@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <!--
   One session of the embedded terminal (R-1069): xterm.js on the output of its program, above it
-  what the session is connected to, search and options, below it the size and the status. In a
+  what the session is connected to, search and options, below it the size and the status. The
+  snippets (R-1071) and the files of the host (R-1072) open in the panel of the options. In a
   detached window (R-1070) the header has the search and Dock only: that window may not save the
   options, start a program or end one, and its title bar names the session.
 -->
@@ -20,9 +21,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     AArrowDown,
     AArrowUp,
     Cable,
+    FolderOpen,
     RotateCw,
     SlidersHorizontal,
     SquareArrowDownLeft,
+    SquareCode,
     X,
   } from '@lucide/svelte';
   import type { TerminalPrefs } from '$lib/bridge/types';
@@ -32,6 +35,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     attachTerminal,
     reconnectTerminal,
     resizeTerminal,
+    snippetBroadcast,
+    terminals,
     writeTerminal,
     type TerminalSession,
   } from '$lib/stores/terminals';
@@ -44,6 +49,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import IconButton from '../ui/IconButton.svelte';
   import Pill from '../ui/Pill.svelte';
   import SearchField from '../ui/SearchField.svelte';
+  import FilesPanel from './FilesPanel.svelte';
+  import SnippetsPanel from './SnippetsPanel.svelte';
   import TerminalOptions from './TerminalOptions.svelte';
 
   interface Props {
@@ -69,7 +76,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let cols = $state(80);
   let rows = $state(24);
   let query = $state('');
-  let optionsOpen = $state(false);
+  // The side panel shown: one at a time.
+  let panel = $state<'options' | 'snippets' | 'files' | null>(null);
   let pasteHint = $state(false);
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -226,6 +234,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (fontSize !== prefs.fontSize) void saveTerminalPrefs({ ...prefs, fontSize });
   }
 
+  function toggle(which: 'options' | 'snippets' | 'files'): void {
+    panel = panel === which ? null : which;
+  }
+
   function reconnect(): void {
     // The new program starts on an empty terminal, without the modes the last one left set
     // (alternate screen, mouse reports).
@@ -353,12 +365,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
         disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
         onclick={() => changeFont(1)}
       />
+      {#if !session.ansible}
+        <IconButton
+          size="sm"
+          icon={SquareCode}
+          label={$t('terminal.snippets')}
+          aria-pressed={panel === 'snippets'}
+          onclick={() => toggle('snippets')}
+        />
+        <IconButton
+          size="sm"
+          icon={FolderOpen}
+          label={$t('terminal.files')}
+          aria-pressed={panel === 'files'}
+          onclick={() => toggle('files')}
+        />
+      {/if}
       <IconButton
         size="sm"
         icon={SlidersHorizontal}
         label={$t('terminal.options')}
-        aria-pressed={optionsOpen}
-        onclick={() => (optionsOpen = !optionsOpen)}
+        aria-pressed={panel === 'options'}
+        onclick={() => toggle('options')}
       />
       <span class="term-sep" aria-hidden="true"></span>
       {#if !session.ansible}
@@ -398,9 +426,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </div>
       {/if}
     </div>
-    {#if optionsOpen}
+    {#if panel === 'options'}
       <aside class="term-panel" aria-label={$t('terminal.options')}>
         <TerminalOptions prefs={$terminalPrefs} onChange={(p) => void saveTerminalPrefs(p)} />
+      </aside>
+    {:else if panel === 'snippets' && !onDock && !session.ansible}
+      <aside class="term-panel" aria-label={$t('terminal.snippets')}>
+        <SnippetsPanel
+          sessionKey={session.key}
+          running={session.status === 'connected'}
+          onRun={() => term?.focus()}
+        />
+      </aside>
+    {:else if panel === 'files' && !onDock && !session.ansible}
+      <aside class="term-panel" aria-label={$t('terminal.files')}>
+        <FilesPanel
+          session={session.backendId}
+          running={session.status === 'connected'}
+          shown={$terminals.active === session.key}
+        />
       </aside>
     {/if}
   </div>
@@ -409,6 +453,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span>{cols}×{rows}</span>
     {#if pasteHint}
       <span class="term-hint" role="status">{$t('terminal.pasteHint')}</span>
+    {/if}
+    {#if $snippetBroadcast && !session.ansible}
+      <span class="term-broadcast">{$t('terminal.snippets.broadcastActive')}</span>
     {/if}
     <span class="term-spacer"></span>
     <span>{statusText}</span>
@@ -504,7 +551,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     overflow: hidden;
     white-space: nowrap;
   }
-  .term-hint {
+  .term-hint,
+  .term-broadcast {
     color: var(--warning);
   }
 </style>

@@ -64,6 +64,14 @@ pub struct Spawn {
     /// A directory of the run, removed with all it holds once the program has ended; a start
     /// that fails leaves it to the caller.
     pub cleanup: Option<PathBuf>,
+    /// Whether a broadcast of the snippet panel reaches the session ([`PtyRegistry::broadcast`]):
+    /// an SSH session, not an Ansible run.
+    pub broadcast: bool,
+    /// The ControlMaster socket of an SSH session: its SFTP channel goes over it (R-1072).
+    pub control_path: Option<PathBuf>,
+    /// The argv of the SFTP channel of an SSH session, for the same program (R-1072,
+    /// `connection::ssh::build_sftp_args`); `None` for a session without one.
+    pub sftp: Option<Vec<String>>,
 }
 
 /// The label of the main window, which may reach every session.
@@ -108,6 +116,10 @@ struct Session {
     stream: Mutex<Stream>,
     /// Set by a close: the session then leaves the registry at its end, listened to or not.
     closing: std::sync::atomic::AtomicBool,
+    /// [`Spawn::broadcast`].
+    broadcast: bool,
+    /// The program and argv of [`Spawn::sftp`].
+    sftp: Option<(PathBuf, Vec<String>)>,
     writer: Mutex<Box<dyn Write + Send>>,
     /// Gone once the program exited: on Windows the pseudo console closes with it, and only
     /// then does the reader get its end.
@@ -138,6 +150,9 @@ type Sessions = Arc<Mutex<HashMap<u64, Arc<Session>>>>;
 pub struct PtyRegistry {
     next: AtomicU64,
     sessions: Sessions,
+    /// The broadcast of the snippet panel, off at the start: held here, so that every window
+    /// shows the warning while it is on ([`PtyRegistry::broadcast`] sends nothing while off).
+    broadcasting: std::sync::atomic::AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -208,6 +223,8 @@ impl PtyRegistry {
                 ended: None,
             }),
             closing: std::sync::atomic::AtomicBool::new(false),
+            broadcast: spawn.broadcast,
+            sftp: spawn.sftp.map(|args| (spawn.program.clone(), args)),
             writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             killer: Mutex::new(Some(child.clone_killer())),
@@ -317,6 +334,43 @@ impl PtyRegistry {
         Ok(())
     }
 
+    /// Writes `data` to the program of every running session that takes a broadcast, whichever
+    /// window shows it, and returns how many it reached. A session whose write fails is not
+    /// counted and does not stop the others. May wait like [`PtyRegistry::write`]: not on the
+    /// main thread.
+    pub fn broadcast(&self, data: &[u8]) -> u32 {
+        if !self.broadcasting() {
+            return 0;
+        }
+        // Collected first: a write may wait, and the registry stays free for the readers.
+        let sessions: Vec<Arc<Session>> = lock(&self.sessions)
+            .values()
+            .filter(|session| session.broadcast)
+            .cloned()
+            .collect();
+        let mut reached = 0;
+        for session in sessions {
+            if lock(&session.stream).ended.is_some() {
+                continue;
+            }
+            let mut writer = lock(&session.writer);
+            if writer.write_all(data).and_then(|()| writer.flush()).is_ok() {
+                reached += 1;
+            }
+        }
+        reached
+    }
+
+    /// Whether the broadcast is on.
+    pub fn broadcasting(&self) -> bool {
+        self.broadcasting.load(Ordering::SeqCst)
+    }
+
+    /// Switches the broadcast on or off; true when that changed it.
+    pub fn set_broadcasting(&self, on: bool) -> bool {
+        self.broadcasting.swap(on, Ordering::SeqCst) != on
+    }
+
     /// Tells the program of session `id` its new size; nothing for a session that has ended.
     pub fn resize(&self, id: u64, cols: u16, rows: u16) -> Result<(), AppError> {
         let Some(session) = self.session(id) else {
@@ -353,6 +407,19 @@ impl PtyRegistry {
         for id in ids {
             self.close(id);
         }
+    }
+
+    /// The program and argv of the SFTP channel of session `id` ([`Spawn::sftp`]): only while
+    /// its program runs, as the channel goes over its connection.
+    pub fn sftp(&self, id: u64) -> Result<(PathBuf, Vec<String>), AppError> {
+        let session = self
+            .session(id)
+            .filter(|session| lock(&session.stream).ended.is_none())
+            .ok_or_else(|| AppError::Connection("the terminal session has ended".to_string()))?;
+        session
+            .sftp
+            .clone()
+            .ok_or_else(|| AppError::Validation("the session has no SFTP channel".to_string()))
     }
 
     /// Whether session `id` is there.
@@ -402,6 +469,9 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: None,
+            broadcast: false,
+            control_path: None,
+            sftp: None,
         }
     }
 
@@ -414,6 +484,9 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: None,
+            broadcast: false,
+            control_path: None,
+            sftp: None,
         }
     }
 
@@ -779,6 +852,72 @@ mod tests {
     }
 
     #[test]
+    fn a_broadcast_reaches_the_running_sessions_that_take_it() {
+        let registry = PtyRegistry::default();
+        #[cfg(unix)]
+        let (script, line, own_line) = ("read x; printf got:%s \"$x\"", "hello\n", "mine\n");
+        #[cfg(windows)]
+        let (script, line, own_line) = ("set /p x=&echo got:!x!", "hello\r", "mine\r");
+        let to_all = |spawn: Spawn, owner: &str| {
+            let mut spawn = spawn;
+            spawn.broadcast = true;
+            open_for(&registry, spawn, owner)
+        };
+        let (first, first_rx) = to_all(shell(script), "main");
+        // A detached window's session is reached all the same.
+        let (second, second_rx) = to_all(shell(script), "terminal-5");
+        // Like an Ansible run: it takes no broadcast.
+        let (own, own_rx) = open(&registry, shell(script));
+        // Ended, but kept: nobody heard its end.
+        let mut ended = shell("exit 0");
+        ended.broadcast = true;
+        let ended = registry
+            .open(ended, 80, 24, "main", |_| false)
+            .expect("the session starts");
+        let deadline = Instant::now() + WAIT;
+        while registry
+            .session(ended)
+            .is_some_and(|session| lock(&session.stream).ended.is_none())
+        {
+            assert!(Instant::now() < deadline, "the session does not end");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(registry.has(ended), "an end nobody heard keeps the session");
+        let first_text = until_ready(&registry, first, &first_rx);
+        let second_text = until_ready(&registry, second, &second_rx);
+        let own_text = until_ready(&registry, own, &own_rx);
+
+        // Off, as at the start: nothing goes out, the line read would be this one.
+        assert!(!registry.broadcasting());
+        assert_eq!(
+            registry.broadcast(line.replace("hello", "off").as_bytes()),
+            0
+        );
+        assert!(registry.set_broadcasting(true));
+        assert!(!registry.set_broadcasting(true), "it was on already");
+        assert_eq!(registry.broadcast(line.as_bytes()), 2);
+
+        let (text, _) = until_exit(&registry, first, &first_rx, first_text);
+        assert!(text.contains("got:hello"), "output: {text:?}");
+        let (text, _) = until_exit(&registry, second, &second_rx, second_text);
+        assert!(text.contains("got:hello"), "output: {text:?}");
+        registry
+            .write(own, own_line.as_bytes())
+            .expect("the input goes in");
+        let (text, _) = until_exit(&registry, own, &own_rx, own_text);
+        assert!(text.contains("got:mine"), "output: {text:?}");
+        assert!(
+            !text.contains("hello"),
+            "the broadcast reached it: {text:?}"
+        );
+        registry.close(ended);
+        until_gone(&registry);
+        assert_eq!(registry.broadcast(line.as_bytes()), 0, "nobody is left");
+        assert!(registry.set_broadcasting(false));
+        assert!(!registry.broadcasting());
+    }
+
+    #[test]
     fn the_ring_keeps_the_last_output() {
         let mut stream = Stream {
             ring: std::collections::VecDeque::new(),
@@ -805,6 +944,9 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: None,
+            broadcast: false,
+            control_path: None,
+            sftp: None,
         };
         let refused = registry.open(spawn, 80, 24, "main", |_| true);
         assert!(refused.is_err());
@@ -842,10 +984,49 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: Some(dir.clone()),
+            broadcast: false,
+            control_path: None,
+            sftp: None,
         };
         assert!(registry.open(spawn, 80, 24, "main", |_| true).is_err());
         assert!(dir.exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_session_hands_out_its_sftp_channel_while_it_runs() {
+        let registry = PtyRegistry::default();
+        let args = vec!["-s".to_string(), "--".to_string(), "h".to_string()];
+        let mut spawn = long_running();
+        spawn.sftp = Some(args.clone());
+        let program = spawn.program.clone();
+        let (id, _rx) = open(&registry, spawn);
+        let (other, _rx_other) = open(&registry, long_running());
+        assert_eq!(registry.sftp(id).unwrap(), (program, args.clone()));
+        assert_eq!(registry.sftp(other).unwrap_err().code(), "ERR_VALIDATION");
+        assert_eq!(
+            registry.sftp(other + 1).unwrap_err().code(),
+            "ERR_CONNECTION"
+        );
+
+        // Ended, kept as nobody heard its end: its connection is gone.
+        let mut ended = shell("exit 0");
+        ended.sftp = Some(args);
+        let ended = registry
+            .open(ended, 80, 24, "main", |_| false)
+            .expect("the session starts");
+        let deadline = Instant::now() + WAIT;
+        while registry
+            .session(ended)
+            .is_some_and(|session| lock(&session.stream).ended.is_none())
+        {
+            assert!(Instant::now() < deadline, "the session does not end");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(registry.has(ended));
+        assert_eq!(registry.sftp(ended).unwrap_err().code(), "ERR_CONNECTION");
+        registry.close(ended);
+        registry.close_all();
     }
 
     #[test]

@@ -23,6 +23,9 @@ const h = vi.hoisted(() => ({
   terminalClose: vi.fn(async () => {}),
   terminalCloseAll: vi.fn(async () => {}),
   terminalWrite: vi.fn(async () => {}),
+  terminalBroadcast: vi.fn(async (_data: Uint8Array) => 2),
+  terminalSetBroadcast: vi.fn(async (_on: boolean) => {}),
+  terminalBroadcastState: vi.fn(async () => false),
   terminalResize: vi.fn(async () => {}),
   resolveConnection: vi.fn(async (connection: unknown) => ({ connection })),
   terminalAttach: vi.fn(),
@@ -39,6 +42,9 @@ vi.mock('$lib/bridge', () => ({
   terminalClose: h.terminalClose,
   terminalCloseAll: h.terminalCloseAll,
   terminalWrite: h.terminalWrite,
+  terminalBroadcast: h.terminalBroadcast,
+  terminalSetBroadcast: h.terminalSetBroadcast,
+  terminalBroadcastState: h.terminalBroadcastState,
   terminalResize: h.terminalResize,
   resolveConnection: h.resolveConnection,
   terminalAttach: h.terminalAttach,
@@ -69,7 +75,10 @@ import {
   openTerminal,
   reconnectTerminal,
   resizeTerminal,
+  runSnippet,
+  setSnippetBroadcast,
   showTab,
+  snippetBroadcast,
   terminals,
   writeTerminal,
   type TerminalSession,
@@ -780,6 +789,101 @@ describe('keeping the SSH tabs for the next run (R-1070)', () => {
     expect(
       openSessionIds([tab(C2), tab(RDP), tab(CONN), tab(C2), tab({ ...CONN, id: '' })]),
     ).toEqual(['c2', 'c1']);
+  });
+});
+
+describe('snippets (R-1071)', () => {
+  // As the store encodes: a Uint8Array of this realm.
+  const encoded = (text: string) => new TextEncoder().encode(text);
+  // What Rust reports to every window.
+  const report = (on: boolean) =>
+    (h.listeners.get('terminal-broadcast') as unknown as (e: { payload: boolean }) => void)({
+      payload: on,
+    });
+  let unsubscribe: (() => void) | null = null;
+  /** A window that shows the store, as the foot of a session does. */
+  async function watch(): Promise<() => boolean> {
+    let now = false;
+    unsubscribe = snippetBroadcast.subscribe((on) => (now = on));
+    await settle();
+    return () => now;
+  }
+
+  afterEach(() => {
+    unsubscribe?.();
+    unsubscribe = null;
+  });
+
+  it('a window starts with the state Rust holds and then follows it', async () => {
+    h.terminalBroadcastState.mockResolvedValueOnce(true);
+    const now = await watch();
+    expect(now()).toBe(true);
+    report(false);
+    expect(now()).toBe(false);
+    report(true);
+    expect(now()).toBe(true);
+    unsubscribe?.();
+    unsubscribe = null;
+    expect(h.listeners.has('terminal-broadcast')).toBe(false);
+  });
+
+  it('a report heard before the answer is newer than it', async () => {
+    let answer!: (on: boolean) => void;
+    h.terminalBroadcastState.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (answer = resolve)),
+    );
+    const now = await watch();
+    report(true);
+    answer(false);
+    await settle();
+    expect(now()).toBe(true);
+  });
+
+  it('switches the broadcast through Rust and reports a refusal', async () => {
+    await setSnippetBroadcast(true);
+    expect(h.terminalSetBroadcast).toHaveBeenCalledWith(true);
+    h.terminalSetBroadcast.mockRejectedValueOnce(
+      new Error('only the main window switches the broadcast'),
+    );
+    await setSnippetBroadcast(false);
+    expect(h.reportError).toHaveBeenCalledWith('only the main window switches the broadcast');
+  });
+
+  it('a snippet goes to its session line by line, each with Enter', async () => {
+    await openTerminal(CONN, RESOLVED);
+    const { key } = only();
+    await runSnippet(key, 'cd /tmp\nls -la\n\n');
+    await settle();
+    expect(h.terminalWrite).toHaveBeenCalledTimes(1);
+    expect(h.terminalWrite).toHaveBeenCalledWith(1, encoded('cd /tmp\rls -la\r'));
+    expect(h.terminalBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('with the broadcast on it goes to Rust for every session, not to its own', async () => {
+    await openTerminal(CONN, RESOLVED);
+    const { key } = only();
+    await watch();
+    report(true);
+    await runSnippet(key, 'uptime');
+    await settle();
+    expect(h.terminalBroadcast).toHaveBeenCalledTimes(1);
+    expect(h.terminalBroadcast).toHaveBeenCalledWith(encoded('uptime\r'));
+    expect(h.terminalWrite).not.toHaveBeenCalled();
+
+    h.terminalBroadcast.mockRejectedValueOnce(new Error('only the main window broadcasts'));
+    await runSnippet(key, 'uptime');
+    expect(h.reportError).toHaveBeenCalledWith('only the main window broadcasts');
+  });
+
+  it('a snippet reaches no session that has ended', async () => {
+    await openTerminal(CONN, RESOLVED);
+    const { key } = only();
+    programs[0].send({ exitCode: 0 });
+    await settle();
+    expect(only().status).toBe('disconnected');
+    await runSnippet(key, 'uptime');
+    await settle();
+    expect(h.terminalWrite).not.toHaveBeenCalled();
   });
 });
 

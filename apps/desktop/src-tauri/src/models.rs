@@ -288,6 +288,18 @@ pub struct Settings {
     /// (`workspace.json`), as its connections are.
     #[serde(default)]
     pub open_sessions: Vec<String>,
+    /// The snippets of the terminal (R-1071), kept in the workspace (`workspace.json`). `None`:
+    /// the workspace never changed them and the panel shows its default list; an empty list stays
+    /// empty.
+    #[serde(default)]
+    pub snippets: Option<Vec<Snippet>>,
+}
+
+/// A command of the snippet panel of the terminal (R-1071).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snippet {
+    pub name: String,
+    pub command: String,
 }
 
 impl Default for Settings {
@@ -311,6 +323,7 @@ impl Default for Settings {
             terminal: TerminalPrefs::default(),
             restore_sessions: false,
             open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 }

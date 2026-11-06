@@ -105,6 +105,15 @@ export interface Settings {
   restoreSessions?: boolean;
   // Ids of the connections whose SSH tabs were open, in tab order; kept in the workspace.
   openSessions?: string[];
+  // The snippets of the terminal, kept in the workspace; null: never changed, the panel shows
+  // its default list. An empty list stays empty.
+  snippets?: Snippet[] | null;
+}
+
+// A command of the snippet panel of the terminal.
+export interface Snippet {
+  name: string;
+  command: string;
 }
 
 // Options of the embedded terminal, kept per device like the RDP options.
@@ -272,4 +281,42 @@ export interface WorkspaceContext {
 // the program ended, with its exit code when waiting for it worked.
 export interface TerminalExit {
   exitCode: number | null;
+}
+
+// ─────────────────────────── SFTP of a terminal session (R-1072) ───────────
+
+// What a directory entry is (sftp.rs SftpKind); a symlink is not followed.
+export type SftpKind = 'dir' | 'file' | 'link' | 'other';
+
+export interface SftpEntry {
+  name: string;
+  kind: SftpKind;
+  size: number;
+}
+
+// A directory: its resolved path and its entries, folders first, `..` on top below `/`.
+export interface SftpListing {
+  path: string;
+  entries: SftpEntry[];
+}
+
+// Files dropped on the main window (event `sftp-drop`): their number for sftpUploadDropped and
+// their names. An upload names no path, only the number: Rust uploads what it holds under it.
+export interface SftpDrop {
+  drop: number;
+  names: string[];
+}
+
+// What an upload did: the files it wrote, and the names of those it left as they existed.
+export interface SftpUploaded {
+  drop: number;
+  uploaded: number;
+  existing: string[];
+}
+
+// A step of a transfer: bytes done of all bytes of the file `name`.
+export interface SftpTransfer {
+  name: string;
+  done: number;
+  total: number;
 }

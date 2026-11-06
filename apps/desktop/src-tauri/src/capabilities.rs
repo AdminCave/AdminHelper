@@ -91,6 +91,7 @@ fn a_detached_window_may_call_the_terminal_of_its_session_and_the_settings_only(
     let expected: BTreeSet<String> = [
         "load_settings",
         "terminal_attach",
+        "terminal_broadcast_state",
         "terminal_write",
         "terminal_resize",
         "terminal_close",

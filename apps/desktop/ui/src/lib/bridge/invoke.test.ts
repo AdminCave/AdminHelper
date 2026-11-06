@@ -20,8 +20,20 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }));
 
-import { apiProxy, terminalOpenSsh, terminalWrite } from './index';
-import type { Connection, TerminalExit } from './types';
+import {
+  apiProxy,
+  sftpDownload,
+  sftpList,
+  sftpMkdir,
+  sftpUpload,
+  sftpUploadDropped,
+  terminalBroadcast,
+  terminalBroadcastState,
+  terminalOpenSsh,
+  terminalSetBroadcast,
+  terminalWrite,
+} from './index';
+import type { Connection, SftpListing, SftpTransfer, TerminalExit } from './types';
 import { IpcError, errCode, errMsg, errStatus } from '$lib/utils/errors';
 
 async function refusalOf(raw: unknown): Promise<unknown> {
@@ -116,5 +128,84 @@ describe('bridge terminal', () => {
   it('sends typed bytes as the list of numbers a Vec<u8> takes', async () => {
     await terminalWrite(7, new Uint8Array([3, 13, 255]));
     expect(h.invoke).toHaveBeenCalledWith('terminal_write', { id: 7, data: [3, 13, 255] });
+  });
+
+  it('broadcasts the bytes without a session id and passes the count on', async () => {
+    h.invoke.mockResolvedValueOnce(2);
+    await expect(terminalBroadcast(new Uint8Array([108, 115, 10]))).resolves.toBe(2);
+    expect(h.invoke).toHaveBeenCalledWith('terminal_broadcast', { data: [108, 115, 10] });
+  });
+
+  it('switches the broadcast and asks for its state', async () => {
+    await terminalSetBroadcast(true);
+    expect(h.invoke).toHaveBeenCalledWith('terminal_set_broadcast', { on: true });
+    h.invoke.mockResolvedValueOnce(true);
+    await expect(terminalBroadcastState()).resolves.toBe(true);
+    expect(h.invoke.mock.lastCall?.[0]).toBe('terminal_broadcast_state');
+  });
+});
+
+describe('bridge SFTP', () => {
+  const step: SftpTransfer = { name: 'a.txt', done: 262144, total: 524288 };
+
+  // The progress arrives over the channel passed as `progress`.
+  function progressOf(call: number): { onmessage: (message: unknown) => void } {
+    const [, args] = h.invoke.mock.calls[call] as [string, Record<string, unknown>];
+    return args.progress as { onmessage: (message: unknown) => void };
+  }
+
+  it('lists and creates folders of a session', async () => {
+    const listing: SftpListing = {
+      path: '/home/u',
+      entries: [{ name: 'docs', kind: 'dir', size: 0 }],
+    };
+    h.invoke.mockResolvedValueOnce(listing);
+    await expect(sftpList(7, '.')).resolves.toEqual(listing);
+    expect(h.invoke).toHaveBeenCalledWith('sftp_list', { session: 7, path: '.' });
+    await sftpMkdir(7, '/home/u/new');
+    expect(h.invoke).toHaveBeenLastCalledWith('sftp_mkdir', { session: 7, path: '/home/u/new' });
+  });
+
+  it('uploads picked files with progress and passes a cancel on as null', async () => {
+    h.invoke.mockResolvedValueOnce({ drop: 3, uploaded: 1, existing: ['b.txt'] });
+    const seen: SftpTransfer[] = [];
+    await expect(sftpUpload(7, '/srv', (s) => seen.push(s))).resolves.toEqual({
+      drop: 3,
+      uploaded: 1,
+      existing: ['b.txt'],
+    });
+    const [cmd, args] = h.invoke.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cmd).toBe('sftp_upload');
+    expect(args).toMatchObject({ session: 7, dir: '/srv' });
+    progressOf(0).onmessage(step);
+    expect(seen).toEqual([step]);
+
+    h.invoke.mockResolvedValueOnce(null);
+    await expect(sftpUpload(7, '/srv', () => {})).resolves.toBeNull();
+  });
+
+  it('uploads a drop by its number, with overwrite as asked', async () => {
+    h.invoke.mockResolvedValueOnce({ drop: 4, uploaded: 2, existing: [] });
+    const seen: SftpTransfer[] = [];
+    await sftpUploadDropped(7, '/srv', 4, true, (s) => seen.push(s));
+    const [cmd, args] = h.invoke.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cmd).toBe('sftp_upload_dropped');
+    expect(args).toMatchObject({ session: 7, dir: '/srv', drop: 4, overwrite: true });
+    progressOf(0).onmessage(step);
+    expect(seen).toEqual([step]);
+  });
+
+  it('downloads with progress and passes a cancel on as false', async () => {
+    h.invoke.mockResolvedValueOnce(true);
+    const seen: SftpTransfer[] = [];
+    await expect(sftpDownload(7, '/var/log/syslog', (s) => seen.push(s))).resolves.toBe(true);
+    const [cmd, args] = h.invoke.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cmd).toBe('sftp_download');
+    expect(args).toMatchObject({ session: 7, path: '/var/log/syslog' });
+    progressOf(0).onmessage(step);
+    expect(seen).toEqual([step]);
+
+    h.invoke.mockResolvedValueOnce(false);
+    await expect(sftpDownload(7, '/x', () => {})).resolves.toBe(false);
   });
 });

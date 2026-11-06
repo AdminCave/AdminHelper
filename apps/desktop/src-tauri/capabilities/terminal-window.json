@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "allow-load-settings",
     "allow-terminal-attach",
+    "allow-terminal-broadcast-state",
     "allow-terminal-write",
     "allow-terminal-resize",
     "allow-terminal-close",

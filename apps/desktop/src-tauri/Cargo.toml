@@ -26,8 +26,11 @@ futures-util = { version = "0.3", default-features = false, features = ["sink"] 
 # (session.rs) and the wait for the admin port of a stopped frpc (frpc.rs);
 # tauri provides the runtime. `net` is in the build through reqwest already.
 # `rt` and `macros`: embedded RDP runs its session on a runtime of its own and selects between
-# the picture and the input of its WebSocket (rdp_embedded/).
-tokio = { version = "1", default-features = false, features = ["sync", "time", "net", "rt", "macros"] }
+# the picture and the input of its WebSocket (rdp_embedded/). `process`, `io-util` and `fs`: the SFTP
+# channel talks to the stdin/stdout of an ssh child (sftp.rs).
+tokio = { version = "1", default-features = false, features = ["sync", "time", "net", "rt", "macros", "process", "io-util", "fs"] }
+# SFTP client over any byte stream; it does not pull in russh (R-1072).
+russh-sftp = "3.0.1"
 url = "2"
 open = "5"
 # The OS keyring through keyring-core and one store crate per platform (keyring_store.rs), not the

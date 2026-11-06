@@ -125,9 +125,16 @@ const RUN_DIR_PREFIX: &str = "adminhelper_ansible_";
 /// Creates the directory of one run in `base`: `adminhelper_ansible_<pid>_<n>_<nanos>`, on Unix
 /// mode 0700. Ansible reads `group_vars/`, `host_vars/` and plugins next to the inventory and
 /// the playbook, so the directory is created afresh (`create`, never an existing one) and holds
-/// only what the run writes. A name that exists already (a pid of an earlier process, a
-/// planted entry) gets a new one, up to 16 tries.
+/// only what the run writes.
 fn create_run_dir(base: &Path) -> std::io::Result<PathBuf> {
+    create_private_dir(base, RUN_DIR_PREFIX)
+}
+
+/// Creates `<prefix><pid>_<n>_<nanos>` in `base`, on Unix mode 0700, always afresh: a name that
+/// exists already (a pid of an earlier process, a planted entry) gets a new one, up to 16
+/// tries. The run directory of Ansible and the ControlMaster directory of the embedded
+/// terminal (R-1072).
+pub(crate) fn create_private_dir(base: &Path, prefix: &str) -> std::io::Result<PathBuf> {
     static RUN_SEQ: AtomicU64 = AtomicU64::new(0);
     #[cfg(unix)]
     let mut builder = std::fs::DirBuilder::new();
@@ -145,7 +152,7 @@ fn create_run_dir(base: &Path) -> std::io::Result<PathBuf> {
             .map(|since| since.as_nanos())
             .unwrap_or_default();
         let dir = base.join(format!(
-            "{RUN_DIR_PREFIX}{}_{}_{nanos}",
+            "{prefix}{}_{}_{nanos}",
             std::process::id(),
             RUN_SEQ.fetch_add(1, Ordering::Relaxed)
         ));
@@ -325,6 +332,9 @@ fn pty_spawn(program: PathBuf, inventory_path: &str, playbook_path: &str, check:
         env: vec![("TERM".to_string(), "xterm-256color".to_string())],
         cwd: None,
         cleanup: Path::new(inventory_path).parent().map(Path::to_path_buf),
+        broadcast: false,
+        control_path: None,
+        sftp: None,
     }
 }
 
@@ -1077,6 +1087,7 @@ mod tests {
         launch_ansible_with(&inventory, &playbook, |inv, pb| {
             seen = Some(format!("-i {inv} {pb} --check\n"));
             let spawn = pty_spawn(stub.0.join("ansible-playbook"), inv, pb, true);
+            assert!(!spawn.broadcast, "a run takes no broadcast");
             registry.open(spawn, 80, 24, "main", move |out| tx.send(out).is_ok())
         })
         .unwrap();

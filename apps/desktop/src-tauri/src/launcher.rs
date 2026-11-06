@@ -146,6 +146,7 @@ pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError
             legacy_keys: false,
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
+            snippets: None,
         };
         return create(base, &mut registry, &meta);
     };
@@ -882,6 +883,7 @@ mod tests {
             legacy_keys: true,
             favorite_connections: Vec::new(),
             open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 
@@ -1253,6 +1255,7 @@ mod tests {
                     legacy_keys: false,
                     favorite_connections: Vec::new(),
                     open_sessions: Vec::new(),
+                    snippets: None,
                 },
                 "{case}"
             );

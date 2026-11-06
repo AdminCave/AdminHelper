@@ -10,7 +10,7 @@
 // (R-1070) keeps its tab, without a terminal; docked again, it attaches anew and the terminal
 // gets the output Rust kept first. The window it is detached into holds it as its only session.
 
-import { get, writable, type Readable } from 'svelte/store';
+import { get, readable, writable, type Readable } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import type { TerminalMessage } from '$lib/bridge';
@@ -493,6 +493,68 @@ export function writeTerminal(key: string, data: Uint8Array): void {
   if (runtime.replaying || session.detached) return;
   if (session.backendId === null) runtime.input.push(data);
   else send(key, runtime, session.backendId, data);
+}
+
+const encoder = new TextEncoder();
+
+/**
+ * Whether a snippet goes to every running SSH session (R-1071) instead of the one it was chosen
+ * in. Rust holds it, not saved and off at every start of the app, so that a detached window
+ * shows the warning as main does: the store listens to `terminal-broadcast`, then asks once; an
+ * event heard before the answer is newer than it.
+ */
+export const snippetBroadcast: Readable<boolean> = readable(false, (set) => {
+  let heard = false;
+  let gone = false;
+  let stop: UnlistenFn | null = null;
+  void listen<boolean>('terminal-broadcast', (e) => {
+    heard = true;
+    set(e.payload);
+  })
+    .then(async (unlisten) => {
+      if (gone) return unlisten();
+      stop = unlisten;
+      const on = await bridge.terminalBroadcastState();
+      if (!heard && !gone) set(on);
+    })
+    .catch((err) => reportError(errMsg(err)));
+  return () => {
+    gone = true;
+    stop?.();
+    // Unheard, the store would keep its last state for the next reader: off is the safe one.
+    set(false);
+  };
+});
+
+/** Switches the broadcast; the store follows once Rust reports it to every window. */
+export async function setSnippetBroadcast(on: boolean): Promise<void> {
+  try {
+    await bridge.terminalSetBroadcast(on);
+  } catch (err) {
+    reportError(errMsg(err));
+  }
+}
+
+/** A snippet as typed: each line with Enter, the last one too, and no empty lines at the end. */
+export function snippetInput(command: string): Uint8Array {
+  return encoder.encode(command.replace(/\n+$/, '').split('\n').join('\r') + '\r');
+}
+
+/**
+ * Runs `command` in the session of `key`; with the broadcast on in every running SSH session of
+ * the workspace instead, whichever window shows it (Rust holds them all).
+ */
+export async function runSnippet(key: string, command: string): Promise<void> {
+  const data = snippetInput(command);
+  if (!get(snippetBroadcast)) {
+    writeTerminal(key, data);
+    return;
+  }
+  try {
+    await bridge.terminalBroadcast(data);
+  } catch (err) {
+    reportError(errMsg(err));
+  }
 }
 
 function resizeBackend(id: number, cols: number, rows: number): void {

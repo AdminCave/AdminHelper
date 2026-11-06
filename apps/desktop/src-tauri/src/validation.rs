@@ -7,7 +7,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::error::AppError;
-use crate::models::{Connection, ConnectionKind, RdpConnectionOptions, SshForwardKind, SshOptions};
+use crate::models::{
+    Connection, ConnectionKind, RdpConnectionOptions, Snippet, SshForwardKind, SshOptions,
+};
 use url::{Host, Url};
 
 pub fn validate_host(host: &str) -> Result<(), AppError> {
@@ -31,6 +33,49 @@ pub fn validate_no_control_chars(value: &str, label: &str) -> Result<(), AppErro
         return Err(AppError::Validation(format!(
             "{label} enthaelt ungueltige Zeichen"
         )));
+    }
+    Ok(())
+}
+
+pub const MAX_SNIPPETS: usize = 200;
+pub const MAX_SNIPPET_NAME: usize = 64;
+pub const MAX_SNIPPET_COMMAND: usize = 4096;
+
+/// The snippets a workspace saves (R-1071): a name to show on one line, a command the panel types
+/// into a session, where a line break and a tab are text and every other control character
+/// would be a key the user never sees.
+pub fn validate_snippets(snippets: &[Snippet]) -> Result<(), AppError> {
+    if snippets.len() > MAX_SNIPPETS {
+        return Err(AppError::Validation(format!(
+            "At most {MAX_SNIPPETS} snippets"
+        )));
+    }
+    for snippet in snippets {
+        let name = snippet.name.chars().count();
+        if snippet.name.trim().is_empty() || name > MAX_SNIPPET_NAME {
+            return Err(AppError::Validation(format!(
+                "A snippet name has 1 to {MAX_SNIPPET_NAME} characters"
+            )));
+        }
+        if snippet.name.contains(|c: char| c.is_control()) {
+            return Err(AppError::Validation(
+                "A snippet name has no control characters".to_string(),
+            ));
+        }
+        let command = snippet.command.chars().count();
+        if snippet.command.trim().is_empty() || command > MAX_SNIPPET_COMMAND {
+            return Err(AppError::Validation(format!(
+                "A snippet command has 1 to {MAX_SNIPPET_COMMAND} characters"
+            )));
+        }
+        if snippet
+            .command
+            .contains(|c: char| c.is_control() && c != '\n' && c != '\t')
+        {
+            return Err(AppError::Validation(
+                "A snippet command has no control characters but line breaks and tabs".to_string(),
+            ));
+        }
     }
     Ok(())
 }
@@ -294,6 +339,54 @@ pub fn required(value: &Option<String>, label: &str) -> Result<String, AppError>
 
 #[cfg(test)]
 mod tests {
+    fn snippet(name: &str, command: &str) -> Snippet {
+        Snippet {
+            name: name.to_string(),
+            command: command.to_string(),
+        }
+    }
+
+    #[test]
+    fn snippets_within_bounds_pass() {
+        let name = "n".repeat(MAX_SNIPPET_NAME);
+        let command = "c".repeat(MAX_SNIPPET_COMMAND);
+        assert!(validate_snippets(&[]).is_ok());
+        assert!(validate_snippets(&[snippet(&name, &command)]).is_ok());
+        assert!(validate_snippets(&[snippet("Größe", "cd /tmp\nls\t-la")]).is_ok());
+        let many = vec![snippet("a", "b"); MAX_SNIPPETS];
+        assert!(validate_snippets(&many).is_ok());
+    }
+
+    #[test]
+    fn snippets_out_of_bounds_fail() {
+        let too_long_name = "n".repeat(MAX_SNIPPET_NAME + 1);
+        let too_long_command = "c".repeat(MAX_SNIPPET_COMMAND + 1);
+        let too_many = vec![snippet("a", "b"); MAX_SNIPPETS + 1];
+        for (case, snippets) in [
+            ("too many", too_many),
+            ("empty name", vec![snippet("", "ls")]),
+            ("blank name", vec![snippet("  ", "ls")]),
+            ("long name", vec![snippet(&too_long_name, "ls")]),
+            ("line break in name", vec![snippet("a\nb", "ls")]),
+            ("tab in name", vec![snippet("a\tb", "ls")]),
+            ("empty command", vec![snippet("a", "")]),
+            ("blank command", vec![snippet("a", " \n")]),
+            ("long command", vec![snippet("a", &too_long_command)]),
+            ("escape in command", vec![snippet("a", "ls\u{1b}[2J")]),
+            ("carriage return in command", vec![snippet("a", "ls\r")]),
+            ("ctrl-c in command", vec![snippet("a", "ls\u{3}")]),
+            (
+                "one bad of two",
+                vec![snippet("a", "ls"), snippet("b", "ls\u{7f}")],
+            ),
+        ] {
+            assert!(
+                matches!(validate_snippets(&snippets), Err(AppError::Validation(_))),
+                "{case}"
+            );
+        }
+    }
+
     use super::*;
     use crate::models::ConnectionKind;
 

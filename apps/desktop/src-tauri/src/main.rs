@@ -25,6 +25,7 @@ mod proxy;
 mod pty;
 mod rdp_embedded;
 mod session;
+mod sftp;
 mod storage;
 mod sync;
 mod terminal;
@@ -42,11 +43,12 @@ use commands::{
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
     open_launcher, open_workspace, password_state, pinned_ca_fingerprint, probe_targets,
     refresh_tunnel, reset_device_identity, reset_server_cert_pin, resolve_connection,
-    save_connections, save_password, save_settings, save_workspace, start_notification_stream,
-    start_session, start_tunnel, stop_notification_stream, stop_tunnel, sync_connections,
-    terminal_attach, terminal_close, terminal_close_all, terminal_detach, terminal_dock,
-    terminal_open_ansible, terminal_open_ssh, terminal_resize, terminal_write, tunnel_status,
-    workspace_context, write_export_csv,
+    save_connections, save_password, save_settings, save_workspace, sftp_download, sftp_list,
+    sftp_mkdir, sftp_upload, sftp_upload_dropped, start_notification_stream, start_session,
+    start_tunnel, stop_notification_stream, stop_tunnel, sync_connections, terminal_attach,
+    terminal_broadcast, terminal_broadcast_state, terminal_close, terminal_close_all,
+    terminal_detach, terminal_dock, terminal_open_ansible, terminal_open_ssh, terminal_resize,
+    terminal_set_broadcast, terminal_write, tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -137,7 +139,11 @@ fn main() {
         .manage(session::SessionState::default())
         .manage(pty::PtyRegistry::default())
         .manage(rdp_embedded::RdpSessions::default())
-        .on_window_event(commands::on_detached_window_event)
+        .manage(sftp::Picks::default())
+        .on_window_event(|window, event| {
+            commands::on_detached_window_event(window, event);
+            commands::on_main_window_event(window, event);
+        })
         .setup(move |app| {
             let base = storage::app_data_dir(app.handle()).map_err(|e| e.to_string())?;
             // The migration, the workspace's lock, then the workspace: nothing before this
@@ -274,6 +280,9 @@ fn main() {
             open_launcher,
             terminal_open_ssh,
             terminal_write,
+            terminal_broadcast,
+            terminal_set_broadcast,
+            terminal_broadcast_state,
             terminal_resize,
             terminal_close,
             terminal_close_all,
@@ -281,6 +290,11 @@ fn main() {
             terminal_detach,
             terminal_dock,
             terminal_open_ansible,
+            sftp_list,
+            sftp_mkdir,
+            sftp_upload,
+            sftp_upload_dropped,
+            sftp_download,
             rdp_embedded::tofu::rdp_trust_certificate,
             rdp_embedded::rdp_session_start,
             rdp_embedded::rdp_session_stop
