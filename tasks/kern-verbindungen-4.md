@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-4 — Task-Ledger
-Status: aktiv · Branch: feature/kern-verbindungen-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-verbindungen-4 · Review: pro Task
 Spec: docs/features/kern-verbindungen-4.md (Roadmap R-1140, R-1143, R-1158)
 Heavy: linux-full — Server-API (neue 403-Antworten an den Verbindungs-Routen); der Sammellauf fährt den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Review: approve (.ah-out/review/kern-verbindungen-4/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- validation -- ssh
 Doku: → T5
 
-### T5 — Hinweis am Jump-Host-Feld, Doku und CHANGELOG (R-1140, R-1143, R-1158)  [ ]
+### T5 — Hinweis am Jump-Host-Feld, Doku und CHANGELOG (R-1140, R-1143, R-1158)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-verbindungen-4.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @feeb2a36 2026-11-06T07:58:44+01:00
+Review: approve (.ah-out/review/kern-verbindungen-4/T5.verdict.json)
 Änderung: `editor.field.jumpHost.hint` DE/EN um „IPv6-Adresse in eckigen Klammern nur im letzten Hop“ / „an IPv6 address in brackets only in the last hop“. API-Referenz DE+EN: `403` für API-Keys bei den Optionen aus T1 und bei `GET …/sessions`, Jump-Host-Regel aus T3. Admin-Doku DE+EN: Jump-Host-Format im Reiter *Optionen*. Changelog-Fragment (ohne Umlaute) unter `### Changed`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts src/components/ConnectionEditor.options.test.ts
 Doku: die genannten Dateien

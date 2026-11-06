@@ -422,7 +422,8 @@ export const translations: Translations = {
     'editor.authMethod.password': 'Passwort',
     'editor.field.jumpHost': 'Jump-Host',
     'editor.field.jumpHost.placeholder': 'user@bastion:22',
-    'editor.field.jumpHost.hint': 'Mehrere Hops mit Komma getrennt.',
+    'editor.field.jumpHost.hint':
+      'Mehrere Hops mit Komma getrennt; eine IPv6-Adresse in eckigen Klammern nur im letzten Hop.',
     'editor.field.forwards': 'Weiterleitungen',
     'editor.forward.add': 'Weiterleitung hinzufügen',
     'editor.forward.remove': 'Entfernen',
@@ -1561,7 +1562,8 @@ export const translations: Translations = {
     'editor.authMethod.password': 'Password',
     'editor.field.jumpHost': 'Jump host',
     'editor.field.jumpHost.placeholder': 'user@bastion:22',
-    'editor.field.jumpHost.hint': 'Several hops separated by commas.',
+    'editor.field.jumpHost.hint':
+      'Several hops separated by commas; an IPv6 address in brackets only in the last hop.',
     'editor.field.forwards': 'Port forwards',
     'editor.forward.add': 'Add forward',
     'editor.forward.remove': 'Remove',
