@@ -20,7 +20,7 @@ fn build_ssh_command(args: &[String]) -> String {
 // Build the ssh argument vector. Extracted from open_ssh so the arg logic (port only when != 22,
 // the `--` separator right before the target, the -i key path, the user@host assembly) is unit-
 // tested without touching the terminal I/O (6.32). The embedded terminal starts ssh with the
-// same argv (R-1069).
+// same argv (R-1069), on Unix behind the switches of its ControlMaster (`control_args`, R-1072).
 pub(crate) fn build_ssh_args(connection: &Connection) -> Result<Vec<String>, AppError> {
     let (mut args, target) = base_args(connection, true)?;
     args.push("--".to_string());
