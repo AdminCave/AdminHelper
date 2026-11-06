@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <!--
   One session of the embedded terminal (R-1069): xterm.js on the output of its program, above it
-  what the session is connected to, search and options, below it the size and the status. In a
+  what the session is connected to, search and options, below it the size and the status. The
+  snippets (R-1071) and the files of the host (R-1072) open in the panel of the options. In a
   detached window (R-1070) the header has the search and Dock only: that window may not save the
   options, start a program or end one, and its title bar names the session.
 -->
@@ -20,6 +21,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     AArrowDown,
     AArrowUp,
     Cable,
+    FolderOpen,
     RotateCw,
     SlidersHorizontal,
     SquareArrowDownLeft,
@@ -34,6 +36,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     reconnectTerminal,
     resizeTerminal,
     snippetBroadcast,
+    terminals,
     writeTerminal,
     type TerminalSession,
   } from '$lib/stores/terminals';
@@ -46,6 +49,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import IconButton from '../ui/IconButton.svelte';
   import Pill from '../ui/Pill.svelte';
   import SearchField from '../ui/SearchField.svelte';
+  import FilesPanel from './FilesPanel.svelte';
   import SnippetsPanel from './SnippetsPanel.svelte';
   import TerminalOptions from './TerminalOptions.svelte';
 
@@ -73,7 +77,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rows = $state(24);
   let query = $state('');
   // The side panel shown: one at a time.
-  let panel = $state<'options' | 'snippets' | null>(null);
+  let panel = $state<'options' | 'snippets' | 'files' | null>(null);
   let pasteHint = $state(false);
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -230,7 +234,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (fontSize !== prefs.fontSize) void saveTerminalPrefs({ ...prefs, fontSize });
   }
 
-  function toggle(which: 'options' | 'snippets'): void {
+  function toggle(which: 'options' | 'snippets' | 'files'): void {
     panel = panel === which ? null : which;
   }
 
@@ -369,6 +373,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
           aria-pressed={panel === 'snippets'}
           onclick={() => toggle('snippets')}
         />
+        <IconButton
+          size="sm"
+          icon={FolderOpen}
+          label={$t('terminal.files')}
+          aria-pressed={panel === 'files'}
+          onclick={() => toggle('files')}
+        />
       {/if}
       <IconButton
         size="sm"
@@ -425,6 +436,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
           sessionKey={session.key}
           running={session.status === 'connected'}
           onRun={() => term?.focus()}
+        />
+      </aside>
+    {:else if panel === 'files' && !onDock && !session.ansible}
+      <aside class="term-panel" aria-label={$t('terminal.files')}>
+        <FilesPanel
+          session={session.backendId}
+          running={session.status === 'connected'}
+          shown={$terminals.active === session.key}
         />
       </aside>
     {/if}

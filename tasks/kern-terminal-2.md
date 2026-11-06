@@ -61,8 +61,10 @@ Verify: bash scripts/dev/verify.sh desktop desktop-ui --strict
 Doku: → T9
 Abhängt von: T5
 
-### T7 — Desktop-UI: SFTP-Panel mit Drag & Drop (R-1072)  [ ]
+### T7 — Desktop-UI: SFTP-Panel mit Drag & Drop (R-1072)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/FilesPanel.svelte, apps/desktop/ui/src/components/terminal/FilesPanel.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a9471432 2026-11-06T17:13:05+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T7.verdict.json)
 Änderung: Kopfknopf „Dateien (SFTP)“ (nicht im abgedockten Fenster), drei Panels schließen sich aus. Neue Komponente (SPDX): Pfad-Pill, Liste (Ordner/Datei-Symbol, Name, Größe), Ordner öffnen, `..`, Datei-Klick lädt herunter, Hochladen, Neuer Ordner (Name abfragen), Aktualisieren, Drop-Zone über `sftp-drop`, Rückfrage bei den Namen in `existing` und erneuter Aufruf von `sftp_upload_dropped` mit derselben Nummer und `overwrite`, Fortschritt, Fehlermeldung; unter Windows nach gescheiterter Anmeldung der Hinweis auf Schlüssel/Agent. i18n DE/EN.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- FilesPanel SshTerminal i18n
 Doku: → T9
@@ -102,3 +104,6 @@ Task-Review: am Ende
 - T6: Abweichung vom IPC-Vertrag der Spec: `sftp_upload` liefert `{drop, uploaded, existing}` oder `null` (Abbruch) statt `u32`, `sftp_upload_dropped` hat zusätzlich `overwrite` und liefert dasselbe. Grund: der Upload bricht bei einer vorhandenen Datei nicht ab, sondern nennt sie in `existing`; die UI fragt einmal und ruft mit derselben Nummer und `overwrite` erneut auf, Hochgeladenes hat den Drop schon verlassen. Dialog-Auswahl und Drop teilen sich die Nummern von `main`: ein neuer Drop verdrängt eine Auswahl, deren Rückfrage noch offen ist (die UI meldet dann den Fehler der veralteten Nummer).
 - T6: Ordner lehnen den ganzen Drop vorab ab. Die serde-Typen heißen `Sftp*`, damit der Paritätstest sie findet (T5 hatte ihn gebrochen, `sftp.rs` steht jetzt in `RUST_FILES`); das Verify ist um `desktop-ui` erweitert. Die SFTP-Argumente entstehen beim Start der Sitzung (`with_sftp`) und liegen in `Session.sftp`.
 - T6: Tauri meldet einen Drop selbst als `tauri://drag-drop` mit den Pfaden an die Webview; geschützt ist nur, dass die Webview für einen Upload keinen Pfad nennt, sondern Rust die Pfade unter der Nummer hält (Prüfer).
+- T7: Ein Drop aufs Hauptfenster geht an das Dateien-Panel des sichtbaren Tabs, wenn es offen ist und die Sitzung läuft; Rust filtert nicht nach der Position im Fenster, ein Drop anderswo im Fenster lädt also in den gezeigten Ordner hoch. Läuft dort gerade eine Aktion, meldet das Panel das und lädt nichts.
+- T7: Ein Link wird wie eine Datei heruntergeladen (das Ziel), nicht betreten. Namen vom Host werden nur in der Anzeige um Steuer- und Bidi-Zeichen bereinigt (U+FFFD), gesendet wird der rohe Name.
+- T7: Der Hinweis auf Schlüssel oder Agent erscheint nur unter Windows (`navigator.userAgent`) bei `ERR_CONNECTION`, solange in der Sitzung noch keine Aktion gelungen ist: dort meldet sich der SFTP-Kanal ohne ControlMaster selbst an, und Rust meldet auch spätere Absagen des Hosts (Rechte, fehlende Datei) als `ERR_CONNECTION` (Prüfer). Ein eigener Code für das Scheitern von `Channel::open` hätte die T6-Dateien berührt. Größen stehen nur bei Dateien (Rust liefert für Links und Sonstiges 0).

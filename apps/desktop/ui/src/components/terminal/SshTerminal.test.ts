@@ -6,8 +6,8 @@
 // program, its output to the terminal, the options reach the terminal as they change, copying
 // on select and pasting with a right click follow the options, a paste carries only text, the
 // search goes forward and back, and an ended session offers to reconnect on an empty terminal.
-// The snippets (R-1071) have a panel of their own, which takes the place of the options, and
-// the foot warns while a snippet goes to every session.
+// The snippets (R-1071) and the files (R-1072) have a panel each, which takes the place of the
+// options, and the foot warns while a snippet goes to every session.
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/svelte';
@@ -90,6 +90,7 @@ const h = vi.hoisted(() => {
     saveSettings: vi.fn<(next: unknown) => Promise<void>>(async () => {}),
     refreshSettings: vi.fn(async () => {}),
     reportError: vi.fn(),
+    sftpList: vi.fn(async (_session: number, path: string) => ({ path, entries: [] })),
     observers: [] as (() => void)[],
   };
 });
@@ -115,9 +116,14 @@ vi.mock('$lib/stores/terminals', async () => {
     reconnectTerminal: h.reconnectTerminal,
     runSnippet: h.runSnippet,
     snippetBroadcast: writable(false),
+    terminals: writable({ sessions: [], active: 'terminal-1' }),
   };
 });
-vi.mock('$lib/bridge', () => ({ saveSettings: h.saveSettings }));
+vi.mock('$lib/bridge', () => ({
+  saveSettings: h.saveSettings,
+  sftpList: h.sftpList,
+}));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
@@ -555,6 +561,22 @@ describe('SshTerminal', () => {
     expect(screen.queryByRole('complementary')).toBeNull();
   });
 
+  it('opens the files of the session in a panel that takes the place of the others', async () => {
+    await mount(session({ status: 'connected', backendId: 4 }));
+    const files = screen.getByRole('button', { name: tNow('terminal.files') });
+    await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.snippets') }));
+
+    await fireEvent.click(files);
+    expect(files.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('complementary', { name: tNow('terminal.snippets') })).toBeNull();
+    expect(screen.getByRole('complementary', { name: tNow('terminal.files') })).toBeTruthy();
+    await vi.waitFor(() => expect(h.sftpList).toHaveBeenCalledWith(4, '.'));
+
+    await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.options') }));
+    expect(screen.queryByRole('complementary', { name: tNow('terminal.files') })).toBeNull();
+    expect(files.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('runs no snippet in a session that does not run', async () => {
     await mount(session({ status: 'disconnected', exitCode: 0 }));
     await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.snippets') }));
@@ -586,13 +608,14 @@ describe('SshTerminal in a detached window (R-1070)', () => {
     return { ...view, onDock };
   }
 
-  it('offers only to dock: no target, font, snippets, options, reconnect or close', async () => {
+  it('offers only to dock: no target, font, snippets, files, options, reconnect or close', async () => {
     const { onDock } = await mountDocked(session({ status: 'connected', connectedAt: null }));
     expect(screen.queryByText('ops@db.example:2222')).toBeNull();
     for (const name of [
       'fontSmaller',
       'fontLarger',
       'snippets',
+      'files',
       'options',
       'reconnect',
       'close',
@@ -667,7 +690,7 @@ describe('SshTerminal running a playbook (R-1073)', () => {
     expect(screen.getByText('apt-upgrade')).toBeTruthy();
   });
 
-  it('takes no snippets and does not warn of a broadcast it does not get', async () => {
+  it('takes no snippets nor files and does not warn of a broadcast it does not get', async () => {
     snippetBroadcast.set(true);
     await mount(
       session({
@@ -678,6 +701,7 @@ describe('SshTerminal running a playbook (R-1073)', () => {
       }),
     );
     expect(screen.queryByRole('button', { name: tNow('terminal.snippets') })).toBeNull();
+    expect(screen.queryByRole('button', { name: tNow('terminal.files') })).toBeNull();
     expect(screen.queryByText(tNow('terminal.snippets.broadcastActive'))).toBeNull();
   });
 });
