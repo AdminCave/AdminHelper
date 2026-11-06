@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-verbindungen-4/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options_authz.py tests/test_connections_options.py tests/test_connections_authz.py tests/test_openapi_snapshot.py
 Doku: → T5
 
-### T2 — Server: Sitzungsverlauf nur für Nutzer-Konten (R-1143)  [ ]
+### T2 — Server: Sitzungsverlauf nur für Nutzer-Konten (R-1143)  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_api_key_server_binding.py, apps/server/tests/test_connection_sessions.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @01fa13f6 2026-11-06T07:35:04+01:00
+Review: approve (.ah-out/review/kern-verbindungen-4/T2.verdict.json)
 Änderung: `list_connection_sessions` antwortet jedem API-Key `403`, vor dem Scope-Check (keine Unterscheidung nach Existenz). Die `_SESSIONS`-Zeilen in `test_api_key_server_binding.py` erwarten jetzt `403` (gewollte Verhaltensänderung, kein Test entfällt), dazu ein Test in `test_connection_sessions.py`, dass ein Key ohne Fix den Verlauf sah. Docstring unverändert (OpenAPI-Snapshot).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_sessions.py tests/test_api_key_server_binding.py tests/test_openapi_snapshot.py
 Doku: → T5

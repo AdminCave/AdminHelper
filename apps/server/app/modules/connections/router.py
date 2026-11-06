@@ -354,6 +354,13 @@ def list_connection_sessions(
     auth=Depends(read_dep),
 ):
     """The newest sessions of a connection, newest first, of every user."""
+    # History and device names are for user accounts (R-1143). Refused before the scope check,
+    # so a key learns nothing about which connections exist.
+    if auth[1] is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The session history needs a user login",
+        )
     _scoped_connection(db, conn_id, auth)
     sessions = (
         db.query(ConnectionSession)
