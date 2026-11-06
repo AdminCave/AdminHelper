@@ -21,7 +21,7 @@ Abschnitt **„Auflagen & Hinweise"** am Ende zusammengefasst.
 > **Erzeugung:** die Paket-Tabellen werden aus dem echten Dependency-Stand
 > generiert — `scripts/gen-third-party-licenses.sh` (pip-licenses × Server/
 > Monitoring/CA-Issuer, go-licenses für Linux + Windows, cargo-license,
-> license-checker × Frontends). Stand **2026-09-03** (Rust: 2026-11-05). Die Auflagen-Abschnitte
+> license-checker × Frontends). Stand **2026-09-03** (Rust: 2026-11-06). Die Auflagen-Abschnitte
 > sind manuell kuratiert. Transitive Abhängigkeiten können sich bei einem
 > erneuten Lock verschieben — dann das Skript erneut laufen lassen.
 
@@ -128,7 +128,8 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
 `toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
 `ironrdp-connector` und `ironrdp-session` (eingebettetes RDP, Git-Revision von
-`github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten) —
+`github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten),
+`russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`) —
 überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
@@ -137,18 +138,18 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license`, Stand **2026-11-05** (737 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license`, Stand **2026-11-06** (741 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 482 |
-| MIT | 145 |
+| Apache-2.0 OR MIT | 484 |
+| MIT | 146 |
 | Apache-2.0 OR MIT OR Zlib | 23 |
 | Unicode-3.0 | 18 |
 | MIT OR Unlicense | 12 |
 | BSD-3-Clause | 6 |
-| Apache-2.0 | 6 |
+| Apache-2.0 | 7 |
 | MPL-2.0 | 5 |
 | ISC | 5 |
 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 5 |
@@ -177,8 +178,8 @@ Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MI
 **Auflagen-relevant:**
 
 - **Apache-2.0 (NOTICE), unvermeidbar** (pur oder als `AND`-Anteil):
-  `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `sync_wrapper`, `tao`,
-  `target-lexicon`.
+  `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `russh-sftp`, `sync_wrapper`,
+  `tao`, `target-lexicon`.
 - **MPL-2.0:** `cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext`,
   `selectors`.
 - **Unicode-3.0:** die ICU-/Zerovec-Familie (`icu_*`, `litemap`, `tinystr`,
@@ -239,7 +240,7 @@ Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 - **Python:** `bcrypt`, `python-multipart`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
 - **Rust:** `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
-  `sync_wrapper`, `tao`, `target-lexicon`
+  `russh-sftp`, `sync_wrapper`, `tao`, `target-lexicon`
 
 Sofern diese Projekte eine `NOTICE`-Datei mitliefern, gehört deren Inhalt
 unverändert in die Distribution. Bei allen **dual** MIT/Apache lizenzierten

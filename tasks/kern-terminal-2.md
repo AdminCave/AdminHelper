@@ -43,8 +43,10 @@ Review: approve (.ah-out/review/kern-terminal-2/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T9
 
-### T5 — Desktop: SFTP-Kanal mit russh-sftp (R-1072)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, THIRD_PARTY_LICENSES.md
+### T5 — Desktop: SFTP-Kanal mit russh-sftp (R-1072)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, THIRD_PARTY_LICENSES.md, apps/desktop/src-tauri/src/error.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @dc00284e 2026-11-06T16:14:29+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T5.verdict.json)
 Änderung: Neues Modul (SPDX): `ssh` mit den Argumenten aus T4 über `tokio::process` starten (tokio-Features `process`, `io-util`), stdin/stdout als Stream an `SftpSession::new`; Operationen `list` (aufgelöster Pfad, Ordner zuerst, `..`), `mkdir`, `upload(local, remote_dir, overwrite, progress)` (vorhandene Datei ohne `overwrite`: eigener Fehler `exists`), `download(remote, local, progress)` mit Fortschritt in Schritten; der Prozess endet nach jeder Aktion, stderr von `ssh` wird zur Fehlermeldung (gekürzt, ohne Datei-Inhalt). Tests unter Linux gegen das echte `sftp-server` (`/usr/lib/openssh/sftp-server`, fehlt es: Test rot) als Programm statt `ssh`: Liste, Ordner anlegen, Hoch- und Herunterladen mit Prüfsumme, Überschreib-Schutz, Fortschritt. `russh-sftp` in `THIRD_PARTY_LICENSES.md`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp
 Doku: → T9
@@ -94,3 +96,4 @@ Task-Review: am Ende
 - T3: Broadcast erreicht auch SSH-Sitzungen, die noch an Passwort- oder Hostkey-Abfrage stehen (Rust kennt den Unterschied nicht); das sagt die Doku (T9).
 - T3: Namen und Befehle nur als Text gerendert; Steuerzeichen-Grenzen prüft Rust (T1). Leere Zeilen am Ende eines Befehls fallen weg, damit kein doppeltes Enter entsteht.
 - T5/T6 tragen `sftp.rs` beide: T5 baut den Kanal ohne Tauri (testbar gegen `sftp-server`), T6 die Befehle; so bleibt die neue Abhängigkeit einzeln zurücknehmbar.
+- T5: Kanal über `russh-sftp` 3.0.1 an stdin/stdout des ssh-Kinds (tokio-Feature `fs` zusätzlich). Ein vorhandenes Ziel ohne Überschreiben ist `AppError::SftpExists` (`ERR_SFTP_EXISTS`); Upload mit `EXCLUDE` bzw. `TRUNCATE`, ein Ordner als Quelle wird vor dem Öffnen auf dem Server abgelehnt (Prüfer-Nit T5). Download schreibt `.<name>.ah-part` neben dem Ziel, dann `sync_all` und `rename`, bei Fehler fällt die Teildatei weg. Fehlermeldung: die letzte nicht leere stderr-Zeile (höchstens 512 Zeichen), nur wenn das Kind schon geendet hat. Die Tests gegen `/usr/lib/openssh/sftp-server` laufen nur unter Linux (Prüfer Runde 1: der Windows-Runner hat keinen); fehlt der Server, sind sie rot, kein SKIP.

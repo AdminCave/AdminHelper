@@ -25,6 +25,7 @@ mod proxy;
 mod pty;
 mod rdp_embedded;
 mod session;
+mod sftp;
 mod storage;
 mod sync;
 mod terminal;
