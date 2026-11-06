@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Read by `cargo audit` from this directory (audit.yml, job "cargo audit (desktop)").
+# rdp_embedded/license_gate.rs keeps the ignore list at exactly the advisory below.
+
+[advisories]
+# RUSTSEC-2023-0071, rsa (Marvin: timing side channel in private-key operations), no fixed
+# release. IronRDP pulls rsa in through picky, sspi and winscard. The embedded RDP session logs
+# on with a password over TLS + CredSSP/NTLM and never loads a private RSA key; IronRDP needs one
+# only for smartcard and Entra logon, which the session does not offer, and standard RDP security
+# stays off. Accepted by Kevin on 2026-11-05 (R-1097, T8). Drop this entry once rsa leaves the
+# build graph or a fixed release exists.
+ignore = ["RUSTSEC-2023-0071"]

@@ -188,19 +188,64 @@
           <h2>Notifications (since v0.38.0)</h2>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/notifications</code>
-            <p>The caller's bell feed, newest first. Query: <code>unread_only</code> (bool, default <code>false</code>), <code>limit</code> (1&ndash;1000), <code>offset</code> (&ge;0). Returns a list of notification objects.</p>
+            <p>The caller's bell feed, last pinged first (<code>notified_at</code>), hidden rows left out. Query: <code>unread_only</code> (bool, default <code>false</code>), <code>limit</code> (1&ndash;1000), <code>offset</code> (&ge;0). Returns a list of notification objects. Besides <code>id</code>, <code>createdAt</code>, <code>severity</code>, <code>category</code>, <code>eventType</code>, <code>title</code>, <code>body</code>, <code>sourceType</code>, <code>sourceId</code>, <code>read</code> and <code>readAt</code> each carries <code>incidentId</code>, <code>state</code> (<code>open</code>/<code>acked</code>/<code>resolved</code>), <code>count</code>, <code>ackedBy</code> and <code>resolvedBy</code> (username; <code>resolvedBy</code> <code>null</code> on a resolved incident: automatic), <code>notifiedAt</code>, <code>muted</code>, <code>mutedUntil</code> and <code>muteSource</code> (<code>incident</code>/<code>server</code>). The incident fields are <code>null</code> on a row without an incident and on one whose servers the person no longer sees.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/notifications/unread-count</code>
-            <p>Cheap badge count for the bell. Returns <code>{ "count" }</code>.</p>
+            <p>Cheap badge count for the bell: unread rows, neither hidden nor muted. Returns <code>{ "count" }</code>.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/notifications/read</code>
             <p>Mark notifications read. Body: <code>{ "ids": [&hellip;] }</code> &ndash; omitting <code>ids</code> / <code>null</code> marks <strong>all</strong> read.</p>
           </div>
+          <p>The hub folds events into <strong>incidents</strong> (the flow is in the <a href="./server.html">server architecture</a>). The routes below work on the caller's own feed only: without a row of the incident <code>404</code>. Acknowledge, resolve, reopen and notes are team actions; without sight of every server of the incident <code>403</code>, an invalid transition <code>409</code>. Every team action enters the history with the username and nudges the stream of everyone holding a row of the incident.</p>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/unread</code>
+            <p>Mark own rows unread. Body: <code>{ "ids": [&hellip;] }</code> (1&ndash;500). Returns <code>{ "updated" }</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/hide</code>
+            <p>Hide own rows; the next ping of their incident shows them again. Body and response as for <code>/unread</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/incidents/{id}</code>
+            <p>An incident's detail: <code>id</code>, <code>state</code>, <code>severity</code>, <code>category</code>, <code>eventType</code>, <code>title</code>, <code>body</code>, <code>sourceType</code>, <code>sourceId</code>, <code>count</code>, <code>firstAt</code>, <code>lastAt</code>, <code>ackedBy</code>/<code>ackedAt</code>, <code>resolvedBy</code>/<code>resolvedAt</code>, <code>bundle</code>, <code>servers</code> (<code>[{ "id", "name", "recoveredAt" }]</code>, only the visible ones), <code>rules</code> (<code>[{ "name", "channel", "ok" }]</code> or <code>null</code>), <code>channels</code> (<code>bell</code>/<code>email</code>/<code>telegram</code>, the ones the hub used), <code>history</code> (<code>[{ "id", "at", "kind", "actor", "text", "severity", "serverId" }]</code>, without entries of other servers; <code>actor</code> <code>null</code> = the hub), <code>canAct</code> (sees every server) and <code>row</code> (the caller's feed row).</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/ack</code>
+            <p>Acknowledge open incidents. Body: <code>{ "ids": [&hellip;] }</code> (1&ndash;500 incident ids). Returns <code>{ "updated", "skipped": [&hellip;] }</code>; <code>skipped</code> lists the ids without an own row, without sight of every server, or no longer open.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/{id}/resolve</code>
+            <p>Resolve an open or acknowledged incident by hand; one already resolved gives <code>409</code>. Its next problem event reopens it within 30&nbsp;min of its last ping, later a new one opens. Returns the detail.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/{id}/reopen</code>
+            <p>Open a resolved incident again, unacknowledged; otherwise <code>409</code>. Returns the detail.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/{id}/notes</code>
+            <p>A note in the history, in any state. Body: <code>{ "text" }</code> (1&ndash;2000 characters, not only whitespace). Everyone holding a row of the incident reads it. Returns the detail.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/notifications/incidents/{id}/mute</code>
+            <p>Mute the caller's row of an incident: pings keep it read and send nothing, the read state stays. Body: <code>{ "until" }</code> (a time with a zone, in the future, at most 7&nbsp;days ahead; otherwise <code>422</code>). Returns the feed row. <span class="method-delete">DELETE</span> on the same path ends the mute.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/server-mutes</code>
+            <p>The caller's server mutes that still hold: <code>[{ "serverId", "until" }]</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/notifications/server-mutes/{server_id}</code>
+            <p>Mute a server the caller sees (otherwise <code>404</code>): their rows of the incidents of exactly this server stay read and send nothing. Body as above, a second <code>PUT</code> moves <code>until</code>. Returns <code>{ "serverId", "until" }</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-delete">DELETE</span><code>/api/notifications/server-mutes/{server_id}</code>
+            <p>End the mute of a server; <code>204</code>, also when there was none.</p>
+          </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/notifications/stream</code>
-            <p>Server-Sent Events (<code>text/event-stream</code>): pushes a &ldquo;refresh&rdquo; nudge whenever the user gets a new notification (push, not polling). Cross-worker via Redis&nbsp;Pub/Sub. The gateway proxies the stream <strong>unbuffered with a long read timeout</strong>; a heartbeat comment keeps it open and the auth (JWT/mTLS) is re-validated periodically.</p>
+            <p>Server-Sent Events (<code>text/event-stream</code>): pushes a &ldquo;refresh&rdquo; nudge whenever the user's feed changes: a ping, a team action on one of their incidents, their own hide, unread or mute (push, not polling). Cross-worker via Redis&nbsp;Pub/Sub. The gateway proxies the stream <strong>unbuffered with a long read timeout</strong>; a heartbeat comment keeps it open and the auth (JWT/mTLS) is re-validated periodically.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/users/me/notification-prefs</code>
@@ -212,7 +257,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/internal/events</code>
-            <p><strong>Internal only</strong> (header <code>X-Internal-Key</code>): event ingress for the monitoring&rarr;hub path. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. Fans the event out to matching recipients. Status <code>202</code>, returns <code>{ "notified" }</code>. A bundled event names its servers in <code>source_ids</code> (1&ndash;500 server ids, each 1&ndash;256 characters) instead of <code>source_id</code>; both together give <code>422</code>. The <code>source_type</code> values <code>frp_config</code>, <code>frps</code> and <code>certificate_expiry</code> are reserved for notices of the server itself and give <code>422</code>. Each recipient gets one row about the servers they may see: title <code>&lt;title&gt; (&lt;n&gt;)</code>, text <code>body</code> plus one line per server. <code>title</code> and <code>body</code> therefore name no server and carry no total &ndash; the server appends count and names per recipient. A bundled event fires the <code>alert.triggered</code> hook once per server.</p>
+            <p><strong>Internal only</strong> (header <code>X-Internal-Key</code>): event ingress for the monitoring&rarr;hub path. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. Fans the event out to matching recipients. Status <code>202</code>, returns <code>{ "notified" }</code>. A bundled event names its servers in <code>source_ids</code> (1&ndash;500 server ids, each 1&ndash;256 characters) instead of <code>source_id</code>; both together give <code>422</code>. The <code>source_type</code> values <code>frp_config</code>, <code>frps</code> and <code>certificate_expiry</code> are reserved for notices of the server itself and give <code>422</code>. Each recipient gets one row about the servers they may see: title <code>&lt;title&gt; (&lt;n&gt;)</code>, text <code>body</code> plus one line per server. <code>title</code> and <code>body</code> therefore name no server and carry no total &ndash; the server appends count and names per recipient. A bundled event fires the <code>alert.triggered</code> hook once per server, and only on a <code>critical</code> ping. A monitoring event carries <code>incident_key</code> (1&ndash;200 characters, <code>check:&lt;id&gt;</code>), a bundled event <code>incident_keys</code> instead (one per entry of <code>source_ids</code>, in the same order; a key with two servers gives <code>422</code>), plus an optional <code>rules</code> (at most 50 <code>{ "name", "channel", "ok" }</code>: the check's alert rules and whether each one sent). Events of one key fold into one incident; <code>notified</code> counts the rows a ping wrote, an event folded in silently gives <code>0</code>. A bundled event without keys stays rows without an incident.</p>
           </div>
           <h2>Error Format</h2>
           <div class="code-header"><span>json</span></div>

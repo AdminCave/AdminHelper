@@ -17,6 +17,9 @@ export type SyncMode = 'local' | 'sync' | 'server';
 export type RdpScalingMode = 'auto' | 'normal' | 'hdpi';
 export type RdpWindowMode = 'fit' | 'fullscreen' | 'multimon' | 'custom';
 export type RdpPerformanceProfile = 'auto' | 'lan' | 'broadband' | 'low';
+export type SshConsole = 'embedded' | 'external';
+export type TerminalTheme = 'cave' | 'contrast' | 'light';
+export type TerminalCursor = 'block' | 'bar' | 'underline';
 
 export interface Connection {
   id: string;
@@ -95,6 +98,20 @@ export interface Settings {
   osNotifications: boolean;
   // Ids of the starred connections; kept in the workspace, not on a server.
   favoriteConnections?: string[];
+  // Where an SSH connection opens: a tab of the app or the terminal of the OS.
+  sshConsole: SshConsole;
+  terminal: TerminalPrefs;
+}
+
+// Options of the embedded terminal, kept per device like the RDP options.
+export interface TerminalPrefs {
+  fontSize: number;
+  theme: TerminalTheme;
+  cursor: TerminalCursor;
+  scrollback: number;
+  copyOnSelect: boolean;
+  rightClickPaste: boolean;
+  confirmClose: boolean;
 }
 
 // One reachability probe: probe_targets answers with the connect time in ms or null per target.
@@ -243,4 +260,12 @@ export interface WorkspaceDraft {
 export interface WorkspaceContext {
   launcher: boolean;
   workspace?: WorkspaceInfo | null;
+}
+
+// ─────────────────────────── Embedded terminal (R-1069) ───────────────────
+
+// The last message of a terminal session, after all of its output (models.rs TerminalExit):
+// the program ended, with its exit code when waiting for it worked.
+export interface TerminalExit {
+  exitCode: number | null;
 }

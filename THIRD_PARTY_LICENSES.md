@@ -21,7 +21,7 @@ Abschnitt **„Auflagen & Hinweise"** am Ende zusammengefasst.
 > **Erzeugung:** die Paket-Tabellen werden aus dem echten Dependency-Stand
 > generiert — `scripts/gen-third-party-licenses.sh` (pip-licenses × Server/
 > Monitoring/CA-Issuer, go-licenses für Linux + Windows, cargo-license,
-> license-checker × Frontends). Stand **2026-09-03**. Die Auflagen-Abschnitte
+> license-checker × Frontends). Stand **2026-09-03** (Rust: 2026-11-05). Die Auflagen-Abschnitte
 > sind manuell kuratiert. Transitive Abhängigkeiten können sich bei einem
 > erneuten Lock verschieben — dann das Skript erneut laufen lassen.
 
@@ -124,9 +124,12 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `serde`, `serde_json`, `tauri`, `reqwest`, `futures-util`, `tokio`, `url`,
 `open`, `keyring-core`, `zbus-secret-service-keyring-store` (Linux), `apple-native-keyring-store` (macOS), `tauri-plugin-shell`, `tauri-plugin-dialog`,
 `tauri-plugin-notification`, `tauri-plugin-log`,
-`tauri-plugin-single-instance` (nur Desktop-Ziele), `log`, `chrono`, `regex`,
+`tauri-plugin-single-instance` (nur Desktop-Ziele), `windows` (nur Windows), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
-`toml`, `zeroize` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
+`toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
+`ironrdp-connector` und `ironrdp-session` (eingebettetes RDP, Git-Revision von
+`github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten) —
+überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
 > Paket ist seit Aug. 2025 archiviert, seine PEM-Parser wanderten in die
@@ -134,40 +137,48 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license` (625 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license`, Stand **2026-11-05** (737 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 381 |
+| Apache-2.0 OR MIT | 482 |
 | MIT | 145 |
-| Apache-2.0 OR MIT OR Zlib | 21 |
+| Apache-2.0 OR MIT OR Zlib | 23 |
 | Unicode-3.0 | 18 |
-| Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 15 |
-| MIT OR Unlicense | 7 |
-| MPL-2.0 | 7 |
-| Apache-2.0 | 2 |
-| BSD-3-Clause | 3 |
-| ISC | 3 |
+| MIT OR Unlicense | 12 |
+| BSD-3-Clause | 6 |
+| Apache-2.0 | 6 |
+| MPL-2.0 | 5 |
+| ISC | 5 |
+| Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 5 |
+| Apache-2.0 OR ISC OR MIT | 3 |
+| Apache-2.0 OR BSD-3-Clause | 3 |
 | Zlib | 2 |
-| Apache-2.0 OR ISC OR MIT | 2 |
-| Apache-2.0 OR BSD-3-Clause | 2 |
 | Apache-2.0 OR BSD-3-Clause OR MIT | 2 |
 | Apache-2.0 OR LGPL-2.1-or-later OR MIT | 2 |
+| CDLA-Permissive-2.0 | 2 |
 | Apache-2.0 OR BSD-2-Clause OR MIT | 2 |
-| übrige (je 1) | 11 |
+| übrige (je 1) | 14 |
 
 Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MIT`,
 `BSD-3-Clause OR MIT`, `Apache-2.0 AND MIT`, `Apache-2.0 OR CC0-1.0 OR MIT-0`,
 `(Apache-2.0 OR MIT) AND BSD-3-Clause`, `Apache-2.0 AND ISC`,
-`Apache-2.0 OR BSL-1.0`, `Apache-2.0 WITH LLVM-exception`,
-`(Apache-2.0 OR MIT) AND Unicode-3.0`, `CDLA-Permissive-2.0`.
+`Apache-2.0 OR BSL-1.0`, `Apache-2.0 OR BSD-2-Clause`, `Apache-2.0 WITH LLVM-exception`,
+`(Apache-2.0 OR MIT) AND Unicode-3.0`, `Apache-2.0 OR BSD-1-Clause OR MIT`,
+`(Apache-2.0 OR ISC) AND ISC` (`aws-lc-rs`) und ein zusammengesetzter Ausdruck aus `Apache-2.0`,
+`BSD-3-Clause`, `ISC` und `MIT` (`aws-lc-sys`).
+
+`aws-lc-rs` und `aws-lc-sys` zählt `cargo-license` mit, weil `cargo metadata` das Default-Feature
+`aws-lc-rs` von `sspi` (CredSSP für IronRDP) ohne dessen Bedingung auflöst: es greift nur, wenn
+`sspi` selbst `rustls` einbindet, und das tut es hier nicht. Gebaut werden beide nicht; der Test
+`rdp_embedded::license_gate` prüft es mit `cargo tree -i` (ebenso: kein `openh264-sys2`).
 
 **Auflagen-relevant:**
 
 - **Apache-2.0 (NOTICE), unvermeidbar** (pur oder als `AND`-Anteil):
-  `borsh-derive`, `sync_wrapper`, `tao`, `dpi`, `encoding_rs`, `ring`,
-  `unicode-ident`.
+  `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `sync_wrapper`, `tao`,
+  `target-lexicon`.
 - **MPL-2.0:** `cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext`,
   `selectors`.
 - **Unicode-3.0:** die ICU-/Zerovec-Familie (`icu_*`, `litemap`, `tinystr`,
@@ -192,6 +203,9 @@ Erzeugt mit `license-checker --production` (nur ausgelieferte Laufzeit-Deps).
 | @tauri-apps/plugin-notification | 2.8.0 | MIT OR Apache-2.0 |
 | @tauri-apps/plugin-shell | 2.6.0 | MIT OR Apache-2.0 |
 | uplot | 1.6.32 | MIT |
+| @xterm/addon-fit | 0.11.0 | MIT |
+| @xterm/addon-search | 0.16.0 | MIT |
+| @xterm/xterm | 6.0.0 | MIT |
 
 Alle `@tauri-apps/*`-Pakete sind dual MIT/Apache → es wird der MIT-Zweig
 geführt (keine NOTICE-Pflicht).
@@ -224,8 +238,8 @@ Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 
 - **Python:** `bcrypt`, `python-multipart`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
-- **Rust:** `borsh-derive`, `sync_wrapper`, `tao`, `dpi`, `encoding_rs`,
-  `ring`, `unicode-ident`
+- **Rust:** `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
+  `sync_wrapper`, `tao`, `target-lexicon`
 
 Sofern diese Projekte eine `NOTICE`-Datei mitliefern, gehört deren Inhalt
 unverändert in die Distribution. Bei allen **dual** MIT/Apache lizenzierten

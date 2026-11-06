@@ -10,9 +10,10 @@ Two distinct self-signed certificates (`certA`/`certB`) plus their EC P-256
 private keys (`keyA`/`keyB`, PKCS#8 DER), `CN=localhost`,
 `SAN=DNS:localhost,IP:127.0.0.1`.
 
-Used only by the real-handshake TOFU test in `src/tofu.rs`: an in-process
-`tokio-rustls` server presents one of them so the test can prove the pinning
-verifier accepts the pinned certificate and rejects a changed one.
+Used only by the real-handshake TOFU tests in `src/tofu.rs` and
+`src/rdp_embedded/tofu.rs`: an in-process `tokio-rustls` server presents one of
+them so the tests can prove the pinning verifier (and IronRDP's validation
+callback) accepts the pinned certificate and rejects a changed one.
 
 These are **throwaway test material with no production value** — intentionally
 committed so the test needs no certificate-generation dependency. Regenerate

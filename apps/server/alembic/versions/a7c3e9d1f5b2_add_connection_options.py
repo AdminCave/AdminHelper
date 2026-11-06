@@ -5,7 +5,7 @@
 """add connections.options
 
 Revision ID: a7c3e9d1f5b2
-Revises: b4d6f8a0c2e1
+Revises: d3b5f7a9c1e4
 Create Date: 2026-11-05
 
 Per-connection SSH and RDP options (R-1066) as one JSON object. A column of its own rather
@@ -20,7 +20,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a7c3e9d1f5b2"
-down_revision: Union[str, Sequence[str], None] = "b4d6f8a0c2e1"
+down_revision: Union[str, Sequence[str], None] = "d3b5f7a9c1e4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

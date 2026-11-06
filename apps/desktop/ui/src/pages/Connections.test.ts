@@ -231,8 +231,9 @@ describe('Connections page', () => {
     expect(row.getAttribute('aria-selected')).toBe('true');
     expect(h.connect).not.toHaveBeenCalled();
 
+    // In the console the settings choose (connectFlow.ts), as the inspector's main button.
     await fireEvent.dblClick(row);
-    expect(h.connect).toHaveBeenCalledWith(B);
+    expect(h.connect).toHaveBeenCalledWith(B, false, undefined);
     await fireEvent.keyDown(row, { key: 'Enter' });
     expect(h.connect).toHaveBeenCalledTimes(2);
   });
@@ -255,7 +256,7 @@ describe('Connections page', () => {
     await renderPage();
     const web = screen.getAllByTestId('conn-row').find((r) => r.textContent?.includes('portal'))!;
     await fireEvent.click(within(web).getByRole('button', { name: tNow('connections.open') }));
-    expect(h.connect).toHaveBeenCalledWith(C);
+    expect(h.connect).toHaveBeenCalledWith(C, false, undefined);
   });
 
   it('shows cards in the card view', async () => {
@@ -306,6 +307,23 @@ describe('Connections page', () => {
     expect(insp.getByText(/^xfreerdp \/v:db01\.example:3389/)).not.toBeNull();
   });
 
+  it('connects from the inspector in the console of the settings or the one its arrow picks', async () => {
+    await renderPage();
+    const row = screen.getAllByTestId('conn-row').find((r) => r.textContent?.includes('web01'))!;
+    await fireEvent.click(row);
+    const insp = within(screen.getByTestId('conn-inspector'));
+
+    await fireEvent.click(insp.getByRole('button', { name: tNow('action.connect') }));
+    expect(h.connect).toHaveBeenLastCalledWith(A, false, undefined);
+
+    await fireEvent.click(insp.getByRole('button', { name: tNow('connections.connect.choose') }));
+    await fireEvent.click(
+      insp.getByRole('menuitem', { name: tNow('connections.connect.embedded') }),
+    );
+    expect(h.connect).toHaveBeenLastCalledWith(A, false, 'embedded');
+    expect(h.connect).toHaveBeenCalledTimes(2);
+  });
+
   it('walks the rows with the arrow keys, connects with Enter and clears with Escape', async () => {
     await renderPage();
     await selectGrouping('none');
@@ -328,7 +346,7 @@ describe('Connections page', () => {
     expect(selected()).toEqual(['portal']);
 
     await fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
-    expect(h.connect).toHaveBeenCalledWith(C);
+    expect(h.connect).toHaveBeenCalledWith(C, false, undefined);
 
     await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     expect(selected()).toEqual([]);

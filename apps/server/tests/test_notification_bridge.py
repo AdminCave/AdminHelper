@@ -32,17 +32,17 @@ class TestBuildEvent:
         assert ev.source_id is None  # global → admin-only fan-out
         assert "promo" in ev.title
 
-    def test_server_deleted_is_lifecycle_global(self):
+    def test_server_deleted_is_agent_global(self):
         ev = build_event("server.deleted", {"id": "srv-1", "name": "web01"})
         assert ev is not None
-        assert ev.category == "lifecycle"
+        assert ev.category == "agent"
         assert ev.source_id is None
         assert "web01" in ev.title
 
     def test_tunnel_created_is_server_scoped(self):
         ev = build_event("frp.tunnel.created", {"id": "t1", "name": "ssh", "serverId": "srv-1"})
         assert ev is not None
-        assert ev.category == "lifecycle"
+        assert ev.category == "tunnel"
         assert ev.severity == "info"
         assert ev.source_id == "srv-1"
 

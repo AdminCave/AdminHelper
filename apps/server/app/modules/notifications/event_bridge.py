@@ -58,7 +58,7 @@ def _on_server_deleted(data: dict) -> IncomingEvent | None:
     return IncomingEvent(
         event_type="lifecycle.server.deleted",
         severity="warning",
-        category="lifecycle",
+        category="agent",
         title=f"Server entfernt: {name}",
         body="Ein Server wurde aus dem Inventar entfernt.",
         source_type="server",
@@ -72,7 +72,7 @@ def _on_tunnel_created(data: dict) -> IncomingEvent | None:
     return IncomingEvent(
         event_type="lifecycle.frp.tunnel.created",
         severity="info",
-        category="lifecycle",
+        category="tunnel",
         title=f"FRP-Tunnel angelegt: {name}",
         body="Ein neuer FRP-Tunnel wurde für einen Server angelegt.",
         source_type="server",

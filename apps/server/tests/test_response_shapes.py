@@ -19,12 +19,21 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import update
 
 from app.core.auth import hash_api_key
+from app.core.time import iso_utc
 from app.modules.ansible.models import Playbook
 from app.modules.audit.models import AuditLog
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.notifications.models import Notification, NotificationSubscription
+from app.modules.notifications import incidents
+from app.modules.notifications.incidents import ingest
+from app.modules.notifications.models import (
+    Notification,
+    NotificationIncident,
+    NotificationServerMute,
+    NotificationSubscription,
+)
+from app.modules.notifications.schemas import IncomingEvent
 from app.modules.provisioning import router as provisioning_router
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
@@ -77,6 +86,17 @@ def _ref_name(schema: dict) -> str:
         ("/api/notifications", "get", "NotificationOut"),
         ("/api/notifications/unread-count", "get", "UnreadCountOut"),
         ("/api/notifications/read", "post", "MarkReadOut"),
+        ("/api/notifications/hide", "post", "MarkReadOut"),
+        ("/api/notifications/unread", "post", "MarkReadOut"),
+        ("/api/notifications/incidents/{incident_id}", "get", "IncidentDetailOut"),
+        ("/api/notifications/incidents/ack", "post", "AckOut"),
+        ("/api/notifications/incidents/{incident_id}/resolve", "post", "IncidentDetailOut"),
+        ("/api/notifications/incidents/{incident_id}/reopen", "post", "IncidentDetailOut"),
+        ("/api/notifications/incidents/{incident_id}/notes", "post", "IncidentDetailOut"),
+        ("/api/notifications/incidents/{incident_id}/mute", "put", "NotificationOut"),
+        ("/api/notifications/incidents/{incident_id}/mute", "delete", "NotificationOut"),
+        ("/api/notifications/server-mutes", "get", "ServerMuteOut"),
+        ("/api/notifications/server-mutes/{server_id}", "put", "ServerMuteOut"),
         ("/api/users/me/notification-prefs", "get", "NotificationPrefsOut"),
         ("/api/users/me/notification-prefs", "put", "NotificationPrefsOut"),
         ("/api/internal/events", "post", "EventsAcceptedOut"),
@@ -556,8 +576,33 @@ class TestProvisioningShape:
         assert body["frp"]["config"] and body["frp"]["pkiBundle"] == ""
 
 
+def _incident(db, **fields) -> NotificationIncident:
+    at = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    incident = NotificationIncident(
+        **{
+            "key": "check:1",
+            "state": "open",
+            "severity": "critical",
+            "category": "monitoring",
+            "event_type": "monitoring.check.transition",
+            "title": "CPU critical on web01",
+            "source_type": "server",
+            "source_id": "srv-1",
+            "first_at": at,
+            "last_at": at,
+            **fields,
+        }
+    )
+    db.add(incident)
+    db.commit()
+    return incident
+
+
 class TestNotificationShape:
-    def test_feed_rows_equal_to_dict(self, test_client, db_session, admin_user):
+    def test_feed_rows_equal_to_feed_rows(self, test_client, db_session, admin_user):
+        """The feed is incidents.feed_rows: to_dict plus the incident and mute fields."""
+        far = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+        acked = _incident(db_session, state="acked", acked_by=admin_user.id, event_count=3)
         full = Notification(
             user_id=admin_user.id,
             severity="critical",
@@ -568,6 +613,8 @@ class TestNotificationShape:
             source_type="server",
             source_id="srv-1",
             read_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+            incident_id=acked.id,
+            muted_until=far,
         )
         sparse = Notification(
             user_id=admin_user.id,
@@ -582,11 +629,93 @@ class TestNotificationShape:
         assert res.status_code == 200, res.text
         rows = {n["id"]: n for n in res.json()}
         assert len(rows) == 2
+        now = datetime.datetime.now(datetime.timezone.utc)
         for row in (full, sparse):
             db_session.refresh(row)
-            assert rows[row.id] == jsonable_encoder(row.to_dict())
+            (expected,) = incidents.feed_rows(db_session, admin_user, [row], now)
+            assert rows[row.id] == jsonable_encoder(expected)
         assert rows[sparse.id]["body"] is None and rows[sparse.id]["readAt"] is None
+        assert rows[sparse.id]["incidentId"] is None and rows[sparse.id]["muted"] is False
         assert rows[full.id]["read"] is True
+        assert (rows[full.id]["state"], rows[full.id]["ackedBy"]) == ("acked", "admin")
+        assert (rows[full.id]["muted"], rows[full.id]["muteSource"]) == (True, "incident")
+
+    def test_incident_detail_equal_to_detail(self, test_client, db_session, admin_user):
+        """A full incident (a bundle, acknowledged, resolved, rules, a note) and a sparse
+        one (open, no rules, no actor): the body is what incidents.detail hands out."""
+        for sid, name in (("srv-1", "web01"), ("srv-2", "db01")):
+            db_session.add(Server(id=sid, name=name, hostname=f"{name}.local"))
+        db_session.add(NotificationSubscription(user_id=admin_user.id, scope_type="all"))
+        db_session.commit()
+        bundle = IncomingEvent(
+            event_type="monitoring.check.transition",
+            severity="critical",
+            category="monitoring",
+            title="Agents not reporting",
+            body="Heartbeat lost",
+            source_type="server",
+            source_ids=["srv-1", "srv-2"],
+            incident_keys=["hb:srv-1", "hb:srv-2"],
+            new_status="critical",
+            rules=[{"name": "Ops mail", "channel": "email", "ok": False}],
+        )
+        single = IncomingEvent(
+            event_type="monitoring.check.transition",
+            severity="warning",
+            category="monitoring",
+            title="Disk warning on web01",
+            source_type="server",
+            source_id="srv-1",
+            new_status="warning",
+            incident_key="check:9",
+        )
+        ingest(db_session, bundle)
+        ingest(db_session, single)
+        full, sparse = db_session.query(NotificationIncident).order_by(NotificationIncident.id)
+        h = _login(test_client)
+        base = f"/api/notifications/incidents/{full.id}"
+        assert (
+            test_client.post(
+                "/api/notifications/incidents/ack", headers=h, json={"ids": [full.id]}
+            ).status_code
+            == 200
+        )
+        assert (
+            test_client.post(f"{base}/notes", headers=h, json={"text": "on it"}).status_code == 200
+        )
+        assert test_client.post(f"{base}/resolve", headers=h).status_code == 200
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for incident in (full, sparse):
+            res = test_client.get(f"/api/notifications/incidents/{incident.id}", headers=h)
+            assert res.status_code == 200, res.text
+            db_session.expire_all()
+            held = incidents.access(db_session, admin_user, incident.id)
+            assert res.json() == jsonable_encoder(
+                incidents.detail(db_session, admin_user, held, now)
+            )
+        body = res.json()
+        assert (body["rules"], body["ackedBy"], body["resolvedAt"], body["bundle"]) == (
+            None,
+            None,
+            None,
+            False,
+        )
+
+    def test_server_mutes_equal_to_rows(self, test_client, db_session, admin_user):
+        db_session.add(Server(id="srv-1", name="web01", hostname="web01.local"))
+        db_session.commit()
+        h = _login(test_client)
+        until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+        put = test_client.put(
+            "/api/notifications/server-mutes/srv-1", headers=h, json={"until": until.isoformat()}
+        )
+        assert put.status_code == 200, put.text
+        mute = db_session.get(NotificationServerMute, (admin_user.id, "srv-1"))
+        db_session.refresh(mute)
+        expected = {"serverId": "srv-1", "until": iso_utc(mute.until)}
+        assert put.json() == expected
+        assert test_client.get("/api/notifications/server-mutes", headers=h).json() == [expected]
 
     def test_prefs_equal_to_dict(self, test_client, db_session, admin_user):
         h = _login(test_client)

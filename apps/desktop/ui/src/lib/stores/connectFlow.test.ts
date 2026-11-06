@@ -8,8 +8,9 @@
 // mode-specific branches (6.5), the tunnel resolution without mappings, the keyring key of a
 // stored RDP password behind a tunnel, the user and domain from the password prompt, which
 // password a start takes after the prompt's "remember password", when the prompt offers it, that
-// a refused resolution ends the start, the screen an RDP start hands to Rust, and the session
-// history: a connect begins a session, the rdp-exit of its start ends it (R-1068).
+// a refused resolution ends the start, the screen an RDP start hands to Rust, which console an
+// SSH start takes, and the session history: a connect begins a session, the rdp-exit of its
+// start ends it (R-1068).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -54,6 +55,7 @@ vi.mock('$lib/bridge', () => ({
 vi.mock('./statusBar', () => ({ reportError: vi.fn(), showStatus: vi.fn() }));
 vi.mock('./tunnel', () => ({ getMappings: vi.fn(() => []) }));
 vi.mock('./editor', () => ({ closeEditor: vi.fn() }));
+vi.mock('./terminals', () => ({ openTerminal: vi.fn(async () => true) }));
 vi.mock('./passwordPrompt', () => ({ requestPassword: vi.fn() }));
 vi.mock('$lib/api/connections', () => ({
   connectionsApi: { touch: vi.fn(), endSession: vi.fn(async () => ({})) },
@@ -74,6 +76,8 @@ import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
 import { endSession, openConnection, resolveConnection, startSession } from '$lib/bridge';
 import { patchInMemory, sessionsChanged, upsert } from './connections';
+import { closeEditor } from './editor';
+import { openTerminal } from './terminals';
 
 const rdpConn = { id: 'r1', name: 'rdp', kind: 'rdp', host: 'h' } as never;
 
@@ -158,6 +162,11 @@ describe('tunnel resolution without mappings', () => {
   });
 
   it('resolves the connection and opens what Rust returns', async () => {
+    // The OS terminal; the embedded one at a resolved target is tested with the console below.
+    state.setSession({
+      settings: { mode: 'local', storePasswords: false, sshConsole: 'external' },
+      session: null,
+    });
     const listed = autoConnection('ssh');
     const resolved: Connection = { ...listed, port: 23001 };
     vi.mocked(resolveConnection).mockResolvedValueOnce({ connection: resolved, viaTunnel: true });
@@ -684,5 +693,119 @@ describe('session history (R-1068)', () => {
     expect(endSession).not.toHaveBeenCalled();
     expect(sessionsChanged).not.toHaveBeenCalled();
     expect(reportError).not.toHaveBeenCalled();
+  });
+});
+
+describe('SSH console (R-1069)', () => {
+  const sshConn: Connection = {
+    id: 's1',
+    name: 'ssh',
+    kind: 'ssh',
+    host: 'h',
+    port: 22,
+    url: null,
+    tags: [],
+    trustCert: false,
+  };
+
+  const withConsole = (sshConsole: 'embedded' | 'external') =>
+    state.setSession({
+      settings: { mode: 'local', storePasswords: false, sshConsole },
+      session: null,
+    });
+
+  it('opens a tab of the embedded terminal at the resolved target when the settings ask', async () => {
+    withConsole('embedded');
+    const resolved: Connection = { ...sshConn, port: 23001 };
+    vi.mocked(resolveConnection).mockResolvedValueOnce({ connection: resolved, viaTunnel: true });
+
+    await initiateConnect(sshConn);
+
+    expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved);
+    expect(openConnection).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1', lastUsed: expect.any(String) }),
+    );
+    expect(closeEditor).toHaveBeenCalledOnce();
+    expect(showStatus).not.toHaveBeenCalled();
+  });
+
+  it('starts the OS terminal when the settings ask', async () => {
+    withConsole('external');
+    await initiateConnect(sshConn);
+
+    expect(openConnection).toHaveBeenCalledOnce();
+    expect(openTerminal).not.toHaveBeenCalled();
+  });
+
+  it('opens the embedded terminal, the default, while the settings have not loaded', async () => {
+    state.setSession({ settings: null, session: null });
+    await initiateConnect(sshConn);
+
+    expect(openTerminal).toHaveBeenCalledOnce();
+    expect(openConnection).not.toHaveBeenCalled();
+  });
+
+  it('takes the console asked for at the start over the setting', async () => {
+    withConsole('external');
+    await initiateConnect(sshConn, false, 'embedded');
+    expect(openTerminal).toHaveBeenCalledOnce();
+    expect(openConnection).not.toHaveBeenCalled();
+
+    withConsole('embedded');
+    await initiateConnect(sshConn, false, 'external');
+    expect(openConnection).toHaveBeenCalledWith(sshConn, undefined);
+    expect(openTerminal).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the editor open when the start asks', async () => {
+    withConsole('embedded');
+    await initiateConnect(sshConn, true);
+    expect(openTerminal).toHaveBeenCalledOnce();
+    expect(closeEditor).not.toHaveBeenCalled();
+  });
+
+  it('marks nothing used and keeps the editor when the program did not start', async () => {
+    withConsole('embedded');
+    vi.mocked(openTerminal).mockResolvedValueOnce(false);
+    await initiateConnect(sshConn);
+    expect(upsert).not.toHaveBeenCalled();
+    expect(closeEditor).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed lastUsed and still closes the editor over the open tab', async () => {
+    withConsole('embedded');
+    vi.mocked(upsert).mockRejectedValueOnce(new Error('disk full'));
+    await initiateConnect(sshConn);
+    expect(reportError).toHaveBeenCalledWith('disk full');
+    expect(closeEditor).toHaveBeenCalledOnce();
+  });
+
+  it('opens no tab for a refused resolution or an invalid connection', async () => {
+    withConsole('embedded');
+    vi.mocked(resolveConnection).mockRejectedValueOnce(new Error(FOREIGN_PORT));
+    await initiateConnect(sshConn);
+    vi.mocked(validateConnection).mockReturnValueOnce({ ok: false, message: 'bad host' });
+    await initiateConnect(sshConn);
+
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);
+    expect(reportError).toHaveBeenCalledWith('bad host');
+  });
+
+  it('opens RDP and web connections as before whatever the console', async () => {
+    withConsole('embedded');
+    const web: Connection = { ...sshConn, id: 'w1', kind: 'web', url: 'https://example.test' };
+    await initiateConnect(web, false, 'embedded');
+    await initiateConnect(rdpConn, false, 'embedded');
+
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(openConnection).toHaveBeenCalledWith(web, undefined);
+    expect(openConnection).toHaveBeenCalledWith(
+      rdpConn,
+      undefined,
+      JSDOM_CLIENT,
+      expect.any(String),
+    );
   });
 });

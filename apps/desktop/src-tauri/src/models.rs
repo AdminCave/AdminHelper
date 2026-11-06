@@ -51,6 +51,61 @@ pub enum RdpPerformanceProfile {
     Low,
 }
 
+/// Where an SSH connection opens: in a tab of the app or in the terminal of the OS.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SshConsole {
+    #[default]
+    Embedded,
+    External,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalTheme {
+    #[default]
+    Cave,
+    Contrast,
+    Light,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalCursor {
+    #[default]
+    Block,
+    Bar,
+    Underline,
+}
+
+/// The options of the embedded terminal. A field missing in `prefs.json` takes its default, so
+/// a file of an older version, or one edited by hand, still loads.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TerminalPrefs {
+    pub font_size: u8,
+    pub theme: TerminalTheme,
+    pub cursor: TerminalCursor,
+    pub scrollback: u32,
+    pub copy_on_select: bool,
+    pub right_click_paste: bool,
+    pub confirm_close: bool,
+}
+
+impl Default for TerminalPrefs {
+    fn default() -> Self {
+        Self {
+            font_size: 13,
+            theme: TerminalTheme::default(),
+            cursor: TerminalCursor::default(),
+            scrollback: 10_000,
+            copy_on_select: true,
+            right_click_paste: true,
+            confirm_close: true,
+        }
+    }
+}
+
 /// Bundled RDP display options that are passed through the connection call
 /// chain. Avoids wide signatures (clippy::too_many_arguments).
 #[derive(Debug, Clone, Copy)]
@@ -222,6 +277,10 @@ pub struct Settings {
     /// Ids of the starred connections, kept in the workspace (`workspace.json`), not on a server.
     #[serde(default)]
     pub favorite_connections: Vec<String>,
+    #[serde(default)]
+    pub ssh_console: SshConsole,
+    #[serde(default)]
+    pub terminal: TerminalPrefs,
 }
 
 impl Default for Settings {
@@ -241,6 +300,8 @@ impl Default for Settings {
             last_username: None,
             os_notifications: false,
             favorite_connections: Vec::new(),
+            ssh_console: SshConsole::Embedded,
+            terminal: TerminalPrefs::default(),
         }
     }
 }
@@ -325,6 +386,14 @@ pub struct PasswordState {
 pub struct DeviceIdentity {
     pub name: String,
     pub not_after: String,
+}
+
+/// The last message of an embedded terminal session (R-1069), after all of its output: the
+/// program ended, with its exit code when waiting for it worked.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalExit {
+    pub exit_code: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]

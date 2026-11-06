@@ -48,7 +48,8 @@ BUNDLE_WINDOW = timedelta(minutes=5)
 FLUSH_SECONDS = 30
 # Member lines in the message text; the webhook's members list carries them all.
 MAX_TEXT_LINES = 50
-# Most server ids the hub takes in one event (IncomingEvent.source_ids, server).
+# Most members the hub takes in one event: entries of IncomingEvent.source_ids
+# and incident_keys in the server, one per member.
 HUB_MAX_IDS = 500
 
 # The two kinds of a bundle: heartbeats gone critical, heartbeats ok again.
@@ -296,7 +297,8 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
     process_alert); the bell's are those hub_decision lets through, split by the
     level they reach the bell with. A rule or a level with BUNDLE_MIN or more
     members gets one message and the rules an alert-log row per member; below that
-    each member goes out on its own. The bell's record
+    each member goes out on its own. The bell's events carry what the rules did
+    with their members. The bell's record
     (hub_status, hub_sent_at) follows each event the hub accepted. Log rows and
     records are flushed; the caller commits them."""
     spec = _KINDS[kind]
@@ -313,8 +315,8 @@ def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> 
             )
         return singles[entry.check.id]
 
-    _send_rules(db, spec, members, names, single, now)
-    _send_bell(spec, members, single, now)
+    results = _send_rules(db, spec, members, names, single, now)
+    _send_bell(spec, members, single, results, now)
     db.flush()
 
 
@@ -343,8 +345,10 @@ def _send_rules(
     names: dict[str, str],
     single: Callable[[Entry], dict],
     now: datetime,
-) -> None:
+) -> dict[str, list[alerter.RuleResult]]:
+    """Each rule's sends; returns what the rules did, per check id of a member."""
     is_recovery = kind.status == "ok"
+    results: dict[str, list[alerter.RuleResult]] = {m.check.id: [] for m in members}
     for rule in alerter.enabled_rules(db):
         matched = [
             m for m in members if alerter.rule_applies(db, rule, m.check, is_recovery=is_recovery)
@@ -355,9 +359,12 @@ def _send_rules(
         else:
             sends = [([m], single(m)) for m in matched]
         for group, msg in sends:
-            alerter.send_to_rule(
+            result = alerter.send_to_rule(
                 db, rule, [(m.check, m.old_status) for m in group], msg, kind.status, now
             )
+            for m in group:
+                results[m.check.id].append(result)
+    return results
 
 
 def _bundle_message(kind: _Kind, members: list[Entry], names: dict[str, str]) -> dict:
@@ -409,7 +416,11 @@ def _line(entry: Entry, names: dict[str, str]) -> str:
 
 
 def _send_bell(
-    kind: _Kind, members: list[Entry], single: Callable[[Entry], dict], now: datetime
+    kind: _Kind,
+    members: list[Entry],
+    single: Callable[[Entry], dict],
+    results: dict[str, list[alerter.RuleResult]],
+    now: datetime,
 ) -> None:
     """Every event is built before the first POST and the bell's record is set
     after the last: no database access between the POSTs, so no write of this
@@ -417,10 +428,7 @@ def _send_bell(
     emit = [
         m
         for m in members
-        if alerter.hub_decision(
-            m.state.hub_status, m.state.hub_sent_at, kind.status, m.check.severity, now
-        )
-        == "emit"
+        if alerter.hub_decision(m.state.hub_status, kind.status, m.check.severity) == "emit"
     ]
     # One event per level (Kevin 2026-10-20): alert.triggered then reaches only
     # servers whose own check is critical, and min_severity applies per server.
@@ -440,16 +448,15 @@ def _send_bell(
             bundled = []
         in_bundle = {m.check.id for m in bundled}
         singles += [(m, single(m), severity) for m in group if m.check.id not in in_bundle]
-        server_ids = list(dict.fromkeys(m.check.server_id for m in bundled))
-        for start in range(0, len(server_ids), HUB_MAX_IDS):
-            chunk_ids = server_ids[start : start + HUB_MAX_IDS]
-            wanted = set(chunk_ids)
-            chunk = [m for m in bundled if m.check.server_id in wanted]
-            bundles.append((chunk, _bundle_payload(kind, severity, chunk_ids)))
+        for start in range(0, len(bundled), HUB_MAX_IDS):
+            chunk = bundled[start : start + HUB_MAX_IDS]
+            bundles.append((chunk, _bundle_payload(kind, severity, chunk, results)))
 
     accepted: list[Entry] = []
     for m, msg, severity in singles:
-        if alerter.emit_to_hub(m.check, m.old_status, kind.status, msg, severity=severity):
+        if alerter.emit_to_hub(
+            m.check, m.old_status, kind.status, msg, severity=severity, rules=results[m.check.id]
+        ):
             accepted.append(m)
     for chunk, payload in bundles:
         if alerter.post_hub_event(payload, "agent bundle"):
@@ -461,7 +468,19 @@ def _send_bell(
         )
 
 
-def _bundle_payload(kind: _Kind, severity: str, server_ids: list[str]) -> dict:
+def _bundle_payload(
+    kind: _Kind,
+    severity: str,
+    members: list[Entry],
+    results: dict[str, list[alerter.RuleResult]],
+) -> dict:
+    """The event of one chunk: per member its server and its key, in the same
+    order, and what the rules did with the members. The hub shows the rules to
+    every reader of the incident, who may not see each server, and a chunk of one
+    server may fold into a bundle incident of several: a rule bound to a server is
+    never named in a bundle."""
+    servers = [m.check.server_id for m in members]
+    rules = [r for m in members for r in results[m.check.id] if r.server_id is None]
     return {
         "event_type": "monitoring.check.transition",
         "severity": severity,
@@ -469,6 +488,8 @@ def _bundle_payload(kind: _Kind, severity: str, server_ids: list[str]) -> dict:
         "title": kind.bell_title,
         "body": kind.bell_body,
         "source_type": "server",
-        "source_ids": server_ids,
+        "source_ids": servers,
+        "incident_keys": [alerter.hub_key(m.check) for m in members],
+        "rules": alerter.hub_rules(rules),
         "new_status": kind.status,
     }

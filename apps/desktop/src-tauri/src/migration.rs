@@ -745,6 +745,17 @@ mod tests {
                 "rdpCustomSize": "1600x900",
                 "rdpPerformanceProfile": "lan",
                 "osNotifications": true,
+                // A settings.json before 0.47 has no console and no terminal options.
+                "sshConsole": "embedded",
+                "terminal": {
+                    "fontSize": 13,
+                    "theme": "cave",
+                    "cursor": "block",
+                    "scrollback": 10000,
+                    "copyOnSelect": true,
+                    "rightClickPaste": true,
+                    "confirmClose": true,
+                },
             })
         );
         // The visitors keep their local ports, now under the server workspace.
@@ -899,6 +910,17 @@ mod tests {
                 "rdpCustomSize": null,
                 "rdpPerformanceProfile": "auto",
                 "osNotifications": false,
+                // A settings.json before 0.47 has no console and no terminal options.
+                "sshConsole": "embedded",
+                "terminal": {
+                    "fontSize": 13,
+                    "theme": "cave",
+                    "cursor": "block",
+                    "scrollback": 10000,
+                    "copyOnSelect": true,
+                    "rightClickPaste": true,
+                    "confirmClose": true,
+                },
             })
         );
         assert_eq!(Registry::load(base).unwrap(), Some(registry(&["standard"])));

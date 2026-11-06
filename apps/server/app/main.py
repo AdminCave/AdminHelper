@@ -229,7 +229,7 @@ def _tell_admins(db, event_type, title, body, source_id):
         IncomingEvent(
             event_type=event_type,
             severity="warning",
-            category="lifecycle",
+            category="tunnel",
             title=title,
             body=body,
             source_type="frp_config",

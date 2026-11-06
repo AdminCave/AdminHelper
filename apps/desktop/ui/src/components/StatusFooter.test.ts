@@ -60,11 +60,17 @@ vi.mock('$lib/stores/monitoring', async () => {
   };
 });
 
+vi.mock('$lib/stores/terminals', async () => {
+  const { writable: w } = await import('svelte/store');
+  return { terminals: w({ sessions: [], active: 'page' }) };
+});
+
 import * as sessionMod from '$lib/stores/session';
 import * as tunnelMod from '$lib/stores/tunnel';
 import * as monitoringMod from '$lib/stores/monitoring';
 import * as settingsMod from '$lib/stores/settings';
 import * as dndMod from '$lib/stores/dnd';
+import * as terminalsMod from '$lib/stores/terminals';
 import { reloadForMode } from '$lib/stores/connections';
 import StatusFooter from './StatusFooter.svelte';
 import { setLanguage } from '$lib/i18n';
@@ -80,6 +86,10 @@ const hasLoaded = monitoringMod.monitoringHasLoaded as unknown as W<boolean>;
 const loadError = monitoringMod.monitoringError as unknown as W<string | null>;
 const modalOpen = settingsMod.settingsModalOpen as unknown as W<boolean>;
 const dndUntil = dndMod.dndUntil as unknown as W<number | null>;
+const terminalsState = terminalsMod.terminals as unknown as W<{
+  sessions: { key: string }[];
+  active: string;
+}>;
 
 const base: Settings = {
   mode: 'local',
@@ -91,6 +101,16 @@ const base: Settings = {
   rdpPerformanceProfile: 'auto',
   allowSelfSignedCerts: false,
   osNotifications: false,
+  sshConsole: 'external',
+  terminal: {
+    fontSize: 13,
+    theme: 'cave',
+    cursor: 'block',
+    scrollback: 10000,
+    copyOnSelect: true,
+    rightClickPaste: true,
+    confirmClose: true,
+  },
 };
 
 function fields(container: HTMLElement): string[] {
@@ -118,6 +138,7 @@ describe('StatusFooter', () => {
     loadError.set(null);
     modalOpen.set(false);
     dndUntil.set(null);
+    terminalsState.set({ sessions: [], active: 'page' });
   });
 
   afterEach(() => cleanup());
@@ -277,5 +298,40 @@ describe('StatusFooter', () => {
     dndUntil.set(null);
     await tick();
     expect(fields(container)).toEqual(['mode']);
+  });
+
+  // R-1069: the sessions of the embedded terminal count in every mode, after the tunnel.
+  it('counts the sessions of the embedded terminal while there are any', async () => {
+    h.deviceIdentity.mockResolvedValue(null);
+    sessionState.set({
+      settings: { ...base, mode: 'server' },
+      session: { serverUrl: 'https://hub.example', username: 'kevin', isAdmin: false },
+    });
+    hasLoaded.set(true);
+    const { container } = render(StatusFooter);
+    await waitFor(() => expect(fields(container)).toContain('cert'));
+    expect(fields(container)).toEqual(['mode', 'tunnel', 'problems', 'cert']);
+
+    terminalsState.set({ sessions: [{ key: 'terminal-1' }], active: 'terminal-1' });
+    await tick();
+    expect(fields(container)).toEqual(['mode', 'tunnel', 'sessions', 'problems', 'cert']);
+    expect(text(container, 'sessions')).toBe('1 Sitzung');
+
+    terminalsState.set({
+      sessions: [{ key: 'terminal-1' }, { key: 'terminal-2' }],
+      active: 'page',
+    });
+    await tick();
+    expect(text(container, 'sessions')).toBe('2 Sitzungen');
+
+    terminalsState.set({ sessions: [], active: 'page' });
+    await tick();
+    expect(fields(container)).toEqual(['mode', 'tunnel', 'problems', 'cert']);
+    cleanup();
+
+    sessionState.set({ settings: { ...base, mode: 'local' }, session: null });
+    terminalsState.set({ sessions: [{ key: 'terminal-3' }], active: 'page' });
+    const local = render(StatusFooter);
+    expect(fields(local.container)).toEqual(['mode', 'sessions']);
   });
 });

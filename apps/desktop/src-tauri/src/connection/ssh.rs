@@ -17,11 +17,13 @@ fn build_ssh_command(args: &[String]) -> String {
 
 // Build the ssh argument vector. Extracted from open_ssh so the arg logic (port only when != 22,
 // the `--` separator right before the target, the -i key path, the user@host assembly) is unit-
-// tested without touching the terminal I/O (6.32).
-fn build_ssh_args(connection: &Connection) -> Result<Vec<String>, AppError> {
-    // Host, user and key_path are validated at the boundary — open_connection runs
-    // validate_connection_input before this, and it's the sole caller. Only the
-    // empty-host guard stays: the boundary allows an empty host, we don't (2.80).
+// tested without touching the terminal I/O (6.32). The embedded terminal starts ssh with the
+// same argv (R-1069).
+pub(crate) fn build_ssh_args(connection: &Connection) -> Result<Vec<String>, AppError> {
+    // Host, user and key_path are validated at the boundary — open_connection and
+    // terminal_open_ssh run validate_connection_input before this, and they are the only
+    // callers. Only the empty-host guard stays: the boundary allows an empty host, we don't
+    // (2.80).
     let host = required(&connection.host, "Host")?;
     let port = connection.port.unwrap_or(22);
     let mut args: Vec<String> = Vec::new();

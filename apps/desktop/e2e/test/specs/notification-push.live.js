@@ -10,8 +10,37 @@
 // and arms a 30s timer. We wait for the Rust SSE client to connect, then inject
 // the event — the next poll is still ~25s away, so a badge appearing within a
 // few seconds can ONLY be the push.
+//
+// The second journey follows one incident (R-1079): events of one key fold into
+// it. A new one pings (toast), the detail of the center acknowledges it, a repeat
+// only counts ×2 and pings nobody (no toast, and no push either: the poll brings
+// the count), the recovery resolves it and pings the all-clear. The detail's
+// buttons show the state, so the checks hold in either language.
 
-import { login, injectEvent, ensureAllSubscription } from "../lib/live.js";
+import {
+  login,
+  injectEvent,
+  ensureAllSubscription,
+  clickItemByName,
+  jsClick,
+  textContentOf,
+  texts,
+} from "../lib/live.js";
+
+// Over the 30s poll: whatever the push misses, the poll brings within this.
+const POLL_BOUND = 45000;
+
+async function toastsTitled(title) {
+  return (await texts(".toast .title")).filter((t) => t === title).length;
+}
+
+async function dismissToasts() {
+  for (const button of await $$(".toast .dismiss")) await jsClick(button);
+  await browser.waitUntil(async () => (await $$(".toast")).length === 0, {
+    timeout: 5000,
+    timeoutMsg: "the toasts did not close",
+  });
+}
 
 describe("Notification bell — SSE push", () => {
   it("shows a pushed notification in real time (well under the 30s poll)", async () => {
@@ -67,5 +96,71 @@ describe("Notification bell — SSE push", () => {
     await expect(items[0].$(".notif-item-title")).toHaveText("E2E SSE push", {
       containing: true,
     });
+  });
+
+  it("folds a keyed event into one incident: ack, a silent repeat ×2, the recovery", async () => {
+    // bail stops the spec after a failed first journey, so this one follows a
+    // passed one; run on its own (mocha grep) it logs in itself.
+    if (!(await $(".sidebar-nav").isExisting())) await login();
+    ensureAllSubscription();
+    if (await $(".notif-panel").isExisting()) {
+      await jsClick(await $(".notif-backdrop"));
+    }
+    await dismissToasts();
+
+    const stamp = Date.now();
+    const key = `e2e:incident:${stamp}`;
+    const title = `E2E incident ${stamp}`;
+    const event = { event_type: "e2e.incident", incident_key: key };
+
+    // A new incident pings the admin: a toast.
+    expect(injectEvent(title, "critical", event).notified).toBe(1);
+    await browser.waitUntil(async () => (await toastsTitled(title)) === 1, {
+      timeout: POLL_BOUND,
+      interval: 500,
+      timeoutMsg: "the new incident never showed a toast",
+    });
+    await dismissToasts();
+
+    // From the bell into the center; the detail acknowledges it: resolving stays.
+    await $(".notif-bell").click();
+    await $(".notif-panel").waitForExist({ timeout: 5000 });
+    await clickItemByName(".notif-item-main", ".notif-item-title", title);
+    await $(".nc-detail .nd-ack").waitForExist({ timeout: 15000 });
+    expect(await textContentOf(await $(".nc-detail .nd-title"))).toBe(title);
+    await jsClick(await $(".nc-detail .nd-ack"));
+    await $(".nc-detail .nd-ack").waitForExist({
+      reverse: true,
+      timeout: 15000,
+    });
+    await expect($(".nc-detail .nd-resolve")).toBeExisting();
+
+    // A repeat folds in silently: nobody notified, the count turns ×2, no toast.
+    expect(injectEvent(title, "critical", event).notified).toBe(0);
+    await browser.waitUntil(
+      async () =>
+        (await $(".nc-detail .nd-count").isExisting()) &&
+        (await textContentOf(await $(".nc-detail .nd-count"))) === "×2",
+      {
+        timeout: POLL_BOUND,
+        interval: 1000,
+        timeoutMsg: "the repeat never counted ×2 in the detail",
+      },
+    );
+    // The poll that brought ×2 would have raised the toast first (loadFeed).
+    expect(await toastsTitled(title)).toBe(0);
+
+    // The recovery resolves it and pings the all-clear; the detail offers to reopen.
+    const cleared = `${title} recovered`;
+    const recovery = { ...event, new_status: "ok" };
+    expect(injectEvent(cleared, "critical", recovery).notified).toBe(1);
+    await browser.waitUntil(async () => (await toastsTitled(cleared)) === 1, {
+      timeout: POLL_BOUND,
+      interval: 500,
+      timeoutMsg: "the all-clear never showed a toast",
+    });
+    await $(".nc-detail .nd-reopen").waitForExist({ timeout: 15000 });
+    await expect($(".nc-detail .nd-resolve")).not.toBeExisting();
+    await expect($(".nc-detail .nd-ack")).not.toBeExisting();
   });
 });
