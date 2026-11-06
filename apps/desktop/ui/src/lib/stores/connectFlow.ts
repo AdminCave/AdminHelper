@@ -356,7 +356,7 @@ async function connectEmbedded(
 ): Promise<void> {
   if (!(await openTerminal(connection, resolved))) return;
   try {
-    await markConnectionUsed(connection);
+    if (await markConnectionUsed(connection)) sessionsChanged();
   } catch (err) {
     reportError(errMsg(err));
   }

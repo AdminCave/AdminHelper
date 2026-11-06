@@ -678,6 +678,17 @@ describe('session history (R-1068)', () => {
     expect(endSession).not.toHaveBeenCalled();
   });
 
+  it('an SSH start in the embedded terminal reloads a shown history too', async () => {
+    state.setSession({
+      settings: { mode: 'local', storePasswords: false, sshConsole: 'embedded' },
+      session: null,
+    });
+    await initiateConnect({ id: 's7', name: 's', kind: 'ssh', host: 'h' } as never);
+    expect(openTerminal).toHaveBeenCalledOnce();
+    expect(startSession).toHaveBeenCalledWith('s7');
+    expect(sessionsChanged).toHaveBeenCalledTimes(1);
+  });
+
   it('a start that fails ends its session at once; an unknown exit is ignored', async () => {
     (openConnection as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('no client'));
     await initiateConnect(rdpConn);
