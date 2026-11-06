@@ -126,6 +126,12 @@ Review: approve (.ah-out/review/kern-terminal-1/T13.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: keine (Attribut-Reihenfolge)
 
+### T14 — Desktop: der Hand-back-Test beantwortet die Cursor-Abfrage unter Windows (R-1070, aus der PR-CI)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs
+Änderung: Die PR-CI (cargo test, Windows) war rot: `pty::tests::a_window_that_is_gone_hands_its_sessions_back_to_main` blieb in `until_gone` stehen. Die Pseudo-Konsole schließt erst nach der Antwort auf ihre Cursor-Abfrage (`pty.rs`, `CURSOR_QUERY`); die Sitzung mit lauschendem, aber nie gelesenem Sink bekam keine. Beide Sitzungen laufen jetzt vor `hand_back` durch `until_ready`, wie die übrigen Windows-Tests; der Produktcode bleibt. Beweis auf der Plattform: der Windows-Job der PR-CI.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
+Doku: keine (nur Test)
+
 ## Entscheidungen
 - Ringpuffer 1 MiB je Sitzung im Backend (Spec, Trade-offs); ein Fenster je abgedockter Sitzung, Label `terminal-<id>`.
 - Rechte doppelt: Capability je Label und Label-Prüfung in jedem Terminal-Befehl, weil die Glob-Form der Labels in der Tauri-Doku nicht belegt ist.
