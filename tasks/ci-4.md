@@ -1,5 +1,5 @@
 # cosign 3 für die Image-Signaturen — Task-Ledger
-Status: bereit · Branch: feature/ci-4 · Review: am Ende
+Status: erledigt · Branch: feature/ci-4 · Review: am Ende
 Spec: docs/features/ci-4.md (Roadmap R-1119)
 Heavy: none — nur `docker.yml` und Doku; der Workflow läuft erst nach dem Merge auf `main` (ein Branch-Lauf würde Images veröffentlichen), die Session beobachtet ihn (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
