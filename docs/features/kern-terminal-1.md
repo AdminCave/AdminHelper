@@ -71,7 +71,8 @@ Nicht-Ziele:
 
 ## Datenmodell / API / Migrationen
 - Keine Migration.
-- `prefs.json`: Neu sind `restoreSessions: bool` und `openSessions: string[]` (Verbindungs-IDs). Fehlen sie, gilt der
+- Neu sind `restoreSessions: bool` in `prefs.json` (global, für das Gerät) und `openSessions: string[]`
+  (Verbindungs-IDs) im `workspace.json` des Workspace. Fehlen sie, gilt der
   Standardwert (`serde(default)`), alte Dateien laden also weiter.
 - **Tauri-IPC, neu:**
   - `terminal_attach(id, output)`: schickt zuerst den Ringpuffer, dann die laufende Ausgabe; der Aufrufer wird
@@ -112,7 +113,7 @@ Nicht-Ziele:
   Eingaben: Die Shell hallt ein Passwort nicht wider, und der Puffer liegt nur im RAM. `pty.rs` loggt weiter nichts.
 - **Windows:** ConPTY und die Fenster sind dort nur über die CI-Jobs `rust-windows` und `tauri-build-smoke` geprüft.
   Die Oberfläche unter Windows bleibt nicht verifiziert.
-- Rollback per Revert der Task-Commits. Die neuen Felder in `prefs.json` ignoriert eine ältere Version.
+- Rollback per Revert der Task-Commits. Die neuen Felder in `prefs.json` und `workspace.json` ignoriert eine ältere Version.
 
 ## Doku-Impact
 `docs/developer/desktop.html` DE und EN: Abschnitt zum eingebetteten Terminal (Abdocken, Ringpuffer, Fensterrechte,
