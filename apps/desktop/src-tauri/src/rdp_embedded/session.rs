@@ -472,6 +472,10 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
 /// resolves every path the server sends beneath `folder` without following links (on Windows
 /// without reparse points), so the server reaches nothing outside it.
 pub(crate) fn rdpdr_factory(folder: &Path) -> Result<Box<dyn RdpdrBackendFactory + Send>, String> {
+    // `RedirectedDrive::new` takes a folder that does not exist.
+    if !folder.is_dir() {
+        return Err(format!("{} is no folder", folder.display()));
+    }
     #[cfg(windows)]
     {
         use ironrdp_rdpdr_native::{RedirectedDrive, WindowsRdpdrBackendFactory};
@@ -482,9 +486,6 @@ pub(crate) fn rdpdr_factory(folder: &Path) -> Result<Box<dyn RdpdrBackendFactory
     #[cfg(not(windows))]
     {
         use ironrdp_rdpdr_native::backend::NixRdpdrBackendFactory;
-        if !folder.is_dir() {
-            return Err(format!("{} is no folder", folder.display()));
-        }
         let Some(base) = folder.to_str() else {
             return Err(format!("{} is no UTF-8 path", folder.display()));
         };
