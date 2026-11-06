@@ -8,8 +8,9 @@
 // mode-specific branches (6.5), the tunnel resolution without mappings, the keyring key of a
 // stored RDP password behind a tunnel, the user and domain from the password prompt, which
 // password a start takes after the prompt's "remember password", when the prompt offers it, that
-// a refused resolution ends the start, the screen an RDP start hands to Rust, and which console an
-// SSH start takes.
+// a refused resolution ends the start, the screen an RDP start hands to Rust, which console an
+// SSH start takes, and the session history: a connect begins a session, the rdp-exit of its
+// start ends it (R-1068).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -46,13 +47,19 @@ vi.mock('$lib/bridge', () => ({
   resolveConnection: vi.fn(async (c: unknown) => ({ connection: c })),
   passwordState: vi.fn(async () => ({ canStore: true, stored: false })),
   savePassword: vi.fn(async () => {}),
+  startSession: vi.fn(async (connectionId: string) => ({ id: `local-${connectionId}` })),
+  endSession: vi.fn(async () => {}),
+  // A hostname with a bell, a newline and blanks: the server refuses control characters.
+  deviceName: vi.fn(async () => ' box\u0007\n'),
 }));
 vi.mock('./statusBar', () => ({ reportError: vi.fn(), showStatus: vi.fn() }));
 vi.mock('./tunnel', () => ({ getMappings: vi.fn(() => []) }));
 vi.mock('./editor', () => ({ closeEditor: vi.fn() }));
 vi.mock('./terminals', () => ({ openTerminal: vi.fn(async () => true) }));
 vi.mock('./passwordPrompt', () => ({ requestPassword: vi.fn() }));
-vi.mock('$lib/api/connections', () => ({ connectionsApi: { touch: vi.fn() } }));
+vi.mock('$lib/api/connections', () => ({
+  connectionsApi: { touch: vi.fn(), endSession: vi.fn(async () => ({})) },
+}));
 vi.mock('$lib/models/connection', () => ({ validateConnection: vi.fn(() => ({ ok: true })) }));
 vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k }));
 vi.mock('./session', () => ({ sessionStore: state.sessionStore }));
@@ -60,14 +67,15 @@ vi.mock('./connections', () => ({
   connections: state.connectionsStore,
   upsert: vi.fn(async () => {}),
   patchInMemory: vi.fn(),
+  sessionsChanged: vi.fn(),
 }));
 
-import { initiateConnect, markRdpError } from './connectFlow';
+import { initiateConnect, markRdpError, markRdpExit } from './connectFlow';
 import { reportError, showStatus } from './statusBar';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
-import { openConnection, resolveConnection } from '$lib/bridge';
-import { patchInMemory, upsert } from './connections';
+import { endSession, openConnection, resolveConnection, startSession } from '$lib/bridge';
+import { patchInMemory, sessionsChanged, upsert } from './connections';
 import { closeEditor } from './editor';
 import { openTerminal } from './terminals';
 
@@ -620,6 +628,82 @@ describe('RDP start hands the screen to Rust', () => {
       client: { screenWidth: 1920, screenHeight: 1080, scaleFactor: 2 },
       correlationId: expect.any(String),
     });
+  });
+});
+
+describe('session history (R-1068)', () => {
+  // The correlationId the last RDP start handed to Rust.
+  const lastCid = (): string =>
+    (openConnection as ReturnType<typeof vi.fn>).mock.calls.at(-1)![3] as string;
+
+  it('server mode: touch carries the cleaned device, rdp-exit ends the session there', async () => {
+    const session = { token: 't' };
+    state.setSession({ settings: { mode: 'server' }, session });
+    (connectionsApi.touch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'r1',
+      sessionId: 's-9',
+    });
+
+    await initiateConnect(rdpConn);
+
+    expect(connectionsApi.touch).toHaveBeenCalledWith(session, 'r1', 'box');
+    // The session id is no field of the connection.
+    expect(patchInMemory).toHaveBeenCalledWith({ id: 'r1' });
+    expect(startSession).not.toHaveBeenCalled();
+    const cid = lastCid();
+    await markRdpExit(cid);
+    expect(connectionsApi.endSession).toHaveBeenCalledWith(session, 'r1', 's-9');
+    // A second exit of the same start ends nothing more.
+    await markRdpExit(cid);
+    expect(connectionsApi.endSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('local mode: the session goes to the local history and rdp-exit ends it', async () => {
+    state.setConnections([rdpConn]);
+    await initiateConnect(rdpConn);
+
+    expect(startSession).toHaveBeenCalledWith('r1');
+    expect(connectionsApi.touch).not.toHaveBeenCalled();
+    // A shown history reloads once the session is written, and again once it ended.
+    expect(sessionsChanged).toHaveBeenCalledTimes(1);
+    await markRdpExit(lastCid());
+    expect(endSession).toHaveBeenCalledWith('local-r1');
+    expect(sessionsChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it('sync mode writes the local history too, and SSH begins a session without an end', async () => {
+    state.setSession({ settings: { mode: 'sync' }, session: null });
+    await initiateConnect({ id: 'c9', name: 'c', kind: 'ssh', host: 'h' } as never);
+    expect(startSession).toHaveBeenCalledWith('c9');
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it('an SSH start in the embedded terminal reloads a shown history too', async () => {
+    state.setSession({
+      settings: { mode: 'local', storePasswords: false, sshConsole: 'embedded' },
+      session: null,
+    });
+    await initiateConnect({ id: 's7', name: 's', kind: 'ssh', host: 'h' } as never);
+    expect(openTerminal).toHaveBeenCalledOnce();
+    expect(startSession).toHaveBeenCalledWith('s7');
+    expect(sessionsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('a start that fails ends its session at once; an unknown exit is ignored', async () => {
+    (openConnection as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('no client'));
+    await initiateConnect(rdpConn);
+    await vi.waitFor(() => expect(endSession).toHaveBeenCalledWith('local-r1'));
+    await markRdpExit('unknown');
+    expect(endSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('a session that could not be written leaves nothing to end', async () => {
+    (startSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('broken file'));
+    await initiateConnect(rdpConn);
+    await markRdpExit(lastCid());
+    expect(endSession).not.toHaveBeenCalled();
+    expect(sessionsChanged).not.toHaveBeenCalled();
+    expect(reportError).not.toHaveBeenCalled();
   });
 });
 

@@ -4,9 +4,10 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 
 from app.core.database import Base
 from app.core.time import utc_now_sql
@@ -38,7 +39,26 @@ _KNOWN_FIELDS = {
     "trustCert",
     "lastUsed",
     "serverId",
+    "options",
 }
+
+
+def _compact(value: Any) -> Any:
+    """`value` without the keys that hold None, nested; None if nothing is left.
+
+    A model_dump of ConnectionOptions carries every field it knows, set or not. Only the
+    ones set are stored, so a field left out keeps meaning "the global default"."""
+    if isinstance(value, dict):
+        kept = {k: c for k, v in value.items() if (c := _compact(v)) is not None}
+        return kept or None
+    if isinstance(value, list):
+        return [_compact(v) for v in value] or None
+    return value
+
+
+def _options_text(value: Any) -> str | None:
+    compact = _compact(value)
+    return json.dumps(compact, ensure_ascii=False) if compact is not None else None
 
 
 class Connection(Base):
@@ -58,6 +78,7 @@ class Connection(Base):
     trust_cert = Column(Boolean, default=False)
     last_used = Column(String, nullable=True)
     extra_data = Column(String, nullable=True)  # JSON for unknown extra fields
+    options = Column(Text, nullable=True)  # JSON object, ConnectionOptions without unset fields
     server_id = Column(
         String, ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -82,6 +103,8 @@ class Connection(Base):
         }
         if self.server_id:
             result["serverId"] = self.server_id
+        if options := self._options():
+            result["options"] = options
         # Merge the extra fields back in; a known field always wins, also one left
         # out above (serverId without a server).
         for key, value in self._extra().items():
@@ -102,6 +125,19 @@ class Connection(Base):
             logger.warning("connection %s: tags is not a JSON list, left out", self.id)
             return []
         return tags
+
+    def _options(self) -> dict[str, Any]:
+        """The stored options, or none if the column holds no JSON object."""
+        if not self.options:
+            return {}
+        try:
+            options = json.loads(self.options)
+        except ValueError:
+            options = None
+        if not isinstance(options, dict):
+            logger.warning("connection %s: options is not a JSON object, left out", self.id)
+            return {}
+        return options
 
     def _extra(self) -> dict[str, Any]:
         """The extra fields, or none if extra_data is not a JSON object.
@@ -130,6 +166,8 @@ class Connection(Base):
             snake_key = _CAMEL_TO_SNAKE.get(key, key)
             if key == "tags":
                 kwargs["tags"] = json.dumps(value) if isinstance(value, list) else value
+            elif key == "options":
+                kwargs["options"] = _options_text(value)
             elif key in _KNOWN_FIELDS:
                 # Only the API names map to columns. A key that merely looks like a column
                 # (extra_data, created_at, server_id) is an extra entry like any other.
@@ -152,6 +190,9 @@ class Connection(Base):
                 self.tags = json.dumps(value) if isinstance(value, list) else value
             elif key == "id":
                 continue  # do not change the ID
+            elif key == "options":
+                # Replaced as a whole, not merged: the client sends the options it shows.
+                self.options = _options_text(value)
             elif key in _KNOWN_FIELDS:
                 setattr(self, snake_key, value)
             else:
@@ -161,3 +202,31 @@ class Connection(Base):
             existing = self._extra()
             existing.update(extra)
             self.extra_data = json.dumps(existing, ensure_ascii=False)
+
+
+def _iso_utc(value: datetime | None) -> str | None:
+    return value.replace(tzinfo=timezone.utc).isoformat() if value is not None else None
+
+
+class ConnectionSession(Base):
+    """One connect of a connection (R-1068): who, from which device, from when to when."""
+
+    __tablename__ = "connection_sessions"
+
+    id = Column(String, primary_key=True)
+    connection_id = Column(
+        String, ForeignKey("connections.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    device = Column(String, nullable=True)
+    started_at = Column(DateTime, nullable=False, index=True)  # naive UTC (F7)
+    # None while open, and for a session whose client never reported the end.
+    ended_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "device": self.device,
+            "startedAt": _iso_utc(self.started_at),
+            "endedAt": _iso_utc(self.ended_at),
+        }

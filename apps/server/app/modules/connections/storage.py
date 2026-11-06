@@ -33,6 +33,17 @@ def save_connections(connections: list[dict[str, Any]]) -> None:
     """
     from app.core.database import SessionLocal
     from app.modules.connections.models import Connection
+    from app.modules.connections.schemas import ConnectionOptions
+
+    # The options become command-line arguments on the desktop: a hook writes them through
+    # the same checks as the API, or nothing is written. Stored is the validated form, as
+    # the API stores it: pydantic accepts "30" for an int, which the desktop would not read.
+    connections = [
+        {**data, "options": ConnectionOptions.model_validate(data["options"]).model_dump()}
+        if data.get("options") is not None
+        else data
+        for data in connections
+    ]
 
     db = SessionLocal()
     try:

@@ -65,7 +65,7 @@ def _ref_name(schema: dict) -> str:
         ("/api/connections", "get", "ConnectionOut"),
         ("/api/connections", "post", "ConnectionOut"),
         ("/api/connections/{conn_id}", "put", "ConnectionOut"),
-        ("/api/connections/{conn_id}/touch", "post", "ConnectionOut"),
+        ("/api/connections/{conn_id}/touch", "post", "ConnectionTouchOut"),
         ("/api/connections/import", "post", "ConnectionImportResult"),
         ("/api/servers", "get", "ServerOut"),
         ("/api/servers", "post", "ServerOut"),
@@ -217,7 +217,11 @@ class TestConnectionShape:
 
         touched = test_client.post(f"/api/connections/{cid}/touch", headers=h)
         assert touched.status_code == 200, touched.text
-        assert touched.json() == self._expected(db_session, cid)
+        # touch also opens a session of the history (R-1068) and names it.
+        body = touched.json()
+        session_id = body.pop("sessionId")
+        assert isinstance(session_id, str) and session_id
+        assert body == self._expected(db_session, cid)
 
     def test_import_result(self, test_client, db_session, admin_user):
         r = test_client.post(

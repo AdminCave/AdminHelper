@@ -7,9 +7,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { Globe, Monitor, Pencil, SquareTerminal, Star } from '@lucide/svelte';
   import type { Component } from 'svelte';
-  import type { Connection, ConnectionKind, SshConsole } from '$lib/bridge/types';
+  import type {
+    Connection,
+    ConnectionKind,
+    ConnectionSession,
+    SshConsole,
+  } from '$lib/bridge/types';
   import { commandPreview, type Reach } from '$lib/models/connectionList';
   import { DEFAULT_PORTS, toCardMeta } from '$lib/models/connection';
+  import { recentSessions, sessionsVersion } from '$lib/stores/connections';
   import { timeAgo } from '$lib/utils/timeAgo';
   import { t } from '$lib/i18n';
   import CodeBlock from '../ui/CodeBlock.svelte';
@@ -49,6 +55,40 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   let command = $derived(conn ? commandPreview(conn) : '');
   let rv = $derived(reachView(reach));
+
+  // The last sessions of the selected connection; reloaded whenever a connect writes a session
+  // or an RDP end closes one.
+  let sessions = $state<ConnectionSession[] | null>(null);
+  let sessionsFailed = $state(false);
+  $effect(() => {
+    const id = conn?.id;
+    void $sessionsVersion;
+    sessions = null;
+    sessionsFailed = false;
+    if (!id) return;
+    let stale = false;
+    recentSessions(id, 5).then(
+      (list) => {
+        if (!stale) sessions = list;
+      },
+      () => {
+        if (!stale) sessionsFailed = true;
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  });
+
+  function duration(s: ConnectionSession): string {
+    if (!s.endedAt) return '—';
+    const ms = Date.parse(s.endedAt) - Date.parse(s.startedAt);
+    if (Number.isNaN(ms) || ms < 0) return '—';
+    const mins = Math.floor(ms / 60_000);
+    if (mins < 1) return $t('connections.insp.sessions.underMinute');
+    if (mins < 60) return $t('connections.insp.sessions.minutes', { count: mins });
+    return $t('connections.insp.sessions.hours', { h: Math.floor(mins / 60), m: mins % 60 });
+  }
 </script>
 
 <aside class="insp" aria-label={$t('connections.insp')} data-testid="conn-inspector">
@@ -131,6 +171,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <CodeBlock code={command} lang={LANGS[conn.kind]} />
       </section>
     {/if}
+
+    <section data-testid="insp-sessions">
+      <h3 class="eyebrow">{$t('connections.insp.sessions')}</h3>
+      {#if sessionsFailed}
+        <p class="insp-muted">{$t('connections.insp.sessions.failed')}</p>
+      {:else if sessions && sessions.length === 0}
+        <p class="insp-muted">{$t('connections.insp.sessions.empty')}</p>
+      {:else if sessions}
+        <ul class="insp-sessions">
+          {#each sessions as s (s.id)}
+            <li>
+              <span title={s.startedAt}>{timeAgo(s.startedAt, $t)}</span>
+              <span class="mono">{duration(s)}</span>
+              <span class="insp-device">{s.device ?? '—'}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
 
     {#if conn.notes?.trim()}
       <section>
@@ -231,6 +290,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   h3 {
     margin: 0 0 8px;
+  }
+  .insp-muted {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .insp-sessions {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-sm);
+  }
+  .insp-sessions li {
+    display: grid;
+    grid-template-columns: minmax(90px, 120px) 70px 1fr;
+    gap: 8px;
+    color: var(--text);
+  }
+  .insp-device {
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
   }
   .insp-notes {
     margin: 0;

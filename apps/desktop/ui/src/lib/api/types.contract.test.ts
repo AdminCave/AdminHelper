@@ -66,6 +66,21 @@ interface Mapping {
 
 const MAPPINGS: Mapping[] = [
   { ts: 'Connection', snapshot: 'server', schema: 'ConnectionOut', direction: 'response' },
+  // `options` of a connection (R-1066): sent with every save, so held as a request.
+  {
+    ts: 'ConnectionOptions',
+    snapshot: 'server',
+    schema: 'ConnectionOptions',
+    direction: 'request',
+  },
+  { ts: 'SshOptions', snapshot: 'server', schema: 'SshOptions', direction: 'request' },
+  { ts: 'SshForward', snapshot: 'server', schema: 'SshForward', direction: 'request' },
+  {
+    ts: 'RdpConnectionOptions',
+    snapshot: 'server',
+    schema: 'RdpOptions',
+    direction: 'request',
+  },
   { ts: 'Server', snapshot: 'server', schema: 'ServerOut', direction: 'response' },
   { ts: 'Playbook', snapshot: 'server', schema: 'PlaybookOut', direction: 'response' },
   {
@@ -512,7 +527,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(46);
+    expect(MAPPINGS.length).toBe(50);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);

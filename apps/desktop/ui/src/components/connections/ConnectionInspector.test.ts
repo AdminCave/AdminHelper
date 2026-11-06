@@ -2,13 +2,29 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The connection inspector (R-1065): its fields, command preview, notes and actions.
+// The connection inspector (R-1065): its fields, command preview, notes and actions, and the
+// last sessions of the connection (R-1068).
 
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/svelte';
-import type { Connection } from '$lib/bridge/types';
+import type { Connection, ConnectionSession } from '$lib/bridge/types';
 import type { Reach } from '$lib/models/connectionList';
 import { setLanguage, tNow } from '$lib/i18n';
+
+const h = vi.hoisted(() => ({
+  recent: vi.fn(async (..._a: unknown[]): Promise<ConnectionSession[]> => []),
+}));
+vi.mock('$lib/stores/connections', async () => {
+  const { writable } = await import('svelte/store');
+  const version = writable(0);
+  return {
+    recentSessions: h.recent,
+    sessionsVersion: version,
+    sessionsChanged: () => version.update((n) => n + 1),
+  };
+});
+
+import { sessionsChanged } from '$lib/stores/connections';
 import ConnectionInspector from './ConnectionInspector.svelte';
 
 const SSH: Connection = {
@@ -78,6 +94,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  h.recent.mockReset();
+  h.recent.mockResolvedValue([]);
 });
 
 describe('ConnectionInspector', () => {
@@ -159,5 +177,54 @@ describe('ConnectionInspector', () => {
     expect(writeText).toHaveBeenCalledWith(
       'ssh -p 2222 -i /home/me/.ssh/id_ed25519 -- deploy@web01.example',
     );
+  });
+});
+
+describe('ConnectionInspector recent sessions', () => {
+  const ago = (min: number): string => new Date(Date.now() - min * 60_000).toISOString();
+  const rows = (): string[] =>
+    [...screen.getByTestId('insp-sessions').querySelectorAll('li')].map((li) =>
+      [...li.querySelectorAll('span')].map((s) => s.textContent?.trim()).join(' | '),
+    );
+
+  it('loads the last five sessions with start, duration and device', async () => {
+    h.recent.mockResolvedValueOnce([
+      { id: '1', device: null, startedAt: ago(3), endedAt: null },
+      { id: '2', device: 'laptop', startedAt: ago(30), endedAt: ago(18) },
+      { id: '3', device: 'desk', startedAt: ago(200), endedAt: ago(70) },
+      { id: '4', device: 'desk', startedAt: ago(300), endedAt: ago(299.5) },
+    ]);
+    renderInsp();
+    expect(h.recent).toHaveBeenCalledWith('a', 5);
+    await vi.waitFor(() => expect(rows()).toHaveLength(4));
+    expect(rows()).toEqual([
+      `${tNow('timeAgo.minutes', { count: 3 })} | — | —`,
+      `${tNow('timeAgo.minutes', { count: 30 })} | 12 min | laptop`,
+      `${tNow('timeAgo.hours', { count: 3 })} | 2 h 10 min | desk`,
+      `${tNow('timeAgo.hours', { count: 5 })} | < 1 min | desk`,
+    ]);
+  });
+
+  it('says so when there are none, or when they could not be loaded', async () => {
+    renderInsp();
+    expect(await screen.findByText(tNow('connections.insp.sessions.empty'))).not.toBeNull();
+    cleanup();
+    h.recent.mockRejectedValueOnce(new Error('offline'));
+    renderInsp();
+    expect(await screen.findByText(tNow('connections.insp.sessions.failed'))).not.toBeNull();
+  });
+
+  it('reloads when a session was written or ended, with the selection unchanged', async () => {
+    renderInsp();
+    expect(await screen.findByText(tNow('connections.insp.sessions.empty'))).not.toBeNull();
+    h.recent.mockResolvedValueOnce([{ id: '1', device: 'box', startedAt: ago(1), endedAt: null }]);
+    sessionsChanged();
+    await vi.waitFor(() => expect(rows()).toHaveLength(1));
+    expect(h.recent).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads nothing without a selection', () => {
+    renderInsp({ conn: null });
+    expect(h.recent).not.toHaveBeenCalled();
   });
 });

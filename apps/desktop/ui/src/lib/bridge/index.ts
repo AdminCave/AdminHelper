@@ -20,6 +20,7 @@ import type {
   AuthSession,
   ClientInfo,
   Connection,
+  ConnectionSession,
   DeviceIdentity,
   HttpMethod,
   PasswordState,
@@ -247,6 +248,26 @@ export function resolveConnection(
   tunnels: TunnelMapping[],
 ): Promise<ResolvedConnection> {
   return invoke<ResolvedConnection>('resolve_connection', { connection, tunnels });
+}
+
+// ─────────────────────────── Session history (R-1068) ─────────────
+
+// The local history of a local or sync workspace; a server workspace asks the server.
+export function startSession(connectionId: string): Promise<ConnectionSession> {
+  return invoke<ConnectionSession>('start_session', { connectionId });
+}
+
+export function endSession(sessionId: string): Promise<void> {
+  return invoke('end_session', { sessionId });
+}
+
+export function listSessions(connectionId: string, limit: number): Promise<ConnectionSession[]> {
+  return invoke<ConnectionSession[]>('list_sessions', { connectionId, limit });
+}
+
+// The name of this computer, sent as the device of a server session.
+export function deviceName(): Promise<string | null> {
+  return invoke<string | null>('device_name');
 }
 
 // ─────────────────────────── Embedded terminal (R-1069) ───────────

@@ -33,7 +33,7 @@ fn workspace_dir(base: &Path) -> Result<PathBuf, AppError> {
     Ok(workspace::current()?.data_dir(base))
 }
 
-fn workspace_file(app: &tauri::AppHandle, file_name: &str) -> Result<PathBuf, AppError> {
+pub(crate) fn workspace_file(app: &tauri::AppHandle, file_name: &str) -> Result<PathBuf, AppError> {
     Ok(workspace_dir(&app_data_dir(app)?)?.join(file_name))
 }
 
@@ -185,7 +185,9 @@ fn fill_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     file.sync_all()
 }
 
-fn read_json_or_default<T: DeserializeOwned + Default>(path: &Path) -> Result<T, AppError> {
+pub(crate) fn read_json_or_default<T: DeserializeOwned + Default>(
+    path: &Path,
+) -> Result<T, AppError> {
     if !path.exists() {
         return Ok(T::default());
     }

@@ -38,6 +38,45 @@ export interface Connection {
   // Set for server-owned connections (server mode). The launcher does not edit
   // it but round-trips it so a server-mode edit keeps the server association.
   serverId?: string | null;
+  options?: ConnectionOptions | null;
+}
+
+export type SshForwardKind = 'L' | 'R' | 'D';
+export type SshAuthMethod = 'key' | 'agent' | 'password';
+
+export interface SshForward {
+  type: SshForwardKind;
+  listen: string;
+  target?: string | null;
+}
+
+export interface SshOptions {
+  jumpHost?: string | null;
+  forwards?: SshForward[];
+  agentForwarding?: boolean | null;
+  compression?: boolean | null;
+  keepalive?: number | null;
+  authMethod?: SshAuthMethod | null;
+}
+
+export type RdpAudio = 'local' | 'remote' | 'off';
+
+export interface RdpConnectionOptions {
+  scalingMode?: RdpScalingMode | null;
+  windowMode?: RdpWindowMode | null;
+  customSize?: string | null;
+  performanceProfile?: RdpPerformanceProfile | null;
+  drives?: boolean | null;
+  audio?: RdpAudio | null;
+  printers?: boolean | null;
+  gateway?: string | null;
+  nla?: boolean | null;
+}
+
+// Per-connection overrides (R-1066); a field left out means the global default.
+export interface ConnectionOptions {
+  ssh?: SshOptions | null;
+  rdp?: RdpConnectionOptions | null;
 }
 
 export interface Settings {
@@ -113,6 +152,14 @@ export interface TunnelRefresh {
   outcome: RefreshOutcome;
   /** The HTTP code with which the server refused the tunnels (403); frpc is stopped then. */
   refused: number | null;
+}
+
+/** One connect of a connection (R-1068), as the server lists it and as the local history keeps it. */
+export interface ConnectionSession {
+  id: string;
+  device: string | null;
+  startedAt: string;
+  endedAt: string | null;
 }
 
 export interface ClientInfo {

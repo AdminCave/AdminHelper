@@ -12,6 +12,7 @@ import type {
   AuthSession,
   Connection,
   ConnectionKind,
+  ConnectionSession,
   ProbeTarget,
   Settings,
 } from '$lib/bridge/types';
@@ -144,6 +145,8 @@ function toServerPayload(conn: Connection): Partial<ServerConnection> {
     tags: conn.tags ?? [],
     trustCert: conn.trustCert,
     serverId: conn.serverId ?? null,
+    // The whole object: PUT replaces it, null clears it (R-1066).
+    options: conn.options ?? null,
   };
 }
 
@@ -208,6 +211,29 @@ export async function refreshFromServer(): Promise<void> {
   if (settings?.mode === 'server' && session) {
     await reloadForMode(settings, session);
   }
+}
+
+const _sessionsVersion = writable(0);
+/** Moves whenever a session was written or ended, so a shown history reloads. */
+export const sessionsVersion = { subscribe: _sessionsVersion.subscribe };
+
+export function sessionsChanged(): void {
+  _sessionsVersion.update((n) => n + 1);
+}
+
+/**
+ * The newest `limit` sessions of a connection, newest first: from the server in server mode,
+ * from the workspace's local history otherwise.
+ */
+export async function recentSessions(
+  connectionId: string,
+  limit = 5,
+): Promise<ConnectionSession[]> {
+  const { settings, session } = get(sessionStore);
+  if (settings?.mode === 'server' && session) {
+    return connectionsApi.sessions(session, connectionId, limit);
+  }
+  return bridge.listSessions(connectionId, limit);
 }
 
 export const kindCounts = derived(_state, ($s): Record<ConnectionKind | 'total', number> => ({

@@ -8,6 +8,8 @@ that relies on the semantics — and replaced the earlier DELETE-ALL+INSERT-ALL.
 
 import uuid
 
+import pytest
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import sessionmaker
 
@@ -211,3 +213,34 @@ def test_tags_that_are_no_list_read_as_empty_with_a_warning(caplog):
             assert conn.to_dict()["tags"] == [], raw
         assert any("c-tags" in r.getMessage() for r in caplog.records), raw
     assert Connection(id="c-ok", name="a", kind="ssh", tags='["x"]').to_dict()["tags"] == ["x"]
+
+
+def test_save_connections_refuses_options_the_api_refuses(db_session, monkeypatch):
+    # The options become desktop command-line arguments: a hook gets the same checks as the API.
+    _bind_sessionlocal(db_session, monkeypatch)
+    db_session.add(Connection(id="keep", name="keep", kind="ssh"))
+    db_session.commit()
+
+    with pytest.raises(ValidationError):
+        storage.save_connections(
+            [{"id": "keep", "name": "keep", "kind": "ssh", "options": {"ssh": {"keepalive": 0}}}]
+        )
+    db_session.expire_all()
+    assert db_session.get(Connection, "keep").options is None
+
+    # Stored in the validated form: "30" and "yes" pass the lax check, the desktop reads only
+    # a number and a boolean.
+    storage.save_connections(
+        [
+            {
+                "id": "keep",
+                "name": "keep",
+                "kind": "ssh",
+                "options": {"ssh": {"keepalive": "30", "agentForwarding": "yes"}},
+            }
+        ]
+    )
+    db_session.expire_all()
+    assert db_session.get(Connection, "keep").to_dict()["options"] == {
+        "ssh": {"keepalive": 30, "agentForwarding": True}
+    }

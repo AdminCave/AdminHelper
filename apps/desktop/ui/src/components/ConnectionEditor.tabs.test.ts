@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The connection editor groups its fields in tabs (R-1066): a type switch on top, General and
-// Sign-in for SSH and RDP, Web without a tab bar. In server mode General offers "Assign server",
+// Sign-in for SSH and RDP, then Options (SSH) or Display (RDP), Web without a tab bar. In server mode General offers "Assign server",
 // which saves the connection's serverId.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
@@ -94,7 +94,7 @@ afterEach(() => {
 describe('ConnectionEditor tabs', () => {
   it('shows General and Sign-in for SSH, with the key path on Sign-in only', async () => {
     const c = await open({ ...emptyConnection('ssh'), name: 'web01', host: 'web01.lan' });
-    expect(tabIds(c)).toEqual(['general', 'auth']);
+    expect(tabIds(c)).toEqual(['general', 'auth', 'options']);
     expect(c.querySelector('[role="tab"][aria-selected="true"]')?.getAttribute('data-tab')).toBe(
       'general',
     );
@@ -111,7 +111,7 @@ describe('ConnectionEditor tabs', () => {
 
   it('puts the domain on General and certificate trust on Sign-in for RDP', async () => {
     const c = await open({ ...emptyConnection('rdp'), name: 'dc01', host: 'dc01.lan' });
-    expect(tabIds(c)).toEqual(['general', 'auth']);
+    expect(tabIds(c)).toEqual(['general', 'auth', 'display']);
     expect(c.textContent).toContain('Domain');
     expect(c.querySelector('input[type="checkbox"]')).toBeNull();
 

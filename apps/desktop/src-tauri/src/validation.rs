@@ -2,8 +2,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::sync::LazyLock;
+
+use regex::Regex;
+
 use crate::error::AppError;
-use crate::models::{Connection, ConnectionKind};
+use crate::models::{Connection, ConnectionKind, RdpConnectionOptions, SshForwardKind, SshOptions};
 use url::{Host, Url};
 
 pub fn validate_host(host: &str) -> Result<(), AppError> {
@@ -70,6 +74,91 @@ pub fn validate_connection_input(connection: &Connection) -> Result<(), AppError
         if connection.kind == ConnectionKind::Web && !url.trim().is_empty() {
             validate_web_url(url)?;
         }
+    }
+    if let Some(ssh) = connection.options.as_ref().and_then(|o| o.ssh.as_ref()) {
+        validate_ssh_options(ssh)?;
+    }
+    if let Some(rdp) = connection.options.as_ref().and_then(|o| o.rdp.as_ref()) {
+        validate_rdp_options(rdp)?;
+    }
+    Ok(())
+}
+
+// The same formats as the server schema (apps/server/app/modules/connections/schemas.py). Checked
+// here again because these values become ssh arguments, and not every source of a connection
+// went through the server (local files, the sync URL).
+const HOST: &str = r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9_][A-Za-z0-9._-]{0,252})";
+const PORT: &str =
+    r"(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})";
+const USER: &str = r"[A-Za-z0-9_][A-Za-z0-9._-]{0,63}";
+
+static JUMP_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let hop = format!("(?:{USER}@)?{HOST}(?::{PORT})?");
+    Regex::new(&format!("^{hop}(?:,{hop}){{0,7}}$")).expect("jump host pattern")
+});
+static LISTEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"^(?:(?:\*|{HOST}):)?{PORT}$")).expect("listen pattern"));
+static TARGET_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("^{HOST}:{PORT}$")).expect("target pattern"));
+static GATEWAY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("^{HOST}(?::{PORT})?$")).expect("gateway pattern"));
+
+const MAX_FORWARDS: usize = 32;
+
+fn matches_within(re: &Regex, value: &str, max_len: usize) -> bool {
+    value.len() <= max_len && re.is_match(value)
+}
+
+pub fn validate_ssh_options(ssh: &SshOptions) -> Result<(), AppError> {
+    if let Some(ref jump) = ssh.jump_host {
+        if !matches_within(&JUMP_RE, jump, 1000) {
+            return Err(AppError::Validation("Invalid jump host".to_string()));
+        }
+    }
+    if ssh.forwards.len() > MAX_FORWARDS {
+        return Err(AppError::Validation(format!(
+            "At most {MAX_FORWARDS} port forwards"
+        )));
+    }
+    for forward in &ssh.forwards {
+        if !matches_within(&LISTEN_RE, &forward.listen, 300) {
+            return Err(AppError::Validation(
+                "Invalid port forward listen address".to_string(),
+            ));
+        }
+        match (forward.kind, forward.target.as_deref()) {
+            (SshForwardKind::D, None) => {}
+            (SshForwardKind::D, Some(_)) => {
+                return Err(AppError::Validation(
+                    "A dynamic forward takes no target".to_string(),
+                ))
+            }
+            (_, Some(target)) if matches_within(&TARGET_RE, target, 300) => {}
+            _ => {
+                return Err(AppError::Validation(
+                    "Invalid port forward target".to_string(),
+                ))
+            }
+        }
+    }
+    if let Some(keepalive) = ssh.keepalive {
+        if !(1..=3600).contains(&keepalive) {
+            return Err(AppError::Validation(
+                "Keepalive must be 1-3600 seconds".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_rdp_options(rdp: &RdpConnectionOptions) -> Result<(), AppError> {
+    if let Some(ref gateway) = rdp.gateway {
+        if !matches_within(&GATEWAY_RE, gateway, 300) {
+            return Err(AppError::Validation("Invalid RD gateway".to_string()));
+        }
+    }
+    if rdp.custom_size.is_some() {
+        crate::connection::rdp_logic::parse_custom_size(rdp.custom_size.as_deref())?;
     }
     Ok(())
 }
@@ -219,7 +308,169 @@ mod tests {
             trust_cert: false,
             last_used: None,
             server_id: None,
+            options: None,
         }
+    }
+
+    fn with_ssh_options(json: serde_json::Value) -> Result<Connection, serde_json::Error> {
+        let mut c = ssh_connection_with_key_path("");
+        c.options = Some(serde_json::from_value(serde_json::json!({ "ssh": json }))?);
+        Ok(c)
+    }
+
+    #[test]
+    fn validate_connection_input_accepts_good_ssh_options() {
+        let c = with_ssh_options(serde_json::json!({
+            "jumpHost": "ops@bastion.example.org:2222,[2001:db8::1],h3",
+            "forwards": [
+                {"type": "L", "listen": "8080", "target": "intranet.local:80"},
+                {"type": "R", "listen": "127.0.0.1:65535", "target": "[::1]:1"},
+                {"type": "D", "listen": "*:1080"}
+            ],
+            "keepalive": 3600
+        }))
+        .unwrap();
+        assert!(validate_connection_input(&c).is_ok());
+    }
+
+    #[test]
+    fn validate_connection_input_rejects_bad_ssh_options() {
+        let nine_hops = ["h"; 9].join(",");
+        let long_host = "a".repeat(254);
+        let too_many: Vec<_> = (0..33)
+            .map(|_| serde_json::json!({"type": "D", "listen": "1080"}))
+            .collect();
+        let bad = [
+            serde_json::json!({"jumpHost": "-oProxyCommand=touch /tmp/x"}),
+            serde_json::json!({"jumpHost": "user@-host"}),
+            serde_json::json!({"jumpHost": "host;id"}),
+            serde_json::json!({"jumpHost": "host name"}),
+            serde_json::json!({"jumpHost": "host\n-oX"}),
+            serde_json::json!({"jumpHost": "host\u{1}"}),
+            serde_json::json!({"jumpHost": "host:0"}),
+            serde_json::json!({"jumpHost": "host:65536"}),
+            serde_json::json!({"jumpHost": ""}),
+            serde_json::json!({"jumpHost": "h,"}),
+            serde_json::json!({"jumpHost": "h\u{e4}"}),
+            serde_json::json!({"jumpHost": nine_hops}),
+            serde_json::json!({"jumpHost": long_host}),
+            serde_json::json!({"forwards": [{"type": "L", "listen": "0", "target": "h:1"}]}),
+            serde_json::json!({"forwards": [{"type": "L", "listen": "-1", "target": "h:1"}]}),
+            serde_json::json!({"forwards": [{"type": "L", "listen": "80", "target": "-oX=y:1"}]}),
+            serde_json::json!({"forwards": [{"type": "L", "listen": "80", "target": "h:1 -oX=y"}]}),
+            serde_json::json!({"forwards": [{"type": "L", "listen": "80", "target": "h"}]}),
+            serde_json::json!({"forwards": [{"type": "L", "listen": "80"}]}),
+            serde_json::json!({"forwards": [{"type": "R", "listen": "80"}]}),
+            serde_json::json!({"forwards": [{"type": "D", "listen": "1080", "target": "h:1"}]}),
+            serde_json::json!({"forwards": too_many}),
+            serde_json::json!({"keepalive": 0}),
+            serde_json::json!({"keepalive": 3601}),
+        ];
+        for options in bad {
+            let c = with_ssh_options(options.clone()).unwrap();
+            assert!(validate_connection_input(&c).is_err(), "{options}");
+        }
+    }
+
+    #[test]
+    fn unknown_forward_types_and_auth_methods_do_not_parse() {
+        // Closed enums: a value the desktop cannot map never becomes an argument.
+        for options in [
+            serde_json::json!({"forwards": [{"type": "X", "listen": "80"}]}),
+            serde_json::json!({"authMethod": "keyboard-interactive"}),
+        ] {
+            assert!(with_ssh_options(options).is_err());
+        }
+    }
+
+    #[test]
+    fn a_connection_without_options_still_loads_and_omits_them() {
+        let c: Connection = serde_json::from_value(serde_json::json!({
+            "id": "1", "name": "n", "kind": "ssh", "host": "h", "port": null, "username": null,
+            "domain": null, "keyPath": null, "url": null, "notes": null, "lastUsed": null
+        }))
+        .unwrap();
+        assert!(c.options.is_none());
+        assert!(serde_json::to_value(&c).unwrap().get("options").is_none());
+    }
+
+    #[test]
+    fn sanitize_synced_connections_drops_entries_with_bad_ssh_options() {
+        let good = ssh_connection_with_key_path("");
+        let bad = with_ssh_options(serde_json::json!({"jumpHost": "-oX"})).unwrap();
+        assert_eq!(sanitize_synced_connections(vec![good, bad]).len(), 1);
+    }
+
+    fn with_rdp_options(json: serde_json::Value) -> Result<Connection, serde_json::Error> {
+        let mut c = ssh_connection_with_key_path("");
+        c.kind = ConnectionKind::Rdp;
+        c.options = Some(serde_json::from_value(serde_json::json!({ "rdp": json }))?);
+        Ok(c)
+    }
+
+    #[test]
+    fn validate_connection_input_accepts_good_rdp_options() {
+        for gateway in [
+            "rdgw.example.org",
+            "rdgw.example.org:443",
+            "[2001:db8::1]:8443",
+        ] {
+            let c = with_rdp_options(serde_json::json!({
+                "scalingMode": "hdpi", "windowMode": "custom", "customSize": "1920x1080",
+                "performanceProfile": "lan", "drives": true, "audio": "remote",
+                "printers": false, "gateway": gateway, "nla": true
+            }))
+            .unwrap();
+            assert!(validate_connection_input(&c).is_ok(), "{gateway}");
+        }
+    }
+
+    #[test]
+    fn validate_connection_input_rejects_bad_rdp_options() {
+        let long_gateway = "a".repeat(301);
+        for options in [
+            serde_json::json!({"gateway": "-gw"}),
+            serde_json::json!({"gateway": "gw /u:admin"}),
+            serde_json::json!({"gateway": "gw,u:admin"}),
+            serde_json::json!({"gateway": "gw\n/p:x"}),
+            serde_json::json!({"gateway": "gw:0"}),
+            serde_json::json!({"gateway": "gw:65536"}),
+            serde_json::json!({"gateway": ""}),
+            serde_json::json!({"gateway": long_gateway}),
+            serde_json::json!({"customSize": "100x100"}),
+            serde_json::json!({"customSize": "1920x1080x60"}),
+            serde_json::json!({"customSize": "1920x1080 /p:x"}),
+        ] {
+            let c = with_rdp_options(options.clone()).unwrap();
+            assert!(validate_connection_input(&c).is_err(), "{options}");
+        }
+    }
+
+    #[test]
+    fn unknown_rdp_enum_values_do_not_parse() {
+        for options in [
+            serde_json::json!({"scalingMode": "zoom"}),
+            serde_json::json!({"audio": "loud"}),
+            serde_json::json!({"windowMode": "kiosk"}),
+        ] {
+            assert!(with_rdp_options(options).is_err());
+        }
+    }
+
+    #[test]
+    fn rdp_options_round_trip_and_keep_only_the_fields_set() {
+        let c = with_rdp_options(serde_json::json!({"nla": false, "gateway": "gw"})).unwrap();
+        assert_eq!(
+            serde_json::to_value(&c).unwrap()["options"],
+            serde_json::json!({"rdp": {"gateway": "gw", "nla": false}})
+        );
+    }
+
+    #[test]
+    fn sanitize_synced_connections_drops_entries_with_bad_rdp_options() {
+        let good = ssh_connection_with_key_path("");
+        let bad = with_rdp_options(serde_json::json!({"gateway": "-gw"})).unwrap();
+        assert_eq!(sanitize_synced_connections(vec![good, bad]).len(), 1);
     }
 
     #[test]

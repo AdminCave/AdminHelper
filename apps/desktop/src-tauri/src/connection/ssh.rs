@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use crate::error::AppError;
-use crate::models::Connection;
+use crate::models::{Connection, SshAuthMethod, SshForwardKind, SshOptions};
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape};
 use crate::validation::required;
 
@@ -38,6 +38,9 @@ pub(crate) fn build_ssh_args(connection: &Connection) -> Result<Vec<String>, App
             args.push(trimmed.to_string());
         }
     }
+    if let Some(ssh) = connection.options.as_ref().and_then(|o| o.ssh.as_ref()) {
+        push_option_args(&mut args, ssh);
+    }
     let target = if let Some(username) = connection.username.as_ref() {
         let u = username.trim();
         if !u.is_empty() {
@@ -51,6 +54,59 @@ pub(crate) fn build_ssh_args(connection: &Connection) -> Result<Vec<String>, App
     args.push("--".to_string());
     args.push(target);
     Ok(args)
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+// The per-connection options (R-1066), already checked by validate_ssh_options. Switches as in
+// ssh(1) and ssh_config(5); booleans go through -o so that an explicit "off" overrides a
+// ~/.ssh/config that turns them on.
+fn push_option_args(args: &mut Vec<String>, ssh: &SshOptions) {
+    if let Some(ref jump) = ssh.jump_host {
+        args.push("-J".to_string());
+        args.push(jump.clone());
+    }
+    for forward in &ssh.forwards {
+        let (flag, spec) = match (forward.kind, forward.target.as_deref()) {
+            (SshForwardKind::L, Some(target)) => ("-L", format!("{}:{target}", forward.listen)),
+            (SshForwardKind::R, Some(target)) => ("-R", format!("{}:{target}", forward.listen)),
+            (SshForwardKind::D, _) => ("-D", forward.listen.clone()),
+            // L/R without a target never pass validation; skip rather than build half a switch.
+            _ => continue,
+        };
+        args.push(flag.to_string());
+        args.push(spec);
+    }
+    let mut option = |key: &str, value: &str| {
+        args.push("-o".to_string());
+        args.push(format!("{key}={value}"));
+    };
+    if let Some(agent) = ssh.agent_forwarding {
+        option("ForwardAgent", yes_no(agent));
+    }
+    if let Some(compression) = ssh.compression {
+        option("Compression", yes_no(compression));
+    }
+    if let Some(keepalive) = ssh.keepalive {
+        option("ServerAliveInterval", &keepalive.to_string());
+    }
+    match ssh.auth_method {
+        Some(SshAuthMethod::Key) => {
+            option("PreferredAuthentications", "publickey");
+            option("IdentitiesOnly", "yes");
+        }
+        Some(SshAuthMethod::Agent) => option("PreferredAuthentications", "publickey"),
+        Some(SshAuthMethod::Password) => {
+            option("PreferredAuthentications", "password,keyboard-interactive")
+        }
+        None => {}
+    }
 }
 
 pub fn open_ssh(connection: &Connection) -> Result<(), AppError> {
@@ -95,6 +151,7 @@ mod tests {
             trust_cert: false,
             last_used: None,
             server_id: None,
+            options: None,
         }
     }
 
@@ -127,6 +184,99 @@ mod tests {
     fn args_reject_missing_or_empty_host() {
         assert!(build_ssh_args(&conn(None, None, Some("u"), None)).is_err());
         assert!(build_ssh_args(&conn(Some(""), None, Some("u"), None)).is_err());
+    }
+
+    fn with_ssh_options(json: serde_json::Value) -> Connection {
+        let mut c = conn(Some("h"), None, Some("u"), None);
+        c.options = Some(serde_json::from_value(serde_json::json!({ "ssh": json })).unwrap());
+        c
+    }
+
+    #[test]
+    fn args_carry_every_ssh_option_before_the_separator() {
+        let c = with_ssh_options(serde_json::json!({
+            "jumpHost": "ops@bastion:2222,[2001:db8::1]",
+            "forwards": [
+                {"type": "L", "listen": "8080", "target": "intranet:80"},
+                {"type": "R", "listen": "127.0.0.1:9000", "target": "[::1]:9000"},
+                {"type": "D", "listen": "*:1080"}
+            ],
+            "agentForwarding": true,
+            "compression": false,
+            "keepalive": 30,
+            "authMethod": "key"
+        }));
+
+        let args = build_ssh_args(&c).unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                "-J",
+                "ops@bastion:2222,[2001:db8::1]",
+                "-L",
+                "8080:intranet:80",
+                "-R",
+                "127.0.0.1:9000:[::1]:9000",
+                "-D",
+                "*:1080",
+                "-o",
+                "ForwardAgent=yes",
+                "-o",
+                "Compression=no",
+                "-o",
+                "ServerAliveInterval=30",
+                "-o",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "IdentitiesOnly=yes",
+                "--",
+                "u@h",
+            ]
+        );
+    }
+
+    #[test]
+    fn args_map_each_auth_method() {
+        let cases = [
+            ("agent", vec!["-o", "PreferredAuthentications=publickey"]),
+            (
+                "password",
+                vec![
+                    "-o",
+                    "PreferredAuthentications=password,keyboard-interactive",
+                ],
+            ),
+        ];
+        for (method, expected) in cases {
+            let args = build_ssh_args(&with_ssh_options(
+                serde_json::json!({ "authMethod": method }),
+            ))
+            .unwrap();
+            assert_eq!(args[..args.len() - 2], expected[..], "{method}");
+        }
+    }
+
+    #[test]
+    fn args_leave_unset_options_to_the_global_default() {
+        let args = build_ssh_args(&with_ssh_options(serde_json::json!({}))).unwrap();
+        assert_eq!(args, vec!["--", "u@h"]);
+        // An explicit "off" is passed on, so it beats a ~/.ssh/config that turns it on.
+        let args = build_ssh_args(&with_ssh_options(
+            serde_json::json!({"agentForwarding": false, "compression": true}),
+        ))
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-o",
+                "ForwardAgent=no",
+                "-o",
+                "Compression=yes",
+                "--",
+                "u@h"
+            ]
+        );
     }
 
     #[test]

@@ -19,6 +19,45 @@ export interface Connection {
   notes?: string | null;
   trustCert?: boolean | null;
   lastUsed?: string | null;
+  options?: ConnectionOptions | null;
+}
+
+export type SshForwardKind = 'L' | 'R' | 'D';
+export type SshAuthMethod = 'key' | 'agent' | 'password';
+
+export interface SshForward {
+  type: SshForwardKind;
+  listen: string;
+  target?: string | null;
+}
+
+export interface SshOptions {
+  jumpHost?: string | null;
+  forwards?: SshForward[];
+  agentForwarding?: boolean | null;
+  compression?: boolean | null;
+  keepalive?: number | null;
+  authMethod?: SshAuthMethod | null;
+}
+
+export type RdpAudio = 'local' | 'remote' | 'off';
+
+export interface RdpConnectionOptions {
+  scalingMode?: 'auto' | 'normal' | 'hdpi' | null;
+  windowMode?: 'fit' | 'fullscreen' | 'multimon' | 'custom' | null;
+  customSize?: string | null;
+  performanceProfile?: 'auto' | 'lan' | 'broadband' | 'low' | null;
+  drives?: boolean | null;
+  audio?: RdpAudio | null;
+  printers?: boolean | null;
+  gateway?: string | null;
+  nla?: boolean | null;
+}
+
+// `options` of the server API (R-1066), the same shape as the desktop model.
+export interface ConnectionOptions {
+  ssh?: SshOptions | null;
+  rdp?: RdpConnectionOptions | null;
 }
 
 export interface Server {

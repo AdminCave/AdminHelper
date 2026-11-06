@@ -35,14 +35,15 @@ mod workspace;
 
 use commands::{
     ansible_run, api_proxy, check_server_cert, delete_password, delete_workspace, device_identity,
-    enroll_with_token, export_browser_p12, fetch_connections_jwt, fetch_tunnels,
-    generate_diagnostics, is_device_enrolled, list_workspaces, load_connections, load_settings,
-    login, logout, open_connection, open_connection_stored, open_launcher, open_workspace,
-    password_state, pinned_ca_fingerprint, probe_targets, refresh_tunnel, reset_device_identity,
-    reset_server_cert_pin, resolve_connection, save_connections, save_password, save_settings,
-    save_workspace, start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
-    sync_connections, terminal_close, terminal_close_all, terminal_open_ssh, terminal_resize,
-    terminal_write, tunnel_status, workspace_context, write_export_csv,
+    device_name, end_session, enroll_with_token, export_browser_p12, fetch_connections_jwt,
+    fetch_tunnels, generate_diagnostics, is_device_enrolled, list_sessions, list_workspaces,
+    load_connections, load_settings, login, logout, open_connection, open_connection_stored,
+    open_launcher, open_workspace, password_state, pinned_ca_fingerprint, probe_targets,
+    refresh_tunnel, reset_device_identity, reset_server_cert_pin, resolve_connection,
+    save_connections, save_password, save_settings, save_workspace, start_notification_stream,
+    start_session, start_tunnel, stop_notification_stream, stop_tunnel, sync_connections,
+    terminal_close, terminal_close_all, terminal_open_ssh, terminal_resize, terminal_write,
+    tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -233,6 +234,10 @@ fn main() {
             save_connections,
             open_connection,
             open_connection_stored,
+            start_session,
+            end_session,
+            list_sessions,
+            device_name,
             login,
             logout,
             fetch_connections_jwt,
