@@ -118,6 +118,12 @@ Review: approve (.ah-out/review/kern-terminal-1/T12.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (nur Tests)
 
+### T13 — Desktop: terminal_open_ansible sichtbar für das IPC-Inventar (R-1073, aus der PR-CI)  [ ]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/commands.rs
+Änderung: Die PR-CI (vitest) war rot: `ipc.inventory.test.ts` findet einen Befehl nur, wenn `fn` direkt auf `#[tauri::command]` folgt, und sah `terminal_open_ansible` wegen des `#[allow(clippy::too_many_arguments)]` dazwischen als registriert, aber nicht definiert. Das `allow` steht jetzt vor `#[tauri::command]`; der Parser bleibt, wie er ist.
+Verify: bash scripts/dev/verify.sh desktop --strict
+Doku: keine (Attribut-Reihenfolge)
+
 ## Entscheidungen
 - Ringpuffer 1 MiB je Sitzung im Backend (Spec, Trade-offs); ein Fenster je abgedockter Sitzung, Label `terminal-<id>`.
 - Rechte doppelt: Capability je Label und Label-Prüfung in jedem Terminal-Befehl, weil die Glob-Form der Labels in der Tauri-Doku nicht belegt ist.
