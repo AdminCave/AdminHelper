@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-4 — Task-Ledger
-Status: bereit · Branch: feature/kern-verbindungen-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-4 · Review: pro Task
 Spec: docs/features/kern-verbindungen-4.md (Roadmap R-1140, R-1143, R-1158)
 Heavy: linux-full — Server-API (neue 403-Antworten an den Verbindungs-Routen); der Sammellauf fährt den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,6 +51,12 @@ Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @feeb2a36 2026
 Review: approve (.ah-out/review/kern-verbindungen-4/T5.verdict.json)
 Änderung: `editor.field.jumpHost.hint` DE/EN um „IPv6-Adresse in eckigen Klammern nur im letzten Hop“ / „an IPv6 address in brackets only in the last hop“. API-Referenz DE+EN: `403` für API-Keys bei den Optionen aus T1 und bei `GET …/sessions`, Jump-Host-Regel aus T3. Admin-Doku DE+EN: Jump-Host-Format im Reiter *Optionen*. Changelog-Fragment (ohne Umlaute) unter `### Changed`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test.ts src/components/ConnectionEditor.options.test.ts
+Doku: die genannten Dateien
+
+### T6 — Server: Umzugs-Sperre auch für `username` und `domain` (R-1140, Abschlussprüfung)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_options_authz.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-verbindungen-4.md
+Änderung: `_TARGET_FIELDS` um `username` und `domain`; Vergleich mit `None` gleich leer, wie `to_dict` speichert. Die Move-Tests laufen über alle fünf Felder, dazu ein Test, dass `username: null` bei leerem gespeichertem Namen durchgeht. API-Referenz DE+EN und Changelog nennen die Felder; der PUT-Satz nimmt das Wiedereinschalten von NLA aus (Nit security T5).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options_authz.py tests/test_connections_authz.py tests/test_openapi_snapshot.py
 Doku: die genannten Dateien
 
 ## Entscheidungen
