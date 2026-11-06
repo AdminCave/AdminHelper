@@ -8,7 +8,7 @@
 // its output until its terminal attaches, so nothing the program sends first is lost, a cursor
 // query of the Windows pseudo console among it. A session detached into a window of its own
 // (R-1070) keeps its tab, without a terminal; docked again, it attaches anew and the terminal
-// gets the output Rust kept first.
+// gets the output Rust kept first. The window it is detached into holds it as its only session.
 
 import { get, writable } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -181,9 +181,7 @@ async function start(
  * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
  * not start: the tab then shows the session disconnected, the status bar why.
  */
-export function openTerminal(connection: Connection, resolved: Connection): Promise<boolean> {
-  opened += 1;
-  const key = `terminal-${opened}`;
+function newRuntime(key: string): Runtime {
   const runtime: Runtime = {
     attempt: 0,
     output: false,
@@ -196,6 +194,13 @@ export function openTerminal(connection: Connection, resolved: Connection): Prom
     writes: Promise.resolve(),
   };
   runtimes.set(key, runtime);
+  return runtime;
+}
+
+export function openTerminal(connection: Connection, resolved: Connection): Promise<boolean> {
+  opened += 1;
+  const key = `terminal-${opened}`;
+  const runtime = newRuntime(key);
   const session: TerminalSession = {
     key,
     connection,
@@ -290,23 +295,14 @@ export async function detachTerminal(key: string): Promise<void> {
 }
 
 /**
- * Takes the detached session `id` back into its tab, in front: the window docked it or was
- * closed. Its terminal starts anew and gets the output Rust kept first. A session that ended
- * meanwhile shows disconnected.
+ * Moves session `id` to the channel of `runtime`: the terminal of `key` gets the output Rust kept
+ * first. A session that ended meanwhile shows disconnected.
  */
-export async function dockTerminal(id: number): Promise<void> {
-  const session = get(state).sessions.find((s) => s.detached && s.backendId === id);
-  const runtime = session && runtimes.get(session.key);
-  if (!session || !runtime) return;
-  const { key } = session;
+async function attachBackend(key: string, runtime: Runtime, id: number): Promise<void> {
   const attempt = (runtime.attempt += 1);
   const current = () => runtimes.get(key) === runtime && runtime.attempt === attempt;
   runtime.pending = [];
   runtime.replaying = true;
-  state.update((s) => ({
-    sessions: s.sessions.map((x) => (x.key === key ? { ...x, detached: false } : x)),
-    active: key,
-  }));
   try {
     await bridge.terminalAttach(id, (message) => {
       if (current()) receive(key, runtime, message);
@@ -318,6 +314,60 @@ export async function dockTerminal(id: number): Promise<void> {
     }
     reportError(errMsg(err));
   }
+}
+
+/**
+ * Takes the detached session `id` back into its tab, in front: the window docked it or was
+ * closed. Its terminal starts anew and gets the output Rust kept first. A session no tab knows,
+ * detached before this window loaded again, ends: nothing would show it.
+ */
+export async function dockTerminal(id: number): Promise<void> {
+  const session = get(state).sessions.find((s) => s.detached && s.backendId === id);
+  const runtime = session && runtimes.get(session.key);
+  if (!session || !runtime) {
+    // Silent: a tab closed while detached has ended it already, and its window docks after.
+    if (!get(state).sessions.some((s) => s.backendId === id)) {
+      bridge.terminalClose(id).catch(() => {});
+    }
+    return;
+  }
+  const { key } = session;
+  state.update((s) => ({
+    sessions: s.sessions.map((x) => (x.key === key ? { ...x, detached: false } : x)),
+    active: key,
+  }));
+  await attachBackend(key, runtime, id);
+}
+
+/**
+ * Takes the running session `id` as the only one of this window, the window it is detached
+ * into; its key. The window's title bar names it, so the connection is a stand-in.
+ */
+export function adoptTerminal(id: number): string {
+  opened += 1;
+  const key = `terminal-${opened}`;
+  const runtime = newRuntime(key);
+  // It has run before: its first output here is no news of a connection.
+  runtime.output = true;
+  const connection = { id: '', name: '', kind: 'ssh' } as Connection;
+  const session: TerminalSession = {
+    key,
+    connection,
+    resolved: connection,
+    status: 'connected',
+    exitCode: null,
+    connectedAt: null,
+    backendId: id,
+  };
+  state.set({ sessions: [session], active: key });
+  void attachBackend(key, runtime, id);
+  return key;
+}
+
+/** The session the route `hash` of a detached window shows (`#/detached/<id>`); else null. */
+export function detachedRoute(hash: string): number | null {
+  const match = /^#\/detached\/([0-9]+)$/.exec(hash);
+  return match ? Number(match[1]) : null;
 }
 
 /**

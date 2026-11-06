@@ -6,7 +6,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <!--
   One session of the embedded terminal (R-1069): xterm.js on the output of its program, above it
-  what the session is connected to, search and options, below it the size and the status.
+  what the session is connected to, search and options, below it the size and the status. In a
+  detached window (R-1070) the header has the search and Dock only: that window may not save the
+  options, start a program or end one, and its title bar names the session.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -14,7 +16,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { FitAddon } from '@xterm/addon-fit';
   import { SearchAddon } from '@xterm/addon-search';
   import '@xterm/xterm/css/xterm.css';
-  import { AArrowDown, AArrowUp, Cable, RotateCw, SlidersHorizontal, X } from '@lucide/svelte';
+  import {
+    AArrowDown,
+    AArrowUp,
+    Cable,
+    RotateCw,
+    SlidersHorizontal,
+    SquareArrowDownLeft,
+    X,
+  } from '@lucide/svelte';
   import type { TerminalPrefs } from '$lib/bridge/types';
   import { currentLocale, t } from '$lib/i18n';
   import { TERMINAL_FONT_SIZE } from '$lib/models/settings';
@@ -39,10 +49,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     session: TerminalSession;
     /** "End session": the tab closes, after asking when the options say so. */
-    onClose: () => void;
+    onClose?: () => void;
+    /** Given in a detached window: "Dock" takes the session back into the main window. */
+    onDock?: () => void;
   }
 
-  let { session, onClose }: Props = $props();
+  let { session, onClose, onDock }: Props = $props();
 
   const PASTE_HINT_MS = 6000;
   const encoder = new TextEncoder();
@@ -75,6 +87,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let statusText = $derived.by(() => {
     if (session.status === 'connecting') return $t('terminal.status.connecting');
     if (session.status === 'connected') {
+      // A detached window does not know since when.
+      if (session.connectedAt === null) return $t('terminal.status.connected');
       return $t('terminal.status.connectedSince', { time: clock(session.connectedAt) });
     }
     return session.exitCode === null
@@ -300,7 +314,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="term">
   <header class="term-head">
     <Dot st={session.status} ring label={statusText} />
-    <span class="term-target">{target}</span>
+    {#if !onDock}
+      <span class="term-target">{target}</span>
+    {/if}
     {#if tunnel}
       <Pill tone="accent" title={$t('terminal.tunnel')}><Cable size={11} />{tunnel}</Pill>
     {/if}
@@ -315,30 +331,37 @@ SPDX-License-Identifier: GPL-3.0-or-later
         onClear={() => term?.clearSelection()}
       />
     </div>
-    <IconButton
-      size="sm"
-      icon={AArrowDown}
-      label={$t('terminal.fontSmaller')}
-      disabled={$terminalPrefs.fontSize <= TERMINAL_FONT_SIZE.min}
-      onclick={() => changeFont(-1)}
-    />
-    <IconButton
-      size="sm"
-      icon={AArrowUp}
-      label={$t('terminal.fontLarger')}
-      disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
-      onclick={() => changeFont(1)}
-    />
-    <IconButton
-      size="sm"
-      icon={SlidersHorizontal}
-      label={$t('terminal.options')}
-      aria-pressed={optionsOpen}
-      onclick={() => (optionsOpen = !optionsOpen)}
-    />
-    <span class="term-sep" aria-hidden="true"></span>
-    <IconButton size="sm" icon={RotateCw} label={$t('terminal.reconnect')} onclick={reconnect} />
-    <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+    {#if onDock}
+      <span class="term-sep" aria-hidden="true"></span>
+      <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+        {$t('terminal.dock')}
+      </Button>
+    {:else}
+      <IconButton
+        size="sm"
+        icon={AArrowDown}
+        label={$t('terminal.fontSmaller')}
+        disabled={$terminalPrefs.fontSize <= TERMINAL_FONT_SIZE.min}
+        onclick={() => changeFont(-1)}
+      />
+      <IconButton
+        size="sm"
+        icon={AArrowUp}
+        label={$t('terminal.fontLarger')}
+        disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
+        onclick={() => changeFont(1)}
+      />
+      <IconButton
+        size="sm"
+        icon={SlidersHorizontal}
+        label={$t('terminal.options')}
+        aria-pressed={optionsOpen}
+        onclick={() => (optionsOpen = !optionsOpen)}
+      />
+      <span class="term-sep" aria-hidden="true"></span>
+      <IconButton size="sm" icon={RotateCw} label={$t('terminal.reconnect')} onclick={reconnect} />
+      <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+    {/if}
   </header>
 
   <div class="term-main">
@@ -353,9 +376,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="term-host" bind:this={host}></div>
       {#if session.status === 'disconnected'}
         <div class="term-ended">
-          <Button size="sm" variant="secondary" iconLeft={RotateCw} onclick={reconnect}>
-            {$t('terminal.reconnect')}
-          </Button>
+          {#if onDock}
+            <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+              {$t('terminal.dock')}
+            </Button>
+          {:else}
+            <Button size="sm" variant="secondary" iconLeft={RotateCw} onclick={reconnect}>
+              {$t('terminal.reconnect')}
+            </Button>
+          {/if}
           <span>{$t('terminal.ended')}</span>
         </div>
       {/if}

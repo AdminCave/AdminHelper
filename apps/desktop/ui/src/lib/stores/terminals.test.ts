@@ -54,7 +54,9 @@ import {
   PAGE_TAB,
   attachTerminal,
   closeAllTerminals,
+  adoptTerminal,
   closeTerminal,
+  detachedRoute,
   detachTerminal,
   listenForDocking,
   openTerminal,
@@ -568,11 +570,15 @@ describe('detach and dock (R-1070)', () => {
 
   it('docks when the window is closed from its title bar, once, and not a session never detached', async () => {
     await listenForDocking();
+    await openTerminal(CONN, RESOLVED);
+    programs[0].send(out('$ '));
+    const { key } = only();
     event('terminal-window-closed', 1);
     await settle();
     expect(h.terminalAttach).not.toHaveBeenCalled();
+    expect(h.terminalClose).not.toHaveBeenCalled();
 
-    const key = await detached();
+    await detachTerminal(key);
     const got: string[] = [];
     attachTerminal(key, (data, done) => {
       got.push(text(data));
@@ -582,6 +588,8 @@ describe('detach and dock (R-1070)', () => {
     event('terminal-docked', 1);
     await settle();
     expect(h.terminalAttach).toHaveBeenCalledTimes(1);
+    // The second event finds the tab docked: it ends nothing.
+    expect(h.terminalClose).not.toHaveBeenCalled();
     attached[0]({ replayed: true });
     expect(got).toEqual(['']);
     writeTerminal(key, bytes('a'));
@@ -606,5 +614,63 @@ describe('detach and dock (R-1070)', () => {
     expect(h.terminalClose).toHaveBeenCalledWith(1);
     expect(h.terminalDock).toHaveBeenCalledWith(1);
     expect(get(terminals).sessions).toEqual([]);
+
+    // Its window docks after it: nothing to take back, and nothing to report.
+    await listenForDocking();
+    event('terminal-docked', 1);
+    await settle();
+    expect(h.terminalAttach).not.toHaveBeenCalled();
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('ends a session docked that no tab knows: detached before this window loaded again', async () => {
+    await listenForDocking();
+    h.terminalClose.mockRejectedValueOnce(new Error('no terminal session 7'));
+    event('terminal-window-closed', 7);
+    await settle();
+    expect(h.terminalClose).toHaveBeenCalledExactlyOnceWith(7);
+    expect(h.terminalAttach).not.toHaveBeenCalled();
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('a detached window takes its session as the only one: replay, then live, then the exit', async () => {
+    await openTerminal(CONN, RESOLVED);
+    const key = adoptTerminal(5);
+    expect(get(terminals)).toEqual({ sessions: [only()], active: key });
+    expect(only()).toMatchObject({ key, backendId: 5, status: 'connected', connectedAt: null });
+    expect(h.terminalAttach).toHaveBeenCalledExactlyOnceWith(5, expect.any(Function));
+
+    await settle();
+    attached[0](out('kept'));
+    attached[0]({ replayed: true });
+    const got: string[] = [];
+    let parsed: (() => void) | undefined;
+    attachTerminal(key, (data, done) => {
+      got.push(text(data));
+      if (done) parsed = done;
+    });
+    writeTerminal(key, bytes('\x1b[1;1R'));
+    await settle();
+    expect(h.terminalWrite).not.toHaveBeenCalled();
+    parsed!();
+    attached[0](out('live'));
+    writeTerminal(key, bytes('a'));
+    resizeTerminal(key, 100, 30);
+    await settle();
+    expect(got).toEqual(['kept', '', 'live']);
+    expect(h.terminalWrite.mock.calls).toEqual([[5, bytes('a')]]);
+    expect(h.terminalResize).toHaveBeenCalledWith(5, 100, 30);
+    // Its output since it was opened here is no new connection.
+    expect(only().connectedAt).toBeNull();
+
+    attached[0]({ exitCode: 0 });
+    expect(only()).toMatchObject({ status: 'disconnected', exitCode: 0 });
+  });
+
+  it('reads the session of a detached window from its route', () => {
+    expect(detachedRoute('#/detached/12')).toBe(12);
+    for (const hash of ['', '#/connections', '#/detached/', '#/detached/+1', '#/detached/1x']) {
+      expect(detachedRoute(hash)).toBeNull();
+    }
   });
 });

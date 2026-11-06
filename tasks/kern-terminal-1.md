@@ -48,10 +48,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- terminals AppShell Ses
 Doku: → T10
 Abhängt von: T2
 
-### T5 — Desktop-UI: das abgedockte Fenster (R-1070)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/main.ts, apps/desktop/ui/src/components/terminal/DetachedTerminal.svelte, apps/desktop/ui/src/components/terminal/DetachedTerminal.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/lib/bridge/index.ts
+### T5 — Desktop-UI: das abgedockte Fenster (R-1070)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/main.ts, apps/desktop/ui/src/components/terminal/DetachedTerminal.svelte, apps/desktop/ui/src/components/terminal/DetachedTerminal.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fc8d32aa 2026-11-06T11:28:36+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T5.verdict.json)
 Änderung: Der Einstieg erkennt `#/detached/<id>` und rendert statt der App nur `DetachedTerminal`: Titel, Knopf *Andocken* (`terminal_dock`), das Terminal mit den Einstellungen des Nutzers, angehängt über `terminal_attach`; Eingaben und Größe gehen an die eigene Sitzung; kein `closeAllTerminals` in diesem Fenster. `SshTerminal` bekommt dafür eine Quelle statt des Store-Schlüssels (Store oder direkte Sitzung). Neue Dateien mit SPDX-Header. Tests: Anhängen, Eingabe, Andocken.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- DetachedTerminal SshTerminal
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- DetachedTerminal SshTerminal terminals
 Doku: → T10
 Abhängt von: T4
 
@@ -100,3 +102,4 @@ Task-Review: am Ende
 - T3: `--check` steht hinter dem Playbook (`-i <inv> <pb> --check`, Ansible nimmt Optionen nach dem Argument), so bleiben die Dateien für beide Wege an ihrer Stelle. Die Sitzung löscht das Run-Verzeichnis über `Spawn::cleanup`, sobald das Programm endet; scheitert der Start, löscht es `launch_ansible_with` wie bisher. `ansible_run` nimmt `check` als `Option<bool>` (fehlt: echter Lauf), damit die UI bis T8 unverändert weiterläuft. `Verify:` ohne Filter: die Tests liegen in `ansible`, `pty` und `capabilities`.
 - Kevin 2026-11-06: Das X der Titelleiste eines abgedockten Fensters dockt die Sitzung an (T4, T5); „Letzte Sitzungen beim Start wiederherstellen“ ist standardmäßig aus (T6, T7).
 - T6: `openSessions` liegt in `workspace.json` (wie `favoriteConnections`), nicht in `prefs.json`: Verbindungs-IDs gehören zu einem Workspace, `prefs.json` gilt für das Gerät. `restoreSessions` liegt in `prefs.json`. Verify `-- storage` statt `-- storage models` (cargo test nimmt einen Filter).
+- T5: Das abgedockte Fenster nutzt denselben Store mit einer übernommenen Sitzung (`adoptTerminal`) statt einer eigenen Quelle für `SshTerminal`: Replay, Status und Exit bleiben eine Logik. Es kennt nur die id, den Namen trägt die Titelleiste. Eine Sitzung, die beim Andocken kein Tab kennt (Hauptfenster neu geladen), wird beendet statt verwaist.

@@ -271,7 +271,8 @@ describe('SshTerminal', () => {
     expect(h.attachTerminal).toHaveBeenCalledWith(KEY, expect.any(Function));
 
     h.sink!(typed('hello'));
-    expect(term.write).toHaveBeenCalledWith(typed('hello'));
+    // Output of the program comes without a callback; only the end of a replay brings one.
+    expect(term.write).toHaveBeenCalledWith(typed('hello'), undefined);
 
     unmount();
     expect(h.detach).toHaveBeenCalled();
@@ -512,6 +513,38 @@ describe('SshTerminal', () => {
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('complementary', { name: tNow('terminal.options') })).toBeTruthy();
+  });
+});
+
+describe('SshTerminal in a detached window (R-1070)', () => {
+  async function mountDocked(s: TerminalSession) {
+    const onDock = vi.fn();
+    const view = render(SshTerminal, { session: s, onDock });
+    await vi.waitFor(() => expect(h.FakeTerminal.last).not.toBeNull());
+    await tick();
+    return { ...view, onDock };
+  }
+
+  it('offers only to dock: no target, font, options, reconnect or close', async () => {
+    const { onDock } = await mountDocked(session({ status: 'connected', connectedAt: null }));
+    expect(screen.queryByText('ops@db.example:2222')).toBeNull();
+    for (const name of ['fontSmaller', 'fontLarger', 'options', 'reconnect', 'close'] as const) {
+      expect(screen.queryByRole('button', { name: tNow(`terminal.${name}`) })).toBeNull();
+    }
+    // Taken over from the main window, it knows no time it connected.
+    expect(screen.getAllByText(tNow('terminal.status.connected')).length).toBeGreaterThan(0);
+
+    await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.dock') }));
+    expect(onDock).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers to dock an ended session instead of reconnecting it', async () => {
+    const { onDock } = await mountDocked(session({ status: 'disconnected', exitCode: 0 }));
+    const ended = screen.getByText(tNow('terminal.ended')).parentElement as HTMLElement;
+    expect(within(ended).queryByRole('button', { name: tNow('terminal.reconnect') })).toBeNull();
+    await fireEvent.click(within(ended).getByRole('button', { name: tNow('terminal.dock') }));
+    expect(onDock).toHaveBeenCalledTimes(1);
+    expect(h.reconnectTerminal).not.toHaveBeenCalled();
   });
 });
 
