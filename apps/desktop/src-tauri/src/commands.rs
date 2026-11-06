@@ -1040,8 +1040,8 @@ pub async fn ansible_run(
 /// [`ansible_run`] in the embedded terminal, main window only: `ansible-playbook` in a session
 /// of `cols`×`rows`, whose id it returns; `output` gets what `terminal_open_ssh` sends. The
 /// session removes the run directory once the run has ended.
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
+#[tauri::command]
 pub async fn terminal_open_ansible(
     window: tauri::Window,
     session: State<'_, SessionState>,

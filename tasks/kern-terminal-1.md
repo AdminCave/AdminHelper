@@ -118,8 +118,10 @@ Review: approve (.ah-out/review/kern-terminal-1/T12.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (nur Tests)
 
-### T13 — Desktop: terminal_open_ansible sichtbar für das IPC-Inventar (R-1073, aus der PR-CI)  [ ]
+### T13 — Desktop: terminal_open_ansible sichtbar für das IPC-Inventar (R-1073, aus der PR-CI)  [x]
 Komponente: desktop · Dateien: apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @2332752e 2026-11-06T12:48:21+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T13.verdict.json)
 Änderung: Die PR-CI (vitest) war rot: `ipc.inventory.test.ts` findet einen Befehl nur, wenn `fn` direkt auf `#[tauri::command]` folgt, und sah `terminal_open_ansible` wegen des `#[allow(clippy::too_many_arguments)]` dazwischen als registriert, aber nicht definiert. Das `allow` steht jetzt vor `#[tauri::command]`; der Parser bleibt, wie er ist.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: keine (Attribut-Reihenfolge)
