@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-terminal-1 — Task-Ledger
-Status: aktiv · Branch: feature/kern-terminal-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-terminal-1 · Review: pro Task
 Spec: docs/features/kern-terminal-1.md (Roadmap R-1070, R-1073)
 Heavy: linux-full + windows — linux-full: neue Desktop-Journey (Abdocken und Andocken in `ssh-connect.live.js`, `desktop_e2e_connect.sh` im Sammellauf); windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): ConPTY, Fensterrechte und der Ansible-Start sind auch Windows-Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -101,8 +101,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: die genannten Dateien
 Task-Review: am Ende
 
-### T11 — Nutzer-Doku: Abdocken, Wiederherstellen, Ansible im Tab (R-1070, R-1073, aus der Abschlussprüfung)  [ ]
+### T11 — Nutzer-Doku: Abdocken, Wiederherstellen, Ansible im Tab (R-1070, R-1073, aus der Abschlussprüfung)  [x]
 Komponente: desktop-rs · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @fa148989 2026-11-06T12:27:18+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Nutzerseite Desktop (Absatz SSH-Terminal und Einstellungen): Abdocken per Knopf, Doppelklick oder Ziehen, Andocken über *Andocken* oder das X, Tab mit Fenstersymbol; Einstellung „SSH-Tabs des letzten Starts wieder öffnen“. Ansible-Seite: Lauf im Sitzungs-Tab bei AdminHelper-Terminal, sonst OS-Terminal; Probelauf `--check`; die Sitzung löscht das Run-Verzeichnis auf jeder Plattform. Nit „mit Zielen“ in der Entwicklerseite.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: die genannten Dateien
