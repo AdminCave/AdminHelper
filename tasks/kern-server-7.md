@@ -1,5 +1,5 @@
 # Servernamen ohne ':' und ohne Windows-Gerätenamen — Task-Ledger
-Status: aktiv · Branch: feature/kern-server-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-server-7 · Review: am Ende
 Spec: docs/features/kern-server-7.md (Roadmap R-1056)
 Heavy: linux-full — Server-API (zusätzliche 422 in POST/PUT /api/servers), geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_schemas.py tests/test_servers_name_windows.py
 Doku: → T2
 
-### T2 — Doku und Changelog: Servernamen-Regel (R-1056)  [ ]
+### T2 — Doku und Changelog: Servernamen-Regel (R-1056)  [x]
 Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-server-7.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @013ca3dce 2026-11-06T20:07:08+01:00
+Review: am Ende (Branch-Review)
 Änderung: Eintrag `POST /api/servers` DE+EN: der neue 422-Fall (':' und reservierte Windows-Namen, auch mit Endung) und dass ein `PUT` mit unverändertem Altnamen erlaubt bleibt; `changelog.d/kern-server-7.md` (`### Changed`, umlautfrei).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_schemas.py
 Doku: docs/developer/api-reference.html DE+EN · changelog.d/kern-server-7.md
