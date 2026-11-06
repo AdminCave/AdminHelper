@@ -55,6 +55,7 @@
     "allow-terminal-open-ssh",
     "allow-terminal-open-ansible",
     "allow-terminal-write",
+    "allow-terminal-broadcast",
     "allow-terminal-resize",
     "allow-terminal-close",
     "allow-terminal-close-all",

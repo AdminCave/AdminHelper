@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-terminal-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9
 
-### T2 — Desktop: terminal_broadcast an alle laufenden SSH-Sitzungen (R-1071)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/pty.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/invoke.test.ts
+### T2 — Desktop: terminal_broadcast an alle laufenden SSH-Sitzungen (R-1071)  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/pty.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/invoke.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @e675fbbe 2026-11-06T15:06:08+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T2.verdict.json)
 Änderung: `Spawn.broadcast` (ssh `true`, Ansible `false`), `PtyRegistry::broadcast(data) -> u32` schreibt an jede laufende Sitzung mit dem Flag, gleich welches Fenster sie besitzt. Befehl `terminal_broadcast` nur in `default.json` (nicht in `terminal-window.json`), registriert in `main.rs`/`build.rs`, Bridge `terminalBroadcast`. Tests: zwei ssh-artige und eine Ansible-artige Sitzung, eine beendete: nur die laufenden mit Flag bekommen die Bytes, die Zahl stimmt; Capability-Test (aus `terminal-*` abgelehnt), IPC-Inventar.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9

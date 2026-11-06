@@ -705,6 +705,7 @@ fn ssh_spawn(
         env: vec![("TERM".to_string(), "xterm-256color".to_string())],
         cwd: home,
         cleanup: None,
+        broadcast: true,
     })
 }
 
@@ -876,6 +877,20 @@ pub async fn terminal_write(window: tauri::Window, id: u64, data: Vec<u8>) -> Re
     may_reach(window.label(), id)?;
     let app = window.app_handle().clone();
     blocking(move || app.state::<PtyRegistry>().write(id, &data)).await
+}
+
+/// Writes `data` to every running SSH session of this workspace, whichever window shows it,
+/// and returns how many it reached: the snippet panel with broadcast on (R-1071). Main only,
+/// as a detached window reaches its own session alone.
+#[tauri::command]
+pub async fn terminal_broadcast(window: tauri::Window, data: Vec<u8>) -> Result<u32, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window broadcasts".into(),
+        ));
+    }
+    let app = window.app_handle().clone();
+    blocking(move || Ok(app.state::<PtyRegistry>().broadcast(&data))).await
 }
 
 #[tauri::command]
@@ -2336,6 +2351,7 @@ mod tests {
             [("TERM".to_string(), "xterm-256color".to_string())]
         );
         assert_eq!(spawn.cwd, Some(home));
+        assert!(spawn.broadcast, "an SSH session takes a broadcast");
         let without_home = ssh_spawn(&connection, Some(ssh), None).expect("it opens");
         assert_eq!(without_home.cwd, None);
     }
@@ -2403,6 +2419,7 @@ mod tests {
             "delete_password",
             "terminal_open_ssh",
             "terminal_write",
+            "terminal_broadcast",
         ] {
             let head = format!("#[tauri::command]\npub async fn {name}(");
             let start = source
@@ -2442,10 +2459,12 @@ mod tests {
                 "{name} does not check the calling window"
             );
         }
-        assert!(
-            body("terminal_detach").contains("if window.label() != pty::MAIN {"),
-            "terminal_detach does not check for main"
-        );
+        for name in ["terminal_detach", "terminal_broadcast"] {
+            assert!(
+                body(name).contains("if window.label() != pty::MAIN {"),
+                "{name} does not check for main"
+            );
+        }
         // close would report every dock and every sign-out as a close through the title bar.
         for name in ["terminal_dock", "logout"] {
             let body = body(name);

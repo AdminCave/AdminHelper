@@ -53,6 +53,7 @@ const COMMANDS: &[&str] = &[
     "open_launcher",
     "terminal_open_ssh",
     "terminal_write",
+    "terminal_broadcast",
     "terminal_resize",
     "terminal_close",
     "terminal_close_all",

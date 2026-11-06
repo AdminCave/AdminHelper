@@ -299,6 +299,12 @@ export function terminalWrite(id: number, data: Uint8Array): Promise<void> {
   return invoke('terminal_write', { id, data: Array.from(data) });
 }
 
+// Writes the bytes to every running SSH session and resolves to how many it reached; main
+// window only.
+export function terminalBroadcast(data: Uint8Array): Promise<number> {
+  return invoke('terminal_broadcast', { data: Array.from(data) });
+}
+
 export function terminalResize(id: number, cols: number, rows: number): Promise<void> {
   return invoke('terminal_resize', { id, cols, rows });
 }

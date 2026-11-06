@@ -64,6 +64,9 @@ pub struct Spawn {
     /// A directory of the run, removed with all it holds once the program has ended; a start
     /// that fails leaves it to the caller.
     pub cleanup: Option<PathBuf>,
+    /// Whether a broadcast of the snippet panel reaches the session ([`PtyRegistry::broadcast`]):
+    /// an SSH session, not an Ansible run.
+    pub broadcast: bool,
 }
 
 /// The label of the main window, which may reach every session.
@@ -108,6 +111,8 @@ struct Session {
     stream: Mutex<Stream>,
     /// Set by a close: the session then leaves the registry at its end, listened to or not.
     closing: std::sync::atomic::AtomicBool,
+    /// [`Spawn::broadcast`].
+    broadcast: bool,
     writer: Mutex<Box<dyn Write + Send>>,
     /// Gone once the program exited: on Windows the pseudo console closes with it, and only
     /// then does the reader get its end.
@@ -208,6 +213,7 @@ impl PtyRegistry {
                 ended: None,
             }),
             closing: std::sync::atomic::AtomicBool::new(false),
+            broadcast: spawn.broadcast,
             writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             killer: Mutex::new(Some(child.clone_killer())),
@@ -317,6 +323,30 @@ impl PtyRegistry {
         Ok(())
     }
 
+    /// Writes `data` to the program of every running session that takes a broadcast, whichever
+    /// window shows it, and returns how many it reached. A session whose write fails is not
+    /// counted and does not stop the others. May wait like [`PtyRegistry::write`]: not on the
+    /// main thread.
+    pub fn broadcast(&self, data: &[u8]) -> u32 {
+        // Collected first: a write may wait, and the registry stays free for the readers.
+        let sessions: Vec<Arc<Session>> = lock(&self.sessions)
+            .values()
+            .filter(|session| session.broadcast)
+            .cloned()
+            .collect();
+        let mut reached = 0;
+        for session in sessions {
+            if lock(&session.stream).ended.is_some() {
+                continue;
+            }
+            let mut writer = lock(&session.writer);
+            if writer.write_all(data).and_then(|()| writer.flush()).is_ok() {
+                reached += 1;
+            }
+        }
+        reached
+    }
+
     /// Tells the program of session `id` its new size; nothing for a session that has ended.
     pub fn resize(&self, id: u64, cols: u16, rows: u16) -> Result<(), AppError> {
         let Some(session) = self.session(id) else {
@@ -402,6 +432,7 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: None,
+            broadcast: false,
         }
     }
 
@@ -414,6 +445,7 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: None,
+            broadcast: false,
         }
     }
 
@@ -779,6 +811,62 @@ mod tests {
     }
 
     #[test]
+    fn a_broadcast_reaches_the_running_sessions_that_take_it() {
+        let registry = PtyRegistry::default();
+        #[cfg(unix)]
+        let (script, line, own_line) = ("read x; printf got:%s \"$x\"", "hello\n", "mine\n");
+        #[cfg(windows)]
+        let (script, line, own_line) = ("set /p x=&echo got:!x!", "hello\r", "mine\r");
+        let to_all = |spawn: Spawn, owner: &str| {
+            let mut spawn = spawn;
+            spawn.broadcast = true;
+            open_for(&registry, spawn, owner)
+        };
+        let (first, first_rx) = to_all(shell(script), "main");
+        // A detached window's session is reached all the same.
+        let (second, second_rx) = to_all(shell(script), "terminal-5");
+        // Like an Ansible run: it takes no broadcast.
+        let (own, own_rx) = open(&registry, shell(script));
+        // Ended, but kept: nobody heard its end.
+        let mut ended = shell("exit 0");
+        ended.broadcast = true;
+        let ended = registry
+            .open(ended, 80, 24, "main", |_| false)
+            .expect("the session starts");
+        let deadline = Instant::now() + WAIT;
+        while registry
+            .session(ended)
+            .is_some_and(|session| lock(&session.stream).ended.is_none())
+        {
+            assert!(Instant::now() < deadline, "the session does not end");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(registry.has(ended), "an end nobody heard keeps the session");
+        let first_text = until_ready(&registry, first, &first_rx);
+        let second_text = until_ready(&registry, second, &second_rx);
+        let own_text = until_ready(&registry, own, &own_rx);
+
+        assert_eq!(registry.broadcast(line.as_bytes()), 2);
+
+        let (text, _) = until_exit(&registry, first, &first_rx, first_text);
+        assert!(text.contains("got:hello"), "output: {text:?}");
+        let (text, _) = until_exit(&registry, second, &second_rx, second_text);
+        assert!(text.contains("got:hello"), "output: {text:?}");
+        registry
+            .write(own, own_line.as_bytes())
+            .expect("the input goes in");
+        let (text, _) = until_exit(&registry, own, &own_rx, own_text);
+        assert!(text.contains("got:mine"), "output: {text:?}");
+        assert!(
+            !text.contains("hello"),
+            "the broadcast reached it: {text:?}"
+        );
+        registry.close(ended);
+        until_gone(&registry);
+        assert_eq!(registry.broadcast(line.as_bytes()), 0, "nobody is left");
+    }
+
+    #[test]
     fn the_ring_keeps_the_last_output() {
         let mut stream = Stream {
             ring: std::collections::VecDeque::new(),
@@ -805,6 +893,7 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: None,
+            broadcast: false,
         };
         let refused = registry.open(spawn, 80, 24, "main", |_| true);
         assert!(refused.is_err());
@@ -842,6 +931,7 @@ mod tests {
             env: Vec::new(),
             cwd: None,
             cleanup: Some(dir.clone()),
+            broadcast: false,
         };
         assert!(registry.open(spawn, 80, 24, "main", |_| true).is_err());
         assert!(dir.exists());

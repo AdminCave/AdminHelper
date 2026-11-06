@@ -20,7 +20,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }));
 
-import { apiProxy, terminalOpenSsh, terminalWrite } from './index';
+import { apiProxy, terminalBroadcast, terminalOpenSsh, terminalWrite } from './index';
 import type { Connection, TerminalExit } from './types';
 import { IpcError, errCode, errMsg, errStatus } from '$lib/utils/errors';
 
@@ -116,5 +116,11 @@ describe('bridge terminal', () => {
   it('sends typed bytes as the list of numbers a Vec<u8> takes', async () => {
     await terminalWrite(7, new Uint8Array([3, 13, 255]));
     expect(h.invoke).toHaveBeenCalledWith('terminal_write', { id: 7, data: [3, 13, 255] });
+  });
+
+  it('broadcasts the bytes without a session id and passes the count on', async () => {
+    h.invoke.mockResolvedValueOnce(2);
+    await expect(terminalBroadcast(new Uint8Array([108, 115, 10]))).resolves.toBe(2);
+    expect(h.invoke).toHaveBeenCalledWith('terminal_broadcast', { data: [108, 115, 10] });
   });
 });

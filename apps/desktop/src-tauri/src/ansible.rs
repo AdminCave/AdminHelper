@@ -325,6 +325,7 @@ fn pty_spawn(program: PathBuf, inventory_path: &str, playbook_path: &str, check:
         env: vec![("TERM".to_string(), "xterm-256color".to_string())],
         cwd: None,
         cleanup: Path::new(inventory_path).parent().map(Path::to_path_buf),
+        broadcast: false,
     }
 }
 
@@ -1077,6 +1078,7 @@ mod tests {
         launch_ansible_with(&inventory, &playbook, |inv, pb| {
             seen = Some(format!("-i {inv} {pb} --check\n"));
             let spawn = pty_spawn(stub.0.join("ansible-playbook"), inv, pb, true);
+            assert!(!spawn.broadcast, "a run takes no broadcast");
             registry.open(spawn, 80, 24, "main", move |out| tx.send(out).is_ok())
         })
         .unwrap();
