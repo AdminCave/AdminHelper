@@ -9,6 +9,7 @@ use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
+use ironrdp_cfg::AudioMode;
 use ironrdp_client::config::{ClipboardType, Config, ConfigBuilder, Destination};
 use ironrdp_client::output_channel::{output_channel, OutputEventReceiver};
 use ironrdp_client::rdp::{
@@ -32,6 +33,7 @@ use super::frame_ws::{FrameServer, Frames, Input};
 use super::tofu::{validation_callback, CertPolicy, CertProblem, CertReport};
 use super::watchdog::{Verdict, Watchdog};
 use crate::error::AppError;
+use crate::models::RdpAudio;
 
 /// Fixed in stage 1: the webview scales the picture to its view.
 const DESKTOP_WIDTH: u16 = 1280;
@@ -60,6 +62,8 @@ pub(crate) struct Target {
     pub(crate) domain: Option<String>,
     pub(crate) password: Zeroizing<String>,
     pub(crate) policy: CertPolicy,
+    /// `options.rdp.audio` of the connection; unset plays locally, as the OS client does.
+    pub(crate) audio: Option<RdpAudio>,
 }
 
 /// Why a session ended: the `code` of the `failed` and `disconnected` phases.
@@ -398,6 +402,21 @@ fn platform() -> MajorPlatformType {
     }
 }
 
+/// The audio of a session for `audio` of its connection. At f96f664 `PlayOnServer` asks the server
+/// for no audio at all, like `Disabled` (docs/features/kern-rdp-2.md).
+fn audio_mode(audio: Option<RdpAudio>) -> AudioMode {
+    // Windows keeps audio off until it passes on a Windows with an audio device (condition 12 of
+    // docs/features/arch-rdp-embedded.md).
+    if cfg!(windows) {
+        return AudioMode::Disabled;
+    }
+    match audio {
+        None | Some(RdpAudio::Local) => AudioMode::RedirectToClient,
+        Some(RdpAudio::Remote) => AudioMode::PlayOnServer,
+        Some(RdpAudio::Off) => AudioMode::Disabled,
+    }
+}
+
 fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
     let builder = ConfigBuilder::new()
         .with_destination(target.destination.clone())
@@ -418,6 +437,8 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
         // Text and pictures over the clipboard, no files (docs/features/kern-rdp-2.md). On Windows
         // start_attempt() brings the backend; elsewhere IronRDP takes the native one.
         .with_clipboard(ClipboardType::Enable)
+        .with_audio_mode(audio_mode(target.audio))
+        .with_audio_capture(false)
         .with_rdpdr(false)
         .with_printers(false)
         .with_ports(false);
@@ -629,6 +650,7 @@ mod tests {
     use std::num::NonZeroU16;
     use std::sync::mpsc as std_mpsc;
 
+    use ironrdp_cfg::PropertySetExt as _;
     use ironrdp_pdu::geometry::InclusiveRectangle;
     use ironrdp_pdu::rdp::session_info::{LogonErrorNotificationData, LogonErrorsInfo};
 
@@ -701,6 +723,7 @@ mod tests {
             domain: None,
             password: Zeroizing::new("secret".into()),
             policy,
+            audio: None,
         }
     }
 
@@ -1049,6 +1072,55 @@ mod tests {
         assert!(pinned.certificate_validation_callback().is_some());
     }
 
+    /// The channel, the client info and the property `config()` derives from one audio mode.
+    fn audio_of(audio: Option<RdpAudio>) -> (bool, bool, bool, Option<AudioMode>) {
+        let mut target = target(
+            Destination::from_parts("192.0.2.10", 3389),
+            CertPolicy::TrustAll,
+        );
+        target.audio = audio;
+        let config = config(&target, &CertReport::default()).unwrap();
+        (
+            config.channels().sound,
+            config.connector().enable_audio_playback,
+            config.channels().audio_capture,
+            config.properties().audio_mode().unwrap(),
+        )
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn session_plays_audio_as_the_connection_options_say() {
+        let local = (true, true, false, Some(AudioMode::RedirectToClient));
+        assert_eq!(audio_of(None), local);
+        assert_eq!(audio_of(Some(RdpAudio::Local)), local);
+        assert_eq!(
+            audio_of(Some(RdpAudio::Remote)),
+            (false, false, false, Some(AudioMode::PlayOnServer))
+        );
+        assert_eq!(
+            audio_of(Some(RdpAudio::Off)),
+            (false, false, false, Some(AudioMode::Disabled))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn session_keeps_audio_off_on_windows() {
+        for audio in [
+            None,
+            Some(RdpAudio::Local),
+            Some(RdpAudio::Remote),
+            Some(RdpAudio::Off),
+        ] {
+            assert_eq!(
+                audio_of(audio),
+                (false, false, false, Some(AudioMode::Disabled)),
+                "{audio:?}"
+            );
+        }
+    }
+
     fn reports() -> (impl Fn(Report) + Send + 'static, std_mpsc::Receiver<Report>) {
         let (sender, receiver) = std_mpsc::channel();
         (
@@ -1140,6 +1212,7 @@ mod tests {
                     domain: None,
                     password: Zeroizing::new(self.password.clone()),
                     policy: self.policy(pin),
+                    audio: None,
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();

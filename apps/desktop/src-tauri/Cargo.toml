@@ -75,10 +75,14 @@ zeroize = "1.8.2"
 portable-pty = "0.9"
 # Embedded RDP (rdp_embedded/): IronRDP pinned to a reviewed Git revision, not a crates.io release,
 # so the client API and the GFX fixes it relies on cannot move underneath us.
-# The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs, and `sound` stays off
-# (docs/features/arch-rdp-backend.md, E2). H.264 comes from the platform (Media Foundation on
-# Windows, none on Linux), not openh264. The license_gate tests keep it that way.
-ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["clipboard", "rdpdr"] }
+# The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs. `sound` plays the
+# session's audio through cpal, which needs ALSA (libasound) on Linux (docs/features/kern-rdp-2.md);
+# on Windows the session keeps audio off (session.rs, audio_mode). H.264 comes from the platform
+# (Media Foundation on Windows, none on Linux), not openh264. The license_gate tests keep it that way.
+ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["clipboard", "rdpdr", "sound"] }
+# The audio mode of ConfigBuilder::with_audio_mode, which ironrdp-client does not re-export; in the
+# lockfile through it already.
+ironrdp-cfg = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 ironrdp-tls = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["rustls-ring"] }
 # ironrdp-client calls tokio_tungstenite::client_async_tls without a feature gate (its RDCleanPath
 # WebSocket transport, unused here), which only exists with a TLS feature of tokio-tungstenite. This one

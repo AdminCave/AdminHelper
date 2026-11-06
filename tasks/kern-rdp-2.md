@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-rdp-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T5
 
-### T2 — Desktop: Audio aus den Optionen, libasound in Paket und CI (R-1099)  [ ]
+### T2 — Desktop: Audio aus den Optionen, libasound in Paket und CI (R-1099)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/tauri.conf.json, .github/workflows/ci.yml, .github/workflows/release.yml, scripts/vm/bootstrap_linux.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @457a234a 2026-11-06T08:56:58+01:00
+Review: approve (.ah-out/review/kern-rdp-2/T2.verdict.json)
 Änderung: Feature `sound` für `ironrdp-client`. `prepare()` gibt `options.rdp.audio` in den `Target`; `config()` setzt `with_sound`/`with_audio_mode`: `local` oder ungesetzt → `RedirectToClient`, `remote` → `PlayOnServer`, `off` → aus; `with_audio_capture(false)`; unter `cfg(windows)` immer aus (Bedingung 12). `libasound2-dev` in den Tauri-Schritten von `ci.yml` und `release.yml`, in `bootstrap_linux.sh` und `DEVELOPMENT.md`; deb/rpm-Abhängigkeit in `tauri.conf.json` nach der Tauri-Doku (vorher lesen). Tests je Audio-Wert und für Windows. Neun Dateien, weil die Abhängigkeit ohne die Build-Pakete in jedem CI-Job rot wäre.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: DEVELOPMENT.md · sonst → T5
@@ -51,3 +53,5 @@ Task-Review: am Ende
 ## Entscheidungen
 - Laufwerk fehlt → Sitzung ohne Laufwerk mit Hinweis statt Abbruch (Spec, Trade-offs).
 - `audio` ungesetzt → lokal, wie der Standard des OS-Clients.
+- T2: `sound` bringt über `ironrdp-rdpsnd-native` den Opus-Decoder (`opus2` mit `bundled`, libopus als C-Quelle per cmake, statisch); Build braucht `cmake` (GitHub-Runner haben es, `bootstrap_linux.sh` und `DEVELOPMENT.md` nennen es), Lizenz der C-Quelle → T5.
+- T2: deb hängt an `libasound2`: Debian 13 und Ubuntu 24.04 liefern `libasound2t64` mit `Provides: libasound2` (lokal geprüft für Debian 13, Ubuntu nicht verifiziert); rpm an `alsa-lib`.

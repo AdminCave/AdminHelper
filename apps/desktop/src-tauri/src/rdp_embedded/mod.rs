@@ -190,6 +190,11 @@ fn prepare(
         domain: domain.map(str::to_string),
         password: Zeroizing::new(password),
         policy,
+        audio: listed
+            .options
+            .as_ref()
+            .and_then(|options| options.rdp.as_ref())
+            .and_then(|rdp| rdp.audio),
     })
 }
 
@@ -267,6 +272,7 @@ mod tests {
 
     use super::tofu::{CertPolicy, CertProblem};
     use super::*;
+    use crate::models::{ConnectionOptions, RdpAudio, RdpConnectionOptions};
     use crate::password::save_password_keyring;
     use crate::port_registry::PortRegistry;
     use crate::workspace::{EnteredWorkspace, Workspace, WorkspaceId};
@@ -443,6 +449,26 @@ mod tests {
                 endpoint: "192.0.2.10:3390".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn start_takes_the_audio_of_the_connection_options() {
+        let scratch = Scratch::new("audio");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let mut listed = rdp("192.0.2.10", None);
+        save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        assert_eq!(target.audio, None);
+        listed.options = Some(ConnectionOptions {
+            ssh: None,
+            rdp: Some(RdpConnectionOptions {
+                audio: Some(RdpAudio::Off),
+                ..Default::default()
+            }),
+        });
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        assert_eq!(target.audio, Some(RdpAudio::Off));
     }
 
     #[test]
