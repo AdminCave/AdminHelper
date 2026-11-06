@@ -199,12 +199,22 @@ fn prepare(
     })
 }
 
+/// The folders a shared drive must not reach.
+#[derive(Default)]
+struct Kept {
+    /// Neither it nor a folder above it: XDG_DOWNLOAD_DIR may name the home folder itself.
+    home: Option<PathBuf>,
+    /// Neither these, a folder above nor one below them (app data, configuration).
+    private: Vec<PathBuf>,
+}
+
 /// The folder `listed` shares as its drive: the user's `downloads` folder when its options ask
 /// for drives (`options.rdp.drives`), else none. A folder that cannot be shared is the reason the
-/// session goes without one.
+/// session goes without one; so is a root and a folder that reaches one of the `kept`.
 fn shared_drive(
     listed: &Connection,
     downloads: Option<PathBuf>,
+    kept: &Kept,
 ) -> Result<Option<PathBuf>, String> {
     let wanted = listed
         .options
@@ -216,8 +226,40 @@ fn shared_drive(
         return Ok(None);
     }
     let folder = downloads.ok_or("there is no Downloads folder")?;
+    let folder = folder
+        .canonicalize()
+        .map_err(|error| format!("the Downloads folder cannot be resolved: {error}"))?;
+    if folder.parent().is_none() {
+        return Err("the Downloads folder is a root".into());
+    }
+    let resolved = |paths: &mut dyn Iterator<Item = &PathBuf>| -> Vec<PathBuf> {
+        paths.filter_map(|path| path.canonicalize().ok()).collect()
+    };
+    let private = resolved(&mut kept.private.iter());
+    if resolved(&mut kept.home.iter().chain(&kept.private))
+        .iter()
+        .any(|kept| kept.starts_with(&folder))
+        || private.iter().any(|kept| folder.starts_with(kept))
+    {
+        return Err(
+            "the Downloads folder reaches the home, app data or configuration folder".into(),
+        );
+    }
+    #[cfg(windows)]
+    let folder = without_verbatim(&folder.to_string_lossy()).map_or(folder, PathBuf::from);
     session::rdpdr_factory(&folder)?;
     Ok(Some(folder))
+}
+
+/// `path` without the `\\?\` prefix `canonicalize` gives on Windows, which IronRDP's
+/// `RedirectedDrive` refuses (f96f664); `None` for a path without one.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn without_verbatim(path: &str) -> Option<String> {
+    let rest = path.strip_prefix(r"\\?\")?;
+    Some(match rest.strip_prefix(r"UNC\") {
+        Some(share) => format!(r"\\{share}"),
+        None => rest.to_string(),
+    })
 }
 
 /// Where the webview takes the picture of a started session from.
@@ -266,7 +308,14 @@ pub(crate) async fn rdp_session_start(
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
         let mut target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
-        let notice = match shared_drive(&connection, app.path().download_dir().ok()) {
+        let kept = Kept {
+            home: app.path().home_dir().ok(),
+            private: [app.path().app_data_dir(), app.path().config_dir()]
+                .into_iter()
+                .filter_map(Result::ok)
+                .collect(),
+        };
+        let notice = match shared_drive(&connection, app.path().download_dir().ok(), &kept) {
             Ok(drive) => {
                 target.drive = drive;
                 None
@@ -528,22 +577,91 @@ mod tests {
             with_drives(None),
             with_drives(Some(false)),
         ] {
-            assert_eq!(shared_drive(&listed, downloads.clone()), Ok(None));
+            assert_eq!(
+                shared_drive(&listed, downloads.clone(), &Kept::default()),
+                Ok(None)
+            );
         }
         assert_eq!(
-            shared_drive(&with_drives(Some(true)), downloads),
-            Ok(Some(scratch.0.clone()))
+            shared_drive(&with_drives(Some(true)), downloads, &Kept::default()),
+            Ok(Some(shared(&scratch.0)))
         );
     }
 
     #[test]
     fn start_names_why_it_shares_no_drive() {
         let wanted = with_drives(Some(true));
-        let reason = shared_drive(&wanted, None).unwrap_err();
+        let reason = shared_drive(&wanted, None, &Kept::default()).unwrap_err();
         assert_eq!(reason, "there is no Downloads folder");
         let scratch = Scratch::new("drive-gone");
         let gone = scratch.0.join("Downloads");
-        assert!(shared_drive(&wanted, Some(gone)).is_err());
+        assert!(shared_drive(&wanted, Some(gone), &Kept::default()).is_err());
+    }
+
+    #[test]
+    fn start_shares_no_folder_that_is_or_holds_a_kept_one() {
+        let wanted = with_drives(Some(true));
+        let scratch = Scratch::new("drive-kept");
+        let home = scratch.0.join("home");
+        let app_data = home.join(".local").join("share").join("adminhelper");
+        let downloads = home.join("Downloads");
+        std::fs::create_dir_all(&app_data).unwrap();
+        std::fs::create_dir_all(&downloads).unwrap();
+        let below = app_data.join("workspaces");
+        std::fs::create_dir_all(&below).unwrap();
+        let kept = Kept {
+            home: Some(home.clone()),
+            private: vec![app_data.clone()],
+        };
+        for refused in [
+            home.clone(),
+            home.join("."),
+            downloads.join(".."),
+            home.join(".local"),
+            app_data.clone(),
+            below,
+            scratch.0.clone(),
+        ] {
+            assert!(
+                shared_drive(&wanted, Some(refused.clone()), &kept).is_err(),
+                "shared {refused:?}"
+            );
+        }
+        let root = std::path::Path::new(&std::path::MAIN_SEPARATOR.to_string())
+            .canonicalize()
+            .unwrap();
+        assert_eq!(
+            shared_drive(&wanted, Some(root), &Kept::default()),
+            Err("the Downloads folder is a root".into())
+        );
+        assert_eq!(
+            shared_drive(&wanted, Some(downloads.clone()), &kept),
+            Ok(Some(shared(&downloads)))
+        );
+    }
+
+    /// The path `shared_drive` gives for `folder`: resolved, on Windows without `\\?\`.
+    fn shared(folder: &std::path::Path) -> PathBuf {
+        let folder = folder.canonicalize().unwrap();
+        if cfg!(windows) {
+            without_verbatim(&folder.to_string_lossy()).map_or(folder, PathBuf::from)
+        } else {
+            folder
+        }
+    }
+
+    #[test]
+    fn a_shared_folder_goes_without_the_verbatim_prefix() {
+        assert_eq!(
+            without_verbatim(r"\\?\C:\Users\a\Downloads").as_deref(),
+            Some(r"C:\Users\a\Downloads")
+        );
+        assert_eq!(
+            without_verbatim(r"\\?\UNC\server\share\Downloads").as_deref(),
+            Some(r"\\server\share\Downloads")
+        );
+        assert_eq!(without_verbatim("/home/a/Downloads"), None);
+        assert_eq!(without_verbatim(r"C:\Users"), None);
     }
 
     #[test]
