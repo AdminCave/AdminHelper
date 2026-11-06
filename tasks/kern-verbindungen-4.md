@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@ddfec795`. Kevins Antworten vom 2026-11-06 in den Roadmap-Zeilen.
 
-### T1 — Server: bestimmte Verbindungs-Optionen nur per Nutzer-Login ändern (R-1140)  [ ]
+### T1 — Server: bestimmte Verbindungs-Optionen nur per Nutzer-Login ändern (R-1140)  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_options_authz.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8b65622d 2026-11-06T07:32:23+01:00
+Review: approve (.ah-out/review/kern-verbindungen-4/T1.verdict.json)
 Änderung: `create_connection`/`update_connection` vergleichen bei einem API-Key `ssh.agentForwarding`, `ssh.forwards`, `ssh.jumpHost`, `rdp.drives`, `rdp.printers`, `rdp.gateway` (Wert) und `rdp.nla` (nur „ist false“) der gesendeten `options` (kompakte Form wie gespeichert) mit dem gespeicherten Stand (beim Anlegen: leer); weicht eines ab → `403` mit englischem `detail`, das die Felder nennt. Ein Admin-JWT darf alles. Neue Testdatei (SPDX) mit Key-/JWT-Fällen je Feld, unverändertem Zurückschreiben, `nla` true/false und `options: null`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_options_authz.py tests/test_connections_options.py tests/test_connections_authz.py tests/test_openapi_snapshot.py
 Doku: → T5
@@ -44,3 +46,4 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n/i18n.test
 Doku: die genannten Dateien
 
 ## Entscheidungen
+- T1: Ein API-Key darf auch `host`, `port` und `kind` nicht ändern, solange die gespeicherte Verbindung eine geschützte Option trägt (sonst wanderte die Option mit zum neuen Ziel); Folge aus Kevins Regel in R-1140, Kevin gemeldet.
