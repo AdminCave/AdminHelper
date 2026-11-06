@@ -70,8 +70,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- FilesPanel SshTerminal
 Doku: → T9
 Abhängt von: T3, T6
 
-### T8 — Desktop-E2E: Snippet und SFTP in der SSH-Sitzung (R-1071, R-1072)  [ ]
+### T8 — Desktop-E2E: Snippet und SFTP in der SSH-Sitzung (R-1071, R-1072)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/ssh-connect.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @eb5e0cac 2026-11-06T17:18:42+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T8.verdict.json)
 Änderung: Nach dem Verbinden im eingebetteten Terminal (Passwort-Anmeldung): ein Snippet anlegen und ausführen, seine Ausgabe im Terminal sehen; das SFTP-Panel öffnen (läuft über den ControlMaster, also ohne zweite Anmeldung), einen Ordner anlegen und nach Aktualisieren in der Liste sehen, hineinwechseln. Läuft im Sammellauf (`desktop_e2e_connect.sh`), lokal nur Lint.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T9
