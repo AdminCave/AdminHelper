@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-3 — Task-Ledger
-Status: erledigt · Branch: feature/kern-verbindungen-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-3 · Review: pro Task
 Spec: docs/features/kern-verbindungen-3.md (Roadmap R-1066, R-1068)
 Heavy: linux-full — Server-API (zwei Alembic-Revisionen, neue Endpunkte) und die Desktop-Journey Verbindungen; der Sammellauf fährt Stack und GUI-E2E
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -122,6 +122,12 @@ Review: approve (.ah-out/review/kern-verbindungen-3/T13.verdict.json)
 Änderung: Nachtrag aus der PR-CI (#402, Server-Jobs): die Matrix der Schlüssel-Routen nimmt `GET …/sessions` und `POST …/sessions/{session_id}/end` auf (gebundener Schlüssel nur für Verbindungen seines Servers); `test_response_shapes` erwartet für `touch` `ConnectionTouchOut` und `to_dict()` plus `sessionId` (gewollte Änderung aus T5).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py -- tests/test_response_shapes.py
 Doku: keine (nur Tests)
+
+### T14 — Desktop-UI: Start im eingebetteten SSH-Terminal meldet die neue Sitzung (R-1068)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts
+Änderung: Fund der Abschlussprüfung nach dem Basis-Merge mit #405: `connectEmbedded` beginnt über `markConnectionUsed` eine Sitzung, ruft aber nicht `sessionsChanged()` wie `performConnect`; ein offener Inspector zeigt „Letzte Sitzungen“ dann veraltet. Fix wie in `performConnect`, Test im describe „session history (R-1068)“ (erst rot).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts
+Doku: keine (Verhalten wie dokumentiert)
 
 ## Entscheidungen
 - T1: Form der Optionen. SSH: `jumpHost` als `[user@]host[:port]`, bis zu acht Hops mit Komma (wie `-J`); `forwards` höchstens 32 Einträge `{type L|R|D, listen "[bind:]port" (bind auch `*`), target "host:port"}`: L/R brauchen ein Ziel, D (SOCKS) nimmt keins; `keepalive` in Sekunden 1–3600 (`ServerAliveInterval`); `authMethod` key|agent|password. RDP: `scalingMode`, `windowMode`, `performanceProfile` mit den Werten der Desktop-Enums, `customSize` im Bereich von `parse_custom_size` (640x480–7680x4320); `drives`, `printers`, `nla` als bool, `audio` local|remote|off, `gateway` `host[:port]`. Host: Name aus `[A-Za-z0-9._-]` ohne führendes `-`, oder IPv6 in Klammern; Port 1–65535 als Regex, damit `0` und `65536` scheitern. Damit sind Leerzeichen, Steuerzeichen und Shell-Zeichen ausgeschlossen.
