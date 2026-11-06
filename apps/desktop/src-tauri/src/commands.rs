@@ -893,6 +893,33 @@ pub async fn terminal_broadcast(window: tauri::Window, data: Vec<u8>) -> Result<
     blocking(move || Ok(app.state::<PtyRegistry>().broadcast(&data))).await
 }
 
+/// Switches the broadcast of the snippet panel (R-1071) and tells every window with
+/// `terminal-broadcast` (the new state), the detached ones among them: each shows the warning
+/// while it is on. Main only, as the broadcast.
+#[tauri::command]
+pub fn terminal_set_broadcast(
+    window: tauri::Window,
+    registry: State<'_, PtyRegistry>,
+    on: bool,
+) -> Result<(), AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window switches the broadcast".into(),
+        ));
+    }
+    registry.set_broadcasting(on);
+    window
+        .app_handle()
+        .emit("terminal-broadcast", on)
+        .map_err(window_error)
+}
+
+/// Whether the broadcast is on: a window asks once it listens to `terminal-broadcast`.
+#[tauri::command]
+pub fn terminal_broadcast_state(registry: State<'_, PtyRegistry>) -> bool {
+    registry.broadcasting()
+}
+
 #[tauri::command]
 pub fn terminal_resize(
     window: tauri::Window,
@@ -2459,7 +2486,11 @@ mod tests {
                 "{name} does not check the calling window"
             );
         }
-        for name in ["terminal_detach", "terminal_broadcast"] {
+        for name in [
+            "terminal_detach",
+            "terminal_broadcast",
+            "terminal_set_broadcast",
+        ] {
             assert!(
                 body(name).contains("if window.label() != pty::MAIN {"),
                 "{name} does not check for main"

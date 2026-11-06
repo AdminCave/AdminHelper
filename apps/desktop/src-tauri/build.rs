@@ -54,6 +54,8 @@ const COMMANDS: &[&str] = &[
     "terminal_open_ssh",
     "terminal_write",
     "terminal_broadcast",
+    "terminal_set_broadcast",
+    "terminal_broadcast_state",
     "terminal_resize",
     "terminal_close",
     "terminal_close_all",

@@ -6,6 +6,8 @@
 // program, its output to the terminal, the options reach the terminal as they change, copying
 // on select and pasting with a right click follow the options, a paste carries only text, the
 // search goes forward and back, and an ended session offers to reconnect on an empty terminal.
+// The snippets (R-1071) have a panel of their own, which takes the place of the options, and
+// the foot warns while a snippet goes to every session.
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/svelte';
@@ -83,6 +85,8 @@ const h = vi.hoisted(() => {
     writeTerminal: vi.fn(),
     resizeTerminal: vi.fn(),
     reconnectTerminal: vi.fn(async () => {}),
+    runSnippet: vi.fn(async () => {}),
+    setSnippets: vi.fn(async () => {}),
     saveSettings: vi.fn<(next: unknown) => Promise<void>>(async () => {}),
     refreshSettings: vi.fn(async () => {}),
     reportError: vi.fn(),
@@ -102,17 +106,26 @@ vi.mock('@xterm/addon-search', () => ({
     findPrevious = h.findPrevious;
   },
 }));
-vi.mock('$lib/stores/terminals', () => ({
-  attachTerminal: h.attachTerminal,
-  writeTerminal: h.writeTerminal,
-  resizeTerminal: h.resizeTerminal,
-  reconnectTerminal: h.reconnectTerminal,
-}));
+vi.mock('$lib/stores/terminals', async () => {
+  const { writable } = await import('svelte/store');
+  return {
+    attachTerminal: h.attachTerminal,
+    writeTerminal: h.writeTerminal,
+    resizeTerminal: h.resizeTerminal,
+    reconnectTerminal: h.reconnectTerminal,
+    runSnippet: h.runSnippet,
+    snippetBroadcast: writable(false),
+  };
+});
 vi.mock('$lib/bridge', () => ({ saveSettings: h.saveSettings }));
 vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
-  return { settings: writable(null), refreshSettings: h.refreshSettings };
+  return {
+    settings: writable(null),
+    refreshSettings: h.refreshSettings,
+    setSnippets: h.setSnippets,
+  };
 });
 vi.mock('$lib/stores/tunnel', async () => {
   const { writable } = await import('svelte/store');
@@ -120,6 +133,7 @@ vi.mock('$lib/stores/tunnel', async () => {
 });
 
 import { settings } from '$lib/stores/session';
+import { snippetBroadcast as broadcastStore } from '$lib/stores/terminals';
 import { tunnelMappings } from '$lib/stores/tunnel';
 import { sanitizePaste } from '$lib/terminal/paste';
 import { terminalTheme } from '$lib/terminal/themes';
@@ -127,6 +141,7 @@ import SshTerminal from './SshTerminal.svelte';
 
 const settingsStore = settings as unknown as ReturnType<typeof writable<Settings | null>>;
 const mappingsStore = tunnelMappings as unknown as ReturnType<typeof writable<TunnelMapping[]>>;
+const snippetBroadcast = broadcastStore as unknown as ReturnType<typeof writable<boolean>>;
 
 const CONN = {
   id: 'c1',
@@ -200,6 +215,7 @@ beforeEach(() => {
   width = 600;
   withPrefs({});
   mappingsStore.set([]);
+  snippetBroadcast.set(false);
   clipboard = {
     writeText: vi.fn(async () => {}),
     readText: vi.fn(async () => 'ls -la'),
@@ -514,6 +530,51 @@ describe('SshTerminal', () => {
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('complementary', { name: tNow('terminal.options') })).toBeTruthy();
   });
+
+  it('opens the snippets in a panel that takes the place of the options', async () => {
+    await mount(session({ status: 'connected', backendId: 1 }));
+    const snippets = screen.getByRole('button', { name: tNow('terminal.snippets') });
+    const options = screen.getByRole('button', { name: tNow('terminal.options') });
+
+    await fireEvent.click(snippets);
+    expect(snippets.getAttribute('aria-pressed')).toBe('true');
+    const panel = screen.getByRole('complementary', { name: tNow('terminal.snippets') });
+    await fireEvent.click(within(panel).getByText('$ df -h'));
+    expect(h.runSnippet).toHaveBeenCalledWith(KEY, 'df -h');
+    // The keys go back to the terminal.
+    expect(h.FakeTerminal.last!.focus).toHaveBeenCalled();
+
+    await fireEvent.click(options);
+    expect(screen.queryByRole('complementary', { name: tNow('terminal.snippets') })).toBeNull();
+    expect(screen.getByRole('complementary', { name: tNow('terminal.options') })).toBeTruthy();
+    expect(snippets.getAttribute('aria-pressed')).toBe('false');
+
+    await fireEvent.click(snippets);
+    expect(screen.queryByRole('complementary', { name: tNow('terminal.options') })).toBeNull();
+    await fireEvent.click(snippets);
+    expect(screen.queryByRole('complementary')).toBeNull();
+  });
+
+  it('runs no snippet in a session that does not run', async () => {
+    await mount(session({ status: 'disconnected', exitCode: 0 }));
+    await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.snippets') }));
+    const card = screen.getByText('$ df -h').closest('button') as HTMLButtonElement;
+    expect(card.disabled).toBe(true);
+    await fireEvent.click(card);
+    expect(h.runSnippet).not.toHaveBeenCalled();
+  });
+
+  it('warns in its foot while the broadcast is on', async () => {
+    await mount();
+    const warning = tNow('terminal.snippets.broadcastActive');
+    expect(screen.queryByText(warning)).toBeNull();
+    snippetBroadcast.set(true);
+    await tick();
+    expect(screen.getByText(warning).closest('footer')).toBeTruthy();
+    snippetBroadcast.set(false);
+    await tick();
+    expect(screen.queryByText(warning)).toBeNull();
+  });
 });
 
 describe('SshTerminal in a detached window (R-1070)', () => {
@@ -525,10 +586,17 @@ describe('SshTerminal in a detached window (R-1070)', () => {
     return { ...view, onDock };
   }
 
-  it('offers only to dock: no target, font, options, reconnect or close', async () => {
+  it('offers only to dock: no target, font, snippets, options, reconnect or close', async () => {
     const { onDock } = await mountDocked(session({ status: 'connected', connectedAt: null }));
     expect(screen.queryByText('ops@db.example:2222')).toBeNull();
-    for (const name of ['fontSmaller', 'fontLarger', 'options', 'reconnect', 'close'] as const) {
+    for (const name of [
+      'fontSmaller',
+      'fontLarger',
+      'snippets',
+      'options',
+      'reconnect',
+      'close',
+    ] as const) {
       expect(screen.queryByRole('button', { name: tNow(`terminal.${name}`) })).toBeNull();
     }
     // Taken over from the main window, it knows no time it connected.
@@ -545,6 +613,15 @@ describe('SshTerminal in a detached window (R-1070)', () => {
     await fireEvent.click(within(ended).getByRole('button', { name: tNow('terminal.dock') }));
     expect(onDock).toHaveBeenCalledTimes(1);
     expect(h.reconnectTerminal).not.toHaveBeenCalled();
+  });
+
+  it('warns in its foot while the broadcast is on, as main does', async () => {
+    await mountDocked(session({ status: 'connected', connectedAt: null }));
+    const warning = tNow('terminal.snippets.broadcastActive');
+    expect(screen.queryByText(warning)).toBeNull();
+    snippetBroadcast.set(true);
+    await tick();
+    expect(screen.getByText(warning).closest('footer')).toBeTruthy();
   });
 });
 
@@ -588,5 +665,19 @@ describe('SshTerminal running a playbook (R-1073)', () => {
   it('names the playbook alone without a dry run', async () => {
     await mount(session({ connection: PLAYBOOK, resolved: PLAYBOOK, ansible: { check: false } }));
     expect(screen.getByText('apt-upgrade')).toBeTruthy();
+  });
+
+  it('takes no snippets and does not warn of a broadcast it does not get', async () => {
+    snippetBroadcast.set(true);
+    await mount(
+      session({
+        connection: PLAYBOOK,
+        resolved: PLAYBOOK,
+        status: 'connected',
+        ansible: { check: false },
+      }),
+    );
+    expect(screen.queryByRole('button', { name: tNow('terminal.snippets') })).toBeNull();
+    expect(screen.queryByText(tNow('terminal.snippets.broadcastActive'))).toBeNull();
   });
 });

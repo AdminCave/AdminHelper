@@ -23,6 +23,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RotateCw,
     SlidersHorizontal,
     SquareArrowDownLeft,
+    SquareCode,
     X,
   } from '@lucide/svelte';
   import type { TerminalPrefs } from '$lib/bridge/types';
@@ -32,6 +33,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     attachTerminal,
     reconnectTerminal,
     resizeTerminal,
+    snippetBroadcast,
     writeTerminal,
     type TerminalSession,
   } from '$lib/stores/terminals';
@@ -44,6 +46,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import IconButton from '../ui/IconButton.svelte';
   import Pill from '../ui/Pill.svelte';
   import SearchField from '../ui/SearchField.svelte';
+  import SnippetsPanel from './SnippetsPanel.svelte';
   import TerminalOptions from './TerminalOptions.svelte';
 
   interface Props {
@@ -69,7 +72,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let cols = $state(80);
   let rows = $state(24);
   let query = $state('');
-  let optionsOpen = $state(false);
+  // The side panel shown: one at a time.
+  let panel = $state<'options' | 'snippets' | null>(null);
   let pasteHint = $state(false);
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -226,6 +230,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (fontSize !== prefs.fontSize) void saveTerminalPrefs({ ...prefs, fontSize });
   }
 
+  function toggle(which: 'options' | 'snippets'): void {
+    panel = panel === which ? null : which;
+  }
+
   function reconnect(): void {
     // The new program starts on an empty terminal, without the modes the last one left set
     // (alternate screen, mouse reports).
@@ -353,12 +361,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
         disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
         onclick={() => changeFont(1)}
       />
+      {#if !session.ansible}
+        <IconButton
+          size="sm"
+          icon={SquareCode}
+          label={$t('terminal.snippets')}
+          aria-pressed={panel === 'snippets'}
+          onclick={() => toggle('snippets')}
+        />
+      {/if}
       <IconButton
         size="sm"
         icon={SlidersHorizontal}
         label={$t('terminal.options')}
-        aria-pressed={optionsOpen}
-        onclick={() => (optionsOpen = !optionsOpen)}
+        aria-pressed={panel === 'options'}
+        onclick={() => toggle('options')}
       />
       <span class="term-sep" aria-hidden="true"></span>
       {#if !session.ansible}
@@ -398,9 +415,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </div>
       {/if}
     </div>
-    {#if optionsOpen}
+    {#if panel === 'options'}
       <aside class="term-panel" aria-label={$t('terminal.options')}>
         <TerminalOptions prefs={$terminalPrefs} onChange={(p) => void saveTerminalPrefs(p)} />
+      </aside>
+    {:else if panel === 'snippets' && !onDock && !session.ansible}
+      <aside class="term-panel" aria-label={$t('terminal.snippets')}>
+        <SnippetsPanel
+          sessionKey={session.key}
+          running={session.status === 'connected'}
+          onRun={() => term?.focus()}
+        />
       </aside>
     {/if}
   </div>
@@ -409,6 +434,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span>{cols}×{rows}</span>
     {#if pasteHint}
       <span class="term-hint" role="status">{$t('terminal.pasteHint')}</span>
+    {/if}
+    {#if $snippetBroadcast && !session.ansible}
+      <span class="term-broadcast">{$t('terminal.snippets.broadcastActive')}</span>
     {/if}
     <span class="term-spacer"></span>
     <span>{statusText}</span>
@@ -504,7 +532,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     overflow: hidden;
     white-space: nowrap;
   }
-  .term-hint {
+  .term-hint,
+  .term-broadcast {
     color: var(--warning);
   }
 </style>

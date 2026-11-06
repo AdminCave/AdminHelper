@@ -143,6 +143,9 @@ type Sessions = Arc<Mutex<HashMap<u64, Arc<Session>>>>;
 pub struct PtyRegistry {
     next: AtomicU64,
     sessions: Sessions,
+    /// The broadcast of the snippet panel, off at the start: held here, so that every window
+    /// shows the warning while it is on ([`PtyRegistry::broadcast`] sends nothing while off).
+    broadcasting: std::sync::atomic::AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -328,6 +331,9 @@ impl PtyRegistry {
     /// counted and does not stop the others. May wait like [`PtyRegistry::write`]: not on the
     /// main thread.
     pub fn broadcast(&self, data: &[u8]) -> u32 {
+        if !self.broadcasting() {
+            return 0;
+        }
         // Collected first: a write may wait, and the registry stays free for the readers.
         let sessions: Vec<Arc<Session>> = lock(&self.sessions)
             .values()
@@ -345,6 +351,16 @@ impl PtyRegistry {
             }
         }
         reached
+    }
+
+    /// Whether the broadcast is on.
+    pub fn broadcasting(&self) -> bool {
+        self.broadcasting.load(Ordering::SeqCst)
+    }
+
+    /// Switches the broadcast on or off; true when that changed it.
+    pub fn set_broadcasting(&self, on: bool) -> bool {
+        self.broadcasting.swap(on, Ordering::SeqCst) != on
     }
 
     /// Tells the program of session `id` its new size; nothing for a session that has ended.
@@ -846,6 +862,14 @@ mod tests {
         let second_text = until_ready(&registry, second, &second_rx);
         let own_text = until_ready(&registry, own, &own_rx);
 
+        // Off, as at the start: nothing goes out, the line read would be this one.
+        assert!(!registry.broadcasting());
+        assert_eq!(
+            registry.broadcast(line.replace("hello", "off").as_bytes()),
+            0
+        );
+        assert!(registry.set_broadcasting(true));
+        assert!(!registry.set_broadcasting(true), "it was on already");
         assert_eq!(registry.broadcast(line.as_bytes()), 2);
 
         let (text, _) = until_exit(&registry, first, &first_rx, first_text);
@@ -864,6 +888,8 @@ mod tests {
         registry.close(ended);
         until_gone(&registry);
         assert_eq!(registry.broadcast(line.as_bytes()), 0, "nobody is left");
+        assert!(registry.set_broadcasting(false));
+        assert!(!registry.broadcasting());
     }
 
     #[test]

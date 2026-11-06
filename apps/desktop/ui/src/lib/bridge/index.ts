@@ -305,6 +305,16 @@ export function terminalBroadcast(data: Uint8Array): Promise<number> {
   return invoke('terminal_broadcast', { data: Array.from(data) });
 }
 
+// Switches the broadcast; every window hears `terminal-broadcast` with the new state. Main
+// window only.
+export function terminalSetBroadcast(on: boolean): Promise<void> {
+  return invoke('terminal_set_broadcast', { on });
+}
+
+export function terminalBroadcastState(): Promise<boolean> {
+  return invoke<boolean>('terminal_broadcast_state');
+}
+
 export function terminalResize(id: number, cols: number, rows: number): Promise<void> {
   return invoke('terminal_resize', { id, cols, rows });
 }

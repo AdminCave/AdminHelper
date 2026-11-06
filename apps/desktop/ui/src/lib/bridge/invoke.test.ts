@@ -20,7 +20,14 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }));
 
-import { apiProxy, terminalBroadcast, terminalOpenSsh, terminalWrite } from './index';
+import {
+  apiProxy,
+  terminalBroadcast,
+  terminalBroadcastState,
+  terminalOpenSsh,
+  terminalSetBroadcast,
+  terminalWrite,
+} from './index';
 import type { Connection, TerminalExit } from './types';
 import { IpcError, errCode, errMsg, errStatus } from '$lib/utils/errors';
 
@@ -122,5 +129,13 @@ describe('bridge terminal', () => {
     h.invoke.mockResolvedValueOnce(2);
     await expect(terminalBroadcast(new Uint8Array([108, 115, 10]))).resolves.toBe(2);
     expect(h.invoke).toHaveBeenCalledWith('terminal_broadcast', { data: [108, 115, 10] });
+  });
+
+  it('switches the broadcast and asks for its state', async () => {
+    await terminalSetBroadcast(true);
+    expect(h.invoke).toHaveBeenCalledWith('terminal_set_broadcast', { on: true });
+    h.invoke.mockResolvedValueOnce(true);
+    await expect(terminalBroadcastState()).resolves.toBe(true);
+    expect(h.invoke.mock.lastCall?.[0]).toBe('terminal_broadcast_state');
   });
 });

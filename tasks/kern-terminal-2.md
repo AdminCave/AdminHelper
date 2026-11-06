@@ -26,10 +26,12 @@ Review: approve (.ah-out/review/kern-terminal-2/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9
 
-### T3 — Desktop-UI: Snippet-Panel, Ausführen und Broadcast (R-1071)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/SnippetsPanel.svelte, apps/desktop/ui/src/components/terminal/SnippetsPanel.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T3 — Desktop-UI: Snippet-Panel, Ausführen und Broadcast (R-1071)  [x]
+Komponente: desktop · Dateien: apps/desktop/ui/src/components/terminal/SnippetsPanel.svelte, apps/desktop/ui/src/components/terminal/SnippetsPanel.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/stores/session.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/invoke.test.ts, apps/desktop/src-tauri/src/pty.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/src/capabilities.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/capabilities/terminal-window.json, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @086f51ac 2026-11-06T15:41:46+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T3.verdict.json)
 Änderung: Kopfknopf „Snippets“ (nicht im abgedockten Fenster), Panel schließt das der Optionen aus. Neue Komponente (SPDX): Karten aus `settings.snippets` bzw. der übersetzten Standardliste bei `null`; Klick schreibt den Befehl (Zeilen mit `\r`) plus `\r` über `writeTerminal`, mit Broadcast über `terminalBroadcast`; Neu/Bearbeiten/Löschen (Rückfrage) speichert die ganze Liste über `save_settings`; Checkbox „An alle SSH-Sitzungen senden“ als nicht gespeicherter Store in `terminals.ts`; Fußzeile „● Broadcast aktiv“ in jeder Sitzung, solange an. Karten deaktiviert, wenn die Sitzung nicht läuft. i18n DE/EN.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- SnippetsPanel SshTerminal terminals i18n
+Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T9
 Abhängt von: T1, T2
 
@@ -81,4 +83,10 @@ Task-Review: am Ende
 - Ein SFTP-Kanal je Aktion, damit kein offener Kanal den Master nach `exit` der Shell hält.
 - Lokale Pfade nur aus Rust (Dialoge, Drag-and-Drop-Ereignis), nie aus der Webview.
 - Kein Löschen, Umbenennen oder rekursiver Ordner-Transfer im SFTP-Panel (Mockup zeigt es nicht); Überschreiben nur nach Rückfrage.
+- T3: Gespeichert wird über `setSnippets` in `session.ts` (Muster `setFavoriteConnections`): die ganze Liste über den aktuellen Settings-Stand; Löschen sucht das Snippet nach der Rückfrage in der dann aktuellen Liste.
+- T3: Snippet-Karten nur bei Status `connected` aktiv (auch nicht während `connecting`, damit kein Befehl in einer Anmeldeabfrage landet); kein Snippets-Knopf in Ansible-Läufen und im abgedockten Fenster, Fußzeile „Broadcast aktiv“ in jeder SSH-Sitzung, auch im abgedockten Fenster, nicht bei Ansible-Läufen.
+- T3: Der Broadcast-Schalter liegt in Rust (`PtyRegistry`, aus beim Start, `terminal_set_broadcast` nur aus `main`, Ereignis `terminal-broadcast` an alle Fenster, `terminal_broadcast_state` auch für `terminal-*`), damit abgedockte Fenster warnen (Prüfer T3); `terminal_broadcast` schreibt bei ausgeschaltetem Broadcast nichts. T3 wird damit Komponente `desktop` (UI und Rust, 19 Dateien: ein Ablauf, gemeinsam getestet). Bearbeiten sucht das Snippet beim Speichern in der aktuellen Liste; ist es weg, landet die Änderung am Ende.
+- T3: Der Broadcast bleibt über ein Abmelden hinweg an (Prüfer-Nit T3): die Spec sagt „bis zum Ende der App“, und die Fußzeile jeder SSH-Sitzung zeigt ihn.
+- T3: Broadcast erreicht auch SSH-Sitzungen, die noch an Passwort- oder Hostkey-Abfrage stehen (Rust kennt den Unterschied nicht); das sagt die Doku (T9).
+- T3: Namen und Befehle nur als Text gerendert; Steuerzeichen-Grenzen prüft Rust (T1). Leere Zeilen am Ende eines Befehls fallen weg, damit kein doppeltes Enter entsteht.
 - T5/T6 tragen `sftp.rs` beide: T5 baut den Kanal ohne Tauri (testbar gegen `sftp-server`), T6 die Befehle; so bleibt die neue Abhängigkeit einzeln zurücknehmbar.

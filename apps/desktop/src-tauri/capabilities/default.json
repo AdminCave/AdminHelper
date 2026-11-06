@@ -56,6 +56,8 @@
     "allow-terminal-open-ansible",
     "allow-terminal-write",
     "allow-terminal-broadcast",
+    "allow-terminal-set-broadcast",
+    "allow-terminal-broadcast-state",
     "allow-terminal-resize",
     "allow-terminal-close",
     "allow-terminal-close-all",
