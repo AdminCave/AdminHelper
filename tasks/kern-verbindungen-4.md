@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-verbindungen-4 — Task-Ledger
-Status: geplant · Branch: feature/kern-verbindungen-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-verbindungen-4 · Review: pro Task
 Spec: docs/features/kern-verbindungen-4.md (Roadmap R-1140, R-1143, R-1158)
 Heavy: linux-full — Server-API (neue 403-Antworten an den Verbindungs-Routen); der Sammellauf fährt den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
