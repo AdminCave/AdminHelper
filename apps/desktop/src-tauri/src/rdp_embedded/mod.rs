@@ -18,13 +18,13 @@ pub(crate) mod tofu;
 pub(crate) mod watchdog;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use ironrdp_client::config::Destination;
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tokio::sync::oneshot;
 use zeroize::Zeroizing;
 
@@ -195,7 +195,29 @@ fn prepare(
             .as_ref()
             .and_then(|options| options.rdp.as_ref())
             .and_then(|rdp| rdp.audio),
+        drive: None,
     })
+}
+
+/// The folder `listed` shares as its drive: the user's `downloads` folder when its options ask
+/// for drives (`options.rdp.drives`), else none. A folder that cannot be shared is the reason the
+/// session goes without one.
+fn shared_drive(
+    listed: &Connection,
+    downloads: Option<PathBuf>,
+) -> Result<Option<PathBuf>, String> {
+    let wanted = listed
+        .options
+        .as_ref()
+        .and_then(|options| options.rdp.as_ref())
+        .and_then(|rdp| rdp.drives)
+        .unwrap_or(false);
+    if !wanted {
+        return Ok(None);
+    }
+    let folder = downloads.ok_or("there is no Downloads folder")?;
+    session::rdpdr_factory(&folder)?;
+    Ok(Some(folder))
 }
 
 /// Where the webview takes the picture of a started session from.
@@ -204,6 +226,9 @@ pub(crate) struct Started {
     session_id: String,
     ws_port: u16,
     token: String,
+    /// `drive_unavailable`: the options ask for a drive, the session shares none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notice: Option<&'static str>,
 }
 
 /// Starts an embedded session to `connection` as the webview lists it; the call returns once the
@@ -240,16 +265,27 @@ pub(crate) async fn rdp_session_start(
     let started = run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
-        let target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
+        let mut target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
+        let notice = match shared_drive(&connection, app.path().download_dir().ok()) {
+            Ok(drive) => {
+                target.drive = drive;
+                None
+            }
+            Err(reason) => {
+                log::warn!("the RDP session shares no drive: {reason}");
+                Some("drive_unavailable")
+            }
+        };
         deadline.start()?;
-        session::spawn(target, stopped, report)
+        session::spawn(target, stopped, report).map(|(ws_port, token)| (ws_port, token, notice))
     })
     .await;
     match started {
-        Ok((ws_port, token)) => Ok(Started {
+        Ok((ws_port, token, notice)) => Ok(Started {
             session_id,
             ws_port,
             token,
+            notice,
         }),
         Err(error) => {
             sessions.stop(&session_id);
@@ -469,6 +505,63 @@ mod tests {
         });
         let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
         assert_eq!(target.audio, Some(RdpAudio::Off));
+    }
+
+    fn with_drives(drives: Option<bool>) -> Connection {
+        let mut listed = rdp("192.0.2.10", None);
+        listed.options = Some(ConnectionOptions {
+            ssh: None,
+            rdp: Some(RdpConnectionOptions {
+                drives,
+                ..Default::default()
+            }),
+        });
+        listed
+    }
+
+    #[test]
+    fn start_shares_the_downloads_folder_only_when_the_options_ask() {
+        let scratch = Scratch::new("drive");
+        let downloads = Some(scratch.0.clone());
+        for listed in [
+            rdp("192.0.2.10", None),
+            with_drives(None),
+            with_drives(Some(false)),
+        ] {
+            assert_eq!(shared_drive(&listed, downloads.clone()), Ok(None));
+        }
+        assert_eq!(
+            shared_drive(&with_drives(Some(true)), downloads),
+            Ok(Some(scratch.0.clone()))
+        );
+    }
+
+    #[test]
+    fn start_names_why_it_shares_no_drive() {
+        let wanted = with_drives(Some(true));
+        let reason = shared_drive(&wanted, None).unwrap_err();
+        assert_eq!(reason, "there is no Downloads folder");
+        let scratch = Scratch::new("drive-gone");
+        let gone = scratch.0.join("Downloads");
+        assert!(shared_drive(&wanted, Some(gone)).is_err());
+    }
+
+    #[test]
+    fn the_start_names_a_missing_drive_only() {
+        let started = |notice| {
+            serde_json::to_value(Started {
+                session_id: "rdp-1".into(),
+                ws_port: 1,
+                token: "t".into(),
+                notice,
+            })
+            .unwrap()
+        };
+        assert!(started(None).get("notice").is_none());
+        assert_eq!(
+            started(Some("drive_unavailable"))["notice"],
+            "drive_unavailable"
+        );
     }
 
     #[test]

@@ -95,6 +95,8 @@ ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664ab
 # not re-export; both are in the lockfile through it already.
 ironrdp-connector = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 ironrdp-session = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
+# The Downloads folder as a drive of the embedded RDP session (rdp_embedded/session.rs, rdpdr_factory).
+ironrdp-rdpdr-native = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 # The client name the RDP server shows for the session.
 gethostname = "1"
 

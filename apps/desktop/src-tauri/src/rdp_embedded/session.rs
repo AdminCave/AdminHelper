@@ -7,6 +7,7 @@
 
 use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use ironrdp_cfg::AudioMode;
@@ -14,6 +15,7 @@ use ironrdp_client::config::{ClipboardType, Config, ConfigBuilder, Destination};
 use ironrdp_client::output_channel::{output_channel, OutputEventReceiver};
 use ironrdp_client::rdp::{
     AutoReconnectDecision, RdpClient, RdpInputEvent, RdpInputSender, RdpOutputEvent,
+    RdpdrBackendFactory,
 };
 use ironrdp_connector::{ConnectorError, ConnectorErrorKind};
 use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags};
@@ -54,6 +56,9 @@ const BUTTONS: [(u8, PointerFlags); 3] = [
     (4, PointerFlags::MIDDLE_BUTTON_OR_WHEEL),
 ];
 const BUTTON_MASK: u8 = 0b111;
+/// The one drive a session shares; device ID 0 belongs to the smartcard.
+const DRIVE_ID: u32 = 1;
+const DRIVE_NAME: &str = "Downloads";
 
 /// What a session connects to, resolved and checked by the start command.
 pub(crate) struct Target {
@@ -64,6 +69,8 @@ pub(crate) struct Target {
     pub(crate) policy: CertPolicy,
     /// `options.rdp.audio` of the connection; unset plays locally, as the OS client does.
     pub(crate) audio: Option<RdpAudio>,
+    /// The folder the server sees as the `Downloads` drive; `None` shares no drive.
+    pub(crate) drive: Option<PathBuf>,
 }
 
 /// Why a session ended: the `code` of the `failed` and `disconnected` phases.
@@ -439,7 +446,8 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
         .with_clipboard(ClipboardType::Enable)
         .with_audio_mode(audio_mode(target.audio))
         .with_audio_capture(false)
-        .with_rdpdr(false)
+        // Device redirection carries the drive only: no printers, ports or smartcard.
+        .with_rdpdr(target.drive.is_some())
         .with_printers(false)
         .with_ports(false);
     let builder = match &target.domain {
@@ -458,6 +466,32 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
             )),
     };
     builder.build().map_err(|e| format!("{e:#}"))
+}
+
+/// The backend that serves the server's requests on `folder` as the `Downloads` drive. IronRDP
+/// resolves every path the server sends beneath `folder` without following links (on Windows
+/// without reparse points), so the server reaches nothing outside it.
+pub(crate) fn rdpdr_factory(folder: &Path) -> Result<Box<dyn RdpdrBackendFactory + Send>, String> {
+    #[cfg(windows)]
+    {
+        use ironrdp_rdpdr_native::{RedirectedDrive, WindowsRdpdrBackendFactory};
+        let drive = RedirectedDrive::new(DRIVE_ID, DRIVE_NAME, folder, false)
+            .map_err(|error| error.to_string())?;
+        Ok(Box::new(WindowsRdpdrBackendFactory::new(drive)))
+    }
+    #[cfg(not(windows))]
+    {
+        use ironrdp_rdpdr_native::backend::NixRdpdrBackendFactory;
+        if !folder.is_dir() {
+            return Err(format!("{} is no folder", folder.display()));
+        }
+        let Some(base) = folder.to_str() else {
+            return Err(format!("{} is no UTF-8 path", folder.display()));
+        };
+        Ok(Box::new(
+            NixRdpdrBackendFactory::new(base.to_string()).with_drive(DRIVE_ID, DRIVE_NAME.into()),
+        ))
+    }
 }
 
 /// One `RdpClient` run; a watchdog reconnect replaces it.
@@ -485,6 +519,16 @@ fn start_attempt(target: &Target, cert: &CertReport) -> Result<Attempt, String> 
         .with_auto_reconnect(AUTO_RECONNECTS)
         .with_desktop_updates();
     let input = client.input_sender();
+    // The start checked the folder; should it be gone since, the attempt shares no drive: without
+    // a factory IronRDP opens no device redirection.
+    let client = match target.drive.as_deref().map(rdpdr_factory) {
+        Some(Ok(factory)) => client.with_rdpdr_backend_factory(factory),
+        Some(Err(error)) => {
+            log::warn!("the RDP session shares no drive: {error}");
+            client
+        }
+        None => client,
+    };
     // Without a factory of its own IronRDP would offer files over the clipboard on Windows.
     #[cfg(windows)]
     let (client, _clipboard) = match super::clipboard_win::ClipboardThread::start(input.clone()) {
@@ -724,6 +768,7 @@ mod tests {
             password: Zeroizing::new("secret".into()),
             policy,
             audio: None,
+            drive: None,
         }
     }
 
@@ -1072,6 +1117,48 @@ mod tests {
         assert!(pinned.certificate_validation_callback().is_some());
     }
 
+    #[test]
+    fn session_redirects_devices_only_for_a_drive() {
+        let mut shared = target(
+            Destination::from_parts("192.0.2.10", 3389),
+            CertPolicy::TrustAll,
+        );
+        shared.drive = Some(std::env::temp_dir());
+        let config = config(&shared, &CertReport::default()).unwrap();
+        let rdpdr = &config.channels().rdpdr;
+        assert!(rdpdr.enabled);
+        assert!(!rdpdr.printers);
+        assert!(!rdpdr.ports);
+    }
+
+    #[test]
+    fn drive_backend_announces_the_downloads_folder_only() {
+        let folder = std::env::temp_dir().join(format!("ah-rdp-drive-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let product = rdpdr_factory(&folder)
+            .map(|factory| factory.build_rdpdr_backend().map_err(|e| e.to_string()));
+        let _ = std::fs::remove_dir_all(&folder);
+        let product = match product {
+            Ok(Ok(product)) => product,
+            Ok(Err(error)) | Err(error) => panic!("no drive backend: {error}"),
+        };
+        let drives: Vec<_> = product
+            .initial_drives()
+            .iter()
+            .map(|drive| (drive.device_id(), drive.name().to_string()))
+            .collect();
+        assert_eq!(drives, [(DRIVE_ID, DRIVE_NAME.to_string())]);
+        assert!(product.printers().is_empty());
+        assert!(product.ports().is_empty());
+    }
+
+    #[test]
+    fn drive_backend_refuses_a_missing_folder() {
+        let folder = std::env::temp_dir().join(format!("ah-rdp-no-drive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(rdpdr_factory(&folder).is_err());
+    }
+
     /// The channel, the client info and the property `config()` derives from one audio mode.
     fn audio_of(audio: Option<RdpAudio>) -> (bool, bool, bool, Option<AudioMode>) {
         let mut target = target(
@@ -1213,6 +1300,7 @@ mod tests {
                     password: Zeroizing::new(self.password.clone()),
                     policy: self.policy(pin),
                     audio: None,
+                    drive: None,
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();

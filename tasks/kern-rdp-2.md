@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: DEVELOPMENT.md · sonst → T5
 Abhängt von: T1
 
-### T3 — Desktop: Downloads-Ordner als Laufwerk bei `drives: true` (R-1099)  [ ]
+### T3 — Desktop: Downloads-Ordner als Laufwerk bei `drives: true` (R-1099)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @924ba48c 2026-11-06T09:16:06+01:00
+Review: approve (.ah-out/review/kern-rdp-2/T3.verdict.json)
 Änderung: Abhängigkeit `ironrdp-rdpdr-native` an derselben Revision. `rdp_session_start` löst `app.path().download_dir()` auf, `prepare()` legt mit `drives: true` den Ordner in den `Target`; `start_attempt()` setzt `with_rdpdr(true)` und eine Fabrik (`NixRdpdrBackendFactory::new(<ordner>).with_drive(1, "Downloads")`, unter Windows `WindowsRdpdrBackendFactory` mit `RedirectedDrive`), sonst `with_rdpdr(false)`. Fehlt der Ordner oder scheitert die Fabrik, startet die Sitzung ohne Laufwerk und die Statusmeldung nennt den Grund. Tests: mit/ohne `drives`, fehlender Ordner, kein Drucker/Port/Smartcard. Risikopfad: `security`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T5
