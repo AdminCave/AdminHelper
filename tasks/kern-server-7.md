@@ -1,5 +1,5 @@
 # Servernamen ohne ':' und ohne Windows-Gerätenamen — Task-Ledger
-Status: geplant · Branch: feature/kern-server-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-server-7 · Review: am Ende
 Spec: docs/features/kern-server-7.md (Roadmap R-1056)
 Heavy: linux-full — Server-API (zusätzliche 422 in POST/PUT /api/servers), geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
