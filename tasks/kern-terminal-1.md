@@ -126,8 +126,10 @@ Review: approve (.ah-out/review/kern-terminal-1/T13.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: keine (Attribut-Reihenfolge)
 
-### T14 — Desktop: der Hand-back-Test beantwortet die Cursor-Abfrage unter Windows (R-1070, aus der PR-CI)  [ ]
+### T14 — Desktop: der Hand-back-Test beantwortet die Cursor-Abfrage unter Windows (R-1070, aus der PR-CI)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @12c9e981 2026-11-06T12:52:55+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T14.verdict.json)
 Änderung: Die PR-CI (cargo test, Windows) war rot: `pty::tests::a_window_that_is_gone_hands_its_sessions_back_to_main` blieb in `until_gone` stehen. Die Pseudo-Konsole schließt erst nach der Antwort auf ihre Cursor-Abfrage (`pty.rs`, `CURSOR_QUERY`); die Sitzung mit lauschendem, aber nie gelesenem Sink bekam keine. Beide Sitzungen laufen jetzt vor `hand_back` durch `until_ready`, wie die übrigen Windows-Tests; der Produktcode bleibt. Beweis auf der Plattform: der Windows-Job der PR-CI.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: keine (nur Test)

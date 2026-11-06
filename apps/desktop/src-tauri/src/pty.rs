@@ -752,7 +752,12 @@ mod tests {
     fn a_window_that_is_gone_hands_its_sessions_back_to_main() {
         let registry = PtyRegistry::default();
         let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-3");
-        let (mine, _mine_rx) = open_for(&registry, long_running(), "terminal-4");
+        let (mine, mine_rx) = open_for(&registry, long_running(), "terminal-4");
+        // Windows: a pseudo console whose cursor query a listening sink never answered does
+        // not close; the windows have answered it, as xterm.js does. Theirs last, right before
+        // the hand back, so that no output of it waits in its sink.
+        until_ready(&registry, mine, &mine_rx);
+        until_ready(&registry, theirs, &theirs_rx);
         registry.hand_back("terminal-3");
         nothing_after(&theirs_rx);
         // Main's close takes the handed back session, not the other window's.
