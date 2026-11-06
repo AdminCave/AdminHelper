@@ -505,15 +505,17 @@ class TestBundleChannels:
             ("telegram", "4711", "Agents not reporting (1)", "- web01")
         ]
 
-    def test_a_single_event_queues_entries_without_text_of_their_own(self, db_session):
+    def test_a_single_event_queues_entries_with_the_text_of_its_ping(self, db_session):
+        # A later ping of the incident rewrites the bell row (R-1079): an entry still
+        # waiting must send the text it was queued with.
         _server(db_session, "srv-1")
         admin = _user(db_session, "boss", is_admin=True, email="a@b.de", telegram_chat_id="4711")
         _sub(db_session, admin, scope_type="all")
         _sub(db_session, admin, scope_type="server", scope_ref="srv-1", email=True, telegram=True)
         assert ingest_event(db_session, _event()) == 1
         assert _outbox_rows(db_session, admin) == [
-            ("email", "a@b.de", None, None),
-            ("telegram", "4711", None, None),
+            ("email", "a@b.de", "CPU critical", None),
+            ("telegram", "4711", "CPU critical", None),
         ]
 
 
@@ -1071,6 +1073,7 @@ class TestRetention:
             event_type="x",
             title="old",
             created_at=datetime.now(timezone.utc) - timedelta(days=100),
+            notified_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         recent = Notification(
             user_id=admin.id,

@@ -2,20 +2,28 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// R-1078: open as the stand-in for an incident state, day groups in local time, the panel tabs
-// and the center filters. Dates are built in local time, so the tests hold in any zone.
+// R-1078, R-1079: open from the incident state, day groups in local time, the panel tabs, the
+// six mailboxes, the center filters and the category order. Dates are built in local time, so
+// the tests hold in any zone. The labels: category, channel, state and the short time.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { get } from 'svelte/store';
 import type { NotificationItem } from '$lib/api/types';
+import { setLanguage, t } from '$lib/i18n';
 import {
   categoriesOf,
+  categoryLabel,
+  channelLabel,
   dayBucket,
   filterItems,
   groupByDay,
   isOpen,
   matchesMailbox,
   matchesTab,
+  shortTime,
+  stateLabel,
   type CenterFilter,
+  type Mailbox,
 } from './notifications';
 
 const item = (over: Partial<NotificationItem>): NotificationItem => ({
@@ -39,11 +47,18 @@ const local = (y: number, m: number, d: number, h = 0, min = 0) =>
 const NOW = new Date(2026, 10, 4, 9, 30); // 2026-11-04 09:30 local
 
 describe('isOpen', () => {
-  it('is unread and warning or critical', () => {
-    expect(isOpen(item({ severity: 'warning' }))).toBe(true);
-    expect(isOpen(item({ severity: 'critical' }))).toBe(true);
-    expect(isOpen(item({ severity: 'info' }))).toBe(false);
-    expect(isOpen(item({ severity: 'critical', read: true }))).toBe(false);
+  it('is a warning or critical incident in state open and not muted, read or not', () => {
+    expect(isOpen(item({ severity: 'warning', state: 'open' }))).toBe(true);
+    expect(isOpen(item({ severity: 'critical', state: 'open', read: true }))).toBe(true);
+    expect(isOpen(item({ severity: 'info', state: 'open' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: 'acked' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: 'resolved' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: 'open', muted: true }))).toBe(false);
+  });
+
+  it('is never open without an incident state (a server before R-1079)', () => {
+    expect(isOpen(item({ severity: 'critical' }))).toBe(false);
+    expect(isOpen(item({ severity: 'critical', state: null }))).toBe(false);
   });
 });
 
@@ -85,8 +100,8 @@ describe('groupByDay', () => {
 
 describe('tabs and mailboxes', () => {
   const unreadInfo = item({ severity: 'info' });
-  const readCritical = item({ severity: 'critical', read: true });
-  const openWarning = item({ severity: 'warning' });
+  const readCritical = item({ severity: 'critical', read: true, state: 'resolved' });
+  const openWarning = item({ severity: 'warning', state: 'open' });
 
   it('panel tabs: all, unread, open', () => {
     expect([unreadInfo, readCritical, openWarning].map((n) => matchesTab(n, 'all'))).toEqual([
@@ -123,11 +138,32 @@ describe('tabs and mailboxes', () => {
       true,
     ]);
   });
+
+  it('mailboxes by incident state: acked, resolved, muted; the inbox drops a muted row', () => {
+    const readOpen = item({ severity: 'critical', state: 'open', read: true });
+    const acked = item({ severity: 'critical', state: 'acked', read: true });
+    const unreadAcked = item({ severity: 'warning', state: 'acked' });
+    const muted = item({ severity: 'critical', state: 'open', muted: true });
+    const rows = [readOpen, acked, unreadAcked, muted, readCritical];
+    const box = (m: Mailbox) => rows.map((n) => matchesMailbox(n, m));
+    expect(box('inbox')).toEqual([true, false, true, false, false]);
+    expect(box('open')).toEqual([true, false, false, false, false]);
+    expect(box('acked')).toEqual([false, true, true, false, false]);
+    expect(box('resolved')).toEqual([false, false, false, false, true]);
+    expect(box('muted')).toEqual([false, false, false, true, false]);
+    expect(box('all')).toEqual([true, true, true, true, true]);
+  });
 });
 
 describe('filterItems', () => {
   const items = [
-    item({ id: 1, severity: 'critical', category: 'monitoring', title: 'Disk full on web-01' }),
+    item({
+      id: 1,
+      severity: 'critical',
+      category: 'monitoring',
+      title: 'Disk full on web-01',
+      state: 'open',
+    }),
     item({ id: 2, severity: 'info', category: 'security', title: 'Login', body: 'New DEVICE' }),
     item({ id: 3, severity: 'warning', category: 'monitoring', title: 'Load', read: true }),
   ];
@@ -151,15 +187,67 @@ describe('filterItems', () => {
 });
 
 describe('categoriesOf', () => {
-  it('counts the categories of the feed, sorted by name', () => {
+  it('counts the categories of the feed, the known ones in vocabulary order', () => {
     const items = [
+      item({ category: 'session' }),
       item({ category: 'security' }),
       item({ category: 'monitoring' }),
       item({ category: 'security' }),
+      item({ category: 'backup' }),
     ];
     expect(categoriesOf(items)).toEqual([
       { category: 'monitoring', count: 1 },
       { category: 'security', count: 2 },
+      { category: 'backup', count: 1 },
+      { category: 'session', count: 1 },
     ]);
+  });
+
+  it('puts an unknown category after the known ones, by name', () => {
+    const items = [
+      item({ category: 'zeta' }),
+      item({ category: 'agent' }),
+      item({ category: 'alpha' }),
+    ];
+    expect(categoriesOf(items).map((c) => c.category)).toEqual(['agent', 'alpha', 'zeta']);
+  });
+});
+
+describe('labels', () => {
+  beforeAll(() => setLanguage('de'));
+
+  it('names a known category and channel, an unknown one as it came', () => {
+    const tr = get(t);
+    expect(categoryLabel('agent', tr)).toBe('Agent & Updates');
+    expect(categoryLabel('security', tr)).toBe('Sicherheit');
+    expect(categoryLabel('zeta', tr)).toBe('zeta');
+    expect(channelLabel('email', tr)).toBe('E-Mail');
+    expect(channelLabel('bell', tr)).toBe('Glocke');
+    expect(channelLabel('pager', tr)).toBe('pager');
+  });
+
+  it('shows a time of today as hh:mm and one of another day with its date', () => {
+    expect(shortTime(local(2026, 11, 4, 8, 5), 'de-DE', NOW)).toBe('08:05');
+    const other = shortTime(local(2026, 11, 3, 23, 50), 'de-DE', NOW);
+    expect(other).toContain('03.11.');
+    expect(other).toContain('23:50');
+    expect(shortTime(null, 'de-DE', NOW)).toBe('');
+    expect(shortTime('not a date', 'de-DE', NOW)).toBe('');
+  });
+
+  it('states the mute first, then who acknowledged, then resolved; open shows nothing', () => {
+    const tr = get(t);
+    const until = local(2026, 11, 4, 10, 30);
+    expect(
+      stateLabel(item({ state: 'acked', muted: true, mutedUntil: until }), tr, 'de-DE', NOW),
+    ).toBe('Stumm bis 10:30');
+    expect(stateLabel(item({ muted: true, mutedUntil: null }), tr, 'de-DE', NOW)).toBe('Stumm');
+    expect(stateLabel(item({ state: 'acked', ackedBy: 'anna' }), tr, 'de-DE', NOW)).toBe(
+      'Bestätigt · anna',
+    );
+    expect(stateLabel(item({ state: 'acked' }), tr, 'de-DE', NOW)).toBe('Bestätigt');
+    expect(stateLabel(item({ state: 'resolved' }), tr, 'de-DE', NOW)).toBe('Behoben');
+    expect(stateLabel(item({ state: 'open' }), tr, 'de-DE', NOW)).toBeNull();
+    expect(stateLabel(item({}), tr, 'de-DE', NOW)).toBeNull();
   });
 });

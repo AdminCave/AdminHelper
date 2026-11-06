@@ -67,7 +67,7 @@ fn pin_identity(server_url: &str) -> String {
 
 /// The TOFU decision for a presented certificate given the stored pin.
 #[derive(Debug, PartialEq, Eq)]
-enum PinDecision {
+pub(crate) enum PinDecision {
     /// Pin matches the presented certificate — accept.
     Trust,
     /// No pin yet — persist this fingerprint and accept (first use). The store
@@ -80,7 +80,7 @@ enum PinDecision {
     Unavailable,
 }
 
-fn decide(pinned: Option<&str>, presented: &str) -> PinDecision {
+pub(crate) fn decide(pinned: Option<&str>, presented: &str) -> PinDecision {
     match pinned {
         Some(pin) if pin == presented => PinDecision::Trust,
         Some(_) => PinDecision::Reject,
@@ -92,7 +92,7 @@ fn decide(pinned: Option<&str>, presented: &str) -> PinDecision {
 
 /// Where pinned fingerprints live. Abstracted so the verifier is unit-testable
 /// without a real OS keyring.
-trait PinStore: Send + Sync {
+pub(crate) trait PinStore: Send + Sync {
     /// `Ok(None)` = no pin (first use), `Ok(Some)` = the pin, `Err(())` = the store
     /// could not be read. The last one must fail closed at the decision
     /// (`PinDecision::Unavailable`, 3.60).
@@ -131,7 +131,7 @@ trait PinStore: Send + Sync {
 /// lock guards the cache and the table of per-identity locks only; the read, decide
 /// and store of a first contact run under the lock of its identity, so two first
 /// contacts of one server still cannot both pin.
-struct KeyringPinStore {
+pub(crate) struct KeyringPinStore {
     cache: &'static Mutex<HashMap<String, String>>,
     locks: &'static Mutex<HashMap<String, Arc<Mutex<()>>>>,
     read: ReadPin,
@@ -158,7 +158,7 @@ fn identity_locks() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
 }
 
 impl KeyringPinStore {
-    fn production() -> Self {
+    pub(crate) fn production() -> Self {
         Self {
             cache: cache(),
             locks: identity_locks(),

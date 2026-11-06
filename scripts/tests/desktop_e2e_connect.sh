@@ -2,9 +2,11 @@
 #
 # desktop_e2e_connect.sh — live desktop E2E: open a connection through the GUI to
 # a REAL target container and verify the target received the connection. The
-# desktop launches ssh/xfreerdp3/the browser as an EXTERNAL process (not in the
-# webview), so the assertion is the target container's log (like the tunnel test
-# checks the frps log), not GUI state.
+# desktop launches xfreerdp3, the browser and ssh in the OS terminal as an EXTERNAL
+# process (not in the webview), so the assertion is the target container's log
+# (like the tunnel test checks the frps log), not GUI state. SSH in the AdminHelper
+# terminal (R-1069) the spec drives in the GUI itself; the sshd log counts its
+# sign-ins too.
 #
 # This file covers the DIRECT SSH journey; web/rdp and the over-tunnel variants
 # build on the same pattern. Shared boot/seed/teardown via lib_e2e_stack.sh.
@@ -48,6 +50,29 @@ wait_rdp_log() {  # container timeout
     return 1
 }
 
+# ssh_clients <container> [pattern] — the SSH clients the target saw, as client ends
+# (address and port) on the lines sshd logs once a client spoke SSH: [preauth] before
+# a sign-in, "Accepted" and "Disconnected from" after one. With a pattern, only the
+# ends on its lines ('Accepted ': the clients that signed in). From
+# desktop_e2e_workspaces.sh, checked there against the OpenSSH of the pinned image.
+ssh_clients() {
+    docker logs "$1" 2>&1 \
+        | grep -E "${2:-\[preauth\]|Accepted |Disconnected from }" \
+        | grep -oE '[[:digit:]]+(\.[[:digit:]]+){3} port [[:digit:]]+' \
+        | sort -u | grep -c .
+}
+
+# ssh in the AdminHelper terminal checks the user's own known_hosts (ssh takes the
+# home of the passwd entry, not $HOME), and the target makes a new host key on each
+# start: a key an earlier run left for its address ends the sign-in with "REMOTE HOST
+# IDENTIFICATION HAS CHANGED". So the run removes that entry before the specs and its
+# own after them; ssh-keygen -R keeps the file before as known_hosts.old. It ships
+# with ssh (openssh-client), which the journey needs anyway.
+E2E_SSH_HOST="[127.0.0.1]:2222"
+forget_e2e_host_key() {
+    ssh-keygen -F "$E2E_SSH_HOST" >/dev/null 2>&1 || return 0
+    ssh-keygen -R "$E2E_SSH_HOST" >/dev/null 2>&1
+}
 
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
@@ -56,7 +81,7 @@ e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
 
 e2e_init false
 # Chain target cleanup in front of the lib's compose teardown (don't replace it).
-trap 'cleanup_targets; e2e_teardown' EXIT
+trap 'cleanup_targets; forget_e2e_host_key; e2e_teardown' EXIT
 e2e_up gateway && ok "gateway live on :$E2E_HTTPS_PORT" || { bad "gateway never came up"; exit 1; }
 
 TOKEN=$(e2e_admin_token)
@@ -102,6 +127,7 @@ XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 
+forget_e2e_host_key || { bad "remove the stale host key of $E2E_SSH_HOST"; exit 1; }
 echo "[connect] driving the connect specs under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 export PATH="$SHIM_DIR:$PATH"  # the app inherits this -> open::that finds the xdg-open shim
@@ -113,17 +139,23 @@ dbus-run-session -- bash -c '
         --spec test/specs/rdp-connect.live.js
 ' && ok "connect GUI specs ran" || bad "connect GUI specs failed"
 
-# Verify from the target side: sshd logged an incoming connection from the
-# desktop. The desktop reaches the published port via the docker bridge, so it
-# appears as a private (non-loopback) source — distinct from the image's own
-# loopback (::1) self-test.
-# Poll for the sshd log line instead of a fixed sleep — it can lag on a loaded box (6.137).
-ssh_ok=0
-for _ in $(seq 1 10); do docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "172\.|10\.|192\.168\." && { ssh_ok=1; break; }; sleep 1; done
+# Verify from the target side: sshd saw the three clients of the SSH spec. The
+# AdminHelper terminal signed in twice (start and reconnect: two "Accepted" ends);
+# the OS terminal's ssh never signs in and leaves its [preauth] line once it ends
+# with the X server above. The desktop reaches the published port via the docker
+# bridge, so it appears with an IPv4 source — distinct from the image's own
+# loopback (::1) self-test. Polled — the log can lag on a loaded box (6.137).
+ssh_ok=0 ssh_in=0 ssh_all=0
+for _ in $(seq 1 20); do
+    ssh_in=$(ssh_clients "$SSH_C" 'Accepted ')
+    ssh_all=$(ssh_clients "$SSH_C")
+    [ "$ssh_in" = 2 ] && [ "$ssh_all" = 3 ] && { ssh_ok=1; break; }
+    sleep 1
+done
 if [ "$ssh_ok" = 1 ]; then
-    ok "sshd logged the desktop's SSH connection (direct)"
+    ok "sshd logged both sign-ins of the AdminHelper terminal and the OS terminal's client (direct)"
 else
-    bad "sshd saw no connection from the desktop"
+    bad "sshd saw $ssh_in sign-ins and $ssh_all clients, expected 2 and 3"
     docker logs --tail 25 "$SSH_C"
 fi
 

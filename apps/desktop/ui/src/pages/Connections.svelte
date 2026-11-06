@@ -40,7 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     type SortDir,
     type SortKey,
   } from '$lib/models/connectionList';
-  import type { Connection, ConnectionKind } from '$lib/bridge/types';
+  import type { Connection, ConnectionKind, SshConsole } from '$lib/bridge/types';
   import { tunnelMappings } from '$lib/stores/tunnel';
   import { infraServers } from '$lib/stores/infra';
   import { openEditor } from '$lib/stores/editor';
@@ -223,9 +223,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     });
   }
 
-  function connect(c: Connection): void {
+  function connect(c: Connection, sshConsole?: SshConsole): void {
     selectedId = c.id;
-    void initiateConnect(c);
+    void initiateConnect(c, false, sshConsole);
   }
 </script>
 

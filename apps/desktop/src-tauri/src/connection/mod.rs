@@ -179,7 +179,7 @@ fn stored_password_source<'a>(
 /// The source of the stored password for opening `connection`, once
 /// `check_credential_connection` took it for `connection`. The check runs without a
 /// credential connection, too: the opened one then has to be its own resolution.
-fn checked_password_source<'a>(
+pub(crate) fn checked_password_source<'a>(
     connection: &'a Connection,
     credential: &CredentialConnection<'a>,
 ) -> Result<&'a Connection, AppError> {

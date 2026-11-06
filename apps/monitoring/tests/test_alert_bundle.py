@@ -400,22 +400,128 @@ class TestBell:
         )
         assert bell_records(db) == [("critical", _NOW)] * 3
 
-    def test_members_in_the_bell_cooldown_drop_out(self, db, channels):
+    def test_a_member_the_bell_showed_lately_stays_in_the_bundle(self, db, channels):
+        # R-1079: no bell cooldown here; the hub folds the member's event into
+        # its open incident and decides whom it pings.
         entries = seed(db, 3)
-        recent = _NOW - timedelta(minutes=10)
         state = entries[0][1]
-        state.hub_status, state.hub_sent_at = "ok", recent
+        state.hub_status, state.hub_sent_at = "ok", _NOW - timedelta(minutes=10)
         db.commit()
 
         send_bundle(db, SILENT, entries, _NOW)
 
-        # Two remain, below the threshold: two single events.
-        assert [(e.get("source_id"), "source_ids" in e) for e in channels.events] == [
-            ("srv-02", False),
-            ("srv-03", False),
+        assert [e["source_ids"] for e in channels.events] == [["srv-01", "srv-02", "srv-03"]]
+        assert bell_records(db) == [("critical", _NOW)] * 3
+
+    def test_the_event_carries_the_keys_of_its_members_and_what_the_rules_did(self, db, channels):
+        entries = seed(db, 3)
+        add_rule(db, "mail")
+        add_rule(db, "hook", channel="webhook")
+
+        send_bundle(db, SILENT, entries, _NOW)
+
+        (event,) = channels.events
+        assert event["incident_keys"] == ["check:chk-01", "check:chk-02", "check:chk-03"]
+        # One entry per rule, though it sent for three members.
+        assert sorted(event["rules"], key=lambda r: r["name"]) == [
+            {"name": "hook", "channel": "webhook", "ok": True},
+            {"name": "mail", "channel": "email", "ok": True},
         ]
-        assert [e["title"] for e in channels.events] == [_SINGLE_DOWN] * 2
-        assert bell_records(db) == [("ok", recent), ("critical", _NOW), ("critical", _NOW)]
+
+    def test_without_a_rule_the_bell_is_alone(self, db, channels):
+        send_bundle(db, SILENT, seed(db, 3), _NOW)
+
+        assert [e["rules"] for e in channels.events] == [[]]
+
+    def test_a_failing_rule_is_named_as_failed(self, db, channels, monkeypatch):
+        def boom(config, rule, check, msg):
+            raise ValueError("smtp_port abc")
+
+        monkeypatch.setattr(alerter, "_send_email", boom)
+        entries = seed(db, 3)
+        add_rule(db, "hook", channel="webhook")
+        add_rule(db, "mail")
+
+        send_bundle(db, SILENT, entries, _NOW)
+
+        assert sorted(channels.events[0]["rules"], key=lambda r: r["name"]) == [
+            {"name": "hook", "channel": "webhook", "ok": True},
+            {"name": "mail", "channel": "email", "ok": False},
+        ]
+
+    def test_two_checks_of_one_server_name_it_twice(self, db, channels):
+        # One entry per member: the keys stay parallel to the servers.
+        entries = seed(db, 3, named=False)
+        entries[1][0].server_id = "srv-01"
+        db.commit()
+
+        send_bundle(db, SILENT, entries, _NOW)
+
+        (event,) = channels.events
+        assert event["source_ids"] == ["srv-01", "srv-01", "srv-03"]
+        assert event["incident_keys"] == ["check:chk-01", "check:chk-02", "check:chk-03"]
+
+    def test_a_rule_bound_to_a_server_is_not_named_to_other_servers(self, db, channels):
+        # Every reader of the bundle sees its rules, not every reader sees srv-02.
+        entries = seed(db, 3)
+        add_rule(db, "all")
+        add_rule(db, "only2", match_server_id="srv-02")
+
+        send_bundle(db, SILENT, entries, _NOW)
+
+        assert [r["name"] for r in channels.events[0]["rules"]] == ["all"]
+        # It still sent for its server.
+        assert [row[:2] for row in log_rows(db)] == [
+            ("all", "chk-01"),
+            ("all", "chk-02"),
+            ("all", "chk-03"),
+            ("only2", "chk-02"),
+        ]
+
+    def test_a_bundle_of_one_server_does_not_name_the_rule_bound_to_it(self, db, channels):
+        # The hub may fold it into an open bundle incident of several servers,
+        # whose other readers do not see srv-02.
+        entries = seed(db, 3, named=False)
+        for check, _state, _old in entries:
+            check.server_id = "srv-02"
+        db.commit()
+        add_rule(db, "all")
+        add_rule(db, "only2", match_server_id="srv-02")
+
+        send_bundle(db, SILENT, entries, _NOW)
+
+        (event,) = channels.events
+        assert event["source_ids"] == ["srv-02"] * 3
+        assert event["rules"] == [{"name": "all", "channel": "email", "ok": True}]
+        assert [row[0] for row in log_rows(db)].count("only2") == 3
+
+    def test_single_events_carry_their_key_and_their_rules(self, db, channels):
+        entries = seed(db, 2)
+        add_rule(db, "all")
+        add_rule(db, "only2", match_server_id="srv-02")
+
+        send_bundle(db, SILENT, entries, _NOW)
+
+        assert [
+            (e["source_id"], e["incident_key"], sorted(r["name"] for r in e["rules"]))
+            for e in channels.events
+        ] == [
+            ("srv-01", "check:chk-01", ["all"]),
+            ("srv-02", "check:chk-02", ["all", "only2"]),
+        ]
+
+    def test_the_return_carries_the_keys_and_the_rules_too(self, db, channels):
+        entries = seed(db, 3, BACK)
+        add_rule(db)
+
+        send_bundle(db, BACK, entries, _NOW)
+
+        (event,) = channels.events
+        assert (event["new_status"], event["incident_keys"]) == (
+            "ok",
+            ["check:chk-01", "check:chk-02", "check:chk-03"],
+        )
+        assert event["rules"] == [{"name": "mail", "channel": "email", "ok": True}]
 
     @pytest.mark.parametrize(
         ("kind", "title", "body"),
@@ -572,13 +678,15 @@ class TestBell:
         assert "sql" in channels.timeline[posts[-1] :]  # the records, flushed after
         assert bell_records(db) == [("warning", _NOW)] * 2 + [("critical", _NOW)] * 3
 
-    def test_more_servers_than_the_hub_takes_go_in_several_events(self, db, channels):
+    def test_more_members_than_the_hub_takes_go_in_several_events(self, db, channels):
         entries = seed(db, HUB_MAX_IDS + 1, named=False)
 
         send_bundle(db, SILENT, entries, _NOW)
 
         assert [len(e["source_ids"]) for e in channels.events] == [HUB_MAX_IDS, 1]
+        assert [len(e["incident_keys"]) for e in channels.events] == [HUB_MAX_IDS, 1]
         assert channels.events[1]["source_ids"] == [f"srv-{HUB_MAX_IDS + 1:02d}"]
+        assert channels.events[1]["incident_keys"] == [f"check:chk-{HUB_MAX_IDS + 1:02d}"]
         assert bell_records(db) == [("critical", _NOW)] * (HUB_MAX_IDS + 1)
 
     def test_a_heartbeat_without_server_goes_on_its_own(self, db, channels):

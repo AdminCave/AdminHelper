@@ -186,19 +186,64 @@
           <h2>Notifications (ab v0.38.0)</h2>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/notifications</code>
-            <p>Glocken-Feed des aktuellen Users, neueste zuerst. Query: <code>unread_only</code> (bool, Default <code>false</code>), <code>limit</code> (1&ndash;1000), <code>offset</code> (&ge;0). Antwort: Liste der Notification-Objekte.</p>
+            <p>Glocken-Feed des aktuellen Users, zuletzt gepingt zuerst (<code>notified_at</code>), ohne ausgeblendete Zeilen. Query: <code>unread_only</code> (bool, Default <code>false</code>), <code>limit</code> (1&ndash;1000), <code>offset</code> (&ge;0). Antwort: Liste der Notification-Objekte. Neben <code>id</code>, <code>createdAt</code>, <code>severity</code>, <code>category</code>, <code>eventType</code>, <code>title</code>, <code>body</code>, <code>sourceType</code>, <code>sourceId</code>, <code>read</code> und <code>readAt</code> tr&auml;gt jedes <code>incidentId</code>, <code>state</code> (<code>open</code>/<code>acked</code>/<code>resolved</code>), <code>count</code>, <code>ackedBy</code> und <code>resolvedBy</code> (Benutzername; <code>resolvedBy</code> <code>null</code> bei einem behobenen Vorfall: automatisch), <code>notifiedAt</code>, <code>muted</code>, <code>mutedUntil</code> und <code>muteSource</code> (<code>incident</code>/<code>server</code>). Die Vorfall-Felder sind <code>null</code> bei einer Zeile ohne Vorfall und bei einem Vorfall, dessen Server die Person nicht mehr sieht.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/notifications/unread-count</code>
-            <p>Schlanker Badge-Z&auml;hler f&uuml;r die Glocke. Antwort: <code>{ "count" }</code>.</p>
+            <p>Schlanker Badge-Z&auml;hler f&uuml;r die Glocke: ungelesene Zeilen, weder ausgeblendet noch stumm. Antwort: <code>{ "count" }</code>.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/notifications/read</code>
             <p>Markiert Benachrichtigungen als gelesen. Body: <code>{ "ids": [&hellip;] }</code> &ndash; <code>ids</code> weglassen bzw. <code>null</code> markiert <strong>alle</strong> als gelesen.</p>
           </div>
+          <p>Der Hub faltet Ereignisse in <strong>Vorf&auml;lle</strong> (Ablauf in der <a href="./server.html">Server-Architektur</a>). Die folgenden Routen gelten nur f&uuml;r den eigenen Feed: ohne eigene Zeile des Vorfalls <code>404</code>. Best&auml;tigen, Beheben, Wieder &ouml;ffnen und Notizen sind Team-Aktionen; ohne Sicht auf jeden Server des Vorfalls <code>403</code>, ein ung&uuml;ltiger &Uuml;bergang <code>409</code>. Jede Team-Aktion steht mit Benutzername im Verlauf und st&ouml;&szlig;t den Stream jeder Person mit einer Zeile des Vorfalls an.</p>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/unread</code>
+            <p>Markiert eigene Zeilen als ungelesen. Body: <code>{ "ids": [&hellip;] }</code> (1&ndash;500). Antwort: <code>{ "updated" }</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/hide</code>
+            <p>Blendet eigene Zeilen aus; der n&auml;chste Ping ihres Vorfalls zeigt sie wieder. Body und Antwort wie <code>/unread</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/incidents/{id}</code>
+            <p>Detail eines Vorfalls: <code>id</code>, <code>state</code>, <code>severity</code>, <code>category</code>, <code>eventType</code>, <code>title</code>, <code>body</code>, <code>sourceType</code>, <code>sourceId</code>, <code>count</code>, <code>firstAt</code>, <code>lastAt</code>, <code>ackedBy</code>/<code>ackedAt</code>, <code>resolvedBy</code>/<code>resolvedAt</code>, <code>bundle</code>, <code>servers</code> (<code>[{ "id", "name", "recoveredAt" }]</code>, nur die sichtbaren), <code>rules</code> (<code>[{ "name", "channel", "ok" }]</code> oder <code>null</code>), <code>channels</code> (<code>bell</code>/<code>email</code>/<code>telegram</code>, die der Hub benutzt hat), <code>history</code> (<code>[{ "id", "at", "kind", "actor", "text", "severity", "serverId" }]</code>, ohne Eintr&auml;ge fremder Server; <code>actor</code> <code>null</code> = der Hub), <code>canAct</code> (sieht jeden Server) und <code>row</code> (die eigene Feed-Zeile).</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/ack</code>
+            <p>Best&auml;tigt offene Vorf&auml;lle. Body: <code>{ "ids": [&hellip;] }</code> (1&ndash;500 Vorfall-IDs). Antwort: <code>{ "updated", "skipped": [&hellip;] }</code>; <code>skipped</code> nennt die IDs ohne eigene Zeile, ohne Sicht auf jeden Server oder nicht mehr offen.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/{id}/resolve</code>
+            <p>Behebt einen offenen oder best&auml;tigten Vorfall von Hand; ein schon behobener ergibt <code>409</code>. Das n&auml;chste Problem-Ereignis &ouml;ffnet ihn innerhalb von 30&nbsp;min nach seinem letzten Ping wieder, danach entsteht ein neuer. Antwort: das Detail.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/{id}/reopen</code>
+            <p>&Ouml;ffnet einen behobenen Vorfall wieder, unbest&auml;tigt; sonst <code>409</code>. Antwort: das Detail.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/incidents/{id}/notes</code>
+            <p>Notiz in den Verlauf, in jedem Zustand. Body: <code>{ "text" }</code> (1&ndash;2000 Zeichen, nicht nur Leerraum). Jede Person mit einer Zeile des Vorfalls liest sie. Antwort: das Detail.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/notifications/incidents/{id}/mute</code>
+            <p>Schaltet die eigene Zeile eines Vorfalls stumm: Pings halten sie gelesen und versenden nichts, der Lesestatus bleibt. Body: <code>{ "until" }</code> (Zeit mit Zone, in der Zukunft, h&ouml;chstens 7&nbsp;Tage voraus; sonst <code>422</code>). Antwort: die Feed-Zeile. <span class="method-delete">DELETE</span> auf denselben Pfad beendet das Stummschalten.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/server-mutes</code>
+            <p>Die laufenden Server-Stummschaltungen des Users: <code>[{ "serverId", "until" }]</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/notifications/server-mutes/{server_id}</code>
+            <p>Schaltet einen Server stumm, den der User sieht (sonst <code>404</code>): seine Zeilen der Vorf&auml;lle genau dieses Servers bleiben gelesen und versenden nichts. Body wie oben, ein zweites <code>PUT</code> verschiebt <code>until</code>. Antwort: <code>{ "serverId", "until" }</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-delete">DELETE</span><code>/api/notifications/server-mutes/{server_id}</code>
+            <p>Beendet die Stummschaltung eines Servers; <code>204</code>, auch wenn keine bestand.</p>
+          </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/notifications/stream</code>
-            <p>Server-Sent-Events (<code>text/event-stream</code>): pusht ein &bdquo;refresh"-Signal, sobald der User eine neue Benachrichtigung bekommt (Push statt Polling). Worker-&uuml;bergreifend via Redis&nbsp;Pub/Sub. Das Gateway proxyt den Stream <strong>ungepuffert mit langem Read-Timeout</strong>; ein Heartbeat-Kommentar h&auml;lt die Verbindung offen, die Auth (JWT/mTLS) wird periodisch re-validiert.</p>
+            <p>Server-Sent-Events (<code>text/event-stream</code>): pusht ein &bdquo;refresh"-Signal, sobald sich der Feed des Users &auml;ndert: ein Ping, eine Team-Aktion an einem seiner Vorf&auml;lle, eigenes Ausblenden, Ungelesen oder Stummschalten (Push statt Polling). Worker-&uuml;bergreifend via Redis&nbsp;Pub/Sub. Das Gateway proxyt den Stream <strong>ungepuffert mit langem Read-Timeout</strong>; ein Heartbeat-Kommentar h&auml;lt die Verbindung offen, die Auth (JWT/mTLS) wird periodisch re-validiert.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/users/me/notification-prefs</code>
@@ -210,7 +255,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/internal/events</code>
-            <p><strong>Nur intern</strong> (Header <code>X-Internal-Key</code>): Event-Ingress f&uuml;r den Monitoring&rarr;Hub-Pfad. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. F&auml;chert das Event an die passenden Empf&auml;nger auf. Status <code>202</code>, Antwort <code>{ "notified" }</code>. Ein Sammel-Event nennt seine Server in <code>source_ids</code> (1&ndash;500 Server-IDs, je 1&ndash;256 Zeichen) statt in <code>source_id</code>; beide zusammen ergeben <code>422</code>. Die <code>source_type</code>-Werte <code>frp_config</code>, <code>frps</code> und <code>certificate_expiry</code> sind Meldungen des Servers selbst vorbehalten und ergeben <code>422</code>. Jeder Empf&auml;nger bekommt eine Zeile &uuml;ber die Server, die er sehen darf: Titel <code>&lt;title&gt; (&lt;n&gt;)</code>, Text <code>body</code> plus eine Zeile je Server. <code>title</code> und <code>body</code> nennen deshalb keinen Server und tragen keine Gesamtzahl &ndash; Anzahl und Namen h&auml;ngt der Server je Empf&auml;nger an. Den Hook <code>alert.triggered</code> feuert ein Sammel-Event einmal je Server.</p>
+            <p><strong>Nur intern</strong> (Header <code>X-Internal-Key</code>): Event-Ingress f&uuml;r den Monitoring&rarr;Hub-Pfad. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. F&auml;chert das Event an die passenden Empf&auml;nger auf. Status <code>202</code>, Antwort <code>{ "notified" }</code>. Ein Sammel-Event nennt seine Server in <code>source_ids</code> (1&ndash;500 Server-IDs, je 1&ndash;256 Zeichen) statt in <code>source_id</code>; beide zusammen ergeben <code>422</code>. Die <code>source_type</code>-Werte <code>frp_config</code>, <code>frps</code> und <code>certificate_expiry</code> sind Meldungen des Servers selbst vorbehalten und ergeben <code>422</code>. Jeder Empf&auml;nger bekommt eine Zeile &uuml;ber die Server, die er sehen darf: Titel <code>&lt;title&gt; (&lt;n&gt;)</code>, Text <code>body</code> plus eine Zeile je Server. <code>title</code> und <code>body</code> nennen deshalb keinen Server und tragen keine Gesamtzahl &ndash; Anzahl und Namen h&auml;ngt der Server je Empf&auml;nger an. Den Hook <code>alert.triggered</code> feuert ein Sammel-Event einmal je Server, und nur bei einem <code>critical</code>-Ping. Ein Monitoring-Ereignis tr&auml;gt <code>incident_key</code> (1&ndash;200 Zeichen, <code>check:&lt;id&gt;</code>), ein Sammel-Event stattdessen <code>incident_keys</code> (je Eintrag von <code>source_ids</code> einer, in derselben Reihenfolge; ein Schl&uuml;ssel mit zwei Servern ergibt <code>422</code>), dazu optional <code>rules</code> (h&ouml;chstens 50 <code>{ "name", "channel", "ok" }</code>: die Alarmregeln des Checks und ob jede versendet hat). Ereignisse eines Schl&uuml;ssels falten in einen Vorfall; <code>notified</code> z&auml;hlt die Zeilen, die ein Ping schrieb, ein still gefaltetes Ereignis ergibt <code>0</code>. Ein Sammel-Event ohne Schl&uuml;ssel bleibt Zeilen ohne Vorfall.</p>
           </div>
           <h2>Fehler-Format</h2>
           <div class="code-header"><span>json</span></div>

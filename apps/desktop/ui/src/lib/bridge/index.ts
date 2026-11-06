@@ -13,7 +13,7 @@
 //   3. Update ./types.ts if the payload changes
 //   4. Add/adjust the function here
 
-import { invoke as tauriInvoke, type InvokeArgs } from '@tauri-apps/api/core';
+import { Channel, invoke as tauriInvoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { fromIpc } from '$lib/utils/errors';
 import type {
   AnsibleTarget,
@@ -27,6 +27,7 @@ import type {
   ResetOutcome,
   ResolvedConnection,
   Settings,
+  TerminalExit,
   TunnelMapping,
   TunnelRefresh,
   TunnelStatus,
@@ -248,6 +249,43 @@ export function resolveConnection(
   return invoke<ResolvedConnection>('resolve_connection', { connection, tunnels });
 }
 
+// ─────────────────────────── Embedded terminal (R-1069) ───────────
+
+// What a terminal session sends, in order: its output as raw bytes, then one TerminalExit.
+export type TerminalMessage = ArrayBuffer | TerminalExit;
+
+// Opens `connection`, resolved as for openConnection, in a pseudo console of cols×rows and
+// returns the id of the session.
+export function terminalOpenSsh(
+  connection: Connection,
+  cols: number,
+  rows: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<number> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke<number>('terminal_open_ssh', { connection, cols, rows, output });
+}
+
+// The bytes as typed. Two writes in flight for one session may reach the program in either
+// order: the caller sends the next one after the last has settled.
+export function terminalWrite(id: number, data: Uint8Array): Promise<void> {
+  return invoke('terminal_write', { id, data: Array.from(data) });
+}
+
+export function terminalResize(id: number, cols: number, rows: number): Promise<void> {
+  return invoke('terminal_resize', { id, cols, rows });
+}
+
+// Ends the program; its TerminalExit still follows on the session's channel.
+export function terminalClose(id: number): Promise<void> {
+  return invoke('terminal_close', { id });
+}
+
+// Ends every session of this process, those of a webview before a reload among them.
+export function terminalCloseAll(): Promise<void> {
+  return invoke('terminal_close_all');
+}
+
 // ─────────────────────────── Password keychain ───────────────────
 
 export function passwordState(connection: Connection): Promise<PasswordState> {
@@ -304,4 +342,12 @@ export function stopNotificationStream(): Promise<void> {
   return invoke('stop_notification_stream');
 }
 
-export type { Connection, Settings, AuthSession, TunnelStatus, TunnelMapping, ResetOutcome };
+export type {
+  Connection,
+  Settings,
+  AuthSession,
+  TunnelStatus,
+  TunnelMapping,
+  ResetOutcome,
+  TerminalExit,
+};

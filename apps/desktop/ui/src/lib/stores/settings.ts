@@ -10,6 +10,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import { sessionStore, refreshSettings, logout } from './session';
 import * as tunnelStore from './tunnel';
+import { closeAllTerminals } from './terminals';
 import { reloadForMode, connectionsStore } from './connections';
 import { reportError, showStatus } from './statusBar';
 import {
@@ -94,13 +95,18 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
 }
 
 /**
- * The logout buttons of the app shell and the settings: stops the tunnel, logs out, then
- * reloads the window, so no store keeps the previous user's data. It lives here, not in
- * session.ts, because tunnel.ts imports session.ts. It reloads no connections: logout()
- * leaves connections.json alone. A `notice` is the line the login screen shows after the
+ * The logout buttons of the app shell and the settings: ends the terminal sessions, stops the
+ * tunnel, logs out, then reloads the window, so no store keeps the previous user's data. It lives
+ * here, not in session.ts, because tunnel.ts imports session.ts. It reloads no connections:
+ * logout() leaves connections.json alone. A `notice` is the line the login screen shows after the
  * reload.
  */
 export async function logoutAndReload(notice?: string): Promise<void> {
+  try {
+    await closeAllTerminals();
+  } catch {
+    /* the UI starting after the reload ends what is left */
+  }
   try {
     await tunnelStore.stop();
   } catch {

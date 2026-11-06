@@ -24,6 +24,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 
@@ -52,7 +53,7 @@ class NotificationSubscription(Base):
     scope_type = Column(String, nullable=False, default="all")
     scope_ref = Column(String, nullable=True)
     min_severity = Column(String, nullable=False, default="warning")
-    # Optional JSON array of category names (e.g. ["monitoring","pki"]); NULL =
+    # Optional JSON array of category names (e.g. ["monitoring","tunnel"]); NULL =
     # every category. Stored as a JSON string to match the project's tags/
     # event_triggers convention (no JSONB).
     categories = Column(Text, nullable=True)
@@ -93,13 +94,33 @@ class Notification(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     severity = Column(String, nullable=False)  # info | warning | critical
-    category = Column(String, nullable=False)  # monitoring | security | pki | lifecycle
+    # The vocabulary of the bell (R-1079): monitoring | security | tunnel | backup |
+    # ansible | agent | session. A free string: an older sender keeps its own.
+    category = Column(String, nullable=False)
     event_type = Column(String, nullable=False)  # e.g. "monitoring.check.transition"
     title = Column(String, nullable=False)
     body = Column(Text, nullable=True)
     source_type = Column(String, nullable=True)  # e.g. "server"
     source_id = Column(String, nullable=True)  # e.g. the server id
     read_at = Column(DateTime(timezone=True), nullable=True)
+    # The incident this row belongs to (R-1079): one row per person and incident, which
+    # a ping moves up. NULL for info notices and for rows from before incidents.
+    incident_id = Column(
+        BigInteger,
+        ForeignKey("notification_incident.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # The last ping of this row; the feed sorts by it (created_at stays the first one).
+    notified_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    muted_until = Column(DateTime(timezone=True), nullable=True)
+    hidden_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "incident_id", name="uq_notification_user_incident"),
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -134,9 +155,10 @@ class NotificationOutbox(Base):
     )
     channel = Column(String, nullable=False)  # email | telegram
     address = Column(String, nullable=False)  # e-mail address or telegram chat id
-    # A bundled event's text for this channel alone (service.ingest_event): it
-    # names only the servers of the subscriptions that asked for this channel,
-    # which may be fewer than the bell row lists. NULL = the notification's text.
+    # The text of the ping that queued it, for this channel (incidents._queue): a
+    # later ping rewrites the bell row, and a bundle's channel names only the servers
+    # of the subscriptions that asked for it. NULL (entries from before R-1079) = the
+    # notification's text.
     title = Column(String, nullable=True)
     body = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="pending", index=True)  # pending|sent|failed
@@ -157,3 +179,90 @@ class NotificationOutbox(Base):
             "attempts": self.attempts,
             "lastError": self.last_error,
         }
+
+
+class NotificationIncident(Base):
+    """One incident the bell folds events into (R-1079): a check that goes red and its
+    repeats, a bundle of servers that went red together, or one keyless notice of the
+    server. The team shares it (state, acknowledgement, history); every recipient has
+    one Notification row pointing here."""
+
+    __tablename__ = "notification_incident"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # check:<id> for an incident of one check; NULL for a bundle (its members carry the
+    # keys) and for keyless notices.
+    key = Column(String, nullable=True, index=True)
+    state = Column(String, nullable=False, default="open")  # open | acked | resolved
+    severity = Column(String, nullable=False)  # warning | critical
+    # What the bell last showed: warning/critical after a problem ping, ok after a
+    # recovery ping, NULL never pinged (the hub's twin of MonitorState.hub_status).
+    notified_severity = Column(String, nullable=True)
+    last_notified_at = Column(DateTime(timezone=True), nullable=True)
+    category = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+    source_type = Column(String, nullable=True)
+    source_id = Column(String, nullable=True)
+    # JSON list of {name, channel, ok}: the alert rules of the last problem event.
+    rules = Column(Text, nullable=True)
+    event_count = Column(Integer, nullable=False, default=1)
+    first_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    acked_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    acked_at = Column(DateTime(timezone=True), nullable=True)
+    # NULL with resolved_at set: resolved by the check turning green.
+    resolved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationIncidentMember(Base):
+    """A server of a bundle incident, fixed when the bundle opens; the bundle resolves
+    once every member has recovered."""
+
+    __tablename__ = "notification_incident_member"
+
+    incident_id = Column(
+        BigInteger,
+        ForeignKey("notification_incident.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    key = Column(String, primary_key=True, index=True)
+    server_id = Column(String, nullable=False)
+    recovered_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationIncidentEvent(Base):
+    """The history of an incident. server_id names the bundle member an entry is about
+    (NULL: the whole incident); the API leaves out entries of servers the reader may not
+    see."""
+
+    __tablename__ = "notification_incident_event"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    incident_id = Column(
+        BigInteger,
+        ForeignKey("notification_incident.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # triggered | notified | escalated | acked | resolved | reopened | note
+    kind = Column(String, nullable=False)
+    # NULL: done by the hub itself (a check event, the green check).
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    text = Column(Text, nullable=True)
+    severity = Column(String, nullable=True)
+    server_id = Column(String, nullable=True)
+
+
+class NotificationServerMute(Base):
+    """A person silences one server until a time: their rows of its incidents stay read
+    and send nothing. Personal, so it is not in the incident history."""
+
+    __tablename__ = "notification_server_mute"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    server_id = Column(String, primary_key=True)
+    until = Column(DateTime(timezone=True), nullable=False)
