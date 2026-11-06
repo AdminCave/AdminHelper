@@ -5,9 +5,14 @@
 """Session history of a connection (R-1068): touch begins a session, .../end ends it, the list
 shows the newest ones in the scope of the connection list, and the server keeps 90 days."""
 
+import secrets
 from datetime import timedelta
 
+import pytest
+
+from app.core.auth import hash_api_key
 from app.core.time import utcnow_naive
+from app.modules.api_keys.models import ApiKey
 from app.modules.connections.models import Connection, ConnectionSession
 from app.modules.servers.models import Server
 
@@ -137,6 +142,21 @@ def test_scope_follows_the_connection_list(test_client, db_session, admin_user, 
     own = test_client.post("/api/connections/c-a/touch", headers=admin).json()["sessionId"]
     listed = test_client.get("/api/connections/c-a/sessions", headers=viewer).json()
     assert [s["id"] for s in listed] == [own]
+
+
+@pytest.mark.parametrize("permission", ["read", "read_write"])
+def test_a_key_does_not_see_the_history(test_client, db_session, admin_user, permission):
+    _seed(db_session)
+    raw = f"ah_{secrets.token_urlsafe(16)}"
+    db_session.add(ApiKey(name="k", hashed_key=hash_api_key(raw), permission=permission))
+    db_session.commit()
+    admin = _login(test_client, "admin", "adminpass")
+    test_client.post("/api/connections/c-a/touch", json={"device": "laptop"}, headers=admin)
+    assert len(test_client.get("/api/connections/c-a/sessions", headers=admin).json()) == 1
+
+    r = test_client.get("/api/connections/c-a/sessions", headers={"X-API-Key": raw})
+    assert r.status_code == 403, r.text
+    assert "laptop" not in r.text
 
 
 def test_only_the_user_who_began_a_session_ends_it(

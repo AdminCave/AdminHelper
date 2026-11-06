@@ -5,7 +5,7 @@
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -21,7 +21,7 @@ from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
-from app.modules.connections.models import Connection, ConnectionSession
+from app.modules.connections.models import Connection, ConnectionSession, _compact
 from app.modules.connections.schemas import (
     ConnectionCreate,
     ConnectionImportResult,
@@ -73,6 +73,86 @@ def _require_key_server(auth, server_id: str | None) -> None:
     if api_key is not None and api_key.server_id and server_id != api_key.server_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Kein Zugriff auf diesen Server"
+        )
+
+
+# Options that change where and with what the desktop opens a session (R-1140). Only a user
+# login sets or changes them; an API key may send them back unchanged, so it can still read,
+# edit and write back a connection. Of nla only switching it off is guarded: NLA on, or back
+# to the global default, is always allowed.
+_LOGIN_ONLY_OPTIONS = (
+    ("ssh", "agentForwarding"),
+    ("ssh", "forwards"),
+    ("ssh", "jumpHost"),
+    ("rdp", "drives"),
+    ("rdp", "printers"),
+    ("rdp", "gateway"),
+)
+
+
+def _login_only_values(options: dict[str, Any] | None) -> dict[str, Any]:
+    options = options or {}
+    return {
+        f"{kind}.{field}": (options.get(kind) or {}).get(field)
+        for kind, field in _LOGIN_ONLY_OPTIONS
+    }
+
+
+def _nla_off(options: dict[str, Any] | None) -> bool:
+    return ((options or {}).get("rdp") or {}).get("nla") is False
+
+
+def _require_login_for_options(auth, sent, stored: dict[str, Any] | None) -> None:
+    """An API key gets 403 if `sent` (a ConnectionOptions or None) sets one of the guarded
+    options other than `stored` holds it, compared in the stored (compact) form."""
+    _user, api_key = auth
+    if api_key is None:
+        return
+    sent_options = _compact(sent.model_dump()) if sent is not None else None
+    new, old = _login_only_values(sent_options), _login_only_values(stored)
+    changed = [name for name in new if new[name] != old[name]]
+    if _nla_off(sent_options) and not _nla_off(stored):
+        changed.append("rdp.nla")
+    changed.sort()
+    if changed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a user login may change these connection options: " + ", ".join(changed),
+        )
+
+
+# The fields that say where and as whom a session goes. Moving a connection whose stored options
+# hold a guarded one would carry that option to the new target, so a key may not do that either.
+_TARGET_FIELDS = ("host", "port", "kind", "username", "domain")
+
+
+def _require_login_to_move(auth, conn: Connection, update: ConnectionUpdate) -> None:
+    _user, api_key = auth
+    if api_key is None:
+        return
+    stored = conn.to_dict()
+    options = stored.get("options")
+    if not any(v is not None for v in _login_only_values(options).values()) and not _nla_off(
+        options
+    ):
+        return
+    moved = sorted(
+        name
+        for name in _TARGET_FIELDS
+        # to_dict stores an unset name as "", so null and "" are the same value here.
+        if name in update.model_fields_set
+        and (getattr(update, name) or "") != (stored.get(name) or "")
+    )
+    if moved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a user login may change "
+            + ", ".join(moved)
+            + " of a connection with these options set: "
+            + ", ".join(
+                sorted(n for n, v in _login_only_values(options).items() if v is not None)
+                + (["rdp.nla"] if _nla_off(options) else [])
+            ),
         )
 
 
@@ -132,6 +212,7 @@ def create_connection(
     _auth=Depends(write_dep),
 ):
     _require_key_server(_auth, connection.serverId)
+    _require_login_for_options(_auth, connection.options, None)
     _reject_unknown_server(db, connection.serverId)
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
@@ -170,6 +251,9 @@ def update_connection(
         )
     if "serverId" in connection.model_fields_set:
         _require_key_server(_auth, connection.serverId)
+    if "options" in connection.model_fields_set:
+        _require_login_for_options(_auth, connection.options, conn.to_dict().get("options"))
+    _require_login_to_move(_auth, conn, connection)
     _reject_unknown_server(db, connection.serverId)
     conn.update_from_dict(connection.model_dump(exclude_unset=True))
     db.commit()
@@ -272,6 +356,13 @@ def list_connection_sessions(
     auth=Depends(read_dep),
 ):
     """The newest sessions of a connection, newest first, of every user."""
+    # History and device names are for user accounts (R-1143). Refused before the scope check,
+    # so a key learns nothing about which connections exist.
+    if auth[1] is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The session history needs a user login",
+        )
     _scoped_connection(db, conn_id, auth)
     sessions = (
         db.query(ConnectionSession)
