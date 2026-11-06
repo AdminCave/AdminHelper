@@ -17,10 +17,20 @@ const h = vi.hoisted(() => ({
   fetchServers: vi.fn(),
   fetchContent: vi.fn(),
   run: vi.fn(),
+  openAnsible: vi.fn(),
   reportError: vi.fn(),
 }));
 
-vi.mock('./session', () => ({ currentSession: () => h.session }));
+vi.mock('./session', () => ({
+  currentSession: () => h.session,
+  sessionStore: {
+    subscribe(fn: (v: unknown) => void) {
+      fn({ settings: { sshConsole: 'external' } });
+      return () => {};
+    },
+  },
+}));
+vi.mock('./terminals', () => ({ openAnsible: h.openAnsible }));
 vi.mock('$lib/api/ansible', () => ({
   ansibleApi: {
     fetchPlaybooks: h.fetchPlaybooks,
@@ -69,8 +79,9 @@ describe('ansible store: runPlaybook + toggleTag (6.41)', () => {
 
     await runPlaybook();
 
-    // One call with the id and the targets: the content never passes through the UI.
-    expect(h.run.mock.calls).toEqual([[pb.id, [{ hostname: 'web.lan', groups: ['web'] }]]]);
+    // One call with the id, the targets and no dry run: the content never passes through the UI.
+    expect(h.run.mock.calls).toEqual([[pb.id, [{ hostname: 'web.lan', groups: ['web'] }], false]]);
+    expect(h.openAnsible).not.toHaveBeenCalled();
     expect(h.fetchContent).not.toHaveBeenCalled();
     expect(get(ansibleRunning)).toBe(false); // reset in finally despite the run failure
     expect(h.reportError).toHaveBeenCalledWith('no terminal');

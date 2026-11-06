@@ -565,3 +565,28 @@ describe('sanitizePaste', () => {
     expect(sanitizePaste('\x20\x7e\xa0')).toBe(' ~\xa0');
   });
 });
+
+describe('SshTerminal running a playbook (R-1073)', () => {
+  const PLAYBOOK = { id: '', name: 'apt-upgrade', kind: 'ssh', tags: [] } as unknown as Connection;
+
+  it('names the playbook and its dry run and offers no reconnect', async () => {
+    await mount(
+      session({
+        connection: PLAYBOOK,
+        resolved: PLAYBOOK,
+        status: 'disconnected',
+        exitCode: 0,
+        ansible: { check: true },
+      }),
+    );
+    expect(screen.getByText('apt-upgrade --check')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: tNow('terminal.reconnect') })).toBeNull();
+    expect(screen.getByText(tNow('terminal.ended'))).toBeTruthy();
+    expect(screen.getByRole('button', { name: tNow('terminal.close') })).toBeTruthy();
+  });
+
+  it('names the playbook alone without a dry run', async () => {
+    await mount(session({ connection: PLAYBOOK, resolved: PLAYBOOK, ansible: { check: false } }));
+    expect(screen.getByText('apt-upgrade')).toBeTruthy();
+  });
+});

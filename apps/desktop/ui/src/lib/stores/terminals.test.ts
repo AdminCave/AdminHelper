@@ -19,6 +19,7 @@ import type { Connection, Settings, TunnelMapping } from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
+  terminalOpenAnsible: vi.fn(async (..._a: unknown[]) => 99),
   terminalClose: vi.fn(async () => {}),
   terminalCloseAll: vi.fn(async () => {}),
   terminalWrite: vi.fn(async () => {}),
@@ -34,6 +35,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('$lib/bridge', () => ({
   terminalOpenSsh: h.terminalOpenSsh,
+  terminalOpenAnsible: h.terminalOpenAnsible,
   terminalClose: h.terminalClose,
   terminalCloseAll: h.terminalCloseAll,
   terminalWrite: h.terminalWrite,
@@ -62,6 +64,7 @@ import {
   detachTerminal,
   keepOpenSessions,
   listenForDocking,
+  openAnsible,
   openSessionIds,
   openTerminal,
   reconnectTerminal,
@@ -777,5 +780,36 @@ describe('keeping the SSH tabs for the next run (R-1070)', () => {
     expect(
       openSessionIds([tab(C2), tab(RDP), tab(CONN), tab(C2), tab({ ...CONN, id: '' })]),
     ).toEqual(['c2', 'c1']);
+  });
+});
+
+describe('a playbook in a tab (R-1073)', () => {
+  const TARGETS = [{ hostname: 'web.lan', groups: ['web'] }];
+
+  it('opens a tab named after the playbook and starts the run with its dry run', async () => {
+    expect(await openAnsible('pb1', 'Deploy', TARGETS, true)).toBe(true);
+    const s = only();
+    expect(s.connection.name).toBe('Deploy');
+    expect(s.ansible).toEqual({ check: true });
+    expect(s.backendId).toBe(99);
+    expect(get(terminals).active).toBe(s.key);
+    expect(h.terminalOpenAnsible).toHaveBeenCalledExactlyOnceWith(
+      'pb1',
+      TARGETS,
+      true,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+  });
+
+  it('is neither reconnected nor kept for the next run', async () => {
+    await openAnsible('pb1', 'Deploy', TARGETS, false);
+    const s = only();
+    expect(await reconnectTerminal(s.key)).toBe(false);
+    expect(h.terminalOpenAnsible).toHaveBeenCalledTimes(1);
+    expect(h.terminalClose).not.toHaveBeenCalled();
+    expect(openSessionIds([s, { ...s, ansible: undefined, connection: CONN }])).toEqual(['c1']);
   });
 });

@@ -371,8 +371,34 @@ export function fetchTunnels(): Promise<TunnelMapping[]> {
 // ─────────────────────────── Ansible ──────────────────────────────
 
 // The backend loads file name and content of the playbook from the signed-in server itself.
-export function ansibleRun(playbookId: string, targets: AnsibleTarget[]): Promise<void> {
-  return invoke('ansible_run', { playbookId, targets });
+// `check` runs it as a dry run (`--check`), in the terminal of the OS.
+export function ansibleRun(
+  playbookId: string,
+  targets: AnsibleTarget[],
+  check: boolean,
+): Promise<void> {
+  return invoke('ansible_run', { playbookId, targets, check });
+}
+
+// The same run in a pseudo console of cols×rows, main window only; returns the id of the
+// session, whose output arrives as for terminalOpenSsh.
+export function terminalOpenAnsible(
+  playbookId: string,
+  targets: AnsibleTarget[],
+  check: boolean,
+  cols: number,
+  rows: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<number> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke<number>('terminal_open_ansible', {
+    playbookId,
+    targets,
+    check,
+    cols,
+    rows,
+    output,
+  });
 }
 
 // ─────────────────────────── Notifications (SSE) ──────────────────

@@ -153,7 +153,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // itself in the header.
   let activeSession = $derived($terminals.sessions.find((s) => s.key === $terminals.active));
   let title = $derived(activeSession?.connection.name ?? pageTitle);
-  let subtitle = $derived(activeSession ? `SSH · ${activeSession.connection.host}` : null);
+  let subtitle = $derived(
+    !activeSession
+      ? null
+      : activeSession.ansible
+        ? 'Ansible'
+        : `SSH · ${activeSession.connection.host}`,
+  );
   // The workspace this window serves (R-0431); null only when its context did not load.
   let workspace = $derived($context?.workspace ?? null);
 

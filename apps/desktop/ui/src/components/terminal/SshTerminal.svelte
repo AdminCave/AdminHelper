@@ -75,6 +75,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let target = $derived.by(() => {
     const c = session.connection;
+    // A playbook run (R-1073) has no host of its own: it names the playbook.
+    if (session.ansible) return session.ansible.check ? `${c.name} --check` : c.name;
     const user = c.username ? `${c.username}@` : '';
     const port = c.port && c.port !== 22 ? `:${c.port}` : '';
     return `${user}${c.host ?? ''}${port}`;
@@ -359,7 +361,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
         onclick={() => (optionsOpen = !optionsOpen)}
       />
       <span class="term-sep" aria-hidden="true"></span>
-      <IconButton size="sm" icon={RotateCw} label={$t('terminal.reconnect')} onclick={reconnect} />
+      {#if !session.ansible}
+        <IconButton
+          size="sm"
+          icon={RotateCw}
+          label={$t('terminal.reconnect')}
+          onclick={reconnect}
+        />
+      {/if}
       <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
     {/if}
   </header>
@@ -380,7 +389,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
               {$t('terminal.dock')}
             </Button>
-          {:else}
+          {:else if !session.ansible}
             <Button size="sm" variant="secondary" iconLeft={RotateCw} onclick={reconnect}>
               {$t('terminal.reconnect')}
             </Button>

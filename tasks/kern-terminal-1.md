@@ -74,10 +74,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- terminals SettingsModa
 Doku: → T10
 Abhängt von: T6
 
-### T8 — Desktop-UI: Ansible-Lauf im Tab und Probelauf-Schalter (R-1073)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/ansible.pipeline.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T8 — Desktop-UI: Ansible-Lauf im Tab und Probelauf-Schalter (R-1073)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/ansible.pipeline.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/components/AppShell.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @08160884 2026-11-06T12:00:39+01:00
+Review: approve (.ah-out/review/kern-terminal-1/T8.verdict.json)
 Änderung: Schalter „Probelauf (--check)“ auf der Ansible-Seite; bei `sshConsole = embedded` öffnet „Ausführen“ einen Tab vom Typ `ansible` (Titel = Playbook, `terminal_open_ansible`), sonst `ansible_run` wie bisher, beide mit `check`. Ein Ansible-Tab hat kein „Neu verbinden“ und wird nicht wiederhergestellt (T7). Tests: beide Wege, `check` durchgereicht, Tab-Titel.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- Ansible ansible terminals
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- Ansible ansible terminals SshTerminal AppShell
 Doku: → T10
 Abhängt von: T3, T4
 
@@ -106,3 +108,4 @@ Task-Review: am Ende
 - T6: `openSessions` liegt in `workspace.json` (wie `favoriteConnections`), nicht in `prefs.json`: Verbindungs-IDs gehören zu einem Workspace, `prefs.json` gilt für das Gerät. `restoreSessions` liegt in `prefs.json`. Verify `-- storage` statt `-- storage models` (cargo test nimmt einen Filter).
 - T5: Das abgedockte Fenster nutzt denselben Store mit einer übernommenen Sitzung (`adoptTerminal`) statt einer eigenen Quelle für `SshTerminal`: Replay, Status und Exit bleiben eine Logik. Es kennt nur die id, den Namen trägt die Titelleiste. Eine Sitzung, die beim Andocken kein Tab kennt (Hauptfenster neu geladen), wird beendet statt verwaist.
 - T7: Das Wiederherstellen öffnet über `initiateConnect` mit Konsole `embedded` (gleicher Weg wie ein Klick, Host-Key-Prüfung inklusive), auch wenn `sshConsole` auf `external` steht: es stellt Tabs wieder her. Nacheinander in der gespeicherten Reihenfolge; eine gelöschte Verbindung oder eine ohne Tab nach dem Start fällt aus der Liste. Gespeichert wird erst, wenn die Verbindungen da sind, und der Logout (`closeAllTerminals`) beendet das Mitschreiben vorher, damit er die Liste nicht leert. Die Abhängigkeiten kommen per Injektion (`SessionKeeping`), weil `connectFlow.ts` den Store importiert. Zwölf Dateien: die vier AppShell-Tests brauchen `connectionsStore` und `setOpenSessions` im Mock; `types.ts` braucht nichts mehr (T6), die i18n-Texte liegen in `dictionaries.ts`, nicht in `de.json`/`en.json` (auch T8 korrigiert).
+- T8: Ein Ansible-Tab ist eine Sitzung mit synthetischer Connection (leere id, Name = Playbook) und `ansible: {check}` statt eines eigenen Tab-Typs: Tabs, Abdocken und Ausgabe bleiben ein Weg; `reconnectTerminal` und `openSessionIds` lassen ihn aus. Eingebettet zeigt der Tab den Start, die Statusmeldung `ansibleStarted` bleibt dem OS-Terminal-Weg.

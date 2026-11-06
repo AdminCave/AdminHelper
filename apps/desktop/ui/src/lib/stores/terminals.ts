@@ -14,7 +14,7 @@ import { get, writable, type Readable } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import type { TerminalMessage } from '$lib/bridge';
-import type { Connection, Settings } from '$lib/bridge/types';
+import type { AnsibleTarget, Connection, Settings } from '$lib/bridge/types';
 import { errMsg } from '$lib/utils/errors';
 import { reportError } from './statusBar';
 import { getMappings } from './tunnel';
@@ -35,6 +35,11 @@ export interface TerminalSession {
   backendId: number | null;
   /** Shown in a window of its own; its tab has no terminal meanwhile. */
   detached?: boolean;
+  /**
+   * A run of a playbook (R-1073) instead of an SSH session: `connection` then only carries its
+   * name. It is not reconnected and not kept for the next run.
+   */
+  ansible?: { check: boolean };
 }
 
 /**
@@ -144,18 +149,25 @@ function begin(runtime: Runtime): number {
   return runtime.attempt;
 }
 
-/** Starts the program for `resolved` in session `key`; false when it did not start. */
+/** Starts the program of a session: in cols×rows, its output to `onMessage`; resolves to its id. */
+type Launch = (
+  cols: number,
+  rows: number,
+  onMessage: (message: TerminalMessage) => void,
+) => Promise<number>;
+
+/** Starts the program of session `key` with `launch`; false when it did not start. */
 async function start(
   key: string,
   runtime: Runtime,
   attempt: number,
-  resolved: Connection,
+  launch: Launch,
 ): Promise<boolean> {
   const current = () => runtimes.get(key) === runtime && runtime.attempt === attempt;
   const { cols, rows } = runtime;
   let id: number;
   try {
-    id = await bridge.terminalOpenSsh(resolved, cols, rows, (message) => {
+    id = await launch(cols, rows, (message) => {
       if (current()) receive(key, runtime, message);
     });
   } catch (err) {
@@ -211,7 +223,43 @@ export function openTerminal(connection: Connection, resolved: Connection): Prom
     backendId: null,
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
-  return start(key, runtime, begin(runtime), resolved);
+  return start(key, runtime, begin(runtime), sshLaunch(resolved));
+}
+
+function sshLaunch(resolved: Connection): Launch {
+  return (cols, rows, onMessage) => bridge.terminalOpenSsh(resolved, cols, rows, onMessage);
+}
+
+/**
+ * Runs the playbook `playbookId`, named `name`, on `targets` in a new tab in front, as a dry run
+ * with `check`. False when it did not start: the tab then shows it disconnected, the status bar
+ * why.
+ */
+export function openAnsible(
+  playbookId: string,
+  name: string,
+  targets: AnsibleTarget[],
+  check: boolean,
+): Promise<boolean> {
+  opened += 1;
+  const key = `terminal-${opened}`;
+  const runtime = newRuntime(key);
+  // The tab shows the name of the playbook; there is no connection behind it.
+  const connection = { id: '', name, kind: 'ssh', tags: [], trustCert: false } as Connection;
+  const session: TerminalSession = {
+    key,
+    connection,
+    resolved: connection,
+    status: 'connecting',
+    exitCode: null,
+    connectedAt: null,
+    backendId: null,
+    ansible: { check },
+  };
+  state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
+  return start(key, runtime, begin(runtime), (cols, rows, onMessage) =>
+    bridge.terminalOpenAnsible(playbookId, targets, check, cols, rows, onMessage),
+  );
 }
 
 /**
@@ -221,7 +269,8 @@ export function openTerminal(connection: Connection, resolved: Connection): Prom
 export async function reconnectTerminal(key: string): Promise<boolean> {
   const session = find(key);
   const runtime = runtimes.get(key);
-  if (!session || !runtime) return false;
+  // A playbook runs again from the Ansible page.
+  if (!session || !runtime || session.ansible) return false;
   const attempt = begin(runtime);
   const id = runningId(session);
   if (id !== null) end(id);
@@ -238,7 +287,7 @@ export async function reconnectTerminal(key: string): Promise<boolean> {
   }
   if (runtimes.get(key) !== runtime || runtime.attempt !== attempt) return false;
   update(key, { resolved });
-  return start(key, runtime, attempt, resolved);
+  return start(key, runtime, attempt, sshLaunch(resolved));
 }
 
 /** The tab in front once `key` leaves the front: the one before it, a session or the page. */
@@ -478,7 +527,12 @@ let stopKeeping: (() => void) | null = null;
 export function openSessionIds(sessions: TerminalSession[]): string[] {
   const ids: string[] = [];
   for (const s of sessions) {
-    if (s.connection.kind === 'ssh' && s.connection.id && !ids.includes(s.connection.id)) {
+    if (
+      !s.ansible &&
+      s.connection.kind === 'ssh' &&
+      s.connection.id &&
+      !ids.includes(s.connection.id)
+    ) {
       ids.push(s.connection.id);
     }
   }
