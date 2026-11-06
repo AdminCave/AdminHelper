@@ -132,9 +132,12 @@ def _require_login_to_move(auth, conn: Connection, update: ConnectionUpdate) -> 
         return
     stored = conn.to_dict()
     options = stored.get("options")
-    if not any(v is not None for v in _login_only_values(options).values()) and not _nla_off(
-        options
-    ):
+    guarded = (
+        sorted(n for n, v in _login_only_values(options).items() if v is not None)
+        + (["rdp.nla"] if _nla_off(options) else [])
+        + (["trustCert"] if stored.get("trustCert") else [])
+    )
+    if not guarded:
         return
     moved = sorted(
         name
@@ -149,10 +152,18 @@ def _require_login_to_move(auth, conn: Connection, update: ConnectionUpdate) -> 
             detail="Only a user login may change "
             + ", ".join(moved)
             + " of a connection with these options set: "
-            + ", ".join(
-                sorted(n for n, v in _login_only_values(options).items() if v is not None)
-                + (["rdp.nla"] if _nla_off(options) else [])
-            ),
+            + ", ".join(guarded),
+        )
+
+
+def _require_login_to_trust(auth, sent: bool | None, stored: bool) -> None:
+    """trustCert makes the desktop skip the target's certificate check, so like the guarded
+    options only a user login turns it on; an API key may send it back unchanged or turn it off."""
+    _user, api_key = auth
+    if api_key is not None and sent is True and not stored:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a user login may turn on trustCert",
         )
 
 
@@ -213,6 +224,7 @@ def create_connection(
 ):
     _require_key_server(_auth, connection.serverId)
     _require_login_for_options(_auth, connection.options, None)
+    _require_login_to_trust(_auth, connection.trustCert, False)
     _reject_unknown_server(db, connection.serverId)
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
@@ -253,6 +265,8 @@ def update_connection(
         _require_key_server(_auth, connection.serverId)
     if "options" in connection.model_fields_set:
         _require_login_for_options(_auth, connection.options, conn.to_dict().get("options"))
+    if "trustCert" in connection.model_fields_set:
+        _require_login_to_trust(_auth, connection.trustCert, bool(conn.trust_cert))
     _require_login_to_move(_auth, conn, connection)
     _reject_unknown_server(db, connection.serverId)
     conn.update_from_dict(connection.model_dump(exclude_unset=True))
