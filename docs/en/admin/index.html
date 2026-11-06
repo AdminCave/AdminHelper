@@ -96,7 +96,7 @@
             <div>
               <div class="callout-title">Modular monolith</div>
               <p>
-                AdminHelper is a modular monolith: one FastAPI process serves the web panel, the REST API, and the APScheduler that runs monitoring jobs. Metrics are streamed to an external <strong>VictoriaMetrics</strong>, and FRP runs in a container of its own. Persistence is <strong>PostgreSQL 17</strong> (its own Compose service); the server and the monitoring service share one Postgres cluster with two databases (<code>adminhelper</code>, <code>adminhelper_monitor</code>). The mTLS PKI is run by the separate <code>ca-issuer</code> service; certificate lifetimes are in <a href="./operations.html">Operations &amp; Config</a>.
+                AdminHelper is a modular monolith: one FastAPI process serves the web panel, the REST API, and the APScheduler that runs monitoring jobs. Metrics are streamed to an external <strong>VictoriaMetrics</strong>, and FRP runs in a container of its own. Persistence is <strong>PostgreSQL 18</strong> (its own Compose service); the server and the monitoring service share one Postgres cluster with two databases (<code>adminhelper</code>, <code>adminhelper_monitor</code>). The mTLS PKI is run by the separate <code>ca-issuer</code> service; certificate lifetimes are in <a href="./operations.html">Operations &amp; Config</a>.
               </p>
             </div>
           </div>

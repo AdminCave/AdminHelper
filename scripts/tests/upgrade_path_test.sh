@@ -91,14 +91,21 @@ upd_teardown() {
     ( cd "$UPD_DIR" && docker compose -p "$UPD_PROJECT" down -v --remove-orphans >/dev/null 2>&1 ) || true
     UPD_DIR=""
 }
-upgrade_teardown() { upd_teardown; e2e_teardown; }
+# The checkout's compose file no longer names the volume of PostgreSQL 17, so its
+# `down -v` leaves it: the move in step 3 keeps it as the way back.
+upgrade_teardown() {
+    upd_teardown; e2e_teardown
+    [ -z "$E2E_PROJECT" ] || docker volume rm "${E2E_PROJECT}_postgres-data" >/dev/null 2>&1 || true
+}
 trap upgrade_teardown EXIT
 
 # ── the two compose stacks ───────────────────────────────────────────────────
 # Phase 1 is the release's OWN docker-compose.yml with its images pinned; phase 2
 # is the repo's file with its test overlay. Both use the SAME project name, so
-# every named volume (postgres-data above all) carries over — that carry-over IS
-# the upgrade under test. The checkout's compose file must not start the release:
+# every named volume carries over — that carry-over IS the upgrade under test. The
+# database moves from PostgreSQL 17 (postgres-data) to 18 (postgres18-data) by the
+# block of update.sh that does it on a host (step 3).
+# The checkout's compose file must not start the release:
 # its services need what only this checkout ships (db-init runs app.db_roles, the
 # services log in with roles the release never created), so the old stack would
 # not come up, and if it did it would not be the release a user runs.
@@ -176,6 +183,38 @@ BEFORE=$(e2e_api "$TOKEN" count-tunnels "$SERVER_ID" 2>/dev/null || echo 0)
     || { bad "seeds not readable on $PREV itself"; exit 1; }
 
 # ── 3. swap in the images from THIS checkout ─────────────────────────────────
+# A release on PostgreSQL 17 first moves its data to 18 with the very block of
+# scripts/update.sh a host runs, its `docker compose` aimed at this stack. The old
+# volume must stay as it was: it is the way back.
+if grep -q 'postgres18-data' "$RELEASE_COMPOSE"; then
+    echo "  --   $PREV runs PostgreSQL 18 already: no move"
+else
+    PG_BLOCK=$(sed -n '/^# >>> pg18-migration$/,/^# <<< pg18-migration$/p' "$E2E_REPO_ROOT/scripts/update.sh")
+    [ -n "$PG_BLOCK" ] || { bad "the pg18-migration block is not in scripts/update.sh"; exit 1; }
+    mkdir -p "$E2E_WORK/pgmove/backups"
+    ( cd "$E2E_WORK/pgmove" || exit 1
+      log() { echo "[update] $*"; }
+      say() { echo "$*"; }
+      # e2e_dc itself calls docker compose: the guard lets that call through.
+      docker() {
+          if [ "${1:-}" = compose ] && [ -z "${_PG_E2E:-}" ]; then shift; _PG_E2E=1 e2e_dc "$@"
+          else command docker "$@"; fi
+      }
+      eval "$PG_BLOCK"
+      pg18_detect || { echo "detect: $PG_WHY"; exit 1; }
+      [ "$PG_MIGRATE" = 1 ] || { echo "detect: no move due on the $PREV data"; exit 1; }
+      pg18_space || { echo "space: $PG_WHY"; exit 1; }
+      pg18_migrate || { echo "the move failed"; exit 1; }
+      [ -z "$(find backups -mindepth 1)" ] || { echo "the dump was left in backups/"; exit 1; }
+    ) > "$E2E_WORK/pgmove.log" 2>&1
+    prc=$?
+    sed 's/^/    /' "$E2E_WORK/pgmove.log"
+    [ "$prc" = 0 ] && ok "the $PREV data moved from PostgreSQL 17 to 18 by the block of update.sh" \
+        || { bad "the move to PostgreSQL 18 failed"; e2e_dc logs --tail 40 postgres; exit 1; }
+    docker volume inspect "${E2E_PROJECT}_postgres-data" >/dev/null 2>&1 \
+        && ok "the volume of PostgreSQL 17 is kept as the way back" \
+        || bad "the volume of PostgreSQL 17 is gone after the move"
+fi
 # `up --build -d` recreates the containers against the same volumes; both
 # services run `alembic upgrade head` on startup, which is the migration under test.
 echo "[upgrade] rebuilding from the checkout and restarting..."

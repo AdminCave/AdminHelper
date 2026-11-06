@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """One Postgres role per service (app.db_roles). The SQL is checked without a database; the
-roles themselves against a throwaway postgres:17-alpine the test starts, because the
+roles themselves against a throwaway postgres:18-alpine the test starts, because the
 developers' test database may not create roles and every worktree shares its cluster."""
 
 import shutil
@@ -17,7 +17,7 @@ from psycopg import errors, sql
 
 from app import db_roles
 
-PG_IMAGE = "postgres:17-alpine"
+PG_IMAGE = "postgres:18-alpine"
 SUPERUSER, SUPERPASS = "adminhelper", "super-pw"
 PASSWORDS = {
     "SERVER_DB_PASSWORD": "server-pw",

@@ -11,10 +11,10 @@
 # install.sh sets up a NEW installation. Over an existing one it stops before it
 # changes anything and points to ./scripts/update.sh: in bootstrap mode when the
 # target directory already holds a .env or a docker-compose.yml, in both modes
-# when the compose project already has containers or a postgres-data or ca-pki
-# volume. A .env alone, written ahead of the install, is taken over. --reset
-# deletes those containers and volumes only after the project name is typed on
-# a terminal, --yes included.
+# when the compose project already has containers or a postgres18-data,
+# postgres-data (PostgreSQL 17) or ca-pki volume. A .env alone, written ahead of
+# the install, is taken over. --reset deletes those containers and volumes only
+# after the project name is typed on a terminal, --yes included.
 #
 # Since 0.29.0 mTLS is enforced by default. There is no "arm" step and no
 # permissive window: the first admin + a one-time enrollment token are created
@@ -528,19 +528,21 @@ install_state() {
     CONTAINERS=$(docker compose ps --all --quiet </dev/null 2>"$err") \
         || { echo "ERROR: cannot list the containers of compose project '${PROJECT}':" >&2; cat -v "$err" >&2; exit 1; }
     [ -z "$CONTAINERS" ] || FOUND="containers"
-    for vol in "${PROJECT}_postgres-data" "${PROJECT}_ca-pki"; do
+    for vol in "${PROJECT}_postgres18-data" "${PROJECT}_postgres-data" "${PROJECT}_ca-pki"; do
         docker volume inspect "$vol" </dev/null >/dev/null 2>&1 && FOUND="${FOUND:+$FOUND, }volume $vol"
     done
     return 0
 }
 # project_volumes prints the volumes of the project that exist, one per line. The
 # names come from the volumes block of CFG (config --volumes fails without
-# interpolation).
+# interpolation), plus postgres-data: update.sh keeps that volume of PostgreSQL 17
+# as the rollback of its migration, and the compose file no longer names it.
 project_volumes() {
     local vol
     while IFS= read -r vol; do
         docker volume inspect "$vol" </dev/null >/dev/null 2>&1 && echo "$vol"
-    done < <(awk '/^volumes:/ {f = 1; next} /^[^ ]/ {f = 0} f && $1 == "name:" {print $2}' <<<"$CFG")
+    done < <({ awk '/^volumes:/ {f = 1; next} /^[^ ]/ {f = 0} f && $1 == "name:" {print $2}' <<<"$CFG"
+        echo "${PROJECT}_postgres-data"; } | awk '!seen[$0]++')
     return 0
 }
 existing_install() {
@@ -666,8 +668,9 @@ fetch_repo_into
 # Pull first so a stale locally-cached :latest (or a pinned tag) is refreshed —
 # `up` alone reuses an existing image and would run an outdated one.
 if [ "$RESET" = 1 ]; then
-    echo "[install] --reset: entferne bestehende Container + Volumes (postgres-data, CA, ...)..."
+    echo "[install] --reset: entferne bestehende Container + Volumes (postgres18-data, CA, ...)..."
     docker compose down -v </dev/null >/dev/null 2>&1 || true
+    docker volume rm "${PROJECT}_postgres-data" </dev/null >/dev/null 2>&1 || true
     install_state
     LEFT=$(project_volumes | tr '\n' ' ')
     [ -z "$CONTAINERS$LEFT" ] || { echo "ERROR: compose project '${PROJECT}' still has ${CONTAINERS:+containers; }${LEFT:+volumes $LEFT}after docker compose down -v; the stack was not started." >&2; exit 1; }
@@ -678,13 +681,13 @@ echo "[install] Starte den Stack und warte auf die Healthchecks (Migration + uvi
 # --wait waits until every service with a healthcheck is healthy, the server's
 # included, so create-admin below finds it up.
 if ! docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}" </dev/null; then
-    # A stale postgres-data volume (from an earlier, failed attempt) was initialised
+    # A stale postgres18-data volume (from an earlier, failed attempt) was initialised
     # with a different POSTGRES_PASSWORD than the current .env — Postgres only honors
     # the password on first init, so auth fails forever. Say so instead of a bare
     # health-check timeout.
     if docker compose logs --tail=20 server </dev/null 2>/dev/null | grep -q "password authentication failed"; then
         echo "FEHLER: Postgres lehnt das Passwort ab (password authentication failed)." >&2
-        echo "       Ursache: meist ein altes 'postgres-data'-Volume aus einem frueheren" >&2
+        echo "       Ursache: meist ein altes 'postgres18-data'-Volume aus einem frueheren" >&2
         echo "       (fehlgeschlagenen) Versuch — dessen Init-Passwort passt nicht zur .env." >&2
         echo "       Loesung: neu aufsetzen mit  docker compose down -v  (loescht die Volumes!)" >&2
         echo "       oder  install.sh … --reset  (raeumt vorab auf)." >&2

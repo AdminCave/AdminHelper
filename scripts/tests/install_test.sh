@@ -53,8 +53,8 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # The compose project is AH_TEST_PROJECT (default ahtest), its volume keys
 # AH_TEST_VOLUME_KEYS, its containers AH_TEST_CONTAINERS (default none), the
 # volumes that exist AH_TEST_VOLUMES (space-separated, default none).
-# `compose down -v` in the call log removes containers and volumes, unless
-# AH_TEST_DOWN_KEEPS=1. AH_TEST_CONFIG_FAIL=1 / AH_TEST_PS_FAIL=1 make compose
+# `compose down -v` in the call log removes containers and volumes, and
+# `volume rm <name>` that volume, unless AH_TEST_DOWN_KEEPS=1. AH_TEST_CONFIG_FAIL=1 / AH_TEST_PS_FAIL=1 make compose
 # config / compose ps fail. docker inspect names AH_TEST_WORKDIR (unset: the
 # current directory; empty: no label) as the directory of every container.
 # compose up --help offers --wait and --wait-timeout unless AH_TEST_NO_WAIT=1;
@@ -67,6 +67,7 @@ cat > "$BIN/docker" <<'EOF'
 [ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
 [ -z "${AH_TEST_DOCKER_ENV:-}" ] || printf '%s\n' "${ADMIN_PASSWORD-<unset>}" >> "$AH_TEST_DOCKER_ENV"
 gone() { [ "${AH_TEST_DOWN_KEEPS:-}" != 1 ] && [ -n "${AH_TEST_DOCKER_LOG:-}" ] && grep -qx 'compose down -v' "$AH_TEST_DOCKER_LOG"; }
+removed() { [ "${AH_TEST_DOWN_KEEPS:-}" != 1 ] && [ -n "${AH_TEST_DOCKER_LOG:-}" ] && grep -qxF "volume rm $1" "$AH_TEST_DOCKER_LOG"; }
 case "$*" in
   *create_connection*) exit 0 ;;
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
@@ -84,7 +85,7 @@ case "$*" in
     bad=$(grep -nE '^[^#=:]* [^#=:]*$' .env 2>/dev/null | head -n 1)
     [ -z "$bad" ] || { echo "failed to read .env: line ${bad%%:*}: key cannot contain a space: ${bad#*:}" >&2; exit 1; }
     echo "name: ${AH_TEST_PROJECT:-ahtest}"; echo "services: {}"; echo "volumes:"
-    for k in ${AH_TEST_VOLUME_KEYS:-ca-pki gateway-certs postgres-data}; do
+    for k in ${AH_TEST_VOLUME_KEYS:-ca-pki gateway-certs postgres18-data}; do
       echo "  $k:"; echo "    name: ${AH_TEST_PROJECT:-ahtest}_$k"
     done
     exit 0 ;;
@@ -94,7 +95,7 @@ case "$*" in
   "inspect --format "*)
     shift 3; for _ in "$@"; do echo "dir=${AH_TEST_WORKDIR-$PWD}"; done; exit 0 ;;
   "volume inspect "*)
-    gone || for v in ${AH_TEST_VOLUMES:-}; do [ "$v" != "$3" ] || exit 0; done
+    gone || removed "$3" || for v in ${AH_TEST_VOLUMES:-}; do [ "$v" != "$3" ] || exit 0; done
     echo "Error: No such volume: $3" >&2; exit 1 ;;
   *) exit 0 ;;
 esac
@@ -507,11 +508,17 @@ unchanged() {
   ! grep -q zz9 <<<"$out" && ok "$1: no .env value in the output" || bad "$1: output names a .env value"
 }
 # (b) a data volume of the project
-existing_install inst10b AH_TEST_VOLUMES=ahtest_postgres-data
+existing_install inst10b AH_TEST_VOLUMES=ahtest_postgres18-data
 { [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'ahtest' <<<"$out"; } \
-  && ok "postgres-data volume: abort names update.sh and the project" \
-  || { echo "$out" | sed 's/^/    │ /'; bad "postgres-data volume: rc=$rc"; }
+  && ok "postgres18-data volume: abort names update.sh and the project" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "postgres18-data volume: rc=$rc"; }
 unchanged inst10b
+# (b2) only the volume of PostgreSQL 17, which the compose file no longer names
+existing_install inst10b2 AH_TEST_VOLUMES=ahtest_postgres-data
+{ [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'volume ahtest_postgres-data' <<<"$out"; } \
+  && ok "postgres-data volume of PostgreSQL 17: abort names it and update.sh" \
+  || { echo "$out" | sed 's/^/    │ /'; bad "postgres-data volume of 17: rc=$rc"; }
+unchanged inst10b2
 # (c) containers of the project
 existing_install inst10c AH_TEST_CONTAINERS=abc123
 { [ $rc -ne 0 ] && grep -q 'update.sh' <<<"$out" && grep -q 'ahtest' <<<"$out"; } \
@@ -566,22 +573,22 @@ else
   }
   # (a) containers of this directory and the project name typed: down -v before
   # the pull, both volumes named
-  reset_run inst11a ahtest AH_TEST_CONTAINERS=abc123 AH_TEST_VOLUMES="ahtest_postgres-data ahtest_ca-pki"
+  reset_run inst11a ahtest AH_TEST_CONTAINERS=abc123 AH_TEST_VOLUMES="ahtest_postgres18-data ahtest_ca-pki"
   [ $rc -eq 0 ] && ok "--reset with the project name typed exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "--reset typed: rc=$rc"; }
-  { grep -q ahtest_postgres-data <<<"$out" && grep -q ahtest_ca-pki <<<"$out"; } \
+  { grep -q ahtest_postgres18-data <<<"$out" && grep -q ahtest_ca-pki <<<"$out"; } \
     && ok "--reset names both volumes before it asks" || bad "--reset question: $(grep -i volume <<<"$out" | tr '\n' ' ')"
   [ "$(grep -nE '^compose (down -v|pull)' <<<"$dlog" | cut -d: -f2 | tr '\n' ' ')" = "compose down -v compose pull " ] \
     && ok "--reset runs compose down -v before compose pull" || bad "--reset calls: $(grep -E '^compose' <<<"$dlog" | tr '\n' ' ')"
   ! grep -q zz9 <<<"$out" && ok "--reset: no .env value in the output" || bad "--reset output names a .env value"
   # (b) another answer: abort, nothing changed
-  reset_run inst11b nein AH_TEST_VOLUMES="ahtest_postgres-data ahtest_ca-pki"
+  reset_run inst11b nein AH_TEST_VOLUMES="ahtest_postgres18-data ahtest_ca-pki"
   { [ $rc -ne 0 ] && grep -q 'not the project name' <<<"$out"; } && ok "--reset with a wrong answer aborts" \
     || { echo "$out" | sed 's/^/    │ /'; bad "--reset wrong answer: rc=$rc"; }
   unchanged inst11b
   # (c) no terminal: abort before any question, --yes or not
   new_inst inst11c; printf 'SECRET_KEY=zz9secret\n' >> "$INST/.env"; cp "$INST/.env" "$WORK/inst11c.env.orig"
   DLOG="$WORK/docker-inst11c.log"
-  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" AH_TEST_VOLUMES=ahtest_postgres-data setsid -w bash "$INSTALL" \
+  out=$(cd "$INST" && AH_TEST_DOCKER_LOG="$DLOG" AH_TEST_VOLUMES=ahtest_postgres18-data setsid -w bash "$INSTALL" \
     --reset --domain new.example --admin-password sikrit123 --yes </dev/null 2>&1); rc=$?
   dlog=$(cat "$DLOG" 2>/dev/null)
   { [ $rc -ne 0 ] && grep -q 'needs a typed confirmation on a terminal' <<<"$out"; } \
@@ -592,8 +599,8 @@ else
   { [ $rc -eq 0 ] && ! grep -q 'Type the project name' <<<"$out"; } && ok "--reset over nothing asks nothing, exit 0" \
     || { echo "$out" | sed 's/^/    │ /'; bad "--reset over nothing: rc=$rc"; }
   # (e) the volumes outlive down -v: abort before the pull
-  reset_run inst11e ahtest AH_TEST_VOLUMES=ahtest_postgres-data AH_TEST_DOWN_KEEPS=1
-  { [ $rc -ne 0 ] && grep -q 'still has' <<<"$out" && grep -q ahtest_postgres-data <<<"$out"; } \
+  reset_run inst11e ahtest AH_TEST_VOLUMES=ahtest_postgres18-data AH_TEST_DOWN_KEEPS=1
+  { [ $rc -ne 0 ] && grep -q 'still has' <<<"$out" && grep -q ahtest_postgres18-data <<<"$out"; } \
     && ok "volumes left after down -v: abort names them" || { echo "$out" | sed 's/^/    │ /'; bad "volumes left after down -v: rc=$rc"; }
   ! grep -qE '^compose (pull|up)' <<<"${dlog//compose up --help/}" && ok "volumes left after down -v: no compose pull/up" \
     || bad "volumes left after down -v: $(grep -E '^compose' <<<"${dlog//compose up --help/}" | tr '\n' ' ')"
@@ -615,6 +622,20 @@ else
     && ok "container without a working_dir label: --reset aborts" \
     || { echo "$out" | sed 's/^/    │ /'; bad "container without a working_dir label: rc=$rc"; }
   unchanged inst11h
+  # (i) the volume of PostgreSQL 17 (update.sh keeps it as the rollback; the compose
+  # file no longer names it, so down -v leaves it): the question names it, and
+  # docker volume rm removes it after down -v, before the pull
+  reset_run inst11i ahtest AH_TEST_VOLUMES="ahtest_postgres-data" AH_TEST_DOWN_KEEPS=1
+  grep -q ahtest_postgres-data <<<"$out" && ok "--reset names the postgres-data volume of PostgreSQL 17" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--reset over the volume of 17: no name in the question"; }
+  [ "$(grep -nE '^compose (down -v|pull)|^volume rm ' <<<"$dlog" | cut -d: -f2 | tr '\n' ' ')" = "compose down -v volume rm ahtest_postgres-data " ] \
+    && ok "--reset removes the postgres-data volume after down -v" || bad "--reset over the volume of 17: $(grep -E '^(compose|volume)' <<<"$dlog" | tr '\n' ' ')"
+  { [ $rc -ne 0 ] && grep -q 'still has' <<<"$out"; } \
+    && ok "postgres-data left after volume rm: abort before the pull" || { echo "$out" | sed 's/^/    │ /'; bad "volume of 17 left: rc=$rc"; }
+  # (j) as (i), and docker volume rm removes it: the install goes on
+  reset_run inst11j ahtest AH_TEST_VOLUMES="ahtest_postgres-data"
+  { [ $rc -eq 0 ] && grep -q '^compose pull' <<<"$dlog"; } && ok "--reset over the volume of 17 removes it and installs" \
+    || { echo "$out" | sed 's/^/    │ /'; bad "--reset over the volume of 17: rc=$rc"; }
 fi
 
 # ── 12. without --domain the DOMAIN of the existing .env stays ──────────────

@@ -17,7 +17,8 @@
 # a rollback and --check on a floating tag over a .env with bytes outside UTF-8 and
 # a NUL byte, and with a terminal on stdin a read-only .env at the re-pin, at the
 # rollback before and at the one after the deploy, and a read-only
-# docker-compose.yml at the swap.
+# docker-compose.yml at the swap, and the move from PostgreSQL 17 to 18 by dump with
+# its refusals, its rollback and the --redeploy guard.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign,
 #      docker compose; no daemon; a user that file rights bind: as root tests 38 and
@@ -76,7 +77,16 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # records, per pull, SERVER_IMAGE from the environment and the SERVER_IMAGE line of .env; AH_TEST_PULL_BLOCK=<marker> and
 # AH_TEST_UP_BLOCK=<marker> create <marker>.started at the pull or `compose up -d`
 # and wait up to 30 s for <marker>, AH_TEST_STOP_BLOCK=<marker> the same at the
-# stop of the migrating services, AH_TEST_HELP_BLOCK=<marker> at `compose up --help` ---
+# stop of the migrating services, AH_TEST_HELP_BLOCK=<marker> at `compose up --help`.
+# The move to PostgreSQL 18: AH_TEST_VOLS=<dir> holds one file per volume of the
+# project ahproj (`compose config` names it, `volume inspect` and `volume rm` look
+# there, AH_TEST_VOLRM_FAIL=1 fails the rm); AH_TEST_PG_CID is the running postgres
+# container, AH_TEST_PG_MOUNTS its volumes, AH_TEST_PG_SIZE the cluster size (default
+# 1000), the Docker root is the install dir; the dump (`run --rm --network
+# container:…`) fails with AH_TEST_DUMP_FAIL=1, `compose up … postgres` creates the
+# new volume or fails with AH_TEST_PG_UP_FAIL=1, the restore (`psql -v
+# ON_ERROR_STOP=1` on stdin) lands in <dir>/restored.sql and fails with
+# AH_TEST_RESTORE_FAIL=1, the DROP DATABASE with AH_TEST_DROP_FAIL=1 ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
@@ -97,6 +107,35 @@ case "$*" in
     [ -z "${AH_TEST_STOP_BLOCK:-}" ] || [ -e "$AH_TEST_STOP_BLOCK" ] || block "$AH_TEST_STOP_BLOCK" ;;
 esac
 case "$*" in
+  "compose config") [ -z "${AH_TEST_VOLS:-}" ] || echo "name: ahproj"; exit 0 ;;
+  "compose config --services") printf '%s\n' postgres db-init server; exit 0 ;;
+  "compose config --images postgres") echo "postgres:18-alpine@sha256:0000"; exit 0 ;;
+  "volume inspect "*) [ -n "${AH_TEST_VOLS:-}" ] && [ -e "$AH_TEST_VOLS/$3" ]; exit ;;
+  "volume rm "*)
+    [ "${AH_TEST_VOLRM_FAIL:-}" != 1 ] || { echo "stub: volume is in use" >&2; exit 1; }
+    rm -f "$AH_TEST_VOLS/$3"; exit 0 ;;
+  "compose ps -q postgres") [ -z "${AH_TEST_PG_CID:-}" ] || echo "$AH_TEST_PG_CID"; exit 0 ;;
+  "inspect -f "*) echo "${AH_TEST_PG_MOUNTS:-}"; exit 0 ;;
+  "exec "*" psql "*) echo "${AH_TEST_PG_SIZE:-1000}"; exit 0 ;;
+  "info -f "*) pwd; exit 0 ;;
+  "run --rm --network container:"*)
+    [ "${AH_TEST_DUMP_FAIL:-}" != 1 ] || { echo "stub: pg_dumpall failed" >&2; exit 1; }
+    printf '%s\n' '-- PostgreSQL database cluster dump' 'CREATE ROLE adminhelper;' \
+      'ALTER ROLE adminhelper WITH SUPERUSER LOGIN;' 'CREATE ROLE ah_server;' '\connect adminhelper' \
+      'CREATE ROLE adminhelper;'
+    exit 0 ;;
+  "compose up -d --wait --wait-timeout "*" postgres")
+    [ "${AH_TEST_PG_UP_FAIL:-}" != 1 ] || { echo "stub: postgres is unhealthy" >&2; exit 1; }
+    : > "$AH_TEST_VOLS/ahproj_postgres18-data"; exit 0 ;;
+  "compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 "*)
+    case "$*" in
+      *" -c DROP DATABASE adminhelper")
+        [ "${AH_TEST_DROP_FAIL:-}" != 1 ] || { echo "stub: drop failed" >&2; exit 1; } ;;
+      *)
+        cat > "$AH_TEST_VOLS/restored.sql"
+        [ "${AH_TEST_RESTORE_FAIL:-}" != 1 ] || { echo "ERROR:  stub: restore failed" >&2; exit 3; } ;;
+    esac
+    exit 0 ;;
   "compose up --help")
     if [ "${AH_TEST_NO_WAIT:-0}" = 1 ]; then echo "  -d, --detach   Detached mode"
     else printf '%s\n' "  -d, --detach   Detached mode" "      --wait   Wait for services" \
@@ -1702,8 +1741,147 @@ lost_log=$(find "$INST/backups" -maxdepth 1 -name 'update-*.log' -perm 600 -prin
   && ok "no terminal, the reader ends before the swap: nothing changed, the output in a 0600 log" \
   || bad "reader ends before the swap: rc=$rc log=${lost_log:-none} $(cat "$lost_log" 2>/dev/null) backups: $(find "$INST/backups" -mindepth 1 -printf '%f ' 2>&1)"
 
-# ── 47. a failing backup-first ends the update before anything changes ──────
-INST="$WORK/inst47"; make_install 0.33.0 "$SRC_OLD" "$INST"; DLOG="$WORK/docker47.log"; rm -f "$DLOG"
+# ── 47. PostgreSQL 17 -> 18: the move by dump, its refusals and its way back ─
+# 0.40.0 ships a compose file on postgres18-data (R-1035). The stub keeps one file
+# per volume of the project ahproj in $INST.vols; 17 runs as cid17 on the old one.
+SRC_PG="$WORK/src-0.40.0"; make_src 0.40.0 "$SRC_PG"
+printf '# volumes: postgres18-data\n' >> "$SRC_PG/docker-compose.yml"
+make_release 0.40.0 "$SRC_PG" "$DL" "$API"
+# $1 suffix, $2 version, $3 source: an install with the old volume; sets INST VOLS DLOG.
+pg_inst() {
+  INST="$WORK/inst47$1"; make_install "$2" "$3" "$INST"
+  VOLS="$INST.vols"; mkdir -p "$VOLS"; : > "$VOLS/ahproj_postgres-data"
+  DLOG="$INST.docker"; : > "$DLOG"
+}
+pg_update() {
+  AH_TEST_VOLS="$VOLS" AH_TEST_DOCKER_LOG="$DLOG" AH_TEST_PG_CID="${AH_TEST_PG_CID-cid17}" \
+    AH_TEST_PG_MOUNTS="${AH_TEST_PG_MOUNTS-ahproj_postgres-data}" run_update "$INST" "$@"
+}
+# The steps of the move in the order of the docker calls.
+pg_steps() {
+  awk '/^compose stop db-init server$/ {print "stop"}
+       /^run --rm --network container:cid17 postgres:18-alpine@sha256:0000 pg_dumpall -h 127\.0\.0\.1 -U adminhelper$/ {print "dump"}
+       /^compose up -d --wait --wait-timeout [0-9]+ postgres$/ {print "pg18"}
+       /^compose exec -T postgres psql .* -c DROP DATABASE adminhelper$/ {print "drop"}
+       /^compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U adminhelper -d postgres$/ {print "restore"}
+       /^compose rm -f -s postgres$/ {print "undo"}
+       /^compose up -d --wait --wait-timeout [0-9]+$/ {print "stack"}' "$DLOG" | tr '\n' ' '
+}
+pg_no_dump() { [ -z "$(find "$INST/backups" -name 'pg17-dumpall.*')" ]; }
+
+pg_inst a 0.34.0 "$SRC_NEW"
+out=$(pg_update --ref v0.40.0 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+{ [ $rc -eq 0 ] && pinned_on "$INST" 0.40.0 && [ "$(pg_steps)" = "stop dump pg18 drop restore stack " ]; } \
+  && ok "the move to 18: services stopped, dump by 18, fresh 18, dump in, then the stack" \
+  || bad "the move to 18: rc=$rc steps '$(pg_steps)' docker $(tr '\n' ';' < "$DLOG")"
+# The fresh cluster has the role already: its CREATE before the first \connect goes,
+# the ALTER with the password and everything after \connect stay.
+{ [ "$(grep -cx 'CREATE ROLE adminhelper;' "$VOLS/restored.sql")" = 1 ] \
+    && [ "$(sed -n '$p' "$VOLS/restored.sql")" = 'CREATE ROLE adminhelper;' ] \
+    && grep -qx 'ALTER ROLE adminhelper WITH SUPERUSER LOGIN;' "$VOLS/restored.sql" \
+    && grep -qx 'CREATE ROLE ah_server;' "$VOLS/restored.sql"; } \
+  && ok "the restore leaves out only the CREATE of the existing role" \
+  || bad "restored dump: $(tr '\n' ';' < "$VOLS/restored.sql")"
+{ pg_no_dump && [ -e "$VOLS/ahproj_postgres-data" ] && [ -e "$VOLS/ahproj_postgres18-data" ] \
+    && grep -qF 'docker volume rm ahproj_postgres-data' <<<"$out" && ! grep -q 'WARN' <<<"$out"; } \
+  && ok "after the move: the dump is gone, the old volume stays and the output names its removal" \
+  || bad "after the move: dumps $(find "$INST/backups" -name 'pg17-*') vols $(ls "$VOLS")"
+
+# No old volume (a new install of 0.34.0 never had one): nothing to move.
+pg_inst b 0.34.0 "$SRC_NEW"; rm "$VOLS/ahproj_postgres-data"
+out=$(pg_update --ref v0.40.0 2>&1); rc=$?
+{ [ $rc -eq 0 ] && pinned_on "$INST" 0.40.0 && [ "$(pg_steps)" = "stack " ]; } \
+  && ok "no old volume: no move" || bad "no old volume: rc=$rc steps '$(pg_steps)' $out"
+# Moved already (an update to 0.40.0 ran, the old volume waits for the admin).
+pg_inst c 0.34.0 "$SRC_NEW"; : > "$VOLS/ahproj_postgres18-data"
+out=$(AH_TEST_PG_MOUNTS=ahproj_postgres18-data pg_update --ref v0.40.0 2>&1); rc=$?
+{ [ $rc -eq 0 ] && [ "$(pg_steps)" = "stack " ] && [ -e "$VOLS/ahproj_postgres18-data" ]; } \
+  && ok "moved already: no second move" || bad "moved already: rc=$rc steps '$(pg_steps)' $out"
+
+# The refusals come before the backup: nothing changes, no image is pulled.
+pg_refused() {   # $1 what, $2 the reason in the message
+  msg=$(grep 'FEHLER: ' <<<"$out")
+  { [ $rc -ne 0 ] && grep -qF -- "$2" <<<"$msg" && grep -q 'Update abgebrochen, nichts geaendert' <<<"$msg" \
+      && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -qE '^(compose (pull|up -d|stop)|run )' "$DLOG" \
+      && [ -z "$(find "$INST/backups" -mindepth 1 ! -name 'update-*.log')" ]; } \
+    && ok "$1: refused before the backup, nothing changed" \
+    || bad "$1: rc=$rc docker $(tr '\n' ';' < "$DLOG") backups $(ls "$INST/backups") $msg"
+}
+pg_inst d 0.34.0 "$SRC_NEW"; : > "$VOLS/ahproj_postgres18-data"; before=$(snapshot_install "$INST")
+out=$(pg_update --ref v0.40.0 2>&1); rc=$?
+pg_refused "a new volume left beside a running 17" "docker volume rm ahproj_postgres18-data"
+pg_inst e 0.34.0 "$SRC_NEW"; before=$(snapshot_install "$INST")
+out=$(AH_TEST_PG_CID='' pg_update --ref v0.40.0 2>&1); rc=$?
+pg_refused "17 does not run" "start the installed stack"
+pg_inst f 0.34.0 "$SRC_NEW"; before=$(snapshot_install "$INST")
+out=$(AH_TEST_PG_SIZE=100000000000000000 pg_update --ref v0.40.0 2>&1); rc=$?
+pg_refused "too little free space" "not enough free space for the move to PostgreSQL 18"
+pg_inst o 0.34.0 "$SRC_PG"; before=$(snapshot_install "$INST")
+out=$(pg_update --ref v0.40.0 2>&1); rc=$?
+pg_refused "a compose file on 18 left by a half update" "already names postgres18-data while the data are still in ahproj_postgres-data"
+pg_inst g 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_PG_SIZE=unknown pg_update --ref v0.40.0 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'WARN: size of the PostgreSQL 17 cluster unreadable' <<<"$out" \
+    && [ "$(pg_steps)" = "stop dump pg18 drop restore stack " ]; } \
+  && ok "an unreadable size is a warning, the move runs" || bad "unreadable size: rc=$rc steps '$(pg_steps)' $out"
+
+# A failed move rolls back: files and pins on 0.34.0, the new volume and the dump
+# gone, the old volume as it was, 17 started again on it.
+pg_rolled_back() {   # $1 what, $2 the steps
+  msg=$(grep 'FEHLER: ' <<<"$out")
+  { [ $rc -ne 0 ] && grep -q 'zurueckgerollt auf 0\.34\.0' <<<"$msg" && pinned_on "$INST" 0.34.0 \
+      && grep -q 'marker: 0.34.0' "$INST/docker-compose.yml" && pg_no_dump \
+      && [ -e "$VOLS/ahproj_postgres-data" ] && [ ! -e "$VOLS/ahproj_postgres18-data" ] \
+      && [ "$(pg_steps)" = "$2" ] && ! grep -q 'Alembic revisions before' <<<"$out"; } \
+    && ok "$1: rolled back, the new volume removed, the old one kept" \
+    || bad "$1: rc=$rc steps '$(pg_steps)' vols $(ls "$VOLS") $msg"
+}
+pg_inst h 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_DUMP_FAIL=1 pg_update --ref v0.40.0 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+pg_rolled_back "a failed dump" "stop dump undo stack "
+grep -q 'the move to PostgreSQL 18 failed' <<<"$msg" && ok "a failed dump names the move" || bad "failed dump: $msg"
+pg_inst i 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_RESTORE_FAIL=1 pg_update --ref v0.40.0 2>&1); rc=$?
+pg_rolled_back "a failed restore" "stop dump pg18 drop restore undo stack "
+pg_inst i2 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_PG_UP_FAIL=1 pg_update --ref v0.40.0 2>&1); rc=$?
+pg_rolled_back "18 that does not start" "stop dump pg18 undo stack "
+pg_inst j 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_RESTORE_FAIL=1 pg_update --ref v0.40.0 --no-rollback 2>&1); rc=$?
+pg_rolled_back "--no-rollback and a failed restore" "stop dump pg18 drop restore undo stack "
+grep -q -- '--no-rollback does not keep an unfinished move to PostgreSQL 18' <<<"$out" \
+  && ok "--no-rollback says it does not keep the unfinished move" || bad "--no-rollback, unfinished move: $out"
+pg_inst k 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_RESTORE_FAIL=1 AH_TEST_VOLRM_FAIL=1 pg_update --ref v0.40.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && pinned_on "$INST" 0.34.0 \
+    && grep -qF 'WARN: could not remove ahproj_postgres18-data; remove it before the next update: docker volume rm ahproj_postgres18-data' <<<"$out"; } \
+  && ok "a new volume that cannot be removed: rolled back with the command to remove it" \
+  || bad "volume rm fails: rc=$rc $out"
+# The move succeeded, the stack does not get healthy: the data written since only
+# lived in 18, the old volume is the state before the update.
+pg_inst l 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_HEALTH=1 pg_update --ref v0.40.0 2>&1); rc=$?
+pg_rolled_back "a failed start after the move" "stop dump pg18 drop restore stack undo stack "
+
+# --redeploy on a compose file on 18 while the data are still in the old volume
+# (an update that ended half way) would start an empty database.
+pg_inst m 0.40.0 "$SRC_PG"; before=$(snapshot_install "$INST")
+out=$(pg_update --redeploy 2>&1); rc=$?
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'would start an empty PostgreSQL 18' <<<"$msg" \
+    && grep -qF -- './scripts/update.sh --ref v0.40.0' <<<"$msg" \
+    && [ "$(snapshot_install "$INST")" = "$before" ] && ! grep -qE '^compose (pull|up -d)' "$DLOG"; } \
+  && ok "--redeploy with the data still in the old volume: refused, the way on named" \
+  || bad "--redeploy, data in the old volume: rc=$rc docker $(tr '\n' ';' < "$DLOG") $msg"
+pg_inst n 0.40.0 "$SRC_PG"; : > "$VOLS/ahproj_postgres18-data"
+out=$(AH_TEST_PG_MOUNTS=ahproj_postgres18-data pg_update --redeploy 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q '^compose pull' "$DLOG"; } \
+  && ok "--redeploy after the move runs" || bad "--redeploy after the move: rc=$rc $out"
+
+# ── 48. a failing backup-first ends the update before anything changes ──────
+INST="$WORK/inst48"; make_install 0.33.0 "$SRC_OLD" "$INST"; DLOG="$WORK/docker48.log"; rm -f "$DLOG"
 printf '#!/usr/bin/env bash\necho "[backup] stub failure" >&2\nexit 3\n' > "$INST/scripts/backup.sh"
 before=$(snapshot_install "$INST")
 out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
