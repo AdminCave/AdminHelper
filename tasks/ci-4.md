@@ -5,8 +5,10 @@ Heavy: none — nur `docker.yml` und Doku; der Workflow läuft erst nach dem Mer
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — docker.yml: cosign-installer v4.1.3 und Verify nach dem Signieren (R-1119)  [ ]
+### T1 — docker.yml: cosign-installer v4.1.3 und Verify nach dem Signieren (R-1119)  [x]
 Komponente: scripts · Dateien: .github/workflows/docker.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c649b87aa 2026-11-06T18:31:43+01:00
+Review: am Ende (Branch-Review)
 Änderung: Beide Schritte „Install cosign“ (Jobs `build` und `latest`) auf `sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3` (cosign v3.1.4). Im Job `build` prüft nach „Sign the image (keyless)“ ein `cosign verify` die frische Signatur gegen die Identität dieses Laufs (`https://github.com/${GITHUB_REPOSITORY}/.github/workflows/docker.yml@${GITHUB_REF}`, Issuer GitHub-OIDC); der Kommentar über dem Signieren nennt das Bundle-Format.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T2
