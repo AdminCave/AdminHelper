@@ -120,6 +120,10 @@ BAD = [
     ({"ssh": {"jumpHost": "host:65536"}}, ("ssh", "jumpHost")),
     ({"ssh": {"jumpHost": ""}}, ("ssh", "jumpHost")),
     ({"ssh": {"jumpHost": ",".join(["h"] * 9)}}, ("ssh", "jumpHost")),
+    # an IPv6 literal only in the last hop (R-1158)
+    ({"ssh": {"jumpHost": "[2001:db8::1],h2"}}, ("ssh", "jumpHost")),
+    ({"ssh": {"jumpHost": "ops@[2001:db8::1]:22,h2"}}, ("ssh", "jumpHost")),
+    ({"ssh": {"jumpHost": "h1,[2001:db8::1],h3"}}, ("ssh", "jumpHost")),
     ({"ssh": {"forwards": [{"type": "L", "listen": "0", "target": "h:1"}]}}, ("ssh", "forwards")),
     (
         {"ssh": {"forwards": [{"type": "L", "listen": "-1", "target": "h:1"}]}},

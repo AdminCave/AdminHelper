@@ -88,13 +88,18 @@ pub fn validate_connection_input(connection: &Connection) -> Result<(), AppError
 // here again because these values become ssh arguments, and not every source of a connection
 // went through the server (local files, the sync URL).
 const HOST: &str = r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9_][A-Za-z0-9._-]{0,252})";
+// HOST without the IPv6 literal.
+const NAMED_HOST: &str = r"[A-Za-z0-9_][A-Za-z0-9._-]{0,252}";
 const PORT: &str =
     r"(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})";
 const USER: &str = r"[A-Za-z0-9_][A-Za-z0-9._-]{0,63}";
 
 static JUMP_RE: LazyLock<Regex> = LazyLock::new(|| {
-    let hop = format!("(?:{USER}@)?{HOST}(?::{PORT})?");
-    Regex::new(&format!("^{hop}(?:,{hop}){{0,7}}$")).expect("jump host pattern")
+    // An IPv6 literal only in the last hop (R-1158): ssh unwraps the last hop itself, but copies
+    // the hops before it unchanged into a ProxyCommand that does not keep the brackets as written.
+    let earlier = format!("(?:{USER}@)?{NAMED_HOST}(?::{PORT})?");
+    let last = format!("(?:{USER}@)?{HOST}(?::{PORT})?");
+    Regex::new(&format!("^(?:{earlier},){{0,7}}{last}$")).expect("jump host pattern")
 });
 static LISTEN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!(r"^(?:(?:\*|{HOST}):)?{PORT}$")).expect("listen pattern"));
@@ -321,7 +326,7 @@ mod tests {
     #[test]
     fn validate_connection_input_accepts_good_ssh_options() {
         let c = with_ssh_options(serde_json::json!({
-            "jumpHost": "ops@bastion.example.org:2222,[2001:db8::1],h3",
+            "jumpHost": "ops@bastion.example.org:2222,h3,[2001:db8::1]",
             "forwards": [
                 {"type": "L", "listen": "8080", "target": "intranet.local:80"},
                 {"type": "R", "listen": "127.0.0.1:65535", "target": "[::1]:1"},
@@ -351,6 +356,10 @@ mod tests {
             serde_json::json!({"jumpHost": "host:65536"}),
             serde_json::json!({"jumpHost": ""}),
             serde_json::json!({"jumpHost": "h,"}),
+            // an IPv6 literal only in the last hop (R-1158)
+            serde_json::json!({"jumpHost": "[2001:db8::1],h2"}),
+            serde_json::json!({"jumpHost": "ops@[2001:db8::1]:22,h2"}),
+            serde_json::json!({"jumpHost": "h1,[2001:db8::1],h3"}),
             serde_json::json!({"jumpHost": "h\u{e4}"}),
             serde_json::json!({"jumpHost": nine_hops}),
             serde_json::json!({"jumpHost": long_host}),

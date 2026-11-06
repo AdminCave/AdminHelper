@@ -94,12 +94,14 @@ MATRIX = [
     (_TOUCH, "/api/connections/c-null/touch", "bound_read", None, 404),
     (_TOUCH, "/api/connections/c-null/touch", "bound_rw", None, 404),
     (_TOUCH, "/api/connections/c-b/touch", "global_read", None, 200),
-    # The session history follows the same scope as touch.
-    (_SESSIONS, "/api/connections/c-a/sessions", "bound_read", None, 200),
-    (_SESSIONS, "/api/connections/c-b/sessions", "bound_read", None, 404),
-    (_SESSIONS, "/api/connections/c-b/sessions", "bound_rw", None, 404),
-    (_SESSIONS, "/api/connections/c-null/sessions", "bound_read", None, 404),
-    (_SESSIONS, "/api/connections/c-b/sessions", "global_read", None, 200),
+    # The session history is for user accounts (R-1143): every key gets the same 403, in
+    # scope, out of scope or for a connection that does not exist.
+    (_SESSIONS, "/api/connections/c-a/sessions", "bound_read", None, 403),
+    (_SESSIONS, "/api/connections/c-b/sessions", "bound_read", None, 403),
+    (_SESSIONS, "/api/connections/c-b/sessions", "bound_rw", None, 403),
+    (_SESSIONS, "/api/connections/c-null/sessions", "bound_read", None, 403),
+    (_SESSIONS, "/api/connections/c-b/sessions", "global_read", None, 403),
+    (_SESSIONS, "/api/connections/c-missing/sessions", "global_rw", None, 403),
     # A key ends no session, not even one on its own server: only the user who began a
     # session ends it, and a key carries no user.
     (_END, "/api/connections/c-a/sessions/s-a/end", "bound_read", None, 404),
