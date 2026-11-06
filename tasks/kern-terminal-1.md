@@ -17,6 +17,7 @@ Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs, apps/deskt
 Änderung: `PtyRegistry` hält je Sitzung einen Ringpuffer (1 MiB) und das Label des Besitzer-Fensters; der Sink ist austauschbar. `attach(id, owner, sink)` schickt den Puffer, dann die laufende Ausgabe; ein Sink, der scheitert, wird abgehängt, ohne das Programm zu beenden (es puffert weiter). `close_all_of(owner)` ersetzt `close_all` für `terminal_close_all` (beim Exit bleibt `close_all`). Neuer Befehl `terminal_attach(id, output)`; `terminal_open_ssh` merkt sich das aufrufende Fenster. Tests: Puffer läuft über und behält das Ende, Wiederanhängen bekommt Puffer und dann Live-Ausgabe genau einmal, `close_all_of` lässt fremde Sitzungen laufen, Exit nach dem Abhängen kommt beim nächsten Sink an.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: → T10
+Test-Löschung: apps/desktop/src-tauri/src/pty.rs::a_sink_nobody_listens_to_ends_the_program — gewollte Verhaltensänderung (R-1070): ohne Zuhörer läuft das Programm weiter und puffert; Ersatz a_sink_nobody_listens_to_is_let_go_and_the_program_runs_on
 
 ### T2 — Desktop: abgedocktes Fenster und Rechte je Label (R-1070)  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/capabilities/terminal-window.json, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs
