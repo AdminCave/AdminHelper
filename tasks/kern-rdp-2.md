@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-rdp-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-rdp-2 · Review: pro Task
 Spec: docs/features/kern-rdp-2.md (Roadmap R-1099, R-1092)
 Heavy: linux-full + windows — linux-full: neue Kanäle in der eingebetteten Sitzung, die `desktop_e2e_rdp_embedded` (xrdp-Container) im Sammellauf fährt, und eine neue Laufzeit-Abhängigkeit des Linux-Pakets; windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): Zwischenablage-Fabrik und Laufwerk sind `cfg(windows)`-Code. PR merged Kevin (`.github/workflows/`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,6 +53,13 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- license_gate
 Doku: die genannten Dateien
 Task-Review: am Ende
+
+### T6 — Desktop: freigegebenen Ordner vor dem Laufwerk prüfen (R-1099, aus der Abschlussprüfung)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: `shared_drive` löst den Downloads-Ordner mit `canonicalize` auf und gibt ihn nur frei, wenn er ein eigener Ordner ist: keine Wurzel, nicht das Home-, App-Daten- oder Konfigurationsverzeichnis und keiner ihrer Vorfahren; sonst `drive_unavailable` wie bei einem fehlenden Ordner. Tests: Home selbst, Home über `.`, ein Vorfahre der App-Daten, die Wurzel, ein Unterordner (frei).
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html (Absatz Laufwerk)
+Abhängt von: T3
 
 ## Entscheidungen
 - Laufwerk fehlt → Sitzung ohne Laufwerk mit Hinweis statt Abbruch (Spec, Trade-offs).
