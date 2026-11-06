@@ -38,7 +38,7 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T5
 Abhängt von: T2
 
-### T4 — R-1092: Windows-Probe des Absturzes reproduzieren und eingrenzen  [?] (Wo läuft die Probe: privates Wegwerf-Repo (Empfehlung) oder Wegwerf-Branch im öffentlichen Repo mit öffentlichem Log?)
+### T4 — R-1092: Windows-Probe des Absturzes reproduzieren und eingrenzen  [~] (verschoben in kern-rdp-3: wartet auf Kevins Wort zum Ort der Windows-Probe)
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs
 Änderung: Die Probe aus R-1074 T4 an IronRDP `f96f664` auf einem Windows-Runner, ohne Merge; Ergebnis und Logs nur unter `tasks/private/spikes/`. Reproduziert sich der Absturz: Mail-Entwurf an Devolutions unter `tasks/private/`, Kevin schickt ab. Im Baum ändert sich nur der Kommentar am Windows-Gate aus T2 (Verweis auf R-1092, neutral); Audio unter Windows bleibt aus.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
