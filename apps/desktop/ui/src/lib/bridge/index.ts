@@ -28,6 +28,9 @@ import type {
   ResetOutcome,
   ResolvedConnection,
   Settings,
+  SftpListing,
+  SftpTransfer,
+  SftpUploaded,
   TerminalExit,
   TunnelMapping,
   TunnelRefresh,
@@ -327,6 +330,53 @@ export function terminalClose(id: number): Promise<void> {
 // Ends every session of this window, those of a webview before a reload among them.
 export function terminalCloseAll(): Promise<void> {
   return invoke('terminal_close_all');
+}
+
+// ─────────────────────────── SFTP of a terminal session (R-1072) ──
+// Main window only; each goes over the connection of the running SSH session `session`.
+
+// The entries of `path` on the host; '.' is the login directory.
+export function sftpList(session: number, path: string): Promise<SftpListing> {
+  return invoke<SftpListing>('sftp_list', { session, path });
+}
+
+export function sftpMkdir(session: number, path: string): Promise<void> {
+  return invoke('sftp_mkdir', { session, path });
+}
+
+// Uploads the files the user picks in the file dialog into `dir`; null once the dialog is
+// cancelled. Files that exist there stay and are named in `existing`: sftpUploadDropped with
+// the returned `drop` and `overwrite` replaces them.
+export function sftpUpload(
+  session: number,
+  dir: string,
+  onProgress: (step: SftpTransfer) => void,
+): Promise<SftpUploaded | null> {
+  const progress = new Channel<SftpTransfer>(onProgress);
+  return invoke<SftpUploaded | null>('sftp_upload', { session, dir, progress });
+}
+
+// Uploads what is left of the files of `drop` (event `sftp-drop`, or a sftpUpload) into
+// `dir`; only the last drop counts, and a folder in it refuses the whole drop.
+export function sftpUploadDropped(
+  session: number,
+  dir: string,
+  drop: number,
+  overwrite: boolean,
+  onProgress: (step: SftpTransfer) => void,
+): Promise<SftpUploaded> {
+  const progress = new Channel<SftpTransfer>(onProgress);
+  return invoke<SftpUploaded>('sftp_upload_dropped', { session, dir, drop, overwrite, progress });
+}
+
+// Downloads the file `path` to where the user saves it; false once the dialog is cancelled.
+export function sftpDownload(
+  session: number,
+  path: string,
+  onProgress: (step: SftpTransfer) => void,
+): Promise<boolean> {
+  const progress = new Channel<SftpTransfer>(onProgress);
+  return invoke<boolean>('sftp_download', { session, path, progress });
 }
 
 // Moves session `id` to this window and `onMessage`; the channel before hears nothing more.

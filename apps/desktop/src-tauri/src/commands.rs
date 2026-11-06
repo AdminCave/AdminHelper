@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::ansible;
 use crate::auth;
@@ -27,6 +28,7 @@ use crate::probe::{self, ProbeTarget};
 use crate::proxy;
 use crate::pty::{self, PtyRegistry};
 use crate::session::SessionState;
+use crate::sftp;
 use crate::storage;
 use crate::sync;
 use crate::tofu;
@@ -707,6 +709,7 @@ fn ssh_spawn(
         cleanup: None,
         broadcast: true,
         control_path: None,
+        sftp: None,
     })
 }
 
@@ -720,6 +723,16 @@ fn with_control_master(mut spawn: pty::Spawn, dir: PathBuf) -> pty::Spawn {
     spawn.cleanup = Some(dir);
     spawn.control_path = Some(path);
     spawn
+}
+
+/// `spawn` with the argv of its SFTP channel (R-1072), over its ControlMaster socket when it
+/// holds one.
+fn with_sftp(mut spawn: pty::Spawn, connection: &Connection) -> Result<pty::Spawn, AppError> {
+    spawn.sftp = Some(connection::ssh::build_sftp_args(
+        connection,
+        spawn.control_path.as_deref(),
+    )?);
+    Ok(spawn)
 }
 
 /// A fresh 0700 directory for the ControlMaster socket of a session; none on Windows, whose
@@ -768,8 +781,11 @@ pub async fn terminal_open_ssh(
         };
         // A start that fails leaves the directory to us.
         let dir = spawn.cleanup.clone();
-        app.state::<PtyRegistry>()
-            .open(spawn, cols, rows, &owner, channel_sink(output))
+        with_sftp(spawn, &connection)
+            .and_then(|spawn| {
+                app.state::<PtyRegistry>()
+                    .open(spawn, cols, rows, &owner, channel_sink(output))
+            })
             .inspect_err(|_| {
                 if let Some(dir) = &dir {
                     let _ = std::fs::remove_dir_all(dir);
@@ -955,6 +971,206 @@ pub fn terminal_set_broadcast(
 #[tauri::command]
 pub fn terminal_broadcast_state(registry: State<'_, PtyRegistry>) -> bool {
     registry.broadcasting()
+}
+
+// ── SFTP of a terminal session (R-1072): main only, as the file panel sits in main ──
+
+/// The entries of `path` on the host of `session`; `.` is the login directory.
+#[tauri::command]
+pub async fn sftp_list(
+    window: tauri::Window,
+    session: u64,
+    path: String,
+) -> Result<sftp::SftpListing, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window reaches the files of a session".into(),
+        ));
+    }
+    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    sftp::list(program.as_os_str(), &args, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_mkdir(window: tauri::Window, session: u64, path: String) -> Result<(), AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window reaches the files of a session".into(),
+        ));
+    }
+    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    sftp::mkdir(program.as_os_str(), &args, &path).await
+}
+
+/// Uploads the files the user picks in the file dialog into `dir` on the host of `session`,
+/// `progress` hearing each step; `None` once the dialog is cancelled. A file that exists there
+/// stays and is named in `existing`: `sftp_upload_dropped` with the returned `drop` and
+/// `overwrite` replaces it.
+#[tauri::command]
+pub async fn sftp_upload(
+    window: tauri::Window,
+    session: u64,
+    dir: String,
+    progress: Channel<sftp::SftpTransfer>,
+) -> Result<Option<sftp::SftpUploaded>, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window reaches the files of a session".into(),
+        ));
+    }
+    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let parent = window.clone();
+    // The dialog waits for the user, and must not on the main thread.
+    let picked = blocking(move || {
+        Ok(parent
+            .dialog()
+            .file()
+            .set_parent(&parent)
+            .blocking_pick_files())
+    })
+    .await?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let paths = picked
+        .into_iter()
+        .map(|path| {
+            path.into_path()
+                .map_err(|e| AppError::Validation(e.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let drop = window.state::<sftp::Picks>().put(pty::MAIN, paths).drop;
+    upload_picked(&window, &program, &args, &dir, drop, false, &progress)
+        .await
+        .map(Some)
+}
+
+/// Uploads the files of `drop` that are not there yet into `dir` on the host of `session`:
+/// the last files dropped on main (`sftp-drop`) or picked by `sftp_upload`, an older number is
+/// refused, and so is a drop with a folder in it.
+#[tauri::command]
+pub async fn sftp_upload_dropped(
+    window: tauri::Window,
+    session: u64,
+    dir: String,
+    drop: u64,
+    overwrite: bool,
+    progress: Channel<sftp::SftpTransfer>,
+) -> Result<sftp::SftpUploaded, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window reaches the files of a session".into(),
+        ));
+    }
+    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    upload_picked(&window, &program, &args, &dir, drop, overwrite, &progress).await
+}
+
+/// Uploads what is left of `drop`, one file after the other; each one done leaves the drop, so
+/// a second call with `overwrite` replaces only those that existed.
+async fn upload_picked(
+    window: &tauri::Window,
+    program: &Path,
+    args: &[String],
+    dir: &str,
+    drop: u64,
+    overwrite: bool,
+    progress: &Channel<sftp::SftpTransfer>,
+) -> Result<sftp::SftpUploaded, AppError> {
+    let picks = window.state::<sftp::Picks>();
+    let mut result = sftp::SftpUploaded {
+        drop,
+        uploaded: 0,
+        existing: Vec::new(),
+    };
+    for file in picks.files(pty::MAIN, drop)? {
+        let name = sftp::name_of(&file);
+        let mut report = |done, total| {
+            let _ = progress.send(sftp::SftpTransfer {
+                name: name.clone(),
+                done,
+                total,
+            });
+        };
+        match sftp::upload(
+            program.as_os_str(),
+            args,
+            &file,
+            dir,
+            overwrite,
+            &mut report,
+        )
+        .await
+        {
+            Ok(()) => {
+                picks.done(pty::MAIN, drop, &file);
+                result.uploaded += 1;
+            }
+            Err(AppError::SftpExists(name)) => result.existing.push(name),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(result)
+}
+
+/// Downloads the file `path` from the host of `session` to where the user saves it,
+/// `progress` hearing each step; `false` once the dialog is cancelled.
+#[tauri::command]
+pub async fn sftp_download(
+    window: tauri::Window,
+    session: u64,
+    path: String,
+    progress: Channel<sftp::SftpTransfer>,
+) -> Result<bool, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window reaches the files of a session".into(),
+        ));
+    }
+    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let name = sftp::remote_name(&path).to_string();
+    let parent = window.clone();
+    let suggested = name.clone();
+    let chosen = blocking(move || {
+        Ok(parent
+            .dialog()
+            .file()
+            .set_parent(&parent)
+            .set_file_name(suggested)
+            .blocking_save_file())
+    })
+    .await?;
+    let Some(chosen) = chosen else {
+        return Ok(false);
+    };
+    let local = chosen
+        .into_path()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+    let mut report = |done, total| {
+        let _ = progress.send(sftp::SftpTransfer {
+            name: name.clone(),
+            done,
+            total,
+        });
+    };
+    sftp::download(program.as_os_str(), &args, &path, &local, &mut report).await?;
+    Ok(true)
+}
+
+/// Files dropped on main (R-1072) stay here, under a new number; main hears the number and their
+/// names as `sftp-drop`, and uploads them with `sftp_upload_dropped`. The webview never names a
+/// local path itself.
+pub fn on_main_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if window.label() != pty::MAIN {
+        return;
+    }
+    if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+        if paths.is_empty() {
+            return;
+        }
+        let picked = window.state::<sftp::Picks>().put(pty::MAIN, paths.clone());
+        let _ = window.emit_to(pty::MAIN, "sftp-drop", picked);
+    }
 }
 
 #[tauri::command]
@@ -1181,7 +1397,7 @@ mod tests {
         detached_label, enroll_with_token_in, list_workspaces_in, may_reach, open_launcher_with,
         open_workspace_in, reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in,
         run_with_deadline, save_workspace_in, sign_in_target, ssh_spawn, sync_source,
-        with_control_master,
+        with_control_master, with_sftp,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -2450,7 +2666,30 @@ mod tests {
             Some(dir),
             "the directory goes with the session"
         );
-        assert_eq!(spawn.control_path, Some(path));
+        assert_eq!(spawn.control_path, Some(path.clone()));
+
+        // The SFTP channel goes over that socket, with the switches of the connection.
+        let spawn = with_sftp(spawn, &loopback(2222)).expect("it opens");
+        let sftp = spawn.sftp.expect("an SSH session has an SFTP channel");
+        assert_eq!(
+            sftp,
+            crate::connection::ssh::build_sftp_args(&loopback(2222), Some(&path)).unwrap()
+        );
+        assert!(sftp.contains(&control), "{sftp:?}");
+        assert!(sftp.ends_with(&["-s", "--", "127.0.0.1", "sftp"].map(String::from)));
+
+        // Without a ControlMaster (Windows) it opens a connection of its own.
+        let plain = ssh_spawn(
+            &loopback(2222),
+            Some(std::env::temp_dir().join("ssh")),
+            None,
+        )
+        .and_then(|spawn| with_sftp(spawn, &loopback(2222)))
+        .expect("it opens");
+        assert_eq!(
+            plain.sftp,
+            Some(crate::connection::ssh::build_sftp_args(&loopback(2222), None).unwrap())
+        );
     }
 
     #[cfg(unix)]
@@ -2540,6 +2779,8 @@ mod tests {
             "terminal_open_ssh",
             "terminal_write",
             "terminal_broadcast",
+            "sftp_upload",
+            "sftp_download",
         ] {
             let head = format!("#[tauri::command]\npub async fn {name}(");
             let start = source
@@ -2583,6 +2824,11 @@ mod tests {
             "terminal_detach",
             "terminal_broadcast",
             "terminal_set_broadcast",
+            "sftp_list",
+            "sftp_mkdir",
+            "sftp_upload",
+            "sftp_upload_dropped",
+            "sftp_download",
         ] {
             assert!(
                 body(name).contains("if window.label() != pty::MAIN {"),

@@ -6,14 +6,12 @@
 //! [`crate::connection::ssh::build_sftp_args`]) speaks the `sftp` subsystem on its stdin and
 //! stdout. Every action starts its own child and ends it before it returns.
 
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the SFTP commands (kern-terminal-2 T6) call it")
-)]
-
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use russh_sftp::client::SftpSession;
@@ -40,7 +38,7 @@ const EXIT_WAIT: Duration = Duration::from_secs(5);
 /// What a directory entry is; a symlink is not followed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Kind {
+pub enum SftpKind {
     Dir,
     File,
     Link,
@@ -48,23 +46,23 @@ pub enum Kind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Entry {
+pub struct SftpEntry {
     pub name: String,
-    pub kind: Kind,
+    pub kind: SftpKind,
     pub size: u64,
 }
 
 /// A directory: its resolved path and its entries, folders first, `..` on top below `/`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Listing {
+pub struct SftpListing {
     pub path: String,
-    pub entries: Vec<Entry>,
+    pub entries: Vec<SftpEntry>,
 }
 
 /// Bytes done and bytes in all, reported in steps of [`STEP`] and once at the end.
 pub type Progress<'a> = &'a mut (dyn FnMut(u64, u64) + Send);
 
-pub async fn list(program: &OsStr, args: &[String], path: &str) -> Result<Listing, AppError> {
+pub async fn list(program: &OsStr, args: &[String], path: &str) -> Result<SftpListing, AppError> {
     let channel = Channel::open(program, args).await?;
     let result = channel.list(path).await;
     channel.finish(result).await
@@ -107,6 +105,94 @@ pub async fn download(
     let channel = Channel::open(program, args).await?;
     let result = channel.download(remote, local, progress).await;
     channel.finish(result).await
+}
+
+/// Files picked in the dialog or dropped on a window, for an upload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SftpDrop {
+    pub drop: u64,
+    pub names: Vec<String>,
+}
+
+/// What an upload of picked files did: the files it wrote, and those it left as they existed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SftpUploaded {
+    pub drop: u64,
+    pub uploaded: u32,
+    pub existing: Vec<String>,
+}
+
+/// A step of a transfer, for the UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SftpTransfer {
+    pub name: String,
+    pub done: u64,
+    pub total: u64,
+}
+
+/// The files picked or dropped last, per window, under a number that only grows: an upload
+/// names the number, so a webview can upload nothing but what the user chose last.
+#[derive(Default)]
+pub struct Picks {
+    next: AtomicU64,
+    by_window: Mutex<HashMap<String, (u64, Vec<PathBuf>)>>,
+}
+
+impl Picks {
+    /// Keeps `paths` as the pick of `window`, in place of the one before.
+    pub fn put(&self, window: &str, paths: Vec<PathBuf>) -> SftpDrop {
+        let drop = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let names = paths.iter().map(|path| name_of(path)).collect();
+        lock(&self.by_window).insert(window.to_string(), (drop, paths));
+        SftpDrop { drop, names }
+    }
+
+    /// The files of `drop` not uploaded yet: only the last pick of `window`, and only when each
+    /// of them is a file.
+    pub fn files(&self, window: &str, drop: u64) -> Result<Vec<PathBuf>, AppError> {
+        let paths = match lock(&self.by_window).get(window) {
+            Some((last, paths)) if *last == drop => paths.clone(),
+            _ => {
+                return Err(AppError::Validation(format!(
+                    "the files of drop {drop} are gone; drop them again"
+                )))
+            }
+        };
+        if let Some(folder) = paths.iter().find(|path| !path.is_file()) {
+            return Err(AppError::Validation(format!(
+                "cannot upload {}: it is not a file",
+                name_of(folder)
+            )));
+        }
+        Ok(paths)
+    }
+
+    /// `path` of `drop` is uploaded.
+    pub fn done(&self, window: &str, drop: u64, path: &Path) {
+        if let Some((last, paths)) = lock(&self.by_window).get_mut(window) {
+            if *last == drop {
+                paths.retain(|kept| kept != path);
+            }
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The name a local file goes by in the UI.
+pub fn name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The last part of a remote path, for the name a download is saved under.
+pub fn remote_name(path: &str) -> &str {
+    path.rsplit('/')
+        .find(|part| !part.is_empty())
+        .unwrap_or("download")
 }
 
 /// Why an action failed: on the server (its message, or the child's stderr when the child
@@ -180,9 +266,9 @@ impl Channel {
         })
     }
 
-    async fn list(&self, path: &str) -> Result<Listing, Failure> {
+    async fn list(&self, path: &str) -> Result<SftpListing, Failure> {
         let resolved = self.session.canonicalize(path).await.map_err(remote)?;
-        let mut entries: Vec<Entry> = self
+        let mut entries: Vec<SftpEntry> = self
             .session
             .read_dir(resolved.as_str())
             .await
@@ -190,18 +276,18 @@ impl Channel {
             .map(|entry| {
                 let file_type = entry.file_type();
                 let kind = if file_type.is_dir() {
-                    Kind::Dir
+                    SftpKind::Dir
                 } else if file_type.is_file() {
-                    Kind::File
+                    SftpKind::File
                 } else if file_type.is_symlink() {
-                    Kind::Link
+                    SftpKind::Link
                 } else {
-                    Kind::Other
+                    SftpKind::Other
                 };
-                Entry {
+                SftpEntry {
                     name: entry.file_name(),
                     kind,
-                    size: if kind == Kind::File {
+                    size: if kind == SftpKind::File {
                         entry.metadata().len()
                     } else {
                         0
@@ -210,21 +296,21 @@ impl Channel {
             })
             .collect();
         entries.sort_by(|a, b| {
-            (a.kind != Kind::Dir)
-                .cmp(&(b.kind != Kind::Dir))
+            (a.kind != SftpKind::Dir)
+                .cmp(&(b.kind != SftpKind::Dir))
                 .then_with(|| a.name.cmp(&b.name))
         });
         if resolved != "/" {
             entries.insert(
                 0,
-                Entry {
+                SftpEntry {
                     name: "..".into(),
-                    kind: Kind::Dir,
+                    kind: SftpKind::Dir,
                     size: 0,
                 },
             );
         }
-        Ok(Listing {
+        Ok(SftpListing {
             path: resolved,
             entries,
         })
@@ -508,12 +594,12 @@ mod tests {
             assert_eq!(
                 entries,
                 [
-                    ("..", Kind::Dir, 0),
-                    ("alpha", Kind::Dir, 0),
-                    ("zeta", Kind::Dir, 0),
-                    ("a.txt", Kind::File, 0),
-                    ("b.txt", Kind::File, 5),
-                    ("link", Kind::Link, 0),
+                    ("..", SftpKind::Dir, 0),
+                    ("alpha", SftpKind::Dir, 0),
+                    ("zeta", SftpKind::Dir, 0),
+                    ("a.txt", SftpKind::File, 0),
+                    ("b.txt", SftpKind::File, 5),
+                    ("link", SftpKind::Link, 0),
                 ]
             );
 
@@ -668,6 +754,57 @@ mod tests {
                 .starts_with("cannot start /nonexistent/ah-ssh"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn an_upload_takes_only_the_last_pick_of_its_window() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-pick-")
+            .expect("a private folder");
+        let a = dir.join("a.txt");
+        let b = dir.join("b.txt");
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let picks = Picks::default();
+
+        let first = picks.put("main", vec![a.clone()]);
+        assert_eq!(first.names, ["a.txt"]);
+        assert_eq!(picks.files("main", first.drop).unwrap(), vec![a.clone()]);
+        let second = picks.put("main", vec![a.clone(), b.clone()]);
+        assert!(second.drop > first.drop);
+        // The pick before is gone with the next one.
+        let old = picks.files("main", first.drop).unwrap_err();
+        assert_eq!(old.code(), "ERR_VALIDATION");
+        // A number not given out, and another window, reach nothing.
+        assert!(picks.files("main", second.drop + 1).is_err());
+        assert!(picks.files("terminal-1", second.drop).is_err());
+        let other = picks.put("terminal-1", vec![b.clone()]);
+        assert!(picks.files("main", other.drop).is_err());
+        assert_eq!(
+            picks.files("main", second.drop).unwrap(),
+            [a.clone(), b.clone()]
+        );
+
+        // An uploaded file leaves the pick; an old number changes nothing.
+        picks.done("main", second.drop, &a);
+        picks.done("main", first.drop, &b);
+        assert_eq!(picks.files("main", second.drop).unwrap(), vec![b.clone()]);
+
+        // A folder in a drop refuses the whole drop, before any upload.
+        let folder = dir.join("sub");
+        std::fs::create_dir(&folder).unwrap();
+        let mixed = picks.put("main", vec![b.clone(), folder]);
+        let err = picks.files("main", mixed.drop).unwrap_err();
+        assert_eq!(err.to_string(), "cannot upload sub: it is not a file");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_download_is_saved_under_the_last_part_of_its_path() {
+        assert_eq!(remote_name("/var/log/syslog"), "syslog");
+        assert_eq!(remote_name("notes.txt"), "notes.txt");
+        assert_eq!(remote_name("/srv/data/"), "data");
+        assert_eq!(remote_name("/"), "download");
+        assert_eq!(remote_name(""), "download");
     }
 
     #[test]

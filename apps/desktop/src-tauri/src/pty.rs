@@ -69,6 +69,9 @@ pub struct Spawn {
     pub broadcast: bool,
     /// The ControlMaster socket of an SSH session: its SFTP channel goes over it (R-1072).
     pub control_path: Option<PathBuf>,
+    /// The argv of the SFTP channel of an SSH session, for the same program (R-1072,
+    /// `connection::ssh::build_sftp_args`); `None` for a session without one.
+    pub sftp: Option<Vec<String>>,
 }
 
 /// The label of the main window, which may reach every session.
@@ -115,12 +118,8 @@ struct Session {
     closing: std::sync::atomic::AtomicBool,
     /// [`Spawn::broadcast`].
     broadcast: bool,
-    /// [`Spawn::control_path`].
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the SFTP commands (kern-terminal-2 T6) read it")
-    )]
-    control_path: Option<PathBuf>,
+    /// The program and argv of [`Spawn::sftp`].
+    sftp: Option<(PathBuf, Vec<String>)>,
     writer: Mutex<Box<dyn Write + Send>>,
     /// Gone once the program exited: on Windows the pseudo console closes with it, and only
     /// then does the reader get its end.
@@ -225,7 +224,7 @@ impl PtyRegistry {
             }),
             closing: std::sync::atomic::AtomicBool::new(false),
             broadcast: spawn.broadcast,
-            control_path: spawn.control_path,
+            sftp: spawn.sftp.map(|args| (spawn.program.clone(), args)),
             writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             killer: Mutex::new(Some(child.clone_killer())),
@@ -410,16 +409,17 @@ impl PtyRegistry {
         }
     }
 
-    /// The ControlMaster socket of session `id` ([`Spawn::control_path`]); `None` for a session
-    /// without one or one that is not there.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the SFTP commands (kern-terminal-2 T6) read it")
-    )]
-    pub fn control_path(&self, id: u64) -> Option<PathBuf> {
-        lock(&self.sessions)
-            .get(&id)
-            .and_then(|session| session.control_path.clone())
+    /// The program and argv of the SFTP channel of session `id` ([`Spawn::sftp`]): only while
+    /// its program runs, as the channel goes over its connection.
+    pub fn sftp(&self, id: u64) -> Result<(PathBuf, Vec<String>), AppError> {
+        let session = self
+            .session(id)
+            .filter(|session| lock(&session.stream).ended.is_none())
+            .ok_or_else(|| AppError::Connection("the terminal session has ended".to_string()))?;
+        session
+            .sftp
+            .clone()
+            .ok_or_else(|| AppError::Validation("the session has no SFTP channel".to_string()))
     }
 
     /// Whether session `id` is there.
@@ -471,6 +471,7 @@ mod tests {
             cleanup: None,
             broadcast: false,
             control_path: None,
+            sftp: None,
         }
     }
 
@@ -485,6 +486,7 @@ mod tests {
             cleanup: None,
             broadcast: false,
             control_path: None,
+            sftp: None,
         }
     }
 
@@ -944,6 +946,7 @@ mod tests {
             cleanup: None,
             broadcast: false,
             control_path: None,
+            sftp: None,
         };
         let refused = registry.open(spawn, 80, 24, "main", |_| true);
         assert!(refused.is_err());
@@ -983,6 +986,7 @@ mod tests {
             cleanup: Some(dir.clone()),
             broadcast: false,
             control_path: None,
+            sftp: None,
         };
         assert!(registry.open(spawn, 80, 24, "main", |_| true).is_err());
         assert!(dir.exists());
@@ -990,16 +994,38 @@ mod tests {
     }
 
     #[test]
-    fn a_session_keeps_its_control_path() {
+    fn a_session_hands_out_its_sftp_channel_while_it_runs() {
         let registry = PtyRegistry::default();
-        let path = std::env::temp_dir().join("ah-pty-control").join("c");
+        let args = vec!["-s".to_string(), "--".to_string(), "h".to_string()];
         let mut spawn = long_running();
-        spawn.control_path = Some(path.clone());
+        spawn.sftp = Some(args.clone());
+        let program = spawn.program.clone();
         let (id, _rx) = open(&registry, spawn);
         let (other, _rx_other) = open(&registry, long_running());
-        assert_eq!(registry.control_path(id), Some(path));
-        assert_eq!(registry.control_path(other), None);
-        assert_eq!(registry.control_path(other + 1), None);
+        assert_eq!(registry.sftp(id).unwrap(), (program, args.clone()));
+        assert_eq!(registry.sftp(other).unwrap_err().code(), "ERR_VALIDATION");
+        assert_eq!(
+            registry.sftp(other + 1).unwrap_err().code(),
+            "ERR_CONNECTION"
+        );
+
+        // Ended, kept as nobody heard its end: its connection is gone.
+        let mut ended = shell("exit 0");
+        ended.sftp = Some(args);
+        let ended = registry
+            .open(ended, 80, 24, "main", |_| false)
+            .expect("the session starts");
+        let deadline = Instant::now() + WAIT;
+        while registry
+            .session(ended)
+            .is_some_and(|session| lock(&session.stream).ended.is_none())
+        {
+            assert!(Instant::now() < deadline, "the session does not end");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(registry.has(ended));
+        assert_eq!(registry.sftp(ended).unwrap_err().code(), "ERR_CONNECTION");
+        registry.close(ended);
         registry.close_all();
     }
 

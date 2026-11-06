@@ -25,7 +25,7 @@ import { dirname, join } from 'path';
 
 // src/lib/bridge -> the desktop component root
 const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
-const RUST_FILES = ['models.rs', 'tunnel.rs', 'ansible.rs', 'enrollment.rs', 'probe.rs'];
+const RUST_FILES = ['models.rs', 'tunnel.rs', 'ansible.rs', 'enrollment.rs', 'probe.rs', 'sftp.rs'];
 
 /** serde types in other modules, with the reason each stays out of the scan. */
 const NOT_ON_THE_BRIDGE: Record<string, string> = {};

@@ -52,16 +52,18 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp
 Doku: → T9
 Abhängt von: T4
 
-### T6 — Desktop: SFTP-Befehle, Dialoge und gezogene Dateien (R-1072)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/invoke.test.ts
+### T6 — Desktop: SFTP-Befehle, Dialoge und gezogene Dateien (R-1072)  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/invoke.test.ts, apps/desktop/src-tauri/src/pty.rs, apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/ui/src/lib/bridge/types.parity.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop desktop-ui: 3 passed, 0 failed, 15 skipped @86b7c887 2026-11-06T16:48:05+01:00
+Review: approve (.ah-out/review/kern-terminal-2/T6.verdict.json)
 Änderung: Befehle `sftp_list`, `sftp_mkdir`, `sftp_upload` (Datei-Dialog in Rust, `spawn_blocking`), `sftp_upload_dropped`, `sftp_download` (Speichern-Dialog in Rust) mit Fortschritt über `Channel`, nur `main`; Verbindung und ControlPath aus der Sitzung `session`, unbekannte oder beendete Sitzung → Fehler. `WindowEvent::DragDrop(Drop)` merkt die Pfade je Fenster unter einer fortlaufenden Nummer und meldet `sftp-drop {drop, names}`; `sftp_upload_dropped` nimmt nur die letzte Nummer dieses Fensters, Ordner abgelehnt. Bridge und Typen. Tests: Sitzung → Argumente, fremde/alte Drop-Nummer, Ordner im Drop, Capability (aus `terminal-*` abgelehnt), IPC-Inventar.
-Verify: bash scripts/dev/verify.sh desktop --strict
+Verify: bash scripts/dev/verify.sh desktop desktop-ui --strict
 Doku: → T9
 Abhängt von: T5
 
 ### T7 — Desktop-UI: SFTP-Panel mit Drag & Drop (R-1072)  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/FilesPanel.svelte, apps/desktop/ui/src/components/terminal/FilesPanel.test.ts, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Kopfknopf „Dateien (SFTP)“ (nicht im abgedockten Fenster), drei Panels schließen sich aus. Neue Komponente (SPDX): Pfad-Pill, Liste (Ordner/Datei-Symbol, Name, Größe), Ordner öffnen, `..`, Datei-Klick lädt herunter, Hochladen, Neuer Ordner (Name abfragen), Aktualisieren, Drop-Zone über `sftp-drop`, Rückfrage bei `exists` und erneuter Aufruf mit Überschreiben, Fortschritt, Fehlermeldung; unter Windows nach gescheiterter Anmeldung der Hinweis auf Schlüssel/Agent. i18n DE/EN.
+Änderung: Kopfknopf „Dateien (SFTP)“ (nicht im abgedockten Fenster), drei Panels schließen sich aus. Neue Komponente (SPDX): Pfad-Pill, Liste (Ordner/Datei-Symbol, Name, Größe), Ordner öffnen, `..`, Datei-Klick lädt herunter, Hochladen, Neuer Ordner (Name abfragen), Aktualisieren, Drop-Zone über `sftp-drop`, Rückfrage bei den Namen in `existing` und erneuter Aufruf von `sftp_upload_dropped` mit derselben Nummer und `overwrite`, Fortschritt, Fehlermeldung; unter Windows nach gescheiterter Anmeldung der Hinweis auf Schlüssel/Agent. i18n DE/EN.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- FilesPanel SshTerminal i18n
 Doku: → T9
 Abhängt von: T3, T6
@@ -97,3 +99,6 @@ Task-Review: am Ende
 - T3: Namen und Befehle nur als Text gerendert; Steuerzeichen-Grenzen prüft Rust (T1). Leere Zeilen am Ende eines Befehls fallen weg, damit kein doppeltes Enter entsteht.
 - T5/T6 tragen `sftp.rs` beide: T5 baut den Kanal ohne Tauri (testbar gegen `sftp-server`), T6 die Befehle; so bleibt die neue Abhängigkeit einzeln zurücknehmbar.
 - T5: Kanal über `russh-sftp` 3.0.1 an stdin/stdout des ssh-Kinds (tokio-Feature `fs` zusätzlich). Ein vorhandenes Ziel ohne Überschreiben ist `AppError::SftpExists` (`ERR_SFTP_EXISTS`); Upload mit `EXCLUDE` bzw. `TRUNCATE`, ein Ordner als Quelle wird vor dem Öffnen auf dem Server abgelehnt (Prüfer-Nit T5). Download schreibt `.<name>.ah-part` neben dem Ziel, dann `sync_all` und `rename`, bei Fehler fällt die Teildatei weg. Fehlermeldung: die letzte nicht leere stderr-Zeile (höchstens 512 Zeichen), nur wenn das Kind schon geendet hat. Die Tests gegen `/usr/lib/openssh/sftp-server` laufen nur unter Linux (Prüfer Runde 1: der Windows-Runner hat keinen); fehlt der Server, sind sie rot, kein SKIP.
+- T6: Abweichung vom IPC-Vertrag der Spec: `sftp_upload` liefert `{drop, uploaded, existing}` oder `null` (Abbruch) statt `u32`, `sftp_upload_dropped` hat zusätzlich `overwrite` und liefert dasselbe. Grund: der Upload bricht bei einer vorhandenen Datei nicht ab, sondern nennt sie in `existing`; die UI fragt einmal und ruft mit derselben Nummer und `overwrite` erneut auf, Hochgeladenes hat den Drop schon verlassen. Dialog-Auswahl und Drop teilen sich die Nummern von `main`: ein neuer Drop verdrängt eine Auswahl, deren Rückfrage noch offen ist (die UI meldet dann den Fehler der veralteten Nummer).
+- T6: Ordner lehnen den ganzen Drop vorab ab. Die serde-Typen heißen `Sftp*`, damit der Paritätstest sie findet (T5 hatte ihn gebrochen, `sftp.rs` steht jetzt in `RUST_FILES`); das Verify ist um `desktop-ui` erweitert. Die SFTP-Argumente entstehen beim Start der Sitzung (`with_sftp`) und liegen in `Session.sftp`.
+- T6: Tauri meldet einen Drop selbst als `tauri://drag-drop` mit den Pfaden an die Webview; geschützt ist nur, dass die Webview für einen Upload keinen Pfad nennt, sondern Rust die Pfade unter der Nummer hält (Prüfer).

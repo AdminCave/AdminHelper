@@ -33,13 +33,6 @@ pub(crate) fn build_ssh_args(connection: &Connection) -> Result<Vec<String>, App
 /// bind the forwards again), never a prompt (`BatchMode`), over the ControlMaster socket of the
 /// session when it has one, then the `sftp` subsystem. The `-o` switches below clear what
 /// `~/.ssh/config` sets for the host as well, as sftp(1) does: the first value ssh reads wins.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the SFTP channel (kern-terminal-2 T5) starts ssh with it"
-    )
-)]
 pub(crate) fn build_sftp_args(
     connection: &Connection,
     control_path: Option<&Path>,

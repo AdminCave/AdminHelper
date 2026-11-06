@@ -334,6 +334,7 @@ fn pty_spawn(program: PathBuf, inventory_path: &str, playbook_path: &str, check:
         cleanup: Path::new(inventory_path).parent().map(Path::to_path_buf),
         broadcast: false,
         control_path: None,
+        sftp: None,
     }
 }
 
