@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-rdp-2 — Task-Ledger
-Status: erledigt · Branch: feature/kern-rdp-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-rdp-2 · Review: pro Task
 Spec: docs/features/kern-rdp-2.md (Roadmap R-1099, R-1092)
 Heavy: linux-full + windows — linux-full: neue Kanäle in der eingebetteten Sitzung, die `desktop_e2e_rdp_embedded` (xrdp-Container) im Sammellauf fährt, und eine neue Laufzeit-Abhängigkeit des Linux-Pakets; windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage): Zwischenablage-Fabrik und Laufwerk sind `cfg(windows)`-Code. PR merged Kevin (`.github/workflows/`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,6 +61,14 @@ Review: approve (.ah-out/review/kern-rdp-2/T6.verdict.json)
 Änderung: `shared_drive` löst den Downloads-Ordner mit `canonicalize` auf und gibt ihn nur frei, wenn er ein eigener Ordner ist: keine Wurzel, nicht das Home-, App-Daten- oder Konfigurationsverzeichnis und keiner ihrer Vorfahren; sonst `drive_unavailable` wie bei einem fehlenden Ordner. Tests: Home selbst, Home über `.`, ein Vorfahre der App-Daten, die Wurzel, ein Unterordner (frei).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html (Absatz Laufwerk)
+Abhängt von: T3
+
+### T7 — Desktop: fehlenden Ordner auch unter Windows ablehnen (R-1099, aus der PR-CI)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs
+Beweis: PR #408, Job „Desktop-Backend (cargo test, Windows)“: `drive_backend_refuses_a_missing_folder` scheitert an `assert!(rdpdr_factory(&folder).is_err())` (session.rs:1159), weil `RedirectedDrive::new` einen fehlenden Ordner annimmt.
+Änderung: `rdpdr_factory` prüft `folder.is_dir()` vor der Plattform-Weiche, so lehnen beide Plattformen einen fehlenden Ordner ab.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
+Doku: keine (Verhalten wie dokumentiert)
 Abhängt von: T3
 
 ## Entscheidungen
