@@ -193,7 +193,8 @@ class QuietInput(RequestModel):
 
 class EscalationInput(RequestModel):
     enabled: bool
-    minutes: Literal[5, 10, 30]
+    # The enum alone carries no maximum, which test_openapi_integer_bounds demands.
+    minutes: Annotated[Literal[5, 10, 30], Field(json_schema_extra={"minimum": 5, "maximum": 30})]
     channel: Optional[EscalationChannel] = None
 
     @model_validator(mode="after")
