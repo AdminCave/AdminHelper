@@ -70,13 +70,15 @@ Task-Review: am Ende
 Abhängt von: T5
 
 
-### T8 — Server: Drain stellt ein Ziel, das die Frist verfehlt, für den Rest des Laufs zurück (R-1080)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/tests/test_notification_channels.py
-Änderung: Fund der Abschlussprüfung (security, Einzelheiten privat). `sender` meldet eine verfehlte Frist als eigene Unterklasse `SendTimeout(DeliveryFailed)`; `drain_outbox` merkt sich je Lauf (Kanal, Adresse) eines Eintrags mit `SendTimeout` und überspringt weitere Einträge mit demselben Ziel in diesem Lauf, ohne Versuch und ohne Änderung (sie kommen im nächsten Lauf). Test: zwei Einträge an ein tröpfelndes Ziel und einer an ein gutes; ein Lauf dauert eine Frist, der zweite Eintrag bleibt `pending` mit 0 Versuchen, der gute ist `sent`.
+### T8 — Server: Drain stellt ein Ziel, das die Frist verfehlt, für den Rest des Laufs zurück (R-1080)  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/tests/test_notification_channels.py, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @be7d9790e 2026-11-07T08:36:26+01:00
+Review: approve (.ah-out/review/kern-notify-2/T8.verdict.json)
+Änderung: Fund der Abschlussprüfung (security, Einzelheiten privat). `sender` meldet eine verfehlte Frist und jede httpx-Zeitüberschreitung als `SendTimeout(DeliveryFailed)`; `drain_outbox` stellt nach einem `SendTimeout` oder einem HTTP-Versand ab `_SLOW_SEND` (10 s) das Ziel (Telegram: den Kanal) und die übrigen HTTP-Einträge derselben Person für diesen Lauf zurück, ohne Versuch und ohne Änderung, und liest per `id > last_id` an ihnen vorbei weiter (nur Versuche zählen gegen `batch_size`). Tests: tröpfelndes, schweigendes und langsames Ziel, variierte URL derselben Person, Batch-Plätze, Telegram als ein Ziel.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_channels.py tests/test_outbox.py
 Doku: docs/developer/server.html, docs/en/developer/server.html
 
-### T9 — Desktop-UI: Vorfall-Detail zeigt ntfy mit Label (R-1080)  [ ]
+### T9 — Desktop-UI: Vorfall-Detail zeigt ntfy mit Label (R-1080)  [~] (kein sichtbarer Unterschied: das Label waere woertlich ntfy, channelLabel zeigt den Rohwert ntfy schon heute)
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/notifications.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/notifications.test.ts
 Änderung: Nit der Abschlussprüfung: `CHANNELS` in `notifications.ts` kennt `ntfy` nicht, das Vorfall-Detail zeigt den Kanal roh; `ntfy` dazu, Schlüssel `notifications.channel.ntfy` DE+EN, Test für `channelLabel('ntfy')`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts src/lib/i18n/i18n.test.ts
@@ -110,3 +112,4 @@ Task-Review: am Ende
 - 2026-11-07 T5: Das Toast-Gate liegt im eigenen Store `lib/stores/notifyPrefs.ts` (`desktopWants`), geladen beim Start der Benachrichtigungen, verworfen beim Stopp und nach dem Speichern ersetzt; ohne geladene Kanaleinstellungen (Ladefehler, Server ohne Matrix) kommt alles wie bisher; ein Abruf, der nach Abmelden, Speichern oder einem neueren Abruf antwortet, setzt nichts (Generationszähler, Review). Ein Eintrag mit `state: resolved` folgt der Zeile `ok`, sonst seiner Stufe.
 - 2026-11-07 T5: Der Test-Knopf ist bei einem ungespeicherten Ziel gesperrt (der Server testet das gespeicherte Ziel), ein abgeschalteter Kanal bleibt testbar (wie T4); ein Kanal, den der Server nicht zustellen kann (`available`), zeigt einen Hinweis statt des Knopfs. Der Desktop testet lokal (Toast, OS-Hinweis nur mit Opt-in). Fehlertexte kommen über `errMsg`: der Rust-Proxy liest `detail` als Text und als Liste (`error.rs`), daher keine eigene Behandlung der 422-Formen in der UI.
 - 2026-11-07 T6: `ensureAllSubscription` (`live.js`) schickte die Kanalfelder schon nicht mehr und bleibt unverändert (aus `Dateien:` gestrichen). `TELEGRAM_BOT_TOKEN` steht in `SECRET_KEYS`; der Testfall prüft den Wert mit Doppelpunkt in einer Bot-URL (Gegenprobe: ohne den Schlüssel `LEAK`).
+- 2026-11-07 T8: dritte Prüfrunde (flaky Testpfad, langsames Ziel) auf Kevins Wort; das verbleibende Restrisiko des Drains (eine Wartezeit je Konto und Lauf) nimmt Kevin hin; die Fehlertexte der Test-Route bleiben (Kevin).

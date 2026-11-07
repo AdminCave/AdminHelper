@@ -83,6 +83,10 @@ class BlockedTarget(DeliveryFailed):
     """The SSRF guard rejected the target: another attempt changes nothing."""
 
 
+class SendTimeout(DeliveryFailed):
+    """The target gave no status in time: within _SEND_DEADLINE, or an httpx timeout."""
+
+
 _HTTP_TIMEOUT = 10
 # httpx's timeout holds for each read, not for the request: a target that drips its
 # answer byte by byte would keep the drain (one at a time) waiting for ever. So each
@@ -131,6 +135,8 @@ def _status_within_deadline(channel: str, client: httpx.Client, url: str, kwargs
                 "POST", url, timeout=_HTTP_TIMEOUT, follow_redirects=False, **kwargs
             ) as response:
                 result["status"] = response.status_code
+        except httpx.TimeoutException as exc:
+            result["timeout"] = type(exc).__name__
         except httpx.HTTPError as exc:
             result["error"] = type(exc).__name__
         except Exception as exc:  # handed to the caller, which logs only its type
@@ -148,9 +154,11 @@ def _status_within_deadline(channel: str, client: httpx.Client, url: str, kwargs
     thread.join(_SEND_DEADLINE)
     if thread.is_alive():
         client.close()
-        raise DeliveryFailed(f"{channel}: no answer within {_SEND_DEADLINE} s")
+        raise SendTimeout(f"{channel}: no answer within {_SEND_DEADLINE} s")
     if "exc" in result:
         raise result["exc"]
+    if "timeout" in result:
+        raise SendTimeout(f"{channel}: {result['timeout']}")
     if "error" in result:
         # Only the type: the exception text would carry the URL (and its secret).
         raise DeliveryFailed(f"{channel}: {result['error']}")

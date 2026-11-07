@@ -30,6 +30,7 @@ from app.modules.notifications.outbox import drain_outbox
 from app.modules.notifications.sender import (
     BlockedTarget,
     DeliveryFailed,
+    SendTimeout,
     send_ntfy,
     send_telegram,
     send_webhook,
@@ -220,7 +221,7 @@ def _send(channel):
 
 class _Peer:
     """A real HTTP peer on loopback: /drip drips its headers, /flood sends an endless
-    body, /ok answers 204. The guard and the pin are bypassed (loopback stays blocked
+    body, /silent never answers, /slow answers just before 0.6 s, /ok answers 204. The guard and the pin are bypassed (loopback stays blocked
     there), the client is a plain one."""
 
     def __init__(self):
@@ -239,7 +240,16 @@ class _Peer:
 
     def _serve(self, conn):
         try:
-            path = conn.recv(65536).split(b" ", 2)[1]
+            path = conn.recv(65536).split(b" ", 2)[1].split(b"?")[0]
+            if path == b"/silent":
+                while conn.recv(65536):  # until the client gives up
+                    pass
+                return
+            if path == b"/slow":
+                conn.sendall(b"HTTP/1.1 200 OK\r\n")
+                time.sleep(0.6)
+                conn.sendall(b"Content-Length: 0\r\n\r\n")
+                return
             if path == b"/ok":
                 conn.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
                 return
@@ -295,7 +305,10 @@ def test_a_hanging_target_does_not_hold_up_the_drain(db_session, peer):
     user = _user(db_session, "alice")
     notif = _notif(db_session, user)
     hanging = _outbox(db_session, notif, user, channel="webhook", address=f"{peer.url}/drip")
-    other = _outbox(db_session, notif, user, channel="ntfy", address=f"{peer.url}/ok")
+    bob = _user(db_session, "bob")
+    other = _outbox(
+        db_session, _notif(db_session, bob), bob, channel="ntfy", address=f"{peer.url}/ok"
+    )
     assert drain_outbox(db_session) == (1, 0)
     db_session.refresh(hanging)
     db_session.refresh(other)
@@ -306,6 +319,113 @@ def test_a_hanging_target_does_not_hold_up_the_drain(db_session, peer):
     while sender_mod._SEND_INFLIGHT._value < sender_mod._SEND_MAX_INFLIGHT:
         assert time.monotonic() < deadline, "the permit of the hung send comes back"
         time.sleep(0.05)
+
+
+def test_a_stalled_target_waits_for_the_next_drain(db_session, peer):
+    user = _user(db_session, "alice")
+    notif = _notif(db_session, user)
+    first = _outbox(db_session, notif, user, channel="webhook", address=f"{peer.url}/drip")
+    second = _outbox(db_session, notif, user, channel="webhook", address=f"{peer.url}/drip")
+    bob = _user(db_session, "bob")
+    other = _outbox(
+        db_session, _notif(db_session, bob), bob, channel="ntfy", address=f"{peer.url}/ok"
+    )
+    started = time.monotonic()
+    assert drain_outbox(db_session) == (1, 0)
+    assert time.monotonic() - started < 2, "one deadline for the target, not one per entry"
+    for entry in (first, second, other):
+        db_session.refresh(entry)
+    assert (first.status, first.attempts) == ("pending", 1)
+    assert (second.status, second.attempts, second.last_error) == ("pending", 0, None)
+    assert second.next_attempt_at is None
+    assert other.status == "sent"
+
+
+def test_a_silent_target_waits_for_the_next_drain(db_session, peer, monkeypatch):
+    monkeypatch.setattr(sender_mod, "_HTTP_TIMEOUT", 0.3)  # httpx's own, below the deadline
+    user = _user(db_session, "alice")
+    notif = _notif(db_session, user)
+    first = _outbox(db_session, notif, user, channel="webhook", address=f"{peer.url}/silent")
+    second = _outbox(db_session, notif, user, channel="webhook", address=f"{peer.url}/silent")
+    assert drain_outbox(db_session) == (0, 0)
+    db_session.refresh(first)
+    db_session.refresh(second)
+    assert (first.attempts, first.last_error) == (1, "webhook: ReadTimeout")
+    assert (second.status, second.attempts) == ("pending", 0)
+
+
+def test_a_stalled_person_waits_with_every_http_target(db_session, peer, monkeypatch):
+    alice = _user(db_session, "alice")
+    bob = _user(db_session, "bob")
+    notif = _notif(db_session, alice)
+    first = _outbox(db_session, notif, alice, channel="webhook", address=f"{peer.url}/drip?a")
+    varied = _outbox(db_session, notif, alice, channel="ntfy", address=f"{peer.url}/drip?b")
+    mail = _outbox(db_session, notif, alice, channel="email", address="alice@example.com")
+    other = _outbox(
+        db_session, _notif(db_session, bob), bob, channel="ntfy", address=f"{peer.url}/ok"
+    )
+    monkeypatch.setattr(outbox_mod, "send_email", lambda *_a: None)
+    started = time.monotonic()
+    assert drain_outbox(db_session) == (2, 0)
+    assert time.monotonic() - started < 2, "a varied URL costs no second deadline"
+    for entry in (first, varied, mail, other):
+        db_session.refresh(entry)
+    assert (first.status, first.attempts) == ("pending", 1)
+    assert (varied.status, varied.attempts) == ("pending", 0)
+    assert mail.status == "sent"  # the SMTP relay is not the person's target
+    assert other.status == "sent"
+
+
+def test_a_slow_target_waits_for_the_next_drain(db_session, peer, monkeypatch):
+    monkeypatch.setattr(outbox_mod, "_SLOW_SEND", 0.3)  # each answer is inside the deadline
+    alice = _user(db_session, "alice")
+    bob = _user(db_session, "bob")
+    notif = _notif(db_session, alice)
+    first = _outbox(db_session, notif, alice, channel="webhook", address=f"{peer.url}/slow")
+    second = _outbox(db_session, notif, alice, channel="ntfy", address=f"{peer.url}/slow?b")
+    other = _outbox(
+        db_session, _notif(db_session, bob), bob, channel="ntfy", address=f"{peer.url}/ok"
+    )
+    assert drain_outbox(db_session) == (2, 0)
+    for entry in (first, second, other):
+        db_session.refresh(entry)
+    assert first.status == "sent"
+    assert (second.status, second.attempts) == ("pending", 0)
+    assert other.status == "sent"
+
+
+def test_skipped_entries_take_no_place_of_the_batch(db_session, peer):
+    alice = _user(db_session, "alice")
+    bob = _user(db_session, "bob")
+    notif = _notif(db_session, alice)
+    for _ in range(4):
+        _outbox(db_session, notif, alice, channel="webhook", address=f"{peer.url}/drip")
+    other = _outbox(
+        db_session, _notif(db_session, bob), bob, channel="ntfy", address=f"{peer.url}/ok"
+    )
+    assert drain_outbox(db_session, batch_size=2) == (1, 0)
+    db_session.refresh(other)
+    assert other.status == "sent"
+    attempts = sorted(
+        e.attempts for e in db_session.query(NotificationOutbox).filter_by(user_id=alice.id)
+    )
+    assert attempts == [0, 0, 0, 1]
+
+
+def test_a_telegram_timeout_holds_back_every_telegram_entry(db_session, wire, monkeypatch):
+    calls = []
+
+    def _stall(chat_id, *_a):
+        calls.append(chat_id)
+        raise SendTimeout("telegram: no answer within 30 s")
+
+    monkeypatch.setattr(outbox_mod, "send_telegram", _stall)
+    alice = _user(db_session, "alice")
+    bob = _user(db_session, "bob")
+    _outbox(db_session, _notif(db_session, alice), alice, channel="telegram", address="4711")
+    _outbox(db_session, _notif(db_session, bob), bob, channel="telegram", address="4712")
+    assert drain_outbox(db_session) == (0, 0)
+    assert calls == ["4711"], "one Bot API: its timeout holds back the other chats too"
 
 
 # --- outbox drain ---------------------------------------------------------------------
