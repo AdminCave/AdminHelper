@@ -1,5 +1,5 @@
 # Kanäle ntfy, Telegram, Webhook · Matrix Schweregrad × Kanal · Kategorien — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-2 · Review: pro Task
 Spec: docs/features/kern-notify-2.md (Roadmap R-1080)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), ausgehende Requests, Desktop-Journey SSE-Push (`desktop_e2e_sse_push.sh`); geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -58,8 +58,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
 Doku: keine (Testcode; die Maskierung im Support-Bundle ist nicht einzeln dokumentiert)
 Abhängt von: T1
 
-### T7 — Doku und Changelog: Kanäle, Matrix, Kategorien, Env (R-1080)  [ ]
+### T7 — Doku und Changelog: Kanäle, Matrix, Kategorien, Env (R-1080)  [x]
 Komponente: server · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-notify-2.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4c63d6917 2026-11-07T07:57:02+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Bedienung (Kanäle, Matrix, Kategorien, Test-Knopf), Betrieb (`TELEGRAM_BOT_TOKEN`, `NOTIFY_PRIVATE_TARGETS`, Sperre und Freigabe-Liste), Entwickler (Tabelle `notification_settings`, Outbox-Kanäle, Prefs-API und Test-Route samt Vertragsbruch der Abo-Felder) DE+EN; `changelog.d/kern-notify-2.md` (`### Added`, `### Changed`, umlautfrei). Vorher `python3 scripts/dev/doc-smoke.py --paths --env --strict`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_settings.py
 Doku: alle oben DE+EN · changelog.d/kern-notify-2.md
