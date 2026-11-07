@@ -1,5 +1,5 @@
 # CI-Services und Playwright-Runner auf aktuellem Stand — Task-Ledger
-Status: bereit · Branch: feature/ci-6 · Review: am Ende
+Status: erledigt · Branch: feature/ci-6 · Review: am Ende
 Spec: docs/features/ci-6.md (Roadmap R-1134, R-1136, R-1137)
 Heavy: none — nur `ci.yml` und Doku; Beweis ist die PR-CI selbst (Services und Runner gelten im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
