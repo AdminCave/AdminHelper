@@ -1,5 +1,5 @@
 # Kanäle ntfy, Telegram, Webhook · Matrix Schweregrad × Kanal · Kategorien — Task-Ledger
-Status: erledigt · Branch: feature/kern-notify-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-2 · Review: pro Task
 Spec: docs/features/kern-notify-2.md (Roadmap R-1080)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), ausgehende Requests, Desktop-Journey SSE-Push (`desktop_e2e_sse_push.sh`); geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -92,6 +92,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_settings.py
 Doku: alle oben DE+EN · README
 Task-Review: am Ende
+
+### T11 — openapi-compat: der neue Kanalvertrag als benannte Ausnahmen (R-1080)  [ ]
+Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: **Harness-Pfad** (`scripts/dev/*`), auf Kevins Wort (2026-11-07, Frage nach der PR-CI von #413, wie R-0411/R-0533). `openapi-breaking.sh server` meldet gegen origin/main genau zwölf ERR: `response-property-enum-value-added` (`ntfy`, `webhook` in `channels/items/`) an GET /api/notifications/incidents/{incident_id} und POST …/notes, …/reopen, …/resolve, und `response-required-property-removed` (`subscriptions/items/channelEmail`, `…/channelTelegram`) an GET und PUT /api/users/me/notification-prefs. `oasdiff-err-ignore.txt` bekommt je ERR eine Zeile `2026-11-07 R-1080 <Grund>: <METHODE> <Pfad> <Text wörtlich>`. Test zuerst rot: `EXPECTED_IGNORE` um die zwölf Zeilen, Zählmeldungen auf neunundzwanzig; die echten oasdiff-Fälle bekommen eine Fixture der sechs Routen (Basis: Enum `email`/`telegram` und Pflichtfelder `channelEmail`/`channelTelegram`, Kopf wie der Snapshot): ohne Datei zwölf ERR, mit der Datei keiner; dazu ein Fall mit einem dritten neuen Enum-Wert, der ERR bleibt. Vor dem Commit `bash scripts/dev/openapi-breaking.sh server` → Exit 0, Ausgabe in den Commit-Body.
+Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
+Doku: docs/developer/cicd.html + docs/en/developer/cicd.html: neben R-0411 und R-0533 die zwölf Änderungen des Kanalvertrags (R-1080, Kevin 2026-11-07)
 
 ## Entscheidungen
 - 2026-11-07 Planung: eigene Tabelle statt Spalten an `users`; Kanal-Schalter als Liste; ntfy-Zugang per `?auth=` in der URL; Webhook ohne Signatur; CGNAT unter dem Opt-in; fehlende neue Felder beim `PUT` behalten ihren Wert (Begründungen in der Spec).
