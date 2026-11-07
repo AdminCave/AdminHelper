@@ -19,6 +19,7 @@ from app.modules.notifications import stream_hub
 from app.modules.notifications.models import (
     Notification,
     NotificationOutbox,
+    NotificationSettings,
     NotificationSubscription,
 )
 from app.modules.notifications.schemas import IncomingEvent
@@ -87,15 +88,29 @@ def _sub(
         scope_type=scope_type,
         scope_ref=scope_ref,
         min_severity=min_severity,
-        channel_email=email,
-        channel_telegram=telegram,
         categories=json.dumps(categories) if categories else None,
         enabled=enabled,
     )
     db.add(s)
     db.commit()
     db.refresh(s)
+    _channels(db, user, *(["email"] if email else []), *(["telegram"] if telegram else []))
     return s
+
+
+def _channels(db, user, *channels):
+    """Add `channels` to every row of the person's matrix (R-1080: the channels left
+    the rules; a rule's former tick is a channel in every row the rule reaches)."""
+    if not channels:
+        return
+    settings = db.get(NotificationSettings, user.id)
+    if settings is None:
+        rows = {row: ["desktop"] for row in ("critical", "warning", "info", "ok")}
+        settings = NotificationSettings(user_id=user.id, matrix=json.dumps(rows))
+        db.add(settings)
+    rows = json.loads(settings.matrix)
+    settings.matrix = json.dumps({k: sorted(set(v) | set(channels)) for k, v in rows.items()})
+    db.commit()
 
 
 def _event(
@@ -421,10 +436,10 @@ def _outbox_rows(db, user):
 
 
 class TestBundleChannels:
-    """monitoring-alert-quality T18: an external channel of a bundled event names
-    only the servers of the subscriptions that asked for that channel. A rule
-    that sends one server to a customer's Telegram chat must not carry the names
-    of the servers another rule only wanted in the bell."""
+    """An external channel of a bundled event carries the text of its ping. Since
+    R-1080 the person's matrix picks the channels for every server a rule routes
+    (monitoring-alert-quality T18 routed them per rule), so each names the servers
+    of the bell row, never one the person may not see."""
 
     def _three(self, db):
         return (
@@ -433,76 +448,44 @@ class TestBundleChannels:
             _server(db, "srv-3", name="mail01", tags=["dev"]),
         )
 
-    def test_telegram_names_only_the_server_of_its_subscription(self, db_session):
-        self._three(db_session)
-        admin = _user(db_session, "boss", is_admin=True, telegram_chat_id="4711")
-        _sub(db_session, admin, scope_type="all")
-        _sub(db_session, admin, scope_type="server", scope_ref="srv-2", telegram=True)
-        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
-        [row] = _rows(db_session, admin)
-        assert row.title == "Agents not reporting (3)"
-        assert row.body == "Heartbeat lost\n- web01\n- db01\n- mail01"
-        assert _outbox_rows(db_session, admin) == [
-            ("telegram", "4711", "Agents not reporting (1)", "Heartbeat lost\n- db01")
-        ]
-
-    def test_email_names_only_the_server_of_its_subscription(self, db_session, monkeypatch):
+    def test_every_channel_names_the_servers_of_the_bell(self, db_session, monkeypatch):
         sent = []
         monkeypatch.setattr(
             outbox_mod, "send_email", lambda to, subj, body: sent.append((to, subj, body))
         )
         self._three(db_session)
-        admin = _user(db_session, "boss", is_admin=True, email="a@b.de")
-        _sub(db_session, admin, scope_type="all")
-        _sub(db_session, admin, scope_type="server", scope_ref="srv-2", email=True)
-        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
-        [row] = _rows(db_session, admin)
-        assert row.title == "Agents not reporting (3)"
-        assert _outbox_rows(db_session, admin) == [
-            ("email", "a@b.de", "Agents not reporting (1)", "Heartbeat lost\n- db01")
-        ]
-        # The drain sends the entry's own text, not the bell row's three servers.
-        assert outbox_mod.drain_outbox(db_session) == (1, 0)
-        assert sent == [("a@b.de", "Agents not reporting (1)", "Heartbeat lost\n- db01")]
-
-    def test_each_channel_names_the_servers_of_its_own_subscriptions(self, db_session):
-        self._three(db_session)
         admin = _user(db_session, "boss", is_admin=True, email="a@b.de", telegram_chat_id="4711")
-        _sub(db_session, admin, scope_type="tag", scope_ref="prod", email=True)
-        _sub(db_session, admin, scope_type="server", scope_ref="srv-3", telegram=True)
+        _sub(db_session, admin, scope_type="all")
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-2", email=True, telegram=True)
         assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
         [row] = _rows(db_session, admin)
-        assert row.title == "Agents not reporting (3)"
+        text = "Heartbeat lost\n- web01\n- db01\n- mail01"
+        assert (row.title, row.body) == ("Agents not reporting (3)", text)
         assert _outbox_rows(db_session, admin) == [
-            ("email", "a@b.de", "Agents not reporting (2)", "Heartbeat lost\n- web01\n- db01"),
-            ("telegram", "4711", "Agents not reporting (1)", "Heartbeat lost\n- mail01"),
+            ("email", "a@b.de", "Agents not reporting (3)", text),
+            ("telegram", "4711", "Agents not reporting (3)", text),
         ]
+        assert outbox_mod.drain_outbox(db_session) == (1, 0)
+        assert sent == [("a@b.de", "Agents not reporting (3)", text)]
 
-    def test_a_channel_without_a_server_gets_no_entry(self, db_session):
+    def test_a_member_channel_names_only_servers_they_may_see(self, db_session):
         srv1, srv2, _ = self._three(db_session)
-        member = _user(
-            db_session, "member", servers=[srv1, srv2], email="m@x.de", telegram_chat_id="4711"
-        )
-        _sub(db_session, member, scope_type="all")
-        # Not in the bundle, a server the member may not see, a level the bundle
-        # does not reach: none of these routes a server to its channel.
-        _sub(db_session, member, scope_type="server", scope_ref="srv-9", email=True)
-        _sub(db_session, member, scope_type="server", scope_ref="srv-3", telegram=True)
-        _sub(db_session, member, scope_type="all", min_severity="critical", telegram=True)
-        bundle = _bundle(["srv-1", "srv-2", "srv-3"], severity="warning")
-        assert ingest_event(db_session, bundle) == 1
+        member = _user(db_session, "member", servers=[srv1, srv2], email="m@x.de")
+        _sub(db_session, member, scope_type="all", email=True)
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
         [row] = _rows(db_session, member)
         assert row.title == "Agents not reporting (2)"
-        assert _outbox_rows(db_session, member) == []
+        assert _outbox_rows(db_session, member) == [
+            ("email", "m@x.de", "Agents not reporting (2)", "Heartbeat lost\n- web01\n- db01")
+        ]
 
     def test_without_body_the_channel_lines_are_the_text(self, db_session):
         self._three(db_session)
         admin = _user(db_session, "boss", is_admin=True, telegram_chat_id="4711")
-        _sub(db_session, admin, scope_type="all")
-        _sub(db_session, admin, scope_type="server", scope_ref="srv-1", telegram=True)
+        _sub(db_session, admin, scope_type="all", telegram=True)
         ingest_event(db_session, _bundle(["srv-1", "srv-2"], body=None))
         assert _outbox_rows(db_session, admin) == [
-            ("telegram", "4711", "Agents not reporting (1)", "- web01")
+            ("telegram", "4711", "Agents not reporting (2)", "- web01\n- db01")
         ]
 
     def test_a_single_event_queues_entries_with_the_text_of_its_ping(self, db_session):
@@ -678,7 +661,10 @@ class TestPrefsApi:
             "/api/users/me/notification-prefs", headers=_login(test_client, "alice")
         )
         assert res.status_code == 200
-        assert res.json() == {"email": None, "telegramChatId": None, "subscriptions": []}
+        body = res.json()
+        assert (body["email"], body["telegramChatId"], body["subscriptions"]) == (None, None, [])
+        # The channel settings (R-1080) are pinned in test_notification_settings.py.
+        assert body["matrix"] == {row: ["desktop"] for row in ("critical", "warning", "info", "ok")}
 
     def test_put_then_get_roundtrip(self, test_client, db_session):
         _user(db_session, "alice")
@@ -686,7 +672,7 @@ class TestPrefsApi:
         payload = {
             "email": "alice@example.com",
             "subscriptions": [
-                {"scope_type": "all", "min_severity": "warning", "channel_email": True},
+                {"scope_type": "all", "min_severity": "warning"},
                 {"scope_type": "tag", "scope_ref": "prod", "min_severity": "critical"},
             ],
         }
@@ -695,7 +681,8 @@ class TestPrefsApi:
         got = test_client.get("/api/users/me/notification-prefs", headers=headers).json()
         assert got["email"] == "alice@example.com"
         assert len(got["subscriptions"]) == 2
-        assert got["subscriptions"][0]["channelEmail"] is True
+        assert got["subscriptions"][0]["minSeverity"] == "warning"
+        assert got["subscriptions"][1]["scopeRef"] == "prod"
 
     def test_put_replaces_all(self, test_client, db_session):
         _user(db_session, "alice")
@@ -704,11 +691,11 @@ class TestPrefsApi:
             "subscriptions": [{"scope_type": "all"}, {"scope_type": "server", "scope_ref": "x"}]
         }
         test_client.put("/api/users/me/notification-prefs", headers=headers, json=first)
-        second = {"subscriptions": [{"scope_type": "all", "channel_email": True}]}
+        second = {"subscriptions": [{"scope_type": "all", "min_severity": "critical"}]}
         test_client.put("/api/users/me/notification-prefs", headers=headers, json=second)
         got = test_client.get("/api/users/me/notification-prefs", headers=headers).json()
         assert len(got["subscriptions"]) == 1
-        assert got["subscriptions"][0]["channelEmail"] is True
+        assert got["subscriptions"][0]["minSeverity"] == "critical"
 
     def test_tag_scope_requires_ref(self, test_client, db_session):
         _user(db_session, "alice")
@@ -1042,8 +1029,6 @@ class TestResolverTolerance:
                 scope_type="all",
                 min_severity="warning",
                 categories="{not valid json",
-                channel_email=False,
-                channel_telegram=False,
                 enabled=True,
             )
         )

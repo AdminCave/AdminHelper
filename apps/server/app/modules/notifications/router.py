@@ -24,6 +24,7 @@ from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core import config as app_config
 from app.core.auth import get_current_user
 from app.core.bounds import BigIntPk, Offset
 from app.core.config import MONITOR_API_KEY
@@ -33,8 +34,11 @@ from app.core.pagination import paginate
 from app.core.time import iso_utc
 from app.modules.notifications import incidents, stream_hub
 from app.modules.notifications.models import (
+    CHANNELS,
+    MATRIX_ROWS,
     Notification,
     NotificationServerMute,
+    NotificationSettings,
     NotificationSubscription,
 )
 from app.modules.notifications.schemas import (
@@ -53,6 +57,7 @@ from app.modules.notifications.schemas import (
     ServerMuteOut,
     UnreadCountOut,
 )
+from app.modules.notifications.service import default_matrix
 from app.modules.users.models import User
 
 feed_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -354,11 +359,53 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
         .order_by(NotificationSubscription.id.asc())
         .all()
     )
+    settings = db.get(NotificationSettings, user.id)
     return {
         "email": user.email,
         "telegramChatId": user.telegram_chat_id,
+        "ntfyUrl": settings.ntfy_url if settings else None,
+        "webhookUrl": settings.webhook_url if settings else None,
+        "matrix": json.loads(settings.matrix) if settings else default_matrix(),
+        "disabledChannels": json.loads(settings.disabled_channels) if settings else [],
+        "mutedCategories": json.loads(settings.muted_categories) if settings else [],
+        "available": {
+            "desktop": True,
+            "email": bool(app_config.SMTP_HOST),
+            "ntfy": True,
+            "telegram": False,
+            "webhook": True,
+        },
         "subscriptions": [s.to_dict() for s in subs],
     }
+
+
+def _store_settings(db: Session, user: User, data: NotificationPrefsUpdate) -> None:
+    """Write the channel settings the PUT carries; a field it leaves out keeps its value
+    (NotificationPrefsUpdate). Lists in the order of CHANNELS, without repeats."""
+    sent = data.model_fields_set
+    settings = db.get(NotificationSettings, user.id)
+    if settings is None:
+        settings = NotificationSettings(
+            user_id=user.id,
+            matrix=json.dumps(default_matrix()),
+            disabled_channels="[]",
+            muted_categories="[]",
+        )
+        db.add(settings)
+    if "ntfy_url" in sent:
+        settings.ntfy_url = data.ntfy_url
+    if "webhook_url" in sent:
+        settings.webhook_url = data.webhook_url
+    if "matrix" in sent and data.matrix is not None:
+        matrix = data.matrix
+        settings.matrix = json.dumps(
+            {row: [c for c in CHANNELS if c in matrix.get(row, [])] for row in MATRIX_ROWS}
+        )
+    if "disabled_channels" in sent and data.disabled_channels is not None:
+        off = data.disabled_channels
+        settings.disabled_channels = json.dumps([c for c in CHANNELS if c in off])
+    if "muted_categories" in sent and data.muted_categories is not None:
+        settings.muted_categories = json.dumps(list(dict.fromkeys(data.muted_categories)))
 
 
 @prefs_router.get("/notification-prefs", response_model=NotificationPrefsOut)
@@ -375,9 +422,11 @@ def put_prefs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Replace-all update: set contact data and rewrite the subscription set."""
+    """Replace-all update: set contact data and rewrite the subscription set; the
+    channel settings keep a field that is not sent."""
     current_user.email = data.email
     current_user.telegram_chat_id = data.telegram_chat_id or None
+    _store_settings(db, current_user, data)
     # Rewrite the subscription set wholesale — simpler than per-row CRUD and
     # matches a settings form that submits the full state.
     db.query(NotificationSubscription).filter(
@@ -391,8 +440,6 @@ def put_prefs(
                 scope_ref=s.scope_ref,
                 min_severity=s.min_severity,
                 categories=json.dumps(s.categories) if s.categories else None,
-                channel_email=s.channel_email,
-                channel_telegram=s.channel_telegram,
                 enabled=s.enabled,
             )
         )

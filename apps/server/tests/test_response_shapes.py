@@ -738,10 +738,23 @@ class TestNotificationShape:
         subs = (
             db_session.query(NotificationSubscription).order_by(NotificationSubscription.id).all()
         )
-        assert got.json() == {
+        body = got.json()
+        assert {k: body[k] for k in ("email", "telegramChatId", "subscriptions")} == {
             "email": "admin@example.com",
             "telegramChatId": "12345",
             "subscriptions": [jsonable_encoder(s.to_dict()) for s in subs],
+        }
+        # The channel settings (R-1080), defaults without a stored row.
+        assert set(body) == {
+            "email",
+            "telegramChatId",
+            "subscriptions",
+            "ntfyUrl",
+            "webhookUrl",
+            "matrix",
+            "disabledChannels",
+            "mutedCategories",
+            "available",
         }
         tagged, every = got.json()["subscriptions"]
         assert tagged["categories"] == '["pki"]'

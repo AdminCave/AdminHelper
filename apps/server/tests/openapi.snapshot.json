@@ -380,6 +380,40 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "AvailableChannelsOut": {
+        "description": "Which channels the server can deliver: e-mail only with SMTP_HOST, Telegram only\nwith the bot token. The desktop delivers itself.",
+        "properties": {
+          "desktop": {
+            "title": "Desktop",
+            "type": "boolean"
+          },
+          "email": {
+            "title": "Email",
+            "type": "boolean"
+          },
+          "ntfy": {
+            "title": "Ntfy",
+            "type": "boolean"
+          },
+          "telegram": {
+            "title": "Telegram",
+            "type": "boolean"
+          },
+          "webhook": {
+            "title": "Webhook",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "desktop",
+          "email",
+          "ntfy",
+          "telegram",
+          "webhook"
+        ],
+        "title": "AvailableChannelsOut",
+        "type": "object"
+      },
       "BootstrapRequest": {
         "description": "Creates the first admin user using the bootstrap token from the server logs.",
         "properties": {
@@ -3953,6 +3987,23 @@
       },
       "NotificationPrefsOut": {
         "properties": {
+          "available": {
+            "$ref": "#/components/schemas/AvailableChannelsOut"
+          },
+          "disabledChannels": {
+            "items": {
+              "enum": [
+                "desktop",
+                "email",
+                "ntfy",
+                "telegram",
+                "webhook"
+              ],
+              "type": "string"
+            },
+            "title": "Disabledchannels",
+            "type": "array"
+          },
           "email": {
             "anyOf": [
               {
@@ -3963,6 +4014,49 @@
               }
             ],
             "title": "Email"
+          },
+          "matrix": {
+            "additionalProperties": {
+              "items": {
+                "enum": [
+                  "desktop",
+                  "email",
+                  "ntfy",
+                  "telegram",
+                  "webhook"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "enum": [
+                "critical",
+                "warning",
+                "info",
+                "ok"
+              ]
+            },
+            "title": "Matrix",
+            "type": "object"
+          },
+          "mutedCategories": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mutedcategories",
+            "type": "array"
+          },
+          "ntfyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntfyurl"
           },
           "subscriptions": {
             "items": {
@@ -3981,19 +4075,57 @@
               }
             ],
             "title": "Telegramchatid"
+          },
+          "webhookUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhookurl"
           }
         },
         "required": [
           "email",
           "telegramChatId",
+          "ntfyUrl",
+          "webhookUrl",
+          "matrix",
+          "disabledChannels",
+          "mutedCategories",
+          "available",
           "subscriptions"
         ],
         "title": "NotificationPrefsOut",
         "type": "object"
       },
       "NotificationPrefsUpdate": {
-        "description": "Replace-all update of a user's own notification preferences. email /\ntelegram_chat_id are set verbatim (None clears them); the settings UI always\nsubmits the full current state.",
+        "description": "Replace-all update of a user's own notification preferences. email /\ntelegram_chat_id are set verbatim (None clears them); the settings UI always\nsubmits the full current state. A field of the channel settings (R-1080) that is\nnot sent keeps its stored value, so a caller that sends rules only keeps the\nmatrix; sent as null, a URL is cleared.",
         "properties": {
+          "disabled_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "desktop",
+                    "email",
+                    "ntfy",
+                    "telegram",
+                    "webhook"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Channels"
+          },
           "email": {
             "anyOf": [
               {
@@ -4004,6 +4136,66 @@
               }
             ],
             "title": "Email"
+          },
+          "matrix": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "enum": [
+                      "desktop",
+                      "email",
+                      "ntfy",
+                      "telegram",
+                      "webhook"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "critical",
+                    "warning",
+                    "info",
+                    "ok"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix"
+          },
+          "muted_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muted Categories"
+          },
+          "ntfy_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntfy Url"
           },
           "subscriptions": {
             "items": {
@@ -4022,6 +4214,17 @@
               }
             ],
             "title": "Telegram Chat Id"
+          },
+          "webhook_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Url"
           }
         },
         "required": [
@@ -4043,14 +4246,6 @@
               }
             ],
             "title": "Categories"
-          },
-          "channelEmail": {
-            "title": "Channelemail",
-            "type": "boolean"
-          },
-          "channelTelegram": {
-            "title": "Channeltelegram",
-            "type": "boolean"
           },
           "enabled": {
             "title": "Enabled",
@@ -4091,8 +4286,6 @@
           "scopeRef",
           "minSeverity",
           "categories",
-          "channelEmail",
-          "channelTelegram",
           "enabled"
         ],
         "title": "NotificationSubscriptionOut",
@@ -4891,16 +5084,6 @@
               }
             ],
             "title": "Categories"
-          },
-          "channel_email": {
-            "default": false,
-            "title": "Channel Email",
-            "type": "boolean"
-          },
-          "channel_telegram": {
-            "default": false,
-            "title": "Channel Telegram",
-            "type": "boolean"
           },
           "enabled": {
             "default": true,
@@ -9675,7 +9858,7 @@
         ]
       },
       "put": {
-        "description": "Replace-all update: set contact data and rewrite the subscription set.",
+        "description": "Replace-all update: set contact data and rewrite the subscription set; the\nchannel settings keep a field that is not sent.",
         "operationId": "put_prefs_api_users_me_notification_prefs_put",
         "requestBody": {
           "content": {
