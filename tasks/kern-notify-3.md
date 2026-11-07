@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), zwe
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Server: Spalten, Migration, Prefs-API und Zeitrechnung je Zone (R-1081)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/a4b6c8d0e2f4_notification_quiet_escalation_digest.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/quiet.py, apps/server/tests/test_notification_quiet.py, apps/server/tests/test_notification_settings.py, apps/server/tests/openapi.snapshot.json
+### T1 — Server: Spalten, Migration, Prefs-API und Zeitrechnung je Zone (R-1081)  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/a4b6c8d0e2f4_notification_quiet_escalation_digest.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/quiet.py, apps/server/tests/test_notification_quiet.py, apps/server/tests/test_notification_settings.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_response_shapes.py, apps/server/requirements.in, apps/server/requirements.txt, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @29f6999f7 2026-11-07T11:44:22+01:00
+Review: approve (.ah-out/review/kern-notify-3/T1.verdict.json)
 Änderung: Die Spalten der Spec an `NotificationSettings`, `Notification.escalated_at` und `NotificationIncident.critical_since`, die Migration mit `server_default` auf den Standardwerten; der Downgrade setzt `digest`-Einträge auf `pending`. Die Prefs-API GET/PUT bekommt die neuen Felder additiv (fehlendes Feld behält seinen Wert); geprüft werden `HH:MM`, `minutes` ∈ {5,10,30}, der Kanal und die IANA-Zone (422). `quiet.py` (SPDX) rechnet `in_quiet`, `quiet_end` und `next_digest_at` in der Zone der Person, Standard UTC. Vorher prüfen, ob das Server-Image `tzdata` hat (`/usr/share/zoneinfo` im Image oder das Python-Paket), sonst `tzdata` in die Abhängigkeiten und `THIRD_PARTY_LICENSES.md`, per `set-files`. Tests: Prefs-Rundlauf und 422-Fälle; Zeitrechnung über Mitternacht, an beiden DST-Umstellungstagen in `Europe/Berlin`, in UTC und in einer Zone ohne DST; Migration hoch und runter. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_quiet.py tests/test_notification_settings.py tests/test_notification_prefs_test.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_alembic_builtin.py
 Doku: → T5
@@ -41,3 +43,9 @@ Task-Review: am Ende
 Abhängt von: T2, T3, T4
 
 ## Entscheidungen
+- T1: Das Python-Paket `tzdata` kommt als Abhängigkeit dazu (Lock, `THIRD_PARTY_LICENSES.md`): das apt-`tzdata` des Images (trixie, ohne `tzdata-legacy`) kennt die alten Namen wie `Asia/Calcutta` nicht, die `Intl` liefern kann; Dev-Box und CI haben sie und hätten es verdeckt (Reviewer T1). Ein Test mit leerem TZPATH belegt es.
+- T1: Request-Felder in snake_case wie die übrigen (`sound_critical`), Response in camelCase (`soundCritical`).
+- T1: Eskalation an ohne Kanal ist 422; aus darf der Kanal leer sein. Ein Kanal ohne Ziel wird gespeichert (Spec).
+- T1: Eine gespeicherte, inzwischen unbekannte Zone zählt als UTC (`quiet.zone`), statt den Job scheitern zu lassen.
+- T1: Ein Ende in der doppelten Herbststunde nimmt den Durchgang, der noch vor `now` liegt (`fold=1`).
+- T1: `HH:MM` mit `[0-9]` statt `\d`: pydantics Pattern nimmt mit `\d` auch arabisch-indische Ziffern an (gegengeprüft).

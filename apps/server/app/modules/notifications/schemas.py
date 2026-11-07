@@ -4,8 +4,10 @@
 
 import re
 from datetime import datetime, timedelta, timezone
+from functools import cache
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlsplit
+from zoneinfo import available_timezones
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
@@ -16,6 +18,15 @@ Channel = Literal["desktop", "email", "ntfy", "telegram", "webhook"]
 MatrixRow = Literal["critical", "warning", "info", "ok"]
 ScopeType = Literal["all", "tag", "server"]
 IncidentState = Literal["open", "acked", "resolved"]
+# The channels an escalation can take (R-1081): not the desktop, which is the one that
+# already showed the incident.
+EscalationChannel = Literal["email", "ntfy", "telegram", "webhook"]
+Digest = Literal["off", "daily", "weekly"]
+# HH:MM, ASCII digits only: pydantic's pattern engine matches \d against any Unicode digit.
+ClockTime = Annotated[str, Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
+TIMEZONE_MAX = 64
+# The zone names on disk, read once: available_timezones() walks the tz database.
+_ZONES = cache(available_timezones)
 
 # The longest mute a person can set (spec: until <= now + 7 d).
 MUTE_MAX = timedelta(days=7)
@@ -170,6 +181,28 @@ class SubscriptionInput(RequestModel):
         return self
 
 
+class QuietInput(RequestModel):
+    """Quiet hours: from start to end in the person's zone, across midnight when end is
+    earlier; critical lets critical pings through."""
+
+    enabled: bool
+    start: ClockTime
+    end: ClockTime
+    critical: bool
+
+
+class EscalationInput(RequestModel):
+    enabled: bool
+    minutes: Literal[5, 10, 30]
+    channel: Optional[EscalationChannel] = None
+
+    @model_validator(mode="after")
+    def _channel_when_on(self) -> "EscalationInput":
+        if self.enabled and self.channel is None:
+            raise ValueError("an escalation needs a channel")
+        return self
+
+
 class NotificationPrefsUpdate(RequestModel):
     """Replace-all update of a user's own notification preferences. email /
     telegram_chat_id are set verbatim (None clears them); the settings UI always
@@ -190,6 +223,11 @@ class NotificationPrefsUpdate(RequestModel):
             Field(max_length=MUTED_CATEGORIES_MAX),
         ]
     ] = None
+    timezone: Optional[Annotated[str, Field(max_length=TIMEZONE_MAX)]] = None
+    quiet: Optional[QuietInput] = None
+    escalation: Optional[EscalationInput] = None
+    digest: Optional[Digest] = None
+    sound_critical: Optional[bool] = None
 
     @field_validator("email")
     @classmethod
@@ -204,6 +242,15 @@ class NotificationPrefsUpdate(RequestModel):
     @classmethod
     def _check_url(cls, v: Optional[str]) -> Optional[str]:
         return _check_target_url(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def _check_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if v not in _ZONES():
+            raise ValueError("Unknown time zone")
+        return v
 
 
 class NotificationTestRequest(RequestModel):
@@ -331,6 +378,19 @@ class AvailableChannelsOut(BaseModel):
     webhook: bool
 
 
+class QuietOut(BaseModel):
+    enabled: bool
+    start: str
+    end: str
+    critical: bool
+
+
+class EscalationOut(BaseModel):
+    enabled: bool
+    minutes: int
+    channel: Optional[EscalationChannel]
+
+
 class NotificationPrefsOut(BaseModel):
     email: Optional[str]
     telegramChatId: Optional[str]
@@ -339,6 +399,11 @@ class NotificationPrefsOut(BaseModel):
     matrix: dict[MatrixRow, list[Channel]]
     disabledChannels: list[Channel]
     mutedCategories: list[str]
+    timezone: str
+    quiet: QuietOut
+    escalation: EscalationOut
+    digest: Digest
+    soundCritical: bool
     available: AvailableChannelsOut
     subscriptions: list[NotificationSubscriptionOut]
 

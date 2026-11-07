@@ -304,6 +304,16 @@ class TestPrefsApi:
         assert body["ntfyUrl"] is None and body["webhookUrl"] is None
         assert body["matrix"] == {row: ["desktop"] for row in ROWS}
         assert (body["disabledChannels"], body["mutedCategories"]) == ([], [])
+        # R-1081: everything off, the times prefilled, critical let through.
+        assert body["timezone"] == "UTC"
+        assert body["quiet"] == {
+            "enabled": False,
+            "start": "22:00",
+            "end": "07:00",
+            "critical": True,
+        }
+        assert body["escalation"] == {"enabled": False, "minutes": 10, "channel": None}
+        assert (body["digest"], body["soundCritical"]) == ("off", False)
         assert body["available"] == {
             "desktop": True,
             "email": False,
@@ -407,6 +417,96 @@ class TestPrefsApi:
         ],
     )
     def test_bad_settings_are_422(self, test_client, db_session, extra):
+        _user(db_session, "alice")
+        headers = _login(test_client, "alice")
+        res = test_client.put(PATH, headers=headers, json={"subscriptions": [], **extra})
+        assert res.status_code == 422, extra
+
+
+CLOCK = {
+    "timezone": "Europe/Berlin",
+    "quiet": {"enabled": True, "start": "23:30", "end": "06:15", "critical": False},
+    "escalation": {"enabled": True, "minutes": 5, "channel": "ntfy"},
+    "digest": "weekly",
+    "sound_critical": True,
+}
+
+
+class TestClockPrefsApi:
+    """Quiet hours, escalation, digest and sound (R-1081) through the prefs API."""
+
+    def test_put_then_get(self, test_client, db_session):
+        _user(db_session, "alice")
+        headers = _login(test_client, "alice")
+        res = test_client.put(PATH, headers=headers, json={"subscriptions": [], **CLOCK})
+        assert res.status_code == 200, res.text
+        body = test_client.get(PATH, headers=headers).json()
+        assert body["timezone"] == "Europe/Berlin"
+        assert body["quiet"] == CLOCK["quiet"]
+        assert body["escalation"] == CLOCK["escalation"]
+        assert (body["digest"], body["soundCritical"]) == ("weekly", True)
+
+    def test_a_put_without_them_keeps_them(self, test_client, db_session):
+        _user(db_session, "alice")
+        headers = _login(test_client, "alice")
+        assert (
+            test_client.put(PATH, headers=headers, json={"subscriptions": [], **CLOCK}).status_code
+            == 200
+        )
+        rules_only = {"subscriptions": [{"scope_type": "all"}], "matrix": {"critical": ["email"]}}
+        assert test_client.put(PATH, headers=headers, json=rules_only).status_code == 200
+        body = test_client.get(PATH, headers=headers).json()
+        assert body["timezone"] == "Europe/Berlin"
+        assert body["quiet"] == CLOCK["quiet"]
+        assert body["escalation"] == CLOCK["escalation"]
+        assert (body["digest"], body["soundCritical"]) == ("weekly", True)
+
+    def test_an_escalation_switched_off_may_drop_its_channel(self, test_client, db_session):
+        _user(db_session, "alice")
+        headers = _login(test_client, "alice")
+        off = {"enabled": False, "minutes": 30, "channel": None}
+        res = test_client.put(PATH, headers=headers, json={"subscriptions": [], "escalation": off})
+        assert res.status_code == 200, res.text
+        assert res.json()["escalation"] == off
+
+    def test_a_channel_without_target_is_stored(self, test_client, db_session):
+        # The job skips the person; the desktop shows the hint (spec).
+        _user(db_session, "alice")
+        headers = _login(test_client, "alice")
+        on = {"enabled": True, "minutes": 10, "channel": "webhook"}
+        res = test_client.put(PATH, headers=headers, json={"subscriptions": [], "escalation": on})
+        assert res.status_code == 200, res.text
+        assert res.json()["webhookUrl"] is None
+        assert res.json()["escalation"] == on
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"timezone": "Mars/Olympus"},
+            {"timezone": "../../etc/passwd"},
+            {"timezone": "/usr/share/zoneinfo/UTC"},
+            {"timezone": ""},
+            {"timezone": "E" * 65},
+            {"quiet": {"enabled": True, "start": "24:00", "end": "07:00", "critical": True}},
+            {"quiet": {"enabled": True, "start": "7:00", "end": "07:00", "critical": True}},
+            {"quiet": {"enabled": True, "start": "22:60", "end": "07:00", "critical": True}},
+            # Arabic-Indic digits: a Unicode \d would take them.
+            {
+                "quiet": {
+                    "enabled": True,
+                    "start": "\u0662\u0662:00",
+                    "end": "07:00",
+                    "critical": True,
+                }
+            },
+            {"quiet": {"enabled": True, "start": "22:00", "critical": True}},
+            {"escalation": {"enabled": True, "minutes": 15, "channel": "email"}},
+            {"escalation": {"enabled": True, "minutes": 10, "channel": "desktop"}},
+            {"escalation": {"enabled": True, "minutes": 10, "channel": None}},
+            {"digest": "hourly"},
+        ],
+    )
+    def test_bad_values_are_422(self, test_client, db_session, extra):
         _user(db_session, "alice")
         headers = _login(test_client, "alice")
         res = test_client.put(PATH, headers=headers, json={"subscriptions": [], **extra})
