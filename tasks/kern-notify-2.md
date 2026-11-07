@@ -1,5 +1,5 @@
 # Kanäle ntfy, Telegram, Webhook · Matrix Schweregrad × Kanal · Kategorien — Task-Ledger
-Status: bereit · Branch: feature/kern-notify-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-2 · Review: pro Task
 Spec: docs/features/kern-notify-2.md (Roadmap R-1080)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), ausgehende Requests, Desktop-Journey SSE-Push (`desktop_e2e_sse_push.sh`); geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -12,6 +12,7 @@ Review: approve (.ah-out/review/kern-notify-2/T1.verdict.json)
 Änderung: Neue Tabelle `notification_settings` (Spec, Datenmodell); die Migration übernimmt `channel_email`/`channel_telegram` in die Matrix (Zeilen ≥ `min_severity`, `ok` wenn irgendeine Zeile, `desktop` überall) und entfernt die Spalten, der Downgrade stellt sie aus der Matrix her. `resolve_recipients` liefert nur noch die Glocke, `_queue` wählt die Kanäle aus Matrix (Zeile nach dem Ping-Schweregrad, unbekannt → `critical`), `disabled_channels`, `muted_categories` und den Zielen; bis T2 nur `email` und `telegram`. Prefs-API GET/PUT in der neuen Form (Spec), fehlende neue Felder behalten ihren Wert, URL-Form geprüft. Tests: Migration mit Gegenprobe (Häkchen → Matrix → Downgrade), Routing je Matrix-Zelle, stumme Kategorie und Schalter, Prefs-API; Aufrufer der alten Felder in den Tests nachgezogen (weitere per `set-files`, mehr als acht Dateien, weil das Entfernen der Spalten alle Leser in einem Commit verlangt). Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_settings.py tests/test_notifications.py tests/test_notification_category_migration.py tests/test_cli.py tests/test_users.py tests/test_bootstrap.py tests/test_certificate_expiry_watch.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_alembic_builtin.py tests/test_notification_incidents.py tests/test_outbox.py tests/test_notification_bridge.py
 Doku: → T7
+Test-Löschung: apps/server/tests/test_notifications.py::test_email_names_only_the_server_of_its_subscription — die Kanäle kommen aus der Matrix, ein Bündel nennt die Server der Glocke; ersetzt durch test_every_channel_names_the_servers_of_the_bell; apps/server/tests/test_notifications.py::test_telegram_names_only_the_server_of_its_subscription — dasselbe Verhalten für Telegram, gedeckt durch test_every_channel_names_the_servers_of_the_bell; apps/server/tests/test_notifications.py::test_each_channel_names_the_servers_of_its_own_subscriptions — Kanäle je Abo gibt es nicht mehr, gedeckt durch test_every_channel_names_the_servers_of_the_bell; apps/server/tests/test_notifications.py::test_a_channel_without_a_server_gets_no_entry — umbenannt in test_a_member_channel_names_only_servers_they_may_see (ohne sichtbaren Server kein Eintrag); apps/server/tests/test_certificate_expiry_watch.py::test_only_admins_get_it_and_email_follows_their_subscription — umbenannt in test_only_admins_get_it_and_email_follows_their_matrix (die Matrix ersetzt das Häkchen)
 
 ### T2 — Server und Monitoring: SSRF-Sperre mit Opt-in für private Ziele (R-1080)  [x]
 Komponente: server · Dateien: apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf.py
@@ -67,6 +68,26 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_se
 Doku: alle oben DE+EN · changelog.d/kern-notify-2.md
 Task-Review: am Ende
 Abhängt von: T5
+
+
+### T8 — Server: Drain stellt ein Ziel, das die Frist verfehlt, für den Rest des Laufs zurück (R-1080)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/tests/test_notification_channels.py
+Änderung: Fund der Abschlussprüfung (security, Einzelheiten privat). `sender` meldet eine verfehlte Frist als eigene Unterklasse `SendTimeout(DeliveryFailed)`; `drain_outbox` merkt sich je Lauf (Kanal, Adresse) eines Eintrags mit `SendTimeout` und überspringt weitere Einträge mit demselben Ziel in diesem Lauf, ohne Versuch und ohne Änderung (sie kommen im nächsten Lauf). Test: zwei Einträge an ein tröpfelndes Ziel und einer an ein gutes; ein Lauf dauert eine Frist, der zweite Eintrag bleibt `pending` mit 0 Versuchen, der gute ist `sent`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_channels.py tests/test_outbox.py
+Doku: docs/developer/server.html, docs/en/developer/server.html
+
+### T9 — Desktop-UI: Vorfall-Detail zeigt ntfy mit Label (R-1080)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/notifications.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/notifications.test.ts
+Änderung: Nit der Abschlussprüfung: `CHANNELS` in `notifications.ts` kennt `ntfy` nicht, das Vorfall-Detail zeigt den Kanal roh; `ntfy` dazu, Schlüssel `notifications.channel.ntfy` DE+EN, Test für `channelLabel('ntfy')`.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts src/lib/i18n/i18n.test.ts
+Doku: keine (Label, kein dokumentiertes Verhalten)
+
+### T10 — Doku: Kanäle im Vorfall-Detail und README (R-1080)  [ ]
+Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, README.md
+Änderung: Funde der Abschlussprüfung: `channels` im Vorfall-Detail nennt seit T4 auch `ntfy` und `webhook` (DE+EN); die README-Zeile „Personal notifications“ nennt ntfy, Telegram und Webhook neben E-Mail und die Matrix.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_settings.py
+Doku: alle oben DE+EN · README
+Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-07 Planung: eigene Tabelle statt Spalten an `users`; Kanal-Schalter als Liste; ntfy-Zugang per `?auth=` in der URL; Webhook ohne Signatur; CGNAT unter dem Opt-in; fehlende neue Felder beim `PUT` behalten ihren Wert (Begründungen in der Spec).
