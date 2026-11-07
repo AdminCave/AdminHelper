@@ -1,5 +1,5 @@
 # Ruhezeiten · Eskalation · Zusammenfassung per E-Mail · Ton bei Kritisch — Task-Ledger
-Status: bereit · Branch: feature/kern-notify-3 · Review: pro Task
+Status: erledigt · Branch: feature/kern-notify-3 · Review: pro Task
 Spec: docs/features/kern-notify-3.md (Roadmap R-1081)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), zwei neue Scheduler-Jobs, Desktop-Journey der Benachrichtigungen; geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
