@@ -47,7 +47,8 @@ def _path_refused(name: str, pattern: str | None = None) -> bool:
     """True for a name the API refuses today as a server name (servers/schemas: no '/',
     '.' or '..') or, with `pattern`, as a username: the bulk-ZIP names an entry after it.
     Rows from before stay as they are, so the ZIP leaves such a name out. Compared
-    stripped, as the API compares it."""
+    stripped, as the API compares it. The Windows rule for new names (no ':', no device
+    name, servers/schemas) is left out on purpose: stored names keep shipping (R-1056)."""
     if (
         not name.strip()
         or "/" in name

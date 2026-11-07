@@ -13,7 +13,10 @@ import pytest
 
 from app.modules.frp.schemas import _validate_tags
 from app.modules.servers.models import Server
-from app.modules.servers.schemas import _validate_server_name
+from app.modules.servers.schemas import (
+    _validate_server_name,
+    reject_windows_unsafe_server_name,
+)
 
 
 class TestValidateServerName:
@@ -54,6 +57,50 @@ class TestValidateServerName:
         # The server name reaches the frpc/visitor TOML through the same helper.
         with pytest.raises(ValueError):
             _validate_server_name("srv\x7f1")
+
+
+class TestRejectWindowsUnsafeServerName:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "srv:1",
+            ":",
+            "C:",
+            "con",
+            "PRN",
+            "Aux",
+            "nul",
+            "com1",
+            "COM9",
+            "lpt5",
+            "COM\u00b9",
+            "lpt\u00b3",
+            "nul.tar.gz",
+            "aux.lab",
+            "CON .txt",
+        ],
+    )
+    def test_refused(self, name):
+        with pytest.raises(ValueError):
+            reject_windows_unsafe_server_name(name)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "com0",
+            "com10",
+            "lpt0",
+            "console",
+            "auxiliary",
+            "nul-1",
+            "my.aux",
+            "srv-01",
+            "k8s.node",
+            "COM\u2074",
+        ],
+    )
+    def test_allowed(self, name):
+        reject_windows_unsafe_server_name(name)
 
 
 class TestValidateTags:
