@@ -1,5 +1,5 @@
 # Ruhezeiten · Eskalation · Zusammenfassung per E-Mail · Ton bei Kritisch — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-3 · Review: pro Task
 Spec: docs/features/kern-notify-3.md (Roadmap R-1081)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), zwei neue Scheduler-Jobs, Desktop-Journey der Benachrichtigungen; geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -40,10 +40,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T5
 Abhängt von: T1
 
-### T5 — Doku DE+EN und CHANGELOG (R-1081)  [ ]
-Komponente: docs · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-notify-3.md
+### T5 — Doku DE+EN und CHANGELOG (R-1081)  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-notify-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b3ee068db 2026-11-07T12:52:19+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Unterabschnitt Ruhezeiten, Eskalation, Zusammenfassung und Ton unter „Kanäle und Matrix“ (DE `#kanaele`, EN `#channels`), dazu Outbox-Status `digest`, zwei Systemjobs, `critical_since`/`escalated_at` in der Server-Doku, die neuen Prefs-Felder in der API-Referenz und ein CHANGELOG-Fragment (umlautfrei).
-Verify: bash scripts/dev/verify.sh docs --strict
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-notify-3.md
 Task-Review: am Ende
 Abhängt von: T2, T3, T4
@@ -69,3 +71,4 @@ Abhängt von: T2, T3, T4
 - T4: Der Abschnitt erscheint nur, wenn der Server die Felder schickt (`quiet` vorhanden); dann gehen sie beim Speichern mit, sonst nicht. Ein alter Server würde sie zwar ignorieren (`RequestModel` ohne `extra=forbid`), die Einstellungen wirkten dort aber nicht.
 - T4: Ein Eskalationskanal ist wählbar mit gespeichertem Ziel, eingeschaltet und vom Server zustellbar; der Schalter der Eskalation bleibt gesperrt, bis ein Kanal gewählt ist (der Server lehnt an ohne Kanal mit 422 ab).
 - T4: Die Ruhezeit des Desktops rechnet in der gespeicherten Zone der Person (dieselbe Uhr wie der Server), nicht in der Zone des Rechners; eine unbekannte Zone zählt als UTC.
+- T5: Das Verify der Doku-Task ist `scripts --strict -- doc_smoke_test` (Komponente `scripts`), wie in den übrigen Doku-Tasks; der Plan nannte die Komponente `docs`, die `verify.sh` nicht kennt.
