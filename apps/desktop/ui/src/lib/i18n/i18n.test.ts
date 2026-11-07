@@ -18,6 +18,13 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DYNAMIC_PREFIXES = [
   'notifPrefs.scope.',
   'notifPrefs.sev.',
+  // The channel settings (NotificationPrefs.svelte): notifPrefs.channel.${ch}, .target.${ch},
+  // .targetLabel.${ch}, .row.${row}, .cat.${cat}.
+  'notifPrefs.channel.',
+  'notifPrefs.target.',
+  'notifPrefs.targetLabel.',
+  'notifPrefs.row.',
+  'notifPrefs.cat.',
   'settings.mode.',
   // Weekday labels resolved via template literal (monitoring.maint.day.${d}).
   'monitoring.maint.day.',

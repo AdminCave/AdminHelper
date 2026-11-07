@@ -12,6 +12,7 @@ import { writable, derived, get } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { currentSession } from './session';
 import { reportError } from './statusBar';
+import { loadDesktopPrefs, setDesktopPrefs } from './notifyPrefs';
 import * as bridge from '$lib/bridge';
 import { notificationsApi } from '$lib/api/notifications';
 import { errMsg } from '$lib/utils/errors';
@@ -352,6 +353,7 @@ let logoutGen = 0;
 
 export async function activateNotifications(): Promise<void> {
   const gen = ++activationGen;
+  void loadDesktopPrefs();
   void loadFeed();
   if (pollTimer) clearInterval(pollTimer);
   // Polling stays as a fallback (SSE may be unavailable: no Redis, dead stream).
@@ -397,6 +399,7 @@ export function deactivateNotifications(): void {
     unlistenStream = null;
   }
   void bridge.stopNotificationStream();
+  setDesktopPrefs(null);
   // Reset priming so a different user's backlog does not trigger OS spam.
   lastSeenAt = 0;
   lastSeenId = 0;
