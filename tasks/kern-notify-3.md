@@ -47,5 +47,5 @@ Abhängt von: T2, T3, T4
 - T1: Request-Felder in snake_case wie die übrigen (`sound_critical`), Response in camelCase (`soundCritical`).
 - T1: Eskalation an ohne Kanal ist 422; aus darf der Kanal leer sein. Ein Kanal ohne Ziel wird gespeichert (Spec).
 - T1: Eine gespeicherte, inzwischen unbekannte Zone zählt als UTC (`quiet.zone`), statt den Job scheitern zu lassen.
-- T1: Ein Ende in der doppelten Herbststunde nimmt den Durchgang, der noch vor `now` liegt (`fold=1`).
+- T1: Ein Ende in der doppelten Herbststunde nimmt den ersten Durchgang nach `now` (erst `fold=0`, dann `fold=1`).
 - T1: `HH:MM` mit `[0-9]` statt `\d`: pydantics Pattern nimmt mit `\d` auch arabisch-indische Ziffern an (gegengeprüft).
