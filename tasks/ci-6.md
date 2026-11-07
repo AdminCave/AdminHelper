@@ -1,5 +1,5 @@
 # CI-Services und Playwright-Runner auf aktuellem Stand — Task-Ledger
-Status: bereit · Branch: feature/ci-6 · Review: am Ende
+Status: aktiv · Branch: feature/ci-6 · Review: am Ende
 Spec: docs/features/ci-6.md (Roadmap R-1134, R-1136, R-1137)
 Heavy: none — nur `ci.yml` und Doku; Beweis ist die PR-CI selbst (Services und Runner gelten im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -20,3 +20,10 @@ Review: am Ende (Branch-Review)
 Änderung: Job `frontend-e2e` auf `runs-on: ubuntu-26.04`, der Kommentar zu Playwright 1.60 entfällt. `cicd.html:42` DE+EN: der Satz zur Ausnahme für `frontend-e2e` entfällt. `changelog.d/ci-6.md` (`### Changed`, umlautfrei) für T1 und T2.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html DE+EN · changelog.d/ci-6.md
+
+### T3 — changelog.d/ci-3.md: Satz zum Playwright-Job auf den Endstand (R-1134, Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: changelog.d/ci-3.md
+Änderung: Das noch unveröffentlichte Fragment von ci-3 sagt, der Playwright-E2E-Job bleibe auf `ubuntu-24.04`; mit T2 widerspräche es im selben Release `ci-6.md`. Der Satz entfällt.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: changelog.d/ci-3.md
+Task-Review: am Ende
