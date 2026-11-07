@@ -215,8 +215,9 @@ fi
 # line contains its text (strings.Contains), and the path it compares exactly is
 # the line's first field starting with "/" (checker/ignore.go,
 # api_change.go:131 @v1.32.0). So this holds two things. The file, byte for byte,
-# is the list below — date, roadmap id, reason and finding text of all seventeen
-# lines (Kevin 2026-10-17, 2026-10-21); a further exception is Kevin's call and
+# is the list below — date, roadmap id, reason and finding text of all
+# twenty-nine lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07); a further
+# exception is Kevin's call and
 # changes the list. And every line, the next one too, has the form <date> <R-id>
 # <reason>: <METHOD> <path> <text>, its reason only letters, digits, blanks and
 # hyphens: no backtick and no quote, so no finding text can hide in it, and no
@@ -247,13 +248,25 @@ if [ -r "$IGNORE" ]; then
 2026-10-21 R-0533 tighter visitor port bounds: POST /api/frp/tunnels the `visitor_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
 2026-10-21 R-0533 tighter visitor port bounds: PUT /api/frp/tunnels/{tunnel_id} the `visitor_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
 2026-10-21 R-0533 tighter visitor port bounds: PUT /api/frp/tunnels/{tunnel_id} the `visitor_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
+2026-11-07 R-1080 new notification channels: GET /api/notifications/incidents/{incident_id} added the new `ntfy` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: GET /api/notifications/incidents/{incident_id} added the new `webhook` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: POST /api/notifications/incidents/{incident_id}/notes added the new `ntfy` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: POST /api/notifications/incidents/{incident_id}/notes added the new `webhook` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: POST /api/notifications/incidents/{incident_id}/reopen added the new `ntfy` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: POST /api/notifications/incidents/{incident_id}/reopen added the new `webhook` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: POST /api/notifications/incidents/{incident_id}/resolve added the new `ntfy` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 new notification channels: POST /api/notifications/incidents/{incident_id}/resolve added the new `webhook` enum value to the `channels/items/` response property for the response status `200`
+2026-11-07 R-1080 channel matrix replaces the subscription flags: GET /api/users/me/notification-prefs removed the required property `subscriptions/items/channelEmail` from the response with the `200` status
+2026-11-07 R-1080 channel matrix replaces the subscription flags: GET /api/users/me/notification-prefs removed the required property `subscriptions/items/channelTelegram` from the response with the `200` status
+2026-11-07 R-1080 channel matrix replaces the subscription flags: PUT /api/users/me/notification-prefs removed the required property `subscriptions/items/channelEmail` from the response with the `200` status
+2026-11-07 R-1080 channel matrix replaces the subscription flags: PUT /api/users/me/notification-prefs removed the required property `subscriptions/items/channelTelegram` from the response with the `200` status
 EXPECTED_EXCEPTIONS
 )
   # diff against the file itself, not a $(…) copy of it: that would drop
   # trailing blank lines, and the comparison must see every byte. Its exit code
   # decides, not an empty output: a diff that could not run prints nothing too.
   DRIFT_RC=0; DRIFT=$(diff <(printf '%s\n' "$EXPECTED_IGNORE") "$IGNORE" 2>&1) || DRIFT_RC=$?
-  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the seventeen expected lines, reasons included" \
+  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the twenty-nine expected lines, reasons included" \
     || bad "the exception file drifted from the expected lines (diff rc=$DRIFT_RC): $DRIFT"
   # oasdiff checks no path for a component or a security change: a line with the
   # word "components" or "security" could match one of those by its text alone.
@@ -307,9 +320,34 @@ TUNNEL_PORT=$(props visitor_port "$(or_null "$PORT")")
 FRP_BASE=$(frp_spec "$BASE_PROPS" "$BASE_PUT" "$OTHER_WIDE" "$TUNNEL_WIDE")
 FRP_HEAD=$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE" "$TUNNEL_PORT")
 
+# notify_spec <channel enum> <required of a subscription> <its properties> — the
+# routes of the R-1080 findings: an incident's channels (GET and three POST) and
+# the subscriptions in the prefs response (GET and PUT); JSON arguments.
+IID='"parameters":[{"name":"incident_id","in":"path","required":true,"schema":{"type":"integer"}}]'
+ok200() { printf '{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":%s}}}}}' "$1"; }
+notify_spec() {
+  local inc prefs
+  inc=$(ok200 "$(printf '{"type":"object","properties":{"channels":{"type":"array","items":{"type":"string","enum":%s}}}}' "$1")")
+  prefs=$(ok200 "$(printf '{"type":"object","properties":{"subscriptions":{"type":"array","items":{"type":"object","required":%s,"properties":%s}}}}' "$2" "$3")")
+  printf '{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{'
+  printf '"/api/notifications/incidents/{incident_id}":{%s,"get":%s},' "$IID" "$inc"
+  local action
+  for action in notes reopen resolve; do
+    printf '"/api/notifications/incidents/{incident_id}/%s":{%s,"post":%s},' "$action" "$IID" "$inc"
+  done
+  printf '"/api/users/me/notification-prefs":{"get":%s,"put":%s}}}\n' "$prefs" "$prefs"
+}
+PREFS_HEAD_REQUIRED='["severity"]'
+PREFS_HEAD_PROPS='{"severity":{"type":"string"}}'
+NOTIFY_BASE=$(notify_spec '["email","telegram"]' '["severity","channelEmail","channelTelegram"]' \
+  '{"severity":{"type":"string"},"channelEmail":{"type":"boolean"},"channelTelegram":{"type":"boolean"}}')
+NOTIFY_HEAD=$(notify_spec '["email","telegram","ntfy","webhook"]' "$PREFS_HEAD_REQUIRED" "$PREFS_HEAD_PROPS")
+
 # frp_fixture <dir> <head-spec> — fixture() with the FRP base and this head
 # (bash locals are visible to the functions this one calls)
 frp_fixture() { local SNAP_BASE="$FRP_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
+# notify_fixture <dir> <head-spec> — the same with the R-1080 base
+notify_fixture() { local SNAP_BASE="$NOTIFY_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
 
 # The ERR findings of a gate run, one per line: "in API <METHOD> <path> | <text>".
 errs_of() {
@@ -370,6 +408,22 @@ if [ -n "$REAL_OASDIFF" ]; then
   REPO="$WORK/f5"
   frp_fixture "$REPO" "$(frp_spec "$(head_props "$PORT" "$(or_null "$WIDE")")" "$(head_props "$PORT" "$(or_null "$WIDE")")" "$OTHER_WIDE" "$(props visitor_port "$(or_null "$(int_schema 0 65535)")")")"
   real_case "visitor_port with the minimum 0 stays ERR" 1 2 "the \`visitor_port/anyOf[subschema #1]/\` request property's min was increased to \`0.00\`" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # The channel contract of R-1080: ntfy and webhook join the channels of an
+  # incident (four routes), and the matrix takes the place of the subscription
+  # flags channelEmail and channelTelegram (GET and PUT of the prefs). Base and
+  # head as in the server snapshot before and after: the same twelve texts.
+  REPO="$WORK/n1"; notify_fixture "$REPO" "$NOTIFY_HEAD"
+  real_case "no exception file: the twelve of R-1080 are ERR" 1 12 "/api/" \
+    -- "$NOIGN/openapi-breaking.sh" server --base HEAD --root "$REPO"
+  real_case "with the file: the twelve of R-1080 pass" 0 0 "" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # A further channel is a new change: its value stays ERR at every route.
+  REPO="$WORK/n2"
+  notify_fixture "$REPO" "$(notify_spec '["email","telegram","ntfy","webhook","sms"]' "$PREFS_HEAD_REQUIRED" "$PREFS_HEAD_PROPS")"
+  real_case "a further channel value stays ERR" 1 4 "added the new \`sms\` enum value" \
     -- "$CHECK" server --base HEAD --root "$REPO"
 else
   echo "  SKIP: oasdiff not installed — the exceptions are not checked against its matcher"
