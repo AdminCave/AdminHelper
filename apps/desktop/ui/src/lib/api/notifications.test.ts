@@ -25,6 +25,10 @@ const proxy = vi.mocked(bridge.apiProxy);
 const prefs: NotificationPrefsUpdate = {
   email: 'admin@example.com',
   telegram_chat_id: null,
+  ntfy_url: 'https://ntfy.example/alerts',
+  matrix: { critical: ['desktop', 'ntfy'], warning: ['desktop'], info: ['desktop'], ok: [] },
+  disabled_channels: ['email'],
+  muted_categories: ['agent'],
   subscriptions: [],
 };
 
@@ -169,6 +173,13 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     'PUT',
     '/api/users/me/notification-prefs',
     JSON.stringify(prefs),
+  ],
+  [
+    'testChannel',
+    () => notificationsApi.testChannel(session, 'ntfy'),
+    'POST',
+    '/api/users/me/notification-prefs/test',
+    JSON.stringify({ channel: 'ntfy' }),
   ],
 ];
 

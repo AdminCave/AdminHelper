@@ -25,11 +25,14 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.notifications.models import (
+    CHANNELS,
+    MATRIX_ROWS,
     SEVERITY_LEVELS,
     Notification,
     NotificationIncident,
     NotificationIncidentMember,
     NotificationServerMute,
+    NotificationSettings,
     NotificationSubscription,
 )
 from app.modules.notifications.schemas import IncomingEvent
@@ -100,17 +103,41 @@ def _category_matches(sub: NotificationSubscription, category: str) -> bool:
 
 def default_admin_subscription(user_id: int) -> NotificationSubscription:
     """Baseline rule for a freshly created admin: everything at warning+ lands
-    in the bell feed; external channels stay opt-in. Without it a fresh install
-    has zero subscriptions and resolve_recipients routes alerts to nobody."""
+    in the bell feed; external channels stay opt-in (default_matrix). Without it a
+    fresh install has zero subscriptions and resolve_recipients routes alerts to
+    nobody."""
     return NotificationSubscription(
         user_id=user_id,
         scope_type="all",
         scope_ref=None,
         min_severity="warning",
-        channel_email=False,
-        channel_telegram=False,
         enabled=True,
     )
+
+
+def default_matrix() -> dict[str, list[str]]:
+    """The matrix of a person without settings: the desktop for everything, as toasts
+    came for everything before R-1080; every other channel opt-in."""
+    return {row: ["desktop"] for row in MATRIX_ROWS}
+
+
+def matrix_row(level: str) -> str:
+    """The matrix row of a ping: its severity, ok for the all-clear. An unknown one
+    takes critical, toward delivery like severity_at_least."""
+    return level if level in MATRIX_ROWS else "critical"
+
+
+def channels_for(settings: NotificationSettings | None, level: str, category: str) -> list[str]:
+    """The channels besides the bell a ping of `level` and `category` goes to, by the
+    person's settings: the row of the matrix without the switched-off channels, and
+    none for a muted category (it reaches the bell only)."""
+    if settings is None:
+        return list(default_matrix()[matrix_row(level)])
+    if category in json.loads(settings.muted_categories):
+        return []
+    off = set(json.loads(settings.disabled_channels))
+    row = json.loads(settings.matrix).get(matrix_row(level), [])
+    return [c for c in CHANNELS if c in row and c not in off]
 
 
 def _server_label(server: Server | None, server_id: str) -> str:
@@ -121,20 +148,17 @@ def resolve_recipients(
     db: Session, event: IncomingEvent
 ) -> list[tuple[User, dict[str, list[str]]]]:
     """Return (user, channels) for every user a subscription routes this event
-    to. `channels` maps each channel the user gets to the servers it names:
-    "bell" always, "email" and "telegram" when a matching subscription asks for
-    them.
+    to. `channels` maps "bell" to the servers it names, and "out" to the servers the
+    other channels name, which the person's matrix picks (channels_for): the same.
+    A notice without "out" (incidents.notify) reaches the bell only.
 
-    A user with several matching subscriptions is collapsed into one entry whose
-    external channels are the union (so one bell row, e-mail if any matching rule
-    asked for it).
+    A user with several matching subscriptions is collapsed into one entry (one
+    bell row).
 
     A bundled event (source_ids) is resolved server by server under the same
     rules as a single one: a user is a recipient if one of their subscriptions
     covers at least one server they may see. The bell lists exactly those (name,
-    else id) in event order, an external channel only the ones covered by a
-    subscription with that channel: a Telegram rule on one server must not carry
-    the names of the others to its chat. For a single event the lists are empty."""
+    else id) in event order. For a single event the list is empty."""
     targets: list[tuple[Server | None, str]]
     if event.source_ids is not None:
         ids = list(dict.fromkeys(event.source_ids))
@@ -152,7 +176,7 @@ def resolve_recipients(
     )
 
     per_user: dict[int, User] = {}
-    per_user_hits: dict[int, dict[str, set[int]]] = {}  # user → channel → target indices
+    per_user_hits: dict[int, set[int]] = {}  # user → target indices
     user_cache: dict[int, User | None] = {}  # a user with several subs loads once
     # Server ids assigned to each user, built once rather than scanned per
     # server: a bundle checks up to 500 servers against it. Admins see all.
@@ -178,12 +202,7 @@ def resolve_recipients(
         if not hits:
             continue
         per_user[user.id] = user
-        channels = per_user_hits.setdefault(user.id, {})
-        channels.setdefault("bell", set()).update(hits)
-        if sub.channel_email:
-            channels.setdefault("email", set()).update(hits)
-        if sub.channel_telegram:
-            channels.setdefault("telegram", set()).update(hits)
+        per_user_hits.setdefault(user.id, set()).update(hits)
 
     def labels(hits: set[int]) -> list[str]:
         if event.source_ids is None:
@@ -191,8 +210,8 @@ def resolve_recipients(
         return [_server_label(*targets[i]) for i in sorted(hits)]
 
     return [
-        (per_user[uid], {channel: labels(hits) for channel, hits in channels.items()})
-        for uid, channels in per_user_hits.items()
+        (per_user[uid], {"bell": labels(hits), "out": labels(hits)})
+        for uid, hits in per_user_hits.items()
     ]
 
 

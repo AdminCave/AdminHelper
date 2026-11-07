@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.core import config
 from app.core.time import iso_utc
 from app.modules.notifications import stream_hub
 from app.modules.notifications.models import (
@@ -42,9 +43,10 @@ from app.modules.notifications.models import (
     NotificationIncidentMember,
     NotificationOutbox,
     NotificationServerMute,
+    NotificationSettings,
 )
 from app.modules.notifications.schemas import IncomingEvent
-from app.modules.notifications.service import _bundle_text, resolve_recipients
+from app.modules.notifications.service import _bundle_text, channels_for, resolve_recipients
 from app.modules.servers.models import Server
 from app.modules.users.models import User
 
@@ -164,7 +166,7 @@ def _plain(db: Session, event: IncomingEvent, recipients: Recipients, done: Inge
         )
         db.add(row)
         db.flush()  # the id for the outbox FK
-        _queue(db, row, user, channels, event)
+        _queue(db, row, user, channels, event, "ok" if event.new_status == "ok" else event.severity)
         done.notified += 1
         done.user_ids.add(user.id)
         done.max_id = max(done.max_id, row.id)
@@ -471,7 +473,7 @@ def _ping(
             row.notified_at = now
         db.flush()
         if not muted:
-            for channel in ("bell", *_queue(db, row, user, channels, event)):
+            for channel in ("bell", *_queue(db, row, user, channels, event, severity)):
                 if channel not in used:
                     used.append(channel)
         done.notified += 1
@@ -485,16 +487,32 @@ def _ping(
 
 
 def _queue(
-    db: Session, row: Notification, user: User, channels: dict[str, list[str]], event: IncomingEvent
+    db: Session,
+    row: Notification,
+    user: User,
+    channels: dict[str, list[str]],
+    event: IncomingEvent,
+    level: str,
 ) -> list[str]:
-    """Outbox entries for the external channels the user has an address for. Each
-    carries the text of this ping for this channel: a later ping rewrites the row, and
-    a bundle's channel may name fewer servers than the bell row."""
+    """Outbox entries for the external channels the person's matrix picks for `level`
+    (the severity of this ping, ok for the all-clear) and they have an address for.
+    Each carries the text of this ping, naming the servers of the bell row: a later
+    ping rewrites the row. Nothing without "out" (a notice of notify)."""
+    if "out" not in channels:
+        return []
+    settings = db.get(NotificationSettings, user.id)
+    picked = channels_for(settings, level, event.category)
+    title, body = _text(event, channels["out"])
     queued = []
-    for channel, address in (("email", user.email), ("telegram", user.telegram_chat_id)):
-        if channel not in channels or not address:
+    targets = (
+        ("email", user.email),
+        ("ntfy", settings.ntfy_url if settings else None),
+        ("telegram", user.telegram_chat_id if config.TELEGRAM_BOT_TOKEN else None),
+        ("webhook", settings.webhook_url if settings else None),
+    )
+    for channel, address in targets:
+        if channel not in picked or not address:
             continue
-        title, body = _text(event, channels[channel])
         db.add(
             NotificationOutbox(
                 notification_id=row.id,
@@ -503,6 +521,7 @@ def _queue(
                 address=address,
                 title=title,
                 body=body,
+                severity=level,
             )
         )
         queued.append(channel)
@@ -888,7 +907,7 @@ def detail(db: Session, user: User, held: Access, now: datetime) -> dict:
         "bundle": bundle,
         "servers": servers,
         "rules": json.loads(incident.rules) if incident.rules else None,
-        "channels": ["bell", *(c for c in ("email", "telegram") if c in used)],
+        "channels": ["bell", *(c for c in ("email", "ntfy", "telegram", "webhook") if c in used)],
         "history": [
             {
                 "id": e.id,

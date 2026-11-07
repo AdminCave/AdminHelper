@@ -8,7 +8,7 @@ The server is the notification hub: it ingests events (from the monitoring
 service via POST /api/internal/events, and later from the in-process event bus),
 resolves recipients via user_servers × NotificationSubscription, then writes one
 Notification per recipient (the bell feed) plus NotificationOutbox rows for the
-external channels (e-mail/telegram). Monitoring stays a pure event source and
+external channels the person's matrix picks. Monitoring stays a pure event source and
 never learns about users — recipient resolution lives only here, where the
 user↔server mapping exists.
 """
@@ -36,6 +36,11 @@ from app.core.time import iso_utc
 # notifies; see app.modules.notifications.service.severity_at_least.
 SEVERITY_LEVELS = ("info", "warning", "critical")
 
+# The person's channels besides the bell, and the rows of their matrix: the three
+# severities plus ok, the all-clear of an incident (R-1080).
+CHANNELS = ("desktop", "email", "ntfy", "telegram", "webhook")
+MATRIX_ROWS = ("critical", "warning", "info", "ok")
+
 
 class NotificationSubscription(Base):
     """One per-user notification rule. A user may have several (e.g. "all servers
@@ -57,12 +62,8 @@ class NotificationSubscription(Base):
     # every category. Stored as a JSON string to match the project's tags/
     # event_triggers convention (no JSONB).
     categories = Column(Text, nullable=True)
-    # The in-app bell is the baseline delivery (every match yields a feed row);
-    # these two are additive external channels. A "bell off" opt-out is
-    # deliberately out of scope for now (YAGNI) — would become a feed-suppress
-    # flag later.
-    channel_email = Column(Boolean, nullable=False, default=False)
-    channel_telegram = Column(Boolean, nullable=False, default=False)
+    # A rule only decides whether the person is reached (the bell); which other
+    # channels carry it is the person's NotificationSettings.matrix (R-1080).
     enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -74,10 +75,25 @@ class NotificationSubscription(Base):
             "scopeRef": self.scope_ref,
             "minSeverity": self.min_severity,
             "categories": self.categories,
-            "channelEmail": self.channel_email,
-            "channelTelegram": self.channel_telegram,
             "enabled": self.enabled,
         }
+
+
+class NotificationSettings(Base):
+    """A person's channels (R-1080): the targets the users row does not hold, the
+    matrix severity × channel, the channels switched off (their target stays) and the
+    categories that reach the bell only. No row: the default, the desktop in every row.
+    The JSON columns are text, like categories above."""
+
+    __tablename__ = "notification_settings"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    ntfy_url = Column(Text, nullable=True)
+    webhook_url = Column(Text, nullable=True)
+    # {"critical": [...], "warning": [...], "info": [...], "ok": [...]} of CHANNELS.
+    matrix = Column(Text, nullable=False)
+    disabled_channels = Column(Text, nullable=False, default="[]", server_default="[]")
+    muted_categories = Column(Text, nullable=False, default="[]", server_default="[]")
 
 
 class Notification(Base):
@@ -153,14 +169,19 @@ class NotificationOutbox(Base):
     user_id = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    channel = Column(String, nullable=False)  # email | telegram
-    address = Column(String, nullable=False)  # e-mail address or telegram chat id
+    channel = Column(String, nullable=False)  # email | ntfy | telegram | webhook
+    # e-mail address, telegram chat id, or the ntfy/webhook URL (a secret: ?auth=)
+    address = Column(String, nullable=False)
     # The text of the ping that queued it, for this channel (incidents._queue): a
     # later ping rewrites the bell row, and a bundle's channel names only the servers
     # of the subscriptions that asked for it. NULL (entries from before R-1079) = the
     # notification's text.
     title = Column(String, nullable=True)
     body = Column(Text, nullable=True)
+    # The level of the ping (critical | warning | info | ok), for the ntfy priority and
+    # the webhook; the bell row carries the severity of its incident, not the all-clear.
+    # NULL (entries from before R-1080) = the notification's severity.
+    severity = Column(String, nullable=True)
     status = Column(String, nullable=False, default="pending", index=True)  # pending|sent|failed
     attempts = Column(Integer, nullable=False, default=0)
     next_attempt_at = Column(DateTime(timezone=True), nullable=True)

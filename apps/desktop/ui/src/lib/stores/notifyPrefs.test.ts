@@ -1,0 +1,114 @@
+// SPDX-FileCopyrightText: 2026 Kevin Stenzel
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Loading the channel settings for the desktop's pop-ups (R-1080): loaded they gate, a failed
+// load lets everything through as before, and the notifications load them when they start and
+// drop them when they stop.
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { NotificationItem, NotificationPrefs } from '$lib/api/types';
+
+const h = vi.hoisted(() => ({
+  fetchPrefs: vi.fn(async (..._a: unknown[]): Promise<unknown> => ({})),
+  fetchFeed: vi.fn(async (..._a: unknown[]) => [] as NotificationItem[]),
+  fetchUnreadCount: vi.fn(async (..._a: unknown[]) => ({ count: 0 })),
+}));
+
+vi.mock('$lib/api/notifications', () => ({
+  notificationsApi: {
+    fetchPrefs: h.fetchPrefs,
+    fetchFeed: h.fetchFeed,
+    fetchUnreadCount: h.fetchUnreadCount,
+  },
+}));
+vi.mock('$lib/bridge', () => ({
+  startNotificationStream: vi.fn(async () => {}),
+  stopNotificationStream: vi.fn(async () => {}),
+}));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('$lib/stores/session', async () => {
+  const { writable } = await import('svelte/store');
+  const session = { serverUrl: 'https://srv', username: 'admin', isAdmin: true };
+  return {
+    sessionStore: writable({ settings: { mode: 'server' }, session }),
+    currentSession: () => session,
+  };
+});
+
+import { desktopWants, loadDesktopPrefs, setDesktopPrefs } from './notifyPrefs';
+import { activateNotifications, deactivateNotifications } from './notifications';
+
+const entry: NotificationItem = {
+  id: 1,
+  createdAt: null,
+  severity: 'warning',
+  category: 'monitoring',
+  eventType: 'monitoring.check.transition',
+  title: 't',
+  read: false,
+};
+
+const noDesktop: NotificationPrefs = {
+  email: null,
+  telegramChatId: null,
+  matrix: { critical: ['desktop'], warning: [], info: [], ok: [] },
+  disabledChannels: [],
+  mutedCategories: [],
+  subscriptions: [],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setDesktopPrefs(null);
+});
+
+describe('notifyPrefs', () => {
+  it('loaded settings gate the pop-up', async () => {
+    h.fetchPrefs.mockResolvedValueOnce(noDesktop);
+    await loadDesktopPrefs();
+    expect(desktopWants(entry)).toBe(false);
+    expect(desktopWants({ ...entry, severity: 'critical' })).toBe(true);
+  });
+
+  it('a failed load lets everything through, also after loaded ones', async () => {
+    setDesktopPrefs(noDesktop);
+    h.fetchPrefs.mockRejectedValueOnce(new Error('HTTP 404'));
+    await loadDesktopPrefs();
+    expect(desktopWants(entry)).toBe(true);
+  });
+
+  it('the notifications load them on start and drop them on stop', async () => {
+    h.fetchPrefs.mockResolvedValueOnce(noDesktop);
+    await activateNotifications();
+    await vi.waitFor(() => expect(desktopWants(entry)).toBe(false));
+    expect(h.fetchPrefs).toHaveBeenCalledTimes(1);
+
+    deactivateNotifications();
+    expect(desktopWants(entry)).toBe(true);
+  });
+
+  it('a load that answers after the logout puts nothing back', async () => {
+    let answer: (p: NotificationPrefs) => void = () => {};
+    h.fetchPrefs.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const pending = loadDesktopPrefs();
+    setDesktopPrefs(null);
+    answer(noDesktop);
+    await pending;
+    expect(desktopWants(entry)).toBe(true);
+  });
+
+  it('an older load answering last does not replace the newer one', async () => {
+    let first: (p: NotificationPrefs) => void = () => {};
+    h.fetchPrefs.mockReturnValueOnce(new Promise((r) => (first = r)));
+    h.fetchPrefs.mockResolvedValueOnce({
+      ...noDesktop,
+      matrix: { ...noDesktop.matrix, warning: ['desktop'] },
+    });
+    const older = loadDesktopPrefs();
+    await loadDesktopPrefs();
+    first(noDesktop);
+    await older;
+    expect(desktopWants(entry)).toBe(true);
+  });
+});

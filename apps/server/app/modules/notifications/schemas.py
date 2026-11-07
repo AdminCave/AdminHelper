@@ -2,14 +2,18 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal, Optional
+from urllib.parse import urlsplit
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from app.core.bounds import BigIntPk, RequestModel
 
 Severity = Literal["info", "warning", "critical"]
+Channel = Literal["desktop", "email", "ntfy", "telegram", "webhook"]
+MatrixRow = Literal["critical", "warning", "info", "ok"]
 ScopeType = Literal["all", "tag", "server"]
 IncidentState = Literal["open", "acked", "resolved"]
 
@@ -20,6 +24,30 @@ MUTE_MAX = timedelta(days=7)
 # email-validator dependency for a single optional field; the SMTP server is the
 # real authority on deliverability.
 _EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+URL_MAX = 2048
+MUTED_CATEGORIES_MAX = 32
+CATEGORY_MAX = 64
+
+
+def _check_target_url(v: Optional[str]) -> Optional[str]:
+    """The form of an ntfy or webhook URL: http(s) with a host, no credentials in the
+    userinfo (ntfy takes its token as ?auth=). Where it points is checked on every send
+    (app.core.ssrf), not here: DNS may change in between."""
+    if v is None or v == "":
+        return None
+    if len(v) > URL_MAX:
+        raise ValueError(f"URL may be at most {URL_MAX} characters")
+    try:
+        parts = urlsplit(v)
+        host = parts.hostname
+    except ValueError:
+        raise ValueError("Invalid URL") from None
+    if parts.scheme not in ("http", "https") or not host:
+        raise ValueError("URL must be http:// or https:// with a host")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("URL must not carry credentials before the host")
+    return v
 
 
 class IncidentRule(RequestModel):
@@ -128,8 +156,6 @@ class SubscriptionInput(RequestModel):
     scope_ref: Optional[str] = Field(default=None, max_length=256)
     min_severity: Severity = "warning"
     categories: Optional[list[str]] = None
-    channel_email: bool = False
-    channel_telegram: bool = False
     enabled: bool = True
 
     @model_validator(mode="after")
@@ -147,22 +173,47 @@ class SubscriptionInput(RequestModel):
 class NotificationPrefsUpdate(RequestModel):
     """Replace-all update of a user's own notification preferences. email /
     telegram_chat_id are set verbatim (None clears them); the settings UI always
-    submits the full current state."""
+    submits the full current state. A field of the channel settings (R-1080) that is
+    not sent keeps its stored value, so a caller that sends rules only keeps the
+    matrix; sent as null, a URL is cleared."""
 
     email: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     subscriptions: list[SubscriptionInput]
+    ntfy_url: Optional[str] = None
+    webhook_url: Optional[str] = None
+    matrix: Optional[dict[MatrixRow, list[Channel]]] = None
+    disabled_channels: Optional[list[Channel]] = None
+    muted_categories: Optional[
+        Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=CATEGORY_MAX)]],
+            Field(max_length=MUTED_CATEGORIES_MAX),
+        ]
+    ] = None
 
     @field_validator("email")
     @classmethod
     def _check_email(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v == "":
             return None
-        import re
-
         if not re.match(_EMAIL_PATTERN, v):
             raise ValueError("Ungültige E-Mail-Adresse")
         return v
+
+    @field_validator("ntfy_url", "webhook_url")
+    @classmethod
+    def _check_url(cls, v: Optional[str]) -> Optional[str]:
+        return _check_target_url(v)
+
+
+class NotificationTestRequest(RequestModel):
+    """A test message to the stored target of one channel; the desktop tests itself."""
+
+    channel: Literal["email", "ntfy", "telegram", "webhook"]
+
+
+class NotificationTestOut(BaseModel):
+    channel: str
 
 
 class NotificationOut(BaseModel):
@@ -238,7 +289,7 @@ class IncidentDetailOut(BaseModel):
     bundle: bool
     servers: list[IncidentServerOut]
     rules: Optional[list[IncidentRuleOut]]
-    channels: list[Literal["bell", "email", "telegram"]]
+    channels: list[Literal["bell", "email", "ntfy", "telegram", "webhook"]]
     history: list[IncidentEntryOut]
     # The reader sees every server of the incident: acknowledge, resolve, reopen, note.
     canAct: bool
@@ -266,14 +317,29 @@ class NotificationSubscriptionOut(BaseModel):
     minSeverity: str
     # The stored JSON text of the category list, as written, not parsed.
     categories: Optional[str]
-    channelEmail: bool
-    channelTelegram: bool
     enabled: bool
+
+
+class AvailableChannelsOut(BaseModel):
+    """Which channels the server can deliver: e-mail only with SMTP_HOST, Telegram only
+    with the bot token. The desktop delivers itself."""
+
+    desktop: bool
+    email: bool
+    ntfy: bool
+    telegram: bool
+    webhook: bool
 
 
 class NotificationPrefsOut(BaseModel):
     email: Optional[str]
     telegramChatId: Optional[str]
+    ntfyUrl: Optional[str]
+    webhookUrl: Optional[str]
+    matrix: dict[MatrixRow, list[Channel]]
+    disabledChannels: list[Channel]
+    mutedCategories: list[str]
+    available: AvailableChannelsOut
     subscriptions: list[NotificationSubscriptionOut]
 
 

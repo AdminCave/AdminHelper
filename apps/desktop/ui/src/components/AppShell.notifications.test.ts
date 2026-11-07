@@ -82,7 +82,8 @@ import { settings, session } from '$lib/stores/session';
 import { replace } from '$lib/router';
 import { get } from 'svelte/store';
 import { toasts, clearStatus } from '$lib/stores/statusBar';
-import type { NotificationItem } from '$lib/api/types';
+import { setDesktopPrefs } from '$lib/stores/notifyPrefs';
+import type { NotificationItem, NotificationPrefs } from '$lib/api/types';
 import AppShell from './AppShell.svelte';
 
 const settingsState = settings as unknown as Writable<Partial<Settings> | null>;
@@ -114,6 +115,7 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   clearStatus();
+  setDesktopPrefs(null);
 });
 
 describe('AppShell: notifications follow server and user, not the session object', () => {
@@ -214,5 +216,72 @@ describe('AppShell: new entries as toasts and OS notifications', () => {
     h.notifyOs.mockClear();
     lastHandler()?.([entry(4, 'info')]);
     expect(h.notifyOs).not.toHaveBeenCalled();
+  });
+});
+
+// The person's channel settings (R-1080): the matrix row of the entry, the desktop switch and
+// the muted categories; without loaded settings everything pops up, as above.
+const prefs = (over: Partial<NotificationPrefs> = {}): NotificationPrefs => ({
+  email: null,
+  telegramChatId: null,
+  matrix: {
+    critical: ['desktop', 'email'],
+    warning: ['email'],
+    info: ['desktop'],
+    ok: [],
+  },
+  disabledChannels: [],
+  mutedCategories: [],
+  subscriptions: [],
+  ...over,
+});
+
+describe('AppShell: the channel settings decide whether the desktop pops up', () => {
+  it('only the rows of the matrix with the desktop pop up, toast and OS notification', async () => {
+    settingsState.set({ mode: 'server', osNotifications: true });
+    setDesktopPrefs(prefs());
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info'), entry(2, 'warning'), entry(3, 'critical')]);
+    expect(get(toasts).map((m) => m.text)).toEqual(['entry 1', 'entry 3']);
+    expect(h.notifyOs).toHaveBeenCalledWith([entry(1, 'info'), entry(3, 'critical')]);
+  });
+
+  it('the entry of a resolved incident follows the row ok', async () => {
+    setDesktopPrefs(prefs());
+    render(AppShell);
+    await tick();
+    lastHandler()?.([{ ...entry(1, 'critical'), state: 'resolved' }]);
+    expect(get(toasts)).toEqual([]);
+
+    setDesktopPrefs(prefs({ matrix: { critical: [], warning: [], info: [], ok: ['desktop'] } }));
+    lastHandler()?.([{ ...entry(2, 'critical'), state: 'resolved' }, entry(3, 'critical')]);
+    expect(get(toasts).map((m) => m.text)).toEqual(['entry 2']);
+  });
+
+  it('the desktop switched off holds back every entry, a critical one too', async () => {
+    settingsState.set({ mode: 'server', osNotifications: true });
+    setDesktopPrefs(prefs({ disabledChannels: ['desktop'] }));
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info'), entry(3, 'critical')]);
+    expect(get(toasts)).toEqual([]);
+    expect(h.notifyOs).not.toHaveBeenCalled();
+  });
+
+  it('a muted category holds back its entries only', async () => {
+    setDesktopPrefs(prefs({ mutedCategories: ['monitoring'] }));
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info'), { ...entry(2, 'info'), category: 'tunnel' }]);
+    expect(get(toasts).map((m) => m.text)).toEqual(['entry 2']);
+  });
+
+  it('settings without a matrix (a server before them) let everything through', async () => {
+    setDesktopPrefs({ email: null, telegramChatId: null, subscriptions: [] });
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'info'), entry(2, 'warning')]);
+    expect(get(toasts)).toHaveLength(2);
   });
 });
