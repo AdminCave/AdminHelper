@@ -193,6 +193,7 @@ def _keyless(
         event_count=1,
         first_at=now,
         last_at=now,
+        critical_since=now if event.severity == "critical" else None,
     )
     _take_text(incident, event, event.source_id)
     db.add(incident)
@@ -225,6 +226,7 @@ def _problem(db: Session, event: IncomingEvent, level: int, now: datetime, done:
             incident.state = "open"
             incident.resolved_at = incident.resolved_by = None
             incident.acked_at = incident.acked_by = None
+            _rearm(db, incident)
             target.reopened = True
         member = members.get(incident.id, {}).get(key)
         if member is not None:
@@ -257,6 +259,10 @@ def _problem(db: Session, event: IncomingEvent, level: int, now: datetime, done:
             incident.severity = _LEVEL_SEVERITY[max(level, _SEVERITY_LEVEL[incident.severity])]
         else:
             incident.severity = severity
+        # The escalation deadline runs from here, also for a reopen inside
+        # REOPEN_WINDOW, which pings no one (escalation.escalate_due).
+        if incident.severity == "critical" and incident.critical_since is None:
+            incident.critical_since = now
         # A single event folding into a bundle names its own server: the bundle keeps
         # the team text of its bundle events, which the other members' readers see.
         if not target.bundle or event.source_ids is not None:
@@ -330,6 +336,7 @@ def _recover(db: Session, event: IncomingEvent, now: datetime, done: Ingested) -
         incident.state = "resolved"
         incident.resolved_at = now
         incident.resolved_by = None
+        incident.critical_since = None
         _log(
             db,
             done,
@@ -794,11 +801,20 @@ def act(
     elif kind == "resolved":
         incident.state = "resolved"
         incident.resolved_by, incident.resolved_at = user.id, now
+        incident.critical_since = None
     elif kind == "reopened":
         incident.state = "open"
         incident.resolved_by = incident.resolved_at = None
         incident.acked_by = incident.acked_at = None
+        _rearm(db, incident)
     db.add(_Entry(incident_id=incident.id, at=now, kind=kind, actor_id=user.id, text=text))
+
+
+def _rearm(db: Session, incident: NotificationIncident) -> None:
+    """A reopened incident may escalate again (escalation.escalate_due)."""
+    db.query(Notification).filter(
+        Notification.incident_id == incident.id, Notification.escalated_at.is_not(None)
+    ).update({Notification.escalated_at: None}, synchronize_session=False)
 
 
 def finish_actions(db: Session, incident_ids: list[int]) -> None:

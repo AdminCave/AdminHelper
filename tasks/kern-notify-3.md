@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_di
 Doku: → T5
 Abhängt von: T1
 
-### T3 — Server: Eskalation unbestätigter kritischer Vorfälle an den Kanal der Person (R-1081)  [ ]
+### T3 — Server: Eskalation unbestätigter kritischer Vorfälle an den Kanal der Person (R-1081)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/escalation.py, apps/server/app/modules/hooks/scheduler.py, apps/server/app/scheduler_main.py, apps/server/tests/test_notification_escalation.py, apps/server/tests/test_notification_incidents.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @eef85d260 2026-11-07T12:15:19+01:00
+Review: approve (.ah-out/review/kern-notify-3/T3.verdict.json)
 Änderung: `critical_since` wird beim ersten kritischen Ping eines Vorfalls gesetzt und geleert, wenn er behoben wird. Beim Wiederöffnen leert `act` außerdem `escalated_at` der Zeilen. `escalation.py` (SPDX) `escalate_due(db, now)`: für offene Vorfälle mit `critical_since` ≤ `now − Frist der Person` und einer Zeile ohne `escalated_at`, die nicht stumm ist, und mit Eskalation an, Kanal an und Ziel vorhanden, ein Outbox-Eintrag auf dem gewählten Kanal mit Schweregrad `critical` und dem Text „Unbestätigt seit N Min.: <Titel>“ (Ruhezeit wie Kritisch). `escalated_at` wird mit `escalated_at IS NULL` im UPDATE gesetzt, der Eintrag `escalated` mit dem Kanal kommt in die Zeitleiste, die SSE-Benachrichtigung wie bei `finish_actions`. Der Systemjob läuft jede Minute. Tests: Eskalation nach Frist, nicht vor der Frist, nicht nach Bestätigen oder Beheben, einmal je Person, wieder nach Wiederöffnen, stumm, Kanal ohne Ziel oder ausgeschaltet, Matrix ohne den Kanal eskaliert trotzdem, Abfragezahl begrenzt. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_escalation.py tests/test_notification_incidents.py tests/test_notification_incident_api.py
 Doku: → T5
@@ -55,3 +57,9 @@ Abhängt von: T2, T3, T4
 - T2: Die Zusammenfassung geht an die Adresse des neuesten Eintrags; ein Fehlversand zählt einen Versuch je Eintrag und wiederholt beim nächsten Lauf (alle 5 Min.) ohne Backoff bis `NOTIFICATION_MAX_ATTEMPTS`, dann `failed`.
 - T2: Fällig ist sie zur ersten Versandzeit nach dem späteren von ältestem Eintrag und `digest_last_at`: ein nach dem Versand committeter Ping mit älterem `created_at` wartet aufs nächste Fenster.
 - T2: Eine Zusammenfassungs-Mail beachtet die Ruhezeit nicht (08:00 liegt außerhalb der Standard-Ruhezeit).
+- T3: Der Text ist englisch („Unacknowledged for N min: <title>“, Code-Strings englisch); die Spec gibt die Bedeutung.
+- T3: Eskaliert wird nur eine Zeile, die die Person mit `critical` bekam (`Notification.severity`).
+- T3: `critical_since` setzt jedes Ereignis, das den offenen Vorfall kritisch macht, nicht erst der Ping: ein Wiederöffnen in `REOPEN_WINDOW` pingt niemanden und darf trotzdem wieder eskalieren (Spec). Vorfälle ohne Schlüssel setzen es beim Anlegen.
+- T3: Ein Kanal ohne Ziel oder ausgeschaltet setzt `escalated_at` nicht; kommt das Ziel später, eskaliert der nächste Lauf.
+- T3: `escalated_at` leert das Wiederöffnen in `act` und in `_problem`; `critical_since` leert jedes Beheben.
+- T3: Die Server-Stummschaltung prüft die Zeile über `source_id`, wie Feed und Badge; die Sichtbarkeit wird beim Eskalieren nicht neu geprüft (die Zeile hat die Person schon).

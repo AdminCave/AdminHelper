@@ -448,6 +448,26 @@ def schedule_outbox_drain(minutes: int = 1) -> None:
     _register_system_job(_run_outbox_drain, _OUTBOX_DRAIN_JOB_ID, minutes=minutes)
 
 
+_ESCALATION_JOB_ID = "system:notification-escalation"
+
+
+def _run_notification_escalation() -> None:
+    """Escalate the unacknowledged critical incidents (R-1081)."""
+    from app.modules.notifications.escalation import escalate_due
+
+    def work(db):
+        sent = escalate_due(db, datetime.now(timezone.utc))
+        return f"Notification escalation: {sent} sent" if sent else None
+
+    _run_in_session("Notification escalation", work)
+
+
+def schedule_notification_escalation(minutes: int = 1) -> None:
+    """Register the periodic escalation of unacknowledged critical incidents
+    (idempotent). Runs once at start and then every `minutes` minutes."""
+    _register_system_job(_run_notification_escalation, _ESCALATION_JOB_ID, minutes=minutes)
+
+
 _DIGEST_JOB_ID = "system:notification-digest"
 
 
