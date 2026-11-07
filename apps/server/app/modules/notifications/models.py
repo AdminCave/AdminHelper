@@ -26,7 +26,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.sql import false as sa_false
 from sqlalchemy.sql import func
+from sqlalchemy.sql import true as sa_true
 
 from app.core.database import Base
 from app.core.time import iso_utc
@@ -94,6 +96,19 @@ class NotificationSettings(Base):
     matrix = Column(Text, nullable=False)
     disabled_channels = Column(Text, nullable=False, default="[]", server_default="[]")
     muted_categories = Column(Text, nullable=False, default="[]", server_default="[]")
+    # Quiet hours, escalation, digest and sound (R-1081); all off by default. The times
+    # are HH:MM in the person's IANA zone (None: UTC), see notifications.quiet.
+    timezone = Column(String, nullable=True)
+    quiet_enabled = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    quiet_start = Column(String(5), nullable=False, default="22:00", server_default="22:00")
+    quiet_end = Column(String(5), nullable=False, default="07:00", server_default="07:00")
+    quiet_critical = Column(Boolean, nullable=False, default=True, server_default=sa_true())
+    escalation_enabled = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    escalation_minutes = Column(Integer, nullable=False, default=10, server_default="10")
+    escalation_channel = Column(String, nullable=True)  # email | ntfy | telegram | webhook
+    digest = Column(String, nullable=False, default="off", server_default="off")
+    digest_last_at = Column(DateTime(timezone=True), nullable=True)
+    sound_critical = Column(Boolean, nullable=False, default=False, server_default=sa_false())
 
 
 class Notification(Base):
@@ -133,6 +148,8 @@ class Notification(Base):
     )
     muted_until = Column(DateTime(timezone=True), nullable=True)
     hidden_at = Column(DateTime(timezone=True), nullable=True)
+    # When the escalation of this row's incident went out (R-1081); cleared on reopen.
+    escalated_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("user_id", "incident_id", name="uq_notification_user_incident"),
@@ -182,7 +199,9 @@ class NotificationOutbox(Base):
     # the webhook; the bell row carries the severity of its incident, not the all-clear.
     # NULL (entries from before R-1080) = the notification's severity.
     severity = Column(String, nullable=True)
-    status = Column(String, nullable=False, default="pending", index=True)  # pending|sent|failed
+    status = Column(
+        String, nullable=False, default="pending", index=True
+    )  # pending|sent|failed|digest
     attempts = Column(Integer, nullable=False, default=0)
     next_attempt_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
@@ -220,6 +239,8 @@ class NotificationIncident(Base):
     # recovery ping, NULL never pinged (the hub's twin of MonitorState.hub_status).
     notified_severity = Column(String, nullable=True)
     last_notified_at = Column(DateTime(timezone=True), nullable=True)
+    # The first critical ping of the open incident, the start of the escalation deadline.
+    critical_since = Column(DateTime(timezone=True), nullable=True)
     category = Column(String, nullable=False)
     event_type = Column(String, nullable=False)
     title = Column(String, nullable=False)

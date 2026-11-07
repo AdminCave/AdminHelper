@@ -4,7 +4,8 @@
 
 // Loading the channel settings for the desktop's pop-ups (R-1080): loaded they gate, a failed
 // load lets everything through as before, and the notifications load them when they start and
-// drop them when they stop.
+// drop them when they stop. R-1081: the quiet hours in the person's zone, the pass for critical
+// and the tone switch.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NotificationItem, NotificationPrefs } from '$lib/api/types';
@@ -36,7 +37,14 @@ vi.mock('$lib/stores/session', async () => {
   };
 });
 
-import { desktopWants, loadDesktopPrefs, setDesktopPrefs } from './notifyPrefs';
+import {
+  criticalPasses,
+  desktopWants,
+  inQuiet,
+  loadDesktopPrefs,
+  setDesktopPrefs,
+  soundCritical,
+} from './notifyPrefs';
 import { activateNotifications, deactivateNotifications } from './notifications';
 
 const entry: NotificationItem = {
@@ -110,5 +118,81 @@ describe('notifyPrefs', () => {
     first(noDesktop);
     await older;
     expect(desktopWants(entry)).toBe(true);
+  });
+});
+
+describe('notifyPrefs: quiet hours (R-1081)', () => {
+  const quietPrefs = (over: Partial<NotificationPrefs> = {}): NotificationPrefs => ({
+    ...noDesktop,
+    timezone: 'UTC',
+    quiet: { enabled: true, start: '22:00', end: '07:00', critical: true },
+    soundCritical: false,
+    ...over,
+  });
+  const utc = (hhmm: string) => Date.parse(`2026-11-07T${hhmm}:00Z`);
+
+  it('across midnight: from the start up to before the end', () => {
+    setDesktopPrefs(quietPrefs());
+    expect([
+      inQuiet(utc('21:59')),
+      inQuiet(utc('22:00')),
+      inQuiet(utc('23:59')),
+      inQuiet(utc('00:00')),
+      inQuiet(utc('06:59')),
+      inQuiet(utc('07:00')),
+      inQuiet(utc('12:00')),
+    ]).toEqual([false, true, true, true, true, false, false]);
+  });
+
+  it('within a day, and start equal to end is no quiet at all', () => {
+    setDesktopPrefs(
+      quietPrefs({ quiet: { enabled: true, start: '12:00', end: '13:30', critical: true } }),
+    );
+    expect([
+      inQuiet(utc('11:59')),
+      inQuiet(utc('12:00')),
+      inQuiet(utc('13:29')),
+      inQuiet(utc('13:30')),
+    ]).toEqual([false, true, true, false]);
+    setDesktopPrefs(
+      quietPrefs({ quiet: { enabled: true, start: '08:00', end: '08:00', critical: true } }),
+    );
+    expect([inQuiet(utc('07:59')), inQuiet(utc('08:00')), inQuiet(utc('20:00'))]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it('in the stored zone, not the clock of this machine; an unknown zone counts as UTC', () => {
+    // 21:30 UTC is 06:30 the next morning in Tokyo (UTC+9): inside 22:00–07:00 there.
+    setDesktopPrefs(quietPrefs({ timezone: 'Asia/Tokyo' }));
+    expect(inQuiet(utc('21:30'))).toBe(true);
+    expect(inQuiet(utc('22:30'))).toBe(false);
+    setDesktopPrefs(quietPrefs({ timezone: 'Mars/Olympus' }));
+    expect(inQuiet(utc('21:30'))).toBe(false);
+    expect(inQuiet(utc('22:30'))).toBe(true);
+  });
+
+  it('switched off, without settings, or from a server before them: never quiet', () => {
+    setDesktopPrefs(
+      quietPrefs({ quiet: { enabled: false, start: '00:00', end: '23:59', critical: true } }),
+    );
+    expect(inQuiet(utc('12:00'))).toBe(false);
+    setDesktopPrefs(noDesktop);
+    expect(inQuiet(utc('23:00'))).toBe(false);
+    setDesktopPrefs(null);
+    expect(inQuiet(utc('23:00'))).toBe(false);
+  });
+
+  it('critical passes and the tone is off unless the settings say otherwise', () => {
+    expect([criticalPasses(), soundCritical()]).toEqual([true, false]);
+    setDesktopPrefs(
+      quietPrefs({
+        quiet: { enabled: true, start: '22:00', end: '07:00', critical: false },
+        soundCritical: true,
+      }),
+    );
+    expect([criticalPasses(), soundCritical()]).toEqual([false, true]);
   });
 });

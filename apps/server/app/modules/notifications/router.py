@@ -379,8 +379,49 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
         "matrix": json.loads(settings.matrix) if settings else default_matrix(),
         "disabledChannels": json.loads(settings.disabled_channels) if settings else [],
         "mutedCategories": json.loads(settings.muted_categories) if settings else [],
+        **_clock_response(settings or _default_settings(user)),
         "available": _available(),
         "subscriptions": [s.to_dict() for s in subs],
+    }
+
+
+def _default_settings(user: User) -> NotificationSettings:
+    """The settings of a person without a row, never added to the session: the
+    column defaults (R-1081: everything off)."""
+    return NotificationSettings(
+        user_id=user.id,
+        matrix=json.dumps(default_matrix()),
+        disabled_channels="[]",
+        muted_categories="[]",
+        timezone=None,
+        quiet_enabled=False,
+        quiet_start="22:00",
+        quiet_end="07:00",
+        quiet_critical=True,
+        escalation_enabled=False,
+        escalation_minutes=10,
+        escalation_channel=None,
+        digest="off",
+        sound_critical=False,
+    )
+
+
+def _clock_response(settings: NotificationSettings) -> dict[str, Any]:
+    return {
+        "timezone": settings.timezone or "UTC",
+        "quiet": {
+            "enabled": settings.quiet_enabled,
+            "start": settings.quiet_start,
+            "end": settings.quiet_end,
+            "critical": settings.quiet_critical,
+        },
+        "escalation": {
+            "enabled": settings.escalation_enabled,
+            "minutes": settings.escalation_minutes,
+            "channel": settings.escalation_channel,
+        },
+        "digest": settings.digest,
+        "soundCritical": settings.sound_critical,
     }
 
 
@@ -400,12 +441,7 @@ def _store_settings(db: Session, user: User, data: NotificationPrefsUpdate) -> N
     sent = data.model_fields_set
     settings = db.get(NotificationSettings, user.id)
     if settings is None:
-        settings = NotificationSettings(
-            user_id=user.id,
-            matrix=json.dumps(default_matrix()),
-            disabled_channels="[]",
-            muted_categories="[]",
-        )
+        settings = _default_settings(user)
         db.add(settings)
     if "ntfy_url" in sent:
         settings.ntfy_url = data.ntfy_url
@@ -421,6 +457,21 @@ def _store_settings(db: Session, user: User, data: NotificationPrefsUpdate) -> N
         settings.disabled_channels = json.dumps([c for c in CHANNELS if c in off])
     if "muted_categories" in sent and data.muted_categories is not None:
         settings.muted_categories = json.dumps(list(dict.fromkeys(data.muted_categories)))
+    if "timezone" in sent and data.timezone is not None:
+        settings.timezone = data.timezone
+    if "quiet" in sent and data.quiet is not None:
+        settings.quiet_enabled = data.quiet.enabled
+        settings.quiet_start = data.quiet.start
+        settings.quiet_end = data.quiet.end
+        settings.quiet_critical = data.quiet.critical
+    if "escalation" in sent and data.escalation is not None:
+        settings.escalation_enabled = data.escalation.enabled
+        settings.escalation_minutes = data.escalation.minutes
+        settings.escalation_channel = data.escalation.channel
+    if "digest" in sent and data.digest is not None:
+        settings.digest = data.digest
+    if "sound_critical" in sent and data.sound_critical is not None:
+        settings.sound_critical = data.sound_critical
 
 
 @prefs_router.get("/notification-prefs", response_model=NotificationPrefsOut)

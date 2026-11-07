@@ -45,6 +45,7 @@ from app.modules.notifications.models import (
     NotificationServerMute,
     NotificationSettings,
 )
+from app.modules.notifications.quiet import quiet_end
 from app.modules.notifications.schemas import IncomingEvent
 from app.modules.notifications.service import _bundle_text, channels_for, resolve_recipients
 from app.modules.servers.models import Server
@@ -119,7 +120,7 @@ def ingest(db: Session, event: IncomingEvent, *, now: datetime | None = None) ->
         if level > 0:
             _problem(db, event, level, now, done)
     elif recovery or level == 0:
-        _plain(db, event, resolve_recipients(db, event), done)
+        _plain(db, event, resolve_recipients(db, event), now, done)
     else:
         done.pinged_servers = _servers(event) or [event.source_id]
         _keyless(db, event, resolve_recipients(db, event), now, done)
@@ -141,7 +142,7 @@ def notify(
         return 0
     done = Ingested()
     if event.new_status == "ok" or level_of(event) == 0:
-        _plain(db, event, recipients, done)
+        _plain(db, event, recipients, now, done)
     else:
         _keyless(db, event, recipients, now, done)
     _finish(db, done)
@@ -151,7 +152,9 @@ def notify(
 # --- the three kinds of events ---------------------------------------------------
 
 
-def _plain(db: Session, event: IncomingEvent, recipients: Recipients, done: Ingested) -> None:
+def _plain(
+    db: Session, event: IncomingEvent, recipients: Recipients, now: datetime, done: Ingested
+) -> None:
     for user, channels in recipients:
         title, body = _text(event, channels["bell"])
         row = Notification(
@@ -166,7 +169,8 @@ def _plain(db: Session, event: IncomingEvent, recipients: Recipients, done: Inge
         )
         db.add(row)
         db.flush()  # the id for the outbox FK
-        _queue(db, row, user, channels, event, "ok" if event.new_status == "ok" else event.severity)
+        level = "ok" if event.new_status == "ok" else event.severity
+        _queue(db, row, user, channels, event, level, now)
         done.notified += 1
         done.user_ids.add(user.id)
         done.max_id = max(done.max_id, row.id)
@@ -176,7 +180,7 @@ def _keyless(
     db: Session, event: IncomingEvent, recipients: Recipients, now: datetime, done: Ingested
 ) -> None:
     if event.source_ids is not None:
-        _plain(db, event, recipients, done)
+        _plain(db, event, recipients, now, done)
         return
     # Only with a recipient: notify_expiring tries a notice nobody got again on every
     # run, each try would leave an incident nobody sees.
@@ -189,6 +193,7 @@ def _keyless(
         event_count=1,
         first_at=now,
         last_at=now,
+        critical_since=now if event.severity == "critical" else None,
     )
     _take_text(incident, event, event.source_id)
     db.add(incident)
@@ -221,6 +226,7 @@ def _problem(db: Session, event: IncomingEvent, level: int, now: datetime, done:
             incident.state = "open"
             incident.resolved_at = incident.resolved_by = None
             incident.acked_at = incident.acked_by = None
+            _rearm(db, incident)
             target.reopened = True
         member = members.get(incident.id, {}).get(key)
         if member is not None:
@@ -253,6 +259,10 @@ def _problem(db: Session, event: IncomingEvent, level: int, now: datetime, done:
             incident.severity = _LEVEL_SEVERITY[max(level, _SEVERITY_LEVEL[incident.severity])]
         else:
             incident.severity = severity
+        # The escalation deadline runs from here, also for a reopen inside
+        # REOPEN_WINDOW, which pings no one (escalation.escalate_due).
+        if incident.severity == "critical" and incident.critical_since is None:
+            incident.critical_since = now
         # A single event folding into a bundle names its own server: the bundle keeps
         # the team text of its bundle events, which the other members' readers see.
         if not target.bundle or event.source_ids is not None:
@@ -326,6 +336,7 @@ def _recover(db: Session, event: IncomingEvent, now: datetime, done: Ingested) -
         incident.state = "resolved"
         incident.resolved_at = now
         incident.resolved_by = None
+        incident.critical_since = None
         _log(
             db,
             done,
@@ -473,7 +484,7 @@ def _ping(
             row.notified_at = now
         db.flush()
         if not muted:
-            for channel in ("bell", *_queue(db, row, user, channels, event, severity)):
+            for channel in ("bell", *_queue(db, row, user, channels, event, severity, now)):
                 if channel not in used:
                     used.append(channel)
         done.notified += 1
@@ -493,16 +504,26 @@ def _queue(
     channels: dict[str, list[str]],
     event: IncomingEvent,
     level: str,
+    now: datetime,
 ) -> list[str]:
     """Outbox entries for the external channels the person's matrix picks for `level`
     (the severity of this ping, ok for the all-clear) and they have an address for.
     Each carries the text of this ping, naming the servers of the bell row: a later
-    ping rewrites the row. Nothing without "out" (a notice of notify)."""
+    ping rewrites the row. Nothing without "out" (a notice of notify).
+
+    In the person's quiet hours an entry waits for their end (next_attempt_at, the
+    drain sends it then), a critical one only when it may not pass. With the digest on,
+    the e-mail of info, warning and ok waits for it instead (status digest)."""
     if "out" not in channels:
         return []
     settings = db.get(NotificationSettings, user.id)
     picked = channels_for(settings, level, event.category)
     title, body = _text(event, channels["out"])
+    critical = level == "critical"
+    held = None
+    if not critical or (settings is not None and not settings.quiet_critical):
+        held = quiet_end(settings, now)
+    digest = settings is not None and settings.digest != "off" and not critical
     queued = []
     targets = (
         ("email", user.email),
@@ -513,6 +534,7 @@ def _queue(
     for channel, address in targets:
         if channel not in picked or not address:
             continue
+        status = "digest" if digest and channel == "email" else "pending"
         db.add(
             NotificationOutbox(
                 notification_id=row.id,
@@ -522,6 +544,9 @@ def _queue(
                 title=title,
                 body=body,
                 severity=level,
+                status=status,
+                next_attempt_at=held if status == "pending" else None,
+                created_at=now,
             )
         )
         queued.append(channel)
@@ -776,11 +801,20 @@ def act(
     elif kind == "resolved":
         incident.state = "resolved"
         incident.resolved_by, incident.resolved_at = user.id, now
+        incident.critical_since = None
     elif kind == "reopened":
         incident.state = "open"
         incident.resolved_by = incident.resolved_at = None
         incident.acked_by = incident.acked_at = None
+        _rearm(db, incident)
     db.add(_Entry(incident_id=incident.id, at=now, kind=kind, actor_id=user.id, text=text))
+
+
+def _rearm(db: Session, incident: NotificationIncident) -> None:
+    """A reopened incident may escalate again (escalation.escalate_due)."""
+    db.query(Notification).filter(
+        Notification.incident_id == incident.id, Notification.escalated_at.is_not(None)
+    ).update({Notification.escalated_at: None}, synchronize_session=False)
 
 
 def finish_actions(db: Session, incident_ids: list[int]) -> None:
