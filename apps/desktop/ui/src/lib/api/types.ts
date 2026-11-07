@@ -767,7 +767,23 @@ export interface NotificationAvailableChannels {
   webhook: boolean;
 }
 
-// The fields of R-1080 are optional: a server before it sends none of them.
+// Quiet hours in the person's zone, across midnight when end is earlier (R-1081).
+export interface NotificationQuiet {
+  enabled: boolean;
+  start: string; // HH:MM
+  end: string; // HH:MM
+  critical: boolean; // critical pings pass the quiet hours and do not disturb
+}
+
+export interface NotificationEscalation {
+  enabled: boolean;
+  minutes: 5 | 10 | 30;
+  channel: NotificationTestChannel | null;
+}
+
+export type NotificationDigest = 'off' | 'daily' | 'weekly';
+
+// The fields of R-1080 and R-1081 are optional: a server before them sends none of them.
 export interface NotificationPrefs {
   email: string | null;
   telegramChatId: string | null;
@@ -777,6 +793,11 @@ export interface NotificationPrefs {
   disabledChannels?: NotificationChannel[];
   mutedCategories?: string[];
   available?: NotificationAvailableChannels;
+  timezone?: string;
+  quiet?: NotificationQuiet;
+  escalation?: NotificationEscalation;
+  digest?: NotificationDigest;
+  soundCritical?: boolean;
   subscriptions: NotificationSubscription[];
 }
 
@@ -800,6 +821,11 @@ export interface NotificationPrefsUpdate {
   matrix?: NotificationMatrix;
   disabled_channels?: NotificationChannel[];
   muted_categories?: string[];
+  timezone?: string;
+  quiet?: NotificationQuiet;
+  escalation?: NotificationEscalation;
+  digest?: NotificationDigest;
+  sound_critical?: boolean;
   subscriptions: NotificationSubscriptionInput[];
 }
 

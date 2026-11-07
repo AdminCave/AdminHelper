@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   setNewNotificationHandler: vi.fn(),
   notifyOs: vi.fn(async () => {}),
   allows: vi.fn((_severity: string) => true),
+  playCriticalTone: vi.fn(),
 }));
 
 vi.mock('$lib/bridge', () => ({
@@ -64,6 +65,7 @@ vi.mock('$lib/stores/connections', async () => {
 });
 vi.mock('$lib/osNotify', () => ({ notifyOs: h.notifyOs }));
 vi.mock('$lib/stores/dnd', () => ({ allows: h.allows }));
+vi.mock('$lib/sound', () => ({ playCriticalTone: h.playCriticalTone }));
 vi.mock('../pages/Dashboard.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Connections.svelte', () => ({ default: vi.fn() }));
 vi.mock('../pages/Infrastructure.svelte', () => ({ default: vi.fn() }));
@@ -283,5 +285,40 @@ describe('AppShell: the channel settings decide whether the desktop pops up', ()
     await tick();
     lastHandler()?.([entry(1, 'info'), entry(2, 'warning')]);
     expect(get(toasts)).toHaveLength(2);
+  });
+});
+
+// R-1081: the tone follows a critical toast that shows, once the person turned it on.
+describe('AppShell: the tone on critical', () => {
+  const withTone = (on: boolean) =>
+    setDesktopPrefs({ ...prefs({ matrix: undefined }), soundCritical: on });
+
+  it('plays once for the critical toasts of a batch, not for the rest', async () => {
+    withTone(true);
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'warning'), entry(2, 'info')]);
+    expect(h.playCriticalTone).not.toHaveBeenCalled();
+    lastHandler()?.([entry(3, 'critical'), entry(4, 'critical'), entry(5, 'info')]);
+    expect(h.playCriticalTone).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays silent with the tone off', async () => {
+    withTone(false);
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'critical')]);
+    expect(get(toasts)).toHaveLength(1);
+    expect(h.playCriticalTone).not.toHaveBeenCalled();
+  });
+
+  it('stays silent while quiet holds the critical toast back', async () => {
+    withTone(true);
+    h.allows.mockImplementation(() => false);
+    render(AppShell);
+    await tick();
+    lastHandler()?.([entry(1, 'critical')]);
+    expect(get(toasts)).toHaveLength(0);
+    expect(h.playCriticalTone).not.toHaveBeenCalled();
   });
 });

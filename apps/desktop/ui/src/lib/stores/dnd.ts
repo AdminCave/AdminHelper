@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Do not disturb (R-1078): until a point in time, toasts and OS notifications of this window
-// stay quiet; critical ones always come through. Feed, badge and center page are not affected.
+// stay quiet; critical ones come through while the person lets them pass (R-1081), which also
+// holds for their quiet hours. Feed, badge and center page are not affected.
 // Kept in localStorage per workspace: the workspace processes share one webview store, so the
 // key carries the workspace id.
 
 import { get, writable } from 'svelte/store';
 import { context } from './workspace';
+import { criticalPasses, inQuiet } from './notifyPrefs';
 import type { NotificationSeverity } from '$lib/api/types';
 
 export type DndDuration = '1h' | '4h' | 'tomorrow';
@@ -73,11 +75,12 @@ export function loadDnd(now: number = Date.now()): void {
   apply(stored, now);
 }
 
-/** Whether a notice of `severity` may show now: critical always, the rest only outside the quiet. */
+/** Whether a notice of `severity` may show now: outside do not disturb and the quiet hours,
+ * and critical inside them too while it may pass. */
 export function allows(severity: NotificationSeverity, now: number = Date.now()): boolean {
-  if (severity === 'critical') return true;
+  if (severity === 'critical' && criticalPasses()) return true;
   const until = get(_until);
-  return until === null || now >= until;
+  return (until === null || now >= until) && !inQuiet(now);
 }
 
 // The workspace id arrives with the context after start; read its stored point then.

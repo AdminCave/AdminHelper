@@ -744,7 +744,7 @@ class TestNotificationShape:
             "telegramChatId": "12345",
             "subscriptions": [jsonable_encoder(s.to_dict()) for s in subs],
         }
-        # The channel settings (R-1080), defaults without a stored row.
+        # The channel settings (R-1080) and the clock (R-1081), defaults without a row.
         assert set(body) == {
             "email",
             "telegramChatId",
@@ -754,6 +754,11 @@ class TestNotificationShape:
             "matrix",
             "disabledChannels",
             "mutedCategories",
+            "timezone",
+            "quiet",
+            "escalation",
+            "digest",
+            "soundCritical",
             "available",
         }
         tagged, every = got.json()["subscriptions"]
