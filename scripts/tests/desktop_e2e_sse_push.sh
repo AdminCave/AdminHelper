@@ -39,7 +39,7 @@ TOKEN=$(e2e_admin_token)
 # injected event to them — without a subscription the bell stays empty.
 curl -sk -X PUT "$E2E_SERVER_URL/api/users/me/notification-prefs" \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d '{"email":null,"telegram_chat_id":null,"subscriptions":[{"scope_type":"all","min_severity":"info","channel_email":false,"channel_telegram":false,"enabled":true}]}' \
+    -d '{"email":null,"telegram_chat_id":null,"subscriptions":[{"scope_type":"all","min_severity":"info","enabled":true}]}' \
     >/dev/null && ok "seeded scope=all subscription" || { bad "seed subscription"; exit 1; }
 
 # The spec injects the event itself (Node context); hand it the internal key.

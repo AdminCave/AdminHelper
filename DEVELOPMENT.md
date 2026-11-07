@@ -18,8 +18,13 @@ sudo apt install -y \
   libgtk-3-dev \
   libappindicator3-dev \
   librsvg2-dev \
+  libasound2-dev \
+  cmake \
   patchelf
 ```
+
+`libasound2-dev` braucht der Ton der eingebetteten RDP-Sitzung (cpal), `cmake` baut den Opus-Decoder,
+den IronRDP mitbringt.
 
 SPDX-Header neuer Quelldateien schreibt `reuse annotate` (CLAUDE.md §10). Ohne sudo (das Debian-Paket
 `reuse` braeuchte es) ein eigenes venv mit Link in den `PATH`, wie bei `pip-audit` unten:

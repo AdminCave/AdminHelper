@@ -2,16 +2,31 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import re
 from datetime import datetime, timedelta, timezone
+from functools import cache
 from typing import Annotated, Literal, Optional
+from urllib.parse import urlsplit
+from zoneinfo import available_timezones
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from app.core.bounds import BigIntPk, RequestModel
 
 Severity = Literal["info", "warning", "critical"]
+Channel = Literal["desktop", "email", "ntfy", "telegram", "webhook"]
+MatrixRow = Literal["critical", "warning", "info", "ok"]
 ScopeType = Literal["all", "tag", "server"]
 IncidentState = Literal["open", "acked", "resolved"]
+# The channels an escalation can take (R-1081): not the desktop, which is the one that
+# already showed the incident.
+EscalationChannel = Literal["email", "ntfy", "telegram", "webhook"]
+Digest = Literal["off", "daily", "weekly"]
+# HH:MM, ASCII digits only: pydantic's pattern engine matches \d against any Unicode digit.
+ClockTime = Annotated[str, Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
+TIMEZONE_MAX = 64
+# The zone names on disk, read once: available_timezones() walks the tz database.
+_ZONES = cache(available_timezones)
 
 # The longest mute a person can set (spec: until <= now + 7 d).
 MUTE_MAX = timedelta(days=7)
@@ -20,6 +35,30 @@ MUTE_MAX = timedelta(days=7)
 # email-validator dependency for a single optional field; the SMTP server is the
 # real authority on deliverability.
 _EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+URL_MAX = 2048
+MUTED_CATEGORIES_MAX = 32
+CATEGORY_MAX = 64
+
+
+def _check_target_url(v: Optional[str]) -> Optional[str]:
+    """The form of an ntfy or webhook URL: http(s) with a host, no credentials in the
+    userinfo (ntfy takes its token as ?auth=). Where it points is checked on every send
+    (app.core.ssrf), not here: DNS may change in between."""
+    if v is None or v == "":
+        return None
+    if len(v) > URL_MAX:
+        raise ValueError(f"URL may be at most {URL_MAX} characters")
+    try:
+        parts = urlsplit(v)
+        host = parts.hostname
+    except ValueError:
+        raise ValueError("Invalid URL") from None
+    if parts.scheme not in ("http", "https") or not host:
+        raise ValueError("URL must be http:// or https:// with a host")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("URL must not carry credentials before the host")
+    return v
 
 
 class IncidentRule(RequestModel):
@@ -128,8 +167,6 @@ class SubscriptionInput(RequestModel):
     scope_ref: Optional[str] = Field(default=None, max_length=256)
     min_severity: Severity = "warning"
     categories: Optional[list[str]] = None
-    channel_email: bool = False
-    channel_telegram: bool = False
     enabled: bool = True
 
     @model_validator(mode="after")
@@ -144,25 +181,87 @@ class SubscriptionInput(RequestModel):
         return self
 
 
+class QuietInput(RequestModel):
+    """Quiet hours: from start to end in the person's zone, across midnight when end is
+    earlier; critical lets critical pings through."""
+
+    enabled: bool
+    start: ClockTime
+    end: ClockTime
+    critical: bool
+
+
+class EscalationInput(RequestModel):
+    enabled: bool
+    # The enum alone carries no maximum, which test_openapi_integer_bounds demands.
+    minutes: Annotated[Literal[5, 10, 30], Field(json_schema_extra={"minimum": 5, "maximum": 30})]
+    channel: Optional[EscalationChannel] = None
+
+    @model_validator(mode="after")
+    def _channel_when_on(self) -> "EscalationInput":
+        if self.enabled and self.channel is None:
+            raise ValueError("an escalation needs a channel")
+        return self
+
+
 class NotificationPrefsUpdate(RequestModel):
     """Replace-all update of a user's own notification preferences. email /
     telegram_chat_id are set verbatim (None clears them); the settings UI always
-    submits the full current state."""
+    submits the full current state. A field of the channel settings (R-1080) that is
+    not sent keeps its stored value, so a caller that sends rules only keeps the
+    matrix; sent as null, a URL is cleared."""
 
     email: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     subscriptions: list[SubscriptionInput]
+    ntfy_url: Optional[str] = None
+    webhook_url: Optional[str] = None
+    matrix: Optional[dict[MatrixRow, list[Channel]]] = None
+    disabled_channels: Optional[list[Channel]] = None
+    muted_categories: Optional[
+        Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=CATEGORY_MAX)]],
+            Field(max_length=MUTED_CATEGORIES_MAX),
+        ]
+    ] = None
+    timezone: Optional[Annotated[str, Field(max_length=TIMEZONE_MAX)]] = None
+    quiet: Optional[QuietInput] = None
+    escalation: Optional[EscalationInput] = None
+    digest: Optional[Digest] = None
+    sound_critical: Optional[bool] = None
 
     @field_validator("email")
     @classmethod
     def _check_email(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v == "":
             return None
-        import re
-
         if not re.match(_EMAIL_PATTERN, v):
             raise ValueError("Ungültige E-Mail-Adresse")
         return v
+
+    @field_validator("ntfy_url", "webhook_url")
+    @classmethod
+    def _check_url(cls, v: Optional[str]) -> Optional[str]:
+        return _check_target_url(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def _check_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if v not in _ZONES():
+            raise ValueError("Unknown time zone")
+        return v
+
+
+class NotificationTestRequest(RequestModel):
+    """A test message to the stored target of one channel; the desktop tests itself."""
+
+    channel: Literal["email", "ntfy", "telegram", "webhook"]
+
+
+class NotificationTestOut(BaseModel):
+    channel: str
 
 
 class NotificationOut(BaseModel):
@@ -238,7 +337,7 @@ class IncidentDetailOut(BaseModel):
     bundle: bool
     servers: list[IncidentServerOut]
     rules: Optional[list[IncidentRuleOut]]
-    channels: list[Literal["bell", "email", "telegram"]]
+    channels: list[Literal["bell", "email", "ntfy", "telegram", "webhook"]]
     history: list[IncidentEntryOut]
     # The reader sees every server of the incident: acknowledge, resolve, reopen, note.
     canAct: bool
@@ -266,14 +365,47 @@ class NotificationSubscriptionOut(BaseModel):
     minSeverity: str
     # The stored JSON text of the category list, as written, not parsed.
     categories: Optional[str]
-    channelEmail: bool
-    channelTelegram: bool
     enabled: bool
+
+
+class AvailableChannelsOut(BaseModel):
+    """Which channels the server can deliver: e-mail only with SMTP_HOST, Telegram only
+    with the bot token. The desktop delivers itself."""
+
+    desktop: bool
+    email: bool
+    ntfy: bool
+    telegram: bool
+    webhook: bool
+
+
+class QuietOut(BaseModel):
+    enabled: bool
+    start: str
+    end: str
+    critical: bool
+
+
+class EscalationOut(BaseModel):
+    enabled: bool
+    minutes: int
+    channel: Optional[EscalationChannel]
 
 
 class NotificationPrefsOut(BaseModel):
     email: Optional[str]
     telegramChatId: Optional[str]
+    ntfyUrl: Optional[str]
+    webhookUrl: Optional[str]
+    matrix: dict[MatrixRow, list[Channel]]
+    disabledChannels: list[Channel]
+    mutedCategories: list[str]
+    timezone: str
+    quiet: QuietOut
+    escalation: EscalationOut
+    digest: Digest
+    soundCritical: bool
+    available: AvailableChannelsOut
     subscriptions: list[NotificationSubscriptionOut]
 
 

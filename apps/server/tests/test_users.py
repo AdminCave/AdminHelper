@@ -110,8 +110,10 @@ class TestDefaultAdminSubscription:
         )
         assert (sub.scope_type, sub.scope_ref, sub.min_severity) == ("all", None, "warning")
         assert sub.enabled is True
-        assert sub.channel_email is False
-        assert sub.channel_telegram is False
+        # No channel settings: the default matrix, the desktop only (R-1080).
+        from app.modules.notifications.models import NotificationSettings
+
+        assert db_session.get(NotificationSettings, res.json()["id"]) is None
 
     def test_plain_user_gets_no_default_subscription(self, test_client, admin_user, db_session):
         from app.modules.notifications.models import NotificationSubscription

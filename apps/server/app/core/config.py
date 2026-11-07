@@ -2,9 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import ipaddress
 import logging
 import os
 import secrets
+import socket
 import tempfile
 from pathlib import Path
 
@@ -332,6 +334,53 @@ SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
 SMTP_CA_FILE = os.environ.get("SMTP_CA_FILE", "").strip()
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
+# Bot token of the Telegram channel (R-1080). Empty = no Telegram delivery: no entry
+# is queued, and the drain leaves the ones already queued waiting.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+
+def _private_targets(raw: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """The networks of NOTIFY_PRIVATE_TARGETS, comma-separated CIDR. A wrong entry
+    stops the start: a typo would otherwise close a target without a word, or open
+    more than meant (192.168.1.5/16 is not read as 192.168.0.0/16)."""
+    networks = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(part))
+        except ValueError as exc:
+            raise ValueError(
+                f"NOTIFY_PRIVATE_TARGETS: {part!r} is no network in CIDR form"
+            ) from exc
+    return tuple(networks)
+
+
+def _warn_own_addresses(networks) -> None:
+    """Warn when a listed network holds an address of this host: the networks of the
+    containers next to it are usually there, and a target in them is the server's own
+    neighbour, not the operator's LAN."""
+    if not networks:
+        return  # no lookup of the own name on every start without a listed network
+    try:
+        own = {ipaddress.ip_address(a) for a in socket.gethostbyname_ex(socket.gethostname())[2]}
+    except (OSError, ValueError):
+        return
+    for net in networks:
+        if any(a in net for a in own):
+            logger.warning(
+                "NOTIFY_PRIVATE_TARGETS: %s holds an address of this host; "
+                "name the network of the targets alone",
+                net,
+            )
+
+
+# Private networks ntfy and webhook targets may be in (R-1080), e.g.
+# 192.168.1.0/24,100.64.0.0/10. Empty = none. Loopback, link-local and the cloud
+# metadata addresses stay blocked whatever this holds (app/core/ssrf.py).
+NOTIFY_PRIVATE_TARGETS = _private_targets(os.environ.get("NOTIFY_PRIVATE_TARGETS", ""))
+_warn_own_addresses(NOTIFY_PRIVATE_TARGETS)
 # Bell-feed retention in days. A daily system job prunes notification rows older
 # than this so the feed does not grow without bound. 0 = keep forever.
 NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "90"))

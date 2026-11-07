@@ -14,6 +14,7 @@ Three surfaces:
 
 import json
 import secrets
+import threading
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -24,6 +25,7 @@ from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core import config as app_config
 from app.core.auth import get_current_user
 from app.core.bounds import BigIntPk, Offset
 from app.core.config import MONITOR_API_KEY
@@ -33,8 +35,11 @@ from app.core.pagination import paginate
 from app.core.time import iso_utc
 from app.modules.notifications import incidents, stream_hub
 from app.modules.notifications.models import (
+    CHANNELS,
+    MATRIX_ROWS,
     Notification,
     NotificationServerMute,
+    NotificationSettings,
     NotificationSubscription,
 )
 from app.modules.notifications.schemas import (
@@ -50,9 +55,20 @@ from app.modules.notifications.schemas import (
     NotificationOut,
     NotificationPrefsOut,
     NotificationPrefsUpdate,
+    NotificationTestOut,
+    NotificationTestRequest,
     ServerMuteOut,
     UnreadCountOut,
 )
+from app.modules.notifications.sender import (
+    BlockedTarget,
+    DeliveryFailed,
+    send_email,
+    send_ntfy,
+    send_telegram,
+    send_webhook,
+)
+from app.modules.notifications.service import default_matrix
 from app.modules.users.models import User
 
 feed_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -354,11 +370,108 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
         .order_by(NotificationSubscription.id.asc())
         .all()
     )
+    settings = db.get(NotificationSettings, user.id)
     return {
         "email": user.email,
         "telegramChatId": user.telegram_chat_id,
+        "ntfyUrl": settings.ntfy_url if settings else None,
+        "webhookUrl": settings.webhook_url if settings else None,
+        "matrix": json.loads(settings.matrix) if settings else default_matrix(),
+        "disabledChannels": json.loads(settings.disabled_channels) if settings else [],
+        "mutedCategories": json.loads(settings.muted_categories) if settings else [],
+        **_clock_response(settings or _default_settings(user)),
+        "available": _available(),
         "subscriptions": [s.to_dict() for s in subs],
     }
+
+
+def _default_settings(user: User) -> NotificationSettings:
+    """The settings of a person without a row, never added to the session: the
+    column defaults (R-1081: everything off)."""
+    return NotificationSettings(
+        user_id=user.id,
+        matrix=json.dumps(default_matrix()),
+        disabled_channels="[]",
+        muted_categories="[]",
+        timezone=None,
+        quiet_enabled=False,
+        quiet_start="22:00",
+        quiet_end="07:00",
+        quiet_critical=True,
+        escalation_enabled=False,
+        escalation_minutes=10,
+        escalation_channel=None,
+        digest="off",
+        sound_critical=False,
+    )
+
+
+def _clock_response(settings: NotificationSettings) -> dict[str, Any]:
+    return {
+        "timezone": settings.timezone or "UTC",
+        "quiet": {
+            "enabled": settings.quiet_enabled,
+            "start": settings.quiet_start,
+            "end": settings.quiet_end,
+            "critical": settings.quiet_critical,
+        },
+        "escalation": {
+            "enabled": settings.escalation_enabled,
+            "minutes": settings.escalation_minutes,
+            "channel": settings.escalation_channel,
+        },
+        "digest": settings.digest,
+        "soundCritical": settings.sound_critical,
+    }
+
+
+def _available() -> dict[str, bool]:
+    return {
+        "desktop": True,
+        "email": bool(app_config.SMTP_HOST),
+        "ntfy": True,
+        "telegram": bool(app_config.TELEGRAM_BOT_TOKEN),
+        "webhook": True,
+    }
+
+
+def _store_settings(db: Session, user: User, data: NotificationPrefsUpdate) -> None:
+    """Write the channel settings the PUT carries; a field it leaves out keeps its value
+    (NotificationPrefsUpdate). Lists in the order of CHANNELS, without repeats."""
+    sent = data.model_fields_set
+    settings = db.get(NotificationSettings, user.id)
+    if settings is None:
+        settings = _default_settings(user)
+        db.add(settings)
+    if "ntfy_url" in sent:
+        settings.ntfy_url = data.ntfy_url
+    if "webhook_url" in sent:
+        settings.webhook_url = data.webhook_url
+    if "matrix" in sent and data.matrix is not None:
+        matrix = data.matrix
+        settings.matrix = json.dumps(
+            {row: [c for c in CHANNELS if c in matrix.get(row, [])] for row in MATRIX_ROWS}
+        )
+    if "disabled_channels" in sent and data.disabled_channels is not None:
+        off = data.disabled_channels
+        settings.disabled_channels = json.dumps([c for c in CHANNELS if c in off])
+    if "muted_categories" in sent and data.muted_categories is not None:
+        settings.muted_categories = json.dumps(list(dict.fromkeys(data.muted_categories)))
+    if "timezone" in sent and data.timezone is not None:
+        settings.timezone = data.timezone
+    if "quiet" in sent and data.quiet is not None:
+        settings.quiet_enabled = data.quiet.enabled
+        settings.quiet_start = data.quiet.start
+        settings.quiet_end = data.quiet.end
+        settings.quiet_critical = data.quiet.critical
+    if "escalation" in sent and data.escalation is not None:
+        settings.escalation_enabled = data.escalation.enabled
+        settings.escalation_minutes = data.escalation.minutes
+        settings.escalation_channel = data.escalation.channel
+    if "digest" in sent and data.digest is not None:
+        settings.digest = data.digest
+    if "sound_critical" in sent and data.sound_critical is not None:
+        settings.sound_critical = data.sound_critical
 
 
 @prefs_router.get("/notification-prefs", response_model=NotificationPrefsOut)
@@ -375,9 +488,11 @@ def put_prefs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Replace-all update: set contact data and rewrite the subscription set."""
+    """Replace-all update: set contact data and rewrite the subscription set; the
+    channel settings keep a field that is not sent."""
     current_user.email = data.email
     current_user.telegram_chat_id = data.telegram_chat_id or None
+    _store_settings(db, current_user, data)
     # Rewrite the subscription set wholesale — simpler than per-row CRUD and
     # matches a settings form that submits the full state.
     db.query(NotificationSubscription).filter(
@@ -391,14 +506,98 @@ def put_prefs(
                 scope_ref=s.scope_ref,
                 min_severity=s.min_severity,
                 categories=json.dumps(s.categories) if s.categories else None,
-                channel_email=s.channel_email,
-                channel_telegram=s.channel_telegram,
                 enabled=s.enabled,
             )
         )
     db.commit()
     db.refresh(current_user)
     return _prefs_response(db, current_user)
+
+
+# One test per person and channel in this many seconds: the button sends at once, to a
+# target the person chose, so it must not serve as an amplifier.
+_TEST_WINDOW = 10
+_TEST_TITLE = "AdminHelper test"
+_TEST_BODY = "This is a test message from AdminHelper. The channel works."
+# A send may hang up to sender._SEND_DEADLINE, longer than the window, and the senders of
+# this process share a few slots: one test at a time per person, so one account cannot
+# hold them all.
+_TESTS_RUNNING: set[int] = set()
+_TESTS_LOCK = threading.Lock()
+
+
+@prefs_router.post("/notification-prefs/test", response_model=NotificationTestOut)
+def test_channel(
+    data: NotificationTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send a test message to the stored target of one channel, at once and without the
+    outbox. 409 without a target or when the server cannot deliver the channel, 422 for
+    a target the SSRF guard blocks, 502 for a failed send, 429 for a second test of the
+    channel within ten seconds."""
+    from app.core.rate_limit import get_backend
+
+    channel = data.channel
+    settings = db.get(NotificationSettings, current_user.id)
+    target = {
+        "email": current_user.email,
+        "ntfy": settings.ntfy_url if settings else None,
+        "telegram": current_user.telegram_chat_id,
+        "webhook": settings.webhook_url if settings else None,
+    }[channel]
+    if not _available()[channel]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{channel}: not set up on this server",
+        )
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"{channel}: no target stored"
+        )
+    with _TESTS_LOCK:
+        if current_user.id in _TESTS_RUNNING:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="another test is still running",
+            )
+        _TESTS_RUNNING.add(current_user.id)
+    try:
+        # Counted after the refusals: saving a target and testing it at once must work.
+        key = f"notify_test:{current_user.id}:{channel}"
+        if get_backend().increment(key, _TEST_WINDOW) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"{channel}: one test per {_TEST_WINDOW} seconds",
+            )
+        _send_test(channel, target)
+    finally:
+        with _TESTS_LOCK:
+            _TESTS_RUNNING.discard(current_user.id)
+    return {"channel": channel}
+
+
+def _send_test(channel: str, target: str) -> None:
+    """One test message; every error becomes a neutral HTTPException."""
+    try:
+        if channel == "email":
+            send_email(target, _TEST_TITLE, _TEST_BODY)
+        elif channel == "ntfy":
+            send_ntfy(target, _TEST_TITLE, _TEST_BODY, "info")
+        elif channel == "telegram":
+            send_telegram(target, _TEST_TITLE, _TEST_BODY)
+        else:
+            send_webhook(target, _TEST_TITLE, _TEST_BODY, "info", "test")
+    except BlockedTarget as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except DeliveryFailed as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+    except Exception as exc:
+        # Any other error's text may hold the URL (with ?auth=), the bot token or the
+        # SMTP dialogue: its type only.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"{channel}: {type(exc).__name__}"
+        ) from None
 
 
 # --- Internal event ingress (monitoring → server) --------------------------

@@ -38,6 +38,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | bcrypt | 5.0.0 | Apache-2.0 | x |  |  |
 | python-multipart | 0.0.33 | Apache-2.0 | x |  |  |
 | opentelemetry-api | 1.45.2 | Apache-2.0 | x | x | x |
+| tzdata | 2026.6 | Apache-2.0 | x |  |  |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | x |  | x |
 | uvloop | 0.23.0 | Apache-2.0 OR MIT | x | x | x |
 | click | 8.5.0 | BSD-3-Clause | x | x | x |
@@ -79,7 +80,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 `opentelemetry-api` mit (ohne SDK, sendet nichts).
 
 **Auflagen-relevant:** Apache-2.0 (NOTICE) — `bcrypt`, `python-multipart`,
-`opentelemetry-api`;
+`opentelemetry-api`, `tzdata`;
 LGPL-3.0 — `psycopg`, `psycopg-binary`; MPL-2.0 — `certifi`. `cryptography`
 (Apache OR BSD) und `uvloop` (Apache OR MIT) sind dual — es wird der
 permissive Zweig geführt (siehe „Auflagen & Hinweise").
@@ -127,7 +128,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `tauri-plugin-single-instance` (nur Desktop-Ziele), `windows` (nur Windows), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
 `toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
-`ironrdp-connector` und `ironrdp-session` (eingebettetes RDP, Git-Revision von
+`ironrdp-connector`, `ironrdp-session` und `ironrdp-rdpdr-native` (eingebettetes RDP, Git-Revision von
 `github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten),
 `russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`) —
 überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
@@ -138,28 +139,28 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license`, Stand **2026-11-06** (741 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license`, Stand **2026-11-07** (758 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 484 |
-| MIT | 146 |
-| Apache-2.0 OR MIT OR Zlib | 23 |
+| Apache-2.0 OR MIT | 493 |
+| MIT | 148 |
+| Apache-2.0 OR MIT OR Zlib | 27 |
 | Unicode-3.0 | 18 |
 | MIT OR Unlicense | 12 |
+| Apache-2.0 | 8 |
 | BSD-3-Clause | 6 |
-| Apache-2.0 | 7 |
 | MPL-2.0 | 5 |
 | ISC | 5 |
 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 5 |
 | Apache-2.0 OR ISC OR MIT | 3 |
+| Apache-2.0 OR BSD-2-Clause OR MIT | 3 |
 | Apache-2.0 OR BSD-3-Clause | 3 |
 | Zlib | 2 |
 | Apache-2.0 OR BSD-3-Clause OR MIT | 2 |
 | Apache-2.0 OR LGPL-2.1-or-later OR MIT | 2 |
 | CDLA-Permissive-2.0 | 2 |
-| Apache-2.0 OR BSD-2-Clause OR MIT | 2 |
 | übrige (je 1) | 14 |
 
 Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MIT`,
@@ -178,8 +179,12 @@ Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MI
 **Auflagen-relevant:**
 
 - **Apache-2.0 (NOTICE), unvermeidbar** (pur oder als `AND`-Anteil):
-  `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `russh-sftp`, `sync_wrapper`,
-  `tao`, `target-lexicon`.
+  `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `russh-sftp`,
+  `sync_wrapper`, `tao`, `target-lexicon`.
+- **BSD-3-Clause, mitgebaut:** `libopus_sys` (selbst `MIT`, Audio des eingebetteten RDP) bringt
+  die C-Quelle von libopus mit und linkt sie statisch; ihre Lizenz (`BSD-3-Clause`, Xiph.Org und
+  andere, `opus/COPYING` im Crate) sieht `cargo-license` nicht, ihr Copyright-Hinweis gehört in
+  die Distribution.
 - **MPL-2.0:** `cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext`,
   `selectors`.
 - **Unicode-3.0:** die ICU-/Zerovec-Familie (`icu_*`, `litemap`, `tinystr`,
@@ -237,9 +242,9 @@ Test-Harness und wird nicht ausgeliefert.
 betreffenden Projekte in der Distribution weiterzugeben. Zwingend
 Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 
-- **Python:** `bcrypt`, `python-multipart`
+- **Python:** `bcrypt`, `python-multipart`, `tzdata`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
-- **Rust:** `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
+- **Rust:** `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
   `russh-sftp`, `sync_wrapper`, `tao`, `target-lexicon`
 
 Sofern diese Projekte eine `NOTICE`-Datei mitliefern, gehört deren Inhalt
@@ -273,7 +278,8 @@ unter MPL, ohne die GPL-Gesamtlizenz zu berühren.
 
 ### Unicode-3.0 / BSD / ISC / Zlib
 
-Die `Unicode-3.0`-Crates (ICU-/Zerovec-Familie im Rust-Graphen) sowie die
+Die `Unicode-3.0`-Crates (ICU-/Zerovec-Familie im Rust-Graphen), die
+statisch gelinkte libopus (`BSD-3-Clause`, über `libopus_sys`) sowie die
 diversen `BSD`-/`ISC`-/`Zlib`-/`MIT`-Lizenzen sind GPL-3.0-kompatibel. Es
 genügt, den jeweiligen Lizenztext bzw. Copyright-Hinweis in der Distribution
 mitzuführen.

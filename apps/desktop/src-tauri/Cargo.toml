@@ -78,10 +78,14 @@ zeroize = "1.8.2"
 portable-pty = "0.9"
 # Embedded RDP (rdp_embedded/): IronRDP pinned to a reviewed Git revision, not a crates.io release,
 # so the client API and the GFX fixes it relies on cannot move underneath us.
-# The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs, and `sound` stays off
-# (docs/features/arch-rdp-backend.md, E2). H.264 comes from the platform (Media Foundation on
-# Windows, none on Linux), not openh264. The license_gate tests keep it that way.
-ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["clipboard", "rdpdr"] }
+# The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs. `sound` plays the
+# session's audio through cpal, which needs ALSA (libasound) on Linux (docs/features/kern-rdp-2.md);
+# on Windows the session keeps audio off (session.rs, audio_mode). H.264 comes from the platform
+# (Media Foundation on Windows, none on Linux), not openh264. The license_gate tests keep it that way.
+ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["clipboard", "rdpdr", "sound"] }
+# The audio mode of ConfigBuilder::with_audio_mode, which ironrdp-client does not re-export; in the
+# lockfile through it already.
+ironrdp-cfg = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 ironrdp-tls = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310", default-features = false, features = ["rustls-ring"] }
 # ironrdp-client calls tokio_tungstenite::client_async_tls without a feature gate (its RDCleanPath
 # WebSocket transport, unused here), which only exists with a TLS feature of tokio-tungstenite. This one
@@ -94,6 +98,8 @@ ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664ab
 # not re-export; both are in the lockfile through it already.
 ironrdp-connector = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 ironrdp-session = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
+# The Downloads folder as a drive of the embedded RDP session (rdp_embedded/session.rs, rdpdr_factory).
+ironrdp-rdpdr-native = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 # The client name the RDP server shows for the session.
 gethostname = "1"
 
@@ -108,7 +114,13 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # CreateProcessW from the system directory (terminal.rs, spawn_in_new_console).
 # JobObjects (Security for CreateJobObjectW, Threading for OpenProcess and the limit struct): frpc
 # ends with the desktop process (frpc.rs, end_with_this_process).
-windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects"] }
+# WindowsAndMessaging: the message loop of the embedded RDP session's clipboard thread
+# (rdp_embedded/clipboard_win.rs).
+windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_UI_WindowsAndMessaging"] }
+# The Windows clipboard of the embedded RDP session runs on a thread of its own with a message
+# loop (rdp_embedded/clipboard_win.rs); both crates are in the lockfile through ironrdp-client.
+ironrdp-cliprdr = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
+ironrdp-cliprdr-native = { git = "https://github.com/Devolutions/IronRDP", rev = "f96f664abf0bdfe547f222bcd37e09899f00f310" }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.

@@ -380,6 +380,40 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "AvailableChannelsOut": {
+        "description": "Which channels the server can deliver: e-mail only with SMTP_HOST, Telegram only\nwith the bot token. The desktop delivers itself.",
+        "properties": {
+          "desktop": {
+            "title": "Desktop",
+            "type": "boolean"
+          },
+          "email": {
+            "title": "Email",
+            "type": "boolean"
+          },
+          "ntfy": {
+            "title": "Ntfy",
+            "type": "boolean"
+          },
+          "telegram": {
+            "title": "Telegram",
+            "type": "boolean"
+          },
+          "webhook": {
+            "title": "Webhook",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "desktop",
+          "email",
+          "ntfy",
+          "telegram",
+          "webhook"
+        ],
+        "title": "AvailableChannelsOut",
+        "type": "object"
+      },
       "BootstrapRequest": {
         "description": "Creates the first admin user using the bootstrap token from the server logs.",
         "properties": {
@@ -1253,6 +1287,84 @@
           "username"
         ],
         "title": "EnrollmentTokenForRequest",
+        "type": "object"
+      },
+      "EscalationInput": {
+        "properties": {
+          "channel": {
+            "anyOf": [
+              {
+                "enum": [
+                  "email",
+                  "ntfy",
+                  "telegram",
+                  "webhook"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "minutes": {
+            "enum": [
+              5,
+              10,
+              30
+            ],
+            "maximum": 30.0,
+            "minimum": 5.0,
+            "title": "Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "minutes"
+        ],
+        "title": "EscalationInput",
+        "type": "object"
+      },
+      "EscalationOut": {
+        "properties": {
+          "channel": {
+            "anyOf": [
+              {
+                "enum": [
+                  "email",
+                  "ntfy",
+                  "telegram",
+                  "webhook"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "minutes": {
+            "title": "Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "minutes",
+          "channel"
+        ],
+        "title": "EscalationOut",
         "type": "object"
       },
       "EventsAcceptedOut": {
@@ -3063,7 +3175,9 @@
               "enum": [
                 "bell",
                 "email",
-                "telegram"
+                "ntfy",
+                "telegram",
+                "webhook"
               ],
               "type": "string"
             },
@@ -3953,6 +4067,32 @@
       },
       "NotificationPrefsOut": {
         "properties": {
+          "available": {
+            "$ref": "#/components/schemas/AvailableChannelsOut"
+          },
+          "digest": {
+            "enum": [
+              "off",
+              "daily",
+              "weekly"
+            ],
+            "title": "Digest",
+            "type": "string"
+          },
+          "disabledChannels": {
+            "items": {
+              "enum": [
+                "desktop",
+                "email",
+                "ntfy",
+                "telegram",
+                "webhook"
+              ],
+              "type": "string"
+            },
+            "title": "Disabledchannels",
+            "type": "array"
+          },
           "email": {
             "anyOf": [
               {
@@ -3963,6 +4103,59 @@
               }
             ],
             "title": "Email"
+          },
+          "escalation": {
+            "$ref": "#/components/schemas/EscalationOut"
+          },
+          "matrix": {
+            "additionalProperties": {
+              "items": {
+                "enum": [
+                  "desktop",
+                  "email",
+                  "ntfy",
+                  "telegram",
+                  "webhook"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "enum": [
+                "critical",
+                "warning",
+                "info",
+                "ok"
+              ]
+            },
+            "title": "Matrix",
+            "type": "object"
+          },
+          "mutedCategories": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mutedcategories",
+            "type": "array"
+          },
+          "ntfyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntfyurl"
+          },
+          "quiet": {
+            "$ref": "#/components/schemas/QuietOut"
+          },
+          "soundCritical": {
+            "title": "Soundcritical",
+            "type": "boolean"
           },
           "subscriptions": {
             "items": {
@@ -3981,19 +4174,82 @@
               }
             ],
             "title": "Telegramchatid"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "webhookUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhookurl"
           }
         },
         "required": [
           "email",
           "telegramChatId",
+          "ntfyUrl",
+          "webhookUrl",
+          "matrix",
+          "disabledChannels",
+          "mutedCategories",
+          "timezone",
+          "quiet",
+          "escalation",
+          "digest",
+          "soundCritical",
+          "available",
           "subscriptions"
         ],
         "title": "NotificationPrefsOut",
         "type": "object"
       },
       "NotificationPrefsUpdate": {
-        "description": "Replace-all update of a user's own notification preferences. email /\ntelegram_chat_id are set verbatim (None clears them); the settings UI always\nsubmits the full current state.",
+        "description": "Replace-all update of a user's own notification preferences. email /\ntelegram_chat_id are set verbatim (None clears them); the settings UI always\nsubmits the full current state. A field of the channel settings (R-1080) that is\nnot sent keeps its stored value, so a caller that sends rules only keeps the\nmatrix; sent as null, a URL is cleared.",
         "properties": {
+          "digest": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "daily",
+                  "weekly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digest"
+          },
+          "disabled_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "desktop",
+                    "email",
+                    "ntfy",
+                    "telegram",
+                    "webhook"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Channels"
+          },
           "email": {
             "anyOf": [
               {
@@ -4004,6 +4260,97 @@
               }
             ],
             "title": "Email"
+          },
+          "escalation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EscalationInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "matrix": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "enum": [
+                      "desktop",
+                      "email",
+                      "ntfy",
+                      "telegram",
+                      "webhook"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "critical",
+                    "warning",
+                    "info",
+                    "ok"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix"
+          },
+          "muted_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muted Categories"
+          },
+          "ntfy_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ntfy Url"
+          },
+          "quiet": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sound_critical": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sound Critical"
           },
           "subscriptions": {
             "items": {
@@ -4022,6 +4369,29 @@
               }
             ],
             "title": "Telegram Chat Id"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "webhook_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Url"
           }
         },
         "required": [
@@ -4043,14 +4413,6 @@
               }
             ],
             "title": "Categories"
-          },
-          "channelEmail": {
-            "title": "Channelemail",
-            "type": "boolean"
-          },
-          "channelTelegram": {
-            "title": "Channeltelegram",
-            "type": "boolean"
           },
           "enabled": {
             "title": "Enabled",
@@ -4091,11 +4453,42 @@
           "scopeRef",
           "minSeverity",
           "categories",
-          "channelEmail",
-          "channelTelegram",
           "enabled"
         ],
         "title": "NotificationSubscriptionOut",
+        "type": "object"
+      },
+      "NotificationTestOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "NotificationTestOut",
+        "type": "object"
+      },
+      "NotificationTestRequest": {
+        "description": "A test message to the stored target of one channel; the desktop tests itself.",
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "ntfy",
+              "telegram",
+              "webhook"
+            ],
+            "title": "Channel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "NotificationTestRequest",
         "type": "object"
       },
       "PlaybookContentOut": {
@@ -4373,6 +4766,65 @@
           "createdAt"
         ],
         "title": "ProvisionTokenOut",
+        "type": "object"
+      },
+      "QuietInput": {
+        "description": "Quiet hours: from start to end in the person's zone, across midnight when end is\nearlier; critical lets critical pings through.",
+        "properties": {
+          "critical": {
+            "title": "Critical",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "end": {
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "start",
+          "end",
+          "critical"
+        ],
+        "title": "QuietInput",
+        "type": "object"
+      },
+      "QuietOut": {
+        "properties": {
+          "critical": {
+            "title": "Critical",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "start",
+          "end",
+          "critical"
+        ],
+        "title": "QuietOut",
         "type": "object"
       },
       "RdpOptions": {
@@ -4891,16 +5343,6 @@
               }
             ],
             "title": "Categories"
-          },
-          "channel_email": {
-            "default": false,
-            "title": "Channel Email",
-            "type": "boolean"
-          },
-          "channel_telegram": {
-            "default": false,
-            "title": "Channel Telegram",
-            "type": "boolean"
           },
           "enabled": {
             "default": true,
@@ -9675,7 +10117,7 @@
         ]
       },
       "put": {
-        "description": "Replace-all update: set contact data and rewrite the subscription set.",
+        "description": "Replace-all update: set contact data and rewrite the subscription set; the\nchannel settings keep a field that is not sent.",
         "operationId": "put_prefs_api_users_me_notification_prefs_put",
         "requestBody": {
           "content": {
@@ -9715,6 +10157,53 @@
           }
         ],
         "summary": "Put Prefs",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/users/me/notification-prefs/test": {
+      "post": {
+        "description": "Send a test message to the stored target of one channel, at once and without the\noutbox. 409 without a target or when the server cannot deliver the channel, 422 for\na target the SSRF guard blocks, 502 for a failed send, 429 for a second test of the\nchannel within ten seconds.",
+        "operationId": "test_channel_api_users_me_notification_prefs_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Channel",
         "tags": [
           "notifications"
         ]

@@ -79,6 +79,8 @@ def main() -> None:
         schedule_frps_supervisor_watch,
         schedule_hook_reconcile,
         schedule_notification_cleanup,
+        schedule_notification_digest,
+        schedule_notification_escalation,
         schedule_outbox_drain,
         schedule_provision_token_cleanup,
         scheduler,
@@ -92,6 +94,8 @@ def main() -> None:
     schedule_provision_token_cleanup()
     schedule_audit_cleanup()
     schedule_outbox_drain()
+    schedule_notification_digest()
+    schedule_notification_escalation()
     schedule_notification_cleanup()
     schedule_frps_supervisor_watch()
     schedule_hook_reconcile()

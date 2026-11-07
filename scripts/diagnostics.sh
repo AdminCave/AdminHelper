@@ -57,9 +57,9 @@ done
 # It is masked at word edges only (a short user like admin must not eat into
 # adminhelper), and like every value at every place (REDACT_AWK): a user that is a word
 # of another secret cannot cut that secret in two, and a secret inside the user cannot
-# cut the user.
+# cut the user. TELEGRAM_BOT_TOKEN sends as the bot of this installation (R-1080).
 SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD SERVER_DB_PASSWORD SCHEDULER_DB_PASSWORD MONITOR_DB_PASSWORD CA_DB_PASSWORD
-    MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER)
+    MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD SMTP_USER TELEGRAM_BOT_TOKEN)
 
 # The .env keys whose values name this installation: host names, addresses, networks
 # and mail addresses. Masked only with --mask-hosts — a wrong domain or SAN is a

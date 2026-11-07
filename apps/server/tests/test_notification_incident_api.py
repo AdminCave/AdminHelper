@@ -22,12 +22,13 @@ from app.modules.notifications.models import (
     Notification,
     NotificationIncident,
     NotificationIncidentEvent,
+    NotificationSettings,
 )
 from app.modules.notifications.schemas import IncomingEvent
 from tests.token_claims import claims_for
 
 from .test_notification_incidents import _admin, _at, _check, _heartbeat, _heartbeats
-from .test_notifications import _server, _sub, _user
+from .test_notifications import _channels, _server, _sub, _user
 
 API = "/api/notifications"
 
@@ -209,6 +210,22 @@ class TestDetail:
         ]
         assert (body["firstAt"], body["lastAt"]) == ("2026-11-05T08:00:00Z", "2026-11-05T08:03:00Z")
         assert body["row"]["incidentId"] == incident.id
+
+    def test_the_detail_names_every_channel_the_ping_went_to(
+        self, test_client, db_session, servers
+    ):
+        admin = _admin(db_session)
+        _channels(db_session, admin, "ntfy", "webhook")
+        settings = db_session.get(NotificationSettings, admin.id)
+        settings.ntfy_url = "https://ntfy.example/alerts"
+        settings.webhook_url = "https://hooks.example/in"
+        db_session.commit()
+        ingest(db_session, _check("critical"), now=_at(0))
+        (incident,) = _incidents(db_session)
+
+        res = test_client.get(f"{API}/incidents/{incident.id}", headers=_auth(admin))
+        assert res.status_code == 200, res.text
+        assert res.json()["channels"] == ["bell", "email", "ntfy", "webhook"]
 
     def test_a_reader_sees_only_their_servers_of_a_bundle(
         self, test_client, db_session, servers, reader

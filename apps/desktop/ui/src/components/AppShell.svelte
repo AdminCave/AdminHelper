@@ -77,6 +77,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/stores/notifications';
   import { notifyOs } from '$lib/osNotify';
   import { allows } from '$lib/stores/dnd';
+  import { desktopWants, soundCritical } from '$lib/stores/notifyPrefs';
+  import { playCriticalTone } from '$lib/sound';
   import type { NotificationItem } from '$lib/api/types';
 
   interface NavItem {
@@ -219,14 +221,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   // New feed entries become toasts and, while the user opted in, OS notifications; do not
-  // disturb holds both back for this window, a critical entry always comes through (R-1078).
+  // disturb and the quiet hours hold both back for this window, a critical entry comes through
+  // while the person lets it pass (R-1078, R-1081). The person's channel settings decide before
+  // that whether the desktop gets it (R-1080). The tone follows a shown critical toast.
   const NOTICE_TONE: Record<NotificationItem['severity'], ToastTone> = {
     info: 'info',
     warning: 'warning',
     critical: 'danger',
   };
   function onNewNotifications(items: NotificationItem[], os: boolean): void {
-    const shown = items.filter((n) => allows(n.severity));
+    const shown = items.filter((n) => desktopWants(n) && allows(n.severity));
     for (const n of shown) {
       showNotice({
         title: n.title,
@@ -237,6 +241,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       });
     }
     if (os && shown.length) void notifyOs(shown);
+    if (soundCritical() && shown.some((n) => n.severity === 'critical')) playCriticalTone();
   }
   $effect(() => {
     const os = !!$settings?.osNotifications;

@@ -8,11 +8,16 @@ through the notification hub, at most LIMIT per run, and the system job that run
 from __future__ import annotations
 
 import datetime
+import json
 
 from app.modules.enrollment import expiry
 from app.modules.enrollment.models import InfraCertificate, IssuedCertificate
 from app.modules.hooks import scheduler as sched
-from app.modules.notifications.models import Notification, NotificationOutbox
+from app.modules.notifications.models import (
+    Notification,
+    NotificationOutbox,
+    NotificationSettings,
+)
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
 from tests.test_certificate_expiry import DAY, NOW, _agent_line, _infra
@@ -102,11 +107,10 @@ def test_an_expired_certificate_says_so(db_session, admin_user):
     assert (row.severity, row.title) == ("critical", "Certificate frps has expired")
 
 
-def test_only_admins_get_it_and_email_follows_their_subscription(
-    db_session, admin_user, normal_user
-):
-    sub = _admin_bell(db_session, admin_user)
-    sub.channel_email = True
+def test_only_admins_get_it_and_email_follows_their_matrix(db_session, admin_user, normal_user):
+    _admin_bell(db_session, admin_user)
+    rows = {row: ["desktop", "email"] for row in ("critical", "warning", "info", "ok")}
+    db_session.add(NotificationSettings(user_id=admin_user.id, matrix=json.dumps(rows)))
     admin_user.email = "admin@example.org"
     viewer_sub = default_admin_subscription(normal_user.id)
     db_session.add(viewer_sub)

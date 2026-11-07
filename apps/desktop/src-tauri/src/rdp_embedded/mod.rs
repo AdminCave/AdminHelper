@@ -8,6 +8,8 @@
 //! password does and hands it to a session thread (`session`). The webview hears the phases as
 //! `rdp-session` events and takes the picture from the session's WebSocket (`frame_ws`).
 
+#[cfg(windows)]
+mod clipboard_win;
 pub(crate) mod frame_ws;
 #[cfg(test)]
 mod license_gate;
@@ -16,13 +18,13 @@ pub(crate) mod tofu;
 pub(crate) mod watchdog;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use ironrdp_client::config::Destination;
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tokio::sync::oneshot;
 use zeroize::Zeroizing;
 
@@ -188,6 +190,75 @@ fn prepare(
         domain: domain.map(str::to_string),
         password: Zeroizing::new(password),
         policy,
+        audio: listed
+            .options
+            .as_ref()
+            .and_then(|options| options.rdp.as_ref())
+            .and_then(|rdp| rdp.audio),
+        drive: None,
+    })
+}
+
+/// The folders a shared drive must not reach.
+#[derive(Default)]
+struct Kept {
+    /// Neither it nor a folder above it: XDG_DOWNLOAD_DIR may name the home folder itself.
+    home: Option<PathBuf>,
+    /// Neither these, a folder above nor one below them (app data, configuration).
+    private: Vec<PathBuf>,
+}
+
+/// The folder `listed` shares as its drive: the user's `downloads` folder when its options ask
+/// for drives (`options.rdp.drives`), else none. A folder that cannot be shared is the reason the
+/// session goes without one; so is a root and a folder that reaches one of the `kept`.
+fn shared_drive(
+    listed: &Connection,
+    downloads: Option<PathBuf>,
+    kept: &Kept,
+) -> Result<Option<PathBuf>, String> {
+    let wanted = listed
+        .options
+        .as_ref()
+        .and_then(|options| options.rdp.as_ref())
+        .and_then(|rdp| rdp.drives)
+        .unwrap_or(false);
+    if !wanted {
+        return Ok(None);
+    }
+    let folder = downloads.ok_or("there is no Downloads folder")?;
+    let folder = folder
+        .canonicalize()
+        .map_err(|error| format!("the Downloads folder cannot be resolved: {error}"))?;
+    if folder.parent().is_none() {
+        return Err("the Downloads folder is a root".into());
+    }
+    let resolved = |paths: &mut dyn Iterator<Item = &PathBuf>| -> Vec<PathBuf> {
+        paths.filter_map(|path| path.canonicalize().ok()).collect()
+    };
+    let private = resolved(&mut kept.private.iter());
+    if resolved(&mut kept.home.iter().chain(&kept.private))
+        .iter()
+        .any(|kept| kept.starts_with(&folder))
+        || private.iter().any(|kept| folder.starts_with(kept))
+    {
+        return Err(
+            "the Downloads folder reaches the home, app data or configuration folder".into(),
+        );
+    }
+    #[cfg(windows)]
+    let folder = without_verbatim(&folder.to_string_lossy()).map_or(folder, PathBuf::from);
+    session::rdpdr_factory(&folder)?;
+    Ok(Some(folder))
+}
+
+/// `path` without the `\\?\` prefix `canonicalize` gives on Windows, which IronRDP's
+/// `RedirectedDrive` refuses (f96f664); `None` for a path without one.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn without_verbatim(path: &str) -> Option<String> {
+    let rest = path.strip_prefix(r"\\?\")?;
+    Some(match rest.strip_prefix(r"UNC\") {
+        Some(share) => format!(r"\\{share}"),
+        None => rest.to_string(),
     })
 }
 
@@ -197,6 +268,9 @@ pub(crate) struct Started {
     session_id: String,
     ws_port: u16,
     token: String,
+    /// `drive_unavailable`: the options ask for a drive, the session shares none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notice: Option<&'static str>,
 }
 
 /// Starts an embedded session to `connection` as the webview lists it; the call returns once the
@@ -233,16 +307,34 @@ pub(crate) async fn rdp_session_start(
     let started = run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
-        let target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
+        let mut target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
+        let kept = Kept {
+            home: app.path().home_dir().ok(),
+            private: [app.path().app_data_dir(), app.path().config_dir()]
+                .into_iter()
+                .filter_map(Result::ok)
+                .collect(),
+        };
+        let notice = match shared_drive(&connection, app.path().download_dir().ok(), &kept) {
+            Ok(drive) => {
+                target.drive = drive;
+                None
+            }
+            Err(reason) => {
+                log::warn!("the RDP session shares no drive: {reason}");
+                Some("drive_unavailable")
+            }
+        };
         deadline.start()?;
-        session::spawn(target, stopped, report)
+        session::spawn(target, stopped, report).map(|(ws_port, token)| (ws_port, token, notice))
     })
     .await;
     match started {
-        Ok((ws_port, token)) => Ok(Started {
+        Ok((ws_port, token, notice)) => Ok(Started {
             session_id,
             ws_port,
             token,
+            notice,
         }),
         Err(error) => {
             sessions.stop(&session_id);
@@ -265,6 +357,7 @@ mod tests {
 
     use super::tofu::{CertPolicy, CertProblem};
     use super::*;
+    use crate::models::{ConnectionOptions, RdpAudio, RdpConnectionOptions};
     use crate::password::save_password_keyring;
     use crate::port_registry::PortRegistry;
     use crate::workspace::{EnteredWorkspace, Workspace, WorkspaceId};
@@ -440,6 +533,152 @@ mod tests {
                 pin: Some("ab".repeat(32)),
                 endpoint: "192.0.2.10:3390".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn start_takes_the_audio_of_the_connection_options() {
+        let scratch = Scratch::new("audio");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let mut listed = rdp("192.0.2.10", None);
+        save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        assert_eq!(target.audio, None);
+        listed.options = Some(ConnectionOptions {
+            ssh: None,
+            rdp: Some(RdpConnectionOptions {
+                audio: Some(RdpAudio::Off),
+                ..Default::default()
+            }),
+        });
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        assert_eq!(target.audio, Some(RdpAudio::Off));
+    }
+
+    fn with_drives(drives: Option<bool>) -> Connection {
+        let mut listed = rdp("192.0.2.10", None);
+        listed.options = Some(ConnectionOptions {
+            ssh: None,
+            rdp: Some(RdpConnectionOptions {
+                drives,
+                ..Default::default()
+            }),
+        });
+        listed
+    }
+
+    #[test]
+    fn start_shares_the_downloads_folder_only_when_the_options_ask() {
+        let scratch = Scratch::new("drive");
+        let downloads = Some(scratch.0.clone());
+        for listed in [
+            rdp("192.0.2.10", None),
+            with_drives(None),
+            with_drives(Some(false)),
+        ] {
+            assert_eq!(
+                shared_drive(&listed, downloads.clone(), &Kept::default()),
+                Ok(None)
+            );
+        }
+        assert_eq!(
+            shared_drive(&with_drives(Some(true)), downloads, &Kept::default()),
+            Ok(Some(shared(&scratch.0)))
+        );
+    }
+
+    #[test]
+    fn start_names_why_it_shares_no_drive() {
+        let wanted = with_drives(Some(true));
+        let reason = shared_drive(&wanted, None, &Kept::default()).unwrap_err();
+        assert_eq!(reason, "there is no Downloads folder");
+        let scratch = Scratch::new("drive-gone");
+        let gone = scratch.0.join("Downloads");
+        assert!(shared_drive(&wanted, Some(gone), &Kept::default()).is_err());
+    }
+
+    #[test]
+    fn start_shares_no_folder_that_is_or_holds_a_kept_one() {
+        let wanted = with_drives(Some(true));
+        let scratch = Scratch::new("drive-kept");
+        let home = scratch.0.join("home");
+        let app_data = home.join(".local").join("share").join("adminhelper");
+        let downloads = home.join("Downloads");
+        std::fs::create_dir_all(&app_data).unwrap();
+        std::fs::create_dir_all(&downloads).unwrap();
+        let below = app_data.join("workspaces");
+        std::fs::create_dir_all(&below).unwrap();
+        let kept = Kept {
+            home: Some(home.clone()),
+            private: vec![app_data.clone()],
+        };
+        for refused in [
+            home.clone(),
+            home.join("."),
+            downloads.join(".."),
+            home.join(".local"),
+            app_data.clone(),
+            below,
+            scratch.0.clone(),
+        ] {
+            assert!(
+                shared_drive(&wanted, Some(refused.clone()), &kept).is_err(),
+                "shared {refused:?}"
+            );
+        }
+        let root = std::path::Path::new(&std::path::MAIN_SEPARATOR.to_string())
+            .canonicalize()
+            .unwrap();
+        assert_eq!(
+            shared_drive(&wanted, Some(root), &Kept::default()),
+            Err("the Downloads folder is a root".into())
+        );
+        assert_eq!(
+            shared_drive(&wanted, Some(downloads.clone()), &kept),
+            Ok(Some(shared(&downloads)))
+        );
+    }
+
+    /// The path `shared_drive` gives for `folder`: resolved, on Windows without `\\?\`.
+    fn shared(folder: &std::path::Path) -> PathBuf {
+        let folder = folder.canonicalize().unwrap();
+        if cfg!(windows) {
+            without_verbatim(&folder.to_string_lossy()).map_or(folder, PathBuf::from)
+        } else {
+            folder
+        }
+    }
+
+    #[test]
+    fn a_shared_folder_goes_without_the_verbatim_prefix() {
+        assert_eq!(
+            without_verbatim(r"\\?\C:\Users\a\Downloads").as_deref(),
+            Some(r"C:\Users\a\Downloads")
+        );
+        assert_eq!(
+            without_verbatim(r"\\?\UNC\server\share\Downloads").as_deref(),
+            Some(r"\\server\share\Downloads")
+        );
+        assert_eq!(without_verbatim("/home/a/Downloads"), None);
+        assert_eq!(without_verbatim(r"C:\Users"), None);
+    }
+
+    #[test]
+    fn the_start_names_a_missing_drive_only() {
+        let started = |notice| {
+            serde_json::to_value(Started {
+                session_id: "rdp-1".into(),
+                ws_port: 1,
+                token: "t".into(),
+                notice,
+            })
+            .unwrap()
+        };
+        assert!(started(None).get("notice").is_none());
+        assert_eq!(
+            started(Some("drive_unavailable"))["notice"],
+            "drive_unavailable"
         );
     }
 

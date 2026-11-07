@@ -12,6 +12,7 @@ around it: a hung resolver must neither park the caller for the OS default nor,
 since R-0042, park *every other* caller with it.
 """
 
+import ipaddress
 import logging
 import socket
 import threading
@@ -269,3 +270,133 @@ def test_a_malformed_ipv6_literal_is_rejected_not_raised(url):
     # urlparse raises ValueError on these (R-0181); the guard answers with a verdict.
     assert ssrf_mod.classify_url(url) is ssrf_mod.UrlVerdict.PRIVATE
     assert ssrf_mod.is_private_url(url) is True
+
+
+def _resolving_to(monkeypatch, address: str) -> None:
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    answer = [(family, socket.SOCK_STREAM, 6, "", (address, 0))]
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: answer)
+
+
+# R-1080: allow_networks opens the private networks the operator named for targets chosen
+# on purpose, and nothing else. Documentation addresses stand in for public ones where the
+# range matters; the real public answer is the one from _PUBLIC_ADDRINFO.
+_NET = ipaddress.ip_network
+_EVERY_PRIVATE = tuple(
+    _NET(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+)
+# Every address there is, so the hard block shows it does not depend on what the list holds.
+_EVERYTHING = (_NET("0.0.0.0/0"), _NET("::/0"))
+
+
+@pytest.mark.parametrize(
+    ("address", "network"),
+    [
+        ("10.1.2.3", "10.1.0.0/16"),
+        ("172.16.0.1", "172.16.0.0/12"),
+        ("192.168.1.10", "192.168.1.0/24"),
+        ("100.64.0.1", "100.64.0.0/10"),  # CGNAT
+        ("100.127.255.254", "100.64.0.0/10"),
+        ("fc00::1", "fc00::/7"),
+        ("fd12:3456::1", "fd12:3456::/32"),
+        ("::ffff:192.168.1.10", "192.168.1.0/24"),  # IPv4-mapped, matched as IPv4
+    ],
+)
+def test_a_private_address_passes_only_inside_a_listed_network(monkeypatch, address, network):
+    _resolving_to(monkeypatch, address)
+    url = "http://lan-target.example/"
+    assert ssrf_mod.check_target(url).verdict is ssrf_mod.UrlVerdict.PRIVATE
+    allowed = ssrf_mod.check_target(url, allow_networks=(_NET(network),))
+    assert allowed.verdict is ssrf_mod.UrlVerdict.ALLOWED
+    assert allowed.addresses == (address.removeprefix("::ffff:"),)
+
+
+@pytest.mark.parametrize(
+    ("address", "networks"),
+    [
+        ("192.168.2.10", ("192.168.1.0/24",)),  # the neighbouring network
+        ("172.18.0.5", ("192.168.0.0/16", "10.0.0.0/8")),
+        ("10.0.0.1", ("100.64.0.0/10",)),
+        ("100.64.0.1", ("10.0.0.0/8",)),
+        ("fd12:3456::1", ("fd99::/16",)),
+        ("::ffff:10.0.0.1", ("::ffff:0:0/96",)),  # the mapped form is matched as IPv4
+    ],
+)
+def test_a_private_address_outside_the_listed_networks_stays_blocked(
+    monkeypatch, address, networks
+):
+    _resolving_to(monkeypatch, address)
+    target = ssrf_mod.check_target(
+        "http://lan-target.example/", allow_networks=tuple(_NET(n) for n in networks)
+    )
+    assert target.verdict is ssrf_mod.UrlVerdict.PRIVATE
+    assert target.addresses == ()
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "127.0.0.1",
+        "127.8.9.10",
+        "::1",
+        "169.254.169.254",  # cloud metadata
+        "169.254.0.1",
+        "fe80::1",
+        "fd00:ec2::254",  # cloud metadata over IPv6
+        "fd00:ec2::23",
+        "fd20:ce::254",
+        "100.100.100.200",  # cloud metadata inside CGNAT
+        "0.0.0.0",
+        "0.1.2.3",
+        "::",
+        "224.0.0.1",
+        "ff02::1",
+        "240.0.0.1",
+        "255.255.255.255",
+        "::ffff:127.0.0.1",
+        "::ffff:169.254.169.254",
+        "::7f00:1",  # IPv4-compatible 127.0.0.1
+        "64:ff9b::7f00:1",  # NAT64 around 127.0.0.1
+        "64:ff9b::a9fe:a9fe",  # NAT64 around 169.254.169.254
+        "2002:a9fe:a9fe::1",  # 6to4 around 169.254.169.254
+        "2002:7f00:1::1",  # 6to4 around 127.0.0.1
+        "2001:0:4136:e378:8000:63bf:80ff:fffe",  # Teredo around 127.0.0.1
+    ],
+)
+def test_an_always_blocked_address_stays_blocked_whatever_the_list_holds(monkeypatch, address):
+    _resolving_to(monkeypatch, address)
+    url = "http://lan-target.example/"
+    for networks in ((), _EVERY_PRIVATE, _EVERYTHING):
+        target = ssrf_mod.check_target(url, allow_networks=networks)
+        assert target.verdict is ssrf_mod.UrlVerdict.PRIVATE, networks
+        assert target.addresses == ()
+
+
+def test_a_public_address_passes_whatever_the_list_holds(monkeypatch):
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: _PUBLIC_ADDRINFO)
+    for networks in ((), _EVERY_PRIVATE):
+        target = ssrf_mod.check_target("http://public.example/", allow_networks=networks)
+        assert target.verdict is ssrf_mod.UrlVerdict.ALLOWED
+        assert target.addresses == ("93.184.216.34",)
+
+
+def test_one_blocked_address_among_listed_ones_rejects_the_host(monkeypatch):
+    answer = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", 0)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0)),
+    ]
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: answer)
+    target = ssrf_mod.check_target("http://split.example/", allow_networks=_EVERYTHING)
+    assert target.verdict is ssrf_mod.UrlVerdict.PRIVATE
+
+
+def test_one_unlisted_private_address_rejects_the_host(monkeypatch):
+    answer = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", 0)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("172.18.0.5", 0)),
+    ]
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: answer)
+    target = ssrf_mod.check_target(
+        "http://split.example/", allow_networks=(_NET("192.168.1.0/24"),)
+    )
+    assert target.verdict is ssrf_mod.UrlVerdict.PRIVATE

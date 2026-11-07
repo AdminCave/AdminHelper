@@ -110,8 +110,23 @@
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Delivery attempts per e-mail with linear backoff, then "failed" (default 5).</td></tr>
             </tbody>
           </table>
-          <p>Who receives which e-mails is controlled by each user via their notification rules (see <a href="./monitoring.html">Monitoring → Personal notifications</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
+          <p>Who receives which e-mails is controlled by each user via their notification rules and their matrix (see <a href="./monitoring.html#channels">Monitoring → Channels and matrix</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
           <p>The e-mail channel of the alert rules in monitoring uses the <code>SMTP_*</code> variables as well (see <a href="./monitoring.html">Monitoring → Notifications &amp; alerting</a>); a rule can set its own relay with its own credentials there.</p>
+
+          <h3 id="notify-channels">Channels ntfy, Telegram and webhook</h3>
+          <p>Besides e-mail the notification hub delivers via ntfy, Telegram and webhooks; each person sets their own targets. Operation needs two variables in the <code>.env</code> (Compose passes them to <code>server</code> and <code>scheduler</code>):</p>
+          <table>
+            <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Token of a Telegram bot of your own (from <code>@BotFather</code>). Empty = no Telegram delivery: the settings show the channel as not set up, and no new Telegram entry is queued; entries already waiting stay until a token is set. The token is a secret: <code>scripts/diagnostics.sh</code> redacts it.</td></tr>
+              <tr><td><code>NOTIFY_PRIVATE_TARGETS</code></td><td>Comma-separated CIDR list of private networks ntfy and webhook targets may be in, e.g. <code>192.168.1.0/24,100.64.0.0/10</code>. Empty (default) = no private target. An invalid entry, also one with host bits set such as <code>192.168.1.5/16</code>, stops the start.</td></tr>
+            </tbody>
+          </table>
+          <p>ntfy and webhook check the target on <em>every</em> delivery against the resolved address and follow no redirect. Blocked are private networks (RFC 1918, <code>fc00::/7</code>, CGNAT <code>100.64.0.0/10</code>, e.g. for Tailscale) and the other private ranges, unless a network from <code>NOTIFY_PRIVATE_TARGETS</code> holds the address. Always blocked, even when a listed network holds them, are loopback, link-local (among them the metadata address <code>169.254.169.254</code>), the other cloud metadata addresses, unspecified, multicast and reserved addresses. A blocked target fails at once, with no further attempt; the test button reports it as <code>&lt;channel&gt;: target address not allowed</code>.</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Name exactly the network of the targets</div><p>Do not open the whole private block (<code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>): the containers' Docker networks are usually inside it, and anyone with an account could then reach the services next to the server. When a listed network holds an address of the server itself, the start logs a warning.</p></div>
+          </div>
 
           <h3 id="smtp-ca">Relay with its own CA</h3>
           <p>If the relay presents a certificate the containers do not trust (self-signed or issued by a company CA), put the CA as the PEM file <code>smtp-ca.pem</code> next to <code>docker-compose.yml</code> in the install directory and mount it, with a <code>docker-compose.override.yml</code> next to it, into the services <code>server</code>, <code>scheduler</code> and <code>monitoring</code>, which Compose also gives the other <code>SMTP_*</code> variables; add these entries to an existing <code>docker-compose.override.yml</code> (for instance one with <code>FRPS_DASHBOARD_URL</code>, see <a href="./frp-tunnel.html">FRP Tunnel</a>) instead of replacing it:</p>

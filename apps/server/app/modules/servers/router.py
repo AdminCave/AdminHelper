@@ -30,9 +30,17 @@ from app.modules.servers.schemas import (
     ServerOut,
     ServerSummary,
     ServerUpdate,
+    reject_windows_unsafe_server_name,
 )
 
 logger = logging.getLogger("adminhelper.servers")
+
+
+def _check_new_name(name: str) -> None:
+    try:
+        reject_windows_unsafe_server_name(name)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"name {e}") from None
 
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
@@ -117,6 +125,7 @@ def create_server(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    _check_new_name(data.name)
     server = Server(
         id=str(uuid.uuid4()),
         name=data.name,
@@ -173,6 +182,9 @@ def update_server(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server nicht gefunden")
 
     sent = data.model_fields_set
+    # Only a new name: one stored before the rule stays valid when an edit sends it back.
+    if "name" in sent and data.name is not None and data.name != server.name:
+        _check_new_name(data.name)
     for field in ["name", "hostname", "os_type", "notes"]:
         if field in sent:
             setattr(server, field, getattr(data, field))

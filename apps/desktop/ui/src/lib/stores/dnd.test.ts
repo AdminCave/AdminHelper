@@ -2,12 +2,18 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// R-1078 do not disturb: the three durations, critical always through, the end by timer with no
-// stale timer left, and the stored point per workspace.
+// R-1078 do not disturb: the three durations, critical through, the end by timer with no
+// stale timer left, and the stored point per workspace. R-1081: the person's quiet hours hold
+// back like it, and critical passes both only while the person lets it.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const h = vi.hoisted(() => ({ context: null as unknown }));
+const h = vi.hoisted(() => ({ context: null as unknown, passes: true, quiet: false }));
+
+vi.mock('./notifyPrefs', () => ({
+  criticalPasses: () => h.passes,
+  inQuiet: () => h.quiet,
+}));
 
 vi.mock('./workspace', async () => {
   const { writable } = await import('svelte/store');
@@ -28,6 +34,8 @@ describe('do not disturb', () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     localStorage.clear();
+    h.passes = true;
+    h.quiet = false;
     ctx().set(workspace('ws-a'));
     endDnd();
   });
@@ -110,5 +118,24 @@ describe('do not disturb', () => {
     startDnd('1h');
     expect(allows('info', NOW.getTime() + 3_600_000)).toBe(true);
     expect(allows('info', NOW.getTime() + 3_599_999)).toBe(false);
+  });
+
+  it('critical waits for the end too once the person does not let it pass', () => {
+    h.passes = false;
+    expect(allows('critical')).toBe(true);
+    startDnd('1h');
+    expect(allows('critical')).toBe(false);
+    expect(allows('critical', NOW.getTime() + 3_600_000)).toBe(true);
+  });
+
+  it('the quiet hours hold back like do not disturb, critical only without the pass', () => {
+    h.quiet = true;
+    expect(allows('info')).toBe(false);
+    expect(allows('warning')).toBe(false);
+    expect(allows('critical')).toBe(true);
+    h.passes = false;
+    expect(allows('critical')).toBe(false);
+    h.quiet = false;
+    expect(allows('critical')).toBe(true);
   });
 });

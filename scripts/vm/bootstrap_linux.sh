@@ -116,7 +116,7 @@ $SUDO apt-get install -y --no-install-recommends --no-upgrade \
   ca-certificates curl git rsync openssl gnupg jq unzip build-essential pkg-config \
   python3 python3-pip python3-venv shellcheck \
   libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
-  libayatana-appindicator3-dev libssl-dev patchelf file \
+  libayatana-appindicator3-dev libssl-dev libasound2-dev cmake patchelf file \
   xvfb webkit2gtk-driver at-spi2-core dbus-x11 gnome-keyring \
   minisign dpkg-dev apt-utils createrepo-c rpm locales \
   xterm freerdp2-x11 qemu-guest-agent
