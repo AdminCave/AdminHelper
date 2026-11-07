@@ -21,7 +21,8 @@ Kevin hat am 2026-11-07 entschieden (Notiz an R-1080):
 - Kanal-Ziele gelten **je Person**, wie E-Mail und Chat-ID heute.
 - Der Telegram-Bot-Token kommt aus der Env-Variable `TELEGRAM_BOT_TOKEN`.
 - ntfy- und Webhook-Ziele sind gesperrt wie der Monitoring-Webhook: privat, Loopback, Link-Local, Metadaten, keine
-  Redirects. `NOTIFY_ALLOW_PRIVATE_TARGETS=true` gibt private Ziele frei; Loopback und Metadaten bleiben gesperrt.
+  Redirects. `NOTIFY_PRIVATE_TARGETS=192.168.1.0/24,100.64.0.0/10` gibt genau die genannten privaten Netze frei
+  (Kevin 2026-11-07, statt eines Schalters für alle privaten Netze); Loopback und Metadaten bleiben gesperrt.
 - Die Matrix Schweregrad × Kanal je Person ersetzt `channel_email`/`channel_telegram` der Abos. Eine Datenmigration
   übernimmt die Häkchen (Kanal an für Schweregrade ≥ `min_severity`); die API-Felder fallen weg.
 
@@ -60,8 +61,8 @@ Kevin hat am 2026-11-07 entschieden (Notiz an R-1080):
 - `app/modules/notifications/incidents.py`: `_queue` (Zeile 487) wählt die Kanäle aus Matrix, Schaltern,
   ausgeschalteten Kategorien und den gespeicherten Zielen, nach dem Schweregrad des Pings (`ok` für die Entwarnung).
 - `app/modules/notifications/outbox.py` und `sender.py`: Versand für `ntfy`, `telegram`, `webhook`.
-- `app/core/ssrf.py`: `check_target(url, *, allow_private=False)`; dieselbe Änderung in `apps/monitoring/app/core/ssrf.py`, weil `tests/test_ssrf_parity.py` beide Kopien gleich verlangt (das Monitoring ruft ohne das Argument, sein Verhalten bleibt).
-- `app/core/config.py`: `TELEGRAM_BOT_TOKEN`, `NOTIFY_ALLOW_PRIVATE_TARGETS`.
+- `app/core/ssrf.py`: `check_target(url, *, allow_networks=())`; dieselbe Änderung in `apps/monitoring/app/core/ssrf.py`, weil `tests/test_ssrf_parity.py` beide Kopien gleich verlangt (das Monitoring ruft ohne das Argument, sein Verhalten bleibt).
+- `app/core/config.py`: `TELEGRAM_BOT_TOKEN`, `NOTIFY_PRIVATE_TARGETS` (kommagetrennte CIDR-Liste; eine ungültige Angabe bricht den Start ab).
 - `app/modules/notifications/schemas.py` und `router.py`:
   - Prefs-API neu (`NotificationPrefsUpdate` Zeile 147, `SubscriptionInput` Zeile 124, `_prefs_response` Zeile 350).
   - `IncidentDetailOut.channels` (Zeile 241) um `ntfy`, `webhook` erweitert.
@@ -153,10 +154,12 @@ Server der Glocke. Das folgt aus „Matrix ersetzt Häkchen“; die Migration bi
 - **Webhook:** `POST` JSON `{"title", "body", "severity", "category", "sent_at"}` an die gespeicherte URL, ohne
   Signatur.
 - **Allgemein für ntfy und Webhook:**
-  - Jeder Versand geht durch `check_target(url, allow_private=NOTIFY_ALLOW_PRIVATE_TARGETS)` und `pinned_client`,
+  - Jeder Versand geht durch `check_target(url, allow_networks=NOTIFY_PRIVATE_TARGETS)` und `pinned_client`,
     ohne Redirects.
-  - Mit Opt-in sind private Adressen und `100.64.0.0/10` (CGNAT, etwa Tailscale) erlaubt. Loopback, Link-Local
-    (Metadaten `169.254.169.254`), unspezifiziert, Multicast, reserviert und `0.0.0.0/8` bleiben gesperrt.
+  - Eine private Adresse (RFC 1918, `fc00::/7`, `100.64.0.0/10` CGNAT, etwa Tailscale) ist nur erlaubt, wenn ein
+    Netz aus `NOTIFY_PRIVATE_TARGETS` sie enthält. Loopback, Link-Local (Metadaten `169.254.169.254`), die übrigen
+    Metadaten-Adressen der Clouds, unspezifiziert, Multicast, reserviert und `0.0.0.0/8` bleiben gesperrt, auch
+    wenn ein genanntes Netz sie enthält.
 - Ein Status außer 2xx und jeder Netzfehler ist ein Fehlversuch mit Backoff wie bei E-Mail.
 - Ein gesperrtes Ziel ist sofort `failed`: Ein neuer Versuch ändert daran nichts.
 - **Log-Regel:** Logs und `last_error` nennen nie URL, Chat-ID oder Token, nur Kanal, Ausnahmetyp und HTTP-Status.
@@ -225,7 +228,7 @@ Der Agent ist nicht betroffen, das Monitoring nur durch die gespiegelte `ssrf.py
 - **Bedienung:** `docs/admin/monitoring.html` und `docs/en/admin/monitoring.html`, Abschnitt Persönliche
   Benachrichtigungen: Kanäle, Matrix, Kategorien, Test.
 - **Betrieb:** `docs/admin/betrieb.html` und `docs/en/admin/operations.html`: `TELEGRAM_BOT_TOKEN` und
-  `NOTIFY_ALLOW_PRIVATE_TARGETS` neben SMTP.
+  `NOTIFY_PRIVATE_TARGETS` neben SMTP.
 - **Entwickler:** `docs/developer/server.html` DE+EN (Tabellen `notification_settings`, Outbox-Kanäle) und
   `docs/developer/api-reference.html` DE+EN (Prefs-API und Test-Route).
 - **Weiteres:** `.env.example` und `changelog.d/kern-notify-2.md`.
