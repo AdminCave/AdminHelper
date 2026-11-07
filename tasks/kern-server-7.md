@@ -1,5 +1,5 @@
 # Servernamen ohne ':' und ohne Windows-Gerätenamen — Task-Ledger
-Status: erledigt · Branch: feature/kern-server-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-server-7 · Review: am Ende
 Spec: docs/features/kern-server-7.md (Roadmap R-1056)
 Heavy: linux-full — Server-API (zusätzliche 422 in POST/PUT /api/servers), geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,3 +32,11 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_schemas
 Doku: docs/developer/api-reference.html DE+EN
 Task-Review: am Ende
 Abhängt von: T2
+
+### T4 — Doku: Gerätenamen-Bereiche ohne Env-Fehlalarm des Doku-Smoke-Tests (R-1056, PR-CI)  [ ]
+Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Änderung: Eintrag `POST /api/servers` DE+EN schreibt die Bereiche als `<code>COM1&ndash;COM9</code>` und `<code>LPT1&ndash;LPT9</code>`: `doc-smoke.py --env --strict` (CI-Job „Ops scripts“) las das einzeln gesetzte `LPT9` als undokumentierte Env-Variable.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_schemas.py
+Doku: docs/developer/api-reference.html DE+EN
+Task-Review: am Ende
+Abhängt von: T3
