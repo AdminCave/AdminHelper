@@ -330,8 +330,10 @@ def test_bootstrap_admin_gets_default_subscription(test_client, db_session, fres
     )
     assert (sub.scope_type, sub.min_severity) == ("all", "warning")
     assert sub.enabled is True
-    assert sub.channel_email is False
-    assert sub.channel_telegram is False
+    # No channel settings: the default matrix, the desktop only (R-1080).
+    from app.modules.notifications.models import NotificationSettings
+
+    assert db_session.get(NotificationSettings, user.id) is None
 
 
 def test_env_admin_gets_default_subscription(db_session, monkeypatch):

@@ -147,6 +147,25 @@ const MAPPINGS: Mapping[] = [
     schema: 'NotificationPrefsOut',
     direction: 'response',
   },
+  {
+    ts: 'NotificationAvailableChannels',
+    snapshot: 'server',
+    schema: 'AvailableChannelsOut',
+    direction: 'response',
+  },
+  { ts: 'NotificationQuiet', snapshot: 'server', schema: 'QuietOut', direction: 'response' },
+  {
+    ts: 'NotificationEscalation',
+    snapshot: 'server',
+    schema: 'EscalationOut',
+    direction: 'response',
+  },
+  {
+    ts: 'NotificationTestResult',
+    snapshot: 'server',
+    schema: 'NotificationTestOut',
+    direction: 'response',
+  },
   { ts: 'ServerInput', snapshot: 'server', schema: 'ServerCreate', direction: 'request' },
   { ts: 'PlaybookInput', snapshot: 'server', schema: 'PlaybookCreate', direction: 'request' },
   { ts: 'FrpTunnelInput', snapshot: 'server', schema: 'FrpTunnelCreate', direction: 'request' },
@@ -527,7 +546,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(50);
+    expect(MAPPINGS.length).toBe(54);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);

@@ -723,7 +723,7 @@ export interface IncidentDetail {
   servers: IncidentServer[];
   // null: the sender reports no rules (only the monitoring service does).
   rules: IncidentRule[] | null;
-  channels: ('bell' | 'email' | 'telegram')[];
+  channels: ('bell' | 'email' | 'ntfy' | 'telegram' | 'webhook')[];
   history: IncidentEntry[];
   // The reader sees every server of it: acknowledge, resolve, reopen, note.
   canAct: boolean;
@@ -741,7 +741,8 @@ export interface NotificationServerMute {
   until: string;
 }
 
-// One per-user subscription rule (mirrors NotificationSubscription.to_dict()).
+// One per-user subscription rule (mirrors NotificationSubscription.to_dict()). It decides what
+// reaches the bell; which channels a ping goes to is the matrix of NotificationPrefs (R-1080).
 export interface NotificationSubscription {
   id: number;
   userId: number;
@@ -749,14 +750,54 @@ export interface NotificationSubscription {
   scopeRef?: string | null;
   minSeverity: NotificationSeverity;
   categories?: string | null; // JSON array string, or null = every category
-  channelEmail: boolean;
-  channelTelegram: boolean;
   enabled: boolean;
 }
 
+export type NotificationChannel = 'desktop' | 'email' | 'ntfy' | 'telegram' | 'webhook';
+// The row of the matrix: the severity of the ping, ok for the all-clear.
+export type NotificationMatrixRow = NotificationSeverity | 'ok';
+export type NotificationMatrix = Record<NotificationMatrixRow, NotificationChannel[]>;
+
+// Which channels the server can deliver (e-mail only with SMTP, Telegram only with a bot token).
+export interface NotificationAvailableChannels {
+  desktop: boolean;
+  email: boolean;
+  ntfy: boolean;
+  telegram: boolean;
+  webhook: boolean;
+}
+
+// Quiet hours in the person's zone, across midnight when end is earlier (R-1081).
+export interface NotificationQuiet {
+  enabled: boolean;
+  start: string; // HH:MM
+  end: string; // HH:MM
+  critical: boolean; // critical pings pass the quiet hours and do not disturb
+}
+
+export interface NotificationEscalation {
+  enabled: boolean;
+  minutes: 5 | 10 | 30;
+  channel: NotificationTestChannel | null;
+}
+
+export type NotificationDigest = 'off' | 'daily' | 'weekly';
+
+// The fields of R-1080 and R-1081 are optional: a server before them sends none of them.
 export interface NotificationPrefs {
   email: string | null;
   telegramChatId: string | null;
+  ntfyUrl?: string | null;
+  webhookUrl?: string | null;
+  matrix?: NotificationMatrix;
+  disabledChannels?: NotificationChannel[];
+  mutedCategories?: string[];
+  available?: NotificationAvailableChannels;
+  timezone?: string;
+  quiet?: NotificationQuiet;
+  escalation?: NotificationEscalation;
+  digest?: NotificationDigest;
+  soundCritical?: boolean;
   subscriptions: NotificationSubscription[];
 }
 
@@ -767,15 +808,32 @@ export interface NotificationSubscriptionInput {
   scope_ref?: string | null;
   min_severity: NotificationSeverity;
   categories?: string[] | null;
-  channel_email: boolean;
-  channel_telegram: boolean;
   enabled: boolean;
 }
 
+// A field of the channel settings that is not sent keeps its stored value; a URL sent as
+// null is cleared.
 export interface NotificationPrefsUpdate {
   email?: string | null;
   telegram_chat_id?: string | null;
+  ntfy_url?: string | null;
+  webhook_url?: string | null;
+  matrix?: NotificationMatrix;
+  disabled_channels?: NotificationChannel[];
+  muted_categories?: string[];
+  timezone?: string;
+  quiet?: NotificationQuiet;
+  escalation?: NotificationEscalation;
+  digest?: NotificationDigest;
+  sound_critical?: boolean;
   subscriptions: NotificationSubscriptionInput[];
+}
+
+// The channels the server tests; the desktop tests itself.
+export type NotificationTestChannel = Exclude<NotificationChannel, 'desktop'>;
+
+export interface NotificationTestResult {
+  channel: string;
 }
 
 export interface TemplateCheckDef {

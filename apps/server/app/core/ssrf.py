@@ -35,10 +35,20 @@ logger = logging.getLogger(__name__)
 
 # Extra reserved ranges as an explicit backstop to the category checks below
 # (0.0.0.0/8 = "this network", which resolves to localhost on Linux).
+# The cloud metadata services that live outside link-local stay blocked as well, even
+# inside a network a caller allows (allow_networks): AWS over IPv6, GCP on IPv6-only
+# instances, Alibaba Cloud inside CGNAT.
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),
-    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
+    ipaddress.ip_network("fd00:ec2::/32"),
+    ipaddress.ip_network("fd20:ce::254/128"),
+    ipaddress.ip_network("100.100.100.200/32"),
 ]
+# Blocked unless the caller allows a network that holds the address: CGNAT is where a
+# Tailscale or carrier-NAT host lives, private in all but name.
+_PRIVATE_NETWORKS = [ipaddress.ip_network("100.64.0.0/10")]
+
+IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 # socket.getaddrinfo has no timeout and uses the resolver defaults (up to ~30 s for a hung
 # nameserver). The hook script worker calls this before its own HTTP timeout applies, and the
@@ -150,7 +160,27 @@ class Target:
     addresses: tuple[str, ...] = ()
 
 
-def check_target(url: str) -> Target:
+def _always_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for an address no outbound target may have, whatever allow_networks holds.
+
+    A 6to4 or Teredo address carries an IPv4 address of its own; without a listed network
+    is_private catches both prefixes, inside one the embedded address is checked here.
+    """
+    if ip.version == 6:
+        embedded = [ip.sixtofour, *(ip.teredo or ())]
+        if any(v4 is not None and _always_blocked(v4) for v4 in embedded):
+            return True
+    return (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+        or any(ip in net for net in _BLOCKED_NETWORKS)
+    )
+
+
+def check_target(url: str, *, allow_networks: tuple[IpNetwork, ...] = ()) -> Target:
     """Resolves the URL's host once and checks every address (R-0045).
 
     The host resolved is the name the request carries as Host header and TLS name:
@@ -166,6 +196,14 @@ def check_target(url: str) -> Target:
     the deadline or the in-flight cap missed) — a dead nameserver is not a wrong URL.
     One blocked address among public ones rejects the host, and a rejection carries
     no address at all.
+
+    allow_networks lets a private address (RFC 1918, fc00::/7, CGNAT and the like)
+    through when one of the networks holds it: the networks the operator named for
+    targets chosen on purpose (R-1080), not every private network, so a network of
+    the server's own containers stays closed unless it is named. Loopback,
+    link-local (cloud metadata 169.254.169.254 included), the other metadata
+    addresses, unspecified, multicast, reserved and 0.0.0.0/8 stay blocked whatever
+    the networks hold: they are this host or nobody's.
     """
     try:
         hostname = urlparse(url).hostname
@@ -197,14 +235,10 @@ def check_target(url: str) -> Target:
         # IPv4 category checks below catch it.
         if ip.version == 6 and ip.ipv4_mapped is not None:
             ip = ip.ipv4_mapped
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-            or any(ip in net for net in _BLOCKED_NETWORKS)
+        if _always_blocked(ip):
+            return Target(UrlVerdict.PRIVATE, hostname)
+        if (ip.is_private or any(ip in net for net in _PRIVATE_NETWORKS)) and not any(
+            ip in net for net in allow_networks
         ):
             return Target(UrlVerdict.PRIVATE, hostname)
         if str(ip) not in addresses:

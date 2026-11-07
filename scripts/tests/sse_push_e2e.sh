@@ -96,8 +96,7 @@ async def main() -> int:
         auth = {"Authorization": f"Bearer {token}"}
         r = await c.put(f"{A}/api/users/me/notification-prefs", headers=auth, json={
             "email": None, "telegram_chat_id": None,
-            "subscriptions": [{"scope_type": "all", "min_severity": "info",
-                               "channel_email": False, "channel_telegram": False, "enabled": True}]})
+            "subscriptions": [{"scope_type": "all", "min_severity": "info", "enabled": True}]})
         r.raise_for_status()
         print("[e2e] logged in + subscribed (scope=all)")
 

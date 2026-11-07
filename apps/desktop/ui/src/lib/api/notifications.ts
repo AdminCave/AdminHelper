@@ -4,7 +4,7 @@
 
 // Notifications API: typed wrappers around api_proxy for the server's
 // notification hub — the caller's own bell feed, its incidents and their
-// actions (R-1079), and per-user preferences.
+// actions (R-1079), and per-user preferences with the channel test (R-1080).
 
 import { apiRequest } from '$lib/api/request';
 import type { AuthSession } from '$lib/bridge/types';
@@ -15,6 +15,8 @@ import type {
   NotificationPrefs,
   NotificationPrefsUpdate,
   NotificationServerMute,
+  NotificationTestChannel,
+  NotificationTestResult,
 } from '$lib/api/types';
 
 const incident = (id: number, action = '') => `/api/notifications/incidents/${id}${action}`;
@@ -87,5 +89,18 @@ export const notificationsApi = {
   },
   savePrefs(session: AuthSession, prefs: NotificationPrefsUpdate): Promise<NotificationPrefs> {
     return apiRequest<NotificationPrefs>(session, 'PUT', '/api/users/me/notification-prefs', prefs);
+  },
+  // Sends at once to the stored target (R-1080): 409 without a target or when the server cannot
+  // deliver the channel, 422 for a refused target, 502 for a failed send, 429 for a second test.
+  testChannel(
+    session: AuthSession,
+    channel: NotificationTestChannel,
+  ): Promise<NotificationTestResult> {
+    return apiRequest<NotificationTestResult>(
+      session,
+      'POST',
+      '/api/users/me/notification-prefs/test',
+      { channel },
+    );
   },
 };

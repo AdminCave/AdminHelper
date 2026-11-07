@@ -151,8 +151,23 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Zustellversuche pro E-Mail mit linearem Backoff, danach „fehlgeschlagen" (Default 5).</td></tr>
             </tbody>
           </table>
-          <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln (siehe <a href="./monitoring.html">Monitoring → Persönliche Benachrichtigungen</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
+          <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln und seine Matrix (siehe <a href="./monitoring.html#kanaele">Monitoring → Kanäle und Matrix</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
           <p>Die <code>SMTP_*</code>-Variablen nutzt auch der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
+
+          <h3 id="notify-kanaele">Kanäle ntfy, Telegram und Webhook</h3>
+          <p>Neben E-Mail stellt der Notification-Hub über ntfy, Telegram und Webhooks zu; die Ziele hinterlegt jede Person selbst. Für den Betrieb zählen zwei Variablen in der <code>.env</code> (Compose gibt sie an <code>server</code> und <code>scheduler</code>):</p>
+          <table>
+            <thead><tr><th>Variable</th><th>Bedeutung</th></tr></thead>
+            <tbody>
+              <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Token eines eigenen Telegram-Bots (von <code>@BotFather</code>). Leer = kein Telegram-Versand: die Einstellungen zeigen den Kanal als nicht eingerichtet, und es entsteht kein neuer Telegram-Eintrag; schon wartende bleiben liegen, bis ein Token gesetzt ist. Der Token ist ein Geheimnis: <code>scripts/diagnostics.sh</code> schwärzt ihn.</td></tr>
+              <tr><td><code>NOTIFY_PRIVATE_TARGETS</code></td><td>Kommagetrennte CIDR-Liste privater Netze, in denen ntfy- und Webhook-Ziele liegen dürfen, etwa <code>192.168.1.0/24,100.64.0.0/10</code>. Leer (Default) = kein privates Ziel. Ein ungültiger Eintrag, auch mit gesetzten Hostbits wie <code>192.168.1.5/16</code>, verhindert den Start.</td></tr>
+            </tbody>
+          </table>
+          <p>ntfy und Webhook prüfen das Ziel bei <em>jedem</em> Versand gegen die aufgelöste Adresse und folgen keiner Umleitung. Gesperrt sind private Netze (RFC 1918, <code>fc00::/7</code>, CGNAT <code>100.64.0.0/10</code> etwa für Tailscale) und die übrigen privaten Bereiche, außer ein Netz aus <code>NOTIFY_PRIVATE_TARGETS</code> enthält die Adresse. Immer gesperrt, auch wenn ein Netz der Liste sie enthält, sind Loopback, Link-Local (darunter die Metadaten-Adresse <code>169.254.169.254</code>), die übrigen Metadaten-Adressen der Clouds, unspezifizierte, Multicast- und reservierte Adressen. Ein gesperrtes Ziel scheitert sofort, ohne weiteren Versuch; der Test-Knopf meldet es als <code>&lt;Kanal&gt;: target address not allowed</code>.</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Genau das Netz der Ziele nennen</div><p>Nicht den ganzen privaten Block freigeben (<code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>): die Docker-Netze der Container liegen meist darin, und jede Person mit einem Konto könnte dann die Dienste neben dem Server ansprechen. Enthält ein genanntes Netz eine Adresse des Servers selbst, warnt der Start im Log.</p></div>
+          </div>
 
           <h3 id="smtp-ca">Relay mit eigener CA</h3>
           <p>Weist sich der Relay mit einem Zertifikat aus, dem die Container nicht vertrauen (selbstsigniert oder von einer Firmen-CA), die CA als PEM-Datei <code>smtp-ca.pem</code> neben die <code>docker-compose.yml</code> ins Install-Verzeichnis legen und mit einer <code>docker-compose.override.yml</code> daneben in die Dienste <code>server</code>, <code>scheduler</code> und <code>monitoring</code> einhängen, denen Compose auch die übrigen <code>SMTP_*</code>-Variablen gibt; eine bestehende <code>docker-compose.override.yml</code> (etwa mit <code>FRPS_DASHBOARD_URL</code>, siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>) um diese Einträge ergänzen, nicht ersetzen:</p>

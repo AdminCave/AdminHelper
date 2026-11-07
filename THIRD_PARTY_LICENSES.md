@@ -38,6 +38,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | bcrypt | 5.0.0 | Apache-2.0 | x |  |  |
 | python-multipart | 0.0.33 | Apache-2.0 | x |  |  |
 | opentelemetry-api | 1.45.2 | Apache-2.0 | x | x | x |
+| tzdata | 2026.6 | Apache-2.0 | x |  |  |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | x |  | x |
 | uvloop | 0.23.0 | Apache-2.0 OR MIT | x | x | x |
 | click | 8.5.0 | BSD-3-Clause | x | x | x |
@@ -79,7 +80,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 `opentelemetry-api` mit (ohne SDK, sendet nichts).
 
 **Auflagen-relevant:** Apache-2.0 (NOTICE) — `bcrypt`, `python-multipart`,
-`opentelemetry-api`;
+`opentelemetry-api`, `tzdata`;
 LGPL-3.0 — `psycopg`, `psycopg-binary`; MPL-2.0 — `certifi`. `cryptography`
 (Apache OR BSD) und `uvloop` (Apache OR MIT) sind dual — es wird der
 permissive Zweig geführt (siehe „Auflagen & Hinweise").
@@ -241,7 +242,7 @@ Test-Harness und wird nicht ausgeliefert.
 betreffenden Projekte in der Distribution weiterzugeben. Zwingend
 Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 
-- **Python:** `bcrypt`, `python-multipart`
+- **Python:** `bcrypt`, `python-multipart`, `tzdata`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
 - **Rust:** `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
   `russh-sftp`, `sync_wrapper`, `tao`, `target-lexicon`
