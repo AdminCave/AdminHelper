@@ -21,12 +21,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type {
     NotificationAvailableChannels,
     NotificationChannel,
+    NotificationDigest,
+    NotificationEscalation,
     NotificationMatrix,
     NotificationMatrixRow,
     NotificationPrefs,
+    NotificationQuiet,
     NotificationScopeType,
     NotificationSeverity,
     NotificationSubscriptionInput,
+    NotificationTestChannel,
     Server,
   } from '$lib/api/types';
 
@@ -59,6 +63,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ok: ['desktop'],
   };
 
+  // The server's defaults for the settings of R-1081: nothing changes until the person turns
+  // them on.
+  const DEFAULT_QUIET: NotificationQuiet = {
+    enabled: false,
+    start: '22:00',
+    end: '07:00',
+    critical: true,
+  };
+  const DEFAULT_ESCALATION: NotificationEscalation = { enabled: false, minutes: 10, channel: null };
+  const ESCALATION_MINUTES: NotificationEscalation['minutes'][] = [5, 10, 30];
+  const ESCALATION_CHANNELS: NotificationTestChannel[] = ['email', 'ntfy', 'telegram', 'webhook'];
+  const DIGESTS: NotificationDigest[] = ['off', 'daily', 'weekly'];
+
   // categories is stored server-side as a JSON-array string; parse it back to a
   // string[] so it survives the round-trip (malformed → null, not a crash).
   function parseCategories(raw: string | null | undefined): string[] | null {
@@ -83,6 +100,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let disabled = $state<NotificationChannel[]>([]);
   let muted = $state<string[]>([]);
   let available = $state<NotificationAvailableChannels | null>(null);
+  // A server before R-1081 sends none of its settings: the section stays hidden and the save
+  // leaves them out.
+  let quietKnown = $state(false);
+  let quiet = $state<NotificationQuiet>({ ...DEFAULT_QUIET });
+  let escalation = $state<NotificationEscalation>({ ...DEFAULT_ESCALATION });
+  let digest = $state<NotificationDigest>('off');
+  let sound = $state(false);
   let rules = $state<EditRule[]>([]);
   let servers = $state<Server[]>([]);
   let loading = $state(true);
@@ -115,6 +139,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     disabled = [...(p.disabledChannels ?? [])];
     muted = [...(p.mutedCategories ?? [])];
     available = p.available ?? null;
+    quietKnown = p.quiet !== undefined;
+    quiet = { ...(p.quiet ?? DEFAULT_QUIET) };
+    escalation = { ...(p.escalation ?? DEFAULT_ESCALATION) };
+    digest = p.digest ?? 'off';
+    sound = p.soundCritical ?? false;
   }
 
   async function load(): Promise<void> {
@@ -197,6 +226,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
         matrix: $state.snapshot(matrix),
         disabled_channels: [...disabled],
         muted_categories: [...muted],
+        ...(quietKnown && {
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          quiet: { ...quiet },
+          escalation: { ...escalation },
+          digest,
+          sound_critical: sound,
+        }),
         subscriptions,
       });
       apply(saved);
@@ -254,6 +290,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function unsaved(ch: NotificationChannel): boolean {
     return ch !== 'desktop' && targets[ch].trim() !== stored[ch];
+  }
+
+  // An escalation goes to a stored target only, on a channel that is on and that the server
+  // can deliver; the server skips it otherwise.
+  function canEscalate(ch: NotificationTestChannel): boolean {
+    return stored[ch] !== '' && isOn(ch) && canDeliver(ch);
+  }
+
+  function pickEscalation(value: string): void {
+    const ch = ESCALATION_CHANNELS.find((c) => c === value);
+    if (ch) escalation.channel = ch;
   }
 </script>
 
@@ -370,6 +417,115 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/each}
       </div>
     </section>
+
+    {#if quietKnown}
+      <section class="np-sec">
+        <div class="np-head">
+          <span class="np-title">{$t('notifPrefs.calm')}</span>
+        </div>
+        <div class="np-row" data-row="quiet">
+          <div class="np-row-text">
+            <Switch
+              size="sm"
+              checked={quiet.enabled}
+              label={$t('notifPrefs.quiet')}
+              onChange={(on) => (quiet.enabled = on)}
+            />
+            <span class="np-muted">{$t('notifPrefs.quietDesc')}</span>
+          </div>
+          <div class="np-row-ctl">
+            <input
+              type="time"
+              bind:value={quiet.start}
+              disabled={!quiet.enabled}
+              aria-label={$t('notifPrefs.quietFrom')}
+            />
+            <span class="np-muted">–</span>
+            <input
+              type="time"
+              bind:value={quiet.end}
+              disabled={!quiet.enabled}
+              aria-label={$t('notifPrefs.quietTo')}
+            />
+          </div>
+        </div>
+        <div class="np-row" data-row="pass">
+          <div class="np-row-text">
+            <Switch
+              size="sm"
+              checked={quiet.critical}
+              label={$t('notifPrefs.quietCritical')}
+              onChange={(on) => (quiet.critical = on)}
+            />
+            <span class="np-muted">{$t('notifPrefs.quietCriticalDesc')}</span>
+          </div>
+        </div>
+        <div class="np-row" data-row="escalation">
+          <div class="np-row-text">
+            <Switch
+              size="sm"
+              checked={escalation.enabled}
+              disabled={escalation.channel === null}
+              label={$t('notifPrefs.escalation')}
+              onChange={(on) => (escalation.enabled = on)}
+            />
+            <span class="np-muted">{$t('notifPrefs.escalationDesc')}</span>
+            {#if ESCALATION_CHANNELS.some((c) => !canEscalate(c))}
+              <span class="np-muted np-hint">{$t('notifPrefs.escalationHint')}</span>
+            {/if}
+          </div>
+          <div class="np-row-ctl">
+            <select bind:value={escalation.minutes} aria-label={$t('notifPrefs.escalationAfter')}>
+              {#each ESCALATION_MINUTES as m (m)}
+                <option value={m}>{$t('notifPrefs.afterMinutes', { minutes: m })}</option>
+              {/each}
+            </select>
+            <select
+              value={escalation.channel ?? ''}
+              aria-label={$t('notifPrefs.escalationChannel')}
+              onchange={(e) => pickEscalation(e.currentTarget.value)}
+            >
+              <option value="" disabled>{$t('notifPrefs.pickChannel')}</option>
+              {#each ESCALATION_CHANNELS as ch (ch)}
+                <option value={ch} disabled={!canEscalate(ch)}>
+                  {$t(`notifPrefs.channel.${ch}`)}
+                </option>
+              {/each}
+            </select>
+          </div>
+        </div>
+        <div class="np-row" data-row="sound">
+          <div class="np-row-text">
+            <Switch
+              size="sm"
+              checked={sound}
+              label={$t('notifPrefs.sound')}
+              onChange={(on) => (sound = on)}
+            />
+            <span class="np-muted">{$t('notifPrefs.soundDesc')}</span>
+          </div>
+        </div>
+        <div class="np-row" data-row="digest">
+          <div class="np-row-text">
+            <span class="np-name">{$t('notifPrefs.digest')}</span>
+            <span class="np-muted">{$t('notifPrefs.digestDesc')}</span>
+          </div>
+          <div class="np-row-ctl np-chips">
+            {#each DIGESTS as d (d)}
+              <button
+                type="button"
+                class="np-chip"
+                class:active={digest === d}
+                aria-pressed={digest === d}
+                onclick={() => (digest = d)}
+              >
+                {$t(`notifPrefs.digest.${d}`)}
+              </button>
+            {/each}
+          </div>
+        </div>
+      </section>
+    {/if}
 
     <section class="np-sec">
       <div class="np-rules-head">
@@ -535,6 +691,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
     background: var(--surface-active, var(--bg-panel));
     color: var(--text-strong, var(--text));
     font-weight: 600;
+  }
+  .np-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--sp-2, 8px) var(--sp-3, 12px);
+    padding: var(--sp-2, 8px) 0;
+    border-top: 1px solid var(--border-faint, var(--border));
+  }
+  .np-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .np-row-ctl {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 8px);
   }
   .np-rules-head {
     display: flex;
