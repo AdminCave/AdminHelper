@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-notify-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_settings.py tests/test_notifications.py tests/test_notification_category_migration.py tests/test_cli.py tests/test_users.py tests/test_bootstrap.py tests/test_certificate_expiry_watch.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_alembic_builtin.py tests/test_notification_incidents.py tests/test_outbox.py tests/test_notification_bridge.py
 Doku: → T7
 
-### T2 — Server und Monitoring: SSRF-Sperre mit Opt-in für private Ziele (R-1080)  [ ]
+### T2 — Server und Monitoring: SSRF-Sperre mit Opt-in für private Ziele (R-1080)  [x]
 Komponente: server · Dateien: apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @33a146925 2026-11-07T06:10:10+01:00
+Review: approve (.ah-out/review/kern-notify-2/T2.verdict.json)
 Änderung: `check_target(url, *, allow_networks=())` in beiden Kopien gleich (`test_ssrf_parity.py` verlangt identischen Code): eine private Adresse oder eine aus `100.64.0.0/10` ist erlaubt, wenn ein Netz der Liste sie enthält; Loopback, Link-Local (auch `169.254.169.254`), unspezifiziert, Multicast, reserviert und `0.0.0.0/8` bleiben gesperrt, auch als IPv4-mapped IPv6. Ohne das Argument ändert sich nichts (Hooks, Monitoring). Tests je Adressklasse mit und ohne Listeneintrag.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf.py tests/test_ssrf_parity.py tests/test_ssrf_properties.py tests/test_ssrf_pin.py
 Doku: → T7
