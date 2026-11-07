@@ -46,9 +46,12 @@ _BACKOFF_MINUTES = 5
 _SLOW_SEND = 10
 
 
-def drain_outbox(db: Session, *, batch_size: int = 50) -> tuple[int, int]:
-    """Deliver due outbox entries. Returns (sent, permanently_failed)."""
-    now = datetime.now(timezone.utc)
+def drain_outbox(
+    db: Session, *, batch_size: int = 50, now: datetime | None = None
+) -> tuple[int, int]:
+    """Deliver due outbox entries. Returns (sent, permanently_failed). Entries waiting
+    for the digest (status digest) stay; digest.send_digests sends them."""
+    now = now or datetime.now(timezone.utc)
     channels = ["email", "ntfy", "webhook"]
     if config.TELEGRAM_BOT_TOKEN:
         channels.append("telegram")

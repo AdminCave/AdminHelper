@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-notify-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_quiet.py tests/test_notification_settings.py tests/test_notification_prefs_test.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_alembic_builtin.py
 Doku: → T5
 
-### T2 — Server: Ruhezeit hält Nicht-Kritisches zurück, Zusammenfassung sammelt E-Mails (R-1081)  [ ]
+### T2 — Server: Ruhezeit hält Nicht-Kritisches zurück, Zusammenfassung sammelt E-Mails (R-1081)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/digest.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/hooks/scheduler.py, apps/server/app/scheduler_main.py, apps/server/tests/test_notification_digest.py, apps/server/tests/test_notifications.py, apps/server/tests/test_outbox.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @2434edff1 2026-11-07T11:58:19+01:00
+Review: approve (.ah-out/review/kern-notify-3/T2.verdict.json)
 Änderung: `_queue` setzt in der Ruhezeit der Person für Info, Warnung und `ok` `next_attempt_at` = Ende der Ruhezeit (Kritisch nur ohne Durchlass). Bei eingeschalteter Zusammenfassung bekommen E-Mail-Einträge für Info, Warnung und `ok` Status `digest`. `digest.py` (SPDX) `send_digests(db, now)` schickt je fälliger Person (`next_digest_at`, `digest_last_at`) eine Mail mit allen `digest`-Einträgen, setzt sie auf `sent` und `digest_last_at`. Ist die Zusammenfassung aus, gehen wartende `digest`-Einträge beim nächsten Lauf als Zusammenfassung raus; ohne Einträge geht keine Mail. Der Systemjob läuft alle fünf Minuten neben `schedule_outbox_drain`. Tests: zurückgehalten und zur Endzeit zugestellt (Drain mit `now` danach), Kritisch mit und ohne Durchlass, `digest` liegt im Drain, Versand um 08:00 täglich und am Montag, keine Mail ohne Einträge, kein Doppelversand im selben Fenster. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_digest.py tests/test_notifications.py tests/test_outbox.py tests/test_notification_incidents.py tests/test_notification_channels.py
 Doku: → T5
@@ -49,3 +51,7 @@ Abhängt von: T2, T3, T4
 - T1: Eine gespeicherte, inzwischen unbekannte Zone zählt als UTC (`quiet.zone`), statt den Job scheitern zu lassen.
 - T1: Ein Ende in der doppelten Herbststunde nimmt den ersten Durchgang nach `now` (erst `fold=0`, dann `fold=1`).
 - T1: `HH:MM` mit `[0-9]` statt `\d`: pydantics Pattern nimmt mit `\d` auch arabisch-indische Ziffern an (gegengeprüft).
+- T2: Ein Outbox-Eintrag trägt `created_at` = Zeit des Pings (statt der DB-Uhr): Ruhezeit, Fenster der Zusammenfassung und Zeilen der Mail rechnen mit derselben Uhr.
+- T2: Die Zusammenfassung geht an die Adresse des neuesten Eintrags; ein Fehlversand zählt einen Versuch je Eintrag und wiederholt beim nächsten Lauf (alle 5 Min.) ohne Backoff bis `NOTIFICATION_MAX_ATTEMPTS`, dann `failed`.
+- T2: Fällig ist sie zur ersten Versandzeit nach dem späteren von ältestem Eintrag und `digest_last_at`: ein nach dem Versand committeter Ping mit älterem `created_at` wartet aufs nächste Fenster.
+- T2: Eine Zusammenfassungs-Mail beachtet die Ruhezeit nicht (08:00 liegt außerhalb der Standard-Ruhezeit).
