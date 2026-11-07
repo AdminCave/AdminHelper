@@ -1,5 +1,5 @@
 # Kanäle ntfy, Telegram, Webhook · Matrix Schweregrad × Kanal · Kategorien — Task-Ledger
-Status: bereit · Branch: feature/kern-notify-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-notify-2 · Review: pro Task
 Spec: docs/features/kern-notify-2.md (Roadmap R-1080)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), ausgehende Requests, Desktop-Journey SSE-Push (`desktop_e2e_sse_push.sh`); geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
