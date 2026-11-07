@@ -516,7 +516,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           <h2>Release Signing (supply chain)</h2>
           <p>The <code>curl|bash</code> install/update flow should prove <strong>authenticity</strong>, not just transport integrity (otherwise the bundle and <code>SHA256SUMS</code> come from the same origin). Two mechanisms:</p>
           <ul>
-            <li><strong>Container images:</strong> <code>docker.yml</code> signs each pushed image digest <em>keylessly</em> with cosign (GitHub OIDC, no private key) and attaches SLSA provenance (<code>mode=max</code>) + an SBOM. Verify:
+            <li><strong>Container images:</strong> <code>docker.yml</code> signs each pushed image digest <em>keylessly</em> with cosign (GitHub OIDC, no private key) and attaches SLSA provenance (<code>mode=max</code>) + an SBOM. Since cosign 3 the signature is a Sigstore bundle in an OCI 1.1 referrer; <code>docker.yml</code> verifies it right after signing against the identity of its own run. Verify with cosign 3 (or 2.6 and later with <code>--new-bundle-format</code>); cosign 3 also verifies the older images up to 0.46.0:
 <pre><code>cosign verify ghcr.io/admincave/adminhelper/server \
   --certificate-identity-regexp 'https://github.com/AdminCave/AdminHelper/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre></li>
