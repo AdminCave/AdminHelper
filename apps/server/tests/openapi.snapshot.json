@@ -3097,7 +3097,9 @@
               "enum": [
                 "bell",
                 "email",
-                "telegram"
+                "ntfy",
+                "telegram",
+                "webhook"
               ],
               "type": "string"
             },
@@ -4289,6 +4291,39 @@
           "enabled"
         ],
         "title": "NotificationSubscriptionOut",
+        "type": "object"
+      },
+      "NotificationTestOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "NotificationTestOut",
+        "type": "object"
+      },
+      "NotificationTestRequest": {
+        "description": "A test message to the stored target of one channel; the desktop tests itself.",
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "ntfy",
+              "telegram",
+              "webhook"
+            ],
+            "title": "Channel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "NotificationTestRequest",
         "type": "object"
       },
       "PlaybookContentOut": {
@@ -9898,6 +9933,53 @@
           }
         ],
         "summary": "Put Prefs",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/users/me/notification-prefs/test": {
+      "post": {
+        "description": "Send a test message to the stored target of one channel, at once and without the\noutbox. 409 without a target or when the server cannot deliver the channel, 422 for\na target the SSRF guard blocks, 502 for a failed send, 429 for a second test of the\nchannel within ten seconds.",
+        "operationId": "test_channel_api_users_me_notification_prefs_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Channel",
         "tags": [
           "notifications"
         ]

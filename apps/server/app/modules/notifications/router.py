@@ -14,6 +14,7 @@ Three surfaces:
 
 import json
 import secrets
+import threading
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -54,8 +55,18 @@ from app.modules.notifications.schemas import (
     NotificationOut,
     NotificationPrefsOut,
     NotificationPrefsUpdate,
+    NotificationTestOut,
+    NotificationTestRequest,
     ServerMuteOut,
     UnreadCountOut,
+)
+from app.modules.notifications.sender import (
+    BlockedTarget,
+    DeliveryFailed,
+    send_email,
+    send_ntfy,
+    send_telegram,
+    send_webhook,
 )
 from app.modules.notifications.service import default_matrix
 from app.modules.users.models import User
@@ -368,14 +379,18 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
         "matrix": json.loads(settings.matrix) if settings else default_matrix(),
         "disabledChannels": json.loads(settings.disabled_channels) if settings else [],
         "mutedCategories": json.loads(settings.muted_categories) if settings else [],
-        "available": {
-            "desktop": True,
-            "email": bool(app_config.SMTP_HOST),
-            "ntfy": True,
-            "telegram": bool(app_config.TELEGRAM_BOT_TOKEN),
-            "webhook": True,
-        },
+        "available": _available(),
         "subscriptions": [s.to_dict() for s in subs],
+    }
+
+
+def _available() -> dict[str, bool]:
+    return {
+        "desktop": True,
+        "email": bool(app_config.SMTP_HOST),
+        "ntfy": True,
+        "telegram": bool(app_config.TELEGRAM_BOT_TOKEN),
+        "webhook": True,
     }
 
 
@@ -446,6 +461,92 @@ def put_prefs(
     db.commit()
     db.refresh(current_user)
     return _prefs_response(db, current_user)
+
+
+# One test per person and channel in this many seconds: the button sends at once, to a
+# target the person chose, so it must not serve as an amplifier.
+_TEST_WINDOW = 10
+_TEST_TITLE = "AdminHelper test"
+_TEST_BODY = "This is a test message from AdminHelper. The channel works."
+# A send may hang up to sender._SEND_DEADLINE, longer than the window, and the senders of
+# this process share a few slots: one test at a time per person, so one account cannot
+# hold them all.
+_TESTS_RUNNING: set[int] = set()
+_TESTS_LOCK = threading.Lock()
+
+
+@prefs_router.post("/notification-prefs/test", response_model=NotificationTestOut)
+def test_channel(
+    data: NotificationTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send a test message to the stored target of one channel, at once and without the
+    outbox. 409 without a target or when the server cannot deliver the channel, 422 for
+    a target the SSRF guard blocks, 502 for a failed send, 429 for a second test of the
+    channel within ten seconds."""
+    from app.core.rate_limit import get_backend
+
+    channel = data.channel
+    settings = db.get(NotificationSettings, current_user.id)
+    target = {
+        "email": current_user.email,
+        "ntfy": settings.ntfy_url if settings else None,
+        "telegram": current_user.telegram_chat_id,
+        "webhook": settings.webhook_url if settings else None,
+    }[channel]
+    if not _available()[channel]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{channel}: not set up on this server",
+        )
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"{channel}: no target stored"
+        )
+    with _TESTS_LOCK:
+        if current_user.id in _TESTS_RUNNING:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="another test is still running",
+            )
+        _TESTS_RUNNING.add(current_user.id)
+    try:
+        # Counted after the refusals: saving a target and testing it at once must work.
+        key = f"notify_test:{current_user.id}:{channel}"
+        if get_backend().increment(key, _TEST_WINDOW) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"{channel}: one test per {_TEST_WINDOW} seconds",
+            )
+        _send_test(channel, target)
+    finally:
+        with _TESTS_LOCK:
+            _TESTS_RUNNING.discard(current_user.id)
+    return {"channel": channel}
+
+
+def _send_test(channel: str, target: str) -> None:
+    """One test message; every error becomes a neutral HTTPException."""
+    try:
+        if channel == "email":
+            send_email(target, _TEST_TITLE, _TEST_BODY)
+        elif channel == "ntfy":
+            send_ntfy(target, _TEST_TITLE, _TEST_BODY, "info")
+        elif channel == "telegram":
+            send_telegram(target, _TEST_TITLE, _TEST_BODY)
+        else:
+            send_webhook(target, _TEST_TITLE, _TEST_BODY, "info", "test")
+    except BlockedTarget as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except DeliveryFailed as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+    except Exception as exc:
+        # Any other error's text may hold the URL (with ?auth=), the bot token or the
+        # SMTP dialogue: its type only.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"{channel}: {type(exc).__name__}"
+        ) from None
 
 
 # --- Internal event ingress (monitoring → server) --------------------------

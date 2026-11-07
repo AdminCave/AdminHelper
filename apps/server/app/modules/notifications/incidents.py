@@ -907,7 +907,7 @@ def detail(db: Session, user: User, held: Access, now: datetime) -> dict:
         "bundle": bundle,
         "servers": servers,
         "rules": json.loads(incident.rules) if incident.rules else None,
-        "channels": ["bell", *(c for c in ("email", "telegram") if c in used)],
+        "channels": ["bell", *(c for c in ("email", "ntfy", "telegram", "webhook") if c in used)],
         "history": [
             {
                 "id": e.id,

@@ -31,10 +31,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_ch
 Doku: → T7
 Abhängt von: T2
 
-### T4 — Server: Test-Route je Kanal mit Sperre je Person (R-1080)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/sender.py, apps/server/tests/test_notification_prefs_test.py, apps/server/tests/openapi.snapshot.json, apps/server/app/modules/notifications/incidents.py, apps/server/tests/test_notification_incidents.py
+### T4 — Server: Test-Route je Kanal mit Sperre je Person (R-1080)  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/schemas.py, apps/server/tests/test_notification_prefs_test.py, apps/server/tests/openapi.snapshot.json, apps/server/app/modules/notifications/incidents.py, apps/server/tests/test_notification_incident_api.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9c0765102 2026-11-07T06:54:42+01:00
+Review: approve (.ah-out/review/kern-notify-2/T4.verdict.json)
 Änderung: `POST /api/users/me/notification-prefs/test` mit `{"channel"}` (Spec): sofortiger Versand an das gespeicherte Ziel über die Sender aus T3, `200`/`409`/`422`/`502`/`429`, Sperre ein Test je Person und Kanal in zehn Sekunden über `app/core/rate_limit.py`, neutrale Fehlertexte. Prüft dabei, ob `RequestModel` alte Felder (`channel_email`) ablehnt, und hält das Ergebnis unter `## Entscheidungen` für T6 fest. Tests: jeder Status, die Sperre, kein Geheimnis in der Antwort; OpenAPI-Snapshot. Neue Datei mit SPDX-Header. Dazu (Review T3): `IncidentDetailOut.channels` und die Detailansicht des Vorfalls (`incidents.py`) nennen ntfy und Webhook neben E-Mail und Telegram (Spec, Betroffene Stellen), mit Test. Jede Ausnahme eines Senders wird in der Route neutral (`502`), nie ein `500` mit Traceback.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_prefs_test.py tests/test_openapi_snapshot.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_prefs_test.py tests/test_notification_incident_api.py tests/test_openapi_snapshot.py
 Doku: → T7
 Abhängt von: T3
 
@@ -74,3 +76,7 @@ Abhängt von: T5
 - 2026-11-07 T3: Die Outbox trägt die Stufe des Pings (`severity`, Migration f3a5, nullable): ntfy-Priorität und Webhook nehmen sie, alte Einträge die Stufe der Notification. `last_error` nennt bei einem unerwarteten Fehler nur Kanal und Typ (`_error_text`), bei `DeliveryFailed` dessen neutralen Text.
 - 2026-11-07 T3 (Review): Jeder Versand liest nur den Status, nie den Body, und läuft in einem eigenen Daemon-Thread unter einer harten Frist von 30 s (`_SEND_DEADLINE`), denn der Timeout von httpx gilt je Leseoperation; bei Überschreitung schließt der Sender den Client (das beendet den Lesevorgang des Threads), der Versand ist ein Fehlversuch mit Backoff. Höchstens acht Versände ohne Antwort zugleich (`_SEND_MAX_INFLIGHT`, wie `ssrf._resolve`), darüber scheitert ein Versand sofort. Details privat.
 - 2026-11-07 T3 (Review): `available.telegram` folgt `TELEGRAM_BOT_TOKEN`; `_warn_own_addresses` schlägt den eigenen Namen nur nach, wenn `NOTIFY_PRIVATE_TARGETS` Netze nennt; Telegram nennt einen Ping ohne eigenen Text nur einmal.
+- 2026-11-07 T4: `RequestModel` verbietet keine zusätzlichen Felder (Pydantic-Standard `extra="ignore"`): `channel_email`/`channel_telegram` eines älteren Clients werden still ignoriert, kein `422` (Test `TestOldClients`). T6 entfernt sie trotzdem aus den Skripten, die Doku (T7) nennt das.
+- 2026-11-07 T4: Die Test-Route antwortet `200` mit `{"channel"}`; `409` (nicht zustellbar oder kein Ziel) und `422` aus der Validierung zählen nicht gegen die Sperre, jeder Versandversuch schon (auch ein `502`). Ein abgeschalteter Kanal (`disabled_channels`) lässt sich testen: der Knopf prüft das Ziel, nicht die Weiterleitung. Text der Testnachricht englisch wie die übrigen Server-Texte.
+- 2026-11-07 T4: Der Test der Vorfall-Kanäle steht in `test_notification_incident_api.py` neben dem bestehenden Detail-Test, nicht in `test_notification_incidents.py`; `sender.py` bleibt unverändert.
+- 2026-11-07 T4 (Review): Höchstens ein laufender Test je Person (`_TESTS_RUNNING` im Prozess, geprüft vor dem Zähler), sonst `429`: ein Versand kann bis zur Frist von 30 s hängen, länger als die Sperre, und die Sender eines Prozesses teilen wenige Plätze. Details privat. Ein gesperrtes Ziel antwortet `422` mit Text in `detail`, die Validierung mit einer Liste: T5 liest beide Formen, T7 nennt es in der API-Doku.

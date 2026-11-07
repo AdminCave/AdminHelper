@@ -206,6 +206,16 @@ class NotificationPrefsUpdate(RequestModel):
         return _check_target_url(v)
 
 
+class NotificationTestRequest(RequestModel):
+    """A test message to the stored target of one channel; the desktop tests itself."""
+
+    channel: Literal["email", "ntfy", "telegram", "webhook"]
+
+
+class NotificationTestOut(BaseModel):
+    channel: str
+
+
 class NotificationOut(BaseModel):
     """A feed row as incidents.feed_rows hands it out. The incident fields are NULL for
     a row without an incident and for one whose incident the reader no longer sees."""
@@ -279,7 +289,7 @@ class IncidentDetailOut(BaseModel):
     bundle: bool
     servers: list[IncidentServerOut]
     rules: Optional[list[IncidentRuleOut]]
-    channels: list[Literal["bell", "email", "telegram"]]
+    channels: list[Literal["bell", "email", "ntfy", "telegram", "webhook"]]
     history: list[IncidentEntryOut]
     # The reader sees every server of the incident: acknowledge, resolve, reopen, note.
     canAct: bool
