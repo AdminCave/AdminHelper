@@ -62,14 +62,15 @@ _PULL_STEP = "Pull the base images of the image tests"
 _SKIP_STEP = "No test skipped"
 _PLAYWRIGHT_STEP = "Install Playwright browsers"
 _LATEST_STEP = "Point latest at the signed images of the release"
+_SIGN_STEP = "Sign the image (keyless)"
 _REPO = "ghcr.io/admincave/adminhelper"
 _ISSUER = "https://token.actions.githubusercontent.com"
 _GH_LATEST = "gh api repos/AdminCave/AdminHelper/releases/latest --jq .tag_name"
 # docker answers `buildx imagetools inspect` from a registry of files, one per reference holding
 # its digest; `buildx imagetools create` gives the new reference the digest of its source (a
 # carbon copy) or, with STUB_REWRAP set, another one, and fails for the image STUB_CREATE_FAIL.
-# cosign verifies a signature only for the identity STUB_SIGNER and the issuer of GitHub
-# Actions, and finds none on the image STUB_UNSIGNED. gh answers that STUB_LATEST is the latest
+# cosign signs any reference, and verifies a signature only for the identity STUB_SIGNER and
+# the issuer of GitHub Actions, and finds none on the image STUB_UNSIGNED. gh answers that STUB_LATEST is the latest
 # release. Every stub logs every call.
 _DOCKER_STUB = """#!/bin/sh
 echo "docker $*" >> "$STUB_LOG"
@@ -90,6 +91,7 @@ esac
 """
 _COSIGN_STUB = """#!/bin/sh
 echo "cosign $*" >> "$STUB_LOG"
+[ "$1 $2" != "sign --yes" ] || exit 0
 [ "$1" = verify ] || exit 2
 shift
 while [ $# -gt 0 ]; do
@@ -188,17 +190,65 @@ def _signer(tag: str) -> str:
     return f"https://github.com/AdminCave/AdminHelper/.github/workflows/docker.yml@refs/tags/{tag}"
 
 
+def _stubs(tmp_path: Path) -> str:
+    """docker, cosign and gh as stubs in front of the PATH."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    for name, body in (("docker", _DOCKER_STUB), ("cosign", _COSIGN_STUB), ("gh", _GH_STUB)):
+        (stubs / name).write_text(body, encoding="utf-8")
+        (stubs / name).chmod(0o755)
+    return f"{stubs}:{os.environ['PATH']}"
+
+
+def _sign(
+    tmp_path: Path, image: str, tag: str = "v1.2.3", **env: str
+) -> tuple[subprocess.CompletedProcess, list[str]]:
+    """The sign step of job build for image on the push of tag, with the job_workflow_ref
+    GitHub gives that run; the run and the logged calls."""
+    step = dict(_step("docker.yml", "build", _SIGN_STEP))
+    assert step["run"].count("${{ matrix.image }}") == 1, step["run"]
+    step["run"] = step["run"].replace("${{ matrix.image }}", image)
+    log = tmp_path / "calls.log"
+    log.touch()
+    context = {
+        "DIGEST": _digest(image),
+        "GITHUB_WORKFLOW_REF": f"AdminCave/AdminHelper/.github/workflows/docker.yml@refs/tags/{tag}",
+        "OWNER": "AdminCave",
+        "STUB_ISSUER": _ISSUER,
+        "STUB_LOG": str(log),
+        "STUB_SIGNER": _signer(tag),
+    }
+    result = _run_step(step, tmp_path, tmp_path, _stubs(tmp_path), {**context, **env})
+    return result, log.read_text(encoding="utf-8").splitlines()
+
+
+@pytest.mark.parametrize("image", sorted(_published()))
+def test_the_push_signs_the_digest_and_verifies_it_as_latest_will(tmp_path, image):
+    result, calls = _sign(tmp_path, image)
+    assert result.returncode == 0, result.stdout + result.stderr
+    ref = f"{_REPO}/{image}@{_digest(image)}"
+    # The identity is the one the job latest checks at the release of the same tag.
+    assert calls == [
+        f"cosign sign --yes {ref}",
+        f"cosign verify --certificate-identity {_signer('v1.2.3')} "
+        f"--certificate-oidc-issuer {_ISSUER} {ref}",
+    ], calls
+
+
+def test_the_push_fails_when_its_signature_does_not_verify(tmp_path):
+    result, calls = _sign(tmp_path, "server", STUB_UNSIGNED=f"{_REPO}/server")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "no matching signatures" in result.stderr, result.stderr
+    assert [call.split()[1] for call in calls] == ["sign", "verify"], calls
+
+
 def _latest(
     tmp_path: Path, present: set[str], tag: str = "v1.2.3", **env: str
 ) -> tuple[subprocess.CompletedProcess, Path, list[str]]:
     """The latest step of docker.yml for the release of tag, the latest release, with the
     images present of its version on the stub registry, signed by the push of tag; the run,
     the registry and the logged calls."""
-    stubs = tmp_path / "bin"
-    stubs.mkdir()
-    for name, body in (("docker", _DOCKER_STUB), ("cosign", _COSIGN_STUB), ("gh", _GH_STUB)):
-        (stubs / name).write_text(body, encoding="utf-8")
-        (stubs / name).chmod(0o755)
+    path = _stubs(tmp_path)
     registry = tmp_path / "registry"
     registry.mkdir()
     for image in present:
@@ -217,7 +267,6 @@ def _latest(
         "STUB_SIGNER": _signer(tag),
     }
     step = _step("docker.yml", "latest", _LATEST_STEP)
-    path = f"{stubs}:{os.environ['PATH']}"
     result = _run_step(step, tmp_path, tmp_path, path, {**context, **env})
     return result, registry, log.read_text(encoding="utf-8").splitlines()
 
@@ -326,8 +375,7 @@ def test_the_latest_job_verifies_with_no_oidc_token():
     assert step["env"]["GH_TOKEN"] == "${{ github.token }}", step["env"]
     # Where the identity of _signer comes from: job build signs on the push of a tag v*.
     assert docker[True]["push"]["tags"] == ["v*"]
-    build = docker["jobs"]["build"]["steps"]
-    assert [signs for signs in build if "cosign sign" in signs.get("run", "")], build
+    assert "cosign sign" in _step("docker.yml", "build", _SIGN_STEP)["run"]
 
 
 def test_compose_pulls_from_ghcr_exactly_the_published_images():
