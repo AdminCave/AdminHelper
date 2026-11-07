@@ -1,5 +1,5 @@
 # Ruhezeiten · Eskalation · Zusammenfassung per E-Mail · Ton bei Kritisch — Task-Ledger
-Status: erledigt · Branch: feature/kern-notify-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-3 · Review: pro Task
 Spec: docs/features/kern-notify-3.md (Roadmap R-1081)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), zwei neue Scheduler-Jobs, Desktop-Journey der Benachrichtigungen; geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -58,6 +58,13 @@ Review: approve (.ah-out/review/kern-notify-3/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_escalation.py
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html
 Abhängt von: T3, T5
+
+### T7 — Eskalationsfrist mit Obergrenze im Schema (R-1081)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/notifications/schemas.py, apps/server/tests/openapi.snapshot.json
+Änderung: Aus der PR-CI (#414, run 42371542725): `test_every_integer_input_has_a_maximum` verlangt ein `maximum` für jede Ganzzahl-Eingabe; `Literal[5, 10, 30]` erzeugt nur ein `enum`. `minimum`/`maximum` (5/30) ins Schema von `escalation.minutes`, Snapshot nachziehen; die Schutzregel bleibt unverändert.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_integer_bounds.py tests/test_openapi_snapshot.py tests/test_notification_settings.py
+Doku: keine (nur die Schemagrenze; die Werte 5/10/30 stehen schon in der API-Referenz)
+Abhängt von: T1
 
 ## Entscheidungen
 - T1: Das Python-Paket `tzdata` kommt als Abhängigkeit dazu (Lock, `THIRD_PARTY_LICENSES.md`): das apt-`tzdata` des Images (trixie, ohne `tzdata-legacy`) kennt die alten Namen wie `Asia/Calcutta` nicht, die `Intl` liefern kann; Dev-Box und CI haben sie und hätten es verdeckt (Reviewer T1). Ein Test mit leerem TZPATH belegt es.
