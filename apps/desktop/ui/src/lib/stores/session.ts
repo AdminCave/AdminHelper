@@ -19,7 +19,7 @@ import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { setLanguage, tNow } from '$lib/i18n';
 import { errMsg } from '$lib/utils/errors';
-import type { AuthSession, Settings } from '$lib/bridge/types';
+import type { AuthSession, Settings, Snippet } from '$lib/bridge/types';
 import { reportError } from './statusBar';
 import { context, loadContext, reloadContextForUrl } from './workspace';
 
@@ -159,6 +159,24 @@ export async function setFavoriteConnections(ids: string[]): Promise<void> {
   const current = get(_state);
   if (!current.settings) return;
   const next = { ...current.settings, favoriteConnections: ids };
+  await bridge.saveSettings(next);
+  _state.update((s) => ({ ...s, settings: next }));
+}
+
+/** Saves the snippets of this workspace (R-1071), the whole list: an empty one stays empty. */
+export async function setSnippets(snippets: Snippet[]): Promise<void> {
+  const current = get(_state);
+  if (!current.settings) return;
+  const next = { ...current.settings, snippets };
+  await bridge.saveSettings(next);
+  _state.update((s) => ({ ...s, settings: next }));
+}
+
+/** Keeps the ids of the open SSH tabs (R-1070) for the next sign-in. */
+export async function setOpenSessions(ids: string[]): Promise<void> {
+  const current = get(_state);
+  if (!current.settings) return;
+  const next = { ...current.settings, openSessions: ids };
   await bridge.saveSettings(next);
   _state.update((s) => ({ ...s, settings: next }));
 }

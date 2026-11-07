@@ -6,7 +6,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <!--
   One session of the embedded terminal (R-1069): xterm.js on the output of its program, above it
-  what the session is connected to, search and options, below it the size and the status.
+  what the session is connected to, search and options, below it the size and the status. The
+  snippets (R-1071) and the files of the host (R-1072) open in the panel of the options. In a
+  detached window (R-1070) the header has the search and Dock only: that window may not save the
+  options, start a program or end one, and its title bar names the session.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -14,7 +17,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { FitAddon } from '@xterm/addon-fit';
   import { SearchAddon } from '@xterm/addon-search';
   import '@xterm/xterm/css/xterm.css';
-  import { AArrowDown, AArrowUp, Cable, RotateCw, SlidersHorizontal, X } from '@lucide/svelte';
+  import {
+    AArrowDown,
+    AArrowUp,
+    Cable,
+    FolderOpen,
+    RotateCw,
+    SlidersHorizontal,
+    SquareArrowDownLeft,
+    SquareCode,
+    X,
+  } from '@lucide/svelte';
   import type { TerminalPrefs } from '$lib/bridge/types';
   import { currentLocale, t } from '$lib/i18n';
   import { TERMINAL_FONT_SIZE } from '$lib/models/settings';
@@ -22,6 +35,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     attachTerminal,
     reconnectTerminal,
     resizeTerminal,
+    snippetBroadcast,
+    terminals,
     writeTerminal,
     type TerminalSession,
   } from '$lib/stores/terminals';
@@ -34,15 +49,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import IconButton from '../ui/IconButton.svelte';
   import Pill from '../ui/Pill.svelte';
   import SearchField from '../ui/SearchField.svelte';
+  import FilesPanel from './FilesPanel.svelte';
+  import SnippetsPanel from './SnippetsPanel.svelte';
   import TerminalOptions from './TerminalOptions.svelte';
 
   interface Props {
     session: TerminalSession;
     /** "End session": the tab closes, after asking when the options say so. */
-    onClose: () => void;
+    onClose?: () => void;
+    /** Given in a detached window: "Dock" takes the session back into the main window. */
+    onDock?: () => void;
   }
 
-  let { session, onClose }: Props = $props();
+  let { session, onClose, onDock }: Props = $props();
 
   const PASTE_HINT_MS = 6000;
   const encoder = new TextEncoder();
@@ -57,12 +76,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let cols = $state(80);
   let rows = $state(24);
   let query = $state('');
-  let optionsOpen = $state(false);
+  // The side panel shown: one at a time.
+  let panel = $state<'options' | 'snippets' | 'files' | null>(null);
   let pasteHint = $state(false);
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
   let target = $derived.by(() => {
     const c = session.connection;
+    // A playbook run (R-1073) has no host of its own: it names the playbook.
+    if (session.ansible) return session.ansible.check ? `${c.name} --check` : c.name;
     const user = c.username ? `${c.username}@` : '';
     const port = c.port && c.port !== 22 ? `:${c.port}` : '';
     return `${user}${c.host ?? ''}${port}`;
@@ -75,6 +97,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let statusText = $derived.by(() => {
     if (session.status === 'connecting') return $t('terminal.status.connecting');
     if (session.status === 'connected') {
+      // A detached window does not know since when.
+      if (session.connectedAt === null) return $t('terminal.status.connected');
       return $t('terminal.status.connectedSince', { time: clock(session.connectedAt) });
     }
     return session.exitCode === null
@@ -210,6 +234,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (fontSize !== prefs.fontSize) void saveTerminalPrefs({ ...prefs, fontSize });
   }
 
+  function toggle(which: 'options' | 'snippets' | 'files'): void {
+    panel = panel === which ? null : which;
+  }
+
   function reconnect(): void {
     // The new program starts on an empty terminal, without the modes the last one left set
     // (alternate screen, mouse reports).
@@ -267,7 +295,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         }),
       ];
       terminal.attachCustomKeyEventHandler(onKey);
-      const detach = attachTerminal(key, (data) => terminal.write(data));
+      const detach = attachTerminal(key, (data, parsed) => terminal.write(data, parsed));
       const observer =
         typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => refit());
       observer?.observe(host);
@@ -300,7 +328,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="term">
   <header class="term-head">
     <Dot st={session.status} ring label={statusText} />
-    <span class="term-target">{target}</span>
+    {#if !onDock}
+      <span class="term-target">{target}</span>
+    {/if}
     {#if tunnel}
       <Pill tone="accent" title={$t('terminal.tunnel')}><Cable size={11} />{tunnel}</Pill>
     {/if}
@@ -315,30 +345,60 @@ SPDX-License-Identifier: GPL-3.0-or-later
         onClear={() => term?.clearSelection()}
       />
     </div>
-    <IconButton
-      size="sm"
-      icon={AArrowDown}
-      label={$t('terminal.fontSmaller')}
-      disabled={$terminalPrefs.fontSize <= TERMINAL_FONT_SIZE.min}
-      onclick={() => changeFont(-1)}
-    />
-    <IconButton
-      size="sm"
-      icon={AArrowUp}
-      label={$t('terminal.fontLarger')}
-      disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
-      onclick={() => changeFont(1)}
-    />
-    <IconButton
-      size="sm"
-      icon={SlidersHorizontal}
-      label={$t('terminal.options')}
-      aria-pressed={optionsOpen}
-      onclick={() => (optionsOpen = !optionsOpen)}
-    />
-    <span class="term-sep" aria-hidden="true"></span>
-    <IconButton size="sm" icon={RotateCw} label={$t('terminal.reconnect')} onclick={reconnect} />
-    <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+    {#if onDock}
+      <span class="term-sep" aria-hidden="true"></span>
+      <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+        {$t('terminal.dock')}
+      </Button>
+    {:else}
+      <IconButton
+        size="sm"
+        icon={AArrowDown}
+        label={$t('terminal.fontSmaller')}
+        disabled={$terminalPrefs.fontSize <= TERMINAL_FONT_SIZE.min}
+        onclick={() => changeFont(-1)}
+      />
+      <IconButton
+        size="sm"
+        icon={AArrowUp}
+        label={$t('terminal.fontLarger')}
+        disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
+        onclick={() => changeFont(1)}
+      />
+      {#if !session.ansible}
+        <IconButton
+          size="sm"
+          icon={SquareCode}
+          label={$t('terminal.snippets')}
+          aria-pressed={panel === 'snippets'}
+          onclick={() => toggle('snippets')}
+        />
+        <IconButton
+          size="sm"
+          icon={FolderOpen}
+          label={$t('terminal.files')}
+          aria-pressed={panel === 'files'}
+          onclick={() => toggle('files')}
+        />
+      {/if}
+      <IconButton
+        size="sm"
+        icon={SlidersHorizontal}
+        label={$t('terminal.options')}
+        aria-pressed={panel === 'options'}
+        onclick={() => toggle('options')}
+      />
+      <span class="term-sep" aria-hidden="true"></span>
+      {#if !session.ansible}
+        <IconButton
+          size="sm"
+          icon={RotateCw}
+          label={$t('terminal.reconnect')}
+          onclick={reconnect}
+        />
+      {/if}
+      <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+    {/if}
   </header>
 
   <div class="term-main">
@@ -353,16 +413,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="term-host" bind:this={host}></div>
       {#if session.status === 'disconnected'}
         <div class="term-ended">
-          <Button size="sm" variant="secondary" iconLeft={RotateCw} onclick={reconnect}>
-            {$t('terminal.reconnect')}
-          </Button>
+          {#if onDock}
+            <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+              {$t('terminal.dock')}
+            </Button>
+          {:else if !session.ansible}
+            <Button size="sm" variant="secondary" iconLeft={RotateCw} onclick={reconnect}>
+              {$t('terminal.reconnect')}
+            </Button>
+          {/if}
           <span>{$t('terminal.ended')}</span>
         </div>
       {/if}
     </div>
-    {#if optionsOpen}
+    {#if panel === 'options'}
       <aside class="term-panel" aria-label={$t('terminal.options')}>
         <TerminalOptions prefs={$terminalPrefs} onChange={(p) => void saveTerminalPrefs(p)} />
+      </aside>
+    {:else if panel === 'snippets' && !onDock && !session.ansible}
+      <aside class="term-panel" aria-label={$t('terminal.snippets')}>
+        <SnippetsPanel
+          sessionKey={session.key}
+          running={session.status === 'connected'}
+          onRun={() => term?.focus()}
+        />
+      </aside>
+    {:else if panel === 'files' && !onDock && !session.ansible}
+      <aside class="term-panel" aria-label={$t('terminal.files')}>
+        <FilesPanel
+          session={session.backendId}
+          running={session.status === 'connected'}
+          shown={$terminals.active === session.key}
+        />
       </aside>
     {/if}
   </div>
@@ -371,6 +453,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span>{cols}×{rows}</span>
     {#if pasteHint}
       <span class="term-hint" role="status">{$t('terminal.pasteHint')}</span>
+    {/if}
+    {#if $snippetBroadcast && !session.ansible}
+      <span class="term-broadcast">{$t('terminal.snippets.broadcastActive')}</span>
     {/if}
     <span class="term-spacer"></span>
     <span>{statusText}</span>
@@ -466,7 +551,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     overflow: hidden;
     white-space: nowrap;
   }
-  .term-hint {
+  .term-hint,
+  .term-broadcast {
     color: var(--warning);
   }
 </style>

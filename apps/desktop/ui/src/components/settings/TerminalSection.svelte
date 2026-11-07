@@ -12,9 +12,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     sshConsole: SshConsole;
     terminal: TerminalPrefs;
+    restoreSessions: boolean;
   }
 
-  let { sshConsole = $bindable(), terminal = $bindable() }: Props = $props();
+  let {
+    sshConsole = $bindable(),
+    terminal = $bindable(),
+    restoreSessions = $bindable(),
+  }: Props = $props();
 </script>
 
 <div class="sm-section">
@@ -25,6 +30,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <option value="embedded">{$t('settings.terminal.sshConsole.embedded')}</option>
       <option value="external">{$t('settings.terminal.sshConsole.external')}</option>
     </select>
+  </label>
+  <label class="field checkbox">
+    <input type="checkbox" data-field="restore-sessions" bind:checked={restoreSessions} />
+    <span>{$t('settings.terminal.restoreSessions')}</span>
   </label>
 </div>
 <div class="sm-section">

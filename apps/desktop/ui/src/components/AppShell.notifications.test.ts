@@ -27,7 +27,11 @@ vi.mock('$lib/bridge', () => ({
 }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
-  return { settings: writable(null), session: writable(null) };
+  return {
+    setOpenSessions: vi.fn(async () => {}),
+    settings: writable(null),
+    session: writable(null),
+  };
 });
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.0.0') }));
@@ -51,7 +55,12 @@ vi.mock('$lib/stores/tunnel', () => ({
 vi.mock('$lib/stores/connectFlow', () => ({ markRdpError: vi.fn(), initiateConnect: vi.fn() }));
 vi.mock('$lib/stores/connections', async () => {
   const { writable } = await import('svelte/store');
-  return { searchTerm: writable(''), connections: writable([]) };
+  return {
+    searchTerm: writable(''),
+    // An empty list: the tabs of the last run are neither opened nor saved (R-1070).
+    connectionsStore: writable({ items: [], loading: false }),
+    connections: writable([]),
+  };
 });
 vi.mock('$lib/osNotify', () => ({ notifyOs: h.notifyOs }));
 vi.mock('$lib/stores/dnd', () => ({ allows: h.allows }));

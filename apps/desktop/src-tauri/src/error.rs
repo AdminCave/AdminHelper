@@ -81,6 +81,9 @@ pub enum AppError {
     /// The gateway refused a login without a device certificate under enforced mTLS
     /// (`auth::login_failure`).
     MtlsCertRequired,
+    /// An upload found a file of this name in the remote folder and was not asked to replace
+    /// it (sftp.rs).
+    SftpExists(String),
     /// A non-2xx answer of the server: `code` only in the form the server promises,
     /// `message` the redacted text of its `detail` (`AppError::http`).
     Http {
@@ -135,6 +138,7 @@ impl std::fmt::Display for AppError {
                  enforced). Enroll this device with a one-time enrollment token from your \
                  administrator."
             ),
+            AppError::SftpExists(name) => write!(f, "{name} already exists on the server"),
             AppError::Http {
                 status, message, ..
             } if *message == http_fallback(*status) => write!(f, "{message}"),
@@ -246,6 +250,7 @@ impl AppError {
             AppError::Json(_) => "ERR_JSON",
             AppError::SessionExpired => "ERR_SESSION_EXPIRED",
             AppError::MtlsCertRequired => "ERR_MTLS_CERT_REQUIRED",
+            AppError::SftpExists(_) => "ERR_SFTP_EXISTS",
             AppError::Http { code, .. } => code.as_deref().unwrap_or("ERR_HTTP"),
         }
     }
@@ -414,6 +419,7 @@ mod tests {
             (AppError::Json(json), "ERR_JSON"),
             (AppError::SessionExpired, "ERR_SESSION_EXPIRED"),
             (AppError::MtlsCertRequired, "ERR_MTLS_CERT_REQUIRED"),
+            (AppError::SftpExists("a.txt".into()), "ERR_SFTP_EXISTS"),
         ];
         for (err, code) in cases {
             assert_eq!(

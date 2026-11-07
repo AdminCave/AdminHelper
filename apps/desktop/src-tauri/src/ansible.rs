@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::AppError;
+use crate::pty::Spawn;
 use crate::session::SessionState;
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
 
@@ -90,21 +91,21 @@ async fn fetch_json<T: serde::de::DeserializeOwned>(
 /// `launch` ([`launch_ansible`] in the app). If a step fails, the whole directory goes, a
 /// half-written file with it, also when `launch` rejected the paths: it is this run's own. After
 /// a launch that succeeded, it is left to the run.
-pub fn run(
+pub fn run<T>(
     targets: &[AnsibleTarget],
     playbook: &Playbook,
-    launch: impl FnOnce(&str, &str) -> Result<(), AppError>,
-) -> Result<(), AppError> {
+    launch: impl FnOnce(&str, &str) -> Result<T, AppError>,
+) -> Result<T, AppError> {
     run_in(&std::env::temp_dir(), targets, playbook, launch)
 }
 
 /// [`run`] with its directory in `base` instead of the temp dir.
-fn run_in(
+fn run_in<T>(
     base: &Path,
     targets: &[AnsibleTarget],
     playbook: &Playbook,
-    launch: impl FnOnce(&str, &str) -> Result<(), AppError>,
-) -> Result<(), AppError> {
+    launch: impl FnOnce(&str, &str) -> Result<T, AppError>,
+) -> Result<T, AppError> {
     let dir = create_run_dir(base)?;
     let launched = generate_inventory(&dir, targets)
         .and_then(|inventory| {
@@ -124,9 +125,16 @@ const RUN_DIR_PREFIX: &str = "adminhelper_ansible_";
 /// Creates the directory of one run in `base`: `adminhelper_ansible_<pid>_<n>_<nanos>`, on Unix
 /// mode 0700. Ansible reads `group_vars/`, `host_vars/` and plugins next to the inventory and
 /// the playbook, so the directory is created afresh (`create`, never an existing one) and holds
-/// only what the run writes. A name that exists already (a pid of an earlier process, a
-/// planted entry) gets a new one, up to 16 tries.
+/// only what the run writes.
 fn create_run_dir(base: &Path) -> std::io::Result<PathBuf> {
+    create_private_dir(base, RUN_DIR_PREFIX)
+}
+
+/// Creates `<prefix><pid>_<n>_<nanos>` in `base`, on Unix mode 0700, always afresh: a name that
+/// exists already (a pid of an earlier process, a planted entry) gets a new one, up to 16
+/// tries. The run directory of Ansible and the ControlMaster directory of the embedded
+/// terminal (R-1072).
+pub(crate) fn create_private_dir(base: &Path, prefix: &str) -> std::io::Result<PathBuf> {
     static RUN_SEQ: AtomicU64 = AtomicU64::new(0);
     #[cfg(unix)]
     let mut builder = std::fs::DirBuilder::new();
@@ -144,7 +152,7 @@ fn create_run_dir(base: &Path) -> std::io::Result<PathBuf> {
             .map(|since| since.as_nanos())
             .unwrap_or_default();
         let dir = base.join(format!(
-            "{RUN_DIR_PREFIX}{}_{}_{nanos}",
+            "{prefix}{}_{}_{nanos}",
             std::process::id(),
             RUN_SEQ.fetch_add(1, Ordering::Relaxed)
         ));
@@ -275,19 +283,75 @@ fn confined_run_dir(path: &str) -> Option<PathBuf> {
     Some(dir.to_path_buf())
 }
 
-/// Starts ansible-playbook in a native terminal.
-pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), AppError> {
-    launch_ansible_with(inventory_path, playbook_path, start_in_terminal)
+/// The arguments of `ansible-playbook` for a run: `--check` comes last, so the files keep their
+/// places for both ways of starting it.
+pub fn playbook_args(inventory_path: &str, playbook_path: &str, check: bool) -> Vec<String> {
+    let mut args = vec![
+        "-i".to_string(),
+        inventory_path.to_string(),
+        playbook_path.to_string(),
+    ];
+    if check {
+        args.push("--check".to_string());
+    }
+    args
+}
+
+/// Starts ansible-playbook in a native terminal, with `--check` for a dry run.
+pub fn launch_ansible(
+    inventory_path: &str,
+    playbook_path: &str,
+    check: bool,
+) -> Result<(), AppError> {
+    launch_ansible_with(inventory_path, playbook_path, |inventory, playbook| {
+        start_in_terminal(inventory, playbook, check)
+    })
+}
+
+/// Starts ansible-playbook through `open` (a session of the embedded terminal) and returns what
+/// `open` returns. The session removes the run directory once ansible-playbook has ended
+/// (`Spawn::cleanup`); a start that fails removes it here, as [`launch_ansible`] does.
+pub fn launch_ansible_in_pty<T>(
+    inventory_path: &str,
+    playbook_path: &str,
+    check: bool,
+    open: impl FnOnce(Spawn) -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    launch_ansible_with(inventory_path, playbook_path, |inventory, playbook| {
+        let program = which("ansible-playbook").ok_or_else(not_installed)?;
+        open(pty_spawn(program, inventory, playbook, check))
+    })
+}
+
+/// The session of a run in the embedded terminal: `program` on the two files, the run
+/// directory (the one the inventory lies in) to remove at the end.
+fn pty_spawn(program: PathBuf, inventory_path: &str, playbook_path: &str, check: bool) -> Spawn {
+    Spawn {
+        program,
+        args: playbook_args(inventory_path, playbook_path, check),
+        env: vec![("TERM".to_string(), "xterm-256color".to_string())],
+        cwd: None,
+        cleanup: Path::new(inventory_path).parent().map(Path::to_path_buf),
+        broadcast: false,
+        control_path: None,
+        sftp: None,
+    }
+}
+
+fn not_installed() -> AppError {
+    AppError::Connection(
+        "ansible-playbook wurde nicht gefunden. Bitte Ansible installieren.".to_string(),
+    )
 }
 
 /// `launch_ansible` with the start passed in. Both files must lie in the same run directory
 /// ([`confined_run_dir`]). A start that fails takes that directory with it, as no run will; a
 /// path that fails the check is never removed, it may not be ours.
-fn launch_ansible_with(
+fn launch_ansible_with<T>(
     inventory_path: &str,
     playbook_path: &str,
-    start: impl FnOnce(&str, &str) -> Result<(), AppError>,
-) -> Result<(), AppError> {
+    start: impl FnOnce(&str, &str) -> Result<T, AppError>,
+) -> Result<T, AppError> {
     let run_dir = confined_run_dir(inventory_path);
     let Some(run_dir) = run_dir.filter(|dir| confined_run_dir(playbook_path).as_ref() == Some(dir))
     else {
@@ -314,26 +378,24 @@ fn launch_ansible_with(
     started
 }
 
-fn start_in_terminal(inventory_path: &str, playbook_path: &str) -> Result<(), AppError> {
+fn start_in_terminal(
+    inventory_path: &str,
+    playbook_path: &str,
+    check: bool,
+) -> Result<(), AppError> {
     if which("ansible-playbook").is_none() {
-        return Err(AppError::Connection(
-            "ansible-playbook wurde nicht gefunden. Bitte Ansible installieren.".to_string(),
-        ));
+        return Err(not_installed());
     }
 
     if cfg!(target_os = "windows") {
         open_windows_terminal(
             "ansible-playbook",
-            &[
-                "-i".to_string(),
-                inventory_path.to_string(),
-                playbook_path.to_string(),
-            ],
+            &playbook_args(inventory_path, playbook_path, check),
         )
     } else {
         let bash_args = vec![
             "-c".to_string(),
-            linux_run_script(inventory_path, playbook_path),
+            linux_run_script(inventory_path, playbook_path, check),
         ];
         open_linux_terminal("bash", &bash_args)
     }
@@ -347,7 +409,7 @@ fn start_in_terminal(inventory_path: &str, playbook_path: &str) -> Result<(), Ap
 /// INT trap even when ansible-playbook caught Ctrl-C itself, so `exit` there would close the
 /// terminal over its output, and on SIGINT bash waits for ansible-playbook anyway and, if that
 /// died of it, runs the EXIT trap (the Ctrl-C test pins both).
-fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
+fn linux_run_script(inventory_path: &str, playbook_path: &str, check: bool) -> String {
     let run_dir = shell_escape(
         Path::new(inventory_path)
             .parent()
@@ -356,10 +418,11 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
     );
     let inventory = shell_escape(inventory_path);
     let playbook = shell_escape(playbook_path);
+    let check = if check { " --check" } else { "" };
     format!(
         "ah_cleanup() {{ rm -rf -- {run_dir}; }}; \
          trap ah_cleanup EXIT; trap exit HUP TERM; \
-         ansible-playbook -i {inventory} {playbook}; ah_cleanup; \
+         ansible-playbook -i {inventory} {playbook}{check}; ah_cleanup; \
          echo ''; echo 'Ansible beendet. Druecke Enter zum Schliessen.'; read"
     )
 }
@@ -368,7 +431,8 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str) -> String {
 mod tests {
     use super::{
         confined_run_dir, create_run_dir, create_temp_file, fetch_playbook, generate_inventory,
-        launch_ansible_with, run, run_in, write_playbook_temp, AnsibleTarget, Playbook,
+        launch_ansible_in_pty, launch_ansible_with, playbook_args, pty_spawn, run, run_in,
+        write_playbook_temp, AnsibleTarget, Playbook,
     };
     use crate::error::AppError;
     use crate::session::SessionState;
@@ -586,10 +650,11 @@ mod tests {
     #[test]
     fn run_removes_its_directory_when_the_launch_fails() {
         let mut seen = None;
-        let result = run(&one_target(), &site("launch_fails.yml"), |inventory, _| {
-            seen = Some(PathBuf::from(inventory));
-            Err(AppError::Connection("no terminal found".to_string()))
-        });
+        let result: Result<(), _> =
+            run(&one_target(), &site("launch_fails.yml"), |inventory, _| {
+                seen = Some(PathBuf::from(inventory));
+                Err(AppError::Connection("no terminal found".to_string()))
+            });
         let dir = seen
             .expect("the run never launched")
             .parent()
@@ -797,6 +862,7 @@ mod tests {
         stub_dir: &Path,
         inventory: &str,
         playbook: &str,
+        check: bool,
     ) -> std::process::Command {
         use std::process::Stdio;
         let mut dirs = vec![stub_dir.to_path_buf()];
@@ -806,7 +872,7 @@ mod tests {
         let mut command = std::process::Command::new("bash");
         command
             .arg("-c")
-            .arg(super::linux_run_script(inventory, playbook))
+            .arg(super::linux_run_script(inventory, playbook, check))
             .env("PATH", std::env::join_paths(dirs).unwrap())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -817,13 +883,13 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn linux_run_script_removes_both_files_when_ansible_playbook_ends() {
-        for code in [0, 2] {
+        for (code, check) in [(0, false), (2, false), (0, true)] {
             let stub = stub_ansible_playbook(&format!("exit{code}"), "", &format!("exit {code}"));
             let dir = run_dir();
             let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
             let playbook = write_playbook_temp(&dir.0, "it's a run.yml", "- hosts: all\n").unwrap();
 
-            let status = run_script_command(&stub.0, &inventory, &playbook)
+            let status = run_script_command(&stub.0, &inventory, &playbook, check)
                 .status()
                 .unwrap();
             let args = fs::read_to_string(stub.0.join("args")).unwrap_or_default();
@@ -835,7 +901,10 @@ mod tests {
 
             assert_eq!(
                 args,
-                format!("-i {inventory} {playbook}\n"),
+                format!(
+                    "-i {inventory} {playbook}{}\n",
+                    if check { " --check" } else { "" }
+                ),
                 "the stub did not run on both files (exit {code}, bash {status})"
             );
             assert_eq!(
@@ -868,7 +937,7 @@ mod tests {
         let playbook =
             write_playbook_temp(&dir.0, &format!("{case}.yml"), "- hosts: all\n").unwrap();
 
-        let mut child = run_script_command(&stub.0, &inventory, &playbook)
+        let mut child = run_script_command(&stub.0, &inventory, &playbook, false)
             .stdout(std::process::Stdio::piped())
             .process_group(0)
             .spawn()
@@ -971,6 +1040,78 @@ mod tests {
     }
 
     #[test]
+    fn playbook_args_add_check_last_for_a_dry_run_only() {
+        assert_eq!(
+            playbook_args("/r/inv", "/r/pb.yml", false),
+            ["-i", "/r/inv", "/r/pb.yml"]
+        );
+        assert_eq!(
+            playbook_args("/r/inv", "/r/pb.yml", true),
+            ["-i", "/r/inv", "/r/pb.yml", "--check"]
+        );
+    }
+
+    #[test]
+    fn a_pty_run_removes_its_directory_when_the_session_does_not_start() {
+        let dir = run_dir();
+        let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
+        let playbook = write_playbook_temp(&dir.0, "no_session.yml", "- hosts: all\n").unwrap();
+
+        // Without ansible-playbook on PATH it fails before `open`; both must leave nothing.
+        let result: Result<u64, AppError> =
+            launch_ansible_in_pty(&inventory, &playbook, true, |_| {
+                Err(AppError::Connection(
+                    "the session did not start".to_string(),
+                ))
+            });
+
+        assert!(matches!(result, Err(AppError::Connection(_))), "{result:?}");
+        assert!(!dir.0.exists(), "{:?} left after a failed start", dir.0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pty_run_gets_check_and_removes_its_directory_once_it_ends() {
+        use crate::pty::{Output, PtyRegistry};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let stub = stub_ansible_playbook("pty", "", "exit 0");
+        let dir = run_dir();
+        let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
+        let playbook = write_playbook_temp(&dir.0, "in_the_tab.yml", "- hosts: all\n").unwrap();
+        let registry = PtyRegistry::default();
+        let (tx, rx) = mpsc::channel();
+
+        let mut seen = None;
+        launch_ansible_with(&inventory, &playbook, |inv, pb| {
+            seen = Some(format!("-i {inv} {pb} --check\n"));
+            let spawn = pty_spawn(stub.0.join("ansible-playbook"), inv, pb, true);
+            assert!(!spawn.broadcast, "a run takes no broadcast");
+            registry.open(spawn, 80, 24, "main", move |out| tx.send(out).is_ok())
+        })
+        .unwrap();
+        let code = loop {
+            match rx
+                .recv_timeout(Duration::from_secs(20))
+                .expect("the run ends in time")
+            {
+                Output::Exit(code) => break code,
+                Output::Data(_) | Output::Replayed => {}
+            }
+        };
+
+        assert_eq!(code, Some(0));
+        let args = fs::read_to_string(stub.0.join("args")).unwrap_or_default();
+        assert_eq!(
+            Some(args),
+            seen,
+            "the stub did not run on both files with --check"
+        );
+        assert!(!dir.0.exists(), "{:?} left after the run ended", dir.0);
+    }
+
+    #[test]
     fn launch_ansible_removes_both_files_when_the_start_fails() {
         let dir = run_dir();
         let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
@@ -988,7 +1129,7 @@ mod tests {
         #[cfg(not(unix))]
         let expected = (inventory.clone(), playbook.clone());
         let mut seen = None;
-        let result = launch_ansible_with(&inventory, &playbook, |inv, pb| {
+        let result: Result<(), _> = launch_ansible_with(&inventory, &playbook, |inv, pb| {
             seen = Some((inv.to_string(), pb.to_string()));
             Err(AppError::Connection("Kein Terminal gefunden".to_string()))
         });
@@ -1057,10 +1198,11 @@ mod tests {
         let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
 
         let mut started = false;
-        let result = launch_ansible_with(&inventory, foreign.0.to_str().unwrap(), |_, _| {
-            started = true;
-            Err(AppError::Connection("Kein Terminal gefunden".to_string()))
-        });
+        let result: Result<(), _> =
+            launch_ansible_with(&inventory, foreign.0.to_str().unwrap(), |_, _| {
+                started = true;
+                Err(AppError::Connection("Kein Terminal gefunden".to_string()))
+            });
         let left = (Path::new(&inventory).exists(), foreign.0.exists());
 
         assert!(matches!(result, Err(AppError::Validation(_))), "{result:?}");
@@ -1079,7 +1221,7 @@ mod tests {
         let playbook = write_playbook_temp(&second.0, "two_dirs.yml", "- hosts: all\n").unwrap();
 
         let mut started = false;
-        let result = launch_ansible_with(&inventory, &playbook, |_, _| {
+        let result: Result<(), _> = launch_ansible_with(&inventory, &playbook, |_, _| {
             started = true;
             Err(AppError::Connection("Kein Terminal gefunden".to_string()))
         });

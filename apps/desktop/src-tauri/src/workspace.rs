@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use url::{Origin, Url};
 
 use crate::error::AppError;
-use crate::models::{SyncMode, WorkspaceContext, WorkspaceInfo};
+use crate::models::{Snippet, SyncMode, WorkspaceContext, WorkspaceInfo};
 use crate::storage::write_json_atomic;
 
 /// Every character an id may hold (`^[a-z0-9-]{1,32}$`), spelled out rather than as ranges, so
@@ -363,6 +363,12 @@ pub(crate) struct Meta {
     /// Ids of the starred connections (R-1065); a meta written before has none.
     #[serde(default)]
     pub favorite_connections: Vec<String>,
+    /// Ids of the connections whose SSH tabs were open (R-1070); a meta written before has none.
+    #[serde(default)]
+    pub open_sessions: Vec<String>,
+    /// The snippets of the terminal (R-1071); `None` until the workspace changes them.
+    #[serde(default)]
+    pub snippets: Option<Vec<Snippet>>,
 }
 
 impl Meta {
@@ -1251,6 +1257,8 @@ mod tests {
             last_username: Some("admin".to_string()),
             legacy_keys: false,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 
@@ -1309,6 +1317,8 @@ mod tests {
                 "lastUsername": null,
                 "legacyKeys": true,
                 "favoriteConnections": [],
+                "openSessions": [],
+                "snippets": null,
             })
         );
         assert_eq!(names_in(&dir), [META_FILE]);

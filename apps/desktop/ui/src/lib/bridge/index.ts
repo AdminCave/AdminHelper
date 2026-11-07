@@ -28,6 +28,9 @@ import type {
   ResetOutcome,
   ResolvedConnection,
   Settings,
+  SftpListing,
+  SftpTransfer,
+  SftpUploaded,
   TerminalExit,
   TunnelMapping,
   TunnelRefresh,
@@ -272,8 +275,14 @@ export function deviceName(): Promise<string | null> {
 
 // ─────────────────────────── Embedded terminal (R-1069) ───────────
 
-// What a terminal session sends, in order: its output as raw bytes, then one TerminalExit.
-export type TerminalMessage = ArrayBuffer | TerminalExit;
+// The end of the kept output terminalAttach replays first; what follows is live.
+export interface TerminalReplayed {
+  replayed: true;
+}
+
+// What a terminal session sends, in order: its output as raw bytes, then one TerminalExit; on a
+// channel of terminalAttach the kept output and TerminalReplayed come first.
+export type TerminalMessage = ArrayBuffer | TerminalExit | TerminalReplayed;
 
 // Opens `connection`, resolved as for openConnection, in a pseudo console of cols×rows and
 // returns the id of the session.
@@ -293,6 +302,22 @@ export function terminalWrite(id: number, data: Uint8Array): Promise<void> {
   return invoke('terminal_write', { id, data: Array.from(data) });
 }
 
+// Writes the bytes to every running SSH session and resolves to how many it reached; main
+// window only.
+export function terminalBroadcast(data: Uint8Array): Promise<number> {
+  return invoke('terminal_broadcast', { data: Array.from(data) });
+}
+
+// Switches the broadcast; every window hears `terminal-broadcast` with the new state. Main
+// window only.
+export function terminalSetBroadcast(on: boolean): Promise<void> {
+  return invoke('terminal_set_broadcast', { on });
+}
+
+export function terminalBroadcastState(): Promise<boolean> {
+  return invoke<boolean>('terminal_broadcast_state');
+}
+
 export function terminalResize(id: number, cols: number, rows: number): Promise<void> {
   return invoke('terminal_resize', { id, cols, rows });
 }
@@ -302,9 +327,75 @@ export function terminalClose(id: number): Promise<void> {
   return invoke('terminal_close', { id });
 }
 
-// Ends every session of this process, those of a webview before a reload among them.
+// Ends every session of this window, those of a webview before a reload among them.
 export function terminalCloseAll(): Promise<void> {
   return invoke('terminal_close_all');
+}
+
+// ─────────────────────────── SFTP of a terminal session (R-1072) ──
+// Main window only; each goes over the connection of the running SSH session `session`.
+
+// The entries of `path` on the host; '.' is the login directory.
+export function sftpList(session: number, path: string): Promise<SftpListing> {
+  return invoke<SftpListing>('sftp_list', { session, path });
+}
+
+export function sftpMkdir(session: number, path: string): Promise<void> {
+  return invoke('sftp_mkdir', { session, path });
+}
+
+// Uploads the files the user picks in the file dialog into `dir`; null once the dialog is
+// cancelled. Files that exist there stay and are named in `existing`: sftpUploadDropped with
+// the returned `drop` and `overwrite` replaces them.
+export function sftpUpload(
+  session: number,
+  dir: string,
+  onProgress: (step: SftpTransfer) => void,
+): Promise<SftpUploaded | null> {
+  const progress = new Channel<SftpTransfer>(onProgress);
+  return invoke<SftpUploaded | null>('sftp_upload', { session, dir, progress });
+}
+
+// Uploads what is left of the files of `drop` (event `sftp-drop`, or a sftpUpload) into
+// `dir`; only the last drop counts, and a folder in it refuses the whole drop.
+export function sftpUploadDropped(
+  session: number,
+  dir: string,
+  drop: number,
+  overwrite: boolean,
+  onProgress: (step: SftpTransfer) => void,
+): Promise<SftpUploaded> {
+  const progress = new Channel<SftpTransfer>(onProgress);
+  return invoke<SftpUploaded>('sftp_upload_dropped', { session, dir, drop, overwrite, progress });
+}
+
+// Downloads the file `path` to where the user saves it; false once the dialog is cancelled.
+export function sftpDownload(
+  session: number,
+  path: string,
+  onProgress: (step: SftpTransfer) => void,
+): Promise<boolean> {
+  const progress = new Channel<SftpTransfer>(onProgress);
+  return invoke<boolean>('sftp_download', { session, path, progress });
+}
+
+// Moves session `id` to this window and `onMessage`; the channel before hears nothing more.
+export function terminalAttach(
+  id: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<void> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke('terminal_attach', { id, output });
+}
+
+// Opens session `id` in a window of its own titled `title`, or brings that window to the front.
+export function terminalDetach(id: number, title: string): Promise<void> {
+  return invoke('terminal_detach', { id, title });
+}
+
+// Closes the window of session `id`; main hears `terminal-docked`.
+export function terminalDock(id: number): Promise<void> {
+  return invoke('terminal_dock', { id });
 }
 
 // ─────────────────────────── Password keychain ───────────────────
@@ -346,8 +437,34 @@ export function fetchTunnels(): Promise<TunnelMapping[]> {
 // ─────────────────────────── Ansible ──────────────────────────────
 
 // The backend loads file name and content of the playbook from the signed-in server itself.
-export function ansibleRun(playbookId: string, targets: AnsibleTarget[]): Promise<void> {
-  return invoke('ansible_run', { playbookId, targets });
+// `check` runs it as a dry run (`--check`), in the terminal of the OS.
+export function ansibleRun(
+  playbookId: string,
+  targets: AnsibleTarget[],
+  check: boolean,
+): Promise<void> {
+  return invoke('ansible_run', { playbookId, targets, check });
+}
+
+// The same run in a pseudo console of cols×rows, main window only; returns the id of the
+// session, whose output arrives as for terminalOpenSsh.
+export function terminalOpenAnsible(
+  playbookId: string,
+  targets: AnsibleTarget[],
+  check: boolean,
+  cols: number,
+  rows: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<number> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke<number>('terminal_open_ansible', {
+    playbookId,
+    targets,
+    check,
+    cols,
+    rows,
+    output,
+  });
 }
 
 // ─────────────────────────── Notifications (SSE) ──────────────────

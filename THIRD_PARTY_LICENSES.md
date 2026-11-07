@@ -128,7 +128,8 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `webpki-roots`, `x509-parser`, `p12`,
 `toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
 `ironrdp-connector`, `ironrdp-session` und `ironrdp-rdpdr-native` (eingebettetes RDP, Git-Revision von
-`github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten) —
+`github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten),
+`russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`) —
 überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
@@ -137,17 +138,17 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license`, Stand **2026-11-06** (754 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license`, Stand **2026-11-07** (758 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 491 |
-| MIT | 147 |
+| Apache-2.0 OR MIT | 493 |
+| MIT | 148 |
 | Apache-2.0 OR MIT OR Zlib | 27 |
 | Unicode-3.0 | 18 |
 | MIT OR Unlicense | 12 |
-| Apache-2.0 | 7 |
+| Apache-2.0 | 8 |
 | BSD-3-Clause | 6 |
 | MPL-2.0 | 5 |
 | ISC | 5 |
@@ -177,8 +178,8 @@ Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MI
 **Auflagen-relevant:**
 
 - **Apache-2.0 (NOTICE), unvermeidbar** (pur oder als `AND`-Anteil):
-  `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `sync_wrapper`,
-  `tao`, `target-lexicon`.
+  `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`, `russh-sftp`,
+  `sync_wrapper`, `tao`, `target-lexicon`.
 - **BSD-3-Clause, mitgebaut:** `libopus_sys` (selbst `MIT`, Audio des eingebetteten RDP) bringt
   die C-Quelle von libopus mit und linkt sie statisch; ihre Lizenz (`BSD-3-Clause`, Xiph.Org und
   andere, `opus/COPYING` im Crate) sieht `cargo-license` nicht, ihr Copyright-Hinweis gehört in
@@ -243,7 +244,7 @@ Apache-lizenziert (pur oder als `AND`-Anteil) sind:
 - **Python:** `bcrypt`, `python-multipart`
 - **Go:** `cobra`, `numcpus`, `mousetrap`
 - **Rust:** `cpal`, `cryptoki`, `cryptoki-sys`, `dpi`, `flagset`, `gethostname`, `ring`,
-  `sync_wrapper`, `tao`, `target-lexicon`
+  `russh-sftp`, `sync_wrapper`, `tao`, `target-lexicon`
 
 Sofern diese Projekte eine `NOTICE`-Datei mitliefern, gehört deren Inhalt
 unverändert in die Distribution. Bei allen **dual** MIT/Apache lizenzierten

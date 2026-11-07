@@ -118,6 +118,8 @@ impl Planned {
                 last_username,
                 legacy_keys: true,
                 favorite_connections: Vec::new(),
+                open_sessions: Vec::new(),
+                snippets: None,
             },
             connections,
         })
@@ -670,6 +672,8 @@ mod tests {
             last_username: last_username.map(String::from),
             legacy_keys: true,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 
@@ -745,8 +749,9 @@ mod tests {
                 "rdpCustomSize": "1600x900",
                 "rdpPerformanceProfile": "lan",
                 "osNotifications": true,
-                // A settings.json before 0.47 has no console and no terminal options.
+                // A settings.json before 0.47 has no console, no terminal options and no restore switch.
                 "sshConsole": "embedded",
+                "restoreSessions": false,
                 "terminal": {
                     "fontSize": 13,
                     "theme": "cave",
@@ -910,8 +915,9 @@ mod tests {
                 "rdpCustomSize": null,
                 "rdpPerformanceProfile": "auto",
                 "osNotifications": false,
-                // A settings.json before 0.47 has no console and no terminal options.
+                // A settings.json before 0.47 has no console, no terminal options and no restore switch.
                 "sshConsole": "embedded",
+                "restoreSessions": false,
                 "terminal": {
                     "fontSize": 13,
                     "theme": "cave",

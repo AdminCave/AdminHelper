@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   fetchPlaybooks: vi.fn(async (..._a: unknown[]) => [] as unknown[]),
   fetchServers: vi.fn(async (..._a: unknown[]) => [] as unknown[]),
   ansibleRun: vi.fn(async (..._a: unknown[]) => undefined),
+  openAnsible: vi.fn(async (..._a: unknown[]) => true),
+  sshConsole: 'external' as 'external' | 'embedded',
   modal: vi.fn(),
 }));
 
@@ -22,7 +24,14 @@ vi.mock('$lib/api/ansible', () => ({
 vi.mock('$lib/bridge', () => ({ ansibleRun: h.ansibleRun }));
 vi.mock('$lib/stores/session', () => ({
   currentSession: () => ({ serverUrl: 'https://srv.example', username: 'a', isAdmin: true }),
+  sessionStore: {
+    subscribe(fn: (v: unknown) => void) {
+      fn({ settings: { sshConsole: h.sshConsole } });
+      return () => {};
+    },
+  },
 }));
+vi.mock('$lib/stores/terminals', () => ({ openAnsible: h.openAnsible }));
 vi.mock('$lib/stores/statusBar', () => ({ showStatus: vi.fn(), reportError: vi.fn() }));
 vi.mock('../components/ansible/PlaybookModal.svelte', () => ({ default: h.modal }));
 
@@ -65,6 +74,8 @@ beforeEach(() => {
   h.fetchServers.mockResolvedValue(servers);
   h.ansibleRun.mockReset();
   h.ansibleRun.mockResolvedValue(undefined);
+  h.openAnsible.mockClear();
+  h.sshConsole = 'external';
   h.modal.mockReset();
   clearSelection();
 });
@@ -111,13 +122,48 @@ describe('Ansible', () => {
     await fireEvent.click(action('playbook-run'));
     await waitFor(() => expect(h.ansibleRun).toHaveBeenCalledTimes(1));
     expect(h.ansibleRun.mock.calls[0][0]).toBe('p1');
+    expect(h.ansibleRun.mock.calls[0][2]).toBe(false);
+    expect(h.openAnsible).not.toHaveBeenCalled();
+  });
+
+  it('runs a dry run in a terminal tab when the terminal is embedded (R-1073)', async () => {
+    h.sshConsole = 'embedded';
+    await mount();
+    await fireEvent.click(items()[0]);
+    await fireEvent.click(screen.getByRole('checkbox', { name: /db-01/ }));
+    const check = screen.getByRole('checkbox', { name: /--check/ }) as HTMLInputElement;
+    expect(check.checked).toBe(false);
+    await fireEvent.click(check);
+    expect(check.checked).toBe(true);
+    await fireEvent.click(action('playbook-run'));
+    await waitFor(() => expect(h.openAnsible).toHaveBeenCalledTimes(1));
+    expect(h.openAnsible).toHaveBeenCalledWith(
+      'p1',
+      'apt-upgrade',
+      [{ hostname: 'db-01.example', groups: ['prod', 'db'] }],
+      true,
+    );
+    expect(h.ansibleRun).not.toHaveBeenCalled();
+  });
+
+  it('hands the dry run to the OS terminal as well', async () => {
+    await mount();
+    await fireEvent.click(items()[0]);
+    await fireEvent.click(screen.getByRole('checkbox', { name: /web-01/ }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: /--check/ }));
+    await fireEvent.click(action('playbook-run'));
+    await waitFor(() => expect(h.ansibleRun).toHaveBeenCalledTimes(1));
+    expect(h.ansibleRun.mock.calls[0][2]).toBe(true);
   });
 
   it('switches to tag targets and selects every server of a tag', async () => {
     await mount();
     await fireEvent.click(items()[0]);
     await fireEvent.click(screen.getByRole('radio', { name: 'Nach Tags' }));
-    expect(screen.queryByRole('checkbox')).toBeNull();
+    // No server checkboxes left; the dry run (R-1073) is the only one.
+    expect(screen.getAllByRole('checkbox')).toEqual([
+      screen.getByRole('checkbox', { name: /--check/ }),
+    ]);
     const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('.pb-tag-chip'));
     expect(chips.map((c) => c.textContent?.trim())).toEqual(['db (1)', 'prod (2)']);
     await fireEvent.click(chips[1]);

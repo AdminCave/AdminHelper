@@ -22,8 +22,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
-  import { session, settings } from '$lib/stores/session';
-  import { connections } from '$lib/stores/connections';
+  import { session, settings, setOpenSessions } from '$lib/stores/session';
+  import { connections, connectionsStore } from '$lib/stores/connections';
   import { initiateConnect, markRdpError, markRdpExit } from '$lib/stores/connectFlow';
   import { openEditor } from '$lib/stores/editor';
   import { buildEntries } from '$lib/palette';
@@ -36,6 +36,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import {
     PAGE_TAB,
     closeTerminal,
+    detachTerminal,
+    keepOpenSessions,
+    listenForDocking,
     showTab,
     terminals,
     type TerminalSession,
@@ -150,7 +153,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // itself in the header.
   let activeSession = $derived($terminals.sessions.find((s) => s.key === $terminals.active));
   let title = $derived(activeSession?.connection.name ?? pageTitle);
-  let subtitle = $derived(activeSession ? `SSH · ${activeSession.connection.host}` : null);
+  let subtitle = $derived(
+    !activeSession
+      ? null
+      : activeSession.ansible
+        ? 'Ansible'
+        : `SSH · ${activeSession.connection.host}`,
+  );
   // The workspace this window serves (R-0431); null only when its context did not load.
   let workspace = $derived($context?.workspace ?? null);
 
@@ -272,6 +281,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // instead of a hand-maintained string that silently drifts (audit 2.17).
   let appVersion = $state('');
 
+  // Only the main window keeps the tabs: a detached one holds a single session of them.
+  const stopKeeping = keepOpenSessions({
+    settings,
+    connections: connectionsStore,
+    save: setOpenSessions,
+    connect: (c) => initiateConnect(c, false, 'embedded'),
+  });
+
   onMount(async () => {
     getVersion()
       .then((v) => (appVersion = v))
@@ -298,6 +315,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           if (e.payload?.correlationId) void markRdpExit(e.payload.correlationId);
         }),
         listenForSessionExpiry(),
+        listenForDocking(),
       ]);
       // Destroyed while awaiting? Unregister immediately instead of leaking the handlers (4.100).
       if (destroyed) {
@@ -312,6 +330,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   onDestroy(() => {
     destroyed = true;
+    stopKeeping();
     stopSyncTimer();
     unlisteners.forEach((fn) => {
       try {
@@ -444,7 +463,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </header>
 
   <!-- The page and every session stay mounted behind the tab in front: a page keeps its state,
-       a terminal its scrollback and its program. -->
+       a terminal its scrollback and its program. A detached session has its terminal in its own
+       window; docked, it starts a terminal anew, which gets the output first that Rust kept. -->
   <div class="content-area">
     <SessionTabs
       sessions={$terminals.sessions}
@@ -452,6 +472,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       pageLabel={pageTitle}
       onSelect={showTab}
       onClose={(s) => void endSession(s)}
+      onDetach={(s) => void detachTerminal(s.key)}
     />
     <main class="content-main" class:hidden={activeSession !== undefined}>
       <section class="content-section">
@@ -471,9 +492,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </section>
     </main>
     {#each $terminals.sessions as s (s.key)}
-      <div class="terminal-pane" class:hidden={s.key !== $terminals.active} data-session={s.key}>
-        <SshTerminal session={s} onClose={() => void endSession(s)} />
-      </div>
+      {#if !s.detached}
+        <div class="terminal-pane" class:hidden={s.key !== $terminals.active} data-session={s.key}>
+          <SshTerminal session={s} onClose={() => void endSession(s)} />
+        </div>
+      {/if}
     {/each}
   </div>
 

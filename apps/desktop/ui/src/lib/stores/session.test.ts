@@ -32,6 +32,7 @@ import {
   settings,
   setAllowSelfSignedCerts,
   setFavoriteConnections,
+  setSnippets,
   registerConnectionsSync,
 } from './session';
 import { context } from './workspace';
@@ -376,6 +377,35 @@ describe('session store', () => {
       const fresh = await freshStart();
       await fresh.session.setFavoriteConnections(['a']);
       expect(fresh.bridge.saveSettings).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setSnippets (R-1071)', () => {
+    const DF = { name: 'Disk', command: 'df -h' };
+
+    it('saves the whole settings with the list, an empty one too, and updates the store', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ language: 'de', favoriteConnections: ['a'], snippets: null }),
+      );
+      await hydrate();
+
+      await setSnippets([DF]);
+      expect(bridge.saveSettings).toHaveBeenLastCalledWith(
+        baseSettings({ language: 'de', favoriteConnections: ['a'], snippets: [DF] }),
+      );
+      expect(get(settings)?.snippets).toEqual([DF]);
+
+      await setSnippets([]);
+      expect(get(settings)?.snippets).toEqual([]);
+    });
+
+    it('does not touch the store when saving fails', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(baseSettings({ snippets: [DF] }));
+      await hydrate();
+      vi.mocked(bridge.saveSettings).mockRejectedValueOnce(new Error('too many snippets'));
+
+      await expect(setSnippets([])).rejects.toThrow('too many snippets');
+      expect(get(settings)?.snippets).toEqual([DF]);
     });
   });
 });

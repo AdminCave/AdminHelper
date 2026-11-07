@@ -18,7 +18,7 @@ use crate::models::{
     Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings, SshConsole,
     SyncMode, TerminalPrefs,
 };
-use crate::validation::{validate_https_url, validate_server_url_secure};
+use crate::validation::{validate_https_url, validate_server_url_secure, validate_snippets};
 use crate::workspace::{self, Meta};
 
 pub(crate) fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -294,6 +294,9 @@ pub fn save_settings(app: &tauri::AppHandle, settings: &Settings) -> Result<(), 
 }
 
 fn save_settings_in(base: &Path, seen: &SeenPrefs, settings: &Settings) -> Result<(), AppError> {
+    if let Some(snippets) = &settings.snippets {
+        validate_snippets(snippets)?;
+    }
     if let Ok(ws) = workspace::current() {
         let _meta = meta_lock();
         let dir = ws.data_dir(base);
@@ -382,6 +385,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         os_notifications,
         ssh_console,
         terminal,
+        restore_sessions,
     } = prefs;
     Settings {
         mode: meta.map_or(defaults.mode, |meta| meta.kind.clone()),
@@ -402,6 +406,9 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         favorite_connections: meta.map_or_else(Vec::new, |meta| meta.favorite_connections.clone()),
         ssh_console,
         terminal,
+        restore_sessions,
+        open_sessions: meta.map_or_else(Vec::new, |meta| meta.open_sessions.clone()),
+        snippets: meta.and_then(|meta| meta.snippets.clone()),
     }
 }
 
@@ -463,6 +470,8 @@ fn meta_with(
         allow_self_signed_certs: settings.allow_self_signed_certs,
         last_username: settings.last_username.clone(),
         favorite_connections: settings.favorite_connections.clone(),
+        open_sessions: settings.open_sessions.clone(),
+        snippets: settings.snippets.clone(),
         ..meta.clone()
     })
 }
@@ -550,6 +559,9 @@ pub(crate) struct Prefs {
     pub ssh_console: SshConsole,
     #[serde(default)]
     pub terminal: TerminalPrefs,
+    // Absent in a prefs.json of 0.46 and before.
+    #[serde(default)]
+    pub restore_sessions: bool,
 }
 
 impl From<&Settings> for Prefs {
@@ -564,6 +576,7 @@ impl From<&Settings> for Prefs {
             os_notifications: settings.os_notifications,
             ssh_console: settings.ssh_console,
             terminal: settings.terminal,
+            restore_sessions: settings.restore_sessions,
         }
     }
 }
@@ -594,6 +607,7 @@ impl Prefs {
             os_notifications,
             ssh_console,
             terminal,
+            restore_sessions,
         } = mine;
         take_changed(&mut self.language, &seen.language, language);
         take_changed(
@@ -629,6 +643,11 @@ impl Prefs {
         take_changed(&mut self.ssh_console, &seen.ssh_console, ssh_console);
         // As a whole: two windows changing different options at once, the last one wins.
         take_changed(&mut self.terminal, &seen.terminal, terminal);
+        take_changed(
+            &mut self.restore_sessions,
+            &seen.restore_sessions,
+            restore_sessions,
+        );
         self
     }
 }
@@ -918,8 +937,8 @@ mod settings_tests {
     use crate::error::AppError;
     use crate::keyring_store;
     use crate::models::{
-        Connection, RdpScalingMode, Settings, SshConsole, SyncMode, TerminalCursor, TerminalPrefs,
-        TerminalTheme,
+        Connection, RdpScalingMode, Settings, Snippet, SshConsole, SyncMode, TerminalCursor,
+        TerminalPrefs, TerminalTheme,
     };
     use crate::workspace::{self, EnteredWorkspace, Meta, Workspace, WorkspaceId, PALETTE};
 
@@ -966,6 +985,8 @@ mod settings_tests {
             last_username: None,
             legacy_keys: false,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 
@@ -1042,6 +1063,9 @@ mod settings_tests {
             right_click_paste: false,
             confirm_close: false,
         };
+        settings.restore_sessions = true;
+        settings.open_sessions = vec!["c2".to_string(), "c1".to_string()];
+        settings.snippets = Some(vec![snippet("Disk", "df -h")]);
         save_settings_in(base, &process, &settings).unwrap();
 
         // The next process of the workspace reads what this one saved.
@@ -1070,6 +1094,7 @@ mod settings_tests {
                     "rightClickPaste": false,
                     "confirmClose": false,
                 },
+                "restoreSessions": true,
             })
         );
         assert_eq!(
@@ -1080,6 +1105,8 @@ mod settings_tests {
                 allow_self_signed_certs: true,
                 last_username: Some("admin".to_string()),
                 favorite_connections: vec!["c1".to_string(), "c2".to_string()],
+                open_sessions: vec!["c2".to_string(), "c1".to_string()],
+                snippets: Some(vec![snippet("Disk", "df -h")]),
                 ..meta(SyncMode::Server, None)
             }
         );
@@ -1120,6 +1147,137 @@ mod settings_tests {
         let prefs = json_of(&base.join(PREFS_FILE));
         assert_eq!(prefs["language"], "en");
         assert!(prefs.get("favoriteConnections").is_none());
+    }
+
+    #[test]
+    fn open_sessions_belong_to_their_workspace_and_old_files_have_none() {
+        let scratch = Scratch::new("settings-open-sessions");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        // A workspace.json and a prefs.json written before R-1070.
+        let dir_b = workspace("b").data_dir(base);
+        fs::create_dir_all(&dir_b).unwrap();
+        let mut old = serde_json::to_value(meta(SyncMode::Local, None)).unwrap();
+        old.as_object_mut().unwrap().remove("openSessions");
+        fs::write(dir_b.join("workspace.json"), old.to_string()).unwrap();
+        let mut old_prefs = serde_json::to_value(Prefs::default()).unwrap();
+        old_prefs.as_object_mut().unwrap().remove("restoreSessions");
+        fs::write(base.join(PREFS_FILE), old_prefs.to_string()).unwrap();
+        {
+            let _b = enter("b");
+            let settings = load_settings_in(base, None).unwrap();
+            assert!(!settings.restore_sessions, "restoring is off unless chosen");
+            assert!(settings.open_sessions.is_empty());
+        }
+        {
+            let _a = enter("a");
+            let process = SeenPrefs::new();
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.open_sessions = vec!["s2".to_string(), "s1".to_string()];
+            settings.restore_sessions = true;
+            save_settings_in(base, &process, &settings).unwrap();
+        }
+        assert_eq!(
+            meta_in(base, "a").open_sessions,
+            vec!["s2".to_string(), "s1".to_string()],
+            "the tab order is kept"
+        );
+        // The switch is the device's, the tabs are the workspace's.
+        let prefs = json_of(&base.join(PREFS_FILE));
+        assert_eq!(prefs["restoreSessions"], true);
+        assert!(prefs.get("openSessions").is_none());
+        let _b = enter("b");
+        let in_b = load_settings_in(base, None).unwrap();
+        assert!(in_b.restore_sessions);
+        assert!(in_b.open_sessions.is_empty());
+    }
+
+    fn snippet(name: &str, command: &str) -> Snippet {
+        Snippet {
+            name: name.to_string(),
+            command: command.to_string(),
+        }
+    }
+
+    #[test]
+    fn snippets_belong_to_their_workspace_and_none_differs_from_empty() {
+        let scratch = Scratch::new("settings-snippets");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        // A workspace.json written before R-1071.
+        let dir_b = workspace("b").data_dir(base);
+        fs::create_dir_all(&dir_b).unwrap();
+        let mut old = serde_json::to_value(meta(SyncMode::Local, None)).unwrap();
+        old.as_object_mut().unwrap().remove("snippets");
+        fs::write(dir_b.join("workspace.json"), old.to_string()).unwrap();
+        {
+            let _b = enter("b");
+            let settings = load_settings_in(base, None).unwrap();
+            assert_eq!(
+                settings.snippets, None,
+                "no list of its own: the default list"
+            );
+        }
+        let saved = |snippets: Option<Vec<Snippet>>| {
+            let _a = enter("a");
+            let process = SeenPrefs::new();
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.snippets = snippets;
+            save_settings_in(base, &process, &settings).unwrap();
+            (
+                meta_in(base, "a").snippets,
+                load_settings_in(base, None).unwrap().snippets,
+            )
+        };
+        let list = vec![
+            snippet("Disk", "df -h"),
+            snippet("Two lines", "cd /tmp\nls -la\t-h"),
+        ];
+        assert_eq!(saved(Some(list.clone())), (Some(list.clone()), Some(list)));
+        assert_eq!(
+            saved(Some(Vec::new())),
+            (Some(Vec::new()), Some(Vec::new())),
+            "empty stays empty"
+        );
+        assert_eq!(saved(None), (None, None));
+        // The list is the workspace's: neither prefs.json nor another workspace has it.
+        let _a = enter("a");
+        let process = SeenPrefs::new();
+        let mut settings = load_settings_in(base, Some(&process)).unwrap();
+        settings.snippets = Some(vec![snippet("Up", "uptime")]);
+        settings.language = Some("en".to_string());
+        save_settings_in(base, &process, &settings).unwrap();
+        assert_eq!(json_of(&base.join(PREFS_FILE))["language"], "en");
+        assert!(json_of(&base.join(PREFS_FILE)).get("snippets").is_none());
+        let wire = json_of(&workspace("a").data_dir(base).join("workspace.json"));
+        assert_eq!(
+            wire["snippets"],
+            serde_json::json!([{"name": "Up", "command": "uptime"}])
+        );
+        drop(_a);
+        let _b = enter("b");
+        assert_eq!(load_settings_in(base, None).unwrap().snippets, None);
+    }
+
+    #[test]
+    fn a_snippet_out_of_bounds_saves_nothing() {
+        let scratch = Scratch::new("settings-snippets-bounds");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        let _a = enter("a");
+        let process = SeenPrefs::new();
+        let mut settings = load_settings_in(base, Some(&process)).unwrap();
+        settings.language = Some("en".to_string());
+        settings.snippets = Some(vec![snippet("", "df -h")]);
+        assert!(matches!(
+            save_settings_in(base, &process, &settings),
+            Err(AppError::Validation(_))
+        ));
+        assert_eq!(meta_in(base, "a").snippets, None);
+        assert!(
+            !base.join(PREFS_FILE).exists(),
+            "the language was not saved either"
+        );
     }
 
     #[test]

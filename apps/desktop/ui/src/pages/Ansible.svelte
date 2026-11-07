@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ansibleTagGroups,
     ansibleSelectedPlaybook,
     ansibleCanRun,
+    ansibleCheck,
     activateAnsible,
     reloadPlaybooks,
     selectPlaybook,
@@ -26,6 +27,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     toggleServer,
     toggleTag,
     runPlaybook,
+    setCheck,
     type AnsibleTargetMode,
   } from '$lib/stores/ansible';
   import { t } from '$lib/i18n';
@@ -179,6 +181,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 {/each}
               </div>
             {/if}
+
+            <Checkbox
+              checked={$ansibleCheck}
+              label={$t('ansible.run.check')}
+              description={$t('ansible.run.checkHint')}
+              onChange={setCheck}
+            />
 
             <div class="pb-summary">
               {#if $ansibleSelectedServerIds.size > 0}

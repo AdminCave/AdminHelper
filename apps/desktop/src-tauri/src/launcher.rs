@@ -145,6 +145,8 @@ pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError
             last_username: None,
             legacy_keys: false,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
+            snippets: None,
         };
         return create(base, &mut registry, &meta);
     };
@@ -880,6 +882,8 @@ mod tests {
             last_username: Some("admin".to_string()),
             legacy_keys: true,
             favorite_connections: Vec::new(),
+            open_sessions: Vec::new(),
+            snippets: None,
         }
     }
 
@@ -1250,6 +1254,8 @@ mod tests {
                     last_username: None,
                     legacy_keys: false,
                     favorite_connections: Vec::new(),
+                    open_sessions: Vec::new(),
+                    snippets: None,
                 },
                 "{case}"
             );
