@@ -1,5 +1,5 @@
 # Ruhezeiten · Eskalation · Zusammenfassung per E-Mail · Ton bei Kritisch — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-3 · Review: pro Task
 Spec: docs/features/kern-notify-3.md (Roadmap R-1081)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), zwei neue Scheduler-Jobs, Desktop-Journey der Benachrichtigungen; geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -50,8 +50,10 @@ Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/
 Task-Review: am Ende
 Abhängt von: T2, T3, T4
 
-### T6 — Eskalation folgt der aktuellen Sicht und den Kategorien (R-1081)  [ ]
+### T6 — Eskalation folgt der aktuellen Sicht und den Kategorien (R-1081)  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/escalation.py, apps/server/tests/test_notification_escalation.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @42cfa2ffe 2026-11-07T13:10:33+01:00
+Review: approve (.ah-out/review/kern-notify-3/T6.verdict.json)
 Änderung: Aus der Abschlussprüfung. `escalate_due` eskaliert nur, wer den Vorfall jetzt noch sieht (dieselbe Prüfung wie `access`: Admin oder ein zugewiesener Server des Vorfalls), und nicht in einer ausgeschalteten Kategorie (wie `service.channels_for`). Ohne Sicht oder in stummer Kategorie bleibt `escalated_at` leer. Die Mitglieder der fälligen Vorfälle lädt eine Abfrage. Tests: Zuweisung entzogen, früherer Admin bei einem Vorfall ohne Server, Wiederöffnen nach dem Entzug, zugewiesene Person eskaliert, stumme und andere Kategorie. Doku: der Satz zur Stummschaltung klarer, Sicht und Kategorie im Abschnitt Eskalation DE+EN.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_escalation.py
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html
@@ -78,4 +80,5 @@ Abhängt von: T3, T5
 - T4: Der Abschnitt erscheint nur, wenn der Server die Felder schickt (`quiet` vorhanden); dann gehen sie beim Speichern mit, sonst nicht. Ein alter Server würde sie zwar ignorieren (`RequestModel` ohne `extra=forbid`), die Einstellungen wirkten dort aber nicht.
 - T4: Ein Eskalationskanal ist wählbar mit gespeichertem Ziel, eingeschaltet und vom Server zustellbar; der Schalter der Eskalation bleibt gesperrt, bis ein Kanal gewählt ist (der Server lehnt an ohne Kanal mit 422 ab).
 - T4: Die Ruhezeit des Desktops rechnet in der gespeicherten Zone der Person (dieselbe Uhr wie der Server), nicht in der Zone des Rechners; eine unbekannte Zone zählt als UTC.
+- T6: Die Eskalation prüft die Sicht der Person beim Versand neu, mit `incidents._sight` wie `access`; die T3-Zeile, sie werde nicht neu geprüft, gilt damit nicht mehr. Eine ausgeschaltete Kategorie eskaliert nicht (Spec, wie `channels_for`).
 - T5: Das Verify der Doku-Task ist `scripts --strict -- doc_smoke_test` (Komponente `scripts`), wie in den übrigen Doku-Tasks; der Plan nannte die Komponente `docs`, die `verify.sh` nicht kennt.

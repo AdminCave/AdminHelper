@@ -6,8 +6,8 @@
 
 Pinned here: after the deadline since the first critical ping and not before; not once
 acknowledged or resolved; once per person; again after a reopen and a new critical
-ping; not for a muted row or server, a switched-off channel or one without a target;
-regardless of the matrix; the quiet hours as for critical; the history entry; and a
+ping; not for a muted row, server or category, a switched-off channel or one without a
+target; only while the person still sees the incident; regardless of the matrix; the quiet hours as for critical; the history entry; and a
 query count that does not grow with the candidates."""
 
 import json
@@ -29,7 +29,7 @@ from app.modules.notifications.models import (
 )
 
 from .test_notification_incidents import T0, _admin, _at, _check
-from .test_notifications import _event, _server
+from .test_notifications import _event, _server, _sub, _user
 
 NTFY = "https://ntfy.example/alerts"
 
@@ -47,7 +47,16 @@ def published(monkeypatch):
 
 
 def _person(db, username="boss", **settings):
-    user = _admin(db, username)
+    return _escalating(db, _admin(db, username), **settings)
+
+
+def _assignee(db, server, username="ops"):
+    user = _user(db, username, servers=[server], email=f"{username}@example.org")
+    _sub(db, user, email=True)
+    return _escalating(db, user)
+
+
+def _escalating(db, user, **settings):
     values = dict(
         escalation_enabled=True,
         escalation_minutes=10,
@@ -272,6 +281,68 @@ class TestSkip:
         assert escalate_due(db_session, _at(10)) == 1
         (entry,) = _escalations(db_session, user)
         assert (entry.channel, entry.address) == ("email", "boss@example.org")
+
+
+class TestSight:
+    def test_an_assignee_escalates(self, db_session, web01, published):
+        user = _assignee(db_session, web01)
+        ingest(db_session, _check(), now=T0)
+
+        assert escalate_due(db_session, _at(10)) == 1
+        assert len(_escalations(db_session, user)) == 1
+
+    def test_not_after_the_server_was_unassigned(self, db_session, web01, published):
+        user = _assignee(db_session, web01)
+        ingest(db_session, _check(), now=T0)
+        user.servers = []
+        db_session.commit()
+
+        assert escalate_due(db_session, _at(10)) == 0
+        assert _escalations(db_session, user) == []
+        row = db_session.query(Notification).filter(Notification.user_id == user.id).one()
+        assert row.escalated_at is None
+        kinds = [e.kind for e in db_session.query(NotificationIncidentEvent)]
+        assert "escalated" not in kinds
+
+    def test_not_for_a_former_admin_on_an_incident_without_a_server(
+        self, db_session, web01, published
+    ):
+        user = _person(db_session)
+        ingest(db_session, _event(source_id=None), now=T0)
+        assert _incident(db_session).critical_since == T0
+        user.is_admin = False
+        db_session.commit()
+
+        assert escalate_due(db_session, _at(10)) == 0
+
+    def test_not_after_a_reopen_once_unassigned(self, db_session, web01, published):
+        user = _assignee(db_session, web01)
+        ingest(db_session, _check(), now=T0)
+        assert escalate_due(db_session, _at(10)) == 1
+        ingest(db_session, _check("ok"), now=_at(12))
+        user.servers = []
+        db_session.commit()
+        ingest(db_session, _check(), now=_at(14))
+        assert _incident(db_session).critical_since == _at(14)
+
+        assert escalate_due(db_session, _at(24)) == 0
+        assert len(_escalations(db_session, user)) == 1
+
+
+class TestCategory:
+    def test_not_in_a_muted_category(self, db_session, web01, published):
+        user = _person(db_session, muted_categories=json.dumps(["monitoring"]))
+        ingest(db_session, _check(), now=T0)
+
+        assert escalate_due(db_session, _at(10)) == 0
+        row = db_session.query(Notification).filter(Notification.user_id == user.id).one()
+        assert row.escalated_at is None
+
+    def test_another_muted_category_does_not_stop_it(self, db_session, web01, published):
+        _person(db_session, muted_categories=json.dumps(["tunnel"]))
+        ingest(db_session, _check(), now=T0)
+
+        assert escalate_due(db_session, _at(10)) == 1
 
 
 class TestQuiet:
