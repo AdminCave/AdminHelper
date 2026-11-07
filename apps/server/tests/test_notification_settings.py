@@ -236,6 +236,11 @@ class TestChannelsFor:
 
 
 class TestRouting:
+    @pytest.fixture(autouse=True)
+    def _telegram_bot(self, monkeypatch):
+        # Telegram entries are queued only with a bot token (R-1080).
+        monkeypatch.setattr(app_config, "TELEGRAM_BOT_TOKEN", "test-token")
+
     @pytest.mark.parametrize(
         ("severity", "new_status", "expected"),
         [
@@ -293,6 +298,7 @@ class TestRouting:
 class TestPrefsApi:
     def test_get_defaults(self, test_client, db_session, monkeypatch):
         monkeypatch.setattr(app_config, "SMTP_HOST", "")
+        monkeypatch.setattr(app_config, "TELEGRAM_BOT_TOKEN", "")
         _user(db_session, "alice")
         body = test_client.get(PATH, headers=_login(test_client, "alice")).json()
         assert body["ntfyUrl"] is None and body["webhookUrl"] is None
@@ -311,6 +317,12 @@ class TestPrefsApi:
         _user(db_session, "alice")
         body = test_client.get(PATH, headers=_login(test_client, "alice")).json()
         assert body["available"]["email"] is True
+
+    def test_telegram_available_with_bot_token(self, test_client, db_session, monkeypatch):
+        monkeypatch.setattr(app_config, "TELEGRAM_BOT_TOKEN", "123456:token")
+        _user(db_session, "alice")
+        body = test_client.get(PATH, headers=_login(test_client, "alice")).json()
+        assert body["available"]["telegram"] is True
 
     def test_put_then_get_and_normalised(self, test_client, db_session):
         _user(db_session, "alice")

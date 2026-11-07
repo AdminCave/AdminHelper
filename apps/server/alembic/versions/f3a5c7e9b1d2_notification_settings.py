@@ -14,6 +14,7 @@ rule's min_severity and into ok (the all-clear went out on the channel of the ru
 reported the problem); the desktop goes into every row, as toasts came for everything.
 The downgrade ticks a channel on every rule of the person when it is in any row of the
 matrix and not switched off: the matrix is finer than the ticks, so that way loses detail.
+The outbox gains the level of the ping (severity) for the ntfy priority and the webhook.
 """
 
 import json
@@ -79,9 +80,11 @@ def upgrade() -> None:
         )
     op.drop_column("notification_subscription", "channel_email")
     op.drop_column("notification_subscription", "channel_telegram")
+    op.add_column("notification_outbox", sa.Column("severity", sa.String(), nullable=True))
 
 
 def downgrade() -> None:
+    op.drop_column("notification_outbox", "severity")
     for column in ("channel_email", "channel_telegram"):
         op.add_column(
             "notification_subscription",

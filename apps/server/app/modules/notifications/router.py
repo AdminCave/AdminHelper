@@ -372,7 +372,7 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
             "desktop": True,
             "email": bool(app_config.SMTP_HOST),
             "ntfy": True,
-            "telegram": False,
+            "telegram": bool(app_config.TELEGRAM_BOT_TOKEN),
             "webhook": True,
         },
         "subscriptions": [s.to_dict() for s in subs],

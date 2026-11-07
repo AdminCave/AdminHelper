@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.core import config
 from app.core.time import iso_utc
 from app.modules.notifications import stream_hub
 from app.modules.notifications.models import (
@@ -499,10 +500,17 @@ def _queue(
     ping rewrites the row. Nothing without "out" (a notice of notify)."""
     if "out" not in channels:
         return []
-    picked = channels_for(db.get(NotificationSettings, user.id), level, event.category)
+    settings = db.get(NotificationSettings, user.id)
+    picked = channels_for(settings, level, event.category)
     title, body = _text(event, channels["out"])
     queued = []
-    for channel, address in (("email", user.email), ("telegram", user.telegram_chat_id)):
+    targets = (
+        ("email", user.email),
+        ("ntfy", settings.ntfy_url if settings else None),
+        ("telegram", user.telegram_chat_id if config.TELEGRAM_BOT_TOKEN else None),
+        ("webhook", settings.webhook_url if settings else None),
+    )
+    for channel, address in targets:
         if channel not in picked or not address:
             continue
         db.add(
@@ -513,6 +521,7 @@ def _queue(
                 address=address,
                 title=title,
                 body=body,
+                severity=level,
             )
         )
         queued.append(channel)

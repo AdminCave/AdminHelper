@@ -11,8 +11,10 @@ notified about servers they may see) is pinned here."""
 import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import text
 
+import app.core.config as app_config
 from app.core.auth import hash_password
 from app.modules.notifications import outbox as outbox_mod
 from app.modules.notifications import stream_hub
@@ -441,6 +443,11 @@ class TestBundleChannels:
     (monitoring-alert-quality T18 routed them per rule), so each names the servers
     of the bell row, never one the person may not see."""
 
+    @pytest.fixture(autouse=True)
+    def _telegram_bot(self, monkeypatch):
+        # Telegram entries are queued only with a bot token (R-1080).
+        monkeypatch.setattr(app_config, "TELEGRAM_BOT_TOKEN", "test-token")
+
     def _three(self, db):
         return (
             _server(db, "srv-1", name="web01", tags=["prod"]),
@@ -452,6 +459,9 @@ class TestBundleChannels:
         sent = []
         monkeypatch.setattr(
             outbox_mod, "send_email", lambda to, subj, body: sent.append((to, subj, body))
+        )
+        monkeypatch.setattr(
+            outbox_mod, "send_telegram", lambda to, subj, body: sent.append((to, subj, body))
         )
         self._three(db_session)
         admin = _user(db_session, "boss", is_admin=True, email="a@b.de", telegram_chat_id="4711")
@@ -465,8 +475,11 @@ class TestBundleChannels:
             ("email", "a@b.de", "Agents not reporting (3)", text),
             ("telegram", "4711", "Agents not reporting (3)", text),
         ]
-        assert outbox_mod.drain_outbox(db_session) == (1, 0)
-        assert sent == [("a@b.de", "Agents not reporting (3)", text)]
+        assert outbox_mod.drain_outbox(db_session) == (2, 0)
+        assert sent == [
+            ("a@b.de", "Agents not reporting (3)", text),
+            ("4711", "Agents not reporting (3)", text),
+        ]
 
     def test_a_member_channel_names_only_servers_they_may_see(self, db_session):
         srv1, srv2, _ = self._three(db_session)

@@ -162,6 +162,10 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
+      # Telegram channel and the private networks ntfy/webhook targets may be in
+      # (R-1080, .env.example); the test route sends from here.
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - NOTIFY_PRIVATE_TARGETS=${NOTIFY_PRIVATE_TARGETS:-}
     logging: *default-logging
     restart: unless-stopped
     # No process gains privileges on exec (setuid bits, file capabilities).
@@ -222,6 +226,9 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
+      # The other channels of the outbox drain (R-1080).
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - NOTIFY_PRIVATE_TARGETS=${NOTIFY_PRIVATE_TARGETS:-}
     volumes:
       # Shared DATA_DIR so the auto-generated SECRET_KEY matches the web service.
       - ./data:/app/data

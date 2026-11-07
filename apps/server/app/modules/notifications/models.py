@@ -169,14 +169,19 @@ class NotificationOutbox(Base):
     user_id = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    channel = Column(String, nullable=False)  # email | telegram
-    address = Column(String, nullable=False)  # e-mail address or telegram chat id
+    channel = Column(String, nullable=False)  # email | ntfy | telegram | webhook
+    # e-mail address, telegram chat id, or the ntfy/webhook URL (a secret: ?auth=)
+    address = Column(String, nullable=False)
     # The text of the ping that queued it, for this channel (incidents._queue): a
     # later ping rewrites the bell row, and a bundle's channel names only the servers
     # of the subscriptions that asked for it. NULL (entries from before R-1079) = the
     # notification's text.
     title = Column(String, nullable=True)
     body = Column(Text, nullable=True)
+    # The level of the ping (critical | warning | info | ok), for the ntfy priority and
+    # the webhook; the bell row carries the severity of its incident, not the all-clear.
+    # NULL (entries from before R-1080) = the notification's severity.
+    severity = Column(String, nullable=True)
     status = Column(String, nullable=False, default="pending", index=True)  # pending|sent|failed
     attempts = Column(Integer, nullable=False, default=0)
     next_attempt_at = Column(DateTime(timezone=True), nullable=True)

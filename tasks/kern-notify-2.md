@@ -22,16 +22,18 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf.py tests/t
 Doku: → T7
 Abhängt von: T1
 
-### T3 — Server: Versand über ntfy, Telegram und Webhook mit SSRF-Sperre (R-1080)  [ ]
-Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/notifications/incidents.py, .env.example, apps/server/tests/test_notification_channels.py, apps/server/tests/test_ssrf.py
+### T3 — Server: Versand über ntfy, Telegram und Webhook mit SSRF-Sperre (R-1080)  [x]
+Komponente: server · Dateien: apps/server/app/core/config.py, apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/notifications/incidents.py, .env.example, apps/server/tests/test_notification_channels.py, apps/server/tests/test_ssrf.py, apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/f3a5c7e9b1d2_notification_settings.py, docker-compose.yml, apps/server/tests/test_notifications.py, apps/server/tests/test_notification_settings.py, apps/server/app/modules/notifications/router.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f806090de 2026-11-07T06:39:26+01:00
+Review: approve (.ah-out/review/kern-notify-2/T3.verdict.json)
 Änderung: Vorher ntfy-Publish (Titel-Kodierung, `auth`) und Telegram `sendMessage` (Textlimit, `parse_mode`) in der offiziellen Doku nachlesen und die Belege unter `## Entscheidungen`. `TELEGRAM_BOT_TOKEN` und `NOTIFY_PRIVATE_TARGETS` (CIDR-Liste) in `config.py`. `drain_outbox` stellt `ntfy`, `telegram`, `webhook` zu (Format Spec), über `check_target(url, allow_networks=NOTIFY_PRIVATE_TARGETS)` (T2) und `pinned_client` ohne Redirects; ein gesperrtes Ziel ist sofort `failed`, sonst Backoff wie E-Mail; Logs und `last_error` ohne URL, Chat-ID, Token. `_queue` legt `ntfy`/`webhook` an und `telegram` nur mit Token. Tests mit `httpx.MockTransport`: Format je Kanal, Priorität, Kürzung, gesperrtes Ziel mit und ohne Listeneintrag, kein Redirect, kein Geheimnis im Log (`caplog`). Neue Datei mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_channels.py tests/test_notifications.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_channels.py tests/test_notifications.py tests/test_notification_settings.py tests/test_outbox.py
 Doku: → T7
 Abhängt von: T2
 
 ### T4 — Server: Test-Route je Kanal mit Sperre je Person (R-1080)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/sender.py, apps/server/tests/test_notification_prefs_test.py, apps/server/tests/openapi.snapshot.json
-Änderung: `POST /api/users/me/notification-prefs/test` mit `{"channel"}` (Spec): sofortiger Versand an das gespeicherte Ziel über die Sender aus T3, `200`/`409`/`422`/`502`/`429`, Sperre ein Test je Person und Kanal in zehn Sekunden über `app/core/rate_limit.py`, neutrale Fehlertexte. Prüft dabei, ob `RequestModel` alte Felder (`channel_email`) ablehnt, und hält das Ergebnis unter `## Entscheidungen` für T6 fest. Tests: jeder Status, die Sperre, kein Geheimnis in der Antwort; OpenAPI-Snapshot. Neue Datei mit SPDX-Header.
+Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/sender.py, apps/server/tests/test_notification_prefs_test.py, apps/server/tests/openapi.snapshot.json, apps/server/app/modules/notifications/incidents.py, apps/server/tests/test_notification_incidents.py
+Änderung: `POST /api/users/me/notification-prefs/test` mit `{"channel"}` (Spec): sofortiger Versand an das gespeicherte Ziel über die Sender aus T3, `200`/`409`/`422`/`502`/`429`, Sperre ein Test je Person und Kanal in zehn Sekunden über `app/core/rate_limit.py`, neutrale Fehlertexte. Prüft dabei, ob `RequestModel` alte Felder (`channel_email`) ablehnt, und hält das Ergebnis unter `## Entscheidungen` für T6 fest. Tests: jeder Status, die Sperre, kein Geheimnis in der Antwort; OpenAPI-Snapshot. Neue Datei mit SPDX-Header. Dazu (Review T3): `IncidentDetailOut.channels` und die Detailansicht des Vorfalls (`incidents.py`) nennen ntfy und Webhook neben E-Mail und Telegram (Spec, Betroffene Stellen), mit Test. Jede Ausnahme eines Senders wird in der Route neutral (`502`), nie ein `500` mit Traceback.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_prefs_test.py tests/test_openapi_snapshot.py
 Doku: → T7
 Abhängt von: T3
@@ -44,10 +46,10 @@ Doku: → T7
 Abhängt von: T4
 
 ### T6 — Desktop-E2E und Test-Skripte: Prefs in der neuen Form (R-1080)  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, scripts/tests/sse_push_e2e.sh, scripts/tests/desktop_e2e_sse_push.sh
-Änderung: `ensureAllSubscription` (`live.js`) und die beiden SSE-Push-Skripte schicken Regeln ohne `channel_email`/`channel_telegram`; die Journeys laufen im Sammellauf (Heavy).
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, scripts/tests/sse_push_e2e.sh, scripts/tests/desktop_e2e_sse_push.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+Änderung: `ensureAllSubscription` (`live.js`) und die beiden SSE-Push-Skripte schicken Regeln ohne `channel_email`/`channel_telegram`; die Journeys laufen im Sammellauf (Heavy). Dazu (Review T3): `TELEGRAM_BOT_TOKEN` in `SECRET_KEYS` von `scripts/diagnostics.sh`, mit einem Fall in `diagnostics_test.sh`.
 Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
-Doku: keine (Testcode)
+Doku: keine (Testcode; die Maskierung im Support-Bundle ist nicht einzeln dokumentiert)
 Abhängt von: T1
 
 ### T7 — Doku und Changelog: Kanäle, Matrix, Kategorien, Env (R-1080)  [ ]
@@ -65,3 +67,10 @@ Abhängt von: T5
 - 2026-11-07 T1: `RequestModel` verbietet keine Extra-Felder: ein altes `channel_email` in einer Regel wird still ignoriert (T4 bestätigt das für T6); `available.telegram` bleibt `false`, bis T3 `TELEGRAM_BOT_TOKEN` liest.
 - 2026-11-07 T2: Kevin 2026-11-07: Die Freigabe privater Ziele ist eine CIDR-Liste `NOTIFY_PRIVATE_TARGETS` statt des Schalters `NOTIFY_ALLOW_PRIVATE_TARGETS`; nur die genannten Netze gehen auf, die harte Sperre liegt davor.
 - 2026-11-07 T2: Die harte Sperre (`_always_blocked`) prüft auch die eingebettete IPv4 von 6to4 (`2002::/16`) und Teredo, sonst öffnete ein Listeneintrag wie `2002::/16` den Weg zu 169.254.169.254; sie gilt vor der Liste, auch für `0.0.0.0/0`. Dazu sperrt sie die Metadaten-Adressen außerhalb von Link-Local: `fd00:ec2::/32` (AWS IPv6), `fd20:ce::254` (GCP, nur IPv6), `100.100.100.200` (Alibaba). NAT64 (`64:ff9b::/96`) und IPv4-kompatible Adressen (`::/96`) fängt `is_reserved` schon heute. Die übrigen `is_private`-Bereiche (etwa `192.0.0.0/24`, `198.18.0.0/15`) sind nur mit einem Netz der Liste erlaubt.
+- 2026-11-07 T3: Doku-Belege: ntfy (docs.ntfy.sh/publish) nimmt den Body als Nachricht, `X-Title` in UTF-8 oder RFC 2047, `X-Priority` 1–5, `?auth=` in der URL; ein Body über 4096 Bytes oder ohne gültiges UTF-8 wird zum Anhang, darum kürzt der Sender auf 4096 Bytes an einer Zeichengrenze. Telegram `sendMessage` (core.telegram.org/bots/api#sendmessage): `chat_id` und `text` Pflicht, „1-4096 characters after entities parsing“; ohne `parse_mode` geht der Text unverändert durch. Der Sender kürzt auf 4096 UTF-16-Einheiten (nicht verifiziert, ob Telegram so zählt; die konservative Lesart).
+- 2026-11-07 T3: Ohne `TELEGRAM_BOT_TOKEN` legt `_queue` keine Telegram-Einträge an, und `drain_outbox` lässt vorhandene liegen (`pending`, kein Versuch): ein Token, das später kommt, stellt sie noch zu, solange das Outbox-Alter reicht (`test_skips_telegram_channel` bleibt).
+- 2026-11-07 T3: Ein nicht auflösbarer Host (`UNRESOLVED`) ist ein Fehlversuch mit Backoff, kein gesperrtes Ziel; nur `PRIVATE` setzt den Eintrag sofort auf `failed`.
+- 2026-11-07 T3: Ein ungültiger Eintrag in `NOTIFY_PRIVATE_TARGETS` (auch gesetzte Hostbits wie `192.168.1.5/16`) bricht den Start ab; enthält ein Netz eine Adresse des Hosts selbst, warnt der Start.
+- 2026-11-07 T3: Die Outbox trägt die Stufe des Pings (`severity`, Migration f3a5, nullable): ntfy-Priorität und Webhook nehmen sie, alte Einträge die Stufe der Notification. `last_error` nennt bei einem unerwarteten Fehler nur Kanal und Typ (`_error_text`), bei `DeliveryFailed` dessen neutralen Text.
+- 2026-11-07 T3 (Review): Jeder Versand liest nur den Status, nie den Body, und läuft in einem eigenen Daemon-Thread unter einer harten Frist von 30 s (`_SEND_DEADLINE`), denn der Timeout von httpx gilt je Leseoperation; bei Überschreitung schließt der Sender den Client (das beendet den Lesevorgang des Threads), der Versand ist ein Fehlversuch mit Backoff. Höchstens acht Versände ohne Antwort zugleich (`_SEND_MAX_INFLIGHT`, wie `ssrf._resolve`), darüber scheitert ein Versand sofort. Details privat.
+- 2026-11-07 T3 (Review): `available.telegram` folgt `TELEGRAM_BOT_TOKEN`; `_warn_own_addresses` schlägt den eigenen Namen nur nach, wenn `NOTIFY_PRIVATE_TARGETS` Netze nennt; Telegram nennt einen Ping ohne eigenen Text nur einmal.
