@@ -29,6 +29,27 @@ def _validate_server_name(v: Optional[str]) -> Optional[str]:
     return v
 
 
+# Windows device names (Microsoft Learn, "Naming Files, Paths, and Namespaces"): reserved
+# in every directory, case-insensitive, with any extension too ("NUL.txt" is NUL), and
+# Windows counts the superscripts 1-3 as digits of COM#/LPT#.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    ["con", "prn", "aux", "nul"]
+    + [f"{dev}{d}" for dev in ("com", "lpt") for d in "123456789\u00b9\u00b2\u00b3"]
+)
+
+
+def reject_windows_unsafe_server_name(v: str) -> None:
+    """A new or renamed server name must also be a folder name on Windows: the bulk-ZIP
+    puts it into clients/<name>/frpc.toml. Not in the schema, because names stored before
+    stay valid and an edit that sends one back unchanged must pass (R-1056)."""
+    if ":" in v:
+        raise ValueError("must not contain ':'")
+    if v.split(".", 1)[0].rstrip(" ").lower() in _WINDOWS_DEVICE_NAMES:
+        raise ValueError(
+            "must not be a reserved Windows device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9)"
+        )
+
+
 class ServerCreate(RequestModel):
     name: str
     hostname: str
