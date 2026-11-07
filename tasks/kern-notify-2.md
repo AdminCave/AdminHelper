@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T7
 Abhängt von: T4
 
-### T6 — Desktop-E2E und Test-Skripte: Prefs in der neuen Form (R-1080)  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, scripts/tests/sse_push_e2e.sh, scripts/tests/desktop_e2e_sse_push.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+### T6 — Desktop-E2E und Test-Skripte: Prefs in der neuen Form (R-1080)  [x]
+Komponente: desktop-e2e · Dateien: scripts/tests/sse_push_e2e.sh, scripts/tests/desktop_e2e_sse_push.sh, scripts/diagnostics.sh, scripts/tests/diagnostics_test.sh
+Evidenz: run.sh[quick] desktop-e2e scripts: 7 passed, 0 failed, 11 skipped @01e772f2f 2026-11-07T07:52:35+01:00
+Review: approve (.ah-out/review/kern-notify-2/T6.verdict.json)
 Änderung: `ensureAllSubscription` (`live.js`) und die beiden SSE-Push-Skripte schicken Regeln ohne `channel_email`/`channel_telegram`; die Journeys laufen im Sammellauf (Heavy). Dazu (Review T3): `TELEGRAM_BOT_TOKEN` in `SECRET_KEYS` von `scripts/diagnostics.sh`, mit einem Fall in `diagnostics_test.sh`.
 Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
 Doku: keine (Testcode; die Maskierung im Support-Bundle ist nicht einzeln dokumentiert)
@@ -84,3 +86,4 @@ Abhängt von: T5
 - 2026-11-07 T4 (Review): Höchstens ein laufender Test je Person (`_TESTS_RUNNING` im Prozess, geprüft vor dem Zähler), sonst `429`: ein Versand kann bis zur Frist von 30 s hängen, länger als die Sperre, und die Sender eines Prozesses teilen wenige Plätze. Details privat. Ein gesperrtes Ziel antwortet `422` mit Text in `detail`, die Validierung mit einer Liste: T5 liest beide Formen, T7 nennt es in der API-Doku.
 - 2026-11-07 T5: Das Toast-Gate liegt im eigenen Store `lib/stores/notifyPrefs.ts` (`desktopWants`), geladen beim Start der Benachrichtigungen, verworfen beim Stopp und nach dem Speichern ersetzt; ohne geladene Kanaleinstellungen (Ladefehler, Server ohne Matrix) kommt alles wie bisher; ein Abruf, der nach Abmelden, Speichern oder einem neueren Abruf antwortet, setzt nichts (Generationszähler, Review). Ein Eintrag mit `state: resolved` folgt der Zeile `ok`, sonst seiner Stufe.
 - 2026-11-07 T5: Der Test-Knopf ist bei einem ungespeicherten Ziel gesperrt (der Server testet das gespeicherte Ziel), ein abgeschalteter Kanal bleibt testbar (wie T4); ein Kanal, den der Server nicht zustellen kann (`available`), zeigt einen Hinweis statt des Knopfs. Der Desktop testet lokal (Toast, OS-Hinweis nur mit Opt-in). Fehlertexte kommen über `errMsg`: der Rust-Proxy liest `detail` als Text und als Liste (`error.rs`), daher keine eigene Behandlung der 422-Formen in der UI.
+- 2026-11-07 T6: `ensureAllSubscription` (`live.js`) schickte die Kanalfelder schon nicht mehr und bleibt unverändert (aus `Dateien:` gestrichen). `TELEGRAM_BOT_TOKEN` steht in `SECRET_KEYS`; der Testfall prüft den Wert mit Doppelpunkt in einer Bot-URL (Gegenprobe: ohne den Schlüssel `LEAK`).
