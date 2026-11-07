@@ -1,5 +1,5 @@
 # Kanäle ntfy, Telegram, Webhook · Matrix Schweregrad × Kanal · Kategorien — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-2 · Review: pro Task
 Spec: docs/features/kern-notify-2.md (Roadmap R-1080)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), ausgehende Requests, Desktop-Journey SSE-Push (`desktop_e2e_sse_push.sh`); geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -84,8 +84,10 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/notifications.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/notifications.test.ts src/lib/i18n/i18n.test.ts
 Doku: keine (Label, kein dokumentiertes Verhalten)
 
-### T10 — Doku: Kanäle im Vorfall-Detail und README (R-1080)  [ ]
+### T10 — Doku: Kanäle im Vorfall-Detail und README (R-1080)  [x]
 Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, README.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a8752e0b5 2026-11-07T08:37:15+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Funde der Abschlussprüfung: `channels` im Vorfall-Detail nennt seit T4 auch `ntfy` und `webhook` (DE+EN); die README-Zeile „Personal notifications“ nennt ntfy, Telegram und Webhook neben E-Mail und die Matrix.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_settings.py
 Doku: alle oben DE+EN · README
