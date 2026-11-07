@@ -1,5 +1,5 @@
 # Servernamen ohne ':' und ohne Windows-Gerätenamen — Task-Ledger
-Status: bereit · Branch: feature/kern-server-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-server-7 · Review: am Ende
 Spec: docs/features/kern-server-7.md (Roadmap R-1056)
 Heavy: linux-full — Server-API (zusätzliche 422 in POST/PUT /api/servers), geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,3 +22,11 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_schemas
 Doku: docs/developer/api-reference.html DE+EN · changelog.d/kern-server-7.md
 Task-Review: am Ende
 Abhängt von: T1
+
+### T3 — Doku: Bulk-ZIP liefert Bestandsnamen trotz Windows-Regel aus (R-1056, Abschlussprüfung)  [ ]
+Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Änderung: Eintrag `bulk-zip` DE+EN: die Windows-Regel für neue Namen (`:` und Gerätenamen) ist ausgenommen, solche Bestandsnamen bekommen weiter eine Datei; Eintrag `POST /api/servers` nennt auch `COM¹²³`/`LPT¹²³`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_schemas.py
+Doku: docs/developer/api-reference.html DE+EN
+Task-Review: am Ende
+Abhängt von: T2
