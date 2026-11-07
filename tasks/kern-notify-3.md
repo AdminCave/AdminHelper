@@ -1,5 +1,5 @@
 # Ruhezeiten · Eskalation · Zusammenfassung per E-Mail · Ton bei Kritisch — Task-Ledger
-Status: bereit · Branch: feature/kern-notify-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-3 · Review: pro Task
 Spec: docs/features/kern-notify-3.md (Roadmap R-1081)
 Heavy: linux-full — Server-API und Alembic-Migration (notification-prefs), zwei neue Scheduler-Jobs, Desktop-Journey der Benachrichtigungen; geht in den Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -49,6 +49,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-notify-3.md
 Task-Review: am Ende
 Abhängt von: T2, T3, T4
+
+### T6 — Eskalation folgt der aktuellen Sicht und den Kategorien (R-1081)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/notifications/escalation.py, apps/server/tests/test_notification_escalation.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html
+Änderung: Aus der Abschlussprüfung. `escalate_due` eskaliert nur, wer den Vorfall jetzt noch sieht (dieselbe Prüfung wie `access`: Admin oder ein zugewiesener Server des Vorfalls), und nicht in einer ausgeschalteten Kategorie (wie `service.channels_for`). Ohne Sicht oder in stummer Kategorie bleibt `escalated_at` leer. Die Mitglieder der fälligen Vorfälle lädt eine Abfrage. Tests: Zuweisung entzogen, früherer Admin bei einem Vorfall ohne Server, Wiederöffnen nach dem Entzug, zugewiesene Person eskaliert, stumme und andere Kategorie. Doku: der Satz zur Stummschaltung klarer, Sicht und Kategorie im Abschnitt Eskalation DE+EN.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_escalation.py
+Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/server.html, docs/en/developer/server.html
+Abhängt von: T3, T5
 
 ## Entscheidungen
 - T1: Das Python-Paket `tzdata` kommt als Abhängigkeit dazu (Lock, `THIRD_PARTY_LICENSES.md`): das apt-`tzdata` des Images (trixie, ohne `tzdata-legacy`) kennt die alten Namen wie `Asia/Calcutta` nicht, die `Intl` liefern kann; Dev-Box und CI haben sie und hätten es verdeckt (Reviewer T1). Ein Test mit leerem TZPATH belegt es.
