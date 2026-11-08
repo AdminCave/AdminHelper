@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Pin immer, Stufe 2 Tab — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-1 · Review: pro Task
 Spec: docs/features/kern-rdp-1.md (Roadmap R-1141, R-1098)
 Heavy: linux-full — Desktop-Journey: der RDP-Tab gegen den xrdp-Container (neue Live-Spec) und `desktop_e2e_rdp_embedded` laufen im Sammellauf; IronRDP-Quelle und TLS-Prüfung ändern sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -76,8 +76,10 @@ Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/in
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6, T7
 
-### T9 — R-1098: Strg+Alt+Entf gegen Windows prüfen (Bedingung 6)  [ ]
+### T9 — R-1098: Strg+Alt+Entf gegen Windows prüfen (Bedingung 6)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @07effd785 2026-11-08T19:24:10+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T9.verdict.json)
 Änderung: Im privaten Wegwerf-Repo von R-1092 (Kevin 2026-11-08) schickt die Probe die Strg+Alt+Entf-Folge aus T2 an den Windows-Runner und hält fest, ob der Sicherheitsbildschirm erscheint; Ergebnis nur unter `tasks/private/spikes/`. Im Baum ändert sich nur der Kommentar an der Folge (neutral).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: keine (Ergebnis privat)

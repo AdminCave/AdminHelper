@@ -61,6 +61,7 @@ const BUTTON_MASK: u8 = 0b111;
 const DRIVE_ID: u32 = 1;
 const DRIVE_NAME: &str = "Downloads";
 /// The scancodes of Ctrl, Alt and Del (E0 prefix); pressed in this order, released the other way.
+/// Windows answers this sequence with its secure attention screen (checked against Windows Server).
 const CTRL_ALT_DEL: [(u8, bool); 3] = [(0x1D, false), (0x38, false), (0x53, true)];
 
 /// What a session connects to, resolved and checked by the start command.
