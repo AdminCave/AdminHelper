@@ -25,3 +25,4 @@ Abhängt von: T1
 ## Entscheidungen
 - 2026-11-08 T1: IronRDP f96f664 hat einen RD-Gateway-Client hinter dem Feature `gateway` (ironrdp-mstsgu); der Rueckfall auf den OS-Client bleibt (Kevin 2026-11-08), der Gateway-Weg ist R-1191
 - 2026-11-08 T2: Absturz 5/5 reproduziert, Ursache in Fremdcode und dort schon öffentlich gemeldet (Einzelheiten nur privat); kein Mail-Entwurf, ein Kommentar-Entwurf für Kevin; Umweg ist R-1192
+- 2026-11-08 T2: Das Wegwerf-Repo der Probe ist noch nicht gelöscht: das Löschen braucht einen Token-Scope, den nur Kevin vergeben kann; als blockiert-Zeile für Kevin in der Roadmap (R-1193)
