@@ -28,6 +28,8 @@ use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{accept_async_with_config, WebSocketStream};
 
+use super::session::Display;
+
 const TOKEN_BYTES: usize = 32;
 const LOGIN_DEADLINE: Duration = Duration::from_secs(5);
 /// Logins that run side by side. Each ends at the deadline, so a local process that opens
@@ -58,6 +60,8 @@ pub(crate) enum Input {
     },
     /// Ctrl+Alt+Del, which the webview cannot send as keys: the local system takes it first.
     CtrlAltDel,
+    /// The desktop the webview wants, already within the limits of MS-RDPEDISP.
+    Size(Display),
     Close,
 }
 
@@ -77,6 +81,11 @@ enum ClientMessage {
         wheel: i16,
     },
     Cad,
+    Size {
+        w: u16,
+        h: u16,
+        scale: u32,
+    },
     Close,
 }
 
@@ -238,6 +247,9 @@ async fn stream(
                         wheel,
                     },
                     Ok(ClientMessage::Cad) => Input::CtrlAltDel,
+                    Ok(ClientMessage::Size { w, h, scale }) => {
+                        Input::Size(Display::clamped(w, h, scale))
+                    }
                     Ok(ClientMessage::Close) => Input::Close,
                     // Unknown or malformed: dropped, the session goes on.
                     Err(_) => continue,
@@ -784,6 +796,8 @@ mod tests {
             r#"{"t":"key","code":300,"ext":false,"down":true}"#,
             r#"{"t":"mouse","x":-1,"y":0,"buttons":0,"wheel":0}"#,
             r#"{"t":"mouse","x":1,"y":2,"buttons":"left","wheel":0}"#,
+            r#"{"t":"size","w":1920,"h":1080}"#,
+            r#"{"t":"size","w":70000,"h":1080,"scale":100}"#,
         ] {
             ws.send(Message::text(malformed)).await.unwrap();
         }
@@ -793,6 +807,7 @@ mod tests {
             r#"{"t":"key","code":75,"ext":true,"down":false}"#,
             r#"{"t":"mouse","x":640,"y":480,"buttons":1,"wheel":-120}"#,
             r#"{"t":"cad"}"#,
+            r#"{"t":"size","w":1921,"h":100,"scale":900}"#,
             r#"{"t":"close"}"#,
         ] {
             ws.send(Message::text(valid)).await.unwrap();
@@ -822,6 +837,11 @@ mod tests {
                     wheel: -120
                 },
                 Input::CtrlAltDel,
+                Input::Size(Display {
+                    width: 1920,
+                    height: 200,
+                    scale: 500
+                }),
                 Input::Close,
             ]
         );

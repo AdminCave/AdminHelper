@@ -26,7 +26,7 @@ use ironrdp_pdu::rdp::client_info::PerformanceFlags;
 use ironrdp_pdu::rdp::session_info::LogonErrorNotificationType;
 use ironrdp_session::{GracefulDisconnectReason, SessionResult};
 use ironrdp_tls::CertificateValidation;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::{JoinHandle, LocalSet};
 use tokio::time::MissedTickBehavior;
@@ -38,9 +38,15 @@ use super::watchdog::{Verdict, Watchdog};
 use crate::error::AppError;
 use crate::models::{RdpAudio, RdpPerformanceProfile};
 
-/// Fixed in stage 1: the webview scales the picture to its view.
+/// The desktop of a session the webview asked for no size.
 const DESKTOP_WIDTH: u16 = 1280;
 const DESKTOP_HEIGHT: u16 = 720;
+/// The limits of a monitor in MS-RDPEDISP (DISPLAYCONTROL_MONITOR_LAYOUT): 200 to 8192 pixels, an
+/// even width, a desktop scale factor of 100 to 500 percent.
+const MIN_SIDE: u16 = 200;
+const MAX_SIDE: u16 = 8192;
+const MIN_SCALE: u32 = 100;
+const MAX_SCALE: u32 = 500;
 /// IronRDP's own reconnects of a session that lost its connection, before it gives up.
 const AUTO_RECONNECTS: u32 = 3;
 /// How often the watchdog looks at the clock.
@@ -67,6 +73,8 @@ const CTRL_ALT_DEL: [(u8, bool); 3] = [(0x1D, false), (0x38, false), (0x53, true
 /// What a session connects to, resolved and checked by the start command.
 pub(crate) struct Target {
     pub(crate) destination: Destination,
+    /// The desktop the session starts with.
+    pub(crate) display: Display,
     pub(crate) username: String,
     pub(crate) domain: Option<String>,
     pub(crate) password: Zeroizing<String>,
@@ -79,6 +87,47 @@ pub(crate) struct Target {
     pub(crate) credssp: bool,
     /// The connection's own profile, else `rdp_performance_profile` of the settings.
     pub(crate) performance: RdpPerformanceProfile,
+}
+
+/// The size of the desktop in pixels and its scale factor in percent, within the limits of
+/// MS-RDPEDISP. The webview asks for it; IronRDP fits it to the server once more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub(crate) struct Display {
+    pub(crate) width: u16,
+    pub(crate) height: u16,
+    pub(crate) scale: u32,
+}
+
+impl Display {
+    pub(crate) fn clamped(width: u16, height: u16, scale: u32) -> Self {
+        Display {
+            // MAX_SIDE is even, so rounding down stays in the range.
+            width: width.clamp(MIN_SIDE, MAX_SIDE) & !1,
+            height: height.clamp(MIN_SIDE, MAX_SIDE),
+            scale: scale.clamp(MIN_SCALE, MAX_SCALE),
+        }
+    }
+
+    /// The device scale factor that goes with `scale`: servers ignore a desktop scale factor
+    /// without one of 100, 140 or 180 percent. The plateaus are IronRDP's
+    /// (`DeviceScaleFactor::from_desktop_scale_factor`).
+    fn device_scale(self) -> u32 {
+        match self.scale {
+            ..140 => 100,
+            140..180 => 140,
+            _ => 180,
+        }
+    }
+}
+
+impl Default for Display {
+    fn default() -> Self {
+        Display {
+            width: DESKTOP_WIDTH,
+            height: DESKTOP_HEIGHT,
+            scale: MIN_SCALE,
+        }
+    }
 }
 
 /// Why a session ended: the `code` of the `failed` and `disconnected` phases.
@@ -149,6 +198,13 @@ struct Machine {
     logon_failed: bool,
     /// The buttons the server last heard pressed.
     buttons: u8,
+    /// The desktop the webview asked for last; a new connection starts with it.
+    display: Display,
+    /// The desktop the server has or was last asked for.
+    applied: Display,
+    /// The desktop IronRDP connects again with: the start size of the attempt, or the size of a
+    /// resize it fell back to reconnecting for. A resize that worked in place leaves it alone.
+    configured: Display,
     last: Option<Report>,
 }
 
@@ -167,6 +223,18 @@ impl Machine {
             Some(report) => Flow::Report(report),
             None => Flow::Continue,
         }
+    }
+
+    /// A new attempt connects with the desktop the webview asked for.
+    fn started(&mut self) {
+        self.applied = self.display;
+        self.configured = self.display;
+    }
+
+    /// The desktop to ask the server for: the one the webview wants, if the live connection has
+    /// another.
+    fn size_due(&self) -> Option<Display> {
+        (self.live && self.display != self.applied).then_some(self.display)
     }
 
     fn on_event(&mut self, event: RdpOutputEvent, now: Instant) -> Flow {
@@ -188,6 +256,7 @@ impl Machine {
             RdpOutputEvent::AutoReconnecting { response, .. } => {
                 // IronRDP waits for this answer; the watchdog decides when reconnecting is futile.
                 let _ = response.send(AutoReconnectDecision::Continue);
+                self.applied = self.configured;
                 self.lose();
                 self.watchdog.reconnecting();
                 self.flow(Report::Reconnecting)
@@ -216,6 +285,20 @@ impl Machine {
                     );
                 }
                 Flow::Continue
+            }
+            RdpOutputEvent::DisplayResizeFallback(reason) => {
+                // The server cannot resize the session in place: IronRDP connects again with the
+                // new size and reports `Connected` once that session is up.
+                log::info!("the RDP session reconnects to resize its desktop: {reason:?}");
+                // IronRDP takes over the size of the resize, not its scale.
+                self.configured = Display {
+                    scale: self.configured.scale,
+                    ..self.applied
+                };
+                self.applied = self.configured;
+                self.lose();
+                self.watchdog.reconnecting();
+                self.flow(Report::Reconnecting)
             }
             RdpOutputEvent::ServerRedirected { target } => {
                 // IronRDP connects to the new target in the same task. Ending here drops that
@@ -357,7 +440,8 @@ impl Machine {
                 }
                 events
             }
-            Input::Close => Vec::new(),
+            // `forward` resizes; `run` ends the session.
+            Input::Size(_) | Input::Close => Vec::new(),
         }
     }
 }
@@ -484,7 +568,7 @@ fn performance_flags(profile: RdpPerformanceProfile) -> PerformanceFlags {
     }
 }
 
-fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
+fn config(target: &Target, display: Display, cert: &CertReport) -> Result<Config, String> {
     let builder = ConfigBuilder::new()
         .with_destination(target.destination.clone())
         .with_username(target.username.as_str())
@@ -493,8 +577,10 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
         .with_client_dir(CLIENT_DIR)
         .with_client_name(client_name())
         .with_platform(platform())
-        .with_desktop_width(DESKTOP_WIDTH)
-        .with_desktop_height(DESKTOP_HEIGHT)
+        .with_desktop_width(display.width)
+        .with_desktop_height(display.height)
+        .with_desktop_scale_factor(display.scale)
+        .with_device_scale_factor(display.device_scale())
         .with_performance_flags(performance_flags(target.performance))
         .with_tls(true)
         .with_credssp(target.credssp)
@@ -575,8 +661,8 @@ impl Drop for Attempt {
     }
 }
 
-fn start_attempt(target: &Target, cert: &CertReport) -> Result<Attempt, String> {
-    let config = config(target, cert)?;
+fn start_attempt(target: &Target, display: Display, cert: &CertReport) -> Result<Attempt, String> {
+    let config = config(target, display, cert)?;
     let (sender, events) = output_channel(OUTPUT_QUEUE);
     let client = RdpClient::new(config, sender)
         .with_auto_reconnect(AUTO_RECONNECTS)
@@ -617,6 +703,9 @@ fn start_attempt(target: &Target, cert: &CertReport) -> Result<Attempt, String> 
 /// Passes one message of the webview on. The queue slot comes first, so a message that finds the
 /// queue full leaves the machine as it was: the next one sends the button changes again.
 fn forward(machine: &mut Machine, input: &RdpInputSender, message: Input) {
+    if let Input::Size(display) = message {
+        return resize(machine, input, display);
+    }
     if !machine.live {
         return;
     }
@@ -629,6 +718,33 @@ fn forward(machine: &mut Machine, input: &RdpInputSender, message: Input) {
     if !events.is_empty() {
         permit.send(RdpInputEvent::FastPath(events.into()));
     }
+}
+
+/// Takes the desktop the webview asks for and passes it on (`send_size`).
+fn resize(machine: &mut Machine, input: &RdpInputSender, display: Display) {
+    machine.display = display;
+    send_size(machine, input);
+}
+
+/// Asks the live connection for the desktop the webview wants, once; a connection that comes up
+/// with another size gets it as soon as it is live. IronRDP holds back a resize until Display
+/// Control is ready and keeps only the last one while another is under way.
+fn send_size(machine: &mut Machine, input: &RdpInputSender) {
+    let Some(display) = machine.size_due() else {
+        return;
+    };
+    let Ok(permit) = input.try_reserve() else {
+        // The next message or event of the session tries again.
+        log::debug!("the RDP input queue is full; held back a resize");
+        return;
+    };
+    machine.applied = display;
+    permit.send(RdpInputEvent::Resize {
+        width: display.width,
+        height: display.height,
+        scale_factor: display.scale,
+        physical_size: None,
+    });
 }
 
 /// The end once the WebSocket stopped passing input on.
@@ -666,6 +782,7 @@ async fn run(
     }
     let mut machine = Machine {
         frames,
+        display: target.display,
         ..Machine::default()
     };
     let (input_tx, mut input_rx) = mpsc::channel(INPUT_QUEUE);
@@ -677,7 +794,8 @@ async fn run(
         if let Some(phase) = machine.report(phase.clone()) {
             report(phase);
         }
-        let mut attempt = match start_attempt(&target, &machine.cert) {
+        machine.started();
+        let mut attempt = match start_attempt(&target, machine.display, &machine.cert) {
             Ok(attempt) => attempt,
             Err(error) => {
                 log::warn!("could not configure the RDP session: {error}");
@@ -700,7 +818,11 @@ async fn run(
                     }
                 }
                 event = attempt.events.recv() => match event {
-                    Some(event) => machine.on_event(event, Instant::now()),
+                    Some(event) => {
+                        let flow = machine.on_event(event, Instant::now());
+                        send_size(&mut machine, &attempt.input);
+                        flow
+                    }
                     None => machine.lost(),
                 },
                 message = input_rx.recv() => match message {
@@ -763,6 +885,7 @@ mod tests {
     use std::sync::mpsc as std_mpsc;
 
     use ironrdp_cfg::PropertySetExt as _;
+    use ironrdp_client::rdp::DisplayResizeFallbackReason;
     use ironrdp_pdu::geometry::InclusiveRectangle;
     use ironrdp_pdu::rdp::session_info::{LogonErrorNotificationData, LogonErrorsInfo};
 
@@ -831,6 +954,7 @@ mod tests {
     fn target(destination: Destination, policy: CertPolicy) -> Target {
         Target {
             destination,
+            display: Display::default(),
             username: "e2e".into(),
             domain: None,
             password: Zeroizing::new("secret".into()),
@@ -1151,10 +1275,218 @@ mod tests {
     }
 
     #[test]
+    fn display_keeps_to_the_limits_of_display_control() {
+        assert_eq!(
+            Display::clamped(1921, 1080, 150),
+            Display {
+                width: 1920,
+                height: 1080,
+                scale: 150
+            }
+        );
+        assert_eq!(
+            Display::clamped(0, 0, 0),
+            Display {
+                width: 200,
+                height: 200,
+                scale: 100
+            }
+        );
+        assert_eq!(
+            Display::clamped(u16::MAX, u16::MAX, u32::MAX),
+            Display {
+                width: 8192,
+                height: 8192,
+                scale: 500
+            }
+        );
+        let device = |scale| Display::clamped(1280, 720, scale).device_scale();
+        assert_eq!(
+            [
+                device(100),
+                device(139),
+                device(140),
+                device(179),
+                device(180),
+                device(500)
+            ],
+            [100, 100, 140, 140, 180, 180]
+        );
+    }
+
+    fn sent(receiver: &mut mpsc::Receiver<RdpInputEvent>) -> Vec<(u16, u16, u32)> {
+        let mut sizes = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                RdpInputEvent::Resize {
+                    width,
+                    height,
+                    scale_factor,
+                    physical_size: None,
+                } => sizes.push((width, height, scale_factor)),
+                other => panic!("expected a resize, got {other:?}"),
+            }
+        }
+        sizes
+    }
+
+    #[test]
+    fn a_new_size_goes_to_the_server_once() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = live();
+        let wide = Display::clamped(1920, 1080, 100);
+
+        forward(&mut machine, &input, Input::Size(Display::default()));
+        assert!(sent(&mut receiver).is_empty());
+        forward(&mut machine, &input, Input::Size(wide));
+        forward(&mut machine, &input, Input::Size(wide));
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 100)]);
+        forward(
+            &mut machine,
+            &input,
+            Input::Size(Display::clamped(1920, 1080, 150)),
+        );
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 150)]);
+    }
+
+    /// One event as the session loop handles it.
+    fn event(machine: &mut Machine, input: &RdpInputSender, event: RdpOutputEvent) -> Flow {
+        let flow = machine.on_event(event, Instant::now());
+        send_size(machine, input);
+        flow
+    }
+
+    #[test]
+    fn a_size_while_connecting_goes_to_the_server_once_it_is_up() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = Machine::default();
+        machine.started();
+        let wide = Display::clamped(1920, 1080, 125);
+
+        forward(&mut machine, &input, Input::Size(wide));
+        assert!(sent(&mut receiver).is_empty());
+        event(&mut machine, &input, RdpOutputEvent::Connected);
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 125)]);
+        forward(&mut machine, &input, Input::Size(wide));
+        event(&mut machine, &input, RdpOutputEvent::LoginComplete);
+        assert!(sent(&mut receiver).is_empty());
+    }
+
+    #[test]
+    fn a_new_attempt_starts_with_the_size_and_sends_it_no_more() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = Machine::default();
+        let wide = Display::clamped(1920, 1080, 100);
+
+        forward(&mut machine, &input, Input::Size(wide));
+        machine.started();
+        event(&mut machine, &input, RdpOutputEvent::Connected);
+        assert!(sent(&mut receiver).is_empty());
+    }
+
+    #[test]
+    fn an_automatic_reconnect_gets_the_size_again() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = live();
+        let wide = Display::clamped(1920, 1080, 100);
+        forward(&mut machine, &input, Input::Size(wide));
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 100)]);
+
+        // IronRDP reconnects with the size it started with, not with one resized in place.
+        let (response, _decision) = oneshot::channel();
+        let reconnecting = RdpOutputEvent::AutoReconnecting {
+            disconnect_reason: 0,
+            attempt: 1,
+            maximum_attempts: AUTO_RECONNECTS,
+            response,
+        };
+        event(&mut machine, &input, reconnecting);
+        assert!(sent(&mut receiver).is_empty());
+        event(&mut machine, &input, RdpOutputEvent::AutoReconnected);
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 100)]);
+    }
+
+    #[test]
+    fn a_resize_by_reconnecting_keeps_its_size_for_the_next_reconnect() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = live();
+        let wide = Display::clamped(1920, 1080, 100);
+        forward(&mut machine, &input, Input::Size(wide));
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 100)]);
+
+        let fallback = RdpOutputEvent::DisplayResizeFallback(
+            DisplayResizeFallbackReason::CapabilitiesTimedOut,
+        );
+        event(&mut machine, &input, fallback);
+        event(&mut machine, &input, RdpOutputEvent::Connected);
+        assert!(sent(&mut receiver).is_empty());
+        assert_eq!(machine.configured, wide);
+    }
+
+    #[test]
+    fn a_size_that_finds_the_queue_full_is_not_taken_for_sent() {
+        let (input, mut receiver) = RdpInputSender::channel(1);
+        let mut machine = live();
+        let wide = Display::clamped(1920, 1080, 100);
+        forward(
+            &mut machine,
+            &input,
+            Input::Size(Display::clamped(1600, 900, 100)),
+        );
+
+        forward(&mut machine, &input, Input::Size(wide));
+        assert_eq!(sent(&mut receiver), [(1600, 900, 100)]);
+        forward(&mut machine, &input, Input::Size(wide));
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 100)]);
+    }
+
+    #[test]
+    fn a_resize_by_reconnecting_is_a_reconnect_not_a_failure() {
+        let mut machine = live();
+        let now = Instant::now();
+        machine.watchdog.login_complete(now);
+
+        let fallback = RdpOutputEvent::DisplayResizeFallback(
+            DisplayResizeFallbackReason::DisplayControlUnavailable,
+        );
+        assert_eq!(
+            machine.on_event(fallback, now),
+            Flow::Report(Report::Reconnecting)
+        );
+        assert!(!machine.live);
+        // IronRDP's new connection is no stall of the old one.
+        assert_eq!(machine.tick(now + LATER), Flow::Continue);
+        assert_eq!(
+            machine.on_event(RdpOutputEvent::Connected, now),
+            Flow::Report(Report::Connected)
+        );
+        assert!(machine.live);
+    }
+
+    #[test]
+    fn session_starts_with_the_size_the_webview_asked_for() {
+        let destination = Destination::from_parts("192.0.2.10", 3389);
+        let config = config(
+            &target(destination, CertPolicy::TrustAll),
+            Display::clamped(1920, 1200, 150),
+            &CertReport::default(),
+        )
+        .unwrap();
+        let connector = config.connector();
+        assert_eq!(
+            (connector.desktop_size.width, connector.desktop_size.height),
+            (1920, 1200)
+        );
+        assert_eq!(connector.desktop_scale_factor, 150);
+        assert_eq!(connector.device_scale_factor, Some(140));
+    }
+
+    #[test]
     fn session_configures_tls_gfx_and_its_channels() {
         let destination = Destination::from_parts("192.0.2.10", 3389);
         let trusted = config(
             &target(destination.clone(), CertPolicy::TrustAll),
+            Display::default(),
             &CertReport::default(),
         )
         .unwrap();
@@ -1179,7 +1511,12 @@ mod tests {
         );
         assert!(trusted.certificate_validation_callback().is_none());
 
-        let pinned = config(&target(destination, pinned(None)), &CertReport::default()).unwrap();
+        let pinned = config(
+            &target(destination, pinned(None)),
+            Display::default(),
+            &CertReport::default(),
+        )
+        .unwrap();
         assert_eq!(
             pinned.certificate_validation(),
             CertificateValidation::Strict
@@ -1199,7 +1536,7 @@ mod tests {
                 CertPolicy::TrustAll,
             );
             target.performance = profile;
-            config(&target, &CertReport::default())
+            config(&target, Display::default(), &CertReport::default())
                 .unwrap()
                 .connector()
                 .performance_flags
@@ -1316,7 +1653,7 @@ mod tests {
             CertPolicy::TrustAll,
         );
         tls_only.credssp = false;
-        let config = config(&tls_only, &CertReport::default()).unwrap();
+        let config = config(&tls_only, Display::default(), &CertReport::default()).unwrap();
         let connector = config.connector();
         assert!(connector.enable_tls);
         assert!(!connector.enable_credssp);
@@ -1330,7 +1667,7 @@ mod tests {
             CertPolicy::TrustAll,
         );
         shared.drive = Some(std::env::temp_dir());
-        let config = config(&shared, &CertReport::default()).unwrap();
+        let config = config(&shared, Display::default(), &CertReport::default()).unwrap();
         let rdpdr = &config.channels().rdpdr;
         assert!(rdpdr.enabled);
         assert!(!rdpdr.printers);
@@ -1372,7 +1709,7 @@ mod tests {
             CertPolicy::TrustAll,
         );
         target.audio = audio;
-        let config = config(&target, &CertReport::default()).unwrap();
+        let config = config(&target, Display::default(), &CertReport::default()).unwrap();
         (
             config.channels().sound,
             config.connector().enable_audio_playback,
@@ -1513,6 +1850,7 @@ mod tests {
             fn start(&self, pin: Option<&str>) -> Session {
                 let target = Target {
                     destination: self.destination.clone(),
+                    display: Display::default(),
                     username: self.user.clone(),
                     domain: None,
                     password: Zeroizing::new(self.password.clone()),
@@ -1629,11 +1967,53 @@ mod tests {
             assert_eq!(header(&frame)[5..], [DESKTOP_WIDTH, DESKTOP_HEIGHT]);
             // Without a receipt nothing more comes, although typing changes the picture.
             type_a(&mut ws).await;
-            if let Ok(message) = timeout(QUIET, ws.next()).await {
+            // The stats come every second as text; only a picture breaks the receipt rule (R-1195).
+            let quiet = async {
+                loop {
+                    match ws.next().await {
+                        Some(Ok(Message::Text(_))) => continue,
+                        message => break message,
+                    }
+                }
+            };
+            if let Ok(message) = timeout(QUIET, quiet).await {
                 panic!("a picture without a receipt: {message:?}");
             }
             ws.send(Message::text(r#"{"t":"ack"}"#)).await.unwrap();
             next_frame(&mut ws).await;
+
+            // A resize: the pictures take the new desktop size, without a failed phase.
+            ws.send(Message::text(
+                r#"{"t":"size","w":1024,"h":768,"scale":100}"#,
+            ))
+            .await
+            .unwrap();
+            ws.send(Message::text(r#"{"t":"ack"}"#)).await.unwrap();
+            let resized = async {
+                loop {
+                    // Stats come once a second besides the pictures.
+                    let frame = match ws.next().await {
+                        Some(Ok(Message::Binary(frame))) => frame,
+                        Some(Ok(Message::Text(_) | Message::Ping(_) | Message::Pong(_))) => {
+                            continue
+                        }
+                        other => panic!("expected a picture, got {other:?}"),
+                    };
+                    if header(&frame)[5..] == [1024, 768] {
+                        break;
+                    }
+                    ws.send(Message::text(r#"{"t":"ack"}"#)).await.unwrap();
+                }
+            };
+            timeout(Duration::from_secs(30), resized)
+                .await
+                .expect("the desktop never took the new size");
+            while let Ok(phase) = session.phases.try_recv() {
+                assert!(
+                    matches!(phase, Report::Reconnecting | Report::Connected),
+                    "a resize ended in {phase:?}"
+                );
+            }
 
             session.stop.take().unwrap().send(()).unwrap();
             assert_eq!(session.phase().await, Report::Disconnected(Code::Closed));

@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-rdp-4/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T12
 
-### T2 — R-1100: Startgröße, Skalierung und Resize im Backend  [ ]
+### T2 — R-1100: Startgröße, Skalierung und Resize im Backend  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @05f1a4065 2026-11-08T20:56:07+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T2.verdict.json)
 Änderung: `rdp_session_start` nimmt Breite, Höhe und Skalierungsfaktor, statt fest 1280×720 (`session.rs:42-43`) zu verbinden. Die WebSocket-Nachricht `{"t":"size",…}` wird zu `Input::Size`, auf die Grenzen von MS-RDPEDISP begrenzt (200–8192, Breite gerade, Faktor 100–500), Wiederholungen werden verworfen, dann geht `RdpInputEvent::Resize` an den Client. `DisplayResizeFallback` verbindet mit der neuen Größe neu, ohne `failed` zu melden. Tests: Begrenzung, Verwerfen, Weitergabe; die Bildgröße im Kopf folgt dem Reset.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T12
@@ -93,3 +95,5 @@ Task-Review: am Ende
 - 2026-11-08: Bedingung 10 per Commit auf dem Fork statt eigener Sitzungsschleife (Kevins Notiz an R-1100: „unabhängig von IronRDP-PR #2014“; Fork = Pin nach Weg (c)); kein Upstream-PR ohne Kevins Wort.
 - 2026-11-08: Keine neuen Einstellungen: Der Tab nimmt `rdp_window_mode`, `rdp_scaling_mode` und `rdp_custom_size` als Startwerte, die Kopfleiste ändert sie nur für den Tab (wie das Leistungsprofil).
 - 2026-11-08: Multi-Monitor als zwei WebSocket-Clients mit Ausschnitt, nicht ein Fenster über beide Bildschirme.
+- 2026-11-08: Ein Resize, der nur den Skalierungsfaktor ändert, gilt im Fork sofort als abgeschlossen (die Bildgröße bleibt); angenommen (Prüfer-Nit T1).
+- 2026-11-08 (T2): Der Live-Test `xrdp_live_session` überspringt in der Ruhefrist QUIET Textnachrichten (Stats, jede Sekunde); nur ein Bild ohne Quittung ist ein Fehler. Vorher fiel er, sobald Stats in die 2 s fielen (lokal rot, passt zu R-1195); die Prüfung bleibt für Bilder gleich streng.

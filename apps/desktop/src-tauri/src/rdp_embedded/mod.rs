@@ -30,7 +30,7 @@ use tokio::sync::oneshot;
 use zeroize::Zeroizing;
 
 use self::frame_ws::Frames;
-use self::session::{Code, Report, Target};
+use self::session::{Code, Display, Report, Target};
 use self::tofu::{cert_policy, CertPolicy, CertReason};
 use crate::commands::{reject_foreign_port, run_with_deadline, OPEN_CONNECTION_TIMEOUT};
 use crate::connection::{checked_password_source, CredentialConnection};
@@ -297,6 +297,8 @@ fn prepare(
     };
     Ok(Target {
         destination,
+        // `rdp_session_start` sets the size the webview asks for.
+        display: Display::default(),
         username: username.to_string(),
         domain: domain.map(str::to_string),
         password,
@@ -387,7 +389,8 @@ pub(crate) struct Started {
 /// session's WebSocket listens. The phases follow as `rdp-session` events, the first one possibly
 /// before this call returns: the webview listens before it calls. A refusal before the start is
 /// the error of this call, as with `open_connection_stored`. A `password` the user typed goes to
-/// this session only and to no store.
+/// this session only and to no store. `display` is the desktop to start with, 1280×720 at 100 %
+/// when the webview names none.
 #[tauri::command]
 pub(crate) async fn rdp_session_start(
     app: tauri::AppHandle,
@@ -396,6 +399,7 @@ pub(crate) async fn rdp_session_start(
     sessions: State<'_, RdpSessions>,
     connection: Connection,
     password: Option<String>,
+    display: Option<Display>,
 ) -> Result<Started, AppError> {
     let password = password.map(Zeroizing::new);
     let (tunnels, connections, bindings) = match signed_in.current().await {
@@ -430,6 +434,9 @@ pub(crate) async fn rdp_session_start(
             &pins,
             password,
         )?;
+        target.display = display.map_or_else(Display::default, |display| {
+            Display::clamped(display.width, display.height, display.scale)
+        });
         target.performance = performance(
             &connection,
             storage::load_settings(&app)?.rdp_performance_profile,
