@@ -1,5 +1,5 @@
 # frp 0.69.1 -> 0.72.0 — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-3 · Review: am Ende
+Status: erledigt · Branch: feature/kern-frp-3 · Review: am Ende
 Spec: docs/features/kern-frp-3.md (Roadmap R-1034)
 Heavy: scenario --tunnel — frps-Image und frpc wechseln die Version; der echte 3-Host-FRP-Datenpfad beweist es (die Desktop-Tunnel-Suiten mit dem frpc-Image im Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
