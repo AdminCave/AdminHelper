@@ -91,16 +91,19 @@ impl RdpSessions {
         }
     }
 
-    /// Port and a fresh token for a new login at the WebSocket of session `id`; the token handed
-    /// out before logs in no more.
-    fn attach(&self, id: &str) -> Result<Attached, AppError> {
+    /// Port and a fresh token for a new login at the WebSocket of session `id` that shows
+    /// `screen`; the token that screen had before logs in no more.
+    fn attach(&self, id: &str, screen: usize) -> Result<Attached, AppError> {
+        if screen >= frame_ws::SCREENS {
+            return Err(AppError::Validation(format!("no screen {screen}")));
+        }
         let (ws_port, tokens) = lock(&self.running)
             .get(id)
             .and_then(|handle| handle.socket.clone())
             .ok_or_else(ended)?;
         Ok(Attached {
             ws_port,
-            token: tokens.renew()?,
+            token: tokens.renew(screen)?,
         })
     }
 
@@ -527,15 +530,19 @@ pub(crate) fn rdp_session_stop(
 /// Port and a fresh, single-use token for logging in again at the WebSocket of session
 /// `session_id`, after the webview lost its connection or for another window (R-1101). The login
 /// takes over from the client before; the token handed out before no longer logs in. An error once
-/// the session has ended.
+/// the session has ended. `screen` 1 is the second monitor of a session across two windows; the
+/// default 0 shows the session's whole desktop, or its first monitor.
 #[tauri::command]
 pub(crate) fn rdp_session_attach(
     window: tauri::Window,
     sessions: State<'_, RdpSessions>,
     session_id: String,
+    screen: Option<u8>,
 ) -> Result<Attached, AppError> {
     window::may_reach(window.label(), &session_id)?;
-    sessions.attach(&session_id)
+    let screen = usize::from(screen.unwrap_or(0));
+    window::may_show(window.label(), screen)?;
+    sessions.attach(&session_id, screen)
 }
 
 /// Saves the desktop of session `session_id` as a PNG where the user chooses; `false` once the
@@ -996,16 +1003,22 @@ mod tests {
         // A late start of an ended session brings no info back.
         sessions.started(&id, info, 4711, tokens());
         assert!(sessions.info(&id).is_err());
-        assert!(sessions.attach(&id).is_err());
+        assert!(sessions.attach(&id, 0).is_err());
     }
 
     #[test]
     fn attach_hands_out_a_fresh_token_for_a_started_session_only() {
         let sessions = RdpSessions::default();
-        assert!(sessions.attach("rdp-1").is_err(), "attached to no session");
+        assert!(
+            sessions.attach("rdp-1", 0).is_err(),
+            "attached to no session"
+        );
         let (stop, _stopped) = oneshot::channel();
         let id = sessions.add(stop, Frames::default());
-        assert!(sessions.attach(&id).is_err(), "attached before the start");
+        assert!(
+            sessions.attach(&id, 0).is_err(),
+            "attached before the start"
+        );
 
         let server = frame_ws::FrameServer::bind().unwrap();
         let first = server.token();
@@ -1018,8 +1031,8 @@ mod tests {
             fingerprint: None,
         };
         sessions.started(&id, info, 4711, server.tokens());
-        let one = sessions.attach(&id).unwrap();
-        let two = sessions.attach(&id).unwrap();
+        let one = sessions.attach(&id, 0).unwrap();
+        let two = sessions.attach(&id, 0).unwrap();
         assert_eq!((one.ws_port, two.ws_port), (4711, 4711));
         assert_eq!(one.token.len(), 64);
         assert!(
@@ -1030,6 +1043,13 @@ mod tests {
             serde_json::to_value(&two).unwrap(),
             serde_json::json!({ "ws_port": 4711, "token": two.token })
         );
+        // The second screen gets a token of its own; there is no third.
+        let second = sessions.attach(&id, 1).unwrap();
+        assert!(second.token != two.token);
+        assert!(matches!(
+            sessions.attach(&id, 2),
+            Err(AppError::Validation(_))
+        ));
     }
 
     #[test]

@@ -103,6 +103,9 @@ ironrdp-pdu = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166
 # not re-export; both are in the lockfile through it already.
 ironrdp-connector = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 ironrdp-session = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+# The monitor layout of a session across two windows (rdp_embedded/session.rs); in the lockfile
+# through ironrdp-client already.
+ironrdp-displaycontrol = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 # The Downloads folder as a drive of the embedded RDP session (rdp_embedded/session.rs, rdpdr_factory).
 ironrdp-rdpdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 # The client name the RDP server shows for the session.

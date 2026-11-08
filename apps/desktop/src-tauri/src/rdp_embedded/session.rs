@@ -18,6 +18,9 @@ use ironrdp_client::rdp::{
     RdpdrBackendFactory,
 };
 use ironrdp_connector::{ConnectorError, ConnectorErrorKind};
+use ironrdp_displaycontrol::pdu::{
+    DeviceScaleFactor, DisplayControlMonitorLayout, MonitorLayoutEntry,
+};
 use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags};
 use ironrdp_pdu::input::mouse::PointerFlags;
 use ironrdp_pdu::input::MousePdu;
@@ -32,7 +35,7 @@ use tokio::task::{JoinHandle, LocalSet};
 use tokio::time::MissedTickBehavior;
 use zeroize::Zeroizing;
 
-use super::frame_ws::{FrameServer, Frames, Input, Tokens};
+use super::frame_ws::{FrameServer, Frames, Input, Tokens, Viewport};
 use super::tofu::{validation_callback, CertPolicy, CertProblem, CertReport, CALLBACK_SCOPE};
 use super::watchdog::{Verdict, Watchdog};
 use crate::error::AppError;
@@ -130,6 +133,125 @@ impl Default for Display {
     }
 }
 
+/// A desktop across two monitors (R-1101): the first is the primary at (0, 0), the second lies
+/// at `left`, `top` beside it, touching it along an edge as MS-RDPEDISP demands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Layout {
+    pub(crate) first: Display,
+    pub(crate) second: Display,
+    left: i32,
+    top: i32,
+}
+
+impl Layout {
+    /// The layout nearest to the second monitor lying at `left`, `top` from the first, as the
+    /// client's screens lie: it moves to the side it lies on most and slides along it until the
+    /// two touch.
+    pub(crate) fn placed(first: Display, second: Display, left: i32, top: i32) -> Self {
+        let (w0, h0) = (i32::from(first.width), i32::from(first.height));
+        let (w1, h1) = (i32::from(second.width), i32::from(second.height));
+        // Twice the distance of the centres, which keeps it in integers.
+        let cx = 2 * i64::from(left) + i64::from(w1) - i64::from(w0);
+        let cy = 2 * i64::from(top) + i64::from(h1) - i64::from(h0);
+        let (left, top) = if cx.abs() >= cy.abs() {
+            (if cx >= 0 { w0 } else { -w1 }, top.clamp(1 - h1, h0 - 1))
+        } else {
+            (left.clamp(1 - w1, w0 - 1), if cy >= 0 { h0 } else { -h1 })
+        };
+        Layout {
+            first,
+            second,
+            left,
+            top,
+        }
+    }
+
+    /// Where the two monitors lie in the desktop picture, which starts at their top left corner.
+    pub(crate) fn viewports(self) -> [Viewport; 2] {
+        // Both offsets lie within one monitor's size, so they fit u16.
+        let x = (-self.left.min(0)) as u16;
+        let y = (-self.top.min(0)) as u16;
+        [
+            Viewport {
+                x,
+                y,
+                width: self.first.width,
+                height: self.first.height,
+            },
+            Viewport {
+                x: (i32::from(x) + self.left) as u16,
+                y: (i32::from(y) + self.top) as u16,
+                width: self.second.width,
+                height: self.second.height,
+            },
+        ]
+    }
+
+    /// The desktop that holds both monitors, for a connection that starts with this layout.
+    fn bounds(self) -> Display {
+        let [first, second] = self.viewports();
+        let end = |start: u16, length: u16| u32::from(start) + u32::from(length);
+        let side = |a: u32, b: u32| u16::try_from(a.max(b)).unwrap_or(u16::MAX);
+        Display::clamped(
+            side(end(first.x, first.width), end(second.x, second.width)),
+            side(end(first.y, first.height), end(second.y, second.height)),
+            self.first.scale,
+        )
+    }
+
+    /// The Display Control message of this layout.
+    fn message(self) -> ironrdp_pdu::EncodeResult<DisplayControlMonitorLayout> {
+        let entry = |display: Display, entry: MonitorLayoutEntry| -> ironrdp_pdu::EncodeResult<_> {
+            Ok(entry
+                .with_desktop_scale_factor(display.scale)?
+                .with_device_scale_factor(DeviceScaleFactor::from_desktop_scale_factor(
+                    display.scale,
+                )))
+        };
+        let first = entry(
+            self.first,
+            MonitorLayoutEntry::new_primary(self.first.width.into(), self.first.height.into())?,
+        )?;
+        let second = entry(
+            self.second,
+            MonitorLayoutEntry::new_secondary(self.second.width.into(), self.second.height.into())?
+                .with_position(self.left, self.top)?,
+        )?;
+        DisplayControlMonitorLayout::new(&[first, second])
+    }
+}
+
+/// What the webview asks the server for: one monitor, or two across a detached window each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Desktop {
+    One(Display),
+    Two(Layout),
+}
+
+impl Desktop {
+    /// The desktop a new connection starts with: two monitors start as the desktop around both,
+    /// and get their layout once the connection is live.
+    fn start(self) -> Display {
+        match self {
+            Desktop::One(display) => display,
+            Desktop::Two(layout) => layout.bounds(),
+        }
+    }
+
+    fn scale(self) -> u32 {
+        match self {
+            Desktop::One(display) => display.scale,
+            Desktop::Two(layout) => layout.first.scale,
+        }
+    }
+}
+
+impl Default for Desktop {
+    fn default() -> Self {
+        Desktop::One(Display::default())
+    }
+}
+
 /// Why a session ended: the `code` of the `failed` and `disconnected` phases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -199,12 +321,12 @@ struct Machine {
     /// The buttons the server last heard pressed.
     buttons: u8,
     /// The desktop the webview asked for last; a new connection starts with it.
-    display: Display,
+    display: Desktop,
     /// The desktop the server has or was last asked for.
-    applied: Display,
+    applied: Desktop,
     /// The desktop IronRDP connects again with: the start size of the attempt, or the size of a
     /// resize it fell back to reconnecting for. A resize that worked in place leaves it alone.
-    configured: Display,
+    configured: Desktop,
     last: Option<Report>,
 }
 
@@ -227,13 +349,13 @@ impl Machine {
 
     /// A new attempt connects with the desktop the webview asked for.
     fn started(&mut self) {
-        self.applied = self.display;
-        self.configured = self.display;
+        self.applied = Desktop::One(self.display.start());
+        self.configured = self.applied;
     }
 
     /// The desktop to ask the server for: the one the webview wants, if the live connection has
     /// another.
-    fn size_due(&self) -> Option<Display> {
+    fn size_due(&self) -> Option<Desktop> {
         (self.live && self.display != self.applied).then_some(self.display)
     }
 
@@ -290,10 +412,14 @@ impl Machine {
                 // The server cannot resize the session in place: IronRDP connects again with the
                 // new size and reports `Connected` once that session is up.
                 log::info!("the RDP session reconnects to resize its desktop: {reason:?}");
-                // IronRDP takes over the size of the resize, not its scale.
-                self.configured = Display {
-                    scale: self.configured.scale,
-                    ..self.applied
+                // IronRDP takes over the size of the resize, not its scale; a layout it connects
+                // again with as a whole.
+                self.configured = match self.applied {
+                    Desktop::One(display) => Desktop::One(Display {
+                        scale: self.configured.scale(),
+                        ..display
+                    }),
+                    two @ Desktop::Two(_) => two,
                 };
                 self.applied = self.configured;
                 self.lose();
@@ -318,6 +444,12 @@ impl Machine {
             RdpOutputEvent::Terminated(result) => {
                 let ended = terminated(result);
                 Flow::End(self.ended(ended))
+            }
+            RdpOutputEvent::MonitorLayoutRejected => {
+                // The session keeps its desktop; both screens show it as one again.
+                log::warn!("the RDP server cannot show the session across two monitors");
+                self.frames.set_layout(None);
+                Flow::Continue
             }
             _ => Flow::Continue,
         }
@@ -441,7 +573,7 @@ impl Machine {
                 events
             }
             // `forward` resizes; `run` ends the session.
-            Input::Size(_) | Input::Close => Vec::new(),
+            Input::Size(_) | Input::Layout(_) | Input::Close => Vec::new(),
         }
     }
 }
@@ -703,8 +835,10 @@ fn start_attempt(target: &Target, display: Display, cert: &CertReport) -> Result
 /// Passes one message of the webview on. The queue slot comes first, so a message that finds the
 /// queue full leaves the machine as it was: the next one sends the button changes again.
 fn forward(machine: &mut Machine, input: &RdpInputSender, message: Input) {
-    if let Input::Size(display) = message {
-        return resize(machine, input, display);
+    match message {
+        Input::Size(display) => return resize(machine, input, Desktop::One(display)),
+        Input::Layout(layout) => return resize(machine, input, Desktop::Two(layout)),
+        _ => {}
     }
     if !machine.live {
         return;
@@ -721,7 +855,7 @@ fn forward(machine: &mut Machine, input: &RdpInputSender, message: Input) {
 }
 
 /// Takes the desktop the webview asks for and passes it on (`send_size`).
-fn resize(machine: &mut Machine, input: &RdpInputSender, display: Display) {
+fn resize(machine: &mut Machine, input: &RdpInputSender, display: Desktop) {
     machine.display = display;
     send_size(machine, input);
 }
@@ -730,21 +864,42 @@ fn resize(machine: &mut Machine, input: &RdpInputSender, display: Display) {
 /// with another size gets it as soon as it is live. IronRDP holds back a resize until Display
 /// Control is ready and keeps only the last one while another is under way.
 fn send_size(machine: &mut Machine, input: &RdpInputSender) {
-    let Some(display) = machine.size_due() else {
+    let Some(desktop) = machine.size_due() else {
         return;
+    };
+    let (event, viewports) = match desktop {
+        Desktop::One(display) => (
+            RdpInputEvent::Resize {
+                width: display.width,
+                height: display.height,
+                scale_factor: display.scale,
+                physical_size: None,
+            },
+            None,
+        ),
+        Desktop::Two(layout) => match layout.message() {
+            Ok(message) => (
+                RdpInputEvent::MonitorLayout(message),
+                Some(layout.viewports()),
+            ),
+            Err(error) => {
+                // `placed` and `clamped` keep to the rules; this would be a bug of ours.
+                log::error!("could not build the monitor layout {layout:?}: {error}");
+                machine.applied = desktop;
+                return;
+            }
+        },
     };
     let Ok(permit) = input.try_reserve() else {
         // The next message or event of the session tries again.
         log::debug!("the RDP input queue is full; held back a resize");
         return;
     };
-    machine.applied = display;
-    permit.send(RdpInputEvent::Resize {
-        width: display.width,
-        height: display.height,
-        scale_factor: display.scale,
-        physical_size: None,
-    });
+    machine.applied = desktop;
+    permit.send(event);
+    // Each screen shows its monitor from now on; until the server has the new desktop, the part
+    // of it that exists.
+    machine.frames.set_layout(viewports);
 }
 
 /// The end once the WebSocket stopped passing input on.
@@ -782,7 +937,7 @@ async fn run(
     }
     let mut machine = Machine {
         frames,
-        display: target.display,
+        display: Desktop::One(target.display),
         ..Machine::default()
     };
     let (input_tx, mut input_rx) = mpsc::channel(INPUT_QUEUE);
@@ -795,7 +950,7 @@ async fn run(
             report(phase);
         }
         machine.started();
-        let mut attempt = match start_attempt(&target, machine.display, &machine.cert) {
+        let mut attempt = match start_attempt(&target, machine.display.start(), &machine.cert) {
             Ok(attempt) => attempt,
             Err(error) => {
                 log::warn!("could not configure the RDP session: {error}");
@@ -1421,7 +1576,215 @@ mod tests {
         event(&mut machine, &input, fallback);
         event(&mut machine, &input, RdpOutputEvent::Connected);
         assert!(sent(&mut receiver).is_empty());
-        assert_eq!(machine.configured, wide);
+        assert_eq!(machine.configured, Desktop::One(wide));
+    }
+
+    /// A whole desktop of `width` x `height` as IronRDP delivers it.
+    fn desktop(width: u16, height: u16) -> RdpOutputEvent {
+        let update = ironrdp_client::rdp::DesktopUpdate::new(
+            vec![0; usize::from(width) * usize::from(height)],
+            NonZeroU16::new(width).unwrap(),
+            NonZeroU16::new(height).unwrap(),
+            InclusiveRectangle {
+                left: 0,
+                top: 0,
+                right: width - 1,
+                bottom: height - 1,
+            },
+        )
+        .unwrap();
+        RdpOutputEvent::DesktopUpdate(update)
+    }
+
+    /// Position, size and scale of a monitor in a layout sent.
+    type SentMonitor = ((i32, i32), (u32, u32), Option<u32>);
+
+    /// The monitors of the layouts sent.
+    fn sent_layouts(receiver: &mut mpsc::Receiver<RdpInputEvent>) -> Vec<Vec<SentMonitor>> {
+        let mut layouts = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                RdpInputEvent::MonitorLayout(layout) => layouts.push(
+                    layout
+                        .monitors()
+                        .iter()
+                        .map(|monitor| {
+                            (
+                                monitor.position().unwrap_or((0, 0)),
+                                monitor.dimensions(),
+                                monitor.desktop_scale_factor(),
+                            )
+                        })
+                        .collect(),
+                ),
+                other => panic!("expected a monitor layout, got {other:?}"),
+            }
+        }
+        layouts
+    }
+
+    fn side_by_side() -> Layout {
+        Layout::placed(
+            Display::clamped(1920, 1080, 100),
+            Display::clamped(1280, 1024, 150),
+            1920,
+            0,
+        )
+    }
+
+    #[test]
+    fn a_layout_goes_to_the_server_once_and_shows_on_both_screens() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = live();
+        let layout = side_by_side();
+
+        forward(&mut machine, &input, Input::Layout(layout));
+        forward(&mut machine, &input, Input::Layout(layout));
+        assert_eq!(
+            sent_layouts(&mut receiver),
+            [vec![
+                ((0, 0), (1920, 1080), Some(100)),
+                ((1920, 0), (1280, 1024), Some(150)),
+            ]]
+        );
+        assert_eq!(
+            layout.viewports(),
+            [
+                Viewport {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080
+                },
+                Viewport {
+                    x: 1920,
+                    y: 0,
+                    width: 1280,
+                    height: 1024
+                },
+            ]
+        );
+        // The frames show each monitor on its screen.
+        machine.on_event(desktop(3200, 1080), Instant::now());
+        assert_eq!(machine.frames.origin(1), (1920, 0));
+
+        // Back to one monitor: a size of its own, and screen 0 shows the whole desktop again.
+        let wide = Display::clamped(1920, 1080, 100);
+        forward(&mut machine, &input, Input::Size(wide));
+        assert_eq!(sent(&mut receiver), [(1920, 1080, 100)]);
+        assert_eq!(machine.frames.origin(1), (0, 0));
+    }
+
+    #[test]
+    fn a_new_connection_starts_around_both_monitors_and_gets_the_layout_again() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = live();
+        // The second monitor left of and above the first: the desktop starts at its corner.
+        let layout = Layout::placed(
+            Display::clamped(1920, 1080, 100),
+            Display::clamped(1280, 1024, 100),
+            -1280,
+            -200,
+        );
+        forward(&mut machine, &input, Input::Layout(layout));
+        assert_eq!(
+            sent_layouts(&mut receiver),
+            [vec![
+                ((0, 0), (1920, 1080), Some(100)),
+                ((-1280, -200), (1280, 1024), Some(100)),
+            ]]
+        );
+        assert_eq!(
+            machine.display.start(),
+            Display {
+                width: 3200,
+                height: 1280,
+                scale: 100
+            }
+        );
+
+        // A new attempt connects with the desktop around both and sends the layout once live.
+        machine.lose();
+        machine.started();
+        assert_eq!(machine.applied, Desktop::One(machine.display.start()));
+        event(&mut machine, &input, RdpOutputEvent::Connected);
+        assert_eq!(sent_layouts(&mut receiver).len(), 1);
+
+        // A resize that fell back to reconnecting connects again with the layout itself.
+        let fallback = RdpOutputEvent::DisplayResizeFallback(
+            DisplayResizeFallbackReason::CapabilitiesTimedOut,
+        );
+        event(&mut machine, &input, fallback);
+        event(&mut machine, &input, RdpOutputEvent::Connected);
+        assert!(sent_layouts(&mut receiver).is_empty());
+        assert_eq!(machine.configured, Desktop::Two(layout));
+    }
+
+    #[test]
+    fn a_rejected_layout_shows_the_desktop_on_one_screen_again() {
+        let (input, mut receiver) = RdpInputSender::channel(INPUT_QUEUE);
+        let mut machine = live();
+        forward(&mut machine, &input, Input::Layout(side_by_side()));
+        assert_eq!(sent_layouts(&mut receiver).len(), 1);
+        machine.on_event(desktop(3200, 1080), Instant::now());
+        assert_eq!(machine.frames.origin(1), (1920, 0));
+
+        let flow = event(&mut machine, &input, RdpOutputEvent::MonitorLayoutRejected);
+        assert_eq!(flow, Flow::Continue);
+        assert_eq!(machine.frames.origin(1), (0, 0));
+        assert!(
+            sent_layouts(&mut receiver).is_empty(),
+            "the layout went again"
+        );
+    }
+
+    // MS-RDPEDISP: one primary at (0, 0), no overlap, the second touching it. `placed` keeps
+    // to that wherever the client's second screen lies, and so does its message.
+    #[test]
+    fn a_placed_layout_keeps_to_the_rules_wherever_the_second_screen_lies() {
+        let sizes = [
+            (200, 200),
+            (1920, 1080),
+            (1080, 1920),
+            (8192, 8192),
+            (1280, 1024),
+        ];
+        let offsets = [
+            -20000, -8192, -1921, -1080, -1, 0, 1, 1079, 1920, 8192, 20000,
+        ];
+        for (w0, h0) in sizes {
+            for (w1, h1) in sizes {
+                for left in offsets {
+                    for top in offsets {
+                        let first = Display::clamped(w0, h0, 100);
+                        let second = Display::clamped(w1, h1, 180);
+                        let layout = Layout::placed(first, second, left, top);
+                        assert!(layout.message().is_ok(), "{layout:?} breaks MS-RDPEDISP");
+                        let start = layout.bounds();
+                        assert!(start.width >= MIN_SIDE && start.height >= MIN_SIDE);
+                    }
+                }
+            }
+        }
+        // The second screen lies where the client's does, on the side it lies on most.
+        let first = Display::clamped(1920, 1080, 100);
+        let second = Display::clamped(1280, 1024, 100);
+        let place = |left, top| {
+            let [a, b] = Layout::placed(first, second, left, top).viewports();
+            (
+                i32::from(b.x) - i32::from(a.x),
+                i32::from(b.y) - i32::from(a.y),
+            )
+        };
+        assert_eq!(place(1920, 0), (1920, 0));
+        assert_eq!(place(1900, 30), (1920, 30));
+        assert_eq!(place(-1280, 56), (-1280, 56));
+        assert_eq!(place(300, 1080), (300, 1080));
+        assert_eq!(place(0, -1024), (0, -1024));
+        // A gap or an overlap closes; a screen past the corner slides back to touch.
+        assert_eq!(place(2500, 0), (1920, 0));
+        assert_eq!(place(100, 100), (-1280, 100));
+        assert_eq!(place(1920, 5000), (1919, 1080));
     }
 
     #[test]
@@ -1593,8 +1956,13 @@ mod tests {
         let now = Instant::now();
         machine.on_event(picture(), now);
         let stats = |machine: &Machine| -> serde_json::Value {
-            serde_json::from_str(&machine.frames.take_stats(Duration::from_secs(1)).unwrap())
-                .unwrap()
+            serde_json::from_str(
+                &machine
+                    .frames
+                    .take_stats(0, Duration::from_secs(1))
+                    .unwrap(),
+            )
+            .unwrap()
         };
         machine.on_event(
             RdpOutputEvent::NetworkCharacteristics {
@@ -2022,7 +2390,7 @@ mod tests {
             // The client goes, the session stays; a new login gets the whole desktop (R-1101).
             ws.close(None).await.unwrap();
             drop(ws);
-            let token = session.tokens.renew().unwrap();
+            let token = session.tokens.renew(0).unwrap();
             let mut ws = connect(session.port, &token).await;
             let whole = async {
                 loop {

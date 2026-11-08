@@ -7,9 +7,11 @@
 //!
 //! One server per session, on 127.0.0.1 with a port the system picks, listening as long as the
 //! session lives. A client logs in with the session's token as its first text message; a login
-//! uses the token up, and `Tokens::renew` hands out the next one (R-1101). One client streams at a
-//! time: a new login takes over from the one before and gets the whole picture first, and a
-//! client that goes away leaves the session running. Pictures go out one at a time, the next
+//! uses the token up, and `Tokens::renew` hands out the next one (R-1101). Each token belongs to a
+//! screen: screen 0 shows the desktop, or its first monitor once the webview asked for two
+//! (`{"t":"layout",…}`), screen 1 the second monitor. One client streams per screen: a new login
+//! takes over from the one before on its screen and gets its whole picture first, and a client
+//! that goes away leaves the session running. Pictures go out one at a time, the next
 //! after the client's `{"t":"ack"}`; whatever changes in between is merged into one enclosing
 //! rectangle, so no backlog builds up behind a slow webview. Once a second, while there is a
 //! picture, a text message `{"t":"stats",…}` tells how many pictures went out and what the
@@ -20,18 +22,20 @@ use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use std::task::Poll;
+
 use futures_util::{SinkExt, StreamExt};
 use ironrdp_client::rdp::DesktopUpdate;
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Notify};
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 use tokio::time::{interval_at, timeout, Instant, MissedTickBehavior};
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{accept_async_with_config, WebSocketStream};
 
-use super::session::Display;
+use super::session::{Display, Layout};
 
 const TOKEN_BYTES: usize = 32;
 const LOGIN_DEADLINE: Duration = Duration::from_secs(5);
@@ -45,6 +49,8 @@ const FRAME_VERSION: u16 = 1;
 /// Version, x, y, width, height, desktop width, desktop height: seven u16, little-endian.
 const HEADER_LEN: usize = 14;
 const STATS_EVERY: Duration = Duration::from_secs(1);
+/// The desktop as one picture, or its two monitors as two (R-1101).
+pub(crate) const SCREENS: usize = 2;
 
 /// What the webview sends besides the receipt, for the session to pass on to the server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +72,8 @@ pub(crate) enum Input {
     CtrlAltDel,
     /// The desktop the webview wants, already within the limits of MS-RDPEDISP.
     Size(Display),
+    /// Two monitors instead of one desktop, already placed edge to edge.
+    Layout(Layout),
     Close,
 }
 
@@ -90,7 +98,20 @@ enum ClientMessage {
         h: u16,
         scale: u32,
     },
+    Layout {
+        monitors: Vec<Monitor>,
+    },
     Close,
+}
+
+/// One monitor of a `layout` message: where the webview sees it, its size and scale.
+#[derive(Debug, Deserialize)]
+struct Monitor {
+    x: i32,
+    y: i32,
+    w: u16,
+    h: u16,
+    scale: u32,
 }
 
 /// The `stats` message: pictures per second sent to the webview, the desktop size and, when the
@@ -107,38 +128,49 @@ struct Stats {
     rtt_ms: Option<u32>,
 }
 
-/// The token that logs the next client in. A login uses it up; until `renew` hands out the next
-/// one, no further client gets in.
+/// The token that logs the next client of each screen in. A login uses it up; until `renew` hands
+/// out the next one, no further client of that screen gets in. Screen 1 has none until the first
+/// `renew`.
 #[derive(Clone)]
-pub(crate) struct Tokens(Arc<Mutex<Option<String>>>);
+pub(crate) struct Tokens(Arc<Mutex<[Option<String>; SCREENS]>>);
 
 impl Tokens {
     fn new() -> io::Result<Self> {
-        Ok(Self(Arc::new(Mutex::new(Some(fresh_token()?)))))
+        Ok(Self(Arc::new(Mutex::new([Some(fresh_token()?), None]))))
     }
 
-    fn slot(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+    fn slots(&self) -> std::sync::MutexGuard<'_, [Option<String>; SCREENS]> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// A fresh token for the next login; the one before, used or not, logs in no more.
-    pub(crate) fn renew(&self) -> io::Result<String> {
+    /// A fresh token for the next login on `screen`; the one before, used or not, logs in no more.
+    pub(crate) fn renew(&self, screen: usize) -> io::Result<String> {
         let token = fresh_token()?;
-        *self.slot() = Some(token.clone());
+        let mut slots = self.slots();
+        let slot = slots
+            .get_mut(screen)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no such screen"))?;
+        *slot = Some(token.clone());
         Ok(token)
     }
 
-    /// Whether `presented` is the token; a match uses it up, so of logins that race with the
-    /// same token only one gets in.
-    fn redeem(&self, presented: &[u8]) -> bool {
-        let mut slot = self.slot();
-        let matches = slot
-            .as_deref()
-            .is_some_and(|token| same_token(token.as_bytes(), presented));
-        if matches {
-            *slot = None;
+    /// The screen whose token `presented` is; a match uses it up, so of logins that race with the
+    /// same token only one gets in. Every slot is compared, in time independent of which matches.
+    fn redeem(&self, presented: &[u8]) -> Option<usize> {
+        let mut slots = self.slots();
+        let mut screen = None;
+        for (index, slot) in slots.iter().enumerate() {
+            if slot
+                .as_deref()
+                .is_some_and(|token| same_token(token.as_bytes(), presented))
+            {
+                screen = Some(index);
+            }
         }
-        matches
+        if let Some(index) = screen {
+            slots[index] = None;
+        }
+        screen
     }
 }
 
@@ -175,9 +207,9 @@ impl FrameServer {
         Ok(self.listener.local_addr()?.port())
     }
 
-    /// The token of the first login.
+    /// The token of the first login, on screen 0.
     pub(crate) fn token(&self) -> String {
-        self.tokens.slot().clone().unwrap_or_default()
+        self.tokens.slots()[0].clone().unwrap_or_default()
     }
 
     /// Where the tokens of later logins come from.
@@ -185,15 +217,16 @@ impl FrameServer {
         self.tokens.clone()
     }
 
-    /// Streams `frames` to the client that logged in last and passes its input on, until a
-    /// client sends `close` or the session takes no more input. Must run inside a tokio runtime.
+    /// Streams `frames` to the client of each screen that logged in last and passes its input on,
+    /// until a client sends `close` or the session takes no more input. Must run inside a tokio
+    /// runtime.
     pub(crate) async fn serve(self, frames: Frames, input: mpsc::Sender<Input>) -> io::Result<()> {
         let listener = TcpListener::from_std(self.listener)?;
         // A wrong token, or none in time, closes only that connection, and logins do not wait for
         // each other: a local process that connects first must not lock the webview out.
         let mut pending = JoinSet::new();
-        // At most one: the client that streams.
-        let mut client = JoinSet::new();
+        // At most one per screen: the client that streams it.
+        let mut clients: [JoinSet<Ended>; SCREENS] = Default::default();
         loop {
             tokio::select! {
                 accepted = listener.accept(), if pending.len() < MAX_PENDING_LOGINS => {
@@ -212,16 +245,16 @@ impl FrameServer {
                     pending.spawn(async move { timeout(deadline, login(tcp, &tokens)).await });
                 }
                 Some(done) = pending.join_next() => {
-                    if let Ok(Ok(Some(ws))) = done {
+                    if let Ok(Ok(Some((ws, screen)))) = done {
                         // The client before is gone before the whole picture is due, so it
                         // cannot take that picture from the new one.
-                        client.shutdown().await;
-                        frames.refresh();
+                        clients[screen].shutdown().await;
+                        frames.refresh(screen);
                         let (frames, input) = (frames.clone(), input.clone());
-                        client.spawn(stream(ws, frames, input, self.stats_every));
+                        clients[screen].spawn(stream(ws, screen, frames, input, self.stats_every));
                     }
                 }
-                Some(done) = client.join_next() => {
+                done = ended(&mut clients) => {
                     if matches!(done, Ok(Ended::Close)) || input.is_closed() {
                         return Ok(());
                     }
@@ -229,6 +262,20 @@ impl FrameServer {
             }
         }
     }
+}
+
+/// The end of the next client stream, of whichever screen; pending while none streams (a login
+/// that spawns one comes through another branch of `serve`, which polls again).
+async fn ended(clients: &mut [JoinSet<Ended>; SCREENS]) -> Result<Ended, JoinError> {
+    std::future::poll_fn(|cx| {
+        for client in clients.iter_mut() {
+            if let Poll::Ready(Some(done)) = client.poll_join_next(cx) {
+                return Poll::Ready(done);
+            }
+        }
+        Poll::Pending
+    })
+    .await
 }
 
 /// How a client's stream ended.
@@ -240,14 +287,19 @@ enum Ended {
     Gone,
 }
 
-async fn login(tcp: TcpStream, tokens: &Tokens) -> Option<WebSocketStream<TcpStream>> {
+/// The client and the screen its token belongs to.
+async fn login(tcp: TcpStream, tokens: &Tokens) -> Option<(WebSocketStream<TcpStream>, usize)> {
     let limits = WebSocketConfig::default()
         .max_message_size(Some(MAX_CLIENT_MESSAGE))
         .max_frame_size(Some(MAX_CLIENT_MESSAGE));
     let mut ws = accept_async_with_config(tcp, Some(limits)).await.ok()?;
-    match ws.next().await {
-        Some(Ok(Message::Text(text))) if tokens.redeem(text.as_bytes()) => Some(ws),
-        _ => {
+    let screen = match ws.next().await {
+        Some(Ok(Message::Text(text))) => tokens.redeem(text.as_bytes()),
+        _ => None,
+    };
+    match screen {
+        Some(screen) => Some((ws, screen)),
+        None => {
             let _ = ws.close(None).await;
             None
         }
@@ -268,6 +320,7 @@ fn same_token(expected: &[u8], presented: &[u8]) -> bool {
 
 async fn stream(
     mut ws: WebSocketStream<TcpStream>,
+    screen: usize,
     frames: Frames,
     input: mpsc::Sender<Input>,
     stats_every: Duration,
@@ -279,19 +332,19 @@ async fn stream(
     stats.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         tokio::select! {
-            () = frames.changed(), if acked => {
-                if let Some(frame) = frames.take_frame() {
+            () = frames.changed(screen), if acked => {
+                if let Some(frame) = frames.take_frame(screen) {
                     if ws.send(Message::binary(frame)).await.is_err() {
                         return Ended::Gone;
                     }
-                    frames.sent();
+                    frames.sent(screen);
                     acked = false;
                 }
             }
             now = stats.tick() => {
                 let elapsed = now.duration_since(since);
                 since = now;
-                if let Some(text) = frames.take_stats(elapsed) {
+                if let Some(text) = frames.take_stats(screen, elapsed) {
                     if ws.send(Message::text(text)).await.is_err() {
                         return Ended::Gone;
                     }
@@ -313,16 +366,29 @@ async fn stream(
                         extended: ext,
                         down,
                     },
-                    Ok(ClientMessage::Mouse { x, y, buttons, wheel }) => Input::Mouse {
-                        x,
-                        y,
-                        buttons,
-                        wheel,
-                    },
+                    Ok(ClientMessage::Mouse { x, y, buttons, wheel }) => {
+                        // The client's picture starts where its monitor lies in the desktop.
+                        let (left, top) = frames.origin(screen);
+                        Input::Mouse {
+                            x: x.saturating_add(left),
+                            y: y.saturating_add(top),
+                            buttons,
+                            wheel,
+                        }
+                    }
                     Ok(ClientMessage::Cad) => Input::CtrlAltDel,
                     Ok(ClientMessage::Size { w, h, scale }) => {
                         Input::Size(Display::clamped(w, h, scale))
                     }
+                    Ok(ClientMessage::Layout { monitors }) => match monitors.as_slice() {
+                        [first, second] => Input::Layout(Layout::placed(
+                            Display::clamped(first.w, first.h, first.scale),
+                            Display::clamped(second.w, second.h, second.scale),
+                            second.x.saturating_sub(first.x),
+                            second.y.saturating_sub(first.y),
+                        )),
+                        _ => continue,
+                    },
                     Ok(ClientMessage::Close) => Input::Close,
                     // Unknown or malformed: dropped, the session goes on.
                     Err(_) => continue,
@@ -339,22 +405,23 @@ async fn stream(
 }
 
 /// The desktop picture, shared between the session (which applies IronRDP's updates) and the
-/// WebSocket (which sends what changed).
+/// WebSocket (which sends what changed to the client of each screen).
 #[derive(Clone, Default)]
 pub(crate) struct Frames(Arc<Shared>);
 
 #[derive(Default)]
 struct Shared {
     buffer: Mutex<Framebuffer>,
-    changed: Notify,
+    /// One per screen: a `notify_one` keeps its permit for the stream of that screen only.
+    changed: [Notify; SCREENS],
     counters: Mutex<Counters>,
 }
 
-/// What the next `stats` message reports.
+/// What the next `stats` message of each screen reports.
 #[derive(Default)]
 struct Counters {
-    /// Pictures sent since the last `stats` message.
-    sent: u32,
+    /// Pictures sent since the last `stats` message, per screen.
+    sent: [u32; SCREENS],
     rtt_ms: Option<u32>,
     bandwidth_kbps: Option<u32>,
 }
@@ -369,8 +436,20 @@ struct Framebuffer {
     height: u16,
     /// `0x00RRGGBB`, row by row, as IronRDP delivers them.
     pixels: Vec<u32>,
-    /// What changed since the last picture went out.
-    dirty: Option<Rect>,
+    /// Where each screen's monitor lies in the desktop; `None` shows the whole desktop on
+    /// screen 0 and nothing on screen 1.
+    layout: Option<[Viewport; SCREENS]>,
+    /// What changed on each screen since its last picture went out, in desktop coordinates.
+    dirty: [Option<Rect>; SCREENS],
+}
+
+/// A monitor's place in the desktop picture, which starts at the top left corner of all monitors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Viewport {
+    pub(crate) x: u16,
+    pub(crate) y: u16,
+    pub(crate) width: u16,
+    pub(crate) height: u16,
 }
 
 /// Inclusive coordinates, like IronRDP's regions.
@@ -392,6 +471,16 @@ impl Rect {
         }
     }
 
+    fn intersection(self, other: Rect) -> Option<Rect> {
+        let rect = Rect {
+            left: self.left.max(other.left),
+            top: self.top.max(other.top),
+            right: self.right.min(other.right),
+            bottom: self.bottom.min(other.bottom),
+        };
+        (rect.left <= rect.right && rect.top <= rect.bottom).then_some(rect)
+    }
+
     fn width(self) -> u16 {
         self.right - self.left + 1
     }
@@ -402,48 +491,56 @@ impl Rect {
 }
 
 impl Frames {
-    pub(crate) fn apply(&self, update: DesktopUpdate) {
-        self.0
-            .buffer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .apply(update);
-        self.0.changed.notify_one();
+    fn buffer(&self) -> std::sync::MutexGuard<'_, Framebuffer> {
+        self.0.buffer.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn has_changes(&self) -> bool {
-        self.0
-            .buffer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .dirty
-            .is_some()
-    }
-
-    /// The next picture covers the whole desktop, for a client that has none of it yet.
-    fn refresh(&self) {
-        self.0
-            .buffer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .refresh();
-        self.0.changed.notify_one();
-    }
-
-    /// Returns once there is something to send. A notification without a change (its picture
-    /// already went out) waits on.
-    async fn changed(&self) {
-        while !self.has_changes() {
-            self.0.changed.notified().await;
+    fn notify_all(&self) {
+        for changed in &self.0.changed {
+            changed.notify_one();
         }
     }
 
-    fn take_frame(&self) -> Option<Vec<u8>> {
-        self.0
-            .buffer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take_frame()
+    pub(crate) fn apply(&self, update: DesktopUpdate) {
+        self.buffer().apply(update);
+        self.notify_all();
+    }
+
+    /// Shows the desktop's monitors on a screen each, or with `None` the whole desktop on screen
+    /// 0 again. A layout that differs from the one before sends every screen its whole picture.
+    pub(crate) fn set_layout(&self, layout: Option<[Viewport; SCREENS]>) {
+        if self.buffer().set_layout(layout) {
+            self.notify_all();
+        }
+    }
+
+    fn has_changes(&self, screen: usize) -> bool {
+        self.buffer().dirty[screen].is_some()
+    }
+
+    /// The next picture of `screen` covers all of it, for a client that has none of it yet.
+    fn refresh(&self, screen: usize) {
+        self.buffer().refresh(screen);
+        self.0.changed[screen].notify_one();
+    }
+
+    /// Returns once there is something to send on `screen`. A notification without a change
+    /// (its picture already went out) waits on.
+    async fn changed(&self, screen: usize) {
+        while !self.has_changes(screen) {
+            self.0.changed[screen].notified().await;
+        }
+    }
+
+    fn take_frame(&self, screen: usize) -> Option<Vec<u8>> {
+        self.buffer().take_frame(screen)
+    }
+
+    /// Where the picture of `screen` starts in the desktop.
+    pub(crate) fn origin(&self, screen: usize) -> (u16, u16) {
+        self.buffer()
+            .visible(screen)
+            .map_or((0, 0), |visible| (visible.left, visible.top))
     }
 
     fn counters(&self) -> std::sync::MutexGuard<'_, Counters> {
@@ -458,27 +555,22 @@ impl Frames {
         counters.bandwidth_kbps = bandwidth_kbps;
     }
 
-    fn sent(&self) {
+    fn sent(&self, screen: usize) {
         let mut counters = self.counters();
-        counters.sent = counters.sent.saturating_add(1);
+        counters.sent[screen] = counters.sent[screen].saturating_add(1);
     }
 
-    /// The `stats` message for the `elapsed` time since the last one, which starts the count
-    /// again; none while there is no picture.
-    pub(crate) fn take_stats(&self, elapsed: Duration) -> Option<String> {
-        let (width, height) = {
-            let buffer = self.0.buffer.lock().unwrap_or_else(|e| e.into_inner());
-            (buffer.width, buffer.height)
-        };
+    /// The `stats` message of `screen` for the `elapsed` time since its last one, which starts
+    /// the count again; none while the screen shows no picture.
+    pub(crate) fn take_stats(&self, screen: usize, elapsed: Duration) -> Option<String> {
+        let visible = self.buffer().visible(screen);
         let mut counters = self.counters();
-        let sent = std::mem::take(&mut counters.sent);
-        if width == 0 || elapsed.is_zero() {
-            return None;
-        }
+        let sent = std::mem::take(&mut counters.sent[screen]);
+        let visible = visible.filter(|_| !elapsed.is_zero())?;
         let stats = Stats {
             fps: one_decimal(f64::from(sent) / elapsed.as_secs_f64()),
-            width,
-            height,
+            width: visible.width(),
+            height: visible.height(),
             mbps: counters
                 .bandwidth_kbps
                 .map(|kbps| one_decimal(f64::from(kbps) / 1000.0)),
@@ -491,7 +583,7 @@ impl Frames {
     pub(crate) fn png(&self) -> Result<Vec<u8>, String> {
         // Copied first: encoding takes longer than an update should wait for the lock.
         let (width, height, rgb) = {
-            let buffer = self.0.buffer.lock().unwrap_or_else(|e| e.into_inner());
+            let buffer = self.buffer();
             let rgb: Vec<u8> = buffer
                 .pixels
                 .iter()
@@ -517,6 +609,39 @@ impl Frames {
 }
 
 impl Framebuffer {
+    /// The part of the desktop `screen` shows: its monitor as far as the desktop reaches, which
+    /// until the server took a new layout may be less than the monitor or nothing.
+    fn visible(&self, screen: usize) -> Option<Rect> {
+        if self.width == 0 {
+            return None;
+        }
+        let desktop = Rect {
+            left: 0,
+            top: 0,
+            right: self.width - 1,
+            bottom: self.height - 1,
+        };
+        let Some(layout) = self.layout else {
+            return (screen == 0).then_some(desktop);
+        };
+        let viewport = layout[screen];
+        let corner = |start: u16, length: u16| start.saturating_add(length.max(1) - 1);
+        Rect {
+            left: viewport.x,
+            top: viewport.y,
+            right: corner(viewport.x, viewport.width),
+            bottom: corner(viewport.y, viewport.height),
+        }
+        .intersection(desktop)
+    }
+
+    /// Every screen's next picture covers all of it.
+    fn refresh_all(&mut self) {
+        for screen in 0..SCREENS {
+            self.refresh(screen);
+        }
+    }
+
     fn apply(&mut self, update: DesktopUpdate) {
         let (pixels, width, height, region) = update.into_parts();
         let (width, height) = (width.get(), height.get());
@@ -530,14 +655,9 @@ impl Framebuffer {
             self.width = width;
             self.height = height;
             self.pixels = vec![0; usize::from(width) * usize::from(height)];
-            // The client's picture has another size, or there is none yet: the next one covers
-            // the whole desktop.
-            self.dirty = Some(Rect {
-                left: 0,
-                top: 0,
-                right: width - 1,
-                bottom: height - 1,
-            });
+            // The clients' pictures have another size, or there are none yet: the next ones
+            // cover all of their screens.
+            self.refresh_all();
         }
         // DesktopUpdate::new checked that the region lies in the desktop and `pixels` fills it.
         let row_len = usize::from(region.width());
@@ -546,32 +666,46 @@ impl Framebuffer {
                 (usize::from(region.top) + row) * usize::from(width) + usize::from(region.left);
             self.pixels[start..start + row_len].copy_from_slice(line);
         }
-        self.dirty = Some(self.dirty.map_or(region, |dirty| dirty.union(region)));
-    }
-
-    fn refresh(&mut self) {
-        if self.width > 0 {
-            self.dirty = Some(Rect {
-                left: 0,
-                top: 0,
-                right: self.width - 1,
-                bottom: self.height - 1,
-            });
+        for screen in 0..SCREENS {
+            if let Some(changed) = self
+                .visible(screen)
+                .and_then(|visible| visible.intersection(region))
+            {
+                let dirty = &mut self.dirty[screen];
+                *dirty = Some(dirty.map_or(changed, |dirty| dirty.union(changed)));
+            }
         }
     }
 
-    fn take_frame(&mut self) -> Option<Vec<u8>> {
-        let dirty = self.dirty.take()?;
+    /// Whether the layout changed.
+    fn set_layout(&mut self, layout: Option<[Viewport; SCREENS]>) -> bool {
+        if self.layout == layout {
+            return false;
+        }
+        self.layout = layout;
+        self.refresh_all();
+        true
+    }
+
+    fn refresh(&mut self, screen: usize) {
+        self.dirty[screen] = self.visible(screen);
+    }
+
+    /// The next picture of `screen`, in the coordinates of its monitor: the header names the
+    /// monitor's visible size as the desktop.
+    fn take_frame(&mut self, screen: usize) -> Option<Vec<u8>> {
+        let dirty = self.dirty[screen].take()?;
+        let visible = self.visible(screen)?;
         let row_len = usize::from(dirty.width());
         let mut frame = Vec::with_capacity(HEADER_LEN + row_len * usize::from(dirty.height()) * 4);
         for value in [
             FRAME_VERSION,
-            dirty.left,
-            dirty.top,
+            dirty.left - visible.left,
+            dirty.top - visible.top,
             dirty.width(),
             dirty.height(),
-            self.width,
-            self.height,
+            visible.width(),
+            visible.height(),
         ] {
             frame.extend_from_slice(&value.to_le_bytes());
         }
@@ -799,7 +933,7 @@ mod tests {
     async fn frame_ws_a_renewed_token_replaces_the_one_before() {
         let running = start(LOGIN_DEADLINE);
         running.frames.apply(update(4, 3, (0, 0, 3, 2), 0x00102030));
-        let renewed = running.tokens.renew().unwrap();
+        let renewed = running.tokens.renew(0).unwrap();
         assert_ne!(renewed, running.token);
         assert_eq!(renewed.len(), 2 * TOKEN_BYTES);
 
@@ -831,7 +965,7 @@ mod tests {
             "a client that went away sent input"
         );
 
-        let token = running.tokens.renew().unwrap();
+        let token = running.tokens.renew(0).unwrap();
         let mut back = with_token(&running, &token).await;
         let frame = next_frame(&mut back).await;
         assert_eq!(header(&frame), [1, 0, 0, 8, 6, 8, 6]);
@@ -854,7 +988,7 @@ mod tests {
         let mut first = logged_in(&running).await;
         next_frame(&mut first).await;
 
-        let token = running.tokens.renew().unwrap();
+        let token = running.tokens.renew(0).unwrap();
         let mut second = with_token(&running, &token).await;
         // The new client gets the whole picture although the first one has it already.
         assert_eq!(
@@ -882,28 +1016,28 @@ mod tests {
     fn frame_ws_picture_layout() {
         let frames = Frames::default();
         frames.apply(update(8, 6, (0, 0, 7, 5), 0x00000000));
-        let first = frames.take_frame().unwrap();
+        let first = frames.take_frame(0).unwrap();
         assert_eq!(header(&first), [1, 0, 0, 8, 6, 8, 6]);
         assert_eq!(first.len(), HEADER_LEN + 8 * 6 * 4);
 
         frames.apply(update(8, 6, (2, 1, 4, 2), 0x00112233));
-        let frame = frames.take_frame().unwrap();
+        let frame = frames.take_frame(0).unwrap();
         assert_eq!(
             frame[..HEADER_LEN],
             [1, 0, 2, 0, 1, 0, 3, 0, 2, 0, 8, 0, 6, 0]
         );
         assert_eq!(frame[HEADER_LEN..], [0x11, 0x22, 0x33, 0xff].repeat(6));
-        assert_eq!(frames.take_frame(), None, "a picture went out twice");
+        assert_eq!(frames.take_frame(0), None, "a picture went out twice");
     }
 
     #[test]
     fn frame_ws_a_new_desktop_size_sends_the_whole_desktop() {
         let frames = Frames::default();
         frames.apply(update(8, 6, (0, 0, 7, 5), 0x00ffffff));
-        frames.take_frame().unwrap();
+        frames.take_frame(0).unwrap();
 
         frames.apply(update(4, 3, (1, 1, 1, 1), 0x00abcdef));
-        let frame = frames.take_frame().unwrap();
+        let frame = frames.take_frame(0).unwrap();
         assert_eq!(header(&frame), [1, 0, 0, 4, 3, 4, 3]);
         let pixels: Vec<&[u8]> = frame[HEADER_LEN..].chunks(4).collect();
         assert_eq!(pixels.len(), 12);
@@ -1036,6 +1170,188 @@ mod tests {
             .unwrap();
     }
 
+    fn viewport(x: u16, y: u16, width: u16, height: u16) -> Viewport {
+        Viewport {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn frame_ws_each_screen_shows_its_part_of_the_desktop() {
+        let frames = Frames::default();
+        frames.apply(update(8, 3, (0, 0, 3, 2), 0x00111111));
+        frames.apply(update(8, 3, (4, 0, 7, 2), 0x00222222));
+        // Without a layout screen 0 shows the whole desktop and screen 1 nothing.
+        assert_eq!(
+            header(&frames.take_frame(0).unwrap()),
+            [1, 0, 0, 8, 3, 8, 3]
+        );
+        assert_eq!(frames.take_frame(1), None);
+        assert_eq!(frames.take_stats(1, Duration::from_secs(1)), None);
+
+        frames.set_layout(Some([viewport(0, 0, 4, 3), viewport(4, 0, 4, 3)]));
+        let left = frames.take_frame(0).unwrap();
+        let right = frames.take_frame(1).unwrap();
+        assert_eq!(header(&left), [1, 0, 0, 4, 3, 4, 3]);
+        assert_eq!(header(&right), [1, 0, 0, 4, 3, 4, 3]);
+        assert_eq!(left[HEADER_LEN..], rgba(0x00111111).repeat(12));
+        assert_eq!(right[HEADER_LEN..], rgba(0x00222222).repeat(12));
+        // The same layout again sends nothing.
+        frames.set_layout(Some([viewport(0, 0, 4, 3), viewport(4, 0, 4, 3)]));
+        assert_eq!((frames.take_frame(0), frames.take_frame(1)), (None, None));
+
+        // A change goes to the screen it lies on, in that screen's coordinates.
+        frames.apply(update(8, 3, (5, 1, 5, 1), 0x00abcdef));
+        assert_eq!(frames.take_frame(0), None);
+        let frame = frames.take_frame(1).unwrap();
+        assert_eq!(header(&frame), [1, 1, 1, 1, 1, 4, 3]);
+        assert_eq!(frame[HEADER_LEN..], rgba(0x00abcdef));
+        // Across both, each screen gets its part of it.
+        frames.apply(update(8, 3, (3, 0, 4, 0), 0x00ffffff));
+        assert_eq!(
+            header(&frames.take_frame(0).unwrap()),
+            [1, 3, 0, 1, 1, 4, 3]
+        );
+        assert_eq!(
+            header(&frames.take_frame(1).unwrap()),
+            [1, 0, 0, 1, 1, 4, 3]
+        );
+        let stats: serde_json::Value =
+            serde_json::from_str(&frames.take_stats(1, Duration::from_secs(1)).unwrap()).unwrap();
+        assert_eq!(
+            (stats["width"].as_u64(), stats["height"].as_u64()),
+            (Some(4), Some(3))
+        );
+    }
+
+    #[test]
+    fn frame_ws_a_screen_shows_what_exists_of_its_monitor() {
+        // The server has not taken the layout yet: its desktop is smaller than both monitors.
+        let frames = Frames::default();
+        frames.apply(update(6, 3, (0, 0, 5, 2), 0x00111111));
+        frames.set_layout(Some([viewport(0, 1, 4, 3), viewport(4, 0, 4, 2)]));
+        assert_eq!(
+            header(&frames.take_frame(0).unwrap()),
+            [1, 0, 0, 4, 2, 4, 2]
+        );
+        assert_eq!(
+            header(&frames.take_frame(1).unwrap()),
+            [1, 0, 0, 2, 2, 2, 2]
+        );
+        assert_eq!(frames.origin(1), (4, 0));
+        // Then it does: each screen gets all of its monitor.
+        frames.apply(update(8, 4, (0, 0, 7, 3), 0x00222222));
+        assert_eq!(
+            header(&frames.take_frame(0).unwrap()),
+            [1, 0, 0, 4, 3, 4, 3]
+        );
+        assert_eq!(
+            header(&frames.take_frame(1).unwrap()),
+            [1, 0, 0, 4, 2, 4, 2]
+        );
+        // A monitor outside the desktop shows nothing.
+        frames.set_layout(Some([viewport(0, 0, 4, 4), viewport(8, 0, 4, 4)]));
+        assert!(frames.take_frame(0).is_some());
+        assert_eq!(frames.take_frame(1), None);
+        // Without a layout screen 0 shows the whole desktop again.
+        frames.set_layout(None);
+        assert_eq!(
+            header(&frames.take_frame(0).unwrap()),
+            [1, 0, 0, 8, 4, 8, 4]
+        );
+        assert_eq!(frames.take_frame(1), None);
+        assert_eq!(frames.origin(1), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn frame_ws_each_screen_has_its_client_its_token_and_its_ack() {
+        let mut running = start(LOGIN_DEADLINE);
+        running
+            .frames
+            .set_layout(Some([viewport(0, 0, 4, 3), viewport(4, 0, 4, 3)]));
+        running.frames.apply(update(8, 3, (0, 0, 7, 2), 0x00102030));
+        // Screen 1 has no token before one is handed out for it.
+        let second_token = running.tokens.renew(1).unwrap();
+        let mut first = logged_in(&running).await;
+        assert_eq!(header(&next_frame(&mut first).await), [1, 0, 0, 4, 3, 4, 3]);
+        // Its token for screen 1 left the one of screen 0 alone, and logs in only once.
+        let mut second = with_token(&running, &second_token).await;
+        assert_eq!(
+            header(&next_frame(&mut second).await),
+            [1, 0, 0, 4, 3, 4, 3]
+        );
+        let mut again = with_token(&running, &second_token).await;
+        assert_closed(&mut again).await;
+
+        // A change on both screens: only the screen that acknowledged gets its picture.
+        running.frames.apply(update(8, 3, (2, 1, 5, 1), 0x00abcdef));
+        ack(&mut second).await;
+        assert_eq!(
+            header(&next_frame(&mut second).await),
+            [1, 0, 1, 2, 1, 4, 3]
+        );
+        assert_quiet(&mut first).await;
+        ack(&mut first).await;
+        assert_eq!(header(&next_frame(&mut first).await), [1, 2, 1, 2, 1, 4, 3]);
+
+        // The mouse of screen 1 lies in its monitor, which starts at x 4 of the desktop.
+        for ws in [&mut first, &mut second] {
+            ws.send(Message::text(
+                r#"{"t":"mouse","x":1,"y":2,"buttons":0,"wheel":0}"#,
+            ))
+            .await
+            .unwrap();
+        }
+        let mut received = Vec::new();
+        for _ in 0..2 {
+            received.push(timeout(WAIT, running.input.recv()).await.unwrap().unwrap());
+        }
+        let mouse = |x| Input::Mouse {
+            x,
+            y: 2,
+            buttons: 0,
+            wheel: 0,
+        };
+        assert!(
+            received.contains(&mouse(1)) && received.contains(&mouse(5)),
+            "{received:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn frame_ws_passes_a_layout_of_two_monitors_on() {
+        let mut running = start(LOGIN_DEADLINE);
+        let mut ws = logged_in(&running).await;
+        for message in [
+            r#"{"t":"layout","monitors":[]}"#,
+            r#"{"t":"layout","monitors":[{"x":0,"y":0,"w":1920,"h":1080,"scale":100}]}"#,
+            r#"{"t":"layout","monitors":[{"x":0,"y":0,"w":1920,"h":1080,"scale":100},{"x":1920,"y":0,"w":1920,"h":1080,"scale":100},{"x":3840,"y":0,"w":1920,"h":1080,"scale":100}]}"#,
+            r#"{"t":"layout","monitors":[{"x":0,"y":0,"w":1920,"h":1080}]}"#,
+            r#"{"t":"layout","monitors":[{"x":1000,"y":200,"w":1921,"h":100,"scale":900},{"x":2921,"y":100,"w":1280,"h":1024,"scale":100}]}"#,
+        ] {
+            ws.send(Message::text(message)).await.unwrap();
+        }
+        let received = timeout(WAIT, running.input.recv()).await.unwrap().unwrap();
+        // Sizes and scales within the limits of `size`, the second placed from the first.
+        assert_eq!(
+            received,
+            Input::Layout(Layout::placed(
+                Display::clamped(1920, 200, 500),
+                Display::clamped(1280, 1024, 100),
+                1921,
+                -100,
+            ))
+        );
+        assert_quiet(&mut ws).await;
+        assert!(
+            running.input.try_recv().is_err(),
+            "a layout of other than two monitors went on"
+        );
+    }
+
     async fn next_stats(ws: &mut Client) -> serde_json::Value {
         match timeout(WAIT, ws.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => serde_json::from_str(&text).unwrap(),
@@ -1081,20 +1397,20 @@ mod tests {
     #[test]
     fn frame_ws_stats_count_since_the_last_message() {
         let frames = Frames::default();
-        frames.sent();
+        frames.sent(0);
         assert_eq!(
-            frames.take_stats(Duration::from_secs(1)),
+            frames.take_stats(0, Duration::from_secs(1)),
             None,
             "stats without a picture"
         );
 
         frames.apply(update(8, 6, (0, 0, 7, 5), 0));
         for _ in 0..3 {
-            frames.sent();
+            frames.sent(0);
         }
         frames.network(Some(40), Some(1_234));
         let stats: serde_json::Value =
-            serde_json::from_str(&frames.take_stats(Duration::from_secs(2)).unwrap()).unwrap();
+            serde_json::from_str(&frames.take_stats(0, Duration::from_secs(2)).unwrap()).unwrap();
         assert_eq!(
             stats,
             serde_json::json!({"t": "stats", "fps": 1.5, "width": 8, "height": 6, "mbps": 1.2, "rtt_ms": 40})
@@ -1103,7 +1419,7 @@ mod tests {
         // A new connection has measured nothing yet.
         frames.network(None, None);
         let stats: serde_json::Value =
-            serde_json::from_str(&frames.take_stats(Duration::from_secs(1)).unwrap()).unwrap();
+            serde_json::from_str(&frames.take_stats(0, Duration::from_secs(1)).unwrap()).unwrap();
         assert_eq!(
             stats,
             serde_json::json!({"t": "stats", "fps": 0.0, "width": 8, "height": 6})
@@ -1117,7 +1433,7 @@ mod tests {
         frames.apply(update(3, 2, (0, 0, 2, 1), 0x00102030));
         frames.apply(update(3, 2, (2, 1, 2, 1), 0x00abcdef));
         // What went out to the webview does not matter: the PNG is the whole desktop.
-        frames.take_frame().unwrap();
+        frames.take_frame(0).unwrap();
 
         let png = frames.png().unwrap();
         let mut reader = png::Decoder::new(std::io::Cursor::new(png))

@@ -75,8 +75,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T12
 Abhängt von: T7
 
-### T9 — R-1101: Multi-Monitor im Backend (Layout, Ausschnitt je Client)  [ ]
+### T9 — R-1101: Multi-Monitor im Backend (Layout, Ausschnitt je Client)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/window.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @b430edaa3 2026-11-09T00:14:07+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T9.verdict.json)
 Änderung: Die Nachricht `{"t":"layout",…}` mit zwei Monitoren (je Größe, Lage, Faktor, begrenzt wie `size`) wird zu `RdpInputEvent::MonitorLayout`. Der Bild-Server nimmt je Bildschirm einen Client (Bildschirm 0 und 1, je ein Token aus `rdp_session_attach`) und schickt jedem nur seinen Ausschnitt, mit eigener Bestätigung. Die Mauskoordinaten eines Clients werden um die Lage seines Monitors verschoben. `rdp_detach` öffnet für Bildschirm 1 das zweite Fenster auf dem zweiten Monitor des Systems. Tests: Ausschnitt, Bestätigungen je Client, Verschiebung, Begrenzung.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T12

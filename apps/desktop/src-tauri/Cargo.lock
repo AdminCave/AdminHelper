@@ -21,6 +21,7 @@ dependencies = [
  "ironrdp-cliprdr",
  "ironrdp-cliprdr-native",
  "ironrdp-connector",
+ "ironrdp-displaycontrol",
  "ironrdp-pdu",
  "ironrdp-rdpdr-native",
  "ironrdp-session",
