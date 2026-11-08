@@ -57,8 +57,10 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T8
 Abhängt von: T3, T5
 
-### T7 — R-1098: Live-Spec — RDP-Tab gegen xrdp  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/rdp-embedded.live.js, scripts/tests/desktop_e2e_connect.sh
+### T7 — R-1098: Live-Spec — RDP-Tab gegen xrdp  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/rdp-embedded.live.js, scripts/tests/desktop_e2e_connect.sh, scripts/tests/e2e_api.py
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @7b64a1c0e 2026-11-08T18:49:15+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T7.verdict.json)
 Änderung: Neue Spec mit SPDX-Header: `rdp_client` auf AdminHelper, Verbindung `rdp-direct` öffnen, Zertifikat bestätigen, Tab zeigt `verbunden` und ein Bild (Canvas nicht leer), Taste erreicht den Server, Trennen; der Orchestrator prüft serverseitig über das xrdp-Log. Läuft im Sammellauf (Heavy linux-full).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T8
@@ -95,3 +97,4 @@ Abhängt von: T2
 - 2026-11-08 T5: Ein verlorener WebGL-Kontext wird per `preventDefault` wiederherstellbar gehalten; nach `webglcontextrestored` übernimmt ein neuer Renderer, das Bild füllt sich mit den nächsten Änderungen
 - 2026-11-08 T5: Phasen, die vor der Antwort von `rdp_session_start` kommen, werden gepuffert und nach der Antwort nach `session_id` gefiltert nachgespielt; eine Sitzung, deren Tab während des Starts schloss oder neu startete, wird sofort gestoppt
 - 2026-11-08 T6: Ein getipptes Passwort bleibt nur im `RdpRun` des Tabs, für dessen Neustarts (Neu verbinden, Profil, Zertifikat) und geht mit dem Tab; nach dem Speichern über „Passwort merken“ startet der Tab ohne und Rust nimmt das gespeicherte. Ohne Passwort-Store fragt der Tab immer (kein OS-Client, der fragen könnte). Der Rückfall auf den OS-Client nimmt dasselbe Passwort; die Statuszeile sagt `status.rdpOsClient` statt `status.rdpStarting`
+- 2026-11-08 T7: Der Live-Test des Tabs fährt gegen den xrdp-gfx-Container (`rdp-embedded`), nicht gegen rdp-direct: der eingebettete Client verlangt die Grafik-Pipeline. Das Bild belegt die Canvas-Größe nach dem ersten Bild (WebGL-Pixel sind im Webdriver nicht verlässlich lesbar) plus `egfx created` im xrdp-Log; `connection-pinned` (ohne `trustCert`) lässt den Zertifikatsdialog erscheinen. Das erste Bild ist xrdps Anmeldeschirm, deshalb setzt ein Wächter des Orchestrators Marken (Sitzung im xrdp-Log, Datei des getippten Befehls) und die Spec tippt bis zu fünfmal

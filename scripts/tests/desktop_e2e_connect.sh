@@ -29,7 +29,11 @@ ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
 TARGETS=()
-cleanup_targets() { for c in "${TARGETS[@]:-}"; do [ -n "$c" ] && docker rm -f "$c" >/dev/null 2>&1; done; }
+TARGETS_WATCH=""
+cleanup_targets() {
+    [ -n "$TARGETS_WATCH" ] && kill "$TARGETS_WATCH" 2>/dev/null
+    for c in "${TARGETS[@]:-}"; do [ -n "$c" ] && docker rm -f "$c" >/dev/null 2>&1; done
+}
 
 wait_log() {  # container pattern timeout — readiness via the log, so we don't
     # pollute the target with a host-side probe (which would look like a client).
@@ -111,6 +115,21 @@ TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target (xrdp) up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 e2e_api "$TOKEN" connection rdp-direct rdp 127.0.0.1 3389 e2e >/dev/null && ok "seeded direct RDP connection" || { bad "seed RDP connection"; exit 1; }
 
+# ── RDP target with the graphics pipeline + the connection the AdminHelper tab opens ──
+# xrdp 0.10 of desktop_e2e_rdp_embedded.sh: the tab (R-1098) draws what the graphics pipeline
+# sends, and its session is a bare xterm, so a typed command leaves a file to look for.
+GFX_C="ah-e2e-rdp-gfx-$$"
+docker build -q -t ah-xrdp-gfx:e2e "$_E2E_LIB_DIR/xrdp-gfx" >/dev/null \
+    || { bad "xrdp-gfx image build"; exit 1; }
+docker run -d --init --name "$GFX_C" -p 127.0.0.1::3389 ah-xrdp-gfx:e2e >/dev/null \
+    || { bad "xrdp-gfx target start"; exit 1; }
+TARGETS+=("$GFX_C")
+wait_log "$GFX_C" '^xrdp-gfx: ready$' 60 || { bad "xrdp-gfx target never came up"; docker logs --tail 20 "$GFX_C"; exit 1; }
+GFX_PORT=$(docker port "$GFX_C" 3389/tcp); GFX_PORT=${GFX_PORT##*:}
+[[ $GFX_PORT =~ ^[0123456789]+$ ]] && ok "RDP target with the graphics pipeline up on :$GFX_PORT" \
+    || { bad "no port of the xrdp-gfx target"; exit 1; }
+e2e_api "$TOKEN" connection-pinned rdp-embedded rdp 127.0.0.1 "$GFX_PORT" e2e >/dev/null && ok "seeded RDP connection for the tab" || { bad "seed RDP connection for the tab"; exit 1; }
+
 # xdg-open shim: the desktop's open::that(url) resolves "xdg-open" via PATH. This
 # shim fetches the URL so the nginx access log proves the right URL was opened
 # (headless has no real browser to do it).
@@ -127,6 +146,22 @@ XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 
+# The RDP tab draws xrdp's own screen before the session of e2e is up, and keys typed then
+# are lost: the spec waits for marks this watcher sets from the container, "session" once
+# xrdp logged the session on, "key" once the typed command made its file.
+AH_RDP_MARKS="$E2E_WORK/rdp-marks"; mkdir -p "$AH_RDP_MARKS"; export AH_RDP_MARKS
+(
+    for _ in $(seq 1 1200); do
+        if [ ! -f "$AH_RDP_MARKS/session" ] && docker exec "$GFX_C" cat /var/log/xrdp.log 2>/dev/null \
+            | grep -Eq 'session is available on display [[:digit:]]+ for user e2e$'; then
+            touch "$AH_RDP_MARKS/session"
+        fi
+        docker exec "$GFX_C" test -f /home/e2e/ahkey 2>/dev/null && { touch "$AH_RDP_MARKS/key"; break; }
+        sleep 0.5
+    done
+) &
+TARGETS_WATCH=$!
+
 forget_e2e_host_key || { bad "remove the stale host key of $E2E_SSH_HOST"; exit 1; }
 echo "[connect] driving the connect specs under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
@@ -136,7 +171,8 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/ssh-connect.live.js \
         --spec test/specs/web-connect.live.js \
-        --spec test/specs/rdp-connect.live.js
+        --spec test/specs/rdp-connect.live.js \
+        --spec test/specs/rdp-embedded.live.js
 ' && ok "connect GUI specs ran" || bad "connect GUI specs failed"
 
 # Verify from the target side: sshd saw the three clients of the SSH spec. The
@@ -176,6 +212,33 @@ else
     docker exec "$RDP_C" sh -c 'tail -25 /var/log/xrdp.log 2>/dev/null' 2>/dev/null
     docker logs --tail 15 "$RDP_C"
 fi
+
+# RDP in the tab: xrdp signed e2e on, drew over the graphics pipeline, and the command the
+# spec typed ran in the session's xterm. xrdp answers a wrong password with its own login
+# screen, which takes keys and draws as well: only the log and the file tell them apart.
+gfx_log=$(docker exec "$GFX_C" cat /var/log/xrdp.log 2>&1)
+if grep -Eq 'session is available on display [[:digit:]]+ for user e2e$' <<<"$gfx_log" \
+    && ! grep -q 'could not be authenticated' <<<"$gfx_log"; then
+    ok "xrdp logged e2e on for the AdminHelper tab"
+else
+    bad "xrdp started no session for e2e from the AdminHelper tab"
+fi
+if grep -q 'egfx created' <<<"$gfx_log"; then
+    ok "the tab's picture went over the graphics pipeline"
+else
+    bad "xrdp did not use the graphics pipeline for the tab"
+fi
+gfx_key=no
+for _ in $(seq 1 10); do
+    docker exec "$GFX_C" test -f /home/e2e/ahkey && { gfx_key=yes; break; }
+    sleep 1
+done
+if [ "$gfx_key" = yes ]; then
+    ok "the keys typed in the tab ran a command in the remote session"
+else
+    bad "the command typed in the tab never ran in the remote session"
+fi
+[ "$FAIL" -eq 0 ] || { echo "[connect] xrdp.log of the graphics target:"; printf '%s\n' "$gfx_log" | tail -n 40; }
 
 echo ""
 echo "desktop_e2e_connect: $PASS passed, $FAIL failed"

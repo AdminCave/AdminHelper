@@ -16,6 +16,7 @@ ops:
     visitor-port <name>                            -> prints the visitor port of tunnel <name>
     provision-token <server_id>                    -> prints a fresh provision token
     connection <name> <kind> <host> <port> <user>  -> prints the new connection id
+    connection-pinned <name> <kind> <host> <port> <user>  -> the same without trustCert
     web-connection <name> <url>                    -> prints the new web connection id
     devices <username>                             -> prints "<id> <revoked reason or ->" per device
 """
@@ -109,10 +110,12 @@ def main(argv):
     elif op == "provision-token":
         (server_id,) = rest
         print(_call(base, token, "POST", f"/api/servers/{server_id}/provision/token", {})["token"])
-    elif op == "connection":
+    elif op in ("connection", "connection-pinned"):
         # server_id is optional and defaults to "": without it the row carries no
         # serverId, and a per-server read-back would count 0 before AND after an
         # upgrade — an assertion that cannot fail (upgrade_path_test.sh).
+        # connection-pinned leaves trustCert off: the RDP tab of AdminHelper then asks
+        # to confirm the certificate and pins it (R-1098).
         name, kind, host, port, user, *maybe_server = rest
         server_id = maybe_server[0] if maybe_server else ""
         print(
@@ -129,7 +132,7 @@ def main(argv):
                     "host": host,
                     "port": int(port),
                     "username": user,
-                    "trustCert": True,
+                    "trustCert": op == "connection",
                     **({"serverId": server_id} if server_id else {}),
                 },
             )["id"]
