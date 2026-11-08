@@ -22,9 +22,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     /** The session in Rust this window shows. */
     sessionId: string;
+    /** Its screen: 1 is the second monitor of a session across two, which main lays out. */
+    screen?: number;
   }
 
-  let { sessionId }: Props = $props();
+  let { sessionId, screen = 0 }: Props = $props();
 
   let key = $state<string | null>(null);
   let failure = $state<string | null>(null);
@@ -49,7 +51,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       },
       () => {},
     );
-    key = adoptRdp(sessionId);
+    key = adoptRdp(sessionId, screen);
   });
 </script>
 
@@ -58,7 +60,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div class="detached-failure" role="alert">{$t('terminal.dockFailed', { error: failure })}</div>
   {/if}
   {#if session}
-    <RdpSession {session} onDock={() => void dock()} />
+    <!-- The second monitor's window closes from its title bar; docking is the first one's. -->
+    <RdpSession {session} {screen} onDock={screen === 0 ? () => void dock() : undefined} />
   {/if}
 </div>
 

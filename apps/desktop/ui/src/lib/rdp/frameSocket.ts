@@ -6,6 +6,8 @@
 // the token as the first message, then one picture per binary message, each acknowledged with
 // `{"t":"ack"}` once it is drawn; the server sends the next one only after that receipt.
 
+import type { RdpMonitor } from './display';
+
 export const FRAME_VERSION = 1;
 // Version, x, y, width, height, desktop width, desktop height: seven u16, little-endian.
 export const HEADER_LEN = 14;
@@ -39,7 +41,9 @@ export type FrameInput =
   | { t: 'mouse'; x: number; y: number; buttons: number; wheel: number }
   | { t: 'cad' }
   // The desktop to ask the server for (R-1100); Rust keeps it within MS-RDPEDISP.
-  | { t: 'size'; w: number; h: number; scale: number };
+  | { t: 'size'; w: number; h: number; scale: number }
+  // Two monitors, where they lie and their desktop (R-1101); the server places the second one.
+  | { t: 'layout'; monitors: RdpMonitor[] };
 
 export interface FrameHandlers {
   // Draws the picture; the receipt goes out when this returns.

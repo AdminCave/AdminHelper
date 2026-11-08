@@ -13,6 +13,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   A certificate the session was refused for is shown to be confirmed; confirmed, it starts anew.
   In a window of its own (R-1101, `onDock`) it shows what that window may do: no start, no
   screenshot, no details, no full screen; the way back is *Dock*.
+  *Multi-monitor* shows the session across the first two monitors of the system: the tab the
+  first, a window of its own the second (`screen` 1), which shows the picture and takes input
+  only, while the tab lays both out. With one monitor the tab is fitted.
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
@@ -38,6 +41,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RdpScalingMode,
     RdpSessionInfo,
     RdpWindowMode,
+    SystemMonitor,
   } from '$lib/bridge/types';
   import { t } from '$lib/i18n';
   import {
@@ -46,6 +50,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     fitDisplay,
     fixedDisplay,
     layoutOf,
+    monitorDisplay,
     RESIZE_DEBOUNCE_MS,
     ZOOM,
     zoomedSize,
@@ -56,7 +61,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { settings } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
   import {
+    closeRdpMonitor,
     disconnectRdp,
+    openRdpMonitor,
     reconnectRdp,
     setRdpDisplay,
     setRdpPerformance,
@@ -83,10 +90,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     onClose?: () => void;
     /** Shown in a window of its own: docks it back into its tab. */
     onDock?: () => void;
+    /** 1: the second monitor of a session across two, in a window of its own. */
+    screen?: number;
   }
 
-  let { session, onClose, onDock }: Props = $props();
-  let detached = $derived(onDock !== undefined);
+  let { session, onClose, onDock, screen = 0 }: Props = $props();
+  let second = $derived(screen === 1);
+  let detached = $derived(onDock !== undefined || second);
 
   let viewport: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -157,12 +167,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   let customSize = $derived(rdpOptions?.customSize ?? $settings?.rdpCustomSize ?? null);
   let layouts = $derived(
-    (detached ? (['fit', 'custom'] as const) : (['fit', 'fullscreen', 'custom'] as const)).map(
-      (value) => ({
-        value,
-        label: $t(`settings.rdp.window.${value}`),
-      }),
-    ),
+    (detached
+      ? (['fit', 'custom'] as const)
+      : (['fit', 'fullscreen', 'multimon', 'custom'] as const)
+    ).map((value) => ({
+      value,
+      label: $t(`settings.rdp.window.${value}`),
+    })),
   );
   let scalings = $derived(
     (['auto', 'normal', 'hdpi'] as const).map((value) => ({
@@ -196,8 +207,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   // The desktop the tab asks for goes to the store for the next start and to the running
-  // session; Rust drops what it has already.
+  // session; Rust drops what it has already. Across two monitors the next start begins with the
+  // first one. The second monitor's window shows what the tab lays out.
   function report(): void {
+    if (second) return;
+    if (monitors) {
+      const [first] = monitors;
+      setRdpDisplay(session.key, { width: first.w, height: first.h, scale: first.scale });
+      send({ t: 'layout', monitors });
+      return;
+    }
     const display = wanted();
     if (!display) return;
     setRdpDisplay(session.key, display);
@@ -206,7 +225,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const reportLater = debounce(report, RESIZE_DEBOUNCE_MS);
 
   $effect(() => {
-    void [layout, scaling, customSize];
+    void [layout, scaling, customSize, monitors];
     untrack(report);
   });
 
@@ -243,6 +262,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let sessionId = $derived(rdp.sessionId);
   let wsPort = $derived(rdp.wsPort);
   let token = $derived(rdp.token);
+
+  // Across two monitors while the session runs, in the tab only. A reconnect keeps both: it
+  // comes back with the layout, and a `size` meanwhile would shrink it to one monitor.
+  let running = $derived(connected || rdp.phase === 'reconnecting');
+  let multi = $derived(!detached && windowMode === 'multimon' && running && sessionId !== null);
+  // A new `session` comes with every update of the tab; the window goes with the key only.
+  let tabKey = $derived(session.key);
+  let systemMonitors = $state<SystemMonitor[] | null>(null);
+  let monitors = $derived(
+    multi && systemMonitors && systemMonitors.length >= 2
+      ? [monitorDisplay(systemMonitors[0], scaling), monitorDisplay(systemMonitors[1], scaling)]
+      : null,
+  );
+  let singleScreen = $derived(multi && systemMonitors !== null && systemMonitors.length < 2);
+
+  // The second monitor's window opens with the mode and goes with it, with the session and with
+  // the tab.
+  $effect(() => {
+    if (!multi || sessionId === null) return;
+    const id = sessionId;
+    const key = tabKey;
+    let gone = false;
+    bridge.systemMonitors().then(
+      (list) => {
+        if (gone) return;
+        systemMonitors = list;
+        if (list.length >= 2) void openRdpMonitor(key);
+      },
+      (err: unknown) => {
+        if (gone) return;
+        reportError(errMsg(err));
+        setRdpWindow(key, 'fit');
+      },
+    );
+    return () => {
+      gone = true;
+      systemMonitors = null;
+      void closeRdpMonitor(id);
+    };
+  });
 
   // A new session in Rust gets a socket of its own; the one before it goes.
   $effect(() => {
@@ -409,100 +468,108 @@ SPDX-License-Identifier: GPL-3.0-or-later
     >
       {$t('rdp.cad')}
     </Button>
-    <span class="rdp-sep" aria-hidden="true"></span>
-    {#if !detached}
+    {#if !second}
+      <span class="rdp-sep" aria-hidden="true"></span>
+      {#if !detached}
+        <IconButton
+          size="sm"
+          icon={Camera}
+          label={$t('rdp.screenshot')}
+          disabled={!connected}
+          onclick={() => void screenshot()}
+        />
+        <IconButton
+          size="sm"
+          icon={Gauge}
+          label={$t('rdp.info')}
+          disabled={rdp.sessionId === null}
+          onclick={() => void showInfo()}
+        />
+        <IconButton
+          size="sm"
+          icon={RotateCw}
+          label={$t('terminal.reconnect')}
+          onclick={() => void reconnectRdp(session.key)}
+        />
+      {/if}
       <IconButton
         size="sm"
-        icon={Camera}
-        label={$t('rdp.screenshot')}
-        disabled={!connected}
-        onclick={() => void screenshot()}
-      />
-      <IconButton
-        size="sm"
-        icon={Gauge}
-        label={$t('rdp.info')}
+        icon={Power}
+        label={$t('rdp.disconnect')}
         disabled={rdp.sessionId === null}
-        onclick={() => void showInfo()}
+        onclick={() => disconnectRdp(session.key)}
       />
-      <IconButton
-        size="sm"
-        icon={RotateCw}
-        label={$t('terminal.reconnect')}
-        onclick={() => void reconnectRdp(session.key)}
-      />
-    {/if}
-    <IconButton
-      size="sm"
-      icon={Power}
-      label={$t('rdp.disconnect')}
-      disabled={rdp.sessionId === null}
-      onclick={() => disconnectRdp(session.key)}
-    />
-    {#if onDock}
-      <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
-        {$t('terminal.dock')}
-      </Button>
-    {:else}
-      <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+      {#if onDock}
+        <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+          {$t('terminal.dock')}
+        </Button>
+      {:else}
+        <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+      {/if}
     {/if}
   </header>
 
-  <div class="rdp-bar">
-    {#if !detached}
-      <!-- A new profile starts the session anew, which only its tab may. -->
-      <label class="rdp-label" for="rdp-performance-{session.key}">{$t('rdp.performance')}</label>
+  {#if !second}
+    <div class="rdp-bar">
+      {#if !detached}
+        <!-- A new profile starts the session anew, which only its tab may. -->
+        <label class="rdp-label" for="rdp-performance-{session.key}">{$t('rdp.performance')}</label>
+        <Select
+          id="rdp-performance-{session.key}"
+          size="sm"
+          value={profile}
+          options={profiles}
+          onChange={(v) => void setRdpPerformance(session.key, v as RdpPerformanceProfile)}
+        />
+      {/if}
+      <label class="rdp-label" for="rdp-window-{session.key}">{$t('rdp.window')}</label>
       <Select
-        id="rdp-performance-{session.key}"
+        id="rdp-window-{session.key}"
         size="sm"
-        value={profile}
-        options={profiles}
-        onChange={(v) => void setRdpPerformance(session.key, v as RdpPerformanceProfile)}
+        value={fullscreen
+          ? 'fullscreen'
+          : !detached && windowMode === 'multimon'
+            ? 'multimon'
+            : layout}
+        options={layouts}
+        onChange={(v) => setRdpWindow(session.key, v as RdpWindowMode)}
       />
-    {/if}
-    <label class="rdp-label" for="rdp-window-{session.key}">{$t('rdp.window')}</label>
-    <Select
-      id="rdp-window-{session.key}"
-      size="sm"
-      value={fullscreen ? 'fullscreen' : layout}
-      options={layouts}
-      onChange={(v) => setRdpWindow(session.key, v as RdpWindowMode)}
-    />
-    <label class="rdp-label" for="rdp-scaling-{session.key}">{$t('rdp.scaling')}</label>
-    <Select
-      id="rdp-scaling-{session.key}"
-      size="sm"
-      value={scaling}
-      options={scalings}
-      onChange={(v) => setRdpScaling(session.key, v as RdpScalingMode)}
-    />
-    {#if layout === 'custom'}
-      <span class="rdp-sep" aria-hidden="true"></span>
-      <IconButton
+      <label class="rdp-label" for="rdp-scaling-{session.key}">{$t('rdp.scaling')}</label>
+      <Select
+        id="rdp-scaling-{session.key}"
         size="sm"
-        icon={ZoomOut}
-        label={$t('rdp.zoom.out')}
-        disabled={zoom !== 'fit' && zoom <= ZOOM.min}
-        onclick={() => zoomBy(-ZOOM.step)}
+        value={scaling}
+        options={scalings}
+        onChange={(v) => setRdpScaling(session.key, v as RdpScalingMode)}
       />
-      <span class="rdp-zoom" aria-live="polite">
-        {zoom === 'fit' ? $t('rdp.zoom.fit') : `${zoom} %`}
-      </span>
-      <IconButton
-        size="sm"
-        icon={ZoomIn}
-        label={$t('rdp.zoom.in')}
-        disabled={zoom !== 'fit' && zoom >= ZOOM.max}
-        onclick={() => zoomBy(ZOOM.step)}
-      />
-      <Button size="sm" variant="secondary" onclick={() => (zoom = 100)}>
-        {$t('rdp.zoom.actual')}
-      </Button>
-      <Button size="sm" variant="secondary" onclick={() => (zoom = 'fit')}>
-        {$t('rdp.zoom.fit')}
-      </Button>
-    {/if}
-  </div>
+      {#if layout === 'custom'}
+        <span class="rdp-sep" aria-hidden="true"></span>
+        <IconButton
+          size="sm"
+          icon={ZoomOut}
+          label={$t('rdp.zoom.out')}
+          disabled={zoom !== 'fit' && zoom <= ZOOM.min}
+          onclick={() => zoomBy(-ZOOM.step)}
+        />
+        <span class="rdp-zoom" aria-live="polite">
+          {zoom === 'fit' ? $t('rdp.zoom.fit') : `${zoom} %`}
+        </span>
+        <IconButton
+          size="sm"
+          icon={ZoomIn}
+          label={$t('rdp.zoom.in')}
+          disabled={zoom !== 'fit' && zoom >= ZOOM.max}
+          onclick={() => zoomBy(ZOOM.step)}
+        />
+        <Button size="sm" variant="secondary" onclick={() => (zoom = 100)}>
+          {$t('rdp.zoom.actual')}
+        </Button>
+        <Button size="sm" variant="secondary" onclick={() => (zoom = 'fit')}>
+          {$t('rdp.zoom.fit')}
+        </Button>
+      {/if}
+    </div>
+  {/if}
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
@@ -543,7 +610,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <MonitorOff size={30} />
         {/if}
         <span>{endText}</span>
-        {#if onDock}
+        {#if second}
+          <!-- The tab decides; this window closes with the session. -->
+        {:else if onDock}
           <Button size="sm" iconLeft={SquareArrowDownLeft} onclick={onDock}>
             {$t('terminal.dock')}
           </Button>
@@ -564,6 +633,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span>{figures.join(' · ')}</span>
     {#if rdp.notice === 'drive_unavailable'}
       <span class="rdp-notice">{$t('rdp.notice.driveUnavailable')}</span>
+    {/if}
+    {#if singleScreen}
+      <span class="rdp-notice">{$t('rdp.notice.singleScreen')}</span>
     {/if}
     <span class="rdp-spacer"></span>
     <span class="rdp-hint">

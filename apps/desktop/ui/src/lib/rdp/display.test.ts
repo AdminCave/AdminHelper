@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The desktop a tab asks for (R-1100): pixels and scale factor per scaling, the fixed size from
-// the settings, the zoom limits and its CSS size, and the debounce before a resize goes out.
+// the settings, the zoom limits and its CSS size, and the debounce before a resize goes out. A
+// monitor of the system, in physical pixels, as the desktop of one monitor of two (R-1101).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
@@ -12,6 +13,7 @@ import {
   fitDisplay,
   fixedDisplay,
   layoutOf,
+  monitorDisplay,
   parseSize,
   scaleOf,
   zoomedSize,
@@ -88,5 +90,33 @@ describe('display (R-1100)', () => {
     call.cancel();
     vi.advanceTimersByTime(1000);
     expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('lays a monitor of the system out as a tab of its size (R-1101)', () => {
+    const left = { x: 0, y: 0, width: 3840, height: 2160, scaleFactor: 2 };
+    const right = { x: 3840, y: 120, width: 1920, height: 1080, scaleFactor: 1 };
+    // 100 %: the logical pixels, where the monitor lies among them too.
+    expect(monitorDisplay(left, 'normal')).toEqual({ x: 0, y: 0, w: 1920, h: 1080, scale: 100 });
+    expect(monitorDisplay(right, 'normal')).toEqual({
+      x: 3840,
+      y: 120,
+      w: 1920,
+      h: 1080,
+      scale: 100,
+    });
+    // Auto and HiDPI: the physical pixels at the monitor's scale factor.
+    expect(monitorDisplay(left, 'auto')).toEqual({ x: 0, y: 0, w: 3840, h: 2160, scale: 200 });
+    expect(monitorDisplay(right, 'hdpi')).toEqual({
+      x: 3840,
+      y: 120,
+      w: 1920,
+      h: 1080,
+      scale: 175,
+    });
+    const odd = { x: -1500, y: 0, width: 1500, height: 1000, scaleFactor: 1.5 };
+    expect(monitorDisplay(odd, 'normal')).toEqual({ x: -1000, y: 0, w: 1000, h: 667, scale: 100 });
+    // A side MS-RDPEDISP does not take is cut to its largest.
+    const wide = { x: 0, y: 0, width: 10240, height: 1440, scaleFactor: 1 };
+    expect(monitorDisplay(wide, 'auto')).toMatchObject({ w: 8192, h: 1440, scale: 100 });
   });
 });

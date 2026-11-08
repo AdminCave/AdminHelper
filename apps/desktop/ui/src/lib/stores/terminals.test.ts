@@ -45,7 +45,7 @@ const h = vi.hoisted(() => ({
   rdpSessionStop: vi.fn(async (_id: string) => {}),
   rdpTrustCertificate: vi.fn(async (_identity: string, _fingerprint: string) => {}),
   rdpSessionAttach: vi.fn(),
-  rdpDetach: vi.fn(async (_id: string, _title: string) => {}),
+  rdpDetach: vi.fn(async (_id: string, _title: string, _screen?: number) => {}),
   rdpDock: vi.fn(async (_id: string) => {}),
   listeners: new Map<string, (e: { payload: { id: number } }) => void>(),
   reportError: vi.fn(),
@@ -89,6 +89,7 @@ import {
   PAGE_TAB,
   attachTerminal,
   closeAllTerminals,
+  closeRdpMonitor,
   adoptRdp,
   adoptTerminal,
   closeTerminal,
@@ -100,6 +101,7 @@ import {
   listenForDocking,
   openAnsible,
   openRdp,
+  openRdpMonitor,
   openSessionIds,
   openTerminal,
   reconnectRdp,
@@ -1233,7 +1235,7 @@ describe('detaching an RDP tab (R-1101)', () => {
     fire('rdp-docked', { session_id: 's1' });
     await settle();
     stop();
-    expect(h.rdpSessionAttach).toHaveBeenCalledWith('s1');
+    expect(h.rdpSessionAttach).toHaveBeenCalledWith('s1', 0);
     expect(only().detached).toBe(false);
     expect(get(terminals).active).toBe(key);
     expect(rdp()).toMatchObject({ sessionId: 's1', wsPort: 7001, token: 'renewed1' });
@@ -1284,7 +1286,7 @@ describe('detaching an RDP tab (R-1101)', () => {
     expect(get(terminals).active).toBe(key);
     expect(only()).toMatchObject({ detached: true, status: 'connected' });
     await settle();
-    expect(h.rdpSessionAttach).toHaveBeenCalledWith('rdp-3');
+    expect(h.rdpSessionAttach).toHaveBeenCalledWith('rdp-3', 0);
     expect(rdp()).toMatchObject({ sessionId: 'rdp-3', wsPort: 7001, token: 'renewed1' });
     phase({ session_id: 'rdp-4', phase: 'disconnected' });
     expect(only().status).toBe('connected');
@@ -1302,10 +1304,103 @@ describe('detaching an RDP tab (R-1101)', () => {
   });
 
   it('reads the session of a detached RDP window from its route', () => {
-    expect(detachedRdpRoute('#/detached-rdp/rdp-12')).toBe('rdp-12');
+    expect(detachedRdpRoute('#/detached-rdp/rdp-12')).toEqual({ sessionId: 'rdp-12', screen: 0 });
+    expect(detachedRdpRoute('#/detached-rdp/rdp-12/1')).toEqual({ sessionId: 'rdp-12', screen: 1 });
     expect(detachedRdpRoute('#/detached-rdp/12')).toBeNull();
     expect(detachedRdpRoute('#/detached-rdp/rdp-1/x')).toBeNull();
+    expect(detachedRdpRoute('#/detached-rdp/rdp-1/2')).toBeNull();
+    expect(detachedRdpRoute('#/detached-rdp/rdp-1/1/1')).toBeNull();
     expect(detachedRdpRoute('#/detached/3')).toBeNull();
     expect(detachedRoute('#/detached-rdp/rdp-1')).toBeNull();
+  });
+
+  describe('across two monitors', () => {
+    async function connected(): Promise<string> {
+      await listenForDocking();
+      await openRdp(RDP);
+      phase({ session_id: 's1', phase: 'connected' });
+      setRdpWindow(only().key, 'multimon');
+      return only().key;
+    }
+
+    it('opens the second monitor in a window of its own and closes it, the tab staying', async () => {
+      const key = await connected();
+      await openRdpMonitor(key);
+      await openRdpMonitor(key);
+      expect(h.rdpDetach).toHaveBeenCalledExactlyOnceWith('s1', 'db', 1);
+      expect(only().detached).toBeFalsy();
+
+      await closeRdpMonitor('s1');
+      expect(h.rdpDock).toHaveBeenCalledExactlyOnceWith('s1');
+      // The dock main asked for is no dock of the tab: it logs in nowhere anew.
+      fire('rdp-docked', { session_id: 's1' });
+      await settle();
+      expect(h.rdpSessionAttach).not.toHaveBeenCalled();
+      expect(h.rdpSessionStop).not.toHaveBeenCalled();
+      expect(get(terminals).active).toBe(key);
+      // Closed already: nothing more to close.
+      await closeRdpMonitor('s1');
+      expect(h.rdpDock).toHaveBeenCalledOnce();
+    });
+
+    it('shows one monitor again when the second window is closed from its title bar', async () => {
+      const key = await connected();
+      await openRdpMonitor(key);
+      fire('rdp-monitor-closed', { session_id: 's1' });
+      expect(rdp().window).toBe('fit');
+      await closeRdpMonitor('s1');
+      expect(h.rdpDock).not.toHaveBeenCalled();
+      expect(only().detached).toBeFalsy();
+    });
+
+    it('stays on one monitor, fitted, when the second window cannot open', async () => {
+      const key = await connected();
+      h.rdpDetach.mockRejectedValueOnce(new Error('no window'));
+      await openRdpMonitor(key);
+      expect(h.reportError).toHaveBeenCalledWith('no window');
+      expect(rdp().window).toBe('fit');
+      await closeRdpMonitor('s1');
+      expect(h.rdpDock).not.toHaveBeenCalled();
+    });
+
+    it('closes the second window that opened after it was closed already', async () => {
+      const key = await connected();
+      let opened!: () => void;
+      h.rdpDetach.mockImplementationOnce(() => new Promise<void>((resolve) => (opened = resolve)));
+      const opening = openRdpMonitor(key);
+      await closeRdpMonitor('s1');
+      opened();
+      await opening;
+      expect(h.rdpDock).toHaveBeenCalledTimes(2);
+      fire('rdp-docked', { session_id: 's1' });
+      fire('rdp-docked', { session_id: 's1' });
+      await settle();
+      expect(h.rdpSessionAttach).not.toHaveBeenCalled();
+    });
+
+    it('detaching the tab closes the second window first and keeps the tab detached', async () => {
+      const key = await connected();
+      await openRdpMonitor(key);
+      await detachTerminal(key);
+      expect(h.rdpDock).toHaveBeenCalledExactlyOnceWith('s1');
+      expect(h.rdpDock.mock.invocationCallOrder[0]).toBeLessThan(
+        h.rdpDetach.mock.invocationCallOrder[1],
+      );
+      expect(h.rdpDetach).toHaveBeenLastCalledWith('s1', 'db');
+      // The dock that closed the second window, heard after the tab went: it stays detached.
+      fire('rdp-docked', { session_id: 's1' });
+      await settle();
+      expect(only().detached).toBe(true);
+      // Its own window's dock takes it back.
+      fire('rdp-docked', { session_id: 's1' });
+      await settle();
+      expect(only().detached).toBe(false);
+    });
+
+    it('a second monitor window takes screen 1 of its session', async () => {
+      adoptRdp('rdp-3', 1);
+      await settle();
+      expect(h.rdpSessionAttach).toHaveBeenCalledExactlyOnceWith('rdp-3', 1);
+    });
   });
 });

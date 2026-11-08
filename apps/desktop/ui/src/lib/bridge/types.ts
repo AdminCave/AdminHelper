@@ -23,6 +23,14 @@ export interface RdpDisplay {
   height: number;
   scale: number;
 }
+/** A monitor of the system, in physical pixels: where it lies, its size and its scale factor. */
+export interface SystemMonitor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
 export type RdpPerformanceProfile = 'auto' | 'lan' | 'broadband' | 'low';
 export type SshConsole = 'embedded' | 'external';
 export type RdpClient = 'embedded' | 'os';

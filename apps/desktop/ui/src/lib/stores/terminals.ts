@@ -724,6 +724,8 @@ async function detachRdp(key: string, session: TerminalSession): Promise<void> {
   const id = run?.sessionId;
   // Rust knows where a session listens once it connected.
   if (!run || !id || session.rdp?.phase !== 'connected') return;
+  // `rdp_dock` closes the windows of both screens: the second one goes before the first opens.
+  await closeRdpMonitor(id);
   try {
     await bridge.rdpDetach(id, session.connection.name);
   } catch (err) {
@@ -744,7 +746,12 @@ async function detachRdp(key: string, session: TerminalSession): Promise<void> {
  * showed it before loses the picture. Its phases come as `rdp-session` events; a tab that does
  * not hear them yet starts to. A session that ended meanwhile shows disconnected.
  */
-async function attachRdp(key: string, run: RdpRun, sessionId: string): Promise<boolean> {
+async function attachRdp(
+  key: string,
+  run: RdpRun,
+  sessionId: string,
+  screen = 0,
+): Promise<boolean> {
   const attempt = run.attempt;
   const current = () => rdpRuns.get(key) === run && run.attempt === attempt;
   try {
@@ -758,7 +765,7 @@ async function attachRdp(key: string, run: RdpRun, sessionId: string): Promise<b
       }
       run.unlisten = unlisten;
     }
-    const attached = await bridge.rdpSessionAttach(sessionId);
+    const attached = await bridge.rdpSessionAttach(sessionId, screen);
     if (!current() || run.sessionId !== sessionId) return false;
     updateRdp(key, { sessionId, wsPort: attached.ws_port, token: attached.token });
     return true;
@@ -781,6 +788,13 @@ async function attachRdp(key: string, run: RdpRun, sessionId: string): Promise<b
  * session no tab knows, detached before this window loaded again, ends: nothing would show it.
  */
 async function dockRdp(sessionId: string): Promise<void> {
+  // Main closed the second monitor's window itself: the tab stays where it is.
+  const docking = rdpDocking.get(sessionId) ?? 0;
+  if (docking > 0) {
+    if (docking === 1) rdpDocking.delete(sessionId);
+    else rdpDocking.set(sessionId, docking - 1);
+    return;
+  }
   const key = [...rdpRuns].find(([, run]) => run.window === sessionId)?.[0];
   const run = key === undefined ? undefined : rdpRuns.get(key);
   if (key === undefined || !run || !find(key)?.detached) {
@@ -801,10 +815,11 @@ async function dockRdp(sessionId: string): Promise<void> {
 }
 
 /**
- * Takes the running RDP session `sessionId` as the only one of this window, the window it is
- * detached into; its key. The window's title bar names it, so the connection is a stand-in.
+ * Takes screen `screen` of the running RDP session `sessionId` as the only session of this
+ * window, the window it is detached into; its key. The window's title bar names it, so the
+ * connection is a stand-in.
  */
-export function adoptRdp(sessionId: string): string {
+export function adoptRdp(sessionId: string, screen = 0): string {
   opened += 1;
   const key = `terminal-${opened}`;
   const run: RdpRun = { attempt: 0, sessionId, unlisten: null, password: undefined };
@@ -833,14 +848,65 @@ export function adoptRdp(sessionId: string): string {
     },
   };
   state.set({ sessions: [session], active: key });
-  void attachRdp(key, run, sessionId);
+  void attachRdp(key, run, sessionId, screen);
   return key;
 }
 
-/** The RDP session the route `hash` of a detached window shows (`#/detached-rdp/<id>`). */
-export function detachedRdpRoute(hash: string): string | null {
-  const match = /^#\/detached-rdp\/(rdp-[0-9]+)$/.exec(hash);
-  return match ? match[1] : null;
+/**
+ * The RDP session and its screen the route `hash` of a detached window shows
+ * (`#/detached-rdp/<id>`, the second monitor's `#/detached-rdp/<id>/1`).
+ */
+export function detachedRdpRoute(hash: string): { sessionId: string; screen: number } | null {
+  const match = /^#\/detached-rdp\/(rdp-[0-9]+)(\/1)?$/.exec(hash);
+  return match ? { sessionId: match[1], screen: match[2] ? 1 : 0 } : null;
+}
+
+// Sessions across two monitors whose second one main shows in a window of its own (R-1101),
+// and how many `rdp-docked` main has asked for to close one: those are no dock of a tab.
+const rdpMonitors = new Set<string>();
+const rdpDocking = new Map<string, number>();
+
+function dockMonitor(sessionId: string): Promise<void> {
+  rdpDocking.set(sessionId, (rdpDocking.get(sessionId) ?? 0) + 1);
+  return bridge.rdpDock(sessionId).catch((err: unknown) => {
+    const docking = (rdpDocking.get(sessionId) ?? 1) - 1;
+    if (docking > 0) rdpDocking.set(sessionId, docking);
+    else rdpDocking.delete(sessionId);
+    reportError(errMsg(err));
+  });
+}
+
+/**
+ * Shows the second monitor of the session of tab `key` in a window of its own, on another monitor
+ * of the system. One that cannot open leaves the tab on one monitor, fitted.
+ */
+export async function openRdpMonitor(key: string): Promise<void> {
+  const session = find(key);
+  const id = rdpRuns.get(key)?.sessionId;
+  if (!session || !id || rdpMonitors.has(id)) return;
+  rdpMonitors.add(id);
+  try {
+    await bridge.rdpDetach(id, session.connection.name, 1);
+  } catch (err) {
+    rdpMonitors.delete(id);
+    reportError(errMsg(err));
+    if (rdpRuns.get(key)?.sessionId === id) setRdpWindow(key, 'fit');
+    return;
+  }
+  // Closed again while it opened: it goes now.
+  if (!rdpMonitors.has(id)) await dockMonitor(id);
+}
+
+/** Closes the second monitor's window of session `sessionId`, if main opened one. */
+export function closeRdpMonitor(sessionId: string): Promise<void> {
+  return rdpMonitors.delete(sessionId) ? dockMonitor(sessionId) : Promise.resolve();
+}
+
+/** The second monitor's window was closed from its title bar: the tab shows one monitor again. */
+function monitorClosed(sessionId: string): void {
+  if (!rdpMonitors.delete(sessionId)) return;
+  const key = [...rdpRuns].find(([, run]) => run.sessionId === sessionId)?.[0];
+  if (key !== undefined) setRdpWindow(key, 'fit');
 }
 
 /** The session the route `hash` of a detached window shows (`#/detached/<id>`); else null. */
@@ -852,7 +918,8 @@ export function detachedRoute(hash: string): number | null {
 /**
  * Docks a session when its window says so (`terminal-docked`, `rdp-docked`) and when it is closed
  * from its title bar (`terminal-window-closed`, `rdp-window-closed`; Kevin 2026-11-06: docking
- * keeps the program).
+ * keeps the program). A second monitor's window closed so shows the session on one monitor
+ * again (`rdp-monitor-closed`).
  */
 export async function listenForDocking(): Promise<UnlistenFn> {
   const dock = (e: { payload: { id: number } }) => void dockTerminal(e.payload.id);
@@ -863,6 +930,9 @@ export async function listenForDocking(): Promise<UnlistenFn> {
     listen<{ id: number }>('terminal-window-closed', dock),
     listen<{ session_id: string }>('rdp-docked', dockRdpEvent),
     listen<{ session_id: string }>('rdp-window-closed', dockRdpEvent),
+    listen<{ session_id: string }>('rdp-monitor-closed', (e) =>
+      monitorClosed(e.payload.session_id),
+    ),
   ]);
   return () => fns.forEach((fn) => fn());
 }
@@ -881,6 +951,10 @@ export async function closeAllTerminals(): Promise<void> {
     if (run.window) closeRdpWindow(run.window);
   }
   rdpRuns.clear();
+  for (const id of rdpMonitors) closeRdpWindow(id);
+  rdpMonitors.clear();
+  // What these docks announce finds no tab any more and ends a session that ended already.
+  rdpDocking.clear();
   state.set({ sessions: [], active: PAGE_TAB });
   await bridge.terminalCloseAll();
 }

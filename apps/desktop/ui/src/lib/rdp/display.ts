@@ -9,10 +9,10 @@
 // local screen would show it, and *HiDPI* for the physical pixels at least at 175 %, as the OS
 // client's HiDPI asks for a large scale. Rust keeps it within the limits of MS-RDPEDISP.
 
-import type { RdpDisplay, RdpScalingMode, RdpWindowMode } from '$lib/bridge/types';
+import type { RdpDisplay, RdpScalingMode, RdpWindowMode, SystemMonitor } from '$lib/bridge/types';
 import { RDP_CUSTOM_SIZE_PATTERN } from '$lib/models/settings';
 
-/** How the tab lays the desktop out; fullscreen and multi-monitor come with later stages. */
+/** How the tab lays the desktop out; full screen fits it, two monitors fit each of theirs. */
 export type RdpLayout = 'fit' | 'custom';
 
 export const FIXED_DEFAULT = { width: 1280, height: 720 } as const;
@@ -60,6 +60,32 @@ export function fitDisplay(
   return {
     width: Math.round(boxWidth * pixels),
     height: Math.round(boxHeight * pixels),
+    scale,
+  };
+}
+
+/** A monitor of a session across two (R-1101): where it lies and its desktop. */
+export interface RdpMonitor {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale: number;
+}
+
+/**
+ * The desktop for monitor `m` of the system, which lies in physical pixels: at *100 %* in its
+ * logical pixels, else in its physical ones, as `fitDisplay` for a tab.
+ */
+export function monitorDisplay(m: SystemMonitor, scaling: RdpScalingMode): RdpMonitor {
+  const { pixels, scale } = density(scaling, m.scaleFactor);
+  const ratio = pixels / (m.scaleFactor > 0 ? m.scaleFactor : 1);
+  const side = (v: number) => Math.min(Math.round(v * ratio), MAX_SIDE);
+  return {
+    x: Math.round(m.x * ratio),
+    y: Math.round(m.y * ratio),
+    w: side(m.width),
+    h: side(m.height),
     scale,
   };
 }

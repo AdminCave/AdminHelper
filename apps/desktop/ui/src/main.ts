@@ -37,8 +37,7 @@ function mountApp(target: HTMLElement) {
 
 function mountWindow(target: HTMLElement) {
   if (detached !== null) return mount(DetachedTerminal, { target, props: { id: detached } });
-  if (detachedRdp !== null)
-    return mount(DetachedRdp, { target, props: { sessionId: detachedRdp } });
+  if (detachedRdp !== null) return mount(DetachedRdp, { target, props: detachedRdp });
   return mountApp(target);
 }
 

@@ -14,7 +14,12 @@
 //   4. Add/adjust the function here
 
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  availableMonitors,
+  currentMonitor,
+  getCurrentWindow,
+  type Monitor,
+} from '@tauri-apps/api/window';
 import { fromIpc } from '$lib/utils/errors';
 import type {
   AnsibleTarget,
@@ -36,6 +41,7 @@ import type {
   SftpListing,
   SftpTransfer,
   SftpUploaded,
+  SystemMonitor,
   TerminalExit,
   TunnelMapping,
   TunnelRefresh,
@@ -424,19 +430,35 @@ export function rdpSessionStop(sessionId: string): Promise<void> {
   return invoke('rdp_session_stop', { sessionId });
 }
 
-// Port and a fresh token for the window that shows session `sessionId` from now on (R-1101); the
-// window before it loses the picture.
-export function rdpSessionAttach(sessionId: string): Promise<RdpAttached> {
-  return invoke<RdpAttached>('rdp_session_attach', { sessionId });
+// Port and a fresh token for the window that shows screen `screen` of session `sessionId` from
+// now on (R-1101); the window before it loses the picture of that screen.
+export function rdpSessionAttach(sessionId: string, screen = 0): Promise<RdpAttached> {
+  return invoke<RdpAttached>('rdp_session_attach', { sessionId, screen });
 }
 
-// Opens session `sessionId` in a window of its own titled `title`, or brings that window to the
-// front.
-export function rdpDetach(sessionId: string, title: string): Promise<void> {
-  return invoke('rdp_detach', { sessionId, title });
+// Opens screen `screen` of session `sessionId` in a window of its own titled `title`, or brings
+// that window to the front; screen 1 is the second monitor of a session across two.
+export function rdpDetach(sessionId: string, title: string, screen = 0): Promise<void> {
+  return invoke('rdp_detach', { sessionId, title, screen });
 }
 
-// Closes the window of session `sessionId`; main hears `rdp-docked`.
+// The monitors of the system, the one this window is on first (R-1101).
+export async function systemMonitors(): Promise<SystemMonitor[]> {
+  const [current, all] = await Promise.all([currentMonitor(), availableMonitors()]);
+  const at = (m: Monitor, other: Monitor) =>
+    m.position.x === other.position.x && m.position.y === other.position.y;
+  const first = all.find((m) => current !== null && at(m, current)) ?? all[0];
+  if (!first) return [];
+  return [first, ...all.filter((m) => m !== first)].map((m) => ({
+    x: m.position.x,
+    y: m.position.y,
+    width: m.size.width,
+    height: m.size.height,
+    scaleFactor: m.scaleFactor,
+  }));
+}
+
+// Closes the windows of session `sessionId`, of both its screens; main hears `rdp-docked`.
 export function rdpDock(sessionId: string): Promise<void> {
   return invoke('rdp_dock', { sessionId });
 }

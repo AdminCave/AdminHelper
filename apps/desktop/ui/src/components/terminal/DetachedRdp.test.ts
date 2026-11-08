@@ -78,15 +78,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mount() {
-  render(DetachedRdp, { sessionId: 'rdp-3' });
+async function mount(second = false) {
+  render(DetachedRdp, { sessionId: 'rdp-3', ...(second ? { screen: 1 } : {}) });
   await vi.waitFor(() => expect(h.FakeSocket.all).toHaveLength(1));
 }
 
 describe('DetachedRdp', () => {
   it('takes its session over and logs in with a fresh token', async () => {
     await mount();
-    expect(h.rdpSessionAttach).toHaveBeenCalledExactlyOnceWith('rdp-3');
+    expect(h.rdpSessionAttach).toHaveBeenCalledExactlyOnceWith('rdp-3', 0);
     expect(h.FakeSocket.all[0]).toMatchObject({ port: 7101, token: 'fresh' });
     expect(h.refreshSettings).toHaveBeenCalled();
     expect(h.listen).toHaveBeenCalledWith('rdp-session', expect.any(Function));
@@ -108,5 +108,11 @@ describe('DetachedRdp', () => {
     expect(h.rdpDock).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
     expect(h.rdpSessionStop).not.toHaveBeenCalled();
+  });
+
+  it('shows the second monitor without a Dock button', async () => {
+    await mount(true);
+    expect(h.rdpSessionAttach).toHaveBeenCalledExactlyOnceWith('rdp-3', 1);
+    expect(screen.queryByRole('button', { name: tNow('terminal.dock') })).toBeNull();
   });
 });
