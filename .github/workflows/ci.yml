@@ -41,7 +41,7 @@ jobs:
         shard: [1, 2]
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -57,7 +57,7 @@ jobs:
       # reachable; without this service it never ran in PR CI, so a break in
       # stream_hub.publish/start would pass green. 6380 matches the test's URL (6.84).
       redis:
-        image: redis:7-alpine
+        image: redis:8-alpine
         ports:
           - 6380:6379
         options: >-
@@ -214,7 +214,7 @@ jobs:
       # (the FOR UPDATE row lock) and test_db_session_utc (the session time zone).
       # The rest of the monitoring suite runs on SQLite.
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -251,7 +251,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -305,7 +305,7 @@ jobs:
         shard: [1, 2]
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -318,7 +318,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:8-alpine
         ports:
           - 6380:6379
         options: >-
@@ -408,7 +408,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -448,7 +448,7 @@ jobs:
     # As in ca-issuer: Postgres only for the pg_engine tests, through AH_TEST_DB.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -490,7 +490,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: adminhelper
           POSTGRES_PASSWORD: cipw
@@ -671,9 +671,7 @@ jobs:
 
   frontend-e2e:
     name: Web-Frontend (Playwright E2E)
-    # Playwright 1.60 refuses to install chromium on ubuntu-26.04; 26.04 support starts with
-    # 1.61. The job moves to 26.04 with the npm update (R-1039).
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
