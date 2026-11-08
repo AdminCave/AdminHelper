@@ -22,6 +22,7 @@ use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags};
 use ironrdp_pdu::input::mouse::PointerFlags;
 use ironrdp_pdu::input::MousePdu;
 use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
+use ironrdp_pdu::rdp::client_info::PerformanceFlags;
 use ironrdp_pdu::rdp::session_info::LogonErrorNotificationType;
 use ironrdp_session::{GracefulDisconnectReason, SessionResult};
 use ironrdp_tls::CertificateValidation;
@@ -35,7 +36,7 @@ use super::frame_ws::{FrameServer, Frames, Input};
 use super::tofu::{validation_callback, CertPolicy, CertProblem, CertReport, CALLBACK_SCOPE};
 use super::watchdog::{Verdict, Watchdog};
 use crate::error::AppError;
-use crate::models::RdpAudio;
+use crate::models::{RdpAudio, RdpPerformanceProfile};
 
 /// Fixed in stage 1: the webview scales the picture to its view.
 const DESKTOP_WIDTH: u16 = 1280;
@@ -59,6 +60,8 @@ const BUTTON_MASK: u8 = 0b111;
 /// The one drive a session shares; device ID 0 belongs to the smartcard.
 const DRIVE_ID: u32 = 1;
 const DRIVE_NAME: &str = "Downloads";
+/// The scancodes of Ctrl, Alt and Del (E0 prefix); pressed in this order, released the other way.
+const CTRL_ALT_DEL: [(u8, bool); 3] = [(0x1D, false), (0x38, false), (0x53, true)];
 
 /// What a session connects to, resolved and checked by the start command.
 pub(crate) struct Target {
@@ -73,6 +76,8 @@ pub(crate) struct Target {
     pub(crate) drive: Option<PathBuf>,
     /// NLA (CredSSP) before the session; off only for `options.rdp.nla: false`, as the OS client.
     pub(crate) credssp: bool,
+    /// The connection's own profile, else `rdp_performance_profile` of the settings.
+    pub(crate) performance: RdpPerformanceProfile,
 }
 
 /// Why a session ended: the `code` of the `failed` and `disconnected` phases.
@@ -186,6 +191,14 @@ impl Machine {
                 self.watchdog.reconnecting();
                 self.flow(Report::Reconnecting)
             }
+            RdpOutputEvent::NetworkCharacteristics {
+                bandwidth_kbps,
+                average_rtt_ms,
+                ..
+            } => {
+                self.frames.network(Some(average_rtt_ms), bandwidth_kbps);
+                Flow::Continue
+            }
             RdpOutputEvent::LogonError(info) => {
                 if logon_fails(info.error_type) {
                     log::warn!(
@@ -242,10 +255,12 @@ impl Machine {
         otherwise
     }
 
-    /// The connection is gone: the next one starts without input and without pressed buttons.
+    /// The connection is gone: the next one starts without input, without pressed buttons and
+    /// without the measurements of this one.
     fn lose(&mut self) {
         self.live = false;
         self.buttons = 0;
+        self.frames.network(None, None);
     }
 
     fn tick(&mut self, now: Instant) -> Flow {
@@ -286,6 +301,24 @@ impl Machine {
                     self.watchdog.input_sent(now);
                 }
                 vec![FastPathInputEvent::KeyboardEvent(flags, code)]
+            }
+            Input::CtrlAltDel => {
+                self.watchdog.input_sent(now);
+                let key = |(code, extended): (u8, bool), release: bool| {
+                    let mut flags = KeyboardFlags::empty();
+                    if release {
+                        flags |= KeyboardFlags::RELEASE;
+                    }
+                    if extended {
+                        flags |= KeyboardFlags::EXTENDED;
+                    }
+                    FastPathInputEvent::KeyboardEvent(flags, code)
+                };
+                CTRL_ALT_DEL
+                    .into_iter()
+                    .map(|code| key(code, false))
+                    .chain(CTRL_ALT_DEL.into_iter().rev().map(|code| key(code, true)))
+                    .collect()
             }
             Input::Mouse {
                 x,
@@ -427,6 +460,29 @@ fn audio_mode(audio: Option<RdpAudio>) -> AudioMode {
     }
 }
 
+/// What the server leaves out of the desktop for `profile`; `Auto` is `Lan`
+/// (docs/features/kern-rdp-1.md).
+fn performance_flags(profile: RdpPerformanceProfile) -> PerformanceFlags {
+    match profile {
+        RdpPerformanceProfile::Auto | RdpPerformanceProfile::Lan => {
+            PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION
+        }
+        RdpPerformanceProfile::Broadband => {
+            PerformanceFlags::DISABLE_WALLPAPER
+                | PerformanceFlags::DISABLE_FULLWINDOWDRAG
+                | PerformanceFlags::DISABLE_MENUANIMATIONS
+                | PerformanceFlags::ENABLE_FONT_SMOOTHING
+        }
+        RdpPerformanceProfile::Low => {
+            PerformanceFlags::DISABLE_WALLPAPER
+                | PerformanceFlags::DISABLE_FULLWINDOWDRAG
+                | PerformanceFlags::DISABLE_MENUANIMATIONS
+                | PerformanceFlags::DISABLE_THEMING
+                | PerformanceFlags::DISABLE_CURSOR_SHADOW
+        }
+    }
+}
+
 fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
     let builder = ConfigBuilder::new()
         .with_destination(target.destination.clone())
@@ -438,6 +494,7 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
         .with_platform(platform())
         .with_desktop_width(DESKTOP_WIDTH)
         .with_desktop_height(DESKTOP_HEIGHT)
+        .with_performance_flags(performance_flags(target.performance))
         .with_tls(true)
         .with_credssp(target.credssp)
         .with_autologon(true)
@@ -592,6 +649,7 @@ async fn served(serve: &mut JoinHandle<io::Result<()>>) -> Report {
 async fn run(
     target: Target,
     server: FrameServer,
+    frames: Frames,
     mut stop: oneshot::Receiver<()>,
     report: &dyn Fn(Report),
 ) -> Report {
@@ -605,7 +663,10 @@ async fn run(
             return Report::Failed(Code::Tls);
         }
     }
-    let mut machine = Machine::default();
+    let mut machine = Machine {
+        frames,
+        ..Machine::default()
+    };
     let (input_tx, mut input_rx) = mpsc::channel(INPUT_QUEUE);
     let mut serve = tokio::task::spawn_local(server.serve(machine.frames.clone(), input_tx));
     let mut tick = tokio::time::interval(TICK);
@@ -670,6 +731,7 @@ async fn run(
 /// `report` hears every phase; after the one that ends the session, the thread is gone.
 pub(crate) fn spawn(
     target: Target,
+    frames: Frames,
     stop: oneshot::Receiver<()>,
     report: impl Fn(Report) + Send + 'static,
 ) -> Result<(u16, String), AppError> {
@@ -683,7 +745,7 @@ pub(crate) fn spawn(
         .name("rdp-session".into())
         .spawn(move || {
             let end = catch_unwind(AssertUnwindSafe(|| {
-                LocalSet::new().block_on(&runtime, run(target, server, stop, &report))
+                LocalSet::new().block_on(&runtime, run(target, server, frames, stop, &report))
             }))
             .unwrap_or_else(|_| {
                 log::error!("the RDP session thread panicked");
@@ -775,6 +837,7 @@ mod tests {
             audio: None,
             drive: None,
             credssp: true,
+            performance: RdpPerformanceProfile::Auto,
         }
     }
 
@@ -1128,6 +1191,124 @@ mod tests {
     }
 
     #[test]
+    fn session_asks_the_server_for_the_desktop_of_its_profile() {
+        let flags = |profile| {
+            let mut target = target(
+                Destination::from_parts("192.0.2.10", 3389),
+                CertPolicy::TrustAll,
+            );
+            target.performance = profile;
+            config(&target, &CertReport::default())
+                .unwrap()
+                .connector()
+                .performance_flags
+        };
+        let full =
+            PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION;
+        assert_eq!(flags(RdpPerformanceProfile::Auto), full);
+        assert_eq!(flags(RdpPerformanceProfile::Lan), full);
+        let broadband = flags(RdpPerformanceProfile::Broadband);
+        assert!(broadband.contains(PerformanceFlags::DISABLE_WALLPAPER));
+        assert!(!broadband.contains(PerformanceFlags::DISABLE_THEMING));
+        let low = flags(RdpPerformanceProfile::Low);
+        for off in [
+            PerformanceFlags::DISABLE_WALLPAPER,
+            PerformanceFlags::DISABLE_THEMING,
+            PerformanceFlags::DISABLE_MENUANIMATIONS,
+            PerformanceFlags::DISABLE_FULLWINDOWDRAG,
+        ] {
+            assert!(low.contains(off), "{off:?} in {low:?}");
+        }
+        assert!(!low.contains(PerformanceFlags::ENABLE_FONT_SMOOTHING));
+        assert!(!low.contains(PerformanceFlags::ENABLE_DESKTOP_COMPOSITION));
+    }
+
+    #[test]
+    fn session_sends_ctrl_alt_del_as_one_key_sequence() {
+        let mut machine = live();
+        let now = Instant::now();
+        let press = |code| FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), code);
+        let release = |code| FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, code);
+        let del = |flags| FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED | flags, 0x53);
+        assert_eq!(
+            machine.input(Input::CtrlAltDel, now),
+            [
+                press(0x1D),
+                press(0x38),
+                del(KeyboardFlags::empty()),
+                del(KeyboardFlags::RELEASE),
+                release(0x38),
+                release(0x1D),
+            ]
+        );
+        // The secure attention screen is a picture the key sequence must bring.
+        assert_eq!(machine.tick(now + LATER), Flow::Reconnect);
+
+        let mut offline = Machine::default();
+        assert!(offline.input(Input::CtrlAltDel, now).is_empty());
+    }
+
+    #[test]
+    fn session_stats_forget_the_measurements_of_a_lost_connection() {
+        let mut machine = live();
+        let now = Instant::now();
+        machine.on_event(picture(), now);
+        let stats = |machine: &Machine| -> serde_json::Value {
+            serde_json::from_str(&machine.frames.take_stats(Duration::from_secs(1)).unwrap())
+                .unwrap()
+        };
+        machine.on_event(
+            RdpOutputEvent::NetworkCharacteristics {
+                base_rtt_ms: Some(5),
+                bandwidth_kbps: Some(80_000),
+                average_rtt_ms: 9,
+            },
+            now,
+        );
+        let measured = stats(&machine);
+        assert_eq!(
+            (measured["rtt_ms"].as_u64(), measured["mbps"].as_f64()),
+            (Some(9), Some(80.0))
+        );
+
+        // A watchdog reconnect and one of IronRDP's own both start without them.
+        assert_eq!(machine.tick(now + LATER), Flow::Continue);
+        machine.input(key(0x1E, false, true), now + LATER);
+        assert_eq!(machine.tick(now + LATER + LATER), Flow::Reconnect);
+        let after = stats(&machine);
+        assert!(
+            after.get("rtt_ms").is_none() && after.get("mbps").is_none(),
+            "{after}"
+        );
+        assert_eq!(
+            (after["width"].as_u64(), after["height"].as_u64()),
+            (Some(2), Some(2))
+        );
+
+        let mut machine = live();
+        machine.on_event(picture(), now);
+        machine.on_event(
+            RdpOutputEvent::NetworkCharacteristics {
+                base_rtt_ms: None,
+                bandwidth_kbps: None,
+                average_rtt_ms: 30,
+            },
+            now,
+        );
+        let (response, _answer) = oneshot::channel();
+        machine.on_event(
+            RdpOutputEvent::AutoReconnecting {
+                disconnect_reason: 0,
+                attempt: 1,
+                maximum_attempts: 3,
+                response,
+            },
+            now,
+        );
+        assert!(stats(&machine).get("rtt_ms").is_none());
+    }
+
+    #[test]
     fn session_goes_without_credssp_only_when_nla_is_off() {
         let mut tls_only = target(
             Destination::from_parts("192.0.2.10", 3389),
@@ -1250,7 +1431,13 @@ mod tests {
         let (report, phases) = reports();
         let (_stop, stop) = oneshot::channel();
         let destination = Destination::from_parts("127.0.0.1", port);
-        spawn(target(destination, CertPolicy::TrustAll), stop, report).unwrap();
+        spawn(
+            target(destination, CertPolicy::TrustAll),
+            Frames::default(),
+            stop,
+            report,
+        )
+        .unwrap();
         assert_eq!(phases.recv_timeout(WAIT), Ok(Report::Connecting));
         assert_eq!(phases.recv_timeout(WAIT), Ok(Report::Failed(Code::Connect)));
     }
@@ -1263,7 +1450,13 @@ mod tests {
         let (report, phases) = reports();
         let (stop_tx, stop) = oneshot::channel();
         let destination = Destination::from_parts("127.0.0.1", port);
-        let (ws_port, _) = spawn(target(destination, CertPolicy::TrustAll), stop, report).unwrap();
+        let (ws_port, _) = spawn(
+            target(destination, CertPolicy::TrustAll),
+            Frames::default(),
+            stop,
+            report,
+        )
+        .unwrap();
         assert_eq!(phases.recv_timeout(WAIT), Ok(Report::Connecting));
         stop_tx.send(()).unwrap();
         assert_eq!(
@@ -1326,10 +1519,11 @@ mod tests {
                     audio: None,
                     drive: None,
                     credssp: true,
+                    performance: RdpPerformanceProfile::Auto,
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();
-                let (port, token) = spawn(target, stop_rx, move |report| {
+                let (port, token) = spawn(target, Frames::default(), stop_rx, move |report| {
                     let _ = sender.send(report);
                 })
                 .unwrap();

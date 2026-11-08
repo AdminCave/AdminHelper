@@ -29,6 +29,7 @@ dependencies = [
  "log",
  "open",
  "p12",
+ "png",
  "portable-pty",
  "rcgen",
  "regex",

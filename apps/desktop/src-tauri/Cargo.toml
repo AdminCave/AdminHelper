@@ -105,6 +105,8 @@ ironrdp-session = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e
 ironrdp-rdpdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
 # The client name the RDP server shows for the session.
 gethostname = "1"
+# The screenshot of the embedded RDP session; in the lockfile through tauri's image-png already.
+png = "0.18"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }

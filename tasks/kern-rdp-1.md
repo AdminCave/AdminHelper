@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-rdp-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T8
 
-### T2 — R-1098: Backend Stufe 2 — Statistik, Leistungsprofil, Strg+Alt+Entf, Screenshot, Verbindungsinfo  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/capabilities.rs
+### T2 — R-1098: Backend Stufe 2 — Statistik, Leistungsprofil, Strg+Alt+Entf, Screenshot, Verbindungsinfo  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/capabilities.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @24f409f0d 2026-11-08T16:21:34+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T2.verdict.json)
 Änderung: Die Sitzung meldet je Sekunde fps, Mbit/s, Auflösung und, wenn bekannt, Codec und RTT (`NetworkCharacteristics`) als Text-Nachricht auf dem Frame-WebSocket; `rdp_performance_profile` wird auf `with_performance_flags` abgebildet (Auto wie LAN, Niedrig ohne Hintergrund, Themes, Animationen); Strg+Alt+Entf als Eingabe-Nachricht (Scancode-Folge); ein Befehl speichert das letzte Bild als PNG über den Rust-Speichern-Dialog; ein Befehl liefert die Verbindungsinfo (Ziel, Tunnel ja/nein, TLS-Version, CredSSP, Fingerprint). Tests je Teil, Neuverbindung behält die Statistik konsistent.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T8
@@ -72,3 +74,7 @@ Abhängt von: T2
 ## Entscheidungen
 - 2026-11-08 Gate: Start ohne gespeichertes Passwort mit einmal getipptem Passwort an `rdp_session_start` (Kevin 2026-11-08, Offene Frage 1)
 - 2026-11-08 Gate: Strg+Alt+Entf gegen Windows als Probe im privaten Wegwerf-Repo von R-1092 (Kevin 2026-11-08, Offene Frage 2)
+- 2026-11-08 T2: Mbit/s ist die vom Server gemessene Bandbreite (`NetworkCharacteristics.bandwidth_kbps`/1000), RTT dessen `average_rtt_ms`; beides nur, wenn gemeldet. IronRDP (Fork c39d48e) gibt weder Transport-Bytezähler noch den Codec noch die TLS-Version an den Client weiter: Codec und TLS-Version fehlen in Statistik und Verbindungsinfo
+- 2026-11-08 T2: fps zählt die Bilder, die der Frame-WebSocket je Sekunde an die Webview schickt; keine Statistik vor dem ersten Bild; eine Neuverbindung (Watchdog oder IronRDP) setzt RTT und Bandbreite zurück, Auflösung bleibt bis zum nächsten Bild
+- 2026-11-08 T2: Leistungsprofil `Auto` wie `Lan`; das eigene Profil der Verbindung vor dem der Einstellungen (wie `RdpOptions::with_overrides`)
+- 2026-11-08 T2: Verbindungsinfo: Ziel `host:port` der gespeicherten Verbindung, Tunnel ja/nein mit Name, CredSSP, Zertifikat `pinned`/`trust_all`, Fingerprint = der Pin (bei `trust_all` keiner); Screenshot = PNG des ganzen Desktops zum Zeitpunkt des Aufrufs, Standardname `rdp-<jjjjmmtt-hhmmss>.png`

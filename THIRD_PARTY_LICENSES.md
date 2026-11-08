@@ -130,7 +130,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
 `ironrdp-connector`, `ironrdp-session` und `ironrdp-rdpdr-native` (eingebettetes RDP, Git-Revision des Forks
 `github.com/AdminCave/IronRDP`, Upstream `github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten),
-`russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`) —
+`russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`), `png` (Screenshot der eingebetteten RDP-Sitzung, `MIT OR Apache-2.0`) —
 überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
