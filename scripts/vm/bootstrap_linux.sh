@@ -28,7 +28,7 @@ TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
 # UP017/B008/RUF100 while the dev box and CI were green, which reads as "the
 # tree is broken" and is really "the box is newer". Keep in sync with
 # .github/workflows/ci.yml and the pin in apps/server/requirements-dev.txt.
-RUFF_VERSION="${AH_RUFF_VERSION:-0.15.20}"
+RUFF_VERSION="${AH_RUFF_VERSION:-0.17.4}"
 # pytest for scripts/vm/tests: run.sh's `vm-pytest` step dep-gates on importing
 # it, and only the python components' own steps build the shared venv. Without
 # it here, `run.sh --only scripts` on a box SKIPs the step and --strict calls

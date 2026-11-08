@@ -11,9 +11,8 @@
 # Genau das ruff, das CI pinnt (ci.yml, scripts/vm/bootstrap_linux.sh,
 # apps/server/requirements-dev.txt; scripts/dev/toolchain-lockstep.sh prüft die
 # Gleichheit). run.sh nimmt das erste ruff im PATH: ein anderes bricht hier mit
-# Exit 2 ab, statt still andere Regeln anzuwenden (0.16.x: 841 Treffer, die CI
-# nie sieht).
-required-version = "==0.15.20"
+# Exit 2 ab, statt still andere Regeln anzuwenden.
+required-version = "==0.17.4"
 line-length = 100
 target-version = "py313"
 
@@ -21,8 +20,10 @@ target-version = "py313"
 extend-exclude = ["docs", "data"]
 
 [lint]
-# Pyflakes + pycodestyle-Kern (ruff-Default) plus Import-Sortierung.
-extend-select = ["I"]
+# Pyflakes + pycodestyle-Kern plus Import-Sortierung. Ausdrücklich, nicht als
+# extend-select auf den Default: ruff 0.16 hat den Default von 59 auf 413 Regeln
+# erweitert (mit 0.17.4 hier 1317 Treffer); das ist der Default bis 0.15.
+select = ["E4", "E7", "E9", "F", "I"]
 
 [lint.isort]
 known-first-party = ["app"]
