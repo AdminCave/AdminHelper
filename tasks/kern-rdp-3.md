@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Gateway, Drucker, NLA; Windows-Probe — Task-Ledger
-Status: geplant · Branch: feature/kern-rdp-3 · Review: am Ende
+Status: aktiv · Branch: feature/kern-rdp-3 · Review: am Ende
 Spec: docs/features/kern-rdp-3.md (Roadmap R-1163, R-1092)
 Heavy: linux-full + windows — linux-full: `config()` der eingebetteten Sitzung ändert sich, `desktop_e2e_rdp_embedded` (xrdp-Container) fährt im Sammellauf; windows = die CI-Jobs `rust-windows` und `tauri-build-smoke` (der Pool hat keine Windows-Vorlage)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
