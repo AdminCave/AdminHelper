@@ -7,11 +7,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <!--
   One embedded RDP session (R-1098), after the mockup (DesignSystem ui_kits/adminhelper/rdp.jsx):
   above the picture what it is connected to and its actions, the phases over it, below it the
-  figures of the stream. A click into the picture grabs the keyboard, Ctrl+Alt+Home gives it back.
+  figures of the stream. The desktop follows the tab (fit) or keeps a fixed size with a zoom and
+  scrollbars (R-1100); a resize goes to the session once the tab kept its size for a moment.
+  A click into the picture grabs the keyboard, Ctrl+Alt+Home gives it back.
   A certificate the session was refused for is shown to be confirmed; confirmed, it starts anew.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import {
     Cable,
     Camera,
@@ -22,18 +24,40 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RotateCw,
     ShieldAlert,
     X,
+    ZoomIn,
+    ZoomOut,
   } from '@lucide/svelte';
   import * as bridge from '$lib/bridge';
-  import type { RdpPerformanceProfile, RdpSessionInfo } from '$lib/bridge/types';
+  import type {
+    RdpDisplay,
+    RdpPerformanceProfile,
+    RdpScalingMode,
+    RdpSessionInfo,
+    RdpWindowMode,
+  } from '$lib/bridge/types';
   import { t } from '$lib/i18n';
+  import {
+    clampZoom,
+    debounce,
+    fitDisplay,
+    fixedDisplay,
+    layoutOf,
+    RESIZE_DEBOUNCE_MS,
+    ZOOM,
+    zoomedSize,
+  } from '$lib/rdp/display';
   import { FrameSocket, type FrameInput, type FrameStats } from '$lib/rdp/frameSocket';
   import { buttonsOf, grabKeyboard, toDesktop, wheelOf, type KeyboardGrab } from '$lib/rdp/input';
   import { createRenderer, type Renderer } from '$lib/rdp/renderer';
+  import { settings } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
   import {
     disconnectRdp,
     reconnectRdp,
+    setRdpDisplay,
     setRdpPerformance,
+    setRdpScaling,
+    setRdpWindow,
     trustRdpCertificate,
     type TerminalSession,
   } from '$lib/stores/terminals';
@@ -63,7 +87,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let keyboard: KeyboardGrab | null = null;
 
   let stats = $state<FrameStats | null>(null);
-  let desktop = { width: 0, height: 0 };
+  // What the frames say; reassigned only when it changes, not with every frame.
+  let desktop = $state({ width: 0, height: 0 });
+  // The CSS size of the picture's box, from the ResizeObserver.
+  let box = { width: 0, height: 0 };
+  // A fixed desktop is shown at this zoom in percent, or fitted into the tab.
+  let zoom = $state<number | 'fit'>(100);
   let grabbed = $state(false);
   // The certificate dialog put aside: the overlay offers it again.
   let certificateLater = $state(false);
@@ -108,6 +137,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let profile = $derived(
     rdp.performance ?? session.connection.options?.rdp?.performanceProfile ?? 'auto',
   );
+  let rdpOptions = $derived(session.connection.options?.rdp);
+  let windowMode = $derived<RdpWindowMode>(
+    rdp.window ?? rdpOptions?.windowMode ?? $settings?.rdpWindowMode ?? 'fit',
+  );
+  let layout = $derived(layoutOf(windowMode));
+  let scaling = $derived<RdpScalingMode>(
+    rdp.scaling ?? rdpOptions?.scalingMode ?? $settings?.rdpScalingMode ?? 'auto',
+  );
+  let customSize = $derived(rdpOptions?.customSize ?? $settings?.rdpCustomSize ?? null);
+  let layouts = $derived(
+    (['fit', 'custom'] as const).map((value) => ({
+      value,
+      label: $t(`settings.rdp.window.${value}`),
+    })),
+  );
+  let scalings = $derived(
+    (['auto', 'normal', 'hdpi'] as const).map((value) => ({
+      value,
+      label: $t(`settings.rdp.scaling.${value}`),
+    })),
+  );
+  // The CSS size of a zoomed fixed desktop; null while the picture is fitted into the tab.
+  let zoomed = $derived.by(() => {
+    if (layout !== 'custom' || zoom === 'fit') return null;
+    const fixed = fixedDisplay(customSize, scaling, devicePixelRatio);
+    const width = desktop.width || fixed.width;
+    const height = desktop.height || fixed.height;
+    return zoomedSize(width, height, zoom, devicePixelRatio);
+  });
   let profiles = $derived(
     (['auto', 'lan', 'broadband', 'low'] as const).map((value) => ({
       value,
@@ -117,6 +175,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function send(input: FrameInput): void {
     socket?.send(input);
+  }
+
+  function wanted(): RdpDisplay | null {
+    if (layout === 'custom') return fixedDisplay(customSize, scaling, devicePixelRatio);
+    if (box.width <= 0 || box.height <= 0) return null;
+    return fitDisplay(box.width, box.height, scaling, devicePixelRatio);
+  }
+
+  // The desktop the tab asks for goes to the store for the next start and to the running
+  // session; Rust drops what it has already.
+  function report(): void {
+    const display = wanted();
+    if (!display) return;
+    setRdpDisplay(session.key, display);
+    send({ t: 'size', w: display.width, h: display.height, scale: display.scale });
+  }
+  const reportLater = debounce(report, RESIZE_DEBOUNCE_MS);
+
+  $effect(() => {
+    void [layout, scaling, customSize];
+    untrack(report);
+  });
+
+  function zoomBy(step: number): void {
+    zoom = clampZoom((zoom === 'fit' ? 100 : zoom) + step);
   }
 
   // Each on its own: a new phase is a new `rdp`, but the same session keeps its socket, and
@@ -131,10 +214,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     stats = null;
     const current = new FrameSocket(wsPort, token, {
       frame: (frame) => {
-        desktop = { width: frame.header.desktopWidth, height: frame.header.desktopHeight };
+        const { desktopWidth: width, desktopHeight: height } = frame.header;
+        if (width !== desktop.width || height !== desktop.height) desktop = { width, height };
         renderer?.draw(frame);
       },
       stats: (s) => (stats = s),
+      // What the tab asked for while the session started went nowhere: input before the socket
+      // opened is dropped.
+      opened: report,
       closed: () => {
         if (socket === current) socket = null;
       },
@@ -211,7 +298,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
     canvas.addEventListener('webglcontextlost', lost);
     canvas.addEventListener('webglcontextrestored', restored);
     keyboard = grabKeyboard(viewport, send, (on) => (grabbed = on));
+    // Measured before the session starts, so it starts with the size of the tab.
+    box = { width: viewport.clientWidth, height: viewport.clientHeight };
+    report();
+    const resizer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            box = { width: viewport.clientWidth, height: viewport.clientHeight };
+            if (layout === 'fit') reportLater();
+          });
+    resizer?.observe(viewport);
     return () => {
+      resizer?.disconnect();
+      reportLater.cancel();
       canvas.removeEventListener('webglcontextlost', lost);
       canvas.removeEventListener('webglcontextrestored', restored);
       keyboard?.destroy();
@@ -279,12 +379,55 @@ SPDX-License-Identifier: GPL-3.0-or-later
       options={profiles}
       onChange={(v) => void setRdpPerformance(session.key, v as RdpPerformanceProfile)}
     />
+    <label class="rdp-label" for="rdp-window-{session.key}">{$t('rdp.window')}</label>
+    <Select
+      id="rdp-window-{session.key}"
+      size="sm"
+      value={layout}
+      options={layouts}
+      onChange={(v) => setRdpWindow(session.key, v as RdpWindowMode)}
+    />
+    <label class="rdp-label" for="rdp-scaling-{session.key}">{$t('rdp.scaling')}</label>
+    <Select
+      id="rdp-scaling-{session.key}"
+      size="sm"
+      value={scaling}
+      options={scalings}
+      onChange={(v) => setRdpScaling(session.key, v as RdpScalingMode)}
+    />
+    {#if layout === 'custom'}
+      <span class="rdp-sep" aria-hidden="true"></span>
+      <IconButton
+        size="sm"
+        icon={ZoomOut}
+        label={$t('rdp.zoom.out')}
+        disabled={zoom !== 'fit' && zoom <= ZOOM.min}
+        onclick={() => zoomBy(-ZOOM.step)}
+      />
+      <span class="rdp-zoom" aria-live="polite">
+        {zoom === 'fit' ? $t('rdp.zoom.fit') : `${zoom} %`}
+      </span>
+      <IconButton
+        size="sm"
+        icon={ZoomIn}
+        label={$t('rdp.zoom.in')}
+        disabled={zoom !== 'fit' && zoom >= ZOOM.max}
+        onclick={() => zoomBy(ZOOM.step)}
+      />
+      <Button size="sm" variant="secondary" onclick={() => (zoom = 100)}>
+        {$t('rdp.zoom.actual')}
+      </Button>
+      <Button size="sm" variant="secondary" onclick={() => (zoom = 'fit')}>
+        {$t('rdp.zoom.fit')}
+      </Button>
+    {/if}
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="rdp-view"
     class:grabbed
+    class:zoomed={zoomed !== null}
     bind:this={viewport}
     tabindex="0"
     role="application"
@@ -293,6 +436,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <canvas
       bind:this={canvas}
       class:hidden={!connected}
+      style:width={zoomed ? `${zoomed.width}px` : null}
+      style:height={zoomed ? `${zoomed.height}px` : null}
       {onpointerdown}
       onpointermove={(e) => point(e)}
       onpointerup={(e) => point(e)}
@@ -444,6 +589,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .rdp-view.grabbed {
     box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  /* A zoomed desktop has its own size; larger than the tab, it scrolls. */
+  .rdp-view.zoomed {
+    overflow: auto;
+  }
+  .rdp-view.zoomed canvas {
+    flex: 0 0 auto;
+    margin: auto;
+  }
+  .rdp-zoom {
+    min-width: 64px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
   }
   /* The canvas has the size of the desktop; the picture keeps its aspect within the box. */
   canvas {

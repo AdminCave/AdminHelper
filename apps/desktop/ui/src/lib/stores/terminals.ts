@@ -20,10 +20,13 @@ import type {
   AnsibleTarget,
   Connection,
   RdpEndCode,
+  RdpDisplay,
   RdpPerformanceProfile,
   RdpPhase,
   RdpPhaseEvent,
+  RdpScalingMode,
   RdpStarted,
+  RdpWindowMode,
   Settings,
 } from '$lib/bridge/types';
 import { errMsg, IpcError } from '$lib/utils/errors';
@@ -69,6 +72,9 @@ export interface RdpView {
   certificate: { identity: string; fingerprint: string; reason: 'unknown' | 'changed' } | null;
   /** The profile this tab starts with, chosen in the tab; null: as the connection says. */
   performance: RdpPerformanceProfile | null;
+  /** The window mode and scaling chosen in the tab (R-1100); null: as the settings say. */
+  window: RdpWindowMode | null;
+  scaling: RdpScalingMode | null;
   notice: RdpStarted['notice'] | null;
 }
 
@@ -329,6 +335,8 @@ interface RdpRun {
   /** The password typed for this tab, for its starts anew (a trusted certificate, a
    * reconnect); kept nowhere else and gone with the tab. */
   password: string | undefined;
+  /** The desktop the tab last asked for, for each start (R-1100); unset until it measured. */
+  display?: RdpDisplay;
 }
 
 /** How the start of an RDP tab went: `os-client` when Rust leaves the connection to the client
@@ -462,6 +470,7 @@ async function startRdp(key: string, run: RdpRun, first = false): Promise<RdpOpe
     started = await bridge.rdpSessionStart(
       withProfile(session.connection, session.rdp.performance),
       run.password,
+      run.display,
     );
   } catch (err) {
     return failed(err);
@@ -510,6 +519,8 @@ export function openRdp(connection: Connection, password?: string): Promise<RdpO
       code: null,
       certificate: null,
       performance: null,
+      window: null,
+      scaling: null,
       notice: null,
     },
   };
@@ -533,6 +544,25 @@ export function disconnectRdp(key: string): void {
 export function setRdpPerformance(key: string, profile: RdpPerformanceProfile): Promise<boolean> {
   updateRdp(key, { performance: profile });
   return reconnectRdp(key);
+}
+
+/** Chooses how tab `key` lays its desktop out, for this tab only; the session follows its size. */
+export function setRdpWindow(key: string, mode: RdpWindowMode): void {
+  updateRdp(key, { window: mode });
+}
+
+/** Chooses the scaling of tab `key`, for this tab only. */
+export function setRdpScaling(key: string, scaling: RdpScalingMode): void {
+  updateRdp(key, { scaling });
+}
+
+/**
+ * Keeps the desktop tab `key` asks for: each start of its session asks for it first, so a
+ * reconnect starts with the size the tab has, not with the size it had once.
+ */
+export function setRdpDisplay(key: string, display: RdpDisplay): void {
+  const run = rdpRuns.get(key);
+  if (run) run.display = display;
 }
 
 /**

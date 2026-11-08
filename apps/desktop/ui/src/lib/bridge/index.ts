@@ -25,6 +25,7 @@ import type {
   HttpMethod,
   PasswordState,
   ProbeTarget,
+  RdpDisplay,
   RdpSessionInfo,
   RdpStarted,
   ResetOutcome,
@@ -403,9 +404,18 @@ export function terminalDock(id: number): Promise<void> {
 // ─────────────────────────── Embedded RDP ─────────────────────────
 
 // Starts an embedded session; its phases follow as `rdp-session` events, so listen first. A typed
-// `password` goes to this session alone; without one Rust takes the stored one.
-export function rdpSessionStart(connection: Connection, password?: string): Promise<RdpStarted> {
-  return invoke<RdpStarted>('rdp_session_start', { connection, password: password ?? null });
+// `password` goes to this session alone; without one Rust takes the stored one. `display` is the
+// desktop to start with; without one Rust starts with 1280×720 at 100 %.
+export function rdpSessionStart(
+  connection: Connection,
+  password?: string,
+  display?: RdpDisplay,
+): Promise<RdpStarted> {
+  return invoke<RdpStarted>('rdp_session_start', {
+    connection,
+    password: password ?? null,
+    display: display ?? null,
+  });
 }
 
 export function rdpSessionStop(sessionId: string): Promise<void> {

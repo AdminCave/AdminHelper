@@ -37,12 +37,16 @@ export interface FrameStats {
 export type FrameInput =
   | { t: 'key'; code: number; ext: boolean; down: boolean }
   | { t: 'mouse'; x: number; y: number; buttons: number; wheel: number }
-  | { t: 'cad' };
+  | { t: 'cad' }
+  // The desktop to ask the server for (R-1100); Rust keeps it within MS-RDPEDISP.
+  | { t: 'size'; w: number; h: number; scale: number };
 
 export interface FrameHandlers {
   // Draws the picture; the receipt goes out when this returns.
   frame(frame: Frame): void;
   stats(stats: FrameStats): void;
+  // The socket is open and sent its token: input goes out from now on.
+  opened(): void;
   // The socket closed, from either side.
   closed(): void;
 }
@@ -104,6 +108,7 @@ export class FrameSocket {
     this.socket.onopen = () => {
       this.open = true;
       this.socket.send(token);
+      this.handlers.opened();
     };
     this.socket.onmessage = (event: MessageEvent) => this.receive(event.data);
     this.socket.onclose = () => this.end();

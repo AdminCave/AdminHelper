@@ -149,6 +149,8 @@ describe('SessionTabs', () => {
           code: null,
           certificate: null,
           performance: null,
+          window: null,
+          scaling: null,
           notice: null,
         },
       });

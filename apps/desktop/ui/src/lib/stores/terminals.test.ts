@@ -97,7 +97,10 @@ import {
   reconnectTerminal,
   resizeTerminal,
   runSnippet,
+  setRdpDisplay,
   setRdpPerformance,
+  setRdpScaling,
+  setRdpWindow,
   setSnippetBroadcast,
   showTab,
   snippetBroadcast,
@@ -963,7 +966,7 @@ describe('an RDP session in a tab (R-1098)', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-08T10:00:00Z'));
     expect(await openRdp(RDP)).toBe('started');
-    expect(h.rdpSessionStart).toHaveBeenCalledWith(RDP, undefined);
+    expect(h.rdpSessionStart).toHaveBeenCalledWith(RDP, undefined, undefined);
     expect(get(terminals).active).toBe(only().key);
     expect(only()).toMatchObject({ status: 'connecting', connectedAt: null });
     expect(rdp()).toMatchObject({
@@ -1068,9 +1071,36 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(
       { ...RDP, options: { rdp: { performanceProfile: 'low' } } },
       undefined,
+      undefined,
     );
     expect(only().connection).toBe(RDP);
     expect(rdp()).toMatchObject({ performance: 'low', sessionId: 's2' });
+  });
+
+  it('starts with the desktop the tab asked for last, and keeps the modes of this tab', async () => {
+    const opened = openRdp(RDP);
+    // The tab measures itself once it is there, before the start goes out.
+    setRdpDisplay(only().key, { width: 1600, height: 900, scale: 100 });
+    await opened;
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, {
+      width: 1600,
+      height: 900,
+      scale: 100,
+    });
+    expect(rdp()).toMatchObject({ window: null, scaling: null });
+
+    setRdpWindow(only().key, 'custom');
+    setRdpScaling(only().key, 'hdpi');
+    setRdpDisplay(only().key, { width: 1920, height: 1080, scale: 175 });
+    expect(rdp()).toMatchObject({ window: 'custom', scaling: 'hdpi', sessionId: 's1' });
+    // Neither mode starts anew: the session follows the size over its socket.
+    expect(h.rdpSessionStart).toHaveBeenCalledTimes(1);
+    expect(await reconnectRdp(only().key)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, {
+      width: 1920,
+      height: 1080,
+      scale: 175,
+    });
   });
 
   it('pins the refused certificate and starts anew; a refused pin stays', async () => {
@@ -1102,12 +1132,12 @@ describe('an RDP session in a tab (R-1098)', () => {
 
   it('hands a typed password to every start of its tab', async () => {
     await openRdp(RDP, 'typed');
-    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed');
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed', undefined);
     expect(JSON.stringify(get(terminals))).not.toContain('typed');
     expect(await reconnectRdp(only().key)).toBe(true);
-    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed');
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed', undefined);
     await openRdp(RDP);
-    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, undefined);
   });
 
   it('leaves a connection only the OS client can open to it, without a tab', async () => {

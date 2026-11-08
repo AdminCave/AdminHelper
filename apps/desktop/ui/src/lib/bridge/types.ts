@@ -16,6 +16,13 @@ export type ConnectionKind = 'ssh' | 'rdp' | 'web';
 export type SyncMode = 'local' | 'sync' | 'server';
 export type RdpScalingMode = 'auto' | 'normal' | 'hdpi';
 export type RdpWindowMode = 'fit' | 'fullscreen' | 'multimon' | 'custom';
+
+/** The desktop an embedded session asks for (R-1100): pixels and the scale factor in percent. */
+export interface RdpDisplay {
+  width: number;
+  height: number;
+  scale: number;
+}
 export type RdpPerformanceProfile = 'auto' | 'lan' | 'broadband' | 'low';
 export type SshConsole = 'embedded' | 'external';
 export type RdpClient = 'embedded' | 'os';
