@@ -5,9 +5,11 @@ Heavy: linux-full + windows — linux-full: `config()` der eingebetteten Sitzung
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Desktop: Gateway und Drucker an den OS-Client, NLA aus ohne CredSSP (R-1163)  [ ]
+### T1 — Desktop: Gateway und Drucker an den OS-Client, NLA aus ohne CredSSP (R-1163)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/error.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-3.md
-Änderung: `prepare()` lehnt eine Verbindung mit gesetztem `gateway` (nicht leer) oder `printers: true` mit der neuen `AppError`-Variante ab (Code `ERR_RDP_OS_CLIENT`, Text nennt den Grund); `Target` trägt `credssp` (`nla != Some(false)`), `config()` setzt `with_credssp(target.credssp)`. Tests: Ablehnung je Grund samt Code, leeres Gateway startet, `nla: false` baut einen Connector ohne CredSSP. Doku: Fehlervertrag und Absatz „Kanäle“ DE+EN, Changelog.
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @73bfb9b54 2026-11-08T08:59:20+01:00
+Review: am Ende (Branch-Review)
+Änderung: `prepare()` lehnt eine Verbindung mit gesetztem `gateway` oder `printers: true` mit der neuen `AppError`-Variante ab (Code `ERR_RDP_OS_CLIENT`, Text nennt den Grund); `Target` trägt `credssp` (`nla != Some(false)`), `config()` setzt `with_credssp(target.credssp)`. Tests: Ablehnung je Grund samt Code, `printers: false` startet, `nla: false` baut einen Connector ohne CredSSP. Doku: Fehlervertrag und Absatz „Kanäle“ DE+EN, Changelog.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-3.md
 

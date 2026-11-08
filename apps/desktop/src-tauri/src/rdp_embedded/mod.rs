@@ -155,6 +155,20 @@ fn prepare(
         ));
     }
     validate_connection_input(listed)?;
+    let own = listed
+        .options
+        .as_ref()
+        .and_then(|options| options.rdp.as_ref());
+    if own.is_some_and(|rdp| rdp.gateway.is_some()) {
+        return Err(AppError::RdpOsClient(
+            "an embedded RDP session cannot go through an RD gateway".to_string(),
+        ));
+    }
+    if own.is_some_and(|rdp| rdp.printers == Some(true)) {
+        return Err(AppError::RdpOsClient(
+            "an embedded RDP session cannot share printers".to_string(),
+        ));
+    }
     let workspace = workspace::current()?;
     let resolved = resolve_connection(listed, tunnels, bindings);
     let credential = CredentialConnection {
@@ -190,12 +204,9 @@ fn prepare(
         domain: domain.map(str::to_string),
         password: Zeroizing::new(password),
         policy,
-        audio: listed
-            .options
-            .as_ref()
-            .and_then(|options| options.rdp.as_ref())
-            .and_then(|rdp| rdp.audio),
+        audio: own.and_then(|rdp| rdp.audio),
         drive: None,
+        credssp: own.is_none_or(|rdp| rdp.nla != Some(false)),
     })
 }
 
@@ -554,6 +565,78 @@ mod tests {
         });
         let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
         assert_eq!(target.audio, Some(RdpAudio::Off));
+    }
+
+    fn with_rdp(options: RdpConnectionOptions) -> Connection {
+        let mut listed = rdp("192.0.2.10", None);
+        listed.options = Some(ConnectionOptions {
+            ssh: None,
+            rdp: Some(options),
+        });
+        listed
+    }
+
+    #[test]
+    fn start_leaves_a_gateway_or_printers_to_the_os_client() {
+        let scratch = Scratch::new("os-client");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let cases = [
+            (
+                RdpConnectionOptions {
+                    gateway: Some("rdgw.example.org:443".to_string()),
+                    ..Default::default()
+                },
+                "RD gateway",
+            ),
+            (
+                RdpConnectionOptions {
+                    printers: Some(true),
+                    ..Default::default()
+                },
+                "printers",
+            ),
+        ];
+        for (options, reason) in cases {
+            let listed = with_rdp(options);
+            save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+            match prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()) {
+                Err(error) => {
+                    assert_eq!(error.code(), "ERR_RDP_OS_CLIENT", "{error}");
+                    assert!(error.to_string().contains(reason), "{error}");
+                }
+                Ok(_) => panic!("the start with {reason} was not refused"),
+            }
+        }
+        let listed = with_rdp(RdpConnectionOptions {
+            printers: Some(false),
+            ..Default::default()
+        });
+        save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+        assert!(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).is_ok());
+    }
+
+    #[test]
+    fn start_goes_without_credssp_only_when_nla_is_off() {
+        let scratch = Scratch::new("nla");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        for (nla, credssp) in [(None, true), (Some(true), true), (Some(false), false)] {
+            let listed = with_rdp(RdpConnectionOptions {
+                nla,
+                ..Default::default()
+            });
+            save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+            assert_eq!(target.credssp, credssp, "nla {nla:?}");
+        }
+        let plain = rdp("192.0.2.10", None);
+        save_password_keyring(&scratch.0, &plain, "secret").unwrap();
+        assert!(
+            prepare(&scratch.0, &plain, &[], &[], &[], &no_pins())
+                .unwrap()
+                .credssp
+        );
     }
 
     fn with_drives(drives: Option<bool>) -> Connection {
