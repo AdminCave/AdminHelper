@@ -53,8 +53,9 @@ Kein Feld, keine Migration, kein neuer Tauri-Befehl. Neu ist der Ablehnungscode 
 
 ## Externe Integrationen
 - IronRDP `f96f664`: `ConfigBuilder::with_credssp(false)` verbindet mit TLS ohne CredSSP; die Probe aus R-1074 T4
-  lief so gegen Windows (`credssp: false`, Anmeldung erfolgreich). Kein Gateway-Client (RD-Gateway, MS-TSGU) im
-  Client-Crate dieser Revision; vor der Task im Quelltext nachsehen.
+  lief so gegen Windows (`credssp: false`, Anmeldung erfolgreich). Ein RD-Gateway-Client (MS-TSGU, Crate
+  `ironrdp-mstsgu`) liegt an dieser Revision hinter dem Feature `gateway` von `ironrdp-client`, das der Desktop nicht
+  einschaltet (nachgesehen 2026-11-08). Ihn zu nutzen bleibt eine eigene Zeile: ohne Gateway im Pool nicht prüfbar.
 - GitHub Actions `windows-latest` (Windows Server 2025, TermService an) für die Probe, wie in R-1074 T4.
 
 ## Trade-offs & Alternativen

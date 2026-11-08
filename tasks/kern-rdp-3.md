@@ -21,3 +21,4 @@ Doku: keine (Ergebnis privat)
 Abhängt von: T1
 
 ## Entscheidungen
+- 2026-11-08 T1: IronRDP f96f664 hat einen RD-Gateway-Client hinter dem Feature `gateway` (ironrdp-mstsgu); der Rueckfall auf den OS-Client bleibt (Kevin 2026-11-08), der Gateway-Weg ist R-1191
