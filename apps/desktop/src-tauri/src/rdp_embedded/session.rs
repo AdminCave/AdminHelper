@@ -414,8 +414,9 @@ fn platform() -> MajorPlatformType {
 /// The audio of a session for `audio` of its connection. At f96f664 `PlayOnServer` asks the server
 /// for no audio at all, like `Disabled` (docs/features/kern-rdp-2.md).
 fn audio_mode(audio: Option<RdpAudio>) -> AudioMode {
-    // Windows keeps audio off until it passes on a Windows with an audio device (condition 12 of
-    // docs/features/arch-rdp-embedded.md).
+    // Windows keeps audio off: the probe on a Windows runner did not pass (R-1092), and audio needs
+    // a run on a Windows with an audio device first (condition 12 of
+    // docs/features/arch-rdp-embedded.md, R-1192).
     if cfg!(windows) {
         return AudioMode::Disabled;
     }
