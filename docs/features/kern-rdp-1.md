@@ -114,11 +114,9 @@ Nicht-Ziele:
 `docs/admin/index.html` DE+EN (Einstellung *Client für RDP*, Bedienung des RDP-Tabs), `changelog.d/kern-rdp-1.md`.
 
 ## Offene Fragen
-1. **Start ohne gespeichertes Passwort** (Kevins Bereich: sichtbares Verhalten, IPC-Vertrag). Das Backend liest das
-   Passwort nur aus dem Keyring (`arch-rdp-backend.md`, „Passwort aus dem Keyring“). Ist keins gespeichert, (a) nimmt
-   `rdp_session_start` ein einmal getipptes Passwort an (wie der OS-Client-Weg, `connectFlow.ts:285`; kein neuer Weg
-   des Passworts, es geht schon heute vom Webview nach Rust), oder (b) fällt der Start auf den OS-Client zurück, oder
-   (c) verlangt der Prompt „Merken“. Empfehlung (a). Betrifft T6.
-2. **Strg+Alt+Entf gegen Windows** (Bedingung 6: „Stufe 2 prüft es“). Ohne Windows-Box im Pool nur als Probe auf
-   einem Windows-Runner im privaten Wegwerf-Repo von R-1092 (dessen Löschung noch offen ist, R-1193). Empfehlung: ja,
-   eine Probe wie in R-1092, Ergebnis nur privat. Betrifft T9.
+Keine. Entschieden (Kevin 2026-11-08):
+1. **Start ohne gespeichertes Passwort:** Der Passwort-Dialog fragt, `rdp_session_start` nimmt das getippte Passwort
+   einmalig an (wie der OS-Client-Weg, `connectFlow.ts:285`; das Passwort geht schon heute vom Webview nach Rust).
+   Gespeichert wird es nur, wenn der Nutzer *Merken* wählt. Betrifft T6.
+2. **Strg+Alt+Entf gegen Windows** (Bedingung 6): eine Probe auf einem Windows-Runner im privaten Wegwerf-Repo von
+   R-1092, Ergebnis nur privat. Betrifft T9.

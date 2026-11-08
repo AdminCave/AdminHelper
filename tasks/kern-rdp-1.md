@@ -38,10 +38,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T8
 Abhängt von: T4
 
-### T6 — R-1098: Connect-Flow — `rdp_client`, Split-Button, Rückfall, Einstellungen  [?] (Start ohne gespeichertes Passwort: einmal getipptes Passwort an rdp_session_start, Rückfall auf den OS-Client oder Merken verlangen? Empfehlung: getipptes Passwort)
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/components/terminal/ConnectButton.svelte, apps/desktop/ui/src/components/terminal/ConnectButton.test.ts, apps/desktop/ui/src/components/settings/RdpSection.svelte, apps/desktop/ui/src/components/settings/RdpSection.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Doppelklick, Enter, *Verbinden* und Schnellzugriff öffnen RDP nach `rdp_client`; der Pfeil am Knopf wählt den Client je Start (wie SSH); `ERR_RDP_OS_CLIENT` startet den OS-Client mit Hinweis; Einstellung *Client für RDP* in *Einstellungen → RDP*. Start ohne gespeichertes Passwort nach Offener Frage 1 der Spec. Tests je Weg, auch Rückfall und Einstellung.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict
+### T6 — R-1098: Connect-Flow — `rdp_client`, Split-Button, Rückfall, Einstellungen  [ ]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/components/terminal/ConnectButton.svelte, apps/desktop/ui/src/components/terminal/ConnectButton.test.ts, apps/desktop/ui/src/components/settings/RdpSection.svelte, apps/desktop/ui/src/components/settings/RdpSection.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Doppelklick, Enter, *Verbinden* und Schnellzugriff öffnen RDP nach `rdp_client`; der Pfeil am Knopf wählt den Client je Start (wie SSH); `ERR_RDP_OS_CLIENT` startet den OS-Client mit Hinweis; Einstellung *Client für RDP* in *Einstellungen → RDP*. Ohne gespeichertes Passwort fragt der Passwort-Dialog, und `rdp_session_start` nimmt das getippte Passwort einmalig an (Kevin 2026-11-08); dazu der Parameter im Backend (`mod.rs`, Zeroizing, gleiche Prüfungen wie beim OS-Client-Weg). Tests je Weg, auch Rückfall, Einstellung und das getippte Passwort (Rust: angenommen, nicht gespeichert, gleiche Ablehnungen).
+Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T8
 Abhängt von: T3, T5
 
@@ -60,11 +60,13 @@ Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/in
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6, T7
 
-### T9 — R-1098: Strg+Alt+Entf gegen Windows prüfen (Bedingung 6)  [?] (Probe auf einem Windows-Runner im privaten Wegwerf-Repo von R-1092? Empfehlung: ja)
+### T9 — R-1098: Strg+Alt+Entf gegen Windows prüfen (Bedingung 6)  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs
-Änderung: Die Probe aus R-1092 schickt die Strg+Alt+Entf-Folge aus T2 an den Windows-Runner und hält fest, ob der Sicherheitsbildschirm erscheint; Ergebnis nur unter `tasks/private/spikes/`. Im Baum ändert sich nur der Kommentar an der Folge (neutral).
+Änderung: Im privaten Wegwerf-Repo von R-1092 (Kevin 2026-11-08) schickt die Probe die Strg+Alt+Entf-Folge aus T2 an den Windows-Runner und hält fest, ob der Sicherheitsbildschirm erscheint; Ergebnis nur unter `tasks/private/spikes/`. Im Baum ändert sich nur der Kommentar an der Folge (neutral).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: keine (Ergebnis privat)
 Abhängt von: T2
 
 ## Entscheidungen
+- 2026-11-08 Gate: Start ohne gespeichertes Passwort mit einmal getipptem Passwort an `rdp_session_start` (Kevin 2026-11-08, Offene Frage 1)
+- 2026-11-08 Gate: Strg+Alt+Entf gegen Windows als Probe im privaten Wegwerf-Repo von R-1092 (Kevin 2026-11-08, Offene Frage 2)
