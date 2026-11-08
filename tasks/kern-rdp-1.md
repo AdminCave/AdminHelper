@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T8
 Abhängt von: T1
 
-### T3 — R-1098: Einstellung `rdp_client` (Wire-Vertrag)  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/types.parity.test.ts
+### T3 — R-1098: Einstellung `rdp_client` (Wire-Vertrag)  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/types.parity.test.ts, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/migration.rs
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @095d273cd 2026-11-08T16:40:18+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T3.verdict.json)
 Änderung: `Settings.rdp_client` (`embedded` | `os`) mit `#[serde(default)]`, Standard `os` bis R-1090 (Bedingung 4); UI-Typ und Parity-Test; Test: eine Einstellungsdatei ohne das Feld liest sich als `os`, Rundreise beider Werte.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T8

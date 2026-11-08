@@ -51,6 +51,17 @@ pub enum RdpPerformanceProfile {
     Low,
 }
 
+/// Which client an RDP connection opens in: a tab of the app or the RDP client of the OS.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RdpClient {
+    Embedded,
+    // The OS client stays the default until the embedded one has passed its Windows checks
+    // (docs/features/kern-rdp-1.md, R-1090).
+    #[default]
+    Os,
+}
+
 /// Where an SSH connection opens: in a tab of the app or in the terminal of the OS.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -280,6 +291,8 @@ pub struct Settings {
     #[serde(default)]
     pub ssh_console: SshConsole,
     #[serde(default)]
+    pub rdp_client: RdpClient,
+    #[serde(default)]
     pub terminal: TerminalPrefs,
     /// Opens the SSH tabs of the last run again after sign-in (R-1070); off unless chosen.
     #[serde(default)]
@@ -320,6 +333,7 @@ impl Default for Settings {
             os_notifications: false,
             favorite_connections: Vec::new(),
             ssh_console: SshConsole::Embedded,
+            rdp_client: RdpClient::Os,
             terminal: TerminalPrefs::default(),
             restore_sessions: false,
             open_sessions: Vec::new(),

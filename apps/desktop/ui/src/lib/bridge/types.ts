@@ -18,6 +18,7 @@ export type RdpScalingMode = 'auto' | 'normal' | 'hdpi';
 export type RdpWindowMode = 'fit' | 'fullscreen' | 'multimon' | 'custom';
 export type RdpPerformanceProfile = 'auto' | 'lan' | 'broadband' | 'low';
 export type SshConsole = 'embedded' | 'external';
+export type RdpClient = 'embedded' | 'os';
 export type TerminalTheme = 'cave' | 'contrast' | 'light';
 export type TerminalCursor = 'block' | 'bar' | 'underline';
 
@@ -100,6 +101,8 @@ export interface Settings {
   favoriteConnections?: string[];
   // Where an SSH connection opens: a tab of the app or the terminal of the OS.
   sshConsole: SshConsole;
+  // Which client an RDP connection opens in; 'os' when absent.
+  rdpClient?: RdpClient;
   terminal: TerminalPrefs;
   // Open the SSH tabs of the last run again after sign-in; off unless chosen.
   restoreSessions?: boolean;
