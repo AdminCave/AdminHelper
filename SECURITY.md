@@ -41,7 +41,7 @@ the wrong way.
 
 In the FRP STCP model, `user` / `serverUser` / `allowUsers` are **self-asserted
 strings**, accepted after a token-only check — FRP does **not** bind them to the
-TLS client-certificate CN (verified against frp 0.69.1), and a single global
+TLS client-certificate CN (verified against frp 0.72.0), and a single global
 `auth.token` ships in **every** `frpc.toml` and visitor bundle. The system is
 safe **only because the server scopes the per-tunnel `secretKey` per user**
 (`frp/generate_router.py` filters visitor tunnels by `current_user.servers`).

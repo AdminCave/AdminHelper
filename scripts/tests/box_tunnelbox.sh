@@ -24,7 +24,7 @@ AGENT_LOG=/var/log/adminhelper/agent.log
 MARK_FILE="$HOME/.mb-tunnel-mark"
 
 # proxy_started <TUNNEL> — poll the frpc journal for the tunnel instead of a fixed sleep, it
-# can lag on a loaded box (6.137). frp v0.69.1 logs "[<proxy>] start proxy success" once frps
+# can lag on a loaded box (6.137). frp v0.72.0 logs "[<proxy>] start proxy success" once frps
 # took the proxy (client/control.go).
 proxy_started() {
   local journal

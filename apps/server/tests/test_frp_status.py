@@ -233,11 +233,11 @@ def _list(*proxies: dict) -> bytes:
     return json.dumps({"proxies": list(proxies)}).encode()
 
 
-# A proxy as frps 0.69.1 lists it (ProxyStatsInfo), conf included, which the view leaves out.
+# A proxy as frps 0.72.0 lists it (ProxyStatsInfo), conf included, which the view leaves out.
 _PROXY = {
     "name": "srv1.sup-ssh",
     "conf": {"name": "srv1.sup-ssh", "type": "stcp"},
-    "clientVersion": "0.69.1",
+    "clientVersion": "0.72.0",
     "todayTrafficIn": 1024,
     "todayTrafficOut": 2048,
     "curConns": 2,
@@ -271,7 +271,7 @@ def test_status_without_dashboard_url_reads_the_supervisor_files(
                 "type": "stcp",
                 "status": "online",
                 "curConns": 2,
-                "clientVersion": "0.69.1",
+                "clientVersion": "0.72.0",
                 "todayTrafficIn": 1024,
                 "todayTrafficOut": 2048,
                 "lastStartTime": "10-18 07:00:00",
