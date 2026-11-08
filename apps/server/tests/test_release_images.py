@@ -50,7 +50,10 @@ _FRPS_DOCKERFILE = "apps/frps/Dockerfile"
 _GATEWAY_DOCKERFILE = "apps/gateway/Dockerfile"
 _SUPERVISOR = "apps/frps/frps-supervisor.sh"
 _GHCR = re.compile(r"ghcr\.io/admincave/adminhelper/([a-z-]+):")
-_FRPS_BASE = re.compile(r"^FROM (snowdreamtech/frps:(\d+\.\d+\.\d+)@sha256:[0-9a-f]{64})$", re.M)
+# snowdreamtech tags newer releases only as <version>-alpine or <version>-debian (no plain 0.72.0).
+_FRPS_BASE = re.compile(
+    r"^FROM (snowdreamtech/frps:(\d+\.\d+\.\d+)(?:-alpine)?@sha256:[0-9a-f]{64})$", re.M
+)
 # What the lockstep step of frp-consistency reads.
 _PINNED = (
     ".github/workflows/ci.yml",
@@ -130,7 +133,7 @@ def _published() -> set[str]:
 
 def _frps_base() -> re.Match:
     base = _FRPS_BASE.search((_ROOT / _FRPS_DOCKERFILE).read_text(encoding="utf-8"))
-    assert base, f"{_FRPS_DOCKERFILE}: FROM snowdreamtech/frps:<version>@sha256:<digest>"
+    assert base, f"{_FRPS_DOCKERFILE}: FROM snowdreamtech/frps:<version>[-alpine]@sha256:<digest>"
     return base
 
 
@@ -413,7 +416,7 @@ def test_the_lockstep_job_reads_the_frp_version_of_the_frps_image(tmp_path):
 def test_the_lockstep_job_fails_when_the_frps_image_moves_alone(tmp_path):
     base = _frps_base()
     dockerfile = (_ROOT / _FRPS_DOCKERFILE).read_text(encoding="utf-8")
-    moved = dockerfile.replace(base[1], base[1].replace(f":{base[2]}@", ":0.0.1@"))
+    moved = dockerfile.replace(base[1], base[1].replace(f":{base[2]}", ":0.0.1", 1))
     assert moved != dockerfile
 
     result = _lockstep(tmp_path, moved)

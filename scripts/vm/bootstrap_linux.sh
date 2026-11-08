@@ -14,8 +14,8 @@
 
 set -euo pipefail
 
-FRP_VERSION="${AH_FRP_VERSION:-0.69.1}"
-FRP_SHA256_LINUX_AMD64="7be257b72dbbc60bcb3e0e25a5afd1dfac7b63f897084864d3c956dd3d5674e1"
+FRP_VERSION="${AH_FRP_VERSION:-0.72.0}"
+FRP_SHA256_LINUX_AMD64="daf719b32ca2778770bb92955e231a07414d754378b9af328aa2642862479804"
 GO_VERSION="${AH_GO_VERSION:-1.27.2}"
 # Pin the Go tarball checksum like the frpc one (consistency) — the official sha256
 # from go.dev's release JSON; override alongside a non-default GO_VERSION (4.123).

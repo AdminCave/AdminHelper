@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-FROM snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a
+FROM snowdreamtech/frps:0.72.0-alpine@sha256:bd1b1475d211f5349dfa496c82185ee3bf96baa7b480d1db13914df0f765e9a2
 
 # frps under a supervisor that starts it only from a checked copy of the configuration the
 # server writes (see frps-supervisor.sh). The supervisor reads frps.toml from /etc/frp, which
