@@ -14,6 +14,7 @@
 //   4. Add/adjust the function here
 
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { fromIpc } from '$lib/utils/errors';
 import type {
   AnsibleTarget,
@@ -429,6 +430,11 @@ export function rdpSessionScreenshot(sessionId: string): Promise<boolean> {
 
 export function rdpSessionInfo(sessionId: string): Promise<RdpSessionInfo> {
   return invoke<RdpSessionInfo>('rdp_session_info', { sessionId });
+}
+
+// The main window in or out of full screen, for an RDP tab shown full screen (R-1100).
+export function setFullscreen(on: boolean): Promise<void> {
+  return getCurrentWindow().setFullscreen(on);
 }
 
 // Pins the fingerprint the user confirmed for `identity`; the session then starts again.

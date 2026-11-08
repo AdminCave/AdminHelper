@@ -114,3 +114,25 @@ fn a_detached_window_may_call_the_terminal_of_its_session_and_the_settings_only(
         ])
     );
 }
+
+// Beyond the commands and core:default, main may put its window in full screen and nothing else
+// (an RDP tab in full screen, R-1100); a detached terminal window may not.
+#[test]
+fn only_the_main_window_may_go_full_screen() {
+    let main = capability(include_str!("../capabilities/default.json"));
+    let others: BTreeSet<String> = strings(&main, "permissions")
+        .into_iter()
+        .filter(|permission| !permission.starts_with("allow-"))
+        .collect();
+    assert_eq!(
+        others,
+        BTreeSet::from([
+            "core:default".to_string(),
+            "core:window:allow-set-fullscreen".to_string(),
+            "dialog:allow-save".to_string(),
+            "notification:default".to_string(),
+        ])
+    );
+    let detached = capability(include_str!("../capabilities/terminal-window.json"));
+    assert!(!strings(&detached, "permissions").contains("core:window:allow-set-fullscreen"));
+}

@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     Camera,
     Gauge,
     Keyboard,
+    Minimize,
     MonitorOff,
     Power,
     RotateCw,
@@ -58,6 +59,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     setRdpPerformance,
     setRdpScaling,
     setRdpWindow,
+    terminals,
     trustRdpCertificate,
     type TerminalSession,
   } from '$lib/stores/terminals';
@@ -142,12 +144,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdp.window ?? rdpOptions?.windowMode ?? $settings?.rdpWindowMode ?? 'fit',
   );
   let layout = $derived(layoutOf(windowMode));
+  // Full screen lays the desktop out as fit, over the whole window in full screen.
+  let fullscreen = $derived(windowMode === 'fullscreen');
   let scaling = $derived<RdpScalingMode>(
     rdp.scaling ?? rdpOptions?.scalingMode ?? $settings?.rdpScalingMode ?? 'auto',
   );
   let customSize = $derived(rdpOptions?.customSize ?? $settings?.rdpCustomSize ?? null);
   let layouts = $derived(
-    (['fit', 'custom'] as const).map((value) => ({
+    (['fit', 'fullscreen', 'custom'] as const).map((value) => ({
       value,
       label: $t(`settings.rdp.window.${value}`),
     })),
@@ -197,6 +201,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
     void [layout, scaling, customSize];
     untrack(report);
   });
+
+  // Hidden tabs stay mounted: only the shown one may hold the window in full screen.
+  let shown = $derived($terminals.active === session.key);
+
+  // The window follows the tab into full screen and back, also when the tab goes or hides. A
+  // window that cannot go full screen leaves the tab fitted, or the overlay would hide the error.
+  $effect(() => {
+    if (!fullscreen || !shown) return;
+    bridge.setFullscreen(true).catch((err) => {
+      reportError(errMsg(err));
+      setRdpWindow(session.key, 'fit');
+    });
+    return () => {
+      bridge.setFullscreen(false).catch((err) => reportError(errMsg(err)));
+    };
+  });
+
+  // With the keyboard released (Ctrl+Alt+Home), F11 leaves full screen; grabbed, it is the
+  // server's.
+  function onwindowkeydown(e: KeyboardEvent): void {
+    if (!fullscreen || !shown || grabbed || e.code !== 'F11') return;
+    e.preventDefault();
+    setRdpWindow(session.key, 'fit');
+  }
 
   function zoomBy(step: number): void {
     zoom = clampZoom((zoom === 'fit' ? 100 : zoom) + step);
@@ -322,7 +350,41 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 </script>
 
-<div class="rdp">
+<svelte:window onkeydown={onwindowkeydown} />
+
+<div class="rdp" class:fullscreen>
+  {#if fullscreen}
+    <!-- Esc belongs to the server: the way back is this bar, shown on hover at the top edge. -->
+    <div class="rdp-edge">
+      <div class="rdp-float" role="toolbar" aria-label={$t('settings.rdp.window.fullscreen')}>
+        <span class="rdp-target">{target}</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          iconLeft={Keyboard}
+          disabled={!connected}
+          onclick={() => send({ t: 'cad' })}
+        >
+          {$t('rdp.cad')}
+        </Button>
+        <IconButton
+          size="sm"
+          icon={Power}
+          label={$t('rdp.disconnect')}
+          disabled={rdp.sessionId === null}
+          onclick={() => disconnectRdp(session.key)}
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          iconLeft={Minimize}
+          onclick={() => setRdpWindow(session.key, 'fit')}
+        >
+          {$t('rdp.fullscreen.leave')}
+        </Button>
+      </div>
+    </div>
+  {/if}
   <header class="rdp-head">
     <Dot st={session.status} ring label={statusText} />
     <span class="rdp-target">{target}</span>
@@ -383,7 +445,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <Select
       id="rdp-window-{session.key}"
       size="sm"
-      value={layout}
+      value={fullscreen ? 'fullscreen' : layout}
       options={layouts}
       onChange={(v) => setRdpWindow(session.key, v as RdpWindowMode)}
     />
@@ -486,52 +548,56 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {$t('rdp.releaseKeyboard')}
     </span>
   </footer>
+
+  <!-- Inside the tab: in full screen it lies over everything else of the window. -->
+  <Modal
+    open={rdp.phase === 'certificate' && rdp.certificate !== null && !certificateLater}
+    title={$t('rdp.certificate.title')}
+    onClose={() => (certificateLater = true)}
+  >
+    {#if rdp.certificate}
+      <p>
+        {rdp.certificate.reason === 'changed'
+          ? $t('rdp.certificate.changed', { host: session.connection.host ?? '' })
+          : $t('rdp.certificate.unknown', { host: session.connection.host ?? '' })}
+      </p>
+      <p class="rdp-label">{$t('rdp.certificate.fingerprint')}</p>
+      <code class="rdp-fingerprint">{rdp.certificate.fingerprint}</code>
+    {/if}
+    {#snippet footer()}
+      <Button variant="secondary" onclick={() => (certificateLater = true)}>
+        {$t('rdp.certificate.cancel')}
+      </Button>
+      <Button
+        variant={rdp.certificate?.reason === 'changed' ? 'danger' : 'primary'}
+        onclick={trust}
+      >
+        {$t('rdp.certificate.trust')}
+      </Button>
+    {/snippet}
+  </Modal>
+
+  <Modal open={info !== null} title={$t('rdp.info')} onClose={() => (info = null)}>
+    {#if info}
+      <dl class="rdp-info">
+        <dt>{$t('rdp.info.target')}</dt>
+        <dd>{info.target}</dd>
+        <dt>{$t('rdp.info.tunnel')}</dt>
+        <dd>{info.via_tunnel ? (info.tunnel ?? $t('rdp.info.yes')) : $t('rdp.info.no')}</dd>
+        <dt>{$t('rdp.info.nla')}</dt>
+        <dd>{info.credssp ? $t('rdp.info.yes') : $t('rdp.info.no')}</dd>
+        <dt>{$t('rdp.info.certificate')}</dt>
+        <dd>
+          {info.certificate === 'pinned' ? $t('rdp.info.pinned') : $t('rdp.info.trustAll')}
+        </dd>
+        {#if info.fingerprint}
+          <dt>{$t('rdp.certificate.fingerprint')}</dt>
+          <dd><code class="rdp-fingerprint">{info.fingerprint}</code></dd>
+        {/if}
+      </dl>
+    {/if}
+  </Modal>
 </div>
-
-<Modal
-  open={rdp.phase === 'certificate' && rdp.certificate !== null && !certificateLater}
-  title={$t('rdp.certificate.title')}
-  onClose={() => (certificateLater = true)}
->
-  {#if rdp.certificate}
-    <p>
-      {rdp.certificate.reason === 'changed'
-        ? $t('rdp.certificate.changed', { host: session.connection.host ?? '' })
-        : $t('rdp.certificate.unknown', { host: session.connection.host ?? '' })}
-    </p>
-    <p class="rdp-label">{$t('rdp.certificate.fingerprint')}</p>
-    <code class="rdp-fingerprint">{rdp.certificate.fingerprint}</code>
-  {/if}
-  {#snippet footer()}
-    <Button variant="secondary" onclick={() => (certificateLater = true)}>
-      {$t('rdp.certificate.cancel')}
-    </Button>
-    <Button variant={rdp.certificate?.reason === 'changed' ? 'danger' : 'primary'} onclick={trust}>
-      {$t('rdp.certificate.trust')}
-    </Button>
-  {/snippet}
-</Modal>
-
-<Modal open={info !== null} title={$t('rdp.info')} onClose={() => (info = null)}>
-  {#if info}
-    <dl class="rdp-info">
-      <dt>{$t('rdp.info.target')}</dt>
-      <dd>{info.target}</dd>
-      <dt>{$t('rdp.info.tunnel')}</dt>
-      <dd>{info.via_tunnel ? (info.tunnel ?? $t('rdp.info.yes')) : $t('rdp.info.no')}</dd>
-      <dt>{$t('rdp.info.nla')}</dt>
-      <dd>{info.credssp ? $t('rdp.info.yes') : $t('rdp.info.no')}</dd>
-      <dt>{$t('rdp.info.certificate')}</dt>
-      <dd>
-        {info.certificate === 'pinned' ? $t('rdp.info.pinned') : $t('rdp.info.trustAll')}
-      </dd>
-      {#if info.fingerprint}
-        <dt>{$t('rdp.certificate.fingerprint')}</dt>
-        <dd><code class="rdp-fingerprint">{info.fingerprint}</code></dd>
-      {/if}
-    </dl>
-  {/if}
-</Modal>
 
 <style>
   .rdp {
@@ -540,6 +606,42 @@ SPDX-License-Identifier: GPL-3.0-or-later
     height: 100%;
     min-height: 0;
     background: var(--bg);
+  }
+  /* Over the whole window, which is in full screen: the app around the tab is not seen. */
+  .rdp.fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+  }
+  .rdp.fullscreen .rdp-head,
+  .rdp.fullscreen .rdp-bar,
+  .rdp.fullscreen .rdp-foot {
+    display: none;
+  }
+  .rdp-edge {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    z-index: 1;
+    transform: translateX(-50%);
+    padding-bottom: 12px;
+  }
+  .rdp-float {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    background: var(--bg-subtle);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+    transform: translateY(calc(-100% + 4px));
+    transition: transform 0.15s ease;
+  }
+  .rdp-edge:hover .rdp-float,
+  .rdp-float:focus-within {
+    transform: none;
   }
   .rdp-head {
     display: flex;

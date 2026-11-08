@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T12
 Abhängt von: T2
 
-### T4 — R-1100: Vollbild mit Leiste  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/src/capabilities.rs, apps/desktop/ui/src/components/terminal/RdpSession.svelte, apps/desktop/ui/src/components/terminal/RdpSession.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T4 — R-1100: Vollbild mit Leiste  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/src/capabilities.rs, apps/desktop/ui/src/components/terminal/RdpSession.svelte, apps/desktop/ui/src/components/terminal/RdpSession.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/bridge/index.ts
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @04f636037 2026-11-08T21:56:40+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T4.verdict.json)
 Änderung: *Vollbild* setzt das Fenster per `setFullscreen` in den Vollbildmodus (Recht `core:window:allow-set-fullscreen` für main, Test in `capabilities.rs`). Eine Leiste blendet am oberen Rand beim Darüberfahren ein und führt mit Trennen, Strg+Alt+Entf und *Vollbild verlassen* zurück. Die Auflösung folgt dem Bildschirm, wie bei *Eingepasst*. Esc bleibt beim Server; zurück geht es über die Leiste oder Strg+Alt+Pos1 und dann F11. Tests: Ein- und Ausstieg, die Leiste, das Recht.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T12
@@ -100,3 +102,4 @@ Task-Review: am Ende
 - 2026-11-08: Ein Resize, der nur den Skalierungsfaktor ändert, gilt im Fork sofort als abgeschlossen (die Bildgröße bleibt); angenommen (Prüfer-Nit T1).
 - 2026-11-08 (T2): Der Live-Test `xrdp_live_session` überspringt in der Ruhefrist QUIET Textnachrichten (Stats, jede Sekunde); nur ein Bild ohne Quittung ist ein Fehler. Vorher fiel er, sobald Stats in die 2 s fielen (lokal rot, passt zu R-1195); die Prüfung bleibt für Bilder gleich streng.
 - 2026-11-08 (T3): Skalierung *Auto* = physische Pixel bei `scaleOf(devicePixelRatio)` (25er-Stufen, 100–500), *100 %* = CSS-Pixel bei 100, *HiDPI* = physische Pixel bei mindestens 175 (angelehnt an `/scale:180` des OS-Clients). Zoom 100 % = 1:1 je Gerätepixel. Vollbild und Multi-Monitor verhalten sich bis T4 wie *Eingepasst*. Die Mathematik liegt im neuen `lib/rdp/display.ts` statt in `renderer.ts` (dort ungetestet, weil die Tab-Tests den Renderer mocken); `renderer.ts` und `input.ts` bleiben unverändert, die Koordinaten folgen Zoom und Bildlauf über das Canvas-Rechteck. Der Start nimmt `run.display`; was der Tab danach bis zum Öffnen des Sockets misst, schickt er beim Öffnen (`FrameHandlers.opened`, Prüfer T3). `rdp_custom_size` wird im UI auf 8192 je Seite gekappt (Rust liest u16).
+- 2026-11-08 (T4): Vollbild deckt mit `position: fixed` das ganze Fenster; die Dialoge des Tabs (Zertifikat, Info) liegen deshalb im Tab-Container, sonst wären sie im Vollbild verdeckt (Prüfer T4). Die übrigen App-Dialoge und die Statusleiste bleiben im Vollbild unsichtbar; scheitert `setFullscreen`, fällt der Tab auf *Eingepasst* zurück, damit der Fehler zu sehen ist. Nur der angezeigte Tab hält das Fenster im Vollbild (verdeckte Tabs bleiben gemountet). F11 verlässt das Vollbild nur bei freigegebener Tastatur, sonst geht es an den Server. Ein Wechsel von `devicePixelRatio` allein löst keinen neuen `size` aus (bekannt, nicht in diesem Zug).

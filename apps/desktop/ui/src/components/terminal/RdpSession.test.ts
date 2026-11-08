@@ -49,23 +49,29 @@ const h = vi.hoisted(() => {
     box: { width: 0, height: 0 },
     rdpSessionScreenshot: vi.fn(async () => true),
     rdpSessionInfo: vi.fn(),
+    setFullscreen: vi.fn(async () => {}),
     reportError: vi.fn(),
   };
 });
 
 vi.mock('$lib/rdp/frameSocket', () => ({ FrameSocket: h.FakeSocket }));
-vi.mock('$lib/rdp/renderer', () => ({
+vi.mock('$lib/rdp/renderer', async (original) => ({
+  ...(await original<typeof import('$lib/rdp/renderer')>()),
   createRenderer: () => ({ kind: '2d', draw: h.draw, destroy: vi.fn() }),
 }));
-vi.mock('$lib/stores/terminals', () => ({
-  disconnectRdp: h.disconnectRdp,
-  reconnectRdp: h.reconnectRdp,
-  setRdpPerformance: h.setRdpPerformance,
-  setRdpDisplay: h.setRdpDisplay,
-  setRdpWindow: h.setRdpWindow,
-  setRdpScaling: h.setRdpScaling,
-  trustRdpCertificate: h.trustRdpCertificate,
-}));
+vi.mock('$lib/stores/terminals', async () => {
+  const { writable } = await import('svelte/store');
+  return {
+    terminals: writable({ sessions: [], active: 'terminal-1' }),
+    disconnectRdp: h.disconnectRdp,
+    reconnectRdp: h.reconnectRdp,
+    setRdpPerformance: h.setRdpPerformance,
+    setRdpDisplay: h.setRdpDisplay,
+    setRdpWindow: h.setRdpWindow,
+    setRdpScaling: h.setRdpScaling,
+    trustRdpCertificate: h.trustRdpCertificate,
+  };
+});
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return { settings: writable(null) };
@@ -73,6 +79,7 @@ vi.mock('$lib/stores/session', async () => {
 vi.mock('$lib/bridge', () => ({
   rdpSessionScreenshot: h.rdpSessionScreenshot,
   rdpSessionInfo: h.rdpSessionInfo,
+  setFullscreen: h.setFullscreen,
 }));
 vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/stores/tunnel', async () => {
@@ -81,9 +88,11 @@ vi.mock('$lib/stores/tunnel', async () => {
 });
 
 import { settings as settingsStore } from '$lib/stores/session';
+import { terminals as terminalsStore } from '$lib/stores/terminals';
 import RdpSession from './RdpSession.svelte';
 
 const settings = settingsStore as unknown as Writable<Partial<Settings> | null>;
+const terminals = terminalsStore as unknown as Writable<{ sessions: []; active: string }>;
 
 const CONN = {
   id: 'r1',
@@ -140,6 +149,7 @@ const foot = (container: HTMLElement) => container.querySelector('.rdp-foot')!.t
 beforeAll(() => setLanguage('en'));
 
 beforeEach(() => {
+  terminals.set({ sessions: [], active: KEY });
   vi.clearAllMocks();
   h.FakeSocket.all = [];
   h.resized = [];
@@ -389,6 +399,83 @@ describe('RdpSession (R-1098)', () => {
     expect(socket.sent).toEqual([]);
     socket.handlers.opened();
     expect(socket.sent).toEqual([{ t: 'size', w: 1600, h: 900, scale: 100 }]);
+  });
+
+  it('shows the desktop full screen with a bar at the top edge, and leaves it from there', async () => {
+    settings.set({ rdpWindowMode: 'fullscreen' });
+    const { container, rerender } = mount();
+    expect(h.setFullscreen).toHaveBeenCalledExactlyOnceWith(true);
+    expect(container.querySelector('.rdp')!.classList.contains('fullscreen')).toBe(true);
+    expect(select(container, 'window').value).toBe('fullscreen');
+    // Full screen follows the screen as fit does.
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, { width: 1000, height: 600, scale: 100 });
+
+    const bar = within(screen.getByRole('toolbar', { name: 'Fullscreen' }));
+    await fireEvent.click(bar.getByRole('button', { name: 'Ctrl+Alt+Del' }));
+    expect(h.FakeSocket.all[0].sent.at(-1)).toEqual({ t: 'cad' });
+    await fireEvent.click(bar.getByRole('button', { name: 'Disconnect' }));
+    expect(h.disconnectRdp).toHaveBeenCalledWith(KEY);
+    await fireEvent.click(bar.getByRole('button', { name: 'Exit full screen' }));
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fit');
+
+    await rerender({ session: session(view({ window: 'fit' })) });
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('.rdp')!.classList.contains('fullscreen')).toBe(false);
+    expect(screen.queryByRole('toolbar')).toBeNull();
+  });
+
+  it('chooses full screen for this tab, and the window leaves it when the tab goes', async () => {
+    const { container, rerender, unmount } = mount();
+    expect(h.setFullscreen).not.toHaveBeenCalled();
+    const window = select(container, 'window');
+    window.value = 'fullscreen';
+    await fireEvent.change(window);
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fullscreen');
+    await rerender({ session: session(view({ window: 'fullscreen' })) });
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(true);
+    unmount();
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(false);
+  });
+
+  it('reports a window that cannot go full screen and fits the tab, so the error shows', async () => {
+    h.setFullscreen.mockRejectedValueOnce(new Error('not allowed'));
+    mount(view({ window: 'fullscreen' }));
+    await vi.waitFor(() => expect(h.reportError).toHaveBeenCalledWith('not allowed'));
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fit');
+  });
+
+  it('leaves full screen with F11 once the keyboard is released, not while it is grabbed', async () => {
+    const { container } = mount(view({ window: 'fullscreen' }));
+    await fireEvent.keyDown(window, { code: 'F11' });
+    expect(h.setRdpWindow).toHaveBeenCalledExactlyOnceWith(KEY, 'fit');
+
+    h.setRdpWindow.mockClear();
+    await fireEvent.pointerDown(container.querySelector('canvas')!);
+    expect(container.querySelector('.rdp-view')!.classList.contains('grabbed')).toBe(true);
+    await fireEvent.keyDown(container.querySelector('.rdp-view')!, { code: 'F11' });
+    expect(h.setRdpWindow).not.toHaveBeenCalled();
+  });
+
+  it('asks for the certificate inside the full-screen tab, where the dialog can be seen', () => {
+    const certificate = {
+      identity: 'win.example:3390',
+      fingerprint: 'ab:cd',
+      reason: 'unknown',
+    } as const;
+    const { container } = mount(view({ window: 'fullscreen', phase: 'certificate', certificate }));
+    const dialog = screen.getByRole('dialog');
+    expect(container.querySelector('.rdp.fullscreen')!.contains(dialog)).toBe(true);
+  });
+
+  it('lets only the shown tab hold the window in full screen', async () => {
+    mount(view({ window: 'fullscreen' }));
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(true);
+    terminals.set({ sessions: [], active: 'terminal-2' });
+    await tick();
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(false);
+    terminals.set({ sessions: [], active: KEY });
+    await tick();
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(true);
   });
 
   it('keeps the socket of the session while its phase changes', async () => {
