@@ -323,3 +323,55 @@ export interface SftpTransfer {
   done: number;
   total: number;
 }
+
+// ─────────────────────────── Embedded RDP ─────────────────────────
+// The session types are pub(crate) in rdp_embedded/ and outside the parity scan; their fields
+// stay snake_case on the wire, as Rust names them.
+
+// Where the picture of a started session comes from: the session's local WebSocket and the
+// token it wants as the first message. `drive_unavailable`: the options ask for a drive, the
+// session shares none.
+export interface RdpStarted {
+  session_id: string;
+  ws_port: number;
+  token: string;
+  notice?: 'drive_unavailable';
+}
+
+export type RdpPhase =
+  'connecting' | 'connected' | 'reconnecting' | 'certificate' | 'disconnected' | 'failed';
+
+// Why a session ended, with the `disconnected` and `failed` phases.
+export type RdpEndCode =
+  | 'tls'
+  | 'auth'
+  | 'logon'
+  | 'watchdog'
+  | 'redirect'
+  | 'panic'
+  | 'connect'
+  | 'closed'
+  | 'server'
+  | 'network';
+
+// The event `rdp-session`. `certificate` carries the pin identity, the server's fingerprint and
+// whether no pin exists yet (`unknown`) or the pin differs (`changed`).
+export interface RdpPhaseEvent {
+  session_id: string;
+  phase: RdpPhase;
+  code?: RdpEndCode;
+  identity?: string;
+  fingerprint?: string;
+  reason?: 'unknown' | 'changed';
+}
+
+// What a running session connected to: the stored `host:port`, the tunnel that carries it and
+// how the certificate is checked.
+export interface RdpSessionInfo {
+  target: string;
+  via_tunnel: boolean;
+  tunnel?: string;
+  credssp: boolean;
+  certificate: 'pinned' | 'trust_all';
+  fingerprint?: string;
+}

@@ -25,6 +25,8 @@ import type {
   HttpMethod,
   PasswordState,
   ProbeTarget,
+  RdpSessionInfo,
+  RdpStarted,
   ResetOutcome,
   ResolvedConnection,
   Settings,
@@ -396,6 +398,31 @@ export function terminalDetach(id: number, title: string): Promise<void> {
 // Closes the window of session `id`; main hears `terminal-docked`.
 export function terminalDock(id: number): Promise<void> {
   return invoke('terminal_dock', { id });
+}
+
+// ─────────────────────────── Embedded RDP ─────────────────────────
+
+// Starts an embedded session; its phases follow as `rdp-session` events, so listen first.
+export function rdpSessionStart(connection: Connection): Promise<RdpStarted> {
+  return invoke<RdpStarted>('rdp_session_start', { connection });
+}
+
+export function rdpSessionStop(sessionId: string): Promise<void> {
+  return invoke('rdp_session_stop', { sessionId });
+}
+
+// Saves the desktop as a PNG where the user chooses; false once the dialog is cancelled.
+export function rdpSessionScreenshot(sessionId: string): Promise<boolean> {
+  return invoke<boolean>('rdp_session_screenshot', { sessionId });
+}
+
+export function rdpSessionInfo(sessionId: string): Promise<RdpSessionInfo> {
+  return invoke<RdpSessionInfo>('rdp_session_info', { sessionId });
+}
+
+// Pins the fingerprint the user confirmed for `identity`; the session then starts again.
+export function rdpTrustCertificate(identity: string, fingerprint: string): Promise<void> {
+  return invoke('rdp_trust_certificate', { identity, fingerprint });
 }
 
 // ─────────────────────────── Password keychain ───────────────────

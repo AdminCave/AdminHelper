@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/kern-rdp-1/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T8
 
-### T4 — R-1098: UI-Bibliothek der Sitzung — WebSocket, Renderer, Tastatur, Maus  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/rdp/frameSocket.ts, apps/desktop/ui/src/lib/rdp/frameSocket.test.ts, apps/desktop/ui/src/lib/rdp/renderer.ts, apps/desktop/ui/src/lib/rdp/renderer.test.ts, apps/desktop/ui/src/lib/rdp/input.ts, apps/desktop/ui/src/lib/rdp/input.test.ts, apps/desktop/ui/src/lib/bridge/index.ts
+### T4 — R-1098: UI-Bibliothek der Sitzung — WebSocket, Renderer, Tastatur, Maus  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/rdp/frameSocket.ts, apps/desktop/ui/src/lib/rdp/frameSocket.test.ts, apps/desktop/ui/src/lib/rdp/renderer.ts, apps/desktop/ui/src/lib/rdp/renderer.test.ts, apps/desktop/ui/src/lib/rdp/input.ts, apps/desktop/ui/src/lib/rdp/input.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/ipc.inventory.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e469a5618 2026-11-08T17:01:07+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T4.verdict.json)
 Änderung: Neue Dateien mit SPDX-Header. Frame-Client (Token als erste Nachricht, 14-Byte-Kopf lesen, `ack` je Bild, Statistik-Nachrichten, Schließen); Renderer mit WebGL-Textur und 2d-Rückfall, eingepasst mit Seitenverhältnis; `KeyboardEvent.code` → Set-1-Scancode mit E0, Maus in Desktop-Koordinaten, Rad; Tastatur-Fang mit Freigabe durch Strg+Alt+Pos1 und bei Fokusverlust; Bridge-Aufrufe der Befehle. Unit-Tests je Modul (Kopf, Gegendruck, Abbildungstabelle, Koordinaten bei Einpassung, Fang/Freigabe).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T8
@@ -80,3 +82,6 @@ Abhängt von: T2
 - 2026-11-08 T2: fps zählt die Bilder, die der Frame-WebSocket je Sekunde an die Webview schickt; keine Statistik vor dem ersten Bild; eine Neuverbindung (Watchdog oder IronRDP) setzt RTT und Bandbreite zurück, Auflösung bleibt bis zum nächsten Bild
 - 2026-11-08 T2: Leistungsprofil `Auto` wie `Lan`; das eigene Profil der Verbindung vor dem der Einstellungen (wie `RdpOptions::with_overrides`)
 - 2026-11-08 T2: Verbindungsinfo: Ziel `host:port` der gespeicherten Verbindung, Tunnel ja/nein mit Name, CredSSP, Zertifikat `pinned`/`trust_all`, Fingerprint = der Pin (bei `trust_all` keiner); Screenshot = PNG des ganzen Desktops zum Zeitpunkt des Aufrufs, Standardname `rdp-<jjjjmmtt-hhmmss>.png`
+- 2026-11-08 T4: Die Canvas hat die Desktopgröße und wird per CSS `object-fit: contain` eingepasst; `toDesktop` rechnet über `fitRect` zurück, Punkte in den Balken landen am Rand
+- 2026-11-08 T4: Auch ein unlesbares Bild wird quittiert, sonst hielte der Gegendruck des Servers die Sitzung an; ein Rad-Ereignis ist eine Raste (±120), Pause hat keinen einfachen Set-1-Code und wird nicht gesendet
+- 2026-11-08 T4: Der IPC-Inventartest liest Befehle jetzt auch aus `rdp_embedded/` und nimmt Pfade in `generate_handler!` mit ihrem letzten Segment; bisher fielen die RDP-Befehle aus dem Abgleich. Die Befehlstabelle der Entwicklerdoku nennt dafür `rdp_session_screenshot` und `rdp_session_info` (die Beschreibung zieht T8 nach)
