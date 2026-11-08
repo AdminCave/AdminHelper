@@ -66,8 +66,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T8
 Abhängt von: T6
 
-### T8 — R-1098, R-1141: Doku DE+EN und Changelog  [ ]
+### T8 — R-1098, R-1141: Doku DE+EN und Changelog  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-rdp-1.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @572f51ba3 2026-11-08T19:08:05+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Eingebettetes RDP in `desktop.html` DE+EN (Pin immer, Fork-Revision, neue Befehle und WebSocket-Nachrichten, Tab statt „keine Oberfläche“); `admin/index.html` DE+EN (Einstellung *Client für RDP*, Bedienung des Tabs, Tastatur-Fang, Rückfall); Changelog-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-rdp-1.md
