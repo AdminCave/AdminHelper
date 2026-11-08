@@ -140,17 +140,19 @@ describe('FrameSocket', () => {
     ]);
   });
 
-  it('says close before closing, reports the end once and then stays quiet', () => {
+  it('closes without ending the session, reports the end once and then stays quiet', () => {
     const { socket, client, handlers } = connect();
     socket.onopen?.();
+    const before = socket.sent.length;
     client.close();
-    expect(socket.sent.at(-1)).toBe('{"t":"close"}');
+    // A view that goes (docking out, a closed window) leaves the session running.
+    expect(socket.sent.slice(before)).toEqual([]);
     expect(socket.closed).toBe(true);
     socket.onclose?.();
     expect(handlers.closed).toHaveBeenCalledTimes(1);
     client.send({ t: 'cad' });
     socket.receive(frameBytes([1, 0, 0, 1, 1, 8, 6], [0, 0, 0, 255]));
-    expect(socket.sent.at(-1)).toBe('{"t":"close"}');
+    expect(socket.sent.slice(before)).toEqual([]);
     expect(handlers.frame).not.toHaveBeenCalled();
   });
 

@@ -141,8 +141,9 @@ export class FrameSocket {
     if (this.open && !this.done) this.socket.send(JSON.stringify(input));
   }
 
+  // Closing lets go of the picture only, without `{"t":"close"}`: a view goes whenever its tab
+  // docks out or a window closes, and the session ends through `rdp_session_stop` alone.
   close(): void {
-    if (this.open && !this.done) this.socket.send('{"t":"close"}');
     this.socket.close();
     this.end();
   }
