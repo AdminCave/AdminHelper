@@ -32,7 +32,7 @@ use tokio::task::{JoinHandle, LocalSet};
 use tokio::time::MissedTickBehavior;
 use zeroize::Zeroizing;
 
-use super::frame_ws::{FrameServer, Frames, Input};
+use super::frame_ws::{FrameServer, Frames, Input, Tokens};
 use super::tofu::{validation_callback, CertPolicy, CertProblem, CertReport, CALLBACK_SCOPE};
 use super::watchdog::{Verdict, Watchdog};
 use crate::error::AppError;
@@ -850,17 +850,18 @@ async fn run(
     end
 }
 
-/// Starts a session on a thread of its own and returns the port and token of its WebSocket.
-/// `report` hears every phase; after the one that ends the session, the thread is gone.
+/// Starts a session on a thread of its own and returns the port of its WebSocket, the token of
+/// the first login and where the tokens of later ones come from. `report` hears every phase;
+/// after the one that ends the session, the thread is gone.
 pub(crate) fn spawn(
     target: Target,
     frames: Frames,
     stop: oneshot::Receiver<()>,
     report: impl Fn(Report) + Send + 'static,
-) -> Result<(u16, String), AppError> {
+) -> Result<(u16, String, Tokens), AppError> {
     let server = FrameServer::bind()?;
     let port = server.port()?;
-    let token = server.token().to_string();
+    let (token, tokens) = (server.token(), server.tokens());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -876,7 +877,7 @@ pub(crate) fn spawn(
             });
             report(end);
         })?;
-    Ok((port, token))
+    Ok((port, token, tokens))
 }
 
 #[cfg(test)]
@@ -1788,7 +1789,7 @@ mod tests {
         let (report, phases) = reports();
         let (stop_tx, stop) = oneshot::channel();
         let destination = Destination::from_parts("127.0.0.1", port);
-        let (ws_port, _) = spawn(
+        let (ws_port, _, _) = spawn(
             target(destination, CertPolicy::TrustAll),
             Frames::default(),
             stop,
@@ -1862,13 +1863,15 @@ mod tests {
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();
-                let (port, token) = spawn(target, Frames::default(), stop_rx, move |report| {
-                    let _ = sender.send(report);
-                })
-                .unwrap();
+                let (port, token, tokens) =
+                    spawn(target, Frames::default(), stop_rx, move |report| {
+                        let _ = sender.send(report);
+                    })
+                    .unwrap();
                 Session {
                     port,
                     token,
+                    tokens,
                     stop: Some(stop),
                     phases,
                 }
@@ -1878,6 +1881,7 @@ mod tests {
         struct Session {
             port: u16,
             token: String,
+            tokens: Tokens,
             stop: Option<oneshot::Sender<()>>,
             phases: UnboundedReceiver<Report>,
         }
@@ -2014,6 +2018,29 @@ mod tests {
                     "a resize ended in {phase:?}"
                 );
             }
+
+            // The client goes, the session stays; a new login gets the whole desktop (R-1101).
+            ws.close(None).await.unwrap();
+            drop(ws);
+            let token = session.tokens.renew().unwrap();
+            let mut ws = connect(session.port, &token).await;
+            let whole = async {
+                loop {
+                    match ws.next().await {
+                        Some(Ok(Message::Binary(frame))) => break frame,
+                        Some(Ok(Message::Text(_) | Message::Ping(_) | Message::Pong(_))) => {}
+                        other => panic!("expected a picture, got {other:?}"),
+                    }
+                }
+            };
+            let frame = timeout(Duration::from_secs(15), whole)
+                .await
+                .expect("no picture after the new login");
+            assert_eq!(header(&frame), [1, 0, 0, 1024, 768, 1024, 768]);
+            assert!(
+                session.phases.try_recv().is_err(),
+                "the client going away changed the phase"
+            );
 
             session.stop.take().unwrap().send(()).unwrap();
             assert_eq!(session.phase().await, Report::Disconnected(Code::Closed));

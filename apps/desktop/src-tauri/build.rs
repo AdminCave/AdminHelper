@@ -73,6 +73,7 @@ const COMMANDS: &[&str] = &[
     "rdp_session_stop",
     "rdp_session_screenshot",
     "rdp_session_info",
+    "rdp_session_attach",
 ];
 
 fn main() {

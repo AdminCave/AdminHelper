@@ -299,7 +299,8 @@ fn main() {
             rdp_embedded::rdp_session_start,
             rdp_embedded::rdp_session_stop,
             rdp_embedded::rdp_session_screenshot,
-            rdp_embedded::rdp_session_info
+            rdp_embedded::rdp_session_info,
+            rdp_embedded::rdp_session_attach
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

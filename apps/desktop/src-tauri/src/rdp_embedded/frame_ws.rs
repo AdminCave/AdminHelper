@@ -5,12 +5,15 @@
 //! The local WebSocket that carries the desktop picture to the webview and its input back
 //! (docs/features/arch-rdp-backend.md, "WebSocket-Protokoll").
 //!
-//! One server per session, on 127.0.0.1 with a port the system picks. The first client that
-//! sends the session's token as its first text message is the only one: the server stops
-//! listening once it has logged in. Pictures go out one at a time, the next after the client's
-//! `{"t":"ack"}`; whatever changes in between is merged into one enclosing rectangle, so no
-//! backlog builds up behind a slow webview. Once a second, while there is a picture, a text
-//! message `{"t":"stats",…}` tells how many pictures went out and what the server measured.
+//! One server per session, on 127.0.0.1 with a port the system picks, listening as long as the
+//! session lives. A client logs in with the session's token as its first text message; a login
+//! uses the token up, and `Tokens::renew` hands out the next one (R-1101). One client streams at a
+//! time: a new login takes over from the one before and gets the whole picture first, and a
+//! client that goes away leaves the session running. Pictures go out one at a time, the next
+//! after the client's `{"t":"ack"}`; whatever changes in between is merged into one enclosing
+//! rectangle, so no backlog builds up behind a slow webview. Once a second, while there is a
+//! picture, a text message `{"t":"stats",…}` tells how many pictures went out and what the
+//! server measured.
 
 use std::io;
 use std::net::Ipv4Addr;
@@ -35,6 +38,7 @@ const LOGIN_DEADLINE: Duration = Duration::from_secs(5);
 /// Logins that run side by side. Each ends at the deadline, so a local process that opens
 /// connections and stays silent holds back the webview's login by one deadline at most.
 const MAX_PENDING_LOGINS: usize = 8;
+const ACCEPT_BACKOFF: Duration = Duration::from_millis(50);
 /// The client sends the token and small JSON messages; anything larger is not ours.
 const MAX_CLIENT_MESSAGE: usize = 4096;
 const FRAME_VERSION: u16 = 1;
@@ -103,9 +107,53 @@ struct Stats {
     rtt_ms: Option<u32>,
 }
 
+/// The token that logs the next client in. A login uses it up; until `renew` hands out the next
+/// one, no further client gets in.
+#[derive(Clone)]
+pub(crate) struct Tokens(Arc<Mutex<Option<String>>>);
+
+impl Tokens {
+    fn new() -> io::Result<Self> {
+        Ok(Self(Arc::new(Mutex::new(Some(fresh_token()?)))))
+    }
+
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A fresh token for the next login; the one before, used or not, logs in no more.
+    pub(crate) fn renew(&self) -> io::Result<String> {
+        let token = fresh_token()?;
+        *self.slot() = Some(token.clone());
+        Ok(token)
+    }
+
+    /// Whether `presented` is the token; a match uses it up, so of logins that race with the
+    /// same token only one gets in.
+    fn redeem(&self, presented: &[u8]) -> bool {
+        let mut slot = self.slot();
+        let matches = slot
+            .as_deref()
+            .is_some_and(|token| same_token(token.as_bytes(), presented));
+        if matches {
+            *slot = None;
+        }
+        matches
+    }
+}
+
+fn fresh_token() -> io::Result<String> {
+    let mut bytes = [0u8; TOKEN_BYTES];
+    crate::tofu::ring_provider()
+        .secure_random
+        .fill(&mut bytes)
+        .map_err(|_| io::Error::other("no random bytes for the frame token"))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
 pub(crate) struct FrameServer {
     listener: std::net::TcpListener,
-    token: String,
+    tokens: Tokens,
     login_deadline: Duration,
     stats_every: Duration,
 }
@@ -115,15 +163,9 @@ impl FrameServer {
     pub(crate) fn bind() -> io::Result<Self> {
         let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         listener.set_nonblocking(true)?;
-        let mut bytes = [0u8; TOKEN_BYTES];
-        crate::tofu::ring_provider()
-            .secure_random
-            .fill(&mut bytes)
-            .map_err(|_| io::Error::other("no random bytes for the frame token"))?;
-        let token = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
         Ok(Self {
             listener,
-            token,
+            tokens: Tokens::new()?,
             login_deadline: LOGIN_DEADLINE,
             stats_every: STATS_EVERY,
         })
@@ -133,47 +175,78 @@ impl FrameServer {
         Ok(self.listener.local_addr()?.port())
     }
 
-    pub(crate) fn token(&self) -> &str {
-        &self.token
+    /// The token of the first login.
+    pub(crate) fn token(&self) -> String {
+        self.tokens.slot().clone().unwrap_or_default()
     }
 
-    /// Waits for the client, then streams `frames` to it and passes its input on, until the
-    /// client closes or goes away. Must run inside a tokio runtime.
+    /// Where the tokens of later logins come from.
+    pub(crate) fn tokens(&self) -> Tokens {
+        self.tokens.clone()
+    }
+
+    /// Streams `frames` to the client that logged in last and passes its input on, until a
+    /// client sends `close` or the session takes no more input. Must run inside a tokio runtime.
     pub(crate) async fn serve(self, frames: Frames, input: mpsc::Sender<Input>) -> io::Result<()> {
         let listener = TcpListener::from_std(self.listener)?;
         // A wrong token, or none in time, closes only that connection, and logins do not wait for
         // each other: a local process that connects first must not lock the webview out.
         let mut pending = JoinSet::new();
-        let ws = loop {
+        // At most one: the client that streams.
+        let mut client = JoinSet::new();
+        loop {
             tokio::select! {
                 accepted = listener.accept(), if pending.len() < MAX_PENDING_LOGINS => {
-                    let (tcp, _) = accepted?;
-                    let (token, deadline) = (self.token.clone(), self.login_deadline);
-                    pending.spawn(async move { timeout(deadline, login(tcp, &token)).await });
+                    // The listener lives as long as the session: a connection reset before
+                    // the accept or a full file table must not end it, so it keeps listening
+                    // and backs off a moment, since a full table fails again at once.
+                    let tcp = match accepted {
+                        Ok((tcp, _)) => tcp,
+                        Err(error) => {
+                            log::debug!("the RDP frame socket missed a connection: {error}");
+                            tokio::time::sleep(ACCEPT_BACKOFF).await;
+                            continue;
+                        }
+                    };
+                    let (tokens, deadline) = (self.tokens.clone(), self.login_deadline);
+                    pending.spawn(async move { timeout(deadline, login(tcp, &tokens)).await });
                 }
                 Some(done) = pending.join_next() => {
                     if let Ok(Ok(Some(ws))) = done {
-                        break ws;
+                        // The client before is gone before the whole picture is due, so it
+                        // cannot take that picture from the new one.
+                        client.shutdown().await;
+                        frames.refresh();
+                        let (frames, input) = (frames.clone(), input.clone());
+                        client.spawn(stream(ws, frames, input, self.stats_every));
+                    }
+                }
+                Some(done) = client.join_next() => {
+                    if matches!(done, Ok(Ended::Close)) || input.is_closed() {
+                        return Ok(());
                     }
                 }
             }
-        };
-        // One client per session: the other logins end here, and a later client finds the port
-        // closed.
-        drop(pending);
-        drop(listener);
-        stream(ws, frames, input, self.stats_every).await;
-        Ok(())
+        }
     }
 }
 
-async fn login(tcp: TcpStream, token: &str) -> Option<WebSocketStream<TcpStream>> {
+/// How a client's stream ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Ended {
+    /// The client sent `close`, which ends the session.
+    Close,
+    /// The client went away, or the session took no more input.
+    Gone,
+}
+
+async fn login(tcp: TcpStream, tokens: &Tokens) -> Option<WebSocketStream<TcpStream>> {
     let limits = WebSocketConfig::default()
         .max_message_size(Some(MAX_CLIENT_MESSAGE))
         .max_frame_size(Some(MAX_CLIENT_MESSAGE));
     let mut ws = accept_async_with_config(tcp, Some(limits)).await.ok()?;
     match ws.next().await {
-        Some(Ok(Message::Text(text))) if same_token(token.as_bytes(), text.as_bytes()) => Some(ws),
+        Some(Ok(Message::Text(text))) if tokens.redeem(text.as_bytes()) => Some(ws),
         _ => {
             let _ = ws.close(None).await;
             None
@@ -198,7 +271,7 @@ async fn stream(
     frames: Frames,
     input: mpsc::Sender<Input>,
     stats_every: Duration,
-) {
+) -> Ended {
     // The first picture needs no receipt; every further one waits for the client's ack.
     let mut acked = true;
     let mut since = Instant::now();
@@ -209,7 +282,7 @@ async fn stream(
             () = frames.changed(), if acked => {
                 if let Some(frame) = frames.take_frame() {
                     if ws.send(Message::binary(frame)).await.is_err() {
-                        return;
+                        return Ended::Gone;
                     }
                     frames.sent();
                     acked = false;
@@ -220,14 +293,14 @@ async fn stream(
                 since = now;
                 if let Some(text) = frames.take_stats(elapsed) {
                     if ws.send(Message::text(text)).await.is_err() {
-                        return;
+                        return Ended::Gone;
                     }
                 }
             }
             message = ws.next() => {
                 let text = match message {
                     Some(Ok(Message::Text(text))) => text,
-                    Some(Ok(Message::Close(_)) | Err(_)) | None => return,
+                    Some(Ok(Message::Close(_)) | Err(_)) | None => return Ended::Gone,
                     Some(Ok(_)) => continue,
                 };
                 let event = match serde_json::from_str::<ClientMessage>(&text) {
@@ -254,8 +327,11 @@ async fn stream(
                     // Unknown or malformed: dropped, the session goes on.
                     Err(_) => continue,
                 };
-                if input.send(event).await.is_err() || event == Input::Close {
-                    return;
+                if input.send(event).await.is_err() {
+                    return Ended::Gone;
+                }
+                if event == Input::Close {
+                    return Ended::Close;
                 }
             }
         }
@@ -342,6 +418,16 @@ impl Frames {
             .unwrap_or_else(|e| e.into_inner())
             .dirty
             .is_some()
+    }
+
+    /// The next picture covers the whole desktop, for a client that has none of it yet.
+    fn refresh(&self) {
+        self.0
+            .buffer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .refresh();
+        self.0.changed.notify_one();
     }
 
     /// Returns once there is something to send. A notification without a change (its picture
@@ -463,6 +549,17 @@ impl Framebuffer {
         self.dirty = Some(self.dirty.map_or(region, |dirty| dirty.union(region)));
     }
 
+    fn refresh(&mut self) {
+        if self.width > 0 {
+            self.dirty = Some(Rect {
+                left: 0,
+                top: 0,
+                right: self.width - 1,
+                bottom: self.height - 1,
+            });
+        }
+    }
+
     fn take_frame(&mut self) -> Option<Vec<u8>> {
         let dirty = self.dirty.take()?;
         let row_len = usize::from(dirty.width());
@@ -545,6 +642,7 @@ mod tests {
     struct Running {
         port: u16,
         token: String,
+        tokens: Tokens,
         frames: Frames,
         input: mpsc::Receiver<Input>,
         task: JoinHandle<io::Result<()>>,
@@ -559,13 +657,14 @@ mod tests {
         let mut server = FrameServer::bind().unwrap();
         server.login_deadline = login_deadline;
         server.stats_every = stats_every;
-        let (port, token) = (server.port().unwrap(), server.token().to_string());
+        let (port, token, tokens) = (server.port().unwrap(), server.token(), server.tokens());
         let frames = Frames::default();
         let (sender, input) = mpsc::channel(16);
         let task = tokio::spawn(server.serve(frames.clone(), sender));
         Running {
             port,
             token,
+            tokens,
             frames,
             input,
             task,
@@ -573,8 +672,12 @@ mod tests {
     }
 
     async fn logged_in(running: &Running) -> Client {
+        with_token(running, &running.token).await
+    }
+
+    async fn with_token(running: &Running, token: &str) -> Client {
         let mut ws = connect(running.port).await;
-        ws.send(Message::text(running.token.clone())).await.unwrap();
+        ws.send(Message::text(token)).await.unwrap();
         ws
     }
 
@@ -683,15 +786,96 @@ mod tests {
         let mut ws = logged_in(&running).await;
         next_frame(&mut ws).await;
 
-        let refused = match TcpStream::connect((Ipv4Addr::LOCALHOST, running.port)).await {
-            Err(_) => true,
-            // A handshake that hangs means the port is still open: not refused.
-            Ok(tcp) => {
-                let url = format!("ws://127.0.0.1:{}/", running.port);
-                matches!(timeout(WAIT, client_async(url, tcp)).await, Ok(Err(_)))
-            }
-        };
-        assert!(refused, "a second client was not refused");
+        let mut second = logged_in(&running).await;
+        assert_closed(&mut second).await;
+
+        // The first client streams on.
+        running.frames.apply(update(4, 3, (1, 1, 1, 1), 0x00abcdef));
+        ack(&mut ws).await;
+        assert_eq!(header(&next_frame(&mut ws).await), [1, 1, 1, 1, 1, 4, 3]);
+    }
+
+    #[tokio::test]
+    async fn frame_ws_a_renewed_token_replaces_the_one_before() {
+        let running = start(LOGIN_DEADLINE);
+        running.frames.apply(update(4, 3, (0, 0, 3, 2), 0x00102030));
+        let renewed = running.tokens.renew().unwrap();
+        assert_ne!(renewed, running.token);
+        assert_eq!(renewed.len(), 2 * TOKEN_BYTES);
+
+        let mut old = logged_in(&running).await;
+        assert_closed(&mut old).await;
+        let mut ws = with_token(&running, &renewed).await;
+        assert_eq!(header(&next_frame(&mut ws).await), [1, 0, 0, 4, 3, 4, 3]);
+    }
+
+    #[tokio::test]
+    async fn frame_ws_the_session_outlives_its_client_and_a_new_one_gets_the_whole_picture() {
+        let mut running = start(LOGIN_DEADLINE);
+        running.frames.apply(update(8, 6, (0, 0, 7, 5), 0x00102030));
+        let mut ws = logged_in(&running).await;
+        next_frame(&mut ws).await;
+        running.frames.apply(update(8, 6, (2, 1, 4, 2), 0x00112233));
+        ack(&mut ws).await;
+        assert_eq!(header(&next_frame(&mut ws).await), [1, 2, 1, 3, 2, 8, 6]);
+
+        ws.close(None).await.unwrap();
+        drop(ws);
+        tokio::time::sleep(QUIET).await;
+        assert!(
+            !running.task.is_finished(),
+            "the server ended with its client"
+        );
+        assert!(
+            running.input.try_recv().is_err(),
+            "a client that went away sent input"
+        );
+
+        let token = running.tokens.renew().unwrap();
+        let mut back = with_token(&running, &token).await;
+        let frame = next_frame(&mut back).await;
+        assert_eq!(header(&frame), [1, 0, 0, 8, 6, 8, 6]);
+        let pixels: Vec<&[u8]> = frame[HEADER_LEN..].chunks(4).collect();
+        // (2, 1) in a desktop eight pixels wide carries the second update.
+        assert_eq!(pixels[8 + 2], rgba(0x00112233));
+        assert_eq!(pixels[0], rgba(0x00102030));
+
+        back.send(Message::text(r#"{"t":"cad"}"#)).await.unwrap();
+        assert_eq!(
+            timeout(WAIT, running.input.recv()).await.unwrap(),
+            Some(Input::CtrlAltDel)
+        );
+    }
+
+    #[tokio::test]
+    async fn frame_ws_a_new_login_takes_over_from_the_client() {
+        let mut running = start(LOGIN_DEADLINE);
+        running.frames.apply(update(4, 3, (0, 0, 3, 2), 0x00102030));
+        let mut first = logged_in(&running).await;
+        next_frame(&mut first).await;
+
+        let token = running.tokens.renew().unwrap();
+        let mut second = with_token(&running, &token).await;
+        // The new client gets the whole picture although the first one has it already.
+        assert_eq!(
+            header(&next_frame(&mut second).await),
+            [1, 0, 0, 4, 3, 4, 3]
+        );
+        assert_closed(&mut first).await;
+
+        second
+            .send(Message::text(r#"{"t":"close"}"#))
+            .await
+            .unwrap();
+        assert_eq!(
+            timeout(WAIT, running.input.recv()).await.unwrap(),
+            Some(Input::Close)
+        );
+        timeout(WAIT, &mut running.task)
+            .await
+            .expect("close did not end the server")
+            .unwrap()
+            .unwrap();
     }
 
     #[test]

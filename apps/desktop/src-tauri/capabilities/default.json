@@ -74,6 +74,7 @@
     "allow-rdp-session-start",
     "allow-rdp-session-stop",
     "allow-rdp-session-screenshot",
-    "allow-rdp-session-info"
+    "allow-rdp-session-info",
+    "allow-rdp-session-attach"
   ]
 }

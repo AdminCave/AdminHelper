@@ -49,16 +49,18 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T12
 Abhängt von: T4
 
-### T6 — R-1101: Wiederanmelden am Bild-Server  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+### T6 — R-1101: Wiederanmelden am Bild-Server  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0f33d36a8 2026-11-08T23:03:43+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T6.verdict.json)
 Änderung: Der Bild-Server lauscht weiter, solange die Sitzung lebt (`frame_ws.rs:155`). Geht ein Client weg, endet die Sitzung nicht mehr, nur `close` oder `rdp_session_stop` beenden sie. `rdp_session_attach(session_id)` gibt einen frischen, einmal gültigen Token aus, der alte verfällt. Eine neue Anmeldung löst den bisherigen Client ab, und der neue Client bekommt zuerst ein ganzes Bild. Anmeldefrist und `MAX_PENDING_LOGINS` bleiben. Tests: Anmelden, Weggehen, wieder Anmelden mit ganzem Bild; ein alter Token wird abgewiesen; Ablösung; die Sitzung lebt ohne Client weiter. Risikopfad lokale Authentisierung: dazu `security`.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- -- capabilities rdp_embedded
 Doku: → T12
 
 ### T7 — R-1101: Abdocken im Backend, Fensterrechte je Label  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/window.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/src/capabilities.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/capabilities/rdp-window.json
 Änderung: Das neue Modul `window.rs` (SPDX-Header) baut `rdp_detach(session_id, title)` und `rdp_dock` nach dem Muster von `terminal_detach` und `terminal_dock` (`commands.rs:861`). Das Fenster `rdp-<n>` öffnet die Route `#/detached-rdp/<id>`; Schließen über die Titelleiste meldet `rdp-window-closed` an main. Ein `may_reach` für RDP lässt ein `rdp-*`-Fenster nur die eigene Sitzung erreichen. `rdp-window.json` (neu, kein SPDX in JSON) erlaubt nur `rdp_session_attach`, `rdp_session_stop`, `rdp_dock`, Einstellungen lesen und Events. Tests: Label-Abbildung, `may_reach`, Rechte-Inventar in `capabilities.rs`. Risikopfad Rechte: dazu `security`.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- capabilities rdp_embedded
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- -- capabilities rdp_embedded
 Doku: → T12
 Abhängt von: T6
 
@@ -106,3 +108,4 @@ Task-Review: am Ende
 - 2026-11-08 (T3): Skalierung *Auto* = physische Pixel bei `scaleOf(devicePixelRatio)` (25er-Stufen, 100–500), *100 %* = CSS-Pixel bei 100, *HiDPI* = physische Pixel bei mindestens 175 (angelehnt an `/scale:180` des OS-Clients). Zoom 100 % = 1:1 je Gerätepixel. Vollbild und Multi-Monitor verhalten sich bis T4 wie *Eingepasst*. Die Mathematik liegt im neuen `lib/rdp/display.ts` statt in `renderer.ts` (dort ungetestet, weil die Tab-Tests den Renderer mocken); `renderer.ts` und `input.ts` bleiben unverändert, die Koordinaten folgen Zoom und Bildlauf über das Canvas-Rechteck. Der Start nimmt `run.display`; was der Tab danach bis zum Öffnen des Sockets misst, schickt er beim Öffnen (`FrameHandlers.opened`, Prüfer T3). `rdp_custom_size` wird im UI auf 8192 je Seite gekappt (Rust liest u16).
 - 2026-11-08 (T4): Vollbild deckt mit `position: fixed` das ganze Fenster; die Dialoge des Tabs (Zertifikat, Info) liegen deshalb im Tab-Container, sonst wären sie im Vollbild verdeckt (Prüfer T4). Die übrigen App-Dialoge und die Statusleiste bleiben im Vollbild unsichtbar; scheitert `setFullscreen`, fällt der Tab auf *Eingepasst* zurück, damit der Fehler zu sehen ist. Nur der angezeigte Tab hält das Fenster im Vollbild (verdeckte Tabs bleiben gemountet). F11 verlässt das Vollbild nur bei freigegebener Tastatur, sonst geht es an den Server. Ein Wechsel von `devicePixelRatio` allein löst keinen neuen `size` aus (bekannt, nicht in diesem Zug).
 - 2026-11-08 (T5): Windows-Abnahme Bedingung 10 im Wegwerf-Repo: der Fork 1dc939ea schließt den Resize mit GFX ohne Neuverbindung ab (3/3, ~250 ms), Upstream f96f664 fällt zurück (2/2 ReactivationTimedOut); Befund tasks/private/spikes/arch-rdp-embedded/r1100-resize/. Bildtakt gegen Windows nicht messbar (die Probe zählt Updates), die Live-Spec hält ihn gegen xrdp fest. Prüfer-Nit (kein Vergleich mit der Tab-Größe) offen gelassen.
+- 2026-11-08 (T6): `rdp_session_attach` ist schon in T6 registriert (main.rs, build.rs, default.json; die Permission-Datei erzeugt der Build, gitignored), weil ein nicht registriertes Kommando unter clippy `-D warnings` als toter Code rot ist; T6 prüft deshalb auch `capabilities`. Ein accept-Fehler beendet die Sitzung nicht mehr (der Listener lebt so lange wie sie): Logzeile, 50 ms Pause, weiter lauschen; ohne Test, weil Linux den Fehler nicht auslösen lässt (Plattform-I/O); der neue Client bekommt das ganze Bild erst, nachdem der alte beendet ist (`JoinSet::shutdown`), damit der alte es ihm nicht wegnimmt.
