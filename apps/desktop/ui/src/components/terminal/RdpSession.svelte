@@ -1,0 +1,517 @@
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Stenzel
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+<!--
+  One embedded RDP session (R-1098), after the mockup (DesignSystem ui_kits/adminhelper/rdp.jsx):
+  above the picture what it is connected to and its actions, the phases over it, below it the
+  figures of the stream. A click into the picture grabs the keyboard, Ctrl+Alt+Home gives it back.
+  A certificate the session was refused for is shown to be confirmed; confirmed, it starts anew.
+-->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import {
+    Cable,
+    Camera,
+    Gauge,
+    Keyboard,
+    MonitorOff,
+    Power,
+    RotateCw,
+    ShieldAlert,
+    X,
+  } from '@lucide/svelte';
+  import * as bridge from '$lib/bridge';
+  import type { RdpPerformanceProfile, RdpSessionInfo } from '$lib/bridge/types';
+  import { t } from '$lib/i18n';
+  import { FrameSocket, type FrameInput, type FrameStats } from '$lib/rdp/frameSocket';
+  import { buttonsOf, grabKeyboard, toDesktop, wheelOf, type KeyboardGrab } from '$lib/rdp/input';
+  import { createRenderer, type Renderer } from '$lib/rdp/renderer';
+  import { reportError } from '$lib/stores/statusBar';
+  import {
+    disconnectRdp,
+    reconnectRdp,
+    setRdpPerformance,
+    trustRdpCertificate,
+    type TerminalSession,
+  } from '$lib/stores/terminals';
+  import { tunnelMappings } from '$lib/stores/tunnel';
+  import { errMsg } from '$lib/utils/errors';
+  import Button from '../ui/Button.svelte';
+  import Dot from '../ui/Dot.svelte';
+  import IconButton from '../ui/IconButton.svelte';
+  import Kbd from '../ui/Kbd.svelte';
+  import Modal from '../ui/Modal.svelte';
+  import Pill from '../ui/Pill.svelte';
+  import Select from '../ui/Select.svelte';
+  import Spinner from '../ui/Spinner.svelte';
+
+  interface Props {
+    session: TerminalSession;
+    /** "Close session": the tab closes, after asking when the options say so. */
+    onClose?: () => void;
+  }
+
+  let { session, onClose }: Props = $props();
+
+  let viewport: HTMLDivElement;
+  let canvas: HTMLCanvasElement;
+  let renderer: Renderer | null = null;
+  let socket: FrameSocket | null = null;
+  let keyboard: KeyboardGrab | null = null;
+
+  let stats = $state<FrameStats | null>(null);
+  let desktop = { width: 0, height: 0 };
+  let grabbed = $state(false);
+  // The certificate dialog put aside: the overlay offers it again.
+  let certificateLater = $state(false);
+  let info = $state<RdpSessionInfo | null>(null);
+
+  let rdp = $derived(session.rdp!);
+  let connected = $derived(rdp.phase === 'connected');
+  let target = $derived.by(() => {
+    const c = session.connection;
+    const user = c.username ? `${c.domain ? `${c.domain}\\` : ''}${c.username} @ ` : '';
+    const port = c.port && c.port !== 3389 ? `:${c.port}` : '';
+    return `${user}${c.host ?? ''}${port}`;
+  });
+  // As the connection list shows it: the last enabled mapping for the connection.
+  let tunnel = $derived(
+    $tunnelMappings.filter((m) => m.enabled && m.connectionId === session.connection.id).at(-1)
+      ?.name ?? null,
+  );
+  let statusText = $derived.by(() => {
+    if (rdp.phase === 'connected') return $t('terminal.status.connected');
+    if (rdp.phase === 'connecting' || rdp.phase === 'reconnecting') {
+      return $t('terminal.status.connecting');
+    }
+    return $t('terminal.status.disconnected');
+  });
+  let endText = $derived.by(() => {
+    if (rdp.phase === 'certificate') return $t('rdp.certificate.pending');
+    if (rdp.code && rdp.code !== 'closed') return $t(`rdp.end.${rdp.code}`);
+    return rdp.phase === 'failed' ? $t('rdp.end.unknown') : $t('rdp.ended');
+  });
+  const dash = '—';
+  let figures = $derived.by(() => {
+    const s = stats;
+    return [
+      s && s.width > 0 ? `${s.width}×${s.height}` : dash,
+      dash,
+      s ? `${Math.round(s.fps)} fps` : dash,
+      s?.mbps !== undefined ? `${s.mbps.toFixed(1)} Mbit/s` : dash,
+      s?.rttMs !== undefined ? `${Math.round(s.rttMs)} ms` : dash,
+    ];
+  });
+  let profile = $derived(
+    rdp.performance ?? session.connection.options?.rdp?.performanceProfile ?? 'auto',
+  );
+  let profiles = $derived(
+    (['auto', 'lan', 'broadband', 'low'] as const).map((value) => ({
+      value,
+      label: $t(`rdp.performance.${value}`),
+    })),
+  );
+
+  function send(input: FrameInput): void {
+    socket?.send(input);
+  }
+
+  // Each on its own: a new phase is a new `rdp`, but the same session keeps its socket, and
+  // Rust lets only the first client in.
+  let sessionId = $derived(rdp.sessionId);
+  let wsPort = $derived(rdp.wsPort);
+  let token = $derived(rdp.token);
+
+  // A new session in Rust gets a socket of its own; the one before it goes.
+  $effect(() => {
+    if (sessionId === null || wsPort === null || token === null) return;
+    stats = null;
+    const current = new FrameSocket(wsPort, token, {
+      frame: (frame) => {
+        desktop = { width: frame.header.desktopWidth, height: frame.header.desktopHeight };
+        renderer?.draw(frame);
+      },
+      stats: (s) => (stats = s),
+      closed: () => {
+        if (socket === current) socket = null;
+      },
+    });
+    socket = current;
+    return () => {
+      keyboard?.release();
+      current.close();
+      if (socket === current) socket = null;
+    };
+  });
+
+  $effect(() => {
+    if (rdp.phase !== 'certificate') certificateLater = false;
+  });
+
+  function point(e: MouseEvent, wheel = 0): void {
+    if (!connected) return;
+    const { x, y } = toDesktop(
+      e.offsetX,
+      e.offsetY,
+      canvas.clientWidth,
+      canvas.clientHeight,
+      desktop.width,
+      desktop.height,
+    );
+    send({ t: 'mouse', x, y, buttons: buttonsOf(e.buttons), wheel });
+  }
+
+  function onpointerdown(e: PointerEvent): void {
+    if (!connected) return;
+    viewport.focus();
+    keyboard?.grab();
+    point(e);
+  }
+
+  function onwheel(e: WheelEvent): void {
+    if (!connected) return;
+    e.preventDefault();
+    point(e, wheelOf(e.deltaY));
+  }
+
+  async function screenshot(): Promise<void> {
+    if (!rdp.sessionId) return;
+    try {
+      await bridge.rdpSessionScreenshot(rdp.sessionId);
+    } catch (err) {
+      reportError(errMsg(err));
+    }
+  }
+
+  async function showInfo(): Promise<void> {
+    if (!rdp.sessionId) return;
+    try {
+      info = await bridge.rdpSessionInfo(rdp.sessionId);
+    } catch (err) {
+      reportError(errMsg(err));
+    }
+  }
+
+  function trust(): void {
+    void trustRdpCertificate(session.key);
+  }
+
+  onMount(() => {
+    renderer = createRenderer(canvas);
+    // A lost WebGL context draws nothing until it is back; then a new renderer takes over, and
+    // the picture fills in as the session sends what changes.
+    const lost = (e: Event) => e.preventDefault();
+    const restored = () => {
+      renderer?.destroy();
+      renderer = createRenderer(canvas);
+    };
+    canvas.addEventListener('webglcontextlost', lost);
+    canvas.addEventListener('webglcontextrestored', restored);
+    keyboard = grabKeyboard(viewport, send, (on) => (grabbed = on));
+    return () => {
+      canvas.removeEventListener('webglcontextlost', lost);
+      canvas.removeEventListener('webglcontextrestored', restored);
+      keyboard?.destroy();
+      keyboard = null;
+      renderer?.destroy();
+      renderer = null;
+    };
+  });
+</script>
+
+<div class="rdp">
+  <header class="rdp-head">
+    <Dot st={session.status} ring label={statusText} />
+    <span class="rdp-target">{target}</span>
+    {#if tunnel}
+      <Pill tone="accent" title={$t('terminal.tunnel')}><Cable size={11} />{tunnel}</Pill>
+    {/if}
+    <span class="rdp-spacer"></span>
+    <Button
+      size="sm"
+      variant="secondary"
+      iconLeft={Keyboard}
+      disabled={!connected}
+      onclick={() => send({ t: 'cad' })}
+    >
+      {$t('rdp.cad')}
+    </Button>
+    <span class="rdp-sep" aria-hidden="true"></span>
+    <IconButton
+      size="sm"
+      icon={Camera}
+      label={$t('rdp.screenshot')}
+      disabled={!connected}
+      onclick={() => void screenshot()}
+    />
+    <IconButton
+      size="sm"
+      icon={Gauge}
+      label={$t('rdp.info')}
+      disabled={rdp.sessionId === null}
+      onclick={() => void showInfo()}
+    />
+    <IconButton
+      size="sm"
+      icon={RotateCw}
+      label={$t('terminal.reconnect')}
+      onclick={() => void reconnectRdp(session.key)}
+    />
+    <IconButton
+      size="sm"
+      icon={Power}
+      label={$t('rdp.disconnect')}
+      disabled={rdp.sessionId === null}
+      onclick={() => disconnectRdp(session.key)}
+    />
+    <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+  </header>
+
+  <div class="rdp-bar">
+    <label class="rdp-label" for="rdp-performance-{session.key}">{$t('rdp.performance')}</label>
+    <Select
+      id="rdp-performance-{session.key}"
+      size="sm"
+      value={profile}
+      options={profiles}
+      onChange={(v) => void setRdpPerformance(session.key, v as RdpPerformanceProfile)}
+    />
+  </div>
+
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div
+    class="rdp-view"
+    class:grabbed
+    bind:this={viewport}
+    tabindex="0"
+    role="application"
+    aria-label={$t('rdp.view', { name: session.connection.name })}
+  >
+    <canvas
+      bind:this={canvas}
+      class:hidden={!connected}
+      {onpointerdown}
+      onpointermove={(e) => point(e)}
+      onpointerup={(e) => point(e)}
+      {onwheel}
+      oncontextmenu={(e) => e.preventDefault()}
+    ></canvas>
+    {#if rdp.phase === 'connecting' || rdp.phase === 'reconnecting'}
+      <div class="rdp-overlay" role="status">
+        <Spinner size={26} />
+        <span>
+          {rdp.phase === 'reconnecting'
+            ? $t('rdp.reconnecting')
+            : $t('rdp.connecting', { host: session.connection.host ?? '' })}
+        </span>
+        <span class="rdp-steps">{$t('rdp.connecting.steps')}</span>
+      </div>
+    {:else if !connected}
+      <div class="rdp-overlay" role="status">
+        {#if rdp.phase === 'certificate'}
+          <ShieldAlert size={30} />
+        {:else}
+          <MonitorOff size={30} />
+        {/if}
+        <span>{endText}</span>
+        {#if rdp.phase === 'certificate' && rdp.certificate}
+          <Button size="sm" onclick={() => (certificateLater = false)}>
+            {$t('rdp.certificate.review')}
+          </Button>
+        {:else}
+          <Button size="sm" iconLeft={RotateCw} onclick={() => void reconnectRdp(session.key)}>
+            {$t('terminal.reconnect')}
+          </Button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  <footer class="rdp-foot">
+    <span>{figures.join(' · ')}</span>
+    {#if rdp.notice === 'drive_unavailable'}
+      <span class="rdp-notice">{$t('rdp.notice.driveUnavailable')}</span>
+    {/if}
+    <span class="rdp-spacer"></span>
+    <span class="rdp-hint">
+      <Kbd>{$t('rdp.key.ctrl')}</Kbd><Kbd>{$t('rdp.key.alt')}</Kbd><Kbd>{$t('rdp.key.home')}</Kbd>
+      {$t('rdp.releaseKeyboard')}
+    </span>
+  </footer>
+</div>
+
+<Modal
+  open={rdp.phase === 'certificate' && rdp.certificate !== null && !certificateLater}
+  title={$t('rdp.certificate.title')}
+  onClose={() => (certificateLater = true)}
+>
+  {#if rdp.certificate}
+    <p>
+      {rdp.certificate.reason === 'changed'
+        ? $t('rdp.certificate.changed', { host: session.connection.host ?? '' })
+        : $t('rdp.certificate.unknown', { host: session.connection.host ?? '' })}
+    </p>
+    <p class="rdp-label">{$t('rdp.certificate.fingerprint')}</p>
+    <code class="rdp-fingerprint">{rdp.certificate.fingerprint}</code>
+  {/if}
+  {#snippet footer()}
+    <Button variant="secondary" onclick={() => (certificateLater = true)}>
+      {$t('rdp.certificate.cancel')}
+    </Button>
+    <Button variant={rdp.certificate?.reason === 'changed' ? 'danger' : 'primary'} onclick={trust}>
+      {$t('rdp.certificate.trust')}
+    </Button>
+  {/snippet}
+</Modal>
+
+<Modal open={info !== null} title={$t('rdp.info')} onClose={() => (info = null)}>
+  {#if info}
+    <dl class="rdp-info">
+      <dt>{$t('rdp.info.target')}</dt>
+      <dd>{info.target}</dd>
+      <dt>{$t('rdp.info.tunnel')}</dt>
+      <dd>{info.via_tunnel ? (info.tunnel ?? $t('rdp.info.yes')) : $t('rdp.info.no')}</dd>
+      <dt>{$t('rdp.info.nla')}</dt>
+      <dd>{info.credssp ? $t('rdp.info.yes') : $t('rdp.info.no')}</dd>
+      <dt>{$t('rdp.info.certificate')}</dt>
+      <dd>
+        {info.certificate === 'pinned' ? $t('rdp.info.pinned') : $t('rdp.info.trustAll')}
+      </dd>
+      {#if info.fingerprint}
+        <dt>{$t('rdp.certificate.fingerprint')}</dt>
+        <dd><code class="rdp-fingerprint">{info.fingerprint}</code></dd>
+      {/if}
+    </dl>
+  {/if}
+</Modal>
+
+<style>
+  .rdp {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg);
+  }
+  .rdp-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 46px;
+    padding: 0 10px 0 16px;
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+    overflow: hidden;
+  }
+  .rdp-target {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-strong);
+    white-space: nowrap;
+  }
+  .rdp-spacer {
+    flex: 1;
+  }
+  .rdp-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .rdp-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-subtle);
+    flex: 0 0 auto;
+  }
+  .rdp-label {
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .rdp-view {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    background: #0b0f14;
+    outline: none;
+  }
+  .rdp-view.grabbed {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  /* The canvas has the size of the desktop; the picture keeps its aspect within the box. */
+  canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: default;
+  }
+  canvas.hidden {
+    visibility: hidden;
+  }
+  .rdp-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  .rdp-steps {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-subtle);
+  }
+  .rdp-foot {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    height: 26px;
+    padding: 0 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-subtle);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-subtle);
+    flex: 0 0 auto;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .rdp-notice {
+    color: var(--warning);
+  }
+  .rdp-hint {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rdp-fingerprint {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    word-break: break-all;
+    color: var(--text-strong);
+  }
+  .rdp-info {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    font-size: 13px;
+  }
+  .rdp-info dt {
+    color: var(--text-muted);
+  }
+  .rdp-info dd {
+    margin: 0;
+  }
+</style>

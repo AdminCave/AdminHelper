@@ -9,12 +9,23 @@
 // query of the Windows pseudo console among it. A session detached into a window of its own
 // (R-1070) keeps its tab, without a terminal; docked again, it attaches anew and the terminal
 // gets the output Rust kept first. The window it is detached into holds it as its only session.
+// An embedded RDP session (R-1098) is a tab of its own kind: Rust runs it, its phases come as
+// `rdp-session` events, and its picture goes over a WebSocket of its own; it is not detached.
 
 import { get, readable, writable, type Readable } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import type { TerminalMessage } from '$lib/bridge';
-import type { AnsibleTarget, Connection, Settings } from '$lib/bridge/types';
+import type {
+  AnsibleTarget,
+  Connection,
+  RdpEndCode,
+  RdpPerformanceProfile,
+  RdpPhase,
+  RdpPhaseEvent,
+  RdpStarted,
+  Settings,
+} from '$lib/bridge/types';
 import { errMsg } from '$lib/utils/errors';
 import { reportError } from './statusBar';
 import { getMappings } from './tunnel';
@@ -40,6 +51,25 @@ export interface TerminalSession {
    * name. It is not reconnected and not kept for the next run.
    */
   ansible?: { check: boolean };
+  /** An embedded RDP session (R-1098) instead of a program of a terminal. */
+  rdp?: RdpView;
+}
+
+/** What the tab of an embedded RDP session shows; its picture comes over the WebSocket. */
+export interface RdpView {
+  /** The session in Rust while it runs; null before the start answered and once it ended. */
+  sessionId: string | null;
+  /** Where its picture is fetched, with which token; null without a session. */
+  wsPort: number | null;
+  token: string | null;
+  phase: RdpPhase;
+  /** Why it ended, with `disconnected` and `failed`. */
+  code: RdpEndCode | null;
+  /** The certificate to confirm, with the `certificate` phase. */
+  certificate: { identity: string; fingerprint: string; reason: 'unknown' | 'changed' } | null;
+  /** The profile this tab starts with, chosen in the tab; null: as the connection says. */
+  performance: RdpPerformanceProfile | null;
+  notice: RdpStarted['notice'] | null;
 }
 
 /**
@@ -290,6 +320,225 @@ export async function reconnectTerminal(key: string): Promise<boolean> {
   return start(key, runtime, attempt, sshLaunch(resolved));
 }
 
+// What an RDP tab holds besides what it shows. `attempt` counts the starts: the events and the
+// answer of an earlier start, one a reconnect or the close replaced, are not heard any more.
+interface RdpRun {
+  attempt: number;
+  sessionId: string | null;
+  unlisten: UnlistenFn | null;
+}
+
+const rdpRuns = new Map<string, RdpRun>();
+
+/** Ends the RDP session `id`; its `disconnected` phase still comes, unheard once the tab moved on. */
+function stopRdp(id: string): void {
+  bridge.rdpSessionStop(id).catch((err: unknown) => reportError(errMsg(err)));
+}
+
+/** Lets go of what an RDP tab listens to and ends its session if it still runs. */
+function releaseRdp(run: RdpRun): void {
+  run.attempt += 1;
+  run.unlisten?.();
+  run.unlisten = null;
+  if (run.sessionId !== null) stopRdp(run.sessionId);
+  run.sessionId = null;
+}
+
+function updateRdp(key: string, change: Partial<RdpView>, more: Partial<TerminalSession> = {}) {
+  state.update((s) => ({
+    ...s,
+    sessions: s.sessions.map((session) =>
+      session.key === key && session.rdp
+        ? { ...session, ...more, rdp: { ...session.rdp, ...change } }
+        : session,
+    ),
+  }));
+}
+
+const ENDING: RdpPhase[] = ['certificate', 'disconnected', 'failed'];
+
+function rdpStatus(phase: RdpPhase): TerminalStatus {
+  if (phase === 'connected') return 'connected';
+  return ENDING.includes(phase) ? 'disconnected' : 'connecting';
+}
+
+function onRdpPhase(key: string, run: RdpRun, event: RdpPhaseEvent): void {
+  const ended = ENDING.includes(event.phase);
+  if (ended) {
+    run.sessionId = null;
+    run.unlisten?.();
+    run.unlisten = null;
+  }
+  const certificate =
+    event.phase === 'certificate' && event.identity && event.fingerprint && event.reason
+      ? { identity: event.identity, fingerprint: event.fingerprint, reason: event.reason }
+      : null;
+  const more: Partial<TerminalSession> = { status: rdpStatus(event.phase) };
+  if (event.phase === 'connected' && find(key)?.connectedAt == null) more.connectedAt = Date.now();
+  updateRdp(
+    key,
+    {
+      phase: event.phase,
+      code: event.code ?? null,
+      certificate,
+      ...(ended ? { sessionId: null, wsPort: null, token: null } : {}),
+    },
+    more,
+  );
+}
+
+/** The connection as listed, with the profile chosen in the tab. */
+function withProfile(connection: Connection, profile: RdpPerformanceProfile | null): Connection {
+  if (profile === null) return connection;
+  const options = connection.options ?? {};
+  return {
+    ...connection,
+    options: { ...options, rdp: { ...options.rdp, performanceProfile: profile } },
+  };
+}
+
+/**
+ * Starts the RDP session of tab `key`. It listens to the phases before it starts: the first one
+ * may come before the start answers with the id, so what comes before is kept and sorted after.
+ * False when it did not start: the tab then shows it failed, the status bar why.
+ */
+async function startRdp(key: string, run: RdpRun): Promise<boolean> {
+  const session = find(key);
+  if (!session?.rdp) return false;
+  releaseRdp(run);
+  const attempt = run.attempt;
+  const current = () => rdpRuns.get(key) === run && run.attempt === attempt;
+  updateRdp(
+    key,
+    {
+      sessionId: null,
+      wsPort: null,
+      token: null,
+      phase: 'connecting',
+      code: null,
+      certificate: null,
+      notice: null,
+    },
+    { status: 'connecting', connectedAt: null },
+  );
+  let sessionId: string | null = null;
+  const early: RdpPhaseEvent[] = [];
+  const failed = (err: unknown): false => {
+    if (current()) {
+      run.unlisten?.();
+      run.unlisten = null;
+      updateRdp(key, { phase: 'failed' }, { status: 'disconnected' });
+    }
+    reportError(errMsg(err));
+    return false;
+  };
+  try {
+    const unlisten = await listen<RdpPhaseEvent>('rdp-session', (e) => {
+      if (!current()) return;
+      if (sessionId === null) early.push(e.payload);
+      else if (e.payload.session_id === sessionId) onRdpPhase(key, run, e.payload);
+    });
+    if (!current()) {
+      unlisten();
+      return false;
+    }
+    run.unlisten = unlisten;
+  } catch (err) {
+    return failed(err);
+  }
+  let started: RdpStarted;
+  try {
+    started = await bridge.rdpSessionStart(
+      withProfile(session.connection, session.rdp.performance),
+    );
+  } catch (err) {
+    return failed(err);
+  }
+  if (!current()) {
+    // Closed or started anew while it started: no tab shows this session.
+    stopRdp(started.session_id);
+    return true;
+  }
+  sessionId = started.session_id;
+  run.sessionId = sessionId;
+  updateRdp(key, {
+    sessionId,
+    wsPort: started.ws_port,
+    token: started.token,
+    notice: started.notice ?? null,
+  });
+  for (const event of early.splice(0)) {
+    if (event.session_id === sessionId && current()) onRdpPhase(key, run, event);
+  }
+  return true;
+}
+
+/**
+ * Opens `connection`, an RDP connection as listed, as an embedded session in a new tab in front.
+ * Rust resolves and checks it. False when it did not start.
+ */
+export function openRdp(connection: Connection): Promise<boolean> {
+  opened += 1;
+  const key = `terminal-${opened}`;
+  const run: RdpRun = { attempt: 0, sessionId: null, unlisten: null };
+  rdpRuns.set(key, run);
+  const session: TerminalSession = {
+    key,
+    connection,
+    resolved: connection,
+    status: 'connecting',
+    exitCode: null,
+    connectedAt: null,
+    backendId: null,
+    rdp: {
+      sessionId: null,
+      wsPort: null,
+      token: null,
+      phase: 'connecting',
+      code: null,
+      certificate: null,
+      performance: null,
+      notice: null,
+    },
+  };
+  state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
+  return startRdp(key, run);
+}
+
+/** Starts the RDP session of tab `key` anew; one still running ends first. */
+export function reconnectRdp(key: string): Promise<boolean> {
+  const run = rdpRuns.get(key);
+  return run ? startRdp(key, run) : Promise.resolve(false);
+}
+
+/** Ends the RDP session of tab `key`; the tab stays and shows it disconnected. */
+export function disconnectRdp(key: string): void {
+  const run = rdpRuns.get(key);
+  if (run?.sessionId) stopRdp(run.sessionId);
+}
+
+/** Starts tab `key` anew with `profile`, for this tab only: the settings stay as they are. */
+export function setRdpPerformance(key: string, profile: RdpPerformanceProfile): Promise<boolean> {
+  updateRdp(key, { performance: profile });
+  return reconnectRdp(key);
+}
+
+/**
+ * Pins the certificate tab `key` was refused for, as the user confirmed it, and starts the
+ * session anew. False when the pin was not saved: the status bar says why.
+ */
+export async function trustRdpCertificate(key: string): Promise<boolean> {
+  const certificate = find(key)?.rdp?.certificate;
+  if (!certificate) return false;
+  try {
+    await bridge.rdpTrustCertificate(certificate.identity, certificate.fingerprint);
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+  return reconnectRdp(key);
+}
+
 /** The tab in front once `key` leaves the front: the one before it, a session or the page. */
 function before(s: TerminalsState, key: string): string {
   if (s.active !== key) return s.active;
@@ -305,6 +554,11 @@ export function closeTerminal(key: string): void {
   const session = find(key);
   if (!session) return;
   runtimes.delete(key);
+  const run = rdpRuns.get(key);
+  if (run) {
+    rdpRuns.delete(key);
+    releaseRdp(run);
+  }
   const id = runningId(session);
   if (id !== null) end(id);
   if (session.detached && session.backendId !== null) {
@@ -434,12 +688,15 @@ export async function listenForDocking(): Promise<UnlistenFn> {
 
 /**
  * Ends every session of this window, those of an earlier load of it among them, and removes
- * their tabs: as the UI starts and before the logout reloads it.
+ * their tabs: as the UI starts and before the logout reloads it. RDP sessions end with their
+ * tabs; one an earlier load started ends with the app, as nothing shows it.
  */
 export async function closeAllTerminals(): Promise<void> {
   // The logout ends the tabs, not the run: what was open is opened again after the next sign-in.
   stopKeeping?.();
   runtimes.clear();
+  for (const run of rdpRuns.values()) releaseRdp(run);
+  rdpRuns.clear();
   state.set({ sessions: [], active: PAGE_TAB });
   await bridge.terminalCloseAll();
 }

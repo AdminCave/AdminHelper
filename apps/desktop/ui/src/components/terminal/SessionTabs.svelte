@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import Monitor from '@lucide/svelte/icons/monitor';
   import SquareArrowOutUpRight from '@lucide/svelte/icons/square-arrow-out-up-right';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import X from '@lucide/svelte/icons/x';
@@ -41,8 +42,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return $t('terminal.status.disconnected');
   }
 
-  // Only a program that runs has something to show in a window of its own.
-  const canDetach = (s: TerminalSession) => s.status !== 'disconnected' && s.backendId !== null;
+  // Only a program that runs has something to show in a window of its own; an RDP session stays
+  // in its tab.
+  const canDetach = (s: TerminalSession) =>
+    !s.rdp && s.status !== 'disconnected' && s.backendId !== null;
 
   // A click on a detached tab brings its window to the front; the tab itself never is.
   function select(s: TerminalSession): void {
@@ -142,6 +145,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
         >
           {#if s.detached}
             <AppWindow size={14} />
+          {:else if s.rdp}
+            <Monitor size={14} />
           {:else}
             <SquareTerminal size={14} />
           {/if}

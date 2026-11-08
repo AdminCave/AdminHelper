@@ -10,12 +10,20 @@
 // window (R-1070) keeps its tab and hears nothing more here; docked, it attaches anew, the
 // terminal gets the kept output first and what it answers to that goes nowhere. The SSH tabs of
 // a run are kept for the next (R-1070): opened again only when chosen, saved only once the
-// connections are there, and not wiped by the logout.
+// connections are there, and not wiped by the logout. An RDP tab (R-1098) follows the phases of
+// its own session, also one that came before the start answered, and closing, a reconnect, a new
+// profile or a pinned certificate end the session it had.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 import type { TerminalMessage } from '$lib/bridge';
-import type { Connection, Settings, TunnelMapping } from '$lib/bridge/types';
+import type {
+  Connection,
+  RdpPhaseEvent,
+  RdpStarted,
+  Settings,
+  TunnelMapping,
+} from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
@@ -31,6 +39,9 @@ const h = vi.hoisted(() => ({
   terminalAttach: vi.fn(),
   terminalDetach: vi.fn(async () => {}),
   terminalDock: vi.fn(async () => {}),
+  rdpSessionStart: vi.fn(),
+  rdpSessionStop: vi.fn(async (_id: string) => {}),
+  rdpTrustCertificate: vi.fn(async (_identity: string, _fingerprint: string) => {}),
   listeners: new Map<string, (e: { payload: { id: number } }) => void>(),
   reportError: vi.fn(),
   mappings: [] as unknown[],
@@ -50,11 +61,17 @@ vi.mock('$lib/bridge', () => ({
   terminalAttach: h.terminalAttach,
   terminalDetach: h.terminalDetach,
   terminalDock: h.terminalDock,
+  rdpSessionStart: h.rdpSessionStart,
+  rdpSessionStop: h.rdpSessionStop,
+  rdpTrustCertificate: h.rdpTrustCertificate,
 }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (name: string, handler: (e: { payload: { id: number } }) => void) => {
     h.listeners.set(name, handler);
-    return () => h.listeners.delete(name);
+    // A later listener of the same name replaced this one: its unlisten leaves that one.
+    return () => {
+      if (h.listeners.get(name) === handler) h.listeners.delete(name);
+    };
   }),
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError }));
@@ -68,18 +85,23 @@ import {
   closeTerminal,
   detachedRoute,
   detachTerminal,
+  disconnectRdp,
   keepOpenSessions,
   listenForDocking,
   openAnsible,
+  openRdp,
   openSessionIds,
   openTerminal,
+  reconnectRdp,
   reconnectTerminal,
   resizeTerminal,
   runSnippet,
+  setRdpPerformance,
   setSnippetBroadcast,
   showTab,
   snippetBroadcast,
   terminals,
+  trustRdpCertificate,
   writeTerminal,
   type TerminalSession,
 } from './terminals';
@@ -915,5 +937,165 @@ describe('a playbook in a tab (R-1073)', () => {
     expect(h.terminalOpenAnsible).toHaveBeenCalledTimes(1);
     expect(h.terminalClose).not.toHaveBeenCalled();
     expect(openSessionIds([s, { ...s, ansible: undefined, connection: CONN }])).toEqual(['c1']);
+  });
+});
+
+describe('an RDP session in a tab (R-1098)', () => {
+  const RDP = { ...CONN, id: 'r1', kind: 'rdp', host: 'win', port: 3389 } as Connection;
+  let started: number;
+
+  const phase = (event: RdpPhaseEvent) =>
+    (h.listeners.get('rdp-session') as unknown as (e: { payload: RdpPhaseEvent }) => void)({
+      payload: event,
+    });
+  const rdp = () => only().rdp!;
+
+  beforeEach(() => {
+    started = 0;
+    h.rdpSessionStart.mockImplementation(async () => {
+      started += 1;
+      return { session_id: `s${started}`, ws_port: 7000 + started, token: `t${started}` };
+    });
+  });
+
+  it('opens in a tab in front and follows the phases of its own session only', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-08T10:00:00Z'));
+    expect(await openRdp(RDP)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenCalledWith(RDP);
+    expect(get(terminals).active).toBe(only().key);
+    expect(only()).toMatchObject({ status: 'connecting', connectedAt: null });
+    expect(rdp()).toMatchObject({
+      sessionId: 's1',
+      wsPort: 7001,
+      token: 't1',
+      phase: 'connecting',
+    });
+
+    phase({ session_id: 'other', phase: 'connected' });
+    expect(only().status).toBe('connecting');
+    phase({ session_id: 's1', phase: 'connected' });
+    expect(only()).toMatchObject({ status: 'connected', connectedAt: Date.now() });
+    phase({ session_id: 's1', phase: 'reconnecting' });
+    expect(only().status).toBe('connecting');
+    phase({ session_id: 's1', phase: 'disconnected', code: 'network' });
+    expect(only().status).toBe('disconnected');
+    expect(rdp()).toMatchObject({
+      phase: 'disconnected',
+      code: 'network',
+      sessionId: null,
+      wsPort: null,
+      token: null,
+    });
+    // Ended: nothing listens any more.
+    expect(h.listeners.has('rdp-session')).toBe(false);
+  });
+
+  it('keeps a phase that came before the start answered and plays it after', async () => {
+    let answer!: (s: RdpStarted) => void;
+    h.rdpSessionStart.mockImplementationOnce(
+      () => new Promise<RdpStarted>((resolve) => (answer = resolve)),
+    );
+    const opened = openRdp(RDP);
+    await settle();
+    phase({ session_id: 'old', phase: 'connected' });
+    phase({ session_id: 's9', phase: 'connected' });
+    answer({ session_id: 's9', ws_port: 7009, token: 't9', notice: 'drive_unavailable' });
+    expect(await opened).toBe(true);
+    expect(only().status).toBe('connected');
+    expect(rdp()).toMatchObject({
+      sessionId: 's9',
+      phase: 'connected',
+      notice: 'drive_unavailable',
+    });
+  });
+
+  it('shows the start failing and says why', async () => {
+    h.rdpSessionStart.mockRejectedValueOnce(new Error('no password'));
+    expect(await openRdp(RDP)).toBe(false);
+    expect(only().status).toBe('disconnected');
+    expect(rdp().phase).toBe('failed');
+    expect(h.reportError).toHaveBeenCalledWith('no password');
+    expect(h.listeners.has('rdp-session')).toBe(false);
+  });
+
+  it('ends the session when its tab closes, and every session on closing all', async () => {
+    await openRdp(RDP);
+    closeTerminal(only().key);
+    expect(h.rdpSessionStop).toHaveBeenCalledWith('s1');
+    expect(get(terminals).sessions).toEqual([]);
+    expect(h.listeners.has('rdp-session')).toBe(false);
+
+    await openRdp(RDP);
+    await openRdp(RDP);
+    await closeAllTerminals();
+    expect(h.rdpSessionStop.mock.calls.map((c) => c[0])).toEqual(['s1', 's2', 's3']);
+  });
+
+  it('stops a session whose tab closed while it started', async () => {
+    let answer!: (s: RdpStarted) => void;
+    h.rdpSessionStart.mockImplementationOnce(
+      () => new Promise<RdpStarted>((resolve) => (answer = resolve)),
+    );
+    const opened = openRdp(RDP);
+    await settle();
+    closeTerminal(only().key);
+    answer({ session_id: 's7', ws_port: 7007, token: 't7' });
+    await opened;
+    expect(h.rdpSessionStop).toHaveBeenCalledWith('s7');
+  });
+
+  it('disconnects and keeps the tab, reconnects with a new session', async () => {
+    await openRdp(RDP);
+    const { key } = only();
+    disconnectRdp(key);
+    expect(h.rdpSessionStop).toHaveBeenCalledWith('s1');
+    phase({ session_id: 's1', phase: 'disconnected', code: 'closed' });
+    expect(only().key).toBe(key);
+    expect(rdp().code).toBe('closed');
+
+    expect(await reconnectRdp(key)).toBe(true);
+    expect(rdp()).toMatchObject({ sessionId: 's2', phase: 'connecting', code: null });
+    phase({ session_id: 's1', phase: 'connected' });
+    expect(only().status).toBe('connecting');
+  });
+
+  it('starts anew with the profile chosen for this tab only', async () => {
+    await openRdp(RDP);
+    expect(await setRdpPerformance(only().key, 'low')).toBe(true);
+    expect(h.rdpSessionStop).toHaveBeenCalledWith('s1');
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith({
+      ...RDP,
+      options: { rdp: { performanceProfile: 'low' } },
+    });
+    expect(only().connection).toBe(RDP);
+    expect(rdp()).toMatchObject({ performance: 'low', sessionId: 's2' });
+  });
+
+  it('pins the refused certificate and starts anew; a refused pin stays', async () => {
+    await openRdp(RDP);
+    phase({
+      session_id: 's1',
+      phase: 'certificate',
+      identity: 'win:3389',
+      fingerprint: 'ab:cd',
+      reason: 'changed',
+    });
+    expect(only().status).toBe('disconnected');
+    expect(rdp().certificate).toEqual({
+      identity: 'win:3389',
+      fingerprint: 'ab:cd',
+      reason: 'changed',
+    });
+
+    h.rdpTrustCertificate.mockRejectedValueOnce(new Error('keyring locked'));
+    expect(await trustRdpCertificate(only().key)).toBe(false);
+    expect(h.reportError).toHaveBeenCalledWith('keyring locked');
+    expect(h.rdpSessionStart).toHaveBeenCalledTimes(1);
+
+    expect(await trustRdpCertificate(only().key)).toBe(true);
+    expect(h.rdpTrustCertificate).toHaveBeenLastCalledWith('win:3389', 'ab:cd');
+    expect(h.rdpSessionStart).toHaveBeenCalledTimes(2);
+    expect(rdp()).toMatchObject({ sessionId: 's2', certificate: null, phase: 'connecting' });
   });
 });

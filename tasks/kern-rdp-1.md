@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T8
 Abhängt von: T2
 
-### T5 — R-1098: RDP-Tab — Sitzungsansicht, Phasen, Menü, Statuszeile, Zertifikatsdialog  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/RdpSession.svelte, apps/desktop/ui/src/components/terminal/RdpSession.test.ts, apps/desktop/ui/src/components/terminal/SessionTabs.svelte, apps/desktop/ui/src/components/terminal/SessionTabs.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T5 — R-1098: RDP-Tab — Sitzungsansicht, Phasen, Menü, Statuszeile, Zertifikatsdialog  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/RdpSession.svelte, apps/desktop/ui/src/components/terminal/RdpSession.test.ts, apps/desktop/ui/src/components/terminal/SessionTabs.svelte, apps/desktop/ui/src/components/terminal/SessionTabs.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/lib/i18n/i18n.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @277919d8d 2026-11-08T17:42:54+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T5.verdict.json)
 Änderung: Neue Komponente mit SPDX-Header; RDP-Sitzungen als eigene Art im Tab-Store (Start, Phasen aus `rdp-session`, Stopp beim Schließen, Abmelden, Fensterende); Ansicht nach dem Mockup (DesignSystem `ui_kits/adminhelper/rdp.jsx`): Kopf mit Trennen, Neu verbinden, Strg+Alt+Entf, Screenshot, Verbindungsinfo, Leistungsprofil; Phasen-Overlays; Fuß mit Auflösung, Codec, fps, Mbit/s, RTT („—“ ohne Meldung) und dem Hinweis „Strg+Alt+Pos1 Tastatur freigeben“; Zertifikatsdialog (Fingerprint, Grund unbekannt/geändert) → `rdp_trust_certificate` → Neustart. Kein Abdocken (Stufe 5). Tests: Phasen, Dialog, Schließen stoppt, Menüaktionen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T8
@@ -85,3 +87,8 @@ Abhängt von: T2
 - 2026-11-08 T4: Die Canvas hat die Desktopgröße und wird per CSS `object-fit: contain` eingepasst; `toDesktop` rechnet über `fitRect` zurück, Punkte in den Balken landen am Rand
 - 2026-11-08 T4: Auch ein unlesbares Bild wird quittiert, sonst hielte der Gegendruck des Servers die Sitzung an; ein Rad-Ereignis ist eine Raste (±120), Pause hat keinen einfachen Set-1-Code und wird nicht gesendet
 - 2026-11-08 T4: Der IPC-Inventartest liest Befehle jetzt auch aus `rdp_embedded/` und nimmt Pfade in `generate_handler!` mit ihrem letzten Segment; bisher fielen die RDP-Befehle aus dem Abgleich. Die Befehlstabelle der Entwicklerdoku nennt dafür `rdp_session_screenshot` und `rdp_session_info` (die Beschreibung zieht T8 nach)
+- 2026-11-08 T5: Das Leistungsprofil im Tab gilt nur für diesen Tab und startet die Sitzung neu; die Verbindung und die Einstellungen bleiben unverändert
+- 2026-11-08 T5: Fensterende: Rust hat kein Stop-All, die Sitzungen enden mit dem Prozess; eine Sitzung aus einem früheren Laden der UI (Reload) läuft bis zum App-Ende weiter. Abmelden und Schließen stoppen jede bekannte Sitzung
+- 2026-11-08 T5: Die Fußzeile zeigt für den Codec immer „—“ (das Backend meldet keinen, T2); Info-Pill im Bild und die Pill „NLA · TLS“ aus dem Mockup entfallen, die Angaben stehen im Fuß bzw. im Info-Dialog
+- 2026-11-08 T5: Ein verlorener WebGL-Kontext wird per `preventDefault` wiederherstellbar gehalten; nach `webglcontextrestored` übernimmt ein neuer Renderer, das Bild füllt sich mit den nächsten Änderungen
+- 2026-11-08 T5: Phasen, die vor der Antwort von `rdp_session_start` kommen, werden gepuffert und nach der Antwort nach `session_id` gefiltert nachgespielt; eine Sitzung, deren Tab während des Starts schloss oder neu startete, wird sofort gestoppt
