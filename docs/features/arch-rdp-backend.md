@@ -144,7 +144,8 @@ Revision gelesen. Eine Doku-Seite dafür gibt es nicht; die Crates sind 0.x.
   - einen Callback, den IronRDP **nur dann** fragt, wenn die strenge Prüfung scheitert.
 - Folge: Selbstsignierte Zertifikate, der Normalfall bei RDP und bei xrdp, laufen immer über unseren Pin. Über den
   Tunnel gilt das ebenso, denn der Servername ist dort `127.0.0.1`.
-- Ein Zertifikat, das eine Plattform-CA für den Hostnamen ausgestellt hat, nimmt IronRDP dagegen ohne Pin an.
+- Ein Zertifikat, das eine Plattform-CA für den Hostnamen ausgestellt hat, nahm IronRDP dagegen ohne Pin an (Stand
+  Stufe 1; seit R-1141 erledigt, siehe Offene Frage 1).
   - Das entspricht dem heutigen OS-Client: `xfreerdp3` und `mstsc` nehmen CA-gültige Zertifikate ebenfalls ohne
     Rückfrage an.
   - Es weicht aber vom „Pin immer“ des `TofuVerifier` ab.
@@ -216,7 +217,7 @@ trägt dann keinen Fingerprint, eine Statuszeile dafür in Stufe 2 braucht einen
 ## Risiken & Rollback
 
 - **CA-gültige Zertifikate ohne Pin** (Trade-off oben, Offene Frage 1). Erreichbar erst mit Stufe 2. Kevin hat am
-  2026-11-05 Variante (a) hingenommen; R-1141 („Pin immer“) kommt vor Stufe 2.
+  2026-11-05 Variante (a) hingenommen; R-1141 („Pin immer“) kommt vor Stufe 2. Behoben mit R-1141 (Offene Frage 1).
 - **`SSLKEYLOGFILE`:**
   - `ironrdp-tls` setzt `KeyLogFile`. Ist die Variable gesetzt, schreibt rustls die TLS-Schlüssel der RDP-Sitzung in
     diese Datei.
@@ -270,6 +271,9 @@ trägt dann keinen Fingerprint, eine Statuszeile dafür in Stufe 2 braucht einen
 
 1. **CA-gültige RDP-Zertifikate ohne Pin** (Kevins Bereich: hingenommenes Restrisiko, Abweichung von Bedingung 5).
    Entschieden (Kevin 2026-11-05): (a), die Folgezeile (c) ist R-1141 und kommt vor Stufe 2.
+   **Erledigt** (R-1141, `kern-rdp-1` T1): Der Desktop bezieht IronRDP aus einer Revision im Fork `AdminCave/IronRDP`
+   mit der Option `CertificateValidationCallbackScope::AllCertificates`, die auch upstream als PR vorliegt. Der
+   Callback entscheidet über jedes Zertifikat; ein CA-gültiges ohne Pin meldet `certificate` wie ein unbekanntes.
    - Empfehlung (a): Stufe 1 pinnt jedes Zertifikat, das die Plattform-CA-Prüfung nicht besteht. CA-gültige nimmt sie
      wie `xfreerdp3` und `mstsc` an.
    - Dazu eine Folgezeile (c): Upstream-Option in IronRDP, damit der Callback immer gefragt wird, und danach

@@ -5,8 +5,10 @@ Heavy: linux-full — Desktop-Journey: der RDP-Tab gegen den xrdp-Container (neu
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1141: Pin immer über eine IronRDP-Option (Fork-Revision, Upstream-PR)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/tofu.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, docs/features/arch-rdp-backend.md
+### T1 — R-1141: Pin immer über eine IronRDP-Option (Fork-Revision, Upstream-PR)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/tofu.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, docs/features/arch-rdp-backend.md, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @7f2099fbf 2026-11-08T16:00:31+01:00
+Review: approve (.ah-out/review/kern-rdp-1/T1.verdict.json)
 Änderung: Fork `AdminCave/IronRDP`, Branch auf `f96f664` plus eine additive Option in `ironrdp-tls` (und ihr Weg durch `ironrdp-client`), mit der der Prüf-Callback jedes Leaf-Zertifikat sieht, auch nach bestandener strenger Prüfung; Test in der IronRDP-Testsuite, Upstream-PR gegen `master` nach `AGENTS.md`/`STYLE.md` (Kevin 2026-11-08: Weg (c)). Der Desktop bezieht alle `ironrdp-*` aus der Fork-Revision und setzt die Option; `tofu.rs` behandelt ein CA-gültiges Zertifikat ohne Pin wie ein unbekanntes (`certificate`, Grund `unknown`). Test: Handshake mit einem Zertifikat einer Test-CA, der die Plattform-Wurzeln vertrauen (`SSL_CERT_FILE`), ohne Pin → `certificate`; mit Pin → verbunden; Gegenprobe ohne die Option rot. `arch-rdp-backend.md` Offene Frage 1 auf erledigt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T8

@@ -32,7 +32,7 @@ use tokio::time::MissedTickBehavior;
 use zeroize::Zeroizing;
 
 use super::frame_ws::{FrameServer, Frames, Input};
-use super::tofu::{validation_callback, CertPolicy, CertProblem, CertReport};
+use super::tofu::{validation_callback, CertPolicy, CertProblem, CertReport, CALLBACK_SCOPE};
 use super::watchdog::{Verdict, Watchdog};
 use crate::error::AppError;
 use crate::models::RdpAudio;
@@ -466,7 +466,8 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
             .with_certificate_validation_callback(validation_callback(
                 target.policy.clone(),
                 cert.clone(),
-            )),
+            ))
+            .with_certificate_validation_callback_scope(CALLBACK_SCOPE),
     };
     builder.build().map_err(|e| format!("{e:#}"))
 }
@@ -1120,6 +1121,10 @@ mod tests {
             CertificateValidation::Strict
         );
         assert!(pinned.certificate_validation_callback().is_some());
+        assert_eq!(
+            pinned.certificate_validation_callback_scope(),
+            ironrdp_tls::CertificateValidationCallbackScope::AllCertificates
+        );
     }
 
     #[test]
