@@ -71,6 +71,8 @@ pub(crate) struct Target {
     pub(crate) audio: Option<RdpAudio>,
     /// The folder the server sees as the `Downloads` drive; `None` shares no drive.
     pub(crate) drive: Option<PathBuf>,
+    /// NLA (CredSSP) before the session; off only for `options.rdp.nla: false`, as the OS client.
+    pub(crate) credssp: bool,
 }
 
 /// Why a session ended: the `code` of the `failed` and `disconnected` phases.
@@ -412,8 +414,9 @@ fn platform() -> MajorPlatformType {
 /// The audio of a session for `audio` of its connection. At f96f664 `PlayOnServer` asks the server
 /// for no audio at all, like `Disabled` (docs/features/kern-rdp-2.md).
 fn audio_mode(audio: Option<RdpAudio>) -> AudioMode {
-    // Windows keeps audio off until it passes on a Windows with an audio device (condition 12 of
-    // docs/features/arch-rdp-embedded.md).
+    // Windows keeps audio off: the probe on a Windows runner did not pass (R-1092), and audio needs
+    // a run on a Windows with an audio device first (condition 12 of
+    // docs/features/arch-rdp-embedded.md, R-1192).
     if cfg!(windows) {
         return AudioMode::Disabled;
     }
@@ -436,7 +439,7 @@ fn config(target: &Target, cert: &CertReport) -> Result<Config, String> {
         .with_desktop_width(DESKTOP_WIDTH)
         .with_desktop_height(DESKTOP_HEIGHT)
         .with_tls(true)
-        .with_credssp(true)
+        .with_credssp(target.credssp)
         .with_autologon(true)
         // Bulk compression stays off (spec, condition 1); GFX carries the picture (condition 9).
         .with_compression(false)
@@ -770,6 +773,7 @@ mod tests {
             policy,
             audio: None,
             drive: None,
+            credssp: true,
         }
     }
 
@@ -1119,6 +1123,20 @@ mod tests {
     }
 
     #[test]
+    fn session_goes_without_credssp_only_when_nla_is_off() {
+        let mut tls_only = target(
+            Destination::from_parts("192.0.2.10", 3389),
+            CertPolicy::TrustAll,
+        );
+        tls_only.credssp = false;
+        let config = config(&tls_only, &CertReport::default()).unwrap();
+        let connector = config.connector();
+        assert!(connector.enable_tls);
+        assert!(!connector.enable_credssp);
+        assert!(!connector.enable_standard_rdp_security);
+    }
+
+    #[test]
     fn session_redirects_devices_only_for_a_drive() {
         let mut shared = target(
             Destination::from_parts("192.0.2.10", 3389),
@@ -1302,6 +1320,7 @@ mod tests {
                     policy: self.policy(pin),
                     audio: None,
                     drive: None,
+                    credssp: true,
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();
