@@ -5,8 +5,10 @@ Heavy: linux-full — Desktop-Journeys: Resize, Abdocken und Multi-Monitor des R
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1100: ResetGraphics schließt einen Resize ab (Fork-Revision)  [ ]
+### T1 — R-1100: ResetGraphics schließt einen Resize ab (Fork-Revision)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @61b4781ce 2026-11-08T20:37:53+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T1.verdict.json)
 Änderung: Auf dem Fork `AdminCave/IronRDP` ein Commit über `c39d48e`: Meldet `ironrdp-session` einen Grafik-Reset (`reset`) mit der Größe des laufenden Resize, ruft `ironrdp-client` `ResizeQueue::completed()` auf. Ohne Reset bleibt der Rückfall nach 3 s. Test in der IronRDP-Suite: Reset mit passender Größe → keine Neuverbindung; abweichende Größe → weiter wartend; Gegenprobe ohne den Patch rot. Der Desktop pinnt die neue Revision für alle `ironrdp-*`, `cargo tree -i aws-lc-rs` bleibt leer. Kein Upstream-PR ohne Kevins Wort.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded
 Doku: → T12
