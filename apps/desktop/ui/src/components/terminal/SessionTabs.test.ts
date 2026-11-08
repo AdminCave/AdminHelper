@@ -5,7 +5,8 @@
 // The tab bar of the embedded terminal (R-1069): only with a session, the page first, then each
 // session with its name and status; a click or the arrow keys bring a tab to the front, the cross
 // and Delete close a session. A running session detaches by its button, a double click or a
-// pull downwards (R-1070); its tab stays in italics, and a click brings its window forward.
+// pull downwards (R-1070); its tab stays in italics, and a click brings its window forward. An
+// RDP tab (R-1098) has its own icon and stays in the window.
 
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
@@ -136,6 +137,29 @@ describe('SessionTabs', () => {
       await fireEvent.click(detachButton('run')!);
       expect(onDetach).toHaveBeenCalledExactlyOnceWith(RUN);
       expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('offers no window for an RDP session, by button or double click, and marks its tab', async () => {
+      const RDP = session('terminal-6', 'win', 'connected', {
+        rdp: {
+          sessionId: 's1',
+          wsPort: 7001,
+          token: 't1',
+          phase: 'connected',
+          code: null,
+          certificate: null,
+          performance: null,
+          notice: null,
+        },
+      });
+      const { onDetach } = setup(PAGE_TAB, [RUN, RDP]);
+      expect(detachButton('win')).toBeNull();
+      await fireEvent.dblClick(screen.getByRole('tab', { name: /win/ }));
+      expect(onDetach).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole('tab', { name: /win/ }).querySelector('.lucide-monitor'),
+      ).not.toBeNull();
+      expect(screen.getByRole('tab', { name: /run/ }).querySelector('.lucide-monitor')).toBeNull();
     });
 
     it('detaches with a double click', async () => {

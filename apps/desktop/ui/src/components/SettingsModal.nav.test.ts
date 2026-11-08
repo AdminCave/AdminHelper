@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
     intervalMinutes: 5,
     language: 'de',
     storePasswords: false,
+    rdpClient: 'os',
     rdpScalingMode: 'auto',
     rdpWindowMode: 'fit',
     rdpCustomSize: '1920x1080',
@@ -184,6 +185,11 @@ describe('SettingsModal — sections (R-1063)', () => {
     await fireEvent.change(windowMode, { target: { value: 'custom' } });
     const size = pane(container, 'rdp').querySelector<HTMLInputElement>('input[type="text"]')!;
     await fireEvent.input(size, { target: { value: ' 1280x720 ' } });
+    const rdpClient = pane(container, 'rdp').querySelector<HTMLSelectElement>(
+      'select[data-field="rdp-client"]',
+    )!;
+    expect(rdpClient.value).toBe('os');
+    await fireEvent.change(rdpClient, { target: { value: 'embedded' } });
 
     await fireEvent.click(tab(container, 'terminal'));
     const sshConsole = pane(container, 'terminal').querySelector<HTMLSelectElement>(
@@ -210,6 +216,7 @@ describe('SettingsModal — sections (R-1063)', () => {
       intervalMinutes: 42,
       rdpWindowMode: 'custom',
       rdpCustomSize: '1280x720',
+      rdpClient: 'embedded',
       sshConsole: 'embedded',
       terminal: { ...h.stored.terminal, confirmClose: false },
     });

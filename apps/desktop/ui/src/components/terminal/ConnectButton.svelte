@@ -5,9 +5,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <!--
-  The connect button of a connection (R-1069). For SSH a split button: the main part opens the
-  console the settings choose, the arrow a menu that picks the console for this start only.
-  RDP and Web keep the single button.
+  The connect button of a connection (R-1069). For SSH and RDP a split button: the main part opens
+  where the settings choose, the arrow a menu that picks for this start only: in AdminHelper or
+  in the program of the system (R-1098). Web keeps the single button.
 -->
 <script lang="ts">
   import { ArrowUpRight, ChevronDown, ExternalLink, PanelTop } from '@lucide/svelte';
@@ -18,27 +18,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   interface Props {
     conn: Connection;
-    /** Without a console the start takes the one of the settings. */
-    onConnect: (c: Connection, sshConsole?: SshConsole) => void;
+    /** Without a client the start takes the one of the settings. */
+    onConnect: (c: Connection, client?: SshConsole) => void;
   }
 
   let { conn, onConnect }: Props = $props();
 
   let items = $derived<MenuItem[]>([
     {
-      label: $t('connections.connect.embedded'),
+      label: $t(
+        conn.kind === 'rdp' ? 'connections.connect.rdpEmbedded' : 'connections.connect.embedded',
+      ),
       icon: PanelTop,
       onClick: () => onConnect(conn, 'embedded'),
     },
     {
-      label: $t('connections.connect.external'),
+      label: $t(
+        conn.kind === 'rdp' ? 'connections.connect.rdpExternal' : 'connections.connect.external',
+      ),
       icon: ExternalLink,
       onClick: () => onConnect(conn, 'external'),
     },
   ]);
 </script>
 
-{#if conn.kind === 'ssh'}
+{#if conn.kind === 'ssh' || conn.kind === 'rdp'}
   <div class="split">
     <Button variant="primary" class="split-main" onclick={() => onConnect(conn)}
       >{$t('action.connect')}</Button
@@ -50,7 +54,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           variant="primary"
           class="split-more"
           iconLeft={ChevronDown}
-          aria-label={$t('connections.connect.choose')}
+          aria-label={$t(
+            conn.kind === 'rdp' ? 'connections.connect.rdpChoose' : 'connections.connect.choose',
+          )}
         />
       {/snippet}
     </Menu>

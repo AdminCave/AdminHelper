@@ -297,7 +297,9 @@ fn main() {
             sftp_download,
             rdp_embedded::tofu::rdp_trust_certificate,
             rdp_embedded::rdp_session_start,
-            rdp_embedded::rdp_session_stop
+            rdp_embedded::rdp_session_stop,
+            rdp_embedded::rdp_session_screenshot,
+            rdp_embedded::rdp_session_info
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

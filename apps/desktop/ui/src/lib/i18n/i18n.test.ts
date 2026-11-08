@@ -46,6 +46,9 @@ const DYNAMIC_PREFIXES = [
   'notifications.category.',
   'notifications.channel.',
   'notifications.history.',
+  // The embedded RDP session (RdpSession.svelte): rdp.end.${code}, rdp.performance.${value}.
+  'rdp.end.',
+  'rdp.performance.',
 ];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {

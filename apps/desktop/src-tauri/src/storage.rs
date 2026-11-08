@@ -15,8 +15,8 @@ use tauri::Manager;
 use crate::enrollment;
 use crate::error::AppError;
 use crate::models::{
-    Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings, SshConsole,
-    SyncMode, TerminalPrefs,
+    Connection, RdpClient, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings,
+    SshConsole, SyncMode, TerminalPrefs,
 };
 use crate::validation::{validate_https_url, validate_server_url_secure, validate_snippets};
 use crate::workspace::{self, Meta};
@@ -384,6 +384,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         rdp_performance_profile,
         os_notifications,
         ssh_console,
+        rdp_client,
         terminal,
         restore_sessions,
     } = prefs;
@@ -405,6 +406,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         os_notifications,
         favorite_connections: meta.map_or_else(Vec::new, |meta| meta.favorite_connections.clone()),
         ssh_console,
+        rdp_client,
         terminal,
         restore_sessions,
         open_sessions: meta.map_or_else(Vec::new, |meta| meta.open_sessions.clone()),
@@ -557,6 +559,9 @@ pub(crate) struct Prefs {
     // Absent in a prefs.json of 0.46 and before.
     #[serde(default)]
     pub ssh_console: SshConsole,
+    // Absent in a prefs.json of 0.46 and before.
+    #[serde(default)]
+    pub rdp_client: RdpClient,
     #[serde(default)]
     pub terminal: TerminalPrefs,
     // Absent in a prefs.json of 0.46 and before.
@@ -575,6 +580,7 @@ impl From<&Settings> for Prefs {
             rdp_performance_profile: settings.rdp_performance_profile,
             os_notifications: settings.os_notifications,
             ssh_console: settings.ssh_console,
+            rdp_client: settings.rdp_client,
             terminal: settings.terminal,
             restore_sessions: settings.restore_sessions,
         }
@@ -606,6 +612,7 @@ impl Prefs {
             rdp_performance_profile,
             os_notifications,
             ssh_console,
+            rdp_client,
             terminal,
             restore_sessions,
         } = mine;
@@ -641,6 +648,7 @@ impl Prefs {
             os_notifications,
         );
         take_changed(&mut self.ssh_console, &seen.ssh_console, ssh_console);
+        take_changed(&mut self.rdp_client, &seen.rdp_client, rdp_client);
         // As a whole: two windows changing different options at once, the last one wins.
         take_changed(&mut self.terminal, &seen.terminal, terminal);
         take_changed(
@@ -937,8 +945,8 @@ mod settings_tests {
     use crate::error::AppError;
     use crate::keyring_store;
     use crate::models::{
-        Connection, RdpScalingMode, Settings, Snippet, SshConsole, SyncMode, TerminalCursor,
-        TerminalPrefs, TerminalTheme,
+        Connection, RdpClient, RdpScalingMode, Settings, Snippet, SshConsole, SyncMode,
+        TerminalCursor, TerminalPrefs, TerminalTheme,
     };
     use crate::workspace::{self, EnteredWorkspace, Meta, Workspace, WorkspaceId, PALETTE};
 
@@ -1085,6 +1093,7 @@ mod settings_tests {
                 "rdpPerformanceProfile": "auto",
                 "osNotifications": true,
                 "sshConsole": "external",
+                "rdpClient": "os",
                 "terminal": {
                     "fontSize": 16,
                     "theme": "contrast",
@@ -1349,6 +1358,8 @@ mod settings_tests {
         let settings = load_settings_in(base, None).unwrap();
         assert_eq!(settings.language.as_deref(), Some("en"));
         assert_eq!(settings.ssh_console, SshConsole::Embedded);
+        assert_eq!(settings.rdp_client, RdpClient::Os);
+        assert_eq!(wire(&settings)["rdpClient"], "os");
         assert_eq!(settings.terminal, TerminalPrefs::default());
         assert_eq!(
             wire(&settings)["terminal"],
@@ -1374,6 +1385,27 @@ mod settings_tests {
                 ..TerminalPrefs::default()
             }
         );
+    }
+
+    #[test]
+    fn rdp_client_is_saved_and_read_back_per_device() {
+        let scratch = Scratch::new("settings-rdp-client");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        let _a = enter("a");
+        let seen = SeenPrefs::new();
+        for client in [RdpClient::Embedded, RdpClient::Os] {
+            let mut settings = load_settings_in(base, Some(&seen)).unwrap();
+            settings.rdp_client = client;
+            save_settings_in(base, &seen, &settings).unwrap();
+            assert_eq!(load_settings_in(base, None).unwrap().rdp_client, client);
+            let wire_name = if client == RdpClient::Embedded {
+                "embedded"
+            } else {
+                "os"
+            };
+            assert_eq!(json_of(&base.join(PREFS_FILE))["rdpClient"], wire_name);
+        }
     }
 
     #[test]

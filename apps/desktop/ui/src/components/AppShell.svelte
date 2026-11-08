@@ -59,6 +59,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
   import SessionTabs from './terminal/SessionTabs.svelte';
+  import RdpSession from './terminal/RdpSession.svelte';
   import SshTerminal from './terminal/SshTerminal.svelte';
   import Avatar from './ui/Avatar.svelte';
   import { confirmDialog } from './ui/ConfirmDialog.svelte';
@@ -499,7 +500,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#each $terminals.sessions as s (s.key)}
       {#if !s.detached}
         <div class="terminal-pane" class:hidden={s.key !== $terminals.active} data-session={s.key}>
-          <SshTerminal session={s} onClose={() => void endSession(s)} />
+          {#if s.rdp}
+            <RdpSession session={s} onClose={() => void endSession(s)} />
+          {:else}
+            <SshTerminal session={s} onClose={() => void endSession(s)} />
+          {/if}
         </div>
       {/if}
     {/each}

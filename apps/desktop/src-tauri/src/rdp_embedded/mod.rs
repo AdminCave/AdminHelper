@@ -25,32 +25,43 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use ironrdp_client::config::Destination;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 use zeroize::Zeroizing;
 
+use self::frame_ws::Frames;
 use self::session::{Code, Report, Target};
-use self::tofu::{cert_policy, CertReason};
+use self::tofu::{cert_policy, CertPolicy, CertReason};
 use crate::commands::{reject_foreign_port, run_with_deadline, OPEN_CONNECTION_TIMEOUT};
 use crate::connection::{checked_password_source, CredentialConnection};
 use crate::error::AppError;
-use crate::models::{Connection, ConnectionKind, VisitorBinding};
+use crate::models::{Connection, ConnectionKind, RdpPerformanceProfile, VisitorBinding};
 use crate::password::{load_password_keyring, rdp_port};
 use crate::session::SessionState;
 use crate::tofu::{KeyringPinStore, PinStore};
-use crate::tunnel::{resolve_connection, TunnelMapping};
+use crate::tunnel::{resolve_connection, ResolvedConnection, TunnelMapping};
 use crate::validation::validate_connection_input;
 use crate::{frpc, storage, workspace};
 
 /// The Tauri event that carries the phases of every session.
 const EVENT: &str = "rdp-session";
 
-type Running = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
+type Running = Arc<Mutex<HashMap<String, Handle>>>;
+
+/// What the app keeps of a session that has not ended.
+struct Handle {
+    stop: oneshot::Sender<()>,
+    frames: Frames,
+    /// Set once the session has started.
+    info: Option<SessionInfo>,
+}
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The sessions of this process that have not ended, each with the sender that stops it.
+/// The sessions of this process that have not ended, each with the sender that stops it, its
+/// picture and what it connected to.
 #[derive(Default)]
 pub(crate) struct RdpSessions {
     next: AtomicU64,
@@ -58,17 +69,97 @@ pub(crate) struct RdpSessions {
 }
 
 impl RdpSessions {
-    fn add(&self, stop: oneshot::Sender<()>) -> String {
+    fn add(&self, stop: oneshot::Sender<()>, frames: Frames) -> String {
         let id = format!("rdp-{}", self.next.fetch_add(1, Ordering::Relaxed) + 1);
-        lock(&self.running).insert(id.clone(), stop);
+        let handle = Handle {
+            stop,
+            frames,
+            info: None,
+        };
+        lock(&self.running).insert(id.clone(), handle);
         id
     }
 
-    fn stop(&self, id: &str) {
-        if let Some(stop) = lock(&self.running).remove(id) {
-            let _ = stop.send(());
+    fn started(&self, id: &str, info: SessionInfo) {
+        if let Some(handle) = lock(&self.running).get_mut(id) {
+            handle.info = Some(info);
         }
     }
+
+    fn stop(&self, id: &str) {
+        if let Some(handle) = lock(&self.running).remove(id) {
+            let _ = handle.stop.send(());
+        }
+    }
+
+    fn frames(&self, id: &str) -> Result<Frames, AppError> {
+        lock(&self.running)
+            .get(id)
+            .map(|handle| handle.frames.clone())
+            .ok_or_else(ended)
+    }
+
+    fn info(&self, id: &str) -> Result<SessionInfo, AppError> {
+        lock(&self.running)
+            .get(id)
+            .and_then(|handle| handle.info.clone())
+            .ok_or_else(ended)
+    }
+}
+
+fn ended() -> AppError {
+    AppError::Validation("the RDP session has ended".to_string())
+}
+
+/// What a session connected to, for the connection info of the webview.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct SessionInfo {
+    /// `host:port` of the connection as it is stored, also when a tunnel carries it.
+    target: String,
+    via_tunnel: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tunnel: Option<String>,
+    credssp: bool,
+    /// `pinned` or `trust_all`.
+    certificate: &'static str,
+    /// The pinned fingerprint; none when the connection trusts every certificate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fingerprint: Option<String>,
+}
+
+fn session_info(
+    listed: &Connection,
+    resolved: &ResolvedConnection,
+    target: &Target,
+) -> SessionInfo {
+    let host = listed.host.as_deref().unwrap_or_default().trim();
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    let (certificate, fingerprint) = match &target.policy {
+        CertPolicy::TrustAll => ("trust_all", None),
+        CertPolicy::Pinned { pin, .. } => ("pinned", pin.clone()),
+    };
+    SessionInfo {
+        target: format!("{host}:{}", rdp_port(listed)),
+        via_tunnel: resolved.via_tunnel,
+        tunnel: resolved.tunnel_name.clone().filter(|_| resolved.via_tunnel),
+        credssp: target.credssp,
+        certificate,
+        fingerprint,
+    }
+}
+
+/// The performance profile of a session to `listed`: its own, else the one of the settings.
+fn performance(listed: &Connection, settings: RdpPerformanceProfile) -> RdpPerformanceProfile {
+    listed
+        .options
+        .as_ref()
+        .and_then(|options| options.rdp.as_ref())
+        .and_then(|rdp| rdp.performance_profile)
+        .unwrap_or(settings)
 }
 
 /// One phase of a session as the webview reads it.
@@ -140,7 +231,8 @@ fn reporter(
 /// The target of a session to `listed`, the connection as the webview lists it. Rust resolves
 /// it with the session's `tunnels` and the `bindings` of its frpc and checks it as
 /// `connection::open_connection_stored` checks a start with the stored password; the password
-/// comes from the keyring, the certificate pin from `pins`. Both may wait: a blocking thread only.
+/// is `typed` when the user typed one for this start, else it comes from the keyring, the
+/// certificate pin from `pins`. Both may wait: a blocking thread only.
 fn prepare(
     base: &Path,
     listed: &Connection,
@@ -148,6 +240,7 @@ fn prepare(
     connections: &[Connection],
     bindings: &[VisitorBinding],
     pins: &dyn PinStore,
+    typed: Option<Zeroizing<String>>,
 ) -> Result<Target, AppError> {
     if listed.kind != ConnectionKind::Rdp {
         return Err(AppError::Validation(
@@ -195,18 +288,24 @@ fn prepare(
     let domain = domain.filter(|domain| !domain.is_empty());
     let destination = Destination::from_parts(host, rdp_port(&resolved.connection));
     let policy = cert_policy(&workspace.id, listed, &resolved, &destination, pins)?;
-    let password = load_password_keyring(base, source)?.ok_or_else(|| {
-        AppError::Validation("no password is stored for this RDP connection".to_string())
-    })?;
+    // An empty one is none, as on the OS client's way (`connection::rdp`).
+    let password = match typed.filter(|typed| !typed.is_empty()) {
+        Some(typed) => typed,
+        None => Zeroizing::new(load_password_keyring(base, source)?.ok_or_else(|| {
+            AppError::Validation("no password is stored for this RDP connection".to_string())
+        })?),
+    };
     Ok(Target {
         destination,
         username: username.to_string(),
         domain: domain.map(str::to_string),
-        password: Zeroizing::new(password),
+        password,
         policy,
         audio: own.and_then(|rdp| rdp.audio),
         drive: None,
         credssp: own.is_none_or(|rdp| rdp.nla != Some(false)),
+        // `rdp_session_start` sets it from the settings, which `prepare` does not read.
+        performance: RdpPerformanceProfile::Auto,
     })
 }
 
@@ -287,7 +386,8 @@ pub(crate) struct Started {
 /// Starts an embedded session to `connection` as the webview lists it; the call returns once the
 /// session's WebSocket listens. The phases follow as `rdp-session` events, the first one possibly
 /// before this call returns: the webview listens before it calls. A refusal before the start is
-/// the error of this call, as with `open_connection_stored`.
+/// the error of this call, as with `open_connection_stored`. A `password` the user typed goes to
+/// this session only and to no store.
 #[tauri::command]
 pub(crate) async fn rdp_session_start(
     app: tauri::AppHandle,
@@ -295,7 +395,9 @@ pub(crate) async fn rdp_session_start(
     signed_in: State<'_, SessionState>,
     sessions: State<'_, RdpSessions>,
     connection: Connection,
+    password: Option<String>,
 ) -> Result<Started, AppError> {
+    let password = password.map(Zeroizing::new);
     let (tunnels, connections, bindings) = match signed_in.current().await {
         Some(now) => {
             let bindings = frpc::bindings_for(state.inner(), &now.signed_in());
@@ -304,7 +406,8 @@ pub(crate) async fn rdp_session_start(
         None => Default::default(),
     };
     let (stop, stopped) = oneshot::channel();
-    let session_id = sessions.add(stop);
+    let frames = Frames::default();
+    let session_id = sessions.add(stop, frames.clone());
     let emitter = app.clone();
     let report = reporter(
         session_id.clone(),
@@ -318,7 +421,24 @@ pub(crate) async fn rdp_session_start(
     let started = run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
-        let mut target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
+        let mut target = prepare(
+            &base,
+            &connection,
+            &tunnels,
+            &connections,
+            &bindings,
+            &pins,
+            password,
+        )?;
+        target.performance = performance(
+            &connection,
+            storage::load_settings(&app)?.rdp_performance_profile,
+        );
+        let info = session_info(
+            &connection,
+            &resolve_connection(&connection, &tunnels, &bindings),
+            &target,
+        );
         let kept = Kept {
             home: app.path().home_dir().ok(),
             private: [app.path().app_data_dir(), app.path().config_dir()]
@@ -337,16 +457,20 @@ pub(crate) async fn rdp_session_start(
             }
         };
         deadline.start()?;
-        session::spawn(target, stopped, report).map(|(ws_port, token)| (ws_port, token, notice))
+        session::spawn(target, frames, stopped, report)
+            .map(|(ws_port, token)| (ws_port, token, notice, info))
     })
     .await;
     match started {
-        Ok((ws_port, token, notice)) => Ok(Started {
-            session_id,
-            ws_port,
-            token,
-            notice,
-        }),
+        Ok((ws_port, token, notice, info)) => {
+            sessions.started(&session_id, info);
+            Ok(Started {
+                session_id,
+                ws_port,
+                token,
+                notice,
+            })
+        }
         Err(error) => {
             sessions.stop(&session_id);
             Err(error)
@@ -359,6 +483,52 @@ pub(crate) async fn rdp_session_start(
 #[tauri::command]
 pub(crate) fn rdp_session_stop(sessions: State<'_, RdpSessions>, session_id: String) {
     sessions.stop(&session_id);
+}
+
+/// Saves the desktop of session `session_id` as a PNG where the user chooses; `false` once the
+/// dialog is cancelled. The picture is the one of the moment of the call, not of the save.
+#[tauri::command]
+pub(crate) async fn rdp_session_screenshot(
+    window: tauri::Window,
+    sessions: State<'_, RdpSessions>,
+    session_id: String,
+) -> Result<bool, AppError> {
+    let frames = sessions.frames(&session_id)?;
+    let name = format!("rdp-{}.png", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+    let chosen = tauri::async_runtime::spawn_blocking(move || {
+        let png = frames.png().map_err(AppError::Validation)?;
+        let Some(chosen) = window
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_file_name(name)
+            .add_filter("PNG", &["png"])
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = chosen
+            .into_path()
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+        std::fs::write(path, png)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|error| {
+        AppError::Io(std::io::Error::other(format!(
+            "the screenshot did not finish: {error}"
+        )))
+    })?;
+    chosen
+}
+
+/// What session `session_id` connected to; an error once it has ended.
+#[tauri::command]
+pub(crate) fn rdp_session_info(
+    sessions: State<'_, RdpSessions>,
+    session_id: String,
+) -> Result<SessionInfo, AppError> {
+    sessions.info(&session_id)
 }
 
 #[cfg(test)]
@@ -467,7 +637,7 @@ mod tests {
         let _ws = entered("w-0000000a");
         let mut ssh = rdp("192.0.2.10", None);
         ssh.kind = ConnectionKind::Ssh;
-        let refused = refusal(prepare(&scratch.0, &ssh, &[], &[], &[], &no_pins()));
+        let refused = refusal(prepare(&scratch.0, &ssh, &[], &[], &[], &no_pins(), None));
         assert!(refused.contains("needs an RDP connection"), "{refused}");
     }
 
@@ -477,7 +647,15 @@ mod tests {
         PortRegistry::new(&scratch.0).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
         let _ws = entered("w-0000000a");
         let listed = rdp("127.0.0.1", Some(23005));
-        let refused = refusal(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            None,
+        ));
         assert!(
             refused.starts_with("port 23005 on this machine"),
             "{refused}"
@@ -499,6 +677,7 @@ mod tests {
                 &connections,
                 &[],
                 &no_pins(),
+                None,
             ));
             assert!(refused.contains("does not match"), "{refused}");
         }
@@ -509,7 +688,15 @@ mod tests {
         let scratch = Scratch::new("pin");
         let _ws = entered("w-0000000a");
         let listed = rdp("192.0.2.10", None);
-        let refused = refusal(prepare(&scratch.0, &listed, &[], &[], &[], &Pins(None)));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &Pins(None),
+            None,
+        ));
         assert!(refused.contains("could not be read"), "{refused}");
     }
 
@@ -519,7 +706,15 @@ mod tests {
         let _keyring = crate::keyring_store::memory();
         let _ws = entered("w-0000000a");
         let listed = rdp("192.0.2.10", None);
-        let refused = refusal(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            None,
+        ));
         assert!(refused.contains("no password is stored"), "{refused}");
     }
 
@@ -532,7 +727,7 @@ mod tests {
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
         let identity = "rdp/w-0000000a/192.0.2.10:3390".to_string();
         let pins = Pins(Some(HashMap::from([(identity.clone(), "ab".repeat(32))])));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None).unwrap();
         assert_eq!(target.destination.to_string(), "192.0.2.10:3390");
         assert_eq!(target.username, "e2e");
         assert_eq!(target.domain.as_deref(), Some("LAB"));
@@ -548,13 +743,215 @@ mod tests {
     }
 
     #[test]
+    fn start_takes_a_typed_password_before_the_stored_one_and_stores_none() {
+        let scratch = Scratch::new("typed");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let listed = rdp("192.0.2.10", None);
+        let typed = Some(Zeroizing::new("typed".to_string()));
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed).unwrap();
+        assert_eq!(target.password.as_str(), "typed");
+        assert_eq!(load_password_keyring(&scratch.0, &listed).unwrap(), None);
+
+        save_password_keyring(&scratch.0, &listed, "stored").unwrap();
+        let typed = Some(Zeroizing::new("typed".to_string()));
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed).unwrap();
+        assert_eq!(target.password.as_str(), "typed");
+        assert_eq!(
+            load_password_keyring(&scratch.0, &listed)
+                .unwrap()
+                .as_deref(),
+            Some("stored")
+        );
+    }
+
+    #[test]
+    fn an_empty_typed_password_is_none() {
+        let scratch = Scratch::new("typed-empty");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let listed = rdp("192.0.2.10", None);
+        let empty = Some(Zeroizing::new(String::new()));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            empty,
+        ));
+        assert!(refused.contains("no password is stored"), "{refused}");
+    }
+
+    #[test]
+    fn a_typed_password_passes_no_check_the_stored_one_must() {
+        let scratch = Scratch::new("typed-checks");
+        PortRegistry::new(&scratch.0).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let typed = || Some(Zeroizing::new("typed".to_string()));
+        let foreign = rdp("127.0.0.1", Some(23005));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &foreign,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            typed(),
+        ));
+        assert!(
+            refused.starts_with("port 23005 on this machine"),
+            "{refused}"
+        );
+        let listed = rdp("192.0.2.10", None);
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[mapping("c1")],
+            &[],
+            &[],
+            &no_pins(),
+            typed(),
+        ));
+        assert!(refused.contains("does not match"), "{refused}");
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &Pins(None),
+            typed(),
+        ));
+        assert!(refused.contains("could not be read"), "{refused}");
+        let mut ssh = listed.clone();
+        ssh.kind = ConnectionKind::Ssh;
+        let refused = refusal(prepare(
+            &scratch.0,
+            &ssh,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            typed(),
+        ));
+        assert!(refused.contains("needs an RDP connection"), "{refused}");
+    }
+
+    #[test]
+    fn session_info_names_the_stored_target_the_tunnel_and_the_pin() {
+        let scratch = Scratch::new("info");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let listed = rdp("192.0.2.10", Some(3390));
+        save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+        let identity = "rdp/w-0000000a/192.0.2.10:3390".to_string();
+        let pins = Pins(Some(HashMap::from([(identity, "ab".repeat(32))])));
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None).unwrap();
+        let tunneled = ResolvedConnection {
+            connection: rdp("127.0.0.1", Some(6000)),
+            via_tunnel: true,
+            tunnel_name: Some("lab-rdp".to_string()),
+            tunnel_type: Some("stcp".to_string()),
+        };
+        let info = session_info(&listed, &tunneled, &target);
+        assert_eq!(
+            serde_json::to_value(&info).unwrap(),
+            serde_json::json!({
+                "target": "192.0.2.10:3390",
+                "via_tunnel": true,
+                "tunnel": "lab-rdp",
+                "credssp": true,
+                "certificate": "pinned",
+                "fingerprint": "ab".repeat(32),
+            })
+        );
+
+        let six = rdp("2001:db8::10", None);
+        assert_eq!(
+            session_info(&six, &tunneled, &target).target,
+            "[2001:db8::10]:3389"
+        );
+
+        let direct = ResolvedConnection {
+            connection: listed.clone(),
+            via_tunnel: false,
+            tunnel_name: None,
+            tunnel_type: None,
+        };
+        let mut trusting = target;
+        trusting.policy = CertPolicy::TrustAll;
+        trusting.credssp = false;
+        assert_eq!(
+            serde_json::to_value(session_info(&listed, &direct, &trusting)).unwrap(),
+            serde_json::json!({
+                "target": "192.0.2.10:3390",
+                "via_tunnel": false,
+                "credssp": false,
+                "certificate": "trust_all",
+            })
+        );
+    }
+
+    #[test]
+    fn session_takes_its_own_performance_profile_before_the_settings() {
+        let mut listed = rdp("192.0.2.10", None);
+        assert_eq!(
+            performance(&listed, RdpPerformanceProfile::Broadband),
+            RdpPerformanceProfile::Broadband
+        );
+        listed.options = Some(ConnectionOptions {
+            rdp: Some(RdpConnectionOptions {
+                performance_profile: Some(RdpPerformanceProfile::Low),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert_eq!(
+            performance(&listed, RdpPerformanceProfile::Broadband),
+            RdpPerformanceProfile::Low
+        );
+    }
+
+    #[test]
+    fn sessions_keep_picture_and_info_until_the_session_ends() {
+        let sessions = RdpSessions::default();
+        let frames = Frames::default();
+        let (stop, mut stopped) = oneshot::channel();
+        let id = sessions.add(stop, frames);
+        assert!(sessions.frames(&id).is_ok());
+        // Between the start and the end of `rdp_session_start` there is no info yet.
+        assert!(sessions.info(&id).is_err());
+        let info = SessionInfo {
+            target: "192.0.2.10:3389".to_string(),
+            via_tunnel: false,
+            tunnel: None,
+            credssp: true,
+            certificate: "trust_all",
+            fingerprint: None,
+        };
+        sessions.started(&id, info.clone());
+        assert_eq!(sessions.info(&id).unwrap(), info);
+
+        sessions.stop(&id);
+        assert!(stopped.try_recv().is_ok());
+        assert!(sessions.frames(&id).is_err());
+        assert!(sessions.info(&id).is_err());
+        // A late start of an ended session brings no info back.
+        sessions.started(&id, info);
+        assert!(sessions.info(&id).is_err());
+    }
+
+    #[test]
     fn start_takes_the_audio_of_the_connection_options() {
         let scratch = Scratch::new("audio");
         let _keyring = crate::keyring_store::memory();
         let _ws = entered("w-0000000a");
         let mut listed = rdp("192.0.2.10", None);
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
         assert_eq!(target.audio, None);
         listed.options = Some(ConnectionOptions {
             ssh: None,
@@ -563,7 +960,7 @@ mod tests {
                 ..Default::default()
             }),
         });
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
         assert_eq!(target.audio, Some(RdpAudio::Off));
     }
 
@@ -600,7 +997,7 @@ mod tests {
         for (options, reason) in cases {
             let listed = with_rdp(options);
             save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-            match prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()) {
+            match prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None) {
                 Err(error) => {
                     assert_eq!(error.code(), "ERR_RDP_OS_CLIENT", "{error}");
                     assert!(error.to_string().contains(reason), "{error}");
@@ -613,7 +1010,7 @@ mod tests {
             ..Default::default()
         });
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-        assert!(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).is_ok());
+        assert!(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).is_ok());
     }
 
     #[test]
@@ -627,13 +1024,13 @@ mod tests {
                 ..Default::default()
             });
             save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
             assert_eq!(target.credssp, credssp, "nla {nla:?}");
         }
         let plain = rdp("192.0.2.10", None);
         save_password_keyring(&scratch.0, &plain, "secret").unwrap();
         assert!(
-            prepare(&scratch.0, &plain, &[], &[], &[], &no_pins())
+            prepare(&scratch.0, &plain, &[], &[], &[], &no_pins(), None)
                 .unwrap()
                 .credssp
         );
@@ -770,7 +1167,7 @@ mod tests {
         let sessions = RdpSessions::default();
         sessions.stop("rdp-1");
         let (stop, mut stopped) = oneshot::channel();
-        let id = sessions.add(stop);
+        let id = sessions.add(stop, Frames::default());
         sessions.stop("rdp-99");
         assert!(stopped.try_recv().is_err());
         sessions.stop(&id);
@@ -782,7 +1179,7 @@ mod tests {
     fn the_last_phase_ends_the_session() {
         let sessions = RdpSessions::default();
         let (stop, _stopped) = oneshot::channel();
-        let id = sessions.add(stop);
+        let id = sessions.add(stop, Frames::default());
         let (sender, events) = mpsc::channel();
         let report = reporter(id.clone(), Arc::clone(&sessions.running), move |event| {
             sender.send(event).unwrap();

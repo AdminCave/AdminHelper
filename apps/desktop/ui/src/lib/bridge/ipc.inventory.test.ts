@@ -8,7 +8,7 @@
  * Tauri IPC inventory (harness 8a, T11).
  *
  * Three lists have to agree and none of them is checked by a compiler: the
- * commands `commands.rs` defines, the ones `main.rs` hands to
+ * commands `commands.rs` and the `rdp_embedded` module define, the ones `main.rs` hands to
  * `generate_handler!`, and the names `bridge/index.ts` passes to `invoke()`.
  * A command that is defined but not registered is dead Rust; one the UI calls
  * without registration fails at runtime with "command not found" — in the
@@ -41,11 +41,15 @@ const COMMAND_DOCS: Record<string, string> = {
 /** Commands not called from the UI, with the reason each one may stay. */
 const UNCALLED_ALLOWLIST: Record<string, string> = {};
 
+/** The files that define commands; `main.rs` registers the module's by path. */
+const COMMAND_SOURCES = [['commands.rs'], ['rdp_embedded', 'mod.rs'], ['rdp_embedded', 'tofu.rs']];
+
 function definedCommands(): Set<string> {
-  const src = read('src-tauri', 'src', 'commands.rs');
+  const src = COMMAND_SOURCES.map((p) => read('src-tauri', 'src', ...p)).join('\n');
   // The attribute may carry arguments (#[tauri::command(async)]), and rustfmt
   // keeps the fn on the next line — allow both.
-  const re = /#\[tauri::command[^\]]*\]\s*(?:pub\s+)?(?:async\s+)?fn\s+([a-z0-9_]+)/g;
+  const re =
+    /#\[tauri::command[^\]]*\]\s*(?:pub(?:\([a-z]+\))?\s+)?(?:async\s+)?fn\s+([a-z0-9_]+)/g;
   return new Set([...src.matchAll(re)].map((m) => m[1]));
 }
 
@@ -56,7 +60,8 @@ function registeredCommands(): Set<string> {
   return new Set(
     block[1]
       .split(',')
-      .map((s) => s.trim())
+      // A command of a module stands there by path (`rdp_embedded::tofu::x`); Tauri calls it `x`.
+      .map((s) => s.trim().split('::').at(-1) ?? '')
       .filter((s) => /^[a-z0-9_]+$/.test(s)),
   );
 }

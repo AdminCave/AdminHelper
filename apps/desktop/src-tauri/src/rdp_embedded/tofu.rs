@@ -4,10 +4,10 @@
 
 //! Certificate pinning of the embedded RDP client (docs/features/arch-rdp-backend.md, condition 5).
 //!
-//! IronRDP takes no rustls verifier of ours, only a callback it asks once its strict check
-//! (platform roots and server name) has failed. Self-signed RDP certificates, the normal case,
-//! always reach the callback; a certificate a platform CA issued for the host name does not
-//! (open question 1 of the spec).
+//! IronRDP takes no rustls verifier of ours, only a callback. By default it asks the callback
+//! only once its strict check (platform roots and server name) has failed; with
+//! [`CALLBACK_SCOPE`] it asks for every certificate, so a certificate a platform CA issued for the
+//! host name needs a pin like a self-signed one.
 //!
 //! Unlike the server pin (`crate::tofu`), a first contact pins nothing by itself: the session
 //! refuses and reports the fingerprint, and only `rdp_trust_certificate` stores the one the user
@@ -176,6 +176,10 @@ fn check(policy: &CertPolicy, endpoint: &str, presented: &str) -> Result<(), Opt
         reason,
     }))
 }
+
+/// The callback decides on every certificate, also one that passes the strict check.
+pub(crate) const CALLBACK_SCOPE: ironrdp_tls::CertificateValidationCallbackScope =
+    ironrdp_tls::CertificateValidationCallbackScope::AllCertificates;
 
 /// The callback for `ironrdp_client` (`with_certificate_validation_callback`). It never writes a
 /// pin, so no handshake can pin a certificate the user has not seen.
@@ -669,11 +673,11 @@ mod tests {
         );
     }
 
-    // The real handshake: IronRDP's own TLS upgrade against an in-process server with a
-    // self-signed certificate. It proves IronRDP asks our callback when its strict check
-    // fails, with the endpoint it was given, that a refusal ends the handshake and a pin lets it
-    // through, and that IronRDP's rustls configuration finds ring (it panics if the build has
-    // no single provider).
+    // The real handshake: IronRDP's own TLS upgrade against an in-process server, with the
+    // callback scope the session sets. It proves IronRDP asks our callback, with the endpoint it
+    // was given, that a refusal ends the handshake and a pin lets it through, that a certificate
+    // the platform roots trust needs a pin too, and that IronRDP's rustls configuration finds ring
+    // (it panics if the build has no single provider).
     mod tls_handshake {
         use super::*;
         use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -681,16 +685,34 @@ mod tests {
         use tokio_rustls::TlsAcceptor;
 
         const IDENTITY: &str = "rdp/kunde-a/h:3389";
+        /// Marks the child process of the CA test and names its certificate directory.
+        const CA_CHILD_DIR: &str = "AH_RDP_CA_CHILD_DIR";
+        const CA_CHILD_TEST: &str =
+            "rdp_embedded::tofu::tests::tls_handshake::ca_issued_certificate_child";
+        /// The endpoint of the CA test: the certificate is issued for `localhost`.
+        const CA_ENDPOINT: &str = "localhost:3389";
 
         async fn handshake(policy: CertPolicy) -> (bool, Option<CertProblem>) {
+            handshake_with(
+                CERT_A.to_vec(),
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(KEY_A.to_vec())),
+                "127.0.0.1",
+                ENDPOINT,
+                policy,
+            )
+            .await
+        }
+
+        /// One TLS accept on a free local port; the handle says whether the handshake completed.
+        async fn tls_server(
+            cert: Vec<u8>,
+            key: PrivateKeyDer<'static>,
+        ) -> (u16, tokio::task::JoinHandle<bool>) {
             let config = rustls::ServerConfig::builder_with_provider(crate::tofu::ring_provider())
                 .with_safe_default_protocol_versions()
                 .unwrap()
                 .with_no_client_auth()
-                .with_single_cert(
-                    vec![CertificateDer::from(CERT_A.to_vec())],
-                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(KEY_A.to_vec())),
-                )
+                .with_single_cert(vec![CertificateDer::from(cert)], key)
                 .unwrap();
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -701,20 +723,153 @@ mod tests {
                     .await
                     .is_ok()
             });
+            (port, server)
+        }
 
+        async fn handshake_with(
+            cert: Vec<u8>,
+            key: PrivateKeyDer<'static>,
+            server_name: &str,
+            endpoint: &str,
+            policy: CertPolicy,
+        ) -> (bool, Option<CertProblem>) {
+            let (port, server) = tls_server(cert, key).await;
             let report = CertReport::default();
             let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-            let client = ironrdp_tls::upgrade_with_certificate_validation_callback_for_endpoint(
+            let client = ironrdp_tls::upgrade_with_scoped_certificate_validation_callback(
                 tcp,
-                "127.0.0.1",
-                ENDPOINT,
+                server_name,
+                endpoint,
                 validation_callback(policy, report.clone()),
+                CALLBACK_SCOPE,
             )
             .await;
             let accepted = client.is_ok();
             drop(client);
             let _ = server.await;
             (accepted, report.take())
+        }
+
+        /// Strict validation trusts the platform roots, which `SSL_CERT_FILE` replaces; the child
+        /// process gets the test CA that way, so no other test sees it as a platform root.
+        #[test]
+        fn tofu_handshake_with_a_ca_issued_certificate_asks_for_a_pin() {
+            let dir = std::env::temp_dir().join(format!(
+                "ah-rdp-ca-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir(&dir).unwrap();
+            write_ca_and_server_certificate(&dir);
+            let out = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", CA_CHILD_TEST, "--nocapture"])
+                .env("SSL_CERT_FILE", dir.join("ca.pem"))
+                .env_remove("SSL_CERT_DIR")
+                .env(CA_CHILD_DIR, &dir)
+                .output()
+                .unwrap();
+            std::fs::remove_dir_all(&dir).unwrap();
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success(),
+                "{stdout}{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            // The filter matched and the child really ran its checks.
+            assert!(stdout.contains("1 passed"), "{stdout}");
+        }
+
+        #[tokio::test]
+        async fn ca_issued_certificate_child() {
+            let Some(dir) = std::env::var_os(CA_CHILD_DIR).map(std::path::PathBuf::from) else {
+                return;
+            };
+            let cert = std::fs::read(dir.join("server.der")).unwrap();
+            let key = std::fs::read(dir.join("server-key.der")).unwrap();
+            let run = |policy| {
+                handshake_with(
+                    cert.clone(),
+                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.clone())),
+                    "localhost",
+                    CA_ENDPOINT,
+                    policy,
+                )
+            };
+
+            // The platform roots trust it: strict validation alone connects, so only the scope
+            // makes the callback decide.
+            let (port, server) = tls_server(
+                cert.clone(),
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.clone())),
+            )
+            .await;
+            let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+            let strict = ironrdp_tls::upgrade_with_certificate_validation(
+                tcp,
+                "localhost",
+                ironrdp_tls::CertificateValidation::Strict,
+            )
+            .await;
+            assert!(
+                strict.is_ok(),
+                "the platform roots must trust the test CA: {:?}",
+                strict.as_ref().err()
+            );
+            drop(strict);
+            let _ = server.await;
+
+            let (accepted, problem) = run(CertPolicy::TrustAll).await;
+            assert!(accepted);
+            assert_eq!(problem, None);
+
+            let (accepted, problem) = run(pinned(IDENTITY, None, CA_ENDPOINT)).await;
+            assert!(
+                !accepted,
+                "a CA-issued certificate without a pin must not connect"
+            );
+            assert_eq!(
+                problem,
+                Some(CertProblem {
+                    identity: IDENTITY.to_string(),
+                    fingerprint: fingerprint(&cert),
+                    reason: CertReason::Unknown,
+                })
+            );
+
+            let (accepted, problem) =
+                run(pinned(IDENTITY, Some(&fingerprint(&cert)), CA_ENDPOINT)).await;
+            assert!(accepted);
+            assert_eq!(problem, None);
+        }
+
+        fn write_ca_and_server_certificate(dir: &std::path::Path) {
+            use rcgen::{
+                BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer,
+                KeyPair, KeyUsagePurpose,
+            };
+            let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            ca_params.key_usages = vec![
+                KeyUsagePurpose::KeyCertSign,
+                KeyUsagePurpose::DigitalSignature,
+            ];
+            let ca_key = KeyPair::generate().unwrap();
+            let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+            let issuer = Issuer::new(ca_params, ca_key);
+
+            let mut params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+            params.use_authority_key_identifier_extension = true;
+            params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+            params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+            let key = KeyPair::generate().unwrap();
+            let cert = params.signed_by(&key, &issuer).unwrap();
+
+            std::fs::write(dir.join("ca.pem"), ca_cert.pem()).unwrap();
+            std::fs::write(dir.join("server.der"), cert.der()).unwrap();
+            std::fs::write(dir.join("server-key.der"), key.serialize_der()).unwrap();
         }
 
         #[tokio::test]

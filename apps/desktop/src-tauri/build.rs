@@ -71,6 +71,8 @@ const COMMANDS: &[&str] = &[
     "rdp_trust_certificate",
     "rdp_session_start",
     "rdp_session_stop",
+    "rdp_session_screenshot",
+    "rdp_session_info",
 ];
 
 fn main() {
