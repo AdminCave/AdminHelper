@@ -6,7 +6,7 @@
 // session with its name and status; a click or the arrow keys bring a tab to the front, the cross
 // and Delete close a session. A running session detaches by its button, a double click or a
 // pull downwards (R-1070); its tab stays in italics, and a click brings its window forward. An
-// RDP tab (R-1098) has its own icon and stays in the window.
+// RDP tab (R-1098) has its own icon and detaches once it is connected (R-1101).
 
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
@@ -139,25 +139,32 @@ describe('SessionTabs', () => {
       expect(onSelect).not.toHaveBeenCalled();
     });
 
-    it('offers no window for an RDP session, by button or double click, and marks its tab', async () => {
-      const RDP = session('terminal-6', 'win', 'connected', {
-        rdp: {
-          sessionId: 's1',
-          wsPort: 7001,
-          token: 't1',
-          phase: 'connected',
-          code: null,
-          certificate: null,
-          performance: null,
-          window: null,
-          scaling: null,
-          notice: null,
-        },
-      });
-      const { onDetach } = setup(PAGE_TAB, [RUN, RDP]);
-      expect(detachButton('win')).toBeNull();
-      await fireEvent.dblClick(screen.getByRole('tab', { name: /win/ }));
+    it('detaches a connected RDP session by button or double click, not one that connects', async () => {
+      const rdp = (key: string, name: string, phase: 'connected' | 'connecting') =>
+        session(key, name, phase, {
+          rdp: {
+            sessionId: 's1',
+            wsPort: 7001,
+            token: 't1',
+            phase,
+            code: null,
+            certificate: null,
+            performance: null,
+            window: null,
+            scaling: null,
+            notice: null,
+          },
+        });
+      const WIN = rdp('terminal-6', 'win', 'connected');
+      const NEW = rdp('terminal-7', 'new', 'connecting');
+      const { onDetach } = setup(PAGE_TAB, [RUN, WIN, NEW]);
+      expect(detachButton('new')).toBeNull();
+      await fireEvent.dblClick(screen.getByRole('tab', { name: /new/ }));
       expect(onDetach).not.toHaveBeenCalled();
+      await fireEvent.click(detachButton('win')!);
+      await fireEvent.dblClick(screen.getByRole('tab', { name: /win/ }));
+      expect(onDetach).toHaveBeenNthCalledWith(1, WIN);
+      expect(onDetach).toHaveBeenNthCalledWith(2, WIN);
       expect(
         screen.getByRole('tab', { name: /win/ }).querySelector('.lucide-monitor'),
       ).not.toBeNull();

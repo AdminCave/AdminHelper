@@ -6,7 +6,8 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import { registerConnectionsSync } from '$lib/stores/session';
 import { reloadForMode, clearInMemory } from '$lib/stores/connections';
-import { closeAllTerminals, detachedRoute } from '$lib/stores/terminals';
+import { closeAllTerminals, detachedRdpRoute, detachedRoute } from '$lib/stores/terminals';
+import DetachedRdp from './components/terminal/DetachedRdp.svelte';
 import DetachedTerminal from './components/terminal/DetachedTerminal.svelte';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
@@ -17,8 +18,9 @@ if (!target) {
   throw new Error('#app element not found');
 }
 
-// A window a session is detached into (R-1070) shows that session only, and ends none.
+// A window a session is detached into (R-1070, R-1101) shows that session only, and ends none.
 const detached = detachedRoute(window.location.hash);
+const detachedRdp = detachedRdpRoute(window.location.hash);
 
 function mountApp(target: HTMLElement) {
   // Wire the session store to the connections store here (a leaf module) so the
@@ -33,9 +35,13 @@ function mountApp(target: HTMLElement) {
   return mount(App, { target });
 }
 
-const app =
-  detached === null
-    ? mountApp(target)
-    : mount(DetachedTerminal, { target, props: { id: detached } });
+function mountWindow(target: HTMLElement) {
+  if (detached !== null) return mount(DetachedTerminal, { target, props: { id: detached } });
+  if (detachedRdp !== null)
+    return mount(DetachedRdp, { target, props: { sessionId: detachedRdp } });
+  return mountApp(target);
+}
+
+const app = mountWindow(target);
 
 export default app;

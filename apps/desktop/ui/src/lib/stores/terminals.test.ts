@@ -12,7 +12,8 @@
 // a run are kept for the next (R-1070): opened again only when chosen, saved only once the
 // connections are there, and not wiped by the logout. An RDP tab (R-1098) follows the phases of
 // its own session, also one that came before the start answered, and closing, a reconnect, a new
-// profile or a pinned certificate end the session it had.
+// profile or a pinned certificate end the session it had. Detached (R-1101), its window logs in
+// at the session anew and the tab lets go of it; docked or closed there, the tab logs in again.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
@@ -43,6 +44,9 @@ const h = vi.hoisted(() => ({
   rdpSessionStart: vi.fn(),
   rdpSessionStop: vi.fn(async (_id: string) => {}),
   rdpTrustCertificate: vi.fn(async (_identity: string, _fingerprint: string) => {}),
+  rdpSessionAttach: vi.fn(),
+  rdpDetach: vi.fn(async (_id: string, _title: string) => {}),
+  rdpDock: vi.fn(async (_id: string) => {}),
   listeners: new Map<string, (e: { payload: { id: number } }) => void>(),
   reportError: vi.fn(),
   mappings: [] as unknown[],
@@ -65,6 +69,9 @@ vi.mock('$lib/bridge', () => ({
   rdpSessionStart: h.rdpSessionStart,
   rdpSessionStop: h.rdpSessionStop,
   rdpTrustCertificate: h.rdpTrustCertificate,
+  rdpSessionAttach: h.rdpSessionAttach,
+  rdpDetach: h.rdpDetach,
+  rdpDock: h.rdpDock,
 }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (name: string, handler: (e: { payload: { id: number } }) => void) => {
@@ -82,8 +89,10 @@ import {
   PAGE_TAB,
   attachTerminal,
   closeAllTerminals,
+  adoptRdp,
   adoptTerminal,
   closeTerminal,
+  detachedRdpRoute,
   detachedRoute,
   detachTerminal,
   disconnectRdp,
@@ -1154,5 +1163,149 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(await reconnectRdp(only().key)).toBe(false);
     expect(rdp().phase).toBe('failed');
     expect(h.reportError).toHaveBeenCalledWith('cannot share printers');
+  });
+});
+
+describe('detaching an RDP tab (R-1101)', () => {
+  const RDP = { ...CONN, id: 'r1', kind: 'rdp', host: 'win', port: 3389 } as Connection;
+  let attached: number;
+
+  const fire = <T>(name: string, payload: T) =>
+    (h.listeners.get(name) as unknown as (e: { payload: T }) => void)({ payload });
+  const phase = (event: RdpPhaseEvent) => fire('rdp-session', event);
+  const rdp = () => only().rdp!;
+
+  beforeEach(() => {
+    attached = 0;
+    h.rdpSessionStart.mockImplementation(async () => ({
+      session_id: 's1',
+      ws_port: 7001,
+      token: 't1',
+    }));
+    h.rdpSessionAttach.mockImplementation(async () => {
+      attached += 1;
+      return { ws_port: 7001, token: `renewed${attached}` };
+    });
+  });
+
+  async function detached(): Promise<string> {
+    await listenForDocking();
+    await openRdp(RDP);
+    phase({ session_id: 's1', phase: 'connected' });
+    await detachTerminal(only().key);
+    // What the tab of the test before ended as this one started.
+    h.rdpSessionStop.mockClear();
+    return only().key;
+  }
+
+  it('moves a connected session into its window; the tab stays, out of the front', async () => {
+    await openRdp(RDP);
+    // Not connected yet: nothing to show in a window.
+    await detachTerminal(only().key);
+    expect(h.rdpDetach).not.toHaveBeenCalled();
+
+    phase({ session_id: 's1', phase: 'connected' });
+    await detachTerminal(only().key);
+    expect(h.rdpDetach).toHaveBeenCalledWith('s1', 'db');
+    expect(only().detached).toBe(true);
+    expect(get(terminals).active).toBe(PAGE_TAB);
+    // The tab still follows its session.
+    phase({ session_id: 's1', phase: 'reconnecting' });
+    expect(only().status).toBe('connecting');
+  });
+
+  it('stays in its tab when the window could not open', async () => {
+    h.rdpDetach.mockRejectedValueOnce(new Error('no window'));
+    await openRdp(RDP);
+    phase({ session_id: 's1', phase: 'connected' });
+    await detachTerminal(only().key);
+    expect(only().detached).toBeFalsy();
+    expect(h.reportError).toHaveBeenCalledWith('no window');
+  });
+
+  it('docks on rdp-docked: logged in anew first, then in front', async () => {
+    const key = await detached();
+    const seen: { detached?: boolean; token: string | null }[] = [];
+    const stop = terminals.subscribe((s) => {
+      const tab = s.sessions[0];
+      if (tab) seen.push({ detached: tab.detached, token: tab.rdp!.token });
+    });
+    fire('rdp-docked', { session_id: 's1' });
+    await settle();
+    stop();
+    expect(h.rdpSessionAttach).toHaveBeenCalledWith('s1');
+    expect(only().detached).toBe(false);
+    expect(get(terminals).active).toBe(key);
+    expect(rdp()).toMatchObject({ sessionId: 's1', wsPort: 7001, token: 'renewed1' });
+    // The tab's view never opened with the token its window used up.
+    expect(seen.filter((x) => !x.detached && x.token === 't1')).toEqual([]);
+    expect(seen.at(-1)).toEqual({ detached: false, token: 'renewed1' });
+  });
+
+  it('docks when its window is closed from the title bar, once', async () => {
+    await detached();
+    fire('rdp-window-closed', { session_id: 's1' });
+    await settle();
+    expect(only().detached).toBe(false);
+    fire('rdp-window-closed', { session_id: 's1' });
+    await settle();
+    expect(h.rdpSessionAttach).toHaveBeenCalledOnce();
+    expect(h.rdpSessionStop).not.toHaveBeenCalled();
+  });
+
+  it('a session that ended in its window shows disconnected once docked', async () => {
+    await detached();
+    phase({ session_id: 's1', phase: 'disconnected', code: 'network' });
+    fire('rdp-docked', { session_id: 's1' });
+    await settle();
+    expect(h.rdpSessionAttach).not.toHaveBeenCalled();
+    expect(only()).toMatchObject({ detached: false, status: 'disconnected' });
+    expect(rdp()).toMatchObject({ phase: 'disconnected', token: null });
+  });
+
+  it('closing a detached tab ends its session and closes its window', async () => {
+    await detached();
+    closeTerminal(only().key);
+    expect(h.rdpSessionStop).toHaveBeenCalledWith('s1');
+    expect(h.rdpDock).toHaveBeenCalledWith('s1');
+    expect(get(terminals).sessions).toEqual([]);
+  });
+
+  it('ends a session docked that no tab knows: detached before this window loaded again', async () => {
+    await listenForDocking();
+    fire('rdp-window-closed', { session_id: 'rdp-7' });
+    await settle();
+    expect(h.rdpSessionStop).toHaveBeenCalledWith('rdp-7');
+    expect(get(terminals).sessions).toEqual([]);
+  });
+
+  it('a detached window takes its session as the only one and follows its phases', async () => {
+    const key = adoptRdp('rdp-3');
+    expect(get(terminals).active).toBe(key);
+    expect(only()).toMatchObject({ detached: true, status: 'connected' });
+    await settle();
+    expect(h.rdpSessionAttach).toHaveBeenCalledWith('rdp-3');
+    expect(rdp()).toMatchObject({ sessionId: 'rdp-3', wsPort: 7001, token: 'renewed1' });
+    phase({ session_id: 'rdp-4', phase: 'disconnected' });
+    expect(only().status).toBe('connected');
+    phase({ session_id: 'rdp-3', phase: 'disconnected', code: 'closed' });
+    expect(only().status).toBe('disconnected');
+    expect(rdp()).toMatchObject({ sessionId: null, token: null });
+  });
+
+  it('a detached window whose session is gone shows it disconnected', async () => {
+    h.rdpSessionAttach.mockRejectedValueOnce(new Error('the session ended'));
+    adoptRdp('rdp-3');
+    await settle();
+    expect(only().status).toBe('disconnected');
+    expect(rdp()).toMatchObject({ phase: 'disconnected', sessionId: null, token: null });
+  });
+
+  it('reads the session of a detached RDP window from its route', () => {
+    expect(detachedRdpRoute('#/detached-rdp/rdp-12')).toBe('rdp-12');
+    expect(detachedRdpRoute('#/detached-rdp/12')).toBeNull();
+    expect(detachedRdpRoute('#/detached-rdp/rdp-1/x')).toBeNull();
+    expect(detachedRdpRoute('#/detached/3')).toBeNull();
+    expect(detachedRoute('#/detached-rdp/rdp-1')).toBeNull();
   });
 });

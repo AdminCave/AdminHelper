@@ -26,6 +26,7 @@ import type {
   HttpMethod,
   PasswordState,
   ProbeTarget,
+  RdpAttached,
   RdpDisplay,
   RdpSessionInfo,
   RdpStarted,
@@ -421,6 +422,23 @@ export function rdpSessionStart(
 
 export function rdpSessionStop(sessionId: string): Promise<void> {
   return invoke('rdp_session_stop', { sessionId });
+}
+
+// Port and a fresh token for the window that shows session `sessionId` from now on (R-1101); the
+// window before it loses the picture.
+export function rdpSessionAttach(sessionId: string): Promise<RdpAttached> {
+  return invoke<RdpAttached>('rdp_session_attach', { sessionId });
+}
+
+// Opens session `sessionId` in a window of its own titled `title`, or brings that window to the
+// front.
+export function rdpDetach(sessionId: string, title: string): Promise<void> {
+  return invoke('rdp_detach', { sessionId, title });
+}
+
+// Closes the window of session `sessionId`; main hears `rdp-docked`.
+export function rdpDock(sessionId: string): Promise<void> {
+  return invoke('rdp_dock', { sessionId });
 }
 
 // Saves the desktop as a PNG where the user chooses; false once the dialog is cancelled.

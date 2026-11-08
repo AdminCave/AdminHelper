@@ -345,6 +345,12 @@ export interface RdpStarted {
   notice?: 'drive_unavailable';
 }
 
+/** Where a window logs in at the WebSocket of a running session (`rdp_session_attach`). */
+export interface RdpAttached {
+  ws_port: number;
+  token: string;
+}
+
 export type RdpPhase =
   'connecting' | 'connected' | 'reconnecting' | 'certificate' | 'disconnected' | 'failed';
 

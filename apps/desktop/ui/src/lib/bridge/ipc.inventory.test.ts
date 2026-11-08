@@ -39,12 +39,7 @@ const COMMAND_DOCS: Record<string, string> = {
 };
 
 /** Commands not called from the UI, with the reason each one may stay. */
-const UNCALLED_ALLOWLIST: Record<string, string> = {
-  // R-1101: the backend lands in kern-rdp-4 T6/T7, the UI that calls them in T8.
-  rdp_session_attach: 'the UI follows in kern-rdp-4 T8',
-  rdp_detach: 'the UI follows in kern-rdp-4 T8',
-  rdp_dock: 'the UI follows in kern-rdp-4 T8',
-};
+const UNCALLED_ALLOWLIST: Record<string, string> = {};
 
 /** The files that define commands; `main.rs` registers the module's by path. */
 const COMMAND_SOURCES = [

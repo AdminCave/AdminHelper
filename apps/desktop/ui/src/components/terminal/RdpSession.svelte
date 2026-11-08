@@ -11,6 +11,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   scrollbars (R-1100); a resize goes to the session once the tab kept its size for a moment.
   A click into the picture grabs the keyboard, Ctrl+Alt+Home gives it back.
   A certificate the session was refused for is shown to be confirmed; confirmed, it starts anew.
+  In a window of its own (R-1101, `onDock`) it shows what that window may do: no start, no
+  screenshot, no details, no full screen; the way back is *Dock*.
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
@@ -24,6 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     Power,
     RotateCw,
     ShieldAlert,
+    SquareArrowDownLeft,
     X,
     ZoomIn,
     ZoomOut,
@@ -78,9 +81,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     session: TerminalSession;
     /** "Close session": the tab closes, after asking when the options say so. */
     onClose?: () => void;
+    /** Shown in a window of its own: docks it back into its tab. */
+    onDock?: () => void;
   }
 
-  let { session, onClose }: Props = $props();
+  let { session, onClose, onDock }: Props = $props();
+  let detached = $derived(onDock !== undefined);
 
   let viewport: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -145,16 +151,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   let layout = $derived(layoutOf(windowMode));
   // Full screen lays the desktop out as fit, over the whole window in full screen.
-  let fullscreen = $derived(windowMode === 'fullscreen');
+  let fullscreen = $derived(!detached && windowMode === 'fullscreen');
   let scaling = $derived<RdpScalingMode>(
     rdp.scaling ?? rdpOptions?.scalingMode ?? $settings?.rdpScalingMode ?? 'auto',
   );
   let customSize = $derived(rdpOptions?.customSize ?? $settings?.rdpCustomSize ?? null);
   let layouts = $derived(
-    (['fit', 'fullscreen', 'custom'] as const).map((value) => ({
-      value,
-      label: $t(`settings.rdp.window.${value}`),
-    })),
+    (detached ? (['fit', 'custom'] as const) : (['fit', 'fullscreen', 'custom'] as const)).map(
+      (value) => ({
+        value,
+        label: $t(`settings.rdp.window.${value}`),
+      }),
+    ),
   );
   let scalings = $derived(
     (['auto', 'normal', 'hdpi'] as const).map((value) => ({
@@ -402,26 +410,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {$t('rdp.cad')}
     </Button>
     <span class="rdp-sep" aria-hidden="true"></span>
-    <IconButton
-      size="sm"
-      icon={Camera}
-      label={$t('rdp.screenshot')}
-      disabled={!connected}
-      onclick={() => void screenshot()}
-    />
-    <IconButton
-      size="sm"
-      icon={Gauge}
-      label={$t('rdp.info')}
-      disabled={rdp.sessionId === null}
-      onclick={() => void showInfo()}
-    />
-    <IconButton
-      size="sm"
-      icon={RotateCw}
-      label={$t('terminal.reconnect')}
-      onclick={() => void reconnectRdp(session.key)}
-    />
+    {#if !detached}
+      <IconButton
+        size="sm"
+        icon={Camera}
+        label={$t('rdp.screenshot')}
+        disabled={!connected}
+        onclick={() => void screenshot()}
+      />
+      <IconButton
+        size="sm"
+        icon={Gauge}
+        label={$t('rdp.info')}
+        disabled={rdp.sessionId === null}
+        onclick={() => void showInfo()}
+      />
+      <IconButton
+        size="sm"
+        icon={RotateCw}
+        label={$t('terminal.reconnect')}
+        onclick={() => void reconnectRdp(session.key)}
+      />
+    {/if}
     <IconButton
       size="sm"
       icon={Power}
@@ -429,18 +439,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
       disabled={rdp.sessionId === null}
       onclick={() => disconnectRdp(session.key)}
     />
-    <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+    {#if onDock}
+      <Button size="sm" variant="secondary" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+        {$t('terminal.dock')}
+      </Button>
+    {:else}
+      <IconButton size="sm" icon={X} label={$t('terminal.close')} onclick={onClose} />
+    {/if}
   </header>
 
   <div class="rdp-bar">
-    <label class="rdp-label" for="rdp-performance-{session.key}">{$t('rdp.performance')}</label>
-    <Select
-      id="rdp-performance-{session.key}"
-      size="sm"
-      value={profile}
-      options={profiles}
-      onChange={(v) => void setRdpPerformance(session.key, v as RdpPerformanceProfile)}
-    />
+    {#if !detached}
+      <!-- A new profile starts the session anew, which only its tab may. -->
+      <label class="rdp-label" for="rdp-performance-{session.key}">{$t('rdp.performance')}</label>
+      <Select
+        id="rdp-performance-{session.key}"
+        size="sm"
+        value={profile}
+        options={profiles}
+        onChange={(v) => void setRdpPerformance(session.key, v as RdpPerformanceProfile)}
+      />
+    {/if}
     <label class="rdp-label" for="rdp-window-{session.key}">{$t('rdp.window')}</label>
     <Select
       id="rdp-window-{session.key}"
@@ -524,7 +543,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <MonitorOff size={30} />
         {/if}
         <span>{endText}</span>
-        {#if rdp.phase === 'certificate' && rdp.certificate}
+        {#if onDock}
+          <Button size="sm" iconLeft={SquareArrowDownLeft} onclick={onDock}>
+            {$t('terminal.dock')}
+          </Button>
+        {:else if rdp.phase === 'certificate' && rdp.certificate}
           <Button size="sm" onclick={() => (certificateLater = false)}>
             {$t('rdp.certificate.review')}
           </Button>
@@ -551,7 +574,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   <!-- Inside the tab: in full screen it lies over everything else of the window. -->
   <Modal
-    open={rdp.phase === 'certificate' && rdp.certificate !== null && !certificateLater}
+    open={!detached && rdp.phase === 'certificate' && rdp.certificate !== null && !certificateLater}
     title={$t('rdp.certificate.title')}
     onClose={() => (certificateLater = true)}
   >

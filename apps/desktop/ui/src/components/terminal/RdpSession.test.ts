@@ -7,7 +7,8 @@
 // reach the store or the bridge, a new session gets a socket of its own and the old one closes,
 // and the foot shows what the stream measured, a dash for what it did not. The desktop follows
 // the size of the tab after a pause or keeps a fixed size with a zoom (R-1100), starting with the
-// modes of the settings.
+// modes of the settings. In a window of its own (R-1101) it offers only what that window may do,
+// and docks.
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/svelte';
@@ -511,5 +512,49 @@ describe('RdpSession (R-1098)', () => {
     socket.handlers.stats({ fps: 30, width: 1280, height: 720, mbps: 2.345, rttMs: 11.6 });
     await tick();
     expect(foot(container)).toContain('1280×720 · — · 30 fps · 2.3 Mbit/s · 12 ms');
+  });
+
+  describe('in a window of its own (R-1101)', () => {
+    function detached(rdp: RdpView = view()) {
+      const onDock = vi.fn();
+      const result = render(RdpSession, { session: session(rdp), onDock });
+      return { ...result, onDock };
+    }
+
+    it('offers no start, screenshot, details or close, and docks with its button', async () => {
+      const { container, onDock } = detached();
+      for (const name of ['Screenshot', 'Connection info', 'Reconnect', 'End session']) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+      expect(select(container, 'performance')).toBeNull();
+      await fireEvent.click(button('Ctrl+Alt+Del'));
+      await fireEvent.click(button('Disconnect'));
+      expect(h.disconnectRdp).toHaveBeenCalledWith(KEY);
+      await fireEvent.click(button('Dock'));
+      expect(onDock).toHaveBeenCalledOnce();
+      expect(h.FakeSocket.all[0]).toMatchObject({ port: 7001, token: 't1' });
+    });
+
+    it('docks from the overlay once the session ended, and asks for no certificate', async () => {
+      const certificate = {
+        identity: 'win.example:3390',
+        fingerprint: 'ab:cd:ef',
+        reason: 'unknown' as const,
+      };
+      const { onDock } = detached(view({ phase: 'certificate', certificate, sessionId: null }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await fireEvent.click(within(overlay()!).getByRole('button', { name: 'Dock' }));
+      expect(onDock).toHaveBeenCalledOnce();
+      expect(h.trustRdpCertificate).not.toHaveBeenCalled();
+    });
+
+    it('fits the window where the settings say full screen, and offers no full screen', () => {
+      settings.set({ rdpWindowMode: 'fullscreen' });
+      const { container } = detached();
+      expect(container.querySelector('.rdp')!.classList.contains('fullscreen')).toBe(false);
+      expect(h.setFullscreen).not.toHaveBeenCalled();
+      const modes = [...select(container, 'window').options].map((o) => o.value);
+      expect(modes).toEqual(['fit', 'custom']);
+    });
   });
 });
