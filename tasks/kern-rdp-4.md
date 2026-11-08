@@ -40,8 +40,10 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T12
 Abhängt von: T3
 
-### T5 — R-1100: Live-Spec Resize und Abnahme gegen Windows  [ ]
+### T5 — R-1100: Live-Spec Resize und Abnahme gegen Windows  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/rdp-embedded.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @9aca38ba1 2026-11-08T22:49:36+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T5.verdict.json)
 Änderung: Die Live-Spec ändert die Fenstergröße gegen den xrdp-Container. Erwartet: Die Fußzeile meldet die neue Auflösung, eine Phase `reconnecting` kommt nicht, und der Bildtakt vor und nach dem Resize wird festgehalten (IronRDP #447). *Fest* mit 50 % und 1:1 trifft mit einem Klick dieselbe Desktop-Koordinate. Die Abnahme von Bedingung 10 gegen Windows mit GFX läuft als Probe im Wegwerf-Repo, wie kern-rdp-1 T9. Befund unter `tasks/private/spikes/arch-rdp-embedded/`, im Ledger nur das Ergebnis.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T12
@@ -103,3 +105,4 @@ Task-Review: am Ende
 - 2026-11-08 (T2): Der Live-Test `xrdp_live_session` überspringt in der Ruhefrist QUIET Textnachrichten (Stats, jede Sekunde); nur ein Bild ohne Quittung ist ein Fehler. Vorher fiel er, sobald Stats in die 2 s fielen (lokal rot, passt zu R-1195); die Prüfung bleibt für Bilder gleich streng.
 - 2026-11-08 (T3): Skalierung *Auto* = physische Pixel bei `scaleOf(devicePixelRatio)` (25er-Stufen, 100–500), *100 %* = CSS-Pixel bei 100, *HiDPI* = physische Pixel bei mindestens 175 (angelehnt an `/scale:180` des OS-Clients). Zoom 100 % = 1:1 je Gerätepixel. Vollbild und Multi-Monitor verhalten sich bis T4 wie *Eingepasst*. Die Mathematik liegt im neuen `lib/rdp/display.ts` statt in `renderer.ts` (dort ungetestet, weil die Tab-Tests den Renderer mocken); `renderer.ts` und `input.ts` bleiben unverändert, die Koordinaten folgen Zoom und Bildlauf über das Canvas-Rechteck. Der Start nimmt `run.display`; was der Tab danach bis zum Öffnen des Sockets misst, schickt er beim Öffnen (`FrameHandlers.opened`, Prüfer T3). `rdp_custom_size` wird im UI auf 8192 je Seite gekappt (Rust liest u16).
 - 2026-11-08 (T4): Vollbild deckt mit `position: fixed` das ganze Fenster; die Dialoge des Tabs (Zertifikat, Info) liegen deshalb im Tab-Container, sonst wären sie im Vollbild verdeckt (Prüfer T4). Die übrigen App-Dialoge und die Statusleiste bleiben im Vollbild unsichtbar; scheitert `setFullscreen`, fällt der Tab auf *Eingepasst* zurück, damit der Fehler zu sehen ist. Nur der angezeigte Tab hält das Fenster im Vollbild (verdeckte Tabs bleiben gemountet). F11 verlässt das Vollbild nur bei freigegebener Tastatur, sonst geht es an den Server. Ein Wechsel von `devicePixelRatio` allein löst keinen neuen `size` aus (bekannt, nicht in diesem Zug).
+- 2026-11-08 (T5): Windows-Abnahme Bedingung 10 im Wegwerf-Repo: der Fork 1dc939ea schließt den Resize mit GFX ohne Neuverbindung ab (3/3, ~250 ms), Upstream f96f664 fällt zurück (2/2 ReactivationTimedOut); Befund tasks/private/spikes/arch-rdp-embedded/r1100-resize/. Bildtakt gegen Windows nicht messbar (die Probe zählt Updates), die Live-Spec hält ihn gegen xrdp fest. Prüfer-Nit (kein Vergleich mit der Tab-Größe) offen gelassen.
