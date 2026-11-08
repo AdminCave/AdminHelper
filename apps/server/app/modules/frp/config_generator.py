@@ -38,7 +38,7 @@ _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
 # hinging on a substring match. frps trusts the access intermediate (ca-issuer
 # extra_trust) so this access cert is accepted.
 _VISITOR_IDENTITY_DIR = "{{IDENTITY_DIR}}"
-# frps' own bindPort default (ServerConfig.Complete, v0.69.1) and the schema's.
+# frps' own bindPort default (ServerConfig.Complete, v0.72.0) and the schema's.
 _DEFAULT_BIND_PORT = 7000
 # Always cap ports per client: without it frps defaults to unlimited, so a
 # compromised/malicious enrolled agent could register arbitrarily many proxies.
@@ -49,7 +49,7 @@ _DEFAULT_MAX_PORTS_PER_CLIENT = 16
 
 # The schema keeps new values in range (R-0411), but rows written before that
 # were never checked and are not migrated. frps exits on a port outside 0..65535
-# (validation.ValidatePort, v0.69.1), `bindPort = None` is no TOML at all, and a
+# (validation.ValidatePort, v0.72.0), `bindPort = None` is no TOML at all, and a
 # negative maxPortsPerClient lifts the cap (frps enforces it only while > 0). So
 # the generator reads these fields through the guards below and logs each
 # replacement; the stored row stays as it is.
@@ -260,7 +260,7 @@ def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """Leave out tunnels whose local_port is no port from 1 to 65535.
 
     frpc refuses the whole config for a localPort outside 0..65535 (ValidatePort,
-    v0.69.1), which took down every tunnel of the host, and 0 is no target. The API
+    v0.72.0), which took down every tunnel of the host, and 0 is no target. The API
     holds new values in range (R-0560); rows from before stay as they are. Only the
     proxy is left out, the visitor config is untouched."""
     kept = []

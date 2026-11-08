@@ -12,7 +12,7 @@ container nor frps is trusted here: the file is read strictly against the format
 deviation makes it invalid, and the reader never raises. The proxy type comes from the file
 name, the age from its mtime, both the supervisor's.
 
-Format, as frps 0.69.1 answers:
+Format, as frps 0.72.0 answers:
 
     {"proxies": [{"name": "<str>", "status": "<str>", "curConns": <int>, ...}, ...]}
 

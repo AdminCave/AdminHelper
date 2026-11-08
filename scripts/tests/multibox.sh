@@ -366,7 +366,7 @@ srv_api() {
   local action="$1"; shift
   ask "$SRV_VM" 300 "printf %s $(srv_api_py | base64 -w0) | base64 -d | python3 -I - $action $ADMIN_PW $*"
 }
-# frps_registered <tunnel> — frps logged the STCP registration of this tunnel; frp v0.69.1
+# frps_registered <tunnel> — frps logged the STCP registration of this tunnel; frp v0.72.0
 # writes "new proxy [<frpc user>.<tunnel>] type [stcp] success" (server/control.go).
 frps_registered() {
   local log
