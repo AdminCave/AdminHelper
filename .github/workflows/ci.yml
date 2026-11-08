@@ -198,7 +198,7 @@ jobs:
         # Pin ruff: a new release changes format rules / adds lints and would red every
         # open PR with no code change, and is unreproducible against a local ruff. Keep
         # in sync with the ruff pin in apps/server/requirements-dev.txt (4.88).
-        run: pip install ruff==0.15.20
+        run: pip install ruff==0.17.4
       - name: ruff check
         run: ruff check apps/server apps/monitoring apps/ca-issuer scripts
       - name: ruff format --check
