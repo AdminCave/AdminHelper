@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Pin immer, Stufe 2 Tab — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-rdp-1 · Review: pro Task
 Spec: docs/features/kern-rdp-1.md (Roadmap R-1141, R-1098)
 Heavy: linux-full — Desktop-Journey: der RDP-Tab gegen den xrdp-Container (neue Live-Spec) und `desktop_e2e_rdp_embedded` laufen im Sammellauf; IronRDP-Quelle und TLS-Prüfung ändern sich
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
