@@ -853,7 +853,7 @@ def test_server_route_answers_422_for_a_c1_control_character_in_the_name(
 
 # Rows written before T23 never met these bounds; there is no data migration, so
 # the generator guards what it reads (Kevin 2026-10-17). frps exits on a port
-# outside 0..65535 (pkg/config/v1/validation/common.go ValidatePort, v0.69.1), and
+# outside 0..65535 (pkg/config/v1/validation/common.go ValidatePort, v0.72.0), and
 # `bindPort = None` is no TOML at all.
 _GENERATOR_LOGGER = "app.modules.frp.config_generator"
 _TOKEN = "stored-token-" + "x" * 16

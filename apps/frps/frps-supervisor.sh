@@ -115,7 +115,7 @@ INPUT_MAX=1048576
 # The proxy types the server's status view lists (status_router.py).
 PROXY_TYPES="stcp https tcp udp"
 # The only top-level keys frps gets: those config_generator.py writes, then a few for
-# extra_config (frps 0.69.1 field names, none of them a listener).
+# extra_config (frps 0.72.0 field names, none of them a listener).
 TOP_KEYS="bindPort vhostHTTPSPort subDomainHost maxPortsPerClient detailedErrorsToClient
     webServer.addr webServer.port webServer.user webServer.password auth.method auth.token
     transport.maxPoolCount transport.tcpMux transport.tcpMuxKeepaliveInterval

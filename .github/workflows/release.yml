@@ -19,10 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FRP_VERSION: "0.69.1"
+  FRP_VERSION: "0.72.0"
   # Pinned SHA-256 of the official frp release artifacts (verified before use).
-  FRP_SHA256_LINUX_AMD64: "7be257b72dbbc60bcb3e0e25a5afd1dfac7b63f897084864d3c956dd3d5674e1"
-  FRP_SHA256_WINDOWS_AMD64: "829ac915f8655d4d4e021b8db61b46c3445205ed80d32b04cda7fa89d87c46e0"
+  FRP_SHA256_LINUX_AMD64: "daf719b32ca2778770bb92955e231a07414d754378b9af328aa2642862479804"
+  FRP_SHA256_WINDOWS_AMD64: "5197c1b69564089cdc229fc1260a0e25db1e722b1b7db45fe1542c3c43edf9ae"
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────

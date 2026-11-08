@@ -430,7 +430,7 @@ class FrpServerConfigDetail(FrpServerConfigOut):
 
 
 class FrpStatusProxy(BaseModel):
-    # frps (0.69.1, ProxyStatsInfo) sends these as int64/string, never null; the router
+    # frps (0.72.0, ProxyStatsInfo) sends these as int64/string, never null; the router
     # fills a missing one with 0 or "".
     name: str
     type: str

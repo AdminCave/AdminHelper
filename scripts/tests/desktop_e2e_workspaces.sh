@@ -37,7 +37,7 @@ E2E_DIR="$E2E_REPO_ROOT/apps/desktop/e2e"
 AGENT_BIN="$E2E_REPO_ROOT/apps/agent/bin/adminhelper-agent"
 # As desktop_e2e_connect_tunnel.sh pins them.
 SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4"
-FRPC_IMAGE="snowdreamtech/frpc:0.69.1"
+FRPC_IMAGE="snowdreamtech/frpc:0.72.0-alpine"
 # The names two-installations.workspaces.js expects in both installations.
 TUNNEL=e2e-ssh-tun
 CONNECTION=ssh-tunnel

@@ -22,7 +22,7 @@ AGENT_BIN="$E2E_REPO_ROOT/apps/agent/bin/adminhelper-agent"
 # Digest-pinned like docker-compose.yml — a latest/tagless upstream push must not
 # turn the suite red without an AdminHelper defect (6.136).
 SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4"
-FRPC_IMAGE="snowdreamtech/frpc:0.69.1"
+FRPC_IMAGE="snowdreamtech/frpc:0.72.0-alpine"
 
 PASS=0
 FAIL=0
