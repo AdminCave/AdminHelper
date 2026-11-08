@@ -1,5 +1,5 @@
 # ruff 0.17.4 mit dem bisherigen Regelsatz — Task-Ledger
-Status: geplant · Branch: feature/ci-5 · Review: am Ende
+Status: aktiv · Branch: feature/ci-5 · Review: am Ende
 Spec: docs/features/ci-5.md (Roadmap R-1038)
 Heavy: linux-full — `scripts/vm/bootstrap_linux.sh` installiert das ruff der Test-Boxen; der Sammellauf faehrt es
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
