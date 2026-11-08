@@ -84,6 +84,9 @@ pub enum AppError {
     /// An upload found a file of this name in the remote folder and was not asked to replace
     /// it (sftp.rs).
     SftpExists(String),
+    /// An embedded RDP session cannot carry what the connection asks for (its RD gateway, its
+    /// printers): the caller starts the OS client instead (rdp_embedded::prepare).
+    RdpOsClient(String),
     /// A non-2xx answer of the server: `code` only in the form the server promises,
     /// `message` the redacted text of its `detail` (`AppError::http`).
     Http {
@@ -139,6 +142,7 @@ impl std::fmt::Display for AppError {
                  administrator."
             ),
             AppError::SftpExists(name) => write!(f, "{name} already exists on the server"),
+            AppError::RdpOsClient(msg) => write!(f, "{msg}"),
             AppError::Http {
                 status, message, ..
             } if *message == http_fallback(*status) => write!(f, "{message}"),
@@ -251,6 +255,7 @@ impl AppError {
             AppError::SessionExpired => "ERR_SESSION_EXPIRED",
             AppError::MtlsCertRequired => "ERR_MTLS_CERT_REQUIRED",
             AppError::SftpExists(_) => "ERR_SFTP_EXISTS",
+            AppError::RdpOsClient(_) => "ERR_RDP_OS_CLIENT",
             AppError::Http { code, .. } => code.as_deref().unwrap_or("ERR_HTTP"),
         }
     }
@@ -420,6 +425,7 @@ mod tests {
             (AppError::SessionExpired, "ERR_SESSION_EXPIRED"),
             (AppError::MtlsCertRequired, "ERR_MTLS_CERT_REQUIRED"),
             (AppError::SftpExists("a.txt".into()), "ERR_SFTP_EXISTS"),
+            (AppError::RdpOsClient("gateway".into()), "ERR_RDP_OS_CLIENT"),
         ];
         for (err, code) in cases {
             assert_eq!(
