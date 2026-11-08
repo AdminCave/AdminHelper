@@ -16,7 +16,7 @@ import * as bridge from '$lib/bridge';
 import type { ClientInfo, Connection, SshConsole } from '$lib/bridge/types';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
-import { SSH_CONSOLE_DEFAULT } from '$lib/models/settings';
+import { RDP_CLIENT_DEFAULT, SSH_CONSOLE_DEFAULT } from '$lib/models/settings';
 import { sessionStore } from './session';
 import {
   connections as connectionsStore,
@@ -28,7 +28,7 @@ import { reportError, showStatus } from './statusBar';
 import { getMappings } from './tunnel';
 import { requestPassword } from './passwordPrompt';
 import { closeEditor } from './editor';
-import { openTerminal } from './terminals';
+import { openRdp, openTerminal } from './terminals';
 import { tNow } from '$lib/i18n';
 
 const isLinux =
@@ -71,14 +71,14 @@ function startRdpAttempt(): string {
   return id;
 }
 
-function scheduleRdpStatus(id: string): void {
+function scheduleRdpStatus(id: string, message: string): void {
   const attempt = rdpAttempts.get(id);
   if (!attempt) return;
   if (attempt.timer) clearTimeout(attempt.timer);
   attempt.timer = setTimeout(() => {
     const a = rdpAttempts.get(id);
     if (!a || a.errored) return;
-    showStatus(tNow('status.rdpStarting'));
+    showStatus(message);
     rdpAttempts.delete(id);
   }, RDP_STARTING_DELAY_MS);
 }
@@ -314,13 +314,23 @@ function sshConsoleFor(asked: SshConsole | undefined): SshConsole {
 }
 
 /**
- * Starts `connection`. An SSH connection opens in `sshConsole`, by default the one the settings
- * name.
+ * Whether an RDP start opens in a tab of AdminHelper: `embedded` asked for this start, else the
+ * client the settings name, else its default while the settings have not loaded.
+ */
+function rdpInTab(asked: SshConsole | undefined): boolean {
+  if (asked) return asked === 'embedded';
+  return (get(sessionStore).settings?.rdpClient ?? RDP_CLIENT_DEFAULT) === 'embedded';
+}
+
+/**
+ * Starts `connection`. `client` picks for this start only where it opens: `embedded` in
+ * AdminHelper, `external` in the program of the system (the OS terminal, the OS RDP client);
+ * without it the settings choose. A web connection always opens in the browser.
  */
 export async function initiateConnect(
   connection: Connection,
   keepEditorOpen = false,
-  sshConsole?: SshConsole,
+  client?: SshConsole,
 ): Promise<void> {
   // Resolve before validating: the server's automatic web connections have no URL until a
   // visitor gives them one.
@@ -332,8 +342,13 @@ export async function initiateConnect(
     return;
   }
 
-  if (connection.kind === 'ssh' && sshConsoleFor(sshConsole) === 'embedded') {
+  if (connection.kind === 'ssh' && sshConsoleFor(client) === 'embedded') {
     await connectEmbedded(connection, resolved, keepEditorOpen);
+    return;
+  }
+
+  if (connection.kind === 'rdp' && rdpInTab(client)) {
+    await connectRdpInTab(connection, resolved, keepEditorOpen);
     return;
   }
 
@@ -363,9 +378,82 @@ async function connectEmbedded(
   if (!keepEditorOpen) closeEditor();
 }
 
+/** The password an RDP tab starts with, and the connection as the prompt left it. */
+interface TabPassword {
+  listed: Connection;
+  /** Typed and not saved; without it Rust takes the stored one. */
+  password?: string;
+}
+
+/**
+ * The password of an RDP start in a tab: the stored one when there is one, else what the prompt
+ * asks for (saved when the user wants it remembered). `null` once the prompt was cancelled.
+ */
+async function tabPassword(
+  connection: Connection,
+  keepEditorOpen: boolean,
+): Promise<TabPassword | null> {
+  let canStore = false;
+  if (passwordStoreEnabled()) {
+    try {
+      const pwState = await bridge.passwordState(connection);
+      if (pwState.canStore && pwState.stored) return { listed: connection };
+      canStore = pwState.canStore;
+    } catch (err) {
+      reportError(`Password-Store: ${errMsg(err)}`);
+    }
+  }
+  const allowRemember = canStore && rememberAllowed(connection);
+  const outcome = await requestPassword(connection, keepEditorOpen, allowRemember);
+  if (outcome.cancelled) return null;
+  const listed = outcome.updated ?? connection;
+  if (allowRemember && outcome.remember && outcome.password) {
+    try {
+      await bridge.savePassword(listed, outcome.password);
+      return { listed };
+    } catch (err) {
+      reportError(tNow('error.passwordStore', { message: errMsg(err) }));
+    }
+  }
+  return { listed, password: outcome.password };
+}
+
+/**
+ * Opens the RDP connection `connection` in a tab of AdminHelper. One only the OS client can
+ * open (a gateway, printers) starts there instead, and the status bar says so.
+ */
+async function connectRdpInTab(
+  connection: Connection,
+  resolved: Connection,
+  keepEditorOpen: boolean,
+): Promise<void> {
+  const tab = await tabPassword(connection, keepEditorOpen);
+  if (!tab) return;
+  const { listed, password } = tab;
+  const open = await openRdp(listed, password);
+  if (open === 'os-client') {
+    const target = listed === connection ? resolved : await resolveTarget(listed);
+    if (!target) return;
+    await performConnect(listed, target, keepEditorOpen, {
+      ...(password === undefined ? { useStoredPassword: true } : { password }),
+      startingStatus: tNow('status.rdpOsClient'),
+    });
+    return;
+  }
+  if (open === 'failed') return;
+  try {
+    if (await markConnectionUsed(listed)) sessionsChanged();
+  } catch (err) {
+    reportError(errMsg(err));
+  }
+  if (!keepEditorOpen) closeEditor();
+}
+
 interface PerformOptions {
   password?: string;
   useStoredPassword?: boolean;
+  /** What the status bar says once an RDP client is starting. */
+  startingStatus?: string;
 }
 
 /**
@@ -387,7 +475,7 @@ async function performConnect(
   keepEditorOpen: boolean,
   options: PerformOptions = {},
 ): Promise<void> {
-  const { password, useStoredPassword = false } = options;
+  const { password, useStoredPassword = false, startingStatus } = options;
   try {
     let rdpId: string | null = null;
     if (resolved.kind === 'rdp') {
@@ -417,7 +505,7 @@ async function performConnect(
     await used;
 
     if (connection.kind === 'rdp') {
-      if (rdpId !== null) scheduleRdpStatus(rdpId);
+      if (rdpId !== null) scheduleRdpStatus(rdpId, startingStatus ?? tNow('status.rdpStarting'));
     } else {
       showStatus(tNow('status.connectionStarted'));
     }

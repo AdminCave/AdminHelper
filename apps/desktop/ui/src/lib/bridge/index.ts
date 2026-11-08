@@ -402,9 +402,10 @@ export function terminalDock(id: number): Promise<void> {
 
 // ─────────────────────────── Embedded RDP ─────────────────────────
 
-// Starts an embedded session; its phases follow as `rdp-session` events, so listen first.
-export function rdpSessionStart(connection: Connection): Promise<RdpStarted> {
-  return invoke<RdpStarted>('rdp_session_start', { connection });
+// Starts an embedded session; its phases follow as `rdp-session` events, so listen first. A typed
+// `password` goes to this session alone; without one Rust takes the stored one.
+export function rdpSessionStart(connection: Connection, password?: string): Promise<RdpStarted> {
+  return invoke<RdpStarted>('rdp_session_start', { connection, password: password ?? null });
 }
 
 export function rdpSessionStop(sessionId: string): Promise<void> {

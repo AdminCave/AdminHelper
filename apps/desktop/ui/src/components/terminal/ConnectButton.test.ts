@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The connect button of a connection (R-1069): for SSH the main part starts with the console of the
-// settings and the arrow picks one for this start; RDP and Web have a single button.
+// The connect button of a connection (R-1069, R-1098): for SSH and RDP the main part starts where
+// the settings say and the arrow picks for this start; Web has a single button.
 
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
@@ -57,12 +57,27 @@ describe('ConnectButton', () => {
     expect(onConnect).toHaveBeenCalledTimes(2);
   });
 
-  it('gives RDP a single connect button without a menu', async () => {
+  it('starts RDP where the settings say, or in the client picked from the arrow', async () => {
     const onConnect = setup(RDP);
     expect(arrow()).toBeNull();
-    expect(screen.getAllByRole('button')).toHaveLength(1);
     await fireEvent.click(screen.getByRole('button', { name: tNow('action.connect') }));
     expect(onConnect).toHaveBeenCalledExactlyOnceWith(RDP);
+
+    const rdpArrow = screen.getByRole('button', { name: tNow('connections.connect.rdpChoose') });
+    await fireEvent.click(rdpArrow);
+    expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.trim())).toEqual([
+      tNow('connections.connect.rdpEmbedded'),
+      tNow('connections.connect.rdpExternal'),
+    ]);
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: tNow('connections.connect.rdpEmbedded') }),
+    );
+    expect(onConnect).toHaveBeenLastCalledWith(RDP, 'embedded');
+    await fireEvent.click(rdpArrow);
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: tNow('connections.connect.rdpExternal') }),
+    );
+    expect(onConnect).toHaveBeenLastCalledWith(RDP, 'external');
   });
 
   it('gives Web a single open button without a menu', async () => {

@@ -12,11 +12,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { context } from '$lib/stores/workspace';
   import { t, resolveLanguage, type Language } from '$lib/i18n';
   import { confirmDialog } from '../ui/ConfirmDialog.svelte';
-  import { getSettingsDefaults, getIntervalMinutes } from '$lib/models/settings';
+  import {
+    getSettingsDefaults,
+    getIntervalMinutes,
+    RDP_CLIENT_DEFAULT,
+  } from '$lib/models/settings';
   import type {
     Settings,
     RdpWindowMode,
     RdpPerformanceProfile,
+    RdpClient,
     RdpScalingMode,
     SshConsole,
     TerminalPrefs,
@@ -49,6 +54,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let language = $state<Language>(resolveLanguage(stored.language));
   let storePasswords = $state(Boolean(stored.storePasswords));
   let allowSelfSignedCerts = $state(Boolean(stored.allowSelfSignedCerts));
+  let rdpClient = $state<RdpClient>(stored.rdpClient ?? RDP_CLIENT_DEFAULT);
   let rdpScalingMode = $state<RdpScalingMode>(stored.rdpScalingMode ?? 'auto');
   let rdpWindowMode = $state<RdpWindowMode>(stored.rdpWindowMode ?? 'fit');
   let rdpCustomSize = $state(stored.rdpCustomSize ?? '1920x1080');
@@ -108,6 +114,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       language,
       storePasswords,
       allowSelfSignedCerts,
+      rdpClient,
       rdpScalingMode,
       rdpWindowMode,
       rdpCustomSize: rdpCustomSize.trim(),
@@ -195,6 +202,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         >
           <div data-scope="device">
             <RdpSection
+              bind:rdpClient
               bind:rdpScalingMode
               bind:rdpWindowMode
               bind:rdpCustomSize

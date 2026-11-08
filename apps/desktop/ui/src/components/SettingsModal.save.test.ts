@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
     intervalMinutes: 5,
     language: 'de',
     storePasswords: false,
+    rdpClient: 'os',
     rdpScalingMode: 'auto',
     rdpWindowMode: 'fit',
     rdpCustomSize: '1920x1080',
@@ -315,5 +316,31 @@ describe('SettingsModal — the dialog save has a hook of its own', () => {
     await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
     expect(h.saveSettings).toHaveBeenCalledWith({ ...h.stored, language: 'en' });
     expect(h.apiProxy).not.toHaveBeenCalledWith('PUT', expect.anything(), expect.anything());
+  });
+});
+
+// The client for RDP (R-1098) is saved with the rest of the dialog; a workspace without one shows
+// the OS client, the default of Rust.
+describe('SettingsModal — the client for RDP (R-1098)', () => {
+  afterEach(() => h.setStored(h.stored));
+
+  it('shows the OS client when none is stored and saves the one chosen', async () => {
+    const withoutClient: Settings = { ...h.stored };
+    delete withoutClient.rdpClient;
+    h.setStored(withoutClient);
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+    await fireEvent.click(container.querySelector('[role="tab"][data-section="rdp"]')!);
+    const select = container.querySelector<HTMLSelectElement>('select[data-field="rdp-client"]')!;
+    expect(select.value).toBe('os');
+
+    await fireEvent.change(select, { target: { value: 'embedded' } });
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({
+      ...withoutClient,
+      rdpClient: 'embedded',
+    });
   });
 });

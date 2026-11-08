@@ -26,7 +26,7 @@ import type {
   RdpStarted,
   Settings,
 } from '$lib/bridge/types';
-import { errMsg } from '$lib/utils/errors';
+import { errMsg, IpcError } from '$lib/utils/errors';
 import { reportError } from './statusBar';
 import { getMappings } from './tunnel';
 
@@ -326,7 +326,14 @@ interface RdpRun {
   attempt: number;
   sessionId: string | null;
   unlisten: UnlistenFn | null;
+  /** The password typed for this tab, for its starts anew (a trusted certificate, a
+   * reconnect); kept nowhere else and gone with the tab. */
+  password: string | undefined;
 }
+
+/** How the start of an RDP tab went: `os-client` when Rust leaves the connection to the client
+ * of the operating system (a gateway, printers), and the tab is gone again. */
+export type RdpOpen = 'started' | 'failed' | 'os-client';
 
 const rdpRuns = new Map<string, RdpRun>();
 
@@ -402,9 +409,9 @@ function withProfile(connection: Connection, profile: RdpPerformanceProfile | nu
  * may come before the start answers with the id, so what comes before is kept and sorted after.
  * False when it did not start: the tab then shows it failed, the status bar why.
  */
-async function startRdp(key: string, run: RdpRun): Promise<boolean> {
+async function startRdp(key: string, run: RdpRun, first = false): Promise<RdpOpen> {
   const session = find(key);
-  if (!session?.rdp) return false;
+  if (!session?.rdp) return 'failed';
   releaseRdp(run);
   const attempt = run.attempt;
   const current = () => rdpRuns.get(key) === run && run.attempt === attempt;
@@ -423,14 +430,18 @@ async function startRdp(key: string, run: RdpRun): Promise<boolean> {
   );
   let sessionId: string | null = null;
   const early: RdpPhaseEvent[] = [];
-  const failed = (err: unknown): false => {
+  const failed = (err: unknown): RdpOpen => {
+    if (first && current() && err instanceof IpcError && err.code === 'ERR_RDP_OS_CLIENT') {
+      closeTerminal(key);
+      return 'os-client';
+    }
     if (current()) {
       run.unlisten?.();
       run.unlisten = null;
       updateRdp(key, { phase: 'failed' }, { status: 'disconnected' });
     }
     reportError(errMsg(err));
-    return false;
+    return 'failed';
   };
   try {
     const unlisten = await listen<RdpPhaseEvent>('rdp-session', (e) => {
@@ -440,7 +451,7 @@ async function startRdp(key: string, run: RdpRun): Promise<boolean> {
     });
     if (!current()) {
       unlisten();
-      return false;
+      return 'failed';
     }
     run.unlisten = unlisten;
   } catch (err) {
@@ -450,6 +461,7 @@ async function startRdp(key: string, run: RdpRun): Promise<boolean> {
   try {
     started = await bridge.rdpSessionStart(
       withProfile(session.connection, session.rdp.performance),
+      run.password,
     );
   } catch (err) {
     return failed(err);
@@ -457,7 +469,7 @@ async function startRdp(key: string, run: RdpRun): Promise<boolean> {
   if (!current()) {
     // Closed or started anew while it started: no tab shows this session.
     stopRdp(started.session_id);
-    return true;
+    return 'started';
   }
   sessionId = started.session_id;
   run.sessionId = sessionId;
@@ -470,17 +482,17 @@ async function startRdp(key: string, run: RdpRun): Promise<boolean> {
   for (const event of early.splice(0)) {
     if (event.session_id === sessionId && current()) onRdpPhase(key, run, event);
   }
-  return true;
+  return 'started';
 }
 
 /**
- * Opens `connection`, an RDP connection as listed, as an embedded session in a new tab in front.
- * Rust resolves and checks it. False when it did not start.
+ * Opens `connection`, an RDP connection as listed, as an embedded session in a new tab in front,
+ * with `password` when the user typed one, else the stored one. Rust resolves and checks it.
  */
-export function openRdp(connection: Connection): Promise<boolean> {
+export function openRdp(connection: Connection, password?: string): Promise<RdpOpen> {
   opened += 1;
   const key = `terminal-${opened}`;
-  const run: RdpRun = { attempt: 0, sessionId: null, unlisten: null };
+  const run: RdpRun = { attempt: 0, sessionId: null, unlisten: null, password };
   rdpRuns.set(key, run);
   const session: TerminalSession = {
     key,
@@ -502,13 +514,13 @@ export function openRdp(connection: Connection): Promise<boolean> {
     },
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
-  return startRdp(key, run);
+  return startRdp(key, run, true);
 }
 
 /** Starts the RDP session of tab `key` anew; one still running ends first. */
 export function reconnectRdp(key: string): Promise<boolean> {
   const run = rdpRuns.get(key);
-  return run ? startRdp(key, run) : Promise.resolve(false);
+  return run ? startRdp(key, run).then((open) => open === 'started') : Promise.resolve(false);
 }
 
 /** Ends the RDP session of tab `key`; the tab stays and shows it disconnected. */

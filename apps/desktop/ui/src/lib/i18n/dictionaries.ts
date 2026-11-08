@@ -386,6 +386,9 @@ export const translations: Translations = {
     'settings.section.rdp': 'RDP',
     'settings.section.terminal': 'Terminal',
     'settings.terminal.sshConsole': 'Konsole für SSH',
+    'settings.rdp.client': 'Client für RDP',
+    'settings.rdp.client.os': 'RDP-Client des Systems',
+    'settings.rdp.client.embedded': 'In AdminHelper (Vorschau)',
     'settings.terminal.sshConsole.embedded': 'AdminHelper-Terminal',
     'settings.terminal.sshConsole.external': 'OS-Terminal',
     'settings.terminal.restoreSessions': 'SSH-Tabs des letzten Starts wieder öffnen',
@@ -1069,6 +1072,8 @@ export const translations: Translations = {
 
     // ── Desktop: Status/Error-Meldungen aus Stores ────────────────────
     'status.rdpStarting': 'RDP wird gestartet…',
+    'status.rdpOsClient':
+      'Diese Verbindung öffnet nur der RDP-Client des Systems (Gateway oder Drucker); RDP wird dort gestartet…',
     'status.connectionStarted': 'Verbindung gestartet',
     'status.syncSuccess': 'Sync erfolgreich.',
     'status.syncEditVolatile': 'Änderung nur temporär — der nächste Sync überschreibt sie.',
@@ -1139,6 +1144,9 @@ export const translations: Translations = {
     'connections.connect.embedded': 'Im AdminHelper-Terminal',
     'connections.connect.external': 'Im OS-Terminal',
     'connections.connect.choose': 'Konsole wählen',
+    'connections.connect.rdpEmbedded': 'In AdminHelper',
+    'connections.connect.rdpExternal': 'Im RDP-Client des Systems',
+    'connections.connect.rdpChoose': 'RDP-Client wählen',
     'connections.bulk': 'Sammelaktionen',
     'connections.bulk.selected': '{count} ausgewählt',
     'connections.bulk.tag': 'Tag',
@@ -1675,6 +1683,9 @@ export const translations: Translations = {
     'settings.section.rdp': 'RDP',
     'settings.section.terminal': 'Terminal',
     'settings.terminal.sshConsole': 'Console for SSH',
+    'settings.rdp.client': 'Client for RDP',
+    'settings.rdp.client.os': 'RDP client of the system',
+    'settings.rdp.client.embedded': 'In AdminHelper (preview)',
     'settings.terminal.sshConsole.embedded': 'AdminHelper terminal',
     'settings.terminal.sshConsole.external': 'OS terminal',
     'settings.terminal.restoreSessions': 'Reopen the SSH tabs of the last run',
@@ -2354,6 +2365,8 @@ export const translations: Translations = {
 
     // ── Desktop: Status/Error messages from stores ────────────────────
     'status.rdpStarting': 'Starting RDP…',
+    'status.rdpOsClient':
+      'Only the RDP client of the system opens this connection (gateway or printers); starting RDP there…',
     'status.connectionStarted': 'Connection started',
     'status.syncSuccess': 'Sync successful.',
     'status.syncEditVolatile': 'Change is temporary — the next sync will overwrite it.',
@@ -2424,6 +2437,9 @@ export const translations: Translations = {
     'connections.connect.embedded': 'In the AdminHelper terminal',
     'connections.connect.external': 'In the OS terminal',
     'connections.connect.choose': 'Choose the console',
+    'connections.connect.rdpEmbedded': 'In AdminHelper',
+    'connections.connect.rdpExternal': 'In the RDP client of the system',
+    'connections.connect.rdpChoose': 'Choose the RDP client',
     'connections.bulk': 'Bulk actions',
     'connections.bulk.selected': '{count} selected',
     'connections.bulk.tag': 'Tag',

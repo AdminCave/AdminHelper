@@ -11,9 +11,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RDP_PERFORMANCE_PROFILES,
     RDP_SCALING_MODES,
   } from '$lib/models/settings';
-  import type { RdpWindowMode, RdpPerformanceProfile, RdpScalingMode } from '$lib/bridge/types';
+  import type {
+    RdpClient,
+    RdpWindowMode,
+    RdpPerformanceProfile,
+    RdpScalingMode,
+  } from '$lib/bridge/types';
 
   interface Props {
+    rdpClient: RdpClient;
     rdpScalingMode: RdpScalingMode;
     rdpWindowMode: RdpWindowMode;
     rdpCustomSize: string;
@@ -21,6 +27,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   let {
+    rdpClient = $bindable(),
     rdpScalingMode = $bindable(),
     rdpWindowMode = $bindable(),
     rdpCustomSize = $bindable(),
@@ -48,6 +55,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <div class="sm-section">
   <div class="sm-section-title">{$t('settings.section.rdp')}</div>
+  <label class="field">
+    <span class="field-label">{$t('settings.rdp.client')}</span>
+    <select data-field="rdp-client" bind:value={rdpClient}>
+      <option value="os">{$t('settings.rdp.client.os')}</option>
+      <option value="embedded">{$t('settings.rdp.client.embedded')}</option>
+    </select>
+  </label>
   <label class="field">
     <span class="field-label">{$t('settings.rdp.scaling')}</span>
     <select bind:value={rdpScalingMode}>

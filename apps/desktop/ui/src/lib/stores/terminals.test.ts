@@ -17,6 +17,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 import type { TerminalMessage } from '$lib/bridge';
+import { IpcError } from '$lib/utils/errors';
 import type {
   Connection,
   RdpPhaseEvent,
@@ -961,8 +962,8 @@ describe('an RDP session in a tab (R-1098)', () => {
   it('opens in a tab in front and follows the phases of its own session only', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-08T10:00:00Z'));
-    expect(await openRdp(RDP)).toBe(true);
-    expect(h.rdpSessionStart).toHaveBeenCalledWith(RDP);
+    expect(await openRdp(RDP)).toBe('started');
+    expect(h.rdpSessionStart).toHaveBeenCalledWith(RDP, undefined);
     expect(get(terminals).active).toBe(only().key);
     expect(only()).toMatchObject({ status: 'connecting', connectedAt: null });
     expect(rdp()).toMatchObject({
@@ -1001,7 +1002,7 @@ describe('an RDP session in a tab (R-1098)', () => {
     phase({ session_id: 'old', phase: 'connected' });
     phase({ session_id: 's9', phase: 'connected' });
     answer({ session_id: 's9', ws_port: 7009, token: 't9', notice: 'drive_unavailable' });
-    expect(await opened).toBe(true);
+    expect(await opened).toBe('started');
     expect(only().status).toBe('connected');
     expect(rdp()).toMatchObject({
       sessionId: 's9',
@@ -1012,7 +1013,7 @@ describe('an RDP session in a tab (R-1098)', () => {
 
   it('shows the start failing and says why', async () => {
     h.rdpSessionStart.mockRejectedValueOnce(new Error('no password'));
-    expect(await openRdp(RDP)).toBe(false);
+    expect(await openRdp(RDP)).toBe('failed');
     expect(only().status).toBe('disconnected');
     expect(rdp().phase).toBe('failed');
     expect(h.reportError).toHaveBeenCalledWith('no password');
@@ -1064,10 +1065,10 @@ describe('an RDP session in a tab (R-1098)', () => {
     await openRdp(RDP);
     expect(await setRdpPerformance(only().key, 'low')).toBe(true);
     expect(h.rdpSessionStop).toHaveBeenCalledWith('s1');
-    expect(h.rdpSessionStart).toHaveBeenLastCalledWith({
-      ...RDP,
-      options: { rdp: { performanceProfile: 'low' } },
-    });
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(
+      { ...RDP, options: { rdp: { performanceProfile: 'low' } } },
+      undefined,
+    );
     expect(only().connection).toBe(RDP);
     expect(rdp()).toMatchObject({ performance: 'low', sessionId: 's2' });
   });
@@ -1097,5 +1098,31 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(h.rdpTrustCertificate).toHaveBeenLastCalledWith('win:3389', 'ab:cd');
     expect(h.rdpSessionStart).toHaveBeenCalledTimes(2);
     expect(rdp()).toMatchObject({ sessionId: 's2', certificate: null, phase: 'connecting' });
+  });
+
+  it('hands a typed password to every start of its tab', async () => {
+    await openRdp(RDP, 'typed');
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed');
+    expect(JSON.stringify(get(terminals))).not.toContain('typed');
+    expect(await reconnectRdp(only().key)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed');
+    await openRdp(RDP);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined);
+  });
+
+  it('leaves a connection only the OS client can open to it, without a tab', async () => {
+    const osClient = new IpcError('cannot share printers', 'ERR_RDP_OS_CLIENT');
+    h.rdpSessionStart.mockRejectedValueOnce(osClient);
+    expect(await openRdp(RDP)).toBe('os-client');
+    expect(get(terminals).sessions).toEqual([]);
+    expect(h.reportError).not.toHaveBeenCalled();
+    expect(h.listeners.has('rdp-session')).toBe(false);
+
+    // A tab that ran already stays and says why.
+    await openRdp(RDP);
+    h.rdpSessionStart.mockRejectedValueOnce(osClient);
+    expect(await reconnectRdp(only().key)).toBe(false);
+    expect(rdp().phase).toBe('failed');
+    expect(h.reportError).toHaveBeenCalledWith('cannot share printers');
   });
 });

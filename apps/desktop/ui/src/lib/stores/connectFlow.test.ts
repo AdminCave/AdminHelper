@@ -9,8 +9,8 @@
 // stored RDP password behind a tunnel, the user and domain from the password prompt, which
 // password a start takes after the prompt's "remember password", when the prompt offers it, that
 // a refused resolution ends the start, the screen an RDP start hands to Rust, which console an
-// SSH start takes, and the session history: a connect begins a session, the rdp-exit of its
-// start ends it (R-1068).
+// SSH start takes, where an RDP start opens and with which password (R-1098), and the session
+// history: a connect begins a session, the rdp-exit of its start ends it (R-1068).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -55,7 +55,10 @@ vi.mock('$lib/bridge', () => ({
 vi.mock('./statusBar', () => ({ reportError: vi.fn(), showStatus: vi.fn() }));
 vi.mock('./tunnel', () => ({ getMappings: vi.fn(() => []) }));
 vi.mock('./editor', () => ({ closeEditor: vi.fn() }));
-vi.mock('./terminals', () => ({ openTerminal: vi.fn(async () => true) }));
+vi.mock('./terminals', () => ({
+  openTerminal: vi.fn(async () => true),
+  openRdp: vi.fn(async () => 'started'),
+}));
 vi.mock('./passwordPrompt', () => ({ requestPassword: vi.fn() }));
 vi.mock('$lib/api/connections', () => ({
   connectionsApi: { touch: vi.fn(), endSession: vi.fn(async () => ({})) },
@@ -74,10 +77,19 @@ import { initiateConnect, markRdpError, markRdpExit } from './connectFlow';
 import { reportError, showStatus } from './statusBar';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
-import { endSession, openConnection, resolveConnection, startSession } from '$lib/bridge';
+import {
+  endSession,
+  openConnection,
+  openConnectionStored,
+  passwordState,
+  resolveConnection,
+  savePassword,
+  startSession,
+} from '$lib/bridge';
 import { patchInMemory, sessionsChanged, upsert } from './connections';
 import { closeEditor } from './editor';
-import { openTerminal } from './terminals';
+import { openRdp, openTerminal } from './terminals';
+import { requestPassword } from './passwordPrompt';
 
 const rdpConn = { id: 'r1', name: 'rdp', kind: 'rdp', host: 'h' } as never;
 
@@ -808,7 +820,7 @@ describe('SSH console (R-1069)', () => {
     withConsole('embedded');
     const web: Connection = { ...sshConn, id: 'w1', kind: 'web', url: 'https://example.test' };
     await initiateConnect(web, false, 'embedded');
-    await initiateConnect(rdpConn, false, 'embedded');
+    await initiateConnect(rdpConn);
 
     expect(openTerminal).not.toHaveBeenCalled();
     expect(openConnection).toHaveBeenCalledWith(web, undefined);
@@ -818,5 +830,156 @@ describe('SSH console (R-1069)', () => {
       JSDOM_CLIENT,
       expect.any(String),
     );
+  });
+});
+
+// Where an RDP start opens (R-1098): the client of the settings, by default the OS one, or the one
+// asked for at the start. A tab takes the stored password or asks for one, since no OS client is
+// there to ask; one only the OS client can open starts there with the same password.
+describe('RDP in a tab (R-1098)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const typed: Connection = { ...(rdpConn as Connection), username: 'alice', domain: 'CORP' };
+
+  const withClient = (rdpClient: 'embedded' | 'os' | undefined, storePasswords = true) =>
+    state.setSession({ settings: { mode: 'local', storePasswords, rdpClient }, session: null });
+
+  const prompted = (password: string, remember = false) =>
+    vi.mocked(requestPassword).mockResolvedValueOnce({
+      cancelled: false,
+      updated: typed,
+      password,
+      remember,
+    });
+
+  it('opens a tab with the stored password when the settings ask, and asks for none', async () => {
+    withClient('embedded');
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+
+    await initiateConnect(rdpConn);
+
+    expect(openRdp).toHaveBeenCalledExactlyOnceWith(rdpConn, undefined);
+    expect(requestPassword).not.toHaveBeenCalled();
+    expect(openConnection).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'r1' }));
+    expect(closeEditor).toHaveBeenCalledOnce();
+  });
+
+  it('starts the OS client, the default, without a setting or before the settings load', async () => {
+    withClient(undefined);
+    await initiateConnect(rdpConn);
+    state.setSession({ settings: null, session: null });
+    await initiateConnect(rdpConn);
+
+    expect(openRdp).not.toHaveBeenCalled();
+    expect(openConnection).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes the client asked for at the start over the setting', async () => {
+    withClient('os');
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+    await initiateConnect(rdpConn, false, 'embedded');
+    expect(openRdp).toHaveBeenCalledOnce();
+
+    withClient('embedded');
+    await initiateConnect(rdpConn, false, 'external');
+    expect(openRdp).toHaveBeenCalledOnce();
+    expect(openConnection).toHaveBeenCalledOnce();
+  });
+
+  it('hands the typed password to the tab when it is not remembered', async () => {
+    withClient('embedded');
+    prompted('pw');
+    await initiateConnect(rdpConn, true);
+
+    expect(requestPassword).toHaveBeenCalledWith(rdpConn, true, true);
+    expect(savePassword).not.toHaveBeenCalled();
+    expect(openRdp).toHaveBeenCalledExactlyOnceWith(typed, 'pw');
+    expect(closeEditor).not.toHaveBeenCalled();
+  });
+
+  it('hands no password to the tab once the remembered one is saved', async () => {
+    withClient('embedded');
+    prompted('pw', true);
+    await initiateConnect(rdpConn);
+
+    expect(savePassword).toHaveBeenCalledWith(typed, 'pw');
+    expect(openRdp).toHaveBeenCalledExactlyOnceWith(typed, undefined);
+  });
+
+  it('asks without a store and offers no remembering, and keeps the typed one on a failed save', async () => {
+    withClient('embedded', false);
+    prompted('pw');
+    await initiateConnect(rdpConn);
+    expect(passwordState).not.toHaveBeenCalled();
+    expect(requestPassword).toHaveBeenLastCalledWith(rdpConn, false, false);
+    expect(openRdp).toHaveBeenLastCalledWith(typed, 'pw');
+
+    withClient('embedded');
+    prompted('pw2', true);
+    vi.mocked(savePassword).mockRejectedValueOnce(new Error('keyring locked'));
+    await initiateConnect(rdpConn);
+    expect(reportError).toHaveBeenCalledWith('error.passwordStore');
+    expect(openRdp).toHaveBeenLastCalledWith(typed, 'pw2');
+  });
+
+  it('starts nothing once the prompt is cancelled', async () => {
+    withClient('embedded');
+    vi.mocked(requestPassword).mockResolvedValueOnce({ cancelled: true });
+    await initiateConnect(rdpConn);
+
+    expect(openRdp).not.toHaveBeenCalled();
+    expect(openConnection).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('marks nothing used and keeps the editor when the tab did not start', async () => {
+    withClient('embedded');
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+    vi.mocked(openRdp).mockResolvedValueOnce('failed');
+    await initiateConnect(rdpConn);
+
+    expect(upsert).not.toHaveBeenCalled();
+    expect(closeEditor).not.toHaveBeenCalled();
+    expect(openConnection).not.toHaveBeenCalled();
+  });
+
+  it('starts one only the OS client opens there with the typed password and says so', async () => {
+    vi.useFakeTimers();
+    withClient('embedded');
+    prompted('pw');
+    const resolvedTyped: Connection = { ...typed, port: 23004 };
+    // Resolved once before the prompt and once after it, with the user it returned.
+    vi.mocked(resolveConnection)
+      .mockResolvedValueOnce({ connection: rdpConn, viaTunnel: false })
+      .mockResolvedValueOnce({ connection: resolvedTyped, viaTunnel: true });
+    vi.mocked(openRdp).mockResolvedValueOnce('os-client');
+
+    await initiateConnect(rdpConn);
+    vi.advanceTimersByTime(800);
+
+    expect(openConnection).toHaveBeenCalledExactlyOnceWith(
+      resolvedTyped,
+      'pw',
+      JSDOM_CLIENT,
+      expect.any(String),
+    );
+    expect(showStatus).toHaveBeenCalledWith('status.rdpOsClient');
+    expect(showStatus).not.toHaveBeenCalledWith('status.rdpStarting');
+  });
+
+  it('starts one only the OS client opens there the stored way with a stored password', async () => {
+    withClient('embedded');
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+    vi.mocked(openRdp).mockResolvedValueOnce('os-client');
+    await initiateConnect(rdpConn);
+
+    expect(openConnectionStored).toHaveBeenCalledExactlyOnceWith(
+      rdpConn,
+      rdpConn,
+      JSDOM_CLIENT,
+      expect.any(String),
+    );
+    expect(openConnection).not.toHaveBeenCalled();
   });
 });

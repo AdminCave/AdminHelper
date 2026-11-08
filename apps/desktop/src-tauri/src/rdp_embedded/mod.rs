@@ -231,7 +231,8 @@ fn reporter(
 /// The target of a session to `listed`, the connection as the webview lists it. Rust resolves
 /// it with the session's `tunnels` and the `bindings` of its frpc and checks it as
 /// `connection::open_connection_stored` checks a start with the stored password; the password
-/// comes from the keyring, the certificate pin from `pins`. Both may wait: a blocking thread only.
+/// is `typed` when the user typed one for this start, else it comes from the keyring, the
+/// certificate pin from `pins`. Both may wait: a blocking thread only.
 fn prepare(
     base: &Path,
     listed: &Connection,
@@ -239,6 +240,7 @@ fn prepare(
     connections: &[Connection],
     bindings: &[VisitorBinding],
     pins: &dyn PinStore,
+    typed: Option<Zeroizing<String>>,
 ) -> Result<Target, AppError> {
     if listed.kind != ConnectionKind::Rdp {
         return Err(AppError::Validation(
@@ -286,14 +288,18 @@ fn prepare(
     let domain = domain.filter(|domain| !domain.is_empty());
     let destination = Destination::from_parts(host, rdp_port(&resolved.connection));
     let policy = cert_policy(&workspace.id, listed, &resolved, &destination, pins)?;
-    let password = load_password_keyring(base, source)?.ok_or_else(|| {
-        AppError::Validation("no password is stored for this RDP connection".to_string())
-    })?;
+    // An empty one is none, as on the OS client's way (`connection::rdp`).
+    let password = match typed.filter(|typed| !typed.is_empty()) {
+        Some(typed) => typed,
+        None => Zeroizing::new(load_password_keyring(base, source)?.ok_or_else(|| {
+            AppError::Validation("no password is stored for this RDP connection".to_string())
+        })?),
+    };
     Ok(Target {
         destination,
         username: username.to_string(),
         domain: domain.map(str::to_string),
-        password: Zeroizing::new(password),
+        password,
         policy,
         audio: own.and_then(|rdp| rdp.audio),
         drive: None,
@@ -380,7 +386,8 @@ pub(crate) struct Started {
 /// Starts an embedded session to `connection` as the webview lists it; the call returns once the
 /// session's WebSocket listens. The phases follow as `rdp-session` events, the first one possibly
 /// before this call returns: the webview listens before it calls. A refusal before the start is
-/// the error of this call, as with `open_connection_stored`.
+/// the error of this call, as with `open_connection_stored`. A `password` the user typed goes to
+/// this session only and to no store.
 #[tauri::command]
 pub(crate) async fn rdp_session_start(
     app: tauri::AppHandle,
@@ -388,7 +395,9 @@ pub(crate) async fn rdp_session_start(
     signed_in: State<'_, SessionState>,
     sessions: State<'_, RdpSessions>,
     connection: Connection,
+    password: Option<String>,
 ) -> Result<Started, AppError> {
+    let password = password.map(Zeroizing::new);
     let (tunnels, connections, bindings) = match signed_in.current().await {
         Some(now) => {
             let bindings = frpc::bindings_for(state.inner(), &now.signed_in());
@@ -412,7 +421,15 @@ pub(crate) async fn rdp_session_start(
     let started = run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
-        let mut target = prepare(&base, &connection, &tunnels, &connections, &bindings, &pins)?;
+        let mut target = prepare(
+            &base,
+            &connection,
+            &tunnels,
+            &connections,
+            &bindings,
+            &pins,
+            password,
+        )?;
         target.performance = performance(
             &connection,
             storage::load_settings(&app)?.rdp_performance_profile,
@@ -620,7 +637,7 @@ mod tests {
         let _ws = entered("w-0000000a");
         let mut ssh = rdp("192.0.2.10", None);
         ssh.kind = ConnectionKind::Ssh;
-        let refused = refusal(prepare(&scratch.0, &ssh, &[], &[], &[], &no_pins()));
+        let refused = refusal(prepare(&scratch.0, &ssh, &[], &[], &[], &no_pins(), None));
         assert!(refused.contains("needs an RDP connection"), "{refused}");
     }
 
@@ -630,7 +647,15 @@ mod tests {
         PortRegistry::new(&scratch.0).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
         let _ws = entered("w-0000000a");
         let listed = rdp("127.0.0.1", Some(23005));
-        let refused = refusal(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            None,
+        ));
         assert!(
             refused.starts_with("port 23005 on this machine"),
             "{refused}"
@@ -652,6 +677,7 @@ mod tests {
                 &connections,
                 &[],
                 &no_pins(),
+                None,
             ));
             assert!(refused.contains("does not match"), "{refused}");
         }
@@ -662,7 +688,15 @@ mod tests {
         let scratch = Scratch::new("pin");
         let _ws = entered("w-0000000a");
         let listed = rdp("192.0.2.10", None);
-        let refused = refusal(prepare(&scratch.0, &listed, &[], &[], &[], &Pins(None)));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &Pins(None),
+            None,
+        ));
         assert!(refused.contains("could not be read"), "{refused}");
     }
 
@@ -672,7 +706,15 @@ mod tests {
         let _keyring = crate::keyring_store::memory();
         let _ws = entered("w-0000000a");
         let listed = rdp("192.0.2.10", None);
-        let refused = refusal(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            None,
+        ));
         assert!(refused.contains("no password is stored"), "{refused}");
     }
 
@@ -685,7 +727,7 @@ mod tests {
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
         let identity = "rdp/w-0000000a/192.0.2.10:3390".to_string();
         let pins = Pins(Some(HashMap::from([(identity.clone(), "ab".repeat(32))])));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None).unwrap();
         assert_eq!(target.destination.to_string(), "192.0.2.10:3390");
         assert_eq!(target.username, "e2e");
         assert_eq!(target.domain.as_deref(), Some("LAB"));
@@ -701,6 +743,104 @@ mod tests {
     }
 
     #[test]
+    fn start_takes_a_typed_password_before_the_stored_one_and_stores_none() {
+        let scratch = Scratch::new("typed");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let listed = rdp("192.0.2.10", None);
+        let typed = Some(Zeroizing::new("typed".to_string()));
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed).unwrap();
+        assert_eq!(target.password.as_str(), "typed");
+        assert_eq!(load_password_keyring(&scratch.0, &listed).unwrap(), None);
+
+        save_password_keyring(&scratch.0, &listed, "stored").unwrap();
+        let typed = Some(Zeroizing::new("typed".to_string()));
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed).unwrap();
+        assert_eq!(target.password.as_str(), "typed");
+        assert_eq!(
+            load_password_keyring(&scratch.0, &listed)
+                .unwrap()
+                .as_deref(),
+            Some("stored")
+        );
+    }
+
+    #[test]
+    fn an_empty_typed_password_is_none() {
+        let scratch = Scratch::new("typed-empty");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let listed = rdp("192.0.2.10", None);
+        let empty = Some(Zeroizing::new(String::new()));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            empty,
+        ));
+        assert!(refused.contains("no password is stored"), "{refused}");
+    }
+
+    #[test]
+    fn a_typed_password_passes_no_check_the_stored_one_must() {
+        let scratch = Scratch::new("typed-checks");
+        PortRegistry::new(&scratch.0).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let typed = || Some(Zeroizing::new("typed".to_string()));
+        let foreign = rdp("127.0.0.1", Some(23005));
+        let refused = refusal(prepare(
+            &scratch.0,
+            &foreign,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            typed(),
+        ));
+        assert!(
+            refused.starts_with("port 23005 on this machine"),
+            "{refused}"
+        );
+        let listed = rdp("192.0.2.10", None);
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[mapping("c1")],
+            &[],
+            &[],
+            &no_pins(),
+            typed(),
+        ));
+        assert!(refused.contains("does not match"), "{refused}");
+        let refused = refusal(prepare(
+            &scratch.0,
+            &listed,
+            &[],
+            &[],
+            &[],
+            &Pins(None),
+            typed(),
+        ));
+        assert!(refused.contains("could not be read"), "{refused}");
+        let mut ssh = listed.clone();
+        ssh.kind = ConnectionKind::Ssh;
+        let refused = refusal(prepare(
+            &scratch.0,
+            &ssh,
+            &[],
+            &[],
+            &[],
+            &no_pins(),
+            typed(),
+        ));
+        assert!(refused.contains("needs an RDP connection"), "{refused}");
+    }
+
+    #[test]
     fn session_info_names_the_stored_target_the_tunnel_and_the_pin() {
         let scratch = Scratch::new("info");
         let _keyring = crate::keyring_store::memory();
@@ -709,7 +849,7 @@ mod tests {
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
         let identity = "rdp/w-0000000a/192.0.2.10:3390".to_string();
         let pins = Pins(Some(HashMap::from([(identity, "ab".repeat(32))])));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None).unwrap();
         let tunneled = ResolvedConnection {
             connection: rdp("127.0.0.1", Some(6000)),
             via_tunnel: true,
@@ -811,7 +951,7 @@ mod tests {
         let _ws = entered("w-0000000a");
         let mut listed = rdp("192.0.2.10", None);
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
         assert_eq!(target.audio, None);
         listed.options = Some(ConnectionOptions {
             ssh: None,
@@ -820,7 +960,7 @@ mod tests {
                 ..Default::default()
             }),
         });
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
         assert_eq!(target.audio, Some(RdpAudio::Off));
     }
 
@@ -857,7 +997,7 @@ mod tests {
         for (options, reason) in cases {
             let listed = with_rdp(options);
             save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-            match prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()) {
+            match prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None) {
                 Err(error) => {
                     assert_eq!(error.code(), "ERR_RDP_OS_CLIENT", "{error}");
                     assert!(error.to_string().contains(reason), "{error}");
@@ -870,7 +1010,7 @@ mod tests {
             ..Default::default()
         });
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-        assert!(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).is_ok());
+        assert!(prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).is_ok());
     }
 
     #[test]
@@ -884,13 +1024,13 @@ mod tests {
                 ..Default::default()
             });
             save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins()).unwrap();
+            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
             assert_eq!(target.credssp, credssp, "nla {nla:?}");
         }
         let plain = rdp("192.0.2.10", None);
         save_password_keyring(&scratch.0, &plain, "secret").unwrap();
         assert!(
-            prepare(&scratch.0, &plain, &[], &[], &[], &no_pins())
+            prepare(&scratch.0, &plain, &[], &[], &[], &no_pins(), None)
                 .unwrap()
                 .credssp
         );
