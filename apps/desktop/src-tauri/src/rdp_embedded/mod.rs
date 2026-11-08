@@ -16,6 +16,7 @@ mod license_gate;
 pub(crate) mod session;
 pub(crate) mod tofu;
 pub(crate) mod watchdog;
+pub(crate) mod window;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -513,8 +514,14 @@ pub(crate) async fn rdp_session_start(
 /// Ends the session `session_id` and its WebSocket; one that ended already, or never was, is no
 /// error. The `disconnected` phase follows as an event.
 #[tauri::command]
-pub(crate) fn rdp_session_stop(sessions: State<'_, RdpSessions>, session_id: String) {
+pub(crate) fn rdp_session_stop(
+    window: tauri::Window,
+    sessions: State<'_, RdpSessions>,
+    session_id: String,
+) -> Result<(), AppError> {
+    window::may_reach(window.label(), &session_id)?;
     sessions.stop(&session_id);
+    Ok(())
 }
 
 /// Port and a fresh, single-use token for logging in again at the WebSocket of session
@@ -523,9 +530,11 @@ pub(crate) fn rdp_session_stop(sessions: State<'_, RdpSessions>, session_id: Str
 /// the session has ended.
 #[tauri::command]
 pub(crate) fn rdp_session_attach(
+    window: tauri::Window,
     sessions: State<'_, RdpSessions>,
     session_id: String,
 ) -> Result<Attached, AppError> {
+    window::may_reach(window.label(), &session_id)?;
     sessions.attach(&session_id)
 }
 

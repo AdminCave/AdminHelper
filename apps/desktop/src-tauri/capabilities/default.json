@@ -75,6 +75,8 @@
     "allow-rdp-session-stop",
     "allow-rdp-session-screenshot",
     "allow-rdp-session-info",
-    "allow-rdp-session-attach"
+    "allow-rdp-session-attach",
+    "allow-rdp-detach",
+    "allow-rdp-dock"
   ]
 }

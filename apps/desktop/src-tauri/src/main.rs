@@ -142,6 +142,7 @@ fn main() {
         .manage(sftp::Picks::default())
         .on_window_event(|window, event| {
             commands::on_detached_window_event(window, event);
+            rdp_embedded::window::on_window_event(window, event);
             commands::on_main_window_event(window, event);
         })
         .setup(move |app| {
@@ -300,7 +301,9 @@ fn main() {
             rdp_embedded::rdp_session_stop,
             rdp_embedded::rdp_session_screenshot,
             rdp_embedded::rdp_session_info,
-            rdp_embedded::rdp_session_attach
+            rdp_embedded::rdp_session_attach,
+            rdp_embedded::window::rdp_detach,
+            rdp_embedded::window::rdp_dock
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

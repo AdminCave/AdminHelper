@@ -74,6 +74,8 @@ const COMMANDS: &[&str] = &[
     "rdp_session_screenshot",
     "rdp_session_info",
     "rdp_session_attach",
+    "rdp_detach",
+    "rdp_dock",
 ];
 
 fn main() {
