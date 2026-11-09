@@ -1,5 +1,5 @@
 # Ansible erreicht Server wie Verbinden — Task-Ledger
-Status: bereit · Branch: feature/kern-ansible-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ansible-1 · Review: pro Task
 Spec: docs/features/kern-ansible-1.md (Roadmap R-1202, R-1204)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad und keine Desktop-Journey, die ein Live-Spec faehrt (die E2E-Box hat kein Ansible); Format-Beleg mit ansible-inventory aus einer Wegwerf-Venv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -77,3 +77,4 @@ Abhängt von: T5
 - T1: Der Port-Guard (`reject_foreign_port` je Verbindung) läuft vor dem Abruf des Playbooks, damit ein abgelehnter Lauf den Server nicht fragt.
 - T3: Frage beantwortet in der Notiz von R-1204 (Kevin 2026-11-09): `--ask-pass`, Abfrage im Terminal wie bei Verbinden, ein Passwort je Lauf.
 - T5: Ein Ziel ohne Verbindung bekommt in einem `--ask-pass`-Lauf eine eigene `ansible_ssh_common_args`; sie ersetzt für diesen Host ein `ssh_common_args` aus einer eigenen `ansible.cfg`. Hingenommen (nur Läufe mit Passwort- und Hostname-Ziel zugleich und eigener Config); Hinweis des T5-Prüfers.
+- Abschluss: Das Restrisiko aus der security-Abschlussprüfung (Sprung-Host-Bein eines `--ask-pass`-Laufs, Details in der privaten Roadmap) ist hingenommen (Kevin 2026-11-09); ein Sprung-Host entsteht nur aus einem eingetragenen Wert.
