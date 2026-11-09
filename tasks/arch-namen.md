@@ -43,9 +43,11 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_tunnel_derived_
 Doku: → T12
 Abhängt von: T1, T3
 
-### T5 — Desktop: Server-Dialog mit einem Pflichtfeld (R-1210 2a, 5a)  [ ]
+### T5 — Desktop: Server-Dialog mit einem Pflichtfeld (R-1210 2a, 5a)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerModal.svelte, apps/desktop/ui/src/components/infra/ServerModal.test.ts, apps/desktop/ui/src/lib/models/infra.ts, apps/desktop/ui/src/lib/models/infra.test.ts, apps/desktop/ui/src/lib/stores/infra.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/infra.test.ts
-Änderung: Pflicht ist nur „Name (FQDN)“; „Adresse (falls abweichend)“ optional, Platzhalter = Name, gefüllt nur bei `customHostname`; ein 409 zeigt „Name schon vergeben“ am Feld; Typen um `customHostname` ergänzt (Vertragstest).
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fda60e291 2026-11-09T15:35:02+01:00
+Review: approve (.ah-out/review/arch-namen/T5.verdict.json)
+Änderung: Pflicht ist nur „Name (FQDN)“; „Adresse (falls abweichend)“ optional, Platzhalter = Name, gefüllt nur bei `customHostname`; ein 409 meldet „Name schon vergeben“ in der Statusleiste wie die übrigen Prüfungen des Dialogs; Typen um `customHostname` ergänzt (Vertragstest).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/ServerModal.test.ts src/lib/models/infra.test.ts src/lib/stores/infra.test.ts src/lib/api/types.contract.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T12
 Abhängt von: T2
