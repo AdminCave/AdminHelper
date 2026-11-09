@@ -23,12 +23,27 @@ var hostSubsystems = []struct{ name, binary string }{
 // path without depending on the host (same reason as pluginCollectors, 6.18). Two narrow calls
 // rather than host.Info: Info fails as a whole on any part it cannot read (process count, boot time,
 // host ID), which would cost the platform too. Neither has a timeout of its own: they read /etc,
-// procfs or the registry and start no tool except lsb_release, which gopsutil caps at 3s.
+// procfs, sysctls or the registry and start no tool except lsb_release, which gopsutil caps at 3s.
+// virtualization is gopsutil's except on FreeBSD (virt_freebsd.go, virt_other.go).
 var hostFactsCalls = struct {
 	platform       func() (platform, family, version string, err error)
 	virtualization func() (system, role string, err error)
 	lookPath       func(file string) (string, error)
-}{host.PlatformInformation, host.Virtualization, exec.LookPath}
+}{host.PlatformInformation, virtualization, exec.LookPath}
+
+// freebsdVirtualization maps FreeBSD's sysctls to the virtualization block: jailed is
+// security.jail.jailed, vmGuest kern.vm_guest, the hypervisor the kernel detected ("none" without
+// one; the names in sys/kern/subr_param.c). A jail wins over the VM it may run in: the agent
+// watches the jail, not the VM.
+func freebsdVirtualization(jailed bool, vmGuest string) (system, role string) {
+	switch {
+	case jailed:
+		return "jail", "guest"
+	case vmGuest != "" && vmGuest != "none":
+		return vmGuest, "guest"
+	}
+	return "", ""
+}
 
 // gopsutilNotImplemented is the text of gopsutil's ErrNotImplementedError. The sentinel lives in its
 // internal/common, out of reach, so only the text can be compared (TestCollectHostFactsNotImplemented

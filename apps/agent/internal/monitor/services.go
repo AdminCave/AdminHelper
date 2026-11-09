@@ -35,6 +35,16 @@ func serviceCounts(entries []ServiceEntry) map[string]int {
 	return map[string]int{"active": active, "total": len(entries)}
 }
 
+// answered reports whether a failed call of a service tool (systemctl, service) still answered,
+// i.e. exited non-zero on its own, rather than being ended by the timeout or the end of ctx
+// (context.DeadlineExceeded or context.Canceled from runWithTimeout), killed by a signal (exit code
+// -1) or never started. So the per-unit calls also end with ctx: once it has ended, the next call
+// returns its error unstarted.
+func answered(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0
+}
+
 // commandFailure is the short reason for a failed call of the command name: that it ran into
 // timeout, the limit the caller ran it under (runTimed), that the run was canceled, its exit status
 // or signal, or that the command did not start. Never stderr or the error text, which can name paths
