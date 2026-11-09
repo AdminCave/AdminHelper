@@ -56,10 +56,12 @@ Verify: bash scripts/dev/verify.sh agent monitoring --strict
 Doku: → T11
 Abhängt von: T3
 
-### T5 — Monitoring: Betriebssystem `freebsd` annehmen (R-1247)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/template_suggestions.py, apps/monitoring/tests/test_template_suggestions.py
-Änderung: `_OSES` (`template_suggestions.py:34`) nimmt `freebsd` auf, ohne Vorlagen-Vorschlag wie `darwin`. Test: ein Bericht mit `os: freebsd` wird gespeichert und schlägt keine Vorlage vor (Fall neben `("darwin", (), [])`, Z. 160).
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_suggestions.py
+### T5 — Monitoring: Betriebssystem `freebsd` annehmen (R-1247)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/template_suggestions.py, apps/monitoring/tests/test_template_suggestions.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @263766a7e 2026-11-09T18:27:49+01:00
+Review: approve (.ah-out/review/arch-freebsd-agent/T5.verdict.json)
+Änderung: `_OSES` (`template_suggestions.py:34`) nimmt `freebsd` auf, ohne Vorlagen-Vorschlag wie `darwin`. Test: ein Bericht mit `os: freebsd` wird gespeichert und schlägt keine Vorlage vor (Fall neben `("darwin", (), [])`, Z. 160). `test_agent_report.py::test_report_drops_unknown_os_and_subsystems` nahm `freebsd` als unbekanntes OS und nimmt jetzt `openbsd`; ein Bericht eines FreeBSD-Jails wird mit `os`, Plattform und `jail`/`guest` gespeichert.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_suggestions.py tests/test_agent_report.py
 Doku: → T11
 
 ### T6 — Agent: FreeBSD-Paket und signiertes pkg-Repo bauen (R-1247)  [ ]
@@ -97,7 +99,7 @@ Abhängt von: T6
 
 ### T11 — Doku DE+EN und CHANGELOG (R-1247)  [ ]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, changelog.d/arch-freebsd-agent.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
-Änderung: Agent-Verteilung: Abschnitt FreeBSD (Repo-Datei mit `${ABI}`, Schlüssel und Gateway-CA per `ENV`, `pkg install`, `provision`, Pfade, Dienst `adminhelper_frpc`, Takt über cron.d, Deinstallation). Monitoring: was FreeBSD meldet (`security_updates` aus pkg audit, nur ein RELEASE zählt die Basis, Aktualität der `vuln.xml` über periodic; `reboot_required`, Dienste aus `service -e` samt Einmal-Skripten, Jail/VM, ein Jail zählt als Container). Entwickler-Doku Agent und Monitoring: die Container-Liste nennt `jail` und verweist auf `hostfacts.go` statt `system_linux.go`. Entwickler-Doku Agent: Plattformdateien, `_unix`-Konvention, Cross-Build-Wächter. CI/CD: pkg-Bau aus den Quellen und Signatur. DEVELOPMENT.md: `make build-freebsd`, `make pkg`, die Vorlage, `freebsd_box.sh`. CHANGELOG-Fragment.
+Änderung: Agent-Verteilung: Abschnitt FreeBSD (Repo-Datei mit `${ABI}`, Schlüssel und Gateway-CA per `ENV`, `pkg install`, `provision`, Pfade, Dienst `adminhelper_frpc`, Takt über cron.d, Deinstallation). Monitoring: was FreeBSD meldet (`security_updates` aus pkg audit, nur ein RELEASE zählt die Basis, Aktualität der `vuln.xml` über periodic; `reboot_required`, Dienste aus `service -e` samt Einmal-Skripten, Jail/VM, ein Jail zählt als Container). Entwickler-Doku Agent und Monitoring: die Container-Liste nennt `jail` und verweist auf `hostfacts.go` statt `system_linux.go`; die `os`-Liste von `store_host_facts()` nennt `freebsd` ohne Standard-Template (`docs/developer/monitoring.html` Z. 238 f., DE+EN). Entwickler-Doku Agent: Plattformdateien, `_unix`-Konvention, Cross-Build-Wächter. CI/CD: pkg-Bau aus den Quellen und Signatur. DEVELOPMENT.md: `make build-freebsd`, `make pkg`, die Vorlage, `freebsd_box.sh`. CHANGELOG-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
