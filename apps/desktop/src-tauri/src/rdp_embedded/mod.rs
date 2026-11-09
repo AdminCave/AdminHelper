@@ -113,6 +113,18 @@ impl RdpSessions {
         }
     }
 
+    /// Ends every session and returns their ids.
+    fn stop_all(&self) -> Vec<String> {
+        let running = std::mem::take(&mut *lock(&self.running));
+        running
+            .into_iter()
+            .map(|(id, handle)| {
+                let _ = handle.stop.send(());
+                id
+            })
+            .collect()
+    }
+
     fn frames(&self, id: &str) -> Result<Frames, AppError> {
         lock(&self.running)
             .get(id)
@@ -1281,6 +1293,22 @@ mod tests {
         sessions.stop(&id);
         assert_eq!(stopped.try_recv(), Ok(()));
         sessions.stop(&id);
+    }
+
+    #[test]
+    fn stop_all_ends_every_session() {
+        let sessions = RdpSessions::default();
+        assert!(sessions.stop_all().is_empty());
+        let (stop1, mut stopped1) = oneshot::channel();
+        let (stop2, mut stopped2) = oneshot::channel();
+        let first = sessions.add(stop1, Frames::default());
+        let second = sessions.add(stop2, Frames::default());
+        let mut ended = sessions.stop_all();
+        ended.sort();
+        assert_eq!(ended, vec![first, second]);
+        assert_eq!(stopped1.try_recv(), Ok(()));
+        assert_eq!(stopped2.try_recv(), Ok(()));
+        assert!(lock(&sessions.running).is_empty());
     }
 
     #[test]

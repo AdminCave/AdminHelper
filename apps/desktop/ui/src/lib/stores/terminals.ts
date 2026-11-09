@@ -940,7 +940,8 @@ export async function listenForDocking(): Promise<UnlistenFn> {
 /**
  * Ends every session of this window, those of an earlier load of it among them, and removes
  * their tabs: as the UI starts and before the logout reloads it. RDP sessions end with their
- * tabs; one an earlier load started ends with the app, as nothing shows it.
+ * tabs; `terminal_close_all` ends any the tabs could not reach, one an earlier load started or
+ * whose stop got lost, with its windows.
  */
 export async function closeAllTerminals(): Promise<void> {
   // The logout ends the tabs, not the run: what was open is opened again after the next sign-in.

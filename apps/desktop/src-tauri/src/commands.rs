@@ -1199,10 +1199,16 @@ pub fn terminal_close(
 
 /// Ends the sessions of the calling window: the UI calls it as it starts and before it
 /// reloads, since the channels of a webview that reloaded lead nowhere and their programs
-/// would wait for input forever. Sessions of other windows run on.
+/// would wait for input forever. Sessions of other windows run on. From main it ends the RDP
+/// sessions too, those in detached windows among them (`rdp_embedded::window::close_all_of`).
 #[tauri::command]
-pub fn terminal_close_all(window: tauri::Window, registry: State<'_, PtyRegistry>) {
+pub fn terminal_close_all(
+    window: tauri::Window,
+    registry: State<'_, PtyRegistry>,
+    rdp: State<'_, crate::rdp_embedded::RdpSessions>,
+) {
     registry.close_all_of(window.label());
+    crate::rdp_embedded::window::close_all_of(window.app_handle(), window.label(), &rdp);
 }
 
 // ── Workspaces (R-0431): the launcher manages them, a workspace brings the launcher up ──

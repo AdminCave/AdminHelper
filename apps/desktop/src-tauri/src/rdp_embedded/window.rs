@@ -136,6 +136,27 @@ pub(crate) fn rdp_dock(window: tauri::Window, session_id: String) -> Result<(), 
         .map_err(window_error)
 }
 
+/// When main starts or reloads, its tabs are gone, and nothing reaches a session any more whose
+/// stop got lost on the way (a session outlives its WebSocket client since R-1101): main's
+/// `terminal_close_all` ends every RDP session and closes its windows. Other windows end none.
+pub(crate) fn close_all_of(app: &tauri::AppHandle, label: &str, sessions: &RdpSessions) {
+    for session_id in end_all_of(label, sessions) {
+        for screen in 0..super::frame_ws::SCREENS {
+            if let Some(detached) = app.get_webview_window(&window_label(&session_id, screen)) {
+                let _ = detached.destroy();
+            }
+        }
+    }
+}
+
+fn end_all_of(label: &str, sessions: &RdpSessions) -> Vec<String> {
+    if label == MAIN {
+        sessions.stop_all()
+    } else {
+        Vec::new()
+    }
+}
+
 /// Closing a detached window through its title bar is reported to main, which takes the session
 /// back as a tab (`rdp-window-closed`, the second monitor's window goes with it) or shows it on
 /// one monitor again (`rdp-monitor-closed`); the session itself keeps running.
@@ -189,6 +210,19 @@ mod tests {
         ] {
             assert_eq!(detached_session(label), None, "{label}");
         }
+    }
+
+    #[test]
+    fn only_main_ends_every_rdp_session() {
+        let sessions = RdpSessions::default();
+        let (stop, mut stopped) = tokio::sync::oneshot::channel();
+        let id = sessions.add(stop, super::super::frame_ws::Frames::default());
+        for label in ["rdp-1", "rdp-1-1", "terminal-1", "launcher"] {
+            assert!(end_all_of(label, &sessions).is_empty(), "{label}");
+        }
+        assert!(stopped.try_recv().is_err());
+        assert_eq!(end_all_of(MAIN, &sessions), vec![id]);
+        assert_eq!(stopped.try_recv(), Ok(()));
     }
 
     #[test]

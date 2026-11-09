@@ -118,8 +118,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-4.md
 Task-Review: am Ende
 
-### T14 — R-1100: Start von main beendet alle RDP-Sitzungen  [ ]
+### T14 — R-1100: Start von main beendet alle RDP-Sitzungen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/window.rs, apps/desktop/ui/src/lib/stores/terminals.ts
+Evidenz: run.sh[quick] desktop-rs desktop-ui: 2 passed, 0 failed, 16 skipped @4063df5d5 2026-11-09T01:39:22+01:00
+Review: approve (.ah-out/review/kern-rdp-4/T14.verdict.json)
 Änderung: Seit eine Sitzung den Weggang ihres WebSocket-Clients überlebt, erreicht nach einem Neuladen von main nichts mehr eine Sitzung, deren Stopp verloren ging (Abschlussprüfung security). `terminal_close_all` aus main beendet deshalb auch jede RDP-Sitzung und schließt ihre `rdp-*`-Fenster; aus anderen Fenstern bleibt es wie bisher. Test für `RdpSessions::stop_all` und für die Fensterregel; den Kommentar an `closeAllTerminals` anpassen.
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T15
