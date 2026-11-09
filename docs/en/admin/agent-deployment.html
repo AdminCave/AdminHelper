@@ -223,6 +223,16 @@ sudo adminhelper-agent run --once          # one run by hand: sync + push</code>
           <p>On Windows the agent secures the log directory before it opens the file. If that fails, it logs to stdout only and writes no <code>agent.log</code> until its next start; the FRP sync changes nothing as long as the data directory cannot be secured. When it runs as a service, the reason is in the Event Viewer under <em>Windows Logs → Application</em>: a warning from the source <code>AdminHelper-Agent</code> (event ID 1) with the directory, the error and these consequences. The entry has a description if <code>service install</code> registered the source; for a service set up by an earlier version it has none, and the text is in the event data. A run by hand, for example without administrator rights, writes no entry.</p>
           <p>For a bug report, <code>adminhelper-agent diagnostics</code> writes a <strong>redacted</strong> report (version, OS, config without secrets, log excerpt) to <code>/tmp/</code> — review it and attach it to a GitHub issue.</p>
 
+          <h3 id="resources">Resource limits</h3>
+          <p>The agent must not be noticeable on the host it monitors. On Linux, <code>adminhelper-agent.service</code> therefore runs with <code>Nice=19</code>, <code>IOSchedulingClass=idle</code>, <code>CPUQuota=50%</code> (at most half a core) and <code>MemoryMax=256M</code>. The limits also cover the tools it starts (<code>pvesh</code>, <code>docker</code>, <code>smartctl</code> …). If a tool goes over the memory limit, the kernel ends only that process, not the whole unit (<code>OOMPolicy=continue</code>): the run reports the failed call and still sends the report. Whether the <code>idle</code> IO class has an effect depends on the disk's IO scheduler (<code>bfq</code> yes, <code>mq-deadline</code> and <code>none</code> no); this has not been checked per scheduler. On Windows the service sets its process priority to &ldquo;Low&rdquo; (<code>IDLE_PRIORITY_CLASS</code>) when it starts.</p>
+          <p>If a limit is too tight on a large host (very many containers or VMs), it shows as a missing report or as an <code>oom-kill</code> of a tool in the journal. An override raises it; a package update does not overwrite it:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>sudo systemctl edit adminhelper-agent.service
+# add in the editor:
+[Service]
+MemoryMax=512M
+CPUQuota=100%</code></pre>
+
           <h2 id="upgrade">Upgrade</h2>
           <p>With the package repo set up, <code>apt upgrade</code> or <code>dnf upgrade</code> on every server is enough. During provisioning the agent writes <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> and <code>/etc/frp/frpc.toml</code>; the package does not ship these files, so an upgrade keeps them. On every install and upgrade the package enables <code>adminhelper-agent.timer</code> again, and <code>frpc.service</code> only if <code>/etc/frp/frpc.toml</code> exists.</p>
 

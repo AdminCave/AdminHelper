@@ -1,5 +1,5 @@
 # Agent: Proxmox-Storage-Abfrage, hängende Netz-Freigaben, Ressourcen-Deckel, Befehls-Freigabeliste — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-6 · Review: pro Task
 Spec: docs/features/kern-monitoring-6.md (Roadmap R-1219, R-1220, R-1221, R-1222)
 Heavy: linux-full — apps/agent (Collectors, systemd-Unit); die Box-Nachbauten von R-1219/R-1220 laufen als Beweis in T1/T3 auf einer Pool-VM der eigenen Lane
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -80,8 +80,10 @@ Komponente: agent · Dateien: apps/agent/internal/monitor/report.go
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: → T7
 
-### T7 — Doku: Agent- und Monitoring-Seiten, CHANGELOG  [ ]
+### T7 — Doku: Agent- und Monitoring-Seiten, CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ae154258f 2026-11-09T19:08:58+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - Ressourcen-Deckel samt Override per `systemctl edit` und dem Hinweis „IO-Klasse idle wirkt je nach IO-Scheduler“.
 - Proxmox-Backup-Inhalt alle 30 min.
