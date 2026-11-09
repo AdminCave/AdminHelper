@@ -20,8 +20,9 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/server.html, docs/en/developer/server.html (die Änderung selbst)
 Task-Review: am Ende
 
-### T2 — R-1154: cicd.html nennt audit.toml  [ ]
+### T2 — R-1154: cicd.html nennt audit.toml  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @87fe23194 2026-11-09T15:48:39+01:00
 Review: am Ende (Branch-Review)
 Beweis: arch-rdp-backend 2026-11-05 (reviewer branch, Runde 2, nit) · feature/arch-rdp-backend@993ad620 docs/developer/cicd.html:43
 Änderung: Bei `cargo audit (Desktop)` ergänzen, dass bewusste Ausnahmen aus `apps/desktop/src-tauri/.cargo/audit.toml` gelesen werden, DE+EN.
