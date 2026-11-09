@@ -1451,8 +1451,62 @@ PY
 gateway_takes_client5() {
     [ "$(reach --cert "$E2E_WORK/client5-fullchain.pem" --key "$E2E_WORK/client5.key")" = 401 ]
 }
+# renew_into <fullchain> <key> <csr> <out> — /ca/renew with this certificate: the new leaf with
+# its intermediate into E2E_WORK/<out>-fullchain.pem, the chain field (what the device trusts
+# from now on) into <out>-chain.pem. Non-zero, the error in <out>-renew.err, when it fails.
+renew_into() {
+    python3 - "$E2E_SERVER_URL" "$E2E_WORK" "$@" <<'PY' 2>"$E2E_WORK/$4-renew.err"
+import json, ssl, sys, urllib.request
+base, work, chain, key, csr, out = sys.argv[1:7]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+ctx.load_cert_chain(chain, key)
+req = urllib.request.Request(f"{base}/ca/renew", data=json.dumps({"csr": open(csr).read()}).encode(),
+    headers={"Content-Type": "application/json"})
+body = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))
+fullchain, trust = body["fullchain"], body["chain"]
+open(f"{work}/{out}-fullchain.pem", "w").write(fullchain)
+open(f"{work}/{out}-chain.pem", "w").write(trust)
+PY
+}
+# trust_of <fullchain> <key> — the generation GET /ca/trust names to this client certificate,
+# "HTTP <code>" for another status, "error <type>" when no answer came; both empty: no
+# certificate at all (R-1054).
+trust_of() {
+    python3 - "$E2E_SERVER_URL" "$1" "$2" <<'PY' 2>/dev/null
+import json, ssl, sys, urllib.error, urllib.request
+base, chain, key = sys.argv[1:4]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+if chain:
+    ctx.load_cert_chain(chain, key)
+try:
+    with urllib.request.urlopen(f"{base}/ca/trust", context=ctx, timeout=10) as resp:
+        print(json.load(resp).get("generation", ""))
+except urllib.error.HTTPError as e:
+    print("HTTP", e.code)
+except Exception as e:
+    print("error", type(e).__name__)
+PY
+}
+# generation_of <pem file> — what a client computes from the chain field it holds: SHA-256 over
+# the DER of its certificates, concatenated in their order; empty without a certificate.
+generation_of() {
+    python3 - "$1" <<'PY'
+import hashlib, re, ssl, sys
+pems = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", open(sys.argv[1]).read(), re.S)
+print(hashlib.sha256(b"".join(ssl.PEM_cert_to_DER_cert(p) for p in pems)).hexdigest() if pems else "")
+PY
+}
+# der_hashes <pem file> — the SHA-256 of each certificate's DER in the file, one per line.
+der_hashes() {
+    python3 - "$1" <<'PY'
+import hashlib, re, ssl, sys
+for pem in re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", open(sys.argv[1]).read(), re.S):
+    print(hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest())
+PY
+}
+is_generation() { [[ $1 =~ ^[0123456789abcdef]{64}$ ]]; }
 ca_rotation() {
-    local token today status out leaf_only gw_issuer gw_chain frps_cns code
+    local token today status out leaf_only gw_issuer gw_chain frps_cns code gen0 gen1 chain1 chain2 inter1
     today=$(date -u +%Y-%m-%d)
     token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
     openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client5.key" 2>/dev/null
@@ -1460,6 +1514,20 @@ ca_rotation() {
     if [ -z "$token" ] || ! enroll "$token" client5; then
         bad "rotation: could not enroll a device before the rotation"; return
     fi
+
+    # Before the rotation /ca/trust names the hash of the chain field /ca/renew hands out, and
+    # the gateway lets nobody ask without a client certificate (R-1054).
+    if ! renew_into "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" gen0; then
+        bad "trust generation: renewing before the rotation failed: $(tail -1 "$E2E_WORK/gen0-renew.err")"; return
+    fi
+    gen0=$(generation_of "$E2E_WORK/gen0-chain.pem")
+    out=$(trust_of "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key")
+    is_generation "$gen0" && [ "$out" = "$gen0" ] \
+        && ok "trust generation: before the rotation /ca/trust names the hash of the chain field" \
+        || bad "trust generation before the rotation: /ca/trust '$out', hash of the chain field '$gen0'"
+    out=$(trust_of "" "")
+    [ "$out" = "HTTP 400" ] && ok "trust generation: without a client certificate the gateway refuses /ca/trust (400)" \
+        || bad "trust generation without a client certificate: '$out', expected HTTP 400"
 
     if out=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli status 2>&1); then
         ok "rotation: status before the rotation exits 0"
@@ -1474,6 +1542,31 @@ ca_rotation() {
     e2e_dc restart ca-issuer >/dev/null 2>&1
     until_ok 90 eval '[ "$(health_of ca-issuer)" = healthy ]' \
         || { bad "rotation: ca-issuer not healthy within 90 s after the restart"; return; }
+
+    # The window before the gateway restart (R-1054): the gateway still holds the old
+    # client-ca.pem, yet already passes the new generation through, and a leaf renewed there
+    # under the new intermediate gets through it with its fullchain, the root anchoring it.
+    gen1=$(trust_of "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key")
+    is_generation "$gen1" && [ "$gen1" != "$gen0" ] \
+        && ok "trust generation: before the gateway restart /ca/trust already names a new generation" \
+        || bad "trust generation before the gateway restart: '$gen1', the one before the rotation '$gen0'"
+    if renew_into "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" gen1; then
+        chain1=$(generation_of "$E2E_WORK/gen1-chain.pem")
+        inter1=$(der_hashes "$E2E_WORK/gen1-fullchain.pem" | sed -n 2p)
+        code=$(reach --cert "$E2E_WORK/gen1-fullchain.pem" --key "$E2E_WORK/client5.key")
+        if [ "$chain1" = "$gen1" ] && [ -n "$inter1" ] \
+            && [ "$inter1" = "$(der_hashes "$E2E_WORK/gen1-chain.pem" | sed -n 1p)" ] \
+            && [ "$inter1" != "$(der_hashes "$E2E_WORK/client5-fullchain.pem" | sed -n 2p)" ] \
+            && [ "$code" = 401 ]; then
+            ok "trust generation: a leaf renewed in the window comes from the new intermediate, its chain" \
+                "field hashes to the new generation, and its fullchain gets through the old gateway"
+        else
+            bad "trust generation, leaf renewed in the window: chain field '$chain1' (generation '$gen1')," \
+                "its intermediate '$inter1', HTTP '$code' through the old gateway, expected 401"
+        fi
+    else
+        bad "trust generation: renewing in the window failed: $(tail -1 "$E2E_WORK/gen1-renew.err")"
+    fi
     e2e_dc restart gateway >/dev/null 2>&1
     until_ok 60 gateway_takes_client5 \
         || { bad "rotation: the gateway does not take a device certificate within 60 s after its restart"; return; }
@@ -1540,6 +1633,21 @@ ca_rotation() {
     else
         bad "rotation: frps-certs/ca.crt holds: $(tr '\n' ';' <<<"$frps_cns")"
     fi
+
+    # g. After the gateway restart the device enrolled before learns the new generation, and
+    #    once renewed it holds a chain field of that generation, which it is told again (R-1054).
+    out=$(trust_of "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key")
+    if [ "$out" = "$gen1" ] && [ "$out" != "$gen0" ] \
+        && renew_into "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" gen2; then
+        chain2=$(generation_of "$E2E_WORK/gen2-chain.pem")
+        out=$(trust_of "$E2E_WORK/gen2-fullchain.pem" "$E2E_WORK/client5.key")
+        [ "$chain2" = "$gen1" ] && [ "$out" = "$gen1" ] \
+            && ok "trust generation: after the restart the old device learns the new generation, and its renewal holds it" \
+            || bad "trust generation after the renewal: chain field '$chain2', /ca/trust '$out', expected '$gen1'"
+    else
+        bad "trust generation after the gateway restart: /ca/trust '$out' (expected '$gen1')," \
+            "renewal: $(tail -1 "$E2E_WORK/gen2-renew.err" 2>/dev/null)"
+    fi
 }
 ca_rotation
 
@@ -1562,24 +1670,6 @@ pem_at() {
 }
 # cns_of <file> — the subject CNs of the certificates in the file, joined by ";".
 cns_of() { chain_cns <"$1" | paste -sd';'; }
-
-# renew_into <fullchain> <key> <csr> <out> — /ca/renew with this certificate: the new leaf with
-# its intermediate into E2E_WORK/<out>-fullchain.pem, the chain field (what the device trusts
-# from now on) into <out>-chain.pem. Non-zero, the error in <out>-renew.err, when it fails.
-renew_into() {
-    python3 - "$E2E_SERVER_URL" "$E2E_WORK" "$@" <<'PY' 2>"$E2E_WORK/$4-renew.err"
-import json, ssl, sys, urllib.request
-base, work, chain, key, csr, out = sys.argv[1:7]
-ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-ctx.load_cert_chain(chain, key)
-req = urllib.request.Request(f"{base}/ca/renew", data=json.dumps({"csr": open(csr).read()}).encode(),
-    headers={"Content-Type": "application/json"})
-body = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))
-fullchain, trust = body["fullchain"], body["chain"]
-open(f"{work}/{out}-fullchain.pem", "w").write(fullchain)
-open(f"{work}/{out}-chain.pem", "w").write(trust)
-PY
-}
 
 # tunnel_leaf [name] — an agent leaf for itest-agent under the current tunnel intermediate,
 # minted in a one-off ca-issuer: E2E_WORK/<name>-fullchain.pem (leaf + intermediate) and

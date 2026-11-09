@@ -99,8 +99,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T6
 Abhängt von: T1
 
-### T5 — Stack-Tests: Generation im echten Stack  [ ]
+### T5 — Stack-Tests: Generation im echten Stack  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/agent_monitoring_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b7f0d52db 2026-11-09T15:30:24+01:00
+Review: approve (.ah-out/review/arch-ca-trust-generation/T5.verdict.json)
 Änderung:
 - `integration_stack_test.sh` `ca_rotation` (`:1454`): vor der Rotation ist `/ca/trust` gleich dem Hash der `chain`
   aus `/ca/renew`; nach `rotate-intermediates` und Neustart weicht sie ab; nach der Erneuerung (`renew_into`,
@@ -174,3 +176,10 @@ Abhängt von: T1, T2, T3, T4, T5
 - 2026-11-09 Session (T4): Der Desktop folgt Weiterleitungen wie jeder `enrolled_client`-Aufruf (reqwest-Standard,
   dieselbe CA-Pinning- und mTLS-Konfiguration für jedes Ziel) und wertet die letzte Antwort; der Agent wertet 3xx als
   Fehler. Kein eigener Client nur für diese Abfrage; die Doku (T6) nennt den Unterschied.
+- 2026-11-09 Session (T5): `renew_into` steht jetzt vor `ca_rotation`, das es für die Fensterprüfung aufruft;
+  unverändert verschoben. Die Fensterprüfung belegt nur den Fall derselben Root (Rotation der Intermediates): ein im
+  Fenster erneuertes Blatt kommt durch das alte Gateway (401 ohne JWT, kein TLS-Abbruch). Beweis auf einer
+  Server-VM der Lane (`run.sh integration --strict --step …`; der erste Versuch scheiterte an `--only
+  integration-stack`, das nur Komponenten-Schlüssel nimmt): `integration_stack_test: 140 passed, 0 failed` und
+  `agent_monitoring: 7 passed, 0 failed` (2 `GET /ca/trust` mit 200, keine Erneuerung), je `run.sh[integration]: 1
+  passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`; VM danach zerstört.
