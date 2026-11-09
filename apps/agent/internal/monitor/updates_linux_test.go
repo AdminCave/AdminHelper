@@ -301,7 +301,7 @@ func TestSystemStateUpdatesFailure(t *testing.T) {
 // updatesHelperEnv tells TestHelperSystemStateUpdatesProcess, run as a child process, what to do.
 const updatesHelperEnv = "AH_UPDATES_HELPER"
 
-// TestHelperSystemStateUpdatesProcess is no test of its own: the runTimedEnv test starts the test
+// TestHelperSystemStateUpdatesProcess is no test of its own: the execTimed test starts the test
 // binary as its child process, which prints its LC_ALL or hangs as updatesHelperEnv says. Without
 // it, it returns at once.
 func TestHelperSystemStateUpdatesProcess(t *testing.T) {
@@ -315,12 +315,12 @@ func TestHelperSystemStateUpdatesProcess(t *testing.T) {
 }
 
 func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
-	// The stubs above see what the count passes; this is the proof that the real call hands it on: the
+	// The stubs above see what the count passes; this is the proof that the real runner hands it on: the
 	// child gets LC_ALL=C over the agent's own, and a hanging child is the timeout, as with runTimed.
 	t.Run("environment", func(t *testing.T) {
 		t.Setenv(updatesHelperEnv, "env")
 		t.Setenv("LC_ALL", "de_DE.UTF-8")
-		out, err := updatesCalls.run(context.Background(), time.Minute, []string{"LC_ALL=C"}, os.Args[0],
+		out, err := execTimed(context.Background(), time.Minute, []string{"LC_ALL=C"}, os.Args[0],
 			"-test.run=^TestHelperSystemStateUpdatesProcess$")
 		if err != nil || !strings.Contains(string(out), "LC_ALL=C\n") {
 			t.Errorf("child = %q, %v; want it to see LC_ALL=C", out, err)
@@ -329,7 +329,7 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 	t.Run("hangs", func(t *testing.T) {
 		t.Setenv(updatesHelperEnv, "hang")
 		start := time.Now()
-		_, err := updatesCalls.run(context.Background(), 100*time.Millisecond, nil, os.Args[0],
+		_, err := execTimed(context.Background(), 100*time.Millisecond, nil, os.Args[0],
 			"-test.run=^TestHelperSystemStateUpdatesProcess$")
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("err = %v, want context.DeadlineExceeded", err)
@@ -345,7 +345,7 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 		defer cancel()
 		time.AfterFunc(100*time.Millisecond, cancel)
 		start := time.Now()
-		_, err := updatesCalls.run(ctx, time.Minute, nil, os.Args[0],
+		_, err := execTimed(ctx, time.Minute, nil, os.Args[0],
 			"-test.run=^TestHelperSystemStateUpdatesProcess$")
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("err = %v, want context.Canceled", err)
@@ -359,7 +359,7 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 	// env, is that tool.
 	t.Run("a grandchild holds stdout", func(t *testing.T) {
 		start := time.Now()
-		out, err := updatesCalls.run(context.Background(), time.Second, []string{dockerHelperEnv + "=orphan"}, os.Args[0],
+		out, err := execTimed(context.Background(), time.Second, []string{dockerHelperEnv + "=orphan"}, os.Args[0],
 			"-test.run=^TestHelperDockerProcess$")
 		elapsed := time.Since(start)
 		if !strings.Contains(string(out), orphanStarted) {
@@ -375,16 +375,16 @@ func TestSystemStateUpdatesRunTimedEnv(t *testing.T) {
 }
 
 // A command that exits 0 while a child it started still holds its stdout ends after
-// commandWaitDelay with exec.ErrWaitDelay; its output is complete, so runTimed and runTimedEnv
-// return it without an error.
+// commandWaitDelay with exec.ErrWaitDelay; its output is complete, so execTimed, with and without
+// env, returns it without an error.
 func TestRunTimedTakesErrWaitDelayAsSuccess(t *testing.T) {
 	const script = "sleep 5 & echo ok"
 	for name, run := range map[string]func() ([]byte, error){
-		"runTimed": func() ([]byte, error) {
-			return runTimed(context.Background(), time.Minute, "sh", "-c", script)
+		"without env": func() ([]byte, error) {
+			return execTimed(context.Background(), time.Minute, nil, "sh", "-c", script)
 		},
-		"runTimedEnv": func() ([]byte, error) {
-			return runTimedEnv(context.Background(), time.Minute, []string{"LC_ALL=C"}, "sh", "-c", script)
+		"with env": func() ([]byte, error) {
+			return execTimed(context.Background(), time.Minute, []string{"LC_ALL=C"}, "sh", "-c", script)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
