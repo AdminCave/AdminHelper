@@ -76,6 +76,7 @@ const COMMANDS: &[&str] = &[
     "rdp_session_attach",
     "rdp_detach",
     "rdp_dock",
+    "openh264_remove",
 ];
 
 fn main() {

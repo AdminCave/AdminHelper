@@ -463,6 +463,11 @@ export function rdpDock(sessionId: string): Promise<void> {
   return invoke('rdp_dock', { sessionId });
 }
 
+// Deletes Cisco's OpenH264 library, when the settings turn H.264 off; nothing to do off Linux.
+export function openh264Remove(): Promise<void> {
+  return invoke('openh264_remove');
+}
+
 // Saves the desktop as a PNG where the user chooses; false once the dialog is cancelled.
 export function rdpSessionScreenshot(sessionId: string): Promise<boolean> {
   return invoke<boolean>('rdp_session_screenshot', { sessionId });

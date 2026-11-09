@@ -90,6 +90,10 @@ pub(crate) struct Target {
     pub(crate) credssp: bool,
     /// The connection's own profile, else `rdp_performance_profile` of the settings.
     pub(crate) performance: RdpPerformanceProfile,
+    /// Cisco's OpenH264 library, checked against its pinned hash (R-1102); `None` decodes no
+    /// H.264, so the server sends the other codecs.
+    #[cfg(target_os = "linux")]
+    pub(crate) h264: Option<PathBuf>,
 }
 
 /// The size of the desktop in pixels and its scale factor in percent, within the limits of
@@ -729,6 +733,10 @@ fn config(target: &Target, display: Display, cert: &CertReport) -> Result<Config
         .with_rdpdr(target.drive.is_some())
         .with_printers(false)
         .with_ports(false);
+    // Windows keeps IronRDP's default, Media Foundation.
+    #[cfg(target_os = "linux")]
+    let builder =
+        builder.with_h264_decoder(target.h264.clone().map(super::openh264::decoder_factory));
     let builder = match &target.domain {
         Some(domain) => builder.with_domain(domain.as_str()),
         None => builder,
@@ -1119,6 +1127,8 @@ mod tests {
             drive: None,
             credssp: true,
             performance: RdpPerformanceProfile::Auto,
+            #[cfg(target_os = "linux")]
+            h264: None,
         }
     }
 
@@ -2228,6 +2238,8 @@ mod tests {
                     drive: None,
                     credssp: true,
                     performance: RdpPerformanceProfile::Auto,
+                    #[cfg(target_os = "linux")]
+                    h264: None,
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();

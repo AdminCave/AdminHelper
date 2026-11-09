@@ -292,6 +292,10 @@ pub struct Settings {
     pub ssh_console: SshConsole,
     #[serde(default)]
     pub rdp_client: RdpClient,
+    /// H.264 of the embedded RDP client on Linux through Cisco's OpenH264 (R-1102): on unless
+    /// turned off, which deletes the library.
+    #[serde(default = "default_true")]
+    pub rdp_h264: bool,
     #[serde(default)]
     pub terminal: TerminalPrefs,
     /// Opens the SSH tabs of the last run again after sign-in (R-1070); off unless chosen.
@@ -334,6 +338,7 @@ impl Default for Settings {
             favorite_connections: Vec::new(),
             ssh_console: SshConsole::Embedded,
             rdp_client: RdpClient::Os,
+            rdp_h264: true,
             terminal: TerminalPrefs::default(),
             restore_sessions: false,
             open_sessions: Vec::new(),
@@ -398,6 +403,10 @@ pub struct TunnelRefresh {
 
 fn default_sync_interval_minutes() -> u32 {
     1
+}
+
+pub(crate) fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

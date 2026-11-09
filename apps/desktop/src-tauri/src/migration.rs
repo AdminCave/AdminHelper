@@ -752,6 +752,7 @@ mod tests {
                 // A settings.json before 0.47 has no console, no terminal options and no restore switch.
                 "sshConsole": "embedded",
                 "rdpClient": "os",
+                "rdpH264": true,
                 "restoreSessions": false,
                 "terminal": {
                     "fontSize": 13,
@@ -919,6 +920,7 @@ mod tests {
                 // A settings.json before 0.47 has no console, no terminal options and no restore switch.
                 "sshConsole": "embedded",
                 "rdpClient": "os",
+                "rdpH264": true,
                 "restoreSessions": false,
                 "terminal": {
                     "fontSize": 13,

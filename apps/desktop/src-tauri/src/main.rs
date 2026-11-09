@@ -299,6 +299,7 @@ fn main() {
             rdp_embedded::tofu::rdp_trust_certificate,
             rdp_embedded::rdp_session_start,
             rdp_embedded::rdp_session_stop,
+            rdp_embedded::openh264_remove,
             rdp_embedded::rdp_session_screenshot,
             rdp_embedded::rdp_session_info,
             rdp_embedded::rdp_session_attach,

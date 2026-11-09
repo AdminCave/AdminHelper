@@ -13,10 +13,12 @@ Review: approve (.ah-out/review/kern-rdp-5/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Abdocken und Multi-Monitor dokumentiert mit kern-rdp-4)
 
-### T2 — R-1102: OpenH264 von Cisco laden und als H.264-Dekoder nutzen (Linux)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/openh264.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/main.rs
+### T2 — R-1102: OpenH264 von Cisco laden und als H.264-Dekoder nutzen (Linux)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/openh264.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs, apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/index.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/src-tauri/src/migration.rs
+Evidenz: run.sh[quick] desktop-rs desktop-ui: 2 passed, 0 failed, 16 skipped @9e7091594 2026-11-09T08:54:41+01:00
+Review: approve (.ah-out/review/kern-rdp-5/T2.verdict.json)
 Änderung: Neues Modul `openh264.rs` (SPDX-Header) mit gepinnter URL `https://ciscobinary.openh264.org/libopenh264-2.6.0-linux64.8.so.bz2` und dem SHA-256 der entpackten Datei; Laden über reqwest, Entpacken mit einem reinen Rust-bzip2, Hash prüfen, atomar ins App-Datenverzeichnis schreiben; Löschen als Befehl `openh264_remove`. `Settings.rdp_h264` (Serde-Default `true`). `config()` setzt unter Linux mit `rdp_h264` den Dekoder über `OpenH264Decoder::from_library_path` (`ironrdp-egfx`, Feature `openh264-libloading`, nur `target_os = "linux"`); fehlt die Datei, lädt der Sitzungsstart sie mit kurzer Frist, scheitert das, läuft die Sitzung ohne H.264. Das Lizenz-Gate prüft statt der Abwesenheit von `openh264-sys2` die Abwesenheit seines Features `source`. Tests: falscher Hash wird abgelehnt und nicht geschrieben, Löschen, Standard der Einstellung, Rundlauf Kodieren/Dekodieren mit dem echten Cisco-Binary.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict
+Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T4
 Test-Löschung: apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs::license_gate_openh264_sys2_is_not_built — ersetzt durch ein Gate gegen das Feature `source` von openh264-sys2: R-1102 (Kevin 2026-11-02) lädt Ciscos Binary, damit ist der Crate selbst unter Linux im Graph, die C-Quellen nicht
 
@@ -38,3 +40,4 @@ Abhängt von: T2, T3
 ## Entscheidungen
 - 2026-11-09 Kevin: OpenH264 automatisch und Standard an; der Download zur Laufzeit (FAQ: „at install time“) ist hingenommenes Restrisiko. T11 aus kern-rdp-4 darf eine dritte Prüfrunde bekommen.
 - 2026-11-09 Geprüft: Cisco bietet `libopenh264-2.6.0-linux64.8.so.bz2` über https; entpackt SHA-256 `2f0cde7c…5d04` = Eintrag in `openh264-sys2` 0.9.9 `src/blobs/hashes.txt`.
+- 2026-11-09 T2: `rdpH264?` kommt schon in T2 in die Bridge-Typen (sonst wird `types.parity.test.ts` zwischen den Commits rot), daher prüft T2 auch desktop-ui; aus demselben Grund (`ipc.inventory.test.ts`) bringt T2 den Bridge-Aufruf `openh264Remove` und die Zeile in der Befehlstabelle der Entwickler-Doku mit, T4 die Beschreibung; der Befehl `openh264_remove` braucht `build.rs` und `capabilities/default.json` (ACL, `capabilities.rs` prüft den Gleichlauf). Modul und Target-Feld nur unter Linux, Windows bleibt bei Media Foundation.
