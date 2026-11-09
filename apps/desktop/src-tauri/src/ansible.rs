@@ -7,15 +7,62 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde_json::{Map, Value};
+
 use crate::error::AppError;
+use crate::models::{Connection, ConnectionKind};
 use crate::pty::Spawn;
 use crate::session::SessionState;
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
 
+/// A server of a run: its hostname (its name in the inventory), its tags (its groups) and the SSH
+/// connection that reaches it, as the UI resolved it for Verbinden (R-1202). Without one, Ansible
+/// goes to the hostname.
 #[derive(Debug, serde::Deserialize)]
 pub struct AnsibleTarget {
     pub hostname: String,
     pub groups: Vec<String>,
+    #[serde(default)]
+    pub connection: Option<Connection>,
+}
+
+/// Fails unless every target is fit for the inventory: hostname and group names as
+/// [`generate_inventory`] needs them, a connection as `terminal_open_ssh` takes it (checked
+/// values, an SSH connection with a host).
+pub fn check_targets(targets: &[AnsibleTarget]) -> Result<(), AppError> {
+    // Host + group names arrive as attacker-controllable Tauri-command params. Validate them like
+    // the ssh/rdp spawn paths do: a newline or [/] once injected inventory lines or group headers
+    // into the INI (4.91), and the names stay plain in the JSON too.
+    for target in targets {
+        crate::validation::validate_host(&target.hostname)?;
+        for tag in &target.groups {
+            crate::validation::validate_no_control_chars(tag, "Gruppe")?;
+            if tag.contains(['[', ']']) {
+                return Err(AppError::Validation("Ungueltiger Gruppenname".to_string()));
+            }
+        }
+        if let Some(connection) = target.connection.as_ref() {
+            crate::validation::validate_connection_input(connection)?;
+            if connection.kind != ConnectionKind::Ssh {
+                return Err(AppError::Validation(
+                    "Ansible reaches a server over an SSH connection only".to_string(),
+                ));
+            }
+            crate::validation::required(&connection.host, "Host")?;
+            // Ansible renders every inventory variable as a Jinja template on this machine, so a
+            // `{{ lookup('pipe', …) }}` in the user or key path would run here; Verbinden passes
+            // both as plain argv. Host and jump host already exclude braces by their patterns.
+            for value in [&connection.username, &connection.key_path] {
+                if value.as_deref().is_some_and(|v| v.contains(['{', '}'])) {
+                    return Err(AppError::Validation(
+                        "User and key path of an Ansible target must not contain { or }"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A playbook as a run takes it from the server: its file name and its content.
@@ -178,58 +225,91 @@ fn create_temp_file(path: &Path) -> std::io::Result<std::fs::File> {
     opts.open(path)
 }
 
-/// Writes an Ansible inventory in INI format to `dir/inventory.ini` and returns the path.
+/// The name of the inventory file in a run directory. JSON, read by the `yaml` inventory plugin
+/// Ansible enables by default: values such as `ansible_ssh_common_args` keep their quotes there,
+/// which INI has no clean escape for.
+const INVENTORY_FILE: &str = "inventory.json";
+
+/// Writes the Ansible inventory of `servers` (checked by [`check_targets`]) to
+/// `dir/inventory.json` and returns the path: every host under `all` by its hostname, with the
+/// variables of [`host_vars`], and a group per tag.
 pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<String, AppError> {
-    // Host + group names arrive as attacker-controllable Tauri-command params and go straight into
-    // the INI. Validate them like the ssh/rdp spawn paths do: a newline or [/] would otherwise
-    // inject extra inventory lines or group headers — at best a broken, hard-to-diagnose
-    // inventory, at worst the playbook running against unintended targets (4.91).
+    check_targets(servers)?;
+    let mut hosts = Map::new();
+    let mut groups: std::collections::BTreeMap<&str, Map<String, Value>> =
+        std::collections::BTreeMap::new();
     for server in servers {
-        crate::validation::validate_host(&server.hostname)?;
-        for tag in &server.groups {
-            crate::validation::validate_no_control_chars(tag, "Gruppe")?;
-            if tag.contains(['[', ']']) {
-                return Err(AppError::Validation("Ungueltiger Gruppenname".to_string()));
-            }
+        let alias = server.hostname.trim();
+        let vars = Value::Object(host_vars(server.connection.as_ref()));
+        if hosts.get(alias).is_some_and(|known| *known != vars) {
+            return Err(AppError::Validation(format!(
+                "two servers named {alias} are reached in different ways"
+            )));
         }
-    }
-    let mut content = String::from("[all]\n");
-    for server in servers {
-        content.push_str(&server.hostname);
-        content.push('\n');
-    }
-    content.push('\n');
-
-    // Build groups from tags
-    let mut groups: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    for server in servers {
-        for tag in &server.groups {
+        hosts.insert(alias.to_string(), vars);
+        // `all` holds every host already; as a child of itself Ansible rejects it as a loop.
+        for tag in server.groups.iter().filter(|tag| tag.as_str() != "all") {
             groups
-                .entry(tag.as_str())
+                .entry(tag)
                 .or_default()
-                .push(&server.hostname);
+                .insert(alias.to_string(), Value::Object(Map::new()));
         }
     }
-    let mut sorted_groups: Vec<_> = groups.into_iter().collect();
-    sorted_groups.sort_by_key(|(k, _)| *k);
-    for (group, hosts) in sorted_groups {
-        content.push_str(&format!("[{}]\n", group));
-        for host in hosts {
-            content.push_str(host);
-            content.push('\n');
-        }
-        content.push('\n');
-    }
+    let children: Map<String, Value> = groups
+        .into_iter()
+        .map(|(tag, members)| (tag.to_string(), serde_json::json!({ "hosts": members })))
+        .collect();
+    let inventory = serde_json::json!({ "all": { "hosts": hosts, "children": children } });
 
-    let path = dir.join("inventory.ini");
+    let path = dir.join(INVENTORY_FILE);
     let mut file = create_temp_file(&path)?;
-    file.write_all(content.as_bytes())?;
+    file.write_all(&serde_json::to_vec_pretty(&inventory)?)?;
 
     Ok(path.to_string_lossy().to_string())
 }
 
+/// The variables that send Ansible where `connection` goes, as Verbinden opens it: address,
+/// port other than 22, user and key if set, and the other switches of the connection quoted for the `shlex`
+/// split Ansible applies to `ansible_ssh_common_args`. None without a connection.
+fn host_vars(connection: Option<&Connection>) -> Map<String, Value> {
+    let mut vars = Map::new();
+    let Some(connection) = connection else {
+        return vars;
+    };
+    let host = connection.host.as_deref().unwrap_or_default().trim();
+    // ssh takes an IPv6 address bare; the brackets only keep it apart from a port elsewhere.
+    let host = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(host);
+    vars.insert("ansible_host".into(), host.into());
+    // Like Verbinden's `-p`: port 22 stays unset, so a port from ~/.ssh/config still applies.
+    if let Some(port) = connection.port.filter(|port| *port != 22) {
+        vars.insert("ansible_port".into(), port.into());
+    }
+    let set = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(Value::from)
+    };
+    if let Some(user) = set(&connection.username) {
+        vars.insert("ansible_user".into(), user);
+    }
+    if let Some(key) = set(&connection.key_path) {
+        vars.insert("ansible_ssh_private_key_file".into(), key);
+    }
+    let switches = crate::connection::ssh::option_switches(connection);
+    if !switches.is_empty() {
+        let quoted: Vec<String> = switches.iter().map(|switch| shell_escape(switch)).collect();
+        vars.insert("ansible_ssh_common_args".into(), quoted.join(" ").into());
+    }
+    vars
+}
+
 /// Writes the playbook content to `dir/playbook_<name>` and returns the path. The prefix keeps
-/// any name apart from `inventory.ini`. Of `filename` only ASCII letters, digits, `.`, `_` and
+/// any name apart from `inventory.json`. Of `filename` only ASCII letters, digits, `.`, `_` and
 /// `-` stay, every other character becomes `_`: on Windows the path goes as an argument to
 /// Windows Terminal, which reads `;` as the end of a subcommand, and to `cmd`.
 pub fn write_playbook_temp(dir: &Path, filename: &str, content: &str) -> Result<String, AppError> {
@@ -430,11 +510,12 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str, check: bool) -> S
 #[cfg(test)]
 mod tests {
     use super::{
-        confined_run_dir, create_run_dir, create_temp_file, fetch_playbook, generate_inventory,
-        launch_ansible_in_pty, launch_ansible_with, playbook_args, pty_spawn, run, run_in,
-        write_playbook_temp, AnsibleTarget, Playbook,
+        check_targets, confined_run_dir, create_run_dir, create_temp_file, fetch_playbook,
+        generate_inventory, launch_ansible_in_pty, launch_ansible_with, playbook_args, pty_spawn,
+        run, run_in, write_playbook_temp, AnsibleTarget, Playbook,
     };
     use crate::error::AppError;
+    use crate::models::{Connection, ConnectionKind};
     use crate::session::SessionState;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -445,6 +526,7 @@ mod tests {
         vec![AnsibleTarget {
             hostname: "web01".to_string(),
             groups: vec!["web".to_string()],
+            connection: None,
         }]
     }
 
@@ -1241,18 +1323,20 @@ mod tests {
 
     #[test]
     fn generate_inventory_rejects_host_and_group_injection() {
-        // 4.91: a hostname with a newline or a group name with [/] must be rejected — otherwise it
-        // injects extra inventory lines or group headers into the INI.
+        // 4.91: a hostname with a newline or a group name with [/] must be rejected; both stay
+        // refused for the JSON inventory as they were for the INI one.
         let dir = run_dir();
         let bad_host = vec![AnsibleTarget {
             hostname: "host\nevil ansible_connection=local".to_string(),
             groups: vec![],
+            connection: None,
         }];
         assert!(generate_inventory(&dir.0, &bad_host).is_err());
 
         let bad_group = vec![AnsibleTarget {
             hostname: "host".to_string(),
             groups: vec!["[evil]".to_string()],
+            connection: None,
         }];
         assert!(generate_inventory(&dir.0, &bad_group).is_err());
 
@@ -1260,6 +1344,7 @@ mod tests {
         let ok = vec![AnsibleTarget {
             hostname: "web01.example.com".to_string(),
             groups: vec!["web".to_string()],
+            connection: None,
         }];
         assert!(generate_inventory(&dir.0, &ok).is_ok());
     }
@@ -1270,25 +1355,145 @@ mod tests {
             AnsibleTarget {
                 hostname: "web01".to_string(),
                 groups: vec!["web".to_string()],
+                connection: None,
             },
             AnsibleTarget {
                 hostname: "db01".to_string(),
                 groups: vec!["db".to_string()],
+                connection: None,
             },
         ];
         let dir = run_dir();
         let path = generate_inventory(&dir.0, &targets).unwrap();
-        let content = fs::read_to_string(&path).unwrap();
-        assert_eq!(Path::new(&path), dir.0.join("inventory.ini"));
-        assert!(
-            content.contains("[all]\nweb01\ndb01\n"),
-            "all section: {content}"
+        assert_eq!(Path::new(&path), dir.0.join("inventory.json"));
+        let inventory: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            inventory,
+            serde_json::json!({ "all": {
+                "hosts": { "web01": {}, "db01": {} },
+                "children": {
+                    "db": { "hosts": { "db01": {} } },
+                    "web": { "hosts": { "web01": {} } }
+                }
+            } })
         );
-        assert!(
-            content.contains("[db]\ndb01\n"),
-            "db group (sorted first): {content}"
+    }
+
+    /// An SSH connection to `host` at `port` with the options `ssh` (JSON as the UI sends it).
+    fn ssh_connection(host: &str, port: Option<u16>, ssh: serde_json::Value) -> Connection {
+        serde_json::from_value(serde_json::json!({
+            "id": "c1", "name": "web01 ssh", "kind": "ssh", "host": host, "port": port,
+            "username": "ops", "domain": null, "keyPath": "/home/me/.ssh/id ed25519",
+            "url": null, "notes": null, "lastUsed": null, "options": { "ssh": ssh }
+        }))
+        .unwrap()
+    }
+
+    fn reached(hostname: &str, groups: &[&str], connection: Connection) -> AnsibleTarget {
+        AnsibleTarget {
+            hostname: hostname.to_string(),
+            groups: groups.iter().map(|g| g.to_string()).collect(),
+            connection: Some(connection),
+        }
+    }
+
+    #[test]
+    fn generate_inventory_sends_ansible_where_the_connection_goes() {
+        let targets = vec![
+            reached(
+                "web01.example",
+                &["web", "all"],
+                ssh_connection(
+                    "127.0.0.1",
+                    Some(23001),
+                    serde_json::json!({ "jumpHost": "jump@192.0.2.10", "authMethod": "key" }),
+                ),
+            ),
+            reached(
+                "v6",
+                &[],
+                ssh_connection("[2001:db8::5]", None, serde_json::json!({})),
+            ),
+        ];
+        let dir = run_dir();
+        let path = generate_inventory(&dir.0, &targets).unwrap();
+        let inventory: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            inventory,
+            serde_json::json!({ "all": {
+                "hosts": {
+                    "web01.example": {
+                        "ansible_host": "127.0.0.1",
+                        "ansible_port": 23001,
+                        "ansible_user": "ops",
+                        "ansible_ssh_private_key_file": "/home/me/.ssh/id ed25519",
+                        "ansible_ssh_common_args": "'-o' 'ProxyJump=jump@192.0.2.10' '-o' \
+                            'PreferredAuthentications=publickey' '-o' 'IdentitiesOnly=yes'"
+                    },
+                    "v6": {
+                        "ansible_host": "2001:db8::5",
+                        "ansible_user": "ops",
+                        "ansible_ssh_private_key_file": "/home/me/.ssh/id ed25519"
+                    }
+                },
+                "children": { "web": { "hosts": { "web01.example": {} } } }
+            } }),
+            "the tag all is no child group of all"
         );
-        assert!(content.contains("[web]\nweb01\n"), "web group: {content}");
+    }
+
+    #[test]
+    fn generate_inventory_rejects_what_verbinden_would_not_open() {
+        let dir = run_dir();
+        let mut rdp = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        rdp.kind = ConnectionKind::Rdp;
+        let mut no_host = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        no_host.host = Some("  ".to_string());
+        let mut bad_user = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        bad_user.username = Some("ops\nevil".to_string());
+        let bad_option = ssh_connection(
+            "192.0.2.7",
+            None,
+            serde_json::json!({ "jumpHost": "-oProxyCommand=evil" }),
+        );
+        let mut jinja_user = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        jinja_user.username = Some("{{ lookup('pipe','id') }}".to_string());
+        let mut jinja_key = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        jinja_key.key_path = Some("/k/{% if 1 %}x{% endif %}".to_string());
+        let mut brace_key = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        brace_key.key_path = Some("/k/}".to_string());
+        for connection in [
+            rdp, no_host, bad_user, bad_option, jinja_user, jinja_key, brace_key,
+        ] {
+            let targets = vec![reached("web01", &[], connection)];
+            assert!(
+                check_targets(&targets).is_err(),
+                "{:?}",
+                targets[0].connection
+            );
+            assert!(generate_inventory(&dir.0, &targets).is_err());
+        }
+        assert!(
+            fs::read_dir(&dir.0).unwrap().next().is_none(),
+            "nothing was written"
+        );
+    }
+
+    #[test]
+    fn generate_inventory_rejects_one_name_reached_two_ways() {
+        let dir = run_dir();
+        let one = ssh_connection("192.0.2.7", None, serde_json::json!({}));
+        let other = ssh_connection("192.0.2.8", None, serde_json::json!({}));
+        let same = vec![
+            reached("web01", &["a"], one.clone()),
+            reached("web01", &["b"], one.clone()),
+        ];
+        assert!(generate_inventory(&dir.0, &same).is_ok());
+        let fresh = run_dir();
+        let split = vec![reached("web01", &[], one), reached("web01", &[], other)];
+        assert!(generate_inventory(&fresh.0, &split).is_err());
     }
 
     #[test]
