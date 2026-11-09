@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -149,8 +149,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T15
 Abhängt von: T8, T12
 
-### T15 — Doku DE+EN und CHANGELOG-Fragment (R-1223)  [ ]
+### T15 — Doku DE+EN und CHANGELOG-Fragment (R-1223)  [x]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/arch-monitoring-module.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e333da1d7 2026-11-10T00:59:34+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Module, Erkennung, Funde-Eingang, stille Checks, `probe` in der Liste der Push-Checks, Sicherheitsmodell samt Restrisiko (Admin-Handbuch Monitoring); `monitor credential set|delete|list` in der CLI-Tabelle (Agent-Deployment); Katalog-Format, Check-Typ `probe`, Datenvertrag Plan/Report v4, Fühler, Ziel-Wächter, Takt-Planer, Selbstbremse (Entwickler); neue Routen (API-Referenz); CHANGELOG-Fragment unter `### Added`. Elf Dateien: fünf Seiten je DE+EN und das Fragment.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: diese Task

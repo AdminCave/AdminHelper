@@ -50,6 +50,7 @@
               <tr><td><code>smart_health</code></td><td>SMART-Werte + Temperatur für ATA (HDD/SSD) und NVMe; ohne Daten nennt er den Grund (siehe <a href="#smart">SMART-Monitoring</a>)</td><td>Agent (Push)</td></tr>
               <tr><td><code>system_state</code></td><td>Systemzustand eines Linux-Hosts: Neustart nötig, Uhr nicht synchronisiert, offene Sicherheits-Updates, OOM-Kills seit dem letzten Report; höchstens <span class="badge badge-warning">warning</span> (siehe <a href="#system-state">Systemzustand</a>)</td><td>Agent (Push)</td></tr>
               <tr><td><code>disk_forecast</code></td><td>Prognose „Disk voll in X Stunden" aus der Füllraten-Historie (siehe <a href="#disk-forecast">Disk-Forecast</a>)</td><td>Monitoring-Service (liest VictoriaMetrics)</td></tr>
+              <tr><td><code>probe</code></td><td>Messung eines eingebauten Sensors des Agents an einem Dienst dieses Hosts, aus einem Modul des Katalogs übernommen (siehe <a href="#module">Module und Erkennung</a>)</td><td>Agent (Push)</td></tr>
             </tbody>
           </table>
           <div class="callout callout-note" data-reveal>
@@ -58,7 +59,7 @@
           </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <div><div class="callout-title">&bdquo;Jetzt pr&uuml;fen&ldquo; gibt es nur f&uuml;r Pull-Checks</div><p>Push-ausgewertete Checks (<code>agent_resources</code>, <code>service_process</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>docker_health</code>, <code>smart_health</code>, <code>system_state</code>) bekommen ihre Daten ausschlie&szlig;lich &uuml;ber den Agent-Push und lassen sich deshalb <strong>nicht manuell ausl&ouml;sen</strong> &ndash; der Knopf ist dort ausgegraut, und die API antwortet mit <code>409</code>. Dasselbe gilt f&uuml;r deaktivierte Checks. <code>agent_ping</code> ist bewusst ausgenommen: Er misst das <em>Ausbleiben</em> eines Pushes und wird vom Scheduler ausgewertet, l&auml;sst sich also sehr wohl manuell pr&uuml;fen.</p></div>
+            <div><div class="callout-title">&bdquo;Jetzt pr&uuml;fen&ldquo; gibt es nur f&uuml;r Pull-Checks</div><p>Push-ausgewertete Checks (<code>agent_resources</code>, <code>service_process</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>docker_health</code>, <code>smart_health</code>, <code>system_state</code>, <code>probe</code>) bekommen ihre Daten ausschlie&szlig;lich &uuml;ber den Agent-Push und lassen sich deshalb <strong>nicht manuell ausl&ouml;sen</strong> &ndash; der Knopf ist dort ausgegraut, und die API antwortet mit <code>409</code>. Dasselbe gilt f&uuml;r deaktivierte Checks. <code>agent_ping</code> ist bewusst ausgenommen: Er misst das <em>Ausbleiben</em> eines Pushes und wird vom Scheduler ausgewertet, l&auml;sst sich also sehr wohl manuell pr&uuml;fen.</p></div>
           </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -155,6 +156,7 @@
               <tr><td><code>docker_health</code></td><td><code>ignore_containers</code> (leer), <code>alert_on_unavailable</code> (true)</td></tr>
               <tr><td><code>system_state</code></td><td><code>check_reboot</code>, <code>check_time_sync</code>, <code>check_security_updates</code>, <code>check_oom</code> (je true, siehe <a href="#system-state">Systemzustand</a>)</td></tr>
               <tr><td><code>disk_forecast</code></td><td><code>warn_hours/crit_hours</code> (24/8), <code>window_hours</code> (24), <code>min_history_hours</code> (6)</td></tr>
+              <tr><td><code>probe</code></td><td>Regeln aus dem Katalog (<code>rules</code>), dazu <code>interval_s</code> (300, 900, 3600 oder 86400) und <code>timeout_s</code> (1–30, Default 10), siehe <a href="#probe-status">Status eines Probe-Checks</a></td></tr>
             </tbody>
           </table>
 
@@ -254,6 +256,68 @@
 
           <h3 id="server-vergleichen">Server vergleichen (Reiter Verlauf)</h3>
           <p>Der Reiter <strong>Verlauf</strong> der Monitoring-Seite vergleicht eine Metrik über alle Server mit Agent-Daten: CPU, RAM, Speicher (je Server der vollste Mount), Load je CPU oder Netzwerk ein (eingehender Verkehr in Mbit/s, der Balken relativ zum stärksten Server), in denselben Zeiträumen wie oben. Die <strong>Rangliste</strong> sortiert die Server nach ihrem Ø im gezeigten Ausschnitt, mit Balken, Sparkline, Ø und Max; ein Zoom im Chart ordnet sie neu. Bis zu vier Server stehen im Chart, zu Beginn die vier mit dem höchsten Ø; Checkbox oder Klick auf den Namen wählt einen Server, ein fünfter ersetzt den zuerst gewählten. Die Auswahl bleibt beim Wechsel von Metrik und Zeitraum.</p>
+
+          <h2 id="module">Module und Erkennung</h2>
+          <p>Ein <strong>Modul</strong> beschreibt einen Dienst, den AdminHelper auf einem Host erkennt und mit passenden Checks überwacht: woran der Agent ihn erkennt (Container-Image, systemd-Unit, Prozess, Markerdatei oder Paket, Port) und welche Messungen dazugehören. Die Module stehen im <strong>Katalog</strong>, den der Monitoring-Dienst mitbringt; eine neue AdminHelper-Version kann ihn erweitern. Heute enthält er das Modul <code>port</code> (<em>Listening port</em>): ein TCP-Port, der auf einer Adresse außer Loopback lauscht und keinem bekannten Dienst gehört. Der Agent prüft ihn alle 15&nbsp;Minuten in dem Protokoll, das er auf ihm erkannt hat; antwortet er nicht so, wie das Protokoll es verlangt, steht der Check auf <span class="badge badge-danger">critical</span>.</p>
+          <p>Ein übernommenes Modul wird zu Checks vom Typ <code>probe</code>, je Messung des Moduls einer, gebunden an die gefundene Instanz (einen Container, eine Unit, einen Prozess oder einen Port). Diese Checks laufen im Agent, gehen mit dem normalen Push an den Monitoring-Dienst und verhalten sich danach wie jeder andere Push-Check: Status, <code>consecutive_fails</code>, Wartungsfenster und Benachrichtigungen gelten unverändert. Das Übernehmen und die Erkennung löschen nie einen Check. Willst du eine Messung nicht, schalte ihren Check ab, statt ihn zu löschen: Ein späteres Katalog-Update legt einen gelöschten Check wieder an (still, siehe unten).</p>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Oberfläche folgt</div><p>Den Funde-Eingang und den Dialog für Zugangsdaten bekommt der Desktop-Client mit einer der nächsten Versionen. Bis dahin arbeitest du über die Monitoring-API (<code>/api/monitoring/catalog</code>, <code>/api/monitoring/discovery/…</code>, <code>/api/monitoring/findings…</code>, nur für Admins; Routen im <a href="../developer/monitoring.html#module">Monitoring-Stack</a>) und am Host über die Agent-CLI. Die entstandenen <code>probe</code>-Checks zeigt der Desktop-Client schon heute in der Check-Liste.</p></div>
+          </div>
+
+          <h3 id="erkennung">Erkennung</h3>
+          <p>Etwa einmal am Tag sammelt der Agent ein <strong>Inventar</strong> seines Hosts: beim ersten Kontakt sofort, danach zufällig 24 bis 48&nbsp;Stunden nach dem letzten Scan, und mit <code>POST /api/monitoring/discovery/{server_id}/scan</code> beim nächsten Agent-Lauf (höchstens 5&nbsp;Minuten). Das Inventar enthält:</p>
+          <ul>
+            <li>systemd-Units mit Zustand,</li>
+            <li>lauschende TCP-Sockets mit Prozessname und dem Container, zu dem der Prozess gehört,</li>
+            <li>Docker-Container in jedem Zustand: Name, Image, Compose-Projekt und -Dienst, Zustand, Health, Ports und die Pfade, an denen sie etwas einhängen,</li>
+            <li>ob die Markerpfade und Pakete vorhanden sind, nach denen der Katalog fragt,</li>
+            <li>das Protokoll auf jedem Port, der auf einer Adresse außer Loopback lauscht.</li>
+          </ul>
+          <p>Es enthält nur Namen, Ports und Zustände, <strong>nie Konfigurationsinhalte, Kommandozeilen oder Umgebungsvariablen</strong>. Der Scan hat einen eigenen Zeitrahmen von 60&nbsp;Sekunden mit einer Grenze je Teil; scheitert ein Teil, gilt das Inventar als unvollständig (<code>partial</code>). Den letzten Stand eines Hosts liefert <code>GET /api/monitoring/discovery/{server_id}</code>.</p>
+          <p>Zur Protokollerkennung verbindet sich der Agent mit dem Port, liest, was der Dienst von sich aus sendet (SMTP, FTP, IMAP, POP3, SSH, ein Banner), schickt sonst ein <code>HEAD / HTTP/1.0</code> ohne <code>Host</code>-Header und versucht dasselbe einmal in TLS. Die Ports 22, 3306 und 9100&ndash;9107 sowie jeden Port von <code>sshd</code>, <code>mysqld</code> und <code>mariadbd</code> fasst er nie an: Wiederholte Verbindungen sperren dort den Admin aus (OpenSSH-Strafzeiten, MySQL <code>max_connect_errors</code>) oder drucken die Probe (Raw-Druck auf 9100&ndash;9107). Sie werden auch keine Port-Funde.</p>
+
+          <h3 id="funde">Funde-Eingang</h3>
+          <p>Der Monitoring-Dienst gleicht jedes Inventar mit dem Katalog ab. Was er dabei findet, landet als <strong>Fund</strong> im Eingang (<code>GET /api/monitoring/findings?server_id=…&amp;status=open</code>), je Modul-Instanz einer:</p>
+          <table>
+            <thead><tr><th>Art (<code>kind</code>)</th><th>Bedeutung</th><th>Übernehmen bewirkt</th></tr></thead>
+            <tbody>
+              <tr><td><code>new</code></td><td>Eine Instanz, die noch nicht überwacht wird</td><td>legt die Checks des Moduls an bzw. schaltet die vorhandenen wieder ein</td></tr>
+              <tr><td><code>changed</code></td><td>Eine überwachte Instanz, deren Modul der Katalog geändert hat (neue oder entfallene Messungen)</td><td>legt fehlende Checks an und hebt die Stille neuer Checks auf; was du abgeschaltet hast, bleibt aus</td></tr>
+              <tr><td><code>gone</code></td><td>Eine überwachte Instanz, die zwei vollständige Scans in Folge fehlte</td><td>schaltet ihre Checks ab (sie bleiben erhalten)</td></tr>
+            </tbody>
+          </table>
+          <p>Übernehmen: <code>POST /api/monitoring/findings/{id}/adopt</code>, alle offenen Funde eines Servers mit <code>POST /api/monitoring/findings/adopt-all?server_id=…</code>. Die Antwort nennt die eingeschalteten, ausgeschalteten und übersprungenen Checks; übersprungen wird ein Check, für den die Instanz kein Ziel hergibt (etwa keinen Port oder keinen passenden Container). Ablehnen: <code>POST /api/monitoring/findings/{id}/dismiss</code>; der Fund bleibt abgelehnt, bis sich die Instanz ändert. Eine Instanz, die nie übernommen wurde und verschwindet, verschwindet still aus dem Eingang. Nichts davon löscht einen Check.</p>
+
+          <h3 id="stille-checks">Stille Checks nach einem Katalog-Update</h3>
+          <p>Bringt eine neue Version eine Messung für ein Modul mit, das du schon überwachst, legt der Monitoring-Dienst beim Start den Check dafür an, aber <strong>still</strong> (<code>silent: true</code> in der Check-API): Er wird ausgewertet und angezeigt, benachrichtigt aber nicht. Der Fund der Instanz wird <code>changed</code> und steht wieder offen; erst wenn du ihn übernimmst, benachrichtigt der neue Check wie die übrigen. Eine Messung, die der Katalog entfernt, lässt den vorhandenen Check stehen, wie du ihn eingestellt hast.</p>
+
+          <h3 id="probe-status">Status eines Probe-Checks</h3>
+          <p>Ein Probe-Check bewertet die Felder, die der Sensor des Agents liefert (etwa <code>status_code</code> einer HTTP-Antwort, <code>days_left</code> eines Zertifikats, <code>ok</code> einer Protokoll-Antwort), mit den Regeln des Katalogs; die schlimmste Regel gewinnt. Davor gelten:</p>
+          <ul>
+            <li>Der Agent hat die Probe nicht ausgeführt: ohne hinterlegte Zugangsdaten (<code>no_credential</code>) oder nach einer Abweisung mit 401/403 (<code>denied</code>; der Agent versucht es erst wieder, wenn sich die Zugangsdaten ändern) <span class="badge badge-warning">warning</span>; ein Ziel, das keine Adresse dieses Hosts ist oder das der Agent nie prüft, ein mehrdeutiges Ziel, ein Sensor, den der Agent nicht kennt, oder ungültige Parameter <code>unknown</code>.</li>
+            <li>Das letzte Ergebnis ist älter als zweimal das Intervall (bei gebremstem Agent entsprechend länger) plus 5&nbsp;Minuten: <code>unknown</code>, der Agent führt die Probe nicht mehr aus.</li>
+            <li>Die Messung ist gescheitert (Verbindung abgelehnt, Zeitlimit, falsche Antwort): <span class="badge badge-danger">critical</span> mit dem Grund.</li>
+          </ul>
+          <p>Die Meldung nennt die gemessenen Werte (<code>OK: field = value, …</code>). Eine Probe läuft höchstens alle 5&nbsp;Minuten (Intervalle 5&nbsp;min, 15&nbsp;min, 1&nbsp;h oder 24&nbsp;h) und darf 1 bis 30&nbsp;Sekunden dauern (Default 10).</p>
+
+          <h3 id="zugangsdaten">Zugangsdaten für Proben</h3>
+          <p>Manche Messungen brauchen ein Passwort oder Token, etwa die Statusseite einer Anwendung. Diese Zugangsdaten bleiben <strong>auf dem Host</strong>: Du hinterlegst sie dort mit der Agent-CLI, der Monitoring-Dienst kennt nur ihren Namen (<code>&lt;modul&gt;/&lt;instanz&gt;/&lt;slot&gt;</code>) und erfährt mit jedem Report, welche Namen hinterlegt sind, nie ihren Wert.</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>sudo adminhelper-agent monitor credential set &lt;modul&gt;/&lt;instanz&gt;/default   # fragt ohne Echo, oder von stdin
+sudo adminhelper-agent monitor credential list                            # nur die Namen
+sudo adminhelper-agent monitor credential delete &lt;modul&gt;/&lt;instanz&gt;/default</code></pre>
+          <p>Der Wert ist je nach Verwendung ein Token (<code>bearer</code>, ein Header), <code>benutzer:passwort</code> (<code>basic</code>) oder ein Redis-Passwort, höchstens 4000&nbsp;Bytes ohne Steuerzeichen. Die Datei <code>credentials.json</code> liegt neben <code>monitor.conf</code> (Linux <code>/etc/adminhelper/</code>, Modus <code>0600</code>, Eigentümer das Konto des Agents; Windows <code>%ProgramData%\AdminHelper\</code>, nur SYSTEM und Administratoren). Steht sie anderen Konten offen, nutzt der Agent keinen Eintrag daraus. Datenbanken prüft der Agent ohne gespeichertes Passwort über die lokale Socket-Anmeldung (MariaDB <code>unix_socket</code> als root, PostgreSQL <code>peer</code> als <code>postgres</code>).</p>
+
+          <h3 id="sicherheitsmodell">Sicherheitsmodell und Restrisiko</h3>
+          <ul>
+            <li><strong>Nur eingebaute Sensoren:</strong> Der Monitoring-Dienst schickt dem Agent einen Plan aus Sensor-Namen und Parametern. Was ein Sensor tut, steht im Agent; ein unbekannter Sensor oder ein Parameter außerhalb seiner Grenzen läuft nicht.</li>
+            <li><strong>Nur lesend:</strong> HTTP-Anfragen sind nur <code>GET</code> oder <code>HEAD</code>, der Datenbank-Sensor nur feste Abfragen (Erreichbarkeit, Verbindungen, Replikation, Größe), der Log-Sensor liefert nur Zähler, nie Logzeilen.</li>
+            <li><strong>Nur dieser Host:</strong> Ziele sind Loopback, die eigenen Adressen des Hosts und seine eigenen Container. Der Agent verweigert andere Hosts, die Ports 22, 3306 und 9100&ndash;9107, Ports von <code>sshd</code>, <code>mysqld</code> und <code>mariadbd</code> und die Steuerdienste des Hosts (Container- und VM-Verwaltung, D-Bus, polkit, SSH- und GPG-Agent).</li>
+            <li><strong>Zugangsdaten bleiben lokal</strong> und erscheinen nie in einer Fehlermeldung; der Agent schickt sie nur an das Ziel der Probe, die sie nennt.</li>
+            <li><strong>Selbstbremse:</strong> Der Agent misst, was jeder Sammler pro Lauf kostet (Dauer, CPU-Zeit, Zeitüberschreitungen) und meldet es mit. Stoßen Docker, Proxmox, ZFS oder SMART zwei Läufe in Folge an eine Zeitgrenze, laufen sie nur noch jeden zweiten Lauf, bei Bedarf bis jeden achten; drei Läufe ohne Überschreitung halbieren das wieder. Für die Proben streckt derselbe Faktor die Intervalle. Ressourcen, Systemzustand und Dienste laufen immer. Ein ausgesetzter Sammler lässt den Status seiner Checks stehen.</li>
+          </ul>
+          <p><strong>Restrisiko:</strong> Wer den Monitoring-Dienst übernimmt, kann den Agent mit den eingebauten Sensoren einzelne Felder lokaler Lese-Endpunkte abfragen lassen, auch mit hinterlegten Zugangsdaten. Mehr als diese Lese-Abfragen auf dem eigenen Host erlaubt der Plan nicht.</p>
 
           <h2 id="templates">Templates</h2>
           <p>Ein <strong>Monitoring-Template</strong> bündelt mehrere Check- und Alert-Definitionen und wird einem Server zugewiesen, statt jeden Check einzeln anzulegen. Beim Zuweisen werden aus den Definitionen echte Checks und Alert-Regeln für den Server erzeugt.</p>
