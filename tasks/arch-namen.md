@@ -79,10 +79,12 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (Anzeige im Desktop, kein dokumentiertes Verhalten)
 Abhängt von: T1
 
-### T9 — Web: FRP-Status zeigt den Tunnel, nicht den Proxy-Namen (R-1210 1a)  [ ]
-Komponente: web · Dateien: apps/web/src/modals/FrpStatusModal.svelte, apps/web/src/modals/FrpStatusModal.test.ts, apps/web/src/lib/api/types.ts
+### T9 — Web: FRP-Status zeigt den Tunnel, nicht den Proxy-Namen (R-1210 1a)  [x]
+Komponente: web · Dateien: apps/web/src/modals/FrpStatusModal.svelte, apps/web/src/modals/FrpStatusModal.test.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/api/types.contract.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @113eae3c1 2026-11-09T16:27:11+01:00
+Review: approve (.ah-out/review/arch-namen/T9.verdict.json)
 Änderung: Spalte Name zeigt `p.tunnel?.name` (Anzeigename), ohne Tunnel den Proxy-Namen; Test für beide Fälle. Neue Testdatei mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh web --strict -- FrpStatusModal
+Verify: bash scripts/dev/verify.sh web --strict -- FrpStatusModal types.contract
 Doku: → T12
 Abhängt von: T1
 
