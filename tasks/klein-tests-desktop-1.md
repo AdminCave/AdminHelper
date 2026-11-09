@@ -22,3 +22,12 @@ Dedup-Key: bug:desktop:apps/desktop/src-tauri/src/pty.rs:a_window_that_is_gone_h
 Änderung: `nothing_after` liest `Data` ab und verlangt danach `Disconnected` (`Exit`/`Replayed` panic); in `close_all_of_a_window_leaves_the_others_running` wartet ein Helfer mit Frist auf `registry.len() == 1`, statt es sofort zu prüfen. Der Linux-Fehler wird vorher mit einem `sleep` in der Entfernung (nur Probe, nicht committet) rot gezeigt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
 Doku: keine (Test-only, kein dokumentiertes Verhalten)
+
+### T2 — nothing_after bleibt streng, Senkenwechsel bekommen nothing_after_handover (R-1177)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @029b76258 2026-11-09T13:08:49+01:00
+Review: am Ende (Branch-Review)
+Änderung: Korrektur nach der Abschlussprüfung (wichtig, `pty.rs:633`): das abräumende `nothing_after` schwächte auch die Prüfung „nichts nach `Exit`“. `nothing_after` ist wieder der strenge Helfer; nur die drei Stellen nach `attach`/`hand_back` nutzen den neuen `nothing_after_handover`, der vor dem Loslassen gesendete `Data` abliest.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty
+Doku: keine (Test-only)
+Abhängt von: T1
