@@ -50,6 +50,41 @@
         "title": "AgentKeyOut",
         "type": "object"
       },
+      "AgentPlanOut": {
+        "properties": {
+          "catalog_version": {
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "discovery": {
+            "$ref": "#/components/schemas/PlanDiscoveryOut"
+          },
+          "plan_version": {
+            "title": "Plan Version",
+            "type": "integer"
+          },
+          "probes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanProbeOut"
+            },
+            "title": "Probes",
+            "type": "array"
+          },
+          "scan": {
+            "title": "Scan",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "plan_version",
+          "catalog_version",
+          "scan",
+          "discovery",
+          "probes"
+        ],
+        "title": "AgentPlanOut",
+        "type": "object"
+      },
       "AlertLogOut": {
         "properties": {
           "alertRuleId": {
@@ -1407,6 +1442,175 @@
         "title": "MonitorStateOut",
         "type": "object"
       },
+      "PlanCredentialOut": {
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "use": {
+            "title": "Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "use"
+        ],
+        "title": "PlanCredentialOut",
+        "type": "object"
+      },
+      "PlanDiscoveryOut": {
+        "properties": {
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/PlanMarkerOut"
+            },
+            "title": "Markers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "markers"
+        ],
+        "title": "PlanDiscoveryOut",
+        "type": "object"
+      },
+      "PlanMarkerOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "packages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "paths",
+          "packages"
+        ],
+        "title": "PlanMarkerOut",
+        "type": "object"
+      },
+      "PlanProbeOut": {
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCredentialOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "integer"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "sensor": {
+            "title": "Sensor",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanTargetOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeout_s": {
+            "title": "Timeout S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sensor",
+          "interval_s",
+          "timeout_s",
+          "target",
+          "params",
+          "fields",
+          "credential"
+        ],
+        "title": "PlanProbeOut",
+        "type": "object"
+      },
+      "PlanTargetOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port_hint": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Hint"
+          },
+          "scheme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "port_hint",
+          "scheme"
+        ],
+        "title": "PlanTargetOut",
+        "type": "object"
+      },
       "RestoreOut": {
         "properties": {
           "restored": {
@@ -2376,6 +2580,46 @@
           }
         },
         "summary": "Create Agent Key"
+      }
+    },
+    "/agent/{server_id}/plan": {
+      "get": {
+        "description": "The agent's next run: its probe checks, the markers to look for and whether to scan.",
+        "operationId": "agent_plan_agent__server_id__plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Plan"
       }
     },
     "/agent/{server_id}/report": {

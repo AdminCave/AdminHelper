@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
 from app.catalog.model import Module
+from app.check_configs import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.checkers.agent import agent_number
 from app.core.time import utcnow_naive
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding
@@ -49,6 +50,7 @@ MAX_MARKERS = 1000
 MAX_PORTS = 1000
 MAX_CONTAINER_PORTS = 64
 MAX_MOUNTS = 32
+MAX_CREDENTIALS = 256
 
 SCAN_AFTER_MIN = timedelta(hours=24)
 SCAN_AFTER_MAX = timedelta(hours=48)
@@ -511,5 +513,49 @@ def apply_discovery(
         db.rollback()
         # No traceback: an agent can trigger this on every scan.
         logger.error("Storing the discovery failed (%s): %s", server_id, type(exc).__name__)
+        return False
+    return True
+
+
+_CREDENTIAL_REF = re.compile(CREDENTIAL_REF_PATTERN)
+
+
+def clean_credentials(block: object) -> dict[str, bool] | None:
+    """The credential references the agent holds, as {ref: true}; never a value or hash.
+    None for a block that is no object."""
+    if not isinstance(block, dict):
+        return None
+    refs = sorted(
+        ref
+        for ref, present in islice(block.items(), MAX_CREDENTIALS)
+        if present is True
+        and isinstance(ref, str)
+        and len(ref) <= CREDENTIAL_REF_MAX
+        and _CREDENTIAL_REF.fullmatch(ref)
+    )
+    return dict.fromkeys(refs, True)
+
+
+def apply_credentials(
+    db: Session, server_id: str, block: object, *, now: datetime | None = None
+) -> bool:
+    """Replace the server's stored credential references with the report's. Own commit;
+    a failure is rolled back and only logged. Returns whether the block was stored."""
+    refs = clean_credentials(block)
+    if refs is None:
+        return False
+    try:
+        row = db.get(MonitorDiscovery, server_id)
+        if row is None:
+            row = MonitorDiscovery(server_id=server_id)
+            db.add(row)
+        row.credentials = _dump(refs)
+        row.updated_at = now or utcnow_naive()
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "Storing the credential references failed (%s): %s", server_id, type(exc).__name__
+        )
         return False
     return True

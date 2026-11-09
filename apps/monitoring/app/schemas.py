@@ -549,3 +549,46 @@ class BuiltinUpdateOut(BaseModel):
     shippedVersion: int
     current: TemplateDefinitionsOut
     shipped: TemplateDefinitionsOut
+
+
+# The agent's plan (R-1223). Snake case like the report the agent sends: it is the
+# agent's wire format, not an admin API response.
+class PlanMarkerOut(BaseModel):
+    id: str
+    paths: list[str]
+    packages: list[str]
+
+
+class PlanDiscoveryOut(BaseModel):
+    markers: list[PlanMarkerOut]
+
+
+class PlanTargetOut(BaseModel):
+    kind: str
+    name: str
+    port_hint: int | None
+    scheme: str | None
+
+
+class PlanCredentialOut(BaseModel):
+    ref: str
+    use: str
+
+
+class PlanProbeOut(BaseModel):
+    id: str
+    sensor: str
+    interval_s: int
+    timeout_s: int
+    target: PlanTargetOut | None
+    params: dict[str, Any]
+    fields: list[str]
+    credential: PlanCredentialOut | None
+
+
+class AgentPlanOut(BaseModel):
+    plan_version: int
+    catalog_version: str
+    scan: bool
+    discovery: PlanDiscoveryOut
+    probes: list[PlanProbeOut]
