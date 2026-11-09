@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T11
 Test-Löschung: apps/agent/internal/config/securedir_linux_test.go::* — per git mv umbenannt nach securedir_unix_test.go (Build-Tag linux || freebsd), Tests unverändert; apps/agent/internal/logging/logging_linux_test.go::* — per git mv umbenannt nach logging_unix_test.go (Build-Tag linux || freebsd), Tests unverändert
 
-### T2 — Agent: frpc als rc.d-Dienst unter FreeBSD (R-1247)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/platform_freebsd.go, apps/agent/internal/frpc/sockstat.go, apps/agent/internal/frpc/sockstat_test.go, apps/agent/freebsd/adminhelper_frpc, apps/agent/cmd/adminhelper-agent/rcscript_test.go, apps/agent/cmd/adminhelper-agent/crossbuild_test.go
+### T2 — Agent: frpc als rc.d-Dienst unter FreeBSD (R-1247)  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/platform_freebsd.go, apps/agent/internal/frpc/sockstat.go, apps/agent/internal/frpc/sockstat_test.go, apps/agent/freebsd/adminhelper_frpc, apps/agent/cmd/adminhelper-agent/crossbuild_test.go, apps/agent/internal/frpc/platform_freebsd_test.go, apps/agent/internal/service/service_freebsd_test.go, apps/agent/internal/frpc/rcd.go, apps/agent/internal/frpc/rcscript_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @46679688d 2026-11-09T17:26:15+01:00
+Review: approve (.ah-out/review/arch-freebsd-agent/T2.verdict.json)
 Änderung: `platform_freebsd.go` setzt die Plattform-Funktionen aus `platform_linux.go` um: `service adminhelper_frpc start|stop|restart|status`, aktivieren über `sysrc adminhelper_frpc_enable=YES`, Reload über `/usr/local/libexec/adminhelper/frpc reload -c <FrpDir>/frpc.toml`. `frpcOwnsAdminPort` liest `sockstat -4 -l -q -n -P tcp -p <port>`; der Parser `sockstat.go` (ohne Build-Tag, SPDX) verlangt Benutzer `root`, Kommando `frpc` und `127.0.0.1:<port>`, Tests mit echten Ausgaben und Gegenfällen (anderer Benutzer, anderes Kommando, `*:<port>`, leere Ausgabe). `apps/agent/freebsd/adminhelper_frpc` (rc.subr, SPDX): `daemon -r -R 5 -P <pidfile> -S -T adminhelper-frpc` um frpc mit `-c <FrpDir>/frpc.toml`, `pidfile` auf den Supervisor, `adminhelper_frpc_enable` Standard `NO`; `rcscript_test.go` prüft diese Bausteine im Text. `crossbuild_test.go` nimmt `internal/frpc` auf.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T11
@@ -97,3 +99,8 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- 2026-11-09 T2: Aktivieren über `service adminhelper_frpc enable` (rc.subr ruft `sysrc -s`) statt `sysrc` direkt, Start und Neustart mit `onestart`/`onerestart`, Stopp mit `faststop` vor `disable` — rc.subr lässt `start`/`restart` bei abgeschaltetem rcvar still mit Exit 0 aus, `stop` ohne laufenden Dienst endet mit 1 (rc.subr 14.3 gelesen).
+- 2026-11-09 T2: `daemon -f -p <child-pidfile>` zusätzlich zu `-r -R 5 -P -S -T` — ohne `-f` hält der Supervisor stdout/stderr des Aufrufers offen; `frpcDown` gilt auch bei laufendem Supervisor, solange daemon die Kind-pidfile beim Warten auf den Neustart geleert hat (wie systemd im Restart-Wartezustand).
+- 2026-11-09 T2: Besitz des Admin-Ports über UID `0` und die PID aus der Kind-pidfile statt über den Prozessnamen (den wählt, wer die Datei startet); sockstat mit `-n`, weil die numerische UID nicht an der passwd-Reihenfolge hängt (`toor`). Eine Zeile, die nicht der Spaltenform folgt, und Sockets ohne Prozess (`?`/`??`) verwerfen die ganze Ausgabe (Security-Review T2).
+- 2026-11-09 T2: `service` und `sockstat` mit absolutem Pfad — unabhängig vom PATH eines Aufrufs aus der Shell (cron setzt `_PATH_DEFPATH`, das beide enthält).
+- 2026-11-09 T2: Namen, die Go und rc-Skript teilen, in `internal/frpc/rcd.go` ohne Build-Tag und `rcscript_test.go` nach `internal/frpc/` statt `cmd/adminhelper-agent/` — so prüft die Linux-CI das Skript gegen die Go-Konstanten; die FreeBSD-Tests (`platform_freebsd_test.go`, `service_freebsd_test.go`) kompiliert der Cross-Vet hier, ausgeführt werden sie nativ in T9.

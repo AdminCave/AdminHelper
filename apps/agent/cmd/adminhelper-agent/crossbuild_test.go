@@ -15,6 +15,7 @@ import (
 var freebsdPackages = []string{
 	"./internal/config/...",
 	"./internal/enroll/...",
+	"./internal/frpc/...",
 	"./internal/logging/...",
 	"./internal/service/...",
 }
