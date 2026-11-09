@@ -52,8 +52,8 @@ func TestBuildReportBasics(t *testing.T) {
 
 	report := BuildReport(nil)
 
-	if got := report["report_version"]; got != 3 {
-		t.Errorf("report_version = %v, erwartet 3", got)
+	if got := report["report_version"]; got != 4 {
+		t.Errorf("report_version = %v, erwartet 4", got)
 	}
 
 	ts, ok := report["timestamp"].(string)
@@ -351,7 +351,10 @@ func TestPushBudgetKeepsThePushReserve(t *testing.T) {
 
 	received := make(chan time.Time, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received <- time.Now()
+		// Only the report counts: the plan GET comes before the collection.
+		if r.Method == http.MethodPost {
+			received <- time.Now()
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

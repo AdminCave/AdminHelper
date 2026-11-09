@@ -61,7 +61,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, prev repor
 	}
 
 	report := map[string]any{
-		"report_version": 3,
+		"report_version": 4,
 		"timestamp":      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		"resources":      resources,
 		"uptime_seconds": collectUptime(),

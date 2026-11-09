@@ -253,6 +253,11 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	status.Store(http.StatusOK)
 	received := make(chan float64, 8)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// The plan: none, as from a monitoring service without probes.
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		var body struct {
 			Resources struct {
 				CPUPercent float64 `json:"cpu_percent"`

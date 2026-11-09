@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"adminhelper-agent/internal/execx"
 )
 
 // dockerTimeout caps every docker CLI call: a hanging daemon must not stall
@@ -49,29 +51,13 @@ func runDocker(ctx context.Context, args ...string) ([]byte, error) {
 	return runTimed(ctx, dockerTimeout, "docker", args...)
 }
 
-// commandWaitDelay bounds how long runTimed waits for a command's pipes once its context ended or the
-// command exited. The kill reaches only the tool: a grandchild that inherited its stdout (a daemon, a
-// pager) kept the pipe open, and Output read it past the timeout until the grandchild ended.
-const commandWaitDelay = 2 * time.Second
+// commandWaitDelay is execx.WaitDelay for the calls that build their exec.Cmd themselves (runTimedEnv).
+const commandWaitDelay = execx.WaitDelay
 
-// runTimed runs a command under timeout and ctx, whichever ends first. A call either ended returns the
-// context's error (context.DeadlineExceeded at the timeout or the deadline of ctx, context.Canceled
-// when ctx was canceled): exec itself reports it as the ExitError "signal: killed", which would pass a
-// hanging tool off as a failing one. exec.ErrWaitDelay means the command exited 0 and only a child of
-// it held the pipe past commandWaitDelay: the command's output is complete, so it is no error.
+// runTimed runs a command through execx.Run: under timeout and ctx, whichever ends first, with the
+// context's error for a call either ended.
 func runTimed(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = commandWaitDelay
-	out, err := cmd.Output()
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return out, nil
-	}
-	if err != nil && ctx.Err() != nil {
-		return out, ctx.Err()
-	}
-	return out, err
+	return execx.Run(ctx, timeout, name, args...)
 }
 
 // collectDocker collects Docker container status (cross-platform). No docker binary means Docker is

@@ -201,7 +201,13 @@ func Push(ctx context.Context) error {
 		collectCtx, cancel = context.WithDeadline(ctx, deadline.Add(-pushReserve))
 		defer cancel()
 	}
-	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, loadReportState(reportStatePath), time.Now())
+	plan := currentPlan(collectCtx, cfg, config.MonitorPlanFile())
+	prevReportState := loadReportState(reportStatePath)
+	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, prevReportState, time.Now())
+	// The probes run after the collectors, in what is left of the collection's time.
+	probes, ran := runDueProbes(collectCtx, plan.Probes, prevReportState.Probes, time.Now())
+	nextReportState.Probes = probes
+	report["probes"] = probes
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(ctx, PushReportParams{
@@ -212,6 +218,16 @@ func Push(ctx context.Context) error {
 		TLS:      config.TLSOpts{CACert: cfg.CACert, Insecure: cfg.Insecure},
 	}); err != nil {
 		logger.Errorf("Report senden fehlgeschlagen: %v", err)
+		if ran > 0 {
+			// The probes that ran keep their results all the same: the next report carries them with
+			// their own time, and they are not due again before their interval, however long the
+			// monitoring service is away. The rest of the state stays as the last push left it.
+			kept := prevReportState
+			kept.Probes = probes
+			if err := saveReportState(reportStatePath, kept); err != nil {
+				logger.Warnf("saving the probe results failed: %v", err)
+			}
+		}
 		return err
 	}
 	if sentFull {

@@ -40,9 +40,17 @@ func MonitorInventoryStateFile() string {
 // of the last successful push: {cpu: {unix, total, busy}} (the CPU times),
 // oom_kill and oom_kill_source (the OOM kill counter, from /proc/vmstat or a
 // container's own cgroup) and updates: {checked_unix, security} (the hourly
-// security update count); all but cpu on Linux only. It lives next to
-// monitor.conf for the same reason: the agent runs as a oneshot (systemd timer /
-// scheduled task) — in-memory state does not survive between pushes.
+// security update count); all but cpu on Linux only; and probes: {<check id>:
+// {ts, duration_ms, status, values, error}} (the last result of every probe,
+// saved after a failed push as well). It lives next to monitor.conf for the same
+// reason: the agent runs as a oneshot (systemd timer / scheduled task) —
+// in-memory state does not survive between pushes.
 func MonitorReportStateFile() string {
 	return filepath.Join(MonitorDir(), ".report-state.json")
+}
+
+// MonitorPlanFile keeps the last plan the monitoring service sent (R-1223): the
+// probes a run falls back to while the plan cannot be fetched.
+func MonitorPlanFile() string {
+	return filepath.Join(MonitorDir(), ".plan.json")
 }
