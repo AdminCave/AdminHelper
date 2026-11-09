@@ -1,5 +1,5 @@
 # Eingebettetes RDP: OpenH264 auf Ciscos aktuelle Version — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-6 · Review: pro Task
+Status: erledigt · Branch: feature/kern-rdp-6 · Review: pro Task
 Spec: docs/features/kern-rdp-6.md (Roadmap R-1200)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad, keine neue Abhängigkeit; Beweis ist der Rundlauf-Test mit dem echten Cisco-Binary in desktop-rs, Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
