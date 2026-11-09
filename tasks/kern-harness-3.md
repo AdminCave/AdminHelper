@@ -1,5 +1,5 @@
 # Harness: exakter Schrittname, Einstufung nicht ansprechbarer Schritte, Probelauf ohne Abräumen — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-3 · Review: am Ende
+Status: erledigt · Branch: feature/kern-harness-3 · Review: am Ende
 Spec: docs/features/kern-harness-3.md (Roadmap R-1148, R-1206, R-1153)
 Heavy: none — nur Harness-Skripte mit hermetischen Tests (run_flags_test, heavy_test, vm.py pytest); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
