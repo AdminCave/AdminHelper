@@ -25,8 +25,10 @@ Review: approve (.ah-out/review/arch-monitoring-module/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py
 Doku: → T15
 
-### T2 — Monitoring: Tabellen und Migration für Erkennung, Funde und Modul-Checks (R-1223)  [ ]
+### T2 — Monitoring: Tabellen und Migration für Erkennung, Funde und Modul-Checks (R-1223)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/alembic/versions/b8d0f2a4c6e8_module_discovery.py, apps/monitoring/app/server_cleanup.py, apps/monitoring/tests/test_module_tables.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @92247c417 2026-11-09T16:54:54+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T2.verdict.json)
 Änderung: Modelle `MonitorDiscovery` und `MonitorFinding`, an `MonitorCheck` die Spalten `module_id` (Index), `module_instance`, `module_check_key`, `silent` (Standard `false`, `server_default`), Tabellen und Eindeutigkeit wie in der Spec; Alembic-Revision auf Kopf `3c66308d11a7` mit Downgrade. `cleanup_server` löscht Erkennung und Funde mit. Test: Upgrade/Downgrade/Upgrade, Altzeilen in `monitor_checks` bekommen `silent = false`, Eindeutigkeit der Funde, Aufräumen beim Server-Löschen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_tables.py tests/test_migrations_smoke.py tests/test_alembic_builtin.py tests/test_models_timestamps.py
 Doku: → T15

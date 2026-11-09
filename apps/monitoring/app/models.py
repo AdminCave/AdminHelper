@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 
 from app.core.database import Base
@@ -126,6 +127,14 @@ class MonitorCheck(Base):
     # sync must not overwrite. Checks from before the column start with [] until the
     # first start marks what differs from the template (record_override_baseline).
     overridden_fields = Column(Text, nullable=False, default="[]", server_default="[]")
+    # A check an adopted catalog module brought (docs/features/arch-monitoring-module.md):
+    # the module, the instance it watches and the catalog check it stands for. NULL for
+    # every check from before modules and for every hand-made one.
+    module_id = Column(String, nullable=True, index=True)
+    module_instance = Column(String, nullable=True)
+    module_check_key = Column(String, nullable=True)
+    # Evaluated and shown, never alerted: a module check the admin took over quietly.
+    silent = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
@@ -510,3 +519,48 @@ class MonitorTemplateSuggestionDismissal(Base):
     server_id = Column(String, nullable=False, index=True)
     builtin_slug = Column(String, nullable=False)
     dismissed_at = Column(DateTime, server_default=utc_now_sql())
+
+
+class MonitorDiscovery(Base):
+    """What a server's agent last found on its host (services, containers, units,
+    listening ports, markers) and when it looks again. One row per server.
+
+    ``credentials`` holds references only (``<module>/<instance>/<slot>`` → whether the
+    agent has the secret); the secrets themselves stay on the host.
+    """
+
+    __tablename__ = "monitor_discovery"
+
+    server_id = Column(String, primary_key=True)
+    scanned_at = Column(DateTime, nullable=True)
+    next_scan_at = Column(DateTime, nullable=True)
+    # Set by "scan now": the next plan asks the agent for a discovery regardless of
+    # next_scan_at.
+    scan_requested_at = Column(DateTime, nullable=True)
+    inventory = Column(Text, nullable=False, default="{}", server_default="{}")  # JSON
+    credentials = Column(Text, nullable=False, default="{}", server_default="{}")  # JSON
+    updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
+
+
+class MonitorFinding(Base):
+    """One entry of the discovery inbox: a catalog module whose instance appeared,
+    changed or went away on a server, until the admin adopts or dismisses it."""
+
+    __tablename__ = "monitor_findings"
+    __table_args__ = (
+        UniqueConstraint(
+            "server_id", "module_id", "instance_key", name="uq_finding_server_module_instance"
+        ),
+    )
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, nullable=False, index=True)
+    module_id = Column(String, nullable=False)
+    instance_key = Column(String, nullable=False)
+    kind = Column(String, nullable=False)  # new | changed | gone
+    status = Column(String, nullable=False, default="open", server_default="open")
+    summary = Column(Text, nullable=False, default="{}", server_default="{}")  # JSON
+    catalog_version = Column(String, nullable=False)
+    first_seen = Column(DateTime, nullable=False, server_default=utc_now_sql())
+    last_seen = Column(DateTime, nullable=False, server_default=utc_now_sql())
+    decided_at = Column(DateTime, nullable=True)
