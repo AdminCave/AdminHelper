@@ -11,3 +11,14 @@ ExecStart=/usr/bin/adminhelper-agent run --once
 # retry get SIGTERM'd, losing every report (4.13). Keep in sync with the dynamic unit in
 # internal/service/service_linux.go.
 TimeoutStartSec=270
+# Keep the agent out of the way of the host's own services: a run cut short by these caps costs
+# one data point, never the customer's workload. MemoryMax ends a runaway run (OOMKilled in the
+# journal) and OOMPolicy=continue keeps the run alive when only a child (pvesh, dnf, docker) hits it;
+# raise it with `systemctl edit adminhelper-agent.service`. IOSchedulingClass=idle only
+# takes effect under an I/O scheduler that honours it (bfq). Keep in sync with the dynamic unit in
+# internal/service/service_linux.go.
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryMax=256M
+OOMPolicy=continue

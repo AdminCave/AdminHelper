@@ -30,7 +30,7 @@ Doku: → T7
 Abhängt von: T1
 
 ### T3 — R-1219: Storage-Zustand aus /cluster/resources, Backup-Inhalt höchstens alle 30 min  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/report.go
+Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
 Änderung:
 - `buildBackupIndex` liest die Backup-Storages des Nodes aus `pvesh get /cluster/resources --type storage`: `node` gleich dem lokalen Node, `content` enthält `backup`, `status`.
 - Ein Storage, der nicht `available` ist, ist `backup_index_incomplete` wie heute; sein Inhalt wird nicht abgefragt.
@@ -44,10 +44,12 @@ Dedup-Key: bug:agent:plugins.go:buildBackupIndex
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: → T7
 
-### T4 — R-1221: Ressourcen-Deckel für Unit und Windows-Dienst  [ ]
+### T4 — R-1221: Ressourcen-Deckel für Unit und Windows-Dienst  [x]
 Komponente: agent · Dateien: apps/agent/systemd/adminhelper-agent.service, apps/agent/internal/service/service_linux.go, apps/agent/internal/service/service_linux_test.go, apps/agent/cmd/adminhelper-agent/run_windows.go, apps/agent/cmd/adminhelper-agent/run_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a83fad335 2026-11-09T18:32:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-6/T4.verdict.json)
 Änderung:
-- Ausgeliefertes und dynamisches Unit bekommen `Nice=19`, `IOSchedulingClass=idle`, `CPUQuota=25%` und `MemoryMax=256M`.
+- Ausgeliefertes und dynamisches Unit bekommen `Nice=19`, `IOSchedulingClass=idle`, `CPUQuota=50%`, `MemoryMax=256M` und `OOMPolicy=continue`.
 - Ein Test vergleicht die `[Service]`-Zeilen beider Units, ohne `ExecStart`, damit die Zwillinge nicht auseinanderlaufen.
 - Unter Windows setzt `runLoop` beim Start `SetPriorityClass(IDLE_PRIORITY_CLASS)` auf den eigenen Prozess; ein Fehler wird geloggt, der Dienst läuft weiter.
 - frpc.service bleibt unberührt.
@@ -89,3 +91,6 @@ Task-Review: am Ende
 - Kevin 2026-11-09 (Konzept §10): Befunde 1 und 2 werden auf einer Test-VM im Pool nachgestellt; es gibt nur eine Freigabeliste, die Fallen dienen als Prüfliste bzw. Negativtest; der Agent soll für Kunden nie spürbar sein.
 - Überschneidung mit `feature/arch-freebsd-agent` in `collector.go`: Der Zug fährt trotzdem. Die Überschneidung ist nur die `skipFSTypes`-Map, T1 fasst sie nicht an, und das Konzept (§8.1) setzt diesen Zug vor die Agent-Arbeit der arch-Sessions. Wer zuerst merged, zwingt den anderen zum Nachziehen; die FreeBSD-Befehle brauchen dann Listeneinträge (T5).
 - T1/T2 (R-1220) verworfen, Box-Nachbau 2026-11-09 auf einer Pool-VM der Lane: Netz-Dateisysteme erreichen `collectDisks` nicht (gopsutil `disk.Partitions(false)` filtert `nodev`), der hängende statfs-Pfad existiert nicht. Die Spec-Abschnitte zu R-1220 gelten nicht mehr; ob Netz-Freigaben künftig überwacht werden sollen, ist eine neue Frage an Kevin, kein Teil dieses Zugs.
+- T4: `SetPriorityClass(IDLE_PRIORITY_CLASS)` sitzt in `agentService.Execute`, nicht in `runLoop`: unter Windows ist nur `Execute` der Dienstpfad, `runLoop` läuft dort nur interaktiv.
+- T4: `CPUQuota=50%` statt der geplanten 25 %. Box-Messung 2026-11-09 (PVE 9.2, 2 vCPU, `systemd-run` mit den Deckeln): ein `pvesh get` braucht 2,3 s CPU, unter 25 % 9,5–10,0 s Wanduhr gegen `pluginTimeout` 15 s, unter 50 % 4,6–4,9 s. `Nice=19` lässt dem Host bei Konkurrenz ohnehin den Vortritt. Speicherspitze eines pvesh-Aufrufs 146 MB, unter `MemoryMax=256M`.
+- T4: `OOMPolicy=continue` dazu (Reviewer T4): ohne sie gilt `DefaultOOMPolicy=stop`, und ein Kind über dem Deckel (pvesh, dnf, docker) beendete die ganze Unit samt Push; so endet nur das Kind, der Collector meldet den Fehler.

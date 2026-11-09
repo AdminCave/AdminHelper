@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -21,8 +22,21 @@ const windowsServiceName = "AdminHelper-Agent"
 // instead of an OS signal (the SCM does not send SIGINT/SIGTERM).
 type agentService struct{}
 
+// setPriorityClass is a seam for the test.
+var setPriorityClass = windows.SetPriorityClass
+
+// lowerPriority puts the service process in the idle priority class (Task Manager "Low"), so the
+// agent never competes with the host's own services for CPU (R-1221). A failure costs only that
+// and is logged; the service keeps running.
+func lowerPriority() {
+	if err := setPriorityClass(windows.CurrentProcess(), windows.IDLE_PRIORITY_CLASS); err != nil {
+		logger.Warnf("could not lower the process priority: %v", err)
+	}
+}
+
 func (s *agentService) Execute(_ []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
 	changes <- svc.Status{State: svc.StartPending}
+	lowerPriority()
 
 	// Stop/Shutdown cancels the ctx, which reaches the cycle in flight. Execute
 	// returns only once serve is back (at most stopWait): the process ends with

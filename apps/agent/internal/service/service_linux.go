@@ -67,23 +67,7 @@ func Install() error {
 	}
 
 	// Write the service unit.
-	// Twin of the packaged units in apps/agent/systemd/ (adminhelper-agent.service
-	// + .timer, shipped via deb/rpm): both install paths must share the
-	// `run --once` + timer semantics — keep them in sync. Only ExecStart differs
-	// (dynamic exe path instead of /usr/bin).
-	serviceUnit := fmt.Sprintf(`[Unit]
-Description=AdminHelper Agent — FRPC Sync + Monitoring
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=%s run --once
-# < OnUnitActiveSec=300 (Timer), but enough for the serial collector timeouts (Docker,
-# smartctl 30s/disk) plus the monitor-push retry — 60s let a single dying disk + a push
-# retry get SIGTERM'd, losing every report (4.13). Keep in sync with the packaged unit.
-TimeoutStartSec=270
-`, dest)
+	serviceUnit := serviceUnitText(dest)
 
 	// Write the timer unit
 	timerUnit := `[Unit]
@@ -148,4 +132,36 @@ func Uninstall() error {
 	}
 	fmt.Println("Service deinstalliert.")
 	return nil
+}
+
+// serviceUnitText is the agent's service unit for the binary at exe.
+// Twin of the packaged units in apps/agent/systemd/ (adminhelper-agent.service
+// + .timer, shipped via deb/rpm): both install paths must share the
+// `run --once` + timer semantics and the resource caps — keep them in sync
+// (TestServiceUnitMatchesPackagedUnit). Only ExecStart differs (dynamic exe path
+// instead of /usr/bin).
+func serviceUnitText(exe string) string {
+	return fmt.Sprintf(`[Unit]
+Description=AdminHelper Agent — FRPC Sync + Monitoring
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%s run --once
+# < OnUnitActiveSec=300 (Timer), but enough for the serial collector timeouts (Docker,
+# smartctl 30s/disk) plus the monitor-push retry — 60s let a single dying disk + a push
+# retry get SIGTERM'd, losing every report (4.13). Keep in sync with the packaged unit.
+TimeoutStartSec=270
+# Keep the agent out of the way of the host's own services: a run cut short by these caps costs
+# one data point, never the customer's workload. MemoryMax ends a runaway run (OOMKilled in the
+# journal) and OOMPolicy=continue keeps the run alive when only a child (pvesh, dnf, docker) hits it;
+# raise it with "systemctl edit adminhelper-agent.service". IOSchedulingClass=idle only
+# takes effect under an I/O scheduler that honours it (bfq). Keep in sync with the packaged unit.
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%%
+MemoryMax=256M
+OOMPolicy=continue
+`, exe)
 }
