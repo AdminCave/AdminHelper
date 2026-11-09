@@ -42,8 +42,10 @@ Verify: bash scripts/dev/verify.sh monitoring desktop-ui --strict
 Doku: → T15
 Abhängt von: T1
 
-### T4 — Monitoring: Abgleich Inventar ↔ Katalog und Funde (R-1223)  [ ]
+### T4 — Monitoring: Abgleich Inventar ↔ Katalog und Funde (R-1223)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @682f8b2ec 2026-11-09T17:48:00+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T4.verdict.json)
 Änderung: `discovery.py` (SPDX): Inventar speichern (Obergrenzen der Spec, Felder außerhalb des Vertrags verworfen), nächsten Scan planen (erster Scan sofort, dann 24–48 h Zufallsversatz; `scan_requested_at` erzwingt), Abgleich je Modul (Image-Präfix, Unit, Prozess, Marker, Port-Hinweis) zu Instanzen mit stabilem `instance_key`, Funde `new`/`changed`/`gone` als Upsert (ignorierte bleiben ignoriert, bis sich die Zusammenfassung ändert; verschwundene Instanzen erst nach zwei Scans ohne Treffer, damit ein Teil-Scan (`partial`) nichts verschwinden lässt). Unbekannte lauschende Nicht-Loopback-Ports mit erkanntem Protokoll ergeben Funde des Moduls `port`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py
 Doku: → T15
@@ -135,3 +137,9 @@ Abhängt von: T14
 - 2026-11-09 T3: `max_age` liest den Feldwert als Unix-Sekunden und misst gegen das `ts` der Probe (Vertrag für die Fühler T11–T13); Frische und Alter rechnen mit der Agent-Uhr (`timestamp` des Reports), nur ohne gültige Angabe mit der Server-Uhr.
 - 2026-11-09 T3: `delta_gt` vergleicht mit dem vorigen gemessenen Lauf (`measured_ts`, `values`, `baseline` in den Details); derselbe Lauf im nächsten Report behält seine Basis, ein fallender Zähler ist kein Anstieg.
 - 2026-11-09 T3: Keine Metrik-Historie der Probe-Werte (`CHECK_TYPE_METRICS["probe"] = []`, Werte nur in den Details) — Kennzahlen-Verläufe entscheidet `arch-monitoring-ui`.
+- 2026-11-09 T4: Eine Unit zählt, solange sie nicht `inactive` ist (auch `failed`); Container zählen in jedem Zustand — ein abgestürzter Dienst ist eine Instanz, die überwacht werden will.
+- 2026-11-09 T4: `instance_key` ist Projekt-, Container-, Unit- oder Prozessname und muss als Segment einer Credential-Referenz taugen (sonst keine Instanz); Port-Funde heißen `tcp-<port>`. Ein Modul, das außerhalb seiner Instanzart gefunden wird, bekommt eine Instanz mit dem Modulnamen und `matched_by`.
+- 2026-11-09 T4: Die Zusammenfassung eines Funds ist rein strukturell (Compose: alle Dienste des Projekts mit Image-Repo; Container: Image, Projekt, Dienst) — keine Zustände, sonst wäre jeder Neustart ein `changed`.
+- 2026-11-09 T4: Port-Funde nur für TCP jenseits Loopback mit erkanntem Protokoll, nicht beansprucht von einem gefundenen Modul (seine Container und deren veröffentlichte Ports, seine Prozesse, seine `port_hints`); nie 22, 3306, 9100–9107, nie `sshd`, `mysqld`, `mariadbd`.
+- 2026-11-09 T4: `gone` erst nach zwei vollen Scans ohne Treffer (`full_scan_at` im Inventar-JSON gegen `last_seen`) und nur für beobachtete Instanzen (aktiver Check mit Modul und Instanz); der Fund einer unbeobachteten verschwundenen Instanz wird gelöscht. Kehrt sie zurück: nicht übernommenes `gone` mit gleicher Zusammenfassung → wieder `adopted`, sonst `changed`/`open`; nach übernommenem `gone` → `new`/`open`.
+- 2026-11-09 T4: Hingenommen: ein „Jetzt scannen“ während eines laufenden Scans löscht dieser Scan mit; zwei gleichzeitige Reports desselben Servers → der zweite scheitert am Unique-Schlüssel, wird zurückgerollt und nur geloggt (der nächste Scan holt es nach).
