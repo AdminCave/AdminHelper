@@ -102,7 +102,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T12
 Abhängt von: T8, T9
 
-### T11 — R-1101: Live-Spec Abdocken und Multi-Monitor  [?] (Zwei Prüfrunden verbraucht: die zweite fand nur noch die Umformatierung durch prettier (behoben, Patch im Scratchpad). Dritte Runde für T11 erlauben?)
+### T11 — R-1101: Live-Spec Abdocken und Multi-Monitor  [~] (verschoben in kern-rdp-5: dritte Prüfrunde braucht Kevins Wort; Patch tasks/private/carry/kern-rdp-5-T11-rdp-embedded-spec.patch)
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/rdp-embedded.live.js
 Änderung: Gegen den xrdp-Container: Abdocken zeigt das Bild im neuen Fenster ohne `reconnecting`, Andocken holt es zurück, die Sitzung ist dieselbe (Verbindungsinfo). Multi-Monitor nur, wenn der Webdriver-Treiber zwei Bildschirme sieht, sonst meldet der Test den Hinweis-Pfad. Zwei Monitore auf der VM sind nicht verifiziert; das Ergebnis steht im Ledger.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
