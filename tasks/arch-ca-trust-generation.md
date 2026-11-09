@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ca-trust-generation — Task-Ledger
-Status: aktiv · Branch: feature/arch-ca-trust-generation · Review: pro Task
+Status: bereit · Branch: feature/arch-ca-trust-generation · Review: pro Task
 Spec: docs/features/arch-ca-trust-generation.md (Roadmap R-1054)
 Heavy: linux-full — neue Route in `apps/ca-issuer`, Gateway-Location, Agent-Erneuerung (Sammellauf). Vor dem Merge außerdem der Stack-Job per Dispatch (`gh workflow run ci.yml --ref feature/arch-ca-trust-generation`, fährt `ca_rotation` aus T5) und der Schritt `agent-monitoring` einzeln auf einer VM der Lane (`/test`, `run.sh integration --strict --only …`; der echte Agent fragt `/ca/trust` gegen den Stack). Kein `scenario`: kein neuer Port, kein Cross-Host-Pfad, derselbe mTLS-Client wie bei `/ca/renew`. Kein `windows`: Go- und Rust-Code sind plattformneutral, die CI-Jobs `agent-windows` und `rust-windows` fahren die Suiten nativ.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -117,8 +117,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T6
 Abhängt von: T1, T2, T3
 
-### T6 — Doku DE+EN, ADR-Nachtrag, CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/index.html, docs/en/developer/index.html, docs/adr/0001-unified-pki-and-secure-deployment.md, changelog.d/arch-ca-trust-generation.md
+### T6 — Doku DE+EN, ADR-Nachtrag, CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/server.html, docs/en/developer/server.html, docs/developer/index.html, docs/en/developer/index.html, docs/adr/0001-unified-pki-and-secure-deployment.md, changelog.d/arch-ca-trust-generation.md, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @570fa3e5f 2026-11-09T15:56:55+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Stellen aus „Doku-Impact“ der Spec, DE und EN gleich: Wartezeiten im Runbook (Agents im nächsten Lauf,
 Desktops bei Anmeldung oder stündlich, offline gebliebene Geräte bleiben das Kriterium in `status`), Erneuerung des
 Geräte-Zertifikats, Troubleshooting, Route `/trust` des ca-issuer, ADR 0001 §3.3 als datierter Nachtrag,

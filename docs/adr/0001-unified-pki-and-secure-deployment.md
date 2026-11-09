@@ -165,7 +165,8 @@ Header-Integrität der Datenebene, nicht die CA.
 - Auth = **das aktuelle, noch gültige Cert** (rein kryptografisch vom Issuer prüfbar:
   von unserem Intermediate signiert + nicht abgelaufen). **Ohne Server.**
 - Native: automatisch bei ~50 % Laufzeit + Überlappung → ein kurzzeitig nicht erreichbarer
-  Issuer sperrt niemanden aus. Browser: manuell zum Ablauf (D5).
+  Issuer sperrt niemanden aus; nach einer Rotation schon vorher (Vertrauensgeneration, unten).
+  Browser: manuell zum Ablauf (D5).
 
 **Root-Erneuerung (R-1021, 2026-11-02)** — `python -m app.cli rotate-root stage|switch|finish`,
 Runbook `docs/admin/betrieb.html#root-renewal`:
@@ -185,6 +186,36 @@ Runbook `docs/admin/betrieb.html#root-renewal`:
 - Agent und Desktop ändern sich nicht: sie übernehmen `chain` bei jeder Erneuerung, und der
   Desktop zeigt als `--ca-fp` die letzte Root der Kette. Ein Leck des Root-Schlüssels deckt das
   nicht ab: Dann hilft nur eine frische Hierarchie mit Neu-Enrollment.
+
+**Vertrauensgeneration (R-1054, 2026-11-09)** — `GET /ca/trust` auf `:443` (mTLS, Gateway →
+ca-issuer `/trust`), Runbook `docs/admin/betrieb.html#trust-generation`:
+- Antwort `{"generation":"<hex>"}`: SHA-256 über das DER der Zertifikate, die Enrollment und
+  Renewal für den Scope des vorgelegten Zertifikats im Feld `chain` ausgeben, in dieser Reihenfolge
+  aneinandergehängt. Sie ändert sich mit `rotate-intermediates` und mit jedem Schritt von
+  `rotate-root`, sobald der Issuer neu gestartet ist, sonst nicht.
+- Agent (bei jedem Lauf) und Desktop (bei der Anmeldung, danach stündlich, solange sie besteht)
+  rechnen dieselbe Generation aus ihrem gehaltenen `chain` (`ca.crt` bzw. Keyring-Eintrag
+  `enroll|ca`) und erneuern bei einer Abweichung sofort über `/renew`, nicht erst bei ~50 %.
+  Höchstens eine Erneuerung je Prüfung; weicht die Generation danach weiter ab, warnt der Client,
+  statt in jedem Lauf zu erneuern.
+- Ein Server ohne die Route antwortet `404` oder hinter dem Gateway mit der Web-Oberfläche (`200`,
+  `text/html`): Beides heißt „keine Generation“, kein Fehler, es bleibt bei ~50 %. Jede andere
+  Antwort (`429`, `403`, `5xx`, kaputtes JSON) ist ein Fehler mit Warnung, der Lauf geht weiter.
+  Server und Web ändern sich nicht.
+- Der Issuer prüft das Zertifikat wie bei `/renew` (Kette, Laufzeit, Scope), aber nicht gegen das
+  Register (§3.4): Die Route signiert nichts und nennt nur den Hash öffentlicher Zertifikate, die
+  jeder Client des Scopes ohnehin erhält. Ein widerrufenes, zeitlich noch gültiges Zertifikat
+  erfährt die Generation also weiter; seine Erneuerung verweigert `/renew` (`403`) wie bisher,
+  nach einer Rotation dann in jedem Lauf. Hingenommen.
+- Die Übernahme von `chain` als neue gepinnte Kette stützt sich wie bei der Root-Erneuerung (oben)
+  auf den gepinnten Kanal der Erneuerung; die Generation löst sie früher aus, an dieser Annahme
+  ändert sie nichts.
+- Der Desktop folgt Weiterleitungen wie jede Anfrage seines mTLS-Clients (gleiches Pinning für
+  jedes Ziel); der Agent wertet eine `3xx` als Fehler.
+- Das Gateway liest `client-ca.pem` nur beim Start. Unter derselben Root (Rotation der
+  Intermediates) kommt ein im Fenster bis zum Gateway-Neustart erneuertes Zertifikat durch, belegt
+  im Stack-Test; nach `switch` endet seine Kette an N, die das laufende Gateway noch nicht kennt.
+  Das Runbook macht den Gateway-Neustart deshalb zum Pflichtschritt direkt nach dem healthy Issuer.
 
 ### 3.4 Deprovisionierung ohne CRL (wichtige Präzisierung zu D4)
 
