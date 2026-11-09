@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-doku-6 — Task-Ledger
-Status: bereit · Branch: feature/klein-doku-6 · Review: am Ende
+Status: aktiv · Branch: feature/klein-doku-6 · Review: am Ende
 Spec: docs/features/klein-doku-6.md (Roadmap R-1151, R-1154, R-1167)
 Heavy: none — reine Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,4 +38,13 @@ Beweis: review kern-terminal-1 2026-11-06
 Änderung: „nach der Anmeldung“ durch „nach dem Öffnen des Workspace“ ersetzen (EN: „once the workspace is open“).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/index.html, docs/en/admin/index.html (die Änderung selbst)
+Task-Review: am Ende
+
+### T4 — R-1167: Entwickler-Doku desktop.html nennt denselben Zeitpunkt  [ ]
+Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Review: am Ende (Branch-Review)
+Beweis: Abschlussprüfung klein-doku-6 (reviewer branch) · docs/developer/desktop.html:204 · apps/desktop/ui/src/components/AppShell.svelte:291
+Änderung: „nach der Anmeldung“ / „after sign-in“ durch „nach dem Öffnen des Workspace (sobald die Verbindungen geladen sind)“ / „once the workspace is open (as soon as the connections are loaded)“ ersetzen; im lokalen Modus gibt es keine Anmeldung.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html (die Änderung selbst)
 Task-Review: am Ende
