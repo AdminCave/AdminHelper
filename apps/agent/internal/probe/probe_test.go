@@ -292,6 +292,8 @@ func TestTheGuardsAndTheSensorsRefusalsHaveTheirOwnStatus(t *testing.T) {
 	}{
 		{fmt.Errorf("dial tcp 192.0.2.7:80: %w: 192.0.2.7 is no address of this host", ErrNotAllowed), StatusNotAllowed},
 		{fmt.Errorf("%w: method POST", ErrInvalid), StatusInvalid},
+		{fmt.Errorf("%w: a container target on Windows", ErrUnsupported), StatusUnsupported},
+		{fmt.Errorf("%w: port 8080 listens on ports 80, 443 and none is the hint 8080", ErrAmbiguousTarget), StatusAmbiguousTarget},
 	}
 	for _, c := range cases {
 		t.Run(c.want, func(t *testing.T) {

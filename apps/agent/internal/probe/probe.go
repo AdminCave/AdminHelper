@@ -84,6 +84,11 @@ const (
 	StatusNotAllowed = "not_allowed"
 	// StatusNoCredential: the credential the probe names is not stored on this host.
 	StatusNoCredential = "no_credential"
+	// StatusUnsupported: the sensor cannot run on this host (no systemd, no docker, a platform
+	// without the sensor).
+	StatusUnsupported = "unsupported"
+	// StatusAmbiguousTarget: the target listens on several ports and none is its port hint.
+	StatusAmbiguousTarget = "ambiguous_target"
 )
 
 // The errors a sensor returns to set a status other than error; it may wrap them.
@@ -94,6 +99,10 @@ var (
 	ErrNotAllowed = errors.New("target not allowed")
 	// ErrInvalid: the probe's parameters are none the sensor can run.
 	ErrInvalid = errors.New("invalid probe")
+	// ErrUnsupported: the sensor cannot run on this host.
+	ErrUnsupported = errors.New("not supported on this host")
+	// ErrAmbiguousTarget: the target listens on several ports and none is its port hint.
+	ErrAmbiguousTarget = errors.New("ambiguous target")
 )
 
 // Result is the last run of one probe. TS is when it started (Unix seconds): the monitoring service
@@ -234,6 +243,12 @@ func Run(ctx context.Context, p Probe, start time.Time, acc *Access) Result {
 		res.Error = cleanError(err.Error())
 	case errors.Is(err, ErrInvalid):
 		res.Status = StatusInvalid
+		res.Error = cleanError(err.Error())
+	case errors.Is(err, ErrUnsupported):
+		res.Status = StatusUnsupported
+		res.Error = cleanError(err.Error())
+	case errors.Is(err, ErrAmbiguousTarget):
+		res.Status = StatusAmbiguousTarget
 		res.Error = cleanError(err.Error())
 	case errors.Is(err, ErrDenied) && acc.brake(p):
 		res.Status = StatusDenied
