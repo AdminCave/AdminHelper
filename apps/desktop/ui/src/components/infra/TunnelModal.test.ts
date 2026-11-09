@@ -76,18 +76,21 @@ const stored: FrpTunnel = {
   enabled: true,
 };
 
+const SERVER = { id: 'srv-1', name: 'web01.example.org' };
+
 function openModal(props: Record<string, unknown> = {}) {
   const onClose = vi.fn();
   const onSaved = vi.fn();
   const utils = render(TunnelModal, {
-    props: { open: true, editing: null, serverId: 'srv-1', configs, onClose, onSaved, ...props },
+    props: { open: true, editing: null, server: SERVER, configs, onClose, onSaved, ...props },
   });
   return { ...utils, onClose, onSaved };
 }
 
 // Label-based lookups (6.115): robust against field reorder / placeholder changes, unlike the old
 // placeholder match and `select[1]` index which quietly fill the wrong field when the form changes.
-const nameInput = (c: HTMLElement) => within(c).getByLabelText('Name') as HTMLInputElement;
+const nameInput = (c: HTMLElement) =>
+  within(c).getByLabelText('Zusatz (optional)', { exact: false }) as HTMLInputElement;
 const numberInputs = (c: HTMLElement) =>
   Array.from(c.querySelectorAll('input[type="number"]')) as HTMLInputElement[];
 const typeSelect = (c: HTMLElement) => within(c).getByLabelText('Typ') as HTMLSelectElement;
@@ -108,6 +111,7 @@ describe('TunnelModal create flow', () => {
       server_id: 'srv-1',
       frp_config_id: 'cfg-1', // the only config is preselected on open
       name: 'k01-ssh',
+      label: 'k01-ssh',
       tunnel_type: 'stcp',
       protocol: 'ssh',
       local_ip: '127.0.0.1',
@@ -297,5 +301,20 @@ describe('TunnelModal hands a saved change to the tunnel', () => {
     expect(h.refreshNow).not.toHaveBeenCalled();
     expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('TunnelModal names (R-1210)', () => {
+  it('needs no name and previews the display name the server derives', async () => {
+    const { container, getByTestId } = openModal();
+    await tick();
+    expect(getByTestId('shown-as').textContent).toContain('web01.example.org · SSH (FRP)');
+    await fireEvent.input(numberInputs(container)[0], { target: { value: '22' } });
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(vi.mocked(frpApi.createTunnel).mock.calls[0][1]).toMatchObject({
+      name: 'web01.example.org-ssh',
+      label: '',
+    });
   });
 });

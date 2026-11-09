@@ -49,7 +49,7 @@ describe('infra modals open without an effect loop', () => {
       props: {
         open: true,
         editing: null,
-        serverId: 'srv-1',
+        server: { id: 'srv-1', name: 'web01.example.org' },
         configs: [],
         onClose,
         onSaved: vi.fn(),

@@ -61,8 +61,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/S
 Doku: → T12
 Abhängt von: T3
 
-### T7 — Desktop: Tunnel-Dialog ohne Namensfeld (R-1210 3a)  [ ]
+### T7 — Desktop: Tunnel-Dialog ohne Namensfeld (R-1210 3a)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts, apps/desktop/ui/src/lib/models/frpTunnel.ts, apps/desktop/ui/src/lib/models/frpTunnel.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.svelte, apps/desktop/ui/src/components/infra/modals.regression.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0ab74ba5c 2026-11-09T16:18:44+01:00
+Review: approve (.ah-out/review/arch-namen/T7.verdict.json)
 Änderung: Statt des Pflichtfelds Name (Platzhalter `k01-lnx1-ssh`) ein optionaler Zusatz mit Vorschau des Anzeigenamens; Formular liest `label`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/TunnelModal.test.ts src/components/infra/modals.regression.test.ts src/lib/models/frpTunnel.test.ts src/lib/api/types.contract.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T12

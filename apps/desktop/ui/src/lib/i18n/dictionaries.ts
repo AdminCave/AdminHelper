@@ -126,7 +126,6 @@ export const translations: Translations = {
     'infra.tun.updated': 'Tunnel gespeichert',
     'infra.tun.deleted': 'Tunnel gelöscht',
     'infra.tun.validation.configRequired': 'Bitte eine FRP-Konfiguration wählen',
-    'infra.tun.validation.nameRequired': 'Name darf nicht leer sein',
     'infra.tun.validation.portRequired': 'Lokaler Port erforderlich',
     'infra.tun.validation.visitorPortRange': 'Visitor-Port muss zwischen 1 und 65535 liegen',
 
@@ -1440,7 +1439,6 @@ export const translations: Translations = {
     'infra.tun.updated': 'Tunnel saved',
     'infra.tun.deleted': 'Tunnel deleted',
     'infra.tun.validation.configRequired': 'Please select an FRP configuration',
-    'infra.tun.validation.nameRequired': 'Name must not be empty',
     'infra.tun.validation.portRequired': 'Local port is required',
     'infra.tun.validation.visitorPortRange': 'The visitor port must be between 1 and 65535',
 

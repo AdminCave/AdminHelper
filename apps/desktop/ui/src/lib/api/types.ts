@@ -173,6 +173,8 @@ export interface FrpTunnelInput {
   server_id: string;
   frp_config_id: string;
   name: string;
+  /** The own text of the display name (R-1210); a server from before ignores it. */
+  label?: string;
   tunnel_type: FrpTunnelType;
   protocol: FrpProtocol;
   local_ip: string;
