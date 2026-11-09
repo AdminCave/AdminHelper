@@ -129,8 +129,9 @@ Desktop-Tunnel-Suiten im Sammellauf.
 - **Einmaliger Wechsel aller Tunnel:** Nach dem Server-Update holt jeder Agent sein neues frpc.toml über den Hash
   (`provision_router.py:95-96`) und startet frpc neu; Desktops brauchen die neue Visitor-Konfiguration. Bis beide Seiten
   umgestellt sind, scheitert eine Tunnel-Verbindung → CHANGELOG/Doku: „Tunnel nach dem Update einmal neu starten“.
-- **Portkarte des Desktops** ist nach Visitor-Namen geschlüsselt (`port_registry.rs:69-146`); neue Namen erhalten
-  einmalig neue Einträge, `free_port` bevorzugt den Server-Port – in T8 per Test belegen.
+- **Portkarte des Desktops** ist nach Visitor-Namen geschlüsselt (`port_registry.rs` `assign`); ohne Vorkehrung
+  bekäme ein umbenannter Visitor einen neuen lokalen Port, und ssh fände dort einen fremden Host-Key. T8: ein Visitor,
+  der den Eintrag desselben Owners mit gleichem Server-Port ersetzt, übernimmt dessen lokalen Port.
 - **Mischbetrieb:** alter Desktop + neuer Server zeigt Anzeigenamen richtig (`name`), bei einem Visitor ohne
   verknüpften Tunnel den Visitor-Namen (UUID) – kosmetisch. Neuer Desktop + alter Server: `label`/`customHostname`
   fehlen → Formulare fallen auf `name`/`hostname` zurück.

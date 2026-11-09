@@ -116,7 +116,7 @@ pub fn resolve_connection(
                 ResolvedConnection {
                     connection: resolved,
                     via_tunnel: true,
-                    tunnel_name: Some(visitor.name.clone()),
+                    tunnel_name: Some(tunnel_name_at(tunnels, visitor)),
                     // The allow-list admits STCP visitors only.
                     tunnel_type: Some("stcp".to_string()),
                 }
@@ -159,6 +159,16 @@ fn literal_visitor<'a>(
         return None;
     }
     visitor_at(bindings, connection.port?)
+}
+
+/// The name shown for a visitor reached without a mapping of the connection: the name the server
+/// gives the tunnel of its server port (R-1210), else the visitor's own, which is the tunnel's ID
+/// since then.
+fn tunnel_name_at(tunnels: &[TunnelMapping], visitor: &VisitorBinding) -> String {
+    tunnels
+        .iter()
+        .find(|t| t.tunnel_type == "stcp" && t.visitor_port == Some(i64::from(visitor.server_port)))
+        .map_or_else(|| visitor.name.clone(), |t| t.name.clone())
 }
 
 /// Point `connection` at a visitor on `127.0.0.1`:`local_port`; a web one gets the URL too.
@@ -598,6 +608,8 @@ mod tests {
         // A non-admin reads only the mappings of the servers assigned to them; without one, the
         // server's automatic connection names the visitor's server port on loopback. A mapping of
         // another connection changes nothing.
+        // The visitor is named after the mapping of its server port when the list has one (the
+        // name the server shows, R-1210), else after itself.
         let other = [tunnel("other", "stcp", "rdp")];
         for tunnels in [&[][..], &other[..]] {
             for (host, port, visitor, local) in [
@@ -610,8 +622,13 @@ mod tests {
                 let case = format!("{host}:{port} with {} mappings", tunnels.len());
                 let conn = literal(ConnectionKind::Ssh, host, port);
                 let resolved = resolve_connection(&conn, tunnels, &moved_ports());
+                let shown = if port == 13389 && !tunnels.is_empty() {
+                    "tunnel-1"
+                } else {
+                    visitor
+                };
                 assert!(resolved.via_tunnel, "{case}");
-                assert_eq!(resolved.tunnel_name.as_deref(), Some(visitor), "{case}");
+                assert_eq!(resolved.tunnel_name.as_deref(), Some(shown), "{case}");
                 assert_eq!(resolved.tunnel_type.as_deref(), Some("stcp"), "{case}");
                 assert_eq!(
                     json(&resolved.connection),

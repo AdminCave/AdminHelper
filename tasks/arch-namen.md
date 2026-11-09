@@ -66,9 +66,11 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/T
 Doku: → T12
 Abhängt von: T4
 
-### T8 — Desktop-RS: Tunnelname eines Visitors aus der Tunnelliste (R-1210 1a)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/port_registry.rs
-Änderung: Eine Verbindung ohne verknüpften Tunnel, die auf einen Visitor-Port zeigt, nennt den Tunnel mit diesem Visitor-Port aus der Tunnelliste (Anzeigename), nicht den Visitor-Namen (künftig `<uuid>-visitor`). Test: ein umbenannter Visitor (gleicher Server-Port) behält seinen lokalen Port in der Portkarte.
+### T8 — Desktop-RS: Tunnelname eines Visitors aus der Tunnelliste, Titel mit Mittelpunkt (R-1210 1a, 3a)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/port_registry.rs, apps/desktop/src-tauri/src/validation.rs, docs/features/arch-namen.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @9eeee24ca 2026-11-09T15:49:28+01:00
+Review: approve (.ah-out/review/arch-namen/T8.verdict.json)
+Änderung: Eine Verbindung ohne verknüpften Tunnel, die auf einen Visitor-Port zeigt, nennt den Tunnel mit diesem Visitor-Port aus der Tunnelliste (Anzeigename), sonst wie bisher den Visitor-Namen (künftig `<uuid>-visitor`). `sanitize_window_title` lässt den Mittelpunkt `·` der Anzeigenamen durch (Fenster- und xfreerdp-Titel). Die Portkarte gibt einem vom Server umbenannten Visitor (gleicher Server-Port) seinen bisherigen lokalen Port, sonst fände ssh dort einen fremden Host-Key; mit Test.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (Anzeige im Desktop, kein dokumentiertes Verhalten)
 Abhängt von: T1

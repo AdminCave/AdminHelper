@@ -63,8 +63,9 @@ impl PortRegistry {
     /// The local port of every visitor `owner` runs, given as (name, server port), in the order
     /// given. A visitor that has an entry keeps its port; with `recheck` only if the port still
     /// binds on `127.0.0.1`, for when no frpc of `owner` runs that would hold it. Any other gets
-    /// a port as [`free_port`] picks it. The entries of `owner` for visitors not given go. More
-    /// than [`MAX_VISITORS`] visitors, or a visitor that would take `owner` past
+    /// a port as [`free_port`] picks it, unless it replaces an entry of `owner` for the same server
+    /// port: a visitor the server renamed keeps its port. The entries of `owner` for visitors not
+    /// given go. More than [`MAX_VISITORS`] visitors, or a visitor that would take `owner` past
     /// [`MAX_FALLBACK_PORTS`], is an error, and the map stays as it was.
     pub fn assign(
         &self,
@@ -80,14 +81,12 @@ impl PortRegistry {
         }
         let _lock = self.lock()?;
         let loaded = self.load()?;
-        let mut entries: Vec<Entry> = loaded
+        let given = |entry: &Entry| visitors.iter().any(|(name, _)| *name == entry.visitor);
+        let (mut entries, mut replaced): (Vec<Entry>, Vec<Entry>) = loaded
             .entries
             .iter()
-            .filter(|entry| {
-                entry.owner != owner || visitors.iter().any(|(name, _)| *name == entry.visitor)
-            })
             .cloned()
-            .collect();
+            .partition(|entry| entry.owner != owner || given(entry));
         let mut assigned = Vec::with_capacity(visitors.len());
         for (name, server_port) in visitors {
             let own = entries
@@ -104,7 +103,19 @@ impl PortRegistry {
                     if let Some(i) = own {
                         entries.remove(i);
                     }
-                    let local_port = free_port(&entries, *server_port, &binds)?;
+                    // A visitor the server renamed (R-1210: its name became the tunnel's ID) keeps
+                    // the port of the entry it replaces, so ssh finds the host key it knows there.
+                    let renamed = own.is_none().then(|| {
+                        replaced.iter().position(|old| {
+                            old.server_port == *server_port
+                                && !entries.iter().any(|e| e.local_port == old.local_port)
+                                && (!recheck || binds(old.local_port))
+                        })
+                    });
+                    let local_port = match renamed.flatten() {
+                        Some(j) => replaced.remove(j).local_port,
+                        None => free_port(&entries, *server_port, &binds)?,
+                    };
                     // By where the port lies, not how it came: a server port in the range takes
                     // room from the other owners all the same.
                     let held = entries
@@ -388,6 +399,75 @@ mod tests {
             FALLBACK_PORTS.contains(&local),
             "{local} is no fallback port"
         );
+        drop(listener);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_keeps_the_port_of_a_visitor_the_server_renamed() {
+        // R-1210: the visitor names became the tunnel IDs. The old entry sits on a fallback port
+        // (its server port was taken when it got it), which free_port would not pick now: the
+        // visitor at the same server port keeps it, the one at another server port, asked first,
+        // does not inherit it.
+        let dir = scratch_dir("renamed");
+        let [server_port, other_port] = free_ports();
+        let old_local = *FALLBACK_PORTS.start() + 7;
+        let registry = PortRegistry::new(&dir);
+        registry.seed(
+            DEFAULT_OWNER,
+            &[("web01-ssh-visitor", server_port, old_local)],
+        );
+
+        let after = registry
+            .assign(
+                DEFAULT_OWNER,
+                &[
+                    visitor("7a0e4d2c-visitor", other_port),
+                    visitor("2f6b1c3e-visitor", server_port),
+                ],
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(
+            after,
+            [
+                visitor("7a0e4d2c-visitor", other_port),
+                visitor("2f6b1c3e-visitor", old_local),
+            ]
+        );
+        let again = registry
+            .assign(
+                DEFAULT_OWNER,
+                &[visitor("2f6b1c3e-visitor", server_port)],
+                false,
+            )
+            .unwrap();
+        assert_eq!(again, [visitor("2f6b1c3e-visitor", old_local)]);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_gives_a_renamed_visitor_a_new_port_when_its_old_one_is_taken() {
+        // With recheck (no frpc of the owner runs) a port someone else bound meanwhile is not
+        // inherited.
+        let dir = scratch_dir("renamed-taken");
+        let server_port = free_port();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let taken = listener.local_addr().unwrap().port();
+        let registry = PortRegistry::new(&dir);
+        registry.seed(DEFAULT_OWNER, &[("web01-ssh-visitor", server_port, taken)]);
+
+        let after = registry
+            .assign(
+                DEFAULT_OWNER,
+                &[visitor("2f6b1c3e-visitor", server_port)],
+                true,
+            )
+            .unwrap();
+
+        assert_ne!(after[0].1, taken);
+        assert_eq!(after[0], visitor("2f6b1c3e-visitor", server_port));
         drop(listener);
         fs::remove_dir_all(&dir).ok();
     }
