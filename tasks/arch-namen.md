@@ -88,8 +88,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- FrpStatusModal types.contract
 Doku: → T12
 Abhängt von: T1
 
-### T10 — Desktop-E2E: Live-Specs auf Name/Zusatz umstellen (R-1210)  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js, scripts/tests/e2e_api.py
+### T10 — Desktop-E2E: Live-Specs auf Name/Zusatz umstellen (R-1210)  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js, scripts/tests/e2e_api.py, apps/desktop/e2e/test/specs/tunnel-connect.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @b20e8e140 2026-11-09T16:45:25+01:00
+Review: approve (.ah-out/review/arch-namen/T10.verdict.json)
 Änderung: Server nur mit Name anlegen, Adresse folgt; Tunnel ohne Namensfeld, Zusatz ändern, Zeile zeigt `<server> · …`; Verbindung am Server mit Zusatz, Zeile zeigt den Anzeigenamen. Live-Lauf im Sammellauf linux-full.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Tests)
@@ -105,8 +107,8 @@ Doku: keine (Test-Skripte)
 Abhängt von: T1
 
 ### T12 — Doku DE+EN und CHANGELOG (R-1210, R-1211)  [ ]
-Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/arch-namen.md
-Änderung: Kennungen über IDs und einmaliger Tunnel-Neustart nach dem Update (frp-tunnel), Generator/Visitor/Statuszuordnung, Anzeigename, `label`, `customHostname`, Eindeutigkeit (server.html); weitere Seiten mit Namensfeldern per grep (`Hostname`, `Proxy-Name`, `via FRP`) nachziehen und in `Dateien:` aufnehmen; CHANGELOG-Fragment (Changed, Fixed R-1211). Neue Datei mit SPDX-Header.
+Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/arch-namen.md, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Kennungen über IDs und einmaliger Tunnel-Neustart nach dem Update (frp-tunnel), Generator/Visitor/Statuszuordnung, Anzeigename, `label`, `customHostname`, Eindeutigkeit (server.html); weitere Seiten mit Namensfeldern per grep (`Hostname`, `Proxy-Name`, `via FRP`) nachziehen und in `Dateien:` aufnehmen; CHANGELOG-Fragment (Changed, Fixed R-1211; wie die übrigen Fragmente ohne SPDX-Kopf).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html DE+EN · docs/developer/server.html DE+EN · changelog.d/arch-namen.md
 Abhängt von: T1, T2, T3, T4
