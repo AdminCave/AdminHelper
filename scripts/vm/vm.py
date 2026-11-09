@@ -2123,16 +2123,16 @@ VERB_TABLE["list"] = verb_list
 VERB_TABLE["bake"] = verb_bake
 
 
-def auto_reap(cfg: Config, api: Api, verb: str) -> None:
+def auto_reap(cfg: Config, api: Api, verb: str, dry_run: bool = False) -> None:
     """Every verb that changes something sweeps its own lane afterwards.
 
     This is the whole reaper: no timer, no cron on the hypervisor, nothing that
     runs without someone asking for it — and still no expired VM survives a
-    working day. `list` and `doctor` are exempt because a report must not have
-    side effects. A sweep that fails is reported and swallowed: it is not the
+    working day. `list`, `doctor` and `reap --dry-run` are exempt because a report
+    must not have side effects. A sweep that fails is reported and swallowed: it is not the
     caller's result.
     """
-    if verb in ("list", "doctor") or os.environ.get("AH_VM_NO_AUTOREAP") == "1":
+    if dry_run or verb in ("list", "doctor") or os.environ.get("AH_VM_NO_AUTOREAP") == "1":
         return
     try:
         for entry in reap_lane(cfg, api, current_lane()):
@@ -2198,7 +2198,7 @@ def main(argv=None) -> int:
             # the moment the expired VMs eating that capacity must go, or the
             # next attempt fails the same way.
             if not interrupted:
-                auto_reap(cfg, api, args.verb)
+                auto_reap(cfg, api, args.verb, getattr(args, "dry_run", False))
     except VmError as exc:
         sys.stderr.write("vm.py: %s\n" % exc)
         return exc.code
