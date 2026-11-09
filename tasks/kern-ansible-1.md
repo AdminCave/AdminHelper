@@ -1,5 +1,5 @@
 # Ansible erreicht Server wie Verbinden — Task-Ledger
-Status: bereit · Branch: feature/kern-ansible-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ansible-1 · Review: pro Task
 Spec: docs/features/kern-ansible-1.md (Roadmap R-1202, R-1204)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad und keine Desktop-Journey, die ein Live-Spec faehrt (die E2E-Box hat kein Ansible); Format-Beleg mit ansible-inventory aus einer Wegwerf-Venv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -40,6 +40,21 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/ansible.html, docs/en/admin/ansible.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-ansible-1.md
 Task-Review: am Ende
 Abhängt von: T2
+
+### T5 — R-1204: Mit `--ask-pass` melden sich nur Passwort-Ziele per Passwort an  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Änderung: Fund der Abschlussprüfung (security, branch). Hat der Lauf `--ask-pass` (`asks_password`), bekommt jedes Ziel, dessen Verbindung nicht `SshAuthMethod::Password` nutzt, und jedes Ziel ohne Verbindung in `ansible_ssh_common_args` `-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no`. Ohne `--ask-pass` bleibt das Inventar wie bisher. Test in `generate_inventory`.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
+Doku: keine (Verhalten wie dokumentiert: das Passwort gilt den Passwort-Servern des Laufs)
+Abhängt von: T3
+
+### T6 — README: Ansible-Inventar als JSON  [ ]
+Komponente: desktop-ui · Dateien: README.md
+Änderung: Fund der Abschlussprüfung (reviewer, branch): README.md beschreibt noch ein INI-Inventar. Der Satz nennt `inventory.json`, das Ziel wie Verbinden und `--ask-pass` bei Passwort-Zielen, mit Verweis auf docs/en/admin/ansible.html.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: README.md
+Task-Review: am Ende
+Abhängt von: T4
 
 ## Entscheidungen
 - T1: Format-Beleg mit ansible-core 2.22.0 aus einer Wegwerf-Venv (2026-11-09): `ansible-inventory -i inventory.json --list` liest das Inventar aus dem Test `generate_inventory_sends_ansible_where_the_connection_goes` (Gruppe `web`, Hostvars, IPv6 ohne Klammern); shlex teilt `ansible_ssh_common_args` in genau die Schalter zurück; `ansible -m ping -vvv` baut `-o Port=23001 -o 'IdentityFile="/home/me/.ssh/id ed25519"' … -o ProxyJump=jump@192.0.2.10`.
