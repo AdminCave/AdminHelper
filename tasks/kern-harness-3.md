@@ -5,8 +5,10 @@ Heavy: none — nur Harness-Skripte mit hermetischen Tests (run_flags_test, heav
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1148: Ein exakter Schrittname gewinnt bei --step  [ ]
+### T1 — R-1148: Ein exakter Schrittname gewinnt bei --step  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @df2a5b20c 2026-11-09T17:13:50+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Trockenlauf von `--step` nimmt bei mehreren Teilstring-Treffern den einen, dessen Name gleich dem gesuchten ist, und der echte Lauf fährt dann nur ihn (`want_step` vergleicht exakt); ohne exakten Treffer bleibt es `ambiguous step`, Exit 2. Test in run_flags_test: ein Name, der Präfix eines anderen Schritts ist, fährt genau einen Schritt; ein Teilstring über mehrere bleibt mehrdeutig.
 Beweis: feature/arch-ssh-terminal@49b3538b · `iter.sh all --strict --step desktop_e2e_connect` → `ambiguous step: 'desktop_e2e_connect' matches 2 steps`, Exit 2
 Dedup-Key: bug:scripts:scripts/tests/run.sh:want_step
