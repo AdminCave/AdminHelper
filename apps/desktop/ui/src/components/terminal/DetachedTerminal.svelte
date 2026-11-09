@@ -17,6 +17,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { refreshSettings, settings } from '$lib/stores/session';
   import { adoptTerminal, terminals } from '$lib/stores/terminals';
   import { errMsg } from '$lib/utils/errors';
+  import StatusBar from '../StatusBar.svelte';
   import SshTerminal from './SshTerminal.svelte';
 
   interface Props {
@@ -30,7 +31,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let failure = $state<string | null>(null);
   let session = $derived($terminals.sessions.find((s) => s.key === key) ?? null);
 
-  // The status bar of the main window is not here: a failure shows in this window.
+  // Errors of the terminals store go through reportError into the toasts; this window has its own StatusBar for them.
   async function dock(): Promise<void> {
     failure = null;
     try {
@@ -60,6 +61,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {#if session}
     <SshTerminal {session} onDock={() => void dock()} />
   {/if}
+  <StatusBar />
 </div>
 
 <style>

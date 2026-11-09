@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ui-desktop-1 — Desktop-UI: Ruhe-Hinweis, Fehler im abgedockten Terminal (R-1185, R-1169) — Task-Ledger
-Status: aktiv · Branch: feature/klein-ui-desktop-1 · Review: am Ende
+Status: bereit · Branch: feature/klein-ui-desktop-1 · Review: am Ende
 Spec: docs/features/klein-ui-desktop-1.md (Roadmap R-1185, R-1169)
 Heavy: none — reine Desktop-UI ohne Stack-, Gateway- oder Install-Pfad; Komponententests decken das sichtbare Verhalten
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Dedup-Key: bug:desktop-ui:dictionaries.ts:notifications.dndNote
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/NotificationBell.test.ts
 Doku: keine (Fehlerbehebung ohne dokumentiertes Verhalten)
 
-### T2 — Abgedocktes Terminal zeigt Fehler an (R-1169)  [ ]
+### T2 — Abgedocktes Terminal zeigt Fehler an (R-1169)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/DetachedTerminal.svelte, apps/desktop/ui/src/components/terminal/DetachedTerminal.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @67d7b85a7 2026-11-09T14:56:52+01:00
+Review: am Ende (Branch-Review)
 Beweis: review kern-terminal-1 2026-11-06, `DetachedTerminal.svelte`: `reportError` aus `terminals.ts` landet in `statusBar`-Toasts, die nur `AppShell` (`<StatusBar />`) rendert
 Dedup-Key: bug:desktop-ui:DetachedTerminal.svelte:report_error
 Änderung: Erst Test rot (nach `reportError('x')` zeigt das Fenster den Text). Dann `<StatusBar />` in `DetachedTerminal.svelte` einbinden.
