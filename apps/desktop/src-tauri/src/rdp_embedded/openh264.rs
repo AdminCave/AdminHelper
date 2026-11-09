@@ -6,8 +6,9 @@
 //! docs/features/kern-rdp-5.md). Cisco's patent licence covers only its own binary, downloaded to
 //! the device apart from the app (https://www.openh264.org/BINARY_LICENSE.txt), so the desktop
 //! fetches exactly one release, checks its SHA-256 against the value pinned here and keeps it in
-//! the app data dir. `openh264-sys2` checks the file once more against its own list when it loads
-//! it. The library is loaded at runtime; OpenH264 built from source stays out (license_gate.rs).
+//! the app data dir. Before each load the desktop checks the file once more against the same pin,
+//! as `openh264-sys2`'s own list of known hashes stops at 2.6.0 (docs/features/kern-rdp-6.md). The
+//! library is loaded at runtime; OpenH264 built from source stays out (license_gate.rs).
 
 use std::fmt::Write as _;
 use std::fs;
@@ -17,16 +18,20 @@ use std::time::Duration;
 
 use ironrdp_client::h264::H264DecoderFactory;
 use ironrdp_egfx::decode::{H264Decoder, OpenH264Decoder, YuvMatrix};
+use openh264::OpenH264API;
 use sha2::{Digest, Sha256};
 
 use crate::http_client;
 
-/// The one release the desktop loads: the version `openh264` 0.9 is built against.
-const URL: &str = "https://ciscobinary.openh264.org/libopenh264-2.6.0-linux64.8.so.bz2";
-/// SHA-256 of the unpacked library, the same as its line in `openh264-sys2` 0.9.9
-/// `src/blobs/hashes.txt` (checked 2026-11-09).
-const SHA256: &str = "2f0cde7c6a6abcf5cae76942894ea42897fa677bce4ed6c91a24dd1b041d5f04";
-const FILE_NAME: &str = "libopenh264-2.6.0-linux64.8.so";
+/// The one release the desktop loads, ABI 8 like the 2.6.0 that `openh264` 0.9 is built against;
+/// the round trip below proves the bindings fit it.
+const URL: &str = "https://ciscobinary.openh264.org/libopenh264-2.7.0-linux64.8.so.bz2";
+/// SHA-256 of the unpacked library, as in Cisco's libopenh264-2.7.0-linux64.8.so.signed.sha256.txt
+/// next to it and in two downloads of our own (checked 2026-11-09).
+const SHA256: &str = "1522f873a482923c5ec018a4415e1866898197528828c50f90fd300c94620df3";
+const FILE_NAME: &str = "libopenh264-2.7.0-linux64.8.so";
+/// Every release the desktop ever kept starts so; an older one goes once the pinned one is there.
+const FILE_PREFIX: &str = "libopenh264-";
 /// The folder in the app data dir; nothing else lives in it.
 const DIR_NAME: &str = "openh264";
 /// About 0.6 MB packed and 1.7 MB unpacked; the limits only stop a runaway answer.
@@ -117,16 +122,55 @@ async fn download() -> Result<Vec<u8>, String> {
 }
 
 /// The checked library in the app data dir `base`, downloaded first when it is missing or
-/// differs from the pinned one.
+/// differs from the pinned one; older releases in the folder go.
 pub(crate) async fn ensure(base: &Path) -> Result<PathBuf, String> {
     let dir = library_dir(base);
-    if let Some(path) = verified(&dir) {
-        return Ok(path);
+    let path = match verified(&dir) {
+        Some(path) => path,
+        None => {
+            let packed = tokio::time::timeout(FETCH_DEADLINE, download())
+                .await
+                .map_err(|_| {
+                    format!("the OpenH264 download took longer than {FETCH_DEADLINE:?}")
+                })??;
+            install(&dir, &packed)?
+        }
+    };
+    prune(&dir);
+    Ok(path)
+}
+
+/// Deletes the releases in `dir` other than the pinned one, which an older app left there.
+fn prune(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(FILE_PREFIX) && name != FILE_NAME {
+            if let Err(error) = fs::remove_file(entry.path()) {
+                log::warn!("cannot delete the old OpenH264 library {name}: {error}");
+            }
+        }
     }
-    let packed = tokio::time::timeout(FETCH_DEADLINE, download())
-        .await
-        .map_err(|_| format!("the OpenH264 download took longer than {FETCH_DEADLINE:?}"))??;
-    install(&dir, &packed)
+}
+
+/// Loads the library at `path` only if it still has the pinned hash. `openh264-sys2` would check
+/// against its own list, which does not carry the pinned release.
+fn load(path: &Path) -> Result<OpenH264API, String> {
+    let bytes =
+        fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    let hash = sha256_hex(&bytes);
+    if hash != SHA256 {
+        return Err(format!(
+            "the OpenH264 library has an unknown SHA-256 {hash}"
+        ));
+    }
+    // SAFETY: the file is the pinned Cisco release for linux64 with the ABI of the bindings (the
+    // round trip test loads it), which is what from_blob_path_unchecked asks of its caller.
+    unsafe { OpenH264API::from_blob_path_unchecked(path) }
+        .map_err(|error| format!("cannot load {}: {error}", path.display()))
 }
 
 /// Deletes the library and its folder from the app data dir `base`; none there is no error.
@@ -140,15 +184,20 @@ pub(crate) fn remove(base: &Path) -> io::Result<()> {
 /// A decoder from the library at `path` for each surface and video; a decoder that fails to
 /// start leaves that surface without H.264 and the server falls back to the other codecs.
 pub(crate) fn decoder_factory(path: PathBuf) -> H264DecoderFactory {
-    H264DecoderFactory::new(move || match OpenH264Decoder::from_library_path(&path) {
-        // MS-RDPEVOR video is converted from RGB with BT.601 (2.2.1.6), as IronRDP's own
-        // OpenH264 factory does; the graphics pipeline converts the YUV planes itself.
-        Ok(decoder) => {
-            Some(Box::new(decoder.with_yuv_matrix(YuvMatrix::Bt601Limited)) as Box<dyn H264Decoder>)
-        }
-        Err(error) => {
-            log::warn!("OpenH264 does not start: {error}");
-            None
+    H264DecoderFactory::new(move || {
+        match load(&path)
+            .and_then(|api| OpenH264Decoder::from_api(api).map_err(|error| error.to_string()))
+        {
+            // MS-RDPEVOR video is converted from RGB with BT.601 (2.2.1.6), as IronRDP's own
+            // OpenH264 factory does; the graphics pipeline converts the YUV planes itself.
+            Ok(decoder) => {
+                Some(Box::new(decoder.with_yuv_matrix(YuvMatrix::Bt601Limited))
+                    as Box<dyn H264Decoder>)
+            }
+            Err(error) => {
+                log::warn!("OpenH264 does not start: {error}");
+                None
+            }
         }
     })
 }
@@ -158,7 +207,6 @@ mod tests {
     use super::*;
     use openh264::encoder::{Encoder, EncoderConfig};
     use openh264::formats::{RgbaSliceU8, YUVBuffer};
-    use openh264::OpenH264API;
 
     struct Scratch(PathBuf);
 
@@ -234,6 +282,33 @@ mod tests {
     }
 
     #[test]
+    fn load_refuses_a_library_with_another_hash() {
+        let scratch = Scratch::new("load");
+        let path = scratch.0.join(FILE_NAME);
+        fs::write(&path, b"changed on disk").unwrap();
+        let error = load(&path).err().expect("not loaded");
+        assert!(error.contains("unknown SHA-256"), "{error}");
+        assert!(load(&scratch.0.join("missing.so")).is_err());
+    }
+
+    #[test]
+    fn prune_keeps_only_the_pinned_release() {
+        let scratch = Scratch::new("prune");
+        let dir = library_dir(&scratch.0);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(FILE_NAME), b"x").unwrap();
+        fs::write(dir.join("libopenh264-2.6.0-linux64.8.so"), b"old").unwrap();
+        // A download another call is writing right now stays.
+        let part = format!(".{FILE_NAME}.part-1");
+        fs::write(dir.join(&part), b"half").unwrap();
+        prune(&dir);
+        let mut left = entries(&dir);
+        left.sort();
+        assert_eq!(left, vec![part, FILE_NAME.to_string()]);
+        prune(&scratch.0.join("missing"));
+    }
+
+    #[test]
     fn remove_deletes_the_folder_and_is_quiet_without_one() {
         let scratch = Scratch::new("remove");
         let dir = library_dir(&scratch.0);
@@ -246,11 +321,18 @@ mod tests {
     }
 
     // Cisco's real binary, fetched from ciscobinary.openh264.org: the download, the pinned hash,
-    // the load through openh264-sys2 and a picture that goes through its encoder and comes back
-    // from the decoder the sessions use.
+    // the load after our own hash check, an older release that goes, and a picture that goes
+    // through its encoder and comes back from the decoder the sessions use.
     #[tokio::test]
     async fn ciscos_library_downloads_loads_and_decodes_a_picture() {
         let scratch = Scratch::new("cisco");
+        let dir = library_dir(&scratch.0);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("libopenh264-2.6.0-linux64.8.so"),
+            b"left by an older app",
+        )
+        .unwrap();
         let path = ensure(&scratch.0).await.expect("download and install");
         assert_eq!(path, library_dir(&scratch.0).join(FILE_NAME));
         assert_eq!(
@@ -267,7 +349,7 @@ mod tests {
         let rgba: Vec<u8> = (0..width * height)
             .flat_map(|i| [(i % 256) as u8, 0x80, 0x40, 0xFF])
             .collect();
-        let api = OpenH264API::from_blob_path(&path).expect("load");
+        let api = load(&path).expect("load");
         let mut encoder = Encoder::with_api_config(api, EncoderConfig::new()).expect("encoder");
         let picture =
             YUVBuffer::from_rgb_source(RgbaSliceU8::new(&rgba, (width as usize, height as usize)));

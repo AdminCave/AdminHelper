@@ -78,36 +78,38 @@ zeroize = "1.8.2"
 portable-pty = "0.9"
 # Embedded RDP (rdp_embedded/): IronRDP pinned to a reviewed Git revision, not a crates.io release,
 # so the client API and the GFX fixes it relies on cannot move underneath us. The revision lives in
-# the fork AdminCave/IronRDP: upstream f96f664 plus two commits, one that lets the certificate
-# callback decide on every certificate (CertificateValidationCallbackScope) and one that completes a
+# the fork AdminCave/IronRDP: upstream f96f664 plus three commits, one that lets the certificate
+# callback decide on every certificate (CertificateValidationCallbackScope), one that completes a
 # resize once the graphics output has the requested size (GFX resets instead of reactivating,
-# docs/features/kern-rdp-4.md). Every ironrdp-* crate comes from the same revision, or Cargo builds
+# docs/features/kern-rdp-4.md) and one that builds the OpenH264 decoder from an API the caller
+# loaded (OpenH264Decoder::from_api, docs/features/kern-rdp-6.md). Every ironrdp-* crate comes from the same revision, or Cargo builds
 # two copies.
 # The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs. `sound` plays the
 # session's audio through cpal, which needs ALSA (libasound) on Linux (docs/features/kern-rdp-2.md);
 # on Windows the session keeps audio off (session.rs, audio_mode). H.264 comes from the platform
-# (Media Foundation on Windows, none on Linux), not openh264. The license_gate tests keep it that way.
-ironrdp-client = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986", default-features = false, features = ["clipboard", "rdpdr", "sound"] }
+# (Media Foundation on Windows, Cisco's binary loaded at runtime on Linux), never OpenH264 built
+# from source. The license_gate tests keep it that way.
+ironrdp-client = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5", default-features = false, features = ["clipboard", "rdpdr", "sound"] }
 # The audio mode of ConfigBuilder::with_audio_mode, which ironrdp-client does not re-export; in the
 # lockfile through it already.
-ironrdp-cfg = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
-ironrdp-tls = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986", default-features = false, features = ["rustls-ring"] }
+ironrdp-cfg = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
+ironrdp-tls = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5", default-features = false, features = ["rustls-ring"] }
 # ironrdp-client calls tokio_tungstenite::client_async_tls without a feature gate (its RDCleanPath
 # WebSocket transport, unused here), which only exists with a TLS feature of tokio-tungstenite. This one
 # takes rustls without default features, so the provider stays ring.
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-native-roots"] }
 # The input events, the logon error notices, the platform type and the update region of the
 # session (rdp_embedded/session.rs, frame_ws.rs).
-ironrdp-pdu = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-pdu = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
 # The kind of a connect error and the reason of a graceful disconnect, which ironrdp-client does
 # not re-export; both are in the lockfile through it already.
-ironrdp-connector = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
-ironrdp-session = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-connector = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
+ironrdp-session = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
 # The monitor layout of a session across two windows (rdp_embedded/session.rs); in the lockfile
 # through ironrdp-client already.
-ironrdp-displaycontrol = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-displaycontrol = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
 # The Downloads folder as a drive of the embedded RDP session (rdp_embedded/session.rs, rdpdr_factory).
-ironrdp-rdpdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-rdpdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
 # The client name the RDP server shows for the session.
 gethostname = "1"
 # The screenshot of the embedded RDP session; in the lockfile through tauri's image-png already.
@@ -120,9 +122,12 @@ zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 # H.264 of the embedded RDP client through Cisco's OpenH264 binary, loaded at runtime (R-1102,
 # rdp_embedded/openh264.rs). `openh264-libloading` only: `openh264-bundled` (and ironrdp-client's
 # `openh264`) build OpenH264 from source, which carries no patent licence (license_gate.rs).
-ironrdp-egfx = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986", features = ["openh264-libloading"] }
+ironrdp-egfx = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5", features = ["openh264-libloading"] }
 # Cisco ships the library as .so.bz2; the default backend is pure Rust (libbz2-rs-sys), no C build.
 bzip2 = "0.6"
+# Loads Cisco's library after our own hash check (rdp_embedded/openh264.rs): openh264-sys2's list of
+# known hashes stops at 2.6.0. Without `source` (license_gate.rs); the version ironrdp-egfx uses.
+openh264 = { version = "0.9", default-features = false, features = ["libloading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
@@ -137,8 +142,8 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_UI_WindowsAndMessaging"] }
 # The Windows clipboard of the embedded RDP session runs on a thread of its own with a message
 # loop (rdp_embedded/clipboard_win.rs); both crates are in the lockfile through ironrdp-client.
-ironrdp-cliprdr = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
-ironrdp-cliprdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-cliprdr = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
+ironrdp-cliprdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "12ee85c8056e7f26795c9fcce6c903fb467ab9b5" }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.
@@ -154,8 +159,3 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "net", "
 # tree, so tests use the same ring provider as the shipped binary.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-# The round trip of rdp_embedded/openh264.rs encodes its picture with Cisco's library through the
-# crate itself: ironrdp-egfx's OpenH264Encoder::from_library_path asks for bitrate 0, which 2.6.0
-# refuses. Without `source` (license_gate.rs); already in the lockfile through ironrdp-egfx.
-openh264 = { version = "0.9", default-features = false, features = ["libloading"] }
