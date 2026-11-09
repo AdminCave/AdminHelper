@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Spec Stufe 5, H.264 unter Linux — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-5 · Review: pro Task
 Spec: docs/features/kern-rdp-5.md (Roadmap R-1101, R-1102)
 Heavy: linux-full — Desktop-Journeys: die Live-Spec Abdocken/Multi-Monitor gegen den xrdp-Container läuft im Sammellauf; neue Abhängigkeiten im Desktop-Build (ironrdp-egfx mit libloading, bzip2); Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T4
 Abhängt von: T2
 
-### T4 — Doku H.264 unter Linux (DE+EN), Changelog  [ ]
+### T4 — Doku H.264 unter Linux (DE+EN), Changelog  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, docs/features/arch-rdp-embedded.md, changelog.d/kern-rdp-5.md, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @608d8ed7c 2026-11-09T09:12:03+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Entwickler-Doku: Laden, Hash, Datei, Gate, Befehl `openh264_remove`; Admin-Doku: Schalter, automatischer Download, Lizenzhinweis; Bedingung 7 der Arch-Spec mit Verweis auf R-1102; `THIRD_PARTY_LICENSES.md` neu erzeugt (`scripts/gen-third-party-licenses.sh`); Changelog-Eintrag ASCII.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-rdp-5.md
@@ -43,3 +45,4 @@ Abhängt von: T2, T3
 - 2026-11-09 Kevin: OpenH264 automatisch und Standard an; der Download zur Laufzeit (FAQ: „at install time“) ist hingenommenes Restrisiko. T11 aus kern-rdp-4 darf eine dritte Prüfrunde bekommen.
 - 2026-11-09 Geprüft: Cisco bietet `libopenh264-2.6.0-linux64.8.so.bz2` über https; entpackt SHA-256 `2f0cde7c…5d04` = Eintrag in `openh264-sys2` 0.9.9 `src/blobs/hashes.txt`.
 - 2026-11-09 T2: `rdpH264?` kommt schon in T2 in die Bridge-Typen (sonst wird `types.parity.test.ts` zwischen den Commits rot), daher prüft T2 auch desktop-ui; aus demselben Grund (`ipc.inventory.test.ts`) bringt T2 den Bridge-Aufruf `openh264Remove` und die Zeile in der Befehlstabelle der Entwickler-Doku mit, T4 die Beschreibung; der Befehl `openh264_remove` braucht `build.rs` und `capabilities/default.json` (ACL, `capabilities.rs` prüft den Gleichlauf). Modul und Target-Feld nur unter Linux, Windows bleibt bei Media Foundation.
+- 2026-11-09 T2 security (wichtig, offen für Kevin): Ciscos C-Dekoder parst H.264 des RDP-Servers im Desktop-Prozess, und der Pin 2.6.0 steigt erst mit einem App-Release; ob 2.6.0 alle bekannten CVEs schließt, ist nicht verifiziert. Als Restrisiko im Schlussbericht an Kevin.
