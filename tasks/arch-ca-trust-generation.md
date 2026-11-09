@@ -97,6 +97,9 @@ Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts
 - `integration_stack_test.sh` `ca_rotation` (`:1454`): vor der Rotation ist `/ca/trust` gleich dem Hash der `chain`
   aus `/ca/renew`; nach `rotate-intermediates` und Neustart weicht sie ab; nach der Erneuerung (`renew_into`,
   `:1569`) ist sie gleich dem Hash der neuen `chain`. Ohne Client-Zertifikat kein Durchlass.
+- Fenster zwischen den Neustarts (Spec, Risiko „Gateway mit altem `client-ca.pem`“): nach dem Neustart des ca-issuer
+  und vor dem des Gateways liefert `/ca/trust` über das alte Gateway schon die neue Generation, und ein dort
+  erneuertes Blatt des neuen Intermediates kommt durch das alte Gateway.
 - `agent_monitoring_test.sh`: nach `run --once` zeigt das Gateway-Log `GET /ca/trust` mit 200, und der Agent hat nicht
   erneuert.
 - Beweis außer `Verify:`: Stack-Job per Dispatch und `agent-monitoring` auf der VM (Kopf `Heavy:`), Ergebnis im Ledger.
@@ -109,7 +112,9 @@ Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operation
 Änderung: Die Stellen aus „Doku-Impact“ der Spec, DE und EN gleich: Wartezeiten im Runbook (Agents im nächsten Lauf,
 Desktops bei Anmeldung oder stündlich, offline gebliebene Geräte bleiben das Kriterium in `status`), Erneuerung des
 Geräte-Zertifikats, Troubleshooting, Route `/trust` des ca-issuer, ADR 0001 §3.3 als datierter Nachtrag,
-Changelog-Fragment (`### Added`, `### Changed`).
+Changelog-Fragment (`### Added`, `### Changed`). Im Runbook wird der Gateway-Neustart direkt nach dem healthy
+ca-issuer (`rotate-intermediates`, `switch`, `finish`) ein Pflichtschritt mit Folge: Ohne ihn erreichen Agents, die
+nach `switch` erneuert haben, :443 nicht (Spec, Risiko „Gateway mit altem `client-ca.pem`“).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende

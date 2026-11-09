@@ -136,6 +136,16 @@ Nicht-Ziele (YAGNI):
 - **Lastspitze nach einer Rotation**: Alle Agents erneuern im nächsten Lauf. Die Timer sind über die Startzeiten
   verteilt (`OnUnitActiveSec=300`), die `renew`-Zone (5 r/s je Adresse) bleibt. Was dort 429 bekommt, erneuert
   einen Lauf später.
+- **Gateway mit altem `client-ca.pem`**: nginx liest `client-ca.pem` nur beim Start. Zwischen dem Neustart des
+  ca-issuer und dem des Gateways prüft das Gateway Client-Zertifikate deshalb gegen den Stand von vorher. Bei
+  `rotate-intermediates` unter derselben Wurzel legt der Client das neue Intermediate mit vor, und die Wurzel steht in
+  der alten Datei: Das sollte durchgehen (nicht verifiziert, T5 belegt es im Stack). Nach `switch` endet ein
+  erneuertes Blatt bei der neuen Wurzel, die die alte Datei nicht trägt. Nach Code-Lage lehnt das noch laufende
+  Gateway es ab, bis es neu startet. Heute fällt das kaum auf, weil erst bei 50 % erneuert wird. Mit R-1054 erneuert
+  jeder Online-Agent, dessen Lauf in dieses Fenster fällt, und erreicht :443 erst nach dem Gateway-Neustart wieder;
+  danach geht es ohne weitere Erneuerung weiter. Gegenmittel: Das Runbook ordnet schon an, das Gateway direkt nach
+  dem healthy ca-issuer neu zu starten. T6 macht daraus einen Pflichtschritt und nennt die Folge. Vergisst ein Admin
+  den Gateway-Neustart, zeigt sich das jetzt nach Minuten statt nach Wochen.
 - **Alter Server**: 404 wird still übergangen. Alle anderen Fehler loggt der Agent als Warnung, best-effort wie heute
   „Cert-Renew Fehler“. Der Lauf geht weiter.
 - **Sicherheit**: Die Route verrät nur den Hash öffentlicher Zertifikate, die das Gateway ohnehin im Handshake zeigt.
