@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Sitzungsende ohne Anzeige, Umleitungen, TLS-Schlüssel — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-8 · Review: pro Task
+Status: erledigt · Branch: feature/kern-rdp-8 · Review: pro Task
 Spec: docs/features/kern-rdp-8.md (Roadmap R-1199, R-1145)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad; die Desktop-GUI-Journeys starten keine eingebettete RDP-Sitzung gegen einen Server
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
