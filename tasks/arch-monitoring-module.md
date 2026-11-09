@@ -17,8 +17,10 @@ tragen aber Ziel-Wächter, Zugangsdaten und Fremdprotokolle: `security` auch dor
 Harness-Pfad und wird eine zurückgestellte Roadmap-Zeile). Neue Quelldateien bekommen den SPDX-Header (`reuse
 annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later <datei>`).
 
-### T1 — Monitoring: Katalog-Modell, Lader und Modul `port` (R-1223)  [ ]
+### T1 — Monitoring: Katalog-Modell, Lader und Modul `port` (R-1223)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/__init__.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/loader.py, apps/monitoring/app/catalog/modules/__init__.py, apps/monitoring/app/catalog/modules/port.py, apps/monitoring/tests/test_catalog.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5c1b3faae 2026-11-09T16:50:35+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T1.verdict.json)
 Änderung: Pydantic-Modelle für Modul, Erkennung, Instanz-Art, Check (Fühler, Ziel, Parameter, Takt aus {300, 900, 3600, 86400}, `test_object` ⇒ Takt ≥ 900, höchstens 32 Felder, Regeln mit `eq ne lt le gt ge in max_age delta_gt` und Stufe) und Karte; ein Parameter-Modell je Fühler in `sensors.py` (Plan und Katalog teilen es). Der Lader liest alle `MODULE`-Dicts aus `catalog/modules/`, prüft sie und bildet `catalog_version` (SHA-256 über die kanonische JSON-Form). Mitgeliefert nur das generische Modul `port`. Tests mit Fixture-Modulen: gültig, falscher Takt, Testobjekt unter 15 min, unbekannter Fühler, Parameter fremder Fühler, doppelte Keys, Version stabil und ändernd.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py
 Doku: → T15
@@ -119,3 +121,8 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_sna
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T14
+
+## Entscheidungen
+- 2026-11-09 T1: Das Modul `port` prüft mit `proto` und `protocol: auto` (der Agent erkennt das Protokoll wie seine Erkennung und meldet es in `detail`) — ein Fund trägt das erkannte Protokoll, ohne Platzhalter in Katalog-Parametern bleibt jede Prüfung im eigenen Protokoll.
+- 2026-11-09 T1: Ungültige Module lässt der Lader aus und nennt sie in `Catalog.errors`; `test_catalog.py` verlangt `errors == ()` — die Spec will den Test rot, nicht den Dienst.
+- 2026-11-09 T1: Ein Katalog-Check trägt `timeout_s` (Standard 10, 1–30 s), Marker-IDs beginnen mit `<modul-id>.` — der Plan braucht ein Timeout je Probe, und Marker-IDs sind im Plan global.
