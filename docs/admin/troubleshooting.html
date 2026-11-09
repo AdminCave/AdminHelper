@@ -124,7 +124,7 @@
           <h2>FRP-Tunnel bricht ab</h2>
           <ul>
             <li><code>docker compose logs -f frps</code> → Client-Auth-Fehler?</li>
-            <li>Client-Zertifikat des Agents abgelaufen? Auf dem Agent-Host prüfen: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. Der Agent erneuert es bei jedem Lauf selbst, sobald die Hälfte seiner Laufzeit um ist; scheitert das, steht <code>Cert-Renew Fehler</code> im Journal von <code>adminhelper-agent.service</code>.</li>
+            <li>Client-Zertifikat des Agents abgelaufen? Auf dem Agent-Host prüfen: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. Der Agent erneuert es bei jedem Lauf selbst, sobald die Hälfte seiner Laufzeit um ist oder der <code>ca-issuer</code> nach einer Rotation eine neue Vertrauensgeneration nennt (<a href="./betrieb.html#trust-generation">Betrieb</a>); scheitert das oder schon die Abfrage der Generation (<code>Cert-Renew Fehler: trust generation: …</code>), steht <code>Cert-Renew Fehler</code> im Journal von <code>adminhelper-agent.service</code>.</li>
             <li>Proxy / Firewall blockiert Port 7000 oder 7443? Reiner TCP-Check: <code>nc -vz srm.example.com 7000</code>.</li>
           </ul>
 

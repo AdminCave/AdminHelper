@@ -19,6 +19,7 @@ Hierarchy (ADR 0001 §3.1):
 from __future__ import annotations
 
 import datetime
+import hashlib
 import ipaddress
 from dataclasses import dataclass
 
@@ -111,6 +112,17 @@ def chain_pem(*certs: x509.Certificate) -> bytes:
     """Concatenate certs in the given order (leaf first for a presentation
     fullchain, root last for a trust bundle)."""
     return b"".join(cert_to_pem(c) for c in certs)
+
+
+def trust_generation(pem: bytes) -> str:
+    """The generation of a trust bundle (R-1054): SHA-256 over the DER bytes of its
+    certificates in their order, lowercase hex. Agent and desktop hash the `chain` they
+    hold the same way and renew once GET /trust answers another one; the test vector in
+    tests/test_trust_generation.py pins the definition for all three."""
+    certs = x509.load_pem_x509_certificates(pem)
+    return hashlib.sha256(
+        b"".join(c.public_bytes(serialization.Encoding.DER) for c in certs)
+    ).hexdigest()
 
 
 # --- Validity ----------------------------------------------------------------

@@ -828,18 +828,171 @@ async fn renew(server_url: &str) -> Result<(), AppError> {
     store_identity(&key_pem, &issued)
 }
 
-/// Renew the enrolled identity if it is due. Returns whether a renewal happened.
-/// A no-op when not enrolled. Best-effort at the call site — a transient issuer
-/// outage must not lock the user out (the current cert is still valid).
-pub async fn maybe_renew(server_url: &str) -> Result<bool, AppError> {
-    let Some((_, cert_pem, _)) = load_identity() else {
-        return Ok(false);
-    };
-    if !needs_renewal(&cert_pem, RENEWAL_FRACTION, now_unix())? {
-        return Ok(false);
+/// Why [`maybe_renew`] renewed the identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Renewal {
+    /// The leaf is past [`RENEWAL_FRACTION`] of its lifetime.
+    HalfLife,
+    /// The issuer names another trust generation than that of the pinned chain, after a
+    /// rotation of the root or the intermediates (R-1054).
+    NewTrust,
+}
+
+impl std::fmt::Display for Renewal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Renewal::HalfLife => "half of its lifetime has passed",
+            Renewal::NewTrust => "the issuer has a new trust generation",
+        })
     }
-    renew(server_url).await?;
-    Ok(true)
+}
+
+/// One renewal at a time: the sign-in and the hourly check (`renewal.rs`) may meet, and
+/// both would renew for the same new trust generation.
+static RENEWING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Renew the enrolled identity if it is due and return why, or none. A no-op when not
+/// enrolled. A leaf that is not yet at half of its lifetime asks the issuer for its trust
+/// generation and is due when that differs from the pinned chain's; a server without the
+/// route leaves it at the half. Best-effort at the call site — a transient issuer outage
+/// must not lock the user out (the current cert is still valid).
+pub async fn maybe_renew(server_url: &str) -> Result<Option<Renewal>, AppError> {
+    maybe_renew_with(server_url, fetch_trust_generation, renew).await
+}
+
+/// [`maybe_renew`] with the trust query and the renewal as parameters, for the tests.
+async fn maybe_renew_with<'a, Q, QFut, R, RFut>(
+    server_url: &'a str,
+    query_trust: Q,
+    renew_identity: R,
+) -> Result<Option<Renewal>, AppError>
+where
+    Q: FnOnce(&'a str) -> QFut,
+    QFut: std::future::Future<Output = Result<Option<String>, AppError>>,
+    R: FnOnce(&'a str) -> RFut,
+    RFut: std::future::Future<Output = Result<(), AppError>>,
+{
+    // The identity is read under the lock: a renewal that held it before has stored its own.
+    let _renewing = RENEWING.lock().await;
+    let Some((_, cert_pem, ca_pem)) = load_identity() else {
+        return Ok(None);
+    };
+    if needs_renewal(&cert_pem, RENEWAL_FRACTION, now_unix())? {
+        renew_identity(server_url).await?;
+        return Ok(Some(Renewal::HalfLife));
+    }
+    let issuer = query_trust(server_url)
+        .await
+        .map_err(|e| AppError::Connection(format!("trust generation: {e}")))?;
+    let Some(issuer) = issuer else {
+        return Ok(None);
+    };
+    if trust_generation(&ca_pem)? == issuer {
+        return Ok(None);
+    }
+    renew_identity(server_url).await?;
+    // Should the desktop and the issuer ever compute the generation differently, every
+    // check renews again; this names that loop.
+    match load_identity().map(|(_, _, ca)| trust_generation(&ca)) {
+        Some(Ok(held)) if held != issuer => log::warn!(
+            "the renewed CA chain has trust generation {held}, the issuer named {issuer}; the next check renews again"
+        ),
+        Some(Err(e)) => log::warn!("trust generation of the renewed CA chain: {e}"),
+        _ => {}
+    }
+    Ok(Some(Renewal::NewTrust))
+}
+
+// ── Trust generation (R-1054) ─────────────────────────────────────────────
+
+/// What a `/ca/trust` answer may hold; the answer itself, `{"generation":"<64 hex>"}`, is
+/// 81 bytes.
+const MAX_TRUST_ANSWER: usize = 4 << 10;
+
+/// The trust generation of a PEM bundle: SHA-256 over the DER bytes of its certificates in
+/// their order, as lowercase hex. Other PEM sections and text around them do not count. The
+/// ca-issuer computes the same over the `chain` it hands out, which the desktop pins as
+/// `enroll|ca`.
+fn trust_generation(bundle: &str) -> Result<String, AppError> {
+    let unreadable = |n: usize, e: &dyn std::fmt::Display| {
+        AppError::Validation(format!("certificate {n} of the trust bundle: {e}"))
+    };
+    let mut der = Vec::new();
+    for (i, cert) in CertificateDer::pem_slice_iter(bundle.as_bytes()).enumerate() {
+        let cert = cert.map_err(|e| unreadable(i + 1, &e))?;
+        let (rest, _) =
+            x509_parser::parse_x509_certificate(&cert).map_err(|e| unreadable(i + 1, &e))?;
+        if !rest.is_empty() {
+            return Err(unreadable(i + 1, &"trailing data"));
+        }
+        der.extend_from_slice(&cert);
+    }
+    if der.is_empty() {
+        return Err(AppError::Validation(
+            "the trust bundle holds no certificate".to_string(),
+        ));
+    }
+    Ok(crate::tofu::fingerprint(&der))
+}
+
+/// The trust generation the issuer names for this device's scope, asked over mTLS with
+/// the enrolled identity.
+async fn fetch_trust_generation(server_url: &str) -> Result<Option<String>, AppError> {
+    trust_generation_at(&enrolled_client()?, server_url).await
+}
+
+/// The trust generation at `<server_url>/ca/trust`. None means the server does not know the
+/// route: a 404, or a 200 that is no JSON, because behind a gateway without the location the
+/// server answers every unknown path outside its API with the web UI.
+async fn trust_generation_at(
+    client: &reqwest::Client,
+    server_url: &str,
+) -> Result<Option<String>, AppError> {
+    let url = format!("{}/ca/trust", server_url.trim_end_matches('/'));
+    let mut resp = client.get(&url).send().await?;
+    let status = resp.status();
+    let json = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"));
+    if status == reqwest::StatusCode::NOT_FOUND || (status == reqwest::StatusCode::OK && !json) {
+        return Ok(None);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        body.extend_from_slice(&chunk);
+        if body.len() > MAX_TRUST_ANSWER {
+            break;
+        }
+    }
+    if status != reqwest::StatusCode::OK {
+        let text = String::from_utf8_lossy(&body[..body.len().min(MAX_TRUST_ANSWER)]);
+        return Err(AppError::Validation(format!(
+            "the issuer answered {status}: {}",
+            crate::diagnostics::redact_body(&text)
+        )));
+    }
+    if body.len() > MAX_TRUST_ANSWER {
+        return Err(AppError::Validation(format!(
+            "the answer exceeds {MAX_TRUST_ANSWER} bytes"
+        )));
+    }
+    #[derive(Deserialize)]
+    struct Answer {
+        generation: String,
+    }
+    let answer: Answer = serde_json::from_slice(&body)
+        .map_err(|e| AppError::Validation(format!("parse the answer: {e}")))?;
+    let hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    if answer.generation.len() != 64 || !answer.generation.bytes().all(hex) {
+        return Err(AppError::Validation(format!(
+            "the answer names no trust generation: {:?}",
+            answer.generation
+        )));
+    }
+    Ok(Some(answer.generation))
 }
 
 // ── mTLS client (CA-pinning, hostname-agnostic) ───────────────────────────
@@ -1096,6 +1249,7 @@ pub async fn export_browser_p12(
 mod tests {
     use super::*;
     use crate::workspace::{self, Workspace, WorkspaceId};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn generate_key_and_csr_yields_ec_key_and_csr_pem() {
@@ -2149,6 +2303,171 @@ mod tests {
                 Some(reqwest::StatusCode::OK)
             );
         }
+
+        // ── R-1054: the trust generation at /ca/trust, over mTLS ───────────
+
+        /// A gateway that demands the client certificate, as on :443, and answers one request
+        /// with `response`: the client presenting it, the gateway's URL, and the request head.
+        async fn answers_once(
+            response: String,
+        ) -> (reqwest::Client, String, tokio::task::JoinHandle<String>) {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let ca = make_ca();
+            let (srv_cert, srv_key) = make_leaf(
+                &ca,
+                "server",
+                vec!["localhost".to_string()],
+                ExtendedKeyUsagePurpose::ServerAuth,
+            );
+            let (cli_cert, cli_key) =
+                make_leaf(&ca, "user-01", vec![], ExtendedKeyUsagePurpose::ClientAuth);
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!(
+                "https://127.0.0.1:{}",
+                listener.local_addr().unwrap().port()
+            );
+            let acceptor = tokio_rustls::TlsAcceptor::from(server_config(&ca, &srv_cert, &srv_key));
+            let request = tokio::spawn(async move {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut tls = acceptor.accept(tcp).await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match tls.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => head.extend_from_slice(&buf[..n]),
+                    }
+                }
+                // The client stops reading an answer that is too long.
+                let _ = tls.write_all(response.as_bytes()).await;
+                let _ = tls.shutdown().await;
+                String::from_utf8_lossy(&head).into_owned()
+            });
+            let client = build_mtls_client(&cli_key, &cli_cert, &ca.cert.pem()).unwrap();
+            (client, url, request)
+        }
+
+        fn answer(status: &str, content_type: &str, body: &str) -> String {
+            format!(
+                "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        }
+
+        const NAMED: &str = "139a62a94601003257d9e50a799f24575ed90c88d9e7e3802f4fe8a7098da902";
+
+        fn named(generation: &str) -> String {
+            format!(r#"{{"generation":"{generation}"}}"#)
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn the_issuer_names_its_trust_generation_over_mtls() {
+            let (client, url, request) =
+                answers_once(answer("200 OK", "application/json", &named(NAMED))).await;
+
+            let generation = trust_generation_at(&client, &format!("{url}/")).await;
+
+            assert_eq!(generation.unwrap(), Some(NAMED.to_string()));
+            let head = request.await.unwrap();
+            assert!(head.starts_with("GET /ca/trust HTTP/1.1\r\n"), "{head}");
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn the_media_type_counts_not_its_case_or_parameters() {
+            let (client, url, _) = answers_once(answer(
+                "200 OK",
+                "Application/JSON; charset=utf-8",
+                &named(NAMED),
+            ))
+            .await;
+            assert_eq!(
+                trust_generation_at(&client, &url).await.unwrap(),
+                Some(NAMED.to_string())
+            );
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn a_server_without_the_route_names_no_trust_generation() {
+            for response in [
+                answer(
+                    "404 Not Found",
+                    "application/json",
+                    r#"{"detail":"Not Found"}"#,
+                ),
+                // What the server answers behind a gateway without the location: the web UI.
+                answer(
+                    "200 OK",
+                    "text/html; charset=utf-8",
+                    "<!doctype html><title>AdminHelper</title>",
+                ),
+                answer("200 OK", "text/plain", &named(NAMED)),
+            ] {
+                let (client, url, _) = answers_once(response.clone()).await;
+                assert_eq!(
+                    trust_generation_at(&client, &url).await.unwrap(),
+                    None,
+                    "{response}"
+                );
+            }
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn every_other_answer_is_an_error() {
+            let padded = format!(
+                r#"{{"generation":"{NAMED}","padding":"{}"}}"#,
+                "x".repeat(MAX_TRUST_ANSWER)
+            );
+            for (response, expected) in [
+                (
+                    answer("403 Forbidden", "application/json", r#"{"detail":"no"}"#),
+                    "the issuer answered 403 Forbidden",
+                ),
+                (
+                    answer("429 Too Many Requests", "text/html", "slow down"),
+                    "the issuer answered 429 Too Many Requests",
+                ),
+                (
+                    answer("502 Bad Gateway", "text/html", "<html>bad gateway</html>"),
+                    "the issuer answered 502 Bad Gateway",
+                ),
+                (
+                    answer("200 OK", "application/json", r#"{"generation":"#),
+                    "parse the answer",
+                ),
+                (
+                    answer("200 OK", "application/json", r#"{"other":"x"}"#),
+                    "parse the answer",
+                ),
+                (
+                    answer("200 OK", "application/json", &named(&NAMED.to_uppercase())),
+                    "names no trust generation",
+                ),
+                (
+                    answer("200 OK", "application/json", &named(&NAMED[1..])),
+                    "names no trust generation",
+                ),
+                (
+                    answer("200 OK", "application/json", &padded),
+                    "the answer exceeds 4096 bytes",
+                ),
+                // It announces more than it sends: the read stops at the cap, before an end
+                // that never comes.
+                (
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 1000000\r\nconnection: close\r\n\r\n{padded}"
+                    ),
+                    "the answer exceeds 4096 bytes",
+                ),
+            ] {
+                let (client, url, _) = answers_once(response).await;
+                let error = trust_generation_at(&client, &url)
+                    .await
+                    .unwrap_err()
+                    .to_string();
+                assert!(error.contains(expected), "{expected:?} not in {error:?}");
+            }
+        }
     }
 
     // The steps of the enroll flows that touch only the keyring, against the
@@ -2650,5 +2969,315 @@ mod tests {
             serde_json::to_value(identity).unwrap(),
             serde_json::json!({ "name": "admin", "notAfter": "2027-01-13T00:00:00+00:00" })
         );
+    }
+
+    // ── R-1054: the trust generation ───────────────────────────────────────
+
+    /// The vector of apps/ca-issuer/tests/test_trust_generation.py, word for word: an
+    /// intermediate, then the root that signed it, and their generation. A desktop that
+    /// hashed differently from the issuer would renew at every check.
+    const VECTOR_PEM: &str = "-----BEGIN CERTIFICATE-----
+MIIBWzCCAQGgAwIBAgIBAjAKBggqhkjOPQQDAjAnMSUwIwYDVQQDDBxUcnVzdCBH
+ZW5lcmF0aW9uIFZlY3RvciBSb290MB4XDTI2MDEwMTAwMDAwMFoXDTM2MDEwMTAw
+MDAwMFowLzEtMCsGA1UEAwwkVHJ1c3QgR2VuZXJhdGlvbiBWZWN0b3IgSW50ZXJt
+ZWRpYXRlMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENlpWuP/Az/ZpCk4QzhC/
+oanl8a5JQqNqiu4RuDGYA7LvXSImYisiXPSf8ZrxCMhxi/IGSdKm0+MTpc3ayqcJ
+waMWMBQwEgYDVR0TAQH/BAgwBgEB/wIBADAKBggqhkjOPQQDAgNIADBFAiEAukbS
++Wub4BgO39JMC2y9J2e+4NqLTmKUmIcjoJLOEmYCIB1ZoZXCZLjd9XLnClmiFqjU
+3TN40JGcBWyry5BynfNd
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIBUzCB+aADAgECAgEBMAoGCCqGSM49BAMCMCcxJTAjBgNVBAMMHFRydXN0IEdl
+bmVyYXRpb24gVmVjdG9yIFJvb3QwHhcNMjYwMTAxMDAwMDAwWhcNMzYwMTAxMDAw
+MDAwWjAnMSUwIwYDVQQDDBxUcnVzdCBHZW5lcmF0aW9uIFZlY3RvciBSb290MFkw
+EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESKtAajl1thCHlE0v5zSOXeAdmO6VXsrV
+8SbexteJY1W85otFaj/hQWZ38U8Joetfv3f8+rTjRtFZdgPblbFmCqMWMBQwEgYD
+VR0TAQH/BAgwBgEB/wIBATAKBggqhkjOPQQDAgNJADBGAiEAh2XmSsMTWV+hnvvl
+IIs7rSJKt2ktd5KRjwSgjuwT8JMCIQDeuD64qoEs0BA6QdgH2gzpsVZb6iZHVZAx
+s1nQfUzhBA==
+-----END CERTIFICATE-----
+";
+
+    const VECTOR_GENERATION: &str =
+        "139a62a94601003257d9e50a799f24575ed90c88d9e7e3802f4fe8a7098da902";
+
+    /// The two certificate blocks of the vector, each with its line end.
+    fn vector_blocks() -> (&'static str, &'static str) {
+        let end = "-----END CERTIFICATE-----\n";
+        VECTOR_PEM.split_at(VECTOR_PEM.find(end).unwrap() + end.len())
+    }
+
+    const KEY_BLOCK: &str =
+        "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIA==\n-----END EC PRIVATE KEY-----\n";
+
+    #[test]
+    fn the_trust_generation_matches_the_issuer_vector() {
+        assert_eq!(trust_generation(VECTOR_PEM).unwrap(), VECTOR_GENERATION);
+    }
+
+    /// Only the certificates count, as for the issuer: line ends, text around them and
+    /// other PEM blocks leave the generation as it is.
+    #[test]
+    fn the_trust_generation_reads_only_the_certificates() {
+        let (intermediate, root) = vector_blocks();
+        for (name, bundle) in [
+            ("CRLF line ends", VECTOR_PEM.replace('\n', "\r\n")),
+            (
+                "text and blank lines",
+                format!("issued chain\n\n{intermediate}\n{root}\nend\n"),
+            ),
+            (
+                "a key block between",
+                format!("{intermediate}{KEY_BLOCK}{root}"),
+            ),
+            (
+                "no line end at the end",
+                VECTOR_PEM.trim_end_matches('\n').to_string(),
+            ),
+            (
+                "a key block at the head",
+                format!("{KEY_BLOCK}{VECTOR_PEM}"),
+            ),
+        ] {
+            assert_eq!(
+                trust_generation(&bundle).ok().as_deref(),
+                Some(VECTOR_GENERATION),
+                "{name}"
+            );
+        }
+    }
+
+    /// The order is part of the generation: the issuer hashes `chain` as it hands it out.
+    #[test]
+    fn the_trust_generation_keeps_the_order() {
+        let (intermediate, root) = vector_blocks();
+        let swapped = trust_generation(&format!("{root}{intermediate}")).unwrap();
+        let only = trust_generation(intermediate).unwrap();
+        assert_ne!(swapped, VECTOR_GENERATION);
+        assert_ne!(only, VECTOR_GENERATION);
+        assert_ne!(only, swapped);
+    }
+
+    #[test]
+    fn a_bundle_without_certificates_has_no_trust_generation() {
+        let (intermediate, _) = vector_blocks();
+        let garbled =
+            "-----BEGIN CERTIFICATE-----\nbm8gY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n";
+        // The intermediate's DER (351 bytes, so no padding) and three zero bytes after it.
+        let trailing = intermediate.replace("BynfNd\n", "BynfNdAAAA\n");
+        for (name, bundle) in [
+            ("empty", String::new()),
+            ("text", "not a bundle".to_string()),
+            ("only a key", KEY_BLOCK.to_string()),
+            ("a garbled block", garbled.to_string()),
+            ("garbled after one", format!("{VECTOR_PEM}{garbled}")),
+            ("trailing bytes in a block", trailing),
+        ] {
+            assert!(
+                matches!(trust_generation(&bundle), Err(AppError::Validation(_))),
+                "{name}: {:?}",
+                trust_generation(&bundle)
+            );
+        }
+    }
+
+    /// The calls of the stand-ins for the trust query and the renewal.
+    #[derive(Default)]
+    struct Calls {
+        queries: AtomicUsize,
+        renewals: AtomicUsize,
+    }
+
+    impl Calls {
+        fn seen(&self) -> (usize, usize) {
+            (
+                self.queries.load(Ordering::SeqCst),
+                self.renewals.load(Ordering::SeqCst),
+            )
+        }
+    }
+
+    /// `maybe_renew_with` against an issuer that names `named` and whose renewal stores
+    /// `renewed` under `key`.
+    async fn check(
+        named: Result<Option<String>, AppError>,
+        key: &str,
+        renewed: &IssuedIdentity,
+        calls: &Calls,
+    ) -> Result<Option<Renewal>, AppError> {
+        maybe_renew_with(
+            "https://gateway.test",
+            move |_| async move {
+                calls.queries.fetch_add(1, Ordering::SeqCst);
+                // Where a real query waits for the network, the other check may run.
+                tokio::task::yield_now().await;
+                named
+            },
+            move |_| async move {
+                calls.renewals.fetch_add(1, Ordering::SeqCst);
+                store_identity(key, renewed)
+            },
+        )
+        .await
+    }
+
+    /// A leaf that is not yet due, pinned to `chain`: its key and fullchain.
+    fn enrolled_under(chain: &str) -> (String, String) {
+        let (cert, key, _) = leaf();
+        store_identity(
+            &key,
+            &IssuedIdentity {
+                fullchain: cert.clone(),
+                chain: chain.to_string(),
+            },
+        )
+        .unwrap();
+        (key, cert)
+    }
+
+    /// The identity a renewal after a rotation stores: the same leaf, another chain.
+    fn rotated(cert: &str) -> IssuedIdentity {
+        let (chain, _, _) = leaf();
+        IssuedIdentity {
+            fullchain: cert.to_string(),
+            chain,
+        }
+    }
+
+    #[tokio::test]
+    async fn the_same_trust_generation_renews_nothing() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under(VECTOR_PEM);
+        let calls = Calls::default();
+
+        let named = Ok(Some(VECTOR_GENERATION.to_string()));
+        let outcome = check(named, &key, &rotated(&cert), &calls).await;
+
+        assert_eq!(outcome.unwrap(), None);
+        assert_eq!(calls.seen(), (1, 0));
+        assert_eq!(load_identity().unwrap().2, VECTOR_PEM);
+    }
+
+    #[tokio::test]
+    async fn a_new_trust_generation_renews_at_once() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under(VECTOR_PEM);
+        let renewed = rotated(&cert);
+        let calls = Calls::default();
+
+        let named = Ok(Some(trust_generation(&renewed.chain).unwrap()));
+        let outcome = check(named, &key, &renewed, &calls).await;
+
+        assert_eq!(outcome.unwrap(), Some(Renewal::NewTrust));
+        assert_eq!(calls.seen(), (1, 1));
+        assert_eq!(load_identity().unwrap().2, renewed.chain);
+    }
+
+    #[tokio::test]
+    async fn a_server_without_the_route_leaves_the_renewal_at_the_half() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under(VECTOR_PEM);
+        let calls = Calls::default();
+
+        let outcome = check(Ok(None), &key, &rotated(&cert), &calls).await;
+
+        assert_eq!(outcome.unwrap(), None);
+        assert_eq!(calls.seen(), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn a_due_leaf_renews_without_asking_for_the_trust_generation() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (_, key, _) = leaf();
+        let due = IssuedIdentity {
+            fullchain: fullchain(Some("admin")),
+            chain: VECTOR_PEM.to_string(),
+        };
+        store_identity(&key, &due).unwrap();
+        let calls = Calls::default();
+
+        let named = Ok(Some(VECTOR_GENERATION.to_string()));
+        let outcome = check(named, &key, &due, &calls).await;
+
+        assert_eq!(outcome.unwrap(), Some(Renewal::HalfLife));
+        assert_eq!(calls.seen(), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn without_an_identity_nothing_is_asked_or_renewed() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (cert, key, _) = leaf();
+        let calls = Calls::default();
+
+        let named = Ok(Some(VECTOR_GENERATION.to_string()));
+        let outcome = check(named, &key, &rotated(&cert), &calls).await;
+
+        assert_eq!(outcome.unwrap(), None);
+        assert_eq!(calls.seen(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn a_failed_query_is_an_error_and_renews_nothing() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under(VECTOR_PEM);
+        let calls = Calls::default();
+
+        let failed = Err(AppError::Validation(
+            "the issuer answered 502 Bad Gateway: ".to_string(),
+        ));
+        let outcome = check(failed, &key, &rotated(&cert), &calls).await;
+
+        match outcome {
+            Err(AppError::Connection(msg)) => assert_eq!(
+                msg,
+                "trust generation: the issuer answered 502 Bad Gateway: "
+            ),
+            other => panic!("expected a connection error, got {other:?}"),
+        }
+        assert_eq!(calls.seen(), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_pinned_chain_is_an_error_and_renews_nothing() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under("not a bundle");
+        let calls = Calls::default();
+
+        let named = Ok(Some(VECTOR_GENERATION.to_string()));
+        let outcome = check(named, &key, &rotated(&cert), &calls).await;
+
+        assert!(
+            matches!(outcome, Err(AppError::Validation(_))),
+            "{outcome:?}"
+        );
+        assert_eq!(calls.seen(), (1, 0));
+    }
+
+    /// The sign-in and the hourly check may meet: both see the new generation, one renews.
+    #[tokio::test]
+    async fn two_checks_at_once_renew_once() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under(VECTOR_PEM);
+        let renewed = rotated(&cert);
+        let generation = trust_generation(&renewed.chain).unwrap();
+        let calls = Calls::default();
+
+        let (first, second) = tokio::join!(
+            check(Ok(Some(generation.clone())), &key, &renewed, &calls),
+            check(Ok(Some(generation)), &key, &renewed, &calls),
+        );
+
+        let mut outcomes = [first.unwrap(), second.unwrap()];
+        outcomes.sort_by_key(|outcome| outcome.is_some());
+        assert_eq!(outcomes, [None, Some(Renewal::NewTrust)]);
+        assert_eq!(calls.seen(), (2, 1));
     }
 }

@@ -567,14 +567,17 @@ pub async fn login(
 ) -> Result<AuthSession, AppError> {
     let server_url = sign_in_target(&storage::app_data_dir(&app)?, &server_url, Some(&username))?;
     let self_signed = self_signed_setting(&app, allow_self_signed);
-    auth::login(
+    let user = auth::login(
         session.inner(),
         &server_url,
         &username,
         &password,
         self_signed,
     )
-    .await
+    .await?;
+    let renewal = app.state::<crate::renewal::RenewalState>().inner().clone();
+    crate::renewal::start(app, renewal, session.inner()).await;
+    Ok(user)
 }
 
 /// Signs out; no terminal session and no detached window outlives the sign-in.
@@ -591,6 +594,7 @@ pub async fn logout(
         }
     }
     app.state::<PtyRegistry>().close_all();
+    crate::renewal::stop(app.state::<crate::renewal::RenewalState>().inner());
     auth::logout(session.inner()).await
 }
 
