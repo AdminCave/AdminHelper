@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Spec Stufe 5, H.264 unter Linux — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-5 · Review: pro Task
+Status: erledigt · Branch: feature/kern-rdp-5 · Review: pro Task
 Spec: docs/features/kern-rdp-5.md (Roadmap R-1101, R-1102)
 Heavy: linux-full — Desktop-Journeys: die Live-Spec Abdocken/Multi-Monitor gegen den xrdp-Container läuft im Sammellauf; neue Abhängigkeiten im Desktop-Build (ironrdp-egfx mit libloading, bzip2); Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -55,3 +55,4 @@ Abhängt von: T2
 - 2026-11-09 Geprüft: Cisco bietet `libopenh264-2.6.0-linux64.8.so.bz2` über https; entpackt SHA-256 `2f0cde7c…5d04` = Eintrag in `openh264-sys2` 0.9.9 `src/blobs/hashes.txt`.
 - 2026-11-09 T2: `rdpH264?` kommt schon in T2 in die Bridge-Typen (sonst wird `types.parity.test.ts` zwischen den Commits rot), daher prüft T2 auch desktop-ui; aus demselben Grund (`ipc.inventory.test.ts`) bringt T2 den Bridge-Aufruf `openh264Remove` und die Zeile in der Befehlstabelle der Entwickler-Doku mit, T4 die Beschreibung; der Befehl `openh264_remove` braucht `build.rs` und `capabilities/default.json` (ACL, `capabilities.rs` prüft den Gleichlauf). Modul und Target-Feld nur unter Linux, Windows bleibt bei Media Foundation.
 - 2026-11-09 T2 security (wichtig, offen für Kevin): Ciscos C-Dekoder parst H.264 des RDP-Servers im Desktop-Prozess, und der Pin 2.6.0 steigt erst mit einem App-Release; ob 2.6.0 alle bekannten CVEs schließt, ist nicht verifiziert. Als Restrisiko im Schlussbericht an Kevin.
+- 2026-11-09 Kevin: Restrisiko mit Pin 2.6.0 angenommen; der Wechsel auf eine neuere OpenH264-Version folgt als eigener Kern-Zug.
