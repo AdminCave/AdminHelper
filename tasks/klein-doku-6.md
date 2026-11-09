@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-doku-6 — Task-Ledger
-Status: aktiv · Branch: feature/klein-doku-6 · Review: am Ende
+Status: bereit · Branch: feature/klein-doku-6 · Review: am Ende
 Spec: docs/features/klein-doku-6.md (Roadmap R-1151, R-1154, R-1167)
 Heavy: none — reine Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,9 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html (die Änderung selbst)
 Task-Review: am Ende
 
-### T3 — R-1167: Restore „nach dem Öffnen des Workspace“  [ ]
+### T3 — R-1167: Restore „nach dem Öffnen des Workspace“  [x]
 Komponente: scripts · Dateien: docs/admin/index.html, docs/en/admin/index.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3af05edc3 2026-11-09T15:50:34+01:00
 Review: am Ende (Branch-Review)
 Beweis: review kern-terminal-1 2026-11-06
 Änderung: „nach der Anmeldung“ durch „nach dem Öffnen des Workspace“ ersetzen (EN: „once the workspace is open“).
