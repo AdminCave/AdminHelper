@@ -1,5 +1,5 @@
 # Harness: eigene known_hosts-Datei für den Connect-Lauf — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-4 · Review: am Ende
+Status: erledigt · Branch: feature/kern-harness-4 · Review: am Ende
 Spec: docs/features/kern-harness-4.md (Roadmap R-1157)
 Heavy: linux-full — Desktop-GUI-Journey (desktop_e2e_connect); vor dem Merge zusätzlich der Box-Lauf `iter.sh all --strict --step desktop_e2e_connect` (Bedingung der Roadmap-Zeile)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
