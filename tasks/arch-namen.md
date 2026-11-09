@@ -1,5 +1,5 @@
 # Einheitliche Namen — Task-Ledger
-Status: aktiv · Branch: feature/arch-namen · Review: pro Task
+Status: bereit · Branch: feature/arch-namen · Review: pro Task
 Spec: docs/features/arch-namen.md (Roadmap R-1210, R-1211)
 Heavy: scenario --tunnel — FRP-Kennungen (frpc user, Proxy-, Visitor-Namen) wechseln auf IDs; der echte 3-Host-Datenpfad beweist es, ask-first. Die Desktop-Tunnel-Suiten und die Live-Specs aus T10 fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -106,11 +106,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (Test-Skripte)
 Abhängt von: T1
 
-### T12 — Doku DE+EN und CHANGELOG (R-1210, R-1211)  [ ]
+### T12 — Doku DE+EN und CHANGELOG (R-1210, R-1211)  [x]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/arch-namen.md, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1b6a27ac7 2026-11-09T16:51:44+01:00
+Review: approve (.ah-out/review/arch-namen/T12.verdict.json)
 Änderung: Kennungen über IDs und einmaliger Tunnel-Neustart nach dem Update (frp-tunnel), Generator/Visitor/Statuszuordnung, Anzeigename, `label`, `customHostname`, Eindeutigkeit (server.html); weitere Seiten mit Namensfeldern per grep (`Hostname`, `Proxy-Name`, `via FRP`) nachziehen und in `Dateien:` aufnehmen; CHANGELOG-Fragment (Changed, Fixed R-1211; wie die übrigen Fragmente ohne SPDX-Kopf).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
-Doku: docs/admin/frp-tunnel.html DE+EN · docs/developer/server.html DE+EN · changelog.d/arch-namen.md
+Doku: docs/admin/frp-tunnel.html DE+EN · docs/developer/server.html DE+EN · docs/developer/desktop.html DE+EN · docs/developer/api-reference.html DE+EN · docs/admin/monitoring.html DE+EN · changelog.d/arch-namen.md
 Abhängt von: T1, T2, T3, T4
 
 ### T13 — Desktop-RS: RDP-Pins über die Tunnel-ID statt den Anzeigenamen (R-1210)  [x]
