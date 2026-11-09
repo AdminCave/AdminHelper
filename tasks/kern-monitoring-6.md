@@ -1,5 +1,5 @@
 # Agent: Proxmox-Storage-Abfrage, hängende Netz-Freigaben, Ressourcen-Deckel, Befehls-Freigabeliste — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-6 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-6 · Review: pro Task
 Spec: docs/features/kern-monitoring-6.md (Roadmap R-1219, R-1220, R-1221, R-1222)
 Heavy: linux-full — apps/agent (Collectors, systemd-Unit); die Box-Nachbauten von R-1219/R-1220 laufen als Beweis in T1/T3 auf einer Pool-VM der eigenen Lane
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
