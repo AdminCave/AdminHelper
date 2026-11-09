@@ -134,7 +134,7 @@ func parsePlan(data []byte) (probe.Plan, error) {
 // of probes (a result of a probe no longer among them is dropped), how many ran and how many due ones
 // were postponed. A probe starts only while ctx leaves it its whole timeout, so the push keeps its
 // time; the others stay due for the next run.
-func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results, factor int, now time.Time) (probe.Results, int, int) {
+func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results, factor int, acc *probe.Access, now time.Time) (probe.Results, int, int) {
 	next := probe.Results{}
 	for _, p := range probes {
 		if res, ok := last[p.ID]; ok {
@@ -161,7 +161,7 @@ func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results,
 			postponed++
 			continue
 		}
-		res := runProbe(ctx, p, time.Now())
+		res := runProbe(ctx, p, time.Now(), acc)
 		if ctx.Err() != nil {
 			// The run ended under the probe: its last result stays, and it is due again next run.
 			postponed += len(due) - i

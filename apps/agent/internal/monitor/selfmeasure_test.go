@@ -275,7 +275,7 @@ func TestBuildReportThrottlesTheProbePhaseByThePostponedProbes(t *testing.T) {
 	for i := 1; i <= 2; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		var report map[string]any
-		report, state = buildReportWithState(ctx, nil, long, state, time.Now())
+		report, state = buildReportWithState(ctx, nil, &probeWork{probes: long}, state, time.Now())
 		cancel()
 		st := selfStats(t, report)[probesCollector]
 		if st.Timeouts != 1 || st.Factor != i || st.Throttled {
@@ -292,7 +292,7 @@ func TestBuildReportThrottlesTheProbePhaseByThePostponedProbes(t *testing.T) {
 	// At factor 2 a 300 s probe is not due 400 s after its run; the phase still runs and reports.
 	now := time.Now()
 	state.Probes = probe.Results{"p": {TS: now.Add(-400 * time.Second).Unix(), Status: probe.StatusOK}}
-	report, _ := buildReportWithState(context.Background(), nil, []probe.Probe{{ID: "p", IntervalS: 300, TimeoutS: 1}}, state, now)
+	report, _ := buildReportWithState(context.Background(), nil, &probeWork{probes: []probe.Probe{{ID: "p", IntervalS: 300, TimeoutS: 1}}}, state, now)
 	if len(*calls) != 0 {
 		t.Errorf("ran %v at factor 2, want the probe not due yet", *calls)
 	}

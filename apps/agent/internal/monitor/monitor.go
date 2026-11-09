@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/credentials"
 )
 
 // InitParams groups monitor.Init's arguments (6 same-typed positionals before).
@@ -202,8 +203,13 @@ func Push(ctx context.Context) error {
 		defer cancel()
 	}
 	plan := currentPlan(collectCtx, cfg, config.MonitorPlanFile())
+	work := &probeWork{probes: plan.Probes}
+	work.creds, work.credsErr = credentials.Load(config.MonitorCredentialsFile())
+	if work.credsErr != nil {
+		logger.Warnf("the credentials cannot be read, the probes that need one report no_credential: %v", work.credsErr)
+	}
 	prevReportState := loadReportState(reportStatePath)
-	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, plan.Probes, prevReportState, time.Now())
+	report, nextReportState := buildReportWithState(collectCtx, cfg.Services, work, prevReportState, time.Now())
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(ctx, PushReportParams{
@@ -216,11 +222,12 @@ func Push(ctx context.Context) error {
 		logger.Errorf("Report senden fehlgeschlagen: %v", err)
 		// The probes that ran keep their results all the same: the next report carries them with their
 		// own time, and they are not due again before their interval, however long the monitoring service
-		// is away. The self-throttle counts what the collectors cost, sent or not. The rest of the state
-		// stays as the last push left it.
+		// is away. The self-throttle counts what the collectors cost, sent or not, and a refused
+		// credential stays refused. The rest of the state stays as the last push left it.
 		kept := prevReportState
 		kept.Probes = nextReportState.Probes
 		kept.Throttle = nextReportState.Throttle
+		kept.Brake = nextReportState.Brake
 		if err := saveReportState(reportStatePath, kept); err != nil {
 			logger.Warnf("saving the probe results and the self-throttle failed: %v", err)
 		}

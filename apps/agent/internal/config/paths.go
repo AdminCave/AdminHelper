@@ -54,3 +54,11 @@ func MonitorReportStateFile() string {
 func MonitorPlanFile() string {
 	return filepath.Join(MonitorDir(), ".plan.json")
 }
+
+// MonitorCredentialsFile holds the credentials the probes present (R-1223), set
+// with monitor credential set: {version, credentials: {<ref>: {secret, id}}}.
+// Only the agent's account may read it (0600, on Windows SYSTEM and the
+// Administrators); the agent uses none from a file open to others.
+func MonitorCredentialsFile() string {
+	return filepath.Join(MonitorDir(), "credentials.json")
+}

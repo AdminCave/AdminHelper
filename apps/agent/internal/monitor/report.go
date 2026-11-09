@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"time"
 
 	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/credentials"
 	"adminhelper-agent/internal/enroll"
 	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/probe"
@@ -26,12 +28,21 @@ func BuildReport(serviceNames []string) map[string]any {
 	return report
 }
 
+// probeWork is what the probe phase of a run works with: the plan's probes and the credentials stored
+// on this host (credentials.Load), or why they could not be read.
+type probeWork struct {
+	probes   []probe.Probe
+	creds    map[string]credentials.Credential
+	credsErr error
+}
+
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
-// saved, with the due ones of probes run after the collectors. It also returns the state to save once
-// this report has been pushed. ctx ends the tool calls of the system state, service (systemctl, sc),
-// docker, proxmox, zfs and smart collectors and the probes. Every collector runs in a measuring frame
-// (self.collectors); the optional ones and the probes are throttled by their time-limit hits.
-func buildReportWithState(ctx context.Context, serviceNames []string, probes []probe.Probe, prev reportState, now time.Time) (map[string]any, reportState) {
+// saved, with the due ones of work's probes run after the collectors. It also returns the state to
+// save once this report has been pushed. ctx ends the tool calls of the system state, service
+// (systemctl, sc), docker, proxmox, zfs and smart collectors and the probes. Every collector runs in a
+// measuring frame (self.collectors); the optional ones and the probes are throttled by their
+// time-limit hits. Without work no probe runs and the report names no credential.
+func buildReportWithState(ctx context.Context, serviceNames []string, work *probeWork, prev reportState, now time.Time) (map[string]any, reportState) {
 	m := newSelfMeasure(prev.Throttle)
 	report := map[string]any{"report_version": 4}
 
@@ -99,12 +110,27 @@ func buildReportWithState(ctx context.Context, serviceNames []string, probes []p
 	// hanging service would slow down the probes of every other. The phase's hit is a due probe the
 	// run's time did not leave room for; its factor stretches the interval of every probe.
 	probeFactor := prev.Throttle[probesCollector].factor()
+	acc := &probe.Access{Brake: maps.Clone(prev.Brake)}
+	var probes []probe.Probe
+	if work != nil {
+		probes, acc.Credentials, acc.StoreErr = work.probes, work.creds, work.credsErr
+		// The refs alone, so the monitoring service can tell a missing credential; a store that could
+		// not be read sends no block, and the refs the service has stay.
+		if work.credsErr == nil {
+			stored := map[string]bool{}
+			for _, ref := range credentials.Refs(work.creds) {
+				stored[ref] = true
+			}
+			report["credentials"] = stored
+		}
+	}
 	postponed := 0
 	st := measured(ctx, func(ctx context.Context) {
-		next.Probes, _, postponed = runDueProbes(ctx, probes, prev.Probes, probeFactor, time.Now())
+		next.Probes, _, postponed = runDueProbes(ctx, probes, prev.Probes, probeFactor, acc, time.Now())
 	})
 	m.record(probesCollector, st, postponed)
 	report["probes"] = next.Probes
+	next.Brake = acc.KeptBrake()
 
 	next.Throttle = m.next
 	report["self"] = map[string]any{"collectors": m.stats}

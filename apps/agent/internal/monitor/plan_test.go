@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/credentials"
 	"adminhelper-agent/internal/probe"
 )
 
@@ -253,19 +254,19 @@ func TestProbeDue(t *testing.T) {
 }
 
 // stubRunProbe replaces runProbe; run returns the result of p and records the order of the calls.
-func stubRunProbe(t *testing.T, run func(ctx context.Context, p probe.Probe, start time.Time) probe.Result) *[]string {
+func stubRunProbe(t *testing.T, run func(ctx context.Context, p probe.Probe, start time.Time, acc *probe.Access) probe.Result) *[]string {
 	t.Helper()
 	var calls []string
 	old := runProbe
-	runProbe = func(ctx context.Context, p probe.Probe, start time.Time) probe.Result {
+	runProbe = func(ctx context.Context, p probe.Probe, start time.Time, acc *probe.Access) probe.Result {
 		calls = append(calls, p.ID)
-		return run(ctx, p, start)
+		return run(ctx, p, start, acc)
 	}
 	t.Cleanup(func() { runProbe = old })
 	return &calls
 }
 
-func okResult(_ context.Context, _ probe.Probe, start time.Time) probe.Result {
+func okResult(_ context.Context, _ probe.Probe, start time.Time, _ *probe.Access) probe.Result {
 	return probe.Result{TS: start.Unix(), Status: probe.StatusOK, Values: map[string]any{"v": 1}}
 }
 
@@ -288,7 +289,7 @@ func TestRunDueProbesRunsTheDueOnesOldestFirst(t *testing.T) {
 		"gone":   at(time.Hour),
 	}
 
-	next, ran, postponed := runDueProbes(context.Background(), probes, last, 1, now)
+	next, ran, postponed := runDueProbes(context.Background(), probes, last, 1, nil, now)
 
 	if want := []string{"never", "oldest", "older"}; !reflect.DeepEqual(*calls, want) {
 		t.Fatalf("ran %v, want %v", *calls, want)
@@ -319,7 +320,7 @@ func TestRunDueProbesStartsAProbeOnlyWithItsWholeTimeoutLeft(t *testing.T) {
 		{ID: "short", IntervalS: 300, TimeoutS: 1},
 	}
 
-	next, ran, postponed := runDueProbes(ctx, probes, probe.Results{"long": old}, 1, time.Now())
+	next, ran, postponed := runDueProbes(ctx, probes, probe.Results{"long": old}, 1, nil, time.Now())
 
 	if !reflect.DeepEqual(*calls, []string{"short"}) || ran != 1 || postponed != 1 {
 		t.Fatalf("ran %v (%d, %d postponed), want only the probe that fits and the other postponed", *calls, ran, postponed)
@@ -335,7 +336,7 @@ func TestRunDueProbesStartsAProbeOnlyWithItsWholeTimeoutLeft(t *testing.T) {
 func TestRunDueProbesDropsAProbeTheRunEndedUnder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	calls := stubRunProbe(t, func(ctx context.Context, p probe.Probe, start time.Time) probe.Result {
+	calls := stubRunProbe(t, func(ctx context.Context, p probe.Probe, start time.Time, _ *probe.Access) probe.Result {
 		cancel()
 		return probe.Result{TS: start.Unix(), Status: probe.StatusError, Error: "context canceled"}
 	})
@@ -345,7 +346,7 @@ func TestRunDueProbesDropsAProbeTheRunEndedUnder(t *testing.T) {
 		{ID: "second", IntervalS: 300, TimeoutS: 1},
 	}
 
-	next, ran, postponed := runDueProbes(ctx, probes, probe.Results{"first": old}, 1, time.Now())
+	next, ran, postponed := runDueProbes(ctx, probes, probe.Results{"first": old}, 1, nil, time.Now())
 
 	if !reflect.DeepEqual(*calls, []string{"second"}) || ran != 0 || postponed != 2 {
 		t.Fatalf("ran %v (%d counted, %d postponed), want the never-run probe started, none counted, both postponed", *calls, ran, postponed)
@@ -364,9 +365,9 @@ func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 	s := stubCPU(t)
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
 	var runs atomic.Int32
-	stubRunProbe(t, func(ctx context.Context, p probe.Probe, start time.Time) probe.Result {
+	stubRunProbe(t, func(ctx context.Context, p probe.Probe, start time.Time, acc *probe.Access) probe.Result {
 		runs.Add(1)
-		return okResult(ctx, p, start)
+		return okResult(ctx, p, start, acc)
 	})
 
 	var planStatus, reportStatus atomic.Int32
@@ -463,5 +464,123 @@ func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 	}
 	if st := loadReportState(statePath); len(st.Probes) != 1 || st.Probes["chk-2"].Status != probe.StatusOK {
 		t.Fatalf("state probes after the push = %+v, want chk-2 alone", st.Probes)
+	}
+}
+
+const planCredentialProbe = `{"plan_version": 1, "catalog_version": "c1", "scan": false, "discovery": {"markers": []},
+	"probes": [{"id": "chk-1", "sensor": "fake", "interval_s": 600, "timeout_s": 5, "target": null,
+	"params": {}, "fields": ["status"], "credential": {"ref": "db", "use": "basic"}}]}`
+
+func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *testing.T) {
+	stubReportHost(t)
+	shortenRetryDelay(t)
+	stubCPU(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	credPath := config.MonitorCredentialsFile()
+	if err := credentials.Set(context.Background(), credPath, "db", "pw1"); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := credentials.Load(credPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusedID := stored["db"].ID
+	var secrets []string
+	stubRunProbe(t, func(_ context.Context, p probe.Probe, start time.Time, acc *probe.Access) probe.Result {
+		// As probe.Run does on a 401: the brake takes the id of the credential the target refused.
+		c := acc.Credentials[p.Credential.Ref]
+		secrets = append(secrets, c.Secret)
+		if acc.Brake == nil {
+			acc.Brake = map[string]string{}
+		}
+		acc.Brake[p.Credential.Ref] = c.ID
+		return probe.Result{TS: start.Unix(), Status: probe.StatusDenied, Values: map[string]any{}, Error: "HTTP 401"}
+	})
+
+	var reportStatus atomic.Int32
+	reportStatus.Store(http.StatusBadGateway)
+	received := make(chan map[string]json.RawMessage, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(planCredentialProbe))
+			return
+		}
+		var body map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("report body: %v", err)
+		}
+		received <- body
+		w.WriteHeader(int(reportStatus.Load()))
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statePath := config.MonitorReportStateFile()
+	push := func() (map[string]json.RawMessage, error) {
+		t.Helper()
+		err := Push(context.Background())
+		var last map[string]json.RawMessage
+		for len(received) > 0 {
+			last = <-received
+		}
+		return last, err
+	}
+
+	// 1) The push is lost: the probe ran with the stored secret, the report named the ref alone, and the
+	// refused credential stays braked.
+	got, err := push()
+	if err == nil {
+		t.Fatal("push against 502: want an error")
+	}
+	if len(secrets) != 1 || secrets[0] != "pw1" {
+		t.Fatalf("the probe got %q, want the stored secret once", secrets)
+	}
+	if string(got["credentials"]) != `{"db":true}` {
+		t.Errorf("report credentials = %s, want {\"db\":true}", got["credentials"])
+	}
+	if raw, _ := json.Marshal(got); strings.Contains(string(raw), "pw1") || strings.Contains(string(raw), refusedID) {
+		t.Errorf("the report carries the secret or its id: %s", raw)
+	}
+	if st := loadReportState(statePath); !reflect.DeepEqual(st.Brake, map[string]string{"db": refusedID}) {
+		t.Fatalf("state brake after a lost push = %v, want db at %s", st.Brake, refusedID)
+	}
+
+	// 2) The credentials cannot be read: no credentials block, and the brake stays.
+	if err := os.WriteFile(credPath, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reportStatus.Store(http.StatusOK)
+	got, err = push()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if block, ok := got["credentials"]; ok {
+		t.Errorf("report credentials = %s with an unreadable store, want no block", block)
+	}
+	if st := loadReportState(statePath); !reflect.DeepEqual(st.Brake, map[string]string{"db": refusedID}) {
+		t.Fatalf("state brake with an unreadable store = %v, want it kept", st.Brake)
+	}
+
+	// 3) The credential is set anew: its brake is done, though the probe is not due yet.
+	if err := os.Remove(credPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := credentials.Set(context.Background(), credPath, "db", "pw2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = push()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got["credentials"]) != `{"db":true}` || len(secrets) != 1 {
+		t.Errorf("report credentials = %s after %d runs, want db and no new run", got["credentials"], len(secrets))
+	}
+	if st := loadReportState(statePath); st.Brake != nil {
+		t.Fatalf("state brake after the credential was set anew = %v, want none", st.Brake)
 	}
 }
