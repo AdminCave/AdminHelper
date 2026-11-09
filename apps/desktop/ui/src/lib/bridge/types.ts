@@ -236,6 +236,8 @@ export interface ResolvedConnection {
 export interface AnsibleTarget {
   hostname: string;
   groups: string[];
+  // The server's SSH connection, resolved; without it Ansible goes to the hostname (R-1202).
+  connection?: Connection;
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';

@@ -25,6 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     type PanelTab,
   } from '$lib/models/notifications';
   import { dndUntil, endDnd, startDnd } from '$lib/stores/dnd';
+  import { criticalPasses } from '$lib/stores/notifyPrefs';
   import {
     ackIncidents,
     notificationItems,
@@ -110,7 +111,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </header>
       {#if $dndUntil !== null}
         <div class="notif-dnd-note">
-          <span>{$t('notifications.dndNote', { time: dndTime })}</span>
+          <span
+            >{$t(criticalPasses() ? 'notifications.dndNote' : 'notifications.dndNoteAll', {
+              time: dndTime,
+            })}</span
+          >
           <Button variant="ghost" size="sm" onclick={endDnd}>{$t('notifications.dndEnd')}</Button>
         </div>
       {/if}

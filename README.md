@@ -444,7 +444,7 @@ PUT    /api/ansible/playbooks/{id}         # Update playbook (admin)
 DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)
 ```
 
-The desktop client automatically generates an INI inventory from the selected servers and runs `ansible-playbook` in a session tab of the AdminHelper terminal, or in a native terminal when *Console for SSH* is the OS terminal. *Dry run* adds `--check` on both ways.
+The desktop client automatically generates a JSON inventory (`inventory.json`) from the selected servers, sending Ansible to the target of each server's SSH connection as *Connect* opens it (tunnel, port, user, key, jump host), adds `--ask-pass` when a connection logs in with a password, and runs `ansible-playbook` in a session tab of the AdminHelper terminal, or in a native terminal when *Console for SSH* is the OS terminal. *Dry run* adds `--check` on both ways. Details: [docs/en/admin/ansible.html](docs/en/admin/ansible.html).
 
 ---
 

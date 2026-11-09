@@ -693,7 +693,8 @@ export interface IncidentEntry {
   // The username; null: done by the hub itself, or a deleted user.
   actor: string | null;
   text: string | null;
-  severity: NotificationSeverity | null;
+  // 'ok' is written by the hub for a recovery entry.
+  severity: NotificationSeverity | 'ok' | null;
   serverId: string | null;
 }
 

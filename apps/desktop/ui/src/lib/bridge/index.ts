@@ -526,7 +526,8 @@ export function fetchTunnels(): Promise<TunnelMapping[]> {
 // ─────────────────────────── Ansible ──────────────────────────────
 
 // The backend loads file name and content of the playbook from the signed-in server itself.
-// `check` runs it as a dry run (`--check`), in the terminal of the OS.
+// `check` runs it as a dry run (`--check`), in the terminal of the OS. A target's connection
+// (resolved, R-1202) is checked there as Verbinden checks it.
 export function ansibleRun(
   playbookId: string,
   targets: AnsibleTarget[],

@@ -81,7 +81,16 @@ fn log_plugin(file: Option<String>) -> TauriPlugin<Wry> {
         .build()
 }
 
+/// rustls' `KeyLogFile`, which IronRDP's TLS configuration installs, writes the TLS session keys
+/// to the file `SSLKEYLOGFILE` names. The app writes none, whatever environment it starts in.
+/// Called before the first thread: changing the environment races with threads that read it.
+fn remove_key_log_file_env() {
+    std::env::remove_var("SSLKEYLOGFILE");
+}
+
 fn main() {
+    remove_key_log_file_env();
+
     // Route panics through the log sink (file + stdout) so a crash leaves a
     // trace in the diagnostics log, while keeping the default stderr/backtrace.
     let default_panic = std::panic::take_hook();
@@ -320,4 +329,36 @@ fn main() {
                 password::remove_pending_termsrv();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    const CHILD: &str = "AH_TEST_KEY_LOG_CHILD";
+
+    /// Runs in a process of its own with `SSLKEYLOGFILE` set: the other tests of this binary run
+    /// on threads that may read the environment while this one changes it.
+    #[test]
+    fn main_starts_without_a_tls_key_log_file() {
+        if std::env::var_os(CHILD).is_some() {
+            assert!(std::env::var_os("SSLKEYLOGFILE").is_some());
+            super::remove_key_log_file_env();
+            assert!(std::env::var_os("SSLKEYLOGFILE").is_none());
+            return;
+        }
+        let output = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                "tests::main_starts_without_a_tls_key_log_file",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .env("SSLKEYLOGFILE", "keys.log")
+            .output()
+            .expect("run the test binary");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout}");
+        assert!(stdout.contains("1 passed"), "{stdout}");
+    }
 }

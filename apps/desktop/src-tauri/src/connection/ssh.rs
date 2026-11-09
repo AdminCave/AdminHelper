@@ -57,6 +57,25 @@ pub(crate) fn build_sftp_args(
     Ok(args)
 }
 
+/// The switches of `connection` for a program that sets host, port, user and key itself
+/// (Ansible, R-1202): its options without forwards and agent forwarding, each as `-o key=value`.
+/// Ansible hands these to ssh, sftp and scp alike, and `-o ProxyJump=` reads the same in all three.
+pub(crate) fn option_switches(connection: &Connection) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(ssh) = connection.options.as_ref().and_then(|o| o.ssh.as_ref()) {
+        push_option_args(&mut args, ssh, false);
+    }
+    let mut switches = Vec::with_capacity(args.len());
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match (arg.as_str(), args.next()) {
+            ("-J", Some(jump)) => switches.extend(["-o".to_string(), format!("ProxyJump={jump}")]),
+            (_, value) => switches.extend(std::iter::once(arg).chain(value)),
+        }
+    }
+    switches
+}
+
 /// The socket in a ControlMaster directory ([`control_dir_base`]).
 pub(crate) const CONTROL_SOCKET: &str = "c";
 
@@ -281,6 +300,31 @@ mod tests {
         let mut c = conn(Some("h"), None, Some("u"), None);
         c.options = Some(serde_json::from_value(serde_json::json!({ "ssh": json })).unwrap());
         c
+    }
+
+    #[test]
+    fn option_switches_carry_the_options_as_o_pairs_without_forwards() {
+        let c = with_ssh_options(serde_json::json!({
+            "jumpHost": "ops@bastion:2222",
+            "forwards": [{"type": "D", "listen": "1080"}],
+            "agentForwarding": true,
+            "compression": true,
+            "authMethod": "key"
+        }));
+        assert_eq!(
+            option_switches(&c),
+            [
+                "-o",
+                "ProxyJump=ops@bastion:2222",
+                "-o",
+                "Compression=yes",
+                "-o",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "IdentitiesOnly=yes",
+            ]
+        );
+        assert!(option_switches(&conn(Some("h"), Some(2222), Some("u"), Some("/k"))).is_empty());
     }
 
     #[test]

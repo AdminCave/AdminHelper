@@ -11,6 +11,8 @@ export function playCriticalTone(): void {
   try {
     if (typeof AudioContext === 'undefined') return;
     ctx ??= new AudioContext();
+    // A context created outside a user gesture starts suspended and stays silent until resumed.
+    if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const t = ctx.currentTime;
