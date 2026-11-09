@@ -217,7 +217,7 @@ describe('Open an SSH connection through the GUI', () => {
     expect(await textContentOf(await tab.$('.session-tab-name'))).toBe('ssh-direct');
     expect(await tab.getAttribute('aria-selected')).toBe('true');
 
-    // The orchestrator removed the target's key from known_hosts: ssh asks and keeps the answer.
+    // The run gives ssh a known_hosts of its own, empty at the start: ssh asks and keeps the answer.
     await signIn({ hostKeyAsked: true });
     await typeInTerminal('exit');
     await $(`${TERM_PANE} .term-ended`).waitForExist({ timeout: 15000 });
