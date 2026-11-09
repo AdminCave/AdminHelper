@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resou
 Doku: → T7
 Abhängt von: T1
 
-### T3 — R-1219: Storage-Zustand aus /cluster/resources, Backup-Inhalt höchstens alle 30 min  [ ]
+### T3 — R-1219: Storage-Zustand aus /cluster/resources, Backup-Inhalt höchstens alle 30 min  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @98696a92a 2026-11-09T18:48:07+01:00
+Review: approve (.ah-out/review/kern-monitoring-6/T3.verdict.json)
 Änderung:
 - `buildBackupIndex` liest die Backup-Storages des Nodes aus `pvesh get /cluster/resources --type storage`: `node` gleich dem lokalen Node, `content` enthält `backup`, `status`.
 - Ein Storage, der nicht `available` ist, ist `backup_index_incomplete` wie heute; sein Inhalt wird nicht abgefragt.
@@ -94,3 +96,5 @@ Task-Review: am Ende
 - T4: `SetPriorityClass(IDLE_PRIORITY_CLASS)` sitzt in `agentService.Execute`, nicht in `runLoop`: unter Windows ist nur `Execute` der Dienstpfad, `runLoop` läuft dort nur interaktiv.
 - T4: `CPUQuota=50%` statt der geplanten 25 %. Box-Messung 2026-11-09 (PVE 9.2, 2 vCPU, `systemd-run` mit den Deckeln): ein `pvesh get` braucht 2,3 s CPU, unter 25 % 9,5–10,0 s Wanduhr gegen `pluginTimeout` 15 s, unter 50 % 4,6–4,9 s. `Nice=19` lässt dem Host bei Konkurrenz ohnehin den Vortritt. Speicherspitze eines pvesh-Aufrufs 146 MB, unter `MemoryMax=256M`.
 - T4: `OOMPolicy=continue` dazu (Reviewer T4): ohne sie gilt `DefaultOOMPolicy=stop`, und ein Kind über dem Deckel (pvesh, dnf, docker) beendete die ganze Unit samt Push; so endet nur das Kind, der Collector meldet den Fehler.
+- T3, Box-Nachbau 2026-11-09 (Pool-VM, PVE 9.2 auf Debian 13, NFS-Storage auf eine eigene Freigabe): `status` in `/cluster/resources` ist laut `PVE::API2Tools::extract_storage_stats` genau dann `available`, wenn pmxcfs einen RRD-Eintrag des Storages hält. Nach dem Stopp des NFS-Servers blieb er 4–5 min `available` (pvestatd meldete ab 10 s „not online“) und wurde dann `unknown`. Ein Ausfall wird damit bis zu 5 min später `backup_index_incomplete` als vorher; in dieser Zeit gilt der gespeicherte Index oder, wenn er fällig ist, scheitert der Content-Aufruf mit „storage … is not online“. Hingenommen: das Backup-Alter wird in Stunden gemessen. Ein deaktivierter Storage fehlt in `/cluster/resources` ganz und wird übergangen. Jeder `pvesh`-Aufruf kostet 2,3–2,8 s (Perl-Start), Liste und Inhalt gleich; den 10-s-Verbindungstest eines toten entfernten Servers konnte der Nachbau nicht zeigen (die Freigabe lag auf demselben Host, die Verbindung wurde sofort abgelehnt).
+- T3: Der Report-State und damit der Backup-Index werden nur nach erfolgreichem Push gespeichert (Reviewer-Nit). Ist der Server länger als 30 min weg, liest der Agent den Inhalt in jedem Lauf; hingenommen, gleiches Muster wie `updatesCheck`.

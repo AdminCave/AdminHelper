@@ -25,6 +25,9 @@ type reportState struct {
 	OOMKillSource string `json:"oom_kill_source,omitempty"`
 	// Updates is the last hourly count of pending security updates (Linux only).
 	Updates *updatesCheck `json:"updates,omitempty"`
+	// ProxmoxBackups is the last backup index read from the backup storages' content (Proxmox nodes
+	// only). A state without it, saved by an older agent, reads them at once.
+	ProxmoxBackups *backupIndexCheck `json:"proxmox_backups,omitempty"`
 }
 
 // The sources of the OOM kill counter: /proc/vmstat counts the kills of the whole kernel, the
@@ -48,6 +51,16 @@ func (st reportState) oomKillSource() string {
 type updatesCheck struct {
 	CheckedUnix int64 `json:"checked_unix"`
 	Security    *int  `json:"security"`
+}
+
+// backupIndexCheck is one backup index of Node, read at CheckedUnix from the content of Storages
+// (sorted): vmid -> newest backup ctime. Index has no omitempty: an empty index (no backups yet) must
+// come back as one, not as nil, which counts as never read.
+type backupIndexCheck struct {
+	CheckedUnix int64         `json:"checked_unix"`
+	Node        string        `json:"node"`
+	Storages    []string      `json:"storages"`
+	Index       map[int]int64 `json:"index"`
 }
 
 // cpuSample is the CPU time counted up to Unix, summed as cpuBusyTimes does.
