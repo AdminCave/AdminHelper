@@ -13,7 +13,8 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Prüfung: `security` je Task T1–T4 (Risikopfade ca-issuer, Gateway, Agent-Enrollment, Desktop-Enrollment/Auth), dazu
 `reviewer` je Task.
 Reihenfolge: T1 zuerst (Vertrag und Testvektor). T2, T3, T4 hängen nur am Vertrag aus T1 und sind untereinander
-unabhängig. T5 braucht T1–T3. T6 zuletzt.
+unabhängig. T5 braucht T1–T3. T6 zuletzt. `feature/kern-ansible-1` ändert `commands.rs` ab Z. 1322 (Ansible), T4
+nur `login` (Z. 560): disjunkte Hunks, vor dem PR `origin/main` hineinmergen.
 
 ## Tasks
 
