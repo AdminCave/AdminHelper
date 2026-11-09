@@ -1,5 +1,5 @@
 # Ansible erreicht Server wie Verbinden — Task-Ledger
-Status: geplant · Branch: feature/kern-ansible-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ansible-1 · Review: pro Task
 Spec: docs/features/kern-ansible-1.md (Roadmap R-1202, R-1204)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad und keine Desktop-Journey, die ein Live-Spec faehrt (die E2E-Box hat kein Ansible); Format-Beleg mit ansible-inventory aus einer Wegwerf-Venv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
