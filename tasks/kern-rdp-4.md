@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Stufe 4 Anzeige, Stufe 5 Fenster — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-4 · Review: pro Task
+Status: erledigt · Branch: feature/kern-rdp-4 · Review: pro Task
 Spec: docs/features/kern-rdp-4.md (Roadmap R-1100, R-1101)
 Heavy: linux-full — Desktop-Journeys: Resize, Abdocken und Multi-Monitor des RDP-Tabs gegen den xrdp-Container (Live-Spec) laufen im Sammellauf; neue Fensterrechte und die IronRDP-Revision; Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
