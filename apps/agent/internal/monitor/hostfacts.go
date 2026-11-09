@@ -31,6 +31,12 @@ var hostFactsCalls = struct {
 	lookPath       func(file string) (string, error)
 }{host.PlatformInformation, virtualization, exec.LookPath}
 
+// containerSystems are the virtualization systems reported with the role guest for a container:
+// gopsutil's on Linux (v4.26.5, internal/common/common_linux.go, VirtualizationWithContext; it knows
+// no Podman) and the jail on FreeBSD (freebsdVirtualization), which shares the host's kernel, load
+// and boot as a container does.
+var containerSystems = map[string]bool{"openvz": true, "lxc": true, "docker": true, "rkt": true, "jail": true}
+
 // freebsdVirtualization maps FreeBSD's sysctls to the virtualization block: jailed is
 // security.jail.jailed, vmGuest kern.vm_guest, the hypervisor the kernel detected ("none" without
 // one; the names in sys/kern/subr_param.c). A jail wins over the VM it may run in: the agent
@@ -43,6 +49,16 @@ func freebsdVirtualization(jailed bool, vmGuest string) (system, role string) {
 		return vmGuest, "guest"
 	}
 	return "", ""
+}
+
+// inContainer tells a container from a host or a VM by the virtualization of the host facts, through
+// the same call (hostFactsCalls). gopsutil detects it once per process and keeps the answer
+// (internal/common/common_linux.go), so asking again in the same report reads no file; on FreeBSD it
+// reads two sysctls. Without an answer it is no container, as for the monitoring service, whose
+// report then has no virtualization.
+func inContainer() bool {
+	system, role, err := hostFactsCalls.virtualization()
+	return err == nil && role == "guest" && containerSystems[system]
 }
 
 // gopsutilNotImplemented is the text of gopsutil's ErrNotImplementedError. The sentinel lives in its

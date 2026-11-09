@@ -23,7 +23,7 @@ type reportState struct {
 	// OOMKillSource names where OOMKill was read (oomSourceVMStat or oomSourceCgroup): the counters of
 	// two sources cannot be subtracted from each other.
 	OOMKillSource string `json:"oom_kill_source,omitempty"`
-	// Updates is the last hourly count of pending security updates (Linux only).
+	// Updates is the last hourly count of pending security updates (Linux and FreeBSD).
 	Updates *updatesCheck `json:"updates,omitempty"`
 }
 

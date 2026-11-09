@@ -35,6 +35,15 @@ func stubHostFacts(t *testing.T, found ...string) *[]string {
 	return &looked
 }
 
+// stubVirtualization makes the host facts report system and role as the virtualization, which tells
+// the agent whether it runs in a container.
+func stubVirtualization(t *testing.T, system, role string) {
+	t.Helper()
+	old := hostFactsCalls.virtualization
+	hostFactsCalls.virtualization = func() (string, string, error) { return system, role, nil }
+	t.Cleanup(func() { hostFactsCalls.virtualization = old })
+}
+
 // wantHostFacts is the expected block: os is the platform the test runs on, fields the rest.
 func wantHostFacts(t *testing.T, fields string) map[string]any {
 	t.Helper()
