@@ -5,8 +5,10 @@ Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad; die Desktop-GUI-J
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1199: Eine Sitzung ohne Client endet nach einer Frist  [ ]
+### T1 — R-1199: Eine Sitzung ohne Client endet nach einer Frist  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @fc4d39478 2026-11-09T14:34:33+01:00
+Review: approve (.ah-out/review/kern-rdp-8/T1.verdict.json)
 Änderung: `serve` startet eine Frist (`NO_CLIENT_DEADLINE`, 60 s, im Server einstellbar wie `login_deadline`), sobald kein Bildschirm einen streamenden Client hat, und hebt sie mit dem nächsten Login auf; läuft sie ab, endet `serve` wie nach `close`. Tests: ohne Client endet `serve` nach der Frist; ein Client, der geht und innerhalb der Frist wiederkommt, hält die Sitzung; ein streamender Client hält sie über die Frist hinaus.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
