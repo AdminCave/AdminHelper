@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -81,6 +82,7 @@ var (
 	interfaceAddrs = net.InterfaceAddrs
 	listeners      = listenTCP
 	processName    = nameOf
+	processArgs    = argsOf
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -190,8 +192,64 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
+		if processKey(name) == "docker-proxy" {
+			if err := checkProxy(ctx, l.pid, port); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// checkProxy returns an error unless the docker-proxy pid, which listens on port for a container,
+// forwards to a port a probe may connect to: a container may publish its SSH or MySQL port on any
+// port of the host, and only the proxy's arguments name the container's port.
+func checkProxy(ctx context.Context, pid int32, port uint16) error {
+	args, err := processArgs(ctx, pid)
+	if err != nil {
+		return fmt.Errorf("%w: the docker-proxy on port %d cannot be read: %v", ErrNotAllowed, port, err)
+	}
+	to, ok := proxiedPort(args)
+	if !ok {
+		return fmt.Errorf("%w: the container port the docker-proxy on port %d forwards to is not told", ErrNotAllowed, port)
+	}
+	if blockedPort(to) {
+		return fmt.Errorf("%w: port %d forwards to port %d of a container, one the agent never probes", ErrNotAllowed, port, to)
+	}
+	return nil
+}
+
+// proxiedPort reads the container port from the arguments of docker-proxy, which dockerd starts with
+// -container-port <port> and which reads them with Go's flag package: one or two dashes, the value
+// apart or after "=", the last one counts.
+func proxiedPort(args []string) (uint16, bool) {
+	value, found := "", false
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		name, v, inline := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(a, "-"), "-"), "=")
+		if !strings.HasPrefix(a, "-") || name != "container-port" {
+			continue
+		}
+		if !inline {
+			if i+1 >= len(args) {
+				return 0, false
+			}
+			i++
+			v = args[i]
+		}
+		value, found = v, true
+	}
+	if !found {
+		return 0, false
+	}
+	port, err := strconv.ParseUint(value, 10, 16)
+	if err != nil || port == 0 {
+		return 0, false
+	}
+	return uint16(port), true
 }
 
 // currentListeners returns the listening TCP sockets of this host, at most listenerTTL old.
@@ -242,6 +300,18 @@ func nameOf(ctx context.Context, pid int32) (string, error) {
 		return "", err
 	}
 	return p.NameWithContext(ctx)
+}
+
+// argsOf returns the arguments of the process pid, its name first.
+func argsOf(ctx context.Context, pid int32) ([]string, error) {
+	if pid <= 0 {
+		return nil, errors.New("the owner is unknown")
+	}
+	p, err := process.NewProcessWithContext(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	return p.CmdlineSliceWithContext(ctx)
 }
 
 const (

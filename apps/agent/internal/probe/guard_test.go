@@ -27,12 +27,13 @@ type fakeHost struct {
 	listErr   error
 	listCalls int
 	names     map[int32]string
+	args      map[int32][]string
 }
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
-	oldAddrs, oldList, oldName := interfaceAddrs, listeners, processName
+	oldAddrs, oldList, oldName, oldArgs := interfaceAddrs, listeners, processName, processArgs
 	interfaceAddrs = func() ([]net.Addr, error) { return h.addrs, h.addrsErr }
 	listeners = func(context.Context) ([]listener, error) {
 		h.listCalls++
@@ -45,6 +46,13 @@ func stubHost(t *testing.T, h *fakeHost) {
 		}
 		return name, nil
 	}
+	processArgs = func(_ context.Context, pid int32) ([]string, error) {
+		args, ok := h.args[pid]
+		if !ok {
+			return nil, errors.New("access is denied")
+		}
+		return args, nil
+	}
 	resetSnapshot := func() {
 		snapshot.Lock()
 		snapshot.list, snapshot.at = nil, time.Time{}
@@ -52,7 +60,7 @@ func stubHost(t *testing.T, h *fakeHost) {
 	}
 	resetSnapshot()
 	t.Cleanup(func() {
-		interfaceAddrs, listeners, processName = oldAddrs, oldList, oldName
+		interfaceAddrs, listeners, processName, processArgs = oldAddrs, oldList, oldName, oldArgs
 		resetSnapshot()
 	})
 }
@@ -203,6 +211,63 @@ func TestGuardNeverProbesTheListenersOfTheBlockedProcesses(t *testing.T) {
 		}
 		if !c.refused && err != nil {
 			t.Errorf("%s %s: %v, want it allowed", c.network, c.address, err)
+		}
+	}
+}
+
+func TestGuardNeverProbesAContainerPortPublishedFromABlockedOne(t *testing.T) {
+	proxy := func(hostPort, containerPort string) []string {
+		return []string{"/usr/bin/docker-proxy", "-proto", "tcp", "-host-ip", "0.0.0.0", "-host-port", hostPort,
+			"-container-ip", "192.0.2.2", "-container-port", containerPort, "-use-listen-fd"}
+	}
+	stubHost(t, &fakeHost{
+		list: []listener{
+			lst("0.0.0.0", 13306, 40), lst("0.0.0.0", 2222, 41), lst("::", 19100, 42), lst("0.0.0.0", 8080, 43),
+			lst("0.0.0.0", 8081, 44), lst("0.0.0.0", 8082, 45), lst("0.0.0.0", 8083, 46), lst("0.0.0.0", 8084, 47),
+			lst("0.0.0.0", 8085, 48), lst("0.0.0.0", 8086, 49),
+		},
+		names: map[int32]string{
+			40: "docker-proxy", 41: "docker-proxy", 42: "docker-proxy", 43: "docker-proxy", 44: "docker-proxy",
+			45: "docker-proxy", 46: "docker-proxy", 47: "docker-proxy", 48: "docker-proxy", 49: "nginx",
+		},
+		args: map[int32][]string{
+			40: proxy("13306", "3306"),
+			41: {"docker-proxy", "--container-port=22", "-host-port=2222"},
+			42: {"docker-proxy", "-container-port", "80", "-container-port", "9100"},
+			43: proxy("8080", "80"),
+			// 44: the arguments cannot be read.
+			45: {"docker-proxy", "-host-port", "8082"},
+			46: {"docker-proxy", "-container-port", "http"},
+			47: {"docker-proxy", "--", "-container-port", "3306"},
+			48: {"docker-proxy", "-container-port"},
+			49: {"nginx", "-container-port", "3306"},
+		},
+	})
+	g := NewGuard()
+
+	for _, c := range []struct {
+		address, want string
+	}{
+		{"127.0.0.1:13306", "forwards to port 3306 of a container"},
+		{"127.0.0.1:2222", "forwards to port 22 of a container"},
+		{"[::1]:19100", "forwards to port 9100 of a container"},
+		{"127.0.0.1:8081", "cannot be read"},
+		{"127.0.0.1:8082", "is not told"},
+		{"127.0.0.1:8083", "is not told"},
+		{"127.0.0.1:8084", "is not told"},
+		{"127.0.0.1:8085", "is not told"},
+	} {
+		network := "tcp4"
+		if strings.HasPrefix(c.address, "[") {
+			network = "tcp6"
+		}
+		if err := allowed(g, network, c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
+		}
+	}
+	for _, address := range []string{"127.0.0.1:8080", "127.0.0.1:8086"} {
+		if err := allowed(g, "tcp4", address); err != nil {
+			t.Errorf("%s: %v, want it allowed", address, err)
 		}
 	}
 }
@@ -425,5 +490,13 @@ func TestTheHostSeamsReadTheListenersAndTheirProcesses(t *testing.T) {
 	}
 	if _, err := nameOf(context.Background(), 0); err == nil || !strings.Contains(err.Error(), "the owner is unknown") {
 		t.Errorf("nameOf(0) = %v, want the owner unknown", err)
+	}
+
+	args, err := argsOf(context.Background(), own.pid)
+	if err != nil || len(args) == 0 || args[len(args)-1] != os.Args[len(os.Args)-1] {
+		t.Errorf("argsOf(this process) = %q, %v; want its arguments %q", args, err, os.Args)
+	}
+	if _, err := argsOf(context.Background(), 0); err == nil || !strings.Contains(err.Error(), "the owner is unknown") {
+		t.Errorf("argsOf(0) = %v, want the owner unknown", err)
 	}
 }

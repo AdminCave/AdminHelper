@@ -55,7 +55,11 @@ func currentPlan(ctx context.Context, cfg *config.MonitorConfig, planPath string
 		logger.Warnf("plan refused, the saved plan stays in force: %v", err)
 		return loadPlan(planPath)
 	}
-	if data, err := json.Marshal(plan); err != nil {
+	// The saved plan stands in while the monitoring service cannot be reached: it asks for no discovery,
+	// or every such run would repeat the one this plan asked for.
+	saved := plan
+	saved.Scan = false
+	if data, err := json.Marshal(saved); err != nil {
 		logger.Warnf("saving the plan failed: %v", err)
 	} else if err := config.WriteFile(planPath, data, 0600); err != nil {
 		logger.Warnf("saving the plan failed: %v", err)

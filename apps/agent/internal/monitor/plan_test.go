@@ -21,6 +21,7 @@ import (
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/credentials"
+	"adminhelper-agent/internal/discovery"
 	"adminhelper-agent/internal/probe"
 )
 
@@ -654,5 +655,69 @@ func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T)
 	}
 	if st := loadReportState(statePath); st.Cursors != nil {
 		t.Fatalf("state cursors of a probe that no longer counts = %v, want none", st.Cursors)
+	}
+}
+
+const planScan = `{"plan_version": 1, "catalog_version": "c1", "scan": true,
+	"discovery": {"markers": [{"id": "nginx", "paths": ["/etc/nginx"], "packages": ["nginx"]}]}, "probes": []}`
+
+func TestPushRunsTheDiscoveryThePlanAsksForOnce(t *testing.T) {
+	stubReportHost(t)
+	shortenRetryDelay(t)
+	stubCPU(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	calls := stubDiscovery(t, discovery.Inventory{TS: 1, Markers: map[string]bool{"nginx": true}})
+	var planStatus atomic.Int32
+	planStatus.Store(http.StatusOK)
+	var posted atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(int(planStatus.Load()))
+			_, _ = w.Write([]byte(planScan))
+			return
+		}
+		var report map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("report: %v", err)
+		}
+		posted.Store(report)
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) The plan asks for a discovery: it runs with the plan's markers and its block goes out.
+	if err := Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []probe.Marker{{ID: "nginx", Paths: []string{"/etc/nginx"}, Packages: []string{"nginx"}}}
+	if !reflect.DeepEqual(*calls, [][]probe.Marker{want}) {
+		t.Fatalf("discoveries %+v, want one with the plan's markers", *calls)
+	}
+	block, _ := posted.Load().(map[string]any)["discovery"].(map[string]any)
+	if !reflect.DeepEqual(block["markers"], map[string]any{"nginx": true}) {
+		t.Errorf("discovery block sent = %v, want the inventory", block)
+	}
+	// The saved plan asks for none.
+	saved := loadPlan(config.MonitorPlanFile())
+	if saved.Scan || !reflect.DeepEqual(saved.Discovery.Markers, want) {
+		t.Errorf("saved plan: scan %v, markers %+v; want no scan, the markers kept", saved.Scan, saved.Discovery.Markers)
+	}
+
+	// 2) The monitoring service's plan cannot be read: the saved plan stands in and repeats no discovery.
+	planStatus.Store(http.StatusBadGateway)
+	if err := Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 {
+		t.Errorf("%d discoveries, want no second one from the saved plan", len(*calls))
+	}
+	if _, ok := posted.Load().(map[string]any)["discovery"]; ok {
+		t.Error("the second report carries a discovery block, want none")
 	}
 }

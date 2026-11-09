@@ -166,7 +166,13 @@ func TestAContainerTargetListensInItsNetwork(t *testing.T) {
 		"   1: 0100007F:2328 00000000:0000 0A\n" + // 127.0.0.1:9000, the container's own loopback
 		"   2: 050200C0:01BB 00000000:0000 0A\n" + // 192.0.2.5:443
 		"   3: 090200C0:0016 00000000:0000 0A\n" //  192.0.2.9:22, no address of the container
-	files := map[string]string{"/proc/4242/net/tcp": tcp, "/proc/7/cgroup": "0::/system.slice/docker-" + containerID + ".scope\n"}
+	files := map[string]string{
+		"/proc/4242/net/tcp": tcp,
+		"/proc/4242/cgroup":  "0::/system.slice/docker-" + containerID + ".scope\n",
+		"/proc/7/cgroup":     "0::/system.slice/docker-" + containerID + ".scope/init\n",
+		// A cgroup a user created in their own, named like the container's: not the container's.
+		"/proc/8/cgroup": "0::/user.slice/user-1000.slice/user@1000.service/docker-" + containerID + ".scope\n",
+	}
 	stubProc(t, files)
 	tl := stubTool(t, inspectJSON(t, "running", "healthy", "bridge"), nil)
 	ctx := context.Background()
@@ -198,9 +204,9 @@ func TestAContainerTargetListensInItsNetwork(t *testing.T) {
 	if err != nil || ep.port != 25 || ep.addr != netip.MustParseAddr("127.0.0.1") || ep.extra != nil {
 		t.Errorf("resolve on the host's network = %v, %v; want 127.0.0.1:25 of its process alone", ep, err)
 	}
-	tl.out = strings.Replace(inspectJSON(t, "running", "", "host"), containerID, "4f2a9c1e7b3", 1)
-	if _, err := resolve(ctx, Target{Kind: kindContainer, Name: "web"}); err == nil || !strings.Contains(err.Error(), "has no id") {
-		t.Errorf("resolve with a short id = %v, want an error", err)
+	delete(files, "/proc/4242/cgroup")
+	if _, err := resolve(ctx, Target{Kind: kindContainer, Name: "web"}); err == nil || !strings.Contains(err.Error(), "the cgroup of container web cannot be read") {
+		t.Errorf("resolve without the container's cgroup = %v, want an error", err)
 	}
 	for _, mode := range []string{"none", "container:" + containerID} {
 		tl.out = inspectJSON(t, "running", "", mode)

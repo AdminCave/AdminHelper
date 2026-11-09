@@ -43,6 +43,15 @@ func inCgroup(pid int32, match func(path string) bool) bool {
 	return err == nil && cgroupHas(data, match)
 }
 
+// CgroupsOf returns the cgroups the process pid runs in, nil for one that cannot be read.
+func CgroupsOf(pid int32) Cgroups {
+	data, err := readProcFile("/proc/" + strconv.Itoa(int(pid)) + "/cgroup")
+	if err != nil {
+		return nil
+	}
+	return parseCgroups(data)
+}
+
 // containerEndpoint resolves the container target t: on its own network to its address and a port
 // it listens on in its network namespace; on the host's network as the host's listeners of the
 // container's processes.
@@ -57,12 +66,11 @@ func containerEndpoint(ctx context.Context, t Target) (endpoint, error) {
 	mode := c.HostConfig.NetworkMode
 	switch {
 	case mode == "host":
-		if len(c.ID) < 12 {
-			return endpoint{}, fmt.Errorf("container %s has no id", t.Name)
+		own := CgroupsOf(int32(c.State.Pid))
+		if len(own) == 0 {
+			return endpoint{}, fmt.Errorf("the cgroup of container %s cannot be read", t.Name)
 		}
-		return hostEndpoint(ctx, t, func(l listener) bool {
-			return inCgroup(l.pid, func(path string) bool { return strings.Contains(path, c.ID) })
-		})
+		return hostEndpoint(ctx, t, func(l listener) bool { return own.Holds(CgroupsOf(l.pid)) })
 	case mode == "none" || strings.HasPrefix(mode, "container:"):
 		return endpoint{}, fmt.Errorf("container %s has no network of its own (%s)", t.Name, mode)
 	}

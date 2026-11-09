@@ -264,6 +264,38 @@ func cgroupHas(data []byte, match func(path string) bool) bool {
 	return false
 }
 
+// Cgroups are the cgroups a process runs in: its path in each hierarchy, keyed by the hierarchy
+// ("<id>:<controllers>") of its line in /proc/<pid>/cgroup.
+type Cgroups map[string]string
+
+// parseCgroups reads a /proc/<pid>/cgroup file.
+func parseCgroups(data []byte) Cgroups {
+	c := Cgroups{}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) == 3 {
+			c[parts[0]+":"+parts[1]] = parts[2]
+		}
+	}
+	return c
+}
+
+// Holds says whether the process that runs in p runs in one of the cgroups c or below it, in a
+// hierarchy both name: the processes of a container run in the cgroup of its first one or below it.
+// The root holds every process and counts for none; a path that merely names c's, as one a user may
+// create in the cgroup delegated to them, does not count either.
+func (c Cgroups) Holds(p Cgroups) bool {
+	for h, path := range c {
+		if path == "" || path == "/" {
+			continue
+		}
+		if q, ok := p[h]; ok && (q == path || strings.HasPrefix(q, path+"/")) {
+			return true
+		}
+	}
+	return false
+}
+
 // containerInfo holds the fields of `docker inspect` the container sensor and target read (Engine
 // API ContainerInspectResponse); Health is nil for a container without a healthcheck.
 type containerInfo struct {

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/discovery"
+	"adminhelper-agent/internal/probe"
 )
 
 // stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
@@ -38,7 +40,13 @@ func stubReportHost(t *testing.T) {
 	hostFactsCalls.platform = func() (string, string, string, error) { return "", "", "", nil }
 	hostFactsCalls.virtualization = func() (string, string, error) { return "", "", nil }
 	hostFactsCalls.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	oldDiscovery := runDiscovery
+	runDiscovery = func(context.Context, []probe.Marker) discovery.Inventory {
+		t.Error("a discovery ran, want none")
+		return discovery.Inventory{}
+	}
 	t.Cleanup(func() {
+		runDiscovery = oldDiscovery
 		cpuSampleInterval = oldInterval
 		pluginCollectors = oldPlugins
 		serviceHealthCollector = oldSvc
@@ -379,5 +387,66 @@ func TestPushBudgetKeepsThePushReserve(t *testing.T) {
 		}
 	default:
 		t.Fatal("the server got no report")
+	}
+}
+
+// stubDiscovery has runDiscovery answer inv and returns the markers of each discovery that ran.
+func stubDiscovery(t *testing.T, inv discovery.Inventory) *[][]probe.Marker {
+	t.Helper()
+	var calls [][]probe.Marker
+	old := runDiscovery
+	runDiscovery = func(_ context.Context, markers []probe.Marker) discovery.Inventory {
+		calls = append(calls, markers)
+		return inv
+	}
+	t.Cleanup(func() { runDiscovery = old })
+	return &calls
+}
+
+func TestBuildReportRunsADiscoveryOnlyWhenThePlanAsksForOne(t *testing.T) {
+	stubReportHost(t)
+	inv := discovery.Inventory{TS: 1, Markers: map[string]bool{"nginx": true}}
+	calls := stubDiscovery(t, inv)
+	markers := []probe.Marker{{ID: "nginx", Paths: []string{"/etc/nginx"}}}
+	due := throttle{Factor: 2, Skipped: 1}
+
+	// No discovery asked for: none runs, and its throttle stays as it was.
+	for _, work := range []*probeWork{nil, {markers: markers}} {
+		report, next := buildReportWithState(context.Background(), nil, work, reportState{Throttle: map[string]throttle{discoveryCollector: due}}, time.Now())
+		if _, ok := report["discovery"]; ok || len(*calls) != 0 {
+			t.Fatalf("work %+v: a discovery block, %d discoveries; want none", work, len(*calls))
+		}
+		if _, ok := selfStats(t, report)[discoveryCollector]; ok {
+			t.Errorf("work %+v: a discovery stat, want none", work)
+		}
+		if next.Throttle[discoveryCollector] != due {
+			t.Errorf("work %+v: discovery throttle %+v, want %+v kept", work, next.Throttle[discoveryCollector], due)
+		}
+	}
+
+	// Asked for: it runs with the plan's markers, its block goes out and its run is measured.
+	report, next := buildReportWithState(context.Background(), nil, &probeWork{scan: true, markers: markers},
+		reportState{Throttle: map[string]throttle{discoveryCollector: due}}, time.Now())
+	if !reflect.DeepEqual(*calls, [][]probe.Marker{markers}) {
+		t.Fatalf("discoveries %v, want one with the plan's markers", *calls)
+	}
+	if got, ok := report["discovery"].(discovery.Inventory); !ok || !reflect.DeepEqual(got, inv) {
+		t.Errorf("discovery block = %#v, want the inventory", report["discovery"])
+	}
+	if st, ok := selfStats(t, report)[discoveryCollector]; !ok || st.Throttled {
+		t.Errorf("discovery stat = %+v (%v), want a run", st, ok)
+	}
+	if th := next.Throttle[discoveryCollector]; th.Skipped != 0 || th.Factor != 2 {
+		t.Errorf("discovery throttle after its run = %+v, want factor 2, none skipped", th)
+	}
+
+	// Held back by its throttle: it waits for a later run.
+	report, next = buildReportWithState(context.Background(), nil, &probeWork{scan: true, markers: markers},
+		reportState{Throttle: map[string]throttle{discoveryCollector: {Factor: 2}}}, time.Now())
+	if _, ok := report["discovery"]; ok || len(*calls) != 1 {
+		t.Errorf("a throttled discovery ran (%d discoveries), want it held back", len(*calls))
+	}
+	if st := selfStats(t, report)[discoveryCollector]; !st.Throttled || next.Throttle[discoveryCollector].Skipped != 1 {
+		t.Errorf("discovery stat %+v, throttle %+v: want it held back once", st, next.Throttle[discoveryCollector])
 	}
 }

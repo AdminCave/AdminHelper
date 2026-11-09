@@ -203,7 +203,7 @@ func Push(ctx context.Context) error {
 		defer cancel()
 	}
 	plan := currentPlan(collectCtx, cfg, config.MonitorPlanFile())
-	work := &probeWork{probes: plan.Probes}
+	work := &probeWork{probes: plan.Probes, scan: plan.Scan, markers: plan.Discovery.Markers}
 	work.creds, work.credsErr = credentials.Load(config.MonitorCredentialsFile())
 	if work.credsErr != nil {
 		logger.Warnf("the credentials cannot be read, the probes that need one report no_credential: %v", work.credsErr)

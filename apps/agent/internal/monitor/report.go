@@ -16,6 +16,7 @@ import (
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/credentials"
+	"adminhelper-agent/internal/discovery"
 	"adminhelper-agent/internal/enroll"
 	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/probe"
@@ -29,12 +30,21 @@ func BuildReport(serviceNames []string) map[string]any {
 }
 
 // probeWork is what the probe phase of a run works with: the plan's probes and the credentials stored
-// on this host (credentials.Load), or why they could not be read.
+// on this host (credentials.Load), or why they could not be read; and whether the plan asks for a
+// discovery of this host, with the markers it looks for.
 type probeWork struct {
 	probes   []probe.Probe
 	creds    map[string]credentials.Credential
 	credsErr error
+	scan     bool
+	markers  []probe.Marker
 }
+
+// discoveryCollector is the discovery's name in the self-measurement and the throttle.
+const discoveryCollector = "discovery"
+
+// runDiscovery discovers this host; a seam for the tests.
+var runDiscovery = discovery.Run
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
 // saved, with the due ones of work's probes run after the collectors. It also returns the state to
@@ -132,6 +142,16 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	report["probes"] = next.Probes
 	next.Brake = acc.KeptBrake()
 	next.Cursors = acc.KeptCursors(probes)
+
+	// A discovery runs when the monitoring service asks for one, in what is left of ctx; it takes a
+	// frame of its own. Between two of them its throttle stays as it was.
+	if work != nil && work.scan {
+		m.optional(ctx, discoveryCollector, func(ctx context.Context) {
+			report["discovery"] = runDiscovery(ctx, work.markers)
+		})
+	} else if t, ok := prev.Throttle[discoveryCollector]; ok {
+		m.next[discoveryCollector] = t
+	}
 
 	next.Throttle = m.next
 	report["self"] = map[string]any{"collectors": m.stats}
