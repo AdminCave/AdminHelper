@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-ca-trust-generation — Task-Ledger
-Status: geplant · Branch: feature/arch-ca-trust-generation · Review: pro Task
+Status: aktiv · Branch: feature/arch-ca-trust-generation · Review: pro Task
 Spec: docs/features/arch-ca-trust-generation.md (Roadmap R-1054)
 Heavy: linux-full — neue Route in `apps/ca-issuer`, Gateway-Location, Agent-Erneuerung (Sammellauf). Vor dem Merge außerdem der Stack-Job per Dispatch (`gh workflow run ci.yml --ref feature/arch-ca-trust-generation`, fährt `ca_rotation` aus T5) und der Schritt `agent-monitoring` einzeln auf einer VM der Lane (`/test`, `run.sh integration --strict --only …`; der echte Agent fragt `/ca/trust` gegen den Stack). Kein `scenario`: kein neuer Port, kein Cross-Host-Pfad, derselbe mTLS-Client wie bei `/ca/renew`. Kein `windows`: Go- und Rust-Code sind plattformneutral, die CI-Jobs `agent-windows` und `rust-windows` fahren die Suiten nativ.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
