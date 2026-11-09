@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Stufe 4 Anzeige, Stufe 5 Fenster — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-rdp-4 · Review: pro Task
 Spec: docs/features/kern-rdp-4.md (Roadmap R-1100, R-1101)
 Heavy: linux-full — Desktop-Journeys: Resize, Abdocken und Multi-Monitor des RDP-Tabs gegen den xrdp-Container (Live-Spec) laufen im Sammellauf; neue Fensterrechte und die IronRDP-Revision; Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -116,6 +116,19 @@ Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku „RDP in AdminHelper“: Anzeige-Modi, Skalierung, Vollbild, Abdocken, Multi-Monitor; der Satz „fest 1280×720“ entfällt. Entwickler-Doku: Nachrichten `size` und `layout`, Wiederanmelden, `rdp-*`-Fenster und ihre Rechte, die Fork-Revision. `changelog.d/kern-rdp-4.md` ohne Umlaute.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-4.md
+Task-Review: am Ende
+
+### T13 — R-1100: Start von main beendet alle RDP-Sitzungen  [ ]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/window.rs, apps/desktop/ui/src/lib/stores/terminals.ts
+Änderung: Seit eine Sitzung den Weggang ihres WebSocket-Clients überlebt, erreicht nach einem Neuladen von main nichts mehr eine Sitzung, deren Stopp verloren ging (Abschlussprüfung security). `terminal_close_all` aus main beendet deshalb auch jede RDP-Sitzung und schließt ihre `rdp-*`-Fenster; aus anderen Fenstern bleibt es wie bisher. Test für `RdpSessions::stop_all` und für die Fensterregel; den Kommentar an `closeAllTerminals` anpassen.
+Verify: bash scripts/dev/verify.sh desktop --strict
+Doku: → T14
+
+### T14 — Doku-Korrekturen der Abschlussprüfung (DE+EN)  [ ]
+Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: Eingabe-Absatz: die Klammer der Maus nennt Koordinaten im Bild des Bildschirms, die doppelte Klammer entfällt. Der Satz zum Fehler beim Start des WebSocket-Servers (`failed`/`connect`) kommt zurück. `terminal_close_all` beendet aus main auch die RDP-Sitzungen (T13).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html
 Task-Review: am Ende
 
 ## Entscheidungen
