@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Spec erwartet die falsche feste Größe — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-7 · Review: am Ende
+Status: erledigt · Branch: feature/kern-rdp-7 · Review: am Ende
 Spec: docs/features/kern-rdp-7.md (Roadmap R-1205)
 Heavy: linux-full — Fix eines REG aus dem Sammellauf; Beweis vor dem Merge: Schritt desktop_e2e_connect auf der Box der Lane (`iter.sh --cmd`, der `--step`-Name ist mehrdeutig, R-1206)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -18,3 +18,4 @@ Doku: keine (nur Testcode, kein dokumentiertes Verhalten)
 
 ## Entscheidungen
 - Die Spec folgt der Vorgabe des Dialogs, statt die eigene Größe im Dialog zu setzen: kleinste Änderung, die den Fund behebt; die Angleichung der beiden Vorgaben ist Kevins Entscheidung und eine eigene Zeile.
+- Heavy-Beweis (REG aus dem Sammellauf): Schritt desktop_e2e_connect auf der Box der Lane über `iter.sh --cmd` auf a3c0bbc41 (origin/main hereingemergt): `desktop_e2e_connect: 17 passed, 0 failed` (2026-11-09 16:23); vor dem Fix dreimal `16 passed, 1 failed`.
