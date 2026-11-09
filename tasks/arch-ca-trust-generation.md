@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestMaybeRenew|TestTru
 Doku: → T6
 Abhängt von: T1
 
-### T4 — Desktop: Generation bei Anmeldung und stündlich  [ ]
+### T4 — Desktop: Generation bei Anmeldung und stündlich  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/renewal.rs (neu, SPDX), apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @7926932be 2026-11-09T14:45:17+01:00
+Review: approve (.ah-out/review/arch-ca-trust-generation/T4.verdict.json)
 Änderung:
 - `enrollment.rs`: Hash von `enroll|ca` wie in T1; `maybe_renew` (`:834`) fragt nach `needs_renewal` die Generation
   über `enrolled_client()` (`:1008`) und erneuert bei Abweichung über `renew` (`:800`). 404 still. Eine prozessweite
@@ -163,3 +165,12 @@ Abhängt von: T1, T2, T3, T4, T5
 - 2026-11-09 Session (T3): `MaybeRenew` gibt statt `bool` den Grund zurück (`NoRenewal`, `HalfLife`, `NewTrust`);
   der Lauf loggt die Erneuerung englisch mit Grund („mTLS client certificate renewed: …“) statt des alten deutschen
   Satzes. Kein Leser des alten Satzes in Skripten oder Doku (grep).
+- 2026-11-09 Session (T4): `maybe_renew` gibt den Grund zurück (`Option<Renewal>`: `HalfLife`, `NewTrust`); geloggt
+  wird englisch über `renewal::renew_if_due`, das die Anmeldung (`auth::login`) und der Stunden-Task teilen.
+  `commands::login` startet den Task, `commands::logout` stoppt ihn; eine gescheiterte Token-Erneuerung beendet ihn
+  über `ensure_signed_in`. Die SPA-Fallback-Regel aus T3 gilt gleich (404 oder 200 ohne `application/json` = keine
+  Generation). Die Antwort wird in Stücken gelesen und bei mehr als 4 KiB abgebrochen. Eine gepinnte Kette, die sich
+  nicht lesen lässt, ist ein Fehler ohne Erneuerung (Warnung), nicht still.
+- 2026-11-09 Session (T4): Der Desktop folgt Weiterleitungen wie jeder `enrolled_client`-Aufruf (reqwest-Standard,
+  dieselbe CA-Pinning- und mTLS-Konfiguration für jedes Ziel) und wertet die letzte Antwort; der Agent wertet 3xx als
+  Fehler. Kein eigener Client nur für diese Abfrage; die Doku (T6) nennt den Unterschied.
