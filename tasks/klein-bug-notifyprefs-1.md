@@ -22,8 +22,10 @@ Dedup-Key: bug:desktop-ui:NotificationPrefs.svelte:save-timezone
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/NotificationPrefs.test.ts
 Doku: keine (Fehlerbehebung ohne dokumentiertes Verhalten)
 
-### T2 — Kritisch-Ton: AudioContext fortsetzen (R-1183)  [ ]
+### T2 — Kritisch-Ton: AudioContext fortsetzen (R-1183)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/sound.ts, apps/desktop/ui/src/lib/sound.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a004cdb66 2026-11-09T13:56:28+01:00
+Review: am Ende (Branch-Review)
 Beweis: review kern-notify-3 2026-11-07, feature/kern-notify-3@b80c1e947, `apps/desktop/ui/src/lib/sound.ts` (`playCriticalTone` ohne `resume`)
 Dedup-Key: bug:desktop-ui:sound.ts:playCriticalTone
 Änderung: Neue Testdatei `sound.test.ts` (SPDX-Header) mit einem `AudioContext`-Stub, der `suspended` startet: rot, solange `resume()` nicht aufgerufen wird. Dann `playCriticalTone`: bei `ctx.state === 'suspended'` `void ctx.resume()` (Fehler verschluckt wie bisher), der Ton wird trotzdem eingeplant.
