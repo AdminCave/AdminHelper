@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ui-desktop-1 — Desktop-UI: Ruhe-Hinweis, Fehler im abgedockten Terminal (R-1185, R-1169) — Task-Ledger
-Status: geplant · Branch: feature/klein-ui-desktop-1 · Review: am Ende
+Status: aktiv · Branch: feature/klein-ui-desktop-1 · Review: am Ende
 Spec: docs/features/klein-ui-desktop-1.md (Roadmap R-1185, R-1169)
 Heavy: none — reine Desktop-UI ohne Stack-, Gateway- oder Install-Pfad; Komponententests decken das sichtbare Verhalten
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
