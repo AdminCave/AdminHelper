@@ -10,7 +10,10 @@
 // session of e2e, the graphics pipeline and the file the typed command made. In between
 // (R-1100): a smaller window gives the session a new resolution without a reconnect, the frame
 // rate before and after goes to the log (IronRDP #447), and a fixed desktop at 1:1 and at 50 %
-// takes a click on the same desktop point to the same coordinate.
+// takes a click on the same desktop point to the same coordinate. Then (R-1101): the tab detaches
+// into a window of its own that shows the picture without a reconnect and docks back into the
+// same session, and multi-monitor either opens the second monitor's window or, with one screen,
+// says so and fits the desktop.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -142,8 +145,156 @@ function mark(name) {
   return existsSync(join(dir, name));
 }
 
+// Detach (R-1101): the tab's own button after it, as for a terminal (SessionTabs.svelte).
+const DETACH_BUTTON = '.session-tab-wrap .session-tab-close:nth-child(2)';
+const RECONNECTING = ['Verbindung unterbrochen – verbinde neu …', 'Connection lost – reconnecting …'];
+const NOTICE = `${RDP} .rdp-foot .rdp-notice`;
+const ONE_SCREEN = ['Nur ein Bildschirm: der Desktop ist eingepasst', 'Only one screen: the desktop is fitted'];
+// The foot's notice of one screen only; the same place also says when a drive is not there.
+const oneScreen = () =>
+  browser.execute(
+    (sel, texts) => [...document.querySelectorAll(sel)].some((el) => texts.includes(el.textContent.trim())),
+    NOTICE,
+    ONE_SCREEN,
+  );
+
+// The texts of every overlay a window shows from here on: a reconnect would show there. The
+// commands cannot be watched: Tauri defines `__TAURI_INTERNALS__.invoke` read-only.
+async function watchOverlays() {
+  await browser.execute((rdp) => {
+    const seen = [];
+    window.__rdpOverlays = seen;
+    const note = () => {
+      for (const el of document.querySelectorAll(`${rdp} .rdp-overlay`)) seen.push(el.textContent);
+    };
+    note();
+    new MutationObserver(note).observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }, RDP);
+}
+
+const reconnects = async () =>
+  (await browser.execute(() => window.__rdpOverlays)).filter((t) => RECONNECTING.some((r) => t.includes(r)));
+
+const showsPicture = () =>
+  browser.execute((sel) => {
+    const canvas = document.querySelector(sel);
+    return canvas !== null && !canvas.classList.contains('hidden') && canvas.width > 300 && canvas.height > 150;
+  }, CANVAS);
+
+// The dock button in the head of a detached window; the head's other text button is Ctrl+Alt+Del.
+async function dockButton() {
+  for (const button of await $$(`${RDP} .rdp-head .ui-btn`)) {
+    if (['Andocken', 'Dock'].includes((await button.getText()).trim())) return button;
+  }
+  throw new Error('the detached window shows no Dock button');
+}
+
+// Detaches the tab and returns the session its window shows, after the picture came without a
+// reconnect; then docks it back into the tab, which shows the picture again without one.
+async function detachOnce(main) {
+  await watchOverlays();
+  await jsClick(await $(DETACH_BUTTON));
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 2, {
+    timeout: 15000,
+    timeoutMsg: 'no window opened for the detached RDP session',
+  });
+  await browser.switchToWindow((await browser.getWindowHandles()).find((w) => w !== main));
+  const route = /#\/detached-rdp\/(rdp-[0-9]+)$/.exec(await browser.getUrl());
+  expect(route).not.toBeNull();
+  await $(CANVAS).waitForExist({ timeout: 15000 });
+  await watchOverlays();
+  await browser.waitUntil(showsPicture, {
+    timeout: 20000,
+    timeoutMsg: 'the detached window never showed the picture of the session',
+  });
+  await browser.pause(2000);
+  expect(await reconnects()).toEqual([]);
+
+  await jsClick(await dockButton());
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 1, {
+    timeout: 15000,
+    timeoutMsg: 'the window of the detached RDP session stayed after Dock',
+  });
+  await browser.switchToWindow(main);
+  await browser.waitUntil(showsPicture, {
+    timeout: 20000,
+    timeoutMsg: 'the tab never showed the picture again after Dock',
+  });
+  await browser.pause(2000);
+  expect(await reconnects()).toEqual([]);
+  return route[1];
+}
+
+// Detach and dock twice: the second window shows the same session id. The backend counts the ids
+// up with every session it starts, so a new session at Dock would show the next one.
+async function detachAndDock() {
+  const main = await browser.getWindowHandle();
+  const first = await detachOnce(main);
+  const second = await detachOnce(main);
+  expect(second).toBe(first);
+
+  await jsClick(await $(`${RDP} .rdp-head button:is([aria-label="Verbindungsinfo"], [aria-label="Connection info"])`));
+  const info = await $('.modal-panel .rdp-info');
+  await info.waitForExist({
+    timeout: 10000,
+    timeoutMsg: 'the connection info of the docked session never showed',
+  });
+  expect(await info.getText()).not.toBe('');
+  await browser.keys('Escape');
+  await info.waitForExist({ reverse: true, timeout: 5000 });
+  console.log(`[rdp-embedded] detached and docked ${first} twice without a new session`);
+}
+
+// Multi-monitor: with two screens the session's second monitor opens in a window of its own and
+// shows its part of the desktop; with one the tab says so and fits the desktop. The VM has one
+// screen as far as is known, so only the second path runs there (not verified with two).
+async function acrossMonitors() {
+  const main = await browser.getWindowHandle();
+  await chooseWindowMode('multimon');
+  let path = '';
+  await browser.waitUntil(
+    async () => {
+      if ((await browser.getWindowHandles()).length === 2) path = 'two';
+      else if (await oneScreen()) path = 'one';
+      return path !== '';
+    },
+    {
+      timeout: 20000,
+      interval: 250,
+      timeoutMsg: 'multi-monitor neither opened a second window nor said there is one screen',
+    },
+  );
+  if (path === 'one') {
+    expect(await showsPicture()).toBe(true);
+    console.log('[rdp-embedded] multi-monitor: one screen, the notice path');
+  } else {
+    await browser.switchToWindow((await browser.getWindowHandles()).find((w) => w !== main));
+    expect(await browser.getUrl()).toMatch(/#\/detached-rdp\/rdp-[0-9]+\/1$/);
+    await browser.waitUntil(showsPicture, {
+      timeout: 20000,
+      timeoutMsg: 'the window of the second monitor never showed its picture',
+    });
+    await browser.switchToWindow(main);
+    console.log('[rdp-embedded] multi-monitor: two screens, the second window showed its part');
+  }
+  // Back to one screen: the second window goes.
+  await chooseWindowMode('fit');
+  await browser.waitUntil(async () => (await browser.getWindowHandles()).length === 1, {
+    timeout: 15000,
+    timeoutMsg: 'the window of the second monitor stayed after Fit',
+  });
+  await browser.waitUntil(showsPicture, {
+    timeout: 20000,
+    timeoutMsg: 'the tab lost its picture after Fit',
+  });
+}
+
 describe('RDP in a tab of AdminHelper (R-1098)', () => {
-  it('shows the remote desktop, sends keys to it, follows the window, zooms and disconnects', async () => {
+  it('shows the remote desktop, sends keys to it, follows the window, zooms, detaches, spans the monitors and disconnects', async () => {
     await login();
     await chooseAdminHelperForRdp();
 
@@ -248,6 +399,9 @@ describe('RDP in a tab of AdminHelper (R-1098)', () => {
       expect(Math.abs(at.y - 300)).toBeLessThanOrEqual(1);
     }
     expect((await seen()).overlay).toBe(false);
+
+    await detachAndDock();
+    await acrossMonitors();
 
     await jsClick(await $(DISCONNECT));
     await browser.waitUntil(

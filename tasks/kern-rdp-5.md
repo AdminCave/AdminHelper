@@ -5,8 +5,10 @@ Heavy: linux-full — Desktop-Journeys: die Live-Spec Abdocken/Multi-Monitor geg
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1101: Live-Spec Abdocken und Multi-Monitor  [ ]
+### T1 — R-1101: Live-Spec Abdocken und Multi-Monitor  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/rdp-embedded.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @7da1335e1 2026-11-09T06:00:09+01:00
+Review: approve (.ah-out/review/kern-rdp-5/T1.verdict.json)
 Änderung: Den Patch aus kern-rdp-4 T11 anwenden (tasks/private/carry/kern-rdp-5-T11-rdp-embedded-spec.patch): gegen den xrdp-Container zeigt Abdocken das Bild im neuen Fenster ohne `reconnecting`, Andocken holt es zurück, die Sitzung ist dieselbe; Multi-Monitor nur, wenn der Webdriver-Treiber zwei Bildschirme sieht, sonst der Hinweis-Pfad. Dritte Prüfrunde mit frischem Prüfer (Kevin 2026-11-09), höchstens zwei Runden in diesem Zug.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Abdocken und Multi-Monitor dokumentiert mit kern-rdp-4)
