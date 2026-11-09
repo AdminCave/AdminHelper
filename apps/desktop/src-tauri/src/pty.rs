@@ -125,7 +125,9 @@ struct Session {
     /// then does the reader get its end.
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     /// Gone once the program was waited for, so no signal goes to a process id the system may
-    /// have handed on.
+    /// have handed on. A small window stays: `wait()` has reaped the id before the wait thread
+    /// takes the killer, and a `close()` in that gap can still signal it. Closing the gap needs
+    /// the kill and the wait under one lock, which a blocking `wait()` rules out.
     killer: Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>,
 }
 
