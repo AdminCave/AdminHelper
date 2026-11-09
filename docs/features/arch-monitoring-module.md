@@ -152,6 +152,10 @@ Monitoring-Dienst prüft den Agent-Key wie bei `/report` (`apps/monitoring/app/r
 - `self.collectors[name].throttled`: dieser Collector lief in diesem Lauf nicht (Selbstbremse). Der Monitoring-Dienst
   wertet dann die Push-Checks, die von ihm leben (`docker_health` ← `docker`, `proxmox_backup` ← `proxmox`,
   `zfs_health` ← `zfs`, `smart_health` ← `smart`), in diesem Report nicht aus und behält ihren Zustand.
+- `self.collectors.probes`: die Proben-Phase läuft immer (nie `throttled`); ihre Zeitlimit-Treffer sind die fälligen
+  Proben, für die der Lauf keine Zeit mehr ließ. Ihr `factor` streckt stattdessen das Intervall jeder Probe auf
+  `interval_s × factor`. Der Monitoring-Dienst nimmt ihn (aus demselben Report, auf 1…8 begrenzt, ohne Block 1) in
+  die Frische einer Probe: veraltet erst ab `2 × interval_s × factor + 300 s`.
 
 ### Monitoring-API (Admin, über den Server-Proxy)
 
