@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-desktop-1 — flaky PTY-Tests (R-1177, R-1182) — Task-Ledger
-Status: geplant · Branch: feature/klein-tests-desktop-1 · Review: am Ende
+Status: aktiv · Branch: feature/klein-tests-desktop-1 · Review: am Ende
 Spec: docs/features/klein-tests-desktop-1.md (Roadmap R-1177, R-1182)
 Heavy: windows — `rust-windows` (`cargo test --locked`) ist der CI-Job, der R-1177 zeigt; die PR-CI fährt ihn, lokal ist nur Linux verifizierbar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
