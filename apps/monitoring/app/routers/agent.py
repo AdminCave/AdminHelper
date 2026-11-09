@@ -242,6 +242,10 @@ def _evaluate_push_check(
     nothing of a check is returned before its block has ended."""
     with db.begin_nested():
         config = json.loads(check.config) if check.config else {}
+        if check.check_type == "probe":
+            # A probe's result sits under its check id in the report; the config, stored
+            # as written, cannot carry the id of its own row.
+            config["_check_id"] = check.id
 
         # Reuse the checker registry instead of a hand-written if/elif that
         # duplicated the push-checker list across imports, the in_-filter and

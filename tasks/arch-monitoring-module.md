@@ -33,8 +33,10 @@ Review: approve (.ah-out/review/arch-monitoring-module/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_tables.py tests/test_migrations_smoke.py tests/test_alembic_builtin.py tests/test_models_timestamps.py
 Doku: → T15
 
-### T3 — Monitoring: Check-Typ `probe` mit generischer Bewertung (R-1223)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/check_types.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/checkers/probe.py, apps/monitoring/app/checkers/__init__.py, apps/monitoring/tests/test_probe_checker.py, apps/monitoring/tests/test_check_configs.py, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/api/types.ts
+### T3 — Monitoring: Check-Typ `probe` mit generischer Bewertung (R-1223)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_types.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/checkers/probe.py, apps/monitoring/app/checkers/__init__.py, apps/monitoring/tests/test_probe_checker.py, apps/monitoring/tests/test_check_configs.py, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/api/types.ts, apps/monitoring/app/routers/checks.py, apps/monitoring/app/routers/agent.py
+Evidenz: run.sh[quick] monitoring desktop-ui: 5 passed, 0 failed, 13 skipped @2fffecea3 2026-11-09T17:30:27+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T3.verdict.json)
 Änderung: Neuer push-ausgewerteter Check-Typ `probe` (Config: Fühler, Ziel, Parameter, Felder, Regeln, Takt, Zugang, Testobjekt; Parameter über das Fühler-Modell aus T1). Der Checker liest `report["probes"][<check-id>]`: Status des Agents (`denied`, `not_allowed`, `unsupported`, `ambiguous_target`, `invalid`, `no_credential` → unknown bzw. warning mit verständlicher Meldung), Frische (`ts` älter als zwei Takte plus Lauf → unknown), dann die Regeln (schlimmste Stufe gewinnt; `delta_gt` gegen die Vorgänger-Details). Registriert in `CHECK_TYPES`, `_REGISTRY`, `CONFIG_MODELS` und `CHECK_TYPE_METRICS`; die Desktop-Liste `PUSH_ONLY_CHECK_TYPES` und die Union `MonitorCheckType` bekommen `probe` (`test_push_only_ui_sync.py`, `test_check_type_parity.py`). Acht Dateien über zwei Komponenten: die Paritätstests verlangen die Desktop-Listen im selben Commit.
 Verify: bash scripts/dev/verify.sh monitoring desktop-ui --strict
 Doku: → T15
@@ -128,3 +130,8 @@ Abhängt von: T14
 - 2026-11-09 T1: Das Modul `port` prüft mit `proto` und `protocol: auto` (der Agent erkennt das Protokoll wie seine Erkennung und meldet es in `detail`) — ein Fund trägt das erkannte Protokoll, ohne Platzhalter in Katalog-Parametern bleibt jede Prüfung im eigenen Protokoll.
 - 2026-11-09 T1: Ungültige Module lässt der Lader aus und nennt sie in `Catalog.errors`; `test_catalog.py` verlangt `errors == ()` — die Spec will den Test rot, nicht den Dienst.
 - 2026-11-09 T1: Ein Katalog-Check trägt `timeout_s` (Standard 10, 1–30 s), Marker-IDs beginnen mit `<modul-id>.` — der Plan braucht ein Timeout je Probe, und Marker-IDs sind im Plan global.
+- 2026-11-09 T3: Die Check-ID kommt als `config["_check_id"]` an den Probe-Checker; `_evaluate_push_check` setzt sie aus der Zeile, `ProbeConfig` (extra forbid) nimmt sie an der API nicht an — `test_check_type_parity` legt die Signatur `evaluate(config, report, prev_details)` fest.
+- 2026-11-09 T3: `ProbeConfig` prüft über das Katalog-Modell `Check` (Fühler, Ziel, Parameter, Felder, Regeln, Takt, Testobjekt, `credential.use`) — eine Regelquelle für Katalog und Check; eigen sind nur `target.name`, `credential.ref` (Segmente ohne führenden Punkt) und die strikten Zahlen.
+- 2026-11-09 T3: `max_age` liest den Feldwert als Unix-Sekunden und misst gegen das `ts` der Probe (Vertrag für die Fühler T11–T13); Frische und Alter rechnen mit der Agent-Uhr (`timestamp` des Reports), nur ohne gültige Angabe mit der Server-Uhr.
+- 2026-11-09 T3: `delta_gt` vergleicht mit dem vorigen gemessenen Lauf (`measured_ts`, `values`, `baseline` in den Details); derselbe Lauf im nächsten Report behält seine Basis, ein fallender Zähler ist kein Anstieg.
+- 2026-11-09 T3: Keine Metrik-Historie der Probe-Werte (`CHECK_TYPE_METRICS["probe"] = []`, Werte nur in den Details) — Kennzahlen-Verläufe entscheidet `arch-monitoring-ui`.

@@ -223,7 +223,8 @@ export type MonitorCheckType =
   | 'docker_health'
   | 'smart_health'
   | 'disk_forecast'
-  | 'system_state';
+  | 'system_state'
+  | 'probe';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';

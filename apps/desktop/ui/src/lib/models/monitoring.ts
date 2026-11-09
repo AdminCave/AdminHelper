@@ -182,6 +182,7 @@ const PUSH_ONLY_CHECK_TYPES = [
   'docker_health',
   'smart_health',
   'system_state',
+  'probe',
 ];
 
 export function isPushOnlyCheck(checkType: MonitorCheckType | string): boolean {
