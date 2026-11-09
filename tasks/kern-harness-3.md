@@ -16,8 +16,10 @@ HEAD: 001151564
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html (Zeile `--step`)
 
-### T2 — R-1206: heavy.sh stuft einen nicht ansprechbaren Schritt nicht als rot ein  [ ]
+### T2 — R-1206: heavy.sh stuft einen nicht ansprechbaren Schritt nicht als rot ein  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5ed86de93 2026-11-09T17:25:36+01:00
+Review: am Ende (Branch-Review)
 Änderung: Endet ein Retry (`classify_red_step`) mit `ambiguous step`/`unknown step` im Log, ist der Schritt `infra` (Detail „step not addressable“), ohne weitere Retries; endet ein Lauf der Zweit-VM (`second_vm_check`, HEAD oder Basis) so, bleibt der Kandidat `unbestaetigt`, nie `extern` oder `reg`. Tests in heavy_test mit gestubbtem iter.sh für Retry, HEAD-Lauf und Basis-Lauf.
 Beweis: main@d5092bc55 · weekly 2026-11-09 `.ah-out/weekly/2026-11-09-0959/retry-desktop_e2e_connect-1.log` (`ambiguous step`), Report-Zeile `desktop_e2e_connect | extern`
 Dedup-Key: bug:scripts:scripts/tests/heavy.sh:retry_step

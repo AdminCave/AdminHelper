@@ -187,7 +187,12 @@ cat > "$FIX/scripts/vm/iter.sh" <<'SHIM'
 n=$(cat "$SHIM_STATE/w2.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$SHIM_STATE/w2.n"
 printf 'call %s: AH_LANE=%s AH_SPEC=%s ARGS=%s\n' "$n" "${AH_LANE:-unset}" "${AH_SPEC:-unset}" "$*" >> "$SHIM_STATE/w2.args"
 # Call 1 runs on HEAD, call 2 on the base commit (heavy.sh checks it out between).
-[ "$n" = 1 ] && exit "${SHIM_W2_HEAD_RC:-1}"
+# SHIM_W2_HEAD_OUT/SHIM_W2_BASE_OUT is what the run prints, e.g. run.sh's refusal.
+if [ "$n" = 1 ]; then
+  [ -z "${SHIM_W2_HEAD_OUT:-}" ] || printf '%s\n' "$SHIM_W2_HEAD_OUT"
+  exit "${SHIM_W2_HEAD_RC:-1}"
+fi
+[ -z "${SHIM_W2_BASE_OUT:-}" ] || printf '%s\n' "$SHIM_W2_BASE_OUT"
 exit "${SHIM_W2_BASE_RC:-1}"
 SHIM
 cat > "$FIX/scripts/vm/warm.sh" <<'SHIM'
@@ -252,6 +257,7 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
   export SHIM_WARM_RC=0 SHIM_ITER_RC=0 SHIM_MB_RC=0 SHIM_REAP_RC=0
   export SHIM_WARM_RC_GUI=0 SHIM_ITER_RC_GUI=0
   export SHIM_W2_WARM_RC=0 SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+  unset SHIM_W2_HEAD_OUT SHIM_W2_BASE_OUT
   export SHIM_AUDIT_JSON='[{"conclusion": "success", "created_at": "2026-09-09T03:00:00Z"}]'
   export SHIM_NOTIFY_RC=0
   unset AH_NOTIFY_URL
@@ -607,6 +613,49 @@ out=$(bash "$HEAVY" all --base "$BASE_SHA" 2>&1); rc=$?
 history_of | grep -q ',all,web vitest,reg,' \
   && ok "--base picks the comparison commit explicitly" \
   || bad "rows: $(history_of)"
+
+# ── 4g2: a rerun run.sh refuses by name is no evidence (R-1206) ───────────────
+# The weekly run of 2026-11-09 retried desktop_e2e_connect with --step, run.sh
+# rejected the name as ambiguous (exit 2) each time, and the step ended `extern`
+# although neither the retries nor the counter-check had run.
+mk_case
+export SHIM_ITER_SEQ="1 2"
+export SHIM_ITER_OUT1="  FAIL  web vitest
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+export SHIM_ITER_OUT2="ambiguous step: 'web vitest' matches 2 steps:
+  web vitest
+  web vitest (live)"
+artifact "web vitest:fail:19"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a retry run.sh refuses by name -> exit 74" || bad "unaddressable retry -> rc=$rc"
+history_of | grep -q ',all,web vitest,infra,' \
+  && ok "a red step whose retry could not run -> infra" || bad "rows: $(history_of)"
+[ "$(cat "$SHIM_STATE/iter.n")" = 2 ] \
+  && ok "no further retries after run.sh refused the name" || bad "$(cat "$SHIM_STATE/iter.n") iter calls"
+[ -f "$SHIM_STATE/w2.n" ] && bad "an unaddressable step still went to the second VM" || ok "no second VM for it"
+report_of | head -1 | grep -q '^UNVERIFIED (red step(s) could not be retried (not addressable by --step): web vitest' \
+  && ok "the verdict names the step that could not be retried" || bad "verdict: $(report_of | head -1)"
+
+# The same refusal on the second box, on HEAD and on the base commit (whose
+# older run.sh keeps rejecting the name): unbestaetigt, never extern or reg.
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=2 SHIM_W2_HEAD_OUT="unknown step: 'web vitest' (no step of layer 'all' matches)"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' \
+  && ok "the second box refused the name on HEAD -> unbestaetigt" || bad "rows: $(history_of)"
+[ "$(cat "$SHIM_STATE/w2.n")" = 1 ] \
+  && ok "no counter-check after HEAD was not addressable" || bad "$(cat "$SHIM_STATE/w2.n") w2 runs"
+
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=2
+export SHIM_W2_BASE_OUT="ambiguous step: 'web vitest' matches 2 steps:"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' \
+  && ok "the base refused the name -> unbestaetigt, not extern" || bad "rows: $(history_of)"
+report_of | grep -qF 'step not addressable by --step on base' \
+  && ok "the report says the counter-check could not run" || bad "table: $(report_of | grep '^| all')"
 
 # ── 4h: a confirmed regression becomes a roadmap row + a short ledger ────────
 roadmap_of() { cat "$AH_PRIVATE_DIR/ROADMAP.md" 2>/dev/null; }
