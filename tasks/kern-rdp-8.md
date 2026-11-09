@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/kern-rdp-8/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
 
-### T3 — R-1145: Die App schreibt keine TLS-Sitzungsschlüssel  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/main.rs
+### T3 — R-1145: Die App schreibt keine TLS-Sitzungsschlüssel  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/rdp_embedded/tofu.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5ceebc546 2026-11-09T14:59:15+01:00
+Review: approve (.ah-out/review/kern-rdp-8/T3.verdict.json)
 Änderung: `main` nimmt `SSLKEYLOGFILE` vor dem ersten Thread aus der Umgebung (eigene Funktion, Test: gesetzt → danach nicht gesetzt).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
