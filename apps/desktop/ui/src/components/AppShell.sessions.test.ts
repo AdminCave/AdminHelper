@@ -7,7 +7,8 @@
 // front, the sidebar and a route change bring the page back, the header names the session in
 // front, closing a running session asks when the options say so, and Ctrl+K stays with the shell
 // inside a terminal. A detached session keeps its tab but leaves its pane (R-1070); docked, it gets a
-// new terminal. The real store of the sessions runs on a mocked bridge and a fake xterm.
+// new terminal (R-1070). The tabs of the last run come back, and the open ones are kept, only in the
+// main window and not for a playbook run (R-1168). The real store of the sessions runs on a mocked bridge and a fake xterm.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
@@ -63,6 +64,7 @@ const h = vi.hoisted(() => {
     FakeTerminal,
     channels: [] as ((message: TerminalMessage) => void)[],
     terminalOpenSsh: vi.fn(),
+    terminalOpenAnsible: vi.fn(),
     terminalClose: vi.fn(async () => {}),
     terminalAttach: vi.fn(),
     terminalDetach: vi.fn(async () => {}),
@@ -82,6 +84,7 @@ vi.mock('$lib/bridge', () => ({
   workspaceContext: vi.fn(async () => ({ launcher: true, workspace: null })),
   openLauncher: vi.fn(async () => {}),
   terminalOpenSsh: h.terminalOpenSsh,
+  terminalOpenAnsible: h.terminalOpenAnsible,
   terminalClose: h.terminalClose,
   terminalCloseAll: vi.fn(async () => {}),
   terminalWrite: vi.fn(async () => {}),
@@ -157,13 +160,19 @@ vi.mock('./StatusFooter.svelte', () => ({ default: vi.fn() }));
 vi.mock('./TunnelIndicator.svelte', () => ({ default: vi.fn() }));
 vi.mock('./NotificationBell.svelte', () => ({ default: vi.fn() }));
 
-import { settings } from '$lib/stores/session';
+import { settings, setOpenSessions } from '$lib/stores/session';
+import { connectionsStore } from '$lib/stores/connections';
+import { initiateConnect } from '$lib/stores/connectFlow';
 import { replace } from '$lib/router';
-import { closeAllTerminals, openTerminal } from '$lib/stores/terminals';
+import { closeAllTerminals, openAnsible, openTerminal } from '$lib/stores/terminals';
 import AppShell from './AppShell.svelte';
 import Dashboard from '../pages/Dashboard.svelte';
 
 const settingsState = settings as unknown as Writable<Settings | null>;
+const connectionList = connectionsStore as unknown as Writable<{
+  items: Connection[];
+  loading: boolean;
+}>;
 
 function conn(name: string): Connection {
   return { id: name, name, kind: 'ssh', host: `${name}.example` } as Connection;
@@ -217,6 +226,7 @@ beforeEach(async () => {
   h.terminalAttach.mockImplementation(async (_id: number, onMessage) => {
     h.channels.push(onMessage);
   });
+  connectionList.set({ items: [], loading: false });
   replace('/connections');
   withPrefs(true);
   await closeAllTerminals();
@@ -407,5 +417,88 @@ describe('AppShell: sessions of the embedded terminal', () => {
     expect(tab(/db/).getAttribute('aria-selected')).toBe('true');
     expect(tab(/db/).getAttribute('title')).toBeNull();
     expect(title()).toBe('db');
+  });
+});
+
+describe('AppShell: the tabs of the last run (R-1168)', () => {
+  function withRestore(restoreSessions: boolean, openSessions: string[]): void {
+    settingsState.set({ ...getSettingsDefaults(), restoreSessions, openSessions });
+  }
+
+  it('opens the saved SSH tabs once as embedded terminals, skipping what is gone or not SSH', async () => {
+    const rdp = { id: 'win', name: 'win', kind: 'rdp', host: 'win.example' } as Connection;
+    connectionList.set({ items: [WEB, DB, rdp], loading: false });
+    withRestore(true, ['db', 'gone', 'win', 'web', 'db']);
+
+    render(AppShell);
+
+    await waitFor(() => expect(initiateConnect).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(initiateConnect).mock.calls).toEqual([
+      [DB, false, 'embedded'],
+      [WEB, false, 'embedded'],
+    ]);
+  });
+
+  it('opens nothing while the option is off', async () => {
+    connectionList.set({ items: [WEB], loading: false });
+    withRestore(false, ['web']);
+
+    render(AppShell);
+    await tick();
+    await tick();
+
+    expect(initiateConnect).not.toHaveBeenCalled();
+  });
+
+  it('waits for the connection list before it opens anything', async () => {
+    withRestore(true, ['web']);
+    connectionList.set({ items: [], loading: true });
+
+    render(AppShell);
+    await tick();
+    expect(initiateConnect).not.toHaveBeenCalled();
+
+    connectionList.set({ items: [WEB], loading: false });
+    await waitFor(() =>
+      expect(initiateConnect).toHaveBeenCalledExactlyOnceWith(WEB, false, 'embedded'),
+    );
+  });
+
+  it('saves the ids of the open SSH tabs on every change and stops with the shell', async () => {
+    connectionList.set({ items: [WEB, DB], loading: false });
+    withRestore(false, []);
+
+    const view = render(AppShell);
+    await open(WEB);
+    await waitFor(() => expect(setOpenSessions).toHaveBeenLastCalledWith(['web']));
+    await open(DB);
+    await waitFor(() => expect(setOpenSessions).toHaveBeenLastCalledWith(['web', 'db']));
+
+    view.unmount();
+    vi.mocked(setOpenSessions).mockClear();
+    await closeAllTerminals();
+    await tick();
+    expect(setOpenSessions).not.toHaveBeenCalled();
+  });
+
+  it('shows a playbook run as a tab with the playbook name and does not keep it', async () => {
+    connectionList.set({ items: [WEB], loading: false });
+    withRestore(false, []);
+    h.terminalOpenAnsible.mockImplementation(async (_p, _t, _c, _cols, _rows, onMessage) => {
+      h.channels.push(onMessage);
+      return 7;
+    });
+
+    render(AppShell);
+    await open(WEB);
+    await waitFor(() => expect(setOpenSessions).toHaveBeenLastCalledWith(['web']));
+    vi.mocked(setOpenSessions).mockClear();
+
+    await openAnsible('pb1', 'apt-upgrade', [], true);
+    await waitFor(() => expect(tab(/apt-upgrade/).getAttribute('aria-selected')).toBe('true'));
+    // The terminal header names the playbook with its dry run, not a host.
+    expect(screen.getByText('apt-upgrade --check')).toBeTruthy();
+    await tick();
+    expect(setOpenSessions).not.toHaveBeenCalled();
   });
 });
