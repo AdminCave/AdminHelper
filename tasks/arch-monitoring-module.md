@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
