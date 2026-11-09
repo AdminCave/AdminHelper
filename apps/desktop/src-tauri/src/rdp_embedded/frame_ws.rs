@@ -11,7 +11,7 @@
 //! screen: screen 0 shows the desktop, or its first monitor once the webview asked for two
 //! (`{"t":"layout",…}`), screen 1 the second monitor. One client streams per screen: a new login
 //! takes over from the one before on its screen and gets its whole picture first, and a client
-//! that goes away leaves the session running. Pictures go out one at a time, the next
+//! that goes away leaves the session running, for 60 s while no screen has a client. Pictures go out one at a time, the next
 //! after the client's `{"t":"ack"}`; whatever changes in between is merged into one enclosing
 //! rectangle, so no backlog builds up behind a slow webview. Once a second, while there is a
 //! picture, a text message `{"t":"stats",…}` tells how many pictures went out and what the
@@ -49,6 +49,10 @@ const FRAME_VERSION: u16 = 1;
 /// Version, x, y, width, height, desktop width, desktop height: seven u16, little-endian.
 const HEADER_LEN: usize = 14;
 const STATS_EVERY: Duration = Duration::from_secs(1);
+/// How long a session lives on while no client streams any screen. A view that goes away without
+/// stopping its session (a reload, a lost window) must not leave it logged in where nothing shows
+/// it; a docked-out window hands over within seconds.
+const NO_CLIENT_DEADLINE: Duration = Duration::from_secs(60);
 /// The desktop as one picture, or its two monitors as two (R-1101).
 pub(crate) const SCREENS: usize = 2;
 
@@ -187,6 +191,7 @@ pub(crate) struct FrameServer {
     listener: std::net::TcpListener,
     tokens: Tokens,
     login_deadline: Duration,
+    no_client_deadline: Duration,
     stats_every: Duration,
 }
 
@@ -199,6 +204,7 @@ impl FrameServer {
             listener,
             tokens: Tokens::new()?,
             login_deadline: LOGIN_DEADLINE,
+            no_client_deadline: NO_CLIENT_DEADLINE,
             stats_every: STATS_EVERY,
         })
     }
@@ -218,8 +224,8 @@ impl FrameServer {
     }
 
     /// Streams `frames` to the client of each screen that logged in last and passes its input on,
-    /// until a client sends `close` or the session takes no more input. Must run inside a tokio
-    /// runtime.
+    /// until a client sends `close`, no client streams for `no_client_deadline` or the session
+    /// takes no more input. Must run inside a tokio runtime.
     pub(crate) async fn serve(self, frames: Frames, input: mpsc::Sender<Input>) -> io::Result<()> {
         let listener = TcpListener::from_std(self.listener)?;
         // A wrong token, or none in time, closes only that connection, and logins do not wait for
@@ -227,7 +233,13 @@ impl FrameServer {
         let mut pending = JoinSet::new();
         // At most one per screen: the client that streams it.
         let mut clients: [JoinSet<Ended>; SCREENS] = Default::default();
+        let mut alone_until = None;
         loop {
+            if clients.iter().all(JoinSet::is_empty) {
+                alone_until.get_or_insert_with(|| Instant::now() + self.no_client_deadline);
+            } else {
+                alone_until = None;
+            }
             tokio::select! {
                 accepted = listener.accept(), if pending.len() < MAX_PENDING_LOGINS => {
                     // The listener lives as long as the session: a connection reset before
@@ -259,6 +271,8 @@ impl FrameServer {
                         return Ok(());
                     }
                 }
+                () = tokio::time::sleep_until(alone_until.unwrap_or_else(Instant::now)),
+                    if alone_until.is_some() => return Ok(()),
             }
         }
     }
@@ -788,9 +802,18 @@ mod tests {
     }
 
     fn start_with(login_deadline: Duration, stats_every: Duration) -> Running {
+        start_alone(login_deadline, stats_every, NO_CLIENT_DEADLINE)
+    }
+
+    fn start_alone(
+        login_deadline: Duration,
+        stats_every: Duration,
+        no_client_deadline: Duration,
+    ) -> Running {
         let mut server = FrameServer::bind().unwrap();
         server.login_deadline = login_deadline;
         server.stats_every = stats_every;
+        server.no_client_deadline = no_client_deadline;
         let (port, token, tokens) = (server.port().unwrap(), server.token(), server.tokens());
         let frames = Frames::default();
         let (sender, input) = mpsc::channel(16);
@@ -859,6 +882,7 @@ mod tests {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
         assert_ne!(server.token(), FrameServer::bind().unwrap().token());
         assert_eq!(server.login_deadline, Duration::from_secs(5));
+        assert_eq!(server.no_client_deadline, Duration::from_secs(60));
     }
 
     #[test]
@@ -978,6 +1002,57 @@ mod tests {
         assert_eq!(
             timeout(WAIT, running.input.recv()).await.unwrap(),
             Some(Input::CtrlAltDel)
+        );
+    }
+
+    #[tokio::test]
+    async fn frame_ws_a_session_without_a_client_ends_after_the_deadline() {
+        let mut running = start_alone(
+            LOGIN_DEADLINE,
+            Duration::from_secs(3600),
+            Duration::from_millis(200),
+        );
+        let served = timeout(WAIT, &mut running.task).await;
+        assert!(
+            matches!(served, Ok(Ok(Ok(())))),
+            "the server did not end alone: {served:?}"
+        );
+        // Its end closes the input, which ends the session like a close.
+        assert_eq!(timeout(WAIT, running.input.recv()).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn frame_ws_a_client_that_comes_back_in_time_keeps_the_session() {
+        // Long enough for a login on a slow runner; the test holds the session past it below.
+        let alone = Duration::from_secs(2);
+        let mut running = start_alone(LOGIN_DEADLINE, Duration::from_secs(3600), alone);
+        running.frames.apply(update(4, 3, (0, 0, 3, 2), 0x00102030));
+        let mut ws = logged_in(&running).await;
+        next_frame(&mut ws).await;
+        ws.close(None).await.unwrap();
+        drop(ws);
+        tokio::time::sleep(alone / 10).await;
+
+        let token = running.tokens.renew(0).unwrap();
+        let mut back = with_token(&running, &token).await;
+        next_frame(&mut back).await;
+        // A client that streams holds the session past the deadline.
+        tokio::time::sleep(alone + alone / 2).await;
+        assert!(
+            !running.task.is_finished(),
+            "the server ended while a client streamed"
+        );
+        running.frames.apply(update(4, 3, (1, 1, 1, 1), 0x00abcdef));
+        ack(&mut back).await;
+        assert_eq!(header(&next_frame(&mut back).await), [1, 1, 1, 1, 1, 4, 3]);
+
+        // Gone again, it ends after the deadline.
+        back.close(None).await.unwrap();
+        drop(back);
+        let served = timeout(WAIT, &mut running.task).await;
+        assert!(
+            matches!(served, Ok(Ok(Ok(())))),
+            "the server did not end alone: {served:?}"
         );
     }
 

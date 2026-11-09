@@ -14,9 +14,11 @@
 //! confirmed. The pin is read before the connection starts, on a thread that may wait for the
 //! keyring; the callback runs inside the TLS handshake and only compares values.
 //!
-//! Outside the callback's reach: IronRDP accepts the certificate a redirecting server reports for
-//! the target of its redirection without asking it, and IronRDP's rustls configuration writes the
-//! TLS session keys to the file `SSLKEYLOGFILE` names, if that variable is set.
+//! Outside the callback's reach, and closed elsewhere: IronRDP would accept the certificate a
+//! redirecting server reports for the target of its redirection without asking it, but the
+//! session refuses redirections (`session.rs`, `with_refuse_server_redirection`); IronRDP's rustls
+//! configuration writes the TLS session keys to the file `SSLKEYLOGFILE` names, but `main` removes
+//! that variable before the app starts a thread.
 
 use std::sync::{Arc, Mutex};
 
@@ -160,8 +162,8 @@ fn check(policy: &CertPolicy, endpoint: &str, presented: &str) -> Result<(), Opt
         return Ok(());
     };
     if endpoint != expected {
-        // IronRDP follows a server redirection by itself and asks again for the new target; the
-        // pin and a confirmation belong to the target the session was started for.
+        // The session refuses server redirections; should another endpoint come anyway, the pin
+        // and a confirmation belong to the target the session was started for.
         return Err(None);
     }
     let reason = match decide(pin.as_deref(), presented) {

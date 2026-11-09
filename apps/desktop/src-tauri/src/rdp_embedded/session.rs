@@ -431,9 +431,9 @@ impl Machine {
                 self.flow(Report::Reconnecting)
             }
             RdpOutputEvent::ServerRedirected { target } => {
-                // IronRDP connects to the new target in the same task. Ending here drops that
-                // attempt at its next await, which comes before TLS and the credentials; the pin
-                // callback would refuse a later handshake with another endpoint as well.
+                // The configuration refuses redirections, so IronRDP ends before this event. Should
+                // it come anyway, ending here drops the attempt at its next await, before TLS and
+                // the credentials; the pin callback would refuse another endpoint as well.
                 log::warn!(
                     "the RDP server redirected the session to {target:?}; embedded sessions do \
                      not follow redirects"
@@ -609,6 +609,9 @@ fn logon_fails(kind: LogonErrorNotificationType) -> bool {
 }
 
 fn failure(error: &ConnectorError) -> Code {
+    if ironrdp_client::is_refused_server_redirection(error) {
+        return Code::Redirect;
+    }
     match error.kind() {
         ConnectorErrorKind::Credssp(_)
         | ConnectorErrorKind::AccessDenied
@@ -629,6 +632,12 @@ fn terminated(result: SessionResult<GracefulDisconnectReason>) -> Report {
         Ok(reason) => {
             log::info!("the RDP server ended the session: {reason}");
             Report::Disconnected(Code::Server)
+        }
+        Err(error) if ironrdp_client::is_refused_server_redirection(&error) => {
+            log::warn!(
+                "the RDP server redirected the session; embedded sessions do not follow redirects"
+            );
+            Report::Failed(Code::Redirect)
         }
         Err(error) => {
             log::warn!("the RDP session broke: {}", error.report());
@@ -732,7 +741,10 @@ fn config(target: &Target, display: Display, cert: &CertReport) -> Result<Config
         // Device redirection carries the drive only: no printers, ports or smartcard.
         .with_rdpdr(target.drive.is_some())
         .with_printers(false)
-        .with_ports(false);
+        .with_ports(false)
+        // A session talks to the host the user chose and no other: a server redirection ends it
+        // inside IronRDP, before the configuration moves to the target (R-1145).
+        .with_refuse_server_redirection(true);
     // Windows keeps IronRDP's default, Media Foundation.
     #[cfg(target_os = "linux")]
     let builder =
@@ -1264,6 +1276,32 @@ mod tests {
         assert_eq!(
             live().on_event(redirect, Instant::now()),
             Flow::End(Report::Failed(Code::Redirect))
+        );
+    }
+
+    #[test]
+    fn session_reports_a_refused_redirect_as_redirect() {
+        let now = Instant::now();
+        let refused = || {
+            ironrdp_connector::reason_err!(
+                "Redirect",
+                "{}",
+                ironrdp_client::REFUSED_SERVER_REDIRECTION
+            )
+        };
+        assert_eq!(
+            live().on_event(RdpOutputEvent::ConnectionFailure(refused()), now),
+            Flow::End(Report::Failed(Code::Redirect))
+        );
+        let in_session = ironrdp_session::custom_err!("server redirection", refused());
+        assert_eq!(
+            live().on_event(RdpOutputEvent::Terminated(Err(in_session)), now),
+            Flow::End(Report::Failed(Code::Redirect))
+        );
+        let other = ironrdp_connector::reason_err!("Redirect", "the target is not reachable");
+        assert_eq!(
+            live().on_event(RdpOutputEvent::ConnectionFailure(other), now),
+            Flow::End(Report::Failed(Code::Connect))
         );
     }
 
@@ -1901,6 +1939,7 @@ mod tests {
             CertificateValidation::DangerouslyAcceptInvalidCertificate
         );
         assert!(trusted.certificate_validation_callback().is_none());
+        assert!(trusted.refuse_server_redirection());
 
         let pinned = config(
             &target(destination, pinned(None)),
@@ -1917,6 +1956,7 @@ mod tests {
             pinned.certificate_validation_callback_scope(),
             ironrdp_tls::CertificateValidationCallbackScope::AllCertificates
         );
+        assert!(pinned.refuse_server_redirection());
     }
 
     #[test]
