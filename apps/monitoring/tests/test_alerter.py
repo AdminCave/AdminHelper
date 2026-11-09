@@ -1244,3 +1244,60 @@ class TestMaintenanceSuppression:
         )
         process_alert(db, make_check(), "ok", "critical")
         assert dispatched["n"] == 1
+
+
+class TestSilentModuleCheck:
+    """R-1223: a module check a catalog update added runs silent until the admin
+    adopts the change. It is muted, not dropped: once adopted, the next evaluation
+    reports what it found meanwhile."""
+
+    @pytest.fixture()
+    def db(self):
+        db = _sqlite_session()
+        yield db
+        db.close()
+
+    def test_muted_until_adopted_then_caught_up(self, db, monkeypatch):
+        check = MonitorCheck(
+            id="mod",
+            server_id="srv-1",
+            name="Paperless (paperless): Web",
+            check_type="probe",
+            config="{}",
+            enabled=True,
+            module_id="paperless",
+            module_instance="paperless",
+            module_check_key="web",
+            silent=True,
+        )
+        db.add(check)
+        db.add(MonitorState(check_id="mod", status="critical", notified_status="ok"))
+        db.add(
+            MonitorAlertRule(
+                id="r1", name="r", channel="webhook", channel_config="{}", cooldown_minutes=30
+            )
+        )
+        db.commit()
+        dispatched, emitted = [], []
+        monkeypatch.setattr(
+            alerter,
+            "_dispatch",
+            lambda rule, check, msg: dispatched.append(check.id) or (True, None),
+        )
+        monkeypatch.setattr(
+            alerter, "emit_to_hub", lambda check, *a, **k: emitted.append(check.id) or True
+        )
+
+        assert alerter.muted_reason(db, check, _NOW) == "silent check"
+        process_alert(db, check, "ok", "critical")
+
+        assert (dispatched, emitted) == ([], [])
+        assert db.get(MonitorState, "mod").notified_status == "ok"
+
+        check.silent = False
+        db.commit()
+        assert alerter.muted_reason(db, check, _NOW) is None
+        process_alert(db, check, "critical", "critical")
+
+        assert (dispatched, emitted) == (["mod"], ["mod"])
+        assert db.get(MonitorState, "mod").notified_status == "critical"

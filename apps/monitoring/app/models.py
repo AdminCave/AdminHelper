@@ -156,6 +156,9 @@ class MonitorCheck(Base):
             "overriddenFields": json.loads(self.overridden_fields)
             if self.overridden_fields
             else [],
+            "moduleId": self.module_id,
+            "moduleInstance": self.module_instance,
+            "silent": bool(self.silent),
             "createdAt": iso_utc(self.created_at),
             "updatedAt": iso_utc(self.updated_at),
         }

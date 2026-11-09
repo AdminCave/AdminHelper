@@ -222,7 +222,7 @@ def image_repo(image: str) -> str:
     return repo.removeprefix("library/")
 
 
-def _image_matches(repo: str, prefixes: list[str]) -> bool:
+def image_matches(repo: str, prefixes: list[str]) -> bool:
     # A prefix ends at a path boundary: ghcr.io/immich-app takes ghcr.io/immich-app/x,
     # paperless-ngx does not take paperless-ngx-fork.
     return any(repo == p or repo.startswith(p + "/") for p in prefixes)
@@ -237,9 +237,7 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
     detect = module.detect
     prefixes = [image_repo(p) for p in detect.container_images]
     containers = [
-        c
-        for c in inv["containers"]
-        if prefixes and _image_matches(image_repo(c["image"]), prefixes)
+        c for c in inv["containers"] if prefixes and image_matches(image_repo(c["image"]), prefixes)
     ]
     wanted_units = {_unit_name(u) for u in detect.units}
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
@@ -382,12 +380,14 @@ def _summary(row: MonitorFinding) -> object:
         return None
 
 
-def _seen_again(row: MonitorFinding, summary: dict, watched: bool, version: str) -> None:
+def _seen_again(row: MonitorFinding, summary: dict, watched: bool, in_step: bool) -> None:
     same = _summary(row) == summary
     before = (row.kind, row.status)
     if row.kind == "gone":
-        if row.status != "adopted" and watched and same:
-            # Back before the admin acted on it, its checks still on: as before.
+        if row.status != "adopted" and watched and same and in_step:
+            # Back before the admin acted on it, its checks still on: as before. Not when
+            # the catalog changed meanwhile: the start-up sync skips an open finding, so
+            # only adopting it adds the new checks (and lets a silent one alert).
             row.kind, row.status = "new", "adopted"
         elif row.status != "adopted" and watched:
             row.kind, row.status = "changed", "open"
@@ -404,7 +404,6 @@ def _seen_again(row: MonitorFinding, summary: dict, watched: bool, version: str)
         row.decided_at = None
     if not same or (row.kind, row.status) != before:
         row.summary = _dump(summary)
-        row.catalog_version = version
 
 
 def _update_findings(
@@ -420,16 +419,18 @@ def _update_findings(
         (row.module_id, row.instance_key): row
         for row in db.query(MonitorFinding).filter(MonitorFinding.server_id == server_id)
     }
-    watched = {
-        (module_id, instance)
-        for module_id, instance in db.query(
-            MonitorCheck.module_id, MonitorCheck.module_instance
-        ).filter(
-            MonitorCheck.server_id == server_id,
-            MonitorCheck.module_id.isnot(None),
-            MonitorCheck.enabled.is_(True),
-        )
-    }
+    watched: set[tuple[str, str]] = set()
+    silent: set[tuple[str, str]] = set()
+    for module_id, instance, enabled, is_silent in db.query(
+        MonitorCheck.module_id,
+        MonitorCheck.module_instance,
+        MonitorCheck.enabled,
+        MonitorCheck.silent,
+    ).filter(MonitorCheck.server_id == server_id, MonitorCheck.module_id.isnot(None)):
+        if enabled:
+            watched.add((module_id, instance))
+        if is_silent:
+            silent.add((module_id, instance))
     for key, summary in seen.items():
         row = rows.get(key)
         if row is None:
@@ -449,7 +450,10 @@ def _update_findings(
             )
             continue
         row.last_seen = now
-        _seen_again(row, summary, key in watched, catalog.version)
+        # Only creating, adopting and the start-up sync set catalog_version: it names the
+        # catalog the instance's checks were brought up to.
+        in_step = row.catalog_version == catalog.version and key not in silent
+        _seen_again(row, summary, key in watched, in_step)
 
     if not full_scan or previous_full_scan is None:
         return
@@ -460,7 +464,6 @@ def _update_findings(
             continue  # seen in or after the previous full scan: one miss is no loss yet
         if key in watched:
             row.kind, row.status, row.decided_at = "gone", "open", None
-            row.catalog_version = catalog.version
         else:
             # Nothing watches it, so there is nothing to switch off: the entry is moot.
             db.delete(row)

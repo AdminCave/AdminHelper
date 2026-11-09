@@ -238,3 +238,47 @@ def test_update_check_rejects_consecutive_oks_out_of_range(client_db, value, err
     assert r.status_code == 422, r.text
     assert {"type": error, "loc": ["body", "consecutive_oks"]} in _error_locs(r), r.text
     assert client.get(f"/checks/{cid}").json()["consecutiveOks"] == 3
+
+
+# --- module checks (R-1223) --------------------------------------------------
+
+
+def test_a_check_says_whether_a_module_brought_it(client_db):
+    client, factory = client_db
+    plain = _make_check(client)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="mod",
+                server_id="srv-1",
+                name="Paperless (paperless): Web",
+                check_type="probe",
+                config="{}",
+                enabled=True,
+                module_id="paperless",
+                module_instance="paperless",
+                module_check_key="web",
+                silent=True,
+            )
+        )
+        db.commit()
+
+    fields = ("moduleId", "moduleInstance", "silent")
+    assert [client.get(f"/checks/{plain}").json()[f] for f in fields] == [None, None, False]
+    assert [client.get("/checks/mod").json()[f] for f in fields] == [
+        "paperless",
+        "paperless",
+        True,
+    ]
+    listed = {c["id"]: c for c in client.get("/checks").json()}
+    assert listed["mod"]["silent"] is True
+
+
+def test_a_probe_without_its_instances_name_is_rejected(client_db):
+    client, _ = client_db
+    config = {"sensor": "container", "target": {"kind": "container"}, "fields": ["state"]}
+
+    r = client.post("/checks", json=_payload(check_type="probe", config=config))
+
+    assert r.status_code == 422, r.text
+    assert "target.name is required for kind 'container'" in r.text

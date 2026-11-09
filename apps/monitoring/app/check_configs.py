@@ -221,6 +221,14 @@ class ProbeConfig(_StrictConfig):
         # A probe check is a catalog check bound to one instance: the catalog's rules
         # (sensor params, returned fields, targets, test objects) hold for it alike.
         target = self.target
+        if (
+            target is not None
+            and target.kind in ("container", "unit", "process")
+            and not target.name
+        ):
+            # The agent asks exactly this container, unit or process; without a name it
+            # would have to guess.
+            raise ValueError(f"target.name is required for kind '{target.kind}'")
         try:
             Check.model_validate(
                 {

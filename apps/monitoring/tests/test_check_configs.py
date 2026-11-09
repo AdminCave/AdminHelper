@@ -915,6 +915,10 @@ class TestProbeConfig:
             ({"target": {"kind": "port", "scheme": "ftp"}}, "target.scheme"),
             ({"target": {"kind": "port", "port_hint": 0}}, "target.port_hint"),
             ({"target": {"kind": "unit", "name": "a\nb"}}, "target.name"),
+            # The agent asks exactly the instance's own container, unit or process.
+            ({"target": {"kind": "container"}}, "target.name is required for kind 'container'"),
+            ({"target": {"kind": "unit", "name": ""}}, "target.name is required for kind 'unit'"),
+            ({"target": {"kind": "process"}}, "target.name is required for kind 'process'"),
             ({"target": {"kind": "port", "host": "192.0.2.1"}}, "target.host: Extra inputs"),
             ({"params": {"protocol": "smtp"}}, "protocol"),
             ({"params": {"path": "no-slash"}}, "path"),
