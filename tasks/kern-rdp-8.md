@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-rdp-8/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
 
-### T2 — R-1145: Der RDP-Client folgt keiner Server-Umleitung  [ ]
+### T2 — R-1145: Der RDP-Client folgt keiner Server-Umleitung  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/rdp_embedded/session.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @767e46700 2026-11-09T14:54:13+01:00
+Review: approve (.ah-out/review/kern-rdp-8/T2.verdict.json)
 Änderung: Im Fork `AdminCave/IronRDP` (Branch `adminhelper-pin`) ein Commit: `ironrdp-client` bekommt einen Konfigurationsschalter, mit dem `follow_server_redirection` einen Fehler liefert, bevor `config.destination` sich ändert; Test im Fork. Alle `ironrdp-*` auf die neue Revision, Fork-Kommentar ergänzen. `session.rs` schaltet das Folgen ab; Test auf die gebaute Konfiguration.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
