@@ -105,7 +105,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <ServerConnectionModal
   open={modalOpen}
   target={editing}
-  serverId={server.id}
+  {server}
   onClose={() => (modalOpen = false)}
   {onSaved}
 />

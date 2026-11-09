@@ -12,9 +12,11 @@ import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 import { setLanguage } from '$lib/i18n';
 
+type ServerRow = { id: string; name: string } & Record<string, unknown>;
+
 const h = vi.hoisted(() => ({
   upsert: vi.fn(async () => {}),
-  list: vi.fn(async (): Promise<{ id: string; name: string }[]> => []),
+  list: vi.fn(async (): Promise<ServerRow[]> => []),
 }));
 
 vi.mock('$lib/bridge', () => ({}));
@@ -42,7 +44,7 @@ const session = sessionStores.session as unknown as W<{
   isAdmin: boolean;
 } | null>;
 
-async function seedServers(list: { id: string; name: string }[]): Promise<void> {
+async function seedServers(list: ServerRow[]): Promise<void> {
   h.list.mockResolvedValueOnce(list);
   await loadServers();
   h.list.mockClear();
@@ -213,5 +215,51 @@ describe('ConnectionEditor assign server', () => {
     for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
     expect(h.list).toHaveBeenCalledTimes(1);
     expect(c.querySelectorAll('select[name="serverId"] option')).toHaveLength(1);
+  });
+});
+
+describe('ConnectionEditor own text of a connection of a server (R-1210)', () => {
+  const WEB01 = {
+    id: 's1',
+    name: 'web01.example.org',
+    hostname: 'web01.example.org',
+    connections: [{ id: 'c1', label: 'root' }],
+  };
+
+  it('edits the stored own text and previews the display name', async () => {
+    serverMode();
+    await seedServers([WEB01]);
+    const c = await open({
+      ...emptyConnection('ssh'),
+      id: 'c1',
+      name: 'web01.example.org · root',
+      host: 'web01.example.org',
+      serverId: 's1',
+    });
+    const own = c.querySelector<HTMLInputElement>('input[name="name"]')!;
+    expect(own.value).toBe('root');
+    expect(c.querySelector('[data-testid="shown-as"]')?.textContent).toContain(
+      'web01.example.org · root',
+    );
+
+    await fireEvent.input(own, { target: { value: '' } });
+    expect(c.querySelector('[data-testid="shown-as"]')?.textContent).toContain(
+      'web01.example.org · SSH',
+    );
+    await fireEvent.click(c.querySelector<HTMLElement>('.btn.save')!);
+    // Without an own text the server's name goes as the name: the server stores none for it.
+    expect((h.upsert.mock.calls[0] as unknown as [Connection])[0].name).toBe('web01.example.org');
+  });
+
+  it("starts an empty host at the chosen server's address", async () => {
+    serverMode();
+    await seedServers([WEB01]);
+    const c = await open({ ...emptyConnection('ssh'), name: 'new' });
+    const select = c.querySelector<HTMLSelectElement>('select[name="serverId"]')!;
+    select.value = 's1';
+    await fireEvent.change(select);
+    expect(c.querySelector<HTMLInputElement>('input[name="host"]')!.value).toBe(
+      'web01.example.org',
+    );
   });
 });

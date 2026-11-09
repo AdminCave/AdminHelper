@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { errMsg } from '$lib/utils/errors';
-  import type { Connection, ConnectionKind } from '$lib/api/types';
+  import type { Connection, ConnectionKind, Server } from '$lib/api/types';
   import {
     CONNECTION_KINDS,
     emptyConnectionForm,
@@ -16,7 +16,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     validateConnectionForm,
     type ConnectionForm,
   } from '$lib/models/serverConnection';
-  import { DEFAULT_PORTS } from '$lib/models/connection';
+  import { DEFAULT_PORTS, KIND_LABELS, shownName } from '$lib/models/connection';
   import { connectionsApi } from '$lib/api/connections';
   import { session } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
@@ -25,11 +25,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     open: boolean;
     target: Connection | null;
-    serverId: string;
+    server: Pick<Server, 'id' | 'name' | 'hostname'>;
     onClose: () => void;
     onSaved: () => void;
   }
-  let { open, target, serverId, onClose, onSaved }: Props = $props();
+  let { open, target, server, onClose, onSaved }: Props = $props();
 
   // Seeded for real by the $effect below whenever the modal opens; the initial
   // value must not capture the reactive `serverId` prop (svelte warning).
@@ -39,6 +39,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let saving = $state(false);
 
   let isNew = $derived(target === null);
+  // A tunnel leads to it: the server marks its display name so (R-1210).
+  let viaFrp = $derived(target?.name.endsWith(' (FRP)') ?? false);
 
   $effect(() => {
     if (!open) return;
@@ -46,7 +48,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // after assigning it would make this effect depend on the state it writes,
     // which self-triggers an infinite loop (effect_update_depth_exceeded) that
     // breaks the modal's reactivity (dead inputs and buttons).
-    const next = target ? connectionToForm(target) : emptyConnectionForm(serverId);
+    // A new connection starts at the server's address (R-1210).
+    const next = target
+      ? connectionToForm(target)
+      : emptyConnectionForm(server.id, server.hostname);
     form = next;
     tagsInput = (next.tags ?? []).join(', ');
     confirmDelete = false;
@@ -63,7 +68,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
     saving = true;
     try {
-      const payload = formToPayload(next);
+      const payload = formToPayload(next, server.name);
       if (next.id) {
         await connectionsApi.update(s, next.id, payload);
         showStatus($t('infra.conn.updated'));
@@ -115,15 +120,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div class="editor-panel">
       <div class="panel-header">
         <h2 class="panel-title">
-          {isNew ? $t('infra.conn.new') : form.name || $t('infra.conn.edit')}
+          {isNew ? $t('infra.conn.new') : shownName(server.name, form.name, form.kind, viaFrp)}
         </h2>
         <button class="btn ghost small" onclick={onClose} aria-label={$t('editor.close')}>×</button>
       </div>
 
       <div class="form-grid">
+        <!-- The own text of the display name; the server's name stands before it (R-1210). -->
         <label class="field">
-          <span class="field-label">{$t('infra.field.name')}</span>
-          <input type="text" bind:value={form.name} required />
+          <span class="field-label">{$t('infra.conn.label')}</span>
+          <input
+            type="text"
+            name="label"
+            bind:value={form.name}
+            placeholder={KIND_LABELS[form.kind]}
+          />
+          <span class="field-hint" data-testid="shown-as"
+            >{$t('infra.conn.shownAs')} {shownName(server.name, form.name, form.kind, viaFrp)}</span
+          >
         </label>
 
         <label class="field">

@@ -22,7 +22,13 @@ describe('infra modals open without an effect loop', () => {
   it('ServerConnectionModal: mounts, keeps typed input, Cancel fires onClose', async () => {
     const onClose = vi.fn();
     const { getByText, getByRole, container } = render(ServerConnectionModal, {
-      props: { open: true, target: null, serverId: 'srv-1', onClose, onSaved: vi.fn() },
+      props: {
+        open: true,
+        target: null,
+        server: { id: 'srv-1', name: 'web01.example.org', hostname: 'web01.example.org' },
+        onClose,
+        onSaved: vi.fn(),
+      },
     });
     await tick();
 

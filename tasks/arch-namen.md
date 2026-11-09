@@ -52,10 +52,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/S
 Doku: → T12
 Abhängt von: T2
 
-### T6 — Desktop: Verbindungsdialoge mit Zusatz, Gruppierung nach Server (R-1210 3a)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerConnectionModal.svelte, apps/desktop/ui/src/components/infra/ServerConnectionModal.test.ts, apps/desktop/ui/src/lib/models/serverConnection.ts, apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/lib/models/connection.ts, apps/desktop/ui/src/lib/models/connectionList.ts, apps/desktop/ui/src/lib/models/connectionList.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T6 — Desktop: Verbindungsdialoge mit Zusatz, Gruppierung nach Server (R-1210 3a)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerConnectionModal.svelte, apps/desktop/ui/src/components/infra/ServerConnectionModal.test.ts, apps/desktop/ui/src/lib/models/serverConnection.ts, apps/desktop/ui/src/components/ConnectionEditor.svelte, apps/desktop/ui/src/lib/models/connection.ts, apps/desktop/ui/src/lib/models/connectionList.ts, apps/desktop/ui/src/lib/models/connectionList.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/infra/tabs/ConnectionsTab.svelte, apps/desktop/ui/src/pages/Connections.svelte, apps/desktop/ui/src/components/infra/modals.regression.test.ts, apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts, apps/desktop/ui/src/lib/models/connection.test.ts, apps/desktop/ui/src/lib/models/serverConnection.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e2e385f9b 2026-11-09T16:13:45+01:00
+Review: approve (.ah-out/review/arch-namen/T6.verdict.json)
 Änderung: Mit Server: Feld „Zusatz (optional)“ statt Name, Vorschau des Anzeigenamens, Host aus der Serveradresse vorbelegt; ohne Server Name Pflicht wie heute; Formulare lesen `label`. Gruppierung „Server“ nach `serverId` (Servername), ohne Server nach Host. Stellen, die selbst Namen bilden (`Dashboard.svelte` `conn.name || target(conn)`), prüfen. Neun Dateien: ein Formularvertrag in zwei Dialogen.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/ServerConnectionModal.test.ts src/lib/models/serverConnection.test.ts src/lib/models/connection.test.ts src/lib/models/connectionList.test.ts src/lib/api/types.contract.test.ts src/lib/i18n/i18n.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/ServerConnectionModal.test.ts src/components/infra/modals.regression.test.ts src/lib/models/serverConnection.test.ts src/lib/models/connection.test.ts src/lib/models/connectionList.test.ts src/components/ConnectionEditor.tabs.test.ts src/lib/api/types.contract.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T12
 Abhängt von: T3
 
@@ -102,3 +104,10 @@ Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tu
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html DE+EN · docs/developer/server.html DE+EN · changelog.d/arch-namen.md
 Abhängt von: T1, T2, T3, T4
+
+### T13 — Desktop-RS: RDP-Pins über die Tunnel-ID statt den Anzeigenamen (R-1210)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/rdp_embedded/tofu.rs, apps/desktop/src-tauri/src/port_registry.rs, apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+Änderung: Die Identität eines RDP-Zertifikat-Pins über einen Tunnel nennt den Tunnel bei seiner ID (stabil bei jeder Umbenennung, eindeutig), nicht beim Namen, der seit T4 der abgeleitete Anzeigename ist; `ResolvedConnection` trägt dazu die Tunnel-ID (verknüpfter Pfad: die ID der Zuordnung; Literal-Pfad: die der Zuordnung am Server-Port, sonst die aus `<id>-visitor`). Der Name bleibt nur Anzeige. Bestehende Pins werden einmal neu bestätigt (mit dem Update ändern sich die Namen ohnehin). Dazu der Nit aus T8: der Test mit belegtem altem Port bindet beide Ports gleichzeitig. Quelle: security T8 (privat, tasks/private/sec-arch-namen-notes.md).
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
+Doku: → T12
+Abhängt von: T8
