@@ -222,12 +222,14 @@ func Push(ctx context.Context) error {
 		logger.Errorf("Report senden fehlgeschlagen: %v", err)
 		// The probes that ran keep their results all the same: the next report carries them with their
 		// own time, and they are not due again before their interval, however long the monitoring service
-		// is away. The self-throttle counts what the collectors cost, sent or not, and a refused
-		// credential stays refused. The rest of the state stays as the last push left it.
+		// is away; a counting probe counts on from where the run of its kept result stopped. The
+		// self-throttle counts what the collectors cost, sent or not, and a refused credential stays
+		// refused. The rest of the state stays as the last push left it.
 		kept := prevReportState
 		kept.Probes = nextReportState.Probes
 		kept.Throttle = nextReportState.Throttle
 		kept.Brake = nextReportState.Brake
+		kept.Cursors = nextReportState.Cursors
 		if err := saveReportState(reportStatePath, kept); err != nil {
 			logger.Warnf("saving the probe results and the self-throttle failed: %v", err)
 		}

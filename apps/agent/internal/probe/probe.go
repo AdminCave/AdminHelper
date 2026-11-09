@@ -132,8 +132,15 @@ type Results map[string]Result
 // probe names, "" if it names none.
 type Sensor func(ctx context.Context, p Probe, secret string) (map[string]any, error)
 
-// sensors are the sensors by name; a probe naming another one is invalid.
+// sensors are the sensors by name; a probe naming another one (or a cursorSensor) is invalid.
 var sensors = map[string]Sensor{}
+
+// A cursorSensor counts what happened since its probe's last run: it gets the cursor that run left
+// ("" for none) and returns its values and the cursor the next run starts from ("" to start afresh).
+type cursorSensor func(ctx context.Context, p Probe, cursor string) (map[string]any, string, error)
+
+// cursorSensors are the counting sensors by name; Run hands each the cursor of its probe (Access).
+var cursorSensors = map[string]cursorSensor{}
 
 // maxErrorRunes caps a result's error text.
 const maxErrorRunes = 256
@@ -148,6 +155,49 @@ type Access struct {
 	// run again until it is set anew, which gives it a new id. Run adds to it; the report state keeps
 	// it from run to run (KeptBrake).
 	Brake map[string]string
+	// Cursors holds, by probe id, where the last run of a counting sensor stopped (cursorSensor). Run
+	// sets it; the report state keeps it from run to run (KeptCursors).
+	Cursors map[string]string
+}
+
+// cursor returns where the last run of the probe id stopped, "" for nowhere.
+func (a *Access) cursor(id string) string {
+	if a == nil {
+		return ""
+	}
+	return a.Cursors[id]
+}
+
+// setCursor makes cursor where the next run of the probe id starts; "" drops its cursor.
+func (a *Access) setCursor(id, cursor string) {
+	switch {
+	case a == nil:
+	case cursor == "":
+		delete(a.Cursors, id)
+	default:
+		if a.Cursors == nil {
+			a.Cursors = map[string]string{}
+		}
+		a.Cursors[id] = cursor
+	}
+}
+
+// KeptCursors returns the cursors of those of probes that count (cursorSensor). The cursor of a probe
+// no longer in the plan, or of one that measures with another sensor now, is done.
+func (a *Access) KeptCursors(probes []Probe) map[string]string {
+	if a == nil || len(a.Cursors) == 0 {
+		return nil
+	}
+	kept := map[string]string{}
+	for _, p := range probes {
+		if c, ok := a.Cursors[p.ID]; ok && cursorSensors[p.Sensor] != nil {
+			kept[p.ID] = c
+		}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
 }
 
 // credential returns the secret p presents, or the status and the reason why p does not run.
@@ -217,7 +267,8 @@ func (a *Access) KeptBrake() map[string]string {
 func Run(ctx context.Context, p Probe, start time.Time, acc *Access) Result {
 	res := Result{TS: start.Unix(), Values: map[string]any{}}
 	sensor, ok := sensors[p.Sensor]
-	if !ok {
+	counter, counts := cursorSensors[p.Sensor]
+	if !ok && !counts {
 		res.Status = StatusInvalid
 		res.Error = cleanError(fmt.Sprintf("unknown sensor %q", p.Sensor))
 		return res
@@ -228,12 +279,25 @@ func Run(ctx context.Context, p Probe, start time.Time, acc *Access) Result {
 		res.Error = cleanError(why)
 		return res
 	}
+	cursor := acc.cursor(p.ID)
+	if counts {
+		sensor = func(ctx context.Context, p Probe, _ string) (map[string]any, error) {
+			values, next, err := counter(ctx, p, cursor)
+			cursor = next
+			return values, err
+		}
+	}
 	timeout := time.Duration(p.TimeoutS) * time.Second
+	run := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	began := time.Now()
 	values, err := callSensor(ctx, sensor, p, secret)
 	res.DurationMS = time.Since(began).Milliseconds()
+	if counts && run.Err() == nil {
+		// A probe the run ended under keeps its last result (runDueProbes), so it keeps its cursor too.
+		acc.setCursor(p.ID, cursor)
+	}
 	switch {
 	case err == nil:
 		res.Status = StatusOK

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -327,5 +328,122 @@ func TestKeptBrakeKeepsOnlyCredentialsStillAsRefused(t *testing.T) {
 	var none *Access
 	if got := none.KeptBrake(); got != nil {
 		t.Errorf("KeptBrake of no access = %v, want nil", got)
+	}
+}
+
+// registerCounter adds a counting sensor for the test and removes it afterwards.
+func registerCounter(t *testing.T, name string, sensor cursorSensor) {
+	t.Helper()
+	cursorSensors[name] = sensor
+	t.Cleanup(func() { delete(cursorSensors, name) })
+}
+
+func TestACountingSensorCountsFromTheCursorItsLastRunLeft(t *testing.T) {
+	var got []string
+	next := "c2"
+	registerCounter(t, "counter", func(_ context.Context, _ Probe, cursor string) (map[string]any, string, error) {
+		got = append(got, cursor)
+		return map[string]any{"count": 4}, next, nil
+	})
+	acc := &Access{Cursors: map[string]string{"c1": "c1", "other": "o1"}}
+	p := Probe{ID: "c1", Sensor: "counter", TimeoutS: 1, Fields: []string{"count"}}
+
+	res := Run(context.Background(), p, start, acc)
+
+	if res.Status != StatusOK || res.Values["count"] != 4 {
+		t.Fatalf("result = %+v, want ok with the count", res)
+	}
+	if !reflect.DeepEqual(acc.Cursors, map[string]string{"c1": "c2", "other": "o1"}) {
+		t.Fatalf("cursors = %v, want c1 at the cursor its run left, the other untouched", acc.Cursors)
+	}
+
+	// A run that leaves no cursor drops it: the next one starts afresh.
+	next = ""
+	Run(context.Background(), p, start, acc)
+	Run(context.Background(), p, start, acc)
+
+	if !reflect.DeepEqual(got, []string{"c1", "c2", ""}) {
+		t.Errorf("the runs got the cursors %q, want c1, c2 and none", got)
+	}
+	if _, ok := acc.Cursors["c1"]; ok {
+		t.Errorf("cursors = %v, want c1 dropped", acc.Cursors)
+	}
+}
+
+func TestACountingSensorWithoutAccessCountsWithoutACursor(t *testing.T) {
+	got := "unset"
+	registerCounter(t, "counter", func(_ context.Context, _ Probe, cursor string) (map[string]any, string, error) {
+		got = cursor
+		return map[string]any{"count": 1}, "c2", nil
+	})
+
+	res := Run(context.Background(), Probe{ID: "c1", Sensor: "counter", TimeoutS: 1, Fields: []string{"count"}}, start, nil)
+
+	if res.Status != StatusOK || got != "" {
+		t.Fatalf("result = %+v with cursor %q, want ok without one", res, got)
+	}
+}
+
+func TestACountingRunTheRunEndedOrThatPanickedKeepsItsCursor(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registerCounter(t, "ended", func(context.Context, Probe, string) (map[string]any, string, error) {
+		// The agent's run ends under the sensor (its deadline, a stop): runDueProbes keeps the probe's
+		// last result, so the cursor of that result stays.
+		cancel()
+		return nil, "", context.Canceled
+	})
+	registerCounter(t, "boom", func(context.Context, Probe, string) (map[string]any, string, error) {
+		panic("failed")
+	})
+	acc := &Access{Cursors: map[string]string{"c1": "c1", "c2": "c2"}}
+
+	ended := Run(ctx, Probe{ID: "c1", Sensor: "ended", TimeoutS: 1}, start, acc)
+	boom := Run(context.Background(), Probe{ID: "c2", Sensor: "boom", TimeoutS: 1}, start, acc)
+
+	if ended.Status != StatusError || boom.Status != StatusError {
+		t.Fatalf("results = %+v and %+v, want errors", ended, boom)
+	}
+	if !reflect.DeepEqual(acc.Cursors, map[string]string{"c1": "c1", "c2": "c2"}) {
+		t.Errorf("cursors = %v, want both kept", acc.Cursors)
+	}
+}
+
+func TestACountingSensorPastItsTimeoutDropsItsCursor(t *testing.T) {
+	registerCounter(t, "slow", func(ctx context.Context, _ Probe, cursor string) (map[string]any, string, error) {
+		<-ctx.Done()
+		return nil, "", ctx.Err()
+	})
+	acc := &Access{Cursors: map[string]string{"c1": "c1"}}
+
+	res := Run(context.Background(), Probe{ID: "c1", Sensor: "slow", TimeoutS: 1}, start, acc)
+
+	if res.Status != StatusError || res.Error != "timed out after 1s" {
+		t.Fatalf("result = %+v, want the timeout", res)
+	}
+	if len(acc.Cursors) != 0 {
+		t.Errorf("cursors = %v, want c1 dropped: the probe's own timeout is no end of the run", acc.Cursors)
+	}
+}
+
+func TestKeptCursorsKeepsOnlyThoseOfCountingProbesOfThePlan(t *testing.T) {
+	noop := func(context.Context, Probe, string) (map[string]any, string, error) { return nil, "", nil }
+	registerCounter(t, "counter", noop)
+	register(t, "fake", func(context.Context, Probe, string) (map[string]any, error) { return nil, nil })
+	acc := &Access{Cursors: map[string]string{"counts": "a", "switched": "b", "gone": "c"}}
+	probes := []Probe{
+		{ID: "counts", Sensor: "counter"},
+		{ID: "switched", Sensor: "fake"},
+		{ID: "fresh", Sensor: "counter"},
+	}
+
+	if got := acc.KeptCursors(probes); !reflect.DeepEqual(got, map[string]string{"counts": "a"}) {
+		t.Errorf("kept = %v, want counts alone", got)
+	}
+	if got := acc.KeptCursors(probes[1:]); got != nil {
+		t.Errorf("kept = %v without a counting probe with a cursor, want nil", got)
+	}
+	if got := (*Access)(nil).KeptCursors(probes); got != nil {
+		t.Errorf("kept without access = %v, want nil", got)
 	}
 }

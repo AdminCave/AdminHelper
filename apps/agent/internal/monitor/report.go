@@ -110,7 +110,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	// hanging service would slow down the probes of every other. The phase's hit is a due probe the
 	// run's time did not leave room for; its factor stretches the interval of every probe.
 	probeFactor := prev.Throttle[probesCollector].factor()
-	acc := &probe.Access{Brake: maps.Clone(prev.Brake)}
+	acc := &probe.Access{Brake: maps.Clone(prev.Brake), Cursors: maps.Clone(prev.Cursors)}
 	var probes []probe.Probe
 	if work != nil {
 		probes, acc.Credentials, acc.StoreErr = work.probes, work.creds, work.credsErr
@@ -131,6 +131,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	m.record(probesCollector, st, postponed)
 	report["probes"] = next.Probes
 	next.Brake = acc.KeptBrake()
+	next.Cursors = acc.KeptCursors(probes)
 
 	next.Throttle = m.next
 	report["self"] = map[string]any{"collectors": m.stats}

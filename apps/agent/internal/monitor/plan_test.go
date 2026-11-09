@@ -584,3 +584,75 @@ func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *te
 		t.Fatalf("state brake after the credential was set anew = %v, want none", st.Brake)
 	}
 }
+
+// planLogProbe is a plan with one probe of the counting sensor log.
+const planLogProbe = `{"plan_version": 1, "catalog_version": "c1", "scan": false, "discovery": {"markers": []},
+	"probes": [{"id": "chk-log", "sensor": "log", "interval_s": 600, "timeout_s": 5, "target": null,
+	"params": {}, "fields": ["count"], "credential": null}]}`
+
+func TestACountingProbesCursorOutlivesALostPushAndEndsWithItsProbe(t *testing.T) {
+	stubReportHost(t)
+	shortenRetryDelay(t)
+	stubCPU(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	var got []string
+	stubRunProbe(t, func(_ context.Context, p probe.Probe, start time.Time, acc *probe.Access) probe.Result {
+		// As probe.Run does for a counting sensor: the run gets the cursor the last one left and leaves its own.
+		got = append(got, acc.Cursors[p.ID])
+		if acc.Cursors == nil {
+			acc.Cursors = map[string]string{}
+		}
+		acc.Cursors[p.ID] = fmt.Sprintf("c%d", len(got))
+		return probe.Result{TS: start.Unix(), Status: probe.StatusOK, Values: map[string]any{"count": 0}}
+	})
+
+	var plan atomic.Value
+	plan.Store(planLogProbe)
+	var reportStatus atomic.Int32
+	reportStatus.Store(http.StatusBadGateway)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(plan.Load().(string)))
+			return
+		}
+		w.WriteHeader(int(reportStatus.Load()))
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statePath := config.MonitorReportStateFile()
+	if err := saveReportState(statePath, reportState{Cursors: map[string]string{"chk-log": "c0", "gone": "c9"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) The push is lost: the probe counted from its stored cursor, and the cursor its run left stays
+	// with its result. The cursor of a probe the plan no longer holds is done.
+	if err := Push(context.Background()); err == nil {
+		t.Fatal("push against 502: want an error")
+	}
+	if !reflect.DeepEqual(got, []string{"c0"}) {
+		t.Fatalf("the probe ran from the cursors %q, want once from the stored c0", got)
+	}
+	st := loadReportState(statePath)
+	if !reflect.DeepEqual(st.Cursors, map[string]string{"chk-log": "c1"}) {
+		t.Fatalf("state cursors after a lost push = %v, want chk-log at c1 alone", st.Cursors)
+	}
+	if _, ok := st.Probes["chk-log"]; !ok {
+		t.Fatalf("state probes after a lost push = %v, want the result the cursor goes with", st.Probes)
+	}
+
+	// 2) The probe measures with a sensor that does not count now: its cursor is done.
+	plan.Store(strings.Replace(planLogProbe, `"sensor": "log"`, `"sensor": "fake"`, 1))
+	reportStatus.Store(http.StatusOK)
+	if err := Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(statePath); st.Cursors != nil {
+		t.Fatalf("state cursors of a probe that no longer counts = %v, want none", st.Cursors)
+	}
+}
