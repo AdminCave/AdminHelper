@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"regexp"
@@ -128,4 +129,48 @@ func refuseKernelFile(f *os.File, path string) error {
 // openNoWait opens path to read without waiting: a FIFO swapped in since the stat does not block.
 func openNoWait(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK|unix.O_NOCTTY, 0)
+}
+
+// dialUnix connects to the unix socket path. A socket that does not exist or that nobody serves is
+// errNoListener; one served by a process the agent never probes is ErrNotAllowed.
+func dialUnix(ctx context.Context, path string) (net.Conn, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", path)
+	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {
+		return nil, errNoListener
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPeer(ctx, conn.(*net.UnixConn), path); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// checkPeer refuses the socket path unless the process serving it may be probed: not a process the
+// guard refuses on TCP and not systemd, which holds the sockets it activates on behalf of other
+// services (SO_PEERCRED names the process that called listen).
+func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return fmt.Errorf("%w: the process serving %s cannot be read", ErrNotAllowed, path)
+	}
+	var cred *unix.Ucred
+	var credErr error
+	if err := raw.Control(func(fd uintptr) { cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED) }); err != nil {
+		credErr = err
+	}
+	if credErr != nil {
+		return fmt.Errorf("%w: the process serving %s cannot be read", ErrNotAllowed, path)
+	}
+	name, err := processName(ctx, cred.Pid)
+	if err != nil {
+		return fmt.Errorf("%w: the process serving %s cannot be read: %v", ErrNotAllowed, path, err)
+	}
+	if k := processKey(name); neverProbed(name) || k == "systemd" || strings.HasPrefix(k, "systemd-") {
+		return fmt.Errorf("%w: %s belongs to %s, which the agent never probes", ErrNotAllowed, path, name)
+	}
+	return nil
 }

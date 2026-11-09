@@ -114,3 +114,10 @@ func TestAContainerTargetIsUnsupportedOnWindows(t *testing.T) {
 		t.Errorf("resolve = %v, want ErrUnsupported", err)
 	}
 }
+
+func TestUnixSocketsAreUnsupportedOnWindows(t *testing.T) {
+	p := Probe{Sensor: "unixsocket", Params: map[string]any{"path": "/run/app.sock"}}
+	if _, err := unixSocketSensor(context.Background(), p, ""); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("a unix socket = %v, want ErrUnsupported", err)
+	}
+}

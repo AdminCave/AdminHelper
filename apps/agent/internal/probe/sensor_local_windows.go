@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"time"
@@ -97,4 +98,9 @@ func openNoWait(path string) (*os.File, error) {
 // refuseKernelFile: Windows has no file system of the kernel a path could reach.
 func refuseKernelFile(*os.File, string) error {
 	return nil
+}
+
+// dialUnix is not supported: the agent probes unix sockets on Linux only.
+func dialUnix(context.Context, string) (net.Conn, error) {
+	return nil, fmt.Errorf("%w: unix sockets are probed on Linux only", ErrUnsupported)
 }

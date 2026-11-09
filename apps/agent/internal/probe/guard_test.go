@@ -166,8 +166,16 @@ func TestGuardNeverProbesTheListenersOfTheBlockedProcesses(t *testing.T) {
 			lst("::", 5000, 12),
 			lst("192.0.2.10", 6000, 13),
 			lst("127.0.0.1", 7000, 14),
+			lst("127.0.0.1", 2375, 15),
+			lst("127.0.0.1", 8001, 16),
+			lst("127.0.0.1", 16509, 17),
+			lst("127.0.0.1", 8080, 18),
+			lst("127.0.0.1", 9000, 19),
 		},
-		names: map[int32]string{10: "sshd", 11: "MariaDBd.exe", 12: "nginx", 13: "mysqld", 14: "postgres"},
+		names: map[int32]string{
+			10: "sshd", 11: "MariaDBd.exe", 12: "nginx", 13: "mysqld", 14: "postgres",
+			15: "dockerd", 16: "containerd-shim-runc-v2", 17: "virtqemud", 18: "Podman.exe", 19: "php-fpm",
+		},
 	})
 	g := NewGuard()
 
@@ -182,6 +190,11 @@ func TestGuardNeverProbesTheListenersOfTheBlockedProcesses(t *testing.T) {
 		{"tcp4", "127.0.0.1:6000", false},
 		{"tcp4", "192.0.2.10:6000", true},
 		{"tcp4", "127.0.0.1:7000", false},
+		{"tcp4", "127.0.0.1:2375", true},
+		{"tcp4", "127.0.0.1:8001", true},
+		{"tcp4", "127.0.0.1:16509", true},
+		{"tcp4", "127.0.0.1:8080", true},
+		{"tcp4", "127.0.0.1:9000", false},
 		{"udp4", "127.0.0.1:2222", false},
 	} {
 		err := allowed(g, c.network, c.address)

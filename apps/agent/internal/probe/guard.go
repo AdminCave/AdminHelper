@@ -40,6 +40,32 @@ func blockedPort(port uint16) bool {
 // same reasons as blockedPort: they serve on other ports too.
 var blockedProcesses = map[string]bool{"sshd": true, "mysqld": true, "mariadbd": true}
 
+// hostDaemons are the processes, by name, that control this host or its guests (containers, virtual
+// machines, the system bus, its keys): a probe never talks to them, over TCP or a unix socket.
+var hostDaemons = map[string]bool{
+	"dockerd": true, "containerd": true, "podman": true, "conmon": true, "crio": true, "lxd": true,
+	"incusd": true, "libvirtd": true, "snapd": true, "dbus-daemon": true, "dbus-broker": true,
+	"polkitd": true, "ssh-agent": true, "gpg-agent": true,
+}
+
+// hostDaemonPrefixes start the names of more such processes: the shims of containerd and the
+// daemons of libvirt and VirtualBox (virtqemud, virtlogd, VirtualBoxVM …).
+var hostDaemonPrefixes = []string{"containerd-shim", "virt"}
+
+// neverProbed says whether name (processKey) is a process a probe never talks to.
+func neverProbed(name string) bool {
+	k := processKey(name)
+	if blockedProcesses[k] || hostDaemons[k] {
+		return true
+	}
+	for _, prefix := range hostDaemonPrefixes {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // listenerTTL is how long one snapshot of the listening sockets serves the guard.
 const listenerTTL = 30 * time.Second
 
@@ -161,7 +187,7 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		if err != nil {
 			return fmt.Errorf("%w: the process listening on port %d cannot be read: %v", ErrNotAllowed, port, err)
 		}
-		if blockedProcesses[strings.TrimSuffix(strings.ToLower(name), ".exe")] {
+		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
 	}
@@ -234,9 +260,14 @@ var errBodyTooLarge = fmt.Errorf("the response is larger than %d bytes", maxBody
 // connection, sends only GET and HEAD, follows a redirect only to the same scheme, host and port,
 // and reads at most maxBodyBytes of a body.
 func (g *Guard) HTTPClient(tlsConf *tls.Config) *http.Client {
+	return httpClient(g.DialContext, tlsConf)
+}
+
+// httpClient is the client of HTTPClient, dialing with dial.
+func httpClient(dial func(ctx context.Context, network, addr string) (net.Conn, error), tlsConf *tls.Config) *http.Client {
 	base := &http.Transport{
 		Proxy:                  nil,
-		DialContext:            g.DialContext,
+		DialContext:            dial,
 		TLSClientConfig:        tlsConf,
 		DisableKeepAlives:      true,
 		MaxResponseHeaderBytes: maxHeaderBytes,

@@ -79,11 +79,17 @@ func pathParam(p Probe) (string, error) {
 		}
 	}
 	path, ok := p.Params["path"].(string)
-	if !ok || !strings.HasPrefix(path, "/") || len(path) > maxPathBytes || strings.ContainsRune(path, 0) ||
-		!filepath.IsLocal(path[1:]) {
+	if !ok || !validLocalPath(path) {
 		return "", fmt.Errorf("%w: sensor %s needs an absolute local path of at most %d bytes", ErrInvalid, p.Sensor, maxPathBytes)
 	}
 	return path, nil
+}
+
+// validLocalPath says whether path is an absolute path of at most maxPathBytes on a local disk of
+// this host.
+func validLocalPath(path string) bool {
+	return strings.HasPrefix(path, "/") && len(path) <= maxPathBytes && !strings.ContainsRune(path, 0) &&
+		filepath.IsLocal(path[1:])
 }
 
 // unitSensor reads the state of a systemd unit (Linux) or a Windows service (measureUnit).
