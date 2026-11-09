@@ -18,8 +18,10 @@ nur `login` (Z. 560): disjunkte Hunks, vor dem PR `origin/main` hineinmergen.
 
 ## Tasks
 
-### T1 — ca-issuer: Route `GET /trust` und Trust-Generation  [ ]
+### T1 — ca-issuer: Route `GET /trust` und Trust-Generation  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/main.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/app/pki.py, apps/ca-issuer/tests/test_trust_generation.py (neu, SPDX), apps/ca-issuer/tests/test_storage.py, apps/ca-issuer/tests/schemathesis_exclude.toml
+Evidenz: run.sh[quick] ca-issuer: 4 passed, 0 failed, 14 skipped @db5b1b0c7 2026-11-09T13:21:14+01:00
+Review: approve (.ah-out/review/arch-ca-trust-generation/T1.verdict.json)
 Änderung:
 - `pki.py`: `trust_generation(pem: bytes) -> str`. Nur `CERTIFICATE`-Blöcke, DER in Reihenfolge verkettet,
   SHA-256, hex klein.
@@ -139,3 +141,7 @@ Abhängt von: T1, T2, T3, T4, T5
 - 2026-11-09 Session: Desktop hält eine prozessweite `tokio::sync::Mutex` um `maybe_renew`. Der Stunden-Task trägt eine
   Epoche, weil `ensure_signed_in` eine neue Anmeldung desselben Nutzers am selben Server gelten lässt. Intervall als
   Parameter, keine neue `tokio`-Feature in den Dev-Abhängigkeiten.
+- 2026-11-09 Session (T1): `Intermediate.trust_generation` ist eine schlichte Property, je Aufruf aus `trust_bundle`
+  gerechnet, statt einmal beim Start (Plan T1): ein Hash über zwei bis drei Zertifikate kostet nichts und kann nicht
+  veralten. Die Helfer `_presented` (Issuer) und `_presented_cert` (Route) teilen `/renew` und `/trust`; `/renew`
+  ruft den Header-Helfer im Rumpf auf, damit ungültiger Body weiter 422 vor 401 ergibt.

@@ -105,6 +105,11 @@ class Intermediate:
         """`chain` of /enroll and /renew (PEM): the intermediate, then `roots`."""
         return pki.chain_pem(self.cert, *self.roots)
 
+    @property
+    def trust_generation(self) -> str:
+        """The generation of `trust_bundle` (pki.trust_generation), what GET /trust answers."""
+        return pki.trust_generation(self.trust_bundle)
+
 
 def _write_private(path: Path, pem: bytes) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

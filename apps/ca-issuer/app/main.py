@@ -8,6 +8,8 @@ Internal-only. The only component that holds the online intermediate keys and
 signs certificates. Two doors, each self-authorizing:
   POST /enroll  — one-time token  → first leaf
   POST /renew   — gateway-verified current cert → follow-up leaf
+and one answer to the same check as /renew:
+  GET  /trust   — gateway-verified current cert → trust generation of its scope (R-1054)
 """
 
 from __future__ import annotations
@@ -157,6 +159,26 @@ class RenewRequest(BaseModel):
     csr: str  # PEM
 
 
+class TrustGeneration(BaseModel):
+    generation: str = Field(pattern=r"^[0-9a-f]{64}$")  # pki.trust_generation
+
+
+def _presented_cert(request: Request) -> bytes:
+    """The client cert the gateway verified, as PEM, or a 401."""
+    # The gateway terminates mTLS and forwards the verified client cert. We act
+    # only on a SUCCESS verdict + the escaped PEM (ADR 0001 §3.2 / A0 spike).
+    if request.headers.get(config.HEADER_VERIFY, "").upper() != "SUCCESS":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Kein verifiziertes Client-Cert"
+        )
+    escaped = request.headers.get(config.HEADER_CERT, "")
+    if not escaped:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Client-Cert-Header fehlt"
+        )
+    return urllib.parse.unquote(escaped).encode()
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
@@ -176,18 +198,7 @@ def enroll(body: EnrollRequest, issuer: Issuer = Depends(get_issuer)):
 
 @app.post("/renew")
 def renew(body: RenewRequest, request: Request, issuer: Issuer = Depends(get_issuer)):
-    # The gateway terminates mTLS and forwards the verified client cert. We act
-    # only on a SUCCESS verdict + the escaped PEM (ADR 0001 §3.2 / A0 spike).
-    if request.headers.get(config.HEADER_VERIFY, "").upper() != "SUCCESS":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Kein verifiziertes Client-Cert"
-        )
-    escaped = request.headers.get(config.HEADER_CERT, "")
-    if not escaped:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Client-Cert-Header fehlt"
-        )
-    cert_pem = urllib.parse.unquote(escaped).encode()
+    cert_pem = _presented_cert(request)
     try:
         return issuer.renew(cert_pem, body.csr.encode())
     except IssuanceError as exc:
@@ -196,3 +207,15 @@ def renew(body: RenewRequest, request: Request, issuer: Issuer = Depends(get_iss
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
+
+
+# Clients compare the answer with the hash of the `chain` they hold and renew on a
+# difference, so a rotation reaches them within one check instead of at half their
+# lifetime (R-1054).
+@app.get("/trust", response_model=TrustGeneration)
+def trust_generation(request: Request, issuer: Issuer = Depends(get_issuer)) -> TrustGeneration:
+    cert_pem = _presented_cert(request)
+    try:
+        return TrustGeneration(generation=issuer.trust_generation(cert_pem))
+    except IssuanceError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
