@@ -235,12 +235,13 @@ const INVENTORY_FILE: &str = "inventory.json";
 /// variables of [`host_vars`], and a group per tag.
 pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<String, AppError> {
     check_targets(servers)?;
+    let ask_pass = asks_password(servers);
     let mut hosts = Map::new();
     let mut groups: std::collections::BTreeMap<&str, Map<String, Value>> =
         std::collections::BTreeMap::new();
     for server in servers {
         let alias = server.hostname.trim();
-        let vars = Value::Object(host_vars(server.connection.as_ref()));
+        let vars = Value::Object(host_vars(server.connection.as_ref(), ask_pass));
         if hosts.get(alias).is_some_and(|known| *known != vars) {
             return Err(AppError::Validation(format!(
                 "two servers named {alias} are reached in different ways"
@@ -270,10 +271,17 @@ pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<Strin
 
 /// The variables that send Ansible where `connection` goes, as Verbinden opens it: address,
 /// port other than 22, user and key if set, and the other switches of the connection quoted for
-/// the `shlex` split Ansible applies to `ansible_ssh_common_args`. None without a connection.
-fn host_vars(connection: Option<&Connection>) -> Map<String, Value> {
+/// the `shlex` split Ansible applies to `ansible_ssh_common_args`. None without a connection,
+/// unless the run has `--ask-pass` (`ask_pass`, [`asks_password`]).
+fn host_vars(connection: Option<&Connection>, ask_pass: bool) -> Map<String, Value> {
     let mut vars = Map::new();
+    // With `--ask-pass` Ansible hands the one password to every host and sets no switch against
+    // it, so a host that does not log in with a password must not be offered it.
+    let password_off = ask_pass && !connection.is_some_and(logs_in_with_password);
     let Some(connection) = connection else {
+        if password_off {
+            vars.insert("ansible_ssh_common_args".into(), password_off_args().into());
+        }
         return vars;
     };
     let host = connection.host.as_deref().unwrap_or_default().trim();
@@ -301,11 +309,27 @@ fn host_vars(connection: Option<&Connection>) -> Map<String, Value> {
         vars.insert("ansible_ssh_private_key_file".into(), key);
     }
     let switches = crate::connection::ssh::option_switches(connection);
-    if !switches.is_empty() {
-        let quoted: Vec<String> = switches.iter().map(|switch| shell_escape(switch)).collect();
+    let mut quoted: Vec<String> = switches.iter().map(|switch| shell_escape(switch)).collect();
+    if password_off {
+        quoted.push(password_off_args());
+    }
+    if !quoted.is_empty() {
         vars.insert("ansible_ssh_common_args".into(), quoted.join(" ").into());
     }
     vars
+}
+
+/// The ssh switches that refuse a password and keyboard-interactive login.
+fn password_off_args() -> String {
+    "-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no".to_string()
+}
+
+fn logs_in_with_password(connection: &Connection) -> bool {
+    connection
+        .options
+        .as_ref()
+        .and_then(|options| options.ssh.as_ref())
+        .is_some_and(|ssh| ssh.auth_method == Some(SshAuthMethod::Password))
 }
 
 /// Writes the playbook content to `dir/playbook_<name>` and returns the path. The prefix keeps
@@ -378,9 +402,7 @@ pub fn asks_password(targets: &[AnsibleTarget]) -> bool {
         target
             .connection
             .as_ref()
-            .and_then(|connection| connection.options.as_ref())
-            .and_then(|options| options.ssh.as_ref())
-            .is_some_and(|ssh| ssh.auth_method == Some(SshAuthMethod::Password))
+            .is_some_and(logs_in_with_password)
     })
 }
 
@@ -1537,6 +1559,99 @@ mod tests {
                 "children": { "web": { "hosts": { "web01.example": {} } } }
             } }),
             "the tag all is no child group of all"
+        );
+    }
+
+    #[test]
+    fn with_ask_pass_only_password_targets_are_offered_the_password() {
+        let off = "-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no";
+        let targets = vec![
+            reached(
+                "pw",
+                &[],
+                ssh_connection(
+                    "192.0.2.5",
+                    None,
+                    serde_json::json!({ "authMethod": "password" }),
+                ),
+            ),
+            reached(
+                "key",
+                &[],
+                ssh_connection(
+                    "192.0.2.6",
+                    None,
+                    serde_json::json!({ "authMethod": "key" }),
+                ),
+            ),
+            reached(
+                "unset",
+                &[],
+                ssh_connection("192.0.2.7", None, serde_json::json!({})),
+            ),
+            AnsibleTarget {
+                hostname: "bare".to_string(),
+                groups: vec![],
+                connection: None,
+            },
+        ];
+        let common_args = |targets: &[AnsibleTarget]| {
+            let dir = run_dir();
+            let path = generate_inventory(&dir.0, targets).unwrap();
+            let inventory: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            ["pw", "key", "unset", "bare"]
+                .iter()
+                .filter_map(|host| {
+                    inventory["all"]["hosts"]
+                        .get(*host)
+                        .map(|vars| (*host, vars.clone()))
+                })
+                .map(|(host, vars)| {
+                    (
+                        host,
+                        vars["ansible_ssh_common_args"].as_str().map(str::to_string),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let with_password = common_args(&targets);
+        assert_eq!(
+            with_password,
+            [
+                (
+                    "pw",
+                    Some(
+                        "'-o' 'PreferredAuthentications=password,keyboard-interactive'".to_string()
+                    )
+                ),
+                (
+                    "key",
+                    Some(format!(
+                        "'-o' 'PreferredAuthentications=publickey' '-o' 'IdentitiesOnly=yes' {off}"
+                    ))
+                ),
+                ("unset", Some(off.to_string())),
+                ("bare", Some(off.to_string())),
+            ]
+        );
+
+        let without_password = common_args(&targets[1..]);
+        assert_eq!(
+            without_password,
+            [
+                (
+                    "key",
+                    Some(
+                        "'-o' 'PreferredAuthentications=publickey' '-o' 'IdentitiesOnly=yes'"
+                            .to_string()
+                    )
+                ),
+                ("unset", None),
+                ("bare", None),
+            ],
+            "without --ask-pass the inventory stays as it was"
         );
     }
 

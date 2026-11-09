@@ -41,8 +41,10 @@ Doku: docs/admin/ansible.html, docs/en/admin/ansible.html, docs/developer/deskto
 Task-Review: am Ende
 Abhängt von: T2
 
-### T5 — R-1204: Mit `--ask-pass` melden sich nur Passwort-Ziele per Passwort an  [ ]
+### T5 — R-1204: Mit `--ask-pass` melden sich nur Passwort-Ziele per Passwort an  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @3436658c1 2026-11-09T13:25:30+01:00
+Review: approve (.ah-out/review/kern-ansible-1/T5.verdict.json)
 Änderung: Fund der Abschlussprüfung (security, branch). Hat der Lauf `--ask-pass` (`asks_password`), bekommt jedes Ziel, dessen Verbindung nicht `SshAuthMethod::Password` nutzt, und jedes Ziel ohne Verbindung in `ansible_ssh_common_args` `-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no`. Ohne `--ask-pass` bleibt das Inventar wie bisher. Test in `generate_inventory`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (Verhalten wie dokumentiert: das Passwort gilt den Passwort-Servern des Laufs)
