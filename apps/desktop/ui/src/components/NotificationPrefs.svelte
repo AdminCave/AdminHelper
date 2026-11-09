@@ -104,6 +104,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // leaves them out.
   let quietKnown = $state(false);
   let quiet = $state<NotificationQuiet>({ ...DEFAULT_QUIET });
+  // Last server-side window: a cleared <input type=time> yields '' which the API rejects.
+  let storedQuiet: NotificationQuiet = { ...DEFAULT_QUIET };
   let escalation = $state<NotificationEscalation>({ ...DEFAULT_ESCALATION });
   let digest = $state<NotificationDigest>('off');
   let sound = $state(false);
@@ -141,6 +143,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     available = p.available ?? null;
     quietKnown = p.quiet !== undefined;
     quiet = { ...(p.quiet ?? DEFAULT_QUIET) };
+    storedQuiet = { ...quiet };
     escalation = { ...(p.escalation ?? DEFAULT_ESCALATION) };
     digest = p.digest ?? 'off';
     sound = p.soundCritical ?? false;
@@ -217,6 +220,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       categories: r.categories,
       enabled: r.enabled,
     }));
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     try {
       const saved = await notificationsApi.savePrefs(sess, {
         email: targets.email.trim() || null,
@@ -227,8 +231,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
         disabled_channels: [...disabled],
         muted_categories: [...muted],
         ...(quietKnown && {
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          quiet: { ...quiet },
+          // 'Etc/Unknown' (WebKitGTK without tz data) is no IANA zone the server accepts.
+          ...(zone && zone !== 'Etc/Unknown' && { timezone: zone }),
+          quiet: {
+            ...quiet,
+            start: quiet.start || storedQuiet.start,
+            end: quiet.end || storedQuiet.end,
+          },
           escalation: { ...escalation },
           digest,
           sound_critical: sound,
