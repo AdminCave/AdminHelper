@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { Playbook, Server } from '$lib/api/types';
+import type { Connection, ResolvedConnection, TunnelMapping } from '$lib/bridge/types';
 
 const h = vi.hoisted(() => ({
   fetchPlaybooks: vi.fn(async (..._a: unknown[]) => [] as unknown[]),
@@ -16,12 +17,28 @@ const h = vi.hoisted(() => ({
   openAnsible: vi.fn(async (..._a: unknown[]) => true),
   sshConsole: 'external' as 'external' | 'embedded',
   modal: vi.fn(),
+  reportError: vi.fn(),
+  resolveConnection: vi.fn(),
+  connections: [] as unknown[],
+  mappings: [] as unknown[],
 }));
 
 vi.mock('$lib/api/ansible', () => ({
   ansibleApi: { fetchPlaybooks: h.fetchPlaybooks, fetchServers: h.fetchServers },
 }));
-vi.mock('$lib/bridge', () => ({ ansibleRun: h.ansibleRun }));
+vi.mock('$lib/bridge', () => ({
+  ansibleRun: h.ansibleRun,
+  resolveConnection: h.resolveConnection,
+}));
+vi.mock('$lib/stores/connections', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    connections: readable<unknown[]>([], (set) => {
+      set(h.connections);
+    }),
+  };
+});
+vi.mock('$lib/stores/tunnel', () => ({ getMappings: () => h.mappings }));
 vi.mock('$lib/stores/session', () => ({
   currentSession: () => ({ serverUrl: 'https://srv.example', username: 'a', isAdmin: true }),
   sessionStore: {
@@ -32,7 +49,7 @@ vi.mock('$lib/stores/session', () => ({
   },
 }));
 vi.mock('$lib/stores/terminals', () => ({ openAnsible: h.openAnsible }));
-vi.mock('$lib/stores/statusBar', () => ({ showStatus: vi.fn(), reportError: vi.fn() }));
+vi.mock('$lib/stores/statusBar', () => ({ showStatus: vi.fn(), reportError: h.reportError }));
 vi.mock('../components/ansible/PlaybookModal.svelte', () => ({ default: h.modal }));
 
 import { setLanguage } from '$lib/i18n';
@@ -77,6 +94,16 @@ beforeEach(() => {
   h.openAnsible.mockClear();
   h.sshConsole = 'external';
   h.modal.mockReset();
+  h.reportError.mockReset();
+  h.connections = [];
+  h.mappings = [];
+  h.resolveConnection.mockReset();
+  h.resolveConnection.mockImplementation(
+    async (connection: Connection): Promise<ResolvedConnection> => ({
+      connection,
+      viaTunnel: false,
+    }),
+  );
   clearSelection();
 });
 afterEach(() => cleanup());
@@ -171,5 +198,131 @@ describe('Ansible', () => {
     expect(chips[0].getAttribute('aria-pressed')).toBe('true');
     expect(document.querySelector('.pb-summary')?.textContent).toMatch(/auf\s+2/);
     expect(action('playbook-run').disabled).toBe(false);
+  });
+  describe('reaches each server like Verbinden (R-1202)', () => {
+    const ssh = (id: string, serverId: string, over: Partial<Connection> = {}): Connection => ({
+      id,
+      name: id,
+      kind: 'ssh',
+      host: '192.0.2.20',
+      port: 22,
+      username: 'ops',
+      tags: [],
+      trustCert: false,
+      serverId,
+      ...over,
+    });
+    const stcp: TunnelMapping = {
+      id: 't1',
+      serverId: 's2',
+      tunnelType: 'stcp',
+      protocol: 'tcp',
+      localPort: 22,
+      visitorPort: 6022,
+      customDomains: null,
+      connectionId: null,
+      enabled: true,
+      name: 'db-ssh',
+    };
+
+    function row(name: RegExp): HTMLElement {
+      return screen.getByRole('checkbox', { name }).closest('.pb-server') as HTMLElement;
+    }
+
+    async function choose(...names: RegExp[]) {
+      await mount();
+      await fireEvent.click(items()[0]);
+      for (const name of names) await fireEvent.click(screen.getByRole('checkbox', { name }));
+    }
+
+    it('marks a server without SSH connection and offers a choice where it has several', async () => {
+      h.connections = [
+        ssh('db-zeta', 's2'),
+        ssh('db-rdp', 's2', { kind: 'rdp' }),
+        ssh('db-alpha', 's2'),
+      ];
+      await choose();
+      expect(
+        row(/web-01/)
+          .querySelector('.pb-server-hostname')
+          ?.textContent?.trim(),
+      ).toBe('Hostname');
+      expect(row(/db-01/).querySelector('.pb-server-hostname')).toBeNull();
+      const via = screen.getByRole('combobox', {
+        name: 'SSH-Verbindung fuer db-01',
+      }) as HTMLSelectElement;
+      expect(Array.from(via.options).map((o) => o.value)).toEqual(['db-alpha', 'db-zeta']);
+      expect(via.value).toBe('db-alpha');
+    });
+
+    it('runs over the chosen connection, resolved, and over the hostname without one', async () => {
+      h.connections = [ssh('db-alpha', 's2'), ssh('db-zeta', 's2', { host: '127.0.0.1' })];
+      h.resolveConnection.mockImplementation(async (connection: Connection) => ({
+        connection: { ...connection, port: 23001 },
+        viaTunnel: true,
+        tunnelName: 'db-ssh',
+        tunnelType: 'stcp',
+      }));
+      await choose(/web-01/, /db-01/);
+      const via = screen.getByRole('combobox', { name: 'SSH-Verbindung fuer db-01' });
+      await fireEvent.change(via, { target: { value: 'db-zeta' } });
+      await fireEvent.click(action('playbook-run'));
+      await waitFor(() => expect(h.ansibleRun).toHaveBeenCalledTimes(1));
+      expect(h.resolveConnection).toHaveBeenCalledTimes(1);
+      expect(h.ansibleRun.mock.calls[0][1]).toEqual([
+        { hostname: 'web-01.example', groups: ['prod'] },
+        {
+          hostname: 'db-01.example',
+          groups: ['prod', 'db'],
+          connection: { ...ssh('db-zeta', 's2', { host: '127.0.0.1' }), port: 23001 },
+        },
+      ]);
+    });
+
+    it('starts one run when clicked again while the targets resolve', async () => {
+      h.connections = [ssh('db-alpha', 's2')];
+      let release: () => void = () => {};
+      h.resolveConnection.mockImplementation(
+        (connection: Connection) =>
+          new Promise<ResolvedConnection>((resolve) => {
+            release = () => resolve({ connection, viaTunnel: false });
+          }),
+      );
+      await choose(/db-01/);
+      await fireEvent.click(action('playbook-run'));
+      await waitFor(() => expect(h.resolveConnection).toHaveBeenCalledTimes(1));
+      expect(action('playbook-run').disabled).toBe(true);
+      await fireEvent.click(action('playbook-run'));
+      release();
+      await waitFor(() => expect(h.ansibleRun).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(action('playbook-run').disabled).toBe(false));
+      expect(h.resolveConnection).toHaveBeenCalledTimes(1);
+      expect(h.ansibleRun).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts nothing when the tunnel visitor of a server does not run', async () => {
+      h.connections = [ssh('db-auto', 's2', { host: '127.0.0.1', port: 6022 })];
+      h.mappings = [stcp];
+      await choose(/db-01/);
+      await fireEvent.click(action('playbook-run'));
+      await waitFor(() => expect(h.reportError).toHaveBeenCalledTimes(1));
+      expect(h.reportError.mock.calls[0][0]).toContain('db-01');
+      expect(h.reportError.mock.calls[0][0]).toContain('Tunnel');
+      expect(h.ansibleRun).not.toHaveBeenCalled();
+      expect(h.openAnsible).not.toHaveBeenCalled();
+    });
+
+    it('starts nothing when Rust refuses the target of a server', async () => {
+      h.sshConsole = 'embedded';
+      h.connections = [ssh('db-alpha', 's2', { host: '127.0.0.1', port: 23005 })];
+      h.resolveConnection.mockRejectedValue(
+        'port 23005 on this machine belongs to the tunnel of another workspace',
+      );
+      await choose(/db-01/);
+      await fireEvent.click(action('playbook-run'));
+      await waitFor(() => expect(h.reportError).toHaveBeenCalledTimes(1));
+      expect(h.reportError.mock.calls[0][0]).toMatch(/db-01.*port 23005/);
+      expect(h.openAnsible).not.toHaveBeenCalled();
+    });
   });
 });
