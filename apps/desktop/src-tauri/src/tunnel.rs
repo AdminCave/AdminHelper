@@ -35,7 +35,11 @@ pub struct TunnelMapping {
 pub struct ResolvedConnection {
     pub connection: Connection,
     pub via_tunnel: bool,
+    /// The name the server shows for the tunnel (R-1210: derived from its server's name, so it
+    /// changes with a rename and may repeat). For display only.
     pub tunnel_name: Option<String>,
+    /// The tunnel's ID: unique and kept across renames, what an identity names it by.
+    pub tunnel_id: Option<String>,
     pub tunnel_type: Option<String>,
 }
 
@@ -105,6 +109,7 @@ pub fn resolve_connection(
                 connection: resolved,
                 via_tunnel: true,
                 tunnel_name: Some(t.name.clone()),
+                tunnel_id: Some(t.id.clone()),
                 tunnel_type: Some(t.tunnel_type.clone()),
             }
         }
@@ -117,6 +122,7 @@ pub fn resolve_connection(
                     connection: resolved,
                     via_tunnel: true,
                     tunnel_name: Some(tunnel_name_at(tunnels, visitor)),
+                    tunnel_id: Some(tunnel_id_at(tunnels, visitor)),
                     // The allow-list admits STCP visitors only.
                     tunnel_type: Some("stcp".to_string()),
                 }
@@ -125,6 +131,7 @@ pub fn resolve_connection(
                 connection: connection.clone(),
                 via_tunnel: false,
                 tunnel_name: None,
+                tunnel_id: None,
                 tunnel_type: None,
             },
         },
@@ -161,14 +168,33 @@ fn literal_visitor<'a>(
     visitor_at(bindings, connection.port?)
 }
 
-/// The name shown for a visitor reached without a mapping of the connection: the name the server
-/// gives the tunnel of its server port (R-1210), else the visitor's own, which is the tunnel's ID
-/// since then.
-fn tunnel_name_at(tunnels: &[TunnelMapping], visitor: &VisitorBinding) -> String {
+/// The STCP mapping at the server port of a visitor reached without a mapping of the connection;
+/// the server keeps one tunnel per visitor port.
+fn mapping_at<'a>(
+    tunnels: &'a [TunnelMapping],
+    visitor: &VisitorBinding,
+) -> Option<&'a TunnelMapping> {
     tunnels
         .iter()
         .find(|t| t.tunnel_type == "stcp" && t.visitor_port == Some(i64::from(visitor.server_port)))
-        .map_or_else(|| visitor.name.clone(), |t| t.name.clone())
+}
+
+/// The name shown for such a visitor: the one the server gives its tunnel (R-1210), else the
+/// visitor's own.
+fn tunnel_name_at(tunnels: &[TunnelMapping], visitor: &VisitorBinding) -> String {
+    mapping_at(tunnels, visitor).map_or_else(|| visitor.name.clone(), |t| t.name.clone())
+}
+
+/// The ID of the tunnel behind such a visitor: its mapping's, else the one in its name
+/// (`<tunnel-id>-visitor` since R-1210), else the name itself.
+fn tunnel_id_at(tunnels: &[TunnelMapping], visitor: &VisitorBinding) -> String {
+    mapping_at(tunnels, visitor).map_or_else(
+        || {
+            let name = &visitor.name;
+            name.strip_suffix("-visitor").unwrap_or(name).to_string()
+        },
+        |t| t.id.clone(),
+    )
 }
 
 /// Point `connection` at a visitor on `127.0.0.1`:`local_port`; a web one gets the URL too.
@@ -436,6 +462,7 @@ mod tests {
         let resolved = resolve_connection(&conn, &[], &[]);
         assert!(!resolved.via_tunnel);
         assert_eq!(resolved.tunnel_name, None);
+        assert_eq!(resolved.tunnel_id, None);
         assert_eq!(resolved.tunnel_type, None);
         assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
         assert_eq!(resolved.connection.port, Some(3389));
@@ -463,6 +490,8 @@ mod tests {
         let resolved = resolve_connection(&conn, &[tunnel("c1", "stcp", "rdp")], &same_ports());
         assert!(resolved.via_tunnel);
         assert_eq!(resolved.tunnel_name.as_deref(), Some("tunnel-1"));
+        // The mapped tunnel goes by its ID, which names it in a pin identity (R-1210).
+        assert_eq!(resolved.tunnel_id.as_deref(), Some("t1"));
         assert_eq!(resolved.tunnel_type.as_deref(), Some("stcp"));
         assert_eq!(resolved.connection.host.as_deref(), Some("127.0.0.1"));
         assert_eq!(resolved.connection.port, Some(13389));
@@ -533,6 +562,8 @@ mod tests {
         let resolved = resolve_connection(&conn, &[mapping], &[]);
         assert!(resolved.via_tunnel);
         assert_eq!(resolved.tunnel_name.as_deref(), Some("tunnel-1"));
+        // The mapped tunnel goes by its ID, which names it in a pin identity (R-1210).
+        assert_eq!(resolved.tunnel_id.as_deref(), Some("t1"));
         assert_eq!(resolved.tunnel_type.as_deref(), Some("https"));
         assert_eq!(
             json(&resolved.connection),
@@ -593,6 +624,8 @@ mod tests {
         let resolved = resolve_connection(&conn, &[tunnel("c1", "stcp", "rdp")], &moved_ports());
         assert!(resolved.via_tunnel);
         assert_eq!(resolved.tunnel_name.as_deref(), Some("tunnel-1"));
+        // The mapped tunnel goes by its ID, which names it in a pin identity (R-1210).
+        assert_eq!(resolved.tunnel_id.as_deref(), Some("t1"));
         assert_eq!(resolved.tunnel_type.as_deref(), Some("stcp"));
         assert_eq!(json(&resolved.connection), at_loopback(&conn, 23000, None));
 
@@ -627,8 +660,15 @@ mod tests {
                 } else {
                     visitor
                 };
+                // The pin identity's tunnel (R-1210): the mapping's ID, else the one in the name.
+                let id = if port == 13389 && !tunnels.is_empty() {
+                    "t1"
+                } else {
+                    visitor.strip_suffix("-visitor").unwrap()
+                };
                 assert!(resolved.via_tunnel, "{case}");
                 assert_eq!(resolved.tunnel_name.as_deref(), Some(shown), "{case}");
+                assert_eq!(resolved.tunnel_id.as_deref(), Some(id), "{case}");
                 assert_eq!(resolved.tunnel_type.as_deref(), Some("stcp"), "{case}");
                 assert_eq!(
                     json(&resolved.connection),
@@ -672,6 +712,7 @@ mod tests {
             let resolved = resolve_connection(&conn, &[], &moved_ports());
             assert!(!resolved.via_tunnel, "{case}");
             assert_eq!(resolved.tunnel_name, None, "{case}");
+            assert_eq!(resolved.tunnel_id, None, "{case}");
             assert_eq!(json(&resolved.connection), json(&conn), "{case}");
         }
     }

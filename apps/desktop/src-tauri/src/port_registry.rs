@@ -452,9 +452,10 @@ mod tests {
         // With recheck (no frpc of the owner runs) a port someone else bound meanwhile is not
         // inherited.
         let dir = scratch_dir("renamed-taken");
-        let server_port = free_port();
+        // Bound first: while the listener holds it, the OS cannot hand it out as the server port.
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let taken = listener.local_addr().unwrap().port();
+        let server_port = free_port();
         let registry = PortRegistry::new(&dir);
         registry.seed(DEFAULT_OWNER, &[("web01-ssh-visitor", server_port, taken)]);
 
