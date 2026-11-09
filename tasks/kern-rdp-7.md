@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Spec erwartet die falsche feste Größe — Task-Ledger
-Status: geplant · Branch: feature/kern-rdp-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-rdp-7 · Review: am Ende
 Spec: docs/features/kern-rdp-7.md (Roadmap R-1205)
 Heavy: linux-full — Fix eines REG aus dem Sammellauf; Beweis vor dem Merge: Schritt desktop_e2e_connect auf der Box der Lane (`iter.sh --cmd`, der `--step`-Name ist mehrdeutig, R-1206)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
