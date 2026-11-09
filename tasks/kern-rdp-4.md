@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Stufe 4 Anzeige, Stufe 5 Fenster — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-4 · Review: pro Task
 Spec: docs/features/kern-rdp-4.md (Roadmap R-1100, R-1101)
 Heavy: linux-full — Desktop-Journeys: Resize, Abdocken und Multi-Monitor des RDP-Tabs gegen den xrdp-Container (Live-Spec) laufen im Sammellauf; neue Fensterrechte und die IronRDP-Revision; Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -126,8 +126,10 @@ Review: approve (.ah-out/review/kern-rdp-4/T14.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T15
 
-### T15 — Doku-Korrekturen der Abschlussprüfung (DE+EN)  [ ]
+### T15 — Doku-Korrekturen der Abschlussprüfung (DE+EN)  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @491bf31b2 2026-11-09T01:43:05+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Eingabe-Absatz: die Klammer der Maus nennt Koordinaten im Bild des Bildschirms, die doppelte Klammer entfällt. Der Satz zum Fehler beim Start des WebSocket-Servers (`failed`/`connect`) kommt zurück. `terminal_close_all` beendet aus main auch die RDP-Sitzungen (T14).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html
