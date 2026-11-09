@@ -1,5 +1,5 @@
 # Einheitliche Namen — Task-Ledger
-Status: erledigt · Branch: feature/arch-namen · Review: pro Task
+Status: bereit · Branch: feature/arch-namen · Review: pro Task
 Spec: docs/features/arch-namen.md (Roadmap R-1210, R-1211)
 Heavy: scenario --tunnel — FRP-Kennungen (frpc user, Proxy-, Visitor-Namen) wechseln auf IDs; der echte 3-Host-Datenpfad beweist es, ask-first. Die Desktop-Tunnel-Suiten und die Live-Specs aus T10 fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -132,3 +132,12 @@ Review: approve (.ah-out/review/arch-namen/T14.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/types.parity.test.ts
 Doku: keine (Typbeschreibung, kein Verhalten)
 Abhängt von: T13
+
+### T15 — Desktop-UI: FrpStatusProxy.tunnel im Gleichlauf mit dem Web-Typ (CI)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/types.contract.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d40540cbc 2026-11-09T18:04:28+01:00
+Review: approve (.ah-out/review/arch-namen/T15.verdict.json)
+Änderung: Die PR-CI (Job Desktop-UI, Schritt „API types in lockstep with the web frontend“, und `sync_check_test` im Ops-Job) findet `FrpStatusProxy` in den Web-Typen um `tunnel` reicher als in den Desktop-Typen (T9). Der Desktop-Typ bekommt dieselben Zeilen, der Desktop-Vertragstest beschreibt `tunnel` statt es auszulassen.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts
+Doku: keine (Typbeschreibung)
+Abhängt von: T9
