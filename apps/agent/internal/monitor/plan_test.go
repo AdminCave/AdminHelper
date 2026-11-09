@@ -235,13 +235,20 @@ func TestProbeDue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		res := probe.Result{TS: now.Add(-tc.age).Unix()}
-		if got := probeDue(p, res, now); got != tc.want {
+		if got := probeDue(p, res, now, 1); got != tc.want {
 			t.Errorf("age %s: due = %v, want %v", tc.age, got, tc.want)
 		}
 	}
 	slow := probe.Probe{ID: "c", IntervalS: 3600}
-	if probeDue(slow, probe.Result{TS: now.Add(-50 * time.Minute).Unix()}, now) {
+	if probeDue(slow, probe.Result{TS: now.Add(-50 * time.Minute).Unix()}, now, 1) {
 		t.Error("a 1 h probe 50 min after its run is due, want not yet")
+	}
+	// The probe phase's self-throttle stretches the interval, the slack stays.
+	if probeDue(p, probe.Result{TS: now.Add(-400 * time.Second).Unix()}, now, 2) {
+		t.Error("a 300 s probe at factor 2 is due 400 s after its run, want not yet")
+	}
+	if !probeDue(p, probe.Result{TS: now.Add(-540 * time.Second).Unix()}, now, 2) {
+		t.Error("a 300 s probe at factor 2 is not due 540 s after its run, want due")
 	}
 }
 
@@ -281,13 +288,13 @@ func TestRunDueProbesRunsTheDueOnesOldestFirst(t *testing.T) {
 		"gone":   at(time.Hour),
 	}
 
-	next, ran := runDueProbes(context.Background(), probes, last, now)
+	next, ran, postponed := runDueProbes(context.Background(), probes, last, 1, now)
 
 	if want := []string{"never", "oldest", "older"}; !reflect.DeepEqual(*calls, want) {
 		t.Fatalf("ran %v, want %v", *calls, want)
 	}
-	if ran != 3 || len(next) != 4 {
-		t.Fatalf("ran %d, %d results; want 3 and one per probe of the plan", ran, len(next))
+	if ran != 3 || postponed != 0 || len(next) != 4 {
+		t.Fatalf("ran %d, postponed %d, %d results; want 3, none and one per probe of the plan", ran, postponed, len(next))
 	}
 	if !reflect.DeepEqual(next["recent"], last["recent"]) {
 		t.Errorf("the probe not due has result %+v, want its last one", next["recent"])
@@ -312,15 +319,15 @@ func TestRunDueProbesStartsAProbeOnlyWithItsWholeTimeoutLeft(t *testing.T) {
 		{ID: "short", IntervalS: 300, TimeoutS: 1},
 	}
 
-	next, ran := runDueProbes(ctx, probes, probe.Results{"long": old}, time.Now())
+	next, ran, postponed := runDueProbes(ctx, probes, probe.Results{"long": old}, 1, time.Now())
 
-	if !reflect.DeepEqual(*calls, []string{"short"}) || ran != 1 {
-		t.Fatalf("ran %v (%d), want only the probe that fits", *calls, ran)
+	if !reflect.DeepEqual(*calls, []string{"short"}) || ran != 1 || postponed != 1 {
+		t.Fatalf("ran %v (%d, %d postponed), want only the probe that fits and the other postponed", *calls, ran, postponed)
 	}
 	if !reflect.DeepEqual(next["long"], old) {
 		t.Errorf("the postponed probe has result %+v, want its last one %+v", next["long"], old)
 	}
-	if !probeDue(probes[0], next["long"], time.Now()) {
+	if !probeDue(probes[0], next["long"], time.Now(), 1) {
 		t.Error("the postponed probe is not due for the next run")
 	}
 }
@@ -338,10 +345,10 @@ func TestRunDueProbesDropsAProbeTheRunEndedUnder(t *testing.T) {
 		{ID: "second", IntervalS: 300, TimeoutS: 1},
 	}
 
-	next, ran := runDueProbes(ctx, probes, probe.Results{"first": old}, time.Now())
+	next, ran, postponed := runDueProbes(ctx, probes, probe.Results{"first": old}, 1, time.Now())
 
-	if !reflect.DeepEqual(*calls, []string{"second"}) || ran != 0 {
-		t.Fatalf("ran %v (%d counted), want the never-run probe started and none counted", *calls, ran)
+	if !reflect.DeepEqual(*calls, []string{"second"}) || ran != 0 || postponed != 2 {
+		t.Fatalf("ran %v (%d counted, %d postponed), want the never-run probe started, none counted, both postponed", *calls, ran, postponed)
 	}
 	if _, ok := next["second"]; ok {
 		t.Errorf("the cut-short probe has result %+v, want none", next["second"])
@@ -429,6 +436,10 @@ func TestPushSendsTheProbesAndKeepsThemThroughALostPush(t *testing.T) {
 	}
 	if kept, ok := st.Probes["chk-1"]; !ok || kept.TS != first.TS {
 		t.Fatalf("state probes after a lost push = %+v, want the result sent", st.Probes)
+	}
+	// The self-throttle counts the run all the same: the second clean run of the probe phase.
+	if th := st.Throttle[probesCollector]; th.Clean != 2 {
+		t.Errorf("state throttle of the probes after a lost push = %+v, want the second clean run", th)
 	}
 
 	// 3) The next run, monitoring back: the probe is not due, its result goes out again with its time.

@@ -15,7 +15,7 @@ import (
 // reportState is what the next report is measured against, persisted in config.MonitorReportStateFile
 // between two runs of the oneshot. Push saves it only after a successful push, like the inventory
 // state: a lost push then widens the next CPU window instead of dropping a part of it, and its OOM
-// kills count again in the next report. Probes alone is saved after a lost push too (Push).
+// kills count again in the next report. Probes and Throttle alone are saved after a lost push too (Push).
 type reportState struct {
 	CPU *cpuSample `json:"cpu,omitempty"`
 	// OOMKill is the oom_kill counter at the last report (Linux only), read from OOMKillSource. A
@@ -28,6 +28,8 @@ type reportState struct {
 	Updates *updatesCheck `json:"updates,omitempty"`
 	// Probes is the last result of every probe of the plan; its ts also says when the probe is due.
 	Probes probe.Results `json:"probes,omitempty"`
+	// Throttle is the self-throttle of the optional collectors and of the probe phase, by name.
+	Throttle map[string]throttle `json:"throttle,omitempty"`
 }
 
 // The sources of the OOM kill counter: /proc/vmstat counts the kills of the whole kernel, the

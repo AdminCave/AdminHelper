@@ -86,12 +86,21 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T15
 Abhängt von: T5
 
-### T9 — Agent: Selbstmessung und Selbstbremse (R-1223)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/selfmeasure.go, apps/agent/internal/monitor/selfmeasure_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/report_test.go
+### T9 — Agent: Selbstmessung und Selbstbremse (R-1223)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/selfmeasure.go, apps/agent/internal/monitor/selfmeasure_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/selfmeasure_unix.go, apps/agent/internal/monitor/selfmeasure_windows.go, apps/agent/internal/monitor/plan.go, apps/agent/internal/monitor/plan_test.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/execx/execx.go, apps/agent/internal/execx/execx_test.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e5c624fed 2026-11-09T19:48:51+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T9.verdict.json)
 Änderung: Jeder Collector läuft in einem Messrahmen (Dauer, CPU-Zeit aus rusage von Prozess und Kindern, Zeitlimit-Treffer); Block `self.collectors` im Report. Für die optionalen Collector (`docker`, `proxmox`, `zfs`, `smart`, Proben, Erkennung) verdoppeln zwei Zeitlimit-Treffer hintereinander den Faktor (höchstens 8), drei saubere Läufe halbieren ihn; ein gebremster Lauf meldet `throttled: true`. Faktor und Zähler im Report-Zustand (`.report-state.json`). Die Kern-Collector werden nie gebremst. Der Rahmen liegt in `report.go`, `plugins.go` bleibt außer T8 unberührt.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T15
 Abhängt von: T8
+
+### T16 — Monitoring: Frische einer Probe nach dem gemeldeten Proben-Faktor (R-1223)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_probe_checker.py
+Änderung: Der Probe-Checker liest `self.collectors.probes.factor` aus demselben Report (Zahl, auf 1…8 begrenzt, sonst 1) und wertet ein Ergebnis erst ab `2 × interval × factor + AGENT_RUN_S` als veraltet: die Selbstbremse des Agenten (T9) streckt die Intervalle, ohne dass die Checks `unknown` werden. Ohne Block (Agent vor v4) bleibt es beim reinen Intervall.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_checker.py
+Doku: → T15
+Abhängt von: T9
 
 ### T10 — Agent: Ziel-Wächter, Feld-Freigabe, Zugangsbremse, Zugangsdaten und CLI (R-1223)  [ ]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/fields.go, apps/agent/internal/probe/fields_test.go, apps/agent/internal/credentials/store.go, apps/agent/internal/credentials/store_test.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/credential_cmd_test.go
@@ -170,3 +179,10 @@ Abhängt von: T14
 - 2026-11-09 T8: Nach einem verlorenen Push speichert `Push` die Probe-Ergebnisse trotzdem, sobald eine Probe lief (übriger Zustand wie zuvor): sonst liefe während eines Monitoring-Ausfalls jede Probe in jedem Lauf. Der nächste Report trägt sie mit ihrem eigenen `ts`. Eine Probe, unter der der Lauf endet, behält ihr altes Ergebnis und bleibt fällig.
 - 2026-11-09 T8: Der Block `credentials` kommt mit T10, wenn es die Credential-Datei gibt: ein leerer Block hieße für den Server „alle Referenzen weg“ (T5). Der Block `probes` geht immer mit, ohne Plan als `{}`.
 - 2026-11-09 T8: Proben laufen nacheinander, älteste zuerst, nur mit vollem Timeout im Restbudget der Sammlung; was nicht passt, bleibt fällig (Warn mit Zahl). `Result` liest Werte mit `UseNumber` zurück, damit ein erneut gesendetes Ergebnis wörtlich gleich bleibt.
+- 2026-11-09 T9: Ein Zeitlimit-Treffer ist ein Werkzeugaufruf, den sein eigenes Timeout beendet hat (`execx.CountTimeouts` am Kontext des Messrahmens); ein Aufruf, den das Ende der Sammlung beendet, zählt nicht. Ein eigenes Zeitlimit je Rahmen gibt es nicht: die Timeouts der Werkzeuge sind die Grenzen der Collector.
+- 2026-11-09 T9: Ein optionaler Collector mit Faktor n läuft in jedem n-ten Lauf; ein ausgelassener Lauf meldet `throttled: true` mit seinem Faktor und lässt seinen Block weg, bei `smart` auch `smart_absent`. Die Kern-Collector (`resources`, `system_state`, `services`) werden gemessen, nie gebremst, und tragen keine Bremse im Zustand.
+- 2026-11-09 T9: Die Proben-Phase (Eintrag `probes`) zählt als Treffer die fälligen Proben, die mangels Restzeit verschoben wurden; ihr Faktor streckt das Intervall jeder Probe, die Phase selbst ist nie `throttled` und schickt ihren Block immer. Das Timeout einer einzelnen Probe ist deren eigenes Fehler-Ergebnis, kein Treffer: ein hängender Dienst bremst nicht die Proben aller anderen. Die Phase liegt dafür jetzt in `buildReportWithState`.
+- 2026-11-09 T9: `cpu_ms` ist die CPU-Zeit des Agenten und seiner beendeten, abgewarteten Kinder (rusage SELF + CHILDREN); unter Windows nur die des Agenten (`GetProcessTimes`). Der apt-Aufruf im Systemzustand (eigenes `exec.Cmd`, R-1222) zählt nicht als Treffer.
+- 2026-11-09 T9: Nach einem verlorenen Push speichert `Push` neben den Probe-Ergebnissen immer auch die Bremse: sie misst, was die Collector gekostet haben, gesendet oder nicht. Der übrige Zustand bleibt wie zuvor (Test `TestReportStatePushSavesOnlyAfterSuccess` dafür angepasst).
+- 2026-11-09 T9: 15 Dateien statt etwa acht: der Rahmen, seine Aufrufer (`buildReportWithState`, `runDueProbes`, `Push`) und deren Tests ändern sich nur gemeinsam (neue Signaturen). Der Rahmen der Erkennung kommt mit T14.
+- 2026-11-09 T9: Der Proben-Faktor streckt die Intervalle, die Frische im Monitoring rechnete aber mit dem reinen Intervall (Prüfer-Fund T9): ab Faktor 4 wurden Proben `unknown`. Statt den Faktor der Phase auf 2 zu deckeln, nimmt das Monitoring den gemeldeten Faktor in die Frische (Vertrag in der Spec, eigene Task T16 direkt nach T9) — sonst hielte die Bremse gerade dann nicht, wenn sie gebraucht wird.

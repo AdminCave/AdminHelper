@@ -223,6 +223,9 @@ const dockerHelperEnv = "AH_DOCKER_HELPER"
 // long. A grandchild that outlived the test would keep go test from deleting the test binary on Windows.
 const grandchildLifetime = 20 * time.Second
 
+// spinCPU is the CPU time the "spin" helper burns before it exits.
+const spinCPU = 300 * time.Millisecond
+
 // orphanStarted is what the "orphan" helper prints once its grandchild runs.
 const orphanStarted = "grandchild started"
 
@@ -234,6 +237,10 @@ func TestHelperDockerProcess(t *testing.T) {
 		time.Sleep(time.Minute)
 	case "fail":
 		os.Exit(3)
+	case "spin":
+		// A tool that costs CPU time: the self-measurement counts it to the collector that waited for it.
+		for processCPUTime() < spinCPU {
+		}
 	case "orphan":
 		// A tool that starts a grandchild with its own stdout (a daemon, a pager) and then hangs.
 		grandchild := exec.Command(os.Args[0], "-test.run=^TestHelperDockerProcess$")
@@ -326,7 +333,7 @@ func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
 	pluginCollectors.zfs = record("zfs")
 
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
-	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	buildReportWithState(ctx, nil, nil, reportState{}, time.Now())
 	for _, name := range []string{"docker", "proxmox", "zfs"} {
 		if c := got[name]; c == nil || c.Value(ctxKey{}) != t.Name() {
 			t.Errorf("%s collector got context %v, want the report's", name, c)

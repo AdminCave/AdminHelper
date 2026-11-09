@@ -129,11 +129,12 @@ func parsePlan(data []byte) (probe.Plan, error) {
 	return plan, nil
 }
 
-// runDueProbes runs those of probes that are due, oldest result first, in what is left of ctx. It
-// returns the last result of every one of probes (a result of a probe no longer among them is dropped)
-// and how many ran. A probe starts only while ctx leaves it its whole timeout, so the push keeps its
+// runDueProbes runs those of probes that are due, their intervals stretched by factor (the probe phase's
+// self-throttle), oldest result first, in what is left of ctx. It returns the last result of every one
+// of probes (a result of a probe no longer among them is dropped), how many ran and how many due ones
+// were postponed. A probe starts only while ctx leaves it its whole timeout, so the push keeps its
 // time; the others stay due for the next run.
-func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results, now time.Time) (probe.Results, int) {
+func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results, factor int, now time.Time) (probe.Results, int, int) {
 	next := probe.Results{}
 	for _, p := range probes {
 		if res, ok := last[p.ID]; ok {
@@ -142,7 +143,7 @@ func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results,
 	}
 	due := make([]probe.Probe, 0, len(probes))
 	for _, p := range probes {
-		if res, ok := next[p.ID]; !ok || probeDue(p, res, now) {
+		if res, ok := next[p.ID]; !ok || probeDue(p, res, now, factor) {
 			due = append(due, p)
 		}
 	}
@@ -172,15 +173,16 @@ func runDueProbes(ctx context.Context, probes []probe.Probe, last probe.Results,
 	if postponed > 0 {
 		logger.Warnf("%d due probes postponed to the next run: this run's time is used up", postponed)
 	}
-	return next, ran
+	return next, ran, postponed
 }
 
-// probeDue says whether p, last run as res, is due at now. The slack keeps the agent's own jitter (the
-// timer's random delay, collectors that take longer one run than the next) from pushing a probe whose
-// interval is one agent run to every other run. A result from the future (the clock went back) is due.
-func probeDue(p probe.Probe, res probe.Result, now time.Time) bool {
+// probeDue says whether p, last run as res, is due at now with its interval stretched by factor. The
+// slack keeps the agent's own jitter (the timer's random delay, collectors that take longer one run than
+// the next) from pushing a probe whose interval is one agent run to every other run. A result from the
+// future (the clock went back) is due.
+func probeDue(p probe.Probe, res probe.Result, now time.Time, factor int) bool {
 	age := now.Sub(time.Unix(res.TS, 0))
-	return age < 0 || age >= time.Duration(p.IntervalS)*time.Second-probeDueSlack
+	return age < 0 || age >= time.Duration(p.IntervalS*factor)*time.Second-probeDueSlack
 }
 
 // lastRun is when the probe id last ran, 0 for never.

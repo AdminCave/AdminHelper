@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -323,17 +324,20 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 		t.Fatalf("state after the second push = %+v, want total 1400, busy 300", st)
 	}
 
-	// 3) A lost push (both attempts fail) leaves the file as it was.
-	saved, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 3) A lost push (both attempts fail) leaves the state as it was, but for the self-throttle: that
+	// counts the run all the same (here the third clean one, which resets the count).
+	saved := loadReportState(statePath)
 	status.Store(http.StatusBadGateway)
 	if _, err := push(900, 1500); err == nil {
 		t.Fatal("push against 502: want an error")
 	}
-	if after, _ := os.ReadFile(statePath); !bytes.Equal(after, saved) {
-		t.Fatalf("state file after a failed push = %s, want it unchanged %s", after, saved)
+	after := loadReportState(statePath)
+	if th := after.Throttle[probesCollector]; th != (throttle{Factor: 1}) || saved.Throttle[probesCollector].Clean != 2 {
+		t.Errorf("probes throttle after a failed push = %+v (before %+v), want the third clean run counted", th, saved.Throttle[probesCollector])
+	}
+	after.Throttle, saved.Throttle = nil, nil
+	if !reflect.DeepEqual(after, saved) {
+		t.Fatalf("state after a failed push = %+v, want it unchanged %+v", after, saved)
 	}
 
 	// 4) The next successful push measures since the last successful one: (600-300)/(2400-1400).

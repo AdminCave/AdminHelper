@@ -129,3 +129,40 @@ func TestRunToolThatExitedWhileAGrandchildHoldsStdoutSucceeds(t *testing.T) {
 		t.Errorf("Run returned after %s, the grandchild held it past WaitDelay", elapsed)
 	}
 }
+
+func TestCountTimeoutsCountsTheCallsTheirOwnTimeoutEnded(t *testing.T) {
+	ctx, timeouts := CountTimeouts(context.Background())
+
+	if _, err, _ := runHelper(t, ctx, "hang", 100*time.Millisecond); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if _, err, _ := runHelper(t, ctx, "fail", time.Minute); err == nil {
+		t.Fatal("the failing helper returned no error")
+	}
+	if _, err, _ := runHelper(t, ctx, "print", time.Minute); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+
+	if got := timeouts.Load(); got != 1 {
+		t.Errorf("timeouts = %d, want 1: only the hanging call hit its timeout", got)
+	}
+}
+
+func TestCountTimeoutsLeavesOutTheCallsCtxEnded(t *testing.T) {
+	// The deadline of ctx is the collection's, not the tool's own limit: a call it ends is no hit.
+	counted, timeouts := CountTimeouts(context.Background())
+	ctx, cancel := context.WithTimeout(counted, 100*time.Millisecond)
+	defer cancel()
+	if _, err, _ := runHelper(t, ctx, "hang", time.Minute); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	canceled, stop := context.WithCancel(counted)
+	time.AfterFunc(100*time.Millisecond, stop)
+	if _, err, _ := runHelper(t, canceled, "hang", time.Minute); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+
+	if got := timeouts.Load(); got != 0 {
+		t.Errorf("timeouts = %d, want 0", got)
+	}
+}

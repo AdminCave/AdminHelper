@@ -16,20 +16,105 @@ import (
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/enroll"
 	"adminhelper-agent/internal/httpclient"
+	"adminhelper-agent/internal/probe"
 )
 
 // BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
-// with the 1s sample; monitor init's test push neither reads nor writes the state.
+// with the 1s sample; monitor init's test push neither reads nor writes the state, and runs no probe.
 func BuildReport(serviceNames []string) map[string]any {
-	report, _ := buildReportWithState(context.Background(), serviceNames, reportState{}, time.Now())
+	report, _ := buildReportWithState(context.Background(), serviceNames, nil, reportState{}, time.Now())
 	return report
 }
 
 // buildReportWithState is BuildReport measured against prev, the state the last successful push
-// saved. It also returns the state to save once this report has been pushed. ctx ends the tool calls
-// of the system state, service (systemctl, sc), docker, proxmox, zfs and smart collectors.
-func buildReportWithState(ctx context.Context, serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
-	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
+// saved, with the due ones of probes run after the collectors. It also returns the state to save once
+// this report has been pushed. ctx ends the tool calls of the system state, service (systemctl, sc),
+// docker, proxmox, zfs and smart collectors and the probes. Every collector runs in a measuring frame
+// (self.collectors); the optional ones and the probes are throttled by their time-limit hits.
+func buildReportWithState(ctx context.Context, serviceNames []string, probes []probe.Probe, prev reportState, now time.Time) (map[string]any, reportState) {
+	m := newSelfMeasure(prev.Throttle)
+	report := map[string]any{"report_version": 4}
+
+	var cpuNow *cpuSample
+	m.core(ctx, "resources", func(context.Context) {
+		var resources map[string]any
+		resources, cpuNow = collectResources(prev.CPU, now)
+		report["resources"] = resources
+		report["uptime_seconds"] = collectUptime()
+		report["host"] = collectHostFacts()
+	})
+	report["timestamp"] = time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	// The collector hands prev on with what it measured replaced, so a value it could not read this
+	// time stays the base for the next report.
+	var next reportState
+	m.core(ctx, "system_state", func(ctx context.Context) {
+		var systemState map[string]any
+		systemState, next = systemStateCollector(ctx, prev)
+		if len(systemState) > 0 {
+			report["system_state"] = systemState
+		}
+	})
+	next.CPU = cpuNow
+
+	// Service health (platform-specific)
+	m.core(ctx, "services", func(ctx context.Context) {
+		svcHealth := serviceHealthCollector(ctx)
+		if len(serviceNames) > 0 {
+			// Collect once and reuse for both the "watched" sub-key and the legacy
+			// top-level "services" key: avoids double systemctl/sc subprocess spawns
+			// per cycle and two snapshots that could disagree if a service flips.
+			watched := collectWatchedServices(ctx, serviceNames)
+			svcHealth["watched"] = watched
+			report["services"] = watched
+		}
+		report["systemd"] = svcHealth
+	})
+
+	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
+	m.optional(ctx, "docker", func(ctx context.Context) {
+		if docker := pluginCollectors.docker(ctx); docker != nil {
+			report["docker"] = docker
+		}
+	})
+	m.optional(ctx, "proxmox", func(ctx context.Context) {
+		if proxmox := pluginCollectors.proxmox(ctx); proxmox != nil {
+			report["proxmox"] = proxmox
+		}
+	})
+	m.optional(ctx, "zfs", func(ctx context.Context) {
+		if zfs := pluginCollectors.zfs(ctx); zfs != nil {
+			report["zfs"] = zfs
+		}
+	})
+	m.optional(ctx, "smart", func(ctx context.Context) {
+		if smart, absent := pluginCollectors.smart(ctx); smart != nil {
+			report["smart"] = smart
+		} else {
+			report["smart_absent"] = map[string]string{"reason": absent}
+		}
+	})
+
+	// The probes run in what is left of ctx. A probe that times out is its own result, not a hit: one
+	// hanging service would slow down the probes of every other. The phase's hit is a due probe the
+	// run's time did not leave room for; its factor stretches the interval of every probe.
+	probeFactor := prev.Throttle[probesCollector].factor()
+	postponed := 0
+	st := measured(ctx, func(ctx context.Context) {
+		next.Probes, _, postponed = runDueProbes(ctx, probes, prev.Probes, probeFactor, time.Now())
+	})
+	m.record(probesCollector, st, postponed)
+	report["probes"] = next.Probes
+
+	next.Throttle = m.next
+	report["self"] = map[string]any{"collectors": m.stats}
+	return report, next
+}
+
+// collectResources is the report's resources block, the CPU share measured since prevCPU, and the CPU
+// counters now.
+func collectResources(prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
+	cpuPercent, cpuNow := collectCPUSince(prevCPU, now)
 	resources := map[string]any{
 		"cpu_percent": cpuPercent,
 	}
@@ -59,52 +144,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, prev repor
 	if temps := collectTemperatures(); len(temps) > 0 {
 		resources["temperatures"] = temps
 	}
-
-	report := map[string]any{
-		"report_version": 4,
-		"timestamp":      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		"resources":      resources,
-		"uptime_seconds": collectUptime(),
-		"host":           collectHostFacts(),
-	}
-
-	// The collector hands prev on with what it measured replaced, so a value it could not read this
-	// time stays the base for the next report.
-	systemState, next := systemStateCollector(ctx, prev)
-	next.CPU = cpuNow
-	if len(systemState) > 0 {
-		report["system_state"] = systemState
-	}
-
-	// Service health (platform-specific)
-	svcHealth := serviceHealthCollector(ctx)
-	if len(serviceNames) > 0 {
-		// Collect once and reuse for both the "watched" sub-key and the legacy
-		// top-level "services" key: avoids double systemctl/sc subprocess spawns
-		// per cycle and two snapshots that could disagree if a service flips.
-		watched := collectWatchedServices(ctx, serviceNames)
-		svcHealth["watched"] = watched
-		report["services"] = watched
-	}
-	report["systemd"] = svcHealth
-
-	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
-	if docker := pluginCollectors.docker(ctx); docker != nil {
-		report["docker"] = docker
-	}
-	if proxmox := pluginCollectors.proxmox(ctx); proxmox != nil {
-		report["proxmox"] = proxmox
-	}
-	if zfs := pluginCollectors.zfs(ctx); zfs != nil {
-		report["zfs"] = zfs
-	}
-	if smart, absent := pluginCollectors.smart(ctx); smart != nil {
-		report["smart"] = smart
-	} else {
-		report["smart_absent"] = map[string]string{"reason": absent}
-	}
-
-	return report, next
+	return resources, cpuNow
 }
 
 // pushRetryDelay is a variable so tests can shorten the backoff.

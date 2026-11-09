@@ -150,7 +150,7 @@ func TestBuildReportPassesItsContextToSmart(t *testing.T) {
 		return nil, "not_installed"
 	}
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
-	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	buildReportWithState(ctx, nil, nil, reportState{}, time.Now())
 	if got == nil || got.Value(ctxKey{}) != t.Name() {
 		t.Errorf("smart collector got context %v, want the report's", got)
 	}
@@ -165,7 +165,7 @@ func TestBuildReportPassesItsContextToTheSystemState(t *testing.T) {
 		return nil, st
 	}
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
-	buildReportWithState(ctx, nil, reportState{}, time.Now())
+	buildReportWithState(ctx, nil, nil, reportState{}, time.Now())
 	if got == nil || got.Value(ctxKey{}) != t.Name() {
 		t.Errorf("system state collector got context %v, want the report's", got)
 	}
@@ -208,7 +208,7 @@ func TestBuildReportSystemStateCarriesState(t *testing.T) {
 	}
 
 	prevCPU := &cpuSample{Unix: now.Add(-5 * time.Minute).Unix(), Total: 1000, Busy: 200}
-	report, next := buildReportWithState(context.Background(), nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
+	report, next := buildReportWithState(context.Background(), nil, nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
 	if len(handed) != 1 || handed[0].OOMKill == nil || *handed[0].OOMKill != saved {
 		t.Fatalf("collector got %+v, want the saved counter %d", handed, saved)
 	}
