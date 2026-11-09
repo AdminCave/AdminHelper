@@ -59,8 +59,10 @@ Review: approve (.ah-out/review/kern-monitoring-6/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/service/... ./cmd/...
 Doku: → T7
 
-### T5 — R-1222: Freigabeliste für jeden externen Befehl der Collectors  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/updates_linux.go
+### T5 — R-1222: Freigabeliste für jeden externen Befehl der Collectors  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/updates_linux.go, apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/allowlist_linux_test.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/updates_linux_test.go, apps/agent/internal/monitor/scquery_test.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/system_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @615850779 2026-11-09T19:04:11+01:00
+Review: approve (.ah-out/review/kern-monitoring-6/T5.verdict.json)
 Änderung:
 - `runTimed`/`runTimedEnv` wandern nach `allowlist.go` und prüfen vor dem Start jeden Aufruf gegen eine feste Liste: Befehl, feste Argumente, und für variable Teile ein Muster (Gerätepfad, Unit-Name, Node, Storage-ID). Ein Aufruf außerhalb der Liste wird nicht gestartet und liefert einen Fehler.
 - Tests:

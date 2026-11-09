@@ -258,7 +258,7 @@ func TestHelperDockerProcess(t *testing.T) {
 func runHelperDocker(t *testing.T, mode string, timeout time.Duration) error {
 	t.Helper()
 	t.Setenv(dockerHelperEnv, mode)
-	_, err := runTimed(context.Background(), timeout, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	_, err := execTimed(context.Background(), timeout, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	return err
 }
 
@@ -281,7 +281,7 @@ func TestRunTimedEndsWhenAGrandchildHoldsStdout(t *testing.T) {
 	// leaves the helper time to start its grandchild; the marker in the output proves it did.
 	t.Setenv(dockerHelperEnv, "orphan")
 	start := time.Now()
-	out, err := runTimed(context.Background(), time.Second, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	out, err := execTimed(context.Background(), time.Second, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	elapsed := time.Since(start)
 	if !strings.Contains(string(out), orphanStarted) {
 		t.Fatalf("output = %q, the grandchild did not start before the timeout", out)
@@ -302,7 +302,7 @@ func TestRunTimedEndsWithTheContext(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(100*time.Millisecond, cancel)
 	start := time.Now()
-	_, err := runTimed(ctx, time.Minute, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	_, err := execTimed(ctx, time.Minute, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
