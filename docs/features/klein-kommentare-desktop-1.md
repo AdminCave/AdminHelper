@@ -27,7 +27,7 @@ Keine.
 
 ## Trade-offs & Alternativen
 Die Zeile erlaubt Kommentar oder Umordnen. Empfehlung: Kommentar, weil Umordnen den Wait-Thread umbaut und das
-Fenster Mikrosekunden groß ist; ein Verhaltensänderung wäre kein Zug der Klein-Session.
+Fenster nur `cleanup` und `take()` umfasst; eine Verhaltensänderung wäre kein Zug der Klein-Session.
 
 ## Risiken & Rollback
 Keine, reine Kommentaränderung; Revert des Commits.
