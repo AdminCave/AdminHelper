@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Spec Stufe 5, H.264 unter Linux — Task-Ledger
-Status: geplant · Branch: feature/kern-rdp-5 · Review: pro Task
+Status: aktiv · Branch: feature/kern-rdp-5 · Review: pro Task
 Spec: docs/features/kern-rdp-5.md (Roadmap R-1101, R-1102)
 Heavy: linux-full — Desktop-Journeys: die Live-Spec Abdocken/Multi-Monitor gegen den xrdp-Container läuft im Sammellauf; neue Abhängigkeiten im Desktop-Build (ironrdp-egfx mit libloading, bzip2); Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
