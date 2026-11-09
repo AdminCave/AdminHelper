@@ -16,6 +16,7 @@ mod license_gate;
 pub(crate) mod session;
 pub(crate) mod tofu;
 pub(crate) mod watchdog;
+pub(crate) mod window;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -29,8 +30,8 @@ use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 use zeroize::Zeroizing;
 
-use self::frame_ws::Frames;
-use self::session::{Code, Report, Target};
+use self::frame_ws::{Frames, Tokens};
+use self::session::{Code, Display, Report, Target};
 use self::tofu::{cert_policy, CertPolicy, CertReason};
 use crate::commands::{reject_foreign_port, run_with_deadline, OPEN_CONNECTION_TIMEOUT};
 use crate::connection::{checked_password_source, CredentialConnection};
@@ -54,6 +55,8 @@ struct Handle {
     frames: Frames,
     /// Set once the session has started.
     info: Option<SessionInfo>,
+    /// The port of its WebSocket and the tokens of later logins, set once it has started.
+    socket: Option<(u16, Tokens)>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -75,21 +78,51 @@ impl RdpSessions {
             stop,
             frames,
             info: None,
+            socket: None,
         };
         lock(&self.running).insert(id.clone(), handle);
         id
     }
 
-    fn started(&self, id: &str, info: SessionInfo) {
+    fn started(&self, id: &str, info: SessionInfo, ws_port: u16, tokens: Tokens) {
         if let Some(handle) = lock(&self.running).get_mut(id) {
             handle.info = Some(info);
+            handle.socket = Some((ws_port, tokens));
         }
+    }
+
+    /// Port and a fresh token for a new login at the WebSocket of session `id` that shows
+    /// `screen`; the token that screen had before logs in no more.
+    fn attach(&self, id: &str, screen: usize) -> Result<Attached, AppError> {
+        if screen >= frame_ws::SCREENS {
+            return Err(AppError::Validation(format!("no screen {screen}")));
+        }
+        let (ws_port, tokens) = lock(&self.running)
+            .get(id)
+            .and_then(|handle| handle.socket.clone())
+            .ok_or_else(ended)?;
+        Ok(Attached {
+            ws_port,
+            token: tokens.renew(screen)?,
+        })
     }
 
     fn stop(&self, id: &str) {
         if let Some(handle) = lock(&self.running).remove(id) {
             let _ = handle.stop.send(());
         }
+    }
+
+    /// Ends every session and returns their ids.
+    fn stop_all(&self) -> Vec<String> {
+        let running = std::mem::take(&mut *lock(&self.running));
+        running
+            .into_iter()
+            .map(|(id, handle)| {
+                let _ = handle.stop.send(());
+                id
+            })
+            .collect()
     }
 
     fn frames(&self, id: &str) -> Result<Frames, AppError> {
@@ -297,6 +330,8 @@ fn prepare(
     };
     Ok(Target {
         destination,
+        // `rdp_session_start` sets the size the webview asks for.
+        display: Display::default(),
         username: username.to_string(),
         domain: domain.map(str::to_string),
         password,
@@ -383,11 +418,20 @@ pub(crate) struct Started {
     notice: Option<&'static str>,
 }
 
+/// Where a window logs in again at the WebSocket of a running session. No `Debug`: it carries
+/// the token.
+#[derive(Serialize)]
+pub(crate) struct Attached {
+    ws_port: u16,
+    token: String,
+}
+
 /// Starts an embedded session to `connection` as the webview lists it; the call returns once the
 /// session's WebSocket listens. The phases follow as `rdp-session` events, the first one possibly
 /// before this call returns: the webview listens before it calls. A refusal before the start is
 /// the error of this call, as with `open_connection_stored`. A `password` the user typed goes to
-/// this session only and to no store.
+/// this session only and to no store. `display` is the desktop to start with, 1280×720 at 100 %
+/// when the webview names none.
 #[tauri::command]
 pub(crate) async fn rdp_session_start(
     app: tauri::AppHandle,
@@ -396,6 +440,7 @@ pub(crate) async fn rdp_session_start(
     sessions: State<'_, RdpSessions>,
     connection: Connection,
     password: Option<String>,
+    display: Option<Display>,
 ) -> Result<Started, AppError> {
     let password = password.map(Zeroizing::new);
     let (tunnels, connections, bindings) = match signed_in.current().await {
@@ -430,6 +475,9 @@ pub(crate) async fn rdp_session_start(
             &pins,
             password,
         )?;
+        target.display = display.map_or_else(Display::default, |display| {
+            Display::clamped(display.width, display.height, display.scale)
+        });
         target.performance = performance(
             &connection,
             storage::load_settings(&app)?.rdp_performance_profile,
@@ -458,12 +506,12 @@ pub(crate) async fn rdp_session_start(
         };
         deadline.start()?;
         session::spawn(target, frames, stopped, report)
-            .map(|(ws_port, token)| (ws_port, token, notice, info))
+            .map(|(ws_port, token, tokens)| (ws_port, token, tokens, notice, info))
     })
     .await;
     match started {
-        Ok((ws_port, token, notice, info)) => {
-            sessions.started(&session_id, info);
+        Ok((ws_port, token, tokens, notice, info)) => {
+            sessions.started(&session_id, info, ws_port, tokens);
             Ok(Started {
                 session_id,
                 ws_port,
@@ -481,8 +529,32 @@ pub(crate) async fn rdp_session_start(
 /// Ends the session `session_id` and its WebSocket; one that ended already, or never was, is no
 /// error. The `disconnected` phase follows as an event.
 #[tauri::command]
-pub(crate) fn rdp_session_stop(sessions: State<'_, RdpSessions>, session_id: String) {
+pub(crate) fn rdp_session_stop(
+    window: tauri::Window,
+    sessions: State<'_, RdpSessions>,
+    session_id: String,
+) -> Result<(), AppError> {
+    window::may_reach(window.label(), &session_id)?;
     sessions.stop(&session_id);
+    Ok(())
+}
+
+/// Port and a fresh, single-use token for logging in again at the WebSocket of session
+/// `session_id`, after the webview lost its connection or for another window (R-1101). The login
+/// takes over from the client before; the token handed out before no longer logs in. An error once
+/// the session has ended. `screen` 1 is the second monitor of a session across two windows; the
+/// default 0 shows the session's whole desktop, or its first monitor.
+#[tauri::command]
+pub(crate) fn rdp_session_attach(
+    window: tauri::Window,
+    sessions: State<'_, RdpSessions>,
+    session_id: String,
+    screen: Option<u8>,
+) -> Result<Attached, AppError> {
+    window::may_reach(window.label(), &session_id)?;
+    let screen = usize::from(screen.unwrap_or(0));
+    window::may_show(window.label(), screen)?;
+    sessions.attach(&session_id, screen)
 }
 
 /// Saves the desktop of session `session_id` as a PNG where the user chooses; `false` once the
@@ -932,7 +1004,8 @@ mod tests {
             certificate: "trust_all",
             fingerprint: None,
         };
-        sessions.started(&id, info.clone());
+        let tokens = || frame_ws::FrameServer::bind().unwrap().tokens();
+        sessions.started(&id, info.clone(), 4711, tokens());
         assert_eq!(sessions.info(&id).unwrap(), info);
 
         sessions.stop(&id);
@@ -940,8 +1013,55 @@ mod tests {
         assert!(sessions.frames(&id).is_err());
         assert!(sessions.info(&id).is_err());
         // A late start of an ended session brings no info back.
-        sessions.started(&id, info);
+        sessions.started(&id, info, 4711, tokens());
         assert!(sessions.info(&id).is_err());
+        assert!(sessions.attach(&id, 0).is_err());
+    }
+
+    #[test]
+    fn attach_hands_out_a_fresh_token_for_a_started_session_only() {
+        let sessions = RdpSessions::default();
+        assert!(
+            sessions.attach("rdp-1", 0).is_err(),
+            "attached to no session"
+        );
+        let (stop, _stopped) = oneshot::channel();
+        let id = sessions.add(stop, Frames::default());
+        assert!(
+            sessions.attach(&id, 0).is_err(),
+            "attached before the start"
+        );
+
+        let server = frame_ws::FrameServer::bind().unwrap();
+        let first = server.token();
+        let info = SessionInfo {
+            target: "192.0.2.10:3389".to_string(),
+            via_tunnel: false,
+            tunnel: None,
+            credssp: true,
+            certificate: "trust_all",
+            fingerprint: None,
+        };
+        sessions.started(&id, info, 4711, server.tokens());
+        let one = sessions.attach(&id, 0).unwrap();
+        let two = sessions.attach(&id, 0).unwrap();
+        assert_eq!((one.ws_port, two.ws_port), (4711, 4711));
+        assert_eq!(one.token.len(), 64);
+        assert!(
+            one.token != first && two.token != one.token,
+            "a token came twice"
+        );
+        assert_eq!(
+            serde_json::to_value(&two).unwrap(),
+            serde_json::json!({ "ws_port": 4711, "token": two.token })
+        );
+        // The second screen gets a token of its own; there is no third.
+        let second = sessions.attach(&id, 1).unwrap();
+        assert!(second.token != two.token);
+        assert!(matches!(
+            sessions.attach(&id, 2),
+            Err(AppError::Validation(_))
+        ));
     }
 
     #[test]
@@ -1173,6 +1293,22 @@ mod tests {
         sessions.stop(&id);
         assert_eq!(stopped.try_recv(), Ok(()));
         sessions.stop(&id);
+    }
+
+    #[test]
+    fn stop_all_ends_every_session() {
+        let sessions = RdpSessions::default();
+        assert!(sessions.stop_all().is_empty());
+        let (stop1, mut stopped1) = oneshot::channel();
+        let (stop2, mut stopped2) = oneshot::channel();
+        let first = sessions.add(stop1, Frames::default());
+        let second = sessions.add(stop2, Frames::default());
+        let mut ended = sessions.stop_all();
+        ended.sort();
+        assert_eq!(ended, vec![first, second]);
+        assert_eq!(stopped1.try_recv(), Ok(()));
+        assert_eq!(stopped2.try_recv(), Ok(()));
+        assert!(lock(&sessions.running).is_empty());
     }
 
     #[test]

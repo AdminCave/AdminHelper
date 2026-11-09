@@ -78,31 +78,36 @@ zeroize = "1.8.2"
 portable-pty = "0.9"
 # Embedded RDP (rdp_embedded/): IronRDP pinned to a reviewed Git revision, not a crates.io release,
 # so the client API and the GFX fixes it relies on cannot move underneath us. The revision lives in
-# the fork AdminCave/IronRDP: upstream f96f664 plus one commit that lets the certificate callback
-# decide on every certificate (CertificateValidationCallbackScope), offered upstream as a PR. Every
-# ironrdp-* crate comes from the same revision, or Cargo builds two copies.
+# the fork AdminCave/IronRDP: upstream f96f664 plus two commits, one that lets the certificate
+# callback decide on every certificate (CertificateValidationCallbackScope) and one that completes a
+# resize once the graphics output has the requested size (GFX resets instead of reactivating,
+# docs/features/kern-rdp-4.md). Every ironrdp-* crate comes from the same revision, or Cargo builds
+# two copies.
 # The features are an allow-list: `rustls` and `udp` would pull in aws-lc-rs. `sound` plays the
 # session's audio through cpal, which needs ALSA (libasound) on Linux (docs/features/kern-rdp-2.md);
 # on Windows the session keeps audio off (session.rs, audio_mode). H.264 comes from the platform
 # (Media Foundation on Windows, none on Linux), not openh264. The license_gate tests keep it that way.
-ironrdp-client = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581", default-features = false, features = ["clipboard", "rdpdr", "sound"] }
+ironrdp-client = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986", default-features = false, features = ["clipboard", "rdpdr", "sound"] }
 # The audio mode of ConfigBuilder::with_audio_mode, which ironrdp-client does not re-export; in the
 # lockfile through it already.
-ironrdp-cfg = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
-ironrdp-tls = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581", default-features = false, features = ["rustls-ring"] }
+ironrdp-cfg = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-tls = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986", default-features = false, features = ["rustls-ring"] }
 # ironrdp-client calls tokio_tungstenite::client_async_tls without a feature gate (its RDCleanPath
 # WebSocket transport, unused here), which only exists with a TLS feature of tokio-tungstenite. This one
 # takes rustls without default features, so the provider stays ring.
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-native-roots"] }
 # The input events, the logon error notices, the platform type and the update region of the
 # session (rdp_embedded/session.rs, frame_ws.rs).
-ironrdp-pdu = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
+ironrdp-pdu = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 # The kind of a connect error and the reason of a graceful disconnect, which ironrdp-client does
 # not re-export; both are in the lockfile through it already.
-ironrdp-connector = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
-ironrdp-session = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
+ironrdp-connector = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-session = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+# The monitor layout of a session across two windows (rdp_embedded/session.rs); in the lockfile
+# through ironrdp-client already.
+ironrdp-displaycontrol = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 # The Downloads folder as a drive of the embedded RDP session (rdp_embedded/session.rs, rdpdr_factory).
-ironrdp-rdpdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
+ironrdp-rdpdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 # The client name the RDP server shows for the session.
 gethostname = "1"
 # The screenshot of the embedded RDP session; in the lockfile through tauri's image-png already.
@@ -124,8 +129,8 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 windows = { version = "0.62", features = ["Win32_Security", "Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_UI_WindowsAndMessaging"] }
 # The Windows clipboard of the embedded RDP session runs on a thread of its own with a message
 # loop (rdp_embedded/clipboard_win.rs); both crates are in the lockfile through ironrdp-client.
-ironrdp-cliprdr = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
-ironrdp-cliprdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "c39d48e464be98754486ebdc70cc49a839ddc581" }
+ironrdp-cliprdr = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
+ironrdp-cliprdr-native = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986" }
 
 # A second launch focuses the running window instead of starting a second app.
 # Desktop targets only, as the plugin's docs install it.

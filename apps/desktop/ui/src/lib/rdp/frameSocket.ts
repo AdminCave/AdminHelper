@@ -6,6 +6,8 @@
 // the token as the first message, then one picture per binary message, each acknowledged with
 // `{"t":"ack"}` once it is drawn; the server sends the next one only after that receipt.
 
+import type { RdpMonitor } from './display';
+
 export const FRAME_VERSION = 1;
 // Version, x, y, width, height, desktop width, desktop height: seven u16, little-endian.
 export const HEADER_LEN = 14;
@@ -37,12 +39,18 @@ export interface FrameStats {
 export type FrameInput =
   | { t: 'key'; code: number; ext: boolean; down: boolean }
   | { t: 'mouse'; x: number; y: number; buttons: number; wheel: number }
-  | { t: 'cad' };
+  | { t: 'cad' }
+  // The desktop to ask the server for (R-1100); Rust keeps it within MS-RDPEDISP.
+  | { t: 'size'; w: number; h: number; scale: number }
+  // Two monitors, where they lie and their desktop (R-1101); the server places the second one.
+  | { t: 'layout'; monitors: RdpMonitor[] };
 
 export interface FrameHandlers {
   // Draws the picture; the receipt goes out when this returns.
   frame(frame: Frame): void;
   stats(stats: FrameStats): void;
+  // The socket is open and sent its token: input goes out from now on.
+  opened(): void;
   // The socket closed, from either side.
   closed(): void;
 }
@@ -104,6 +112,7 @@ export class FrameSocket {
     this.socket.onopen = () => {
       this.open = true;
       this.socket.send(token);
+      this.handlers.opened();
     };
     this.socket.onmessage = (event: MessageEvent) => this.receive(event.data);
     this.socket.onclose = () => this.end();
@@ -136,8 +145,9 @@ export class FrameSocket {
     if (this.open && !this.done) this.socket.send(JSON.stringify(input));
   }
 
+  // Closing lets go of the picture only, without `{"t":"close"}`: a view goes whenever its tab
+  // docks out or a window closes, and the session ends through `rdp_session_stop` alone.
   close(): void {
-    if (this.open && !this.done) this.socket.send('{"t":"close"}');
     this.socket.close();
     this.end();
   }

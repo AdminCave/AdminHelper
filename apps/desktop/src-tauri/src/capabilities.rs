@@ -114,3 +114,55 @@ fn a_detached_window_may_call_the_terminal_of_its_session_and_the_settings_only(
         ])
     );
 }
+
+#[test]
+fn a_detached_rdp_window_may_reach_its_session_and_the_settings_only() {
+    let detached = capability(include_str!("../capabilities/rdp-window.json"));
+    assert_eq!(
+        strings(&detached, "windows"),
+        BTreeSet::from(["rdp-*".to_string()])
+    );
+    let expected: BTreeSet<String> = [
+        "load_settings",
+        "rdp_session_attach",
+        "rdp_session_stop",
+        "rdp_dock",
+    ]
+    .map(String::from)
+    .into();
+    assert_eq!(allowed_commands(&detached), expected);
+    let others: BTreeSet<String> = strings(&detached, "permissions")
+        .into_iter()
+        .filter(|permission| !permission.starts_with("allow-"))
+        .collect();
+    // Listening only, as for a terminal window; no full screen either.
+    assert_eq!(
+        others,
+        BTreeSet::from([
+            "core:event:allow-listen".to_string(),
+            "core:event:allow-unlisten".to_string(),
+        ])
+    );
+}
+
+// Beyond the commands and core:default, main may put its window in full screen and nothing else
+// (an RDP tab in full screen, R-1100); a detached terminal window may not.
+#[test]
+fn only_the_main_window_may_go_full_screen() {
+    let main = capability(include_str!("../capabilities/default.json"));
+    let others: BTreeSet<String> = strings(&main, "permissions")
+        .into_iter()
+        .filter(|permission| !permission.starts_with("allow-"))
+        .collect();
+    assert_eq!(
+        others,
+        BTreeSet::from([
+            "core:default".to_string(),
+            "core:window:allow-set-fullscreen".to_string(),
+            "dialog:allow-save".to_string(),
+            "notification:default".to_string(),
+        ])
+    );
+    let detached = capability(include_str!("../capabilities/terminal-window.json"));
+    assert!(!strings(&detached, "permissions").contains("core:window:allow-set-fullscreen"));
+}

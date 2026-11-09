@@ -38,7 +38,12 @@ function frameBytes(header: number[], pixels: number[]): ArrayBuffer {
 
 function connect(): { socket: FakeSocket; client: FrameSocket; handlers: FrameHandlers } {
   let socket: FakeSocket | undefined;
-  const handlers: FrameHandlers = { frame: vi.fn(), stats: vi.fn(), closed: vi.fn() };
+  const handlers: FrameHandlers = {
+    frame: vi.fn(),
+    stats: vi.fn(),
+    opened: vi.fn(),
+    closed: vi.fn(),
+  };
   const client = new FrameSocket(41234, 'cafe', handlers, (url) => {
     socket = new FakeSocket(url);
     return socket as unknown as WebSocket;
@@ -72,12 +77,14 @@ describe('parseFrame', () => {
 
 describe('FrameSocket', () => {
   it('connects to loopback and sends the token as its first message', () => {
-    const { socket } = connect();
+    const { socket, handlers } = connect();
     expect(socket.url).toBe('ws://127.0.0.1:41234');
     expect(socket.binaryType).toBe('arraybuffer');
     expect(socket.sent).toEqual([]);
+    expect(handlers.opened).not.toHaveBeenCalled();
     socket.onopen?.();
     expect(socket.sent).toEqual(['cafe']);
+    expect(handlers.opened).toHaveBeenCalledOnce();
   });
 
   it('acknowledges each picture after drawing it, and only then', () => {
@@ -125,23 +132,27 @@ describe('FrameSocket', () => {
     socket.onopen?.();
     client.send({ t: 'key', code: 0x1e, ext: false, down: true });
     client.send({ t: 'mouse', x: 10, y: 20, buttons: 1, wheel: -120 });
+    client.send({ t: 'size', w: 1920, h: 1080, scale: 150 });
     expect(socket.sent.slice(1).map((m) => JSON.parse(m))).toEqual([
       { t: 'key', code: 0x1e, ext: false, down: true },
       { t: 'mouse', x: 10, y: 20, buttons: 1, wheel: -120 },
+      { t: 'size', w: 1920, h: 1080, scale: 150 },
     ]);
   });
 
-  it('says close before closing, reports the end once and then stays quiet', () => {
+  it('closes without ending the session, reports the end once and then stays quiet', () => {
     const { socket, client, handlers } = connect();
     socket.onopen?.();
+    const before = socket.sent.length;
     client.close();
-    expect(socket.sent.at(-1)).toBe('{"t":"close"}');
+    // A view that goes (docking out, a closed window) leaves the session running.
+    expect(socket.sent.slice(before)).toEqual([]);
     expect(socket.closed).toBe(true);
     socket.onclose?.();
     expect(handlers.closed).toHaveBeenCalledTimes(1);
     client.send({ t: 'cad' });
     socket.receive(frameBytes([1, 0, 0, 1, 1, 8, 6], [0, 0, 0, 255]));
-    expect(socket.sent.at(-1)).toBe('{"t":"close"}');
+    expect(socket.sent.slice(before)).toEqual([]);
     expect(handlers.frame).not.toHaveBeenCalled();
   });
 

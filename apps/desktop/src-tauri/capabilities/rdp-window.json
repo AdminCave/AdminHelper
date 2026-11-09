@@ -1,0 +1,15 @@
+{
+  "identifier": "rdp-window",
+  "description": "A detached RDP window: its own session, the settings and listening to events",
+  "windows": [
+    "rdp-*"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-load-settings",
+    "allow-rdp-session-attach",
+    "allow-rdp-session-stop",
+    "allow-rdp-dock"
+  ]
+}

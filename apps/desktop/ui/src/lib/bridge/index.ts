@@ -14,6 +14,12 @@
 //   4. Add/adjust the function here
 
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from '@tauri-apps/api/core';
+import {
+  availableMonitors,
+  currentMonitor,
+  getCurrentWindow,
+  type Monitor,
+} from '@tauri-apps/api/window';
 import { fromIpc } from '$lib/utils/errors';
 import type {
   AnsibleTarget,
@@ -25,6 +31,8 @@ import type {
   HttpMethod,
   PasswordState,
   ProbeTarget,
+  RdpAttached,
+  RdpDisplay,
   RdpSessionInfo,
   RdpStarted,
   ResetOutcome,
@@ -33,6 +41,7 @@ import type {
   SftpListing,
   SftpTransfer,
   SftpUploaded,
+  SystemMonitor,
   TerminalExit,
   TunnelMapping,
   TunnelRefresh,
@@ -403,13 +412,55 @@ export function terminalDock(id: number): Promise<void> {
 // ─────────────────────────── Embedded RDP ─────────────────────────
 
 // Starts an embedded session; its phases follow as `rdp-session` events, so listen first. A typed
-// `password` goes to this session alone; without one Rust takes the stored one.
-export function rdpSessionStart(connection: Connection, password?: string): Promise<RdpStarted> {
-  return invoke<RdpStarted>('rdp_session_start', { connection, password: password ?? null });
+// `password` goes to this session alone; without one Rust takes the stored one. `display` is the
+// desktop to start with; without one Rust starts with 1280×720 at 100 %.
+export function rdpSessionStart(
+  connection: Connection,
+  password?: string,
+  display?: RdpDisplay,
+): Promise<RdpStarted> {
+  return invoke<RdpStarted>('rdp_session_start', {
+    connection,
+    password: password ?? null,
+    display: display ?? null,
+  });
 }
 
 export function rdpSessionStop(sessionId: string): Promise<void> {
   return invoke('rdp_session_stop', { sessionId });
+}
+
+// Port and a fresh token for the window that shows screen `screen` of session `sessionId` from
+// now on (R-1101); the window before it loses the picture of that screen.
+export function rdpSessionAttach(sessionId: string, screen = 0): Promise<RdpAttached> {
+  return invoke<RdpAttached>('rdp_session_attach', { sessionId, screen });
+}
+
+// Opens screen `screen` of session `sessionId` in a window of its own titled `title`, or brings
+// that window to the front; screen 1 is the second monitor of a session across two.
+export function rdpDetach(sessionId: string, title: string, screen = 0): Promise<void> {
+  return invoke('rdp_detach', { sessionId, title, screen });
+}
+
+// The monitors of the system, the one this window is on first (R-1101).
+export async function systemMonitors(): Promise<SystemMonitor[]> {
+  const [current, all] = await Promise.all([currentMonitor(), availableMonitors()]);
+  const at = (m: Monitor, other: Monitor) =>
+    m.position.x === other.position.x && m.position.y === other.position.y;
+  const first = all.find((m) => current !== null && at(m, current)) ?? all[0];
+  if (!first) return [];
+  return [first, ...all.filter((m) => m !== first)].map((m) => ({
+    x: m.position.x,
+    y: m.position.y,
+    width: m.size.width,
+    height: m.size.height,
+    scaleFactor: m.scaleFactor,
+  }));
+}
+
+// Closes the windows of session `sessionId`, of both its screens; main hears `rdp-docked`.
+export function rdpDock(sessionId: string): Promise<void> {
+  return invoke('rdp_dock', { sessionId });
 }
 
 // Saves the desktop as a PNG where the user chooses; false once the dialog is cancelled.
@@ -419,6 +470,11 @@ export function rdpSessionScreenshot(sessionId: string): Promise<boolean> {
 
 export function rdpSessionInfo(sessionId: string): Promise<RdpSessionInfo> {
   return invoke<RdpSessionInfo>('rdp_session_info', { sessionId });
+}
+
+// The main window in or out of full screen, for an RDP tab shown full screen (R-1100).
+export function setFullscreen(on: boolean): Promise<void> {
+  return getCurrentWindow().setFullscreen(on);
 }
 
 // Pins the fingerprint the user confirmed for `identity`; the session then starts again.

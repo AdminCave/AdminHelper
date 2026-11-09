@@ -2,11 +2,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Scancodes, desktop coordinates of a fitted canvas, wheel and buttons, and the keyboard grab:
+// Scancodes, desktop coordinates of a fitted or zoomed canvas, wheel and buttons, and the keyboard grab:
 // keys go to the session only while grabbed, Ctrl+Alt+Home and losing the focus release it, and
 // releasing lets go of every key still down.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { zoomedSize } from './display';
 import type { FrameInput } from './frameSocket';
 import {
   buttonsOf,
@@ -62,6 +63,26 @@ describe('toDesktop', () => {
 
   it('is the origin before a desktop is known', () => {
     expect(toDesktop(50, 50, 1000, 360, 0, 0)).toEqual({ x: 0, y: 0 });
+  });
+
+  // A zoomed desktop (R-1100) has a canvas of its zoomed size, in a box that scrolls. The offset
+  // of a pointer event is from the canvas, so the scrolled part is in it already.
+  it('follows the zoom and the scroll of a fixed desktop', () => {
+    const at200 = zoomedSize(1280, 720, 200, 1);
+    // Scrolled by 1000 × 400, the pointer 280 × 320 into the box: 1280 × 720 into the canvas.
+    const [scrollX, scrollY, inBoxX, inBoxY] = [1000, 400, 280, 320];
+    expect(
+      toDesktop(scrollX + inBoxX, scrollY + inBoxY, at200.width, at200.height, 1280, 720),
+    ).toEqual({ x: 640, y: 360 });
+
+    const at50 = zoomedSize(1920, 1080, 50, 1);
+    expect(toDesktop(480, 270, at50.width, at50.height, 1920, 1080)).toEqual({ x: 960, y: 540 });
+    // 1:1 on a screen of two pixels per CSS pixel: 960 × 540 CSS pixels for 1920 × 1080.
+    const actual = zoomedSize(1920, 1080, 100, 2);
+    expect(toDesktop(959.9, 539.9, actual.width, actual.height, 1920, 1080)).toEqual({
+      x: 1919,
+      y: 1079,
+    });
   });
 });
 

@@ -42,10 +42,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return $t('terminal.status.disconnected');
   }
 
-  // Only a program that runs has something to show in a window of its own; an RDP session stays
-  // in its tab.
+  // Only a program that runs has something to show in a window of its own, an RDP session once
+  // it is connected (R-1101).
   const canDetach = (s: TerminalSession) =>
-    !s.rdp && s.status !== 'disconnected' && s.backendId !== null;
+    s.rdp
+      ? s.rdp.phase === 'connected' && s.rdp.sessionId !== null
+      : s.status !== 'disconnected' && s.backendId !== null;
 
   // A click on a detached tab brings its window to the front; the tab itself never is.
   function select(s: TerminalSession): void {

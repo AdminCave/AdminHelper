@@ -5,12 +5,17 @@
 // One embedded RDP session (R-1098) over a fake frame socket and renderer: each phase has its
 // overlay, a refused certificate is shown to be confirmed and its trust starts anew, the actions
 // reach the store or the bridge, a new session gets a socket of its own and the old one closes,
-// and the foot shows what the stream measured, a dash for what it did not.
+// and the foot shows what the stream measured, a dash for what it did not. The desktop follows
+// the size of the tab after a pause or keeps a fixed size with a zoom (R-1100), starting with the
+// modes of the settings. In a window of its own (R-1101) it offers only what that window may do,
+// and docks. Across two monitors the tab lays both out and opens the second one's window; with
+// one monitor it is fitted and says so; the second one's window shows the picture only.
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { Connection } from '$lib/bridge/types';
+import type { Writable } from 'svelte/store';
+import type { Connection, Settings, SystemMonitor } from '$lib/bridge/types';
 import type { FrameHandlers, FrameInput } from '$lib/rdp/frameSocket';
 import { setLanguage } from '$lib/i18n';
 import type { RdpView, TerminalSession } from '$lib/stores/terminals';
@@ -37,26 +42,52 @@ const h = vi.hoisted(() => {
     disconnectRdp: vi.fn(),
     reconnectRdp: vi.fn(async () => true),
     setRdpPerformance: vi.fn(async () => true),
+    setRdpDisplay: vi.fn(),
+    setRdpWindow: vi.fn(),
+    setRdpScaling: vi.fn(),
     trustRdpCertificate: vi.fn(async () => true),
+    // The callbacks of the ResizeObservers, and the size the picture's box reports.
+    resized: [] as (() => void)[],
+    box: { width: 0, height: 0 },
     rdpSessionScreenshot: vi.fn(async () => true),
     rdpSessionInfo: vi.fn(),
+    setFullscreen: vi.fn(async () => {}),
+    systemMonitors: vi.fn(async () => [] as SystemMonitor[]),
+    openRdpMonitor: vi.fn(async (_key: string) => {}),
+    closeRdpMonitor: vi.fn(async (_id: string) => {}),
     reportError: vi.fn(),
   };
 });
 
 vi.mock('$lib/rdp/frameSocket', () => ({ FrameSocket: h.FakeSocket }));
-vi.mock('$lib/rdp/renderer', () => ({
+vi.mock('$lib/rdp/renderer', async (original) => ({
+  ...(await original<typeof import('$lib/rdp/renderer')>()),
   createRenderer: () => ({ kind: '2d', draw: h.draw, destroy: vi.fn() }),
 }));
-vi.mock('$lib/stores/terminals', () => ({
-  disconnectRdp: h.disconnectRdp,
-  reconnectRdp: h.reconnectRdp,
-  setRdpPerformance: h.setRdpPerformance,
-  trustRdpCertificate: h.trustRdpCertificate,
-}));
+vi.mock('$lib/stores/terminals', async () => {
+  const { writable } = await import('svelte/store');
+  return {
+    terminals: writable({ sessions: [], active: 'terminal-1' }),
+    disconnectRdp: h.disconnectRdp,
+    reconnectRdp: h.reconnectRdp,
+    setRdpPerformance: h.setRdpPerformance,
+    setRdpDisplay: h.setRdpDisplay,
+    setRdpWindow: h.setRdpWindow,
+    setRdpScaling: h.setRdpScaling,
+    trustRdpCertificate: h.trustRdpCertificate,
+    openRdpMonitor: h.openRdpMonitor,
+    closeRdpMonitor: h.closeRdpMonitor,
+  };
+});
+vi.mock('$lib/stores/session', async () => {
+  const { writable } = await import('svelte/store');
+  return { settings: writable(null) };
+});
 vi.mock('$lib/bridge', () => ({
   rdpSessionScreenshot: h.rdpSessionScreenshot,
   rdpSessionInfo: h.rdpSessionInfo,
+  setFullscreen: h.setFullscreen,
+  systemMonitors: h.systemMonitors,
 }));
 vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/stores/tunnel', async () => {
@@ -64,7 +95,12 @@ vi.mock('$lib/stores/tunnel', async () => {
   return { tunnelMappings: writable([]) };
 });
 
+import { settings as settingsStore } from '$lib/stores/session';
+import { terminals as terminalsStore } from '$lib/stores/terminals';
 import RdpSession from './RdpSession.svelte';
+
+const settings = settingsStore as unknown as Writable<Partial<Settings> | null>;
+const terminals = terminalsStore as unknown as Writable<{ sessions: []; active: string }>;
 
 const CONN = {
   id: 'r1',
@@ -87,6 +123,8 @@ function view(over: Partial<RdpView> = {}): RdpView {
     code: null,
     certificate: null,
     performance: null,
+    window: null,
+    scaling: null,
     notice: null,
     ...over,
   };
@@ -119,11 +157,41 @@ const foot = (container: HTMLElement) => container.querySelector('.rdp-foot')!.t
 beforeAll(() => setLanguage('en'));
 
 beforeEach(() => {
+  terminals.set({ sessions: [], active: KEY });
   vi.clearAllMocks();
   h.FakeSocket.all = [];
+  h.resized = [];
+  h.box = { width: 1000, height: 600 };
+  settings.set(null);
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        h.resized.push(callback);
+      }
+      observe(): void {}
+      disconnect(): void {}
+    },
+  );
+  // jsdom lays nothing out: the picture's box has the size the test gives it.
+  for (const side of ['clientWidth', 'clientHeight'] as const) {
+    vi.spyOn(HTMLElement.prototype, side, 'get').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('rdp-view')) return 0;
+      return side === 'clientWidth' ? h.box.width : h.box.height;
+    });
+  }
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+const sizes = () => h.FakeSocket.all[0].sent.filter((input) => input.t === 'size');
+const select = (container: HTMLElement, name: string) =>
+  container.querySelector<HTMLSelectElement>(`#rdp-${name}-${KEY}`)!;
 
 describe('RdpSession (R-1098)', () => {
   it('shows what it connects to and opens a socket for the session', () => {
@@ -189,7 +257,8 @@ describe('RdpSession (R-1098)', () => {
     });
     const { onClose } = mount();
     await fireEvent.click(button('Ctrl+Alt+Del'));
-    expect(h.FakeSocket.all[0].sent).toEqual([{ t: 'cad' }]);
+    // The size the tab asked for on mount goes first (R-1100).
+    expect(h.FakeSocket.all[0].sent.filter((input) => input.t !== 'size')).toEqual([{ t: 'cad' }]);
     await fireEvent.click(button('Screenshot'));
     expect(h.rdpSessionScreenshot).toHaveBeenCalledWith('s1');
     await fireEvent.click(button('Connection info'));
@@ -226,6 +295,197 @@ describe('RdpSession (R-1098)', () => {
     expect(h.setRdpPerformance).toHaveBeenCalledWith(KEY, 'low');
   });
 
+  it('asks for the size of the tab at once, and for a new one once it kept it for 300 ms', async () => {
+    mount();
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, { width: 1000, height: 600, scale: 100 });
+    expect(sizes().at(-1)).toEqual({ t: 'size', w: 1000, h: 600, scale: 100 });
+
+    vi.useFakeTimers();
+    const before = sizes().length;
+    h.box = { width: 1200, height: 700 };
+    h.resized[0]();
+    vi.advanceTimersByTime(200);
+    h.box = { width: 1400, height: 800 };
+    h.resized[0]();
+    vi.advanceTimersByTime(299);
+    expect(sizes()).toHaveLength(before);
+    vi.advanceTimersByTime(1);
+    expect(sizes().slice(before)).toEqual([{ t: 'size', w: 1400, h: 800, scale: 100 }]);
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, { width: 1400, height: 800, scale: 100 });
+  });
+
+  it('starts with the modes of the settings, then of the connection, then of the tab', async () => {
+    settings.set({ rdpWindowMode: 'custom', rdpScalingMode: 'hdpi', rdpCustomSize: '1920x1080' });
+    const { container } = mount();
+    expect(select(container, 'window').value).toBe('custom');
+    expect(select(container, 'scaling').value).toBe('hdpi');
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, {
+      width: 1920,
+      height: 1080,
+      scale: 175,
+    });
+    cleanup();
+
+    const own = { ...CONN, options: { rdp: { windowMode: 'fit', scalingMode: 'normal' } } };
+    const first = render(RdpSession, {
+      session: { ...session(view()), connection: own as Connection },
+    });
+    expect(select(first.container, 'window').value).toBe('fit');
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, { width: 1000, height: 600, scale: 100 });
+    cleanup();
+
+    const tab = mount(view({ window: 'custom', scaling: 'normal' }));
+    expect(select(tab.container, 'window').value).toBe('custom');
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, {
+      width: 1920,
+      height: 1080,
+      scale: 100,
+    });
+  });
+
+  it('chooses the window mode and the scaling for this tab, and the session follows', async () => {
+    const { container, rerender } = mount();
+    const window = select(container, 'window');
+    window.value = 'custom';
+    await fireEvent.change(window);
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'custom');
+    const scaling = select(container, 'scaling');
+    scaling.value = 'hdpi';
+    await fireEvent.change(scaling);
+    expect(h.setRdpScaling).toHaveBeenCalledWith(KEY, 'hdpi');
+
+    await rerender({ session: session(view({ window: 'custom', scaling: 'hdpi' })) });
+    expect(sizes().at(-1)).toEqual({ t: 'size', w: 1280, h: 720, scale: 175 });
+    // A fixed desktop does not follow the tab.
+    vi.useFakeTimers();
+    const before = sizes().length;
+    h.box = { width: 1600, height: 900 };
+    h.resized[0]();
+    vi.advanceTimersByTime(1000);
+    expect(sizes()).toHaveLength(before);
+  });
+
+  it('zooms a fixed desktop from 25 to 200 %, back to 1:1 and fitted into the tab', async () => {
+    const fitted = mount();
+    expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull();
+    fitted.unmount();
+
+    const { container } = mount(view({ window: 'custom' }));
+    const canvas = container.querySelector('canvas')!;
+    const zoom = () => container.querySelector('.rdp-zoom')!.textContent!.trim();
+    expect(zoom()).toBe('100 %');
+    expect(canvas.style.width).toBe('1280px');
+    expect(container.querySelector('.rdp-view')!.classList.contains('zoomed')).toBe(true);
+
+    for (let i = 0; i < 4; i += 1) await fireEvent.click(button('Zoom out'));
+    expect(zoom()).toBe('25 %');
+    expect(canvas.style.width).toBe('320px');
+    expect((button('Zoom out') as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(button('1:1'));
+    for (let i = 0; i < 5; i += 1) await fireEvent.click(button('Zoom in'));
+    expect(zoom()).toBe('200 %');
+    expect(canvas.style.height).toBe('1440px');
+    expect((button('Zoom in') as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(button('Fit'));
+    expect(zoom()).toBe('Fit');
+    expect(canvas.style.width).toBe('');
+    expect(container.querySelector('.rdp-view')!.classList.contains('zoomed')).toBe(false);
+  });
+
+  it('asks the opened socket for the size the tab got while the session started', async () => {
+    const { rerender } = mount(
+      view({ phase: 'connecting', sessionId: null, wsPort: null, token: null }),
+    );
+    vi.useFakeTimers();
+    h.box = { width: 1600, height: 900 };
+    h.resized[0]();
+    vi.advanceTimersByTime(300);
+    await rerender({ session: session(view({ phase: 'connecting' })) });
+    const socket = h.FakeSocket.all[0];
+    expect(socket.sent).toEqual([]);
+    socket.handlers.opened();
+    expect(socket.sent).toEqual([{ t: 'size', w: 1600, h: 900, scale: 100 }]);
+  });
+
+  it('shows the desktop full screen with a bar at the top edge, and leaves it from there', async () => {
+    settings.set({ rdpWindowMode: 'fullscreen' });
+    const { container, rerender } = mount();
+    expect(h.setFullscreen).toHaveBeenCalledExactlyOnceWith(true);
+    expect(container.querySelector('.rdp')!.classList.contains('fullscreen')).toBe(true);
+    expect(select(container, 'window').value).toBe('fullscreen');
+    // Full screen follows the screen as fit does.
+    expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, { width: 1000, height: 600, scale: 100 });
+
+    const bar = within(screen.getByRole('toolbar', { name: 'Fullscreen' }));
+    await fireEvent.click(bar.getByRole('button', { name: 'Ctrl+Alt+Del' }));
+    expect(h.FakeSocket.all[0].sent.at(-1)).toEqual({ t: 'cad' });
+    await fireEvent.click(bar.getByRole('button', { name: 'Disconnect' }));
+    expect(h.disconnectRdp).toHaveBeenCalledWith(KEY);
+    await fireEvent.click(bar.getByRole('button', { name: 'Exit full screen' }));
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fit');
+
+    await rerender({ session: session(view({ window: 'fit' })) });
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('.rdp')!.classList.contains('fullscreen')).toBe(false);
+    expect(screen.queryByRole('toolbar')).toBeNull();
+  });
+
+  it('chooses full screen for this tab, and the window leaves it when the tab goes', async () => {
+    const { container, rerender, unmount } = mount();
+    expect(h.setFullscreen).not.toHaveBeenCalled();
+    const window = select(container, 'window');
+    window.value = 'fullscreen';
+    await fireEvent.change(window);
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fullscreen');
+    await rerender({ session: session(view({ window: 'fullscreen' })) });
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(true);
+    unmount();
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(false);
+  });
+
+  it('reports a window that cannot go full screen and fits the tab, so the error shows', async () => {
+    h.setFullscreen.mockRejectedValueOnce(new Error('not allowed'));
+    mount(view({ window: 'fullscreen' }));
+    await vi.waitFor(() => expect(h.reportError).toHaveBeenCalledWith('not allowed'));
+    expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fit');
+  });
+
+  it('leaves full screen with F11 once the keyboard is released, not while it is grabbed', async () => {
+    const { container } = mount(view({ window: 'fullscreen' }));
+    await fireEvent.keyDown(window, { code: 'F11' });
+    expect(h.setRdpWindow).toHaveBeenCalledExactlyOnceWith(KEY, 'fit');
+
+    h.setRdpWindow.mockClear();
+    await fireEvent.pointerDown(container.querySelector('canvas')!);
+    expect(container.querySelector('.rdp-view')!.classList.contains('grabbed')).toBe(true);
+    await fireEvent.keyDown(container.querySelector('.rdp-view')!, { code: 'F11' });
+    expect(h.setRdpWindow).not.toHaveBeenCalled();
+  });
+
+  it('asks for the certificate inside the full-screen tab, where the dialog can be seen', () => {
+    const certificate = {
+      identity: 'win.example:3390',
+      fingerprint: 'ab:cd',
+      reason: 'unknown',
+    } as const;
+    const { container } = mount(view({ window: 'fullscreen', phase: 'certificate', certificate }));
+    const dialog = screen.getByRole('dialog');
+    expect(container.querySelector('.rdp.fullscreen')!.contains(dialog)).toBe(true);
+  });
+
+  it('lets only the shown tab hold the window in full screen', async () => {
+    mount(view({ window: 'fullscreen' }));
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(true);
+    terminals.set({ sessions: [], active: 'terminal-2' });
+    await tick();
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(false);
+    terminals.set({ sessions: [], active: KEY });
+    await tick();
+    expect(h.setFullscreen).toHaveBeenLastCalledWith(true);
+  });
+
   it('keeps the socket of the session while its phase changes', async () => {
     const { rerender } = mount(view({ phase: 'connecting' }));
     await rerender({ session: session(view({ phase: 'connected' })) });
@@ -259,5 +519,155 @@ describe('RdpSession (R-1098)', () => {
     socket.handlers.stats({ fps: 30, width: 1280, height: 720, mbps: 2.345, rttMs: 11.6 });
     await tick();
     expect(foot(container)).toContain('1280×720 · — · 30 fps · 2.3 Mbit/s · 12 ms');
+  });
+
+  describe('in a window of its own (R-1101)', () => {
+    function detached(rdp: RdpView = view()) {
+      const onDock = vi.fn();
+      const result = render(RdpSession, { session: session(rdp), onDock });
+      return { ...result, onDock };
+    }
+
+    it('offers no start, screenshot, details or close, and docks with its button', async () => {
+      const { container, onDock } = detached();
+      for (const name of ['Screenshot', 'Connection info', 'Reconnect', 'End session']) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+      expect(select(container, 'performance')).toBeNull();
+      await fireEvent.click(button('Ctrl+Alt+Del'));
+      await fireEvent.click(button('Disconnect'));
+      expect(h.disconnectRdp).toHaveBeenCalledWith(KEY);
+      await fireEvent.click(button('Dock'));
+      expect(onDock).toHaveBeenCalledOnce();
+      expect(h.FakeSocket.all[0]).toMatchObject({ port: 7001, token: 't1' });
+    });
+
+    it('docks from the overlay once the session ended, and asks for no certificate', async () => {
+      const certificate = {
+        identity: 'win.example:3390',
+        fingerprint: 'ab:cd:ef',
+        reason: 'unknown' as const,
+      };
+      const { onDock } = detached(view({ phase: 'certificate', certificate, sessionId: null }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await fireEvent.click(within(overlay()!).getByRole('button', { name: 'Dock' }));
+      expect(onDock).toHaveBeenCalledOnce();
+      expect(h.trustRdpCertificate).not.toHaveBeenCalled();
+    });
+
+    it('fits the window where the settings say full screen, and offers no full screen', () => {
+      settings.set({ rdpWindowMode: 'fullscreen' });
+      const { container } = detached();
+      expect(container.querySelector('.rdp')!.classList.contains('fullscreen')).toBe(false);
+      expect(h.setFullscreen).not.toHaveBeenCalled();
+      const modes = [...select(container, 'window').options].map((o) => o.value);
+      expect(modes).toEqual(['fit', 'custom']);
+    });
+  });
+
+  describe('across two monitors (R-1101)', () => {
+    const LEFT = { x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1 };
+    const RIGHT = { x: 1920, y: 0, width: 2560, height: 1440, scaleFactor: 1 };
+    const layouts = () => h.FakeSocket.all[0].sent.filter((input) => input.t === 'layout');
+
+    it('lays both monitors out and opens the second one, until the mode goes', async () => {
+      h.systemMonitors.mockResolvedValue([LEFT, RIGHT]);
+      const rdp = view({ window: 'multimon', scaling: 'normal' });
+      const { container, rerender } = mount(rdp);
+      expect([...select(container, 'window').options].map((o) => o.value)).toEqual([
+        'fit',
+        'fullscreen',
+        'multimon',
+        'custom',
+      ]);
+      expect(select(container, 'window').value).toBe('multimon');
+      await vi.waitFor(() => expect(h.openRdpMonitor).toHaveBeenCalledExactlyOnceWith(KEY));
+      expect(layouts().at(-1)).toEqual({
+        t: 'layout',
+        monitors: [
+          { x: 0, y: 0, w: 1920, h: 1080, scale: 100 },
+          { x: 1920, y: 0, w: 2560, h: 1440, scale: 100 },
+        ],
+      });
+      // The next start begins with the first monitor.
+      expect(h.setRdpDisplay).toHaveBeenLastCalledWith(KEY, {
+        width: 1920,
+        height: 1080,
+        scale: 100,
+      });
+      expect(foot(container)).not.toContain('Only one screen');
+
+      await rerender({ session: session({ ...rdp, window: 'fit' }) });
+      expect(h.closeRdpMonitor).toHaveBeenCalledExactlyOnceWith('s1');
+      expect(sizes().at(-1)).toEqual({ t: 'size', w: 1000, h: 600, scale: 100 });
+    });
+
+    it('closes the second monitor with the session and with the tab', async () => {
+      h.systemMonitors.mockResolvedValue([LEFT, RIGHT]);
+      const rdp = view({ window: 'multimon' });
+      const { rerender, unmount } = mount(rdp);
+      await vi.waitFor(() => expect(h.openRdpMonitor).toHaveBeenCalledOnce());
+      await rerender({ session: session({ ...rdp, phase: 'disconnected' }, 'disconnected') });
+      expect(h.closeRdpMonitor).toHaveBeenCalledExactlyOnceWith('s1');
+      await rerender({ session: session(rdp) });
+      await vi.waitFor(() => expect(h.openRdpMonitor).toHaveBeenCalledTimes(2));
+      unmount();
+      expect(h.closeRdpMonitor).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the second monitor through an update of the tab and a reconnect', async () => {
+      h.systemMonitors.mockResolvedValue([LEFT, RIGHT]);
+      const rdp = view({ window: 'multimon', scaling: 'normal' });
+      const { rerender } = mount(rdp);
+      await vi.waitFor(() => expect(h.openRdpMonitor).toHaveBeenCalledOnce());
+      const sent = sizes().length;
+      await rerender({ session: session({ ...rdp, notice: 'drive_unavailable' }) });
+      await rerender({ session: session({ ...rdp, phase: 'reconnecting' }, 'connecting') });
+      await rerender({ session: session(rdp) });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.openRdpMonitor).toHaveBeenCalledOnce();
+      expect(h.closeRdpMonitor).not.toHaveBeenCalled();
+      expect(sizes()).toHaveLength(sent);
+    });
+
+    it('fits the tab and says so with one monitor of the system', async () => {
+      h.systemMonitors.mockResolvedValue([LEFT]);
+      const { container } = mount(view({ window: 'multimon', scaling: 'normal' }));
+      await vi.waitFor(() => expect(foot(container)).toContain('Only one screen'));
+      expect(h.openRdpMonitor).not.toHaveBeenCalled();
+      expect(layouts()).toEqual([]);
+      expect(sizes().at(-1)).toEqual({ t: 'size', w: 1000, h: 600, scale: 100 });
+    });
+
+    it('fits the tab when the monitors cannot be read', async () => {
+      h.systemMonitors.mockRejectedValueOnce(new Error('no monitors'));
+      mount(view({ window: 'multimon' }));
+      await vi.waitFor(() => expect(h.setRdpWindow).toHaveBeenCalledWith(KEY, 'fit'));
+      expect(h.reportError).toHaveBeenCalledWith('no monitors');
+    });
+
+    it('shows the second monitor with its picture and input only', async () => {
+      const { container } = render(RdpSession, {
+        session: session(view({ window: 'multimon' })),
+        screen: 1,
+      });
+      expect(h.FakeSocket.all[0]).toMatchObject({ port: 7001, token: 't1' });
+      await fireEvent.click(button('Ctrl+Alt+Del'));
+      expect(h.FakeSocket.all[0].sent).toEqual([{ t: 'cad' }]);
+      for (const name of ['Disconnect', 'Dock', 'End session', 'Reconnect']) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+      expect(container.querySelector('.rdp-bar')).toBeNull();
+      expect(h.systemMonitors).not.toHaveBeenCalled();
+      expect(h.setRdpDisplay).not.toHaveBeenCalled();
+    });
+
+    it('leaves the overlay of an ended session without a button on the second monitor', () => {
+      render(RdpSession, {
+        session: session(view({ phase: 'disconnected', sessionId: null }), 'disconnected'),
+        screen: 1,
+      });
+      expect(within(overlay()!).queryByRole('button')).toBeNull();
+    });
   });
 });

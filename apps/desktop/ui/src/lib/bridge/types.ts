@@ -16,6 +16,21 @@ export type ConnectionKind = 'ssh' | 'rdp' | 'web';
 export type SyncMode = 'local' | 'sync' | 'server';
 export type RdpScalingMode = 'auto' | 'normal' | 'hdpi';
 export type RdpWindowMode = 'fit' | 'fullscreen' | 'multimon' | 'custom';
+
+/** The desktop an embedded session asks for (R-1100): pixels and the scale factor in percent. */
+export interface RdpDisplay {
+  width: number;
+  height: number;
+  scale: number;
+}
+/** A monitor of the system, in physical pixels: where it lies, its size and its scale factor. */
+export interface SystemMonitor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
 export type RdpPerformanceProfile = 'auto' | 'lan' | 'broadband' | 'low';
 export type SshConsole = 'embedded' | 'external';
 export type RdpClient = 'embedded' | 'os';
@@ -336,6 +351,12 @@ export interface RdpStarted {
   ws_port: number;
   token: string;
   notice?: 'drive_unavailable';
+}
+
+/** Where a window logs in at the WebSocket of a running session (`rdp_session_attach`). */
+export interface RdpAttached {
+  ws_port: number;
+  token: string;
 }
 
 export type RdpPhase =

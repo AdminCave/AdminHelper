@@ -42,7 +42,12 @@ const COMMAND_DOCS: Record<string, string> = {
 const UNCALLED_ALLOWLIST: Record<string, string> = {};
 
 /** The files that define commands; `main.rs` registers the module's by path. */
-const COMMAND_SOURCES = [['commands.rs'], ['rdp_embedded', 'mod.rs'], ['rdp_embedded', 'tofu.rs']];
+const COMMAND_SOURCES = [
+  ['commands.rs'],
+  ['rdp_embedded', 'mod.rs'],
+  ['rdp_embedded', 'tofu.rs'],
+  ['rdp_embedded', 'window.rs'],
+];
 
 function definedCommands(): Set<string> {
   const src = COMMAND_SOURCES.map((p) => read('src-tauri', 'src', ...p)).join('\n');

@@ -6,6 +6,7 @@
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-set-fullscreen",
     "dialog:allow-save",
     "notification:default",
     "allow-load-connections",
@@ -73,6 +74,9 @@
     "allow-rdp-session-start",
     "allow-rdp-session-stop",
     "allow-rdp-session-screenshot",
-    "allow-rdp-session-info"
+    "allow-rdp-session-info",
+    "allow-rdp-session-attach",
+    "allow-rdp-detach",
+    "allow-rdp-dock"
   ]
 }
