@@ -666,6 +666,13 @@ export const translations: Translations = {
     'ansible.run.button': 'Playbook ausfuehren',
     'ansible.run.check': 'Probelauf (--check)',
     'ansible.run.checkHint': 'Zeigt, was sich aendern wuerde, ohne etwas zu aendern.',
+    'ansible.run.noVisitor':
+      'Ansible startet nicht: der Tunnel zu {name} laeuft nicht. Starte den Tunnel und versuche es erneut.',
+    'ansible.run.unreachable': 'Ansible startet nicht: {name} ist nicht erreichbar ({message}).',
+    'ansible.target.hostname': 'Hostname',
+    'ansible.target.hostnameHint':
+      'Keine SSH-Verbindung: Ansible verbindet sich mit dem Hostnamen.',
+    'ansible.target.connection': 'SSH-Verbindung fuer {name}',
     'ansible.edit.add': 'Playbook',
     'ansible.edit.new': 'Neues Playbook',
     'ansible.edit.edit': 'Playbook bearbeiten',
@@ -1973,6 +1980,12 @@ export const translations: Translations = {
     'ansible.run.button': 'Run playbook',
     'ansible.run.check': 'Dry run (--check)',
     'ansible.run.checkHint': 'Shows what would change, without changing anything.',
+    'ansible.run.noVisitor':
+      'Ansible does not start: the tunnel to {name} is not running. Start the tunnel and try again.',
+    'ansible.run.unreachable': 'Ansible does not start: {name} cannot be reached ({message}).',
+    'ansible.target.hostname': 'Hostname',
+    'ansible.target.hostnameHint': 'No SSH connection: Ansible connects to the hostname.',
+    'ansible.target.connection': 'SSH connection for {name}',
     'ansible.edit.add': 'Playbook',
     'ansible.edit.new': 'New playbook',
     'ansible.edit.edit': 'Edit playbook',

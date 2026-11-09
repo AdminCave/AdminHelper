@@ -20,7 +20,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ansibleSelectedPlaybook,
     ansibleCanRun,
     ansibleCheck,
+    ansibleServerConnections,
     activateAnsible,
+    chooseConnection,
     reloadPlaybooks,
     selectPlaybook,
     setTargetMode,
@@ -34,6 +36,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from '../components/ui/Button.svelte';
   import Checkbox from '../components/ui/Checkbox.svelte';
   import Segmented from '../components/ui/Segmented.svelte';
+  import Select from '../components/ui/Select.svelte';
   import Tag from '../components/ui/Tag.svelte';
   import PlaybookModal from '../components/ansible/PlaybookModal.svelte';
   import type { Playbook } from '$lib/api/types';
@@ -155,12 +158,34 @@ SPDX-License-Identifier: GPL-3.0-or-later
               {:else}
                 <div class="pb-server-list">
                   {#each $ansibleServers as srv (srv.id)}
-                    <Checkbox
-                      checked={$ansibleSelectedServerIds.has(srv.id)}
-                      label={srv.name}
-                      description={srv.hostname}
-                      onChange={() => toggleServer(srv.id)}
-                    />
+                    {@const via = $ansibleServerConnections[srv.id]}
+                    <div class="pb-server">
+                      <Checkbox
+                        checked={$ansibleSelectedServerIds.has(srv.id)}
+                        label={srv.name}
+                        description={srv.hostname}
+                        onChange={() => toggleServer(srv.id)}
+                      />
+                      {#if !via?.chosen}
+                        <span class="pb-server-hostname" title={$t('ansible.target.hostnameHint')}>
+                          <Tag tone="outline" size="sm" mono={false}
+                            >{$t('ansible.target.hostname')}</Tag
+                          >
+                        </span>
+                      {:else if via.options.length > 1}
+                        <label class="pb-server-via">
+                          <span class="sr-only"
+                            >{$t('ansible.target.connection', { name: srv.name })}</span
+                          >
+                          <Select
+                            size="sm"
+                            value={via.chosen.id}
+                            options={via.options.map((c) => ({ value: c.id, label: c.name }))}
+                            onChange={(id) => chooseConnection(srv.id, id)}
+                          />
+                        </label>
+                      {/if}
+                    </div>
                   {/each}
                 </div>
               {/if}
@@ -371,6 +396,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 10px 18px;
+  }
+  .pb-server {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .pb-server-hostname,
+  .pb-server-via {
+    /* Under the label: the box of Checkbox (19px) and its gap (10px). */
+    margin-left: 29px;
   }
   .pb-tag-list {
     display: flex;

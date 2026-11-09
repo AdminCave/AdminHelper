@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-ansible-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
 
-### T2 — R-1202: UI wählt und löst die SSH-Verbindung je Server auf  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/ansible.ts, apps/desktop/ui/src/lib/models/ansible.test.ts, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/ansible.test.ts, apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T2 — R-1202: UI wählt und löst die SSH-Verbindung je Server auf  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/ansible.ts, apps/desktop/ui/src/lib/models/ansible.test.ts, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/ansible.test.ts, apps/desktop/ui/src/pages/Ansible.svelte, apps/desktop/ui/src/pages/Ansible.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @eda415c17 2026-11-09T12:50:16+01:00
+Review: approve (.ah-out/review/kern-ansible-1/T2.verdict.json)
 Änderung: Je gewähltem Server die SSH-Verbindungen (`serverId`) finden: genau eine wird genommen; ohne Verbindung gilt der Hostname, und die Ansicht markiert ihn; bei mehreren gibt es eine Auswahl je Server, vorbelegt mit der ersten nach Namen. Vor dem Start `resolveConnection` je Ziel. Bleibt eine STCP-Verbindung ohne laufenden Visitor unaufgelöst, wird der Start mit dem Servernamen abgelehnt. Das Ziel geht mit `connection` an Rust. Texte DE+EN. Tests für die drei Fälle, die Ablehnung und die Vorbelegung.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T4
