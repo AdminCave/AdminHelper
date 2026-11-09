@@ -95,8 +95,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T15
 Abhängt von: T8
 
-### T16 — Monitoring: Frische einer Probe nach dem gemeldeten Proben-Faktor (R-1223)  [ ]
+### T16 — Monitoring: Frische einer Probe nach dem gemeldeten Proben-Faktor (R-1223)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_probe_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c205a5eee 2026-11-09T19:54:32+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T16.verdict.json)
 Änderung: Der Probe-Checker liest `self.collectors.probes.factor` aus demselben Report (Zahl, auf 1…8 begrenzt, sonst 1) und wertet ein Ergebnis erst ab `2 × interval × factor + AGENT_RUN_S` als veraltet: die Selbstbremse des Agenten (T9) streckt die Intervalle, ohne dass die Checks `unknown` werden. Ohne Block (Agent vor v4) bleibt es beim reinen Intervall.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_checker.py
 Doku: → T15

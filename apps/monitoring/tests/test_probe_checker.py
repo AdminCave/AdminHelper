@@ -35,10 +35,12 @@ def _rule(field, op, value, level="critical"):
     return {"field": field, "op": op, "value": value, "level": level}
 
 
-def _rate(result, prev=None, stamp=STAMP, **config):
+def _rate(result, prev=None, stamp=STAMP, own=None, **config):
     report = {"probes": {"chk-p": result}}
     if stamp is not None:
         report["timestamp"] = stamp
+    if own is not None:
+        report["self"] = own
     return ProbeChecker().evaluate({**_CONFIG, **config}, report, prev)
 
 
@@ -160,6 +162,74 @@ def test_result_older_than_two_intervals_and_a_run_is_stale(interval, age, stale
         assert metrics["_details"]["values"] == {}
     else:
         assert level == "ok"
+
+
+def _phase(factor):
+    """The report's self block with the probe phase at factor."""
+    entry = {"duration_ms": 40, "cpu_ms": 5, "timeouts": 0, "factor": factor, "throttled": False}
+    return {"collectors": {"probes": entry}}
+
+
+@pytest.mark.parametrize(
+    ("factor", "interval", "age", "stale"),
+    [
+        (1, 300, 900, False),
+        (1, 300, 901, True),
+        (2, 300, 1500, False),
+        (2, 300, 1501, True),
+        (4, 300, 2700, False),
+        (4, 300, 2701, True),
+        (8, 900, 14700, False),
+        (8, 900, 14701, True),
+        # The agent never goes past 8: a larger factor is held to it.
+        (64, 300, 5100, False),
+        (64, 300, 5101, True),
+    ],
+)
+def test_the_agents_probe_factor_stretches_the_freshness(factor, interval, age, stale):
+    # The self-throttle runs every probe factor times less often (T9): its last result is
+    # older, and the agent still runs it.
+    result = _ok({"status_code": 200}, ts=T0 - age)
+    level, msg, _ = _rate(result, own=_phase(factor), interval_s=interval)
+    if stale:
+        assert (level, msg) == (
+            "unknown",
+            f"Last probe result is {age // 60} min old; the agent no longer runs it",
+        )
+    else:
+        assert level == "ok"
+
+
+@pytest.mark.parametrize(
+    "own",
+    [
+        "throttled",
+        {"collectors": [{"probes": {"factor": 4}}]},
+        {"collectors": {"probes": 4}},
+        {"collectors": {"docker": {"factor": 8, "throttled": True}}},
+        _phase("4"),
+        _phase(True),
+        _phase(None),
+        _phase(math.inf),
+        _phase(0),
+        _phase(-4),
+    ],
+    ids=[
+        "not an object",
+        "a list",
+        "no entry object",
+        "another collector",
+        "numeric string",
+        "bool",
+        "null",
+        "infinite",
+        "zero",
+        "negative",
+    ],
+)
+def test_without_a_usable_probe_factor_the_plain_interval_counts(own):
+    assert _rate(_ok({"status_code": 200}, ts=T0 - 900), own=own)[0] == "ok"
+    assert _rate(_ok({"status_code": 200}, ts=T0 - 901), own=own)[0] == "unknown"
 
 
 def test_stale_error_is_unknown_not_critical():

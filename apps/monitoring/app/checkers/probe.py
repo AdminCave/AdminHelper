@@ -11,8 +11,8 @@ result of every probe in each report, filed under the check id, with the time it
 so this checker needs no state beyond the previous details (delta rules).
 
 Order: the agent's own status first (a probe it did not run says why), then freshness
-(a result older than two intervals plus one agent run means the probe stopped), then the
-rules on the values. A rule describes the alerting case; the worst level that holds wins.
+(a result older than two intervals plus one agent run means the probe stopped; the agent's
+self-throttle stretches the interval by its probe factor), then the rules on the values. A rule describes the alerting case; the worst level that holds wins.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ from app.checkers.agent import agent_number, cap_agent_text, join_capped
 # The agent runs every 5 min and runs the probes that are due in that run.
 AGENT_RUN_S = 300
 DEFAULT_INTERVAL_S = 300
+# The agent's self-throttle runs its probes up to this many times less often.
+MAX_PROBE_FACTOR = 8
 # The agent cuts a text value to this length; a value from the report is not trusted to.
 MAX_VALUE_TEXT = 256
 
@@ -89,6 +91,19 @@ def _report_time(report: dict) -> float:
         if parsed is not None and parsed.tzinfo is not None:
             return parsed.timestamp()
     return time.time()
+
+
+def _probe_factor(report: dict) -> int:
+    """How many times less often the agent runs its probes while its self-throttle holds
+    them back: the probe phase's factor in the same report, held to 1..MAX_PROBE_FACTOR;
+    1 without one (an agent before report v4)."""
+    own = report.get("self")
+    collectors = own.get("collectors") if isinstance(own, dict) else None
+    phase = collectors.get("probes") if isinstance(collectors, dict) else None
+    factor = agent_number(phase.get("factor")) if isinstance(phase, dict) else None
+    if factor is None:
+        return 1
+    return int(min(max(factor, 1), MAX_PROBE_FACTOR))
 
 
 def _measured(prev_details: dict | None) -> tuple[float | None, dict | None, dict | None]:
@@ -214,6 +229,7 @@ class ProbeChecker:
         if ts is None:
             return done("unknown", ["Probe result without a time"])
         interval = agent_number(config.get("interval_s")) or DEFAULT_INTERVAL_S
+        interval *= _probe_factor(report)
         age = _report_time(report) - ts
         if age > 2 * interval + AGENT_RUN_S:
             return done(
