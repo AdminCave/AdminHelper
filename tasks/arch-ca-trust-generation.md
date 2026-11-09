@@ -185,3 +185,6 @@ Abhängt von: T1, T2, T3, T4, T5
   integration-stack`, das nur Komponenten-Schlüssel nimmt): `integration_stack_test: 140 passed, 0 failed` und
   `agent_monitoring: 7 passed, 0 failed` (2 `GET /ca/trust` mit 200, keine Erneuerung), je `run.sh[integration]: 1
   passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`; VM danach zerstört.
+- 2026-11-09 Session (T5, Heavy): `ci.yml` per Dispatch auf `feature/arch-ca-trust-generation@570fa3e5f` (nach dem
+  Merge von `origin/main`), Lauf 42635447668: `success`, 34 von 34 Jobs grün, darunter „From-outside stack (mTLS
+  gateway)“ (der Stack-Job läuft auf PRs nicht).
