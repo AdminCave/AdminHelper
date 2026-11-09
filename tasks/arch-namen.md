@@ -89,14 +89,16 @@ Doku: → T12
 Abhängt von: T1
 
 ### T10 — Desktop-E2E: Live-Specs auf Name/Zusatz umstellen (R-1210)  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/connection-crud.live.js
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/server-crud.live.js, apps/desktop/e2e/test/specs/tunnel-create.live.js, apps/desktop/e2e/test/specs/tunnel-crud.live.js, apps/desktop/e2e/test/specs/connection-crud.live.js, apps/desktop/e2e/test/specs/tunnel-start.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js, scripts/tests/e2e_api.py
 Änderung: Server nur mit Name anlegen, Adresse folgt; Tunnel ohne Namensfeld, Zusatz ändern, Zeile zeigt `<server> · …`; Verbindung am Server mit Zusatz, Zeile zeigt den Anzeigenamen. Live-Lauf im Sammellauf linux-full.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Tests)
 Abhängt von: T5, T6, T7
 
-### T11 — Test-Skripte: frpc/frps-Logs über die Tunnel-ID suchen (R-1210 1a)  [ ]
+### T11 — Test-Skripte: frpc/frps-Logs über die Tunnel-ID suchen (R-1210 1a)  [x]
 Komponente: scripts · Dateien: scripts/tests/multibox.sh, scripts/tests/box_tunnelbox.sh, scripts/tests/box_serverbox.sh, scripts/tests/multibox_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @efa8225e0 2026-11-09T16:36:37+01:00
+Review: approve (.ah-out/review/arch-namen/T11.verdict.json)
 Änderung: `frps_registered`/`proxy_started` und der MISSING-Abgleich der Serverbox suchen `[<server_id>.<tunnel_id>]` bzw. `[<tunnel_id>]`; die Skripte lesen die IDs der angelegten Tunnel aus der API statt der Namen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (Test-Skripte)
