@@ -42,8 +42,10 @@ Review: approve (.ah-out/review/arch-ca-trust-generation/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh ca-issuer --strict
 Doku: → T6
 
-### T2 — Gateway: Location `= /ca/trust` mit eigener Zone  [ ]
+### T2 — Gateway: Location `= /ca/trust` mit eigener Zone  [x]
 Komponente: server · Dateien: apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ca469baf8 2026-11-09T13:32:17+01:00
+Review: approve (.ah-out/review/arch-ca-trust-generation/T2.verdict.json)
 Änderung:
 - `nginx.conf`: `limit_req_zone $binary_remote_addr zone=trust` neben `zone=renew` (`:69`). Im :443-Block neben
   `= /ca/renew` (`:110`) die Location `= /ca/trust` mit `limit_req zone=trust`, kleinem `client_max_body_size` und
@@ -117,6 +119,8 @@ Geräte-Zertifikats, Troubleshooting, Route `/trust` des ca-issuer, ADR 0001 §3
 Changelog-Fragment (`### Added`, `### Changed`). Im Runbook wird der Gateway-Neustart direkt nach dem healthy
 ca-issuer (`rotate-intermediates`, `switch`, `finish`) ein Pflichtschritt mit Folge: Ohne ihn erreichen Agents, die
 nach `switch` erneuert haben, :443 nicht (Spec, Risiko „Gateway mit altem `client-ca.pem`“).
+Hingenommen und zu nennen (security T1): `/ca/trust` fragt das Register nicht, ein widerrufenes, zeitlich noch
+gültiges Zertifikat erfährt weiter die Generation; `/ca/renew` verweigert ihm die Erneuerung wie bisher.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
@@ -138,6 +142,10 @@ Abhängt von: T1, T2, T3, T4, T5
 - 2026-11-09 Session: `trust_generation` im ca-issuer liest und prüft das Zertifikat selbst (`read_identity`,
   `_verify_ca_signed`), ohne Register und DB. 401 ohne `SUCCESS`, 403 bei `IssuanceError`.
 - 2026-11-09 Session: Gateway bekommt eine eigene Zone `trust`; Rate und Burst legt T2 fest und trägt sie hier nach.
+  T2: `rate=10r/s`, `burst=100 nodelay`, `client_max_body_size 1k`. Bei einer Anfrage je Agent alle 300 s trägt eine
+  NAT-Adresse damit etwa 3000 Agents; der Burst nimmt hundert auf, die nach einem Stromausfall in derselben Sekunde
+  starten. Eigene Zone, damit die Abfragen nie die Erneuerungen aus `renew` (5 r/s, burst 10) aufbrauchen. Was
+  darüber liegt, bekommt 429; der Agent wertet das als vorübergehend (T3) und fragt im nächsten Lauf.
 - 2026-11-09 Session: Desktop hält eine prozessweite `tokio::sync::Mutex` um `maybe_renew`. Der Stunden-Task trägt eine
   Epoche, weil `ensure_signed_in` eine neue Anmeldung desselben Nutzers am selben Server gelten lässt. Intervall als
   Parameter, keine neue `tokio`-Feature in den Dev-Abhängigkeiten.
