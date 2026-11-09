@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Stufe 4 Anzeige, Stufe 5 Fenster — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-4 · Review: pro Task
 Spec: docs/features/kern-rdp-4.md (Roadmap R-1100, R-1101)
 Heavy: linux-full — Desktop-Journeys: Resize, Abdocken und Multi-Monitor des RDP-Tabs gegen den xrdp-Container (Live-Spec) laufen im Sammellauf; neue Fensterrechte und die IronRDP-Revision; Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -109,8 +109,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T12
 Abhängt von: T8, T10
 
-### T12 — Doku Stufe 4 und 5 (DE+EN), Changelog  [ ]
+### T12 — Doku Stufe 4 und 5 (DE+EN), Changelog  [x]
 Komponente: desktop-ui · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-4.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d14f8675b 2026-11-09T01:09:35+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku „RDP in AdminHelper“: Anzeige-Modi, Skalierung, Vollbild, Abdocken, Multi-Monitor; der Satz „fest 1280×720“ entfällt. Entwickler-Doku: Nachrichten `size` und `layout`, Wiederanmelden, `rdp-*`-Fenster und ihre Rechte, die Fork-Revision. `changelog.d/kern-rdp-4.md` ohne Umlaute.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-4.md
