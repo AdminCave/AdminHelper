@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ui-desktop-1 — Desktop-UI: Ruhe-Hinweis, Fehler im abgedockten Terminal (R-1185, R-1169) — Task-Ledger
-Status: aktiv · Branch: feature/klein-ui-desktop-1 · Review: am Ende
+Status: bereit · Branch: feature/klein-ui-desktop-1 · Review: am Ende
 Spec: docs/features/klein-ui-desktop-1.md (Roadmap R-1185, R-1169)
 Heavy: none — reine Desktop-UI ohne Stack-, Gateway- oder Install-Pfad; Komponententests decken das sichtbare Verhalten
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Dedup-Key: bug:desktop-ui:DetachedTerminal.svelte:report_error
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/DetachedTerminal.test.ts
 Doku: keine (Fehlerbehebung ohne dokumentiertes Verhalten)
 
-### T3 — Doku und CHANGELOG-Fragment nachziehen (R-1185, R-1169)  [ ]
+### T3 — Doku und CHANGELOG-Fragment nachziehen (R-1185, R-1169)  [x]
 Komponente: scripts · Dateien: docs/admin/index.html, docs/en/admin/index.html, changelog.d/klein-ui-desktop-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e629ca1df 2026-11-09T15:09:56+01:00
+Review: am Ende (Branch-Review)
 Änderung: Der Satz zu „Nicht stören“ nennt den Durchlass für Kritisches nur noch, solange „Kritisches trotzdem durchlassen“ an ist (DE+EN, Verweis auf monitoring); CHANGELOG-Fragment `### Fixed` für beide Fehlerbehebungen. Aus der Abschlussprüfung (wichtig, docs/admin/index.html:123, docs/en/admin/index.html:85).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/index.html, docs/en/admin/index.html
