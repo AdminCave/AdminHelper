@@ -5,8 +5,8 @@ Heavy: linux-full — apps/agent (Collectors, systemd-Unit); die Box-Nachbauten 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1220: Netz-Dateisysteme im Unterprozess mit Timeout, hängende Freigabe als Befund  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/netfs.go, apps/agent/internal/monitor/netfs_test.go, apps/agent/internal/monitor/report.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/statfs.go
+### T1 — R-1220: Netz-Dateisysteme im Unterprozess mit Timeout, hängende Freigabe als Befund  [~] (Befund an Box widerlegt: gopsutil disk.Partitions(false) liefert nur Dateisysteme ohne nodev in /proc/filesystems (nfs, nfs4, cifs, fuse.* sind nodev), collectDisks fragt Netz-Freigaben nie ab. Pool-VM Debian 13, nfs4 hard, Server gestoppt: stat -f hängt über 20 s, collectDisks von main kehrt nach 0 s zurück)
+Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/netfs.go, apps/agent/internal/monitor/netfs_test.go, apps/agent/internal/monitor/report.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/statfs.go, apps/agent/cmd/adminhelper-agent/statfs_test.go
 Änderung:
 - `collectDisks` fragt Mounts der Netz-Dateisysteme (nfs, nfs4, cifs, smb3, smbfs, fuse.sshfs, glusterfs, ceph) nicht mehr selbst ab. Das übernimmt ein versteckter Unterbefehl `adminhelper-agent statfs <mount>` als Unterprozess, mit 5 s Timeout je Mount.
 - Ein Timeout landet mit Mount und fstype in `resources.disks_unresponsive`; der Lauf geht weiter.
@@ -19,7 +19,7 @@ Dedup-Key: bug:agent:collector.go:collectDisks
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/... ./cmd/...
 Doku: → T7
 
-### T2 — R-1220: Monitoring warnt bei nicht antwortender Netz-Freigabe  [ ]
+### T2 — R-1220: Monitoring warnt bei nicht antwortender Netz-Freigabe  [~] (verworfen mit T1 (R-1220 widerlegt), kein disks_unresponsive im Bericht)
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_resources_checker.py
 Änderung:
 - `_grade_disks` liest `resources.disks_unresponsive` (über `capped_objects`, `entry_text`) und meldet je Eintrag, der nicht in `ignore_mounts` steht, eine Warnung „Network share <mount> not responding“. Keine Metrik.
@@ -61,12 +61,12 @@ Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist.go, apps/age
 - `runTimed`/`runTimedEnv` wandern nach `allowlist.go` und prüfen vor dem Start jeden Aufruf gegen eine feste Liste: Befehl, feste Argumente, und für variable Teile ein Muster (Gerätepfad, Unit-Name, Node, Storage-ID). Ein Aufruf außerhalb der Liste wird nicht gestartet und liefert einen Fehler.
 - Tests:
   - AST-Test: Keine andere Nicht-Test-Datei unter `internal/monitor` ruft `exec.Command`/`exec.CommandContext` auf.
-  - Tabellentest: Jeder heutige Aufruf (docker, pvesh, zpool, smartctl, systemctl, sc, needs-restarting, timedatectl, apt-get, dnf, der statfs-Unterbefehl aus T1) besteht.
+  - Tabellentest: Jeder heutige Aufruf (docker, pvesh, zpool, smartctl, systemctl, sc, needs-restarting, timedatectl, apt-get, dnf) besteht.
   - Negativtest: Keine Falle aus Konzept §3.6 besteht, u. a. `postfix check`, `apt-get check`, `zpool scrub`, `pvesh get /nodes/<n>/storage`, `docker exec`.
 - Neue Dateien bekommen einen SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: → T7
-Abhängt von: T1, T3
+Abhängt von: T3
 
 ### T6 — R-1221: Rücksicht bei Last  [?] (Was lässt der Agent bei hoher Last aus, und wie erfährt der Server davon? Empfehlung: in arch-monitoring-module verschieben)
 Komponente: agent · Dateien: apps/agent/internal/monitor/report.go
@@ -78,7 +78,6 @@ Doku: → T7
 Komponente: docs · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-6.md
 Änderung:
 - Ressourcen-Deckel samt Override per `systemctl edit` und dem Hinweis „IO-Klasse idle wirkt je nach IO-Scheduler“.
-- Netz-Freigaben im Unterprozess mit 5 s Timeout und der Warnung „Netz-Freigabe antwortet nicht“.
 - Proxmox-Backup-Inhalt alle 30 min.
 - Entwicklerseite: neue Collector-Befehle nur über die Freigabeliste.
 - DE und EN deckungsgleich, CHANGELOG-Fragment.
@@ -89,3 +88,4 @@ Task-Review: am Ende
 ## Entscheidungen
 - Kevin 2026-11-09 (Konzept §10): Befunde 1 und 2 werden auf einer Test-VM im Pool nachgestellt; es gibt nur eine Freigabeliste, die Fallen dienen als Prüfliste bzw. Negativtest; der Agent soll für Kunden nie spürbar sein.
 - Überschneidung mit `feature/arch-freebsd-agent` in `collector.go`: Der Zug fährt trotzdem. Die Überschneidung ist nur die `skipFSTypes`-Map, T1 fasst sie nicht an, und das Konzept (§8.1) setzt diesen Zug vor die Agent-Arbeit der arch-Sessions. Wer zuerst merged, zwingt den anderen zum Nachziehen; die FreeBSD-Befehle brauchen dann Listeneinträge (T5).
+- T1/T2 (R-1220) verworfen, Box-Nachbau 2026-11-09 auf einer Pool-VM der Lane: Netz-Dateisysteme erreichen `collectDisks` nicht (gopsutil `disk.Partitions(false)` filtert `nodev`), der hängende statfs-Pfad existiert nicht. Die Spec-Abschnitte zu R-1220 gelten nicht mehr; ob Netz-Freigaben künftig überwacht werden sollen, ist eine neue Frage an Kevin, kein Teil dieses Zugs.
