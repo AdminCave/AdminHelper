@@ -7,8 +7,8 @@
 // front, the sidebar and a route change bring the page back, the header names the session in
 // front, closing a running session asks when the options say so, and Ctrl+K stays with the shell
 // inside a terminal. A detached session keeps its tab but leaves its pane (R-1070); docked, it gets a
-// new terminal (R-1070). The tabs of the last run come back, and the open ones are kept, only in the
-// main window and not for a playbook run (R-1168). The real store of the sessions runs on a mocked bridge and a fake xterm.
+// new terminal (R-1070). The tabs of the last run come back, and the open ones are kept, not for a
+// playbook run (R-1168). The real store of the sessions runs on a mocked bridge and a fake xterm.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
@@ -452,7 +452,7 @@ describe('AppShell: the tabs of the last run (R-1168)', () => {
 
   it('waits for the connection list before it opens anything', async () => {
     withRestore(true, ['web']);
-    connectionList.set({ items: [], loading: true });
+    connectionList.set({ items: [WEB], loading: true });
 
     render(AppShell);
     await tick();
@@ -476,7 +476,8 @@ describe('AppShell: the tabs of the last run (R-1168)', () => {
 
     view.unmount();
     vi.mocked(setOpenSessions).mockClear();
-    await closeAllTerminals();
+    // A tab opened after the shell is gone is not saved: the shell has stopped keeping.
+    await open(conn('x'));
     await tick();
     expect(setOpenSessions).not.toHaveBeenCalled();
   });
