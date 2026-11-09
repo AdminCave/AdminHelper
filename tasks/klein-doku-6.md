@@ -10,8 +10,9 @@ Heavy: none — reine Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1151: server.html nennt, was Bündel-Aggregate verraten  [ ]
+### T1 — R-1151: server.html nennt, was Bündel-Aggregate verraten  [x]
 Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @43121bdc4 2026-11-09T15:46:41+01:00
 Review: am Ende (Branch-Review)
 Beweis: security branch arch-notify-incidents 2026-11-05 · feature/arch-notify-incidents@67126bba docs/developer/server.html:197 apps/server/app/modules/notifications/incidents.py:248-280
 Änderung: Ein Satz DE+EN: Die zusammengefassten Werte eines Bündels gelten für das ganze Bündel und verraten Aktivität auf nicht sichtbaren Servern, Namen und Anzahl nicht (bewusster Kompromiss).
