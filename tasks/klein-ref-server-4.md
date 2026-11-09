@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ref-server-4 — Task-Ledger
-Status: geplant · Branch: feature/klein-ref-server-4 · Review: am Ende
+Status: aktiv · Branch: feature/klein-ref-server-4 · Review: am Ende
 Spec: docs/features/klein-ref-server-4.md (Roadmap R-1025, R-1124)
 Heavy: none — Test-Dependency und eine Query-Schreibweise ohne Änderung von API oder Gateway
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
