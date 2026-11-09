@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-bug-notifyprefs-1 — Desktop: Speichern der Benachrichtigungs-Einstellungen, Ton, Incident-Typ (R-1184, R-1183, R-1150) — Task-Ledger
-Status: aktiv · Branch: feature/klein-bug-notifyprefs-1 · Review: am Ende
+Status: bereit · Branch: feature/klein-bug-notifyprefs-1 · Review: am Ende
 Spec: docs/features/klein-bug-notifyprefs-1.md (Roadmap R-1184, R-1183, R-1150)
 Heavy: none — reine Desktop-UI ohne Stack-, Gateway- oder Install-Pfad; die Journey „Einstellungen speichern“ deckt der Komponententest mit gemocktem Server
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Dedup-Key: bug:desktop-ui:sound.ts:playCriticalTone
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/sound.test.ts
 Doku: keine (Fehlerbehebung ohne dokumentiertes Verhalten)
 
-### T3 — IncidentEntry.severity kennt ok (R-1150)  [ ]
+### T3 — IncidentEntry.severity kennt ok (R-1150)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e0e76f02e 2026-11-09T13:58:50+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer branch arch-notify-incidents 2026-11-05, feature/arch-notify-incidents@67126bba, `apps/desktop/ui/src/lib/api/types.ts:685` (der Hub schreibt bei Erholungen `ok`)
 Dedup-Key: ref:desktop-ui:api/types.ts:IncidentEntry
 Änderung: `severity: NotificationSeverity | 'ok' | null` mit einem Satz Kommentar, wer `ok` schreibt. Refactor: `npm run check` und die Vertragstests vorher und nachher grün.
