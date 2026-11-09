@@ -17,6 +17,8 @@ Der heutige Agent verletzt das an drei Stellen, und eine vierte fehlt als Absich
   (statfs) für jeden Mount ohne Timeout auf, auch für nfs, nfs4 und cifs. Ein hart gemountetes NFS einer toten Freigabe
   hält den Lauf an, bis systemd ihn nach `TimeoutStartSec=270` abbricht. Damit fällt der ganze Bericht aus. Das ist
   ebenfalls noch nicht an einer Box geprüft.
+  **Widerlegt (2026-11-09, Pool-VM, T1/T2 `[~]`):** gopsutil `disk.Partitions(false)` liefert nur Dateisysteme ohne
+  `nodev`, nfs, nfs4, cifs und fuse.* erreichen `collectDisks` nie. Die R-1220-Abschnitte dieser Spec gelten nicht.
 - **R-1221, Ressourcen-Deckel:** `apps/agent/systemd/adminhelper-agent.service` und das Zwillings-Unit in
   `apps/agent/internal/service/service_linux.go` setzen keine Priorität und keine Grenze. Unter Windows läuft der
   Dienst mit normaler Priorität.
@@ -25,7 +27,7 @@ Der heutige Agent verletzt das an drei Stellen, und eine vierte fehlt als Absich
   `updatesCalls`). Keine Stelle legt fest, welche Befehle mit welchen Argumenten erlaubt sind.
 
 ## Ziel & Nicht-Ziele
-- **R-1220:** Netz-Dateisysteme fragt der Agent nur in einem eigenen Unterprozess mit Timeout ab. Läuft der Timeout
+- **R-1220 (widerlegt, siehe oben):** Netz-Dateisysteme fragt der Agent nur in einem eigenen Unterprozess mit Timeout ab. Läuft der Timeout
   ab, fehlt der Mount nicht still, sondern wird als Befund gemeldet: Der Agent schickt ihn in
   `resources.disks_unresponsive`, der Monitoring-Dienst warnt „Network share <mount> not responding“. Der Lauf
   selbst endet weiter pünktlich.
@@ -76,19 +78,22 @@ Der heutige Agent verletzt das an drei Stellen, und eine vierte fehlt als Absich
 - nfs(5): `hard` ist Standard, Anfragen werden endlos wiederholt.
 
 ## Trade-offs & Alternativen
-- **R-1220, Unterprozess (gewählt, Konzept §3.6):** Ein statfs auf einer toten harten Freigabe kann im Zustand D
+- **R-1220, Unterprozess (widerlegt, nicht gebaut, Konzept §3.6):** Ein statfs auf einer toten harten Freigabe kann im Zustand D
   hängen. Ein Unterprozess lässt sich töten oder zurücklassen, ohne den Agent-Lauf zu halten. Alternative Goroutine
   mit Timeout: einfacher, aber der Faden bliebe im Agent-Prozess hängen, und der Windows-Dauerdienst sammelte solche
   Fäden an.
-- **R-1220, Befund als eigenes Feld (gewählt):** Würde ein Disk-Eintrag ohne Prozent mitgeschickt, läse der
+- **R-1220, Befund als eigenes Feld (widerlegt, nicht gebaut):** Würde ein Disk-Eintrag ohne Prozent mitgeschickt, läse der
   heutige Server ihn als 0 % und meldete „ok“. Das eigene Feld bleibt für alte Server unsichtbar und für neue
   eindeutig.
 - **R-1219:** Der Backup-Inhalt wird alle 30 min abgefragt (Konzept: 30–60 min). Das bleibt unter dem kleinsten
   sinnvollen Backup-Alter-Schwellwert und wird im Report-State gecacht, weil der Agent als oneshot läuft.
 - **R-1221, Werte:**
-  - `CPUQuota=25%`: ein Viertel eines Kerns, für die serielle Collector-Kette reichlich.
+  - `CPUQuota=50%` (geplant 25 %): ein `pvesh get` braucht 2,3 s CPU, unter 25 % 9,5–10,0 s Wanduhr gegen das
+    15-s-Plugin-Timeout, unter 50 % 4,6–4,9 s (Box-Messung 2026-11-09, Ledger `## Entscheidungen`).
   - `MemoryMax=256M`: Die Größe gemessener Läufe liegt bei wenigen 10 MB. Der Deckel fängt nur einen Ausreißer
     ab, etwa `docker inspect` vieler Container.
+  - `OOMPolicy=continue`: Überschreitet ein Kind (pvesh, dnf, docker) den Deckel, endet nur das Kind, nicht die
+    Unit samt Push.
   - Ein Abbruch durch den Deckel kostet einen Messpunkt, nicht den Kundendienst (Kevin: „ein fehlender Messpunkt
     ist besser“).
 - **R-1222, eine Ausführungsstelle mit Liste (gewählt):** Prüfbar per Test. Alternative statische Analyse aller
