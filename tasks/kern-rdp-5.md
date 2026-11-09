@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: → T4
 Test-Löschung: apps/desktop/src-tauri/src/rdp_embedded/license_gate.rs::license_gate_openh264_sys2_is_not_built — ersetzt durch ein Gate gegen das Feature `source` von openh264-sys2: R-1102 (Kevin 2026-11-02) lädt Ciscos Binary, damit ist der Crate selbst unter Linux im Graph, die C-Quellen nicht
 
-### T3 — R-1102: Schalter H.264 in den RDP-Einstellungen  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/components/settings/RdpSection.svelte, apps/desktop/ui/src/components/settings/RdpSection.test.ts, apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/bridge/index.ts
+### T3 — R-1102: Schalter H.264 in den RDP-Einstellungen  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/components/settings/RdpSection.svelte, apps/desktop/ui/src/components/settings/RdpSection.test.ts, apps/desktop/ui/src/components/settings/SettingsDialog.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/models/openh264.ts, apps/desktop/ui/src/components/SettingsModal.save.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8ab7f1de7 2026-11-09T09:06:16+01:00
+Review: approve (.ah-out/review/kern-rdp-5/T3.verdict.json)
 Änderung: `rdpH264` in den Bridge-Typen und im Standard (`true`); in der RDP-Sektion unter Linux ein Schalter „H.264 (OpenH264)“ mit dem Hinweis „OpenH264 Video Codec provided by Cisco Systems, Inc.“ und Ciscos vollem Lizenztext (aufklappbar); Ausschalten ruft beim Speichern `openh264_remove`. Tests: Schalter nur unter Linux, Hinweis und Lizenztext sichtbar, Ausschalten ruft den Befehl.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T4

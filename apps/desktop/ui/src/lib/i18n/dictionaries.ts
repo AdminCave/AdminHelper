@@ -457,6 +457,10 @@ export const translations: Translations = {
     'settings.rdp.perf.lan': 'LAN',
     'settings.rdp.perf.broadband': 'Breitband',
     'settings.rdp.perf.low': 'Niedrig',
+    'settings.rdp.h264': 'H.264 (OpenH264)',
+    'settings.rdp.h264.hint':
+      'Der eingebettete RDP-Client lädt dafür Ciscos OpenH264 einmal herunter. Aus löscht die Bibliothek wieder.',
+    'settings.rdp.h264.license': 'Lizenz von OpenH264',
 
     // ── Desktop: ConnectionEditor ─────────────────────────────────────
     'editor.title.new': 'Neue Verbindung',
@@ -1760,6 +1764,10 @@ export const translations: Translations = {
     'settings.rdp.perf.lan': 'LAN',
     'settings.rdp.perf.broadband': 'Broadband',
     'settings.rdp.perf.low': 'Low',
+    'settings.rdp.h264': 'H.264 (OpenH264)',
+    'settings.rdp.h264.hint':
+      "The embedded RDP client downloads Cisco's OpenH264 for it once. Off deletes the library again.",
+    'settings.rdp.h264.license': 'License of OpenH264',
 
     // ── Desktop: ConnectionEditor ─────────────────────────────────────
     'editor.title.new': 'New connection',

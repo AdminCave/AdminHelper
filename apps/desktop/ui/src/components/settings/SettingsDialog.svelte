@@ -8,6 +8,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { get } from 'svelte/store';
   import { settings, session } from '$lib/stores/session';
   import { closeSettings, saveSettings } from '$lib/stores/settings';
+  import { openh264Remove } from '$lib/bridge';
+  import { reportError } from '$lib/stores/statusBar';
+  import { errMsg } from '$lib/utils/errors';
   import { terminalPrefs } from '$lib/stores/terminalPrefs';
   import { context } from '$lib/stores/workspace';
   import { t, resolveLanguage, type Language } from '$lib/i18n';
@@ -59,6 +62,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpWindowMode = $state<RdpWindowMode>(stored.rdpWindowMode ?? 'fit');
   let rdpCustomSize = $state(stored.rdpCustomSize ?? '1920x1080');
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>(stored.rdpPerformanceProfile ?? 'auto');
+  let rdpH264 = $state(stored.rdpH264 ?? true);
   let osNotifications = $state(Boolean(stored.osNotifications));
   let sshConsole = $state<SshConsole>(stored.sshConsole ?? getSettingsDefaults().sshConsole);
   let restoreSessions = $state(Boolean(stored.restoreSessions));
@@ -119,13 +123,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
       rdpWindowMode,
       rdpCustomSize: rdpCustomSize.trim(),
       rdpPerformanceProfile,
+      // Unset is on, the default of Rust, so a dialog saved without touching it writes nothing new.
+      rdpH264: rdpH264 ? undefined : false,
       osNotifications,
       sshConsole,
       terminal,
       // Unset is off, so a dialog saved without touching it writes nothing new.
       restoreSessions: restoreSessions || undefined,
     };
-    await saveSettings(next);
+    const saved = await saveSettings(next);
+    // Off means the library is gone from the device too (Cisco's condition 2, R-1102); a no-op
+    // when it never came, so no need to know whether it did.
+    if (saved.ok && !rdpH264) {
+      await openh264Remove().catch((err: unknown) => reportError(errMsg(err)));
+    }
   }
 </script>
 
@@ -207,6 +218,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
               bind:rdpWindowMode
               bind:rdpCustomSize
               bind:rdpPerformanceProfile
+              bind:rdpH264
             />
           </div>
         </div>

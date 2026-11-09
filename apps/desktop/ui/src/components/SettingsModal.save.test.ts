@@ -44,6 +44,7 @@ const h = vi.hoisted(() => ({
     },
   } satisfies Settings,
   saveSettings: vi.fn(async (_settings: Settings) => undefined),
+  openh264Remove: vi.fn(async () => undefined),
   // The notification prefs inside the dialog load through the proxy and render their own
   // save button once they have.
   apiProxy: vi.fn(async (method: string, path: string) => {
@@ -63,6 +64,7 @@ vi.mock('$lib/bridge', () => {
     isDeviceEnrolled: async () => false,
     deviceIdentity: async () => null,
     saveSettings: h.saveSettings,
+    openh264Remove: h.openh264Remove,
     apiProxy: h.apiProxy,
   };
   const passthrough = new Set(['then', '__esModule', 'default']);
@@ -342,5 +344,69 @@ describe('SettingsModal — the client for RDP (R-1098)', () => {
       ...withoutClient,
       rdpClient: 'embedded',
     });
+  });
+});
+
+// H.264 through Cisco's OpenH264 (R-1102): on unless turned off, and off deletes the library once
+// the settings are saved. The switch exists on Linux only, so the tests run as Linux.
+describe('SettingsModal — H.264 of the embedded RDP client (R-1102)', () => {
+  beforeEach(() => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    h.setStored(h.stored);
+  });
+
+  async function openRdp(): Promise<HTMLElement> {
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+    await fireEvent.click(container.querySelector('[role="tab"][data-section="rdp"]')!);
+    return container;
+  }
+
+  it('is on without a stored value, and saving untouched writes nothing new and deletes nothing', async () => {
+    const container = await openRdp();
+    const box = container.querySelector<HTMLInputElement>('input[data-field="rdp-h264"]')!;
+    expect(box.checked).toBe(true);
+
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith(h.stored);
+    expect(h.openh264Remove).not.toHaveBeenCalled();
+  });
+
+  it('saves off and then deletes the library', async () => {
+    const container = await openRdp();
+    await fireEvent.click(
+      container.querySelector<HTMLInputElement>('input[data-field="rdp-h264"]')!,
+    );
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(h.openh264Remove).toHaveBeenCalledOnce());
+    expect(h.saveSettings).toHaveBeenCalledExactlyOnceWith({ ...h.stored, rdpH264: false });
+    expect(h.saveSettings.mock.invocationCallOrder[0]).toBeLessThan(
+      h.openh264Remove.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('deletes nothing when the save fails', async () => {
+    h.saveSettings.mockRejectedValueOnce(new Error('disk full'));
+    const container = await openRdp();
+    await fireEvent.click(
+      container.querySelector<HTMLInputElement>('input[data-field="rdp-h264"]')!,
+    );
+    await fireEvent.click(saveButton(container));
+
+    await waitFor(() => expect(h.saveSettings).toHaveBeenCalledOnce());
+    expect(h.openh264Remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps off when it was stored off', async () => {
+    h.setStored({ ...h.stored, rdpH264: false });
+    const container = await openRdp();
+    const box = container.querySelector<HTMLInputElement>('input[data-field="rdp-h264"]')!;
+    expect(box.checked).toBe(false);
   });
 });
