@@ -613,12 +613,42 @@ mod tests {
         }
     }
 
+    /// The registry drops a session after it has sent its end, so the count follows `Exit`
+    /// a moment later.
+    fn until_len(registry: &PtyRegistry, len: usize) {
+        let deadline = Instant::now() + WAIT;
+        while registry.len() != len {
+            assert!(
+                Instant::now() < deadline,
+                "the registry holds {} sessions, not {len}",
+                registry.len()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     /// Nothing comes after the end, and the sink is let go.
     fn nothing_after(rx: &mpsc::Receiver<Output>) {
         assert_eq!(
             rx.recv_timeout(WAIT),
             Err(mpsc::RecvTimeoutError::Disconnected)
         );
+    }
+
+    /// The sink was let go by a hand over (`attach`, `hand_back`). Output sent before that
+    /// (a pseudo console's terminal setup, say) may still wait in the channel and is read off;
+    /// the registry sends nothing more after, so only the disconnect is left.
+    fn nothing_after_handover(rx: &mpsc::Receiver<Output>) {
+        loop {
+            match rx.recv_timeout(WAIT) {
+                Ok(Output::Data(_)) => {}
+                Ok(other) => panic!("a message after the sink was let go: {other:?}"),
+                Err(e) => {
+                    assert_eq!(e, mpsc::RecvTimeoutError::Disconnected);
+                    return;
+                }
+            }
+        }
     }
 
     #[test]
@@ -744,7 +774,7 @@ mod tests {
         until_text(&registry, id, &first, "before");
         let (kept, second) = attach(&registry, id, "terminal-1");
         // The first sink is let go as the second takes over.
-        nothing_after(&first);
+        nothing_after_handover(&first);
         let kept = String::from_utf8_lossy(&kept);
         assert!(kept.contains("before"), "kept: {kept:?}");
         let line: &[u8] = if cfg!(windows) { b"\r" } else { b"\n" };
@@ -811,11 +841,11 @@ mod tests {
         let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-9");
         registry.close_all_of("main");
         until_exit(&registry, mine, &mine_rx, Vec::new());
-        assert_eq!(registry.len(), 1);
+        until_len(&registry, 1);
         assert!(registry.write(theirs, b"").is_ok(), "the other one runs on");
         // A session taken over by a window belongs to it.
         let (_, theirs_rx2) = attach(&registry, theirs, "main");
-        nothing_after(&theirs_rx);
+        nothing_after_handover(&theirs_rx);
         registry.close_all_of("main");
         until_exit(&registry, theirs, &theirs_rx2, Vec::new());
         until_gone(&registry);
@@ -828,11 +858,11 @@ mod tests {
         let (mine, mine_rx) = open_for(&registry, long_running(), "terminal-4");
         // Windows: a pseudo console whose cursor query a listening sink never answered does
         // not close; the windows have answered it, as xterm.js does. Theirs last, right before
-        // the hand back, so that no output of it waits in its sink.
+        // the hand back, so that little of its output is left.
         until_ready(&registry, mine, &mine_rx);
         until_ready(&registry, theirs, &theirs_rx);
         registry.hand_back("terminal-3");
-        nothing_after(&theirs_rx);
+        nothing_after_handover(&theirs_rx);
         // Main's close takes the handed back session, not the other window's.
         registry.close_all_of(MAIN);
         let deadline = Instant::now() + WAIT;

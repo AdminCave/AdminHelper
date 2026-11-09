@@ -1326,18 +1326,25 @@ pub fn open_launcher() -> Result<(), AppError> {
 /// that sends no `check` gets a real run, as before the switch existed.
 #[tauri::command]
 pub async fn ansible_run(
+    app: tauri::AppHandle,
+    state: State<'_, frpc::FrpcState>,
     session: State<'_, SessionState>,
     playbook_id: String,
     targets: Vec<ansible::AnsibleTarget>,
     check: Option<bool>,
 ) -> Result<(), AppError> {
-    let check = check.unwrap_or(false);
+    let switches = ansible::RunSwitches {
+        check: check.unwrap_or(false),
+        ask_pass: ansible::asks_password(&targets),
+    };
+    let guard = foreign_port_guard(&app, state.inner(), session.inner()).await;
     let session = session.inner();
     ansible_run_with(
         &playbook_id,
         targets,
+        guard,
         |id| async move { ansible::fetch_playbook(session, &id).await },
-        move |inventory, playbook| ansible::launch_ansible(inventory, playbook, check),
+        move |inventory, playbook| ansible::launch_ansible(inventory, playbook, switches),
     )
     .await
 }
@@ -1349,6 +1356,7 @@ pub async fn ansible_run(
 #[tauri::command]
 pub async fn terminal_open_ansible(
     window: tauri::Window,
+    state: State<'_, frpc::FrpcState>,
     session: State<'_, SessionState>,
     playbook_id: String,
     targets: Vec<ansible::AnsibleTarget>,
@@ -1362,14 +1370,20 @@ pub async fn terminal_open_ansible(
             "only the main window starts a playbook".into(),
         ));
     }
+    let switches = ansible::RunSwitches {
+        check,
+        ask_pass: ansible::asks_password(&targets),
+    };
     let app = window.app_handle().clone();
+    let guard = foreign_port_guard(&app, state.inner(), session.inner()).await;
     let session = session.inner();
     ansible_run_with(
         &playbook_id,
         targets,
+        guard,
         |id| async move { ansible::fetch_playbook(session, &id).await },
         move |inventory, playbook| {
-            ansible::launch_ansible_in_pty(inventory, playbook, check, |spawn| {
+            ansible::launch_ansible_in_pty(inventory, playbook, switches, |spawn| {
                 app.state::<PtyRegistry>()
                     .open(spawn, cols, rows, pty::MAIN, channel_sink(output))
             })
@@ -1378,24 +1392,58 @@ pub async fn terminal_open_ansible(
     .await
 }
 
-/// [`ansible_run`] with the fetch of the playbook and the launch passed in. The id is checked
-/// before anything goes to the server ([`ansible::check_playbook_id`]); the files are written
-/// and launched on a blocking thread, and a step that fails takes the files written so far
-/// with it ([`ansible::run`]).
-async fn ansible_run_with<T, F, Fut, L>(
+/// The check of [`ansible_run_with`] that no target's connection goes to a loopback port of
+/// another workspace's tunnel ([`reject_foreign_port`]), as `open_connection` checks it for
+/// Verbinden: by the visitors of the frpc of the current sign-in.
+async fn foreign_port_guard(
+    app: &tauri::AppHandle,
+    state: &frpc::FrpcState,
+    session: &SessionState,
+) -> impl FnOnce(&[ansible::AnsibleTarget]) -> Result<(), AppError> + Send + 'static {
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state, &now.signed_in()),
+        None => Vec::new(),
+    };
+    let base = storage::app_data_dir(app);
+    move |targets| reject_foreign_targets(&base?, targets, &bindings)
+}
+
+/// Fails if the connection of one of `targets` goes to a loopback port of another workspace's
+/// tunnel ([`reject_foreign_port`]); on a blocking thread only.
+fn reject_foreign_targets(
+    base: &Path,
+    targets: &[ansible::AnsibleTarget],
+    bindings: &[VisitorBinding],
+) -> Result<(), AppError> {
+    targets
+        .iter()
+        .filter_map(|target| target.connection.as_ref())
+        .try_for_each(|connection| reject_foreign_port(base, connection, bindings))
+}
+
+/// [`ansible_run`] with the check of the targets' ports (`guard`, [`foreign_port_guard`]), the
+/// fetch of the playbook and the launch passed in. Id and targets are checked before anything
+/// goes to the server ([`ansible::check_playbook_id`], [`ansible::check_targets`], then `guard`
+/// on a blocking thread); the files are written and launched on a blocking thread, and a step
+/// that fails takes the files written so far with it ([`ansible::run`]).
+async fn ansible_run_with<T, G, F, Fut, L>(
     playbook_id: &str,
     targets: Vec<ansible::AnsibleTarget>,
+    guard: G,
     fetch: F,
     launch: L,
 ) -> Result<T, AppError>
 where
     T: Send + 'static,
+    G: FnOnce(&[ansible::AnsibleTarget]) -> Result<(), AppError> + Send + 'static,
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Result<ansible::Playbook, AppError>>,
     L: FnOnce(&str, &str) -> Result<T, AppError> + Send + 'static,
 {
     only(Side::Workspace)?;
     ansible::check_playbook_id(playbook_id)?;
+    ansible::check_targets(&targets)?;
+    let targets = blocking(move || guard(&targets).map(|()| targets)).await?;
     let playbook = fetch(playbook_id.to_string()).await?;
     blocking(move || ansible::run(&targets, &playbook, launch)).await
 }
@@ -1405,9 +1453,9 @@ mod tests {
     use super::{
         ansible_run_with, check_server_cert_in, control_dir, delete_workspace_in, detached_id,
         detached_label, enroll_with_token_in, list_workspaces_in, may_reach, open_launcher_with,
-        open_workspace_in, reject_foreign_port, reset_device_identity_in, reset_server_cert_pin_in,
-        run_with_deadline, save_workspace_in, sign_in_target, ssh_spawn, sync_source,
-        with_control_master, with_sftp,
+        open_workspace_in, reject_foreign_port, reject_foreign_targets, reset_device_identity_in,
+        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target, ssh_spawn,
+        sync_source, with_control_master, with_sftp,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -1543,6 +1591,37 @@ mod tests {
         {
             let _owner = entered("w-0000000b");
             assert!(reject_foreign_port(&dir, &loopback(23005), &[]).is_ok());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ansible_targets_to_a_foreign_tunnel_port_are_refused() {
+        let dir =
+            std::env::temp_dir().join(format!("ah-commands-ansible-port-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        PortRegistry::new(&dir).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
+        let target = |connection: Option<Connection>| AnsibleTarget {
+            hostname: "db01".to_string(),
+            groups: Vec::new(),
+            connection,
+        };
+        {
+            let _other = entered("w-0000000a");
+            let refused = reject_foreign_targets(
+                &dir,
+                &[target(Some(loopback(23006))), target(Some(loopback(23005)))],
+                &[],
+            )
+            .unwrap_err();
+            assert!(
+                refused
+                    .to_string()
+                    .starts_with("port 23005 on this machine"),
+                "{refused}"
+            );
+            assert!(reject_foreign_targets(&dir, &[target(Some(loopback(23006)))], &[]).is_ok());
+            assert!(reject_foreign_targets(&dir, &[target(None)], &[]).is_ok());
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1742,6 +1821,7 @@ mod tests {
         vec![AnsibleTarget {
             hostname: format!("{marker}.example"),
             groups: vec!["web".to_string()],
+            connection: None,
         }]
     }
 
@@ -1788,6 +1868,7 @@ mod tests {
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
+            |_| Ok(()),
             |id| {
                 asked.borrow_mut().push(id);
                 async { Ok(marked_playbook(&marker)) }
@@ -1805,9 +1886,13 @@ mod tests {
         let [inventory, inventory_text, playbook, playbook_text] = &launches[0];
         assert_eq!(playbook_text, &marked_playbook(&marker).content);
         assert!(playbook.ends_with("_site.yml"), "{playbook}");
+        let inventory_json: serde_json::Value = serde_json::from_str(inventory_text).unwrap();
+        let host = format!("{marker}.example");
         assert!(
-            inventory_text.contains(&format!("[all]\n{marker}.example\n"))
-                && inventory_text.contains(&format!("[web]\n{marker}.example\n")),
+            inventory_json["all"]["hosts"].get(&host).is_some()
+                && inventory_json["all"]["children"]["web"]["hosts"]
+                    .get(&host)
+                    .is_some(),
             "{inventory_text}"
         );
         // A launch that succeeded leaves both files to the run.
@@ -1825,6 +1910,7 @@ mod tests {
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
+            |_| Ok(()),
             |_| async {
                 Err::<Playbook, _>(AppError::Validation(
                     "the playbook could not be loaded (404 Not Found)".to_string(),
@@ -1849,6 +1935,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ansible_run_asks_the_server_nothing_when_a_target_port_is_refused() {
+        let marker = format!("run-port-refused-{}", std::process::id());
+        let _in_a_workspace = entered("standard");
+        let (launches, launch) = noting_launch(Ok(()));
+        let asked = RefCell::new(Vec::new());
+
+        let result = ansible_run_with(
+            PLAYBOOK_ID,
+            marked_targets(&marker),
+            |_| {
+                Err(AppError::Connection(
+                    "port 23005 on this machine belongs to the tunnel of another workspace"
+                        .to_string(),
+                ))
+            },
+            |id| {
+                asked.borrow_mut().push(id);
+                async { Ok(marked_playbook(&marker)) }
+            },
+            launch,
+        )
+        .await;
+        let written = remove_ansible_files_with(&marker);
+
+        assert!(
+            matches!(&result, Err(AppError::Connection(msg)) if msg.contains("port 23005")),
+            "{result:?}"
+        );
+        assert!(asked.borrow().is_empty(), "fetched despite the refusal");
+        assert_eq!(written, Vec::<PathBuf>::new());
+        assert_eq!(launches.lock().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
     async fn ansible_run_removes_both_files_when_the_launch_fails() {
         let marker = format!("run-launch-fails-{}", std::process::id());
         let _in_a_workspace = entered("standard");
@@ -1858,6 +1978,7 @@ mod tests {
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
+            |_| Ok(()),
             |_| async { Ok(marked_playbook(&marker)) },
             launch,
         )
@@ -1887,6 +2008,7 @@ mod tests {
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
+            |_| Ok(()),
             |_| async {
                 Ok(Playbook {
                     filename: "a".repeat(300),
@@ -1927,6 +2049,7 @@ mod tests {
             let result = ansible_run_with(
                 id,
                 marked_targets(&marker),
+                |_| Ok(()),
                 |_| {
                     fetches.set(fetches.get() + 1);
                     async { Ok(marked_playbook(&marker)) }
@@ -1952,6 +2075,7 @@ mod tests {
         let result = ansible_run_with(
             PLAYBOOK_ID,
             marked_targets(&marker),
+            |_| Ok(()),
             |_| {
                 fetches.set(fetches.get() + 1);
                 async { Ok(marked_playbook(&marker)) }
