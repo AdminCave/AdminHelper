@@ -613,12 +613,34 @@ mod tests {
         }
     }
 
-    /// Nothing comes after the end, and the sink is let go.
+    /// The registry drops a session after it has sent its end, so the count follows `Exit`
+    /// a moment later.
+    fn until_len(registry: &PtyRegistry, len: usize) {
+        let deadline = Instant::now() + WAIT;
+        while registry.len() != len {
+            assert!(
+                Instant::now() < deadline,
+                "the registry holds {} sessions, not {len}",
+                registry.len()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Nothing comes after the end, and the sink is let go. Output that was sent before the
+    /// sink was let go (a pseudo console's terminal setup, say) may still wait in the channel
+    /// and is read off; after that, only the disconnect is left.
     fn nothing_after(rx: &mpsc::Receiver<Output>) {
-        assert_eq!(
-            rx.recv_timeout(WAIT),
-            Err(mpsc::RecvTimeoutError::Disconnected)
-        );
+        loop {
+            match rx.recv_timeout(WAIT) {
+                Ok(Output::Data(_)) => {}
+                Ok(other) => panic!("a message after the sink was let go: {other:?}"),
+                Err(e) => {
+                    assert_eq!(e, mpsc::RecvTimeoutError::Disconnected);
+                    return;
+                }
+            }
+        }
     }
 
     #[test]
@@ -811,7 +833,7 @@ mod tests {
         let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-9");
         registry.close_all_of("main");
         until_exit(&registry, mine, &mine_rx, Vec::new());
-        assert_eq!(registry.len(), 1);
+        until_len(&registry, 1);
         assert!(registry.write(theirs, b"").is_ok(), "the other one runs on");
         // A session taken over by a window belongs to it.
         let (_, theirs_rx2) = attach(&registry, theirs, "main");
