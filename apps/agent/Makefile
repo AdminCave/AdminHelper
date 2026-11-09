@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 LDFLAGS  = -ldflags "-s -w -X main.version=$(VERSION)"
 BINARY   = adminhelper-agent
 
-.PHONY: build build-linux build-windows clean tidy deb rpm all
+.PHONY: build build-linux build-windows build-freebsd clean tidy deb rpm all
 
 build: build-linux
 
@@ -14,6 +14,9 @@ build-linux:
 
 build-windows:
 	GOOS=windows GOARCH=amd64 go build -trimpath $(LDFLAGS) -o bin/$(BINARY).exe ./cmd/adminhelper-agent
+
+build-freebsd:
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -trimpath $(LDFLAGS) -o bin/$(BINARY)-freebsd ./cmd/adminhelper-agent
 
 deb: build-linux
 	cd ../.. && VERSION=$(VERSION) bash apps/agent/build-deb.sh
