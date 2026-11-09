@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value};
 
 use crate::error::AppError;
-use crate::models::{Connection, ConnectionKind};
+use crate::models::{Connection, ConnectionKind, SshAuthMethod};
 use crate::pty::Spawn;
 use crate::session::SessionState;
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
@@ -269,8 +269,8 @@ pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<Strin
 }
 
 /// The variables that send Ansible where `connection` goes, as Verbinden opens it: address,
-/// port other than 22, user and key if set, and the other switches of the connection quoted for the `shlex`
-/// split Ansible applies to `ansible_ssh_common_args`. None without a connection.
+/// port other than 22, user and key if set, and the other switches of the connection quoted for
+/// the `shlex` split Ansible applies to `ansible_ssh_common_args`. None without a connection.
 fn host_vars(connection: Option<&Connection>) -> Map<String, Value> {
     let mut vars = Map::new();
     let Some(connection) = connection else {
@@ -363,28 +363,56 @@ fn confined_run_dir(path: &str) -> Option<PathBuf> {
     Some(dir.to_path_buf())
 }
 
-/// The arguments of `ansible-playbook` for a run: `--check` comes last, so the files keep their
-/// places for both ways of starting it.
-pub fn playbook_args(inventory_path: &str, playbook_path: &str, check: bool) -> Vec<String> {
+/// The switches of a run besides its files: `check` for a dry run (`--check`), `ask_pass` when
+/// a target logs in with a password (`--ask-pass`, [`asks_password`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunSwitches {
+    pub check: bool,
+    pub ask_pass: bool,
+}
+
+/// Whether one of `targets` logs in with a password. Ansible then asks for it once in the
+/// terminal of the run, as Verbinden does for its session; it serves every target of the run.
+pub fn asks_password(targets: &[AnsibleTarget]) -> bool {
+    targets.iter().any(|target| {
+        target
+            .connection
+            .as_ref()
+            .and_then(|connection| connection.options.as_ref())
+            .and_then(|options| options.ssh.as_ref())
+            .is_some_and(|ssh| ssh.auth_method == Some(SshAuthMethod::Password))
+    })
+}
+
+/// The arguments of `ansible-playbook` for a run: the switches come after the files, so the files
+/// keep their places for both ways of starting it, and `--check` comes last.
+pub fn playbook_args(
+    inventory_path: &str,
+    playbook_path: &str,
+    switches: RunSwitches,
+) -> Vec<String> {
     let mut args = vec![
         "-i".to_string(),
         inventory_path.to_string(),
         playbook_path.to_string(),
     ];
-    if check {
+    if switches.ask_pass {
+        args.push("--ask-pass".to_string());
+    }
+    if switches.check {
         args.push("--check".to_string());
     }
     args
 }
 
-/// Starts ansible-playbook in a native terminal, with `--check` for a dry run.
+/// Starts ansible-playbook in a native terminal with `switches`.
 pub fn launch_ansible(
     inventory_path: &str,
     playbook_path: &str,
-    check: bool,
+    switches: RunSwitches,
 ) -> Result<(), AppError> {
     launch_ansible_with(inventory_path, playbook_path, |inventory, playbook| {
-        start_in_terminal(inventory, playbook, check)
+        start_in_terminal(inventory, playbook, switches)
     })
 }
 
@@ -394,21 +422,26 @@ pub fn launch_ansible(
 pub fn launch_ansible_in_pty<T>(
     inventory_path: &str,
     playbook_path: &str,
-    check: bool,
+    switches: RunSwitches,
     open: impl FnOnce(Spawn) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
     launch_ansible_with(inventory_path, playbook_path, |inventory, playbook| {
         let program = which("ansible-playbook").ok_or_else(not_installed)?;
-        open(pty_spawn(program, inventory, playbook, check))
+        open(pty_spawn(program, inventory, playbook, switches))
     })
 }
 
 /// The session of a run in the embedded terminal: `program` on the two files, the run
 /// directory (the one the inventory lies in) to remove at the end.
-fn pty_spawn(program: PathBuf, inventory_path: &str, playbook_path: &str, check: bool) -> Spawn {
+fn pty_spawn(
+    program: PathBuf,
+    inventory_path: &str,
+    playbook_path: &str,
+    switches: RunSwitches,
+) -> Spawn {
     Spawn {
         program,
-        args: playbook_args(inventory_path, playbook_path, check),
+        args: playbook_args(inventory_path, playbook_path, switches),
         env: vec![("TERM".to_string(), "xterm-256color".to_string())],
         cwd: None,
         cleanup: Path::new(inventory_path).parent().map(Path::to_path_buf),
@@ -461,7 +494,7 @@ fn launch_ansible_with<T>(
 fn start_in_terminal(
     inventory_path: &str,
     playbook_path: &str,
-    check: bool,
+    switches: RunSwitches,
 ) -> Result<(), AppError> {
     if which("ansible-playbook").is_none() {
         return Err(not_installed());
@@ -470,12 +503,12 @@ fn start_in_terminal(
     if cfg!(target_os = "windows") {
         open_windows_terminal(
             "ansible-playbook",
-            &playbook_args(inventory_path, playbook_path, check),
+            &playbook_args(inventory_path, playbook_path, switches),
         )
     } else {
         let bash_args = vec![
             "-c".to_string(),
-            linux_run_script(inventory_path, playbook_path, check),
+            linux_run_script(inventory_path, playbook_path, switches),
         ];
         open_linux_terminal("bash", &bash_args)
     }
@@ -489,20 +522,22 @@ fn start_in_terminal(
 /// INT trap even when ansible-playbook caught Ctrl-C itself, so `exit` there would close the
 /// terminal over its output, and on SIGINT bash waits for ansible-playbook anyway and, if that
 /// died of it, runs the EXIT trap (the Ctrl-C test pins both).
-fn linux_run_script(inventory_path: &str, playbook_path: &str, check: bool) -> String {
+fn linux_run_script(inventory_path: &str, playbook_path: &str, switches: RunSwitches) -> String {
     let run_dir = shell_escape(
         Path::new(inventory_path)
             .parent()
             .and_then(Path::to_str)
             .unwrap_or_default(),
     );
-    let inventory = shell_escape(inventory_path);
-    let playbook = shell_escape(playbook_path);
-    let check = if check { " --check" } else { "" };
+    let args: Vec<String> = playbook_args(inventory_path, playbook_path, switches)
+        .iter()
+        .map(|arg| shell_escape(arg))
+        .collect();
+    let args = args.join(" ");
     format!(
         "ah_cleanup() {{ rm -rf -- {run_dir}; }}; \
          trap ah_cleanup EXIT; trap exit HUP TERM; \
-         ansible-playbook -i {inventory} {playbook}{check}; ah_cleanup; \
+         ansible-playbook {args}; ah_cleanup; \
          echo ''; echo 'Ansible beendet. Druecke Enter zum Schliessen.'; read"
     )
 }
@@ -510,9 +545,10 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str, check: bool) -> S
 #[cfg(test)]
 mod tests {
     use super::{
-        check_targets, confined_run_dir, create_run_dir, create_temp_file, fetch_playbook,
-        generate_inventory, launch_ansible_in_pty, launch_ansible_with, playbook_args, pty_spawn,
-        run, run_in, write_playbook_temp, AnsibleTarget, Playbook,
+        asks_password, check_targets, confined_run_dir, create_run_dir, create_temp_file,
+        fetch_playbook, generate_inventory, launch_ansible_in_pty, launch_ansible_with,
+        playbook_args, pty_spawn, run, run_in, write_playbook_temp, AnsibleTarget, Playbook,
+        RunSwitches,
     };
     use crate::error::AppError;
     use crate::models::{Connection, ConnectionKind};
@@ -944,7 +980,7 @@ mod tests {
         stub_dir: &Path,
         inventory: &str,
         playbook: &str,
-        check: bool,
+        switches: RunSwitches,
     ) -> std::process::Command {
         use std::process::Stdio;
         let mut dirs = vec![stub_dir.to_path_buf()];
@@ -954,7 +990,7 @@ mod tests {
         let mut command = std::process::Command::new("bash");
         command
             .arg("-c")
-            .arg(super::linux_run_script(inventory, playbook, check))
+            .arg(super::linux_run_script(inventory, playbook, switches))
             .env("PATH", std::env::join_paths(dirs).unwrap())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -965,13 +1001,26 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn linux_run_script_removes_both_files_when_ansible_playbook_ends() {
-        for (code, check) in [(0, false), (2, false), (0, true)] {
+        let plain = RunSwitches::default();
+        let check = RunSwitches {
+            check: true,
+            ..plain
+        };
+        let ask_pass = RunSwitches {
+            ask_pass: true,
+            ..plain
+        };
+        let both = RunSwitches {
+            check: true,
+            ask_pass: true,
+        };
+        for (code, switches) in [(0, plain), (2, plain), (0, check), (0, ask_pass), (0, both)] {
             let stub = stub_ansible_playbook(&format!("exit{code}"), "", &format!("exit {code}"));
             let dir = run_dir();
             let inventory = generate_inventory(&dir.0, &one_target()).unwrap();
             let playbook = write_playbook_temp(&dir.0, "it's a run.yml", "- hosts: all\n").unwrap();
 
-            let status = run_script_command(&stub.0, &inventory, &playbook, check)
+            let status = run_script_command(&stub.0, &inventory, &playbook, switches)
                 .status()
                 .unwrap();
             let args = fs::read_to_string(stub.0.join("args")).unwrap_or_default();
@@ -984,8 +1033,9 @@ mod tests {
             assert_eq!(
                 args,
                 format!(
-                    "-i {inventory} {playbook}{}\n",
-                    if check { " --check" } else { "" }
+                    "-i {inventory} {playbook}{}{}\n",
+                    if switches.ask_pass { " --ask-pass" } else { "" },
+                    if switches.check { " --check" } else { "" }
                 ),
                 "the stub did not run on both files (exit {code}, bash {status})"
             );
@@ -1019,7 +1069,7 @@ mod tests {
         let playbook =
             write_playbook_temp(&dir.0, &format!("{case}.yml"), "- hosts: all\n").unwrap();
 
-        let mut child = run_script_command(&stub.0, &inventory, &playbook, false)
+        let mut child = run_script_command(&stub.0, &inventory, &playbook, RunSwitches::default())
             .stdout(std::process::Stdio::piped())
             .process_group(0)
             .spawn()
@@ -1122,14 +1172,18 @@ mod tests {
     }
 
     #[test]
-    fn playbook_args_add_check_last_for_a_dry_run_only() {
+    fn playbook_args_add_each_switch_only_when_set_and_check_last() {
+        let args =
+            |check, ask_pass| playbook_args("/r/inv", "/r/pb.yml", RunSwitches { check, ask_pass });
+        assert_eq!(args(false, false), ["-i", "/r/inv", "/r/pb.yml"]);
+        assert_eq!(args(true, false), ["-i", "/r/inv", "/r/pb.yml", "--check"]);
         assert_eq!(
-            playbook_args("/r/inv", "/r/pb.yml", false),
-            ["-i", "/r/inv", "/r/pb.yml"]
+            args(false, true),
+            ["-i", "/r/inv", "/r/pb.yml", "--ask-pass"]
         );
         assert_eq!(
-            playbook_args("/r/inv", "/r/pb.yml", true),
-            ["-i", "/r/inv", "/r/pb.yml", "--check"]
+            args(true, true),
+            ["-i", "/r/inv", "/r/pb.yml", "--ask-pass", "--check"]
         );
     }
 
@@ -1141,7 +1195,7 @@ mod tests {
 
         // Without ansible-playbook on PATH it fails before `open`; both must leave nothing.
         let result: Result<u64, AppError> =
-            launch_ansible_in_pty(&inventory, &playbook, true, |_| {
+            launch_ansible_in_pty(&inventory, &playbook, RunSwitches::default(), |_| {
                 Err(AppError::Connection(
                     "the session did not start".to_string(),
                 ))
@@ -1153,7 +1207,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_pty_run_gets_check_and_removes_its_directory_once_it_ends() {
+    fn a_pty_run_gets_its_switches_and_removes_its_directory_once_it_ends() {
         use crate::pty::{Output, PtyRegistry};
         use std::sync::mpsc;
         use std::time::Duration;
@@ -1167,8 +1221,12 @@ mod tests {
 
         let mut seen = None;
         launch_ansible_with(&inventory, &playbook, |inv, pb| {
-            seen = Some(format!("-i {inv} {pb} --check\n"));
-            let spawn = pty_spawn(stub.0.join("ansible-playbook"), inv, pb, true);
+            seen = Some(format!("-i {inv} {pb} --ask-pass --check\n"));
+            let switches = RunSwitches {
+                check: true,
+                ask_pass: true,
+            };
+            let spawn = pty_spawn(stub.0.join("ansible-playbook"), inv, pb, switches);
             assert!(!spawn.broadcast, "a run takes no broadcast");
             registry.open(spawn, 80, 24, "main", move |out| tx.send(out).is_ok())
         })
@@ -1188,7 +1246,7 @@ mod tests {
         assert_eq!(
             Some(args),
             seen,
-            "the stub did not run on both files with --check"
+            "the stub did not run on both files with --ask-pass --check"
         );
         assert!(!dir.0.exists(), "{:?} left after the run ended", dir.0);
     }
@@ -1396,6 +1454,44 @@ mod tests {
             groups: groups.iter().map(|g| g.to_string()).collect(),
             connection: Some(connection),
         }
+    }
+
+    #[test]
+    fn asks_password_only_when_a_target_logs_in_with_a_password() {
+        let by = |auth: &str| {
+            reached(
+                "web01",
+                &[],
+                ssh_connection("192.0.2.5", None, serde_json::json!({ "authMethod": auth })),
+            )
+        };
+        let no_method = || {
+            reached(
+                "db01",
+                &[],
+                ssh_connection("192.0.2.6", None, serde_json::json!({})),
+            )
+        };
+        let hostname_only = || AnsibleTarget {
+            hostname: "app01".to_string(),
+            groups: vec![],
+            connection: None,
+        };
+
+        assert!(!asks_password(&[]));
+        assert!(!asks_password(&[
+            by("key"),
+            by("agent"),
+            no_method(),
+            hostname_only()
+        ]));
+        assert!(asks_password(&[by("password")]));
+        assert!(asks_password(&[
+            hostname_only(),
+            by("key"),
+            no_method(),
+            by("password")
+        ]));
     }
 
     #[test]

@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T4
 Abhängt von: T1
 
-### T3 [?] (R-1204: Passwort-Verbindungen per --ask-pass (Abfrage im Terminal, ein Passwort je Lauf) oder Ablehnung?) — R-1204: Ansible fragt das SSH-Passwort ab  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+### T3 — R-1204: Ansible fragt das SSH-Passwort ab  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @90098c0f5 2026-11-09T12:57:36+01:00
+Review: approve (.ah-out/review/kern-ansible-1/T3.verdict.json)
 Änderung: Nutzt ein Ziel `SshAuthMethod::Password`, bekommt `playbook_args` den Schalter `--ask-pass`. Das gilt für das OS-Terminal und für das eingebettete Terminal; `linux_run_script` nutzt dieselben Argumente. Tests: Schalter genau bei einem Passwort-Ziel, in beiden Startwegen.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
@@ -42,3 +44,4 @@ Abhängt von: T2
 - T1: Ansible setzt `PreferredAuthentications` selbst und vor `ansible_ssh_common_args`; ssh nimmt den ersten Wert, unser Wert aus der Auth-Methode wirkt dort also nicht. Hingenommen: `IdentitiesOnly` und der Schlüssel wirken weiter, eine Passwort-Abfrage regelt `--ask-pass` (T3).
 - T1: Ein Tag `all` wird keine Kindgruppe: das yaml-Plugin bricht dann mit „can't add group to itself“ ab, und Ansible fällt still auf das ini-Plugin zurück (mit ansible-core 2.22.0 geprobt); derselbe Hostname mit verschiedenen Zielen wird abgelehnt statt still eines zu nehmen.
 - T1: Der Port-Guard (`reject_foreign_port` je Verbindung) läuft vor dem Abruf des Playbooks, damit ein abgelehnter Lauf den Server nicht fragt.
+- T3: Frage beantwortet in der Notiz von R-1204 (Kevin 2026-11-09): `--ask-pass`, Abfrage im Terminal wie bei Verbinden, ein Passwort je Lauf.

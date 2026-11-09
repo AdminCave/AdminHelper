@@ -1329,7 +1329,10 @@ pub async fn ansible_run(
     targets: Vec<ansible::AnsibleTarget>,
     check: Option<bool>,
 ) -> Result<(), AppError> {
-    let check = check.unwrap_or(false);
+    let switches = ansible::RunSwitches {
+        check: check.unwrap_or(false),
+        ask_pass: ansible::asks_password(&targets),
+    };
     let guard = foreign_port_guard(&app, state.inner(), session.inner()).await;
     let session = session.inner();
     ansible_run_with(
@@ -1337,7 +1340,7 @@ pub async fn ansible_run(
         targets,
         guard,
         |id| async move { ansible::fetch_playbook(session, &id).await },
-        move |inventory, playbook| ansible::launch_ansible(inventory, playbook, check),
+        move |inventory, playbook| ansible::launch_ansible(inventory, playbook, switches),
     )
     .await
 }
@@ -1363,6 +1366,10 @@ pub async fn terminal_open_ansible(
             "only the main window starts a playbook".into(),
         ));
     }
+    let switches = ansible::RunSwitches {
+        check,
+        ask_pass: ansible::asks_password(&targets),
+    };
     let app = window.app_handle().clone();
     let guard = foreign_port_guard(&app, state.inner(), session.inner()).await;
     let session = session.inner();
@@ -1372,7 +1379,7 @@ pub async fn terminal_open_ansible(
         guard,
         |id| async move { ansible::fetch_playbook(session, &id).await },
         move |inventory, playbook| {
-            ansible::launch_ansible_in_pty(inventory, playbook, check, |spawn| {
+            ansible::launch_ansible_in_pty(inventory, playbook, switches, |spawn| {
                 app.state::<PtyRegistry>()
                     .open(spawn, cols, rows, pty::MAIN, channel_sink(output))
             })
