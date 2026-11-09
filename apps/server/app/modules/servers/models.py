@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from sqlalchemy import Column, DateTime, String
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
@@ -26,7 +26,9 @@ class Server(Base):
 
     connections = relationship(
         "Connection",
-        backref="server",
+        # selectin: a connection's display name reads its server (R-1210), so a list of them
+        # loads the servers in one query, not one per row.
+        backref=backref("server", lazy="selectin"),
         lazy="selectin",
         foreign_keys="Connection.server_id",
     )

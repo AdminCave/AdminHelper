@@ -246,6 +246,9 @@ def delete_server(
     if not server:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server nicht gefunden")
     server_name = server.name
+    # Its connections stay, without a server: each keeps the name it showed (R-1210).
+    for connection in server.connections:
+        connection.name = connection.display_name()
     # Deprovision the agent's mTLS identity (CN = stable server_id, tunnel scope):
     # the ca-issuer stops renewing its cert and the data plane rejects it (F1).
     revoke_identity(db, server.id, SCOPE_AGENT)

@@ -6,7 +6,10 @@ export type ConnectionKind = 'ssh' | 'rdp' | 'web';
 
 export interface Connection {
   id: string;
+  /** The display name the server derives (R-1210); without a server the name itself. */
   name: string;
+  /** The stored own text of the display name; without a server the name itself. */
+  label?: string;
   kind: ConnectionKind;
   host?: string | null;
   url?: string | null;

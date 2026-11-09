@@ -535,6 +535,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "lastUsed": {
             "anyOf": [
               {
@@ -547,10 +559,16 @@
             "title": "Lastused"
           },
           "name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "notes": {
             "anyOf": [
@@ -651,7 +669,6 @@
           }
         },
         "required": [
-          "name",
           "kind"
         ],
         "title": "ConnectionCreate",
@@ -726,6 +743,10 @@
             "title": "Kind",
             "type": "string"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "lastUsed": {
             "anyOf": [
               {
@@ -798,6 +819,7 @@
         "required": [
           "id",
           "name",
+          "label",
           "kind",
           "host",
           "port",
@@ -878,6 +900,10 @@
             "title": "Kind",
             "type": "string"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "lastUsed": {
             "anyOf": [
               {
@@ -954,6 +980,7 @@
         "required": [
           "id",
           "name",
+          "label",
           "kind",
           "host",
           "port",
@@ -1021,6 +1048,18 @@
               }
             ],
             "title": "Kind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           },
           "lastUsed": {
             "anyOf": [

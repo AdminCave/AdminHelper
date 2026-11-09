@@ -29,14 +29,15 @@ def get_frp_config(db: Session, config_id: str | None = None) -> FrpServerConfig
 
 
 def create_auto_connection(tunnel: FrpTunnel, username: str | None = None) -> Connection | None:
-    """Create an auto-connection for a tunnel (STCP or HTTPS)."""
+    """Create an auto-connection for a tunnel (STCP or HTTPS). It stores no name: its display
+    name derives from the server's (R-1210)."""
     if tunnel.tunnel_type == "stcp" and tunnel.visitor_port:
         conn_kind = (
             "ssh" if tunnel.protocol == "ssh" else "rdp" if tunnel.protocol == "rdp" else "web"
         )
         return Connection(
             id=str(uuid.uuid4()),
-            name=f"{tunnel.name} (via FRP)",
+            name="",
             kind=conn_kind,
             host="127.0.0.1",
             port=tunnel.visitor_port,
@@ -49,7 +50,7 @@ def create_auto_connection(tunnel: FrpTunnel, username: str | None = None) -> Co
         if domain:
             return Connection(
                 id=str(uuid.uuid4()),
-                name=f"{tunnel.name} (via FRP)",
+                name="",
                 kind="web",
                 url=f"https://{domain}",
                 server_id=tunnel.server_id,
