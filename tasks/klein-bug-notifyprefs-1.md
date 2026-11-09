@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-bug-notifyprefs-1 — Desktop: Speichern der Benachrichtigungs-Einstellungen, Ton, Incident-Typ (R-1184, R-1183, R-1150) — Task-Ledger
-Status: geplant · Branch: feature/klein-bug-notifyprefs-1 · Review: am Ende
+Status: aktiv · Branch: feature/klein-bug-notifyprefs-1 · Review: am Ende
 Spec: docs/features/klein-bug-notifyprefs-1.md (Roadmap R-1184, R-1183, R-1150)
 Heavy: none — reine Desktop-UI ohne Stack-, Gateway- oder Install-Pfad; die Journey „Einstellungen speichern“ deckt der Komponententest mit gemocktem Server
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
