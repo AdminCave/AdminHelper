@@ -1,5 +1,5 @@
 # Ansible erreicht Server wie Verbinden — Task-Ledger
-Status: aktiv · Branch: feature/kern-ansible-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-ansible-1 · Review: pro Task
 Spec: docs/features/kern-ansible-1.md (Roadmap R-1202, R-1204)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad und keine Desktop-Journey, die ein Live-Spec faehrt (die E2E-Box hat kein Ansible); Format-Beleg mit ansible-inventory aus einer Wegwerf-Venv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
 Abhängt von: T1
 
-### T4 — Doku Ansible-Ziele (DE+EN), Changelog  [ ]
+### T4 — Doku Ansible-Ziele (DE+EN), Changelog  [x]
 Komponente: desktop-ui · Dateien: docs/admin/ansible.html, docs/en/admin/ansible.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-ansible-1.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @084065873 2026-11-09T13:08:10+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Abschnitte „Inventory-Generierung“ (JSON, Hostvars, Beispiel mit RFC-5737-Adressen) und „SSH-Erreichbarkeit“ beschreiben das Ziel wie Verbinden: Tunnel, Auswahl je Server, Markierung „Hostname“, Ablehnung ohne Visitor und, falls T3 gebaut ist, die Passwort-Abfrage. Die Ansible-Zeile der Command-Tabelle in `desktop.html` wird angepasst. Changelog unter `### Fixed`, in ASCII.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/ansible.html, docs/en/admin/ansible.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-ansible-1.md
@@ -41,7 +43,7 @@ Abhängt von: T2
 
 ## Entscheidungen
 - T1: Format-Beleg mit ansible-core 2.22.0 aus einer Wegwerf-Venv (2026-11-09): `ansible-inventory -i inventory.json --list` liest das Inventar aus dem Test `generate_inventory_sends_ansible_where_the_connection_goes` (Gruppe `web`, Hostvars, IPv6 ohne Klammern); shlex teilt `ansible_ssh_common_args` in genau die Schalter zurück; `ansible -m ping -vvv` baut `-o Port=23001 -o 'IdentityFile="/home/me/.ssh/id ed25519"' … -o ProxyJump=jump@192.0.2.10`.
-- T1: Ansible setzt `PreferredAuthentications` selbst und vor `ansible_ssh_common_args`; ssh nimmt den ersten Wert, unser Wert aus der Auth-Methode wirkt dort also nicht. Hingenommen: `IdentitiesOnly` und der Schlüssel wirken weiter, eine Passwort-Abfrage regelt `--ask-pass` (T3).
+- T1: Ansible setzt `PreferredAuthentications` selbst und vor `ansible_ssh_common_args`; ssh nimmt den ersten Wert, unser Wert aus der Auth-Methode wirkt dort also nicht. Hingenommen: `IdentitiesOnly` und der Schlüssel wirken weiter, eine Passwort-Abfrage regelt `--ask-pass` (T3). Mit `--ask-pass` setzt Ansible diese Schalter nicht, dort wirken unsere Werte (Probe des T3-Prüfers mit ansible-core 2.22.0).
 - T1: Ein Tag `all` wird keine Kindgruppe: das yaml-Plugin bricht dann mit „can't add group to itself“ ab, und Ansible fällt still auf das ini-Plugin zurück (mit ansible-core 2.22.0 geprobt); derselbe Hostname mit verschiedenen Zielen wird abgelehnt statt still eines zu nehmen.
 - T1: Der Port-Guard (`reject_foreign_port` je Verbindung) läuft vor dem Abruf des Playbooks, damit ein abgelehnter Lauf den Server nicht fragt.
 - T3: Frage beantwortet in der Notiz von R-1204 (Kevin 2026-11-09): `--ask-pass`, Abfrage im Terminal wie bei Verbinden, ein Passwort je Lauf.

@@ -67,18 +67,37 @@ DELETE /api/ansible/playbooks/{id}         # Playbook löschen (Admin)</code></p
           <p>Beim Ausführen lädt der Desktop Dateiname und YAML-Inhalt des Playbooks selbst frisch vom angemeldeten Server (<code>/{id}</code> und <code>/{id}/content</code>), schreibt Inventory und Playbook in ein eigenes temporäres Verzeichnis je Lauf und startet den Lauf; von der Oberfläche bekommt er dafür nur die Playbook-Id und die gewählten Ziele. Im Sitzungs-Tab löscht der Desktop dieses Verzeichnis nach dem Ende des Laufs, auf jeder Plattform. Im nativen Terminal unter Linux löscht das Terminal dieses Verzeichnis samt Playbook und Inventory, sobald <code>ansible-playbook</code> endet, gleich mit welchem Ergebnis und auch dann, wenn das Terminal während des Laufs geschlossen wird. Scheitert der Start (kein <code>ansible-playbook</code>, kein Terminal) oder ein Schritt davor, löscht der Client das Verzeichnis sofort, auch mit einer halb geschriebenen Datei. Im nativen Terminal unter Windows bleibt es nach einem gestarteten Lauf im Temp-Verzeichnis liegen. Server-Inventar und Playbooks bezieht der Client direkt vom AdminHelper-Server des Workspace – lokal wird nichts gepflegt.</p>
 
           <h2>Inventory-Generierung</h2>
-          <p>Der Desktop-Client erzeugt aus den ausgewählten Servern automatisch eine Inventory-Datei im <strong>INI-Format</strong> im temporären Verzeichnis des Laufs. Alle gewählten Hosts landen unter <code>[all]</code>; zusätzlich entsteht pro Server-Tag eine Gruppe (alphabetisch sortiert) mit den zugehörigen Hosts.</p>
-          <div class="code-header"><span>INI</span></div>
-<pre><code>[all]
-web01.example.com
-db01.example.com
+          <p>Der Desktop-Client erzeugt aus den ausgewählten Servern automatisch eine Inventory-Datei im <strong>JSON-Format</strong> (<code>inventory.json</code>, gelesen vom yaml-Plugin, das in Ansible standardmäßig aktiv ist) im temporären Verzeichnis des Laufs. Alle gewählten Hosts landen unter <code>all.hosts</code>; zusätzlich entsteht pro Server-Tag eine Gruppe unter <code>all.children</code> mit den zugehörigen Hosts. Ein Tag <code>all</code> wird keine eigene Gruppe, denn alle Hosts gehören schon zu <code>all</code>.</p>
+          <p>Der Name jedes Hosts bleibt sein <code>hostname</code>-Feld, sodass Playbooks, <code>host_vars</code> und Ausgaben dieselben Namen sehen wie bisher. Hat der Server eine SSH-Verbindung, schickt das Inventory Ansible dorthin, wohin <em>Verbinden</em> diese Verbindung öffnet: <code>ansible_host</code> und <code>ansible_port</code> (nach der Tunnel-Auflösung; Port 22 bleibt weg, wie bei Verbinden), <code>ansible_user</code> und <code>ansible_ssh_private_key_file</code>, falls gesetzt, und in <code>ansible_ssh_common_args</code> die übrigen Schalter der Verbindung (Sprung-Host als <code>-o ProxyJump=…</code>, Auth-Methode). Weiterleitungen und Agent-Forwarding nimmt Ansible nicht mit.</p>
+          <div class="code-header"><span>JSON</span></div>
+<pre><code>{
+  "all": {
+    "hosts": {
+      "web01.example.com": {
+        "ansible_host": "127.0.0.1",
+        "ansible_port": 23001,
+        "ansible_user": "ops",
+        "ansible_ssh_private_key_file": "/home/ops/.ssh/id_ed25519",
+        "ansible_ssh_common_args": "'-o' 'ProxyJump=jump@192.0.2.10'"
+      },
+      "db01.example.com": {}
+    },
+    "children": {
+      "database": { "hosts": { "db01.example.com": {} } },
+      "web": { "hosts": { "web01.example.com": {} } }
+    }
+  }
+}</code></pre>
+          <p>Die Gruppen entstehen direkt aus den <strong>Tags der Server</strong> – dieselben Tags, die am Server-Eintrag (Desktop-Client, <em>Infrastruktur</em>) gesetzt sind und im Tag-Modus die Auswahl steuern.</p>
 
-[database]
-db01.example.com
-
-[web]
-web01.example.com</code></pre>
-          <p>Die Gruppen entstehen direkt aus den <strong>Tags der Server</strong> – dieselben Tags, die am Server-Eintrag (Desktop-Client, <em>Infrastruktur</em>) gesetzt sind und im Tag-Modus die Auswahl steuern. Hostnamen sind die <code>hostname</code>-Felder der Server.</p>
+          <h3>Welche SSH-Verbindung Ansible nimmt</h3>
+          <ul>
+            <li><strong>Genau eine</strong> SSH-Verbindung am Server: diese.</li>
+            <li><strong>Keine</strong>: der Hostname wie bisher; in den Zielen steht neben dem Server die Markierung <em>Hostname</em>.</li>
+            <li><strong>Mehrere</strong>: unter dem Server erscheint eine Auswahl, vorbelegt mit der ersten Verbindung nach Namen.</li>
+          </ul>
+          <p>Markierung und Auswahl zeigt der Modus <em>Nach Servern</em>. Im Modus <em>Nach Tags</em> gilt je Server dieselbe Regel ohne Anzeige: die dort getroffene Wahl, sonst die erste Verbindung nach Namen, ohne Verbindung der Hostname.</p>
+          <p>Vor dem Start löst der Client jede gewählte Verbindung wie <em>Verbinden</em> auf, auch über einen FRP-Tunnel. Läuft der Tunnel-Visitor einer STCP-Verbindung nicht, startet der Lauf nicht und die Meldung nennt den Server; einen Rückfall auf den Hostnamen gibt es nicht. Der Desktop prüft jede Verbindung wie beim Öffnen einer SSH-Sitzung und lehnt außerdem einen lokalen Port ab, der zum Tunnel eines anderen Workspace gehört, ebenso Benutzer oder Schlüsselpfade mit <code>{</code> oder <code>}</code> (Ansible wertet Inventory-Werte als Jinja-Template aus).</p>
 
           <h2>Voraussetzungen</h2>
           <ul>
@@ -89,7 +108,7 @@ web01.example.com</code></pre>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">SSH-Erreichbarkeit</div><p>Die Ausführung läuft auf dem Desktop-Rechner gegen die Hostnamen aus dem Inventory. SSH-Zugang, Keys und ggf. <code>ansible_user</code> regelst du wie gewohnt über deine Ansible-/SSH-Konfiguration – AdminHelper generiert nur Inventory und Playbook-Datei.</p></div>
+            <div><div class="callout-title">SSH-Erreichbarkeit</div><p>Die Ausführung läuft auf dem Desktop-Rechner gegen das Ziel der SSH-Verbindung jedes Servers, wie <em>Verbinden</em> es öffnet. Für Server ohne SSH-Verbindung (Markierung <em>Hostname</em>) regelst du Zugang, Keys und ggf. <code>ansible_user</code> wie gewohnt über deine Ansible-/SSH-Konfiguration. Nutzt eine der Verbindungen Passwort-Anmeldung, startet der Lauf mit <code>--ask-pass</code>: Ansible fragt das Passwort einmal im Terminal ab, wie <em>Verbinden</em>, und nimmt es für alle Server des Laufs. Je nach Ansible-Version braucht das <code>sshpass</code> auf dem Desktop-Rechner.</p></div>
           </div>
 
           <div class="page-nav">
