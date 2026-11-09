@@ -32,9 +32,10 @@ Fork-Commit kann später hochgehen).
 - **desktop-rs:**
   - `apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs`: `serve` zählt die Zeit ohne Client und endet nach
     `NO_CLIENT_DEADLINE` (60 s), einstellbar für Tests wie `login_deadline`.
-  - Fork `AdminCave/IronRDP`, Branch `adminhelper-pin`: ein Commit, der in `ironrdp-client` einen Schalter
-    `follow_server_redirection` (Standard an) einführt; aus gibt `follow_server_redirection` einen Fehler zurück,
-    ohne `config.destination` zu ändern. Test im Fork.
+  - Fork `AdminCave/IronRDP`, Branch `adminhelper-pin`: ein Commit, der in `ironrdp-client` den Schalter
+    `with_refuse_server_redirection` (Standard aus) einführt; an gibt die Umleitung einen Fehler zurück
+    (`REFUSED_SERVER_REDIRECTION`, erkennbar mit `is_refused_server_redirection`), ohne `config.destination` zu
+    ändern. Test im Fork.
   - `apps/desktop/src-tauri/Cargo.toml`, `Cargo.lock`: alle `ironrdp-*` auf die neue Fork-Revision.
   - `apps/desktop/src-tauri/src/rdp_embedded/session.rs`: Schalter aus; Test auf die Konfiguration.
   - `apps/desktop/src-tauri/src/main.rs`: `SSLKEYLOGFILE` vor allen Threads aus der Umgebung nehmen.
