@@ -403,6 +403,34 @@ describe('NotificationPrefs — quiet, escalation & digest (R-1081)', () => {
     });
   });
 
+  it('saves without a zone the server cannot know (R-1184)', async () => {
+    const zone = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ timeZone: 'Etc/Unknown' } as Intl.ResolvedDateTimeFormatOptions);
+    try {
+      h.fetchPrefs.mockResolvedValueOnce(calm());
+      const { findByText } = render(NotificationPrefs);
+      await fireEvent.click(await findByText('Benachrichtigungen speichern'));
+      await waitFor(() => expect(h.savePrefs).toHaveBeenCalled());
+      const body = h.savePrefs.mock.calls[0][1] as Record<string, unknown>;
+      expect('timezone' in body).toBe(false);
+      expect(body.quiet).toEqual({ enabled: true, start: '23:00', end: '06:30', critical: false });
+    } finally {
+      zone.mockRestore();
+    }
+  });
+
+  it('a cleared quiet time saves the stored one (R-1184)', async () => {
+    h.fetchPrefs.mockResolvedValueOnce(calm());
+    const { findByLabelText, getByLabelText, getByText } = render(NotificationPrefs);
+    await fireEvent.input(await findByLabelText('Ruhezeit ab'), { target: { value: '' } });
+    await fireEvent.input(getByLabelText('Ruhezeit bis'), { target: { value: '' } });
+    await fireEvent.click(getByText('Benachrichtigungen speichern'));
+    await waitFor(() => expect(h.savePrefs).toHaveBeenCalled());
+    const body = h.savePrefs.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.quiet).toEqual({ enabled: true, start: '23:00', end: '06:30', critical: false });
+  });
+
   it('a channel without a stored target, switched off or not set up cannot be picked', async () => {
     h.fetchPrefs.mockResolvedValueOnce(
       calm({ telegramChatId: '4711', webhookUrl: null, disabledChannels: ['email'] }),
