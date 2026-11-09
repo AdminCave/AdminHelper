@@ -1,5 +1,5 @@
 # Einheitliche Namen — Task-Ledger
-Status: bereit · Branch: feature/arch-namen · Review: pro Task
+Status: erledigt · Branch: feature/arch-namen · Review: pro Task
 Spec: docs/features/arch-namen.md (Roadmap R-1210, R-1211)
 Heavy: scenario --tunnel — FRP-Kennungen (frpc user, Proxy-, Visitor-Namen) wechseln auf IDs; der echte 3-Host-Datenpfad beweist es, ask-first. Die Desktop-Tunnel-Suiten und die Live-Specs aus T10 fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
