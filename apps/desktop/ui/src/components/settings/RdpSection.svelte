@@ -10,7 +10,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RDP_WINDOW_MODES,
     RDP_PERFORMANCE_PROFILES,
     RDP_SCALING_MODES,
+    runsOnLinux,
   } from '$lib/models/settings';
+  import { OPENH264_LICENSE, OPENH264_NOTICE } from '$lib/models/openh264';
   import type {
     RdpClient,
     RdpWindowMode,
@@ -24,6 +26,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdpWindowMode: RdpWindowMode;
     rdpCustomSize: string;
     rdpPerformanceProfile: RdpPerformanceProfile;
+    rdpH264: boolean;
+    /** Shows the H.264 switch; the platform the app runs on unless a test sets it. */
+    linux?: boolean;
   }
 
   let {
@@ -32,6 +37,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdpWindowMode = $bindable(),
     rdpCustomSize = $bindable(),
     rdpPerformanceProfile = $bindable(),
+    rdpH264 = $bindable(),
+    linux = runsOnLinux(),
   }: Props = $props();
 
   let rdpScalingLabels = $derived({
@@ -96,4 +103,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/each}
     </select>
   </label>
+  {#if linux}
+    <label class="field checkbox">
+      <input type="checkbox" data-field="rdp-h264" bind:checked={rdpH264} />
+      <span>{$t('settings.rdp.h264')}</span>
+    </label>
+    <p class="h264-note">{$t('settings.rdp.h264.hint')}</p>
+    <!-- Cisco's condition 3: this exact text where the binary is turned on and off. -->
+    <p class="h264-note" data-field="openh264-notice">{OPENH264_NOTICE}</p>
+    <details class="h264-license">
+      <summary>{$t('settings.rdp.h264.license')}</summary>
+      <pre data-field="openh264-license">{OPENH264_LICENSE}</pre>
+    </details>
+  {/if}
 </div>
+
+<style>
+  .h264-note {
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.85em;
+    color: var(--text-muted);
+  }
+  .h264-license summary {
+    cursor: pointer;
+    font-size: 0.85em;
+  }
+  .h264-license pre {
+    max-height: 16rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: 0.8em;
+  }
+</style>

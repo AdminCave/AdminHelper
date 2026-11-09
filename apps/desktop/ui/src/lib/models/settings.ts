@@ -18,6 +18,12 @@ export const SSH_CONSOLE_DEFAULT: SshConsole = 'embedded';
 /** `#[default]` of `RdpClient` in models.rs: the OS client until R-1090. */
 export const RDP_CLIENT_DEFAULT: RdpClient = 'os';
 
+/** The H.264 switch of the RDP settings exists on Linux only (R-1102): Windows decodes through
+ *  Media Foundation and needs no download. */
+export function runsOnLinux(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('linux');
+}
+
 export function getSettingsDefaults(): Settings {
   return {
     mode: 'local',
@@ -36,6 +42,7 @@ export function getSettingsDefaults(): Settings {
     favoriteConnections: [],
     sshConsole: SSH_CONSOLE_DEFAULT,
     rdpClient: RDP_CLIENT_DEFAULT,
+    rdpH264: true,
     terminal: getTerminalDefaults(),
   };
 }

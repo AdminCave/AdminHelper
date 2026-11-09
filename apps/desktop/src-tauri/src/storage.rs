@@ -385,6 +385,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         os_notifications,
         ssh_console,
         rdp_client,
+        rdp_h264,
         terminal,
         restore_sessions,
     } = prefs;
@@ -407,6 +408,7 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
         favorite_connections: meta.map_or_else(Vec::new, |meta| meta.favorite_connections.clone()),
         ssh_console,
         rdp_client,
+        rdp_h264,
         terminal,
         restore_sessions,
         open_sessions: meta.map_or_else(Vec::new, |meta| meta.open_sessions.clone()),
@@ -562,6 +564,9 @@ pub(crate) struct Prefs {
     // Absent in a prefs.json of 0.46 and before.
     #[serde(default)]
     pub rdp_client: RdpClient,
+    // Absent in a prefs.json of 0.46 and before.
+    #[serde(default = "crate::models::default_true")]
+    pub rdp_h264: bool,
     #[serde(default)]
     pub terminal: TerminalPrefs,
     // Absent in a prefs.json of 0.46 and before.
@@ -581,6 +586,7 @@ impl From<&Settings> for Prefs {
             os_notifications: settings.os_notifications,
             ssh_console: settings.ssh_console,
             rdp_client: settings.rdp_client,
+            rdp_h264: settings.rdp_h264,
             terminal: settings.terminal,
             restore_sessions: settings.restore_sessions,
         }
@@ -613,6 +619,7 @@ impl Prefs {
             os_notifications,
             ssh_console,
             rdp_client,
+            rdp_h264,
             terminal,
             restore_sessions,
         } = mine;
@@ -649,6 +656,7 @@ impl Prefs {
         );
         take_changed(&mut self.ssh_console, &seen.ssh_console, ssh_console);
         take_changed(&mut self.rdp_client, &seen.rdp_client, rdp_client);
+        take_changed(&mut self.rdp_h264, &seen.rdp_h264, rdp_h264);
         // As a whole: two windows changing different options at once, the last one wins.
         take_changed(&mut self.terminal, &seen.terminal, terminal);
         take_changed(
@@ -1094,6 +1102,7 @@ mod settings_tests {
                 "osNotifications": true,
                 "sshConsole": "external",
                 "rdpClient": "os",
+                "rdpH264": true,
                 "terminal": {
                     "fontSize": 16,
                     "theme": "contrast",
@@ -1199,6 +1208,29 @@ mod settings_tests {
         let in_b = load_settings_in(base, None).unwrap();
         assert!(in_b.restore_sessions);
         assert!(in_b.open_sessions.is_empty());
+    }
+
+    #[test]
+    fn h264_is_on_without_prefs_and_in_old_prefs_and_off_stays_off() {
+        let scratch = Scratch::new("settings-h264");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Local, None));
+        let _a = enter("a");
+        assert!(
+            load_settings_in(base, None).unwrap().rdp_h264,
+            "no prefs.json"
+        );
+        // A prefs.json written before R-1102.
+        let mut old_prefs = serde_json::to_value(Prefs::default()).unwrap();
+        old_prefs.as_object_mut().unwrap().remove("rdpH264");
+        fs::write(base.join(PREFS_FILE), old_prefs.to_string()).unwrap();
+        let process = SeenPrefs::new();
+        let mut settings = load_settings_in(base, Some(&process)).unwrap();
+        assert!(settings.rdp_h264, "an old prefs.json");
+        settings.rdp_h264 = false;
+        save_settings_in(base, &process, &settings).unwrap();
+        assert_eq!(json_of(&base.join(PREFS_FILE))["rdpH264"], false);
+        assert!(!load_settings_in(base, None).unwrap().rdp_h264);
     }
 
     fn snippet(name: &str, command: &str) -> Snippet {

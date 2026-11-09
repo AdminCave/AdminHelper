@@ -130,7 +130,8 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 `toml`, `zeroize`, `portable-pty` (eingebettetes Terminal), `ironrdp-client`, `ironrdp-tls`, `ironrdp-pdu`,
 `ironrdp-connector`, `ironrdp-session` und `ironrdp-rdpdr-native` (eingebettetes RDP, Git-Revision des Forks
 `github.com/AdminCave/IronRDP`, Upstream `github.com/Devolutions/IronRDP`), `tokio-tungstenite`, `gethostname` (`Apache-2.0`, siehe NOTICE unten),
-`russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`), `png` (Screenshot der eingebetteten RDP-Sitzung, `MIT OR Apache-2.0`) —
+`russh-sftp` (SFTP-Kanal des Terminals, `Apache-2.0`), `png` (Screenshot der eingebetteten RDP-Sitzung, `MIT OR Apache-2.0`),
+`ironrdp-egfx` mit `openh264-libloading` und `bzip2` (nur Linux, H.264 über Ciscos OpenH264-Binary, siehe unten) —
 überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
 > Hinweis: `rustls-pemfile` ist **nicht** mehr direkte Abhängigkeit — das
@@ -139,14 +140,14 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license`, Stand **2026-11-07** (758 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license`, Stand **2026-11-09** (764 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 493 |
+| Apache-2.0 OR MIT | 494 |
 | MIT | 148 |
-| Apache-2.0 OR MIT OR Zlib | 27 |
+| Apache-2.0 OR MIT OR Zlib | 29 |
 | Unicode-3.0 | 18 |
 | MIT OR Unlicense | 12 |
 | Apache-2.0 | 8 |
@@ -160,21 +161,23 @@ selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 | Zlib | 2 |
 | Apache-2.0 OR BSD-3-Clause OR MIT | 2 |
 | Apache-2.0 OR LGPL-2.1-or-later OR MIT | 2 |
+| BSD-2-Clause | 2 |
 | CDLA-Permissive-2.0 | 2 |
-| übrige (je 1) | 14 |
+| übrige (je 1) | 15 |
 
 Die „übrigen" Einzelfälle: `0BSD OR Apache-2.0 OR MIT`, `BSD-3-Clause AND MIT`,
 `BSD-3-Clause OR MIT`, `Apache-2.0 AND MIT`, `Apache-2.0 OR CC0-1.0 OR MIT-0`,
 `(Apache-2.0 OR MIT) AND BSD-3-Clause`, `Apache-2.0 AND ISC`,
 `Apache-2.0 OR BSL-1.0`, `Apache-2.0 OR BSD-2-Clause`, `Apache-2.0 WITH LLVM-exception`,
-`(Apache-2.0 OR MIT) AND Unicode-3.0`, `Apache-2.0 OR BSD-1-Clause OR MIT`,
+`(Apache-2.0 OR MIT) AND Unicode-3.0`, `Apache-2.0 OR BSD-1-Clause OR MIT`, `bzip2-1.0.6` (`libbz2-rs-sys`),
 `(Apache-2.0 OR ISC) AND ISC` (`aws-lc-rs`) und ein zusammengesetzter Ausdruck aus `Apache-2.0`,
 `BSD-3-Clause`, `ISC` und `MIT` (`aws-lc-sys`).
 
 `aws-lc-rs` und `aws-lc-sys` zählt `cargo-license` mit, weil `cargo metadata` das Default-Feature
 `aws-lc-rs` von `sspi` (CredSSP für IronRDP) ohne dessen Bedingung auflöst: es greift nur, wenn
 `sspi` selbst `rustls` einbindet, und das tut es hier nicht. Gebaut werden beide nicht; der Test
-`rdp_embedded::license_gate` prüft es mit `cargo tree -i` (ebenso: kein `openh264-sys2`).
+`rdp_embedded::license_gate` prüft es mit `cargo tree -i` (ebenso: `openh264-sys2` nur ohne sein Feature
+`source`, also ohne die C-Quellen von OpenH264).
 
 **Auflagen-relevant:**
 
@@ -283,6 +286,77 @@ statisch gelinkte libopus (`BSD-3-Clause`, über `libopus_sys`) sowie die
 diversen `BSD`-/`ISC`-/`Zlib`-/`MIT`-Lizenzen sind GPL-3.0-kompatibel. Es
 genügt, den jeweiligen Lizenztext bzw. Copyright-Hinweis in der Distribution
 mitzuführen.
+
+### OpenH264 von Cisco — Binary, zur Laufzeit geladen (nur Linux)
+
+Die Crates `openh264` und `openh264-sys2` (`BSD-2-Clause`) laden unter Linux Ciscos OpenH264-Binary zur
+Laufzeit; die C-Quellen von OpenH264 werden nicht gebaut (Gate oben). Das Binary liegt nicht im Paket: Der
+Desktop lädt es mit dem Schalter *H.264 (OpenH264)* (Standard an) von `ciscobinary.openh264.org` und prüft die
+gepinnte SHA-256; *aus* löscht es. Cisco trägt dafür die Patentlizenz für H.264. Hinweis und voller Lizenztext
+stehen am Schalter in den Einstellungen (Bedingungen 3 und 4); der Text, Stand v1.0, abgerufen 2026-11-09 von
+<https://www.openh264.org/BINARY_LICENSE.txt>:
+
+```text
+-------------------------------------------------------
+About The Cisco-Provided Binary of OpenH264 Video Codec
+-------------------------------------------------------
+
+Cisco provides this program under the terms of the BSD license.
+
+Additionally, this binary is licensed under Cisco’s AVC/H.264 Patent Portfolio License from MPEG LA, at no cost to you, provided that the requirements and conditions shown below in the AVC/H.264 Patent Portfolio sections are met.
+
+As with all AVC/H.264 codecs, you may also obtain your own patent license from MPEG LA or from the individual patent owners, or proceed at your own risk.  Your rights from Cisco under the BSD license are not affected by this choice.
+
+For more information on the OpenH264 binary licensing, please see the OpenH264 FAQ found at http://www.openh264.org/faq.html#binary
+
+A corresponding source code to this binary program is available under the same BSD terms, which can be found at http://www.openh264.org
+
+-----------
+BSD License
+-----------
+
+Copyright © 2014 Cisco Systems, Inc.
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-----------------------------------------
+AVC/H.264 Patent Portfolio License Notice
+-----------------------------------------
+
+The binary form of this Software is distributed by Cisco under the AVC/H.264 Patent Portfolio License from MPEG LA, and is subject to the following requirements, which may or may not be applicable to your use of this software:
+
+THIS PRODUCT IS LICENSED UNDER THE AVC PATENT PORTFOLIO LICENSE FOR THE PERSONAL USE OF A CONSUMER OR OTHER USES IN WHICH IT DOES NOT RECEIVE REMUNERATION TO (i) ENCODE VIDEO IN COMPLIANCE WITH THE AVC STANDARD (“AVC VIDEO”) AND/OR (ii) DECODE AVC VIDEO THAT WAS ENCODED BY A CONSUMER ENGAGED IN A PERSONAL ACTIVITY AND/OR WAS OBTAINED FROM A VIDEO PROVIDER LICENSED TO PROVIDE AVC VIDEO.  NO LICENSE IS GRANTED OR SHALL BE IMPLIED FOR ANY OTHER USE.  ADDITIONAL INFORMATION MAY BE OBTAINED FROM MPEG LA, L.L.C. SEE HTTP://WWW.MPEGLA.COM
+
+Accordingly, please be advised that content providers and broadcasters using AVC/H.264 in their service may be required to obtain a separate use license from MPEG LA, referred to as "(b) sublicenses" in the SUMMARY OF AVC/H.264 LICENSE TERMS from MPEG LA found at http://www.openh264.org/mpegla
+
+---------------------------------------------
+AVC/H.264 Patent Portfolio License Conditions
+---------------------------------------------
+
+In addition, the Cisco-provided binary of this Software is licensed under Cisco's license from MPEG LA only if the following conditions are met:
+
+1. The Cisco-provided binary is separately downloaded to an end user’s device, and not integrated into or combined with third party software prior to being downloaded to the end user’s device;
+
+2. The end user must have the ability to control (e.g., to enable, disable, or re-enable) the use of the Cisco-provided binary;
+
+3. Third party software, in the location where end users can control the use of the Cisco-provided binary, must display the following text:
+
+       "OpenH264 Video Codec provided by Cisco Systems, Inc."
+
+4.  Any third-party software that makes use of the Cisco-provided binary must reproduce all of the above text, as well as this last condition, in the EULA and/or in another location where licensing information is to be presented to the end user.
+
+
+
+                          v1.0
+```
 
 ### AGPL-3.0 — Redis-Server (Container-Image)
 

@@ -500,6 +500,9 @@ Protokoll oder Stabilität scheitert. V1, V2b, V3b und V3c entfallen.
 7. **H.264 unter Linux aus.** Kein gebündeltes OpenH264 (aus Quellen gebaut, ohne Patentdeckung, [Q2]); AVC nur unter
    Windows über Media Foundation (`ironrdp-egfx-native`, [Q3]). Linux fällt auf RemoteFX Progressive zurück (T2);
    gegen Windows kostet das bei 50 % Fläche Qualität und CPU (65 statt 100 %, 67 statt 40 % eines Kerns, T4).
+   Abgelöst durch R-1102 (Kevin 2026-11-09, `docs/features/kern-rdp-5.md`): unter Linux lädt der Desktop Ciscos
+   Binary zur Laufzeit (`openh264-libloading`, gepinnte Version und SHA-256), Schalter in den Einstellungen,
+   Standard an. Aus Quellen gebautes OpenH264 bleibt draußen; das Gate prüft das Feature `source`.
 8. **TLS-Provider ring.** Der Desktop hält `aws-lc-rs` heute heraus (`Cargo.toml`: reqwest `rustls-no-provider`,
    rustls mit `ring`). Das Feature `rustls` von `ironrdp-client` zieht es über `ironrdp-tls/rustls`
    (= `rustls-aws-lc-rs`), `udp` ebenso. R-1075 nimmt `ironrdp-client` ohne beide und wählt `ironrdp-tls` direkt mit

@@ -118,6 +118,8 @@ export interface Settings {
   sshConsole: SshConsole;
   // Which client an RDP connection opens in; 'os' when absent.
   rdpClient?: RdpClient;
+  // H.264 of the embedded RDP client on Linux through Cisco's OpenH264; on when absent.
+  rdpH264?: boolean;
   terminal: TerminalPrefs;
   // Open the SSH tabs of the last run again after sign-in; off unless chosen.
   restoreSessions?: boolean;

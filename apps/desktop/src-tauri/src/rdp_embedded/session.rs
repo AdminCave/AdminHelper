@@ -90,6 +90,10 @@ pub(crate) struct Target {
     pub(crate) credssp: bool,
     /// The connection's own profile, else `rdp_performance_profile` of the settings.
     pub(crate) performance: RdpPerformanceProfile,
+    /// Cisco's OpenH264 library, checked against its pinned hash (R-1102); `None` decodes no
+    /// H.264, so the server sends the other codecs.
+    #[cfg(target_os = "linux")]
+    pub(crate) h264: Option<PathBuf>,
 }
 
 /// The size of the desktop in pixels and its scale factor in percent, within the limits of
@@ -729,6 +733,10 @@ fn config(target: &Target, display: Display, cert: &CertReport) -> Result<Config
         .with_rdpdr(target.drive.is_some())
         .with_printers(false)
         .with_ports(false);
+    // Windows keeps IronRDP's default, Media Foundation.
+    #[cfg(target_os = "linux")]
+    let builder =
+        builder.with_h264_decoder(target.h264.clone().map(super::openh264::decoder_factory));
     let builder = match &target.domain {
         Some(domain) => builder.with_domain(domain.as_str()),
         None => builder,
@@ -1119,6 +1127,8 @@ mod tests {
             drive: None,
             credssp: true,
             performance: RdpPerformanceProfile::Auto,
+            #[cfg(target_os = "linux")]
+            h264: None,
         }
     }
 
@@ -1845,6 +1855,23 @@ mod tests {
         assert_eq!(connector.device_scale_factor, Some(140));
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn session_takes_the_h264_decoder_only_with_a_library() {
+        let destination = Destination::from_parts("192.0.2.10", 3389);
+        let mut with = target(destination.clone(), CertPolicy::TrustAll);
+        with.h264 = Some(PathBuf::from("/nonexistent/libopenh264.so"));
+        let with = config(&with, Display::default(), &CertReport::default()).unwrap();
+        assert!(with.channels().h264_decoder.is_some());
+        let without = config(
+            &target(destination, CertPolicy::TrustAll),
+            Display::default(),
+            &CertReport::default(),
+        )
+        .unwrap();
+        assert!(without.channels().h264_decoder.is_none());
+    }
+
     #[test]
     fn session_configures_tls_gfx_and_its_channels() {
         let destination = Destination::from_parts("192.0.2.10", 3389);
@@ -2228,6 +2255,8 @@ mod tests {
                     drive: None,
                     credssp: true,
                     performance: RdpPerformanceProfile::Auto,
+                    #[cfg(target_os = "linux")]
+                    h264: None,
                 };
                 let (sender, phases) = unbounded_channel();
                 let (stop, stop_rx) = oneshot::channel();

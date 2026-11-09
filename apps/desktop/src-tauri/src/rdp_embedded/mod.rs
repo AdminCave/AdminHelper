@@ -13,6 +13,8 @@ mod clipboard_win;
 pub(crate) mod frame_ws;
 #[cfg(test)]
 mod license_gate;
+#[cfg(target_os = "linux")]
+mod openh264;
 pub(crate) mod session;
 pub(crate) mod tofu;
 pub(crate) mod watchdog;
@@ -341,6 +343,9 @@ fn prepare(
         credssp: own.is_none_or(|rdp| rdp.nla != Some(false)),
         // `rdp_session_start` sets it from the settings, which `prepare` does not read.
         performance: RdpPerformanceProfile::Auto,
+        // `rdp_session_start` sets it, after the settings and the download.
+        #[cfg(target_os = "linux")]
+        h264: None,
     })
 }
 
@@ -463,6 +468,8 @@ pub(crate) async fn rdp_session_start(
             }
         },
     );
+    #[cfg(target_os = "linux")]
+    let h264 = h264_library(&app).await;
     let started = run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
@@ -478,6 +485,10 @@ pub(crate) async fn rdp_session_start(
         target.display = display.map_or_else(Display::default, |display| {
             Display::clamped(display.width, display.height, display.scale)
         });
+        #[cfg(target_os = "linux")]
+        {
+            target.h264 = h264;
+        }
         target.performance = performance(
             &connection,
             storage::load_settings(&app)?.rdp_performance_profile,
@@ -524,6 +535,40 @@ pub(crate) async fn rdp_session_start(
             Err(error)
         }
     }
+}
+
+/// Cisco's OpenH264 for a session while the settings keep H.264 on (R-1102), downloaded when it
+/// is missing; a failed download costs this session H.264 only, and the next one tries again.
+#[cfg(target_os = "linux")]
+async fn h264_library(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let on = storage::load_settings(app).ok()?.rdp_h264;
+    h264_for(on, &storage::app_data_dir(app).ok()?).await
+}
+
+/// Off loads nothing and touches nothing (Cisco's condition 2: off means the library stays away).
+#[cfg(target_os = "linux")]
+async fn h264_for(on: bool, base: &Path) -> Option<PathBuf> {
+    if !on {
+        return None;
+    }
+    match openh264::ensure(base).await {
+        Ok(path) => Some(path),
+        Err(error) => {
+            log::warn!("the RDP session runs without H.264: {error}");
+            None
+        }
+    }
+}
+
+/// Deletes Cisco's OpenH264 library when the settings turn H.264 off (R-1102). None there is no
+/// error; elsewhere than on Linux there never is one.
+#[tauri::command]
+pub(crate) fn openh264_remove(app: tauri::AppHandle) -> Result<(), AppError> {
+    #[cfg(target_os = "linux")]
+    openh264::remove(&storage::app_data_dir(&app)?)?;
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+    Ok(())
 }
 
 /// Ends the session `session_id` and its WebSocket; one that ended already, or never was, is no
@@ -1355,5 +1400,18 @@ mod tests {
                 "reason": "changed",
             })
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn h264_off_loads_nothing_and_touches_nothing() {
+        let base = std::env::temp_dir().join(format!("ah-h264-off-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let library = h264_for(false, &base).await;
+        let left: Vec<_> = std::fs::read_dir(&base).unwrap().collect();
+        std::fs::remove_dir_all(&base).unwrap();
+        assert_eq!(library, None);
+        assert!(left.is_empty(), "off created {left:?}");
     }
 }

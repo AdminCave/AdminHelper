@@ -116,6 +116,14 @@ png = "0.18"
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# H.264 of the embedded RDP client through Cisco's OpenH264 binary, loaded at runtime (R-1102,
+# rdp_embedded/openh264.rs). `openh264-libloading` only: `openh264-bundled` (and ironrdp-client's
+# `openh264`) build OpenH264 from source, which carries no patent licence (license_gate.rs).
+ironrdp-egfx = { git = "https://github.com/AdminCave/IronRDP", rev = "1dc939ea166191991d5e1fd081290c6823a1e986", features = ["openh264-libloading"] }
+# Cisco ships the library as .so.bz2; the default backend is pure Rust (libbz2-rs-sys), no C build.
+bzip2 = "0.6"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
@@ -145,3 +153,9 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "net", "
 # default-features=false keeps aws-lc-rs (and its cmake/C build) out of the test
 # tree, so tests use the same ring provider as the shipped binary.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# The round trip of rdp_embedded/openh264.rs encodes its picture with Cisco's library through the
+# crate itself: ironrdp-egfx's OpenH264Encoder::from_library_path asks for bitrate 0, which 2.6.0
+# refuses. Without `source` (license_gate.rs); already in the lockfile through ironrdp-egfx.
+openh264 = { version = "0.9", default-features = false, features = ["libloading"] }
