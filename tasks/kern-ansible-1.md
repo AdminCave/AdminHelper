@@ -1,5 +1,5 @@
 # Ansible erreicht Server wie Verbinden — Task-Ledger
-Status: bereit · Branch: feature/kern-ansible-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ansible-1 · Review: pro Task
 Spec: docs/features/kern-ansible-1.md (Roadmap R-1202, R-1204)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad und keine Desktop-Journey, die ein Live-Spec faehrt (die E2E-Box hat kein Ansible); Format-Beleg mit ansible-inventory aus einer Wegwerf-Venv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -59,6 +59,14 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: README.md
 Task-Review: am Ende
 Abhängt von: T4
+
+### T7 — Doku: das abgefragte Passwort gilt nur den Passwort-Servern  [ ]
+Komponente: desktop-ui · Dateien: docs/admin/ansible.html, docs/en/admin/ansible.html, changelog.d/kern-ansible-1.md
+Änderung: Fund der security-Folgerunde (nit): Nach T5 gilt das Passwort nur den Servern des Laufs mit Passwort-Anmeldung, nicht allen; Callout DE+EN und Changelog entsprechend.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: docs/admin/ansible.html, docs/en/admin/ansible.html, changelog.d/kern-ansible-1.md
+Task-Review: am Ende
+Abhängt von: T5
 
 ## Entscheidungen
 - T1: Format-Beleg mit ansible-core 2.22.0 aus einer Wegwerf-Venv (2026-11-09): `ansible-inventory -i inventory.json --list` liest das Inventar aus dem Test `generate_inventory_sends_ansible_where_the_connection_goes` (Gruppe `web`, Hostvars, IPv6 ohne Klammern); shlex teilt `ansible_ssh_common_args` in genau die Schalter zurück; `ansible -m ping -vvv` baut `-o Port=23001 -o 'IdentityFile="/home/me/.ssh/id ed25519"' … -o ProxyJump=jump@192.0.2.10`.
