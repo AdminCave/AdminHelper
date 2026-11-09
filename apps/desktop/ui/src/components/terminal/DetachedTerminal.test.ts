@@ -66,7 +66,6 @@ const h = vi.hoisted(() => {
     terminalDock: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),
     refreshSettings: vi.fn(async () => {}),
-    reportError: vi.fn(),
   };
 });
 
@@ -92,7 +91,6 @@ vi.mock('$lib/bridge', () => ({
   terminalDock: h.terminalDock,
   saveSettings: h.saveSettings,
 }));
-vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return { settings: writable(null), refreshSettings: h.refreshSettings };
@@ -103,6 +101,7 @@ vi.mock('$lib/stores/tunnel', async () => {
 });
 
 import DetachedTerminal from './DetachedTerminal.svelte';
+import { clearStatus, reportError } from '$lib/stores/statusBar';
 
 // An ArrayBuffer of this realm, as the store tells output by `instanceof ArrayBuffer`.
 const out = (text: string) => Uint8Array.from(text, (c) => c.charCodeAt(0)).buffer as ArrayBuffer;
@@ -133,6 +132,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  clearStatus();
   vi.unstubAllGlobals();
 });
 
@@ -157,6 +157,12 @@ describe('DetachedTerminal', () => {
     expect(h.terminalWrite.mock.calls.every(([id]) => id === 7)).toBe(true);
   });
 
+  it('shows an error reported by the terminals store in its own window (R-1169)', async () => {
+    await mount();
+    reportError('connection refused');
+    expect(await screen.findByText('connection refused')).toBeTruthy();
+  });
+
   it('docks with its button and shows a failure in its own window', async () => {
     await mount();
     expect(screen.queryByRole('button', { name: tNow('terminal.close') })).toBeNull();
@@ -164,12 +170,12 @@ describe('DetachedTerminal', () => {
     h.terminalDock.mockRejectedValueOnce(new Error('no window'));
     await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.dock') }));
     expect(h.terminalDock).toHaveBeenCalledExactlyOnceWith(7);
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe(tNow('terminal.dockFailed', { error: 'no window' }));
+    const failed = tNow('terminal.dockFailed', { error: 'no window' });
+    expect((await screen.findByText(failed)).getAttribute('role')).toBe('alert');
 
     await fireEvent.click(screen.getByRole('button', { name: tNow('terminal.dock') }));
     expect(h.terminalDock).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    await vi.waitFor(() => expect(screen.queryByText(failed)).toBeNull());
   });
 
   it('offers to dock once the program has ended', async () => {
