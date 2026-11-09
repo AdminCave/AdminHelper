@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-freebsd-agent — Task-Ledger
-Status: geplant · Branch: feature/arch-freebsd-agent · Review: pro Task
+Status: aktiv · Branch: feature/arch-freebsd-agent · Review: pro Task
 Spec: docs/features/arch-freebsd-agent.md (Roadmap R-1247)
 Heavy: linux-full — Agent (Plattform-Umbenennungen, Paketierung), Gateway-Repo-Ebene und Monitoring-Annahme; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` (T9) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
