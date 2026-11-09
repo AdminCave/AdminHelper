@@ -10,6 +10,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
@@ -31,16 +32,25 @@ from app.modules.servers.schemas import (
     ServerSummary,
     ServerUpdate,
     reject_windows_unsafe_server_name,
+    stored_hostname,
 )
 
 logger = logging.getLogger("adminhelper.servers")
 
 
-def _check_new_name(name: str) -> None:
+def _check_new_name(db: Session, name: str, server_id: str | None = None) -> None:
+    """A new or changed name: a folder name on Windows (R-1056), and no other server's name,
+    case aside (R-1210: every connection and tunnel shows it). Names stored twice before
+    stay, an edit that keeps the name passes."""
     try:
         reject_windows_unsafe_server_name(name)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"name {e}") from None
+    taken = db.query(Server.id).filter(func.lower(Server.name) == func.lower(name))
+    if server_id is not None:
+        taken = taken.filter(Server.id != server_id)
+    if taken.first() is not None:
+        raise HTTPException(status_code=409, detail="name is already used by another server")
 
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
@@ -92,7 +102,7 @@ def list_servers_internal(
     return [
         {
             "id": s.id,
-            "hostname": s.hostname,
+            "hostname": s.address,
             "name": s.name,
             "tags": json.loads(s.tags) if s.tags else [],
         }
@@ -125,11 +135,11 @@ def create_server(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    _check_new_name(data.name)
+    _check_new_name(db, data.name)
     server = Server(
         id=str(uuid.uuid4()),
         name=data.name,
-        hostname=data.hostname,
+        hostname=stored_hostname(data.name, data.hostname),
         os_type=data.os_type,
         tags=json.dumps(data.tags) if data.tags else None,
         notes=data.notes or "",
@@ -137,9 +147,7 @@ def create_server(
     db.add(server)
     db.commit()
     db.refresh(server)
-    fire_event(
-        "server.created", {"id": server.id, "name": server.name, "hostname": server.hostname}
-    )
+    fire_event("server.created", {"id": server.id, "name": server.name, "hostname": server.address})
     audit.record(
         db,
         "server.created",
@@ -158,7 +166,7 @@ def create_server(
 @router.get("/summary", response_model=list[ServerSummary])
 def list_server_summaries(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     rows = db.query(Server.id, Server.name, Server.hostname).order_by(Server.name, Server.id)
-    return [ServerSummary(id=r.id, name=r.name, hostname=r.hostname) for r in rows]
+    return [ServerSummary(id=r.id, name=r.name, hostname=r.hostname or r.name) for r in rows]
 
 
 @router.get("/{server_id}", response_model=ServerOut, response_model_exclude_unset=True)
@@ -182,12 +190,25 @@ def update_server(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server nicht gefunden")
 
     sent = data.model_fields_set
+    if "name" in sent and data.name is None:
+        raise HTTPException(status_code=422, detail="name must not be null")
     # Only a new name: one stored before the rule stays valid when an edit sends it back.
-    if "name" in sent and data.name is not None and data.name != server.name:
-        _check_new_name(data.name)
-    for field in ["name", "hostname", "os_type", "notes"]:
+    if "name" in sent and data.name != server.name:
+        _check_new_name(db, data.name, server.id)
+    hostname = data.hostname if "hostname" in sent else server.hostname
+    # An older client sends back the address it was shown: while the address followed the
+    # name, that is the old name, which must not become an own address on a rename.
+    if (
+        "hostname" in sent
+        and server.hostname is None
+        and (hostname or "").strip().lower() == server.name.strip().lower()
+    ):
+        hostname = None
+    for field in ["name", "os_type", "notes"]:
         if field in sent:
             setattr(server, field, getattr(data, field))
+    # Also after a rename alone: an own hostname that now equals the name follows it again.
+    server.hostname = stored_hostname(server.name, hostname)
     if "tags" in sent:
         server.tags = json.dumps(data.tags) if data.tags else None
     db.commit()

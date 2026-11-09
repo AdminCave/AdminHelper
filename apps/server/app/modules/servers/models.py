@@ -17,7 +17,8 @@ class Server(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
-    hostname = Column(String, nullable=False)
+    # NULL: the address follows the name (R-1210); set only for an own address (IP, internal name).
+    hostname = Column(String, nullable=True)
     os_type = Column(String, nullable=True)
     tags = Column(String, nullable=True)  # JSON-Array als String
     notes = Column(String, nullable=True)
@@ -38,11 +39,17 @@ class Server(Base):
         passive_deletes=True,
     )
 
+    @property
+    def address(self) -> str:
+        """Where the server is reached: its own hostname, else its name."""
+        return self.hostname or self.name
+
     def to_dict(self, include_connections: bool = True) -> dict[str, Any]:
         result = {
             "id": self.id,
             "name": self.name,
-            "hostname": self.hostname,
+            "hostname": self.address,
+            "customHostname": self.hostname is not None,
             "osType": self.os_type,
             "tags": json.loads(self.tags) if self.tags else [],
             "notes": self.notes or "",

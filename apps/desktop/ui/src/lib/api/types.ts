@@ -63,7 +63,10 @@ export interface ConnectionOptions {
 export interface Server {
   id: string;
   name: string;
+  /** Where the server is reached: its own hostname, else its name (R-1210). */
   hostname: string;
+  /** True when an own hostname is stored, false when the address follows the name. */
+  customHostname?: boolean;
   osType?: string | null;
   tags?: string[];
   notes?: string | null;

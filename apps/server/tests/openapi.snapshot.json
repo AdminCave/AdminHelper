@@ -4976,8 +4976,15 @@
       "ServerCreate": {
         "properties": {
           "hostname": {
-            "title": "Hostname",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
           },
           "name": {
             "title": "Name",
@@ -5016,8 +5023,7 @@
           }
         },
         "required": [
-          "name",
-          "hostname"
+          "name"
         ],
         "title": "ServerCreate",
         "type": "object"
@@ -5059,6 +5065,10 @@
               }
             ],
             "title": "Createdat"
+          },
+          "customHostname": {
+            "title": "Customhostname",
+            "type": "boolean"
           },
           "frpTunnels": {
             "items": {
@@ -5106,6 +5116,7 @@
           "id",
           "name",
           "hostname",
+          "customHostname",
           "osType",
           "tags",
           "notes",
