@@ -34,15 +34,17 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connection_deri
 Doku: → T12
 Abhängt von: T2
 
-### T4 — Tunnel: Anzeigename, Zusatz, keine Namens-Eindeutigkeit (R-1210 3a, 4a)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/alembic/versions/d3e5f7a9b1c3_tunnel_derived_names.py, apps/server/tests/test_tunnel_names_migration.py, apps/server/tests/test_frp_tunnels.py, apps/server/tests/openapi.snapshot.json
+### T4 — Tunnel: Anzeigename, Zusatz, keine Namens-Eindeutigkeit (R-1210 3a, 4a)  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/alembic/versions/d3e5f7a9b1c3_tunnel_derived_names.py, apps/server/tests/test_tunnel_names_migration.py, apps/server/tests/test_frp_tunnels.py, apps/server/tests/openapi.snapshot.json, apps/server/tests/test_tunnel_derived_names.py, apps/server/app/modules/frp/status_router.py, apps/desktop/ui/src/lib/api/types.ts, apps/server/tests/test_frp_tunnel_access.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @de7aa503f 2026-11-09T15:31:57+01:00
+Review: approve (.ah-out/review/arch-namen/T4.verdict.json)
 Änderung: `frp_tunnels.name` = Zusatz (`''` = keiner), Unique-Constraint und 409 entfallen; Ausgabe `name` = Anzeigename wie die Auto-Verbindung, neu `label`; Eingabe `label` (optional), `name` alter Clients nach der Kopien-Regel; Liste nach Server und Protokoll sortiert. Migration 4a (Kopien leeren) mit Downgrade (ID-Suffix, Constraint zurück) und Test. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_tunnel_names_migration.py tests/test_frp_tunnels.py tests/test_frp_status.py tests/test_frp_input_hardening.py tests/test_openapi_snapshot.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_tunnel_derived_names.py tests/test_tunnel_names_migration.py tests/test_frp_tunnels.py tests/test_frp_tunnel_access.py tests/test_frp_status.py tests/test_frp_input_hardening.py tests/test_frp_permissions.py tests/test_frp_config.py tests/test_connection_derived_names.py tests/test_servers_authz.py tests/test_response_shapes.py tests/test_openapi_snapshot.py tests/test_alembic_builtin.py tests/test_migrations_smoke.py
 Doku: → T12
 Abhängt von: T1, T3
 
 ### T5 — Desktop: Server-Dialog mit einem Pflichtfeld (R-1210 2a, 5a)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerModal.svelte, apps/desktop/ui/src/components/infra/ServerModal.test.ts, apps/desktop/ui/src/lib/models/infra.ts, apps/desktop/ui/src/lib/models/infra.test.ts, apps/desktop/ui/src/lib/stores/infra.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerModal.svelte, apps/desktop/ui/src/components/infra/ServerModal.test.ts, apps/desktop/ui/src/lib/models/infra.ts, apps/desktop/ui/src/lib/models/infra.test.ts, apps/desktop/ui/src/lib/stores/infra.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/infra.test.ts
 Änderung: Pflicht ist nur „Name (FQDN)“; „Adresse (falls abweichend)“ optional, Platzhalter = Name, gefüllt nur bei `customHostname`; ein 409 zeigt „Name schon vergeben“ am Feld; Typen um `customHostname` ergänzt (Vertragstest).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/ServerModal.test.ts src/lib/models/infra.test.ts src/lib/stores/infra.test.ts src/lib/api/types.contract.test.ts src/lib/i18n/i18n.test.ts
 Doku: → T12

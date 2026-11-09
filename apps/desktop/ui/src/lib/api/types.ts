@@ -152,7 +152,10 @@ export interface FrpTunnel {
   id: string;
   serverId: string;
   frpConfigId: string;
+  /** The display name the server derives (R-1210): "{server} · {label|SSH|RDP|Web} (FRP)". */
   name: string;
+  /** The stored own text of the display name, '' for none. */
+  label?: string;
   tunnelType: FrpTunnelType;
   protocol: FrpProtocol;
   localIp: string | null;

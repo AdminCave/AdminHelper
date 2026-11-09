@@ -2239,6 +2239,18 @@
             "title": "Frp Config Id",
             "type": "string"
           },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "local_ip": {
             "default": "127.0.0.1",
             "title": "Local Ip",
@@ -2251,8 +2263,15 @@
             "type": "integer"
           },
           "name": {
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "protocol": {
             "title": "Protocol",
@@ -2306,7 +2325,6 @@
         "required": [
           "server_id",
           "frp_config_id",
-          "name",
           "tunnel_type",
           "protocol",
           "local_port"
@@ -2380,6 +2398,10 @@
             "title": "Id",
             "type": "string"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "localIp": {
             "anyOf": [
               {
@@ -2446,6 +2468,7 @@
           "serverId",
           "frpConfigId",
           "name",
+          "label",
           "tunnelType",
           "protocol",
           "localIp",
@@ -2524,6 +2547,18 @@
               }
             ],
             "title": "Extra Config"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           },
           "local_ip": {
             "anyOf": [
