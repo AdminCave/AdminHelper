@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@281371546`. R-1185 fährt nicht mit (Überlappung `dictionaries.ts` mit `feature/kern-ansible-1`) und steht in `tasks/klein-ui-desktop-1.md`.
 
-### T1 — Speichern übersteht Etc/Unknown und geleertes Zeitfeld (R-1184)  [ ]
+### T1 — Speichern übersteht Etc/Unknown und geleertes Zeitfeld (R-1184)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationPrefs.svelte, apps/desktop/ui/src/components/NotificationPrefs.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @3e8480cb9 2026-11-09T13:51:30+01:00
+Review: am Ende (Branch-Review)
 Beweis: review kern-notify-3 2026-11-07, feature/kern-notify-3@b80c1e947, `NotificationPrefs.svelte` (`save`: `timezone` aus `Intl…resolvedOptions().timeZone`, `quiet` unverändert); der Server weist `Etc/Unknown` und ein Feld ohne `HH:MM` mit 422 ab (`apps/server/app/modules/notifications/schemas.py`: `_check_timezone`, `ClockTime`)
 Dedup-Key: bug:desktop-ui:NotificationPrefs.svelte:save-timezone
 Änderung: Erst zwei Tests rot (Zone `Etc/Unknown` → die Anfrage trägt kein `timezone`; geleertes Start-/Endfeld → die Anfrage trägt den zuletzt gespeicherten Wert). Dann `save()`: `timezone` nur mitsenden, wenn die Zone nicht leer und nicht `Etc/Unknown` ist; `quiet.start`/`quiet.end` fallen bei keinem `HH:MM` auf den Stand aus `apply()` zurück (neuer `storedQuiet`).
