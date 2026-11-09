@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import datetime
 import uuid
+import warnings
 
 import pytest
+from sqlalchemy.exc import SADeprecationWarning
 
 from app.core.identity import SCOPE_AGENT
 from app.core.time import utcnow_naive
@@ -126,6 +128,19 @@ def test_an_agent_counts_with_its_newest_certificate_and_its_server_name(db_sess
         "days_left": 50,
         "status": "ok",
     }
+
+
+def test_equal_expiry_takes_the_smaller_fingerprint_without_a_deprecation_warning(db_session):
+    # The DISTINCT ON of agents() must come from postgresql.distinct_on: SQLAlchemy 2.1
+    # warns about distinct(col) and may drop it.
+    db_session.add(Server(id="srv-1", name="web-01", hostname="web-01.example"))
+    _, certs = _agent_line(db_session, "srv-1", not_afters=(NOW + 9 * DAY, NOW + 9 * DAY))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SADeprecationWarning)
+        (entry,) = expiry.agents(db_session, NOW)
+
+    assert entry["fingerprint"] == min(c.fingerprint for c in certs)
 
 
 def test_revoked_lines_lines_without_a_certificate_and_devices_are_left_out(db_session):

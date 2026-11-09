@@ -24,7 +24,8 @@
 #   can match — an env prefix never matches one):
 #     --strict         a SKIP of a required step is a FAILURE, not a pass
 #     --only <keys…>   restrict lint/unit to the named components (= AH_ONLY)
-#     --step <name>    run exactly one step (substring of its name, unambiguous)
+#     --step <name>    run exactly one step (substring of its name, unambiguous;
+#                      a name equal to one step wins over longer ones)
 #     --part <gui|rest> run one part of the layer (= AH_PART): gui = the desktop
 #                      GUI suites and their smoke test, rest = every other step;
 #                      heavy.sh runs the two parts of `all` on two boxes at once
@@ -184,6 +185,7 @@ RERUNS=0          # always 0 in stage 1; the field exists so stage 3 can fill it
 SKIP_VERDICT=""   # set by _skip: "skip" or "strict-failed"
 STEP_NAMES=()
 STEP_PROBE=0   # 1 = --step dry pass: collect names, run nothing
+STEP_EXACT=0   # 1 = --step equals one step's whole name: match only that one
 hdr()  { printf '\n\033[1m### %s\033[0m\n' "$*"; }
 pass() { echo   "  PASS  $*"; PASS=$((PASS+1)); }
 fail() { echo   "  FAIL  $*"; FAIL=$((FAIL+1)); FAILED_STEPS+=("$1"); }
@@ -242,6 +244,7 @@ want_step() {
     rest) gui_part_step "$1" && return 1 ;;
   esac
   [ -n "$AH_STEP" ] || return 0
+  if [ "$STEP_EXACT" = 1 ]; then [ "$1" = "$AH_STEP" ]; return; fi
   case "$1" in *"$AH_STEP"*) STEP_NAMES+=("$1"); return 0 ;; esac
   return 1
 }
@@ -1006,8 +1009,15 @@ if [ -n "$AH_STEP" ]; then
        echo "  steps behind an unmet precondition, e.g. a missing docker, are not reached)"
        exit 2 ;;
     1) ;;
-    *) echo "ambiguous step: '$AH_STEP' matches ${#STEP_NAMES[@]} steps:"
-       printf '  %s\n' "${STEP_NAMES[@]}"; exit 2 ;;
+    *) # A name that is a prefix of another (desktop_e2e_connect, ..._tunnel) is
+       # still addressable: the one step whose whole name it is wins.
+       exact=0; for n in "${STEP_NAMES[@]}"; do [ "$n" = "$AH_STEP" ] && exact=$((exact + 1)); done
+       if [ "$exact" = 1 ]; then
+         STEP_EXACT=1
+       else
+         echo "ambiguous step: '$AH_STEP' matches ${#STEP_NAMES[@]} steps:"
+         printf '  %s\n' "${STEP_NAMES[@]}"; exit 2
+       fi ;;
   esac
   PASS=0 FAIL=0 SKIP=0; FAILED_STEPS=(); STRICT_FAILED=()
 fi

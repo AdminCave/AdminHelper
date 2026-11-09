@@ -377,15 +377,16 @@ describe('RDP in a tab of AdminHelper (R-1098)', () => {
     );
     expect((await seen()).overlay).toBe(false);
 
-    // Fixed at 1280x720 (no custom size seeded): at 1:1 and at 50 % a move onto the same desktop
-    // point arrives as the same coordinate.
+    // Fixed at 1920x1080: chooseAdminHelperForRdp saved the settings dialog, and its custom-size
+    // field starts at 1920x1080 (R-1205). At 1:1 and at 50 % a move onto the same desktop point
+    // arrives as the same coordinate.
     await chooseWindowMode('custom');
     await browser.waitUntil(
       async () => {
         const now = await footFigures();
-        return now.width === 1280 && now.height === 720;
+        return now.width === 1920 && now.height === 1080;
       },
-      { timeout: 20000, interval: 250, timeoutMsg: 'the fixed desktop never had 1280x720' },
+      { timeout: 20000, interval: 250, timeoutMsg: 'the fixed desktop never had 1920x1080' },
     );
     const full = await moveTo(400, 300);
     await jsClick(await $(ZOOM_OUT));
