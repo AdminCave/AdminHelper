@@ -1,5 +1,5 @@
 # Ansible erreicht Server wie Verbinden — Task-Ledger
-Status: aktiv · Branch: feature/kern-ansible-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-ansible-1 · Review: pro Task
 Spec: docs/features/kern-ansible-1.md (Roadmap R-1202, R-1204)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad und keine Desktop-Journey, die ein Live-Spec faehrt (die E2E-Box hat kein Ansible); Format-Beleg mit ansible-inventory aus einer Wegwerf-Venv
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -50,8 +50,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (Verhalten wie dokumentiert: das Passwort gilt den Passwort-Servern des Laufs)
 Abhängt von: T3
 
-### T6 — README: Ansible-Inventar als JSON  [ ]
+### T6 — README: Ansible-Inventar als JSON  [x]
 Komponente: desktop-ui · Dateien: README.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @439d32f48 2026-11-09T13:30:03+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Fund der Abschlussprüfung (reviewer, branch): README.md beschreibt noch ein INI-Inventar. Der Satz nennt `inventory.json`, das Ziel wie Verbinden und `--ask-pass` bei Passwort-Zielen, mit Verweis auf docs/en/admin/ansible.html.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: README.md
@@ -64,3 +66,4 @@ Abhängt von: T4
 - T1: Ein Tag `all` wird keine Kindgruppe: das yaml-Plugin bricht dann mit „can't add group to itself“ ab, und Ansible fällt still auf das ini-Plugin zurück (mit ansible-core 2.22.0 geprobt); derselbe Hostname mit verschiedenen Zielen wird abgelehnt statt still eines zu nehmen.
 - T1: Der Port-Guard (`reject_foreign_port` je Verbindung) läuft vor dem Abruf des Playbooks, damit ein abgelehnter Lauf den Server nicht fragt.
 - T3: Frage beantwortet in der Notiz von R-1204 (Kevin 2026-11-09): `--ask-pass`, Abfrage im Terminal wie bei Verbinden, ein Passwort je Lauf.
+- T5: Ein Ziel ohne Verbindung bekommt in einem `--ask-pass`-Lauf eine eigene `ansible_ssh_common_args`; sie ersetzt für diesen Host ein `ssh_common_args` aus einer eigenen `ansible.cfg`. Hingenommen (nur Läufe mit Passwort- und Hostname-Ziel zugleich und eigener Config); Hinweis des T5-Prüfers.
