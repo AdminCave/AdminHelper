@@ -102,7 +102,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T12
 Abhängt von: T8, T9
 
-### T11 — R-1101: Live-Spec Abdocken und Multi-Monitor  [ ]
+### T11 — R-1101: Live-Spec Abdocken und Multi-Monitor  [?] (Zwei Prüfrunden verbraucht: die zweite fand nur noch die Umformatierung durch prettier (behoben, Patch im Scratchpad). Dritte Runde für T11 erlauben?)
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/rdp-embedded.live.js
 Änderung: Gegen den xrdp-Container: Abdocken zeigt das Bild im neuen Fenster ohne `reconnecting`, Andocken holt es zurück, die Sitzung ist dieselbe (Verbindungsinfo). Multi-Monitor nur, wenn der Webdriver-Treiber zwei Bildschirme sieht, sonst meldet der Test den Hinweis-Pfad. Zwei Monitore auf der VM sind nicht verifiziert; das Ergebnis steht im Ledger.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
@@ -133,3 +133,4 @@ Task-Review: am Ende
 - 2026-11-09 (T10): 13 Dateien statt bis zu acht: Bridge (`systemMonitors`, `screen` an `rdp_detach`/`rdp_session_attach`), `FrameInput` `layout`, `monitorDisplay`, Store, Route samt `main.ts` und die beiden Komponenten tragen eine Funktion, die nur zusammen testbar ist.
 - 2026-11-09 (T10): Den zweiten Monitor öffnet und schließt der Tab in main (Effekt auf Modus, Verbindung und Tab), nicht Rust: Er kennt Modus und Systemmonitore. Weil `rdp_dock` die Fenster beider Bildschirme zerstört und `rdp-docked` sendet, zählt main die eigenen Docks je Sitzung und verwirft so angekündigte `rdp-docked`; vor dem Abdocken eines Tabs geht das zweite Fenster zuerst. Im Fenster bleibt *Multi-Monitor* ungewählt (Rückfall *Eingepasst*), Bildschirm 1 zeigt nur Bild und Eingabe und schließt über die Titelleiste (`rdp-monitor-closed` → *Eingepasst*).
 - 2026-11-09 (T10): Lage und Größe der Systemmonitore kommen physisch; bei *100 %* rechnet `monitorDisplay` beide in logische Pixel um, sonst bleiben sie physisch, wie `fitDisplay` für den Tab. Gemischte Skalierungen lagern nur ungefähr; `Layout::placed` rastet die Lage ein.
+- 2026-11-09 (T11): Die Live-Spec läuft gegen xrdp nur auf der Box (`desktop_e2e_connect.sh`, Sammellauf, Heavy linux-full); lokal prüft das Verify Lint und Syntax. „Dieselbe Sitzung“ belegt sie über die Route: zweimal abdocken und andocken, beide Fenster zeigen dieselbe Sitzungs-ID (das Backend zählt sie je Start hoch), kein Overlay „verbinde neu“, und die Verbindungsinfo antwortet. Die Befehle lassen sich nicht mitschneiden: Tauri legt `__TAURI_INTERNALS__.invoke` schreibgeschützt an (Review T11). Multi-Monitor nimmt den Pfad, den der Treiber zeigt (zweites Fenster oder Hinweis „nur ein Bildschirm“), und schreibt ihn ins Log; zwei Monitore auf der VM sind nicht verifiziert.
