@@ -81,13 +81,13 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: → T7
 
 ### T7 — Doku: Agent- und Monitoring-Seiten, CHANGELOG  [ ]
-Komponente: docs · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-6.md
+Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-6.md
 Änderung:
 - Ressourcen-Deckel samt Override per `systemctl edit` und dem Hinweis „IO-Klasse idle wirkt je nach IO-Scheduler“.
 - Proxmox-Backup-Inhalt alle 30 min.
 - Entwicklerseite: neue Collector-Befehle nur über die Freigabeliste.
 - DE und EN deckungsgleich, CHANGELOG-Fragment.
-Verify: bash scripts/dev/verify.sh docs --strict
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-6.md
 Task-Review: am Ende
 
