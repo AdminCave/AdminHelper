@@ -1,5 +1,5 @@
 # Harness: exakter Schrittname, Einstufung nicht ansprechbarer Schritte, Probelauf ohne Abräumen — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-3 · Review: am Ende
+Status: bereit · Branch: feature/kern-harness-3 · Review: am Ende
 Spec: docs/features/kern-harness-3.md (Roadmap R-1148, R-1206, R-1153)
 Heavy: none — nur Harness-Skripte mit hermetischen Tests (run_flags_test, heavy_test, vm.py pytest); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -27,8 +27,10 @@ HEAD: 001151564
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html (Einstufung `infra` und `unbestaetigt`)
 
-### T3 — R-1153: vm.py reap --dry-run sweept die Lane nicht  [ ]
+### T3 — R-1153: vm.py reap --dry-run sweept die Lane nicht  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @77e932f83 2026-11-09T17:31:29+01:00
+Review: am Ende (Branch-Review)
 Änderung: `auto_reap` läuft nicht nach `reap --dry-run`; jedes andere Verb sweept wie bisher. Test: `reap --dry-run` ruft `reap_lane` nur im Probemodus, der Sweep bleibt aus; `reap` ohne `--dry-run` sweept weiter.
 Beweis: main@a3645c00 · `vm.py reap --all --dry-run` aus dem Haupt-Checkout meldete `reaped expired` für eine abgelaufene Box der Lane main (2026-11-05)
 Dedup-Key: bug:scripts:vm.py:auto_reap-dry-run
