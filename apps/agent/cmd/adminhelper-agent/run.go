@@ -206,12 +206,15 @@ func maybeRenewIdentity(ctx context.Context) {
 	if err != nil {
 		return // no server URL configured yet; nothing to renew against
 	}
-	renewed, err := enroll.MaybeRenew(ctx, dir, base, 30*time.Second)
+	renewal, err := maybeRenew(ctx, dir, base, 30*time.Second)
 	if err != nil {
 		logger.Warnf("Cert-Renew Fehler: %v", err)
 		return
 	}
-	if renewed {
-		logger.Infof("mTLS-Client-Zertifikat erneuert.")
+	if renewal != enroll.NoRenewal {
+		logger.Infof("mTLS client certificate renewed: %s", renewal)
 	}
 }
+
+// maybeRenew is the renewal maybeRenewIdentity runs; a seam for the tests.
+var maybeRenew = enroll.MaybeRenew

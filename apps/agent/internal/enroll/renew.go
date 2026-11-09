@@ -88,8 +88,32 @@ func Renew(ctx context.Context, dir, baseURL string, timeout time.Duration) erro
 	return Store(dir, newKey, resp)
 }
 
-// MaybeRenew renews the enrolled identity if it is due. Returns whether a
-// renewal happened. A no-op when the agent is not enrolled.
+// Renewal is why MaybeRenew renewed the identity, or NoRenewal.
+type Renewal int
+
+const (
+	NoRenewal Renewal = iota
+	// HalfLife: the leaf is past RenewalFraction of its lifetime.
+	HalfLife
+	// NewTrust: the issuer names another trust generation than that of the held ca.crt,
+	// after a rotation of the root or the intermediates (R-1054).
+	NewTrust
+)
+
+func (r Renewal) String() string {
+	switch r {
+	case HalfLife:
+		return "half of its lifetime has passed"
+	case NewTrust:
+		return "the issuer has a new trust generation"
+	}
+	return "not renewed"
+}
+
+// MaybeRenew renews the enrolled identity if it is due and returns why, or NoRenewal.
+// A no-op when the agent is not enrolled. An identity that is not yet at half of its
+// lifetime asks the issuer for its trust generation (trustFunc) and is due when that
+// differs from the held ca.crt's; a server without the route leaves it at the half.
 //
 // It takes LockIdentity only for a due identity: a lock that is not released holds
 // up no service cycle with nothing to renew, and one with a due identity gets the
@@ -97,36 +121,76 @@ func Renew(ctx context.Context, dir, baseURL string, timeout time.Duration) erro
 // from reading the certificate to the commit in Store (R-0384). A provisioning that
 // held the lock before it may have dropped or replaced the identity, and the issuer
 // has revoked the line of the old one: so the check runs again under the lock, and
-// a fresh certificate is not renewed.
-func MaybeRenew(ctx context.Context, dir, baseURL string, timeout time.Duration) (bool, error) {
-	if due, err := renewalDue(dir); err != nil || !due {
-		return false, err
+// a fresh certificate, or one stored with the new trust bundle, is not renewed.
+func MaybeRenew(ctx context.Context, dir, baseURL string, timeout time.Duration) (Renewal, error) {
+	if !Provisioned(dir) {
+		return NoRenewal, nil
+	}
+	reason, err := renewalReason(dir, "")
+	if err != nil {
+		return NoRenewal, err
+	}
+	issuerGeneration := ""
+	if reason == NoRenewal {
+		if issuerGeneration, err = trustFunc(ctx, dir, baseURL, timeout); err != nil {
+			return NoRenewal, fmt.Errorf("trust generation: %w", err)
+		}
+		if reason, err = renewalReason(dir, issuerGeneration); err != nil || reason == NoRenewal {
+			return NoRenewal, err
+		}
 	}
 	unlock, err := LockIdentity(ctx, dir)
 	if err != nil {
-		return false, err
+		return NoRenewal, err
 	}
 	defer unlock()
 	RemoveStaleTemps(dir)
-	if due, err := renewalDue(dir); err != nil || !due {
-		return false, err
+	if reason, err = renewalReason(dir, issuerGeneration); err != nil || reason == NoRenewal {
+		return NoRenewal, err
 	}
 	if err := renewFunc(ctx, dir, baseURL, timeout); err != nil {
-		return false, err
+		return NoRenewal, err
 	}
-	return true, nil
+	if reason == NewTrust {
+		// Should the agent and the issuer ever compute the generation differently,
+		// every run renews again; this names that loop.
+		if held, err := heldTrustGeneration(dir); err != nil {
+			logger.Warnf("trust generation of the renewed ca.crt: %v", err)
+		} else if held != issuerGeneration {
+			logger.Warnf("the renewed ca.crt has trust generation %s, the issuer named %s; the next run renews again", held, issuerGeneration)
+		}
+	}
+	return reason, nil
 }
 
-// renewalDue reports whether dir holds an enrolled identity that is due for renewal.
-func renewalDue(dir string) (bool, error) {
+// renewalReason tells why the identity in dir is due for renewal, or NoRenewal. A
+// non-empty issuerGeneration is compared with the trust generation of the held ca.crt.
+func renewalReason(dir, issuerGeneration string) (Renewal, error) {
 	if !Provisioned(dir) {
-		return false, nil
+		return NoRenewal, nil
 	}
 	certPEM, err := os.ReadFile(CertPath(dir))
 	if err != nil {
-		return false, err
+		return NoRenewal, err
 	}
-	return NeedsRenewal(certPEM, RenewalFraction)
+	due, err := NeedsRenewal(certPEM, RenewalFraction)
+	if err != nil {
+		return NoRenewal, err
+	}
+	if due {
+		return HalfLife, nil
+	}
+	if issuerGeneration == "" {
+		return NoRenewal, nil
+	}
+	held, err := heldTrustGeneration(dir)
+	if err != nil {
+		return NoRenewal, err
+	}
+	if held != issuerGeneration {
+		return NewTrust, nil
+	}
+	return NoRenewal, nil
 }
 
 // renewFunc is the seam MaybeRenew uses for the network renewal, so tests can drive the
