@@ -8,11 +8,13 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Entscheidungen Kevin 2026-11-09 (Spec, Ziel 1–6): 1a Kennungen über IDs, 2a ein Pflichtfeld Name + Adresse folgt,
 3a Zusatz statt eigener Name, 4a Kopien leeren, 5a Servername eindeutig ab jetzt.
 
-### T1 — FRP-Kennungen über IDs, Statuszuordnung exakt (R-1210 1a, R-1211)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/status_router.py, apps/server/app/modules/frp/generate_router.py, apps/server/app/modules/frp/provision_router.py, apps/server/app/modules/provisioning/helpers.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_frp_status.py, apps/server/tests/test_frp_toml_roundtrip.py, apps/server/tests/test_frp_input_hardening.py
+### T1 — FRP-Kennungen über IDs, Statuszuordnung exakt (R-1210 1a, R-1211)  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/status_router.py, apps/server/app/modules/frp/generate_router.py, apps/server/app/modules/frp/provision_router.py, apps/server/app/modules/provisioning/helpers.py, apps/server/tests/test_frp_status.py, apps/server/tests/test_frp_toml_roundtrip.py, apps/server/tests/test_frp_input_hardening.py, apps/server/app/modules/servers/schemas.py, apps/server/tests/test_config_generator.py, apps/server/tests/test_frp_permissions.py, apps/server/tests/test_frp_provision_sync.py, apps/agent/internal/frpc/testdata/server_frpc.toml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9e3ee785a 2026-11-09T13:49:03+01:00
+Review: approve (.ah-out/review/arch-namen/T1.verdict.json)
 Änderung: frpc `user` = Server-ID, Proxy-Name = Tunnel-ID, Visitor `name`/`serverName`/`serverUser` aus den IDs, Tunnel nach ID sortiert; Prüfungen, die nur wegen Namen im TOML bestanden, entfallen (Spec „FRP-Wire“), der ZIP-Pfad behält seine. Die Statusseite ordnet über den Schlüssel `{server_id}.{tunnel_id}` zu. Erst der rote Test: ein Proxy, dessen Server- und Tunnelname Punkte tragen, findet seinen Tunnel (heute nicht). Neun Dateien: Generator, seine vier Aufrufer und die Tests sind ein Wire-Wechsel.
 Beweis: main@f8b5364f apps/server/app/modules/frp/status_router.py:107-111 (`name.split(".")[-1]`); Dedup-Key: BUG:server:frp/status_router.py:proxy_name_split
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py tests/test_frp_status.py tests/test_frp_toml_roundtrip.py tests/test_frp_input_hardening.py tests/test_frp_provision_sync.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_status.py tests/test_frp_toml_roundtrip.py tests/test_frp_input_hardening.py tests/test_frp_provision_sync.py tests/test_frp_permissions.py tests/test_frp_provision_authz.py tests/test_provisioning.py
 Doku: → T12
 
 ### T2 — Server: ein Pflichtfeld Name, Adresse folgt, Name eindeutig (R-1210 2a, 5a)  [ ]

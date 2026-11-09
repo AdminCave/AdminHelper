@@ -97,30 +97,33 @@ class TestVisitorBundlePermissions:
         db_session.commit()
 
         result = gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
-        assert "a-ssh" in result["toml"]
-        assert "b-ssh" not in result["toml"], "User sollte Tunnel B nicht sehen"
+        assert '"t-a"' in result["toml"]
+        assert '"t-b"' not in result["toml"], "User sollte Tunnel B nicht sehen"
 
     def test_admin_sees_all_tunnels(self, db_session, admin_user, two_servers_with_tunnels):
         result = gen_visitor_bundle(config_id=None, db=db_session, current_user=admin_user)
-        assert "a-ssh" in result["toml"]
-        assert "b-ssh" in result["toml"]
+        assert '"t-a"' in result["toml"]
+        assert '"t-b"' in result["toml"]
 
-    def test_visitor_tunnels_eager_load_target_server(
+    def test_visitor_toml_reads_no_target_server(
         self, db_session, admin_user, two_servers_with_tunnels
     ):
-        # 5.29: _visible_stcp_tunnels eager-loads target_server (joinedload) so generate_visitor_toml,
-        # which reads tunnel.target_server.name per tunnel, doesn't fire a lazy SELECT per tunnel.
+        # 5.29 guarded a lazy SELECT per tunnel when generate_visitor_toml read
+        # tunnel.target_server.name; it names the server by tunnel.server_id now (R-1210), so
+        # the relationship stays unloaded and no such SELECT can fire.
         from sqlalchemy import inspect
 
+        from app.modules.frp.config_generator import generate_visitor_toml
         from app.modules.frp.generate_router import _visible_stcp_tunnels
 
         cfg = db_session.query(FrpServerConfig).first()
+        db_session.expire_all()
         tunnels = _visible_stcp_tunnels(db_session, cfg, admin_user)
         assert tunnels, "fixture should yield stcp tunnels"
+        toml = generate_visitor_toml(cfg, tunnels)
+        assert 'serverUser = "srv-a"' in toml, toml
         for t in tunnels:
-            # target_server already loaded (not lazy) → the joinedload did it; without the fix it
-            # would be in the unloaded set and read as a per-tunnel SELECT later.
-            assert "target_server" not in inspect(t).unloaded, "target_server is lazy-loaded (N+1)"
+            assert "target_server" in inspect(t).unloaded, "the generator read target_server"
 
 
 class TestVisitorTomlPermissions:
@@ -139,8 +142,8 @@ class TestVisitorTomlPermissions:
             config_id=None, user_id=None, db=db_session, current_user=admin_user
         )
         body = response.body.decode("utf-8")
-        assert "a-ssh" in body
-        assert "b-ssh" in body
+        assert '"t-a"' in body
+        assert '"t-b"' in body
 
 
 def test_attach_auto_connection_links_stcp_and_passes_tags(db_session):
@@ -366,7 +369,7 @@ class TestTunnelsWithoutSecret:
         assert r.status_code == 200, r.text
         frpc = zipfile.ZipFile(io.BytesIO(r.content)).read("clients/serverA/frpc.toml").decode()
         assert frpc.count("[[proxies]]") == 1, frpc
-        assert '"a2-ssh"' in frpc and '"a-ssh"' not in frpc, frpc
+        assert '"t-a2"' in frpc and '"t-a"' not in frpc, frpc
 
     def test_bulk_zip_warns_once_per_secretless_tunnel(
         self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels, caplog
@@ -380,7 +383,7 @@ class TestTunnelsWithoutSecret:
         hits = [
             r
             for r in caplog.records
-            if "a-ssh" in r.getMessage() and "without a secret" in r.getMessage()
+            if "'t-a'" in r.getMessage() and "without a secret" in r.getMessage()
         ]
         assert len(hits) == 1, [r.getMessage() for r in hits]
 
@@ -389,7 +392,7 @@ class TestTunnelsWithoutSecret:
         self._assign(db_session, normal_user, "srv-a", "srv-b")
         toml = gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)["toml"]
         assert toml.count("[[visitors]]") == 1
-        assert "b-ssh" in toml and "a-ssh" not in toml
+        assert '"t-b"' in toml and '"t-a"' not in toml
 
 
 class TestTunnelsWithoutVisitorPort:
@@ -429,7 +432,7 @@ class TestTunnelsWithoutVisitorPort:
         )
         body = response.body.decode("utf-8")
         assert body.count("[[visitors]]") == 1
-        assert "b-ssh" in body and "a-ssh" not in body
+        assert '"t-b"' in body and '"t-a"' not in body
 
     def test_bulk_zip_writes_no_visitor_without_one(
         self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels
@@ -445,7 +448,7 @@ class TestTunnelsWithoutVisitorPort:
         assert f"visitors/{normal_user.username}.toml" not in zf.namelist(), zf.namelist()
         # The agent side is unchanged: serverA keeps the tunnel's proxy.
         frpc = zf.read("clients/serverA/frpc.toml").decode()
-        assert '"a-ssh"' in frpc, frpc
+        assert '"t-a"' in frpc, frpc
 
     def test_bulk_zip_shared_visitor_keeps_the_usable_tunnel(
         self, test_client, db_session, admin_user, two_servers_with_tunnels
@@ -459,7 +462,7 @@ class TestTunnelsWithoutVisitorPort:
         assert r.status_code == 200, r.text
         visitor = zipfile.ZipFile(io.BytesIO(r.content)).read("visitor.toml").decode()
         assert visitor.count("[[visitors]]") == 1, visitor
-        assert "b-ssh" in visitor and "a-ssh" not in visitor, visitor
+        assert '"t-b"' in visitor and '"t-a"' not in visitor, visitor
 
     def test_bulk_zip_without_any_usable_visitor_writes_none(
         self, test_client, db_session, admin_user, two_servers_with_tunnels
@@ -482,15 +485,17 @@ class TestTunnelsWithoutVisitorPort:
         hits = [
             r
             for r in caplog.records
-            if "a-ssh" in r.getMessage() and "visitor_port" in r.getMessage()
+            if "'t-a'" in r.getMessage() and "visitor_port" in r.getMessage()
         ]
         assert len(hits) == 1, [r.getMessage() for r in hits]
 
 
 class TestNamesTheApiRefuses:
-    """A server or user name stored before the schema check (an import, an old row) is
-    written verbatim into TOML strings by the generators. Such a name is left out, and a
-    route that would have nothing else to hand out answers like one without tunnels."""
+    """A user name stored before the schema check (an import, an old row) is written
+    verbatim into TOML strings by the generators: such a user is left out, and a route that
+    would have nothing else to hand out answers like one without tunnels. A server name
+    reaches no TOML (frpc and the visitor know the server by its ID, R-1210), only the
+    folder of the bulk-ZIP."""
 
     REFUSED = 'evil"name'
 
@@ -499,25 +504,27 @@ class TestNamesTheApiRefuses:
         db.get(Server, sid).name = name
         db.commit()
 
-    def test_frpc_toml_for_a_refused_server_name_is_404(
+    def test_frpc_toml_of_a_refused_server_name_carries_the_id_not_the_name(
         self, test_client, db_session, admin_user, two_servers_with_tunnels
     ):
         self._rename_server(db_session, "srv-a", self.REFUSED)
         r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=_login(test_client))
-        assert r.status_code == 404, r.text
-        assert "super-secret" not in r.text and "secret-frps-auth" not in r.text
+        assert r.status_code == 200, r.text
+        assert 'user = "srv-a"' in r.text and 'name = "t-a"' in r.text, r.text
+        assert self.REFUSED not in r.text
 
-    def test_visitor_routes_leave_out_a_tunnel_of_a_refused_server_name(
+    def test_visitor_routes_keep_a_tunnel_of_a_refused_server_name(
         self, db_session, admin_user, two_servers_with_tunnels
     ):
         self._rename_server(db_session, "srv-a", self.REFUSED)
         bundle = gen_visitor_bundle(config_id=None, db=db_session, current_user=admin_user)
-        assert "a-ssh" not in bundle["toml"] and self.REFUSED not in bundle["toml"]
-        assert "b-ssh" in bundle["toml"]
+        assert 'serverUser = "srv-a"' in bundle["toml"], bundle["toml"]
+        assert '"t-a"' in bundle["toml"] and '"t-b"' in bundle["toml"]
+        assert self.REFUSED not in bundle["toml"]
         toml = gen_visitor_toml(
             config_id=None, user_id=None, db=db_session, current_user=admin_user
         ).body.decode()
-        assert "a-ssh" not in toml and "b-ssh" in toml
+        assert '"t-a"' in toml and '"t-b"' in toml and self.REFUSED not in toml
 
     def test_visitor_routes_refuse_a_user_with_a_refused_name(
         self, db_session, normal_user, two_servers_with_tunnels
@@ -559,12 +566,14 @@ class TestNamesTheApiRefuses:
 
 class TestFilterWarnsOncePerTunnel:
     """The sync and the hash poll run the filters every few seconds; a row that stays
-    left out warns once, not on every poll (R-0969), and its name is quoted with %r, so
-    a stored name with a line break cannot fake a log line (R-0971)."""
+    left out warns once, not on every poll (R-0969). The warning names the tunnel by its ID,
+    quoted with %r, never by its name: a stored name with a line break cannot fake a log line
+    (R-0971)."""
 
     @staticmethod
     def _tunnel(**overrides) -> FrpTunnel:
         fields = {
+            "id": "t-x",
             "name": "x-ssh",
             "tunnel_type": "stcp",
             "local_ip": "127.0.0.1",
@@ -595,7 +604,8 @@ class TestFilterWarnsOncePerTunnel:
             assert run([tunnel]) == []
         messages = [r.getMessage() for r in caplog.records]
         assert len(messages) == 1, messages
-        assert "'x-ssh\\nforged'" in messages[0] and "\n" not in messages[0], messages
+        assert "'t-x'" in messages[0] and "forged" not in messages[0], messages
+        assert "\n" not in messages[0], messages
 
     def test_each_reason_warns_once(self, caplog):
         from app.modules.frp import config_generator

@@ -103,13 +103,14 @@ def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)
     if error:
         return {"proxies": [], "total": 0, "error": error}
 
+    # frps lists a proxy as "{user}.{name}" of the agent's frpc: the server's ID and the
+    # tunnel's ID (generate_frpc_toml). Matched whole, so a name may hold dots (R-1211).
     tunnels = db.query(FrpTunnel).all()
-    tunnel_map = {t.name: t.to_dict(mask_secrets=True) for t in tunnels}
+    tunnel_map = {f"{t.server_id}.{t.id}": t.to_dict(mask_secrets=True) for t in tunnels}
 
     result = []
     for p in proxies:
-        proxy_name = p["name"].split(".")[-1] if "." in p["name"] else p["name"]
-        tunnel = tunnel_map.get(proxy_name)
+        tunnel = tunnel_map.get(p["name"])
         result.append(
             {
                 **p,
