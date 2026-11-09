@@ -74,7 +74,7 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: → T7
 Abhängt von: T3
 
-### T6 — R-1221: Rücksicht bei Last  [?] (Was lässt der Agent bei hoher Last aus, und wie erfährt der Server davon? Empfehlung: in arch-monitoring-module verschieben)
+### T6 — R-1221: Rücksicht bei Last  [~] (verschoben: Ruecksicht bei Last braucht Kevins Antwort (was laesst der Agent aus, wie erfaehrt der Server davon); Empfehlung arch-monitoring-module)
 Komponente: agent · Dateien: apps/agent/internal/monitor/report.go
 Änderung: Nach Kevins Antwort.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
