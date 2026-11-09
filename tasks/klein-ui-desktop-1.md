@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Stand `origin/main@0fc7e94c5`. R-1159 fährt nicht mit (zweiter Teil kein Klein-Umfang, siehe Spec) und wandert in `tasks/kern-terminal-3.md`.
 
-### T1 — Ruhe-Hinweis nennt den Durchlass nur, wenn er gilt (R-1185)  [ ]
+### T1 — Ruhe-Hinweis nennt den Durchlass nur, wenn er gilt (R-1185)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationBell.svelte, apps/desktop/ui/src/components/NotificationBell.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fa0fba4e6 2026-11-09T14:47:42+01:00
+Review: am Ende (Branch-Review)
 Beweis: review kern-notify-3 2026-11-07, feature/kern-notify-3@b80c1e947, `dictionaries.ts` `notifications.dndNote`; `stores/dnd.ts` `allows()` lässt Kritisches nur bei `criticalPasses()` durch
 Dedup-Key: bug:desktop-ui:dictionaries.ts:notifications.dndNote
 Änderung: Erst Test rot (Durchlass aus → der Hinweis enthält „Kritisches kommt trotzdem durch“ nicht). Dann neuer Schlüssel `notifications.dndNoteAll` („Ruhe bis {time}.“ / „Quiet until {time}.“) in DE+EN; `NotificationBell.svelte` wählt per `criticalPasses()` zwischen beiden.

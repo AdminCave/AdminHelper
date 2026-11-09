@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   startDnd: vi.fn(),
   endDnd: vi.fn(),
   navigate: vi.fn(),
+  criticalPasses: vi.fn(() => true),
 }));
 
 vi.mock('$lib/stores/notifications', async () => {
@@ -49,6 +50,8 @@ vi.mock('$lib/stores/dnd', async () => {
   h.dndUntil = writable<number | null>(null);
   return { dndUntil: h.dndUntil, startDnd: h.startDnd, endDnd: h.endDnd };
 });
+
+vi.mock('$lib/stores/notifyPrefs', () => ({ criticalPasses: h.criticalPasses }));
 
 vi.mock('$lib/router', () => ({ navigate: h.navigate }));
 
@@ -104,6 +107,7 @@ describe('NotificationBell', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
     setLanguage('de');
+    h.criticalPasses.mockReturnValue(true);
     store<boolean>(h.open).set(true);
     store<number | null>(h.dndUntil).set(null);
     feed(FEED);
@@ -265,5 +269,13 @@ describe('NotificationBell', () => {
 
     await fireEvent.click(container.querySelector('.notif-dnd')!);
     expect(entries()).toContain('Beenden');
+  });
+
+  it('the do-not-disturb note names the critical pass only while it holds (R-1185)', async () => {
+    h.criticalPasses.mockReturnValue(false);
+    const { container } = render(NotificationBell);
+    store<number | null>(h.dndUntil).set(new Date(2026, 10, 4, 13, 30).getTime());
+    await tick();
+    expect(container.querySelector('.notif-dnd-note span')?.textContent).toBe('Ruhe bis 13:30.');
   });
 });
