@@ -1855,6 +1855,23 @@ mod tests {
         assert_eq!(connector.device_scale_factor, Some(140));
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn session_takes_the_h264_decoder_only_with_a_library() {
+        let destination = Destination::from_parts("192.0.2.10", 3389);
+        let mut with = target(destination.clone(), CertPolicy::TrustAll);
+        with.h264 = Some(PathBuf::from("/nonexistent/libopenh264.so"));
+        let with = config(&with, Display::default(), &CertReport::default()).unwrap();
+        assert!(with.channels().h264_decoder.is_some());
+        let without = config(
+            &target(destination, CertPolicy::TrustAll),
+            Display::default(),
+            &CertReport::default(),
+        )
+        .unwrap();
+        assert!(without.channels().h264_decoder.is_none());
+    }
+
     #[test]
     fn session_configures_tls_gfx_and_its_channels() {
         let destination = Destination::from_parts("192.0.2.10", 3389);

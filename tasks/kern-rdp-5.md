@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Spec Stufe 5, H.264 unter Linux — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-5 · Review: pro Task
 Spec: docs/features/kern-rdp-5.md (Roadmap R-1101, R-1102)
 Heavy: linux-full — Desktop-Journeys: die Live-Spec Abdocken/Multi-Monitor gegen den xrdp-Container läuft im Sammellauf; neue Abhängigkeiten im Desktop-Build (ironrdp-egfx mit libloading, bzip2); Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,8 +41,10 @@ Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/in
 Task-Review: am Ende
 Abhängt von: T2, T3
 
-### T5 — R-1102: Tests für das Gate „H.264 aus“ und die Übergabe des Dekoders  [ ]
+### T5 — R-1102: Tests für das Gate „H.264 aus“ und die Übergabe des Dekoders  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/session.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8c1c2a6b4 2026-11-09T09:27:32+01:00
+Review: approve (.ah-out/review/kern-rdp-5/T5.verdict.json)
 Änderung: Fund der Abschlussprüfung (blocker): die Entscheidung aus `h264_library` als `h264_for(on, base)` herausziehen und testen, dass „aus“ ohne Netz und ohne Datei `None` liefert und nichts anlegt; `config()` mit `h264: Some(pfad)` und `None` prüfen (`channels().h264_decoder`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (nur Tests und ein interner Schnitt)
