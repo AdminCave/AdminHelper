@@ -17,8 +17,8 @@ Was im Weg steht: `OpenH264Decoder::from_library_path` (`ironrdp-egfx`) lädt ü
 ## Ziel & Nicht-Ziele
 
 Ziel:
-- `openh264.rs` pinnt `libopenh264-2.7.0-linux64.8.so.bz2` und den SHA-256 der entpackten Datei. Den Hash haben wir
-  selbst über https ermittelt; Cisco veröffentlicht keine Hashes.
+- `openh264.rs` pinnt `libopenh264-2.7.0-linux64.8.so.bz2` und den SHA-256 der entpackten Datei. Der Hash steht in
+  Ciscos `libopenh264-2.7.0-linux64.8.so.signed.sha256.txt` und stimmt mit zwei eigenen Downloads über https überein.
 - Der Dekoder lädt die Bibliothek ohne die Liste von `openh264-sys2`. Er nutzt `OpenH264API::from_blob_path_unchecked`,
   davor steht unsere eigene Prüfung gegen den einen gepinnten Hash. Damit gilt die zweite Hash-Prüfung beim Laden
   weiter, nur gegen unseren Pin.

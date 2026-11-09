@@ -1,5 +1,5 @@
 # Eingebettetes RDP: OpenH264 auf Ciscos aktuelle Version — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-6 · Review: pro Task
 Spec: docs/features/kern-rdp-6.md (Roadmap R-1200)
 Heavy: none — kein Stack-, Gateway-, PKI- oder Install-Pfad, keine neue Abhängigkeit; Beweis ist der Rundlauf-Test mit dem echten Cisco-Binary in desktop-rs, Windows über die Windows-CI-Jobs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-rdp-6/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T2
 
-### T2 — Doku OpenH264 2.7.0 (DE+EN), Changelog  [ ]
-Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-6.md
+### T2 — Doku OpenH264 2.7.0 (DE+EN), Changelog  [x]
+Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-6.md, docs/features/kern-rdp-6.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2b1a49b48 2026-11-09T10:22:09+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt „H.264 unter Linux“: Version 2.7.0, zweite Prüfung gegen den eigenen Pin statt der Liste von `openh264-sys2`, alte Dateien werden geräumt; Changelog-Eintrag ASCII unter `### Changed`, ohne Angriffspfad.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-6.md
