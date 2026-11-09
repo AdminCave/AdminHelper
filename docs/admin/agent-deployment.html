@@ -225,6 +225,16 @@ sudo adminhelper-agent run --once          # ein Durchlauf von Hand: Sync + Push
           <p>Unter Windows sichert der Agent das Log-Verzeichnis, bevor er die Datei öffnet. Gelingt das nicht, schreibt er bis zum nächsten Start nur auf stdout und keine <code>agent.log</code>; der FRP-Abgleich ändert nichts, solange sich das Datenverzeichnis nicht sichern lässt. Läuft er als Dienst, steht der Grund in der Ereignisanzeige unter <em>Windows-Protokolle → Anwendung</em>: eine Warnung der Quelle <code>AdminHelper-Agent</code> (Ereignis-ID 1) mit dem Verzeichnis, dem Fehler und diesen Folgen. Eine Beschreibung hat der Eintrag, wenn <code>service install</code> die Quelle registriert hat; bei einem Dienst, den eine frühere Version eingerichtet hat, fehlt sie, der Text steht dann in den Ereignisdaten. Ein Aufruf von Hand, etwa ohne Administratorrechte, schreibt keinen Eintrag.</p>
           <p>Für einen Bug-Report erzeugt <code>adminhelper-agent diagnostics</code> einen <strong>redaktierten</strong> Bericht (Version, OS, Config ohne Secrets, Log-Auszug) unter <code>/tmp/</code> — kurz durchsehen und an ein GitHub-Issue anhängen.</p>
 
+          <h3 id="ressourcen">Ressourcen-Deckel</h3>
+          <p>Der Agent soll auf dem überwachten Host nicht spürbar sein. Unter Linux läuft <code>adminhelper-agent.service</code> deshalb mit <code>Nice=19</code>, <code>IOSchedulingClass=idle</code>, <code>CPUQuota=50%</code> (höchstens ein halber Kern) und <code>MemoryMax=256M</code>. Die Deckel gelten auch für die Werkzeuge, die er startet (<code>pvesh</code>, <code>docker</code>, <code>smartctl</code> …). Überschreitet ein Werkzeug den Speicher-Deckel, beendet der Kernel nur diesen Prozess, nicht die ganze Unit (<code>OOMPolicy=continue</code>): Der Lauf meldet den gescheiterten Aufruf und schickt den Report trotzdem. Ob die IO-Klasse <code>idle</code> wirkt, hängt vom IO-Scheduler des Datenträgers ab (<code>bfq</code> ja, <code>mq-deadline</code> und <code>none</code> nicht); je Scheduler geprüft ist das nicht. Unter Windows setzt der Dienst beim Start seine Prozesspriorität auf „Niedrig“ (<code>IDLE_PRIORITY_CLASS</code>).</p>
+          <p>Reicht ein Deckel auf einem großen Host nicht (sehr viele Container oder VMs), zeigt sich das als fehlender Report bzw. als <code>oom-kill</code> eines Werkzeugs im Journal. Ein Override hebt ihn an; ein Paket-Update überschreibt es nicht:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>sudo systemctl edit adminhelper-agent.service
+# im Editor eintragen:
+[Service]
+MemoryMax=512M
+CPUQuota=100%</code></pre>
+
           <h2 id="upgrade">Upgrade</h2>
           <p>Mit eingerichtetem Paket-Repo reicht auf allen Servern <code>apt upgrade</code> bzw. <code>dnf upgrade</code>. Beim Provisionieren schreibt der Agent <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> und <code>/etc/frp/frpc.toml</code>; das Paket liefert diese Dateien nicht aus, bei einem Upgrade bleiben sie erhalten. Bei jeder Installation und jedem Upgrade aktiviert das Paket <code>adminhelper-agent.timer</code> neu, <code>frpc.service</code> nur, wenn <code>/etc/frp/frpc.toml</code> vorhanden ist.</p>
 

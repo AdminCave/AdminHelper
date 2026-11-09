@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -47,31 +48,6 @@ var dockerCLI = struct {
 // runDocker runs one docker CLI call under dockerTimeout.
 func runDocker(ctx context.Context, args ...string) ([]byte, error) {
 	return runTimed(ctx, dockerTimeout, "docker", args...)
-}
-
-// commandWaitDelay bounds how long runTimed waits for a command's pipes once its context ended or the
-// command exited. The kill reaches only the tool: a grandchild that inherited its stdout (a daemon, a
-// pager) kept the pipe open, and Output read it past the timeout until the grandchild ended.
-const commandWaitDelay = 2 * time.Second
-
-// runTimed runs a command under timeout and ctx, whichever ends first. A call either ended returns the
-// context's error (context.DeadlineExceeded at the timeout or the deadline of ctx, context.Canceled
-// when ctx was canceled): exec itself reports it as the ExitError "signal: killed", which would pass a
-// hanging tool off as a failing one. exec.ErrWaitDelay means the command exited 0 and only a child of
-// it held the pipe past commandWaitDelay: the command's output is complete, so it is no error.
-func runTimed(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = commandWaitDelay
-	out, err := cmd.Output()
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return out, nil
-	}
-	if err != nil && ctx.Err() != nil {
-		return out, ctx.Err()
-	}
-	return out, err
 }
 
 // collectDocker collects Docker container status (cross-platform). No docker binary means Docker is
@@ -265,20 +241,21 @@ func pveshGet(ctx context.Context, out any, path string, args ...string) (code, 
 // not installed and stays silent (nil). With the CLI present the block is always sent: an unreadable
 // hostname, or a node status, backup index or VM list that could not be read, is available=false
 // with an error code (proxmoxUnavailable), so the monitoring service can raise it instead of seeing
-// no data.
-func collectProxmox(ctx context.Context) map[string]any {
+// no data. saved is the backup index of the last report (buildBackupIndex); the second result is the
+// one to save, saved itself after an outage.
+func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time) (map[string]any, *backupIndexCheck) {
 	if _, err := pveshCLI.lookPath("pvesh"); err != nil {
-		return nil
+		return nil, nil
 	}
 
 	host, err := pveshCLI.hostname()
 	if err != nil {
-		return proxmoxUnavailable("cli_failed", "local hostname unreadable")
+		return proxmoxUnavailable("cli_failed", "local hostname unreadable"), saved
 	}
 	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
 	var nd map[string]any
 	if code, text := pveshGet(ctx, &nd, "/nodes/"+nodeName+"/status"); code != "" {
-		return proxmoxUnavailable(code, text)
+		return proxmoxUnavailable(code, text), saved
 	}
 	memData, _ := nd["memory"].(map[string]any)
 	total := getFloat(memData, "total", 1)
@@ -294,16 +271,16 @@ func collectProxmox(ctx context.Context) map[string]any {
 	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages)). Without
 	// every backup storage read, each VM whose backups sit on a missing one would go out without
 	// last_backup_ts, which the server reads as "No backup" (critical): an outage instead.
-	backupIndex, code, text := buildBackupIndex(ctx, nodeName)
+	backupIndex, check, code, text := buildBackupIndex(ctx, nodeName, saved, now)
 	if code != "" {
-		return proxmoxUnavailable(code, text)
+		return proxmoxUnavailable(code, text), saved
 	}
 
 	// VMs + LXC containers. A VM list that could not be read is an outage, not an empty list: the
 	// server reads a block without VMs as "no VMs" (ok).
 	var vms []map[string]any
 	if code, text = pveshGet(ctx, &vms, "/cluster/resources", "--type", "vm"); code != "" {
-		return proxmoxUnavailable(code, text)
+		return proxmoxUnavailable(code, text), saved
 	}
 	vmList := make([]map[string]any, 0, len(vms))
 	for _, vm := range vms {
@@ -323,7 +300,7 @@ func collectProxmox(ctx context.Context) map[string]any {
 			"last_backup_ts": lastBackup,
 		})
 	}
-	return map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}
+	return map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}, check
 }
 
 // proxmoxUnavailable is the block for an installed pvesh whose node could not be read. code is what
@@ -341,36 +318,54 @@ func proxmoxUnavailable(code, text string) map[string]any {
 	}
 }
 
-// buildBackupIndex fetches all backups of the local node's backup storages and builds a lookup map
-// vmid -> newest ctime timestamp. Only O(Storages) API calls instead of O(VMs × Storages).
-// nodeName is the resolved local node (not the literal "localhost", on which
-// pvesh's implicit mapping is undocumented and could silently break).
-// The storages come from /nodes/<node>/storage, which with --content backup lists only the enabled
-// backup storages of this node (/storage also lists disabled and other nodes' ones, whose content
-// call fails here). An incomplete index returns nil with the outage code and its text for
-// proxmoxUnavailable, a complete one code "": the list or a content call could not be read
-// (pveshGet), or a backup storage is not active (backup_index_incomplete).
-func buildBackupIndex(ctx context.Context, nodeName string) (index map[int]int64, code, text string) {
-	index = make(map[int]int64)
+// proxmoxBackupsEvery is how long a backup index read from the storages' content stays the index.
+// Listing a storage's content activates the storage (pve-storage mounts a missing NFS/CIFS share and
+// lists a PBS datastore over the network), so it runs at most this often, not in every report.
+const proxmoxBackupsEvery = 30 * time.Minute
 
-	storagesPath := "/nodes/" + nodeName + "/storage"
-	var storages []map[string]any
-	if code, text = pveshGet(ctx, &storages, storagesPath, "--content", "backup"); code != "" {
-		return nil, code, text
+// buildBackupIndex returns the lookup map vmid -> newest backup ctime over the local node's backup
+// storages, and the check to save. nodeName is the resolved local node (not the literal "localhost",
+// on which pvesh's implicit mapping is undocumented and could silently break).
+// The storages come from /cluster/resources --type storage, the status pvestatd keeps, which
+// activates nothing (/nodes/<node>/storage activates every storage it lists); only those of this node
+// whose content allows backups count. Their content is read with one call per storage, O(Storages)
+// instead of O(VMs × Storages), and only when saved is not fresh (backupIndexCheck.fresh); else the
+// saved index is the index. An incomplete index returns nil with the outage code and its text for
+// proxmoxUnavailable, a complete one code "": a call could not be read (pveshGet), or a backup
+// storage is not available (backup_index_incomplete).
+func buildBackupIndex(ctx context.Context, nodeName string, saved *backupIndexCheck, now time.Time) (
+	index map[int]int64, check *backupIndexCheck, code, text string) {
+	var resources []map[string]any
+	if code, text = pveshGet(ctx, &resources, "/cluster/resources", "--type", "storage"); code != "" {
+		return nil, nil, code, text
+	}
+	var storages []string
+	for _, res := range resources {
+		node, _ := res["node"].(string)
+		content, _ := res["content"].(string)
+		if node != nodeName || !slices.Contains(strings.Split(content, ","), "backup") {
+			continue
+		}
+		sid, _ := res["storage"].(string)
+		// An unavailable storage gets no content call, which would only fail with "storage ... is not
+		// online" or hang on its share.
+		if status, _ := res["status"].(string); status != "available" {
+			return nil, nil, "backup_index_incomplete", "backup storage " + sid + " not active"
+		}
+		storages = append(storages, sid)
+	}
+	slices.Sort(storages)
+	if saved.fresh(nodeName, storages, now) {
+		return saved.Index, saved, "", ""
 	}
 
-	for _, storage := range storages {
-		sid, _ := storage["storage"].(string)
-		// The API schema calls active a boolean, pve-storage sets it to 0 or 1: both readings count.
-		// An inactive storage gets no content call, which would only fail with "storage ... is not online".
-		if active, _ := storage["active"].(bool); !active && getFloat(storage, "active", 0) == 0 {
-			return nil, "backup_index_incomplete", "backup storage " + sid + " not active"
-		}
-
+	index = make(map[int]int64)
+	for _, sid := range storages {
 		// Fetch all backups of this storage at once (without the --vmid filter)
 		var items []map[string]any
-		if code, text = pveshGet(ctx, &items, storagesPath+"/"+sid+"/content", "--content", "backup"); code != "" {
-			return nil, code, text
+		path := "/nodes/" + nodeName + "/storage/" + sid + "/content"
+		if code, text = pveshGet(ctx, &items, path, "--content", "backup"); code != "" {
+			return nil, nil, code, text
 		}
 		for _, item := range items {
 			vmid := int(getFloat(item, "vmid", 0))
@@ -383,7 +378,19 @@ func buildBackupIndex(ctx context.Context, nodeName string) (index map[int]int64
 			}
 		}
 	}
-	return index, "", ""
+	return index, &backupIndexCheck{CheckedUnix: now.Unix(), Node: nodeName, Storages: storages, Index: index}, "", ""
+}
+
+// fresh reports whether check is the index to use for the backup storages of node now: read less than
+// proxmoxBackupsEvery ago, for the same node and the same storages, so a storage that was added or
+// came back is read at once. A check from the future (the clock was set back) is due, as in
+// securityUpdates, and so is one without an index (a state saved before, or a corrupt one).
+func (check *backupIndexCheck) fresh(node string, storages []string, now time.Time) bool {
+	if check == nil || check.Index == nil || check.Node != node || !slices.Equal(check.Storages, storages) {
+		return false
+	}
+	age := now.Sub(time.Unix(check.CheckedUnix, 0))
+	return age >= 0 && age < proxmoxBackupsEvery
 }
 
 // zpoolCLI indirects collectZFS's zpool lookup and calls so tests can drive every path without zpool
