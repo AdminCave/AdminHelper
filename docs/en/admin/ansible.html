@@ -67,18 +67,37 @@ DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)</code></pre
           <p>On run, the desktop itself fetches the playbook's file name and YAML content fresh from the signed-in server (<code>/{id}</code> and <code>/{id}/content</code>), writes inventory and playbook into a temporary directory of their own per run and starts the run; from the UI it only gets the playbook id and the selected targets. In a session tab the desktop deletes this directory after the run ends, on every platform. In a native terminal on Linux the terminal deletes this directory with the playbook and the inventory as soon as <code>ansible-playbook</code> ends, whatever the result, and also when the terminal is closed during the run. If the start (no <code>ansible-playbook</code>, no terminal) or a step before it fails, the client deletes the directory at once, a half-written file with it. In a native terminal on Windows it stays in the temp directory after a started run. The server inventory and playbooks are sourced directly from the AdminHelper server of the workspace — nothing is maintained locally.</p>
 
           <h2>Inventory Generation</h2>
-          <p>The desktop client automatically builds an <strong>INI-format</strong> inventory file from the selected servers in the run's temporary directory. All selected hosts go under <code>[all]</code>; in addition, one group per server tag is created (sorted alphabetically) listing the matching hosts.</p>
-          <div class="code-header"><span>INI</span></div>
-<pre><code>[all]
-web01.example.com
-db01.example.com
+          <p>The desktop client automatically builds a <strong>JSON-format</strong> inventory file (<code>inventory.json</code>, read by the yaml plugin that Ansible enables by default) from the selected servers in the run's temporary directory. All selected hosts go under <code>all.hosts</code>; in addition, one group per server tag is created under <code>all.children</code> listing the matching hosts. A tag <code>all</code> becomes no group of its own, since every host already belongs to <code>all</code>.</p>
+          <p>Each host keeps its <code>hostname</code> field as its name, so playbooks, <code>host_vars</code> and output see the same names as before. If the server has an SSH connection, the inventory sends Ansible where <em>Connect</em> opens that connection: <code>ansible_host</code> and <code>ansible_port</code> (after tunnel resolution; port 22 is left out, as with Connect), <code>ansible_user</code> and <code>ansible_ssh_private_key_file</code> if set, and in <code>ansible_ssh_common_args</code> the connection's other switches (jump host as <code>-o ProxyJump=…</code>, auth method). Forwards and agent forwarding are not taken along.</p>
+          <div class="code-header"><span>JSON</span></div>
+<pre><code>{
+  "all": {
+    "hosts": {
+      "web01.example.com": {
+        "ansible_host": "127.0.0.1",
+        "ansible_port": 23001,
+        "ansible_user": "ops",
+        "ansible_ssh_private_key_file": "/home/ops/.ssh/id_ed25519",
+        "ansible_ssh_common_args": "'-o' 'ProxyJump=jump@192.0.2.10'"
+      },
+      "db01.example.com": {}
+    },
+    "children": {
+      "database": { "hosts": { "db01.example.com": {} } },
+      "web": { "hosts": { "web01.example.com": {} } }
+    }
+  }
+}</code></pre>
+          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server entry (desktop client, <em>Infrastructure</em>) that drive selection in tag mode.</p>
 
-[database]
-db01.example.com
-
-[web]
-web01.example.com</code></pre>
-          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server entry (desktop client, <em>Infrastructure</em>) that drive selection in tag mode. Hostnames are the servers' <code>hostname</code> fields.</p>
+          <h3>Which SSH connection Ansible takes</h3>
+          <ul>
+            <li><strong>Exactly one</strong> SSH connection on the server: that one.</li>
+            <li><strong>None</strong>: the hostname as before; in the targets the server carries the mark <em>Hostname</em>.</li>
+            <li><strong>Several</strong>: a choice appears below the server, preset to the first connection by name.</li>
+          </ul>
+          <p>The mark and the choice show in the <em>By servers</em> mode. In the <em>By tags</em> mode the same rule applies per server without being shown: the choice made there, otherwise the first connection by name, without a connection the hostname.</p>
+          <p>Before the start the client resolves each chosen connection like <em>Connect</em>, through an FRP tunnel too. If the tunnel visitor of an STCP connection is not running, the run does not start and the message names the server; there is no fallback to the hostname. The desktop checks each connection as when opening an SSH session and also refuses a local port that belongs to the tunnel of another workspace, as well as users or key paths containing <code>{</code> or <code>}</code> (Ansible renders inventory values as Jinja templates).</p>
 
           <h2>Requirements</h2>
           <ul>
@@ -89,7 +108,7 @@ web01.example.com</code></pre>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">SSH reachability</div><p>Execution runs on the desktop machine against the hostnames from the inventory. SSH access, keys and optionally <code>ansible_user</code> are handled as usual via your Ansible/SSH configuration — AdminHelper only generates the inventory and playbook file.</p></div>
+            <div><div class="callout-title">SSH reachability</div><p>Execution runs on the desktop machine against the target of each server's SSH connection, as <em>Connect</em> opens it. For servers without an SSH connection (mark <em>Hostname</em>) you handle access, keys and optionally <code>ansible_user</code> as usual via your Ansible/SSH configuration. If one of the connections uses password login, the run starts with <code>--ask-pass</code>: Ansible asks for the password once in the terminal, as <em>Connect</em> does, and uses it for the servers of the run with password login; ssh does not offer it to the others. Depending on the Ansible version this needs <code>sshpass</code> on the desktop machine.</p></div>
           </div>
 
           <div class="page-nav">
