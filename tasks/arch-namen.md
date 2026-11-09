@@ -123,3 +123,12 @@ Review: approve (.ah-out/review/arch-namen/T13.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T12
 Abhängt von: T8
+
+### T14 — Desktop-UI: Bridge-Typ ResolvedConnection.tunnelId (Folge des Basis-Merges)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @72acd11f9 2026-11-09T17:05:53+01:00
+Review: approve (.ah-out/review/arch-namen/T14.verdict.json)
+Änderung: Der mit origin/main gekommene Paritätstest (`types.parity.test.ts`, serde ↔ bridge/types.ts) kennt das Feld `tunnelId`, das T13 `ResolvedConnection` gegeben hat, noch nicht; der Bridge-Typ beschreibt es (optional, die UI liest es nicht).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/types.parity.test.ts
+Doku: keine (Typbeschreibung, kein Verhalten)
+Abhängt von: T13
