@@ -59,8 +59,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_contain
 Doku: → T6
 Abhängt von: T1
 
-### T3 — Agent: Generation vor jeder Erneuerungsentscheidung  [ ]
+### T3 — Agent: Generation vor jeder Erneuerungsentscheidung  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/renew_test.go, apps/agent/internal/enroll/trust.go (neu, SPDX), apps/agent/internal/enroll/trust_test.go (neu, SPDX), apps/agent/cmd/adminhelper-agent/run.go, apps/agent/cmd/adminhelper-agent/run_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @84d79b393 2026-11-09T13:48:55+01:00
+Review: approve (.ah-out/review/arch-ca-trust-generation/T3.verdict.json)
 Änderung:
 - `trust.go`: Hash eines PEM-Bündels wie in T1, und `GET <base>/ca/trust` über den mTLS-Client
   (`httpclient.NewMTLS`). 404 heißt „Server kennt die Route nicht“, kein Fehler.
@@ -153,3 +155,11 @@ Abhängt von: T1, T2, T3, T4, T5
   gerechnet, statt einmal beim Start (Plan T1): ein Hash über zwei bis drei Zertifikate kostet nichts und kann nicht
   veralten. Die Helfer `_presented` (Issuer) und `_presented_cert` (Route) teilen `/renew` und `/trust`; `/renew`
   ruft den Header-Helfer im Rumpf auf, damit ungültiger Body weiter 422 vor 401 ergibt.
+- 2026-11-09 Session (T3): Ein Server ohne Route antwortet hinter einem Gateway ohne `location = /ca/trust` nicht
+  404, sondern mit dem SPA-Fallback des Servers (200, `text/html`); 404 kommt nur ohne Frontend-Build. Der Agent
+  wertet deshalb 404 und jede 200 ohne `application/json` als „Server kennt die Route nicht“ (50-%-Regel bleibt),
+  jede andere Antwort (429, 403, 5xx, 3xx, kaputtes JSON, kein 64-stelliges Hex) als Fehler mit Warnung. Die Spec
+  nannte nur 404; Desktop (T4) übernimmt dieselbe Regel, die Doku (T6) nennt sie.
+- 2026-11-09 Session (T3): `MaybeRenew` gibt statt `bool` den Grund zurück (`NoRenewal`, `HalfLife`, `NewTrust`);
+  der Lauf loggt die Erneuerung englisch mit Grund („mTLS client certificate renewed: …“) statt des alten deutschen
+  Satzes. Kein Leser des alten Satzes in Skripten oder Doku (grep).
