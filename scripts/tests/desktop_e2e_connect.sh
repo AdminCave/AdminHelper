@@ -66,26 +66,23 @@ ssh_clients() {
         | sort -u | grep -c .
 }
 
-# ssh in the AdminHelper terminal checks the user's own known_hosts (ssh takes the
-# home of the passwd entry, not $HOME), and the target makes a new host key on each
-# start: a key an earlier run left for its address ends the sign-in with "REMOTE HOST
-# IDENTIFICATION HAS CHANGED". So the run removes that entry before the specs and its
-# own after them; ssh-keygen -R keeps the file before as known_hosts.old. It ships
-# with ssh (openssh-client), which the journey needs anyway.
+# ssh would check the user's own known_hosts (ssh takes the home of the passwd entry,
+# not $HOME), and the target makes a new host key on each start: a key an earlier run
+# left for its address would end the sign-in with "REMOTE HOST IDENTIFICATION HAS
+# CHANGED", and removing it would drop a key the user pinned on a dev box. So the ssh
+# shim below gives every ssh of the run a known_hosts of its own, empty at the start;
+# the user's entry for the address is compared before and after.
 E2E_SSH_HOST="[127.0.0.1]:2222"
-forget_e2e_host_key() {
-    ssh-keygen -F "$E2E_SSH_HOST" >/dev/null 2>&1 || return 0
-    ssh-keygen -R "$E2E_SSH_HOST" >/dev/null 2>&1
-}
+user_host_key() { ssh-keygen -F "$E2E_SSH_HOST" 2>/dev/null || true; }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker
+e2e_require ssh ssh-keygen node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
 
 e2e_init false
 # Chain target cleanup in front of the lib's compose teardown (don't replace it).
-trap 'cleanup_targets; forget_e2e_host_key; e2e_teardown' EXIT
+trap 'cleanup_targets; e2e_teardown' EXIT
 e2e_up gateway && ok "gateway live on :$E2E_HTTPS_PORT" || { bad "gateway never came up"; exit 1; }
 
 TOKEN=$(e2e_admin_token)
@@ -142,6 +139,14 @@ curl -s -m 5 "$1" >/dev/null 2>&1 || true
 SHIM
 chmod +x "$SHIM_DIR/xdg-open"
 
+# ssh shim: the terminal, its SFTP channel and the OS terminal find "ssh" via PATH;
+# the option comes first, and ssh keeps the first value it reads.
+REAL_SSH=$(command -v ssh) || { bad "ssh not found"; exit 1; }
+E2E_KNOWN_HOSTS="$E2E_WORK/known_hosts"; : > "$E2E_KNOWN_HOSTS"
+printf '#!/bin/bash\nexec %q -o %q "$@"\n' "$REAL_SSH" "UserKnownHostsFile=$E2E_KNOWN_HOSTS" > "$SHIM_DIR/ssh"
+chmod +x "$SHIM_DIR/ssh"
+USER_HOST_KEY_BEFORE=$(user_host_key)
+
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
@@ -162,7 +167,6 @@ AH_RDP_MARKS="$E2E_WORK/rdp-marks"; mkdir -p "$AH_RDP_MARKS"; export AH_RDP_MARK
 ) &
 TARGETS_WATCH=$!
 
-forget_e2e_host_key || { bad "remove the stale host key of $E2E_SSH_HOST"; exit 1; }
 echo "[connect] driving the connect specs under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 export PATH="$SHIM_DIR:$PATH"  # the app inherits this -> open::that finds the xdg-open shim
@@ -174,6 +178,17 @@ dbus-run-session -- bash -c '
         --spec test/specs/rdp-connect.live.js \
         --spec test/specs/rdp-embedded.live.js
 ' && ok "connect GUI specs ran" || bad "connect GUI specs failed"
+
+if ssh-keygen -F "$E2E_SSH_HOST" -f "$E2E_KNOWN_HOSTS" >/dev/null 2>&1; then
+    ok "the run's own known_hosts holds the target's key"
+else
+    bad "the run's own known_hosts holds no key for $E2E_SSH_HOST: ssh went past the shim"
+fi
+if [ "$(user_host_key)" = "$USER_HOST_KEY_BEFORE" ]; then
+    ok "the user's known_hosts entry for $E2E_SSH_HOST is unchanged"
+else
+    bad "the run changed the user's known_hosts entry for $E2E_SSH_HOST"
+fi
 
 # Verify from the target side: sshd saw the three clients of the SSH spec. The
 # AdminHelper terminal signed in twice (start and reconnect: two "Accepted" ends);
