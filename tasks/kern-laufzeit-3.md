@@ -15,8 +15,10 @@ Negativ-Probe aus dem Default-Netz und `MODULE LIST`; Compose-Tests für Netz, M
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_hardening.py
 Doku: → T3
 
-### T2 — R-1125: uvicorn wertet keine Proxy-Header aus  [ ]
+### T2 — R-1125: uvicorn wertet keine Proxy-Header aus  [x]
 Komponente: server · Dateien: apps/server/docker-entrypoint.sh, apps/server/app/core/identity.py, apps/server/tests/test_server_entrypoint.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e7bee3e6f 2026-11-10T06:27:56+01:00
+Review: approve (.ah-out/review/kern-laufzeit-3/T2.verdict.json)
 Änderung: `--no-proxy-headers` im uvicorn-Aufruf; Docstring von `_peer_is_gateway` nachgezogen; neuer Test (SPDX)
 prüft die Option im `exec uvicorn`-Aufruf und dass kein `--forwarded-allow-ips` daneben steht.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_server_entrypoint.py
