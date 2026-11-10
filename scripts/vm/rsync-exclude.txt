@@ -34,6 +34,9 @@ backups
 # sync's --delete is refused and rsync ends with code 23. Anchored: a bare
 # `data` would match every path segment of that name, tracked ones included.
 /data/
+# The same for ./repo, which compose binds for the :8445 repo plane: a stack
+# start creates it as root when it is missing (gitignored).
+/repo/
 # Per-host, gitignored, and holding the hypervisor token: a throwaway VM has no
 # business carrying the credential that can clone and destroy it, and `bake`
 # would write it into the template. vm.py reads this file on the CLIENT.
