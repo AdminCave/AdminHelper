@@ -267,7 +267,8 @@ fn reporter(
 /// it with the session's `tunnels` and the `bindings` of its frpc and checks it as
 /// `connection::open_connection_stored` checks a start with the stored password; the password
 /// is `typed` when the user typed one for this start, else it comes from the keyring, the
-/// certificate pin from `pins`. Both may wait: a blocking thread only.
+/// certificate pin from `pins`. Both may wait: a blocking thread only. Beside the target it
+/// returns the resolution it checked, which the session info shows (R-1198).
 fn prepare(
     base: &Path,
     listed: &Connection,
@@ -276,7 +277,7 @@ fn prepare(
     bindings: &[VisitorBinding],
     pins: &dyn PinStore,
     typed: Option<Zeroizing<String>>,
-) -> Result<Target, AppError> {
+) -> Result<(Target, ResolvedConnection), AppError> {
     if listed.kind != ConnectionKind::Rdp {
         return Err(AppError::Validation(
             "an embedded RDP session needs an RDP connection".to_string(),
@@ -330,7 +331,7 @@ fn prepare(
             AppError::Validation("no password is stored for this RDP connection".to_string())
         })?),
     };
-    Ok(Target {
+    let target = Target {
         destination,
         // `rdp_session_start` sets the size the webview asks for.
         display: Display::default(),
@@ -346,7 +347,8 @@ fn prepare(
         // `rdp_session_start` sets it, after the settings and the download.
         #[cfg(target_os = "linux")]
         h264: None,
-    })
+    };
+    Ok((target, resolved))
 }
 
 /// The folders a shared drive must not reach.
@@ -473,7 +475,7 @@ pub(crate) async fn rdp_session_start(
     let started = run_with_deadline(OPEN_CONNECTION_TIMEOUT, move |deadline| {
         let base = storage::app_data_dir(&app)?;
         let pins = KeyringPinStore::production();
-        let mut target = prepare(
+        let (mut target, resolved) = prepare(
             &base,
             &connection,
             &tunnels,
@@ -493,11 +495,7 @@ pub(crate) async fn rdp_session_start(
             &connection,
             storage::load_settings(&app)?.rdp_performance_profile,
         );
-        let info = session_info(
-            &connection,
-            &resolve_connection(&connection, &tunnels, &bindings),
-            &target,
-        );
+        let info = session_info(&connection, &resolved, &target);
         let kept = Kept {
             home: app.path().home_dir().ok(),
             private: [app.path().app_data_dir(), app.path().config_dir()]
@@ -741,7 +739,7 @@ mod tests {
         Pins(Some(HashMap::new()))
     }
 
-    fn refusal(result: Result<Target, AppError>) -> String {
+    fn refusal(result: Result<(Target, ResolvedConnection), AppError>) -> String {
         match result {
             Ok(_) => panic!("the start was not refused"),
             Err(error) => error.to_string(),
@@ -844,7 +842,9 @@ mod tests {
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
         let identity = "rdp/w-0000000a/192.0.2.10:3390".to_string();
         let pins = Pins(Some(HashMap::from([(identity.clone(), "ab".repeat(32))])));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None)
+            .unwrap()
+            .0;
         assert_eq!(target.destination.to_string(), "192.0.2.10:3390");
         assert_eq!(target.username, "e2e");
         assert_eq!(target.domain.as_deref(), Some("LAB"));
@@ -866,13 +866,17 @@ mod tests {
         let _ws = entered("w-0000000a");
         let listed = rdp("192.0.2.10", None);
         let typed = Some(Zeroizing::new("typed".to_string()));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed)
+            .unwrap()
+            .0;
         assert_eq!(target.password.as_str(), "typed");
         assert_eq!(load_password_keyring(&scratch.0, &listed).unwrap(), None);
 
         save_password_keyring(&scratch.0, &listed, "stored").unwrap();
         let typed = Some(Zeroizing::new("typed".to_string()));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), typed)
+            .unwrap()
+            .0;
         assert_eq!(target.password.as_str(), "typed");
         assert_eq!(
             load_password_keyring(&scratch.0, &listed)
@@ -958,6 +962,34 @@ mod tests {
     }
 
     #[test]
+    fn session_info_shows_the_tunnel_prepare_resolved() {
+        let scratch = Scratch::new("resolved");
+        let _keyring = crate::keyring_store::memory();
+        let _ws = entered("w-0000000a");
+        let listed = rdp("192.0.2.10", None);
+        save_password_keyring(&scratch.0, &listed, "secret").unwrap();
+        let (target, resolved) = prepare(
+            &scratch.0,
+            &listed,
+            &[mapping("c1")],
+            std::slice::from_ref(&listed),
+            &[],
+            &no_pins(),
+            None,
+        )
+        .unwrap();
+        let info = session_info(&listed, &resolved, &target);
+        assert!(info.via_tunnel);
+        assert_eq!(info.tunnel.as_deref(), Some("lab-rdp"));
+
+        let (target, resolved) =
+            prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
+        let info = session_info(&listed, &resolved, &target);
+        assert!(!info.via_tunnel);
+        assert_eq!(info.tunnel, None);
+    }
+
+    #[test]
     fn session_info_names_the_stored_target_the_tunnel_and_the_pin() {
         let scratch = Scratch::new("info");
         let _keyring = crate::keyring_store::memory();
@@ -966,7 +998,9 @@ mod tests {
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
         let identity = "rdp/w-0000000a/192.0.2.10:3390".to_string();
         let pins = Pins(Some(HashMap::from([(identity, "ab".repeat(32))])));
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &pins, None)
+            .unwrap()
+            .0;
         let tunneled = ResolvedConnection {
             connection: rdp("127.0.0.1", Some(6000)),
             via_tunnel: true,
@@ -1118,7 +1152,9 @@ mod tests {
         let _ws = entered("w-0000000a");
         let mut listed = rdp("192.0.2.10", None);
         save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None)
+            .unwrap()
+            .0;
         assert_eq!(target.audio, None);
         listed.options = Some(ConnectionOptions {
             ssh: None,
@@ -1127,7 +1163,9 @@ mod tests {
                 ..Default::default()
             }),
         });
-        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
+        let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None)
+            .unwrap()
+            .0;
         assert_eq!(target.audio, Some(RdpAudio::Off));
     }
 
@@ -1191,7 +1229,9 @@ mod tests {
                 ..Default::default()
             });
             save_password_keyring(&scratch.0, &listed, "secret").unwrap();
-            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None).unwrap();
+            let target = prepare(&scratch.0, &listed, &[], &[], &[], &no_pins(), None)
+                .unwrap()
+                .0;
             assert_eq!(target.credssp, credssp, "nla {nla:?}");
         }
         let plain = rdp("192.0.2.10", None);
@@ -1199,6 +1239,7 @@ mod tests {
         assert!(
             prepare(&scratch.0, &plain, &[], &[], &[], &no_pins(), None)
                 .unwrap()
+                .0
                 .credssp
         );
     }

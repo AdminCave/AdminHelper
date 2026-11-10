@@ -5,8 +5,10 @@ Heavy: linux-full — der Live-Test xrdp_live_session läuft im CI-Job rdp-embed
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1198: session_info nutzt die Auflösung aus prepare  [ ]
+### T1 — R-1198: session_info nutzt die Auflösung aus prepare  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @441536207 2026-11-10T19:05:43+01:00
+Review: am Ende (Branch-Review)
 Änderung: `prepare` gibt neben dem `Target` die `ResolvedConnection` zurück; `rdp_session_start` reicht genau sie an `session_info`, der zweite Aufruf von `resolve_connection` entfällt. Die Tests von `prepare` folgen der neuen Rückgabe; ein Test prüft, dass die Auflösung aus `prepare` den Tunnel nennt, den `session_info` zeigt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::tests
 Doku: keine (intern)
