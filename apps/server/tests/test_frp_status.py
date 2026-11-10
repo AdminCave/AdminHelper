@@ -95,7 +95,7 @@ def test_status_body_equals_the_untyped_dict(
     )
     db_session.commit()
     proxy = {
-        "name": "admin.st-ssh",
+        "name": "srv-st.tun-st",
         "status": "online",
         "curConns": 2,
         "todayTrafficIn": 1024,
@@ -114,7 +114,7 @@ def test_status_body_equals_the_untyped_dict(
     assert resp.json() == {
         "proxies": [
             {
-                "name": "admin.st-ssh",
+                "name": "srv-st.tun-st",
                 "type": "stcp",
                 "status": "online",
                 "curConns": 2,
@@ -157,7 +157,7 @@ def test_status_masks_the_tunnel_secret(
     db_session.commit()
     httpx_mock.add_response(
         url=f"{_DASHBOARD}/api/proxy/stcp",
-        json={"proxies": [{"name": "admin.sec-ssh", "status": "online"}]},
+        json={"proxies": [{"name": "srv-sec.tun-sec", "status": "online"}]},
     )
     for proxy_type in ("https", "tcp", "udp"):
         httpx_mock.add_response(url=f"{_DASHBOARD}/api/proxy/{proxy_type}", json={"proxies": []})
@@ -168,6 +168,53 @@ def test_status_masks_the_tunnel_secret(
     tunnel = resp.json()["proxies"][0]["tunnel"]
     assert tunnel["id"] == "tun-sec"
     assert tunnel["secretKey"] is None
+
+
+def test_status_finds_the_tunnel_of_each_proxy_the_frpc_config_registers_with_dots_in_names(
+    test_client, admin_user, db_session, httpx_mock, monkeypatch
+):
+    """R-1211: frps lists a proxy as "{user}.{name}" of the agent's frpc.toml. A server or tunnel
+    name may hold dots (an FQDN); every proxy the generated config registers finds its tunnel."""
+    import tomllib
+
+    import app.modules.frp.status_router as sr
+    from app.modules.frp.models import FrpTunnel
+    from app.modules.servers.models import Server
+
+    monkeypatch.setattr(sr, "FRPS_DASHBOARD_URL", _DASHBOARD)
+    _config(db_session, dashboard_port=7500)
+    db_session.add(
+        Server(id="srv-fqdn", name="web01.kunde.example", hostname="web01.kunde.example")
+    )
+    db_session.add(
+        FrpTunnel(
+            id="tun-fqdn",
+            server_id="srv-fqdn",
+            frp_config_id="c1",
+            name="web01.kunde.example-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+        )
+    )
+    db_session.commit()
+    headers = _login(test_client)
+    frpc = test_client.get("/api/frp/generate/frpc-toml/srv-fqdn", headers=headers)
+    assert frpc.status_code == 200, frpc.text
+    parsed = tomllib.loads(frpc.text)
+    registered = [f"{parsed['user']}.{proxy['name']}" for proxy in parsed["proxies"]]
+    httpx_mock.add_response(
+        url=f"{_DASHBOARD}/api/proxy/stcp",
+        json={"proxies": [{"name": name, "status": "online"} for name in registered]},
+    )
+    for proxy_type in ("https", "tcp", "udp"):
+        httpx_mock.add_response(url=f"{_DASHBOARD}/api/proxy/{proxy_type}", json={"proxies": []})
+
+    resp = test_client.get("/api/frp/status", headers=headers)
+
+    assert resp.status_code == 200, resp.text
+    assert [(p["tunnel"] or {}).get("id") for p in resp.json()["proxies"]] == ["tun-fqdn"]
 
 
 def test_status_unreachable_body_equals_the_untyped_dict(
@@ -235,8 +282,8 @@ def _list(*proxies: dict) -> bytes:
 
 # A proxy as frps 0.72.0 lists it (ProxyStatsInfo), conf included, which the view leaves out.
 _PROXY = {
-    "name": "srv1.sup-ssh",
-    "conf": {"name": "srv1.sup-ssh", "type": "stcp"},
+    "name": "srv-sup-ssh.tun-sup-ssh",
+    "conf": {"name": "srv-sup-ssh.tun-sup-ssh", "type": "stcp"},
     "clientVersion": "0.72.0",
     "todayTrafficIn": 1024,
     "todayTrafficOut": 2048,
@@ -267,7 +314,7 @@ def test_status_without_dashboard_url_reads_the_supervisor_files(
     assert resp.json() == {
         "proxies": [
             {
-                "name": "srv1.sup-ssh",
+                "name": "srv-sup-ssh.tun-sup-ssh",
                 "type": "stcp",
                 "status": "online",
                 "curConns": 2,
@@ -417,7 +464,7 @@ def test_status_takes_a_list_just_inside_the_limits(
 
     assert resp.status_code == 200, resp.text
     assert "error" not in resp.json()
-    assert [p["name"] for p in resp.json()["proxies"]] == ["srv1.sup-ssh"]
+    assert [p["name"] for p in resp.json()["proxies"]] == ["srv-sup-ssh.tun-sup-ssh"]
 
 
 def test_status_with_dashboard_url_asks_the_dashboard_not_the_files(

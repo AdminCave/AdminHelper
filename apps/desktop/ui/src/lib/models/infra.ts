@@ -19,7 +19,8 @@ export function emptyServerInput(): ServerInput {
 export function serverToInput(s: Server): ServerInput {
   return {
     name: s.name,
-    hostname: s.hostname,
+    // Empty while the address follows the name (R-1210); a server from before sends no flag.
+    hostname: s.customHostname === false ? '' : s.hostname,
     os_type: s.osType ?? null,
     tags: [...(s.tags ?? [])],
     notes: s.notes ?? '',
@@ -30,7 +31,9 @@ export function normalizeServerInput(input: ServerInput): ServerInput {
   const os = (input.os_type ?? '').trim();
   return {
     name: input.name.trim(),
-    hostname: input.hostname.trim(),
+    // No own address: the name is the address. A server from R-1210 on stores that as
+    // "follows the name", one from before as the hostname it requires.
+    hostname: input.hostname.trim() || input.name.trim(),
     os_type: os || null,
     tags: [...new Set((input.tags ?? []).map((t) => t.trim()).filter((t) => t.length > 0))],
     notes: (input.notes ?? '').trim(),
@@ -39,9 +42,6 @@ export function normalizeServerInput(input: ServerInput): ServerInput {
 
 export function validateServerInput(input: ServerInput): ValidationResult {
   if (!input.name.trim()) return { ok: false, message: tNow('infra.validation.nameRequired') };
-  if (!input.hostname.trim()) {
-    return { ok: false, message: tNow('infra.validation.hostnameRequired') };
-  }
   return { ok: true };
 }
 

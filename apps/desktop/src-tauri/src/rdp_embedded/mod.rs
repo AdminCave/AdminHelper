@@ -971,6 +971,7 @@ mod tests {
             connection: rdp("127.0.0.1", Some(6000)),
             via_tunnel: true,
             tunnel_name: Some("lab-rdp".to_string()),
+            tunnel_id: Some("t-lab".to_string()),
             tunnel_type: Some("stcp".to_string()),
         };
         let info = session_info(&listed, &tunneled, &target);
@@ -996,6 +997,7 @@ mod tests {
             connection: listed.clone(),
             via_tunnel: false,
             tunnel_name: None,
+            tunnel_id: None,
             tunnel_type: None,
         };
         let mut trusting = target;

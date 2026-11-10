@@ -134,7 +134,8 @@ export async function saveServer(
     await loadServers();
     return true;
   } catch (err) {
-    reportError(errMsg(err));
+    // Every connection and tunnel shows the server's name, so it is unique (R-1210).
+    reportError(errStatus(err) === 409 ? tNow('infra.error.nameTaken') : errMsg(err));
     return false;
   }
 }

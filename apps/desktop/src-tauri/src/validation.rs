@@ -314,7 +314,10 @@ pub fn validate_proxy_path(server_url: &str, path: &str, stored: &str) -> Result
 pub fn sanitize_window_title(name: &str) -> String {
     let filtered: String = name
         .chars()
-        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | ':' | '(' | ')'))
+        // `·` separates server and kind in the display names the server derives (R-1210).
+        .filter(|c| {
+            c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | ':' | '(' | ')' | '·')
+        })
         .take(64)
         .collect();
     filtered.trim().to_string()
@@ -800,6 +803,10 @@ mod tests {
         assert_eq!(sanitize_window_title(&"x".repeat(100)).chars().count(), 64);
         // Trimmed.
         assert_eq!(sanitize_window_title("  hi  "), "hi");
+        assert_eq!(
+            sanitize_window_title("web01.example.org · SSH (FRP)"),
+            "web01.example.org · SSH (FRP)"
+        );
     }
 
     #[test]
