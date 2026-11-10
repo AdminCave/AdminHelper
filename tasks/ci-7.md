@@ -1,5 +1,5 @@
 # Downloads der CI wiederholen, xrdp-Suite je PR — Task-Ledger
-Status: aktiv · Branch: feature/ci-7 · Review: am Ende
+Status: bereit · Branch: feature/ci-7 · Review: am Ende
 Spec: docs/features/ci-7.md (Roadmap R-1130, R-1160, R-1194, R-1142)
 Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbst (die geänderten Jobs laufen im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,8 +53,9 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.
 Doku: keine (Test)
 Abhängt von: T4
 
-### T6 — PR-CI: Cache der Tauri-Systempakete  [ ]
+### T6 — PR-CI: Cache der Tauri-Systempakete  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4be817439 2026-11-10T09:08:29+01:00
 Review: am Ende (Branch-Review)
 Beweis: PR #446 Lauf 42775105227, Job 129691660617: der Spiegel lieferte rund 11 MB je Versuch von 3 min, 63,9 MB nötig; die Versuche setzten fort (52,4 → 41,0 MB offen), alle drei endeten mit 124
 Änderung: Die drei Schritte „Tauri system dependencies“ laden die .deb-Archive nach `~/apt-archives` (`-o Dir::Cache::Archives`), das `actions/cache` von Lauf zu Lauf hält (ein Schlüssel für alle drei Jobs); nach der Installation gehören die Dateien dem Runner, damit der Cache sie sichern kann. Ein langsamer Spiegel kostet dann nur noch die geänderten Pakete.
