@@ -568,19 +568,33 @@ def test_the_playwright_install_step_gives_up_before_the_job():
 
 
 def test_the_playwright_job_installs_chromium_alone(tmp_path):
-    # npx as a stub that prints what it was asked to do.
-    stub = tmp_path / "bin" / "npx"
-    stub.parent.mkdir()
-    stub.write_text('#!/bin/sh\necho "$@"\n', encoding="utf-8")
-    stub.chmod(0o755)
+    # npx as a stub that prints what it was asked to do; sudo as one that logs its arguments
+    # and swallows the apt drop-in the step pipes into it.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "npx").write_text('#!/bin/sh\necho "$@"\n', encoding="utf-8")
+    sudo_log = tmp_path / "sudo.log"
+    (bin_dir / "sudo").write_text(f'#!/bin/sh\necho "$@" >> {sudo_log}\ncat\n', encoding="utf-8")
+    for stub in bin_dir.iterdir():
+        stub.chmod(0o755)
 
     step = _step("ci.yml", "frontend-e2e", _PLAYWRIGHT_STEP)
-    path = f"{stub.parent}:{os.environ['PATH']}"
+    path = f"{bin_dir}:{os.environ['PATH']}"
     install = _run_step(step, tmp_path, _ROOT / step["working-directory"], path)
     assert install.returncode == 0, install.stdout + install.stderr
-    # Without a browser it installs the system packages of every browser Playwright knows;
-    # the projects of apps/web/playwright.config.ts all run Desktop Chrome.
-    assert install.stdout.split() == ["playwright", "install", "--with-deps", "chromium"]
+    # Without a browser install-deps installs the system packages of every browser Playwright
+    # knows; the projects of apps/web/playwright.config.ts all run Desktop Chrome.
+    assert [line.split() for line in install.stdout.splitlines()] == [
+        ["playwright", "install-deps", "chromium"],
+        ["playwright", "install", "chromium"],
+    ]
+    assert sudo_log.read_text(encoding="utf-8").split() == [
+        "tee",
+        "/etc/apt/apt.conf.d/80-ci-retries",
+    ]
+    # install-deps runs dpkg, which the kill of retry.sh must never hit.
+    (deps,) = (line for line in step["run"].splitlines() if "install-deps" in line)
+    assert "retry.sh" not in deps, deps
 
 
 @pytest.mark.parametrize("job", ["ca-issuer", "python-lock-ca-issuer"])
