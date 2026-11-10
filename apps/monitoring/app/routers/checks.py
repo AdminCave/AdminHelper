@@ -132,6 +132,8 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
     # No measured values, only the status timeline; without the entry the fallback would
     # ask for monitor_check_duration_ms, which the push path does not write for it.
     "system_state": [],
+    # Likewise: the values of a probe stay in its details; only the status timeline is drawn.
+    "probe": [],
 }
 
 # Check types with dynamic metric names (regex query)
