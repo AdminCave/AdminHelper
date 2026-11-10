@@ -325,11 +325,17 @@ class MonitorCheckOut(BaseModel):
     overriddenFields: list[str]
     moduleId: str | None
     moduleInstance: str | None
+    moduleCheckKey: str | None
     silent: bool
     createdAt: str | None
     updatedAt: str | None
     # Only with a state row; the routes drop it unset (response_model_exclude_unset).
     state: MonitorStateOut | None = None
+
+
+class MonitorCheckStatusOut(MonitorCheckOut):
+    # alerter.muted_reasons: "silent check" | "maintenance window" | "host down" | None.
+    mutedReason: str | None
 
 
 class StatusSummaryOut(BaseModel):
@@ -339,6 +345,23 @@ class StatusSummaryOut(BaseModel):
     critical: int
     unknown: int
     pending: int
+    lastResultAt: str | None
+    minIntervalS: int | None
+
+
+class CollectorCostOut(BaseModel):
+    collector: str
+    durationMs: float | None
+    cpuMs: float | None
+    timeouts: float | None
+    factor: float | None
+    throttled: bool | None
+
+
+class ServerCostsOut(BaseModel):
+    serverId: str
+    window: str
+    collectors: list[CollectorCostOut]
 
 
 class CheckMetricsOut(BaseModel):

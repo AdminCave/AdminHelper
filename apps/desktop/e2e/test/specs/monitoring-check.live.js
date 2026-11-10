@@ -11,7 +11,9 @@
 // checks and ends the suggestion. The step removes the assignment again, which
 // leaves the server as the first step left it.
 // The last two steps (R-1103): the history of the server, whose agent_resources
-// check the first step made, and the comparison tab show the agent's push.
+// check the first step made, and the comparison tab show the agent's push. The
+// history is part of the System card of the server page (arch-monitoring-ui), which
+// the step opens.
 
 import {
   MODAL,
@@ -23,6 +25,7 @@ import {
   clickItemByName,
   waitForRow,
   texts,
+  textContentOf,
 } from "../lib/live.js";
 
 // The built-in linux-base (apps/monitoring/app/builtin_templates.py): its
@@ -37,6 +40,8 @@ const CHECK_NAMES = ".mon-row .mon-name";
 // desktop_e2e_monitoring.sh seeds it; its agent pushes once before the specs run.
 const SERVER_NAME = "e2e-server";
 const HISTORY = ".history-panel";
+// The System card's title, the same in every language of the app.
+const SYSTEM_TITLE = "System";
 const COMPARE = ".compare-view";
 // The period group is the last of the header (after the history tabs or the metrics).
 const PERIOD_BUTTONS = ".mon-segmented:last-of-type .mon-seg-btn";
@@ -63,6 +68,31 @@ async function switchPeriod(scope, index) {
   );
   await (await periodButton(scope, index)).click();
   await waitForChart(scope);
+}
+
+// A card whose checks are green or pending stays closed (concept §3.14), and the
+// admin's choice to open it holds only for the status it was made at. The check the
+// first step made is push-only: it stays pending until the agent reports again, which
+// it does not during this spec, so the card opened at pending stays open.
+async function openSystemCard() {
+  let toggle = null;
+  await browser.waitUntil(
+    async () => {
+      try {
+        for (const c of await $$(".mon-card")) {
+          if ((await textContentOf(await c.$(".mon-card-title"))) === SYSTEM_TITLE) {
+            toggle = await c.$(".mon-card-toggle");
+            return true;
+          }
+        }
+        return false;
+      } catch {
+        return false; // a card re-rendered under the handle
+      }
+    },
+    { timeout: 20000, timeoutMsg: "no System card on the server page" },
+  );
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
 }
 
 // The period buttons by position (1h, 24h, 7d, 30d); their labels are translated.
@@ -133,6 +163,7 @@ describe("Monitoring check via the GUI", () => {
     // The list view, which holds the dashboard: the first option of the view switch.
     await $('.mon-overview-toolbar [role="radio"]').click();
     await clickItemByName(".mon-srv-item", ".mon-srv-name", SERVER_NAME);
+    await openSystemCard();
 
     await waitForChart(HISTORY);
     expect(await (await periodButton(HISTORY, 1)).getAttribute("aria-pressed")).toBe("true");

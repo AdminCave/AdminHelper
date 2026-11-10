@@ -83,6 +83,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let pendingPaste = $state<string | null>(null);
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // A shell of the host: a playbook run has none, and the credential prompt (arch-monitoring-ui)
+  // takes no snippet and no broadcast (they would land in the secret) and has no SFTP.
+  let shell = $derived(!session.ansible && !session.credential);
   let target = $derived.by(() => {
     const c = session.connection;
     // A playbook run (R-1073) has no host of its own: it names the playbook.
@@ -396,7 +399,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
         onclick={() => changeFont(1)}
       />
-      {#if !session.ansible}
+      {#if shell}
         <IconButton
           size="sm"
           icon={SquareCode}
@@ -461,7 +464,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <aside class="term-panel" aria-label={$t('terminal.options')}>
         <TerminalOptions prefs={$terminalPrefs} onChange={(p) => void saveTerminalPrefs(p)} />
       </aside>
-    {:else if panel === 'snippets' && !onDock && !session.ansible}
+    {:else if panel === 'snippets' && !onDock && shell}
       <aside class="term-panel" aria-label={$t('terminal.snippets')}>
         <SnippetsPanel
           sessionKey={session.key}
@@ -469,7 +472,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           onRun={() => term?.focus()}
         />
       </aside>
-    {:else if panel === 'files' && !onDock && !session.ansible}
+    {:else if panel === 'files' && !onDock && shell}
       <aside class="term-panel" aria-label={$t('terminal.files')}>
         <FilesPanel
           session={session.backendId}
@@ -506,7 +509,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#if pasteHint}
       <span class="term-hint" role="status">{$t('terminal.pasteHint')}</span>
     {/if}
-    {#if $snippetBroadcast && !session.ansible}
+    {#if $snippetBroadcast && shell}
       <span class="term-broadcast">{$t('terminal.snippets.broadcastActive')}</span>
     {/if}
     <span class="term-spacer"></span>

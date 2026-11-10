@@ -2,11 +2,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Monitoring store: holds checks, servers, filters, alert rules, alert log.
+// Monitoring store: holds checks, servers, filters, alert rules, alert log, and the
+// module data of the server page (catalog, discovery, open findings).
 // Auto-refresh via activate()/deactivate() from the monitoring page.
 
 import { errMsg, isSessionExpired } from '$lib/utils/errors';
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
 import { monitoringApi } from '$lib/api/monitoring';
@@ -23,13 +24,28 @@ import type {
   AlertRule,
   AlertRuleInput,
   MaintenanceWindow,
+  MonitorAdoptAllResult,
+  MonitorAdoptResult,
+  MonitorCatalog,
   MonitorCheck,
+  MonitorDiscovery,
+  MonitorFinding,
   MonitoringTemplateFull,
   MonitoringTemplateInput,
   Server,
 } from '$lib/api/types';
+import type { AuthSession } from '$lib/bridge/types';
 
-export type MonitoringTab = 'overview' | 'history' | 'alerts' | 'templates' | 'log';
+export type MonitoringTab =
+  | 'overview'
+  | 'history'
+  | 'certs'
+  | 'backups'
+  | 'updates'
+  | 'findings'
+  | 'alerts'
+  | 'templates'
+  | 'log';
 export type OverviewView = 'list' | 'grid';
 
 // Persisted view choice for the overview (list+detail vs tile grid).
@@ -48,11 +64,13 @@ const REFRESH_INTERVAL_MS = 30_000;
 // Grace period after triggering a check so the server-side runner can persist the
 // new state before the reload reads it back.
 const RECHECK_DELAY_MS = 2000;
+// pickWorstServerId's key for checks without a server: no discovery to load for it.
+const NO_SERVER = '__none';
 
 function pickWorstServerId(checks: MonitorCheck[]): string | null {
   const bySrv = new Map<string, MonitorCheck[]>();
   for (const c of checks) {
-    const key = c.serverId || '__none';
+    const key = c.serverId || NO_SERVER;
     const list = bySrv.get(key);
     if (list) list.push(c);
     else bySrv.set(key, [c]);
@@ -84,6 +102,13 @@ interface MonitoringState {
   serverSearch: string;
   overviewView: OverviewView;
   maintenance: MaintenanceWindow[];
+  // Static per monitoring version: loaded once per sign-in (catalogSession).
+  catalog: MonitorCatalog | null;
+  // Open findings of every server: the server page filters, the findings view lists all.
+  findings: MonitorFinding[];
+  // Like `error`: survives the refresh cycle until a load succeeds (T19).
+  findingsError: string | null;
+  discovery: Record<string, MonitorDiscovery>;
 }
 
 const initial: MonitoringState = {
@@ -102,6 +127,10 @@ const initial: MonitoringState = {
   serverSearch: '',
   overviewView: initialOverviewView(),
   maintenance: [],
+  catalog: null,
+  findings: [],
+  findingsError: null,
+  discovery: {},
 };
 
 const _state = writable<MonitoringState>(initial);
@@ -113,6 +142,10 @@ export const monitoring = { subscribe: _state.subscribe };
 // a load whose token is stale by the time it resolves must not overwrite the
 // state a newer load already wrote.
 let statusGen = 0;
+// Same guard for the findings: the refresh and the reload after adopt/dismiss overlap.
+let findingsGen = 0;
+// The sign-in the catalog was loaded for; a new one loads it again.
+let catalogSession: AuthSession | null = null;
 export const monitoringTab = derived(_state, ($s) => $s.tab);
 export const monitoringFilters = derived(_state, ($s) => $s.filters);
 export const monitoringChecks = derived(_state, ($s) => $s.checks);
@@ -137,9 +170,15 @@ export const serversWithoutChecks = derived(_state, ($s) => {
 export const maintenanceActive = derived(_state, ($s) =>
   activeMaintenance($s.maintenance, new Date()),
 );
+export const monitoringCatalog = derived(_state, ($s) => $s.catalog);
+export const monitoringFindings = derived(_state, ($s) => $s.findings);
+export const monitoringFindingsError = derived(_state, ($s) => $s.findingsError);
+export const monitoringDiscovery = derived(_state, ($s) => $s.discovery);
 
 export function setSelectedServer(id: string | null): void {
   _state.update((s) => ({ ...s, selectedServerId: id, expandedCheckId: null }));
+  // Only while the page is active; activateMonitoring loads it for the first selection.
+  if (refreshTimer && id) void loadDiscovery(id);
 }
 
 export function setServerSearch(v: string): void {
@@ -162,6 +201,13 @@ export function setTab(tab: MonitoringTab): void {
   if (tab === 'alerts') void loadAlerts();
   else if (tab === 'templates') void loadTemplates();
   else if (tab === 'log') void loadAlertLog();
+}
+
+/** A cross view's server link: that server's page on the overview tab. */
+export function openServerPage(serverKey: string): void {
+  setSelectedServer(serverKey);
+  setOverviewView('list');
+  setTab('overview');
 }
 
 export function setFilter<K extends keyof MonitoringFilters>(
@@ -219,7 +265,7 @@ export async function loadMonitoring(): Promise<void> {
     _state.update((s) => {
       // Auto-select: if nothing is selected yet, take the server with the worst status.
       let selected = s.selectedServerId;
-      const ids = new Set(checks.map((c) => c.serverId || '__none'));
+      const ids = new Set(checks.map((c) => c.serverId || NO_SERVER));
       if (selected && !ids.has(selected)) selected = null;
       if (!selected && checks.length > 0) {
         selected = pickWorstServerId(checks);
@@ -246,6 +292,111 @@ export async function loadMonitoring(): Promise<void> {
       error: isSessionExpired(err) ? null : msg,
     }));
   }
+}
+
+export async function loadCatalog(): Promise<void> {
+  const session = currentSession();
+  if (!session || catalogSession === session) return;
+  try {
+    const catalog = await monitoringApi.fetchCatalog(session);
+    if (currentSession() !== session) return;
+    catalogSession = session;
+    _state.update((s) => ({ ...s, catalog }));
+  } catch {
+    // The cards fall back to their checks without figures; the next refresh tries again.
+  }
+}
+
+export async function loadFindings(): Promise<void> {
+  const session = currentSession();
+  if (!session) return;
+  const gen = ++findingsGen;
+  try {
+    const findings = await monitoringApi.fetchOpenFindings(session);
+    if (gen !== findingsGen) return;
+    _state.update((s) => ({ ...s, findings, findingsError: null }));
+  } catch (err) {
+    if (gen !== findingsGen) return;
+    // The old list stays: an outage must not look like "nothing new found".
+    _state.update((s) => ({ ...s, findingsError: isSessionExpired(err) ? null : errMsg(err) }));
+  }
+}
+
+export async function loadDiscovery(serverId: string): Promise<void> {
+  const session = currentSession();
+  if (!session || serverId === NO_SERVER) return;
+  try {
+    const found = await monitoringApi.fetchDiscovery(session, serverId);
+    _state.update((s) => ({ ...s, discovery: { ...s.discovery, [serverId]: found } }));
+  } catch {
+    // Header data (last scan, scan pending): the previous answer stays until one succeeds.
+  }
+}
+
+// Scan now. The answer is the discovery with the request noted, so the button shows
+// "requested" without waiting for the next load.
+export async function requestScan(serverId: string): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    const found = await monitoringApi.requestScan(session, serverId);
+    _state.update((s) => ({ ...s, discovery: { ...s.discovery, [serverId]: found } }));
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+// Adopting creates or switches the instance's checks: both lists change. The result
+// (skipped checks and why) is for the caller to show; null after a reported failure.
+export async function adoptFinding(findingId: string): Promise<MonitorAdoptResult | null> {
+  const session = currentSession();
+  if (!session) return null;
+  try {
+    const result = await monitoringApi.adoptFinding(session, findingId);
+    await Promise.all([loadMonitoring(), loadFindings()]);
+    return result;
+  } catch (err) {
+    reportError(errMsg(err));
+    return null;
+  }
+}
+
+// A finding that fails stays open and is named in `failed`; the others are adopted.
+export async function adoptAllFindings(serverId: string): Promise<MonitorAdoptAllResult | null> {
+  const session = currentSession();
+  if (!session) return null;
+  try {
+    const result = await monitoringApi.adoptAllFindings(session, serverId);
+    await Promise.all([loadMonitoring(), loadFindings()]);
+    return result;
+  } catch (err) {
+    reportError(errMsg(err));
+    return null;
+  }
+}
+
+// Dismissing touches no check, only the finding.
+export async function dismissFinding(findingId: string): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.dismissFinding(session, findingId);
+    await loadFindings();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+// The module data of the server page, after a status load picked the selection.
+function loadModuleData(): void {
+  void loadCatalog();
+  void loadFindings();
+  const selected = get(_state).selectedServerId;
+  if (selected) void loadDiscovery(selected);
 }
 
 export async function loadAlerts(): Promise<void> {
@@ -495,11 +646,13 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let runReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function activateMonitoring(): void {
-  void loadServers().then(() => loadMonitoring());
+  void loadServers()
+    .then(() => loadMonitoring())
+    .then(loadModuleData);
   void loadMaintenanceWindows();
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
-    void loadMonitoring();
+    void loadMonitoring().then(loadModuleData);
     void loadMaintenanceWindows();
   }, REFRESH_INTERVAL_MS);
 }

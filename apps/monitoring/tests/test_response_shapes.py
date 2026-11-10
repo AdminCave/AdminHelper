@@ -56,9 +56,10 @@ def _ref_name(schema: dict) -> str:
         ("/checks/{check_id}/toggle", "post", "MonitorCheckOut"),
         ("/checks/{check_id}/reset", "post", "MonitorCheckOut"),
         ("/checks/{check_id}/run", "post", "MonitorCheckOut"),
-        ("/status", "get", "MonitorCheckOut"),
-        ("/status/server/{server_id}", "get", "MonitorCheckOut"),
+        ("/status", "get", "MonitorCheckStatusOut"),
+        ("/status/server/{server_id}", "get", "MonitorCheckStatusOut"),
         ("/status/summary", "get", "StatusSummaryOut"),
+        ("/status/server/{server_id}/costs", "get", "ServerCostsOut"),
         ("/checks/{check_id}/metrics", "get", "CheckMetricsOut"),
         ("/alerts", "get", "AlertRuleOut"),
         ("/alerts", "post", "AlertRuleOut"),
@@ -167,14 +168,19 @@ class TestCheckShape:
         assert "state" in want[0] and "state" not in want[1]
         assert want[1]["enabled"] is None and want[1]["consecutiveFails"] is None
 
-        for path in ("/checks", "/status"):
-            r = client.get(path)
-            assert r.status_code == 200, r.text
-            assert r.json() == want, path
+        r = client.get("/checks")
+        assert r.status_code == 200, r.text
+        assert r.json() == want
+
+        # The status routes add why a check is muted (R-1225); nothing mutes these two.
+        want_status = [{**row, "mutedReason": None} for row in want]
+        r = client.get("/status")
+        assert r.status_code == 200, r.text
+        assert r.json() == want_status
 
         r = client.get("/status/server/srv-1")
         assert r.status_code == 200, r.text
-        assert r.json() == want[:1]
+        assert r.json() == want_status[:1]
 
     def test_single_check_equals_the_producer(self, client_db):
         client, factory = client_db
@@ -245,6 +251,9 @@ def test_status_summary_equals_the_producer(client_db):
         "critical": 0,
         "unknown": 0,
         "pending": 0,
+        # chk-sparse is not enabled (NULL), so only chk-full counts here.
+        "lastResultAt": "2026-10-03T08:05:00Z",
+        "minIntervalS": 60,
     }
 
 

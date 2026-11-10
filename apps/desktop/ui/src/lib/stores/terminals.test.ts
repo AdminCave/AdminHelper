@@ -29,6 +29,7 @@ import type {
 
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
+  terminalOpenSshCredential: vi.fn(async (..._a: unknown[]) => 77),
   terminalOpenAnsible: vi.fn(async (..._a: unknown[]) => 99),
   terminalClose: vi.fn(async () => {}),
   terminalCloseAll: vi.fn(async () => {}),
@@ -54,6 +55,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('$lib/bridge', () => ({
   terminalOpenSsh: h.terminalOpenSsh,
+  terminalOpenSshCredential: h.terminalOpenSshCredential,
   terminalOpenAnsible: h.terminalOpenAnsible,
   terminalClose: h.terminalClose,
   terminalCloseAll: h.terminalCloseAll,
@@ -988,6 +990,44 @@ describe('a playbook in a tab (R-1073)', () => {
     expect(h.terminalOpenAnsible).toHaveBeenCalledTimes(1);
     expect(h.terminalClose).not.toHaveBeenCalled();
     expect(openSessionIds([s, { ...s, ansible: undefined, connection: CONN }])).toEqual(['c1']);
+  });
+});
+
+// arch-monitoring-ui T10: the agent's prompt for a monitoring credential, over SSH.
+describe('a credential prompt in a tab', () => {
+  const REF = 'mysql/3306/monitor';
+
+  it('opens in a tab in front and starts the prompt for its ref, not a shell', async () => {
+    expect(await openTerminal(CONN, RESOLVED, undefined, REF)).toBe(true);
+    const s = only();
+    expect(s).toMatchObject({ connection: CONN, resolved: RESOLVED, credential: { ref: REF } });
+    expect(s.backendId).toBe(77);
+    expect(get(terminals).active).toBe(s.key);
+    expect(h.terminalOpenSshCredential).toHaveBeenCalledExactlyOnceWith(
+      RESOLVED,
+      REF,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+  });
+
+  it('reconnects to the prompt again and is not kept for the next run', async () => {
+    await openTerminal(CONN, RESOLVED, undefined, REF);
+    const s = only();
+    h.resolveConnection.mockResolvedValueOnce({ connection: MOVED });
+    expect(await reconnectTerminal(s.key)).toBe(true);
+    expect(h.terminalOpenSshCredential).toHaveBeenLastCalledWith(
+      MOVED,
+      REF,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+    expect(openSessionIds([s])).toEqual([]);
+    expect(openSessionIds([s, { ...s, credential: undefined }])).toEqual(['c1']);
   });
 });
 

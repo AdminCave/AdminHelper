@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// StatusFooter: per mode only the fields the app has data for (R-1062).
+// StatusFooter: per mode only the fields the app has data for (R-1062), and in server mode the
+// dead man's switch of monitoring (T6, R-1225).
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/svelte';
+import { render, cleanup, waitFor, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 import type { AuthSession, Settings } from '$lib/bridge/types';
@@ -14,6 +15,7 @@ import type { MonitorCheck } from '$lib/api/types';
 const h = vi.hoisted(() => ({
   deviceIdentity: vi.fn(),
   syncConnections: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 vi.mock('$lib/bridge', () => ({
@@ -60,6 +62,13 @@ vi.mock('$lib/stores/monitoring', async () => {
   };
 });
 
+vi.mock('$lib/stores/monitoringPulse', async () => {
+  const { writable: w } = await import('svelte/store');
+  return { monitoringSilentMinutes: w<number | null>(null) };
+});
+
+vi.mock('$lib/router', () => ({ navigate: h.navigate }));
+
 vi.mock('$lib/stores/terminals', async () => {
   const { writable: w } = await import('svelte/store');
   return { terminals: w({ sessions: [], active: 'page' }) };
@@ -71,6 +80,7 @@ import * as monitoringMod from '$lib/stores/monitoring';
 import * as settingsMod from '$lib/stores/settings';
 import * as dndMod from '$lib/stores/dnd';
 import * as terminalsMod from '$lib/stores/terminals';
+import * as pulseMod from '$lib/stores/monitoringPulse';
 import { reloadForMode } from '$lib/stores/connections';
 import StatusFooter from './StatusFooter.svelte';
 import { setLanguage } from '$lib/i18n';
@@ -86,6 +96,7 @@ const hasLoaded = monitoringMod.monitoringHasLoaded as unknown as W<boolean>;
 const loadError = monitoringMod.monitoringError as unknown as W<string | null>;
 const modalOpen = settingsMod.settingsModalOpen as unknown as W<boolean>;
 const dndUntil = dndMod.dndUntil as unknown as W<number | null>;
+const silent = pulseMod.monitoringSilentMinutes as unknown as W<number | null>;
 const terminalsState = terminalsMod.terminals as unknown as W<{
   sessions: { key: string }[];
   active: string;
@@ -140,6 +151,8 @@ describe('StatusFooter', () => {
     modalOpen.set(false);
     dndUntil.set(null);
     terminalsState.set({ sessions: [], active: 'page' });
+    silent.set(null);
+    h.navigate.mockReset();
   });
 
   afterEach(() => cleanup());
@@ -334,5 +347,38 @@ describe('StatusFooter', () => {
     terminalsState.set({ sessions: [{ key: 'terminal-3' }], active: 'page' });
     const local = render(StatusFooter);
     expect(fields(local.container)).toEqual(['mode', 'sessions']);
+  });
+
+  it('server mode warns while monitoring is without a result; a click opens monitoring', async () => {
+    h.deviceIdentity.mockResolvedValue(null);
+    sessionState.set({
+      settings: { ...base, mode: 'server' },
+      session: { serverUrl: 'https://hub.example', username: 'kevin', isAdmin: true },
+    });
+    hasLoaded.set(true);
+    const { container } = render(StatusFooter);
+    await waitFor(() => expect(fields(container)).toContain('cert'));
+    expect(fields(container)).not.toContain('silent');
+
+    silent.set(23);
+    await tick();
+    expect(fields(container)).toEqual(['mode', 'tunnel', 'problems', 'silent', 'cert']);
+    expect(text(container, 'silent')).toBe('Monitoring seit 23 min ohne Ergebnis');
+    const item = container.querySelector<HTMLButtonElement>('[data-field="silent"]');
+    expect(item?.tagName).toBe('BUTTON');
+    await fireEvent.click(item as HTMLButtonElement);
+    expect(h.navigate).toHaveBeenCalledWith('/monitoring');
+
+    silent.set(null);
+    await tick();
+    expect(fields(container)).not.toContain('silent');
+  });
+
+  it('says nothing about monitoring outside server mode', async () => {
+    sessionState.set({ settings: { ...base, mode: 'local' }, session: null });
+    silent.set(23);
+    const { container } = render(StatusFooter);
+    await tick();
+    expect(fields(container)).toEqual(['mode']);
   });
 });

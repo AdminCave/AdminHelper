@@ -921,6 +921,79 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CollectorCostOut": {
+        "properties": {
+          "collector": {
+            "title": "Collector",
+            "type": "string"
+          },
+          "cpuMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpums"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factor"
+          },
+          "throttled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Throttled"
+          },
+          "timeouts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeouts"
+          }
+        },
+        "required": [
+          "collector",
+          "durationMs",
+          "cpuMs",
+          "timeouts",
+          "factor",
+          "throttled"
+        ],
+        "title": "CollectorCostOut",
+        "type": "object"
+      },
       "CompareServerOut": {
         "properties": {
           "points": {
@@ -1684,6 +1757,17 @@
             "title": "Interval",
             "type": "string"
           },
+          "moduleCheckKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulecheckkey"
+          },
           "moduleId": {
             "anyOf": [
               {
@@ -1797,11 +1881,221 @@
           "overriddenFields",
           "moduleId",
           "moduleInstance",
+          "moduleCheckKey",
           "silent",
           "createdAt",
           "updatedAt"
         ],
         "title": "MonitorCheckOut",
+        "type": "object"
+      },
+      "MonitorCheckStatusOut": {
+        "properties": {
+          "checkType": {
+            "title": "Checktype",
+            "type": "string"
+          },
+          "config": {
+            "title": "Config"
+          },
+          "consecutiveFails": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutivefails"
+          },
+          "consecutiveOks": {
+            "title": "Consecutiveoks",
+            "type": "integer"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "string"
+          },
+          "moduleCheckKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulecheckkey"
+          },
+          "moduleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleid"
+          },
+          "moduleInstance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleinstance"
+          },
+          "mutedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutedreason"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overriddenFields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overriddenfields",
+            "type": "array"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "silent": {
+            "title": "Silent",
+            "type": "boolean"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorStateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "templateDefId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templatedefid"
+          },
+          "templateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templateid"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "name",
+          "description",
+          "checkType",
+          "config",
+          "enabled",
+          "interval",
+          "severity",
+          "consecutiveFails",
+          "consecutiveOks",
+          "templateId",
+          "templateDefId",
+          "overriddenFields",
+          "moduleId",
+          "moduleInstance",
+          "moduleCheckKey",
+          "silent",
+          "createdAt",
+          "updatedAt",
+          "mutedReason"
+        ],
+        "title": "MonitorCheckStatusOut",
         "type": "object"
       },
       "MonitorStateOut": {
@@ -2183,6 +2477,32 @@
         "title": "ServerCompareOut",
         "type": "object"
       },
+      "ServerCostsOut": {
+        "properties": {
+          "collectors": {
+            "items": {
+              "$ref": "#/components/schemas/CollectorCostOut"
+            },
+            "title": "Collectors",
+            "type": "array"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "window": {
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "window",
+          "collectors"
+        ],
+        "title": "ServerCostsOut",
+        "type": "object"
+      },
       "ServerHistoryOut": {
         "properties": {
           "end": {
@@ -2279,6 +2599,28 @@
             "title": "Critical",
             "type": "integer"
           },
+          "lastResultAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastresultat"
+          },
+          "minIntervalS": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minintervals"
+          },
           "ok": {
             "title": "Ok",
             "type": "integer"
@@ -2306,7 +2648,9 @@
           "warning",
           "critical",
           "unknown",
-          "pending"
+          "pending",
+          "lastResultAt",
+          "minIntervalS"
         ],
         "title": "StatusSummaryOut",
         "type": "object"
@@ -4410,7 +4754,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/MonitorCheckOut"
+                    "$ref": "#/components/schemas/MonitorCheckStatusOut"
                   },
                   "title": "Response Get All Status Status Get",
                   "type": "array"
@@ -4506,7 +4850,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/MonitorCheckOut"
+                    "$ref": "#/components/schemas/MonitorCheckStatusOut"
                   },
                   "title": "Response Get Server Status Status Server  Server Id  Get",
                   "type": "array"
@@ -4527,6 +4871,46 @@
           }
         },
         "summary": "Get Server Status"
+      }
+    },
+    "/status/server/{server_id}/costs": {
+      "get": {
+        "description": "What monitoring costs one server, per agent collector over the last hour: mean\nduration and CPU time of a run, the time-limit hits, the current factor and whether\nthe agent throttles the collector.",
+        "operationId": "get_server_costs_status_server__server_id__costs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCostsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Server Costs"
       }
     },
     "/status/server/{server_id}/history": {
@@ -4592,7 +4976,7 @@
     },
     "/status/summary": {
       "get": {
-        "description": "Summary: count per status. Dict response (aggregate, not a list) —\ndeliberately unpaginated.",
+        "description": "Summary: count per status, the newest result of an enabled check and the\nshortest interval of the enabled checks (null without one). Dict response\n(aggregate, not a list) — deliberately unpaginated.",
         "operationId": "get_status_summary_status_summary_get",
         "responses": {
           "200": {

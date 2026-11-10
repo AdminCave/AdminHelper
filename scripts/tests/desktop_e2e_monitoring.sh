@@ -8,6 +8,12 @@
 # Combines the desktop harness (xvfb + tauri-driver + fresh D-Bus/keyring) with
 # the agent push from agent_monitoring_test.sh. Shared boot/seed/teardown via
 # lib_e2e_stack.sh. Run: bash scripts/tests/desktop_e2e_monitoring.sh
+#
+# The second spec (arch-monitoring-ui T11) walks the server page and the cross
+# tabs and saves a screenshot of every step under .ah-out/screenshots/. The agent
+# stays in its container for it: the spec lets it report again, and its first
+# report made the port finding the spec adopts (the gateway's published port, a
+# docker-proxy listener on the host network the agent shares).
 
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -44,13 +50,30 @@ SID=$(e2e_api "$TOKEN" server e2e-server e2e.local)
 
 # A real agent enrolls + pushes metrics for the server so the check has data to
 # evaluate (host network + localhost:<port> so the test gateway cert verifies).
+# Its container lives as long as the run, so a spec can let it report again.
+# It sees the host's processes as an agent on the host does: the probe guard
+# connects to no port whose owner it cannot read (pid namespace, ptrace of
+# processes outside the container), so without them the scan finds no port.
+AGENT_CTR="$E2E_PROJECT-agent"
+trap 'docker rm -f "$AGENT_CTR" >/dev/null 2>&1; e2e_teardown' EXIT
+docker run -d --rm --name "$AGENT_CTR" --network host --pid host \
+    --cap-add SYS_PTRACE --security-opt apparmor=unconfined -v "$AGENT_BIN:/agent:ro" \
+    debian:bookworm-slim sleep 7200 >/dev/null \
+    || { bad "agent container did not start"; exit 1; }
 PTOK=$(e2e_api "$TOKEN" provision-token "$SID")
-docker run --rm --network host -v "$AGENT_BIN:/agent:ro" debian:bookworm-slim \
+docker exec "$AGENT_CTR" \
     sh -c "/agent provision --url 'https://localhost:$E2E_HTTPS_PORT' --token '$PTOK' --server-id '$SID' --insecure; /agent run --once" \
     > "$E2E_WORK/agent.log" 2>&1
 grep -q "Report gesendet" "$E2E_WORK/agent.log" \
     && ok "real agent enrolled + pushed metrics" \
     || { bad "agent push failed"; sed 's/^/    /' "$E2E_WORK/agent.log"; }
+
+# The first run of a fresh server scans: the gateway's port is a finding.
+FINDING="tcp-$E2E_HTTPS_PORT"
+FOUND=$(e2e_api "$TOKEN" findings "$SID")
+grep -qx "$FINDING new" <<<"$FOUND" \
+    && ok "the agent's scan found $FINDING" \
+    || { bad "no finding $FINDING after the scan"; sed 's/^/    /' <<<"$FOUND"; }
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
@@ -63,6 +86,14 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/monitoring-check.live.js
 ' && ok "monitoring-check GUI spec passed" || bad "monitoring-check GUI spec failed"
+
+echo "[mon] running the monitoring-server-page spec under xvfb..."
+export AH_E2E_FINDING="$FINDING" AH_E2E_AGENT="$AGENT_CTR"
+dbus-run-session -- bash -c '
+    e2e_keyring_start || exit 1
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/monitoring-server-page.live.js
+' && ok "monitoring-server-page GUI spec passed" || bad "monitoring-server-page GUI spec failed"
 
 echo ""
 echo "desktop_e2e_monitoring: $PASS passed, $FAIL failed"

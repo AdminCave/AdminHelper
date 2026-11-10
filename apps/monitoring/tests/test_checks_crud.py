@@ -263,15 +263,24 @@ def test_a_check_says_whether_a_module_brought_it(client_db):
         )
         db.commit()
 
-    fields = ("moduleId", "moduleInstance", "silent")
-    assert [client.get(f"/checks/{plain}").json()[f] for f in fields] == [None, None, False]
+    fields = ("moduleId", "moduleInstance", "moduleCheckKey", "silent")
+    assert [client.get(f"/checks/{plain}").json()[f] for f in fields] == [
+        None,
+        None,
+        None,
+        False,
+    ]
     assert [client.get("/checks/mod").json()[f] for f in fields] == [
         "paperless",
         "paperless",
+        "web",
         True,
     ]
     listed = {c["id"]: c for c in client.get("/checks").json()}
     assert listed["mod"]["silent"] is True
+    # The server page maps the catalog's card entries to checks by this key.
+    status = {c["id"]: c for c in client.get("/status/server/srv-1").json()}
+    assert status["mod"]["moduleCheckKey"] == "web"
 
 
 def test_a_probe_without_its_instances_name_is_rejected(client_db):

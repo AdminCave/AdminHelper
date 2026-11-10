@@ -11,6 +11,8 @@
 import type {
   MonitorContainerDetails,
   MonitorForecastDetails,
+  MonitorProbeDetails,
+  MonitorProbeValue,
   MonitorResourceDetails,
   MonitorResourceDisk,
   MonitorResourceTemp,
@@ -216,5 +218,25 @@ export const forecastDetails = details(
         ['mount'],
       ),
     ),
+  }),
+);
+
+// A value the probe checker keeps: a scalar, never a list or an object.
+const probeValue: Reader<MonitorProbeValue> = (v) =>
+  v === null || typeof v === 'boolean' || typeof v === 'string' ? v : num(v);
+
+// Partial: unlike the other forms, MonitorProbeDetails names every field as present,
+// and an empty or foreign object must not read as one that has them.
+export type ProbeDetails = Partial<MonitorProbeDetails>;
+
+export const probeDetails = details(
+  shape<ProbeDetails>({
+    ts: nullable(num),
+    status: nullable(str),
+    error: nullable(str),
+    measured_ts: nullable(num),
+    values: recordOf(probeValue),
+    baseline: nullable(recordOf(probeValue)),
+    problems: listOf(str),
   }),
 );
