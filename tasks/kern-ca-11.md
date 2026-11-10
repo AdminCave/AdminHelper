@@ -16,8 +16,10 @@ Retired-File mit WARNING und stoppt bei einem `<scope>.crt` daraus, `status` mar
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_rotation.py tests/test_storage.py tests/test_cli.py
 Doku: → T3
 
-### T2 — R-1116: Gleichstand von not_before im Register über created_at  [ ]
+### T2 — R-1116: Gleichstand von not_before im Register über created_at  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/cli.py, apps/ca-issuer/tests/test_cli.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @6ebabbee1 2026-11-10T06:10:16+01:00
+Review: approve (.ah-out/review/kern-ca-11/T2.verdict.json)
 Änderung: `_query_register` wählt je Linie das Zertifikat mit dem größten `(not_before, created_at)`; Test mit zwei
 Zertifikaten gleicher `not_before`-Sekunde in beiden Einfügereihenfolgen.
 Beweis: reviewer branch kern-ca-7 2026-11-03 · feature/kern-ca-7@578da0db apps/ca-issuer/app/cli.py:494

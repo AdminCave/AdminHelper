@@ -829,6 +829,33 @@ def test_rotate_root_finish_decides_a_renewal_in_the_second_of_the_start_by_its_
     assert held == (since == 0)
 
 
+@pytest.mark.parametrize("first", ["before the start", "after the start"])
+def test_rotate_root_finish_takes_the_newest_record_of_a_line_within_one_second(
+    monkeypatch, pki_dir, capsys, first
+):
+    # Two certificates of one line in the second of the start: the one recorded after the
+    # start is the newest, whatever order the rows come in.
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    engine = _register(monkeypatch)
+    restart = root_rollover.load_state(pki_dir).switch.switched_at.replace(
+        microsecond=500_000
+    ) + datetime.timedelta(hours=1)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: restart)
+        _start(engine, pki_dir)
+    step = datetime.timedelta(milliseconds=1)
+    records = [restart - step, restart + step]
+    if first == "after the start":
+        records.reverse()
+    line = _line(engine, "renewed-twice")
+    for at in records:
+        _issue(engine, line, restart.replace(microsecond=0), recorded_at=at)
+
+    assert cli.main(["status"]) == 0
+    assert "1 since the restart under the new root" in capsys.readouterr().out
+    assert cli.main(["rotate-root", "finish"]) == 0
+
+
 def test_rotate_root_finish_waits_while_the_register_may_miss_a_device(
     monkeypatch, pki_dir, capsys
 ):

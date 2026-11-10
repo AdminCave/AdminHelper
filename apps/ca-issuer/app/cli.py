@@ -516,11 +516,14 @@ def _query_register(conn: Connection, now: datetime.datetime) -> _Register:
     for row in conn.execute(
         select(certs.line_id, certs.not_before, certs.not_after, certs.created_at)
     ):
-        not_before = _aware(row.not_before)
+        device = _Device(_aware(row.not_before), _aware(row.not_after), _aware(row.created_at))
+        # not_before holds whole seconds: within one, the record decides, not the row order.
         if row.line_id in line_of and (
-            row.line_id not in newest or not_before > newest[row.line_id].not_before
+            row.line_id not in newest
+            or (device.not_before, device.recorded_at)
+            > (newest[row.line_id].not_before, newest[row.line_id].recorded_at)
         ):
-            newest[row.line_id] = _Device(not_before, _aware(row.not_after), _aware(row.created_at))
+            newest[row.line_id] = device
     revoked = {
         (row.subject_id, row.scope): row.revoked_at
         for row in conn.execute(
