@@ -11,6 +11,9 @@ Layout under PKI_DIR:
     <scope>-chain.pem     <scope> intermediate + root (trust bundle)
     <scope>-retired.pem   optional: earlier <scope> intermediates, certificates
                           only (no keys), still trusted until they expire
+    <scope>-compromised.pem
+                          optional: intermediates a rotation with --compromised
+                          replaced or dropped, certificates only, never trusted again
     root-next.*, root-retired.pem, root-cross.pem, root-switch.json
                           during a root renewal (app.root_rollover, R-1021)
 
@@ -34,7 +37,7 @@ from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from app import pki, root_rollover
+from app import pki, root_rollover, rotation
 
 _T = TypeVar("_T")
 
@@ -150,6 +153,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     root.crt (pki.intermediate_problem) is left out with a WARNING (file, scope, CN,
     reason) and does not stop the boot; one that is outside its validity (INFO line) or
     equal to the current one is left out too. A file that is no PEM bundle raises.
+    The optional <scope>-compromised.pem lists intermediates a rotation with --compromised
+    took out (rotation.COMPROMISED_SUFFIX): a retired entry with the public key of one of
+    them is left out with a WARNING, a current intermediate with one raises.
 
     A root renewal (app.root_rollover) sets Intermediate.roots: with a staged new root N
     it comes before root.crt (R, which signs); after the switch the old root R comes
@@ -241,6 +247,7 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
         chain_path = pki_dir / f"{scope}-chain.pem"
         cert = _read_pem(cert_path, pki.cert_from_pem, "a PEM certificate", scope)
         key = _read_pem(key_path, pki.key_from_pem, "a PEM EC private key", scope)
+        banned = _compromised_keys(pki_dir, scope)
         chain = chain_path.read_bytes()
         if problem := _signature_problem(cert, root):
             raise _invalid_hierarchy(
@@ -254,6 +261,12 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             hint = ROTATE_HINT if now >= cert.not_valid_after_utc else CLOCK_HINT
             raise _invalid_hierarchy(
                 f"scope {scope!r}, {cert_path}: the intermediate is {problem}", hint=hint
+            )
+        if rotation.public_key_der(cert) in banned:
+            raise _invalid_hierarchy(
+                f"scope {scope!r}, {cert_path}: a rotation with --compromised replaced this "
+                f"intermediate ({rotation.compromised_path(pki_dir, scope).name})",
+                hint=f"{ROTATE_HINT} --compromised {scope}",
             )
         if not _holds_key(cert, key):
             raise _invalid_hierarchy(
@@ -271,7 +284,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             key=key,
             chain=pki.chain_pem(cert, root),
             roots=trust.roots,
-            retired=_load_retired(pki_dir / f"{scope}-retired.pem", scope, cert, signers, now),
+            retired=_load_retired(
+                pki_dir / f"{scope}-retired.pem", scope, cert, signers, now, banned
+            ),
             old_root=trust.old_root,
             cross=trust.cross,
         )
@@ -361,15 +376,28 @@ def _read_pem(path: Path, load: Callable[[bytes], _T], what: str, scope: str = "
         raise _invalid_hierarchy(f"{where}: not {what} ({exc})") from exc
 
 
+def _compromised_keys(pki_dir: Path, scope: str) -> frozenset[bytes]:
+    path = rotation.compromised_path(pki_dir, scope)
+    try:
+        certs = rotation.read_compromised(path)
+    except (OSError, ValueError) as exc:
+        raise _invalid_hierarchy(
+            f"scope {scope!r}, {path}: not a PEM certificate bundle ({exc})"
+        ) from exc
+    return frozenset(rotation.public_key_der(c) for c in certs)
+
+
 def _load_retired(
     path: Path,
     scope: str,
     current: x509.Certificate,
     roots: tuple[x509.Certificate, ...],
     now: datetime.datetime,
+    banned: frozenset[bytes],
 ) -> tuple[x509.Certificate, ...]:
-    """The scope's retired intermediates from `path` under one of `roots` (see
-    ensure_hierarchy), newest first. A missing file or one without any text means none."""
+    """The scope's retired intermediates from `path` under one of `roots` and without a
+    public key in `banned` (see ensure_hierarchy), newest first. A missing file or one
+    without any text means none."""
     if not path.exists():
         return ()
     data = path.read_bytes()
@@ -388,6 +416,14 @@ def _load_retired(
         name = pki.read_identity(cert)[0]
         if problem := pki.intermediate_problem_among(cert, scope, roots):
             logger.warning("scope %r, %s: skipping retired %r, %s", scope, path.name, name, problem)
+            continue
+        if rotation.public_key_der(cert) in banned:
+            logger.warning(
+                "scope %r, %s: skipping retired %r, a rotation with --compromised replaced it",
+                scope,
+                path.name,
+                name,
+            )
             continue
         if problem := _validity_problem(cert, now):
             logger.info(

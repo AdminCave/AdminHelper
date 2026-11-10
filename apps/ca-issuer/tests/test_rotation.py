@@ -454,3 +454,98 @@ def test_a_compromised_rotation_after_the_switch_drops_the_old_root_first(monkey
 
     assert _retired_file(tmp_path, "tunnel") == []
     assert json.loads((tmp_path / "root-switch.json").read_bytes()) == record
+
+
+def _register(pki_dir, scope: str) -> list[x509.Certificate]:
+    return rotation.read_compromised(rotation.compromised_path(pki_dir, scope))
+
+
+def test_a_compromised_rotation_lists_what_it_dropped_and_no_one_trusts_it_again(
+    monkeypatch, tmp_path, caplog
+):
+    first = _booted(monkeypatch, tmp_path, days_ago=20)
+    second = _rotated(monkeypatch, tmp_path, days_ago=10)
+    dropped = [second[pki.SCOPES.index("access")].new, first["access"].cert]
+
+    third = rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"access"}))
+
+    assert {_public_key(c) for c in _register(tmp_path, "access")} == {
+        _public_key(c) for c in dropped
+    }
+    for scope in pki.SCOPES:
+        if scope != "access":
+            assert not rotation.compromised_path(tmp_path, scope).exists()
+    # Written back into the retired file, the boot skips them with a WARNING ...
+    (tmp_path / "access-retired.pem").write_bytes(pki.chain_pem(*dropped))
+    with caplog.at_level("WARNING", logger="ca-issuer.storage"):
+        inter = storage.ensure_hierarchy(tmp_path, None)
+    assert inter["access"].retired == ()
+    assert sum("--compromised" in r.getMessage() for r in caplog.records) == len(dropped)
+    # ... and a plain rotation drops them without stopping, the replaced one is retired.
+    fourth = rotation.rotate_intermediates(tmp_path, PW)
+    access = pki.SCOPES.index("access")
+    assert _retired_file(tmp_path, "access") == [third[access].new]
+    assert storage.ensure_hierarchy(tmp_path, None)["access"].cert == fourth[access].new
+
+
+def test_a_compromised_intermediate_back_as_the_current_one_stops_the_boot(monkeypatch, tmp_path):
+    _booted(monkeypatch, tmp_path, days_ago=10)
+    saved = {
+        n: (tmp_path / n).read_bytes() for n in ("tunnel.crt", "tunnel.key", "tunnel-chain.pem")
+    }
+    rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"tunnel"}))
+    for name, data in saved.items():
+        (tmp_path / name).write_bytes(data)
+
+    with pytest.raises(RuntimeError, match=r"'tunnel'.*--compromised.*--compromised tunnel$"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+    # The rotation is the cure: it replaces the intermediate and does not retire it.
+    rotation.rotate_intermediates(tmp_path, PW)
+    assert _retired_file(tmp_path, "tunnel") == []
+    storage.ensure_hierarchy(tmp_path, None)
+
+
+def test_an_expired_entry_leaves_the_register(monkeypatch, tmp_path):
+    # The first generation ended 30 days ago.
+    first = _booted(monkeypatch, tmp_path, days_ago=pki.VALIDITY_DAYS_INTERMEDIATE + 30)
+    _at(monkeypatch, 40, lambda: rotation.rotate_intermediates(tmp_path, PW, frozenset({"tunnel"})))
+    assert _register(tmp_path, "tunnel") == [first["tunnel"].cert]
+
+    second = _rotated(monkeypatch, tmp_path, days_ago=20)
+    rotation.rotate_intermediates(tmp_path, PW, compromised=frozenset({"tunnel"}))
+
+    # The first generation has expired by now; the replaced one and its predecessor stay.
+    tunnel = second[pki.SCOPES.index("tunnel")]
+    assert {_public_key(c) for c in _register(tmp_path, "tunnel")} == {
+        _public_key(tunnel.new),
+        _public_key(tunnel.old),
+    }
+
+
+def test_an_unreadable_register_stops_rotation_and_boot(tmp_path):
+    storage.ensure_hierarchy(tmp_path, PW)
+    rotation.compromised_path(tmp_path, "access").write_bytes(b"-----BEGIN CERTIFICATE-----\nx\n")
+    before = _snapshot(tmp_path)
+
+    with pytest.raises(rotation.RotationError, match=r"access-compromised\.pem"):
+        rotation.rotate_intermediates(tmp_path, PW)
+    assert _snapshot(tmp_path) == before
+    with pytest.raises(RuntimeError, match=r"access-compromised\.pem"):
+        storage.ensure_hierarchy(tmp_path, None)
+
+
+def test_finish_drops_a_compromised_entry_under_the_new_root(monkeypatch, tmp_path):
+    _booted(monkeypatch, tmp_path, days_ago=20)
+    _at(monkeypatch, 20, lambda: rotation.stage_root(tmp_path, NEXT_PW))
+    switched = _at(monkeypatch, 10, lambda: rotation.switch_root(tmp_path, NEXT_PW, PW))
+    under_n = switched.rotated[pki.SCOPES.index("tunnel")].new
+    rotation.rotate_intermediates(tmp_path, NEXT_PW, compromised=frozenset({"tunnel"}))
+    # Under N, so Switch.compromised (which covers the old root) does not catch it.
+    (tmp_path / "tunnel-retired.pem").write_bytes(pki.cert_to_pem(under_n))
+    assert storage.ensure_hierarchy(tmp_path, None)["tunnel"].retired == ()
+
+    rotation.finish_root(tmp_path)
+
+    assert _retired_file(tmp_path, "tunnel") == []
+    assert storage.ensure_hierarchy(tmp_path, None)["tunnel"].retired == ()
