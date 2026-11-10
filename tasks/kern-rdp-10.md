@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Auflösung einmal, OpenH264-Restfenster, Live-Test nach dem Resize — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-10 · Review: am Ende
+Status: erledigt · Branch: feature/kern-rdp-10 · Review: am Ende
 Spec: docs/features/kern-rdp-10.md (Roadmap R-1198, R-1278, R-1283)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft im CI-Job rdp-embedded und im Teil gui des Sammellaufs; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
