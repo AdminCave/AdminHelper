@@ -503,6 +503,9 @@ export interface MonitorCheck {
   // Template fields the user changed, which the template sync keeps; named as in
   // the request body (snake_case, e.g. 'check_type'), not as the fields above.
   overriddenFields?: string[];
+  moduleId?: string | null;
+  moduleInstance?: string | null;
+  silent?: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
