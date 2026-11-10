@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/termina
 Doku: → T4
 Abhängt von: T1
 
-### T3 — R-1175: Broadcast an 0 Sitzungen meldet sich  [ ]
+### T3 — R-1175: Broadcast an 0 Sitzungen meldet sich  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/components/terminal/SnippetsPanel.svelte, apps/desktop/ui/src/components/terminal/SnippetsPanel.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5e432d4d9 2026-11-10T10:15:27+01:00
+Review: approve (.ah-out/review/kern-terminal-4/T3.verdict.json)
 Änderung: `runSnippet` gibt die Zahl der erreichten Sitzungen zurück (`null` ohne Broadcast oder bei Fehler); das Snippet-Panel zeigt bei 0 per `showStatus` „Keine SSH-Sitzung läuft“; Tests im Store und im Panel.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/terminals.test.ts src/components/terminal/SnippetsPanel.test.ts
 Doku: → T4
@@ -37,5 +39,6 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - Die Zeilen überlappen `feature/arch-namen` in `types.ts` und `dictionaries.ts`, dort aber an anderen Stellen (TunnelMapping, Tunnel-Texte); der Zug fährt trotzdem, sonst wartet er auf PR #432 (Kevins Merge). Wer später merged, löst einen rein textuellen Konflikt.
+- T3: Der Wortlaut der Einfüge-Rückfrage aus T2 lautet jetzt „Text mit Zeilenumbruch einfügen (Zeilen: {n})?“: Auch ein einzelner Befehl mit Umbruch am Ende fragt, und „1 Zeilen“ wäre falsch (Nit des reviewers zu T2); dictionaries.ts gehört zu T3.
 - T3 baut erst nach dem Merge von `feature/kern-rdp-9` (#445), das `terminals.ts` ebenfalls ändert.
 - T2: Die Rückfrage nimmt den Fokus auf „Abbrechen“, nicht auf „Einfügen“: ein Enter, das noch für die Shell gemeint war, verwirft den Text, statt ihn laufen zu lassen; Escape bricht ab.

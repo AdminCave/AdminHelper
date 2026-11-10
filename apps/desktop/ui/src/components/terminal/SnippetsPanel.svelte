@@ -15,7 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { Snippet } from '$lib/bridge/types';
   import { t, tNow } from '$lib/i18n';
   import { setSnippets, settings } from '$lib/stores/session';
-  import { reportError } from '$lib/stores/statusBar';
+  import { reportError, showStatus } from '$lib/stores/statusBar';
   import { runSnippet, setSnippetBroadcast, snippetBroadcast } from '$lib/stores/terminals';
   import { errMsg } from '$lib/utils/errors';
   import Button from '../ui/Button.svelte';
@@ -111,7 +111,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function run(snippet: Snippet): void {
     if (!running) return;
-    void runSnippet(sessionKey, snippet.command);
+    void runSnippet(sessionKey, snippet.command).then((reached) => {
+      // A broadcast that reached no session would otherwise pass without a trace.
+      if (reached === 0) showStatus(tNow('terminal.snippets.broadcastNone'));
+    });
     onRun?.();
   }
 </script>
