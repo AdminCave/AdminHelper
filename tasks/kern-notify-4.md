@@ -28,8 +28,10 @@ Beweis: reviewer branch arch-notify-incidents 2026-11-05, incidents.py:291,383-3
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_incident_locks.py tests/test_notification_incidents.py tests/test_notification_incident_api.py
 Doku: → T4
 
-### T3 — R-1188: Zusammenfassungs-Mail mit Obergrenze  [ ]
+### T3 — R-1188: Zusammenfassungs-Mail mit Obergrenze  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/digest.py, apps/server/tests/test_notification_digest.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @eeb40fb38 2026-11-10T04:28:40+01:00
+Review: approve (.ah-out/review/kern-notify-4/T3.verdict.json)
 Änderung: `_send` schreibt höchstens 200 Zeilen (die neuesten zuletzt wie heute, also die ältesten 200), dahinter
 „… and N more“; der Betreff nennt weiter die volle Zahl, alle Einträge gelten als versandt. Test: 201 Einträge →
 200 Zeilen und der Hinweis, alle `sent`.
