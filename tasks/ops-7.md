@@ -5,10 +5,12 @@ Heavy: linux-full — `scripts/backup.sh`, `scripts/restore.sh` und `scripts/upd
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1114: .env-Leser bei Nicht-ASCII-Schlüsseln vorsichtig  [ ]
-Komponente: scripts · Dateien: scripts/backup.sh, scripts/diagnostics.sh, scripts/restore.sh, scripts/tests/restore_guard_test.sh, scripts/tests/diagnostics_test.sh
+### T1 — R-1114: .env-Leser bei Nicht-ASCII-Schlüsseln vorsichtig  [x]
+Komponente: scripts · Dateien: scripts/backup.sh, scripts/diagnostics.sh, scripts/restore.sh, scripts/tests/restore_guard_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @abe8c3fe9 2026-11-10T05:23:32+01:00
+Review: approve (.ah-out/review/ops-7/T1.verdict.json)
 Änderung: `tok_exact` in `ENV_TOK` setzt `tbad` auch bei einem Schlüssel mit einem Byte ab `\200`, gleich in allen
-drei Kopien; Test für backup.sh (env.sanitized) und diagnostics.sh mit einem solchen Schlüssel.
+drei Kopien; Test für backup.sh (env.sanitized) mit einem solchen Schlüssel.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagnostics_test
 Doku: keine (kein dokumentiertes Verhalten; CHANGELOG → T4)
 
@@ -37,3 +39,4 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: kein Test in diagnostics_test.sh: nur backup.sh liest `tbad`, in diagnostics.sh und restore.sh hält die Zeile nur die drei Kopien gleich (diagnostics_test (r) prüft das, es bleibt im Verify); ein Test dort könnte ohne den Fix nicht rot werden.

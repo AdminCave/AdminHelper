@@ -34,6 +34,7 @@
 # there the passphrase's own value may begin). 15f: a commented line that holds that
 # closing quote stays with it; 15g: a statement compose reads behind it goes whole.
 # 15h: in a file compose refuses, the passphrase statement goes whole, no quote kept.
+# 15l: a key with a byte from \200 on counts as one compose may refuse (as 15h).
 # 15i: a line with an empty key compose takes: the closing quote of another value stays.
 # 15j: the quoted value of an empty key runs on to its closing quote, like any other;
 # 15k: that closing quote stays.
@@ -530,6 +531,21 @@ sanitized=$(bk_env "$WORK/bk/f8")
 { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f8/expected" "$sanitized"; } \
   && ok "env.sanitized drops the passphrase statement whole in a file compose refuses" \
   || bad "refused file: rc=$rc env.sanitized=[$(sed 's/cd13secret/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+
+# --- 15l. backup.sh: a key with a non-ASCII byte counts as one compose may refuse ─
+# compose refuses a key that holds no letter or digit, a symbol (\342\202\254) or a
+# byte outside UTF-8 (\377); awk under LC_ALL=C cannot tell those from a letter, so
+# the passphrase statement goes whole as in 15h, no quote of it kept.
+for kb in '\342\202\254' '\377'; do
+  mkdir -p "$WORK/bk/f15l"; rm -rf "$WORK/bk/f15l/out" "$WORK/bk/f15l/x"
+  printf "$kb"'="\nCA_ROOT_PASSPHRASE=ab"cd13secret\n' > "$WORK/bk/run/.env"
+  printf "$kb"'="\n' > "$WORK/bk/f15l/expected"
+  out=$(bk_run "$WORK/bk/f15l" "$WORK/bk/f15l/out"); rc=$?
+  sanitized=$(bk_env "$WORK/bk/f15l")
+  { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f15l/expected" "$sanitized"; } \
+    && ok "env.sanitized drops the passphrase statement whole behind a key with byte $kb" \
+    || bad "non-ASCII key $kb: rc=$rc env.sanitized=[$(sed 's/cd13secret/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+done
 
 # --- 15i. backup.sh: an empty key is no refused file ─────────────────────────────
 # compose passes over "=abc" and reads on; the quote that closes A stays, or the
