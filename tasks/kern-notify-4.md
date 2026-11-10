@@ -1,5 +1,5 @@
 # Benachrichtigungen: Zielprüfung, Sperrreihenfolge, Zusammenfassung — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-4 · Review: pro Task
 Spec: docs/features/kern-notify-4.md (Roadmap R-1178, R-1179, R-1149, R-1188)
 Heavy: linux-full — Server-API (Benachrichtigungen) und Monitoring; Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,14 +38,17 @@ Review: approve (.ah-out/review/kern-notify-4/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_digest.py
 Doku: → T4
 
-### T4 — Doku und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-notify-4.md
-Änderung: DE+EN: die Liste der gesperrten Bereiche der Zielprüfung, die Obergrenze der Zusammenfassung, die Sperrreihenfolge
+### T4 — Doku und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-notify-4.md, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4cdde2b58 2026-11-10T04:38:40+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: DE+EN: die Obergrenze der Zusammenfassung, die Sperrreihenfolge
 der Erholung (Entwicklerdoku). CHANGELOG-Eintrag neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T4: die Sperrliste der Zielprüfung bleibt in betrieb.html/operations.html allgemein formuliert (übrige Metadaten-Adressen, übrige private Bereiche); sie trifft das neue Verhalten schon.
 - R-1147, R-1180, R-1186, R-1187 → tasks/kern-notify-5.md (Fragen an Kevin).
 - T2: die Erholung sperrt vorab in einer id-geordneten Abfrage; ein Reopen, der zwischen dieser Sperre und `_containing` committet, kann noch eine Sperre außer der Reihe auslösen. Restrisiko als Frage an Kevin (Empfehlung: hinnehmen; das Fenster ist klein, ein uncommitteter Reopen wird von FOR UPDATE nicht erfasst, Postgres bricht einen Deadlock ab).
