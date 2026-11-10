@@ -23,7 +23,7 @@ Review: approve (.ah-out/review/arch-opnsense-plugin/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 
-### T2 — Plugin-Quellbaum `os-adminhelper` (MVC, configd, plugins.inc.d, rc.conf.d) (R-1248)  [ ]
+### T2 — Plugin-Quellbaum `os-adminhelper` (MVC, configd, plugins.inc.d, rc.conf.d) (R-1248)  [?] (Frage 7: auf den lokalen Stand von R-1247 (T1-T6) stapeln oder dessen Merge abwarten)
 Komponente: agent · Dateien: apps/agent/opnsense, apps/agent/opnsense/plugin_test.go
 Änderung: Quellbaum unter `apps/agent/opnsense/src/` im Layout des offiziellen Plugin-Repos:
 - `etc/inc/plugins.inc.d/adminhelper.inc` mit `adminhelper_services()` (Dienst `adminhelper_frpc`, configd start/stop/restart/status, pidfile aus R-1247) und `adminhelper_enabled()`;
@@ -44,7 +44,7 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 Abhängt von: R-1247 gemergt (Dienstname, Pfade)
 
-### T3 — Agent: Fühler-Framework auf FreeBSD (R-1248)  [ ]
+### T3 — Agent: Fühler-Framework auf FreeBSD (R-1248)  [?] (Frage 7: auf den lokalen Stand von R-1247 (T1-T6) stapeln oder dessen Merge abwarten)
 Komponente: agent · Dateien: apps/agent/internal/credentials/store_freebsd.go, apps/agent/internal/probe/target_freebsd.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_unixsocket.go, apps/agent/internal/probe/target_test.go, apps/agent/cmd/adminhelper-agent/crossbuild_test.go
 Änderung: Was R-1223 für Linux und Windows trägt, bekommt FreeBSD. Wo Linux und FreeBSD gleich sind, geschieht das als `_unix`-Datei nach der Konvention aus R-1247.
 - Credential-Store: Datei unter `/usr/local/etc/adminhelper`, root-only, wie unter Linux.
@@ -86,7 +86,7 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_opn
 Doku: → T9
 Abhängt von: T4
 
-### T6 — Paket `os-adminhelper` je ABI und Repo-Datei (R-1248)  [ ]
+### T6 — Paket `os-adminhelper` je ABI und Repo-Datei (R-1248)  [?] (Frage 7: auf den lokalen Stand von R-1247 (T1-T6) stapeln oder dessen Merge abwarten)
 Komponente: agent · Dateien: apps/agent/build-pkg.sh, apps/agent/opnsense/post-install, apps/agent/opnsense/post-deinstall, apps/agent/cmd/adminhelper-agent/packaging_pkg_test.go
 Änderung: `build-pkg.sh` baut nach `adminhelper-agent` zusätzlich `os-adminhelper` je ABI aus `apps/agent/opnsense/src`.
 - Manifest: Abhängigkeit `adminhelper-agent`, origin `opnsense/os-adminhelper`, Versionsdatei `/usr/local/opnsense/version/adminhelper` im Format von `plugins.mk`.
