@@ -103,7 +103,7 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 Abhängt von: T2, R-1247 gemergt
 
-### T7 — Test-Infrastruktur: Vorlage OPNsense 26.7 im Pool (R-1248)  [ ]
+### T7 — Test-Infrastruktur: Vorlage OPNsense 26.7 im Pool (R-1248)  [?] (wartet auf R-1247 Frage 1: Token-Recht Datastore.AllocateTemplate auf einem Datei-Storage mit Inhalt import, oder Import von Hand durch Kevin; danach R-1247 T8 (base-freebsd))
 Komponente: scripts · Dateien: scripts/vm/profiles.json, scripts/vm/vm.py, scripts/vm/tests/test_vm.py, scripts/vm/opnsense/config.xml.in, scripts/vm/opnsense/bootstrap.sh
 Änderung: Profil `base-opnsense` (Tag `ah-tpl-base-opnsense`, Rolle `opnsense`), gebacken aus einem Klon von `base-freebsd`.
 - `bootstrap.sh` (POSIX sh, SPDX) holt `opnsense-bootstrap.sh.in` gepinnt (Commit und SHA-256) und fährt es mit `-r 26.7 -y`.
