@@ -1,5 +1,5 @@
 # Benachrichtigungen: Zielprüfung, Sperrreihenfolge, Zusammenfassung — Task-Ledger
-Status: geplant · Branch: feature/kern-notify-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-4 · Review: pro Task
 Spec: docs/features/kern-notify-4.md (Roadmap R-1178, R-1179, R-1149, R-1188)
 Heavy: linux-full — Server-API (Benachrichtigungen) und Monitoring; Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
