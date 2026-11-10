@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: erledigt · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -166,6 +166,12 @@ Review: approve (.ah-out/review/arch-monitoring-module/T17.verdict.json)
 Änderung: Aus der Abschlussprüfung: `kvm` in `hostDaemons`, Präfix `qemu` in `hostDaemonPrefixes` (qemu-system-*, qemu-kvm); Tests für TCP (`NeverProbed`) und Unix-Socket (`checkPeer`); die Doku nennt die QEMU-Prozesse bei den Steuerdiensten.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html, docs/admin/monitoring.html (DE+EN)
+
+### T18 — Agent: Marker-Pfade der Erkennung auf jedem Betriebssystem in Schrägstrich-Form prüfen (R-1223)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go
+Änderung: Aus der PR-CI (`Go Agent (test, Windows)`, sechs Tests in `internal/discovery` rot): `cleanPath` prüft die Marker-Pfade des Katalogs (Linux-Pfade) mit `path.Clean` statt `filepath.Clean`, das unter Windows `/` zu `\` umschreibt und jeden Pfad-Marker verwarf; unter Linux gleich. Die bestehenden Marker-Tests sind der Beweis auf dem Windows-Runner.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (Marker laufen nur unter Linux; kein dokumentiertes Verhalten ändert sich)
 
 ## Entscheidungen
 - 2026-11-09 T1: Das Modul `port` prüft mit `proto` und `protocol: auto` (der Agent erkennt das Protokoll wie seine Erkennung und meldet es in `detail`) — ein Fund trägt das erkannte Protokoll, ohne Platzhalter in Katalog-Parametern bleibt jede Prüfung im eigenen Protokoll.
