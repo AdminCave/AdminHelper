@@ -86,7 +86,10 @@ AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose versi
 # container:…`) fails with AH_TEST_DUMP_FAIL=1, `compose up … postgres` creates the
 # new volume or fails with AH_TEST_PG_UP_FAIL=1, the restore (`psql -v
 # ON_ERROR_STOP=1` on stdin) lands in <dir>/restored.sql and fails with
-# AH_TEST_RESTORE_FAIL=1, the DROP DATABASE with AH_TEST_DROP_FAIL=1 ---
+# AH_TEST_RESTORE_FAIL=1, the DROP DATABASE with AH_TEST_DROP_FAIL=1; once that
+# `compose up` ran (until `compose rm … postgres`) postgres is AH_TEST_PG18_CID
+# (default cid18) on AH_TEST_PG18_MOUNTS (default ahproj_postgres18-data) and
+# answers server_version_num with AH_TEST_PG18_VERNUM (default 180001) ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
@@ -114,8 +117,15 @@ case "$*" in
   "volume rm "*)
     [ "${AH_TEST_VOLRM_FAIL:-}" != 1 ] || { echo "stub: volume is in use" >&2; exit 1; }
     rm -f "$AH_TEST_VOLS/$3"; exit 0 ;;
-  "compose ps -q postgres") [ -z "${AH_TEST_PG_CID:-}" ] || echo "$AH_TEST_PG_CID"; exit 0 ;;
+  "compose ps -q postgres")
+    if [ -n "${AH_TEST_VOLS:-}" ] && [ -e "$AH_TEST_VOLS/.pg18-up" ]; then
+      [ -z "${AH_TEST_PG18_CID-cid18}" ] || echo "${AH_TEST_PG18_CID-cid18}"
+    else [ -z "${AH_TEST_PG_CID:-}" ] || echo "$AH_TEST_PG_CID"; fi
+    exit 0 ;;
+  "inspect -f "*" cid18") echo "${AH_TEST_PG18_MOUNTS-ahproj_postgres18-data}"; exit 0 ;;
   "inspect -f "*) echo "${AH_TEST_PG_MOUNTS:-}"; exit 0 ;;
+  "exec cid18 psql "*"SHOW server_version_num") echo "${AH_TEST_PG18_VERNUM-180001}"; exit 0 ;;
+  "compose rm -f -s postgres") [ -z "${AH_TEST_VOLS:-}" ] || rm -f "$AH_TEST_VOLS/.pg18-up"; exit 0 ;;
   "exec "*" psql "*) echo "${AH_TEST_PG_SIZE:-1000}"; exit 0 ;;
   "info -f "*) pwd; exit 0 ;;
   "run --rm --network container:"*)
@@ -126,7 +136,7 @@ case "$*" in
     exit 0 ;;
   "compose up -d --wait --wait-timeout "*" postgres")
     [ "${AH_TEST_PG_UP_FAIL:-}" != 1 ] || { echo "stub: postgres is unhealthy" >&2; exit 1; }
-    : > "$AH_TEST_VOLS/ahproj_postgres18-data"; exit 0 ;;
+    : > "$AH_TEST_VOLS/ahproj_postgres18-data"; : > "$AH_TEST_VOLS/.pg18-up"; exit 0 ;;
   "compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 "*)
     case "$*" in
       *" -c DROP DATABASE adminhelper")
@@ -1848,6 +1858,25 @@ pg_rolled_back "a failed restore" "stop dump pg18 drop restore undo stack "
 pg_inst i2 0.34.0 "$SRC_NEW"
 out=$(AH_TEST_PG_UP_FAIL=1 pg_update --ref v0.40.0 2>&1); rc=$?
 pg_rolled_back "18 that does not start" "stop dump pg18 undo stack "
+# 18 started, but not the server the DROP must hit: refused before it, rolled back.
+pg_inst i3 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_PG18_MOUNTS=ahproj_postgres-data pg_update --ref v0.40.0 2>&1); rc=$?
+pg_rolled_back "a started postgres on the old volume" "stop dump pg18 undo stack "
+grep -qF 'ERROR: the started postgres does not run on ahproj_postgres18-data (volumes: ahproj_postgres-data), nothing dropped.' <<<"$out" \
+  && ok "a started postgres on the old volume: the message names its volumes" || bad "postgres on the old volume: $out"
+pg_inst i4 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_PG18_VERNUM=170006 pg_update --ref v0.40.0 2>&1); rc=$?
+pg_rolled_back "a started postgres that is 17" "stop dump pg18 undo stack "
+grep -qF 'ERROR: the started postgres is not PostgreSQL 18 (server_version_num 170006), nothing dropped.' <<<"$out" \
+  && ok "a started postgres that is 17: the message names its version" || bad "postgres 17 started: $out"
+for v in '' 1800010 190000; do
+  pg_inst "i5$v" 0.34.0 "$SRC_NEW"
+  out=$(AH_TEST_PG18_VERNUM="$v" pg_update --ref v0.40.0 2>&1); rc=$?
+  pg_rolled_back "server_version_num '$v'" "stop dump pg18 undo stack "
+done
+pg_inst i6 0.34.0 "$SRC_NEW"
+out=$(AH_TEST_PG18_CID='' pg_update --ref v0.40.0 2>&1); rc=$?
+pg_rolled_back "no started postgres container" "stop dump pg18 undo stack "
 pg_inst j 0.34.0 "$SRC_NEW"
 out=$(AH_TEST_RESTORE_FAIL=1 pg_update --ref v0.40.0 --no-rollback 2>&1); rc=$?
 pg_rolled_back "--no-rollback and a failed restore" "stop dump pg18 drop restore undo stack "

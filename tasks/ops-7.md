@@ -23,8 +23,10 @@ Beweis: reviewer branch ops-6 2026-11-03 · feature/ops-6@6a68e53e scripts/resto
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test
 Doku: → T4
 
-### T3 — R-1138: PostgreSQL-18-Umzug prüft den Zielcontainer vor dem DROP  [ ]
+### T3 — R-1138: PostgreSQL-18-Umzug prüft den Zielcontainer vor dem DROP  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d29e1cebb 2026-11-10T05:37:41+01:00
+Review: approve (.ah-out/review/ops-7/T3.verdict.json)
 Änderung: `pg18_migrate` prüft nach dem Start des neuen postgres, dass der Container `postgres18-data` eingehängt hat
 und `server_version_num` 18 meldet, bevor es `DROP DATABASE` schickt; sonst Fehlschlag und Rollback. Tests mit dem
 Docker-Stub: falscher Mount, falsche Version.
