@@ -5,8 +5,10 @@ Heavy: none — nur CI-Skripte und ein Prüfschritt; kein Stack-, Gateway-, PKI-
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1276: apt_archives_verify.sh verwirft alles außer geprüften .deb und leert partial/  [ ]
+### T1 — R-1276: apt_archives_verify.sh verwirft alles außer geprüften .deb und leert partial/  [x]
 Komponente: scripts · Dateien: .github/scripts/apt_archives_verify.sh, .github/scripts/apt_archives_verify_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-8.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c5d4afaa8 2026-11-10T16:38:18+01:00
+Review: am Ende (Branch-Review)
 Änderung: Vor der Hash-Prüfung löscht das Skript jeden Eintrag des Archiv-Verzeichnisses, der kein reguläres `*.deb` ist (Symlinks, Verzeichnisse, fremde Dateien), leert `partial/` und legt es als Verzeichnis neu an, wenn es fehlt oder ein Symlink war. Der hermetische Test bekommt diese Fälle (erst rot); die Zeile „partial/ untouched“ wird „partial/ geleert, bleibt Verzeichnis“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-8.md
