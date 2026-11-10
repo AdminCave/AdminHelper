@@ -731,11 +731,18 @@ jobs:
       # and the install afterwards reads the downloaded packages only. A mirror that crawls
       # rather than stalls (11 MB in three minutes, PR #446 run 42775105227) outlasts any
       # attempt, so the archives stay in a cache from one run to the next, and only the
-      # packages that changed since come from the mirror.
+      # packages that changed since come from the mirror. The key rolls weekly: a hit is
+      # never saved again, and a fixed key would freeze the cache at its first save
+      # (autoclean drops the superseded archives). apt takes a cached archive whose size
+      # matches the index without hashing it, so apt_archives_verify.sh keeps only those
+      # whose SHA256 the signed index names.
+      - id: apt-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-tauri-ubuntu-26.04-v1
+          key: apt-tauri-ubuntu-26.04-v2-${{ steps.apt-week.outputs.week }}
+          restore-keys: apt-tauri-ubuntu-26.04-v2-
       - name: Tauri system dependencies
         timeout-minutes: 12
         run: |
@@ -744,8 +751,10 @@ jobs:
           pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
             libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file"
           bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update
+          bash .github/scripts/apt_archives_verify.sh ~/apt-archives
           bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs
           sudo apt-get $apt_opts install -y --no-install-recommends $pkgs
+          sudo apt-get $apt_opts autoclean
           # The archives belong to root; the cache saves them as the runner.
           sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
       - name: frpc sidecar (externalBin must resolve for tauri-build)
@@ -816,10 +825,13 @@ jobs:
       # A slow apt mirror held this step until the job's 45-minute limit
       # (run 39776102278). The downloads get three attempts of three minutes (retry.sh) and
       # a cache of the archives, as in the job rust.
+      - id: apt-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-tauri-ubuntu-24.04-v1
+          key: apt-tauri-ubuntu-24.04-v2-${{ steps.apt-week.outputs.week }}
+          restore-keys: apt-tauri-ubuntu-24.04-v2-
       - name: Tauri system dependencies
         timeout-minutes: 12
         run: |
@@ -828,8 +840,10 @@ jobs:
           pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
             libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file"
           bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update
+          bash .github/scripts/apt_archives_verify.sh ~/apt-archives
           bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs
           sudo apt-get $apt_opts install -y --no-install-recommends $pkgs
+          sudo apt-get $apt_opts autoclean
           # The archives belong to root; the cache saves them as the runner.
           sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -874,10 +888,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # As in the job rust: three attempts of three minutes per download (retry.sh) and a
       # cache of the archives, the same as the job rust's.
+      - id: apt-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-tauri-ubuntu-26.04-v1
+          key: apt-tauri-ubuntu-26.04-v2-${{ steps.apt-week.outputs.week }}
+          restore-keys: apt-tauri-ubuntu-26.04-v2-
       - name: Tauri system dependencies
         timeout-minutes: 12
         run: |
@@ -886,8 +903,10 @@ jobs:
           pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
             libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file"
           bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update
+          bash .github/scripts/apt_archives_verify.sh ~/apt-archives
           bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs
           sudo apt-get $apt_opts install -y --no-install-recommends $pkgs
+          sudo apt-get $apt_opts autoclean
           # The archives belong to root; the cache saves them as the runner.
           sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
       - name: frpc sidecar (externalBin must resolve for tauri-build)
@@ -1157,6 +1176,8 @@ jobs:
         run: bash scripts/tests/run.sh unit --strict --only scripts
       - name: retry.sh test
         run: bash .github/scripts/retry_test.sh
+      - name: apt_archives_verify.sh test
+        run: bash .github/scripts/apt_archives_verify_test.sh
       # Does the documentation still describe this tree? Every <code>apps/…</code>
       # in docs/**/*.html has to name a file that exists (--paths), and a <code>
       # that is one ALL_CAPS name has to be carried by the repository outside the

@@ -1,5 +1,5 @@
 # Downloads der CI wiederholen, xrdp-Suite je PR — Task-Ledger
-Status: aktiv · Branch: feature/ci-7 · Review: am Ende
+Status: bereit · Branch: feature/ci-7 · Review: am Ende
 Spec: docs/features/ci-7.md (Roadmap R-1130, R-1160, R-1194, R-1142)
 Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbst (die geänderten Jobs laufen im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -63,8 +63,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-7.md
 Abhängt von: T1
 
-### T7 — PR-Review: Archiv-Cache rollt wöchentlich und wird gegen den Paketindex geprüft  [ ]
+### T7 — PR-Review: Archiv-Cache rollt wöchentlich und wird gegen den Paketindex geprüft  [x]
 Komponente: scripts · Dateien: .github/scripts/apt_archives_verify.sh, .github/scripts/apt_archives_verify_test.sh, .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6f9ea61ba 2026-11-10T09:41:13+01:00
+Review: am Ende (Branch-Review)
 Änderung: Aus der Abschlussprüfung: Ein fester Schlüssel speichert nach einem Treffer nie neu, der Cache friert ein; der Schlüssel trägt deshalb die ISO-Woche mit `restore-keys` auf das Präfix, und `apt-get autoclean` räumt überholte Archive. Neu `.github/scripts/apt_archives_verify.sh` (SPDX): nach `apt-get update` behält es nur Archive, deren SHA256 der signierte Index nennt; hermetischer Test `apt_archives_verify_test.sh` im Job ops-scripts. Dazu der Job `rdp-embedded` in desktop.html (DE+EN).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, docs/developer/desktop.html, docs/en/developer/desktop.html
