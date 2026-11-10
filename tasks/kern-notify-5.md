@@ -1,5 +1,5 @@
 # Benachrichtigungen: Grenze für manuelle Verlaufseinträge, Eskalationsfrist beim Rückfall — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-5 · Review: pro Task
 Spec: docs/features/kern-notify-5.md (Roadmap R-1147, R-1186)
 Heavy: linux-full — Server-API (Benachrichtigungen); Sammellauf. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,8 +26,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_es
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku und CHANGELOG  [ ]
+### T3 — Doku und CHANGELOG  [x]
 Komponente: server · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-notify-5.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a7624659c 2026-11-10T06:45:29+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: DE+EN: Eskalation (Frist stoppt beim Rückfall, neue Frist nach erneutem Kritisch), Teamaktionen (Grenze
 von 200 Einträgen von Hand); CHANGELOG-Eintrag neutral.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_escalation.py
