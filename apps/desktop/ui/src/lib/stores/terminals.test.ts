@@ -1184,6 +1184,21 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, undefined);
   });
 
+  it('starts this and every later start with a login asked anew (R-1196)', async () => {
+    await openRdp(RDP, 'typed');
+    const key = only().key;
+    const alice = { ...RDP, username: 'alice' };
+    expect(await reconnectRdp(key, { connection: alice, password: 'new' })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+    expect(only()).toMatchObject({ connection: alice, resolved: alice });
+    expect(await reconnectRdp(key)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+
+    // A remembered password: Rust takes the stored one from then on.
+    expect(await reconnectRdp(key, { connection: alice, password: undefined })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, undefined, undefined);
+  });
+
   it('leaves a connection only the OS client can open to it, without a tab', async () => {
     const osClient = new IpcError('cannot share printers', 'ERR_RDP_OS_CLIENT');
     h.rdpSessionStart.mockRejectedValueOnce(osClient);

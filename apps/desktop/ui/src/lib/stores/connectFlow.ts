@@ -28,7 +28,7 @@ import { reportError, showStatus } from './statusBar';
 import { getMappings } from './tunnel';
 import { requestPassword } from './passwordPrompt';
 import { closeEditor } from './editor';
-import { openRdp, openTerminal } from './terminals';
+import { openRdp, openTerminal, reconnectRdp, terminals } from './terminals';
 import { tNow } from '$lib/i18n';
 
 const isLinux =
@@ -398,18 +398,20 @@ interface TabPassword {
 }
 
 /**
- * The password of an RDP start in a tab: the stored one when there is one, else what the prompt
- * asks for (saved when the user wants it remembered). `null` once the prompt was cancelled.
+ * The password of an RDP start in a tab: the stored one when there is one and `useStored`, else
+ * what the prompt asks for (saved when the user wants it remembered). `null` once the prompt was
+ * cancelled.
  */
 async function tabPassword(
   connection: Connection,
   keepEditorOpen: boolean,
+  useStored = true,
 ): Promise<TabPassword | null> {
   let canStore = false;
   if (passwordStoreEnabled()) {
     try {
       const pwState = await bridge.passwordState(connection);
-      if (pwState.canStore && pwState.stored) return { listed: connection };
+      if (useStored && pwState.canStore && pwState.stored) return { listed: connection };
       canStore = pwState.canStore;
     } catch (err) {
       reportError(`Password-Store: ${errMsg(err)}`);
@@ -459,6 +461,20 @@ async function connectRdpInTab(
     reportError(errMsg(err));
   }
   if (!keepEditorOpen) closeEditor();
+}
+
+/**
+ * Starts the RDP tab `key` anew. After a failed login it asks for the password again, as the
+ * first start did but past a stored one, since that one was just refused; cancelling starts
+ * nothing. Otherwise it starts with the login the tab has.
+ */
+export async function reconnectRdpTab(key: string): Promise<boolean> {
+  const session = get(terminals).sessions.find((s) => s.key === key);
+  if (!session?.rdp) return false;
+  if (session.rdp.code !== 'auth') return reconnectRdp(key);
+  const tab = await tabPassword(session.connection, true, false);
+  if (!tab) return false;
+  return reconnectRdp(key, { connection: tab.listed, password: tab.password });
 }
 
 interface PerformOptions {

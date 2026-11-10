@@ -24,8 +24,10 @@ Beweis: R-1201 reviewer kern-rdp-5 branch, feature/kern-rdp-5@9567a8180 openh264
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::openh264
 Doku: → T4
 
-### T3 — R-1196: Nach einem Anmeldefehler fragt Neu verbinden das Passwort ab  [ ]
+### T3 — R-1196: Nach einem Anmeldefehler fragt Neu verbinden das Passwort ab  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/components/terminal/RdpSession.svelte, apps/desktop/ui/src/components/terminal/RdpSession.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ba979d982 2026-11-10T07:24:24+01:00
+Review: approve (.ah-out/review/kern-rdp-9/T3.verdict.json)
 Änderung: `reconnectRdp(key, password?)` setzt ein übergebenes Passwort für den Lauf. Neu in `connectFlow` ist `reconnectRdpTab(key)`. Endete die Sitzung mit `failed`/`auth`, zeigt es den Passwort-Dialog: Mit Merken speichert es das Passwort und startet mit dem gespeicherten, ohne Merken mit dem getippten. Abbrechen startet nichts. Ohne Anmeldefehler ruft es `reconnectRdp(key)` wie heute. Beide Knöpfe „Neu verbinden“ in `RdpSession.svelte` rufen `reconnectRdpTab`. Tests: nach `auth` fragt es, schickt das neue Passwort und startet beim Abbrechen nicht; ohne `auth` fragt es nicht; die Knöpfe rufen `reconnectRdpTab`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/terminals.test.ts src/lib/stores/connectFlow.test.ts src/components/terminal/RdpSession.test.ts
 Doku: → T4
@@ -39,3 +41,4 @@ Task-Review: am Ende
 Abhängt von: T2, T3
 
 ## Entscheidungen
+- T3: `reconnectRdp(key, login?)` nimmt statt eines nackten Passworts ein `RdpLogin` (Verbindung und Passwort): Der Dialog lässt Benutzer und Domäne ändern, und nach einem Anmeldefehler ist oft der Benutzer falsch. Ohne getipptes Passwort (gemerkt) nimmt Rust das gespeicherte. `reconnectRdpTab` fragt nach jedem Ende mit Code `auth`, gleich ob `failed` oder `disconnected`.
