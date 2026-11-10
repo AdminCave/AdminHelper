@@ -193,6 +193,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    # redis: the only other service on that network is the scheduler.
+    networks: [default, redis]
 
   # Dedicated scheduler process: the SINGLE APScheduler instance. The web
   # workers (server) run uvicorn only and never start the scheduler, so its jobs
@@ -250,6 +252,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks: [default, redis]
 
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/admincave/adminhelper/gateway:latest}
@@ -404,7 +407,14 @@ services:
 
   redis:
     image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # redis-server itself, not the image's entrypoint: that one loads every module of the image
+    # (search, json, timeseries, bloom), none of which AdminHelper uses, and drops to the user
+    # redis, which `user` does here. vectorset is built into redis-server and stays.
+    entrypoint: ["redis-server"]
+    command: ["--save", "", "--appendonly", "no"]
+    user: redis
+    # It needs no capability; without the image's entrypoint nothing else empties the set.
+    cap_drop: [ALL]
     expose:
       - "6379"
     logging: *default-logging
@@ -424,6 +434,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    # Only server and scheduler use redis, which has no auth: no other service reaches it.
+    networks: [redis]
 
   frps:
     # frps under a supervisor that starts it only from a checked copy of the configuration
@@ -638,13 +650,16 @@ services:
   #     postgres:
   #       condition: service_healthy
 
-# Three networks. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
+# Four networks. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
 # plane is NOT on the shared default net — a compromised internet-facing frps could
 # otherwise reach ca-issuer:8090 and forge the gateway's mTLS headers to /renew, minting
-# client certs (1.1). frps sits alone on `frpedge`; everything else is on `default`.
+# client certs (1.1). `redis` (internal) carries redis and its two users, server and
+# scheduler. frps sits alone on `frpedge`; everything else is on `default`.
 networks:
   default: {}
   pki:
+    internal: true
+  redis:
     internal: true
   # The internet-facing frps tunnel edge, fenced off the internal default net so a
   # compromised frps can't reach the auth-less redis/victoria (3.28). Not `internal`:
