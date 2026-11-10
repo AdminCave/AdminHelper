@@ -9,9 +9,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import {
     monitoring,
     monitoringAlerts,
+    monitoringChecks,
+    monitoringServers,
     monitoringTemplates,
     activateMonitoring,
     deactivateMonitoring,
+    openServerPage,
     setTab,
     type MonitoringTab,
   } from '$lib/stores/monitoring';
@@ -22,6 +25,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import MonitoringAlerts from '../components/monitoring/MonitoringAlerts.svelte';
   import MonitoringTemplates from '../components/monitoring/MonitoringTemplates.svelte';
   import MonitoringLog from '../components/monitoring/MonitoringLog.svelte';
+  import CertsView from '../components/monitoring/cross/CertsView.svelte';
+  import BackupsView from '../components/monitoring/cross/BackupsView.svelte';
   import Callout from '../components/ui/Callout.svelte';
   import Tabs from '../components/ui/Tabs.svelte';
   import { t } from '$lib/i18n';
@@ -42,6 +47,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const tabs = $derived([
     { id: 'overview', label: $t('monitoring.tab.overview') },
     { id: 'history', label: $t('monitoring.tab.history') },
+    { id: 'certs', label: $t('monitoring.tab.certs') },
+    { id: 'backups', label: $t('monitoring.tab.backups') },
     { id: 'alerts', label: $t('monitoring.tab.alerts'), count: count($monitoringAlerts.length) },
     {
       id: 'templates',
@@ -78,6 +85,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 <div class="mon-tab-content" data-tab="history">
   {#if tab === 'history'}<CompareView />{/if}
+</div>
+<div class="mon-tab-content" data-tab="certs">
+  {#if tab === 'certs'}
+    <CertsView checks={$monitoringChecks} servers={$monitoringServers} onOpen={openServerPage} />
+  {/if}
+</div>
+<div class="mon-tab-content" data-tab="backups">
+  {#if tab === 'backups'}
+    <BackupsView checks={$monitoringChecks} servers={$monitoringServers} onOpen={openServerPage} />
+  {/if}
 </div>
 <div class="mon-tab-content" data-tab="alerts">
   {#if tab === 'alerts'}<MonitoringAlerts />{/if}

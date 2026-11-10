@@ -36,7 +36,8 @@ import type {
 } from '$lib/api/types';
 import type { AuthSession } from '$lib/bridge/types';
 
-export type MonitoringTab = 'overview' | 'history' | 'alerts' | 'templates' | 'log';
+export type MonitoringTab =
+  'overview' | 'history' | 'certs' | 'backups' | 'alerts' | 'templates' | 'log';
 export type OverviewView = 'list' | 'grid';
 
 // Persisted view choice for the overview (list+detail vs tile grid).
@@ -192,6 +193,13 @@ export function setTab(tab: MonitoringTab): void {
   if (tab === 'alerts') void loadAlerts();
   else if (tab === 'templates') void loadTemplates();
   else if (tab === 'log') void loadAlertLog();
+}
+
+/** A cross view's server link: that server's page on the overview tab. */
+export function openServerPage(serverKey: string): void {
+  setSelectedServer(serverKey);
+  setOverviewView('list');
+  setTab('overview');
 }
 
 export function setFilter<K extends keyof MonitoringFilters>(

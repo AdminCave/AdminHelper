@@ -72,6 +72,11 @@ import {
   monitoringFindings,
   monitoringFindingsError,
   monitoringDiscovery,
+  monitoring,
+  overviewView,
+  openServerPage,
+  setOverviewView,
+  setTab,
 } from './monitoring';
 import { IpcError, SESSION_EXPIRED } from '$lib/utils/errors';
 
@@ -369,5 +374,19 @@ describe('module data of the server page (arch-monitoring-ui T3)', () => {
     expect(h.fetchDiscovery).toHaveBeenCalledTimes(2);
     expect(get(monitoringDiscovery)['srv-2']?.serverId).toBe('srv-2');
     expect(h.reportError).not.toHaveBeenCalled();
+  });
+});
+
+describe('server link of the cross views (arch-monitoring-ui T7)', () => {
+  it('opens the server page in the list view of the overview tab', () => {
+    setTab('certs');
+    setOverviewView('grid');
+    setSelectedServer('srv-a');
+
+    openServerPage('srv-b');
+
+    expect(get(monitoring).tab).toBe('overview');
+    expect(get(overviewView)).toBe('list');
+    expect(get(selectedServerId)).toBe('srv-b');
   });
 });
