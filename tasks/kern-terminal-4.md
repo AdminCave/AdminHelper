@@ -1,5 +1,5 @@
 # Desktop-Terminal: Rückfrage vor mehrzeiligem Einfügen, Rückmeldung beim Broadcast — Task-Ledger
-Status: geplant · Branch: feature/kern-terminal-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-terminal-4 · Review: pro Task
 Spec: docs/features/kern-terminal-4.md (Roadmap R-1144, R-1175)
 Heavy: none — nur Desktop-Einstellung und UI im Terminal-Tab; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Desktop-Journey
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
