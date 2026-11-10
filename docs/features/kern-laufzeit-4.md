@@ -35,8 +35,9 @@ Keine neue; der Header kommt vom eigenen Gateway.
 - `Secure` immer: bricht die Anmeldung über `http://localhost` in der Entwicklung. Empfehlung: Gateway-Peer + Header.
 
 ## Risiken & Rollback
-Ein Browser, der über das Gateway per HTTP käme, bekäme ein Cookie, das er nicht zurückschickt: das Gateway setzt
-`https` nur auf TLS-Listenern (`$scheme`); auf Port 80 leitet es um. Rollback: Revert des Commits.
+Ein Browser, der über das Gateway per HTTP käme, bekäme ein Cookie, das er nicht zurückschickt: das Gateway proxyt
+nur auf TLS-Listenern (443, 8444, 8445, `apps/gateway/nginx.conf:95`), `$scheme` ist dort `https`; der einzige
+Klartext-Listener (`127.0.0.1:8081`) beantwortet nur den Healthcheck. Rollback: Revert des Commits.
 
 ## Doku-Impact
 Die Doku beschreibt schon `Secure`; nur `changelog.d/kern-laufzeit-4.md`.
