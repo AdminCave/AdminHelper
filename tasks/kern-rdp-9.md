@@ -15,8 +15,10 @@ Dedup-Key: bug:desktop-e2e:scripts/tests/desktop_e2e_rdp_embedded.sh:flaky
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::session
 Doku: keine (nur Test)
 
-### T2 — R-1201, R-1207: OpenH264, aus gewinnt gegen den Download; nur auf x86_64  [ ]
+### T2 — R-1201, R-1207: OpenH264, aus gewinnt gegen den Download; nur auf x86_64  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/openh264.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @6ec86e701 2026-11-10T07:13:50+01:00
+Review: approve (.ah-out/review/kern-rdp-9/T2.verdict.json)
 Beweis: R-1201 reviewer kern-rdp-5 branch, feature/kern-rdp-5@9567a8180 openh264.rs:79,121; R-1207 kern-rdp-6 review, main@f8b5364f openh264.rs URL/FILE_NAME
 Änderung: Eine prozessweite Sperre mit Generationszähler. `remove` erhöht die Generation unter der Sperre und löscht dann. `ensure` merkt sich die Generation vor dem Download, `install` schreibt nur, wenn sie unverändert ist; sonst gibt es einen Fehler und legt nichts an. Gleichzeitige `install` desselben Prozesses laufen nacheinander. Auf einer anderen Architektur als x86_64 lädt `ensure` nichts und gibt einen Fehler zurück, der die Architektur nennt. Tests: ein `remove` zwischen Download und Schreiben hinterlässt keinen Ordner; ohne `remove` schreibt `install`; die Architekturprüfung lehnt eine andere Architektur ab, ohne den Ordner anzulegen.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::openh264
