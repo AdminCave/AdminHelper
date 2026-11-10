@@ -1,5 +1,5 @@
 # CI: Archiv-Cache aufräumen, tauri-cli-Pins vollständig prüfen — Task-Ledger
-Status: erledigt · Branch: feature/ci-8 · Review: am Ende
+Status: aktiv · Branch: feature/ci-8 · Review: am Ende
 Spec: docs/features/ci-8.md (Roadmap R-1276, R-1277)
 Heavy: none — nur CI-Skripte und ein Prüfschritt; kein Stack-, Gateway-, PKI- oder Install-Pfad, die PR-CI fährt beides
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,6 +28,13 @@ Review: am Ende (Branch-Review)
 Änderung: Die Pin-Prüfung aus T2 zieht nach `.github/scripts/tauri_cli_pins.sh` (SPDX) und zählt jede Nicht-Kommentarzeile mit `cargo install … tauri-cli`, auch in `run: |`-Blöcken und über Zeilenfortsetzungen; der hermetische Test `tauri_cli_pins_test.sh` läuft im Job ops-scripts. `apt_archives_verify.sh` streicht abschließende Schrägstriche vom Pfad, damit ein Link an Stelle von `<dir>` auch als `<link>/` erkannt wird; der Test bekommt den Fall.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (cicd.html beschreibt schon „jede dieser Zeilen“; das Skript macht den Satz wahr)
+
+### T4 — PR-CI: der Server-Test des Lockstep-Schritts kopiert das neue Pin-Skript mit  [ ]
+Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Review: am Ende (Branch-Review)
+Änderung: `test_the_lockstep_job_reads_the_frp_version_of_the_frps_image` fährt den Schritt `Compare the four FRP_VERSION pins` auf einer Kopie der Dateien aus `_PINNED`; seit T3 ruft der Schritt `.github/scripts/tauri_cli_pins.sh` auf, das in der Kopie fehlt (PR #453, Lauf 42859714863: `No such file or directory`, rc 127). `_PINNED` nimmt das Skript auf.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
+Doku: keine (Testgerüst)
 
 ## Entscheidungen
 - T3: `verify.sh scripts` fährt `.github/scripts/*_test.sh` nicht (nur der CI-Schritt im Job ops-scripts); die Tests von T1 und T3 fährt die Session zusätzlich direkt mit bash, die Summary steht im Commit-Body. Die Aufnahme in run.sh wäre eine Harness-Änderung und bleibt außen vor.
