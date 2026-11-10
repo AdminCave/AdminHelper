@@ -1,5 +1,5 @@
 # CA-Issuer: Register der kompromittierten Zwischenzertifikate, Gleichstand im finish — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-11 · Review: pro Task
+Status: aktiv · Branch: feature/kern-ca-11 · Review: pro Task
 Spec: docs/features/kern-ca-11.md (Roadmap R-1113, R-1116)
 Heavy: linux-full — `apps/ca-issuer` im Diff: der Sammellauf über `main` fährt den Stack mit Enrollment und Rotation. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
