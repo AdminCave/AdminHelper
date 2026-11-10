@@ -7,7 +7,8 @@
 // the check they name (a figure without its check left out), the closed line of a
 // green card, a problem card's line in plain text (the sensor's status before the
 // raw message), silent checks marked one by one, the muted note, and a module the
-// catalog does not know (any more).
+// catalog does not know (any more). T10: a check without its credentials offers to store
+// them on the host.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,15 +16,43 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // calls matchMedia (missing in jsdom). The card's rows never draw a chart
 // (showChart={false}) — stub the lib away, same as SecServices.test.ts.
 vi.mock('uplot', () => ({ default: class {} }));
+
+const h = vi.hoisted(() => ({
+  connectCredential: vi.fn(async (..._a: unknown[]): Promise<void> => undefined),
+}));
+vi.mock('$lib/stores/connectFlow', () => ({ connectCredential: h.connectCredential }));
+vi.mock('$lib/stores/connections', async (orig) => {
+  const { writable } = await import('svelte/store');
+  return {
+    ...(await orig<typeof import('$lib/stores/connections')>()),
+    connections: writable([]),
+  };
+});
+vi.mock('$lib/stores/monitoring', async (orig) => {
+  const { writable } = await import('svelte/store');
+  return {
+    ...(await orig<typeof import('$lib/stores/monitoring')>()),
+    monitoringServers: writable([]),
+  };
+});
+
+import type { Writable } from 'svelte/store';
 import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import type {
   MonitorCatalogModule,
   MonitorCheck,
   MonitorProbeDetails,
   MonStatus,
+  Server,
 } from '$lib/api/types';
+import type { Connection } from '$lib/bridge/types';
 import { setLanguage } from '$lib/i18n';
+import * as connectionStore from '$lib/stores/connections';
+import * as monitoringStore from '$lib/stores/monitoring';
 import ModuleCard from './ModuleCard.svelte';
+
+const connectionList = connectionStore.connections as unknown as Writable<Connection[]>;
+const serverList = monitoringStore.monitoringServers as unknown as Writable<Server[]>;
 
 function probe(over: Partial<MonitorProbeDetails> = {}): MonitorProbeDetails {
   return {
@@ -81,7 +110,12 @@ function toggle(getByRole: (role: string, opts: object) => HTMLElement): HTMLEle
   return getByRole('button', { name: /Nginx|nginx/ });
 }
 
-beforeEach(() => setLanguage('de'));
+beforeEach(() => {
+  setLanguage('de');
+  connectionList.set([]);
+  serverList.set([]);
+  h.connectCredential.mockClear();
+});
 afterEach(() => cleanup());
 
 describe('ModuleCard', () => {
@@ -203,5 +237,72 @@ describe('ModuleCard', () => {
     expect(container.querySelector('dl')).toBeNull();
     expect(getByText('Status')).toBeTruthy();
     expect(getByText('Zertifikat')).toBeTruthy();
+  });
+
+  describe('credentials (T10)', () => {
+    const REF = 'nginx/proxy/status';
+    const BOX: Connection = {
+      id: 'c-box',
+      name: 'Box',
+      kind: 'ssh',
+      host: '192.0.2.10',
+      port: 22,
+      tags: [],
+      trustCert: false,
+      serverId: 'srv-1',
+    };
+    const needing = (
+      status: 'no_credential' | 'denied',
+      config: unknown = { credential: { ref: REF } },
+    ) => check('c1', 'status', 'critical', probe({ status }), { config } as Partial<MonitorCheck>);
+    const card = (checks: MonitorCheck[]) =>
+      render(ModuleCard, { module: MODULE, moduleId: 'nginx', instance: 'proxy', checks });
+
+    it('offers to store them for a check that lacks them, and not for one without a ref', () => {
+      const first = card([needing('no_credential')]);
+      expect(first.getByRole('button', { name: 'Zugangsdaten hinterlegen' })).toBeTruthy();
+      first.unmount();
+      const second = card([needing('denied')]);
+      expect(second.getByRole('button', { name: 'Zugangsdaten hinterlegen' })).toBeTruthy();
+      second.unmount();
+      const third = card([needing('no_credential', {})]);
+      expect(third.queryByRole('button', { name: 'Zugangsdaten hinterlegen' })).toBeNull();
+      third.unmount();
+      const fourth = card([needing('no_credential', { credential: { ref: 'a;reboot' } })]);
+      expect(fourth.queryByRole('button', { name: 'Zugangsdaten hinterlegen' })).toBeNull();
+    });
+
+    it("opens the dialog over the server's SSH connection without folding the row", async () => {
+      connectionList.set([
+        BOX,
+        { ...BOX, id: 'c-other', name: 'Other', serverId: 'srv-2' },
+        { ...BOX, id: 'c-rdp', name: 'Desk', kind: 'rdp', port: 3389 },
+      ]);
+      const { getByRole, queryByRole } = card([needing('no_credential')]);
+      const row = getByRole('button', { name: /^Status/ }).closest('.mon-line-wrapper')!;
+      expect(row.classList.contains('open')).toBe(false);
+      const offer = getByRole('button', { name: 'Zugangsdaten hinterlegen' });
+      await fireEvent.keyDown(offer, { key: 'Enter' });
+      await fireEvent.click(offer);
+      expect(row.classList.contains('open')).toBe(false);
+      expect(document.body.textContent).toContain(
+        `sudo adminhelper-agent monitor credential set ${REF}`,
+      );
+      // One SSH connection of this server: no choice to make.
+      expect(queryByRole('radio')).toBeNull();
+      await fireEvent.click(getByRole('button', { name: 'Terminal öffnen' }));
+      expect(h.connectCredential).toHaveBeenCalledExactlyOnceWith(BOX, REF);
+    });
+
+    it('shows the PowerShell command for a Windows server', async () => {
+      connectionList.set([BOX]);
+      serverList.set([
+        { id: 'srv-1', name: 'win', hostname: 'win.example', osType: 'Windows Server 2022' },
+      ]);
+      const { getByRole, queryByRole } = card([needing('no_credential')]);
+      await fireEvent.click(getByRole('button', { name: 'Zugangsdaten hinterlegen' }));
+      expect(document.body.textContent).toContain('adminhelper-agent.exe');
+      expect(queryByRole('button', { name: 'Terminal öffnen' })).toBeNull();
+    });
   });
 });

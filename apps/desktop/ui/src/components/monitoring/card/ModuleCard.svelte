@@ -10,8 +10,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { probeDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import { cardNote, cardSummary, probeStatusText, valueText } from '$lib/models/monitoringText';
+  import { connections } from '$lib/stores/connections';
+  import { monitoringServers } from '$lib/stores/monitoring';
   import Badge from '../../ui/Badge.svelte';
+  import Button from '../../ui/Button.svelte';
   import MonCheckLine from '../section/MonCheckLine.svelte';
+  import CredentialDialog, { credentialRefOf } from './CredentialDialog.svelte';
   import MonCard, { opensByDefault } from './MonCard.svelte';
 
   interface Props {
@@ -36,6 +40,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const details = probeDetails(check.state?.details);
     if (details?.status && details.status !== 'ok') return probeStatusText($t, details.status);
     return details?.problems?.[0] ?? null;
+  }
+
+  // A sensor that lacks its credentials or was refused with them: the admin stores them on
+  // the host (concept decision 3).
+  function credentialRefFor(check: MonitorCheck): string | null {
+    const status = probeDetails(check.state?.details)?.status;
+    if (status !== 'no_credential' && status !== 'denied') return null;
+    return credentialRefOf(check);
+  }
+
+  const serverId = $derived(checks[0]?.serverId ?? null);
+  const sshConnections = $derived(
+    serverId ? $connections.filter((c) => c.kind === 'ssh' && c.serverId === serverId) : [],
+  );
+  const windows = $derived(
+    ($monitoringServers.find((s) => s.id === serverId)?.osType ?? '')
+      .toLowerCase()
+      .includes('windows'),
+  );
+  let credential: { name: string; ref: string } | null = $state(null);
+
+  // The row around the button opens and closes on click and Enter.
+  function openCredential(e: MouseEvent, check: MonitorCheck, ref: string): void {
+    e.stopPropagation();
+    credential = { name: check.name, ref };
   }
 
   // The catalog's figures (`card`), each read from the instance's check it names; a
@@ -83,6 +112,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="module-checks">
     {#each checks as check (check.id)}
       {@const text = problemText(check)}
+      {@const ref = credentialRefFor(check)}
       <MonCheckLine {check} dense showChart={false}>
         {#snippet label()}
           <span class="mon-line-name">{check.name}</span>
@@ -94,11 +124,32 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {#if text}
             <span class="module-status">{text}</span>
           {/if}
+          {#if ref}
+            <Button
+              class="module-cred"
+              size="sm"
+              variant="secondary"
+              onclick={(e) => openCredential(e, check, ref)}
+              onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}
+            >
+              {$t('monitoring.credential.action')}
+            </Button>
+          {/if}
         {/snippet}
       </MonCheckLine>
     {/each}
   </div>
 </MonCard>
+{#if credential}
+  <CredentialDialog
+    open
+    checkName={credential.name}
+    credentialRef={credential.ref}
+    connections={sshConnections}
+    {windows}
+    onClose={() => (credential = null)}
+  />
+{/if}
 
 <style>
   .module-figures {
@@ -131,6 +182,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .module-checks {
     display: flex;
     flex-direction: column;
+  }
+  .module-checks :global(.module-cred) {
+    margin-left: var(--space-2);
   }
   .module-status {
     overflow: hidden;

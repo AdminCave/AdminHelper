@@ -55,6 +55,12 @@ export interface TerminalSession {
    * name. It is not reconnected and not kept for the next run.
    */
   ansible?: { check: boolean };
+  /**
+   * Runs only the agent's prompt for the monitoring credential `ref` on the host
+   * (arch-monitoring-ui): no shell, no snippets, no files. Reconnected the same way, and not kept
+   * for the next run.
+   */
+  credential?: { ref: string };
   /** An embedded RDP session (R-1098) instead of a program of a terminal. */
   rdp?: RdpView;
 }
@@ -263,12 +269,14 @@ function watchEnd(key: string, onEnd: () => void): void {
 /**
  * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
  * not start: the tab then shows the session disconnected, the status bar why. `onEnd` hears once
- * when the program of the tab ends or the tab is closed (R-1159).
+ * when the program of the tab ends or the tab is closed (R-1159). With `credentialRef` the tab
+ * runs the agent's prompt for that monitoring credential instead of a shell.
  */
 export function openTerminal(
   connection: Connection,
   resolved: Connection,
   onEnd?: () => void,
+  credentialRef?: string,
 ): Promise<boolean> {
   opened += 1;
   const key = `terminal-${opened}`;
@@ -281,13 +289,19 @@ export function openTerminal(
     exitCode: null,
     connectedAt: null,
     backendId: null,
+    ...(credentialRef === undefined ? {} : { credential: { ref: credentialRef } }),
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
   if (onEnd) watchEnd(key, onEnd);
-  return start(key, runtime, begin(runtime), sshLaunch(resolved));
+  return start(key, runtime, begin(runtime), sshLaunch(session, resolved));
 }
 
-function sshLaunch(resolved: Connection): Launch {
+function sshLaunch(session: TerminalSession, resolved: Connection): Launch {
+  const ref = session.credential?.ref;
+  if (ref !== undefined) {
+    return (cols, rows, onMessage) =>
+      bridge.terminalOpenSshCredential(resolved, ref, cols, rows, onMessage);
+  }
   return (cols, rows, onMessage) => bridge.terminalOpenSsh(resolved, cols, rows, onMessage);
 }
 
@@ -348,7 +362,7 @@ export async function reconnectTerminal(key: string): Promise<boolean> {
   }
   if (runtimes.get(key) !== runtime || runtime.attempt !== attempt) return false;
   update(key, { resolved });
-  return start(key, runtime, attempt, sshLaunch(resolved));
+  return start(key, runtime, attempt, sshLaunch(session, resolved));
 }
 
 // What an RDP tab holds besides what it shows. `attempt` counts the starts: the events and the
@@ -1140,12 +1154,13 @@ export interface SessionKeeping {
 
 let stopKeeping: (() => void) | null = null;
 
-/** The ids of the connections with an SSH tab, in tab order, each once. */
+/** The ids of the connections with an SSH shell tab, in tab order, each once. */
 export function openSessionIds(sessions: TerminalSession[]): string[] {
   const ids: string[] = [];
   for (const s of sessions) {
     if (
       !s.ansible &&
+      !s.credential &&
       s.connection.kind === 'ssh' &&
       s.connection.id &&
       !ids.includes(s.connection.id)

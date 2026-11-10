@@ -758,6 +758,20 @@ export const translations: Translations = {
     'monitoring.probe.ambiguousTarget': 'Ziel nicht eindeutig: mehrere Ports, keiner passt',
     'monitoring.probe.invalid': 'Der Agent hat die Fühler-Einstellungen abgelehnt',
     'monitoring.probe.other': 'Fühler meldet „{code}“',
+    'monitoring.credential.action': 'Zugangsdaten hinterlegen',
+    'monitoring.credential.intro':
+      '„{check}“ braucht Zugangsdaten auf dem Host. Das Geheimnis wird dort eingetippt: AdminHelper speichert es nicht, der Server erfährt nur, dass es hinterlegt ist.',
+    'monitoring.credential.ref': 'Schlüssel',
+    'monitoring.credential.connection': 'Verbindung',
+    'monitoring.credential.terminalHint':
+      'Öffnet ein Terminal über SSH, das nur diesen Befehl ausführt: sudo fragt nach dem eigenen Passwort, der Agent danach ohne Echo nach dem Geheimnis.',
+    'monitoring.credential.noSsh':
+      'Für diesen Server gibt es keine SSH-Verbindung. Den Befehl auf dem Host als root ausführen:',
+    'monitoring.credential.windows':
+      'Auf einem Windows-Host den Befehl in einer PowerShell als Administrator ausführen:',
+    'monitoring.credential.after':
+      'Der Check nimmt die Zugangsdaten mit seinem nächsten Lauf; bis dahin bleibt sein Status.',
+    'monitoring.credential.open': 'Terminal öffnen',
     'monitoring.muted.maintenance': 'Wartungsfenster — Meldungen unterdrückt',
     'monitoring.muted.hostDown': 'Host down — Meldungen unterdrückt',
     'monitoring.muted.silent': 'Stiller Check — meldet erst nach dem Übernehmen',
@@ -2182,6 +2196,20 @@ export const translations: Translations = {
     'monitoring.probe.ambiguousTarget': 'Target is ambiguous: several ports, none matches',
     'monitoring.probe.invalid': 'The agent rejected the sensor settings',
     'monitoring.probe.other': 'Sensor reports “{code}”',
+    'monitoring.credential.action': 'Store credentials',
+    'monitoring.credential.intro':
+      '“{check}” needs credentials on the host. The secret is typed in there: AdminHelper does not keep it, and the server only learns that it is stored.',
+    'monitoring.credential.ref': 'Key',
+    'monitoring.credential.connection': 'Connection',
+    'monitoring.credential.terminalHint':
+      'Opens a terminal over SSH that runs only this command: sudo asks for your own password, then the agent for the secret, without echo.',
+    'monitoring.credential.noSsh':
+      'There is no SSH connection for this server. Run the command on the host as root:',
+    'monitoring.credential.windows':
+      'On a Windows host, run the command in a PowerShell as administrator:',
+    'monitoring.credential.after':
+      'The check takes the credentials on its next run; until then its status stays.',
+    'monitoring.credential.open': 'Open terminal',
     'monitoring.muted.maintenance': 'Maintenance window — notifications muted',
     'monitoring.muted.hostDown': 'Host down — notifications muted',
     'monitoring.muted.silent': 'Silent check — alerts once adopted',

@@ -86,7 +86,13 @@ vi.mock('./connections', () => ({
   sessionsChanged: vi.fn(),
 }));
 
-import { initiateConnect, markRdpError, markRdpExit, reconnectRdpTab } from './connectFlow';
+import {
+  connectCredential,
+  initiateConnect,
+  markRdpError,
+  markRdpExit,
+  reconnectRdpTab,
+} from './connectFlow';
 import { reportError, showStatus } from './statusBar';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
@@ -814,7 +820,8 @@ describe('SSH console (R-1069)', () => {
 
     await initiateConnect(sshConn);
 
-    expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved, expect.any(Function));
+    // A shell: no credential ref (arch-monitoring-ui).
+    expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved, expect.any(Function), undefined);
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1', lastUsed: expect.any(String) }),
@@ -900,6 +907,39 @@ describe('SSH console (R-1069)', () => {
       JSDOM_CLIENT,
       expect.any(String),
     );
+  });
+
+  // arch-monitoring-ui T10: the agent's prompt for a monitoring credential runs only in the
+  // embedded terminal, whatever the console; a session like any start, the editor left alone.
+  it('opens the credential prompt embedded at the resolved target whatever the console', async () => {
+    withConsole('external');
+    const resolved: Connection = { ...sshConn, port: 23001 };
+    vi.mocked(resolveConnection).mockResolvedValueOnce({ connection: resolved, viaTunnel: true });
+
+    await connectCredential(sshConn, 'mysql/3306/monitor');
+
+    expect(openTerminal).toHaveBeenCalledWith(
+      sshConn,
+      resolved,
+      expect.any(Function),
+      'mysql/3306/monitor',
+    );
+    expect(openConnection).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1', lastUsed: expect.any(String) }),
+    );
+    expect(closeEditor).not.toHaveBeenCalled();
+  });
+
+  it('opens no credential prompt for a refused resolution or an invalid connection', async () => {
+    vi.mocked(resolveConnection).mockRejectedValueOnce(new Error(FOREIGN_PORT));
+    await connectCredential(sshConn, 'mysql/3306/monitor');
+    vi.mocked(validateConnection).mockReturnValueOnce({ ok: false, message: 'bad host' });
+    await connectCredential(sshConn, 'mysql/3306/monitor');
+
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);
+    expect(reportError).toHaveBeenCalledWith('bad host');
   });
 });
 
