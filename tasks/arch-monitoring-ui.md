@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui · Review: pro Task
 Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
 Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -147,8 +147,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui/T15.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/SshTerminal.test.ts
 Doku: keine (nur Test)
 
-### T16 — Monitoring: Test der Status-Zusammenfassung mit den Feldern aus T1 (R-1225, PR-CI)  [ ]
+### T16 — Monitoring: Test der Status-Zusammenfassung mit den Feldern aus T1 (R-1225, PR-CI)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_pagination.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @afbc941e5 2026-11-10T16:54:44+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T16.verdict.json)
 Änderung: PR-CI (#450, Job „Monitoring (pytest)“): `test_pagination.py::test_status_summary_counts_per_status` vergleicht die Antwort von `/status/summary` als ganzes Dict und kennt die Felder `lastResultAt` und `minIntervalS` aus T1 nicht; das gezielte Verify von T1 fuhr die Datei nicht. Die Erwartung nimmt beide Felder auf (`None`: keine Ergebnisse, kein aktiver Check), der Vergleich bleibt exakt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_pagination.py tests/test_status_page_api.py tests/test_response_shapes.py
 Doku: keine (nur Test)
