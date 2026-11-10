@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: → T12
 
-### T13 — Monitoring: Katalog-Schlüssel je Check in der Check- und Status-API (R-1225)  [ ]
+### T13 — Monitoring: Katalog-Schlüssel je Check in der Check- und Status-API (R-1225)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @94dc67feb 2026-11-10T11:55:06+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T13.verdict.json)
 Änderung: `MonitorCheck.to_dict` und `MonitorCheckOut` tragen `moduleCheckKey` (die Spalte `module_check_key`, gesetzt von `module_sync`), additiv und nur lesend: die Modulkarte (T5) ordnet die Katalog-`card`-Einträge (`check_key`) damit den Checks einer Instanz zu. Test: der bestehende Modul-Check-Test liest das Feld für Modul- und einfachen Check; OpenAPI-Snapshot neu aufgenommen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_response_shapes.py tests/test_openapi_snapshot.py
 Doku: → T12

@@ -325,6 +325,7 @@ class MonitorCheckOut(BaseModel):
     overriddenFields: list[str]
     moduleId: str | None
     moduleInstance: str | None
+    moduleCheckKey: str | None
     silent: bool
     createdAt: str | None
     updatedAt: str | None
