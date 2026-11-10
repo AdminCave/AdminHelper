@@ -14,8 +14,10 @@ beide Bereiche mit und ohne Freigabe. Details in der privaten Notiz des Zugs.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: → T4
 
-### T2 — R-1149: Erholung und Bestätigen sperren in einer Reihenfolge  [ ]
+### T2 — R-1149: Erholung und Bestätigen sperren in einer Reihenfolge  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notification_incident_locks.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @425b2e4ee 2026-11-10T04:25:55+01:00
+Review: approve (.ah-out/review/kern-notify-4/T2.verdict.json)
 Änderung: `_recover` sperrt vor jeder Änderung alle Vorfälle, die es anfassen kann (aktive mit einem der Schlüssel und
 den letzten Vorfall je Schlüssel und Server), in einer Abfrage nach id; `_note_stale` sperrt nicht mehr selbst.
 `ack_incidents` prüft ohne Sperre vor und sperrt nur Vorfälle, die es bestätigen darf (danach erneut geprüft).
@@ -44,3 +46,4 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - R-1147, R-1180, R-1186, R-1187 → tasks/kern-notify-5.md (Fragen an Kevin).
+- T2: die Erholung sperrt vorab in einer id-geordneten Abfrage; ein Reopen, der zwischen dieser Sperre und `_containing` committet, kann noch eine Sperre außer der Reihe auslösen. Restrisiko als Frage an Kevin (Empfehlung: hinnehmen; das Fenster ist klein, ein uncommitteter Reopen wird von FOR UPDATE nicht erfasst, Postgres bricht einen Deadlock ab).

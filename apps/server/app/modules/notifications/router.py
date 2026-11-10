@@ -236,9 +236,13 @@ def ack_incidents(
     now = _now()
     done: list[int] = []
     skipped: list[int] = []
-    # In id order: the row locks of two calls never wait on each other in a circle.
+    # In id order: the row locks of two calls never wait on each other in a circle. An
+    # incident is locked only once an unlocked look says it can be acked, so a skipped
+    # one is never held against a recovery (R-1149); the locked look decides.
     for incident_id in sorted(set(data.ids)):
-        held = incidents.access(db, current_user, incident_id, lock=True)
+        held = incidents.access(db, current_user, incident_id)
+        if held is not None and held.can_act and incidents.may_act("acked", held.incident.state):
+            held = incidents.access(db, current_user, incident_id, lock=True)
         if held is None or not held.can_act or not incidents.may_act("acked", held.incident.state):
             skipped.append(incident_id)
             continue
