@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-ui · Review: pro Task
+Status: erledigt · Branch: feature/arch-monitoring-ui · Review: pro Task
 Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
 Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
