@@ -181,6 +181,29 @@ def test_only_the_enrollment_plane_presents_the_new_root_beside_the_cross_certif
     }
 
 
+def _locations(block: list[Directive]) -> dict[tuple[str, ...], list[Directive]]:
+    return {tuple(d.args): d.block for d in block if d.name == "location"}
+
+
+def test_the_trust_generation_is_asked_only_on_the_mtls_plane_under_its_own_zone():
+    # R-1054: every agent asks /ca/trust in every run, many of them behind one address,
+    # so it gets a zone of its own and never draws on the renewals of /ca/renew.
+    zones = {args[1]: args for args in _args(_nginx_http(), "limit_req_zone")}
+    assert zones["zone=trust:10m"] == ["$binary_remote_addr", "zone=trust:10m", "rate=10r/s"]
+
+    servers = _servers()
+    for port in ("8444", "8445", "127.0.0.1:8081"):
+        assert ("=", "/ca/trust") not in _locations(servers[port]), port
+    trust = _locations(servers["443"])[("=", "/ca/trust")]
+    assert _args(trust, "limit_req") == [["zone=trust", "burst=100", "nodelay"]]
+    assert _args(trust, "client_max_body_size") == [["1k"]]
+    assert _args(trust, "proxy_pass") == [["http://issuer/trust"]]
+    # A proxy_set_header or include here would end the inheritance of the identity
+    # headers the issuer reads (identity-headers.conf on the server level).
+    assert {"proxy_set_header", "include"} & _names_within(trust) == set()
+    assert ["/etc/nginx/snippets/identity-headers.conf"] in _args(servers["443"], "include")
+
+
 def _run_args(gateway: dict) -> list[str]:
     """docker run arguments for the capabilities, security options, sysctls and the process
     limit compose gives the gateway."""

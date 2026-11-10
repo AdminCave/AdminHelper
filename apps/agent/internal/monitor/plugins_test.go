@@ -265,7 +265,7 @@ func TestHelperDockerProcess(t *testing.T) {
 func runHelperDocker(t *testing.T, mode string, timeout time.Duration) error {
 	t.Helper()
 	t.Setenv(dockerHelperEnv, mode)
-	_, err := runTimed(context.Background(), timeout, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	_, err := execTimed(context.Background(), timeout, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	return err
 }
 
@@ -288,7 +288,7 @@ func TestRunTimedEndsWhenAGrandchildHoldsStdout(t *testing.T) {
 	// leaves the helper time to start its grandchild; the marker in the output proves it did.
 	t.Setenv(dockerHelperEnv, "orphan")
 	start := time.Now()
-	out, err := runTimed(context.Background(), time.Second, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	out, err := execTimed(context.Background(), time.Second, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	elapsed := time.Since(start)
 	if !strings.Contains(string(out), orphanStarted) {
 		t.Fatalf("output = %q, the grandchild did not start before the timeout", out)
@@ -309,7 +309,7 @@ func TestRunTimedEndsWithTheContext(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(100*time.Millisecond, cancel)
 	start := time.Now()
-	_, err := runTimed(ctx, time.Minute, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	_, err := execTimed(ctx, time.Minute, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
@@ -329,7 +329,10 @@ func TestBuildReportPassesItsContextToThePlugins(t *testing.T) {
 		}
 	}
 	pluginCollectors.docker = record("docker")
-	pluginCollectors.proxmox = record("proxmox")
+	proxmox := record("proxmox")
+	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
+		return proxmox(ctx), nil
+	}
 	pluginCollectors.zfs = record("zfs")
 
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
@@ -633,8 +636,8 @@ func TestCollectZFSPools(t *testing.T) {
 }
 
 // stubPvesh swaps pveshCLI for a fake pvesh that is on the PATH and answers each `pvesh get` by its
-// API path from replies, like stubZpool; a path without a reply fails the test. It returns the
-// recorded calls.
+// API path from replies, like stubZpool; a call with --type is answered by "<path>?type=<type>"
+// (pveshVMs, pveshStorages). A path without a reply fails the test. It returns the recorded calls.
 func stubPvesh(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Helper()
 	old := pveshCLI
@@ -646,7 +649,11 @@ func stubPvesh(t *testing.T, replies map[string]dockerReply) *[][]string {
 		var reply dockerReply
 		ok := len(args) > 1 && args[0] == "get"
 		if ok {
-			reply, ok = replies[args[1]]
+			key := args[1]
+			if len(args) > 3 && args[2] == "--type" {
+				key += "?type=" + args[3]
+			}
+			reply, ok = replies[key]
 		}
 		if !ok {
 			t.Errorf("unexpected pvesh call %v", args)
@@ -675,11 +682,11 @@ func pveshNodeStatus(t *testing.T) string {
 	return pveshNode(t) + "/status"
 }
 
-// pveshBackupStorages is the API path collectProxmox asks for the local node's backup storages.
-func pveshBackupStorages(t *testing.T) string {
-	t.Helper()
-	return pveshNode(t) + "/storage"
-}
+// The keys stubPvesh answers `pvesh get /cluster/resources --type vm|storage` by.
+const (
+	pveshVMs      = "/cluster/resources?type=vm"
+	pveshStorages = "/cluster/resources?type=storage"
+)
 
 // pveshBackupContent is the API path collectProxmox asks for the backups on one storage.
 func pveshBackupContent(t *testing.T, storage string) string {
@@ -719,8 +726,10 @@ func assertProxmoxUnavailable(t *testing.T, block map[string]any, logs *bytes.Bu
 func TestCollectProxmoxCLIMissing(t *testing.T) {
 	calls := stubPvesh(t, nil)
 	pveshCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
-	if got := collectProxmox(context.Background()); got != nil {
-		t.Errorf("collectProxmox() = %v, want nil (pvesh not installed is not an outage)", got)
+	saved := &backupIndexCheck{Node: "pve", Index: map[int]int64{}}
+	if got, check := collectProxmox(context.Background(), saved, time.Now()); got != nil || check != nil {
+		t.Errorf("collectProxmox() = %v, %v, want nil, nil (pvesh not installed is not an outage, "+
+			"and a Proxmox gone keeps no index)", got, check)
 	}
 	if len(*calls) != 0 {
 		t.Errorf("pvesh was called without a pvesh binary: %v", *calls)
@@ -735,7 +744,7 @@ func TestCollectProxmoxHostnameUnreadable(t *testing.T) {
 		return "", &os.PathError{Op: "open", Path: "/proc/sys/kernel/hostname", Err: os.ErrPermission}
 	}
 	logs := captureWarnings(t)
-	assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, "cli_failed", "local hostname unreadable")
+	assertProxmoxUnavailable(t, proxmoxBlock(t), logs, "cli_failed", "local hostname unreadable")
 	if len(*calls) != 0 {
 		t.Errorf("pvesh was called without a node name: %v", *calls)
 	}
@@ -760,7 +769,7 @@ func TestCollectProxmoxNodeStatusFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			calls := stubPvesh(t, map[string]dockerReply{pveshNodeStatus(t): tc.reply})
 			logs := captureWarnings(t)
-			assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, tc.code, tc.text)
+			assertProxmoxUnavailable(t, proxmoxBlock(t), logs, tc.code, tc.text)
 			if len(*calls) != 1 {
 				t.Errorf("calls = %v, want only the node status", *calls)
 			}
@@ -787,12 +796,12 @@ func TestCollectProxmoxVMCallFails(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			stubPvesh(t, map[string]dockerReply{
-				pveshNodeStatus(t):     {out: pveshNodeStatusFixture},
-				pveshBackupStorages(t): {out: "[]"},
-				"/cluster/resources":   tc.reply,
+				pveshNodeStatus(t): {out: pveshNodeStatusFixture},
+				pveshStorages:      {out: "[]"},
+				pveshVMs:           tc.reply,
 			})
 			logs := captureWarnings(t)
-			assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, tc.code, tc.text)
+			assertProxmoxUnavailable(t, proxmoxBlock(t), logs, tc.code, tc.text)
 		})
 	}
 }
@@ -801,11 +810,11 @@ func TestCollectProxmoxNoVMs(t *testing.T) {
 	// The counter-check: an empty list is a node without VMs, and the block goes out available with
 	// the node and an empty list, never null.
 	stubPvesh(t, map[string]dockerReply{
-		pveshNodeStatus(t):     {out: pveshNodeStatusFixture},
-		pveshBackupStorages(t): {out: "[]"},
-		"/cluster/resources":   {out: "[]"},
+		pveshNodeStatus(t): {out: pveshNodeStatusFixture},
+		pveshStorages:      {out: "[]"},
+		pveshVMs:           {out: "[]"},
 	})
-	got := dockerWire(t, collectProxmox(context.Background()))
+	got := dockerWire(t, proxmoxBlock(t))
 	want := wantDockerWire(t, `{"available": true, "error": null, "vms": [],
 		"node": {"name": "`+strings.TrimPrefix(pveshNode(t), "/nodes/")+`", "cpu": 5, "memory_percent": 25}}`)
 	if !reflect.DeepEqual(got, want) {
@@ -817,12 +826,20 @@ func TestCollectProxmoxNoVMs(t *testing.T) {
 const pveshVMsFixture = `[{"id":"qemu/100","type":"qemu","vmid":100,"name":"web","status":"running","node":"pve"},
 {"id":"lxc/101","type":"lxc","vmid":101,"name":"dns","status":"running","node":"pve"}]`
 
-// pveshStorage is one entry of `pvesh get /nodes/<node>/storage --content backup` with the given
-// active value (JSON); an empty value leaves the field out.
-func pveshStorage(id, active string) string {
-	entry := `{"storage":"` + id + `","type":"dir","content":"backup,iso","enabled":1,"shared":0`
-	if active != "" {
-		entry += `,"active":` + active
+// pveshStorage is one entry of `pvesh get /cluster/resources --type storage` on the local node, with
+// the given status; an empty status leaves the field out.
+func pveshStorage(t *testing.T, id, status string) string {
+	t.Helper()
+	return pveshStorageOn(t, strings.TrimPrefix(pveshNode(t), "/nodes/"), id, "backup,iso", status)
+}
+
+// pveshStorageOn is such an entry of any node, with the given content list.
+func pveshStorageOn(t *testing.T, node, id, content, status string) string {
+	t.Helper()
+	entry := fmt.Sprintf(`{"id":"storage/%s/%s","type":"storage","storage":"%s","node":"%s","content":"%s",`+
+		`"plugintype":"nfs","shared":0,"disk":1,"maxdisk":2`, node, id, id, node, content)
+	if status != "" {
+		entry += `,"status":"` + status + `"`
 	}
 	return entry + "}"
 }
@@ -839,51 +856,46 @@ func TestCollectProxmoxBackupIndexIncomplete(t *testing.T) {
 	// inactive storage, and the log (diagnose) names the reason, short and without stderr.
 	node := pveshNode(t)
 	fails := runHelperDocker(t, "fail", time.Minute)
-	twoStorages := "[" + pveshStorage("local", "1") + "," + pveshStorage("nas", "1") + "]"
+	twoStorages := "[" + pveshStorage(t, "local", "available") + "," + pveshStorage(t, "nas", "available") + "]"
 	localBackups := "[" + pveshBackup("local", 100, 1760000000) + "]"
 	cases := []struct {
 		name       string
 		replies    map[string]dockerReply
 		code, text string
 	}{
-		{"list fails", map[string]dockerReply{pveshBackupStorages(t): {err: fails}},
-			"cli_failed", "pvesh get " + node + "/storage failed: exit status 3"},
-		{"list times out", map[string]dockerReply{pveshBackupStorages(t): {err: context.DeadlineExceeded}},
-			"timeout", "pvesh get " + node + "/storage timed out after 15s"},
-		{"list not json", map[string]dockerReply{pveshBackupStorages(t): {out: "not json"}},
-			"parse_failed", "pvesh get " + node + "/storage output unreadable"},
-		{"list null", map[string]dockerReply{pveshBackupStorages(t): {out: "null"}},
-			"parse_failed", "pvesh get " + node + "/storage output unreadable"},
-		// An inactive storage gets no content call: it would fail with "storage ... is not online".
-		{"storage active 0", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: "[" + pveshStorage("local", "1") + "," + pveshStorage("nas", "0") + "]"},
-			pveshBackupContent(t, "local"): {out: localBackups},
+		{"list fails", map[string]dockerReply{pveshStorages: {err: fails}},
+			"cli_failed", "pvesh get /cluster/resources failed: exit status 3"},
+		{"list times out", map[string]dockerReply{pveshStorages: {err: context.DeadlineExceeded}},
+			"timeout", "pvesh get /cluster/resources timed out after 15s"},
+		{"list not json", map[string]dockerReply{pveshStorages: {out: "not json"}},
+			"parse_failed", "pvesh get /cluster/resources output unreadable"},
+		{"list null", map[string]dockerReply{pveshStorages: {out: "null"}},
+			"parse_failed", "pvesh get /cluster/resources output unreadable"},
+		// A storage that is not available gets no content call: it would fail with "storage ... is not
+		// online", or hang on its share. Nothing is read before the outage.
+		{"storage unknown", map[string]dockerReply{
+			pveshStorages: {out: "[" + pveshStorage(t, "local", "available") + "," + pveshStorage(t, "nas", "unknown") + "]"},
 		}, "backup_index_incomplete", "backup storage nas not active"},
-		{"storage active false", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: "[" + pveshStorage("local", "1") + "," + pveshStorage("nas", "false") + "]"},
-			pveshBackupContent(t, "local"): {out: localBackups},
-		}, "backup_index_incomplete", "backup storage nas not active"},
-		{"storage without active", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: "[" + pveshStorage("local", "1") + "," + pveshStorage("nas", "") + "]"},
-			pveshBackupContent(t, "local"): {out: localBackups},
+		{"storage without status", map[string]dockerReply{
+			pveshStorages: {out: "[" + pveshStorage(t, "local", "available") + "," + pveshStorage(t, "nas", "") + "]"},
 		}, "backup_index_incomplete", "backup storage nas not active"},
 		{"content fails", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: twoStorages},
+			pveshStorages:                  {out: twoStorages},
 			pveshBackupContent(t, "local"): {out: localBackups},
 			pveshBackupContent(t, "nas"):   {err: fails},
 		}, "cli_failed", "pvesh get " + node + "/storage/nas/content failed: exit status 3"},
 		{"content times out", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: twoStorages},
+			pveshStorages:                  {out: twoStorages},
 			pveshBackupContent(t, "local"): {out: localBackups},
 			pveshBackupContent(t, "nas"):   {err: context.DeadlineExceeded},
 		}, "timeout", "pvesh get " + node + "/storage/nas/content timed out after 15s"},
 		{"content not json", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: twoStorages},
+			pveshStorages:                  {out: twoStorages},
 			pveshBackupContent(t, "local"): {out: localBackups},
 			pveshBackupContent(t, "nas"):   {out: "not json"},
 		}, "parse_failed", "pvesh get " + node + "/storage/nas/content output unreadable"},
 		{"content null", map[string]dockerReply{
-			pveshBackupStorages(t):         {out: twoStorages},
+			pveshStorages:                  {out: twoStorages},
 			pveshBackupContent(t, "local"): {out: localBackups},
 			pveshBackupContent(t, "nas"):   {out: "null"},
 		}, "parse_failed", "pvesh get " + node + "/storage/nas/content output unreadable"},
@@ -891,35 +903,42 @@ func TestCollectProxmoxBackupIndexIncomplete(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			replies := map[string]dockerReply{
-				pveshNodeStatus(t):   {out: pveshNodeStatusFixture},
-				"/cluster/resources": {out: pveshVMsFixture},
+				pveshNodeStatus(t): {out: pveshNodeStatusFixture},
+				pveshVMs:           {out: pveshVMsFixture},
 			}
 			for path, reply := range tc.replies {
 				replies[path] = reply
 			}
 			stubPvesh(t, replies)
 			logs := captureWarnings(t)
-			assertProxmoxUnavailable(t, collectProxmox(context.Background()), logs, tc.code, tc.text)
+			assertProxmoxUnavailable(t, proxmoxBlock(t), logs, tc.code, tc.text)
 		})
 	}
 }
 
 func TestCollectProxmoxBackupIndex(t *testing.T) {
 	// The counter-check: with every backup storage read, a VM gets its newest backup across all of them
-	// and a VM without one stays null ("No backup" on the server); an empty storage is no failure. The
-	// active flag counts as 1 and as true.
+	// and a VM without one stays null ("No backup" on the server); an empty storage is no failure.
+	// Storages of other nodes and storages without backup content are no backup storages of this node:
+	// their status does not count and their content is not read. The storage list never comes from
+	// /nodes/<node>/storage, which activates every storage it lists.
 	node := pveshNode(t)
 	calls := stubPvesh(t, map[string]dockerReply{
 		pveshNodeStatus(t): {out: pveshNodeStatusFixture},
-		pveshBackupStorages(t): {out: "[" + pveshStorage("local", "1") + "," + pveshStorage("nas", "true") + "," +
-			pveshStorage("pbs", "1") + "]"},
+		pveshStorages: {out: "[" + pveshStorage(t, "nas", "available") + "," + pveshStorage(t, "local", "available") + "," +
+			pveshStorageOn(t, "other-node", "nas", "backup", "unknown") + "," +
+			pveshStorageOn(t, strings.TrimPrefix(node, "/nodes/"), "images", "images,rootdir", "unknown") + "," +
+			pveshStorageOn(t, strings.TrimPrefix(node, "/nodes/"), "backup2", "iso,vztmpl", "available") + "," +
+			pveshStorage(t, "pbs", "available") + "]"},
 		pveshBackupContent(t, "local"): {out: "[" + pveshBackup("local", 100, 1760000000) + "]"},
 		pveshBackupContent(t, "nas"): {out: "[" + pveshBackup("nas", 100, 1760086400) + "," +
 			pveshBackup("nas", 100, 1759900000) + "]"},
 		pveshBackupContent(t, "pbs"): {out: "[]"},
-		"/cluster/resources":         {out: pveshVMsFixture},
+		pveshVMs:                     {out: pveshVMsFixture},
 	})
-	wire := dockerWire(t, collectProxmox(context.Background()))
+	now := time.Unix(1760090000, 0)
+	block, check := collectProxmox(context.Background(), nil, now)
+	wire := dockerWire(t, block)
 	want := wantDockerWire(t, `{"vms": [
 		{"vmid": 100, "name": "web", "status": "running", "type": "qemu", "last_backup_ts": 1760086400},
 		{"vmid": 101, "name": "dns", "status": "running", "type": "lxc", "last_backup_ts": null}
@@ -936,11 +955,139 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 	}
 	wantCalls := [][]string{
 		{"get", node + "/status", "--output-format", "json"},
-		{"get", node + "/storage", "--content", "backup", "--output-format", "json"},
+		{"get", "/cluster/resources", "--type", "storage", "--output-format", "json"},
 		content("local"), content("nas"), content("pbs"),
 		{"get", "/cluster/resources", "--type", "vm", "--output-format", "json"},
 	}
 	if !reflect.DeepEqual(*calls, wantCalls) {
 		t.Errorf("calls =\n%v\nwant\n%v", *calls, wantCalls)
+	}
+	wantCheck := &backupIndexCheck{CheckedUnix: now.Unix(), Node: strings.TrimPrefix(node, "/nodes/"),
+		Storages: []string{"local", "nas", "pbs"}, Index: map[int]int64{100: 1760086400}}
+	if !reflect.DeepEqual(check, wantCheck) {
+		t.Errorf("check = %+v, want %+v", check, wantCheck)
+	}
+}
+
+// proxmoxBlock is collectProxmox's block for a report without a saved backup index.
+func proxmoxBlock(t *testing.T) map[string]any {
+	t.Helper()
+	block, _ := collectProxmox(context.Background(), nil, time.Now())
+	return block
+}
+
+func TestCollectProxmoxBackupIndexCache(t *testing.T) {
+	// The content of the backup storages is read at most every proxmoxBackupsEvery: a saved index that
+	// is fresh for the same node and storages is the index, without a content call. An old one, one
+	// from the future, one of another node or other storages, and one without an index are read anew.
+	node := strings.TrimPrefix(pveshNode(t), "/nodes/")
+	now := time.Unix(1760090000, 0)
+	storages := []string{"local", "nas"}
+	savedIndex := map[int]int64{100: 1750000000, 101: 1750000001}
+	readIndex := map[int]int64{100: 1760000000}
+	saved := func(age time.Duration, mutate func(*backupIndexCheck)) *backupIndexCheck {
+		c := &backupIndexCheck{CheckedUnix: now.Add(-age).Unix(), Node: node, Storages: storages, Index: savedIndex}
+		if mutate != nil {
+			mutate(c)
+		}
+		return c
+	}
+	cases := []struct {
+		name  string
+		saved *backupIndexCheck
+		read  bool
+	}{
+		{"fresh", saved(10*time.Minute, nil), false},
+		{"just under the interval", saved(proxmoxBackupsEvery-time.Second, nil), false},
+		{"old", saved(proxmoxBackupsEvery, nil), true},
+		{"from the future", saved(-time.Minute, nil), true},
+		{"no state", nil, true},
+		{"state without index", saved(time.Minute, func(c *backupIndexCheck) { c.Index = nil }), true},
+		{"other node", saved(time.Minute, func(c *backupIndexCheck) { c.Node = "other-node" }), true},
+		{"storage added", saved(time.Minute, func(c *backupIndexCheck) { c.Storages = []string{"local"} }), true},
+		{"empty fresh index", saved(time.Minute, func(c *backupIndexCheck) { c.Index = map[int]int64{} }), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := stubPvesh(t, map[string]dockerReply{
+				pveshNodeStatus(t):             {out: pveshNodeStatusFixture},
+				pveshStorages:                  {out: "[" + pveshStorage(t, "nas", "available") + "," + pveshStorage(t, "local", "available") + "]"},
+				pveshBackupContent(t, "local"): {out: "[" + pveshBackup("local", 100, 1760000000) + "]"},
+				pveshBackupContent(t, "nas"):   {out: "[]"},
+				pveshVMs:                       {out: pveshVMsFixture},
+			})
+			block, check := collectProxmox(context.Background(), tc.saved, now)
+			contentCalls := 0
+			for _, c := range *calls {
+				if strings.HasSuffix(c[1], "/content") {
+					contentCalls++
+				}
+			}
+			wantTS := map[int]any{}
+			if tc.read {
+				if contentCalls != 2 {
+					t.Errorf("content calls = %d, want 2 (one per storage): %v", contentCalls, *calls)
+				}
+				want := &backupIndexCheck{CheckedUnix: now.Unix(), Node: node, Storages: storages, Index: readIndex}
+				if !reflect.DeepEqual(check, want) {
+					t.Errorf("check = %+v, want the index just read %+v", check, want)
+				}
+				wantTS[100], wantTS[101] = float64(1760000000), nil
+			} else {
+				if contentCalls != 0 {
+					t.Errorf("content calls = %d, want none with a fresh index: %v", contentCalls, *calls)
+				}
+				if check != tc.saved {
+					t.Errorf("check = %+v, want the saved one %+v unchanged", check, tc.saved)
+				}
+				for vmid := range map[int]bool{100: true, 101: true} {
+					if ts, ok := tc.saved.Index[vmid]; ok {
+						wantTS[vmid] = float64(ts)
+					} else {
+						wantTS[vmid] = nil
+					}
+				}
+			}
+			vms, _ := dockerWire(t, block)["vms"].([]any)
+			if len(vms) != 2 {
+				t.Fatalf("vms = %v, want both guests", vms)
+			}
+			for _, vm := range vms {
+				m := vm.(map[string]any)
+				vmid := int(m["vmid"].(float64))
+				if !reflect.DeepEqual(m["last_backup_ts"], wantTS[vmid]) {
+					t.Errorf("vm %d last_backup_ts = %v, want %v", vmid, m["last_backup_ts"], wantTS[vmid])
+				}
+			}
+		})
+	}
+}
+
+func TestCollectProxmoxOutageKeepsSavedIndex(t *testing.T) {
+	// An outage reads no index, so the saved one goes on unchanged: the storage list that failed this
+	// time says nothing about the backups read before. A storage that is not available is such an
+	// outage, even with a fresh index.
+	node := strings.TrimPrefix(pveshNode(t), "/nodes/")
+	now := time.Unix(1760090000, 0)
+	saved := &backupIndexCheck{CheckedUnix: now.Unix() - 60, Node: node, Storages: []string{"nas"},
+		Index: map[int]int64{100: 1750000000}}
+	for name, storages := range map[string]dockerReply{
+		"list fails":            {err: context.DeadlineExceeded},
+		"storage not available": {out: "[" + pveshStorage(t, "nas", "unknown") + "]"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubPvesh(t, map[string]dockerReply{
+				pveshNodeStatus(t): {out: pveshNodeStatusFixture},
+				pveshStorages:      storages,
+			})
+			captureWarnings(t)
+			block, check := collectProxmox(context.Background(), saved, now)
+			if block["available"] != false {
+				t.Errorf("block = %v, want the outage", block)
+			}
+			if check != saved {
+				t.Errorf("check = %+v, want the saved one %+v", check, saved)
+			}
+		})
 	}
 }

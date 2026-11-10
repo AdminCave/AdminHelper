@@ -98,8 +98,11 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			report["docker"] = docker
 		}
 	})
+	// A throttled run leaves next.ProxmoxBackups as prev had it, so the saved index stays.
 	m.optional(ctx, "proxmox", func(ctx context.Context) {
-		if proxmox := pluginCollectors.proxmox(ctx); proxmox != nil {
+		proxmox, backups := pluginCollectors.proxmox(ctx, prev.ProxmoxBackups, now)
+		next.ProxmoxBackups = backups
+		if proxmox != nil {
 			report["proxmox"] = proxmox
 		}
 	})
@@ -201,7 +204,7 @@ var pushRetryDelay = 10 * time.Second
 // docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
 var pluginCollectors = struct {
 	docker  func(context.Context) map[string]any
-	proxmox func(context.Context) map[string]any
+	proxmox func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck)
 	zfs     func(context.Context) map[string]any
 	smart   func(context.Context) ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}

@@ -167,11 +167,11 @@ func TestBuildReportMeasuresEveryCollector(t *testing.T) {
 func TestBuildReportCountsTheCPUTimeOfTheToolsItWaitedFor(t *testing.T) {
 	stubReportHost(t)
 	t.Setenv(dockerHelperEnv, "spin")
-	pluginCollectors.proxmox = func(ctx context.Context) map[string]any {
-		if _, err := runTimed(ctx, time.Minute, os.Args[0], "-test.run=^TestHelperDockerProcess$"); err != nil {
+	pluginCollectors.proxmox = func(ctx context.Context, _ *backupIndexCheck, _ time.Time) (map[string]any, *backupIndexCheck) {
+		if _, err := execTimed(ctx, time.Minute, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$"); err != nil {
 			t.Errorf("spinning helper: %v", err)
 		}
-		return nil
+		return nil, nil
 	}
 
 	report, _ := buildReportWithState(context.Background(), nil, nil, reportState{}, time.Now())
@@ -189,7 +189,7 @@ func TestBuildReportThrottlesAnOptionalCollectorThatHitsItsTimeLimit(t *testing.
 	calls := 0
 	pluginCollectors.docker = func(ctx context.Context) map[string]any {
 		calls++
-		_, err := runTimed(ctx, 50*time.Millisecond, os.Args[0], "-test.run=^TestHelperDockerProcess$")
+		_, err := execTimed(ctx, 50*time.Millisecond, nil, os.Args[0], "-test.run=^TestHelperDockerProcess$")
 		return map[string]any{"available": false, "error": err.Error()}
 	}
 	var state reportState

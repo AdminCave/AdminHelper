@@ -191,6 +191,57 @@ func TestReportStateRoundtrip(t *testing.T) {
 	}
 }
 
+func TestReportStateProxmoxBackups(t *testing.T) {
+	// The backup index survives the state file, an empty one as empty (read, no backups yet), not as
+	// nil (never read), which would read the storages again in every report. A state an older agent
+	// saved has none.
+	path := filepath.Join(t.TempDir(), ".report-state.json")
+	for name, index := range map[string]map[int]int64{"empty": {}, "two": {100: 1760000000, 101: 1760000001}} {
+		t.Run(name, func(t *testing.T) {
+			want := backupIndexCheck{CheckedUnix: 1760090000, Node: "pve", Storages: []string{"local", "nas"}, Index: index}
+			if err := saveReportState(path, reportState{ProxmoxBackups: &want}); err != nil {
+				t.Fatalf("saveReportState: %v", err)
+			}
+			got := loadReportState(path).ProxmoxBackups
+			if got == nil || got.Index == nil || !reflect.DeepEqual(*got, want) {
+				t.Errorf("roundtrip: got %+v, want %+v", got, want)
+			}
+		})
+	}
+	if err := os.WriteFile(path, []byte(`{"cpu":{"unix":1,"total":2,"busy":1}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(path); st.ProxmoxBackups != nil {
+		t.Errorf("older state: got %+v, want no backup index", st.ProxmoxBackups)
+	}
+}
+
+func TestBuildReportCarriesProxmoxBackups(t *testing.T) {
+	// The report hands the collector the saved index and the time of the report, and saves what it
+	// returns: nil as well, when Proxmox is gone.
+	stubReportHost(t)
+	saved := &backupIndexCheck{CheckedUnix: 1, Node: "pve", Index: map[int]int64{}}
+	read := &backupIndexCheck{CheckedUnix: 2, Node: "pve", Index: map[int]int64{100: 3}}
+	now := time.Unix(1760090000, 0)
+	for name, ret := range map[string]*backupIndexCheck{"read": read, "gone": nil} {
+		t.Run(name, func(t *testing.T) {
+			var gotSaved *backupIndexCheck
+			var gotNow time.Time
+			pluginCollectors.proxmox = func(_ context.Context, s *backupIndexCheck, n time.Time) (map[string]any, *backupIndexCheck) {
+				gotSaved, gotNow = s, n
+				return nil, ret
+			}
+			_, next := buildReportWithState(context.Background(), nil, nil, reportState{ProxmoxBackups: saved}, now)
+			if gotSaved != saved || !gotNow.Equal(now) {
+				t.Errorf("collector got %+v at %v, want %+v at %v", gotSaved, gotNow, saved, now)
+			}
+			if next.ProxmoxBackups != ret {
+				t.Errorf("next.ProxmoxBackups = %+v, want %+v", next.ProxmoxBackups, ret)
+			}
+		})
+	}
+}
+
 func TestReportStateOOMKillSource(t *testing.T) {
 	// The state keeps where the OOM counter came from; a file from before the source was saved holds a
 	// /proc/vmstat counter.

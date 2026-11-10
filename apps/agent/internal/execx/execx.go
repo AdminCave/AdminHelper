@@ -10,6 +10,7 @@ package execx
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"time"
@@ -28,10 +29,19 @@ const WaitDelay = 2 * time.Second
 //
 // A call its own timeout ended counts under CountTimeouts; one that ctx ended does not.
 func Run(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	return RunEnv(ctx, timeout, nil, name, args...)
+}
+
+// RunEnv is Run with env added to the agent's environment; a later entry of the same key wins
+// (os/exec), so the agent's own LC_ALL is overridden.
+func RunEnv(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.WaitDelay = WaitDelay
 	out, err := cmd.Output()
 	if errors.Is(err, exec.ErrWaitDelay) {

@@ -29,7 +29,9 @@ func stubReportHost(t *testing.T) {
 	cpuSampleInterval = 0
 	oldPlugins := pluginCollectors
 	pluginCollectors.docker = func(context.Context) map[string]any { return nil }
-	pluginCollectors.proxmox = func(context.Context) map[string]any { return nil }
+	pluginCollectors.proxmox = func(context.Context, *backupIndexCheck, time.Time) (map[string]any, *backupIndexCheck) {
+		return nil, nil
+	}
 	pluginCollectors.zfs = func(context.Context) map[string]any { return nil }
 	pluginCollectors.smart = func(context.Context) ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector

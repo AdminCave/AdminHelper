@@ -8,9 +8,6 @@ package monitor
 
 import (
 	"context"
-	"errors"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -33,24 +30,6 @@ var updatesCalls = struct {
 	now func() time.Time
 	run func(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error)
 }{time.Now, runTimedEnv}
-
-// runTimedEnv is runTimed with env added to the environment; a later entry of the same key wins
-// (os/exec), so the agent's own LC_ALL is overridden.
-func runTimedEnv(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), env...)
-	cmd.WaitDelay = commandWaitDelay
-	out, err := cmd.Output()
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return out, nil
-	}
-	if err != nil && ctx.Err() != nil {
-		return out, ctx.Err()
-	}
-	return out, err
-}
 
 // securityUpdates returns the count to report and to save: saved while it is younger than an hour,
 // else a new count from the local package cache, never the network (apt-get -s, dnf -C). A count

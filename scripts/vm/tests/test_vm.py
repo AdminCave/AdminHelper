@@ -2388,6 +2388,18 @@ def test_a_report_has_no_side_effects(cfg, api, http, monkeypatch, verb_name):
     assert swept == []
 
 
+def test_a_dry_run_reap_does_not_sweep(cfg, api, http, monkeypatch):
+    # R-1153: `reap --dry-run` reported what it would do, and the sweep after it
+    # then destroyed the expired boxes of the lane for real.
+    swept = []
+    monkeypatch.setattr(vm, "reap_lane", lambda *a, **k: swept.append(1) or [])
+    wired(monkeypatch, cfg, api, reap=lambda c, a, args: 0)
+    assert vm.main(["reap", "--dry-run"]) == 0
+    assert swept == []
+    assert vm.main(["reap"]) == 0
+    assert swept == [1]
+
+
 def test_the_sweep_can_be_switched_off(cfg, api, http, monkeypatch):
     swept = []
     monkeypatch.setenv("AH_VM_NO_AUTOREAP", "1")
