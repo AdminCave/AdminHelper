@@ -1,5 +1,5 @@
 # Downloads der CI wiederholen, xrdp-Suite je PR — Task-Ledger
-Status: aktiv · Branch: feature/ci-7 · Review: am Ende
+Status: bereit · Branch: feature/ci-7 · Review: am Ende
 Spec: docs/features/ci-7.md (Roadmap R-1130, R-1160, R-1194, R-1142)
 Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbst (die geänderten Jobs laufen im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -24,8 +24,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku und CHANGELOG  [ ]
+### T3 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @31abf8d84 2026-11-10T08:03:59+01:00
+Review: am Ende (Branch-Review)
 Änderung: DE und EN in der `ci.yml`-Zeile der Workflow-Tabelle: die Downloads mit Frist und Wiederholung (apt, Playwright mit Browser-Cache, curl), der Job `rdp-embedded` als Ausnahme zum Desktop-E2E-Satz. `changelog.d/ci-7.md` `### Changed`, umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
