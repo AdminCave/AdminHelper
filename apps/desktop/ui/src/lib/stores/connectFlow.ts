@@ -365,6 +365,25 @@ export async function initiateConnect(
 }
 
 /**
+ * Opens the SSH connection `connection` in a tab of the embedded terminal that runs only the
+ * agent's prompt for the monitoring credential `credentialRef` on the host (arch-monitoring-ui):
+ * the admin types the secret there. A session like any embedded start.
+ */
+export async function connectCredential(
+  connection: Connection,
+  credentialRef: string,
+): Promise<void> {
+  const resolved = await resolveTarget(connection);
+  if (!resolved) return;
+  const validation = validateConnection(resolved);
+  if (!validation.ok) {
+    reportError(validation.message ?? tNow('error.invalidConnection'));
+    return;
+  }
+  await connectEmbedded(connection, resolved, true, credentialRef);
+}
+
+/**
  * Opens `resolved`, the target of the SSH connection `connection`, in a tab of the embedded
  * terminal. The tab shows how the start goes, so the status bar says nothing unless it failed.
  * The session begun ends once the program of the tab ends or the tab is closed (R-1159); a
@@ -374,10 +393,11 @@ async function connectEmbedded(
   connection: Connection,
   resolved: Connection,
   keepEditorOpen: boolean,
+  credentialRef?: string,
 ): Promise<void> {
   let tabEnded!: () => void;
   const ended = new Promise<void>((resolve) => (tabEnded = resolve));
-  if (!(await openTerminal(connection, resolved, () => tabEnded()))) return;
+  if (!(await openTerminal(connection, resolved, () => tabEnded(), credentialRef))) return;
   try {
     const open = await markConnectionUsed(connection);
     if (open) {

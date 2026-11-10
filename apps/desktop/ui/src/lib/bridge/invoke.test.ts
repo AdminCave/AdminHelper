@@ -30,6 +30,7 @@ import {
   terminalBroadcast,
   terminalBroadcastState,
   terminalOpenSsh,
+  terminalOpenSshCredential,
   terminalSetBroadcast,
   terminalWrite,
 } from './index';
@@ -123,6 +124,36 @@ describe('bridge terminal', () => {
     output.onmessage(bytes);
     output.onmessage(end);
     expect(seen).toEqual([bytes, end]);
+  });
+
+  // arch-monitoring-ui T10: Rust takes `credential_ref` as `credentialRef`, and nothing that
+  // could become command text.
+  it('opens the credential action with the connection and the ref only', async () => {
+    h.invoke.mockResolvedValueOnce(9);
+    const seen: unknown[] = [];
+    await expect(
+      terminalOpenSshCredential(connection, 'mysql/3306/monitor', 100, 30, (m) => seen.push(m)),
+    ).resolves.toBe(9);
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+    const [cmd, args] = h.invoke.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cmd).toBe('terminal_open_ssh_credential');
+    expect(Object.keys(args).sort()).toEqual([
+      'cols',
+      'connection',
+      'credentialRef',
+      'output',
+      'rows',
+    ]);
+    expect(args).toMatchObject({
+      connection,
+      credentialRef: 'mysql/3306/monitor',
+      cols: 100,
+      rows: 30,
+    });
+    const output = args.output as { onmessage: (message: unknown) => void };
+    const end: TerminalExit = { exitCode: 1 };
+    output.onmessage(end);
+    expect(seen).toEqual([end]);
   });
 
   it('sends typed bytes as the list of numbers a Vec<u8> takes', async () => {

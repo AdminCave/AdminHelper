@@ -19,11 +19,13 @@ ops:
     connection-pinned <name> <kind> <host> <port> <user>  -> the same without trustCert
     web-connection <name> <url>                    -> prints the new web connection id
     devices <username>                             -> prints "<id> <revoked reason or ->" per device
+    findings <server_id>                           -> prints "<instance key> <kind>" per open finding
 """
 
 import json
 import ssl
 import sys
+import urllib.parse
 import urllib.request
 
 
@@ -170,6 +172,13 @@ def main(argv):
             sys.exit(f"no user {username}")
         for device in _call(base, token, "GET", f"/api/users/{user_id}/devices"):
             print(device["id"], device["revoked_reason"] or "-")
+    elif op == "findings":
+        # The open findings of the agent's discovery on a server (arch-monitoring-ui T11),
+        # one line each, read the way the desktop reads them: through the server's proxy.
+        (server_id,) = rest
+        query = urllib.parse.urlencode({"server_id": server_id, "status": "open"})
+        for finding in _call(base, token, "GET", f"/api/monitoring/findings?{query}"):
+            print(finding["instanceKey"], finding["kind"])
     else:
         sys.exit(f"unknown op: {op}")
 

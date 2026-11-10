@@ -22,6 +22,13 @@ import type {
   MonitoringTemplateTagAssignment,
   MaintenanceWindow,
   MaintenanceInput,
+  MonitorAdoptAllResult,
+  MonitorAdoptResult,
+  MonitorCatalog,
+  MonitorDiscovery,
+  MonitorFinding,
+  MonitoringStatusSummary,
+  MonitorServerCosts,
   Server,
   ServerCompare,
   ServerHistory,
@@ -72,6 +79,62 @@ export const monitoringApi = {
       session,
       'GET',
       `/api/monitoring/status/server/${encodeURIComponent(serverId)}/history?period=${period}&previous=true`,
+    );
+  },
+
+  fetchStatusSummary(session: AuthSession): Promise<MonitoringStatusSummary> {
+    return apiRequest<MonitoringStatusSummary>(session, 'GET', '/api/monitoring/status/summary');
+  },
+  fetchServerCosts(session: AuthSession, serverId: string): Promise<MonitorServerCosts> {
+    return apiRequest<MonitorServerCosts>(
+      session,
+      'GET',
+      `/api/monitoring/status/server/${encodeURIComponent(serverId)}/costs`,
+    );
+  },
+
+  // ── Modules: catalog, discovery, findings ──────────────────────────────────
+  fetchCatalog(session: AuthSession): Promise<MonitorCatalog> {
+    return apiRequest<MonitorCatalog>(session, 'GET', '/api/monitoring/catalog');
+  },
+  fetchDiscovery(session: AuthSession, serverId: string): Promise<MonitorDiscovery> {
+    return apiRequest<MonitorDiscovery>(
+      session,
+      'GET',
+      `/api/monitoring/discovery/${encodeURIComponent(serverId)}`,
+    );
+  },
+  // The agent's next plan asks for a scan; pressing it again while pending changes nothing.
+  requestScan(session: AuthSession, serverId: string): Promise<MonitorDiscovery> {
+    return apiRequest<MonitorDiscovery>(
+      session,
+      'POST',
+      `/api/monitoring/discovery/${encodeURIComponent(serverId)}/scan`,
+    );
+  },
+  // Without a limit the service answers every open finding.
+  fetchOpenFindings(session: AuthSession): Promise<MonitorFinding[]> {
+    return apiRequest<MonitorFinding[]>(session, 'GET', '/api/monitoring/findings?status=open');
+  },
+  adoptFinding(session: AuthSession, findingId: string): Promise<MonitorAdoptResult> {
+    return apiRequest<MonitorAdoptResult>(
+      session,
+      'POST',
+      `/api/monitoring/findings/${encodeURIComponent(findingId)}/adopt`,
+    );
+  },
+  adoptAllFindings(session: AuthSession, serverId: string): Promise<MonitorAdoptAllResult> {
+    return apiRequest<MonitorAdoptAllResult>(
+      session,
+      'POST',
+      `/api/monitoring/findings/adopt-all?server_id=${encodeURIComponent(serverId)}`,
+    );
+  },
+  dismissFinding(session: AuthSession, findingId: string): Promise<MonitorFinding> {
+    return apiRequest<MonitorFinding>(
+      session,
+      'POST',
+      `/api/monitoring/findings/${encodeURIComponent(findingId)}/dismiss`,
     );
   },
 

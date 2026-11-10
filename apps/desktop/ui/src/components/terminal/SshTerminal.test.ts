@@ -758,3 +758,15 @@ describe('SshTerminal running a playbook (R-1073)', () => {
     expect(screen.queryByText(tNow('terminal.snippets.broadcastActive'))).toBeNull();
   });
 });
+
+describe('SshTerminal prompting for a monitoring credential (arch-monitoring-ui)', () => {
+  it('names its host but takes no snippets nor files and does not warn of a broadcast', async () => {
+    snippetBroadcast.set(true);
+    await mount(session({ status: 'connected', credential: { ref: 'pve-api' } }));
+    // The prompt runs on the host, so the target stays; anything else typed would land in the secret.
+    expect(screen.getByText('ops@db.example:2222')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: tNow('terminal.snippets') })).toBeNull();
+    expect(screen.queryByRole('button', { name: tNow('terminal.files') })).toBeNull();
+    expect(screen.queryByText(tNow('terminal.snippets.broadcastActive'))).toBeNull();
+  });
+});

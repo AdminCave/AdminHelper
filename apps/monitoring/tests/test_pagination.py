@@ -213,6 +213,8 @@ def test_status_summary_counts_per_status(client_db):
         "critical": 3,
         "unknown": 0,
         "pending": 0,
+        "lastResultAt": None,
+        "minIntervalS": None,
     }
 
 

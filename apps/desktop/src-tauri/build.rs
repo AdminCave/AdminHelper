@@ -52,6 +52,7 @@ const COMMANDS: &[&str] = &[
     "open_workspace",
     "open_launcher",
     "terminal_open_ssh",
+    "terminal_open_ssh_credential",
     "terminal_write",
     "terminal_broadcast",
     "terminal_set_broadcast",
