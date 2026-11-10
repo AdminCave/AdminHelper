@@ -178,4 +178,5 @@ Bilder gehen an Kevin, bevor gemergt wird.
 ## Offene Fragen
 
 1. **Querschnitt „Geräte“:** ohne Datenquelle bis zur UniFi-Welle (Entscheidung 9a: Geräte als Liste in der
-   Modulkarte). Empfehlung: den Reiter mit der UniFi-Welle bauen, nicht leer in diesem Zug.
+   Modulkarte). Entschieden (Kevin 2026-11-10): der Reiter kommt mit der UniFi-Welle (R-1244), nicht leer in diesem
+   Zug.
