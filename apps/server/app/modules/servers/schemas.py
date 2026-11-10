@@ -12,10 +12,10 @@ from app.modules.frp.schemas import FrpTunnelOut, _reject_toml_breakers, _valida
 
 
 def _validate_server_name(v: Optional[str]) -> Optional[str]:
-    """The server name becomes an FRP identifier in generated TOML (frpc
-    `user`, visitor `serverUser`) and a path component in the bulk-ZIP
-    (`clients/{name}/frpc.toml`) — reject TOML breakers and path separators/
-    traversal at the boundary, same invariant as frp/schemas.py."""
+    """The server name is a path component in the bulk-ZIP
+    (`clients/{name}/frpc.toml`; frpc and the visitor know the server by its ID) —
+    reject TOML breakers and path separators/traversal at the boundary, same
+    invariant as frp/schemas.py."""
     if v is None:
         return v
     v = v.strip()
@@ -50,9 +50,20 @@ def reject_windows_unsafe_server_name(v: str) -> None:
         )
 
 
+def stored_hostname(name: str, hostname: Optional[str]) -> Optional[str]:
+    """The hostname to store: None when the address follows the name (R-1210) — none given,
+    blank, or the name itself (case and outer whitespace aside, as an older client sends the
+    address it was shown); else the address without outer whitespace."""
+    if hostname is None or not hostname.strip():
+        return None
+    hostname = hostname.strip()
+    return None if hostname.lower() == name.strip().lower() else hostname
+
+
 class ServerCreate(RequestModel):
     name: str
-    hostname: str
+    # None or blank: the address follows the name.
+    hostname: Optional[str] = None
     os_type: Optional[str] = None
     tags: list[str] = []
     notes: Optional[str] = ""
@@ -83,7 +94,10 @@ class ServerSummary(BaseModel):
 class ServerOut(BaseModel):
     id: str
     name: str
+    # The address the server is reached at: the own hostname, else the name.
     hostname: str
+    # True when an own hostname is stored, False when the address follows the name.
+    customHostname: bool
     osType: Optional[str]
     tags: list[str]
     notes: str

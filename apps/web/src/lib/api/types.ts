@@ -183,6 +183,8 @@ export interface FrpStatusProxy {
   todayTrafficOut: number;
   lastStartTime?: string;
   lastCloseTime?: string;
+  /** The tunnel the proxy belongs to; its `name` is the display name the server derives (R-1210). */
+  tunnel?: { id: string; name: string } | null;
 }
 
 export interface FrpStatus {

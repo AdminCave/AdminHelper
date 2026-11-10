@@ -15,6 +15,10 @@ import {
   openRowByName,
 } from '../lib/live.js';
 
+// The list shows the display name the server derives from the seeded server e2e-server and the
+// tunnel's own text (R-1210).
+const shown = (own) => `e2e-server · ${own} (FRP)`;
+
 describe('Tunnel CRUD via the GUI', () => {
   it('creates, renames and deletes a tunnel', async () => {
     await login();
@@ -25,24 +29,24 @@ describe('Tunnel CRUD via the GUI', () => {
     await $('[data-action="tun-new"]').waitForEnabled({ timeout: 15000 });
     await $('[data-action="tun-new"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
-    await $('.editor-overlay input[placeholder="k01-lnx1-ssh"]').setValue('crud-tun');
+    await $('.editor-overlay input[name="name"]').setValue('crud-tun');
     let nums = await $$('.editor-overlay input[type="number"]');
     await nums[0].setValue('22'); // local port
     await clickInModal('.btn.primary');
-    await waitForRow('.tun-row .tun-name', 'crud-tun');
+    await waitForRow('.tun-row .tun-name', shown('crud-tun'));
 
     // rename
-    await openRowByName('.tun-row', '.tun-name', 'crud-tun');
+    await openRowByName('.tun-row', '.tun-name', shown('crud-tun'));
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
-    await $('.editor-overlay input[placeholder="k01-lnx1-ssh"]').setValue('crud-tun-renamed');
+    await $('.editor-overlay input[name="name"]').setValue('crud-tun-renamed');
     await clickInModal('.btn.primary');
-    await waitForRow('.tun-row .tun-name', 'crud-tun-renamed');
+    await waitForRow('.tun-row .tun-name', shown('crud-tun-renamed'));
 
     // delete
-    await openRowByName('.tun-row', '.tun-name', 'crud-tun-renamed');
+    await openRowByName('.tun-row', '.tun-name', shown('crud-tun-renamed'));
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     await clickInModal('.btn.danger');
     await clickInModal('.btn.danger');
-    await waitForRow('.tun-row .tun-name', 'crud-tun-renamed', false);
+    await waitForRow('.tun-row .tun-name', shown('crud-tun-renamed'), false);
   });
 });

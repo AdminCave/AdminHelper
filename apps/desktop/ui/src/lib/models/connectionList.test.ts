@@ -127,6 +127,27 @@ describe('groupConnections', () => {
     ]);
   });
 
+  it('groups the connections of a server under its name, also over a tunnel (R-1210)', () => {
+    const bound = [
+      conn('direct', {
+        name: 'web01.example.org · SSH',
+        host: 'web01.example.org',
+        serverId: 's1',
+      }),
+      conn('tunnel', { name: 'web01.example.org · SSH (FRP)', host: '127.0.0.1', serverId: 's1' }),
+      conn('other', { name: 'mail · RDP', host: '192.0.2.10', serverId: 's2' }),
+      conn('free', { name: 'Prod-Gateway', host: 'GW.example' }),
+    ];
+    const byMap = groupConnections(bound, 'host', { s1: 'web01.example.org', s2: 'mail' });
+    expect(byMap.map((g) => [g.key, ids(g.connections)])).toEqual([
+      ['gw.example', ['free']],
+      ['mail', ['other']],
+      ['web01.example.org', ['direct', 'tunnel']],
+    ]);
+    // Without the server list (a user who may not read it): the server's name in the display name.
+    expect(groupConnections(bound, 'host').map((g) => g.key)).toEqual(byMap.map((g) => g.key));
+  });
+
   it('groups by tag with a connection in each of its tags, untagged last', () => {
     const groups = groupConnections(items, 'tag');
     expect(groups.map((g) => [g.key, ids(g.connections)])).toEqual([

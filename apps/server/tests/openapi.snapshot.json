@@ -535,6 +535,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "lastUsed": {
             "anyOf": [
               {
@@ -547,10 +559,16 @@
             "title": "Lastused"
           },
           "name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "notes": {
             "anyOf": [
@@ -651,7 +669,6 @@
           }
         },
         "required": [
-          "name",
           "kind"
         ],
         "title": "ConnectionCreate",
@@ -726,6 +743,10 @@
             "title": "Kind",
             "type": "string"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "lastUsed": {
             "anyOf": [
               {
@@ -798,6 +819,7 @@
         "required": [
           "id",
           "name",
+          "label",
           "kind",
           "host",
           "port",
@@ -878,6 +900,10 @@
             "title": "Kind",
             "type": "string"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "lastUsed": {
             "anyOf": [
               {
@@ -954,6 +980,7 @@
         "required": [
           "id",
           "name",
+          "label",
           "kind",
           "host",
           "port",
@@ -1021,6 +1048,18 @@
               }
             ],
             "title": "Kind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           },
           "lastUsed": {
             "anyOf": [
@@ -2200,6 +2239,18 @@
             "title": "Frp Config Id",
             "type": "string"
           },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "local_ip": {
             "default": "127.0.0.1",
             "title": "Local Ip",
@@ -2212,8 +2263,15 @@
             "type": "integer"
           },
           "name": {
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "protocol": {
             "title": "Protocol",
@@ -2267,7 +2325,6 @@
         "required": [
           "server_id",
           "frp_config_id",
-          "name",
           "tunnel_type",
           "protocol",
           "local_port"
@@ -2341,6 +2398,10 @@
             "title": "Id",
             "type": "string"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "localIp": {
             "anyOf": [
               {
@@ -2407,6 +2468,7 @@
           "serverId",
           "frpConfigId",
           "name",
+          "label",
           "tunnelType",
           "protocol",
           "localIp",
@@ -2485,6 +2547,18 @@
               }
             ],
             "title": "Extra Config"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           },
           "local_ip": {
             "anyOf": [
@@ -4976,8 +5050,15 @@
       "ServerCreate": {
         "properties": {
           "hostname": {
-            "title": "Hostname",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
           },
           "name": {
             "title": "Name",
@@ -5016,8 +5097,7 @@
           }
         },
         "required": [
-          "name",
-          "hostname"
+          "name"
         ],
         "title": "ServerCreate",
         "type": "object"
@@ -5059,6 +5139,10 @@
               }
             ],
             "title": "Createdat"
+          },
+          "customHostname": {
+            "title": "Customhostname",
+            "type": "boolean"
           },
           "frpTunnels": {
             "items": {
@@ -5106,6 +5190,7 @@
           "id",
           "name",
           "hostname",
+          "customHostname",
           "osType",
           "tags",
           "notes",

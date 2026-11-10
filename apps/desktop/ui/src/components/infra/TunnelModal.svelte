@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { errMsg } from '$lib/utils/errors';
-  import type { FrpConfig, FrpProtocol, FrpTunnel, FrpTunnelType } from '$lib/api/types';
+  import type { FrpConfig, FrpProtocol, FrpTunnel, FrpTunnelType, Server } from '$lib/api/types';
   import {
     TUNNEL_TYPES,
     TUNNEL_PROTOCOLS,
@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     type TunnelForm,
   } from '$lib/models/frpTunnel';
   import { frpApi } from '$lib/api/frp';
+  import { KIND_LABELS, shownName } from '$lib/models/connection';
   import { session } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
   import { refreshNow } from '$lib/stores/tunnel';
@@ -27,12 +28,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Props {
     open: boolean;
     editing: FrpTunnel | null;
-    serverId: string;
+    server: Pick<Server, 'id' | 'name'>;
     configs: FrpConfig[];
     onClose: () => void;
     onSaved: () => void;
   }
-  let { open, editing, serverId, configs, onClose, onSaved }: Props = $props();
+  let { open, editing, server, configs, onClose, onSaved }: Props = $props();
 
   let form = $state<TunnelForm>(emptyTunnelForm(''));
   let tagsInput = $state('');
@@ -53,7 +54,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const next = editing
       ? tunnelToForm(editing)
       : // Preselect the only config so the common single-config setup is one click.
-        emptyTunnelForm(serverId, configs.length === 1 ? configs[0].id : '');
+        emptyTunnelForm(server.id, configs.length === 1 ? configs[0].id : '');
     form = next;
     tagsInput = (next.tags ?? []).join(', ');
     confirmDelete = false;
@@ -103,7 +104,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
     saving = true;
     try {
-      const input = formToInput(next);
+      const input = formToInput(next, server.name);
       if (next.id) {
         await frpApi.updateTunnel(s, next.id, input);
         showStatus($t('infra.tun.updated'));
@@ -156,15 +157,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
           </select>
         </label>
 
+        <!-- The own text of the display name; frpc knows the tunnel by its ID (R-1210). -->
         <label class="field">
-          <span class="field-label">{$t('infra.field.name')}</span>
+          <span class="field-label">{$t('infra.conn.label')}</span>
           <input
             type="text"
             name="name"
             bind:value={form.name}
-            placeholder="k01-lnx1-ssh"
-            required
+            placeholder={KIND_LABELS[form.protocol]}
           />
+          <span class="field-hint" data-testid="shown-as"
+            >{$t('infra.conn.shownAs')}
+            {shownName(server.name, form.name, form.protocol, true)}</span
+          >
         </label>
 
         <label class="field">

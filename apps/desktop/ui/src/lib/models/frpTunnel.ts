@@ -20,6 +20,7 @@ export interface TunnelForm {
   id: string | null;
   serverId: string;
   frpConfigId: string;
+  /** The own text of the display name the server derives (R-1210); not the proxy name. */
   name: string;
   tunnelType: FrpTunnelType;
   protocol: FrpProtocol;
@@ -57,7 +58,8 @@ export function tunnelToForm(t: FrpTunnel): TunnelForm {
     id: t.id,
     serverId: t.serverId,
     frpConfigId: t.frpConfigId,
-    name: t.name,
+    // A server from before R-1210 sends no label: its name is the stored one.
+    name: t.label ?? t.name,
     tunnelType: t.tunnelType,
     protocol: t.protocol,
     localIp: t.localIp ?? '127.0.0.1',
@@ -73,13 +75,18 @@ export function tunnelToForm(t: FrpTunnel): TunnelForm {
 
 /** Builds the server payload. Type-irrelevant fields are nulled (an stcp tunnel
  * never carries customDomains; an https one never carries secret/visitor port) so
- * stale values from a type switch don't leak to the server. */
-export function formToInput(form: TunnelForm): FrpTunnelInput {
+ * stale values from a type switch don't leak to the server. The own text goes as
+ * `label`; `name` carries it as well, or "{server}-{protocol}" without one, which a
+ * server from R-1210 on stores as no own text and an older one as the unique proxy
+ * name it requires. */
+export function formToInput(form: TunnelForm, serverName = ''): FrpTunnelInput {
   const isStcp = form.tunnelType === 'stcp';
+  const own = form.name.trim();
   return {
     server_id: form.serverId,
     frp_config_id: form.frpConfigId,
-    name: form.name.trim(),
+    name: own || `${serverName}-${form.protocol}`,
+    label: own,
     tunnel_type: form.tunnelType,
     protocol: form.protocol,
     local_ip: form.localIp.trim() || '127.0.0.1',
@@ -95,7 +102,6 @@ export function formToInput(form: TunnelForm): FrpTunnelInput {
 
 export function validateTunnelForm(form: TunnelForm): ValidationResult {
   if (!form.frpConfigId) return { ok: false, message: tNow('infra.tun.validation.configRequired') };
-  if (!form.name.trim()) return { ok: false, message: tNow('infra.tun.validation.nameRequired') };
   if (!form.localPort || form.localPort <= 0) {
     return { ok: false, message: tNow('infra.tun.validation.portRequired') };
   }
