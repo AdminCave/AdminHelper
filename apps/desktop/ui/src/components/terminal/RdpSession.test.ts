@@ -40,7 +40,7 @@ const h = vi.hoisted(() => {
     FakeSocket,
     draw: vi.fn(),
     disconnectRdp: vi.fn(),
-    reconnectRdp: vi.fn(async () => true),
+    reconnectRdpTab: vi.fn(async () => true),
     setRdpPerformance: vi.fn(async () => true),
     setRdpDisplay: vi.fn(),
     setRdpWindow: vi.fn(),
@@ -69,7 +69,6 @@ vi.mock('$lib/stores/terminals', async () => {
   return {
     terminals: writable({ sessions: [], active: 'terminal-1' }),
     disconnectRdp: h.disconnectRdp,
-    reconnectRdp: h.reconnectRdp,
     setRdpPerformance: h.setRdpPerformance,
     setRdpDisplay: h.setRdpDisplay,
     setRdpWindow: h.setRdpWindow,
@@ -79,6 +78,7 @@ vi.mock('$lib/stores/terminals', async () => {
     closeRdpMonitor: h.closeRdpMonitor,
   };
 });
+vi.mock('$lib/stores/connectFlow', () => ({ reconnectRdpTab: h.reconnectRdpTab }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return { settings: writable(null) };
@@ -213,7 +213,7 @@ describe('RdpSession (R-1098)', () => {
     });
     expect(overlay()!.textContent).toContain('The network connection broke off.');
     await fireEvent.click(within(overlay()!).getByRole('button', { name: 'Reconnect' }));
-    expect(h.reconnectRdp).toHaveBeenCalledWith(KEY);
+    expect(h.reconnectRdpTab).toHaveBeenCalledWith(KEY);
 
     await rerender({
       session: session(view({ phase: 'disconnected', code: 'closed', sessionId: null })),
@@ -268,7 +268,7 @@ describe('RdpSession (R-1098)', () => {
     await fireEvent.click(button('Disconnect'));
     expect(h.disconnectRdp).toHaveBeenCalledWith(KEY);
     await fireEvent.click(screen.getAllByRole('button', { name: 'Reconnect' })[0]);
-    expect(h.reconnectRdp).toHaveBeenCalledWith(KEY);
+    expect(h.reconnectRdpTab).toHaveBeenCalledWith(KEY);
     await fireEvent.click(button('End session'));
     expect(onClose).toHaveBeenCalled();
   });

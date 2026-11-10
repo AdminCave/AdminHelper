@@ -10,10 +10,12 @@
 //! as `openh264-sys2`'s own list of known hashes stops at 2.6.0 (docs/features/kern-rdp-6.md). The
 //! library is loaded at runtime; OpenH264 built from source stays out (license_gate.rs).
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Read, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use ironrdp_client::h264::H264DecoderFactory;
@@ -41,6 +43,22 @@ const MAX_UNPACKED: usize = 8 * 1024 * 1024;
 /// without H.264 and the next one tries again.
 pub(crate) const FETCH_DEADLINE: Duration = Duration::from_secs(15);
 
+/// The one architecture Cisco's pinned binary (`linux64`) is built for.
+const ARCH: &str = "x86_64";
+
+/// How often `remove` emptied each library folder in this process. A download writes only if
+/// the count is still the one from before it, so turning H.264 off wins against a download that
+/// is running (R-1201); the writes of one process go one after the other under the lock.
+static REMOVED: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
+
+fn removed() -> MutexGuard<'static, BTreeMap<PathBuf, u64>> {
+    REMOVED.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn removals(dir: &Path) -> u64 {
+    removed().get(dir).copied().unwrap_or(0)
+}
+
 fn library_dir(base: &Path) -> PathBuf {
     base.join(DIR_NAME)
 }
@@ -61,10 +79,9 @@ fn verified(dir: &Path) -> Option<PathBuf> {
     (sha256_hex(&bytes) == SHA256).then_some(path)
 }
 
-/// Unpacks `packed`, checks the pinned hash and writes the library to `dir` through a temporary
-/// file, so a half-written library never carries the final name. Nothing is written when the hash
-/// differs.
-fn install(dir: &Path, packed: &[u8]) -> Result<PathBuf, String> {
+/// Unpacks `packed`, checks the pinned hash and writes the library to `dir` (`write_library`).
+/// Nothing is written when the hash differs.
+fn install(dir: &Path, packed: &[u8], removals: u64) -> Result<PathBuf, String> {
     let mut library = Vec::new();
     bzip2::read::BzDecoder::new(packed)
         .take(MAX_UNPACKED as u64 + 1)
@@ -79,10 +96,20 @@ fn install(dir: &Path, packed: &[u8]) -> Result<PathBuf, String> {
             "the OpenH264 library has an unknown SHA-256 {hash}"
         ));
     }
+    write_library(dir, &library, removals)
+}
+
+/// Writes `library` to `dir` through a temporary file, so a half-written library never carries
+/// the final name; nothing when `remove` emptied the folder since `removals` was read.
+fn write_library(dir: &Path, library: &[u8], removals: u64) -> Result<PathBuf, String> {
+    let removed = removed();
+    if removed.get(dir).copied().unwrap_or(0) != removals {
+        return Err("H.264 was turned off while the OpenH264 library downloaded".to_string());
+    }
     fs::create_dir_all(dir).map_err(|error| format!("cannot create {}: {error}", dir.display()))?;
     let path = dir.join(FILE_NAME);
     let part = dir.join(format!(".{FILE_NAME}.part-{}", std::process::id()));
-    let written = write_private(&part, &library).and_then(|()| fs::rename(&part, &path));
+    let written = write_private(&part, library).and_then(|()| fs::rename(&part, &path));
     if let Err(error) = written {
         let _ = fs::remove_file(&part);
         return Err(format!("cannot write {}: {error}", path.display()));
@@ -124,16 +151,27 @@ async fn download() -> Result<Vec<u8>, String> {
 /// The checked library in the app data dir `base`, downloaded first when it is missing or
 /// differs from the pinned one; older releases in the folder go.
 pub(crate) async fn ensure(base: &Path) -> Result<PathBuf, String> {
+    ensure_on(base, std::env::consts::ARCH).await
+}
+
+/// `ensure` on the architecture `arch`: elsewhere than on x86_64 it fetches nothing (R-1207).
+async fn ensure_on(base: &Path, arch: &str) -> Result<PathBuf, String> {
+    if arch != ARCH {
+        return Err(format!(
+            "Cisco's OpenH264 binary is pinned for {ARCH} only, not for {arch}"
+        ));
+    }
     let dir = library_dir(base);
     let path = match verified(&dir) {
         Some(path) => path,
         None => {
+            let removals = removals(&dir);
             let packed = tokio::time::timeout(FETCH_DEADLINE, download())
                 .await
                 .map_err(|_| {
                     format!("the OpenH264 download took longer than {FETCH_DEADLINE:?}")
                 })??;
-            install(&dir, &packed)?
+            install(&dir, &packed, removals)?
         }
     };
     prune(&dir);
@@ -175,7 +213,10 @@ fn load(path: &Path) -> Result<OpenH264API, String> {
 
 /// Deletes the library and its folder from the app data dir `base`; none there is no error.
 pub(crate) fn remove(base: &Path) -> io::Result<()> {
-    match fs::remove_dir_all(library_dir(base)) {
+    let dir = library_dir(base);
+    let mut removed = removed();
+    *removed.entry(dir.clone()).or_default() += 1;
+    match fs::remove_dir_all(&dir) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
         _ => Ok(()),
     }
@@ -248,7 +289,7 @@ mod tests {
     fn install_refuses_another_library_and_writes_nothing() {
         let scratch = Scratch::new("hash");
         let dir = library_dir(&scratch.0);
-        let error = install(&dir, &packed(b"not the library")).unwrap_err();
+        let error = install(&dir, &packed(b"not the library"), 0).unwrap_err();
         assert!(error.contains("unknown SHA-256"), "{error}");
         assert!(entries(&dir).is_empty(), "{:?}", entries(&dir));
         assert_eq!(verified(&dir), None);
@@ -258,7 +299,7 @@ mod tests {
     fn install_refuses_what_is_no_bzip2() {
         let scratch = Scratch::new("bz2");
         let dir = library_dir(&scratch.0);
-        let error = install(&dir, b"<html>not found</html>").unwrap_err();
+        let error = install(&dir, b"<html>not found</html>", 0).unwrap_err();
         assert!(error.contains("no bzip2"), "{error}");
         assert!(entries(&dir).is_empty());
     }
@@ -267,7 +308,7 @@ mod tests {
     fn install_stops_unpacking_past_the_limit() {
         let scratch = Scratch::new("bomb");
         let dir = library_dir(&scratch.0);
-        let error = install(&dir, &packed(&vec![0; MAX_UNPACKED + 1])).unwrap_err();
+        let error = install(&dir, &packed(&vec![0; MAX_UNPACKED + 1]), 0).unwrap_err();
         assert!(error.contains("too large"), "{error}");
         assert!(entries(&dir).is_empty());
     }
@@ -306,6 +347,37 @@ mod tests {
         left.sort();
         assert_eq!(left, vec![part, FILE_NAME.to_string()]);
         prune(&scratch.0.join("missing"));
+    }
+
+    #[test]
+    fn a_download_after_remove_writes_nothing() {
+        let scratch = Scratch::new("off");
+        let dir = library_dir(&scratch.0);
+        let before = removals(&dir);
+        // The settings turn H.264 off while the download runs.
+        remove(&scratch.0).unwrap();
+        let error = write_library(&dir, b"library", before).unwrap_err();
+        assert!(error.contains("turned off"), "{error}");
+        assert!(!dir.exists(), "{:?}", entries(&dir));
+    }
+
+    #[test]
+    fn a_download_without_remove_writes_the_library() {
+        let scratch = Scratch::new("write");
+        let dir = library_dir(&scratch.0);
+        remove(&scratch.0).unwrap();
+        let path = write_library(&dir, b"library", removals(&dir)).unwrap();
+        assert_eq!(path, dir.join(FILE_NAME));
+        assert_eq!(fs::read(&path).unwrap(), b"library");
+        assert_eq!(entries(&dir), vec![FILE_NAME.to_string()]);
+    }
+
+    #[tokio::test]
+    async fn another_architecture_fetches_nothing() {
+        let scratch = Scratch::new("arch");
+        let error = ensure_on(&scratch.0, "aarch64").await.unwrap_err();
+        assert!(error.contains("aarch64") && error.contains(ARCH), "{error}");
+        assert!(!library_dir(&scratch.0).exists());
     }
 
     #[test]
