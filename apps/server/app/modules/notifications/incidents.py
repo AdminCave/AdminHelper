@@ -301,6 +301,21 @@ def _recover(db: Session, event: IncomingEvent, now: datetime, done: Ingested) -
     pairs = _pairs(event)
     keys = list(pairs)
     _lock(db, keys)
+    latest = _latest_ids(db, keys, pairs)
+    # Every incident this recovery may write, locked in one go in id order: the active
+    # ones of the keys and the latest of each key on its server (_note_stale). Locked in
+    # two steps, a resolved incident with a smaller id came after an active one, against
+    # the id order of the team actions, and the two waited on each other.
+    member_of = select(_Member.incident_id).where(_Member.key.in_(keys))
+    db.query(_Incident.id).filter(
+        or_(
+            _Incident.id.in_(set(latest.values())),
+            and_(
+                or_(_Incident.key.in_(keys), _Incident.id.in_(member_of)),
+                _Incident.state.in_(ACTIVE),
+            ),
+        )
+    ).order_by(_Incident.id).with_for_update().all()
     incidents, members = _containing(db, keys, _Incident.state.in_(ACTIVE))
     targets: dict[int, _Target] = {}
     stale: list[str] = []
@@ -362,19 +377,11 @@ def _recover(db: Session, event: IncomingEvent, now: datetime, done: Ingested) -
         _ping(db, target, ping_event, recipients, now, done, severity="ok", problem=False)
 
     if stale:
-        _note_stale(db, stale, pairs, event, now, done)
+        _note_stale(db, stale, pairs, latest, event, now, done)
 
 
-def _note_stale(
-    db: Session,
-    keys: list[str],
-    pairs: dict[str, str | None],
-    event: IncomingEvent,
-    now: datetime,
-    done: Ingested,
-) -> None:
-    """A recovery without an active incident (resolved by hand, or never opened): a
-    silent entry on the latest incident of the key on its server, nothing else."""
+def _latest_ids(db: Session, keys: list[str], pairs: dict[str, str | None]) -> dict[str, int]:
+    """key -> the id of the latest incident that holds the key on its server."""
     latest: dict[str, int] = {}
     for key, server, iid in (
         db.query(_Incident.key, _Incident.source_id, func.max(_Incident.id))
@@ -390,14 +397,26 @@ def _note_stale(
     ):
         if server == pairs[key]:
             latest[key] = max(iid, latest.get(key, 0))
+    return latest
+
+
+def _note_stale(
+    db: Session,
+    keys: list[str],
+    pairs: dict[str, str | None],
+    all_latest: dict[str, int],
+    event: IncomingEvent,
+    now: datetime,
+    done: Ingested,
+) -> None:
+    """A recovery without an active incident (resolved by hand, or never opened): a
+    silent entry on the latest incident of the key on its server, nothing else. The
+    incidents are locked already (_recover)."""
+    latest = {key: all_latest[key] for key in keys if key in all_latest}
     if not latest:
         return
     incidents = {
-        i.id: i
-        for i in db.query(_Incident)
-        .filter(_Incident.id.in_(set(latest.values())))
-        .order_by(_Incident.id)
-        .with_for_update()
+        i.id: i for i in db.query(_Incident).filter(_Incident.id.in_(set(latest.values())))
     }
     members = {
         (m.incident_id, m.key): m
@@ -766,7 +785,9 @@ def access(db: Session, user: User, incident_id: int, *, lock: bool = False) -> 
         return None
     query = db.query(_Incident).filter(_Incident.id == incident_id)
     if lock:
-        query = query.with_for_update()
+        # populate_existing: read unlocked before in this session, the incident would
+        # otherwise keep the state of that read.
+        query = query.with_for_update().populate_existing()
     incident = query.one_or_none()
     if incident is None:
         return None
