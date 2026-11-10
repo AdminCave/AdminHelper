@@ -20,7 +20,6 @@ import (
 	"syscall"
 	"time"
 
-	gnet "github.com/shirou/gopsutil/v4/net"
 	"github.com/shirou/gopsutil/v4/process"
 )
 
@@ -269,26 +268,6 @@ func currentListeners(ctx context.Context) ([]listener, error) {
 		list = []listener{}
 	}
 	snapshot.list, snapshot.at = list, time.Now()
-	return list, nil
-}
-
-// listenTCP reads the listening TCP sockets of this host.
-func listenTCP(ctx context.Context) ([]listener, error) {
-	conns, err := gnet.ConnectionsWithContext(ctx, "tcp")
-	if err != nil {
-		return nil, err
-	}
-	var list []listener
-	for _, c := range conns {
-		if c.Status != "LISTEN" || c.Laddr.Port > 0xffff {
-			continue
-		}
-		addr, err := netip.ParseAddr(c.Laddr.IP)
-		if err != nil {
-			continue
-		}
-		list = append(list, listener{addr: addr.Unmap().WithZone(""), port: uint16(c.Laddr.Port), pid: c.Pid})
-	}
 	return list, nil
 }
 

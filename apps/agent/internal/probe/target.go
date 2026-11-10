@@ -253,6 +253,69 @@ func parseProcNetTCP(data []byte) []listener {
 	return list
 }
 
+// parseSockstat reads what `sockstat -46lnq -P tcp` lists on FreeBSD (sockstat(1), releng/14.3): USER
+// COMMAND PID FD PROTO LOCAL FOREIGN, one line per descriptor that holds a socket. COMMAND may hold a
+// blank, so the columns count from the end. LOCAL is the address and the port apart at the last ":"
+// (IPv6 without brackets), "*" the unspecified address of PROTO's family (tcp4, tcp6, tcp46); a PID "?"
+// is an owner sockstat could not tell (0, as gopsutil gives it). -l lists each TCP socket without a
+// peer, so one bound that does not listen yet counts as a listener: the guard errs on the careful
+// side; one without a local port is left out. A line of any other form fails the whole read: a
+// listener the guard does not see would let a probe through to a port it refuses.
+func parseSockstat(out []byte) ([]listener, error) {
+	var list []listener
+	for n, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 0 {
+			continue
+		}
+		bad := fmt.Errorf("sockstat: line %d has another form", n+1)
+		if len(f) < 7 {
+			return nil, bad
+		}
+		pidText, proto, local := f[len(f)-5], f[len(f)-3], f[len(f)-2]
+		var pid int32
+		if pidText != "?" {
+			p, err := strconv.ParseInt(pidText, 10, 32)
+			if err != nil || p <= 0 {
+				return nil, bad
+			}
+			pid = int32(p)
+		}
+		family, ok := strings.CutPrefix(proto, "tcp")
+		if !ok {
+			family, ok = strings.CutPrefix(proto, "toe") // a socket a TCP offload engine carries
+		}
+		if !ok || (family != "4" && family != "6" && family != "46") {
+			return nil, bad
+		}
+		i := strings.LastIndexByte(local, ':')
+		if i < 0 {
+			return nil, bad
+		}
+		host, portText := local[:i], local[i+1:]
+		if portText == "*" {
+			continue
+		}
+		port, err := strconv.ParseUint(portText, 10, 16)
+		if err != nil || port == 0 {
+			return nil, bad
+		}
+		var addr netip.Addr
+		switch {
+		case host == "*" && family == "4":
+			addr = netip.IPv4Unspecified()
+		case host == "*":
+			addr = netip.IPv6Unspecified()
+		default:
+			if addr, err = netip.ParseAddr(host); err != nil {
+				return nil, bad
+			}
+		}
+		list = append(list, listener{addr: addr.Unmap().WithZone(""), port: uint16(port), pid: pid})
+	}
+	return list, nil
+}
+
 // cgroupHas says whether a line of a /proc/<pid>/cgroup file names a cgroup that match accepts.
 func cgroupHas(data []byte, match func(path string) bool) bool {
 	for line := range strings.SplitSeq(string(data), "\n") {

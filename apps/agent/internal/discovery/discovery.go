@@ -69,8 +69,11 @@ const (
 
 // Seams for the tests.
 var (
-	// linuxHost says whether the units, containers and markers of this host can be read: on Linux alone.
-	linuxHost     = runtime.GOOS == "linux"
+	// linuxHost says whether the units and containers of this host can be read: on Linux alone.
+	linuxHost = runtime.GOOS == "linux"
+	// markerHost says whether the markers of this host can be checked: the catalog writes Unix paths,
+	// on FreeBSD those of OPNsense (/usr/local/opnsense/…) among them.
+	markerHost    = linuxHost || runtime.GOOS == "freebsd"
 	runTool       = execx.Run
 	statPath      = os.Stat
 	listSockets   = probe.Listeners
@@ -434,7 +437,7 @@ func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool
 func checkMarkers(ctx context.Context, markers []probe.Marker) (map[string]bool, bool) {
 	found := map[string]bool{}
 	valid := validMarkers(markers)
-	if !linuxHost || len(valid) == 0 {
+	if !markerHost || len(valid) == 0 {
 		return found, true
 	}
 	var paths, packages []string

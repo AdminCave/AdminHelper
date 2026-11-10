@@ -75,13 +75,13 @@ func stubHost(t *testing.T) *fakeHost {
 		cgroupRead: map[int32]int{},
 		protocols:  map[uint16]string{},
 	}
-	oldLinux, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups :=
-		linuxHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf
+	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups :=
+		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf
 	t.Cleanup(func() {
-		linuxHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf =
-			oldLinux, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups
+		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf =
+			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups
 	})
-	linuxHost = true
+	linuxHost, markerHost = true, true
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		h.mu.Lock()
 		h.calls = append(h.calls, append([]string{name}, args...))
@@ -432,9 +432,9 @@ func TestADiscoveryOfANearlyEmptyHostIsWhole(t *testing.T) {
 	}
 }
 
-func TestADiscoveryOffLinuxReadsTheSocketsAlone(t *testing.T) {
+func TestADiscoveryOnWindowsReadsTheSocketsAlone(t *testing.T) {
 	h := wholeHost(t)
-	linuxHost = false
+	linuxHost, markerHost = false, false
 
 	inv := Run(context.Background(), wholeMarkers)
 
@@ -446,6 +446,30 @@ func TestADiscoveryOffLinuxReadsTheSocketsAlone(t *testing.T) {
 	}
 	if len(h.calls) != 0 {
 		t.Errorf("tool calls %q off Linux, want none", h.calls)
+	}
+}
+
+// FreeBSD (R-1248): no systemd units and no docker, but the markers count, by their paths; dpkg and
+// rpm are not installed there, so a marker of packages alone is not installed.
+func TestADiscoveryOnFreeBSDChecksTheMarkersByTheirPaths(t *testing.T) {
+	h := wholeHost(t)
+	linuxHost = false
+	delete(h.tools, "dpkg-query")
+	h.paths["/usr/local/opnsense/version/core"] = true
+	markers := append(slices.Clone(wholeMarkers),
+		probe.Marker{ID: "opnsense.core", Paths: []string{"/usr/local/opnsense/version/core"}})
+
+	inv := Run(context.Background(), markers)
+
+	want := map[string]bool{"nginx": true, "redis": false, "pkgonly": false, "opnsense.core": true}
+	if inv.Partial || !reflect.DeepEqual(inv.Markers, want) {
+		t.Errorf("partial %v, markers %v: want %v, whole", inv.Partial, inv.Markers, want)
+	}
+	if len(inv.Units) != 0 || len(inv.Containers) != 0 || len(inv.Sockets) == 0 || len(inv.Ports) != 2 {
+		t.Errorf("inventory = %+v, want no units and containers, the sockets and ports read", inv)
+	}
+	if got := append(h.called("systemctl"), h.called("docker")...); got != nil {
+		t.Errorf("systemctl and docker calls %q on FreeBSD, want none", got)
 	}
 }
 
