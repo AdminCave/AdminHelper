@@ -6,7 +6,8 @@
 // Pins the certificate thresholds of concept §5 at their boundaries (90 days: 22.5/9 d,
 // 6 days: 36/14.4 h, a short-lived certificate: never under 12 h), the expiry sentences,
 // the UTC reading of zone-less timestamps, units by field name, the finding detail and a
-// card's closed line and muted note.
+// card's closed line and muted note. T8: a finding's name and the lines of what adopting
+// left out, shared by the server page and the findings of all servers.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,8 +16,15 @@ vi.mock('$lib/utils/timeAgo', () => ({ timeAgo: vi.fn(() => 'AGO') }));
 import { get } from 'svelte/store';
 import { setLanguage, t } from '$lib/i18n';
 import { timeAgo } from '$lib/utils/timeAgo';
-import type { MonitorCheck, MonitorMutedReason, MonStatus } from '$lib/api/types';
+import type {
+  MonitorCatalog,
+  MonitorCheck,
+  MonitorFinding,
+  MonitorMutedReason,
+  MonStatus,
+} from '$lib/api/types';
 import {
+  adoptNoteLines,
   ageText,
   bytesText,
   cardNote,
@@ -24,6 +32,7 @@ import {
   expiryLevel,
   expiryText,
   findingDetail,
+  findingLabel,
   mutedReasonText,
   probeStatusText,
   spanText,
@@ -278,5 +287,111 @@ describe('findingDetail', () => {
     expect(findingDetail({ image: '', services: {}, matched_by: [] })).toBeNull();
     expect(findingDetail({ services: ['web'] })).toBeNull();
     expect(findingDetail({ image: 42 })).toBeNull();
+  });
+});
+
+function finding(id: string, over: Partial<MonitorFinding> = {}): MonitorFinding {
+  return {
+    id,
+    serverId: 'srv-1',
+    moduleId: 'nginx',
+    moduleName: 'Nginx',
+    instanceKey: `nginx@${id}`,
+    kind: 'new',
+    status: 'open',
+    summary: {},
+    catalogVersion: '1',
+    firstSeen: null,
+    lastSeen: null,
+    decidedAt: null,
+    silentChecks: [],
+    droppedChecks: [],
+    ...over,
+  };
+}
+
+describe('findingLabel', () => {
+  it('names the module and an instance that is not the module itself', () => {
+    expect(findingLabel(finding('a'))).toBe('Nginx · nginx@a');
+    expect(findingLabel(finding('a', { instanceKey: 'nginx' }))).toBe('Nginx');
+    expect(findingLabel(finding('a', { moduleName: null }))).toBe('nginx · nginx@a');
+  });
+});
+
+describe('adoptNoteLines', () => {
+  const CATALOG: MonitorCatalog = {
+    version: '1',
+    modules: [
+      {
+        id: 'nginx',
+        name: 'Nginx',
+        version: 1,
+        description: '',
+        instance: 'config',
+        checks: [
+          {
+            key: 'tls',
+            name: 'Zertifikat',
+            sensor: 'nginx',
+            interval: 60,
+            fields: [],
+            testObject: false,
+            credential: null,
+          },
+        ],
+        card: [],
+      },
+    ],
+  };
+  const adopted = (f: MonitorFinding, keys: string[]) => ({
+    finding: f,
+    enabledChecks: [],
+    disabledChecks: [],
+    skippedChecks: keys.map((key) => ({ key, reason: `no ${key}` })),
+  });
+
+  it('names a skipped check from the catalog, else by its key', () => {
+    const tr = get(t);
+    const lines = adoptNoteLines(tr, [adopted(finding('a'), ['tls', 'gone'])], [], CATALOG);
+    expect(lines).toEqual([
+      'Nginx · nginx@a: Check „Zertifikat“ nicht angelegt — no tls',
+      'Nginx · nginx@a: Check „gone“ nicht angelegt — no gone',
+    ]);
+    expect(adoptNoteLines(tr, [adopted(finding('a'), ['tls'])], [], null)).toEqual([
+      'Nginx · nginx@a: Check „tls“ nicht angelegt — no tls',
+    ]);
+  });
+
+  it('names a failed finding from the list before adopting, else by its id', () => {
+    const tr = get(t);
+    const failed = [
+      { findingId: 'b', reason: 'instance is gone' },
+      { findingId: 'x', reason: 'unknown' },
+    ];
+    expect(adoptNoteLines(tr, [], failed, CATALOG, [finding('b')])).toEqual([
+      'Nginx · nginx@b: nicht übernommen — instance is gone',
+      'x: nicht übernommen — unknown',
+    ]);
+  });
+
+  it('names findings with the given label, skipped checks first', () => {
+    const tr = get(t);
+    const label = (f: MonitorFinding) => `srv · ${f.id}`;
+    const lines = adoptNoteLines(
+      tr,
+      [adopted(finding('a'), ['tls'])],
+      [{ findingId: 'b', reason: 'r' }],
+      CATALOG,
+      [finding('b')],
+      label,
+    );
+    expect(lines).toEqual([
+      'srv · a: Check „Zertifikat“ nicht angelegt — no tls',
+      'srv · b: nicht übernommen — r',
+    ]);
+  });
+
+  it('is empty when nothing was left out', () => {
+    expect(adoptNoteLines(get(t), [adopted(finding('a'), [])], [], CATALOG)).toEqual([]);
   });
 });

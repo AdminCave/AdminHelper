@@ -6,7 +6,15 @@
 // notification is muted, certificate expiry, age and values with their unit.
 // The translator comes from the caller (`$t`), so a language switch re-renders.
 
-import type { MonitorCheck, MonitorMutedReason, MonitorProbeValue } from '$lib/api/types';
+import type {
+  MonitorAdoptAllResult,
+  MonitorAdoptResult,
+  MonitorCatalog,
+  MonitorCheck,
+  MonitorFinding,
+  MonitorMutedReason,
+  MonitorProbeValue,
+} from '$lib/api/types';
 import { currentLocale, type TranslateFn } from '$lib/i18n';
 import { computeSummary } from '$lib/models/monitoring';
 import { timeAgo } from '$lib/utils/timeAgo';
@@ -198,4 +206,45 @@ export function findingDetail(summary: Record<string, unknown>): string | null {
   if (typeof proc === 'string' && proc) return proc;
   if (Array.isArray(matchedBy) && matchedBy.length) return matchedBy.join(', ');
   return null;
+}
+
+/** A finding's module, and its instance when that is not the module itself. */
+export function findingLabel(f: MonitorFinding): string {
+  const name = f.moduleName ?? f.moduleId;
+  return f.instanceKey !== f.moduleId ? `${name} · ${f.instanceKey}` : name;
+}
+
+/**
+ * What adopting left out, one sentence each: a check the instance cannot carry (named
+ * from the catalog, else by its key) and a finding adopt-all could not take (named from
+ * `known`, the list before adopting, else by its id). `label` names a finding.
+ */
+export function adoptNoteLines(
+  t: TranslateFn,
+  adopted: MonitorAdoptResult[],
+  failed: MonitorAdoptAllResult['failed'],
+  catalog: MonitorCatalog | null,
+  known: MonitorFinding[] = [],
+  label: (f: MonitorFinding) => string = findingLabel,
+): string[] {
+  const checkName = (moduleId: string, key: string) =>
+    catalog?.modules.find((m) => m.id === moduleId)?.checks.find((c) => c.key === key)?.name ?? key;
+  return [
+    ...adopted.flatMap((r) =>
+      r.skippedChecks.map((s) =>
+        t('monitoring.findings.skipped', {
+          module: label(r.finding),
+          check: checkName(r.finding.moduleId, s.key),
+          reason: s.reason,
+        }),
+      ),
+    ),
+    ...failed.map((f) => {
+      const found = known.find((x) => x.id === f.findingId);
+      return t('monitoring.findings.failed', {
+        module: found ? label(found) : f.findingId,
+        reason: f.reason,
+      });
+    }),
+  ];
 }

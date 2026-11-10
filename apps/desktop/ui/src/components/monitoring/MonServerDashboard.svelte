@@ -24,13 +24,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     dismissFinding,
   } from '$lib/stores/monitoring';
   import { STATUS_PRIORITY, computeSummary, worstStatus } from '$lib/models/monitoring';
-  import { ageText, cardNote, cardSummary } from '$lib/models/monitoringText';
-  import type {
-    MonitorAdoptResult,
-    MonitorCheck,
-    MonitorCheckType,
-    MonitorFinding,
-  } from '$lib/api/types';
+  import { adoptNoteLines, ageText, cardNote, cardSummary } from '$lib/models/monitoringText';
+  import type { MonitorCheck, MonitorCheckType, MonitorFinding } from '$lib/api/types';
   import { Plus, RefreshCw, TriangleAlert, Wrench, X } from '@lucide/svelte';
   import Button from '../ui/Button.svelte';
   import Callout from '../ui/Callout.svelte';
@@ -222,20 +217,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let adoptNote = $state<{ serverId: string; lines: string[] } | null>(null);
   let adoptLines = $derived(adoptNote?.serverId === selected ? adoptNote.lines : []);
 
-  function findingLabel(f: MonitorFinding): string {
-    const name = f.moduleName ?? f.moduleId;
-    return f.instanceKey !== f.moduleId ? `${name} · ${f.instanceKey}` : name;
-  }
-  function skippedLines(result: MonitorAdoptResult): string[] {
-    const module = moduleOf(result.finding.moduleId);
-    return result.skippedChecks.map((s) =>
-      $t('monitoring.findings.skipped', {
-        module: findingLabel(result.finding),
-        check: module?.checks.find((c) => c.key === s.key)?.name ?? s.key,
-        reason: s.reason,
-      }),
-    );
-  }
   function showAdoptNote(serverId: string, lines: string[]): void {
     adoptNote = lines.length > 0 ? { serverId, lines } : null;
   }
@@ -243,7 +224,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   async function adopt(f: MonitorFinding): Promise<void> {
     adoptNote = null;
     const result = await adoptFinding(f.id);
-    if (result) showAdoptNote(f.serverId, skippedLines(result));
+    if (result) showAdoptNote(f.serverId, adoptNoteLines($t, [result], [], $monitoringCatalog));
   }
   async function dismiss(f: MonitorFinding): Promise<void> {
     await dismissFinding(f.id);
@@ -255,16 +236,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const before = findings;
     const result = await adoptAllFindings(serverId);
     if (!result) return;
-    showAdoptNote(serverId, [
-      ...result.adopted.flatMap(skippedLines),
-      ...result.failed.map((f) => {
-        const found = before.find((x) => x.id === f.findingId);
-        return $t('monitoring.findings.failed', {
-          module: found ? findingLabel(found) : f.findingId,
-          reason: f.reason,
-        });
-      }),
-    ]);
+    showAdoptNote(
+      serverId,
+      adoptNoteLines($t, result.adopted, result.failed, $monitoringCatalog, before),
+    );
   }
 
   function cardTitle(kind: Exclude<CardKind, 'module'>): string {

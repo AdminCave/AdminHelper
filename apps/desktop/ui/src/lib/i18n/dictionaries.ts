@@ -821,6 +821,15 @@ export const translations: Translations = {
     'monitoring.findings.partial': 'Nicht alles übernommen',
     'monitoring.findings.skipped': '{module}: Check „{check}“ nicht angelegt — {reason}',
     'monitoring.findings.failed': '{module}: nicht übernommen — {reason}',
+    'monitoring.findings.label': 'Neue Funde aller Server',
+    'monitoring.tab.findings': 'Funde',
+    'monitoring.tab.updates': 'Updates & Neustarts',
+    'monitoring.updates.label': 'Updates und Neustarts aller Server',
+    'monitoring.updates.empty':
+      'Kein Server meldet seinen Systemzustand. Ein Linux-Server bekommt den Check mit dem Template „Linux Server — Standard“.',
+    'monitoring.updates.col.state': 'Bewertung',
+    'monitoring.updates.state.ok': 'Aktuell',
+    'monitoring.updates.state.noData': 'Noch keine Daten',
     'monitoring.silent.title': 'Monitoring seit {minutes} min ohne Ergebnis',
     'monitoring.silent.hint':
       'Seitdem hat kein aktiver Check ein Ergebnis geliefert, oder der Server antwortet nicht. Klick öffnet das Monitoring.',
@@ -2236,6 +2245,15 @@ export const translations: Translations = {
     'monitoring.findings.partial': 'Not everything was adopted',
     'monitoring.findings.skipped': '{module}: check “{check}” not created — {reason}',
     'monitoring.findings.failed': '{module}: not adopted — {reason}',
+    'monitoring.findings.label': 'New findings of all servers',
+    'monitoring.tab.findings': 'Findings',
+    'monitoring.tab.updates': 'Updates & reboots',
+    'monitoring.updates.label': 'Updates and reboots of all servers',
+    'monitoring.updates.empty':
+      'No server reports its system state. A Linux server gets the check with the template “Linux Server — Standard”.',
+    'monitoring.updates.col.state': 'Rating',
+    'monitoring.updates.state.ok': 'Up to date',
+    'monitoring.updates.state.noData': 'No data yet',
     'monitoring.silent.title': 'Monitoring without a result for {minutes} min',
     'monitoring.silent.hint':
       'No enabled check has delivered a result since, or the server does not answer. Click to open monitoring.',

@@ -37,7 +37,15 @@ import type {
 import type { AuthSession } from '$lib/bridge/types';
 
 export type MonitoringTab =
-  'overview' | 'history' | 'certs' | 'backups' | 'alerts' | 'templates' | 'log';
+  | 'overview'
+  | 'history'
+  | 'certs'
+  | 'backups'
+  | 'updates'
+  | 'findings'
+  | 'alerts'
+  | 'templates'
+  | 'log';
 export type OverviewView = 'list' | 'grid';
 
 // Persisted view choice for the overview (list+detail vs tile grid).

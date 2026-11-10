@@ -10,6 +10,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     monitoring,
     monitoringAlerts,
     monitoringChecks,
+    monitoringFindings,
+    monitoringFindingsError,
     monitoringServers,
     monitoringTemplates,
     activateMonitoring,
@@ -27,6 +29,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import MonitoringLog from '../components/monitoring/MonitoringLog.svelte';
   import CertsView from '../components/monitoring/cross/CertsView.svelte';
   import BackupsView from '../components/monitoring/cross/BackupsView.svelte';
+  import UpdatesView from '../components/monitoring/cross/UpdatesView.svelte';
+  import FindingsView from '../components/monitoring/cross/FindingsView.svelte';
   import Callout from '../components/ui/Callout.svelte';
   import Tabs from '../components/ui/Tabs.svelte';
   import { t } from '$lib/i18n';
@@ -42,13 +46,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let tab = $derived($monitoring.tab);
 
   // Alerts and templates load lazily on their tab, so an empty list can also mean "not loaded
-  // yet": only a non-empty list earns a counter, never a misleading 0.
+  // yet": only a non-empty list earns a counter, never a misleading 0. The findings load
+  // with every refresh, but a failed load keeps the old list: the same rule.
   const count = (n: number) => (n > 0 ? n : undefined);
   const tabs = $derived([
     { id: 'overview', label: $t('monitoring.tab.overview') },
     { id: 'history', label: $t('monitoring.tab.history') },
     { id: 'certs', label: $t('monitoring.tab.certs') },
     { id: 'backups', label: $t('monitoring.tab.backups') },
+    { id: 'updates', label: $t('monitoring.tab.updates') },
+    {
+      id: 'findings',
+      label: $t('monitoring.tab.findings'),
+      count: count($monitoringFindings.length),
+    },
     { id: 'alerts', label: $t('monitoring.tab.alerts'), count: count($monitoringAlerts.length) },
     {
       id: 'templates',
@@ -94,6 +105,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="mon-tab-content" data-tab="backups">
   {#if tab === 'backups'}
     <BackupsView checks={$monitoringChecks} servers={$monitoringServers} onOpen={openServerPage} />
+  {/if}
+</div>
+<div class="mon-tab-content" data-tab="updates">
+  {#if tab === 'updates'}
+    <UpdatesView checks={$monitoringChecks} servers={$monitoringServers} onOpen={openServerPage} />
+  {/if}
+</div>
+<div class="mon-tab-content" data-tab="findings">
+  {#if tab === 'findings'}
+    <FindingsView
+      findings={$monitoringFindings}
+      error={$monitoringFindingsError}
+      servers={$monitoringServers}
+      onOpen={openServerPage}
+    />
   {/if}
 </div>
 <div class="mon-tab-content" data-tab="alerts">

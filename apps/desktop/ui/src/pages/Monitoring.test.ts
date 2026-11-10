@@ -6,7 +6,8 @@
 // templates only once their lists hold something. The tab bodies are stubbed. Above the tabs
 // the dead man's switch says how long monitoring has been without a result (T6, R-1225).
 // The cross tabs for certificates and backups get the checks, the servers and the link to
-// a server page (T7, R-1225).
+// a server page (T7, R-1225), so does the one for updates and reboots; the findings tab
+// gets the findings with their load error and counts a non-empty list (T8).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -17,6 +18,8 @@ const h = vi.hoisted(() => ({
   stub: vi.fn(),
   certs: vi.fn(),
   backups: vi.fn(),
+  updates: vi.fn(),
+  findings: vi.fn(),
 }));
 
 vi.mock('$lib/stores/monitoring', async () => {
@@ -27,6 +30,8 @@ vi.mock('$lib/stores/monitoring', async () => {
     monitoringTemplates: writable([]),
     monitoringChecks: writable([{ id: 'c1' }]),
     monitoringServers: writable([{ id: 'srv-1' }]),
+    monitoringFindings: writable([{ id: 'f1' }, { id: 'f2' }, { id: 'f3' }]),
+    monitoringFindingsError: writable('timeout'),
     activateMonitoring: vi.fn(),
     deactivateMonitoring: vi.fn(),
     openServerPage: h.openServerPage,
@@ -44,6 +49,8 @@ vi.mock('../components/monitoring/MonitoringTemplates.svelte', () => ({ default:
 vi.mock('../components/monitoring/MonitoringLog.svelte', () => ({ default: h.stub }));
 vi.mock('../components/monitoring/cross/CertsView.svelte', () => ({ default: h.certs }));
 vi.mock('../components/monitoring/cross/BackupsView.svelte', () => ({ default: h.backups }));
+vi.mock('../components/monitoring/cross/UpdatesView.svelte', () => ({ default: h.updates }));
+vi.mock('../components/monitoring/cross/FindingsView.svelte', () => ({ default: h.findings }));
 
 import type { Writable } from 'svelte/store';
 import { setLanguage } from '$lib/i18n';
@@ -53,6 +60,7 @@ import Monitoring from './Monitoring.svelte';
 
 const silent = pulse.monitoringSilentMinutes as unknown as Writable<number | null>;
 const state = store.monitoring as unknown as Writable<{ tab: string }>;
+const findings = store.monitoringFindings as unknown as Writable<{ id: string }[]>;
 
 setLanguage('de');
 afterEach(() => {
@@ -60,6 +68,7 @@ afterEach(() => {
   vi.clearAllMocks();
   silent.set(null);
   state.set({ tab: 'overview' });
+  findings.set([{ id: 'f1' }, { id: 'f2' }, { id: 'f3' }]);
 });
 
 describe('Monitoring page', () => {
@@ -89,11 +98,39 @@ describe('Monitoring page', () => {
     expect(h.setTab).toHaveBeenCalledWith('certs');
     await fireEvent.click(screen.getByRole('tab', { name: 'Backups' }));
     expect(h.setTab).toHaveBeenCalledWith('backups');
+    await fireEvent.click(screen.getByRole('tab', { name: 'Updates & Neustarts' }));
+    expect(h.setTab).toHaveBeenCalledWith('updates');
+    await fireEvent.click(screen.getByRole('tab', { name: /Funde/ }));
+    expect(h.setTab).toHaveBeenCalledWith('findings');
+  });
+
+  it('counts the open findings, never a 0', async () => {
+    render(Monitoring);
+    await tick();
+    const tab = screen.getByRole('tab', { name: /Funde/ });
+    expect(tab.querySelector('.count')?.textContent).toBe('3');
+    findings.set([]);
+    await tick();
+    expect(tab.querySelector('.count')).toBeNull();
+  });
+
+  it('gives the findings tab the findings, their load error, the servers and the link', async () => {
+    state.set({ tab: 'findings' });
+    render(Monitoring);
+    await tick();
+    expect(h.updates).not.toHaveBeenCalled();
+    expect(h.findings).toHaveBeenCalledTimes(1);
+    const props = h.findings.mock.calls[0][1];
+    expect(props.findings).toEqual([{ id: 'f1' }, { id: 'f2' }, { id: 'f3' }]);
+    expect(props.error).toBe('timeout');
+    expect(props.servers).toEqual([{ id: 'srv-1' }]);
+    expect(props.onOpen).toBe(h.openServerPage);
   });
 
   it.each([
     ['certs', 'certs', 'backups'],
     ['backups', 'backups', 'certs'],
+    ['updates', 'updates', 'findings'],
   ] as const)(
     'gives the %s tab the checks, the servers and the server link',
     async (tab, shown, hidden) => {
