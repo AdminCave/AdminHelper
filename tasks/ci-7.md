@@ -1,5 +1,5 @@
 # Downloads der CI wiederholen, xrdp-Suite je PR — Task-Ledger
-Status: geplant · Branch: feature/ci-7 · Review: am Ende
+Status: aktiv · Branch: feature/ci-7 · Review: am Ende
 Spec: docs/features/ci-7.md (Roadmap R-1130, R-1160, R-1194, R-1142)
 Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbst (die geänderten Jobs laufen im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
