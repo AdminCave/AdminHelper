@@ -1,5 +1,5 @@
 # CA-Issuer: Register der kompromittierten Zwischenzertifikate, Gleichstand im finish — Task-Ledger
-Status: aktiv · Branch: feature/kern-ca-11 · Review: pro Task
+Status: bereit · Branch: feature/kern-ca-11 · Review: pro Task
 Spec: docs/features/kern-ca-11.md (Roadmap R-1113, R-1116)
 Heavy: linux-full — `apps/ca-issuer` im Diff: der Sammellauf über `main` fährt den Stack mit Enrollment und Rotation. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py
 Doku: keine (kein dokumentiertes Verhalten; CHANGELOG → T3)
 Abhängt von: T1
 
-### T3 — Doku und CHANGELOG  [ ]
+### T3 — Doku und CHANGELOG  [x]
 Komponente: ca-issuer · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/kern-ca-11.md
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @8c45aee9b 2026-11-10T06:10:50+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: DE+EN im Abschnitt Zwischenzertifikate rotieren: `<scope>-compromised.pem`, Verhalten von Start, Rotation
 und `status`; CHANGELOG-Eintrag neutral.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- tests/test_cli.py
