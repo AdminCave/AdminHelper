@@ -1,5 +1,5 @@
 # Harness: `./repo` der Box beim Sync stehen lassen — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-5 · Review: am Ende
+Status: erledigt · Branch: feature/kern-harness-5 · Review: am Ende
 Spec: docs/features/kern-harness-5.md (Roadmap R-0736)
 Heavy: none — nur die Exclude-Liste von vm.py sync und ihr hermetischer Test, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
