@@ -78,7 +78,7 @@ case "${1:-}" in
       *"python3 -I - frps-config "*) echo "${FAKE_API_FRPS_CONFIG:-MB_API_FRPS_CONFIG=${args##* }}" ;;
       *"python3 -I - add "*)
         name="${args##* }"
-        [ "$name" = "${FAKE_API_ADD_FAIL:-}" ] || echo "MB_API_TUNNEL=$name MB_VISITOR_B64=bGF0ZQ==" ;;
+        [ "$name" = "${FAKE_API_ADD_FAIL:-}" ] || echo "MB_API_TUNNEL=$name MB_API_TUNNEL_ID=id-$name MB_VISITOR_B64=bGF0ZQ==" ;;
       *"box_tunnelbox.sh late "*)
         echo "TUNNEL_FRPC_CONNECTED ${FAKE_TUNNEL_LATE:-TUNNEL_LATE_OK} ${FAKE_TUNNEL_SYNC:-TUNNEL_SYNC_HASH_OK}" ;;
       *"box_tunnelbox.sh mark "*) echo "TUNNEL_SSH_USER=ah TUNNEL_MARK_OK" ;;
@@ -93,7 +93,8 @@ case "${1:-}" in
         else echo "${FAKE_VIS_CHECK:-VIS_SESSION_SURVIVED}"; fi ;;
       *box_visitorbox.sh*) echo "${FAKE_VIS_SSH:-VIS_TUNNEL_SSH_OK} VIS_SSH_PUB_B64=cHVi" ;;
       *"logs --no-color frps"*)
-        for t in ${FAKE_FRPS_TUNNELS:-mb-ssh-late mb-ssh-reload}; do echo "new proxy [mb-tunnel.$t] type [stcp] success"; done ;;
+        # frps names a proxy "<frpc user>.<tunnel ID>" (R-1210); the fake API gives the ID id-<name>.
+        for t in ${FAKE_FRPS_TUNNELS:-id-mb-ssh-late id-mb-ssh-reload}; do echo "new proxy [srv-id.$t] type [stcp] success"; done ;;
       # --docker: the template and the check state over the admin API, the n-th query
       # answering with the n-th word of FAKE_DOCKER_STATES (NONE: no marker).
       *"python3 -I - docker-assign "*) echo "${FAKE_API_DOCKER_ASSIGN:-MB_API_TEMPLATE=docker-host}" ;;
@@ -237,7 +238,7 @@ expect_fail "a session lost in the reload fails the run" \
 expect_fail "a session check without a marker fails the run" \
   "the visitor's SSH session through mb-ssh-late did not live through the reload: no marker" FAKE_VIS_CHECK=NONE
 expect_fail "a second tunnel frps never registered fails the run" \
-  "frps shows no STCP registration of mb-ssh-reload" FAKE_FRPS_TUNNELS=mb-ssh-late
+  "frps shows no STCP registration of mb-ssh-reload" FAKE_FRPS_TUNNELS=id-mb-ssh-late
 reset_state
 OUT=$(FAKE_API_ADD_FAIL=mb-ssh-late bash "$MB" --tunnel 2>&1); rc=$?
 [ $rc -ne 0 ] && grep -q '^  FAIL could not create tunnel mb-ssh-late' <<<"$OUT" \
@@ -258,9 +259,9 @@ missing=""
 for want in "frps up on the server box, run by its supervisor from the seeded config" \
             "max_ports_per_client of the FRP config set to 32 over the API" \
             "frps restarted exactly once for the change: one event, applied, one start and no exit in its log, a new frps process (events:applied/none/false,pid:101-202-202,starts:1,exits:0)" \
-            "the agent's frpc logged in again by itself: frps registered mb-ssh-late mb-ssh-reload anew after the restart" \
-            "a new visitor connection after the restart: an SSH session through mb-ssh-late carries data" \
-            "the new SSH session through mb-ssh-late still carries data seconds later"; do
+            "the agent's frpc logged in again by itself: frps registered id-mb-ssh-late id-mb-ssh-reload anew after the restart" \
+            "a new visitor connection after the restart: an SSH session through id-mb-ssh-late carries data" \
+            "the new SSH session through id-mb-ssh-late still carries data seconds later"; do
   grep -qF "  ok   $want" <<<"$OUT" || missing="$missing [$want]"
 done
 [ $rc -eq 0 ] && [ -z "$missing" ] \
@@ -268,7 +269,7 @@ done
   || bad "R-0411: rc=$rc, missing:$missing"
 grep -q '^run 3001 --timeout 300 -- bash scripts/tests/box_serverbox.sh frps-mark$' "$FAKE_LOG" \
   && grep -qE '^run 3001 --timeout 300 -- printf %s [[:alnum:]+/=]+ \| base64 -d \| python3 -I - frps-config pw1 c1 32$' "$FAKE_LOG" \
-  && grep -q '^run 3001 --timeout 900 -- bash scripts/tests/box_serverbox.sh frps-restart 0123456789abcdef:3:101 mb-ssh-late mb-ssh-reload$' "$FAKE_LOG" \
+  && grep -q '^run 3001 --timeout 900 -- bash scripts/tests/box_serverbox.sh frps-restart 0123456789abcdef:3:101 id-mb-ssh-late id-mb-ssh-reload$' "$FAKE_LOG" \
   && ok "mark, change and watch run on the server box: the tunnels' FRP config, the mark, both tunnels" \
   || bad "frps calls: $(grep -E 'frps-' "$FAKE_LOG")"
 [ "$(grep -c '^run 3004 --timeout 300 -- bash scripts/tests/box_visitorbox.sh hold ah$' "$FAKE_LOG")" = 2 ] \
@@ -286,7 +287,7 @@ expect_fail "a restart watch without a verdict fails the run" \
 expect_fail "a login watch without a verdict fails the run" \
   "the agent's frpc did not log in again after the restart: no marker" FAKE_FRPS_BACK=NONE
 expect_fail "a new session that broke off fails the run" \
-  "the new SSH session through mb-ssh-late broke off: VIS_SESSION_LOST" FAKE_VIS_CHECK_AFTER=VIS_SESSION_LOST
+  "the new SSH session through id-mb-ssh-late broke off: VIS_SESSION_LOST" FAKE_VIS_CHECK_AFTER=VIS_SESSION_LOST
 # frps_calls — the steps of the frps stage the run made, in order.
 frps_calls() { tunnel_steps | grep -oE 'frps-(mark|config|restart)|visitor:(hold|check)' | paste -sd' ' -; }
 reset_state
@@ -312,7 +313,7 @@ OUT=$(FAKE_FRPS_BACK=MISSING:mb-ssh-reload bash "$MB" --tunnel 2>&1); rc=$?
   || bad "agent not back: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT"); $(frps_calls)"
 reset_state
 OUT=$(FAKE_VIS_HOLD_AFTER=VIS_SESSION_NOT_OPEN bash "$MB" --tunnel 2>&1); rc=$?
-[ $rc -ne 0 ] && grep -q '^  FAIL no new visitor connection through mb-ssh-late after the restart: VIS_SESSION_NOT_OPEN' <<<"$OUT" \
+[ $rc -ne 0 ] && grep -q '^  FAIL no new visitor connection through id-mb-ssh-late after the restart: VIS_SESSION_NOT_OPEN' <<<"$OUT" \
   && [ "$(frps_calls)" = "visitor:hold visitor:check frps-mark frps-config frps-restart visitor:hold" ] \
   && ok "a visitor that does not get through after the restart fails the run" \
   || bad "no new visitor: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT"); $(frps_calls)"
@@ -389,7 +390,7 @@ def urlopen(req, context=None, timeout=None):
             tunnels[:] = [t for t in tunnels if path != "/api/frp/tunnels/" + t["id"]]
         return Resp(b"")
     if method == "POST" and path == "/api/frp/tunnels":
-        return Resp(b"{}")
+        return Resp(b'{"id": "tun-late"}')
     if method == "PUT" and path == "/api/frp/server-config/c1":
         kept = os.environ.get("HARNESS_PUT_KEEP") == "1"
         return Resp(json.dumps({"id": "c1", "maxPortsPerClient": None if kept else body["max_ports_per_client"]}).encode())
@@ -423,7 +424,8 @@ OUT=$(python3 -I "$HARNESS" "$PROG" add pw1 t1 c1 mb-ssh-late 2>&1); rc=$?
 [ $rc -eq 0 ] \
   && grep -qxF 'CALL POST /api/frp/tunnels {"frp_config_id": "c1", "local_port": 22, "name": "mb-ssh-late", "protocol": "ssh", "server_id": "t1", "tunnel_type": "stcp"}' <<<"$OUT" \
   && grep -qx 'MB_API_TUNNEL=mb-ssh-late' <<<"$OUT" && grep -qx "MB_VISITOR_B64=$(printf visitor | base64)" <<<"$OUT" \
-  && ok "add creates an STCP tunnel to the sshd and hands on the visitor.toml that has it" || bad "add: rc=$rc $OUT"
+  && grep -qx 'MB_API_TUNNEL_ID=tun-late' <<<"$OUT" \
+  && ok "add creates an STCP tunnel to the sshd and hands on its ID and the visitor.toml that has it" || bad "add: rc=$rc $OUT"
 OUT=$(python3 -I "$HARNESS" "$PROG" frps-config pw1 c1 32 2>&1); rc=$?
 [ $rc -eq 0 ] && grep -qxF 'CALL PUT /api/frp/server-config/c1 {"max_ports_per_client": 32}' <<<"$OUT" \
   && grep -qx 'MB_API_FRPS_CONFIG=32' <<<"$OUT" \

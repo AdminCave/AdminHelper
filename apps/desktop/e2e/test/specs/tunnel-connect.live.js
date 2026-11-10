@@ -96,7 +96,8 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
   let held;
 
   before(async () => {
-    const tunnel = adminTunnels().find((t) => t.name === HELD_TUNNEL);
+    // The name the tunnel was seeded with is its label; `name` is the display name (R-1210).
+    const tunnel = adminTunnels().find((t) => (t.label ?? t.name) === HELD_TUNNEL);
     if (!tunnel?.visitorPort) {
       throw new Error(`the server lists no STCP tunnel ${HELD_TUNNEL} with a visitor port`);
     }

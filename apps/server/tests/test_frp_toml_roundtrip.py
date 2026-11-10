@@ -179,6 +179,8 @@ def _tunnel(**kw) -> FrpTunnel:
     # outside it would send every test down the plain branch — past secretKey,
     # allowUsers and customDomains, which are the interpolations that matter here.
     defaults = dict(
+        id="0b1c2d3e-4f50-4617-8829-3a4b5c6d7e8f",
+        server_id="9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a",
         name="tunnel",
         tunnel_type="stcp",
         local_ip="127.0.0.1",
@@ -193,6 +195,11 @@ def _tunnel(**kw) -> FrpTunnel:
     return FrpTunnel(**defaults)
 
 
+# frpc and the visitor know server and tunnel by their IDs (uuid4, R-1210); the name of either
+# reaches no TOML, so it may be any text.
+ID = st.uuids(version=4).map(str)
+ANY_TEXT = st.text(min_size=1, max_size=40)
+
 # allowUsers is filled from User.username (frp/_helpers.py::get_allow_users), and
 # those names pass through the users schema, not through the FRP one — so the
 # strategy generates what that pattern allows, not arbitrary text.
@@ -204,33 +211,39 @@ USERNAME = st.text(
 
 
 @given(
-    name=SAFE_TEXT,
+    tunnel_id=ID,
+    name=ANY_TEXT,
     local_ip=SAFE_TEXT,
     local_port=PORT,
-    frpc_user=SAFE_TEXT,
+    frpc_user=ID,
     secret=SECRET,
     allow_users=st.lists(USERNAME, min_size=1, max_size=3),
 )
 @example(
-    name="p",
+    tunnel_id="0b1c2d3e-4f50-4617-8829-3a4b5c6d7e8f",
+    name='p"\n',
     local_ip="127.0.0.1",
     local_port=22,
-    frpc_user="u",
+    frpc_user="9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a",
     secret="0123456789abcdef",
     allow_users=["ops-admin"],
 )
 @settings(max_examples=100, deadline=None)
-def test_frpc_stcp_round_trips(name, local_ip, local_port, frpc_user, secret, allow_users):
+def test_frpc_stcp_round_trips(
+    tunnel_id, name, local_ip, local_port, frpc_user, secret, allow_users
+):
     """The stcp branch, where the shared secret and the visitor allowlist land."""
     cfg = _config(auth_token=secret)
-    tunnel = _tunnel(name=name, local_ip=local_ip, local_port=local_port, secret_key=secret)
+    tunnel = _tunnel(
+        id=tunnel_id, name=name, local_ip=local_ip, local_port=local_port, secret_key=secret
+    )
     parsed = tomllib.loads(generate_frpc_toml(cfg, [tunnel], frpc_user, allow_users))
 
     assert parsed["user"] == frpc_user
     assert parsed["auth"]["token"] == secret
     assert len(parsed["proxies"]) == 1
     proxy = parsed["proxies"][0]
-    assert proxy["name"] == name
+    assert proxy["name"] == tunnel_id
     assert proxy["localIP"] == local_ip
     assert proxy["localPort"] == local_port
     assert proxy["secretKey"] == secret
@@ -238,7 +251,8 @@ def test_frpc_stcp_round_trips(name, local_ip, local_port, frpc_user, secret, al
 
 
 @given(
-    name=SAFE_TEXT,
+    tunnel_id=ID,
+    name=ANY_TEXT,
     domains=st.lists(
         st.text(
             alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters=".-"),
@@ -250,32 +264,50 @@ def test_frpc_stcp_round_trips(name, local_ip, local_port, frpc_user, secret, al
     ),
     secret=SECRET,
 )
-@example(name="web", domains=["example.test"], secret="0123456789abcdef")
+@example(
+    tunnel_id="0b1c2d3e-4f50-4617-8829-3a4b5c6d7e8f",
+    name="web",
+    domains=["example.test"],
+    secret="0123456789abcdef",
+)
 @settings(max_examples=100, deadline=None)
-def test_frpc_https_round_trips(name, domains, secret):
+def test_frpc_https_round_trips(tunnel_id, name, domains, secret):
     """The https branch: custom_domains is one comma-separated string in the DB and
     becomes a TOML array — the split is the generator's, so the round trip has to
     put the same list back."""
-    tunnel = _tunnel(name=name, tunnel_type="https", custom_domains=",".join(domains))
+    tunnel = _tunnel(id=tunnel_id, name=name, tunnel_type="https", custom_domains=",".join(domains))
     parsed = tomllib.loads(generate_frpc_toml(_config(auth_token=secret), [tunnel], "u"))
 
     proxy = parsed["proxies"][0]
-    assert proxy["name"] == name
+    assert proxy["name"] == tunnel_id
     assert proxy["customDomains"] == domains
 
 
-@given(name=SAFE_TEXT, visitor_port=PORT, secret=SECRET)
-@example(name="v", visitor_port=6000, secret="0123456789abcdef")
+@given(tunnel_id=ID, server_id=ID, name=ANY_TEXT, visitor_port=PORT, secret=SECRET)
+@example(
+    tunnel_id="0b1c2d3e-4f50-4617-8829-3a4b5c6d7e8f",
+    server_id="9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a",
+    name="v",
+    visitor_port=6000,
+    secret="0123456789abcdef",
+)
 @settings(max_examples=50, deadline=None)
-def test_visitor_toml_round_trips(name, visitor_port, secret):
-    tunnel = _tunnel(name=name, tunnel_type="stcp", secret_key=secret, visitor_port=visitor_port)
-    tunnel.target_server = None
+def test_visitor_toml_round_trips(tunnel_id, server_id, name, visitor_port, secret):
+    tunnel = _tunnel(
+        id=tunnel_id,
+        server_id=server_id,
+        name=name,
+        tunnel_type="stcp",
+        secret_key=secret,
+        visitor_port=visitor_port,
+    )
     parsed = tomllib.loads(generate_visitor_toml(_config(), [tunnel]))
 
     assert len(parsed["visitors"]) == 1
     visitor = parsed["visitors"][0]
-    assert visitor["name"] == f"{name}-visitor"
-    assert visitor["serverName"] == name
+    assert visitor["name"] == f"{tunnel_id}-visitor"
+    assert visitor["serverName"] == tunnel_id
+    assert visitor["serverUser"] == server_id
     assert visitor["secretKey"] == secret
     assert visitor["bindPort"] == visitor_port
 
@@ -300,13 +332,17 @@ def test_allow_users_leaves_out_a_name_the_api_refuses():
     assert parsed["proxies"][0]["allowUsers"] == ["ops-admin"], "fail closed, not open"
 
 
-def test_a_server_name_the_api_refuses_gets_no_user_and_no_tunnel():
-    """The frpc user is the server name; one stored before the schema check must not
-    reach the TOML, and without it no proxy can be named after it either."""
-    tunnel = _tunnel(name="t", secret_key="0123456789abcdef")
-    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], 'web"\nx = "1', ["bob"]))
-    assert "user" not in parsed
-    assert parsed.get("proxies", []) == []
+def test_a_tunnel_name_the_api_refuses_reaches_no_toml():
+    """Before R-1210 the frpc user was the server name and the proxy the tunnel name; a name
+    stored before the schema check had to be kept out. The IDs took their place, so such a
+    name changes nothing."""
+    forged = 'forged-name"\nx = "1'
+    tunnel = _tunnel(name=forged, secret_key="0123456789abcdef", visitor_port=6000)
+    frpc = generate_frpc_toml(_config(), [tunnel], tunnel.server_id, ["bob"])
+    visitor = generate_visitor_toml(_config(), [tunnel])
+    assert tomllib.loads(frpc)["proxies"][0]["name"] == tunnel.id
+    assert tomllib.loads(visitor)["visitors"][0]["serverName"] == tunnel.id
+    assert "forged-name" not in frpc and "forged-name" not in visitor
 
 
 def test_a_visitor_user_the_api_refuses_is_an_error():

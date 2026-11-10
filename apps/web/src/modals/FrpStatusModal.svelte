@@ -88,7 +88,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <td>
               <Dot st={online ? 'ok' : 'crit'} label={online ? 'Online' : 'Offline'} />
             </td>
-            <td>{p.name}</td>
+            <!-- frps knows the proxy as "{server-id}.{tunnel-id}" (R-1210): the tunnel's name reads. -->
+            <td>{p.tunnel?.name ?? p.name}</td>
             <td>{p.type || '-'}</td>
             <td>{p.curConns ?? 0}</td>
             <td>{formatBytes(p.todayTrafficIn ?? 0)}</td>

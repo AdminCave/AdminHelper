@@ -108,7 +108,6 @@ const MAPPINGS: Mapping[] = [
     snapshot: 'server',
     schema: 'FrpStatusProxy',
     direction: 'response',
-    omit: { tunnel: 'the matched tunnel row; no client reads it' },
   },
   { ts: 'FrpStatus', snapshot: 'server', schema: 'FrpStatus', direction: 'response' },
   {

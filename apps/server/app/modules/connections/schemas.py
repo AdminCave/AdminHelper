@@ -138,7 +138,11 @@ class ConnectionOptions(_Options):
 
 
 class ConnectionCreate(RequestModel):
-    name: str = Field(..., min_length=1, max_length=255)
+    # With a server both are optional: the display name derives from the server's name
+    # (R-1210), `label` is the own text in it; `name` is what a client from before sends.
+    # Without a server one of them is the name and must not be blank.
+    name: Optional[str] = Field(None, max_length=255)
+    label: Optional[str] = Field(None, max_length=255)
     # The desktop/web clients only render ssh/rdp/web; reject anything else at
     # the boundary instead of persisting a kind no consumer can handle.
     kind: Literal["ssh", "rdp", "web"]
@@ -162,16 +166,23 @@ class ConnectionCreate(RequestModel):
     def _camel_case_only(cls, data: Any) -> Any:
         return _reject_snake_spellings(cls.__name__, data)
 
-    @field_validator("name")
+    @field_validator("name", "label")
     @classmethod
-    def name_not_blank(cls, v: str) -> str:
-        if not v.strip():
+    def strip_name(cls, v: str | None) -> str | None:
+        return v.strip() if v is not None else v
+
+    @model_validator(mode="after")
+    def name_not_blank_without_server(self) -> "ConnectionCreate":
+        own = self.label if self.label is not None else self.name
+        if self.serverId is None and not (own or "").strip():
             raise ValueError("Name darf nicht leer sein")
-        return v.strip()
+        return self
 
 
 class ConnectionUpdate(RequestModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
+    # The own text of the display name of a connection with a server; '' takes it away.
+    label: Optional[str] = Field(None, max_length=255)
     # Same gate as ConnectionCreate: no client renders anything but ssh/rdp/web,
     # so reject others here too — otherwise PUT could persist a kind that Create
     # rejects and no consumer (launcher, hub) can handle.
@@ -226,7 +237,11 @@ class ConnectionOut(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
+    # The display name (R-1210): "{server} · {label}" or "{server} · SSH|RDP|Web" (" (FRP)" over
+    # a tunnel) for a connection with a server, else its name.
     name: str
+    # The stored own text of the display name; without a server the name itself.
+    label: str
     # Not a Literal: the column takes any string, and rows from before the import validation
     # (v0.36.0) can hold another kind.
     kind: str

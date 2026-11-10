@@ -108,7 +108,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       $reachability,
     ),
   );
-  let groups = $derived(groupConnections(shown, grouping));
+  // "By server" groups under the server's name (R-1210); without the list, the display name.
+  let serverNames = $derived(Object.fromEntries($infraServers.map((s) => [s.id, s.name])));
+  let groups = $derived(groupConnections(shown, grouping, serverNames));
   let filtered = $derived(
     library !== 'all' || kind != null || tag != null || $searchTerm.trim() !== '',
   );
