@@ -5,8 +5,10 @@ Heavy: linux-full — der Live-Test xrdp_live_session läuft nur in desktop_e2e_
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1258, R-1195: Live-Test überspringt Text und lässt Wiederverbindungen vor dem Stopp zu  [ ]
+### T1 — R-1258, R-1195: Live-Test überspringt Text und lässt Wiederverbindungen vor dem Stopp zu  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @41cd47ac0 2026-11-10T07:11:25+01:00
+Review: approve (.ah-out/review/kern-rdp-9/T1.verdict.json)
 Beweis: R-1258 Sammellauf 2026-11-09-0959/-1705/-2117 „expected a picture, got … Text(stats)“; R-1195 Sammellauf 2026-11-08-1600 main@d37699f5e „left: Reconnecting right: Disconnected(Closed)“
 Dedup-Key: bug:desktop-e2e:scripts/tests/desktop_e2e_rdp_embedded.sh:flaky
 Änderung: `next_frame` überspringt Text-Nachrichten wie Ping und Pong. Vor dem Stopp und nach dem neuen Login lässt der Test `Reconnecting` und `Connected` zu, wie schon beim Ändern der Größe; das Ende muss `Disconnected(Closed)` sein, danach kommt kein Bild mehr. Der Beweis ist der Lauf von desktop_e2e_rdp_embedded im Sammellauf; lokal kompiliert der Test nur, denn er ist ignoriert und braucht den xrdp-Container.
