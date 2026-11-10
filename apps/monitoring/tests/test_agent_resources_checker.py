@@ -379,7 +379,7 @@ def _host(system, role="guest"):
     return {"os": "linux", "virtualization": {"system": system, "role": role}}
 
 
-@pytest.mark.parametrize("system", ["lxc", "docker", "openvz", "rkt"])
+@pytest.mark.parametrize("system", ["lxc", "docker", "openvz", "rkt", "jail"])
 def test_the_load_of_a_container_is_shown_but_not_rated(system):
     report = {"host": _host(system), "resources": _HIGH_LOAD}
     # Last round's load problem does not count either.
@@ -404,6 +404,7 @@ def test_a_container_still_rates_everything_but_the_load():
         pytest.param(_host("kvm"), id="kvm-guest"),
         pytest.param(_host("xen"), id="xen-guest"),
         pytest.param(_host("hyperv"), id="hyperv-guest"),
+        pytest.param(_host("bhyve"), id="bhyve-guest"),
         pytest.param(_host("kvm", "host"), id="kvm-host"),
         pytest.param(_host("lxc", "host"), id="lxc-host"),
         pytest.param(_host("linux-vserver"), id="system-not-in-the-list"),
@@ -434,14 +435,15 @@ def test_a_report_without_host_facts_rates_the_load_as_before():
     assert "load_rated" not in metrics["_details"]
 
 
-_AGENT_SYSTEM = Path(__file__).resolve().parents[3] / "apps/agent/internal/monitor/system_linux.go"
+_AGENT_SYSTEM = Path(__file__).resolve().parents[3] / "apps/agent/internal/monitor/hostfacts.go"
 _GO_CONTAINER_SYSTEMS = re.compile(r"var containerSystems = map\[string\]bool\{(.*?)\}", re.S)
 
 
 def test_container_systems_match_the_agent():
-    # The agent counts the OOM kills of a container from its cgroup with the same list
-    # (T30). If a system is added on one side only, the agent and the checker disagree
-    # on what a container is, and nothing else turns red.
+    # The agent counts the OOM kills of a container from its cgroup and leaves out
+    # reboot_required in a jail with the same list (T30). If a system is added on one side
+    # only, the agent and the checker disagree on what a container is, and nothing else
+    # turns red.
     m = _GO_CONTAINER_SYSTEMS.search(_AGENT_SYSTEM.read_text(encoding="utf-8"))
     assert m, f"containerSystems not found in {_AGENT_SYSTEM}"
     agent_systems = re.findall(r'"([a-z-]+)": true', m.group(1))

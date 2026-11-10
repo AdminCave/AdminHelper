@@ -24,10 +24,6 @@ var vmstatPath = "/proc/vmstat"
 // container (hierarchical); the root cgroup of a host has no memory.events.
 var memoryEventsPath = "/sys/fs/cgroup/memory.events"
 
-// containerSystems are the virtualization systems gopsutil reports with the role guest for a
-// container (v4.26.5, internal/common/common_linux.go, VirtualizationWithContext). It knows no Podman.
-var containerSystems = map[string]bool{"openvz": true, "lxc": true, "docker": true, "rkt": true}
-
 // rebootRequiredPath is a variable so tests can point the Debian reboot flag at a fixture.
 var rebootRequiredPath = "/var/run/reboot-required"
 
@@ -91,15 +87,6 @@ func readOOMKill() (uint64, string, bool) {
 		logger.Warnf("system state: no readable oom_kill counter in %s, oom_kills left out", name)
 	}
 	return count, source, ok
-}
-
-// inContainer tells a container from a host or a VM by the virtualization of the host facts, through
-// the same call (hostFactsCalls). gopsutil detects it once per process and keeps the answer
-// (internal/common/common_linux.go), so asking again in the same report reads no file. Without an
-// answer it is no container, as for the monitoring service, whose report then has no virtualization.
-func inContainer() bool {
-	system, role, err := hostFactsCalls.virtualization()
-	return err == nil && role == "guest" && containerSystems[system]
 }
 
 // parseOOMKill finds the line "oom_kill <n>" of /proc/vmstat or memory.events, both "name value"

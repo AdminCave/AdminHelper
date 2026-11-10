@@ -9,27 +9,7 @@ package monitor
 import (
 	"context"
 	"strings"
-	"time"
 )
-
-// updatesTimeout caps the apt-get and dnf call of the security update count. It runs once an hour
-// and reads the whole package cache, so it gets more than pluginTimeout.
-const updatesTimeout = 30 * time.Second
-
-// updatesCheckEvery spaces the counts: dnf loads all metadata on each call, and a pending security
-// update is no five-minute matter.
-const updatesCheckEvery = time.Hour
-
-// updatesLeftOut ends the warning of a failed count: the field stays out until the next one.
-const updatesLeftOut = "security_updates left out until the next hourly count"
-
-// updatesCalls indirects the clock of the hourly count and its calls so tests can drive the cache and
-// every outcome without apt-get or dnf (same reason as cpuCalls). run runs one call under timeout
-// and ctx with env added to the agent's environment.
-var updatesCalls = struct {
-	now func() time.Time
-	run func(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error)
-}{time.Now, runTimedEnv}
 
 // securityUpdates returns the count to report and to save: saved while it is younger than an hour,
 // else a new count from the local package cache, never the network (apt-get -s, dnf -C). A count
@@ -39,12 +19,8 @@ var updatesCalls = struct {
 // timed out.
 func securityUpdates(ctx context.Context, saved *updatesCheck) *updatesCheck {
 	now := updatesCalls.now()
-	if saved != nil {
-		// A count from the future (the clock was set back) is due as well, or counting would stop until
-		// the clock caught up.
-		if age := now.Sub(time.Unix(saved.CheckedUnix, 0)); age >= 0 && age < updatesCheckEvery {
-			return saved
-		}
+	if !updatesDue(saved, now) {
+		return saved
 	}
 	var count int
 	var ok bool

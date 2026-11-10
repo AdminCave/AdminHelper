@@ -31,10 +31,11 @@ EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 NO_MOUNT = "?"
 
 # The virtualization systems the host facts report with the role guest for a container:
-# the agent's containerSystems (system_linux.go, gopsutil v4.26.5, no Podman), kept equal
-# by test_agent_resources_checker.py. A tuple, because `in` on it compares instead of
+# the agent's containerSystems (hostfacts.go: gopsutil v4.26.5 on Linux, no Podman, and the
+# FreeBSD jail, which shares the host's kernel and load), kept equal by
+# test_agent_resources_checker.py. A tuple, because `in` on it compares instead of
 # hashing, so a system that is a list or an object cannot raise.
-_CONTAINER_SYSTEMS = ("lxc", "docker", "openvz", "rkt")
+_CONTAINER_SYSTEMS = ("lxc", "docker", "openvz", "rkt", "jail")
 
 # In-memory map: server_id -> last report time (naive UTC wall clock). Process-
 # local (single-worker invariant, see main.py lifespan); hydrated at startup

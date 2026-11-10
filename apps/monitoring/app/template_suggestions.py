@@ -31,13 +31,13 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
-_OSES = frozenset({"linux", "windows", "darwin"})
+_OSES = frozenset({"linux", "windows", "darwin", "freebsd"})
 # Also the stored order, whatever order the agent sent them in.
 _SUBSYSTEMS = ("docker", "zfs", "proxmox")
 _MAX_TEXT = 64
 
 # The standard template (built-in slug) a reported OS or subsystem suggests;
-# darwin has none.
+# darwin and freebsd have none.
 _OS_TEMPLATES = {"linux": "linux-base", "windows": "windows-base"}
 _SUBSYSTEM_TEMPLATES = {"docker": "docker-host", "zfs": "zfs-storage", "proxmox": "proxmox-host"}
 SUGGESTED_SLUGS = frozenset({*_OS_TEMPLATES.values(), *_SUBSYSTEM_TEMPLATES.values()})
