@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui · Review: pro Task
 Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
 Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -121,8 +121,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T12
 Abhängt von: T5, T6, T7, T8
 
-### T12 — Doku DE+EN und Changelog (R-1225)  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui.md
+### T12 — Doku DE+EN und Changelog (R-1225)  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui.md, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @65711eab3 2026-11-10T15:56:10+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku: Server-Seite (Karten, zu/auf, Neu gefunden, Jetzt scannen, Unterdrückungsgrund, Kosten), Querschnitt-Reiter, Warnung „ohne Ergebnis“ mit Grenze, Zugangsdaten hinterlegen (Befehl, Linux-Ziele, Kopier-Fallback). Entwickler-Doku: `muted_reason`, `last_result_at`, `min_interval_s`, Route `costs`, `details.cert`, das neue Tauri-Kommando. Changelog-Fragment (umlautfrei).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui.md
@@ -167,3 +169,4 @@ Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
 - 2026-11-10 T11: Der Port-Fund der Spec ist der veröffentlichte Gateway-Port (`tcp-$E2E_HTTPS_PORT`, ein `docker-proxy` auf dem Host-Netz); das Skript prüft ihn vor den Specs über die neue Operation `findings <server_id>` in `e2e_api.py` (`Dateien:` dazu erweitert). Weitere `docker-proxy`-Ports des Stacks stehen ebenfalls in „Neu gefunden“, die Spec übernimmt nur ihren.
 - 2026-11-10 T11: `monitoring-check.live.js` Schritt 3 (R-1103): der Verlauf steht jetzt in der Karte „System“ der Serverseite, die Spec öffnet sie. Ihr Check aus Schritt 1 ist Push-only (`PUSH_ONLY_TYPES`) und bleibt bis zum nächsten Report wartend, die Karte also zu; die Spec öffnet sie bei „wartend“ statt auf „ok“ zu warten (Box-Lauf 3: „never left pending“). Die Annahmen an Verlauf und Vergleich bleiben dieselben (verschobener Test, kein Rückbau).
 - 2026-11-10 T11 Live-Lauf: eigene Desktop-Box der Lane `arch-monitoring-ui` (`iter.sh`, `run.sh e2e --strict --step desktop_e2e_monitoring`): `desktop_e2e_monitoring: 8 passed, 0 failed`, `run.sh[e2e]: 1 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`; monitoring-check 4/4, monitoring-server-page 8/8. Screenshots je Schritt hell und dunkel unter `.ah-out/screenshots/server-page-0{1..9}-*-{light,dark}.png`, an Kevin vor dem Merge gegeben.
+- 2026-11-10 T12: `Dateien:` um `docs/developer/desktop.html` und `docs/en/developer/desktop.html` erweitert: das neue Tauri-Kommando `terminal_open_ssh_credential` gehört in die Zeile „Eingebettetes Terminal“ der Desktop-Entwickler-Doku, nicht in die Monitoring-Seite. Die Kostenkarte ist in der Admin-Doku mit dem Fenster der Route beschrieben (Mittel der letzten Stunde).
