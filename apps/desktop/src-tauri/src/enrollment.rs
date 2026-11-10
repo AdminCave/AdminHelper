@@ -857,11 +857,43 @@ static RENEWING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// route leaves it at the half. Best-effort at the call site — a transient issuer outage
 /// must not lock the user out (the current cert is still valid).
 pub async fn maybe_renew(server_url: &str) -> Result<Option<Renewal>, AppError> {
-    maybe_renew_with(server_url, fetch_trust_generation, renew).await
+    maybe_renew_with(server_url, RENEW_BUDGET, fetch_trust_generation, renew).await
 }
 
-/// [`maybe_renew`] with the trust query and the renewal as parameters, for the tests.
+/// How long [`maybe_renew`] may take in all, the wait for [`RENEWING`] included. The HTTP
+/// timeouts bound each connect and each read, not a server that answers slowly, and the
+/// sign-in waits for the check (R-1216). Cut off inside `renew`, the issuer may have signed a
+/// cert the desktop does not store; the held one stays valid.
+const RENEW_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// [`maybe_renew`] with the budget, the trust query and the renewal as parameters, for the
+/// tests.
 async fn maybe_renew_with<'a, Q, QFut, R, RFut>(
+    server_url: &'a str,
+    budget: std::time::Duration,
+    query_trust: Q,
+    renew_identity: R,
+) -> Result<Option<Renewal>, AppError>
+where
+    Q: FnOnce(&'a str) -> QFut,
+    QFut: std::future::Future<Output = Result<Option<String>, AppError>>,
+    R: FnOnce(&'a str) -> RFut,
+    RFut: std::future::Future<Output = Result<(), AppError>>,
+{
+    tokio::time::timeout(
+        budget,
+        renew_if_due_locked(server_url, query_trust, renew_identity),
+    )
+    .await
+    .map_err(|_| {
+        AppError::Connection(format!(
+            "certificate renewal: no result within {} s",
+            budget.as_secs_f32()
+        ))
+    })?
+}
+
+async fn renew_if_due_locked<'a, Q, QFut, R, RFut>(
     server_url: &'a str,
     query_trust: Q,
     renew_identity: R,
@@ -3107,6 +3139,7 @@ s1nQfUzhBA==
     ) -> Result<Option<Renewal>, AppError> {
         maybe_renew_with(
             "https://gateway.test",
+            RENEW_BUDGET,
             move |_| async move {
                 calls.queries.fetch_add(1, Ordering::SeqCst);
                 // Where a real query waits for the network, the other check may run.
@@ -3279,5 +3312,68 @@ s1nQfUzhBA==
         outcomes.sort_by_key(|outcome| outcome.is_some());
         assert_eq!(outcomes, [None, Some(Renewal::NewTrust)]);
         assert_eq!(calls.seen(), (2, 1));
+    }
+
+    /// A pinned server that never answers holds neither the sign-in nor the lock (R-1216).
+    #[tokio::test]
+    async fn a_query_without_an_answer_ends_at_the_budget_and_frees_the_lock() {
+        let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
+        let (key, cert) = enrolled_under(VECTOR_PEM);
+        let calls = Calls::default();
+
+        let outcome = maybe_renew_with(
+            "https://gateway.test",
+            std::time::Duration::from_millis(500),
+            |_| async {
+                calls.queries.fetch_add(1, Ordering::SeqCst);
+                std::future::pending().await
+            },
+            |_| async {
+                calls.renewals.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+
+        match outcome {
+            Err(AppError::Connection(msg)) => {
+                assert_eq!(msg, "certificate renewal: no result within 0.5 s")
+            }
+            other => panic!("expected a connection error, got {other:?}"),
+        }
+        assert_eq!(calls.seen(), (1, 0));
+        // The next check takes the lock and runs.
+        let named = Ok(Some(VECTOR_GENERATION.to_string()));
+        assert_eq!(
+            check(named, &key, &rotated(&cert), &calls).await.unwrap(),
+            None
+        );
+        assert_eq!(calls.seen(), (2, 0));
+    }
+
+    /// The wait for a check that holds the lock counts against the budget too.
+    #[tokio::test]
+    async fn the_wait_for_the_lock_counts_against_the_budget() {
+        let calls = Calls::default();
+
+        let held = RENEWING.lock().await;
+        let outcome = maybe_renew_with(
+            "https://gateway.test",
+            std::time::Duration::from_millis(100),
+            |_| async {
+                calls.queries.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            },
+            |_| async { Ok(()) },
+        )
+        .await;
+        drop(held);
+
+        assert!(
+            matches!(outcome, Err(AppError::Connection(_))),
+            "{outcome:?}"
+        );
+        assert_eq!(calls.seen(), (0, 0));
     }
 }
