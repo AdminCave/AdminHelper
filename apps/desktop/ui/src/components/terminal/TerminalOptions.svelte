@@ -98,6 +98,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     label={$t('terminal.options.confirmClose')}
     onChange={(v) => set('confirmClose', v)}
   />
+  <Switch
+    size="sm"
+    checked={prefs.confirmMultilinePaste}
+    label={$t('terminal.options.confirmMultilinePaste')}
+    onChange={(v) => set('confirmMultilinePaste', v)}
+  />
   <FormField label={$t('terminal.options.scrollback')}>
     <Select
       size="sm"

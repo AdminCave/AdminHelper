@@ -1097,18 +1097,20 @@ export function snippetInput(command: string): Uint8Array {
 
 /**
  * Runs `command` in the session of `key`; with the broadcast on in every running SSH session of
- * the workspace instead, whichever window shows it (Rust holds them all).
+ * the workspace instead, whichever window shows it (Rust holds them all). Returns how many
+ * sessions the broadcast reached; null without the broadcast or when it failed.
  */
-export async function runSnippet(key: string, command: string): Promise<void> {
+export async function runSnippet(key: string, command: string): Promise<number | null> {
   const data = snippetInput(command);
   if (!get(snippetBroadcast)) {
     writeTerminal(key, data);
-    return;
+    return null;
   }
   try {
-    await bridge.terminalBroadcast(data);
+    return await bridge.terminalBroadcast(data);
   } catch (err) {
     reportError(errMsg(err));
+    return null;
   }
 }
 

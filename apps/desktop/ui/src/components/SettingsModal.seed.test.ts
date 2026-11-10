@@ -33,6 +33,7 @@ const h = vi.hoisted(() => ({
       copyOnSelect: true,
       rightClickPaste: true,
       confirmClose: true,
+      confirmMultilinePaste: false,
     },
   } satisfies Settings,
   // Set by the session mock below.
