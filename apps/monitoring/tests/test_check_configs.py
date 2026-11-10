@@ -7,6 +7,7 @@ out-of-range values must fail at create/update/template time instead of
 surfacing as a permanently-unknown or mis-thresholded check at runtime."""
 
 import asyncio
+import copy
 import json
 import math
 import re
@@ -20,7 +21,13 @@ from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
 from app.builtin_templates import seed_builtin_templates
-from app.check_configs import CONFIG_MODELS, _DiskOverride, _TempOverride, validate_check_config
+from app.check_configs import (
+    CONFIG_MODELS,
+    ProbeTarget,
+    _DiskOverride,
+    _TempOverride,
+    validate_check_config,
+)
 from app.checkers.system import SystemStateChecker
 from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
@@ -273,10 +280,17 @@ class TestStrictBoolSwitches:
         assert self._stored(factory, check_id) == json.dumps(legacy)
 
 
-def _is_number(annotation) -> bool:
+def _number_type(annotation) -> type | None:
+    """int or float for a number field, optional or not; None for any other field."""
     union = typing.get_origin(annotation) in (typing.Union, types.UnionType)
     members = typing.get_args(annotation) if union else (annotation,)
-    return {m for m in members if m is not type(None)} in ({int}, {float})
+    kinds = {m for m in members if m is not type(None)}
+    return kinds.pop() if kinds in ({int}, {float}) else None
+
+
+def _is_int(field: FieldInfo) -> bool:
+    # An optional int (the probe's port_hint) is strict like a plain one.
+    return _number_type(field.annotation) is int
 
 
 def _number_fields() -> list[tuple[str, tuple[str, ...], FieldInfo]]:
@@ -285,27 +299,30 @@ def _number_fields() -> list[tuple[str, tuple[str, ...], FieldInfo]]:
     owners = [(t, (), m) for t, m in CONFIG_MODELS.items()]
     owners.append(("agent_resources", ("temp_overrides", "nvme"), _TempOverride))
     owners.append(("agent_resources", ("disk_overrides", "/data"), _DiskOverride))
+    owners.append(("probe", ("target",), ProbeTarget))
     return [
         (t, (*path, key), field)
         for t, path, model in owners
         for key, field in model.model_fields.items()
-        if _is_number(field.annotation)
+        if _number_type(field.annotation) is not None
     ]
 
 
 _NUMBER_FIELDS = _number_fields()
 _NUMBER_FIELD_IDS = [f"{t}.{'.'.join(path)}" for t, path, _ in _NUMBER_FIELDS]
-_INT_FIELDS = [(t, path, field) for t, path, field in _NUMBER_FIELDS if field.annotation is int]
+_INT_FIELDS = [(t, path, field) for t, path, field in _NUMBER_FIELDS if _is_int(field)]
 _INT_FIELD_IDS = [f"{t}.{'.'.join(path)}" for t, path, _ in _INT_FIELDS]
 _REQUIRED = {
     "ping": {"target": "192.0.2.1"},
     "tcp": {"target": "192.0.2.1", "port": 22},
     "http": {"url": "http://192.0.2.1/"},
+    "probe": {"sensor": "socket", "target": {"kind": "port"}, "fields": ["listening"]},
 }
 
 
 def _config_with(check_type: str, path: tuple[str, ...], value) -> dict:
-    config = dict(_REQUIRED.get(check_type, {}))
+    # Deep: the probe's required config nests the target a path may write into.
+    config = copy.deepcopy(_REQUIRED.get(check_type, {}))
     node = config
     for key in path[:-1]:
         node = node.setdefault(key, {})
@@ -346,6 +363,8 @@ class TestStrictNumberFields:
             "proxmox_backup",
             "zfs_health",
             "disk_forecast",
+            "probe",
+            "probe.target",
         }
         int_fields = {(t, path) for t, path, _ in _INT_FIELDS}
         assert {("tcp", ("port",)), ("http", ("expected_status",))} <= int_fields <= found
@@ -365,7 +384,7 @@ class TestStrictNumberFields:
         # json.loads reads the tokens Infinity and NaN, and json.dumps stores them
         # again: a float field without an upper bound took inf.
         loc = re.escape(".".join(path))
-        reason = "valid integer" if field.annotation is int else "finite number"
+        reason = "valid integer" if _is_int(field) else "finite number"
         with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a {reason}"):
             validate_check_config(check_type, _config_with(check_type, path, value))
 
@@ -382,7 +401,7 @@ class TestStrictNumberFields:
     def test_number_is_accepted(self, check_type, path, field):
         n = _a_number(field)
         # An int stays valid for a float field.
-        values = [n] if field.annotation is int else [int(n), float(n)]
+        values = [n] if _is_int(field) else [int(n), float(n)]
         for value in values:
             validate_check_config(check_type, _config_with(check_type, path, value))
 
@@ -852,3 +871,95 @@ class TestRouterUpdateBoundary:
             )
             db.commit()
         assert client.put(f"/checks/{cid}", json={"name": "renamed"}).status_code == 200
+
+
+_PROBE = {
+    "sensor": "http",
+    "target": {"kind": "container", "name": "paperless-web-1", "port_hint": 8000, "scheme": "http"},
+    "params": {"path": "/api/status/"},
+    "interval_s": 900,
+    "timeout_s": 10,
+    "fields": ["status_code", "data.database.status"],
+    "rules": [
+        {"field": "status_code", "op": "ne", "value": 200, "level": "critical"},
+        {"field": "data.database.status", "op": "ne", "value": "OK", "level": "warning"},
+    ],
+    "credential": {"ref": "paperless/paperless/default", "use": "bearer"},
+    "test_object": False,
+}
+
+
+def _probe(**changes) -> dict:
+    config = copy.deepcopy(_PROBE)
+    config.update(changes)
+    return config
+
+
+class TestProbeConfig:
+    """probe (R-1223): a catalog check bound to one instance; the catalog's rules hold
+    for it the same way, checked at the API boundary like every other config."""
+
+    def test_a_full_probe_config_is_valid(self):
+        validate_check_config("probe", _PROBE)
+
+    def test_the_minimal_one_too(self):
+        validate_check_config("probe", _REQUIRED["probe"])
+
+    @pytest.mark.parametrize(
+        ("changes", "reason"),
+        [
+            ({"sensor": "shell"}, "unknown sensor 'shell'"),
+            ({"sensor": None}, "sensor: Input should be a valid string"),
+            ({"target": None}, "sensor 'http' needs a target"),
+            ({"target": {"kind": "host"}}, "target.kind"),
+            ({"target": {"kind": "port", "scheme": "ftp"}}, "target.scheme"),
+            ({"target": {"kind": "port", "port_hint": 0}}, "target.port_hint"),
+            ({"target": {"kind": "unit", "name": "a\nb"}}, "target.name"),
+            # The agent asks exactly the instance's own container, unit or process.
+            ({"target": {"kind": "container"}}, "target.name is required for kind 'container'"),
+            ({"target": {"kind": "unit", "name": ""}}, "target.name is required for kind 'unit'"),
+            ({"target": {"kind": "process"}}, "target.name is required for kind 'process'"),
+            ({"target": {"kind": "port", "host": "192.0.2.1"}}, "target.host: Extra inputs"),
+            ({"params": {"protocol": "smtp"}}, "protocol"),
+            ({"params": {"path": "no-slash"}}, "path"),
+            ({"fields": []}, "fields"),
+            ({"fields": ["status_code", "body"]}, "returns no field 'body'"),
+            (
+                {"rules": [{"field": "duration_ms", "op": "gt", "value": 1, "level": "warning"}]},
+                "rule field 'duration_ms'",
+            ),
+            (
+                {"rules": [{"field": "status_code", "op": "gt", "value": "x", "level": "warning"}]},
+                "needs a number",
+            ),
+            ({"interval_s": 600}, "interval_s must be one of (300, 900, 3600, 86400)"),
+            ({"interval_s": 300, "test_object": True}, "test object runs at most every 900 s"),
+            ({"test_object": 1}, "test_object: Input should be a valid boolean"),
+            ({"timeout_s": 31}, "timeout_s: Input should be less than or equal to 30"),
+            ({"credential": {"ref": "paperless/paperless/default", "use": "cookie"}}, "use"),
+            ({"credential": {"ref": "paperless/paperless/default"}}, "credential.use"),
+            ({"credential": {"ref": "a/../etc", "use": "bearer"}}, "credential.ref"),
+            ({"credential": {"ref": "/etc/shadow", "use": "bearer"}}, "credential.ref"),
+            ({"credential": {"ref": "a//b", "use": "bearer"}}, "credential.ref"),
+            ({"credential": {"ref": "a" * 256, "use": "bearer"}}, "credential.ref"),
+            ({"credential": {"ref": "x", "use": "bearer", "value": "s3cret"}}, "credential.value"),
+        ],
+    )
+    def test_what_breaks_a_catalog_rule_is_rejected(self, changes, reason):
+        with pytest.raises(ValueError, match=re.escape(reason)):
+            validate_check_config("probe", _probe(**changes))
+
+    def test_the_router_key_cannot_come_from_the_api(self):
+        # The push path sets _check_id from the row; a stored one would only be overwritten,
+        # but the boundary does not take it at all.
+        with pytest.raises(ValueError, match=r"_check_id: Extra inputs are not permitted"):
+            validate_check_config("probe", _probe(_check_id="other-check"))
+
+    @pytest.mark.parametrize("ref", ["port/tcp/8080/default", "app/proj_1.x/db", "a:b@c-d"])
+    def test_credential_refs_of_instance_keys_are_accepted(self, ref):
+        validate_check_config("probe", _probe(credential={"ref": ref, "use": "basic"}))
+
+    @pytest.mark.parametrize("use", ["bearer", "basic", "redis_auth", "header:X-Api-Key"])
+    def test_credential_uses_of_the_catalog_are_accepted(self, use):
+        ref = "paperless/paperless/default"
+        validate_check_config("probe", _probe(credential={"ref": ref, "use": use}))

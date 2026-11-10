@@ -44,6 +44,7 @@ def make_check(**kw):
         server_id="srv-1",
         severity="critical",
         template_def_id=None,
+        silent=False,
     )
     defaults.update(kw)
     return SimpleNamespace(**defaults)

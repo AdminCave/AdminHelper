@@ -6,8 +6,8 @@
 
 The server lives in the server's database, so no row here has a foreign key to it
 and nothing cascades: checks, alert rules, assignments, tombstones, the agent key,
-maintenance windows, liveness, host facts and dismissed suggestions are deleted by
-hand. The scheduler follows after the commit, like every template sync.
+maintenance windows, liveness, host facts, dismissed suggestions, the discovery and
+its findings are deleted by hand. The scheduler follows after the commit, like every template sync.
 """
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ from app.models import (
     MonitorAlertRule,
     MonitorCheck,
     MonitorCheckTombstone,
+    MonitorDiscovery,
+    MonitorFinding,
     MonitorHostFacts,
     MonitorMaintenance,
     MonitorTemplateAssignment,
@@ -68,6 +70,10 @@ def cleanup_server(db: Session, server_id: str) -> dict:
     db.query(MonitorTemplateSuggestionDismissal).filter(
         MonitorTemplateSuggestionDismissal.server_id == server_id,
     ).delete()
+
+    # The discovery inventory and its findings: no foreign key to the server either
+    db.query(MonitorDiscovery).filter(MonitorDiscovery.server_id == server_id).delete()
+    db.query(MonitorFinding).filter(MonitorFinding.server_id == server_id).delete()
 
     db.commit()
     apply_scheduler_actions(actions)

@@ -223,7 +223,8 @@ export type MonitorCheckType =
   | 'docker_health'
   | 'smart_health'
   | 'disk_forecast'
-  | 'system_state';
+  | 'system_state'
+  | 'probe';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';
@@ -502,6 +503,9 @@ export interface MonitorCheck {
   // Template fields the user changed, which the template sync keeps; named as in
   // the request body (snake_case, e.g. 'check_type'), not as the fields above.
   overriddenFields?: string[];
+  moduleId?: string | null;
+  moduleInstance?: string | null;
+  silent?: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
