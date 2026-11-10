@@ -67,7 +67,7 @@ Verify: bash scripts/dev/verify.sh agent monitoring --strict
 Doku: → T9
 Abhängt von: T1, T3
 
-### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [ ]
+### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [?] (Frage 5: Firmware-Regel „Neustart nötig → warn“ beruht auf needs_reboot = „das anstehende Update braucht einen Neustart“ — update_reboot als info zusammen mit „Update verfügbar“ (Empfehlung), Regel streichen, oder warn behalten)
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/opnsense.py, apps/monitoring/tests/test_catalog_opnsense.py
 Änderung: `MODULE`:
 - Erkennung: `id: "opnsense"`, Marker `opnsense.core` (`/usr/local/opnsense/version/core`).
