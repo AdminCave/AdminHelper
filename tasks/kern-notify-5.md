@@ -1,5 +1,5 @@
 # Benachrichtigungen: Grenze für manuelle Verlaufseinträge, Eskalationsfrist beim Rückfall — Task-Ledger
-Status: bereit · Branch: feature/kern-notify-5 · Review: pro Task
+Status: erledigt · Branch: feature/kern-notify-5 · Review: pro Task
 Spec: docs/features/kern-notify-5.md (Roadmap R-1147, R-1186)
 Heavy: linux-full — Server-API (Benachrichtigungen); Sammellauf. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
