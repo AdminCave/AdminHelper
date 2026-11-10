@@ -6,13 +6,13 @@
 
 A person who got an incident as critical and has the escalation on gets one message on
 their escalation channel once the incident has stayed open (neither acknowledged nor
-resolved) for their deadline since its first critical ping (critical_since). Their
-matrix does not matter, a switched-off channel, a channel without a target, a muted
-category (service.channels_for), or a mute of the row or its server does, and so does
-their sight of the incident now (incidents.access). Their quiet hours apply as to
-anything critical. Once per
-person and incident (Notification.escalated_at); a reopened incident may escalate again
-(incidents._rearm).
+resolved) for their deadline since it last turned critical (critical_since; a fall back
+to warning stops the deadline, incidents.ingest). Their matrix does not matter, a
+switched-off channel, a channel without a target, a muted category
+(service.channels_for), or a mute of the row or its server does, and so does their sight
+of the incident now (incidents.access). Their quiet hours apply as to anything critical.
+Once per person and incident (Notification.escalated_at); a reopened incident, or one critical
+again after a fall back, may escalate again (incidents._rearm).
 """
 
 import json
