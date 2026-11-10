@@ -1,5 +1,5 @@
 # Desktop: Gesamt-Timeout für die Zertifikatserneuerung — Task-Ledger
-Status: geplant · Branch: feature/kern-ca-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-ca-7 · Review: am Ende
 Spec: docs/features/kern-ca-7.md (Roadmap R-1216)
 Heavy: none — eine Zeitgrenze im Desktop-Backend, mit hermetischem Test; kein Stack-, Gateway-, PKI-Aussteller- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
