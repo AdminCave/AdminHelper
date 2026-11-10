@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API (Benachrichtigungen) und Monitoring; Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1178, R-1179: Zielprüfung ausgehender Anfragen ergänzt  [ ]
-Komponente: server monitoring · Dateien: apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf.py, apps/monitoring/tests/test_ssrf.py
+### T1 — R-1178, R-1179: Zielprüfung ausgehender Anfragen ergänzt  [x]
+Komponente: server · Dateien: apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf.py, apps/monitoring/tests/test_ssrf.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @ad0ab5442 2026-11-10T04:16:08+01:00
+Review: approve (.ah-out/review/kern-notify-4/T1.verdict.json)
 Änderung: zwei Adressbereiche kommen in die Listen der Zielprüfung, in beiden Kopien gleich (Paritätstest); Tests je Kopie für
 beide Bereiche mit und ohne Freigabe. Details in der privaten Notiz des Zugs.
 Verify: bash scripts/dev/verify.sh server monitoring --strict
