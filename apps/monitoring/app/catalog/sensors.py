@@ -1,0 +1,180 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""The sensors the agent has compiled in, and what each one may be asked.
+
+The server sends parameters, never commands (monitoring concept §3.8): a sensor is
+a fixed measurement in the agent, and these models are the whole of what a catalog
+entry or a probe check may set for it. The agent checks the same bounds again and
+answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
+
+Each sensor returns a fixed set of fields (SENSOR_FIELDS). The sensors that read a
+structured answer (a JSON body, Redis INFO, HAProxy stats) also return fields under
+``data.`` — a path into that answer, which the agent resolves to one scalar.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
+
+SENSORS = (
+    "unit",
+    "process",
+    "socket",
+    "container",
+    "http",
+    "tls",
+    "certfile",
+    "file_age",
+    "proto",
+    "unixsocket",
+    "sql",
+    "dns",
+    "log",
+)
+
+SENSOR_FIELDS: dict[str, frozenset[str]] = {
+    "unit": frozenset({"active_state", "sub_state", "restarts", "active_since"}),
+    "process": frozenset({"count", "rss_bytes", "uptime_s"}),
+    "socket": frozenset({"listening", "port"}),
+    "container": frozenset({"state", "health", "restarts", "started_at"}),
+    "http": frozenset({"status_code", "duration_ms"}),
+    "tls": frozenset({"days_left", "not_after", "hostname_ok", "chain_ok", "issuer"}),
+    "certfile": frozenset({"days_left", "not_after", "issuer", "subject"}),
+    "file_age": frozenset({"exists", "age_s", "size_bytes"}),
+    "proto": frozenset({"ok", "duration_ms", "tls_ok", "detail"}),
+    "unixsocket": frozenset({"connected", "duration_ms", "status_code"}),
+    "sql": frozenset(
+        {
+            "ok",
+            "duration_ms",
+            "connections",
+            "max_connections",
+            "replication_running",
+            "replication_lag_s",
+            "size_bytes",
+        }
+    ),
+    "dns": frozenset({"resolved", "duration_ms", "answers"}),
+    "log": frozenset({"count"}),
+}
+
+# Sensors whose answer is structured; they accept fields "data.<path>".
+DATA_SENSORS = frozenset({"http", "proto", "unixsocket"})
+
+# The targets a sensor may point at. None: the sensor names its object in params
+# (a path, a query, a resolver lookup), it has no network or process target.
+SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
+    "unit": frozenset({"unit"}),
+    "process": frozenset({"process"}),
+    "socket": frozenset({"port", "process", "container", "unit"}),
+    "container": frozenset({"container"}),
+    "http": frozenset({"loopback", "port", "process", "container", "unit"}),
+    "tls": frozenset({"loopback", "port", "process", "container", "unit"}),
+    "proto": frozenset({"loopback", "port", "process", "container", "unit"}),
+    "certfile": None,
+    "file_age": None,
+    "unixsocket": None,
+    "sql": None,
+    "dns": None,
+    "log": None,
+}
+
+FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
+_ABS_PATH = r"^/[^\x00]*$"
+_LABEL = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_HOSTNAME = rf"^{_LABEL}(\.{_LABEL})*\.?$"
+
+
+class _Params(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+class NoParams(_Params):
+    pass
+
+
+class HttpParams(_Params):
+    path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
+    method: Literal["GET", "HEAD"] = "GET"
+
+
+class TlsParams(_Params):
+    # The name the certificate must carry; empty: the name of the target.
+    server_name: str = Field("", max_length=253)
+    starttls: Literal["none", "smtp", "imap", "pop3", "ldap", "postgres"] = "none"
+
+
+class PathParams(_Params):
+    path: str = Field(pattern=_ABS_PATH, max_length=1024)
+
+
+class ProtoParams(_Params):
+    # auto: the agent recognises the protocol as its discovery does (banner, typical
+    # probe, TLS) and reports it in `detail`; for a port no module knows.
+    protocol: Literal[
+        "auto", "banner", "smtp", "imap", "pop3", "ldap", "postgres", "redis", "fastcgi", "haproxy"
+    ]
+    starttls: StrictBool = False
+    # fastcgi only: the status path of the pool (php-fpm pm.status_path).
+    status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
+
+
+class UnixSocketParams(_Params):
+    path: str = Field(pattern=_ABS_PATH, max_length=1024)
+    protocol: Literal["connect", "http", "redis", "fastcgi", "haproxy"] = "connect"
+    http_path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
+    status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
+
+
+class SqlParams(_Params):
+    engine: Literal["mariadb", "postgres"]
+    # Fixed queries compiled into the agent; the server picks one, never writes SQL.
+    query: Literal["ping", "connections", "replication", "size"]
+
+
+class DnsParams(_Params):
+    name: str = Field(pattern=_HOSTNAME, max_length=253)
+    rrtype: Literal["A", "AAAA", "MX", "TXT", "SRV", "CNAME", "NS", "PTR"] = "A"
+
+
+class LogParams(_Params):
+    unit: str = Field("", max_length=255)
+    # journald priority: 0 emerg … 7 debug; counts entries at this level or worse.
+    priority: int = Field(3, ge=0, le=7, strict=True)
+    match: str = Field("", max_length=128)
+
+
+PARAM_MODELS: dict[str, type[_Params]] = {
+    "unit": NoParams,
+    "process": NoParams,
+    "socket": NoParams,
+    "container": NoParams,
+    "http": HttpParams,
+    "tls": TlsParams,
+    "certfile": PathParams,
+    "file_age": PathParams,
+    "proto": ProtoParams,
+    "unixsocket": UnixSocketParams,
+    "sql": SqlParams,
+    "dns": DnsParams,
+    "log": LogParams,
+}
+
+
+def field_allowed(sensor: str, field: str) -> bool:
+    """Whether `sensor` can return `field`: one of its own, or a data path."""
+    if not FIELD_PATTERN.fullmatch(field):
+        return False
+    if field in SENSOR_FIELDS[sensor]:
+        return True
+    return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")
+
+
+def validate_params(sensor: str, params: dict) -> dict:
+    """The params of `sensor`, checked and with defaults filled in."""
+    return PARAM_MODELS[sensor].model_validate(params).model_dump()

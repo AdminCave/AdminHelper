@@ -18,9 +18,19 @@ read true as 1."""
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+from app.catalog.model import INTERVALS, Check, Rule
 
 
 class _StrictConfig(BaseModel):
@@ -165,6 +175,92 @@ class SystemStateConfig(_StrictConfig):
     check_oom: StrictBool = True
 
 
+class ProbeTarget(_StrictConfig):
+    # kind and scheme are checked by the catalog's Target (ProbeConfig below).
+    kind: str
+    # The instance's own container, unit or process the agent asks; empty for a port.
+    name: str = Field("", max_length=255, pattern=r"^[^\x00-\x1f\x7f]*$")
+    port_hint: int | None = Field(None, ge=1, le=65535, strict=True)
+    scheme: str | None = None
+
+
+# <module id>/<instance key>/<slot>: the key of a secret in the host's credential file,
+# never the secret. No segment starts with a dot, so none reads as a way up. The agent's
+# credentials block reports these keys too (discovery.clean_credentials).
+CREDENTIAL_REF_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*$"
+CREDENTIAL_REF_MAX = 255
+
+
+class ProbeCredential(_StrictConfig):
+    ref: str = Field(max_length=CREDENTIAL_REF_MAX, pattern=CREDENTIAL_REF_PATTERN)
+    use: str
+
+
+class ProbeConfig(_StrictConfig):
+    """A sensor of the agent run against one module instance (R-1223)."""
+
+    sensor: str
+    target: ProbeTarget | None = None
+    params: dict[str, Any] = {}
+    interval_s: int = Field(300, strict=True)
+    timeout_s: int = Field(10, ge=1, le=30, strict=True)
+    fields: list[str] = []
+    rules: list[Rule] = []
+    credential: ProbeCredential | None = None
+    test_object: StrictBool = False
+
+    @field_validator("interval_s")
+    @classmethod
+    def _allowed_interval(cls, v: int) -> int:
+        if v not in INTERVALS:
+            raise ValueError(f"interval_s must be one of {INTERVALS}")
+        return v
+
+    @model_validator(mode="after")
+    def _fits_the_catalog(self) -> ProbeConfig:
+        # A probe check is a catalog check bound to one instance: the catalog's rules
+        # (sensor params, returned fields, targets, test objects) hold for it alike.
+        target = self.target
+        if (
+            target is not None
+            and target.kind in ("container", "unit", "process")
+            and not target.name
+        ):
+            # The agent asks exactly this container, unit or process; without a name it
+            # would have to guess.
+            raise ValueError(f"target.name is required for kind '{target.kind}'")
+        try:
+            Check.model_validate(
+                {
+                    "key": "probe",
+                    "name": "probe",
+                    "sensor": self.sensor,
+                    "target": None
+                    if target is None
+                    else {
+                        "kind": target.kind,
+                        "port_hint": target.port_hint,
+                        "scheme": target.scheme,
+                    },
+                    "params": self.params,
+                    "interval": self.interval_s,
+                    "timeout_s": self.timeout_s,
+                    "fields": self.fields,
+                    "rules": self.rules,
+                    "credential": None if self.credential is None else {"use": self.credential.use},
+                    "test_object": self.test_object,
+                }
+            )
+        except ValidationError as exc:
+            raise ValueError(
+                "; ".join(
+                    f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else e["msg"]
+                    for e in exc.errors()
+                )
+            ) from exc
+        return self
+
+
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "ping": PingConfig,
     "tcp": TcpConfig,
@@ -178,6 +274,7 @@ CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "docker_health": DockerHealthConfig,
     "disk_forecast": DiskForecastConfig,
     "system_state": SystemStateConfig,
+    "probe": ProbeConfig,
 }
 
 

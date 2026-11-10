@@ -17,6 +17,7 @@ import (
 	"golang.org/x/term"
 
 	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/credentials"
 	"adminhelper-agent/internal/diagnostics"
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/logging"
@@ -233,6 +234,7 @@ func monitorCmd() *cobra.Command {
 	}
 	cmd.AddCommand(monitorInitCmd())
 	cmd.AddCommand(monitorPushCmd())
+	cmd.AddCommand(monitorCredentialCmd())
 	return cmd
 }
 
@@ -302,6 +304,64 @@ func monitorPushCmd() *cobra.Command {
 			return monitor.Push(context.Background())
 		},
 	}
+}
+
+// monitorCredentialCmd manages the credentials the monitoring's probes present. They stay on this
+// host: the monitoring service names a credential by its ref and learns only whether one is stored.
+func monitorCredentialCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "credential",
+		Short: "Manage the credentials the monitoring probes present (kept on this host only)",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set <ref>",
+		Short: "Store the credential <ref>, read from stdin (on a terminal: prompted without echo)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ref := args[0]
+			// Checked before the read, so a wrong ref does not cost typing the secret.
+			if err := credentials.ValidRef(ref); err != nil {
+				return err
+			}
+			secret, err := readStdinSecret(cmd.InOrStdin(), cmd.ErrOrStderr(), "credential")
+			if err != nil {
+				return err
+			}
+			if err := credentials.Set(cmd.Context(), config.MonitorCredentialsFile(), ref, secret); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "credential %s stored\n", ref)
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "delete <ref>",
+		Short: "Delete the credential <ref>",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := credentials.Delete(cmd.Context(), config.MonitorCredentialsFile(), args[0]); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "credential %s deleted\n", args[0])
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List the refs of the stored credentials, never their values",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			creds, err := credentials.Load(config.MonitorCredentialsFile())
+			if err != nil {
+				return err
+			}
+			for _, ref := range credentials.Refs(creds) {
+				fmt.Fprintln(cmd.OutOrStdout(), ref)
+			}
+			return nil
+		},
+	})
+	return cmd
 }
 
 // --- Service subcommands ---

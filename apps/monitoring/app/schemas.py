@@ -323,6 +323,9 @@ class MonitorCheckOut(BaseModel):
     templateId: str | None
     templateDefId: str | None
     overriddenFields: list[str]
+    moduleId: str | None
+    moduleInstance: str | None
+    silent: bool
     createdAt: str | None
     updatedAt: str | None
     # Only with a state row; the routes drop it unset (response_model_exclude_unset).
@@ -549,3 +552,135 @@ class BuiltinUpdateOut(BaseModel):
     shippedVersion: int
     current: TemplateDefinitionsOut
     shipped: TemplateDefinitionsOut
+
+
+# The agent's plan (R-1223). Snake case like the report the agent sends: it is the
+# agent's wire format, not an admin API response.
+class PlanMarkerOut(BaseModel):
+    id: str
+    paths: list[str]
+    packages: list[str]
+
+
+class PlanDiscoveryOut(BaseModel):
+    markers: list[PlanMarkerOut]
+
+
+class PlanTargetOut(BaseModel):
+    kind: str
+    name: str
+    port_hint: int | None
+    scheme: str | None
+
+
+class PlanCredentialOut(BaseModel):
+    ref: str
+    use: str
+
+
+class PlanProbeOut(BaseModel):
+    id: str
+    sensor: str
+    interval_s: int
+    timeout_s: int
+    target: PlanTargetOut | None
+    params: dict[str, Any]
+    fields: list[str]
+    credential: PlanCredentialOut | None
+
+
+class AgentPlanOut(BaseModel):
+    plan_version: int
+    catalog_version: str
+    scan: bool
+    discovery: PlanDiscoveryOut
+    probes: list[PlanProbeOut]
+
+
+# Catalog, discovery and findings (R-1223): admin API, camel case like the rest of it.
+class CatalogCredentialOut(BaseModel):
+    slot: str
+    use: str
+
+
+class CatalogCheckOut(BaseModel):
+    key: str
+    name: str
+    sensor: str
+    interval: int
+    fields: list[str]
+    testObject: bool
+    credential: CatalogCredentialOut | None
+
+
+class CatalogCardOut(BaseModel):
+    checkKey: str
+    field: str
+    label: str
+
+
+class CatalogModuleOut(BaseModel):
+    id: str
+    name: str
+    version: int
+    description: str
+    instance: str
+    checks: list[CatalogCheckOut]
+    card: list[CatalogCardOut]
+
+
+class CatalogOut(BaseModel):
+    version: str
+    modules: list[CatalogModuleOut]
+
+
+class DiscoveryOut(BaseModel):
+    serverId: str
+    scannedAt: str | None
+    nextScanAt: str | None
+    scanRequestedAt: str | None
+    inventory: dict[str, Any]
+    # References <module>/<instance>/<slot> the agent holds a secret for, never values.
+    credentials: list[str]
+
+
+class FindingOut(BaseModel):
+    id: str
+    serverId: str
+    moduleId: str
+    # None once the catalog no longer has the module.
+    moduleName: str | None
+    instanceKey: str
+    kind: str
+    status: str
+    summary: Any
+    catalogVersion: str
+    firstSeen: str | None
+    lastSeen: str | None
+    decidedAt: str | None
+    # Ids of the instance's checks that do not alert yet, and of those whose catalog
+    # check is gone (they stay until the admin removes them).
+    silentChecks: list[str]
+    droppedChecks: list[str]
+
+
+class SkippedCheckOut(BaseModel):
+    key: str
+    reason: str
+
+
+class AdoptOut(BaseModel):
+    finding: FindingOut
+    enabledChecks: list[str]
+    disabledChecks: list[str]
+    skippedChecks: list[SkippedCheckOut]
+
+
+class AdoptFailedOut(BaseModel):
+    findingId: str
+    reason: str
+
+
+class AdoptAllOut(BaseModel):
+    adopted: list[AdoptOut]
+    failed: list[AdoptFailedOut]

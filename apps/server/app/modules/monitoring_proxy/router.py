@@ -82,6 +82,9 @@ _ALLOWED_PATH_PREFIXES = (
     "templates",
     "maintenance",
     "agent",
+    "catalog",
+    "discovery",
+    "findings",
 )
 
 # Raised before the request left this process: the monitoring received nothing.
@@ -137,6 +140,32 @@ async def proxy_agent_report(
     )
 
 
+@router.get("/agent/{server_id}/plan", dependencies=[Depends(require_cert_server)])
+async def proxy_agent_plan(
+    server_id: str,
+    request: Request,
+    _scope=Depends(require_scope(SCOPE_AGENT)),
+):
+    """Proxy for the agent's plan (auth via X-API-Key, no JWT needed; agent scope)."""
+    ip = resolve_client_ip(request)
+    # A counter of its own: a flood of plan requests must not use up the reports of an address.
+    count = await run_in_threadpool(get_backend().increment, f"agent_plan:{ip}", _INGEST_WINDOW)
+    if count > _INGEST_MAX:
+        raise HTTPException(status_code=429, detail="Too many agent plan requests")
+    try:
+        resp = await _client.get(
+            f"{_MONITOR_BASE}/agent/{quote(server_id, safe='')}/plan",
+            headers={"X-API-Key": request.headers.get("x-api-key", "")},
+        )
+    except httpx.HTTPError as exc:
+        raise _upstream_error("agent plan", exc) from None
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type"),
+    )
+
+
 # One decorator per method instead of a single api_route(methods=[…]): FastAPI
 # derives an operation's operationId from `list(route.methods)[0]`, so a
 # multi-method route gives all four operations ONE id — picked from a set, i.e.
@@ -162,7 +191,9 @@ async def proxy_to_monitoring(
     """Proxy for all monitoring requests (admins only)."""
     # Prevent path traversal and SSRF: allow only known paths
     normalized = path.lstrip("/")
-    if ".." in normalized or not any(normalized.startswith(p) for p in _ALLOWED_PATH_PREFIXES):
+    # The whole first segment, not a prefix of it: `agent-keys` (a route the server calls
+    # directly with X-Internal-Key) or `findingsX` must not pass as `agent` or `findings`.
+    if ".." in normalized or normalized.split("/", 1)[0] not in _ALLOWED_PATH_PREFIXES:
         raise HTTPException(status_code=400, detail="Unerlaubter Proxy-Pfad")
 
     # Forward the still-encoded wire path: `path` is percent-DECODED by

@@ -22,7 +22,7 @@ import (
 
 // TestOnlyAllowlistStartsCommands parses every non-test file of the package, whatever its build tag,
 // and fails on a start of a command outside allowlist.go: exec.Command, exec.CommandContext,
-// os.StartProcess, or a call of execTimed, which skips the allowlist check.
+// os.StartProcess, execx.Run, execx.RunEnv, or a call of execTimed, which skips the allowlist check.
 func TestOnlyAllowlistStartsCommands(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil || len(files) == 0 {
@@ -63,6 +63,7 @@ func commandStarts(t *testing.T, file string) []string {
 	}
 	forbidden := map[string]bool{
 		"os/exec.Command": true, "os/exec.CommandContext": true, "os.StartProcess": true,
+		"adminhelper-agent/internal/execx.Run": true, "adminhelper-agent/internal/execx.RunEnv": true,
 	}
 	var found []string
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -82,18 +83,20 @@ func commandStarts(t *testing.T, file string) []string {
 }
 
 // TestCommandStartsSeesAStart is the counter-check of the AST test: a file that starts a command,
-// under an alias and through execTimed, is found.
+// under an alias, through execx and through execTimed, is found.
 func TestCommandStartsSeesAStart(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "start.go")
-	src := "package monitor\n\nimport (\n\tx \"os/exec\"\n\t\"os\"\n)\n\n" +
+	src := "package monitor\n\nimport (\n\tx \"os/exec\"\n\t\"os\"\n\t\"adminhelper-agent/internal/execx\"\n)\n\n" +
 		"func a() { _ = x.Command(\"true\") }\n" +
 		"func b() { _, _ = os.StartProcess(\"true\", nil, nil) }\n" +
-		"func c() { _, _ = execTimed(nil, 0, nil, \"true\") }\n"
+		"func c() { _, _ = execTimed(nil, 0, nil, \"true\") }\n" +
+		"func d() { _, _ = execx.Run(nil, 0, \"true\") }\n" +
+		"func e() { _, _ = execx.RunEnv(nil, 0, nil, \"true\") }\n"
 	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got := commandStarts(t, file)
-	want := []string{"8: x.Command", "9: os.StartProcess", "10: execTimed"}
+	want := []string{"9: x.Command", "10: os.StartProcess", "11: execTimed", "12: execx.Run", "13: execx.RunEnv"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("found %q, want %q", got, want)
 	}
