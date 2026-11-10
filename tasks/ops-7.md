@@ -14,8 +14,10 @@ drei Kopien; Test für backup.sh (env.sanitized) mit einem solchen Schlüssel.
 Verify: bash scripts/dev/verify.sh scripts --strict -- restore_guard_test diagnostics_test
 Doku: keine (kein dokumentiertes Verhalten; CHANGELOG → T4)
 
-### T2 — R-1115: Rollen-Passwort mit $$ annehmen, Meldung mit Ausweg  [ ]
+### T2 — R-1115: Rollen-Passwort mit $$ annehmen, Meldung mit Ausweg  [x]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/restore_guard_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b86cd262c 2026-11-10T05:42:08+01:00
+Review: approve (.ah-out/review/ops-7/T2.verdict.json)
 Änderung: `role_password` nimmt außerhalb einfacher Quotes ein `$`, das nur paarweise als `$$` steht, und liest es
 als ein `$`; ein einzelnes `$` stoppt weiter, die Meldung nennt das Setzen in der Umgebung. Test 29: Wert von
 `SCHEDULER_DB_PASSWORD`, `$$` unquotiert und doppelt gequotet, Backslash in Quotes, `$` in einfachen Quotes.
@@ -42,3 +44,5 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - T1: kein Test in diagnostics_test.sh: nur backup.sh liest `tbad`, in diagnostics.sh und restore.sh hält die Zeile nur die drei Kopien gleich (diagnostics_test (r) prüft das, es bleibt im Verify); ein Test dort könnte ohne den Fix nicht rot werden.
+- T3: Nits der Prüfer hingenommen: die Mount-Prüfung gleicht nicht das Datenverzeichnis ab (nur ein eigenes Override des Betreibers käme durch), Prüfung über `ps -q | head -n 1` gegen DROP über `compose exec` (postgres hat eine Replik), der Rollback-Grund nennt weiter „dump or restore“ (die ERROR-Zeile davor nennt den Grund).
+- T2: `$$` nach compose-go dotenv (Kommentar in `expandEscapes`: `FOO=$$bar` ergibt `$bar`); einfach gequotet bleibt jedes `$` wörtlich; ein Backslash in Quotes stoppt weiter.

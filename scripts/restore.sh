@@ -282,8 +282,9 @@ NEW_ENV=""
 # In the file the last statement of the key counts, in every form compose reads
 # (ENV_TOK): an unquoted value up to a " #" without the whitespace at its end, a quoted
 # one between its quotes. A value restore cannot take as compose does (a quote left
-# open, a line break, a backslash inside quotes, a "$" outside single quotes: compose
-# would expand them) stops the restore with the key named, never its value.
+# open, a line break, a backslash inside quotes, a "$" outside single quotes that is
+# not doubled: compose would expand it) stops the restore with the key named, never
+# its value. Outside single quotes compose reads "$$" as one "$", and so does restore.
 ENV_FILE=.env
 [ -z "$NEW_ENV" ] || ENV_FILE="$NEW_ENV"
 role_password() {
@@ -306,12 +307,15 @@ role_password() {
                     if (i = index(V, " #")) V = substr(V, 1, i - 1)
                     sub("(" ws ")+$", "", V)
                 }
-                if (!C || index(V, "\n") || (Q != "" && index(V, "\\")) || (Q != "\047" && index(V, "$"))) exit 3
+                W = V
+                if (Q != "\047") gsub(/\$\$/, "", W)
+                if (!C || index(V, "\n") || (Q != "" && index(V, "\\")) || (Q != "\047" && index(W, "$"))) exit 3
+                if (Q != "\047") gsub(/\$\$/, "$", V)
                 printf "%s", V
             }
         ' "$ENV_FILE") || rc=$?
         if [ "$rc" = 3 ]; then
-            echo "[restore] ERROR: ${key} in ${ENV_FILE} is no plain value (a quote left open, a line break, a backslash inside quotes or a \$ outside single quotes); restore cannot read it as compose does. Nothing was changed." >&2
+            echo "[restore] ERROR: ${key} in ${ENV_FILE} is no plain value (a quote left open, a line break, a backslash inside quotes or a single \$ outside single quotes); restore cannot read it as compose does. Write a literal \$ as \$\$, or set ${key} in the environment instead. Nothing was changed." >&2
             exit 1
         fi
         [ "$rc" = 0 ] || { echo "[restore] ERROR: could not read ${key} from ${ENV_FILE}; nothing was changed." >&2; exit 1; }
