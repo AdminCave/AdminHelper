@@ -59,6 +59,12 @@ fn removals(dir: &Path) -> u64 {
     removed().get(dir).copied().unwrap_or(0)
 }
 
+/// The mark of the library folder in the app data dir `base`: taken before the settings are
+/// read, a download writes only if no `remove` came since (R-1278).
+pub(crate) fn mark(base: &Path) -> u64 {
+    removals(&library_dir(base))
+}
+
 fn library_dir(base: &Path) -> PathBuf {
     base.join(DIR_NAME)
 }
@@ -149,13 +155,14 @@ async fn download() -> Result<Vec<u8>, String> {
 }
 
 /// The checked library in the app data dir `base`, downloaded first when it is missing or
-/// differs from the pinned one; older releases in the folder go.
-pub(crate) async fn ensure(base: &Path) -> Result<PathBuf, String> {
-    ensure_on(base, std::env::consts::ARCH).await
+/// differs from the pinned one; older releases in the folder go. Nothing is fetched or written
+/// when `remove` came after `mark` was taken.
+pub(crate) async fn ensure(base: &Path, mark: u64) -> Result<PathBuf, String> {
+    ensure_on(base, std::env::consts::ARCH, mark).await
 }
 
 /// `ensure` on the architecture `arch`: elsewhere than on x86_64 it fetches nothing (R-1207).
-async fn ensure_on(base: &Path, arch: &str) -> Result<PathBuf, String> {
+async fn ensure_on(base: &Path, arch: &str, mark: u64) -> Result<PathBuf, String> {
     if arch != ARCH {
         return Err(format!(
             "Cisco's OpenH264 binary is pinned for {ARCH} only, not for {arch}"
@@ -165,13 +172,15 @@ async fn ensure_on(base: &Path, arch: &str) -> Result<PathBuf, String> {
     let path = match verified(&dir) {
         Some(path) => path,
         None => {
-            let removals = removals(&dir);
+            if removals(&dir) != mark {
+                return Err("H.264 was turned off before the OpenH264 download".to_string());
+            }
             let packed = tokio::time::timeout(FETCH_DEADLINE, download())
                 .await
                 .map_err(|_| {
                     format!("the OpenH264 download took longer than {FETCH_DEADLINE:?}")
                 })??;
-            install(&dir, &packed, removals)?
+            install(&dir, &packed, mark)?
         }
     };
     prune(&dir);
@@ -372,10 +381,23 @@ mod tests {
         assert_eq!(entries(&dir), vec![FILE_NAME.to_string()]);
     }
 
+    /// The settings were read with H.264 on, then turned it off before the download began.
+    #[tokio::test]
+    async fn a_remove_after_the_mark_fetches_and_writes_nothing() {
+        let scratch = Scratch::new("marked");
+        let before = mark(&scratch.0);
+        remove(&scratch.0).unwrap();
+        let error = ensure_on(&scratch.0, ARCH, before).await.unwrap_err();
+        assert!(error.contains("turned off"), "{error}");
+        assert!(!library_dir(&scratch.0).exists());
+    }
+
     #[tokio::test]
     async fn another_architecture_fetches_nothing() {
         let scratch = Scratch::new("arch");
-        let error = ensure_on(&scratch.0, "aarch64").await.unwrap_err();
+        let error = ensure_on(&scratch.0, "aarch64", mark(&scratch.0))
+            .await
+            .unwrap_err();
         assert!(error.contains("aarch64") && error.contains(ARCH), "{error}");
         assert!(!library_dir(&scratch.0).exists());
     }
@@ -405,14 +427,16 @@ mod tests {
             b"left by an older app",
         )
         .unwrap();
-        let path = ensure(&scratch.0).await.expect("download and install");
+        let path = ensure(&scratch.0, mark(&scratch.0))
+            .await
+            .expect("download and install");
         assert_eq!(path, library_dir(&scratch.0).join(FILE_NAME));
         assert_eq!(
             entries(&library_dir(&scratch.0)),
             vec![FILE_NAME.to_string()]
         );
         assert_eq!(
-            ensure(&scratch.0).await.unwrap(),
+            ensure(&scratch.0, mark(&scratch.0)).await.unwrap(),
             path,
             "the second call keeps the file"
         );

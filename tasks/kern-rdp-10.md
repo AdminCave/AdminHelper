@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Auflösung einmal, OpenH264-Restfenster, Live-Test nach dem Resize — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-10 · Review: am Ende
+Status: bereit · Branch: feature/kern-rdp-10 · Review: am Ende
 Spec: docs/features/kern-rdp-10.md (Roadmap R-1198, R-1278, R-1283)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft im CI-Job rdp-embedded und im Teil gui des Sammellaufs; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::tests
 Doku: keine (intern)
 
-### T2 — R-1278: Zähler vor dem Lesen der Einstellung festhalten  [ ]
+### T2 — R-1278: Zähler vor dem Lesen der Einstellung festhalten  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/mod.rs, apps/desktop/src-tauri/src/rdp_embedded/openh264.rs, changelog.d/kern-rdp-10.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e8f875d5d 2026-11-10T19:09:05+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer kern-rdp-9 branch 2026-11-10, openh264.rs:168 (`removals(&dir)` erst nach dem Lesen von `rdp_h264` in `h264_library`)
 Änderung: `openh264::mark(base)` liefert den Zähler; `h264_library` holt ihn vor `load_settings`, `ensure` nimmt ihn entgegen und `install` schreibt nur bei unveränderter Marke. Test (erst rot): Marke holen, `remove`, dann `ensure_on` mit einem Download-Stub bzw. `install` mit der alten Marke: kein Ordner.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::openh264
