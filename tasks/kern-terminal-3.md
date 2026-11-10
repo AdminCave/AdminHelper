@@ -1,5 +1,5 @@
 # Desktop-Terminal: Dateien, Befehle, Einfügen, Sitzungsverlauf — Task-Ledger
-Status: geplant · Branch: feature/kern-terminal-3 · Review: pro Task
+Status: aktiv · Branch: feature/kern-terminal-3 · Review: pro Task
 Spec: docs/features/kern-terminal-3.md (Roadmap R-1170, R-1171, R-1174, R-1155, R-1165, R-1166, R-1144, R-1175, R-1159)
 Heavy: linux-full — Desktop-Journeys (eingebettetes Terminal, Dateien-Panel); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
