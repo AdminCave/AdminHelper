@@ -1,0 +1,100 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# arch-monitoring-ui — Task-Ledger
+Status: geplant · Branch: feature/arch-monitoring-ui · Review: pro Task
+Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
+Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+Stand `origin/main@2980eaab5`. Gebaut wird erst nach dem Merge von #438 (R-1223, Datenvertrag); danach `origin/main`
+in den Worktree. R-1226 und R-1227 fahren im Folgezug `arch-monitoring-ui-2` (überlappen `feature/arch-freebsd-agent`);
+aus R-1227 nur das HTTPS-Zertifikat hier (T2). Risikopfade (`scripts/dev/review-risk.txt`): T1 (`schemas.py`,
+`alerter.py`), T3 (`lib/api/types.ts`), T10 (`lib/bridge/types.ts`): `security` je Task; T9 trägt eine Fern-Aktion
+über SSH und eine neue Capability: `security` auch dort. Neue Quelldateien bekommen den SPDX-Header (`reuse annotate
+--copyright "Kevin Stenzel" --license GPL-3.0-or-later <datei>`). UI nur aus Tokens und Komponenten unter
+`apps/desktop/ui/src/components/ui/`, Texte DE+EN in `dictionaries.ts`.
+
+### T1 — Monitoring: Status-API für die Server-Seite (R-1225)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_status_page_api.py, apps/monitoring/tests/openapi.snapshot.json
+Änderung: Check-Antworten von `/status` und `/status/server/{server_id}` tragen `muted_reason`, gebündelt je Antwort berechnet (Wartungsfenster einmal, Host-down einmal je Server) mit derselben Semantik wie `alerter.muted_reason`; `/status/summary` trägt `last_result_at` und `min_interval_s` (SQL-Aggregat); neu `GET /status/server/{server_id}/costs` aus den Collector-Reihen (Mittel 1 h, Treffer, Faktor, gebremst; 502 ohne VictoriaMetrics). Tests (neue Datei, SPDX): Gleichlauf gebündelt ↔ `muted_reason` über alle Gründe, Abfragezahl unabhängig von der Check-Zahl, Summary leer/gefüllt, Kosten mit gestubbtem VM-Client und 502.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_page_api.py tests/test_alerter.py tests/test_response_shapes.py tests/test_openapi_snapshot.py
+Doku: → T12
+
+### T2 — Monitoring: HTTPS-Zertifikat im HTTP-Check (R-1225, aus R-1227)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/tests/test_http_checker.py
+Änderung: Vorher httpx `network_stream` und `ssl.SSLSocket.getpeercert` in der Primärdoku nachlesen (Spec „Externe Integrationen“). Beim ersten https-Hop mit `verify_ssl` an `details.cert` = `not_before`, `not_after`, `issuer`, `subject_cn`; ohne Prüfung kein `cert`; Status, Meldung und Metriken des Checks bleiben unverändert. Kommt das Zertifikat durch `_PinnedTransport` nicht heraus, wird `ssrf.py` nicht nebenbei geändert: Task `[?]` mit Befund. Tests: lokaler TLS-Server mit Test-Zertifikat (Ablauf, Aussteller), Redirect http→https, `verify_ssl: false` ohne `cert`, Status unverändert.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
+Doku: → T12
+
+### T3 — Desktop-UI: Datenschicht für Katalog, Erkennung, Funde, Kosten und Puls (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/api/monitoring.test.ts, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts
+Änderung: Typen gegen die gemergten Schemas (`CatalogOut`, `DiscoveryOut`, `FindingOut`, `AdoptOut`, `AdoptAllOut`, Status mit `muted_reason`, Summary, Kosten, `details.cert`); API-Aufrufe für `/catalog`, `/discovery/{id}` (+ `scan`), `/findings` (+ adopt, adopt-all, dismiss), `/status/server/{id}/costs`; der Store lädt Katalog einmal je Sitzung, Erkennung und Funde mit dem Server-Refresh, nach adopt/dismiss neu. Tests: Aufruf-Pfade und Parameter, Store-Ablauf (adopt lädt Checks und Funde neu, Fehler bleibt lesbar).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/monitoring.test.ts src/lib/stores/monitoring.test.ts
+Doku: → T12
+Abhängt von: T1
+
+### T4 — Desktop-UI: Klartext und Bausteine Karte, Querschnitts-Tabelle, Funde-Eingang (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/monitoringText.ts, apps/desktop/ui/src/lib/models/monitoringText.test.ts, apps/desktop/ui/src/components/monitoring/card/MonCard.svelte, apps/desktop/ui/src/components/monitoring/card/MonCard.test.ts, apps/desktop/ui/src/components/monitoring/cross/CrossTable.svelte, apps/desktop/ui/src/components/monitoring/cross/CrossTable.test.ts, apps/desktop/ui/src/components/monitoring/card/FindingsInbox.svelte, apps/desktop/ui/src/components/monitoring/card/FindingsInbox.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: `monitoringText.ts` (SPDX): Fühler-Status, Unterdrückungsgrund, Ablauf (Tage/Stunden, Einstufung nach Konzept §5 relativ zu L, mindestens 12 h), Alter und Einheiten als Sätze DE+EN. `MonCard` (Kopf mit Status, Titel, Kurzzeile; zu bei ok, auf bei Problem; Inhalt als Slot), `CrossTable` (Spalten, Sortierung, Filter, leere Ansicht), `FindingsInbox` (Liste mit übernehmen/alle übernehmen/ignorieren, Art neu/geändert/verschwunden) — nur Tokens und `components/ui/`. Neun Dateien: Bausteine und ihre Tests gehören in einen Commit, die Texte teilen sie.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitoringText.test.ts src/components/monitoring/card src/components/monitoring/cross
+Doku: → T12
+
+### T5 — Desktop-UI: Server-Seite mit Karten (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/components/monitoring/MonServerDashboard.test.ts, apps/desktop/ui/src/components/monitoring/card/ModuleCard.svelte, apps/desktop/ui/src/components/monitoring/card/ModuleCard.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: `MonServerDashboard` umgebaut: Kopf mit Problemzahl und [Jetzt scannen]; Karte System (heutige Sektionen Live, Netz, Heartbeat, System, ZFS, SMART, Prognose), Karten Dienste, Docker, Backups (heutige `Sec*`), je Modul-Instanz eine `ModuleCard` aus Katalog-`card` und den Checks der Instanz (Kennzahlen, Klartext des Fühler-Status, stille Checks markiert), „Neu gefunden (n)“ mit `FindingsInbox`; Unterdrückungsgrund an der Karte. Bestehende Tests der Datei bleiben in ihrer Aussage und ziehen auf die neue Struktur um; neue Tests: zu/auf nach Status, Modulkarte aus Katalog, Neu gefunden mit adopt, Scan-Knopf, Unterdrückungsgrund.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonServerDashboard.test.ts src/components/monitoring/card
+Doku: → T12
+Abhängt von: T3, T4
+
+### T6 — Desktop-UI: Monitoring-Kosten je Server und Warnung „ohne Ergebnis“ (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/monitoringPulse.ts, apps/desktop/ui/src/lib/stores/monitoringPulse.test.ts, apps/desktop/ui/src/components/StatusBar.svelte, apps/desktop/ui/src/components/StatusBar.test.ts, apps/desktop/ui/src/components/monitoring/card/MonCosts.svelte, apps/desktop/ui/src/components/monitoring/card/MonCosts.test.ts, apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: `monitoringPulse.ts` (SPDX): alle 60 s `/status/summary`, solange eine Sitzung besteht; Grenze max(10 min, 2 × `min_interval_s`); Warnung bei altem `last_result_at` oder Ausfall länger als die Grenze, keine ohne Checks. Statusleiste zeigt „Monitoring seit X min ohne Ergebnis“ (Klick → Monitoring), die Server-Seite die Kosten je Collector (`MonCosts`: Dauer, CPU, gebremst, Treffer). Tests mit Fake-Timern: Grenze, Ausfall, Erholung, keine Checks, Abmelden stoppt den Puls.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/monitoringPulse.test.ts src/components/StatusBar.test.ts src/components/monitoring/card/MonCosts.test.ts
+Doku: → T12
+Abhängt von: T3, T5
+
+### T7 — Desktop-UI: Querschnitt Zertifikate & Domains und Backups (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/components/monitoring/cross/CertsView.svelte, apps/desktop/ui/src/components/monitoring/cross/CertsView.test.ts, apps/desktop/ui/src/components/monitoring/cross/BackupsView.svelte, apps/desktop/ui/src/components/monitoring/cross/BackupsView.test.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Neue Reiter der Monitoring-Seite. Zertifikate & Domains: Zeilen aus `details.cert` der HTTP-Checks und aus `probe`-Checks mit Feld `not_after` (Server, Ziel, Aussteller, Ablauf, Einstufung), nach Ablauf sortiert. Backups: aus den `proxmox_backup`-Checks aller Server (was, letzter Erfolg, Alter, Status). Beide auf `CrossTable`, Klick führt zur Server-Seite. Tests: Sortierung, Einstufung relativ zu L, Fühler-Zeilen über den Check-Status, leere Ansicht.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/cross
+Doku: → T12
+Abhängt von: T2, T4
+
+### T8 — Desktop-UI: Querschnitt Updates & Neustarts und Funde (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/components/monitoring/cross/UpdatesView.svelte, apps/desktop/ui/src/components/monitoring/cross/UpdatesView.test.ts, apps/desktop/ui/src/components/monitoring/cross/FindingsView.svelte, apps/desktop/ui/src/components/monitoring/cross/FindingsView.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Updates & Neustarts aus den `system_state`-Checks (Sicherheitsupdates, Updates, Neustart nötig je Server; Paketnamen folgen mit R-1227). Funde: offener Eingang aller Server (`/findings?status=open`) mit `FindingsInbox`, gruppiert nach Server, übernehmen/ignorieren wie auf der Server-Seite. Tests: Zeilen aus Details, Gruppierung, adopt/dismiss lädt neu.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/cross
+Doku: → T12
+Abhängt von: T3, T4
+
+### T9 — Desktop-Rust: Terminal mit fester Aktion „Zugangsdaten hinterlegen“ (R-1225)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/src-tauri/src/capabilities.rs
+Änderung: Vorher Tauri-Capabilities und Commands in der Primärdoku nachlesen. Neues Kommando `terminal_open_ssh_credential(connection, ref, cols, rows, output)`: wie `terminal_open_ssh` (gleiche Prüfungen, `ssh_spawn`, Fenster-Regel), aber mit `-t` und der in Rust gebauten Fern-Aktion `sudo adminhelper-agent monitor credential set <ref>`; `ref` gegen das Agent-Muster (Spec), sonst Fehler ohne Start. Eingetragen in `COMMANDS`, `generate_handler!`, Capability des Hauptfensters und `capabilities.rs`. Tests: Argumentliste exakt, `ref` mit Leerzeichen, `;`, `$(`, Backtick, führendem `-`, Zeilenumbruch, leerem und zu langem Wert abgelehnt, gültige Formen angenommen; Capability-Listen im Gleichlauf.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
+Doku: → T12
+
+### T10 — Desktop-UI: Dialog „Zugangsdaten hinterlegen“ (R-1225)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/invoke.test.ts, apps/desktop/ui/src/components/monitoring/card/CredentialDialog.svelte, apps/desktop/ui/src/components/monitoring/card/CredentialDialog.test.ts, apps/desktop/ui/src/components/monitoring/card/ModuleCard.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Bridge-Funktion für T9; an der Modulkarte bei `no_credential` der Knopf „Zugangsdaten hinterlegen“: Dialog wählt die SSH-Verbindung des Servers (eine: direkt; mehrere: Auswahl) und öffnet das Terminal; Ziel nicht Linux oder keine SSH-Verbindung → der Befehl zum Kopieren. Danach Hinweis, dass „hinterlegt“ mit dem nächsten Report erscheint. Tests: Kommando-Name und Parameter, Auswahl, Kopier-Fallback, kein Geheimnis-Feld im Dialog.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/invoke.test.ts src/components/monitoring/card/CredentialDialog.test.ts
+Doku: → T12
+Abhängt von: T5, T9
+
+### T11 — Desktop-E2E: Journey Server-Seite mit Schritt-Screenshots (R-1225)  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-server-page.live.js, scripts/tests/desktop_e2e_monitoring.sh
+Änderung: Live-Spec (SPDX, nur ESLint) gegen den geseedeten Server mit echtem Agent: Server-Seite öffnen, System-Karte zu bei ok, „Neu gefunden“ zeigt den Port-Fund des Agents, übernehmen erzeugt die Modulkarte, Querschnitt-Reiter öffnen, Statusleiste ohne Warnung; an jedem Schritt ein Screenshot nach `.ah-out/screenshots/` (hell und dunkel). `desktop_e2e_monitoring.sh` fährt die Spec nach `monitoring-check.live.js`. Live-Lauf auf der warmen Desktop-VM (`/test`), Ergebnis und Screenshot-Pfad hier vermerkt.
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: → T12
+Abhängt von: T5, T6, T7, T8
+
+### T12 — Doku DE+EN und Changelog (R-1225)  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui.md
+Änderung: Admin-Doku: Server-Seite (Karten, zu/auf, Neu gefunden, Jetzt scannen, Unterdrückungsgrund, Kosten), Querschnitt-Reiter, Warnung „ohne Ergebnis“ mit Grenze, Zugangsdaten hinterlegen (Befehl, Linux-Ziele, Kopier-Fallback). Entwickler-Doku: `muted_reason`, `last_result_at`, `min_interval_s`, Route `costs`, `details.cert`, das neue Tauri-Kommando. Changelog-Fragment (umlautfrei).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui.md
+Task-Review: am Ende
+Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
