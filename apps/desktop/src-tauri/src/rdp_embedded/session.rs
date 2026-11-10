@@ -2330,6 +2330,27 @@ mod tests {
                     .expect("no phase in time")
                     .expect("the session went away without a last phase")
             }
+
+            /// The next phase past automatic reconnects: IronRDP connects again by itself, also
+            /// when the test did nothing to cause it (R-1195), and that ends nothing.
+            async fn phase_past_reconnects(&mut self) -> Report {
+                loop {
+                    match self.phase().await {
+                        Report::Reconnecting | Report::Connected => continue,
+                        other => return other,
+                    }
+                }
+            }
+
+            /// Fails on any phase that came so far, but for automatic reconnects (R-1195).
+            fn assert_still_connected(&mut self, after: &str) {
+                while let Ok(phase) = self.phases.try_recv() {
+                    assert!(
+                        matches!(phase, Report::Reconnecting | Report::Connected),
+                        "{after} ended in {phase:?}"
+                    );
+                }
+            }
         }
 
         async fn connect(port: u16, token: &str) -> Client {
@@ -2343,13 +2364,20 @@ mod tests {
         }
 
         async fn next_frame(ws: &mut Client) -> Vec<u8> {
-            loop {
-                match timeout(Duration::from_secs(15), ws.next()).await {
-                    Ok(Some(Ok(Message::Binary(frame)))) => return frame.to_vec(),
-                    Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
-                    other => panic!("expected a picture, got {other:?}"),
+            // The stats come once a second as text, also before the first picture (R-1258), so
+            // the deadline covers the whole wait, not each message.
+            let picture = async {
+                loop {
+                    match ws.next().await {
+                        Some(Ok(Message::Binary(frame))) => return frame.to_vec(),
+                        Some(Ok(Message::Text(_) | Message::Ping(_) | Message::Pong(_))) => {}
+                        other => panic!("expected a picture, got {other:?}"),
+                    }
                 }
-            }
+            };
+            timeout(Duration::from_secs(15), picture)
+                .await
+                .expect("no picture in time")
         }
 
         fn header(frame: &[u8]) -> [u16; 7] {
@@ -2449,12 +2477,7 @@ mod tests {
             timeout(Duration::from_secs(30), resized)
                 .await
                 .expect("the desktop never took the new size");
-            while let Ok(phase) = session.phases.try_recv() {
-                assert!(
-                    matches!(phase, Report::Reconnecting | Report::Connected),
-                    "a resize ended in {phase:?}"
-                );
-            }
+            session.assert_still_connected("a resize");
 
             // The client goes, the session stays; a new login gets the whole desktop (R-1101).
             ws.close(None).await.unwrap();
@@ -2474,13 +2497,13 @@ mod tests {
                 .await
                 .expect("no picture after the new login");
             assert_eq!(header(&frame), [1, 0, 0, 1024, 768, 1024, 768]);
-            assert!(
-                session.phases.try_recv().is_err(),
-                "the client going away changed the phase"
-            );
+            session.assert_still_connected("the client going away");
 
             session.stop.take().unwrap().send(()).unwrap();
-            assert_eq!(session.phase().await, Report::Disconnected(Code::Closed));
+            assert_eq!(
+                session.phase_past_reconnects().await,
+                Report::Disconnected(Code::Closed)
+            );
             assert_closed(&mut ws).await;
 
             // A pin that does not match: the certificate changed.

@@ -56,8 +56,12 @@ python -m app.db_roles grant-ca
 # provisioned by the ca-issuer.
 # WEB_CONCURRENCY=N enables multi-worker; default 1 keeps the single-worker
 # behaviour. Long-lived SSE streams need a bounded graceful shutdown.
+# --no-proxy-headers: uvicorn takes neither client address nor scheme from X-Forwarded-*,
+# whatever FORWARDED_ALLOW_IPS says; the app derives the client address itself, from the
+# peers in TRUSTED_PROXIES (app/core/middleware.py).
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8080 \
     --workers "${WEB_CONCURRENCY:-1}" \
+    --no-proxy-headers \
     --timeout-graceful-shutdown 10
