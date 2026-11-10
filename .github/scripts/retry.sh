@@ -13,7 +13,7 @@
 set -uo pipefail
 
 [ $# -ge 3 ] || { echo "usage: retry.sh <attempts> <seconds> <command…>" >&2; exit 2; }
-attempts=$1 seconds=$2
+attempts=$1 seconds=$2 pause=${RETRY_PAUSE:-5}
 shift 2
 
 rc=0
@@ -22,6 +22,6 @@ for ((i = 1; i <= attempts; i++)); do
     timeout --kill-after=10 "$seconds" "$@" || rc=$?
     [ "$rc" -eq 0 ] && exit 0
     echo "retry.sh: attempt $i/$attempts of '$*' ended with $rc" >&2
-    [ "$i" -lt "$attempts" ] && sleep 5
+    [ "$i" -lt "$attempts" ] && sleep "$pause"
 done
 exit "$rc"

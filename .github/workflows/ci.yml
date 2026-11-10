@@ -687,8 +687,10 @@ jobs:
       # argument install-deps apt-installs the packages of every browser (the gstreamer/ffmpeg
       # chain of webkit and firefox), and run 39767066088 hung there on a stalled mirror until
       # the job timed out. Run 42171086845 hung in the browser download from the Playwright
-      # CDN instead: the cache keeps the browsers from one run to the next, and each download
-      # gets three attempts of three minutes (retry.sh), so a stall costs an attempt.
+      # CDN instead: the cache keeps the browsers from one run to the next, and the browser
+      # download gets three attempts of three minutes (retry.sh), so a stall costs an attempt.
+      # install-deps runs apt-get install, so dpkg, which a kill must never hit: it runs
+      # without retry.sh, and apt itself retries a stalled fetch (the drop-in below).
       - name: Playwright version
         id: playwright
         working-directory: apps/web
@@ -701,7 +703,9 @@ jobs:
         working-directory: apps/web
         timeout-minutes: 12
         run: |
-          bash ../../.github/scripts/retry.sh 3 180 npx playwright install-deps chromium
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\n' |
+            sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          npx playwright install-deps chromium
           bash ../../.github/scripts/retry.sh 3 180 npx playwright install chromium
       - name: Playwright test
         working-directory: apps/web
@@ -1095,7 +1099,7 @@ jobs:
         # The frps supervisor runs under the busybox sh of its image, so it is checked as
         # POSIX sh, not as bash.
         run: |
-          shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh apps/*/docker-entrypoint.sh
+          shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh .github/scripts/*.sh apps/*/docker-entrypoint.sh
           shellcheck --severity=warning -s sh apps/frps/frps-supervisor.sh
       # minisign lets the sandbox tests exercise the (armed) release-signature
       # verification path end-to-end with a throwaway key. Without it those tests
@@ -1126,6 +1130,8 @@ jobs:
       # skipped test a failure here, where every precondition is available.
       - name: Hermetic shell tests
         run: bash scripts/tests/run.sh unit --strict --only scripts
+      - name: retry.sh test
+        run: bash .github/scripts/retry_test.sh
       # Does the documentation still describe this tree? Every <code>apps/…</code>
       # in docs/**/*.html has to name a file that exists (--paths), and a <code>
       # that is one ALL_CAPS name has to be carried by the repository outside the
