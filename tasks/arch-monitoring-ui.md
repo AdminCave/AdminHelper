@@ -26,8 +26,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_page_api.py tests/test_alerter.py tests/test_response_shapes.py tests/test_openapi_snapshot.py
 Doku: → T12
 
-### T2 — Monitoring: HTTPS-Zertifikat im HTTP-Check (R-1225, aus R-1227)  [ ]
+### T2 — Monitoring: HTTPS-Zertifikat im HTTP-Check (R-1225, aus R-1227)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/tests/test_http_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8bdc25245 2026-11-10T11:48:50+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T2.verdict.json)
 Änderung: Vorher httpx `network_stream` und `ssl.SSLSocket.getpeercert` in der Primärdoku nachlesen (Spec „Externe Integrationen“). Beim ersten https-Hop mit `verify_ssl` an `details.cert` = `not_before`, `not_after`, `issuer`, `subject_cn`; ohne Prüfung kein `cert`; Status, Meldung und Metriken des Checks bleiben unverändert. Kommt das Zertifikat durch `_PinnedTransport` nicht heraus, wird `ssrf.py` nicht nebenbei geändert: Task `[?]` mit Befund. Tests: lokaler TLS-Server mit Test-Zertifikat (Ablauf, Aussteller), Redirect http→https, `verify_ssl: false` ohne `cert`, Status unverändert.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: → T12
@@ -106,3 +108,5 @@ Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
 - 2026-11-10 T1: `alerter.muted_reasons` als eigene Bündel-Funktion neben `muted_reason`, nicht als dessen Umbau — die Fakes der Alerter-Tests (`_HostDownDb`, `_helpers.py`) hängen an der Abfrageform von `_host_is_down`; Gleichlauf hält `test_status_page_api.py` über alle Gründe und Rangfälle.
 - 2026-11-10 T1: `minIntervalS` aus den DISTINCT-Intervallen aktiver Checks, das Minimum in Python über `scheduler.interval_timedelta` — `interval` ist Text ("15m" < "5m" lexikalisch), ein SQL-`min()` wäre falsch; ein unbekannter Wert zählt nicht.
 - 2026-11-10 T1: Kosten-Route mit drei `query_range` über die letzten 5 min (Schritt 60 s), der jüngste Punkt je Reihe steht für die Stunde davor — der VM-Client kennt keine Instant-Abfrage; Semantik gegen VictoriaMetrics v1.155.0 im Docker geprobt (Mittel, Summe ohne Werte älter als 1 h, last, fremder Server ausgeschlossen).
+- 2026-11-10 T2: `details.cert.not_before`/`not_after` als Unix-Sekunden (int) — wie `not_after` der Agent-Fühler `tls`/`certfile`, damit der Querschnitt „Zertifikate & Domains“ beide Quellen gleich liest. Weg belegt: httpx-Doku `network_stream` → `get_extra_info("ssl_object")`, Python-Doku `getpeercert()` („If the certificate was not validated, the dict is empty“), Test mit echtem TLS-Server durch `_PinnedTransport`; `ssrf.py` unverändert. Über einen Proxy (CONNECT-Tunnel) nicht getestet.
+- 2026-11-10 T2: Test-PKI zur Laufzeit mit dem `openssl`-CLI (CA + zwei Blätter) — die Test-Abhängigkeiten tragen keinen X.509-Builder, und ein privater Schlüssel gehört nicht ins Repo; Erwartung der Daten aus `openssl x509 -dateopt iso_8601`, nicht aus `ssl`.
