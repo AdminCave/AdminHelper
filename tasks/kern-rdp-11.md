@@ -1,5 +1,5 @@
 # Eingebettetes RDP: eine Vorgabe für die eigene Größe — Task-Ledger
-Status: geplant · Branch: feature/kern-rdp-11 · Review: am Ende
+Status: aktiv · Branch: feature/kern-rdp-11 · Review: am Ende
 Spec: docs/features/kern-rdp-11.md (Roadmap R-1218)
 Heavy: none — nur der Ersatzwert der Webview für eine fehlende eigene Größe; kein Stack-, Gateway-, PKI- oder Install-Pfad, die Desktop-Journeys prüfen keine Größe
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
