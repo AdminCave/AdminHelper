@@ -42,8 +42,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui/T13.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_response_shapes.py tests/test_openapi_snapshot.py
 Doku: → T12
 
-### T3 — Desktop-UI: Datenschicht für Katalog, Erkennung, Funde, Kosten und Puls (R-1225)  [ ]
+### T3 — Desktop-UI: Datenschicht für Katalog, Erkennung, Funde, Kosten und Puls (R-1225)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/api/monitoring.test.ts, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @33ec3cfec 2026-11-10T12:09:26+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T3.verdict.json)
 Änderung: Typen gegen die gemergten Schemas (`CatalogOut`, `DiscoveryOut`, `FindingOut`, `AdoptOut`, `AdoptAllOut`, Status mit `muted_reason`, Summary, Kosten, `details.cert`); API-Aufrufe für `/catalog`, `/discovery/{id}` (+ `scan`), `/findings` (+ adopt, adopt-all, dismiss), `/status/server/{id}/costs`; der Store lädt Katalog einmal je Sitzung, Erkennung und Funde mit dem Server-Refresh, nach adopt/dismiss neu. Tests: Aufruf-Pfade und Parameter, Store-Ablauf (adopt lädt Checks und Funde neu, Fehler bleibt lesbar).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/monitoring.test.ts src/lib/stores/monitoring.test.ts
 Doku: → T12
