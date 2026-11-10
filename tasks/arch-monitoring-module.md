@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -158,6 +158,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_sna
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T14
+
+### T17 — Agent: Ziel-Wächter führt die QEMU-Prozesse der VMs als Steuerdienste (R-1223)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/discover_test.go, apps/agent/internal/probe/sensor_net_linux_test.go, docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Aus der Abschlussprüfung: `kvm` in `hostDaemons`, Präfix `qemu` in `hostDaemonPrefixes` (qemu-system-*, qemu-kvm); Tests für TCP (`NeverProbed`) und Unix-Socket (`checkPeer`); die Doku nennt die QEMU-Prozesse bei den Steuerdiensten.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: docs/developer/agent.html, docs/admin/monitoring.html (DE+EN)
 
 ## Entscheidungen
 - 2026-11-09 T1: Das Modul `port` prüft mit `proto` und `protocol: auto` (der Agent erkennt das Protokoll wie seine Erkennung und meldet es in `detail`) — ein Fund trägt das erkannte Protokoll, ohne Platzhalter in Katalog-Parametern bleibt jede Prüfung im eigenen Protokoll.
