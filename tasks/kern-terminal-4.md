@@ -13,9 +13,11 @@ Review: approve (.ah-out/review/kern-terminal-4/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
 
-### T2 — R-1144: Rückfrage im Terminal vor mehrzeiligem Einfügen  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/components/terminal/TerminalOptions.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Typ und Default `confirmMultilinePaste: false`, Checkbox in den Terminal-Optionen; `paste()` hält bei eingeschalteter Option einen bereinigten Text mit Zeilenumbruch zurück und zeigt eine Leiste im Tab (Zeilenzahl, Einfügen, Abbrechen); Tests für aus, an + einzeilig, an + mehrzeilig (Einfügen und Abbrechen).
+### T2 — R-1144: Rückfrage im Terminal vor mehrzeiligem Einfügen  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/components/terminal/TerminalOptions.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Login.workspace.test.ts, apps/desktop/ui/src/components/SettingsModal.nav.test.ts, apps/desktop/ui/src/components/SettingsModal.save.test.ts, apps/desktop/ui/src/components/SettingsModal.seed.test.ts, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts, apps/desktop/ui/src/components/StatusFooter.test.ts, apps/desktop/ui/src/lib/models/settings.test.ts, apps/desktop/ui/src/lib/stores/session.test.ts, docs/features/kern-terminal-4.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @af011c363 2026-11-10T09:59:14+01:00
+Review: approve (.ah-out/review/kern-terminal-4/T2.verdict.json)
+Änderung: Typ und Default `confirmMultilinePaste: false`, Checkbox in den Terminal-Optionen; `paste()` hält bei eingeschalteter Option einen bereinigten Text mit Zeilenumbruch zurück und zeigt eine Leiste im Tab (Zeilenzahl, Einfügen, Abbrechen; Fokus auf Abbrechen, Escape bricht ab); Tests für aus, an + einzeilig, an + mehrzeilig (Einfügen und Abbrechen).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/SshTerminal.test.ts
 Doku: → T4
 Abhängt von: T1
@@ -36,3 +38,4 @@ Task-Review: am Ende
 ## Entscheidungen
 - Die Zeilen überlappen `feature/arch-namen` in `types.ts` und `dictionaries.ts`, dort aber an anderen Stellen (TunnelMapping, Tunnel-Texte); der Zug fährt trotzdem, sonst wartet er auf PR #432 (Kevins Merge). Wer später merged, löst einen rein textuellen Konflikt.
 - T3 baut erst nach dem Merge von `feature/kern-rdp-9` (#445), das `terminals.ts` ebenfalls ändert.
+- T2: Die Rückfrage nimmt den Fokus auf „Abbrechen“, nicht auf „Einfügen“: ein Enter, das noch für die Shell gemeint war, verwirft den Text, statt ihn laufen zu lassen; Escape bricht ab.

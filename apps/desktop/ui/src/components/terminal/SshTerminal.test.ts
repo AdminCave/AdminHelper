@@ -453,6 +453,59 @@ describe('SshTerminal', () => {
     expect(term.paste).not.toHaveBeenCalled();
   });
 
+  it('asks before pasting several lines when the option is on, and only then', async () => {
+    const { term, body } = await mount();
+    const multi = { getData: () => 'cd /tmp\nrm -rf x\n' };
+
+    // Off by default: the lines go at once, without a question.
+    await fireEvent.paste(term.textarea!, { clipboardData: multi });
+    expect(term.paste).toHaveBeenLastCalledWith('cd /tmp\nrm -rf x\n');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    withPrefs({ confirmMultilinePaste: true });
+    await tick();
+    term.paste.mockClear();
+
+    // One line asks nothing.
+    await fireEvent.paste(term.textarea!, { clipboardData: { getData: () => 'uptime' } });
+    expect(term.paste).toHaveBeenLastCalledWith('uptime');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    // Several lines wait for the answer, which has the focus on Cancel (xterm keeps Tab) and
+    // names the count; Escape drops them, and so does Cancel.
+    term.paste.mockClear();
+    await fireEvent.paste(term.textarea!, { clipboardData: multi });
+    expect(term.paste).not.toHaveBeenCalled();
+    const first = await screen.findByRole('alertdialog', {
+      name: tNow('terminal.pasteConfirm', { n: 2 }),
+    });
+    expect(document.activeElement).toBe(
+      within(first).getByRole('button', { name: tNow('terminal.pasteConfirm.cancel') }),
+    );
+    await fireEvent.keyDown(first, { key: 'Escape' });
+    expect(term.paste).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    await fireEvent.paste(term.textarea!, { clipboardData: multi });
+    const ask = await screen.findByRole('alertdialog');
+    await fireEvent.click(
+      within(ask).getByRole('button', { name: tNow('terminal.pasteConfirm.cancel') }),
+    );
+    expect(term.paste).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    // A right click asks the same; paste sends the cleaned text.
+    clipboard.readText.mockResolvedValueOnce('a\x1b\r\nb');
+    await fireEvent.contextMenu(body);
+    const again = await screen.findByRole('alertdialog');
+    expect(term.paste).not.toHaveBeenCalled();
+    await fireEvent.click(
+      within(again).getByRole('button', { name: tNow('terminal.pasteConfirm.paste') }),
+    );
+    expect(term.paste).toHaveBeenCalledWith('a\r\nb');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
   it('keeps Ctrl+Shift+C and Ctrl+Shift+V for itself and gives the program every other key', async () => {
     const { term } = await mount();
     const key = (type: string, init: KeyboardEventInit) =>

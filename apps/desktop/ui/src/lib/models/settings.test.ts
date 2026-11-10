@@ -51,6 +51,7 @@ describe('getSettingsDefaults', () => {
       copyOnSelect: true,
       rightClickPaste: true,
       confirmClose: true,
+      confirmMultilinePaste: false,
     });
   });
 });

@@ -57,7 +57,7 @@ die Gegenseite es verlangt).
 
 ## Risiken & Rollback
 
-Gering. Die Rückfrage hält den Text nur im Speicher der Komponente; ein Tab-Wechsel oder Schließen verwirft ihn.
+Gering. Die Rückfrage hält den Text nur im Speicher der Komponente; das Schließen des Tabs, Ab- oder Andocken und Neu verbinden verwerfen ihn; ein Tab-Wechsel nicht, die Tabs bleiben gemountet.
 Rollback: Revert der Commits; das Feld in `prefs.json` wird von einer älteren Version ignoriert (serde ohne
 `deny_unknown_fields`).
 

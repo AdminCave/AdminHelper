@@ -152,6 +152,7 @@ function settingsOf(kind: SyncMode, url: string | null): Settings {
       copyOnSelect: true,
       rightClickPaste: true,
       confirmClose: true,
+      confirmMultilinePaste: false,
     },
   };
 }
