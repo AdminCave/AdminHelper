@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-opnsense-plugin — Task-Ledger
-Status: geplant · Branch: feature/arch-opnsense-plugin · Review: pro Task
+Status: aktiv · Branch: feature/arch-opnsense-plugin · Review: pro Task
 Spec: docs/features/arch-opnsense-plugin.md (Roadmap R-1248)
 Heavy: linux-full — Agent (neuer Fühler, Paketierung) und Monitoring (Katalogmodul); dazu vor dem Merge der OPNsense-Box-Lauf `bash scripts/tests/opnsense_box.sh` (T8) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,7 +21,7 @@ Komponente: agent · Dateien: apps/agent/internal/opnsense/opnsense.go, apps/age
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 
-### T2 — Plugin-Quellbaum `os-adminhelper` (MVC, configd, plugins.inc.d, rc.conf.d) (R-1248)  [?] (Frage 2: Einstellungsseite — Schalter, Status und Registrierung per Shell, oder Registrierung in der GUI)
+### T2 — Plugin-Quellbaum `os-adminhelper` (MVC, configd, plugins.inc.d, rc.conf.d) (R-1248)  [ ]
 Komponente: agent · Dateien: apps/agent/opnsense, apps/agent/opnsense/plugin_test.go
 Änderung: Quellbaum unter `apps/agent/opnsense/src/` im Layout des offiziellen Plugin-Repos:
 - `etc/inc/plugins.inc.d/adminhelper.inc` mit `adminhelper_services()` (Dienst `adminhelper_frpc`, configd start/stop/restart/status, pidfile aus R-1247) und `adminhelper_enabled()`;
@@ -29,7 +29,7 @@ Komponente: agent · Dateien: apps/agent/opnsense, apps/agent/opnsense/plugin_te
 - `service/conf/actions.d/actions_adminhelper.conf` (start, stop, restart, status, reconfigure);
 - `service/templates/OPNsense/AdminHelper/+TARGETS` mit `adminhelper_frpc:/etc/rc.conf.d/adminhelper_frpc`.
 Der Schalter steuert den Agenten-Takt (cron.d) und frpc. Aus heißt: kein Lauf, frpc gestoppt. So überschreibt kein Agentenlauf die Vorlage.
-Die Seite zeigt den Status (registriert, Server, Agent-Version, letzter Lauf) über eine lesende configd-Aktion. Weitere Inhalte je nach Antwort auf Frage 2.
+Die Seite zeigt den Status (registriert, Server, Agent-Version, letzter Lauf) über eine lesende configd-Aktion. Registriert wird per Shell (`adminhelper-agent provision --token-stdin`); die Seite trägt kein Token, keine configd-Aktion bekommt eines (Kevin 2026-11-10, Frage 2).
 SPDX in jeder Datei: PHP/Volt/XML als Kommentar, Jinja als `{# #}`.
 `plugin_test.go` prüft statisch:
 - jede XML-Datei wohlgeformt;
@@ -65,12 +65,12 @@ Verify: bash scripts/dev/verify.sh agent monitoring --strict
 Doku: → T9
 Abhängt von: T1, T3
 
-### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [?] (Frage 4: Regeln und Schwellen — wie in der Spec vorgeschlagen, oder zunächst nur warn)
+### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/opnsense.py, apps/monitoring/tests/test_catalog_opnsense.py
 Änderung: `MODULE`:
 - Erkennung: `id: "opnsense"`, Marker `opnsense.core` (`/usr/local/opnsense/version/core`).
 - Ein Check je Ansicht mit den Feldern aus T4 und den Intervallen aus der Spec (5 min, `firmware` 1 h).
-- Regeln nach der Antwort auf Frage 4; die Karte zeigt Version, gestoppte Dienste, Gateways down, States in % und CARP-Rolle.
+- Regeln wie in der Spec §Datenmodell (Kevin 2026-11-10, Frage 4); die Karte zeigt Version, gestoppte Dienste, Gateways down, States in % und CARP-Rolle.
 Tests:
 - das Modul lädt durch den Loader;
 - ein Bericht mit Marker-Treffer ergibt die Instanz `opnsense` mit allen Checks;
@@ -80,12 +80,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_opn
 Doku: → T9
 Abhängt von: T4
 
-### T6 — Paket `os-adminhelper` je ABI und Repo-Datei (R-1248)  [?] (Frage 1: Verteilung — signiertes Repo des Servers mit Vendor-Repo-Datei, nur pkg add, oder Einreichung bei OPNsense)
+### T6 — Paket `os-adminhelper` je ABI und Repo-Datei (R-1248)  [ ]
 Komponente: agent · Dateien: apps/agent/build-pkg.sh, apps/agent/opnsense/post-install, apps/agent/opnsense/post-deinstall, apps/agent/cmd/adminhelper-agent/packaging_pkg_test.go
 Änderung: `build-pkg.sh` baut nach `adminhelper-agent` zusätzlich `os-adminhelper` je ABI aus `apps/agent/opnsense/src`.
 - Manifest: Abhängigkeit `adminhelper-agent`, origin `opnsense/os-adminhelper`, Versionsdatei `/usr/local/opnsense/version/adminhelper` im Format von `plugins.mk`.
 - `+POST_INSTALL`/`+POST_DEINSTALL` wie `plugins.mk`: configd neu starten, `run_migrations.php`, `rc.configure_plugins`, Template-Reload. Unter `PKG_ROOTDIR`/`PKG_CHROOTED` ruft es keinen Dienst, wie in R-1247.
-- Bei Antwort (a) auf Frage 1 zusätzlich `etc/pkg/repos/AdminHelper.conf` als `@sample` und `opnsense/scripts/firmware/repos/AdminHelper.php`. Das Repo-Skript schreibt die Repo-Datei aus der Server-URL der Agent-Konfiguration: `${ABI}`, `signature_type: pubkey`, `SSL_CA_CERT_FILE` je Repo, Priorität unter OPNsense.
+- Dazu (Kevin 2026-11-10, Frage 1: signiertes Repo des Servers) `etc/pkg/repos/AdminHelper.conf` als `@sample` und `opnsense/scripts/firmware/repos/AdminHelper.php`. Das Repo-Skript schreibt die Repo-Datei aus der Server-URL der Agent-Konfiguration: `${ABI}`, `signature_type: pubkey`, `SSL_CA_CERT_FILE` je Repo, Priorität unter OPNsense.
 Test mit Stubs wie die Agent-Skripte (Fake-Wurzel, Abbruch bei fremdem absolutem Pfad) und Prüfung des Manifests.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
@@ -137,3 +137,7 @@ Doku: docs/ DE+EN, DEVELOPMENT.md, changelog.d/arch-opnsense-plugin.md
 Task-Review: am Ende
 
 ## Entscheidungen
+- 2026-11-10 Kevin, Frage 1: `os-adminhelper` kommt aus demselben signierten pkg-Repo des Servers wie der Agent; das Plugin legt die Repo-Datei nach dem Vendor-Muster an; die Doku nennt „Fremd-Repo, nicht unterstützt“ (T6, T9).
+- 2026-11-10 Kevin, Frage 2: Einstellungsseite mit Schalter und Status; Registrierung nur per Shell, kein Token in `config.xml` (T2).
+- 2026-11-10 Kevin, Frage 3: HAProxy-Modul in R-1231 für Linux und OPNsense; R-1248 baut keines, `service list` liefert den Dienststatus.
+- 2026-11-10 Kevin, Frage 4: Regeln und Schwellen wie in der Spec vorgeschlagen (T5).

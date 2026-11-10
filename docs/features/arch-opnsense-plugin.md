@@ -69,7 +69,7 @@ FreeBSD 15.1). Pfade unten, die es auf `main` noch nicht gibt, stammen von dort.
 - MVC `OPNsense/AdminHelper` mit Model `General`, Form, API- und Seiten-Controller, Volt-View, ACL und Menü,
 - `src/opnsense/service/conf/actions.d/actions_adminhelper.conf`,
 - `src/opnsense/service/templates/OPNsense/AdminHelper/{+TARGETS,adminhelper_frpc}`,
-- je nach Frage 1 die Repo-Datei nach Vendor-Muster.
+- die Repo-Datei nach Vendor-Muster (Frage 1).
 Ein Go-Test prüft den Baum statisch: XML wohlgeformt, ACL deckt die Controller-Pfade, Actions und `+TARGETS`
 vollständig, Namen gleich denen aus R-1247. Nativ prüft ihn der Box-Lauf (`php -l`, configd, Template).
 
@@ -202,9 +202,8 @@ Alles DE+EN (T9).
 
 ## Offene Fragen
 
-1. **Verteilung von `os-adminhelper`** (Kevins Bereich: Release, Kanäle): signiertes Repo des Servers mit
-   Vendor-Repo-Datei (Empfehlung), nur `pkg add`, oder gleich die Einreichung? → T6.
-2. **Einstellungsseite** (sichtbares Verhalten): Schalter, Status und Registrierung per Shell (Empfehlung), oder
-   Registrierung in der GUI? → T2.
-3. **HAProxy** (Roadmap-Inhalt): Modul in R-1231 für beide Plattformen (Empfehlung), oder hier? → Notiz an R-1231.
-4. **Regeln und Schwellen des Moduls** (sichtbares Verhalten): wie oben (Empfehlung) oder zunächst nur warn? → T5.
+Keine. Kevin hat am 2026-11-10 alle vier Empfehlungen angenommen:
+1. **Verteilung:** signiertes Repo des Servers mit Vendor-Repo-Datei → T6.
+2. **Einstellungsseite:** Schalter und Status, Registrierung per Shell → T2.
+3. **HAProxy:** Modul in R-1231 für Linux und OPNsense, nicht hier.
+4. **Regeln und Schwellen:** wie oben → T5.
