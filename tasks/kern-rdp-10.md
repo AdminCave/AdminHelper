@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Auflösung einmal, OpenH264-Restfenster, Live-Test nach dem Resize — Task-Ledger
-Status: bereit · Branch: feature/kern-rdp-10 · Review: am Ende
+Status: aktiv · Branch: feature/kern-rdp-10 · Review: am Ende
 Spec: docs/features/kern-rdp-10.md (Roadmap R-1198, R-1278, R-1283)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft im CI-Job rdp-embedded und im Teil gui des Sammellaufs; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,6 +31,13 @@ Dedup-Key: bug:desktop:session.rs:xrdp_live_session_resize_reset
 Änderung: Der Live-Test bekommt einen Logger und gibt beim Abbruch die gemeldete Phase aus. Mit lokaler Reproduktion (frischer Container je Lauf) die Ursache des Abbruchs nach Deactivate/Reactivate finden und beheben; Beweis: wiederholte Läufe von desktop_e2e_rdp_embedded ohne Abbruch, die Zahl steht in `## Entscheidungen`. Liegt die Ursache im Fork, gehört der Fork-Commit samt neuer `rev` (Cargo.toml, Cargo.lock) in diese Task.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::session
 Doku: changelog.d/kern-rdp-10.md
+
+### T4 — Entwicklerdoku: Fork-Pin 2f1f0e30 mit dem fuenften Commit  [ ]
+Komponente: desktop-rs · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: Abschlussprüfung 2026-11-10: der Abschnitt „Eingebettetes RDP“ nennt noch `b3e9f580` mit vier Commits; Revision `2f1f0e30`, fünf Commits, der fünfte stellt Kanal-PDUs während einer Reaktivierung zurück und die Sitzung verarbeitet sie danach (DE+EN).
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::session
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html
+Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-10 T3: Ursache im Fork: xrdp sendet waehrend Deactivate/Reactivate PDUs auf statischen Kanaelen, `ConnectionActivationSequence` dekodierte jedes MCS-SDI als I/O-PDU und brach ab (Laenge 0x0400 sogar als Redirection gelesen) — Fork-Commit 2f1f0e30 stellt solche Frames zurueck, `ironrdp-client` verarbeitet sie nach der Finalisierung in Reihenfolge; Verwerfen haette Kanaldaten (rdpdr, cliprdr) verloren
