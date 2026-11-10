@@ -266,6 +266,9 @@ ENV_TOK='
             c = substr(S, p + RLENGTH, 1)
             p += RLENGTH + 1
             sub("(" hs ")+$", "", k)
+            # compose takes a letter or digit of any script, awk under LC_ALL=C cannot
+            # tell one: a key with a byte from \200 on may be one compose refuses.
+            if (k ~ /[\200-\377]/) tbad = 1
             if (index(k, " ") || (c != "=" && c != ":" && c != "\n")) {
                 tbad = 1
                 p = tok_eol(ks) + 1; continue
