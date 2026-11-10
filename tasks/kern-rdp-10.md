@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Auflösung einmal, OpenH264-Restfenster, Live-Test nach dem Resize — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-10 · Review: am Ende
+Status: bereit · Branch: feature/kern-rdp-10 · Review: am Ende
 Spec: docs/features/kern-rdp-10.md (Roadmap R-1198, R-1278, R-1283)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft im CI-Job rdp-embedded und im Teil gui des Sammellaufs; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Dedup-Key: bug:desktop:session.rs:xrdp_live_session_resize_reset
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::session
 Doku: changelog.d/kern-rdp-10.md
 
-### T4 — Entwicklerdoku: Fork-Pin 2f1f0e30 mit dem fuenften Commit  [ ]
+### T4 — Entwicklerdoku: Fork-Pin 2f1f0e30 mit dem fuenften Commit  [x]
 Komponente: desktop-rs · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @285aec1bf 2026-11-10T19:27:14+01:00
+Review: am Ende (Branch-Review)
 Änderung: Abschlussprüfung 2026-11-10: der Abschnitt „Eingebettetes RDP“ nennt noch `b3e9f580` mit vier Commits; Revision `2f1f0e30`, fünf Commits, der fünfte stellt Kanal-PDUs während einer Reaktivierung zurück und die Sitzung verarbeitet sie danach (DE+EN).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::session
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html
