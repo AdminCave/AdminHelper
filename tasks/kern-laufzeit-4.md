@@ -1,5 +1,5 @@
 # Laufzeit: Refresh-Cookie hinter dem Gateway — Task-Ledger
-Status: bereit · Branch: feature/kern-laufzeit-4 · Review: am Ende
+Status: erledigt · Branch: feature/kern-laufzeit-4 · Review: am Ende
 Spec: docs/features/kern-laufzeit-4.md (Roadmap R-1274)
 Heavy: linux-full — Server-Auth-Route; der Sammellauf fährt die Web-Anmeldung über das Gateway
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
