@@ -1,5 +1,5 @@
 # CI: Archiv-Cache aufräumen, tauri-cli-Pins vollständig prüfen — Task-Ledger
-Status: aktiv · Branch: feature/ci-8 · Review: am Ende
+Status: bereit · Branch: feature/ci-8 · Review: am Ende
 Spec: docs/features/ci-8.md (Roadmap R-1276, R-1277)
 Heavy: none — nur CI-Skripte und ein Prüfschritt; kein Stack-, Gateway-, PKI- oder Install-Pfad, die PR-CI fährt beides
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,8 +29,9 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (cicd.html beschreibt schon „jede dieser Zeilen“; das Skript macht den Satz wahr)
 
-### T4 — PR-CI: der Server-Test des Lockstep-Schritts kopiert das neue Pin-Skript mit  [ ]
+### T4 — PR-CI: der Server-Test des Lockstep-Schritts kopiert das neue Pin-Skript mit  [x]
 Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @47c7d042f 2026-11-10T18:15:12+01:00
 Review: am Ende (Branch-Review)
 Änderung: `test_the_lockstep_job_reads_the_frp_version_of_the_frps_image` fährt den Schritt `Compare the four FRP_VERSION pins` auf einer Kopie der Dateien aus `_PINNED`; seit T3 ruft der Schritt `.github/scripts/tauri_cli_pins.sh` auf, das in der Kopie fehlt (PR #453, Lauf 42859714863: `No such file or directory`, rc 127). `_PINNED` nimmt das Skript auf.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py

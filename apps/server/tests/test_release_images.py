@@ -60,6 +60,8 @@ _PINNED = (
     ".github/workflows/release.yml",
     _FRPS_DOCKERFILE,
     "scripts/vm/bootstrap_linux.sh",
+    # Not a pin: the step runs it for the tauri-cli pins.
+    ".github/scripts/tauri_cli_pins.sh",
 )
 _PULL_STEP = "Pull the base images of the image tests"
 _SKIP_STEP = "No test skipped"
