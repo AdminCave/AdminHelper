@@ -1,5 +1,5 @@
 # Benachrichtigungen: Zielprüfung, Sperrreihenfolge, Zusammenfassung — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-4 · Review: pro Task
 Spec: docs/features/kern-notify-4.md (Roadmap R-1178, R-1179, R-1149, R-1188)
 Heavy: linux-full — Server-API (Benachrichtigungen) und Monitoring; Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -48,8 +48,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T5 — Testorakel und Hook-Doku der Zielprüfung nachziehen  [ ]
+### T5 — Testorakel und Hook-Doku der Zielprüfung nachziehen  [x]
 Komponente: server · Dateien: apps/server/tests/test_ssrf_properties.py, docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9eaa7976b 2026-11-10T05:02:31+01:00
+Review: approve (.ah-out/review/kern-notify-4/T5.verdict.json)
 Änderung: Fund der Abschlussprüfung: das Orakel des Eigenschaftstests kennt die
 neuen gesperrten Bereiche aus T1, je ein Beispiel dazu; die Hook-Doku nennt sie neutral.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf_properties.py tests/test_ssrf.py tests/test_ssrf_parity.py
