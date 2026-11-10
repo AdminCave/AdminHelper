@@ -218,6 +218,38 @@ function parseUrlHost(rawUrl: string | null | undefined): string {
   }
 }
 
+/** How a kind reads in a display name: product terms, the same in every language. */
+export const KIND_LABELS: Record<ConnectionKind, string> = { ssh: 'SSH', rdp: 'RDP', web: 'Web' };
+
+/**
+ * The display name the server derives for a connection or tunnel of a server (R-1210,
+ * connections/models.py `shown_name`): "{server} · {own}", without an own text
+ * "{server} · SSH|RDP|Web", over FRP with " (FRP)". The server sends it as `name`; the
+ * dialogs only preview it.
+ */
+export function shownName(serverName: string, own: string, kind: ConnectionKind, viaFrp = false) {
+  const part = own.trim() || KIND_LABELS[kind] || kind;
+  return `${serverName} · ${part}${viaFrp ? ' (FRP)' : ''}`;
+}
+
+/**
+ * The own text of a connection of `server`: its stored `label` where the server's list carries
+ * it, else read back from the display name (a connection that came through the bridge has no
+ * label). Without a server, the name itself.
+ */
+export function ownTextOf(
+  c: Pick<Connection, 'id' | 'name' | 'kind'>,
+  server: { name: string; connections?: { id: string; label?: string }[] } | undefined,
+): string {
+  if (!server) return c.name;
+  const stored = server.connections?.find((x) => x.id === c.id)?.label;
+  if (stored !== undefined) return stored;
+  const prefix = `${server.name} · `;
+  if (!c.name.startsWith(prefix)) return c.name;
+  const rest = c.name.slice(prefix.length).replace(/ \(FRP\)$/, '');
+  return rest === KIND_LABELS[c.kind] ? '' : rest;
+}
+
 export function connectionGroupingHost(c: Connection): string {
   const host = String(c.host ?? '').trim();
   if (host) return host;

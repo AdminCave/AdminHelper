@@ -46,6 +46,11 @@
             <li><strong>PKI</strong> – the <code>ca-issuer</code>'s internal <code>tunnel</code> intermediate signs the frps server cert and the agent tunnel certs; every <code>frpc</code> authenticates via mTLS (as of A7 a single trust root instead of a frps-run CA).</li>
           </ul>
 
+          <h2 id="names">Names and identifiers</h2>
+          <p>A server has one name, entered when you create it, ideally its FQDN. Its address follows the name unless you enter a different one (an IP, an internal name); each name is taken only once (case aside). Connections of a server and tunnels carry no name of their own, only an optional <em>addition</em>: they are called <code>{server} · {addition}</code>, without one <code>{server} · SSH</code> (RDP, Web), a tunnel and a connection over a tunnel with <code>(FRP)</code>. When you rename a server, its address, connections, tunnels and monitoring follow.</p>
+          <p>frpc and frps know servers and tunnels by their IDs: <code>user</code> in an agent's <code>frpc.toml</code> is the server ID, a proxy's name the tunnel ID, and frps lists a proxy as <code>{server-id}.{tunnel-id}</code>. The frps dashboard shows these identifiers; the FRP status page of the web interface names the tunnel next to them. A rename changes no FRP configuration.</p>
+          <p><strong>Updating to this version:</strong> with the server update, every tunnel switches to the new identifiers once. Each agent fetches its new <code>frpc.toml</code> on its next run (about every 5 minutes) and restarts frpc, the desktop its visitor bundle on its next reconciliation (within a minute); until both sides have switched, a tunnel connection does not come up. The local ports of the tunnels stay. Embedded RDP over a tunnel asks for the certificate once more. Names that only repeated the server or the tunnel (such as the automatic connection <code>… (via FRP)</code> or a tunnel <code>{server}-ssh</code>) become an empty addition; every other name stays as the addition.</p>
+
           <h2>PKI Setup</h2>
           <p>The tunnel PKI is part of the unified internal CA (ADR 0001):</p>
           <ul>

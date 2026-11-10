@@ -277,8 +277,8 @@ def test_extra_config_accepts_clean_scalars():
 
 
 def test_server_name_rejects_toml_breakers():
-    # The server name flows into frpc `user`, visitor `serverUser` and the
-    # bulk-ZIP path — same boundary as the FRP fields (audit residual).
+    # The server name is the folder of its frpc.toml in the bulk-ZIP — same boundary as
+    # the FRP fields (audit residual); frpc and the visitor know the server by its ID.
     with pytest.raises(ValidationError):
         ServerCreate(name='srv"\nauth.token = "attacker', hostname="h")
     with pytest.raises(ValidationError):
@@ -1010,11 +1010,11 @@ def test_generator_leaves_out_a_stored_tunnel_with_a_plugin_key(key, caplog):
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
         text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
 
-    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["n-ssh"]
+    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["t-n"]
     assert _PLUGIN_SECRET not in text
     warned = _generator_warnings(caplog)
     assert len(warned) == 1, warned
-    assert "'p-ssh'" in warned[0] and f"'{key}'" in warned[0], warned
+    assert "'t-p'" in warned[0] and f"'{key}'" in warned[0], warned
     assert "transport.useCompression" not in warned[0], warned
     for value in ("static_file", "/srv/x", _PLUGIN_SECRET, _TOKEN):
         assert value not in warned[0], warned
@@ -1038,7 +1038,7 @@ def test_generator_keeps_a_tunnel_with_a_neighbour_of_the_plugin_family(key, cap
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
         frpc = tomllib.loads(generate_frpc_toml(_legacy_row(), [tunnel], "srv1"))
 
-    assert [p["name"] for p in frpc["proxies"]] == ["n-ssh"]
+    assert [p["name"] for p in frpc["proxies"]] == ["t-n"]
     assert _generator_warnings(caplog) == []
 
 
@@ -1061,10 +1061,10 @@ def test_generator_leaves_out_a_stored_tunnel_out_of_the_agents_form(extra, capl
         text = generate_frpc_toml(_legacy_row(), [refused, _stored_tunnel()], "srv1")
 
     assert text == generate_frpc_toml(_legacy_row(), [_stored_tunnel()], "srv1")
-    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["n-ssh"]
+    assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["t-n"]
     warned = _generator_warnings(caplog)
     assert len(warned) == 1, warned
-    assert "'p-ssh'" in warned[0], warned
+    assert "'t-p'" in warned[0], warned
     for key, value in extra.items():
         assert repr(key) in warned[0], warned
         assert str(value) not in warned[0], warned
@@ -1084,14 +1084,14 @@ NO_JSON_OBJECT = ['{"plugin.type": "static_file"', '["plugin.type"]', "null"]
 
 def _assert_left_out(text):
     proxies = tomllib.loads(text)["proxies"]
-    assert [p["name"] for p in proxies] == ["n-ssh"], proxies
+    assert [p["name"] for p in proxies] == ["t-n"], proxies
     assert not any(k.lower() == "plugin" for p in proxies for k in p), proxies
     assert _PLUGIN_SECRET not in text
 
 
 def _assert_one_line_without_values(warned):
     assert len(warned) == 1, warned
-    assert "'p-ssh'" in warned[0] and "\n" not in warned[0], warned
+    assert "'t-p'" in warned[0] and "\n" not in warned[0], warned
     for value in ("static_file", "/srv/x", _PLUGIN_SECRET, _TOKEN):
         assert value not in warned[0], warned
 
@@ -1150,9 +1150,9 @@ def test_bulk_zip_writes_no_frpc_toml_for_a_host_whose_only_tunnel_is_left_out(
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     assert "clients/serverA/frpc.toml" not in zf.namelist(), zf.namelist()
     # Once per tunnel, not per generator call.
-    assert len([m for m in _generator_warnings(caplog) if "'a-ssh'" in m]) == 1, caplog.text
+    assert len([m for m in _generator_warnings(caplog) if "'t-a'" in m]) == 1, caplog.text
     # The visitor TOML carries no extra_config and keeps the visitor, like the visitor routes.
-    assert 'name = "a-ssh-visitor"' in zf.read("visitor.toml").decode()
+    assert 'name = "t-a-visitor"' in zf.read("visitor.toml").decode()
 
 
 # Stored values only the generator catches: a local_port out of range (the visitor keeps
@@ -1188,9 +1188,9 @@ def test_bulk_zip_writes_no_frpc_toml_for_a_host_whose_only_tunnel_has_a_refused
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     assert "clients/serverA/frpc.toml" not in zf.namelist(), zf.namelist()
     # Once per tunnel, not per generator call.
-    assert len([m for m in _generator_warnings(caplog) if "a-ssh" in m]) == 1, caplog.text
+    assert len([m for m in _generator_warnings(caplog) if "t-a" in m]) == 1, caplog.text
     if case == "local_port":
-        assert 'name = "a-ssh-visitor"' in zf.read("visitor.toml").decode()
+        assert 'name = "t-a-visitor"' in zf.read("visitor.toml").decode()
     else:
         assert "visitor.toml" not in zf.namelist(), zf.namelist()
 

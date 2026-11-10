@@ -46,11 +46,13 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const SERVER = { id: 'srv-1', name: 'web01.example.org', hostname: 'web01.example.org' };
+
 function openModal(props: Record<string, unknown> = {}) {
   const onClose = vi.fn();
   const onSaved = vi.fn();
   const utils = render(ServerConnectionModal, {
-    props: { open: true, target: null, serverId: 'srv-1', onClose, onSaved, ...props },
+    props: { open: true, target: null, server: SERVER, onClose, onSaved, ...props },
   });
   return { ...utils, onClose, onSaved };
 }
@@ -79,6 +81,7 @@ describe('ServerConnectionModal create flow', () => {
     expect(connectionsApi.create).toHaveBeenCalledTimes(1);
     expect(vi.mocked(connectionsApi.create).mock.calls[0][1]).toEqual({
       name: 'db',
+      label: 'db',
       kind: 'ssh',
       host: '10.0.0.5',
       port: 22,
@@ -127,12 +130,75 @@ describe('ServerConnectionModal create flow', () => {
     const { container } = openModal();
     await tick();
 
-    // name only; ssh requires a host -> validation fails.
+    // The host starts at the server's address; emptied, ssh lacks one -> validation fails.
     await fireEvent.input(textInputs(container)[0], { target: { value: 'incomplete' } });
+    await fireEvent.input(textInputs(container)[1], { target: { value: '' } });
     await fireEvent.click(saveBtn(container));
     await tick();
 
     expect(reportError).toHaveBeenCalledTimes(1);
     expect(connectionsApi.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ServerConnectionModal names (R-1210)', () => {
+  it('starts at the server address and shows the derived display name', async () => {
+    const { container, getByTestId } = openModal();
+    await tick();
+    const [own, host] = textInputs(container);
+    expect(host.value).toBe('web01.example.org');
+    expect(own.placeholder).toBe('SSH');
+    expect(getByTestId('shown-as').textContent).toContain('web01.example.org · SSH');
+    await fireEvent.input(own, { target: { value: 'root' } });
+    expect(getByTestId('shown-as').textContent).toContain('web01.example.org · root');
+  });
+
+  it('saves without an own text: the label is empty, the name the server name', async () => {
+    const { container } = openModal();
+    await tick();
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(vi.mocked(connectionsApi.create).mock.calls[0][1]).toMatchObject({
+      name: 'web01.example.org',
+      label: '',
+      host: 'web01.example.org',
+      serverId: 'srv-1',
+    });
+  });
+
+  it('edits the stored own text, not the display name', async () => {
+    const target = {
+      id: 'c-1',
+      name: 'web01.example.org · backup',
+      label: 'backup',
+      kind: 'ssh',
+      host: 'web01.example.org',
+      serverId: 'srv-1',
+    };
+    const { container } = openModal({ target });
+    await tick();
+    expect(textInputs(container)[0].value).toBe('backup');
+  });
+
+  it('keeps the host of an existing web connection and marks one over a tunnel', async () => {
+    const target = {
+      id: 'c-web',
+      name: 'web01.example.org · Web (FRP)',
+      label: '',
+      kind: 'web',
+      host: '127.0.0.1',
+      port: 6005,
+      url: 'http://127.0.0.1:6005',
+      serverId: 'srv-1',
+    };
+    const { container, getByTestId } = openModal({ target });
+    await tick();
+    expect(getByTestId('shown-as').textContent).toContain('web01.example.org · Web (FRP)');
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(vi.mocked(connectionsApi.update).mock.calls[0][2]).toMatchObject({
+      kind: 'web',
+      host: '127.0.0.1',
+    });
   });
 });

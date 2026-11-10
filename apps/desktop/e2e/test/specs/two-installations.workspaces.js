@@ -21,9 +21,11 @@ import { spawn } from 'node:child_process';
 import { application } from '../../wdio.conf.js';
 
 // As desktop_e2e_workspaces.sh seeds them in both installations; the server names the
-// visitor "<tunnel>-visitor" (generate_visitor_toml).
+// visitor "<tunnel-id>-visitor" (generate_visitor_toml, R-1210): a binding is found by the
+// tunnel's visitor port, which is unique. The tunnel list names it by the display name the
+// server derives from the seeded server e2e-server.
 const TUNNEL = 'e2e-ssh-tun';
-const VISITOR = `${TUNNEL}-visitor`;
+const TUNNEL_SHOWN = `e2e-server · ${TUNNEL} (FRP)`;
 const CONNECTION = 'ssh-tunnel';
 // The rows of the connections page (CONN_ROW in ../lib/live.js, which this multiremote spec does not use).
 const CONN_ROW = '[data-testid="conn-row"]';
@@ -156,24 +158,33 @@ async function waitForTunnelConnected(w) {
   );
 }
 
-// Where the visitor VISITOR of the window's frpc listens, once tunnel_status lists it.
+// The visitor port the window's server gave the tunnel TUNNEL.
+async function tunnelPortOf(w) {
+  const port = (await invoke(w, 'fetch_tunnels')).find((t) => t.name === TUNNEL_SHOWN)?.visitorPort;
+  if (!port) throw new Error(`${w.label}: the server lists no tunnel ${TUNNEL} with a visitor port`);
+  return port;
+}
+
+// Where the visitor of the tunnel TUNNEL listens in the window's frpc, once tunnel_status lists
+// it: the binding at the tunnel's visitor port.
 async function bindingOf(w) {
+  const serverPort = await tunnelPortOf(w);
   let status;
   try {
     await w.session.waitUntil(
       async () => {
         status = await invoke(w, 'tunnel_status');
-        return !!status?.bindings?.some((b) => b.name === VISITOR);
+        return !!status?.bindings?.some((b) => b.serverPort === serverPort);
       },
       { timeout: 20000, interval: 500 },
     );
   } catch (error) {
     throw new Error(
-      `${w.label}: tunnel_status never listed ${VISITOR}: ${JSON.stringify(status)}`,
+      `${w.label}: tunnel_status never listed the visitor of ${TUNNEL}: ${JSON.stringify(status)}`,
       { cause: error },
     );
   }
-  return status.bindings.find((b) => b.name === VISITOR);
+  return status.bindings.find((b) => b.serverPort === serverPort);
 }
 
 // Whether something listens on `port` of 127.0.0.1, as the kernel's table of IPv4 sockets has
@@ -281,15 +292,8 @@ describe('Two installations side by side: Standard at stack A, Kunde B at stack 
 
   it('both frpc run the visitor at the same server port, on different local ports', async () => {
     // Both installations gave the tunnel the same visitor port.
-    const visitorPort = async (w) => {
-      const port = (await invoke(w, 'fetch_tunnels')).find((t) => t.name === TUNNEL)?.visitorPort;
-      if (!port) {
-        throw new Error(`${w.label}: the server lists no tunnel ${TUNNEL} with a visitor port`);
-      }
-      return port;
-    };
-    const portA = await visitorPort(A);
-    const portB = await visitorPort(B);
+    const portA = await tunnelPortOf(A);
+    const portB = await tunnelPortOf(B);
     expect(portB).toBe(portA);
 
     const bindingA = await bindingOf(A);
