@@ -88,6 +88,13 @@ check "directory as a link: exit and summary" "0:apt_archives_verify.sh: 0 kept,
 check "directory as a link: now a directory with partial/" yes "$([ -d "$work/arch3/partial" ] && [ ! -L "$work/arch3" ] && echo yes || echo no)"
 check "directory as a link: target untouched" yes "$([ -e "$work/elsewhere2/keep_1.0_amd64.deb" ] && echo yes || echo no)"
 
+mkdir -p "$work/elsewhere3"
+: >"$work/elsewhere3/keep_1.0_amd64.deb"
+ln -s "$work/elsewhere3" "$work/arch4"
+rc=0; out=$(PATH="$work/bin:$PATH" bash "$verify" "$work/arch4/") || rc=$?
+check "directory as a link, given with a slash: exit and summary" "0:apt_archives_verify.sh: 0 kept, 0 dropped, 1 other removed" "$rc:$out"
+check "directory as a link, given with a slash: target untouched" yes "$([ -e "$work/elsewhere3/keep_1.0_amd64.deb" ] && [ ! -e "$work/elsewhere3/partial" ] && echo yes || echo no)"
+
 rc=0; out=$(PATH="$work/bin:$PATH" bash "$verify" "$work/empty-does-not-exist") || rc=$?
 check "missing directory: nothing to keep" "0:apt_archives_verify.sh: 0 kept, 0 dropped, 0 other removed" "$rc:$out"
 

@@ -1,5 +1,5 @@
 # CI: Archiv-Cache aufräumen, tauri-cli-Pins vollständig prüfen — Task-Ledger
-Status: aktiv · Branch: feature/ci-8 · Review: am Ende
+Status: bereit · Branch: feature/ci-8 · Review: am Ende
 Spec: docs/features/ci-8.md (Roadmap R-1276, R-1277)
 Heavy: none — nur CI-Skripte und ein Prüfschritt; kein Stack-, Gateway-, PKI- oder Install-Pfad, die PR-CI fährt beides
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,8 +21,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
 
-### T3 — Branch-Review: Pin-Prüfung als getestetes Skript, Slash am Archiv-Pfad  [ ]
+### T3 — Branch-Review: Pin-Prüfung als getestetes Skript, Slash am Archiv-Pfad  [x]
 Komponente: scripts · Dateien: .github/scripts/tauri_cli_pins.sh, .github/scripts/tauri_cli_pins_test.sh, .github/workflows/ci.yml, .github/scripts/apt_archives_verify.sh, .github/scripts/apt_archives_verify_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @94f2a4e57 2026-11-10T17:31:29+01:00
+Review: am Ende (Branch-Review)
 Änderung: Die Pin-Prüfung aus T2 zieht nach `.github/scripts/tauri_cli_pins.sh` (SPDX) und zählt jede Nicht-Kommentarzeile mit `cargo install … tauri-cli`, auch in `run: |`-Blöcken und über Zeilenfortsetzungen; der hermetische Test `tauri_cli_pins_test.sh` läuft im Job ops-scripts. `apt_archives_verify.sh` streicht abschließende Schrägstriche vom Pfad, damit ein Link an Stelle von `<dir>` auch als `<link>/` erkannt wird; der Test bekommt den Fall.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (cicd.html beschreibt schon „jede dieser Zeilen“; das Skript macht den Satz wahr)

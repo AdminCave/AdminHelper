@@ -13,6 +13,8 @@
 set -euo pipefail
 
 dir=${1:?usage: apt_archives_verify.sh <dir>}
+# A trailing slash would make [ -L ] look through a link in place of <dir>.
+while [ "${dir%/}" != "$dir" ] && [ -n "${dir%/}" ]; do dir=${dir%/}; done
 shopt -s nullglob dotglob
 kept=0 dropped=0 other=0
 if [ -L "$dir" ]; then
