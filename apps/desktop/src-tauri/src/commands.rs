@@ -766,6 +766,7 @@ pub async fn terminal_open_ssh(
     rows: u16,
     output: Channel<InvokeResponseBody>,
 ) -> Result<u64, AppError> {
+    may_open_terminal(window.label())?;
     let app = window.app_handle().clone();
     let bindings = match session.current().await {
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
@@ -850,6 +851,18 @@ fn may_reach(label: &str, id: u64) -> Result<(), AppError> {
         Err(AppError::Validation(format!(
             "this window cannot reach terminal session {id}"
         )))
+    }
+}
+
+/// Main opens sessions, and so does a detached window when it reconnects its own one
+/// (`DetachedTerminal` shows `SshTerminal`); any other window none.
+fn may_open_terminal(label: &str) -> Result<(), AppError> {
+    if label == pty::MAIN || detached_id(label).is_some() {
+        Ok(())
+    } else {
+        Err(AppError::Validation(
+            "this window cannot open a terminal session".into(),
+        ))
     }
 }
 
@@ -1322,8 +1335,7 @@ pub fn open_launcher() -> Result<(), AppError> {
 
 /// Workspace only: runs the playbook `playbook_id` of the signed-in server on `targets` in a
 /// terminal, with `check` as a dry run (`--check`). File name and content come from the
-/// server, not from the webview ([`ansible::fetch_playbook`], [`ansible_run_with`]). A caller
-/// that sends no `check` gets a real run, as before the switch existed.
+/// server, not from the webview ([`ansible::fetch_playbook`], [`ansible_run_with`]).
 #[tauri::command]
 pub async fn ansible_run(
     app: tauri::AppHandle,
@@ -1331,10 +1343,10 @@ pub async fn ansible_run(
     session: State<'_, SessionState>,
     playbook_id: String,
     targets: Vec<ansible::AnsibleTarget>,
-    check: Option<bool>,
+    check: bool,
 ) -> Result<(), AppError> {
     let switches = ansible::RunSwitches {
-        check: check.unwrap_or(false),
+        check,
         ask_pass: ansible::asks_password(&targets),
     };
     let guard = foreign_port_guard(&app, state.inner(), session.inner()).await;
@@ -1452,10 +1464,10 @@ where
 mod tests {
     use super::{
         ansible_run_with, check_server_cert_in, control_dir, delete_workspace_in, detached_id,
-        detached_label, enroll_with_token_in, list_workspaces_in, may_reach, open_launcher_with,
-        open_workspace_in, reject_foreign_port, reject_foreign_targets, reset_device_identity_in,
-        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target, ssh_spawn,
-        sync_source, with_control_master, with_sftp,
+        detached_label, enroll_with_token_in, list_workspaces_in, may_open_terminal, may_reach,
+        open_launcher_with, open_workspace_in, reject_foreign_port, reject_foreign_targets,
+        reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
+        sign_in_target, ssh_spawn, sync_source, with_control_master, with_sftp,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -2969,6 +2981,10 @@ mod tests {
                 "{name} does not check for main"
             );
         }
+        assert!(
+            body("terminal_open_ssh").contains("may_open_terminal(window.label())?;"),
+            "terminal_open_ssh does not check the calling window"
+        );
         // close would report every dock and every sign-out as a close through the title bar.
         for name in ["terminal_dock", "logout"] {
             let body = body(name);
@@ -3000,5 +3016,10 @@ mod tests {
         assert!(may_reach("terminal-7", 8).is_err());
         assert!(may_reach("terminal-+7", 7).is_err());
         assert!(may_reach("launcher", 7).is_err());
+        assert!(may_open_terminal("main").is_ok());
+        assert!(may_open_terminal("terminal-7").is_ok());
+        for label in ["launcher", "rdp-7", "terminal-", "terminal-+7", "settings"] {
+            assert!(may_open_terminal(label).is_err(), "{label}");
+        }
     }
 }

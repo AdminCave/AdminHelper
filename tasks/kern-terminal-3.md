@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-terminal-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T7
 
-### T2 — R-1155, R-1165, R-1166: PATH-Suche nur absolut, Fensterprüfung, `check` als bool  [ ]
+### T2 — R-1155, R-1165, R-1166: PATH-Suche nur absolut, Fensterprüfung, `check` als bool  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/terminal.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @086bcb708 2026-11-10T02:07:03+01:00
+Review: approve (.ah-out/review/kern-terminal-3/T2.verdict.json)
 Änderung:
 - `terminal::which` überspringt relative PATH-Einträge (alle Aufrufer).
 - `terminal_open_ssh` lehnt Fenster ab, die weder `main` noch ein losgelöstes Terminal-Fenster (`detached_id`) sind.
