@@ -922,7 +922,7 @@ describe('snippets (R-1071)', () => {
   it('a snippet goes to its session line by line, each with Enter', async () => {
     await openTerminal(CONN, RESOLVED);
     const { key } = only();
-    await runSnippet(key, 'cd /tmp\nls -la\n\n');
+    await expect(runSnippet(key, 'cd /tmp\nls -la\n\n')).resolves.toBeNull();
     await settle();
     expect(h.terminalWrite).toHaveBeenCalledTimes(1);
     expect(h.terminalWrite).toHaveBeenCalledWith(1, encoded('cd /tmp\rls -la\r'));
@@ -934,14 +934,17 @@ describe('snippets (R-1071)', () => {
     const { key } = only();
     await watch();
     report(true);
-    await runSnippet(key, 'uptime');
+    await expect(runSnippet(key, 'uptime')).resolves.toBe(2);
     await settle();
     expect(h.terminalBroadcast).toHaveBeenCalledTimes(1);
     expect(h.terminalBroadcast).toHaveBeenCalledWith(encoded('uptime\r'));
     expect(h.terminalWrite).not.toHaveBeenCalled();
 
+    h.terminalBroadcast.mockResolvedValueOnce(0);
+    await expect(runSnippet(key, 'uptime')).resolves.toBe(0);
+
     h.terminalBroadcast.mockRejectedValueOnce(new Error('only the main window broadcasts'));
-    await runSnippet(key, 'uptime');
+    await expect(runSnippet(key, 'uptime')).resolves.toBeNull();
     expect(h.reportError).toHaveBeenCalledWith('only the main window broadcasts');
   });
 
@@ -1182,6 +1185,21 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed', undefined);
     await openRdp(RDP);
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, undefined);
+  });
+
+  it('starts this and every later start with a login asked anew (R-1196)', async () => {
+    await openRdp(RDP, 'typed');
+    const key = only().key;
+    const alice = { ...RDP, username: 'alice' };
+    expect(await reconnectRdp(key, { connection: alice, password: 'new' })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+    expect(only()).toMatchObject({ connection: alice, resolved: alice });
+    expect(await reconnectRdp(key)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+
+    // A remembered password: Rust takes the stored one from then on.
+    expect(await reconnectRdp(key, { connection: alice, password: undefined })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, undefined, undefined);
   });
 
   it('leaves a connection only the OS client can open to it, without a tab', async () => {

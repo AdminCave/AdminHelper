@@ -358,7 +358,11 @@ def muted_reason(db: Session, check: MonitorCheck, now: datetime) -> str | None:
     active (collect-but-mute, T25); it mutes every check, the heartbeat and the
     Host Ping included.
     "host down" — the server's heartbeat or Host Ping stands critical
-    (_host_is_down): one incident, one notification."""
+    (_host_is_down): one incident, one notification.
+    "silent check" — a module check a catalog update added and the admin has not
+    adopted yet (module_sync): evaluated and shown, alerted only once adopted."""
+    if check.silent:
+        return "silent check"
     windows = (
         db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
     )

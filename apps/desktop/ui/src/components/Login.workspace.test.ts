@@ -72,6 +72,7 @@ const serverSettings = (serverUrl: string | null): Settings => ({
     copyOnSelect: true,
     rightClickPaste: true,
     confirmClose: true,
+    confirmMultilinePaste: false,
   },
   rdpScalingMode: 'auto',
   rdpWindowMode: 'fit',

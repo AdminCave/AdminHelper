@@ -8,13 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"time"
+
+	"adminhelper-agent/internal/execx"
 )
 
 // errCommandNotAllowed is the error of a call runTimedEnv refused: the command or its arguments are not
@@ -168,10 +168,8 @@ func (c allowedCall) matches(args []string) bool {
 	return true
 }
 
-// commandWaitDelay bounds how long runTimed waits for a command's pipes once its context ended or the
-// command exited. The kill reaches only the tool: a grandchild that inherited its stdout (a daemon, a
-// pager) kept the pipe open, and Output read it past the timeout until the grandchild ended.
-const commandWaitDelay = 2 * time.Second
+// commandWaitDelay bounds how long runTimed waits for a command's pipes (execx.WaitDelay).
+const commandWaitDelay = execx.WaitDelay
 
 // runTimed runs a command under timeout and ctx, whichever ends first; see runTimedEnv.
 func runTimed(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
@@ -189,26 +187,9 @@ func runTimedEnv(ctx context.Context, timeout time.Duration, env []string, name 
 	return execTimed(ctx, timeout, env, name, args...)
 }
 
-// execTimed runs a command without the allowlist check; only runTimedEnv and the tests of the timeout
-// handling call it. A call the timeout or ctx ended returns the context's error
-// (context.DeadlineExceeded at the timeout or the deadline of ctx, context.Canceled when ctx was
-// canceled): exec itself reports it as the ExitError "signal: killed", which would pass a hanging tool
-// off as a failing one. exec.ErrWaitDelay means the command exited 0 and only a child of it held the
-// pipe past commandWaitDelay: the command's output is complete, so it is no error.
+// execTimed runs a command without the allowlist check, through execx.RunEnv (its errors there; a
+// call its own timeout ended counts for the self-throttle); only runTimedEnv and the tests of the
+// timeout handling call it.
 func execTimed(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	if env != nil {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	cmd.WaitDelay = commandWaitDelay
-	out, err := cmd.Output()
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return out, nil
-	}
-	if err != nil && ctx.Err() != nil {
-		return out, ctx.Err()
-	}
-	return out, err
+	return execx.RunEnv(ctx, timeout, env, name, args...)
 }

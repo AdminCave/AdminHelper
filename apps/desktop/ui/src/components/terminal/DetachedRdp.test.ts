@@ -50,7 +50,11 @@ vi.mock('$lib/bridge', () => ({
 vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
-  return { settings: writable(null), refreshSettings: h.refreshSettings };
+  return {
+    settings: writable(null),
+    sessionStore: writable({ settings: null, session: null }),
+    refreshSettings: h.refreshSettings,
+  };
 });
 vi.mock('$lib/stores/tunnel', async () => {
   const { writable } = await import('svelte/store');

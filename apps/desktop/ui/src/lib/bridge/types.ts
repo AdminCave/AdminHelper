@@ -145,6 +145,7 @@ export interface TerminalPrefs {
   copyOnSelect: boolean;
   rightClickPaste: boolean;
   confirmClose: boolean;
+  confirmMultilinePaste: boolean;
 }
 
 // One reachability probe: probe_targets answers with the connect time in ms or null per target.

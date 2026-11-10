@@ -25,6 +25,10 @@ The tunnel edge network frpedge, on which frps sits alone, runs without IP masqu
 only accepts connections, so its published ports keep working, and the packets it sends itself
 leave the host with the container's address. The other networks keep Docker's default.
 
+redis has no auth and sits on a network of its own, internal, with its two users server and
+scheduler: no other service reaches it. It runs redis-server itself as the image's user redis, not
+the image's entrypoint, which loads every module the image ships.
+
 The CA root passphrase reaches the ca-issuer as a compose secret, a file under /run/secrets, and
 not as an environment variable: no service's environment carries it, so it stays out of
 `docker inspect` and /proc/<pid>/environ. Compose takes the secret from CA_ROOT_PASSPHRASE in
@@ -133,8 +137,38 @@ def test_frpedge_runs_without_ip_masquerading_and_holds_frps_alone():
 
 def test_the_other_networks_keep_ip_masquerading():
     networks = _compose()["networks"]
-    options = {name: (networks[name] or {}).get("driver_opts") or {} for name in ("default", "pki")}
+    options = {
+        name: (networks[name] or {}).get("driver_opts") or {}
+        for name in ("default", "pki", "redis")
+    }
     assert {name: opts[_MASQUERADE] for name, opts in options.items() if _MASQUERADE in opts} == {}
+
+
+def test_redis_sits_on_an_internal_network_of_its_own_with_server_and_scheduler():
+    compose = _compose()
+    members = {
+        name: service.get("networks", ["default"])
+        for name, service in compose["services"].items()
+        if "redis" in service.get("networks", [])
+    }
+
+    assert (compose["networks"]["redis"] or {}).get("internal") is True
+    assert members == {
+        "redis": ["redis"],
+        "server": ["default", "redis"],
+        "scheduler": ["default", "redis"],
+    }
+
+
+def test_redis_runs_redis_server_itself_as_the_user_redis():
+    redis = _services()["redis"]
+
+    # Not the image's docker-entrypoint.sh: it adds a --loadmodule for every module of the image.
+    assert redis.get("entrypoint") == ["redis-server"]
+    assert redis.get("user") == "redis"
+    assert redis.get("cap_drop") == ["ALL"]
+    assert "cap_add" not in redis
+    assert not any("loadmodule" in arg for arg in redis.get("command", []))
 
 
 def test_no_service_carries_the_ca_root_passphrase_in_its_environment():

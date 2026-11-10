@@ -201,6 +201,12 @@ def _team_action(
     held = _held(db, user, incident_id, team=True)
     if not incidents.may_act(kind, held.incident.state):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict)
+    # Acknowledge and resolve stay possible, so a full history never strands an incident.
+    if kind in ("note", "reopened") and incidents.history_full(db, incident_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"The history of this incident is full ({incidents.MANUAL_MAX} entries by hand)",
+        )
     now = _now()
     incidents.act(db, user, held, kind, now, text=text)
     incidents.finish_actions(db, [incident_id])

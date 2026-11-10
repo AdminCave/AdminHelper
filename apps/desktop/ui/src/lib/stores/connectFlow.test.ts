@@ -10,7 +10,8 @@
 // password a start takes after the prompt's "remember password", when the prompt offers it, that
 // a refused resolution ends the start, the screen an RDP start hands to Rust, which console an
 // SSH start takes, where an RDP start opens and with which password (R-1098), and the session
-// history: a connect begins a session, the rdp-exit of its start ends it (R-1068).
+// history: a connect begins a session, the rdp-exit of its start ends it (R-1068), and that a
+// reconnect of an RDP tab after a refused login asks for the password again (R-1196).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -19,7 +20,17 @@ import type { Connection, TunnelMapping } from '$lib/bridge/types';
 const state = vi.hoisted(() => {
   let sessionValue: unknown = { settings: { mode: 'local', storePasswords: false }, session: null };
   let connectionsValue: unknown[] = [];
+  let terminalsValue: unknown = { sessions: [], active: 'page' };
   return {
+    setTerminals: (v: unknown) => {
+      terminalsValue = v;
+    },
+    terminalsStore: {
+      subscribe: (fn: (v: unknown) => void) => {
+        fn(terminalsValue);
+        return () => {};
+      },
+    },
     setSession: (v: unknown) => {
       sessionValue = v;
     },
@@ -58,6 +69,8 @@ vi.mock('./editor', () => ({ closeEditor: vi.fn() }));
 vi.mock('./terminals', () => ({
   openTerminal: vi.fn(async () => true),
   openRdp: vi.fn(async () => 'started'),
+  reconnectRdp: vi.fn(async () => true),
+  terminals: state.terminalsStore,
 }));
 vi.mock('./passwordPrompt', () => ({ requestPassword: vi.fn() }));
 vi.mock('$lib/api/connections', () => ({
@@ -73,7 +86,7 @@ vi.mock('./connections', () => ({
   sessionsChanged: vi.fn(),
 }));
 
-import { initiateConnect, markRdpError, markRdpExit } from './connectFlow';
+import { initiateConnect, markRdpError, markRdpExit, reconnectRdpTab } from './connectFlow';
 import { reportError, showStatus } from './statusBar';
 import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
@@ -88,7 +101,7 @@ import {
 } from '$lib/bridge';
 import { patchInMemory, sessionsChanged, upsert } from './connections';
 import { closeEditor } from './editor';
-import { openRdp, openTerminal } from './terminals';
+import { openRdp, openTerminal, reconnectRdp } from './terminals';
 import { requestPassword } from './passwordPrompt';
 
 const settleAll = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -107,6 +120,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.setSession({ settings: { mode: 'local', storePasswords: false }, session: null });
   state.setConnections([]);
+  state.setTerminals({ sessions: [], active: 'page' });
 });
 
 describe('markRdpError race guard', () => {
@@ -1037,5 +1051,92 @@ describe('RDP in a tab (R-1098)', () => {
       expect.any(String),
     );
     expect(openConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe('reconnect of an RDP tab (R-1196)', () => {
+  const KEY = 'terminal-7';
+  const listed: Connection = {
+    id: 'r7',
+    name: 'rdp',
+    kind: 'rdp',
+    host: 'win.example',
+    port: 3389,
+    username: 'admin',
+    tags: [],
+    trustCert: false,
+  };
+  const typed: Connection = { ...listed, username: 'alice', domain: 'CORP' };
+
+  const tabEnded = (code: string) =>
+    state.setTerminals({
+      sessions: [{ key: KEY, connection: listed, rdp: { phase: 'failed', code } }],
+      active: KEY,
+    });
+
+  it('asks again after a refused login, past the stored password, and starts with the typed one', async () => {
+    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+    vi.mocked(requestPassword).mockResolvedValueOnce({
+      cancelled: false,
+      updated: typed,
+      password: 'new',
+      remember: false,
+    });
+    tabEnded('auth');
+
+    expect(await reconnectRdpTab(KEY)).toBe(true);
+
+    expect(requestPassword).toHaveBeenCalledWith(listed, true, true);
+    expect(savePassword).not.toHaveBeenCalled();
+    expect(reconnectRdp).toHaveBeenCalledWith(KEY, { connection: typed, password: 'new' });
+  });
+
+  it('saves a remembered password and starts with the stored one', async () => {
+    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    vi.mocked(requestPassword).mockResolvedValueOnce({
+      cancelled: false,
+      updated: typed,
+      password: 'new',
+      remember: true,
+    });
+    tabEnded('auth');
+
+    expect(await reconnectRdpTab(KEY)).toBe(true);
+
+    expect(savePassword).toHaveBeenCalledWith(typed, 'new');
+    expect(reconnectRdp).toHaveBeenCalledWith(KEY, { connection: typed, password: undefined });
+  });
+
+  it('starts nothing when the prompt is cancelled', async () => {
+    vi.mocked(requestPassword).mockResolvedValueOnce({ cancelled: true });
+    tabEnded('auth');
+
+    expect(await reconnectRdpTab(KEY)).toBe(false);
+
+    expect(reconnectRdp).not.toHaveBeenCalled();
+  });
+
+  it('starts with the login the tab has when the session did not end on a refused login', async () => {
+    tabEnded('network');
+
+    expect(await reconnectRdpTab(KEY)).toBe(true);
+
+    expect(requestPassword).not.toHaveBeenCalled();
+    expect(reconnectRdp).toHaveBeenCalledWith(KEY);
+  });
+
+  it('asks nothing in a detached window, which shows no prompt', async () => {
+    state.setTerminals({
+      sessions: [
+        { key: KEY, connection: listed, detached: true, rdp: { phase: 'failed', code: 'auth' } },
+      ],
+      active: KEY,
+    });
+
+    expect(await reconnectRdpTab(KEY)).toBe(true);
+
+    expect(requestPassword).not.toHaveBeenCalled();
+    expect(reconnectRdp).toHaveBeenCalledWith(KEY);
   });
 });

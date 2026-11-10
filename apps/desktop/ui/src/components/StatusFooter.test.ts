@@ -110,6 +110,7 @@ const base: Settings = {
     copyOnSelect: true,
     rightClickPaste: true,
     confirmClose: true,
+    confirmMultilinePaste: false,
   },
 };
 
