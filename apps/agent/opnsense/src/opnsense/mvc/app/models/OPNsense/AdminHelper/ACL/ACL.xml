@@ -1,0 +1,13 @@
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<acl>
+    <page-services-adminhelper>
+        <name>Services: AdminHelper</name>
+        <patterns>
+            <pattern>ui/adminhelper/*</pattern>
+            <pattern>api/adminhelper/*</pattern>
+        </patterns>
+    </page-services-adminhelper>
+</acl>
