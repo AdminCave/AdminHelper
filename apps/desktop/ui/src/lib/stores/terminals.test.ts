@@ -315,6 +315,39 @@ describe('reconnect (R-1069)', () => {
   });
 });
 
+describe('the end of an SSH tab is heard once (R-1159)', () => {
+  it('when its program ends; a reconnect and its end call nothing more', async () => {
+    const onEnd = vi.fn();
+    await openTerminal(CONN, RESOLVED, onEnd);
+    const { key } = only();
+    programs[0].send(out('x'));
+    expect(onEnd).not.toHaveBeenCalled();
+    programs[0].send({ exitCode: 0 });
+    expect(onEnd).toHaveBeenCalledOnce();
+
+    await reconnectTerminal(key);
+    programs[1].send(out('y'));
+    programs[1].send({ exitCode: 1 });
+    closeTerminal(key);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('when its tab is closed while the program runs', async () => {
+    const onEnd = vi.fn();
+    await openTerminal(CONN, RESOLVED, onEnd);
+    programs[0].send(out('x'));
+    closeTerminal(only().key);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('when its program did not start', async () => {
+    const onEnd = vi.fn();
+    h.terminalOpenSsh.mockRejectedValueOnce(new Error('no ssh'));
+    expect(await openTerminal(CONN, RESOLVED, onEnd)).toBe(false);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+});
+
 describe('closing (R-1069)', () => {
   it('ends a running program; the tab before the closed one comes to the front', async () => {
     await openTerminal(CONN, RESOLVED);
@@ -1149,6 +1182,21 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed', undefined);
     await openRdp(RDP);
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, undefined);
+  });
+
+  it('starts this and every later start with a login asked anew (R-1196)', async () => {
+    await openRdp(RDP, 'typed');
+    const key = only().key;
+    const alice = { ...RDP, username: 'alice' };
+    expect(await reconnectRdp(key, { connection: alice, password: 'new' })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+    expect(only()).toMatchObject({ connection: alice, resolved: alice });
+    expect(await reconnectRdp(key)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+
+    // A remembered password: Rust takes the stored one from then on.
+    expect(await reconnectRdp(key, { connection: alice, password: undefined })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, undefined, undefined);
   });
 
   it('leaves a connection only the OS client can open to it, without a tab', async () => {

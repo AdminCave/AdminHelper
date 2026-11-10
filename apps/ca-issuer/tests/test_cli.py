@@ -174,6 +174,37 @@ def test_status_marks_a_retired_entry_the_boot_skips(pki_dir, capsys):
     assert pki.read_identity(valid)[0] in retired[1] and "SKIPPED" not in retired[1]
 
 
+def test_status_marks_what_a_compromised_rotation_replaced(pki_dir, capsys):
+    replaced = pki.cert_from_pem((pki_dir / "access.crt").read_bytes())
+    saved = {
+        n: (pki_dir / n).read_bytes() for n in ("access.crt", "access.key", "access-chain.pem")
+    }
+    rotation.rotate_intermediates(pki_dir, PW, compromised=frozenset({"access"}))
+    (pki_dir / "access-retired.pem").write_bytes(pki.cert_to_pem(replaced))
+
+    assert cli.main(["status"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    retired = [line for line in out if line.startswith("access (retired)")]
+    assert len(retired) == 1 and "SKIPPED (replaced with --compromised)" in retired[0]
+    assert sum("SKIPPED" in line for line in out) == 1
+
+    # Back as the current one, the boot refuses it: 3.
+    for name, data in saved.items():
+        (pki_dir / name).write_bytes(data)
+    assert cli.main(["status"]) == 3
+    out = capsys.readouterr().out.splitlines()
+    current = [x for x in out if x.startswith("access ") and "(retired)" not in x]
+    assert len(current) == 1
+    assert "COMPROMISED (rotate-intermediates --compromised access)" in current[0]
+
+
+def test_status_of_an_unreadable_register_is_3(pki_dir, capsys):
+    rotation.compromised_path(pki_dir, "tunnel").write_bytes(b"-----BEGIN CERTIFICATE-----\nx\n")
+
+    assert cli.main(["status"]) == 3
+    assert "tunnel (compromised)" in capsys.readouterr().out
+
+
 def test_status_without_a_root_lists_retired_ones_unchecked(monkeypatch, pki_dir, capsys):
     # Nothing to check them against: the missing root is the finding (3).
     other = _cert_with_days_left(monkeypatch, "access", 10)  # from a throwaway root
@@ -796,6 +827,33 @@ def test_rotate_root_finish_decides_a_renewal_in_the_second_of_the_start_by_its_
     assert cli.main(["rotate-root", "finish"]) == (0 if since else 1)
     held = "still hold a certificate from before the restart" in capsys.readouterr().err
     assert held == (since == 0)
+
+
+@pytest.mark.parametrize("first", ["before the start", "after the start"])
+def test_rotate_root_finish_takes_the_newest_record_of_a_line_within_one_second(
+    monkeypatch, pki_dir, capsys, first
+):
+    # Two certificates of one line in the second of the start: the one recorded after the
+    # start is the newest, whatever order the rows come in.
+    renewal.renewed(monkeypatch, pki_dir, "switched")
+    engine = _register(monkeypatch)
+    restart = root_rollover.load_state(pki_dir).switch.switched_at.replace(
+        microsecond=500_000
+    ) + datetime.timedelta(hours=1)
+    with monkeypatch.context() as m:
+        m.setattr(pki, "_now", lambda: restart)
+        _start(engine, pki_dir)
+    step = datetime.timedelta(milliseconds=1)
+    records = [restart - step, restart + step]
+    if first == "after the start":
+        records.reverse()
+    line = _line(engine, "renewed-twice")
+    for at in records:
+        _issue(engine, line, restart.replace(microsecond=0), recorded_at=at)
+
+    assert cli.main(["status"]) == 0
+    assert "1 since the restart under the new root" in capsys.readouterr().out
+    assert cli.main(["rotate-root", "finish"]) == 0
 
 
 def test_rotate_root_finish_waits_while_the_register_may_miss_a_device(

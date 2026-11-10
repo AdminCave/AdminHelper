@@ -86,5 +86,12 @@ services:
     build:
       context: apps/monitoring
 
+# Docker publishes no port of a container that sits on internal networks only: the loopback
+# port of redis above needs its network to be a plain bridge here. Still no other service
+# is on it.
+networks:
+  redis:
+    internal: false
+
 volumes:
   test-data:

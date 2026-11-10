@@ -201,6 +201,12 @@ def _team_action(
     held = _held(db, user, incident_id, team=True)
     if not incidents.may_act(kind, held.incident.state):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict)
+    # Acknowledge and resolve stay possible, so a full history never strands an incident.
+    if kind in ("note", "reopened") and incidents.history_full(db, incident_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"The history of this incident is full ({incidents.MANUAL_MAX} entries by hand)",
+        )
     now = _now()
     incidents.act(db, user, held, kind, now, text=text)
     incidents.finish_actions(db, [incident_id])
@@ -236,9 +242,13 @@ def ack_incidents(
     now = _now()
     done: list[int] = []
     skipped: list[int] = []
-    # In id order: the row locks of two calls never wait on each other in a circle.
+    # In id order: the row locks of two calls never wait on each other in a circle. An
+    # incident is locked only once an unlocked look says it can be acked, so a skipped
+    # one is never held against a recovery (R-1149); the locked look decides.
     for incident_id in sorted(set(data.ids)):
-        held = incidents.access(db, current_user, incident_id, lock=True)
+        held = incidents.access(db, current_user, incident_id)
+        if held is not None and held.can_act and incidents.may_act("acked", held.incident.state):
+            held = incidents.access(db, current_user, incident_id, lock=True)
         if held is None or not held.can_act or not incidents.may_act("acked", held.incident.state):
             skipped.append(incident_id)
             continue

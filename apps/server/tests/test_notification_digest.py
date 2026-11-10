@@ -13,6 +13,7 @@ run once it is turned off, and retries a failed send up to the cutoff."""
 
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -281,3 +282,61 @@ class TestSendDigests:
         (entry,) = _entries(db_session, user)
         assert entry.status == "failed"
         assert db_session.get(NotificationSettings, user.id).digest_last_at is None
+
+
+def test_a_digest_mail_lists_at_most_its_cap_and_counts_the_rest(monkeypatch):
+    # R-1188: a long wait must not make one unbounded mail; every entry still counts
+    # as sent, the bell lists them all.
+    mails: list = []
+    monkeypatch.setattr(digest_mod, "send_email", lambda to, s, b: mails.append((to, s, b)))
+    cap = digest_mod.DIGEST_MAX_LINES
+    entries = [
+        SimpleNamespace(
+            created_at=DAY,
+            severity="warning",
+            title=f"entry {n}",
+            address="boss@example.org",
+            attempts=0,
+            status="digest",
+            sent_at=None,
+            last_error=None,
+            user_id=1,
+        )
+        for n in range(cap + 1)
+    ]
+
+    assert digest_mod._send(None, entries, NEXT_DIGEST) == (True, 0)
+
+    ((to, subject, body),) = mails
+    lines = body.split("\n")
+    assert (to, subject) == ("boss@example.org", f"AdminHelper digest: {cap + 1} notifications")
+    assert len(lines) == cap + 1
+    assert lines[0].endswith("entry 0") and lines[cap - 1].endswith(f"entry {cap - 1}")
+    assert lines[-1] == "... and 1 more"
+    assert {(e.status, e.sent_at) for e in entries} == {("sent", NEXT_DIGEST)}
+
+
+def test_a_digest_mail_at_its_cap_has_no_closing_line(monkeypatch):
+    mails: list = []
+    monkeypatch.setattr(digest_mod, "send_email", lambda to, s, b: mails.append(b))
+    cap = digest_mod.DIGEST_MAX_LINES
+    entries = [
+        SimpleNamespace(
+            created_at=DAY,
+            severity=None,
+            title=f"entry {n}",
+            address="boss@example.org",
+            attempts=0,
+            status="digest",
+            sent_at=None,
+            last_error=None,
+            user_id=1,
+        )
+        for n in range(cap)
+    ]
+
+    digest_mod._send(None, entries, NEXT_DIGEST)
+
+    (body,) = mails
+    assert len(body.split("\n")) == cap
+    assert "more" not in body.split("\n")[-1]
