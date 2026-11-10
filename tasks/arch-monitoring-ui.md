@@ -34,6 +34,12 @@ Review: approve (.ah-out/review/arch-monitoring-ui/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_http_checker.py
 Doku: → T12
 
+### T13 — Monitoring: Katalog-Schlüssel je Check in der Check- und Status-API (R-1225)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/tests/openapi.snapshot.json
+Änderung: `MonitorCheck.to_dict` und `MonitorCheckOut` tragen `moduleCheckKey` (die Spalte `module_check_key`, gesetzt von `module_sync`), additiv und nur lesend: die Modulkarte (T5) ordnet die Katalog-`card`-Einträge (`check_key`) damit den Checks einer Instanz zu. Test: der bestehende Modul-Check-Test liest das Feld für Modul- und einfachen Check; OpenAPI-Snapshot neu aufgenommen.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_response_shapes.py tests/test_openapi_snapshot.py
+Doku: → T12
+
 ### T3 — Desktop-UI: Datenschicht für Katalog, Erkennung, Funde, Kosten und Puls (R-1225)  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/api/monitoring.test.ts, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts
 Änderung: Typen gegen die gemergten Schemas (`CatalogOut`, `DiscoveryOut`, `FindingOut`, `AdoptOut`, `AdoptAllOut`, Status mit `muted_reason`, Summary, Kosten, `details.cert`); API-Aufrufe für `/catalog`, `/discovery/{id}` (+ `scan`), `/findings` (+ adopt, adopt-all, dismiss), `/status/server/{id}/costs`; der Store lädt Katalog einmal je Sitzung, Erkennung und Funde mit dem Server-Refresh, nach adopt/dismiss neu. Tests: Aufruf-Pfade und Parameter, Store-Ablauf (adopt lädt Checks und Funde neu, Fehler bleibt lesbar).
@@ -52,7 +58,7 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/Mon
 Änderung: `MonServerDashboard` umgebaut: Kopf mit Problemzahl und [Jetzt scannen]; Karte System (heutige Sektionen Live, Netz, Heartbeat, System, ZFS, SMART, Prognose), Karten Dienste, Docker, Backups (heutige `Sec*`), je Modul-Instanz eine `ModuleCard` aus Katalog-`card` und den Checks der Instanz (Kennzahlen, Klartext des Fühler-Status, stille Checks markiert), „Neu gefunden (n)“ mit `FindingsInbox`; Unterdrückungsgrund an der Karte. Bestehende Tests der Datei bleiben in ihrer Aussage und ziehen auf die neue Struktur um; neue Tests: zu/auf nach Status, Modulkarte aus Katalog, Neu gefunden mit adopt, Scan-Knopf, Unterdrückungsgrund.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonServerDashboard.test.ts src/components/monitoring/card
 Doku: → T12
-Abhängt von: T3, T4
+Abhängt von: T3, T4, T13
 
 ### T6 — Desktop-UI: Monitoring-Kosten je Server und Warnung „ohne Ergebnis“ (R-1225)  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/monitoringPulse.ts, apps/desktop/ui/src/lib/stores/monitoringPulse.test.ts, apps/desktop/ui/src/components/StatusBar.svelte, apps/desktop/ui/src/components/StatusBar.test.ts, apps/desktop/ui/src/components/monitoring/card/MonCosts.svelte, apps/desktop/ui/src/components/monitoring/card/MonCosts.test.ts, apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
@@ -110,3 +116,4 @@ Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
 - 2026-11-10 T1: Kosten-Route mit drei `query_range` über die letzten 5 min (Schritt 60 s), der jüngste Punkt je Reihe steht für die Stunde davor — der VM-Client kennt keine Instant-Abfrage; Semantik gegen VictoriaMetrics v1.155.0 im Docker geprobt (Mittel, Summe ohne Werte älter als 1 h, last, fremder Server ausgeschlossen).
 - 2026-11-10 T2: `details.cert.not_before`/`not_after` als Unix-Sekunden (int) — wie `not_after` der Agent-Fühler `tls`/`certfile`, damit der Querschnitt „Zertifikate & Domains“ beide Quellen gleich liest. Weg belegt: httpx-Doku `network_stream` → `get_extra_info("ssl_object")`, Python-Doku `getpeercert()` („If the certificate was not validated, the dict is empty“), Test mit echtem TLS-Server durch `_PinnedTransport`; `ssrf.py` unverändert. Über einen Proxy (CONNECT-Tunnel) nicht getestet.
 - 2026-11-10 T2: Test-PKI zur Laufzeit mit dem `openssl`-CLI (CA + zwei Blätter) — die Test-Abhängigkeiten tragen keinen X.509-Builder, und ein privater Schlüssel gehört nicht ins Repo; Erwartung der Daten aus `openssl x509 -dateopt iso_8601`, nicht aus `ssl`.
+- 2026-11-10 Plan: T13 nachgetragen — die Status-API nennt je Check nur `moduleId`/`moduleInstance`, nicht den Katalog-Schlüssel; die Zuordnung Katalog-`card` → Check über Namen oder Fühler wäre brüchig (Checks sind umbenennbar, spätere Module teilen Fühler). Additives, nur lesendes Feld `moduleCheckKey` (camelCase wie T1).
