@@ -243,10 +243,33 @@ function newRuntime(key: string): Runtime {
 }
 
 /**
- * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
- * not start: the tab then shows the session disconnected, the status bar why.
+ * Calls `onEnd` once, as soon as the tab `key` shows its program ended or is gone. A reconnect
+ * after that calls nothing more.
  */
-export function openTerminal(connection: Connection, resolved: Connection): Promise<boolean> {
+function watchEnd(key: string, onEnd: () => void): void {
+  let ended = false;
+  let stop: (() => void) | null = null;
+  stop = state.subscribe((s) => {
+    if (ended) return;
+    const session = s.sessions.find((x) => x.key === key);
+    if (session && session.status !== 'disconnected') return;
+    ended = true;
+    stop?.();
+    onEnd();
+  });
+  if (ended) stop();
+}
+
+/**
+ * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
+ * not start: the tab then shows the session disconnected, the status bar why. `onEnd` hears once
+ * when the program of the tab ends or the tab is closed (R-1159).
+ */
+export function openTerminal(
+  connection: Connection,
+  resolved: Connection,
+  onEnd?: () => void,
+): Promise<boolean> {
   opened += 1;
   const key = `terminal-${opened}`;
   const runtime = newRuntime(key);
@@ -260,6 +283,7 @@ export function openTerminal(connection: Connection, resolved: Connection): Prom
     backendId: null,
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
+  if (onEnd) watchEnd(key, onEnd);
   return start(key, runtime, begin(runtime), sshLaunch(resolved));
 }
 

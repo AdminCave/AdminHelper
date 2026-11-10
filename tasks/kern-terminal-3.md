@@ -66,14 +66,17 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, 
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/terminals.test.ts
 Doku: keine (Rückmeldung ohne dokumentiertes Verhalten)
 
-### T6 — R-1159: Eintrag im Sitzungsverlauf endet mit dem eingebetteten SSH-Terminal  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts
+### T6 — R-1159: Eintrag im Sitzungsverlauf endet mit dem eingebetteten SSH-Terminal  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @cd9bbdb1b 2026-11-10T02:18:23+01:00
+Review: approve (.ah-out/review/kern-terminal-3/T6.verdict.json)
 Änderung:
 - `connectEmbedded` hängt die von `markConnectionUsed` geöffnete Sitzung an den Tab. Endet dessen Programm oder wird
   der Tab geschlossen, endet die Sitzung (Server- oder lokaler Verlauf wie `markRdpExit`), einmal; danach
   `sessionsChanged()`. „Neu verbinden“ beginnt keinen neuen Eintrag.
-- Tests: Programmende beendet den Eintrag, Schließen beendet ihn, zweites Ende ruft nichts.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts
+- Tests: Programmende beendet den Eintrag, Schließen beendet ihn, zweites Ende ruft nichts (`terminals.test.ts`:
+  `openTerminal` meldet das Ende des Tabs einmal; `connectFlow.test.ts`: lokal, Server, Ende vor dem Eintrag).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts src/lib/stores/terminals.test.ts
 Doku: → T7
 
 ### T7 — Doku und CHANGELOG  [ ]
