@@ -56,6 +56,7 @@ export function getTerminalDefaults(): TerminalPrefs {
     copyOnSelect: true,
     rightClickPaste: true,
     confirmClose: true,
+    confirmMultilinePaste: false,
   };
 }
 

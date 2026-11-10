@@ -16,7 +16,8 @@ import { setLanguage, tNow } from '$lib/i18n';
 import { getSettingsDefaults } from '$lib/models/settings';
 
 const h = vi.hoisted(() => ({
-  runSnippet: vi.fn(async (_key: string, _command: string) => {}),
+  runSnippet: vi.fn(async (_key: string, _command: string): Promise<number | null> => null),
+  showStatus: vi.fn(),
   setSnippets: vi.fn<(list: unknown[]) => Promise<void>>(async () => {}),
   reportError: vi.fn(),
   confirm: vi.fn(async (_message: string, _opts?: unknown) => true),
@@ -36,7 +37,10 @@ vi.mock('$lib/stores/terminals', async () => {
     setSnippetBroadcast: vi.fn(async (on: boolean) => snippetBroadcast.set(on)),
   };
 });
-vi.mock('$lib/stores/statusBar', () => ({ reportError: h.reportError }));
+vi.mock('$lib/stores/statusBar', () => ({
+  reportError: h.reportError,
+  showStatus: h.showStatus,
+}));
 vi.mock('../ui/ConfirmDialog.svelte', () => ({ confirmDialog: h.confirm }));
 
 import { settings } from '$lib/stores/session';
@@ -117,6 +121,21 @@ describe('SnippetsPanel', () => {
     await fireEvent.click(card('df -h'));
     expect(h.runSnippet).toHaveBeenCalledWith(KEY, 'df -h');
     expect(onRun).toHaveBeenCalledTimes(1);
+    expect(h.showStatus).not.toHaveBeenCalled();
+  });
+
+  it('says so when a broadcast reached no session, and only then', async () => {
+    withSnippets([DISK]);
+    mount();
+    h.runSnippet.mockResolvedValueOnce(2);
+    await fireEvent.click(card('df -h'));
+    await tick();
+    expect(h.showStatus).not.toHaveBeenCalled();
+
+    h.runSnippet.mockResolvedValueOnce(0);
+    await fireEvent.click(card('df -h'));
+    await tick();
+    expect(h.showStatus).toHaveBeenCalledWith(tNow('terminal.snippets.broadcastNone'));
   });
 
   it('runs nothing in a session that does not run', async () => {

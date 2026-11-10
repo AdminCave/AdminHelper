@@ -275,7 +275,7 @@ Content-Type: application/json
   ]
 }</code></pre>
 
-          <p>Fehler folgen Pydantic-Validations-Konventionen. Gibt ein <code>422</code> eine Eingabe mit einem einzelnen Surrogat zur&uuml;ck, schreibt der Body jedes Zeichen au&szlig;erhalb von ASCII als JSON-Escape (<code>\uXXXX</code>).</p>
+          <p>Fehler folgen Pydantic-Validations-Konventionen. Gibt ein <code>422</code> eine Eingabe mit einem einzelnen Surrogat zur&uuml;ck, schreibt der Body jedes Zeichen au&szlig;erhalb von ASCII als JSON-Escape (<code>\uXXXX</code>). Ein Query-Parameter, den das Schema als Einzelwert beschreibt, ergibt bei mehrfacher Angabe (<code>?offset=1&amp;offset=2</code>) ein <code>422</code> mit <code>loc</code> <code>["query", &lt;name&gt;]</code> und den Werten als Liste in <code>input</code>; ein Parameter, den das Schema nicht kennt, wird weiter ignoriert.</p>
 
           <p>Ein Fehler, auf den ein Client reagieren soll, tr&auml;gt neben <code>detail</code> das Feld <code>code</code>: stabil, in der Form <code>ERR_&hellip;</code>. <code>detail</code> bleibt Text und beginnt aus Kompatibilit&auml;t mit <code>&lt;code&gt;: </code>; der Wortlaut dahinter kann sich &auml;ndern. Heute tragen die <code>403</code> der Zertifikatspr&uuml;fung einen Code: <code>ERR_CERT_REVOKED</code> (Zertifikat widerrufen oder nicht registriert), <code>ERR_CERT_USER_MISMATCH</code> (Zertifikat eines anderen Benutzers), <code>ERR_CERT_SERVER_MISMATCH</code> (Agent-Zertifikat eines anderen Servers). Clients verzweigen an <code>code</code>, nie am Text. Alle anderen Fehler haben kein <code>code</code>.</p>
           <div class="code-header"><span>json</span></div>

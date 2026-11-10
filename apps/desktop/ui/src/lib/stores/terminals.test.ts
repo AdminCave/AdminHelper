@@ -924,7 +924,7 @@ describe('snippets (R-1071)', () => {
   it('a snippet goes to its session line by line, each with Enter', async () => {
     await openTerminal(CONN, RESOLVED);
     const { key } = only();
-    await runSnippet(key, 'cd /tmp\nls -la\n\n');
+    await expect(runSnippet(key, 'cd /tmp\nls -la\n\n')).resolves.toBeNull();
     await settle();
     expect(h.terminalWrite).toHaveBeenCalledTimes(1);
     expect(h.terminalWrite).toHaveBeenCalledWith(1, encoded('cd /tmp\rls -la\r'));
@@ -936,14 +936,17 @@ describe('snippets (R-1071)', () => {
     const { key } = only();
     await watch();
     report(true);
-    await runSnippet(key, 'uptime');
+    await expect(runSnippet(key, 'uptime')).resolves.toBe(2);
     await settle();
     expect(h.terminalBroadcast).toHaveBeenCalledTimes(1);
     expect(h.terminalBroadcast).toHaveBeenCalledWith(encoded('uptime\r'));
     expect(h.terminalWrite).not.toHaveBeenCalled();
 
+    h.terminalBroadcast.mockResolvedValueOnce(0);
+    await expect(runSnippet(key, 'uptime')).resolves.toBe(0);
+
     h.terminalBroadcast.mockRejectedValueOnce(new Error('only the main window broadcasts'));
-    await runSnippet(key, 'uptime');
+    await expect(runSnippet(key, 'uptime')).resolves.toBeNull();
     expect(h.reportError).toHaveBeenCalledWith('only the main window broadcasts');
   });
 
