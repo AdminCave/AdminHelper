@@ -18,8 +18,10 @@ aus R-1227 nur das HTTPS-Zertifikat hier (T2). Risikopfade (`scripts/dev/review-
 --copyright "Kevin Stenzel" --license GPL-3.0-or-later <datei>`). UI nur aus Tokens und Komponenten unter
 `apps/desktop/ui/src/components/ui/`, Texte DE+EN in `dictionaries.ts`.
 
-### T1 — Monitoring: Status-API für die Server-Seite (R-1225)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_status_page_api.py, apps/monitoring/tests/openapi.snapshot.json
+### T1 — Monitoring: Status-API für die Server-Seite (R-1225)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_status_page_api.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_response_shapes.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @38ae97808 2026-11-10T11:41:55+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T1.verdict.json)
 Änderung: Check-Antworten von `/status` und `/status/server/{server_id}` tragen `muted_reason`, gebündelt je Antwort berechnet (Wartungsfenster einmal, Host-down einmal je Server) mit derselben Semantik wie `alerter.muted_reason`; `/status/summary` trägt `last_result_at` und `min_interval_s` (SQL-Aggregat); neu `GET /status/server/{server_id}/costs` aus den Collector-Reihen (Mittel 1 h, Treffer, Faktor, gebremst; 502 ohne VictoriaMetrics). Tests (neue Datei, SPDX): Gleichlauf gebündelt ↔ `muted_reason` über alle Gründe, Abfragezahl unabhängig von der Check-Zahl, Summary leer/gefüllt, Kosten mit gestubbtem VM-Client und 502.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_page_api.py tests/test_alerter.py tests/test_response_shapes.py tests/test_openapi_snapshot.py
 Doku: → T12
@@ -98,3 +100,9 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui.md
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
+
+## Entscheidungen
+- 2026-11-10 T1: neue Felder camelCase (`mutedReason`, `lastResultAt`, `minIntervalS`, Kosten `serverId`, `durationMs` …) statt snake_case wie in der Spec — die Status- und Verlaufsantworten (`MonitorCheckOut`, `ServerHistoryOut`) sind durchgehend camelCase, der Desktop liest sie so.
+- 2026-11-10 T1: `alerter.muted_reasons` als eigene Bündel-Funktion neben `muted_reason`, nicht als dessen Umbau — die Fakes der Alerter-Tests (`_HostDownDb`, `_helpers.py`) hängen an der Abfrageform von `_host_is_down`; Gleichlauf hält `test_status_page_api.py` über alle Gründe und Rangfälle.
+- 2026-11-10 T1: `minIntervalS` aus den DISTINCT-Intervallen aktiver Checks, das Minimum in Python über `scheduler.interval_timedelta` — `interval` ist Text ("15m" < "5m" lexikalisch), ein SQL-`min()` wäre falsch; ein unbekannter Wert zählt nicht.
+- 2026-11-10 T1: Kosten-Route mit drei `query_range` über die letzten 5 min (Schritt 60 s), der jüngste Punkt je Reihe steht für die Stunde davor — der VM-Client kennt keine Instant-Abfrage; Semantik gegen VictoriaMetrics v1.155.0 im Docker geprobt (Mittel, Summe ohne Werte älter als 1 h, last, fremder Server ausgeschlossen).

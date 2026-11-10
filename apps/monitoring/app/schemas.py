@@ -332,6 +332,11 @@ class MonitorCheckOut(BaseModel):
     state: MonitorStateOut | None = None
 
 
+class MonitorCheckStatusOut(MonitorCheckOut):
+    # alerter.muted_reasons: "silent check" | "maintenance window" | "host down" | None.
+    mutedReason: str | None
+
+
 class StatusSummaryOut(BaseModel):
     total: int
     ok: int
@@ -339,6 +344,23 @@ class StatusSummaryOut(BaseModel):
     critical: int
     unknown: int
     pending: int
+    lastResultAt: str | None
+    minIntervalS: int | None
+
+
+class CollectorCostOut(BaseModel):
+    collector: str
+    durationMs: float | None
+    cpuMs: float | None
+    timeouts: float | None
+    factor: float | None
+    throttled: bool | None
+
+
+class ServerCostsOut(BaseModel):
+    serverId: str
+    window: str
+    collectors: list[CollectorCostOut]
 
 
 class CheckMetricsOut(BaseModel):
