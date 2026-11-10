@@ -57,8 +57,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 Abhängt von: R-1223 und R-1247 gemergt
 
-### T4 — Fühler `opnsense` im Agenten und im Sensorvertrag des Monitorings (R-1248)  [ ]
-Komponente: agent monitoring · Dateien: apps/agent/internal/probe/sensor_opnsense.go, apps/agent/internal/probe/sensor_opnsense_test.go, apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_sensors.py
+### T4 — Fühler `opnsense` im Agenten und im Sensorvertrag des Monitorings (R-1248)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_opnsense.go, apps/agent/internal/probe/sensor_opnsense_test.go, apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/app/catalog/model.py
+Evidenz: run.sh[quick] agent monitoring: 6 passed, 0 failed, 12 skipped @7e1f290a0 2026-11-10T10:12:04+01:00
+Review: approve (.ah-out/review/arch-opnsense-plugin/T4.verdict.json)
 Änderung:
 - `sensor_opnsense.go` (SPDX) registriert `sensors["opnsense"]`: kein Ziel, kein Credential, Parameter `view` aus der Allowlist (sonst `invalid`). Er ruft `opnsense.Read` mit `execx.Run`. Ohne `/usr/local/sbin/configctl` meldet er `unsupported`, auch auf Linux und Windows.
 - `sensors.py` nimmt `opnsense` auf, mit `view: Literal[…]`, der Feldmenge je Fühler und ohne Zielarten.
@@ -67,7 +69,7 @@ Verify: bash scripts/dev/verify.sh agent monitoring --strict
 Doku: → T9
 Abhängt von: T1, T3
 
-### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [ ]
+### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [?] (Info-Regeln (Update verfügbar, update_reboot, CARP-Wartung): der Katalogvertrag aus R-1223 kennt nur warning/critical. (A) Check.severity im Katalog, (B) keine Regel, Werte auf Karte und Details, (C) Regelstufe und Status info. Empfehlung B plus Roadmap-Zeile für C.)
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/opnsense.py, apps/monitoring/tests/test_catalog_opnsense.py
 Änderung: `MODULE`:
 - Erkennung: `id: "opnsense"`, Marker `opnsense.core` (`/usr/local/opnsense/version/core`).
@@ -147,3 +149,6 @@ Task-Review: am Ende
 - 2026-11-10 T1: `gateways` zählt `force_down` getrennt als `forced_down` (vom Admin gewollt, kein Ausfall) und ein Gateway ohne Monitoring (`none` ohne Messwert, Quelle `StaticRoute::getMonitorStatus`) gar nicht; `max_loss_pct`/`max_delay_ms` fehlen ohne Messwert.
 - 2026-11-10 T1: `firmware` liefert `update_reboot` statt `needs_reboot`: `needs_reboot` aus `check.sh` heißt „das anstehende Update braucht einen Neustart“ (oder die Einstellung „immer neu starten“), nicht „Neustart steht aus“; das Feld ist nur mit Update wahr. Dazu `checked`, `connection`, `updates`, `major_upgrade`; `product_mirror` und `product_license` verlassen den Parser nie.
 - 2026-11-10 Kevin, Frage 5: `update_reboot` ist info, zusammen mit „Update verfügbar“ (Meldung nennt den Neustart); einen ausstehenden Neustart meldet der Systemcheck (`reboot_required`, warn), das Modul nicht (T5).
+- 2026-11-10 Kevin, Frage 6: Keine Regel für „Update verfügbar“, `update_reboot` und den CARP-Wartungsmodus (der Katalogvertrag aus R-1223 kennt nur warning/critical); die Werte stehen auf der Karte (`update_available` als sechste Kachel) und in den Check-Details, der Status bleibt ok. Eine echte Stufe info ist R-1280 (T5).
+- 2026-11-10 T4 vor T2/T3: der Fühler hängt nur zur Laufzeit auf FreeBSD an R-1247, die Tests nehmen einen Fake-Aufrufer; Basis ist der Branch von #438 (R-1223), in diesen Branch gemergt.
+- 2026-11-10 T4: Der Katalog prüft die Felder je Ansicht (`field_allowed` bekommt die Params, dazu `model.py`), denn ein Feld einer anderen Ansicht käme nie zurück. Der Zeitdeckel eines Checks ist `timeout_s` (≤ 30 s) und liegt unter den 60 s des Readers für `firmware`; `firmware product` startet PHP, `opnsense-update -M/-G` und `opnsense-verify -l`, nach den Quellen ohne Netz (für `-G` nicht verifiziert); ob 30 s reichen und ob es lokal bleibt, prüft der Box-Lauf (T8).
