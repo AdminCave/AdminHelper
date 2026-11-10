@@ -5,10 +5,12 @@ Heavy: none — nur Desktop-Einstellung und UI im Terminal-Tab; kein Stack-, Gat
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1144: Terminal-Option confirmMultilinePaste in den Desktop-Einstellungen  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs
+### T1 — R-1144: Terminal-Option confirmMultilinePaste in den Desktop-Einstellungen  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/migration.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @327e514dd 2026-11-10T09:45:21+01:00
+Review: approve (.ah-out/review/kern-terminal-4/T1.verdict.json)
 Änderung: `TerminalPrefs` bekommt `confirm_multiline_paste: bool`, Default `false`; Test, dass eine `prefs.json` ohne das Feld mit `false` lädt und der Wert die Runde übersteht.
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage::
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T4
 
 ### T2 — R-1144: Rückfrage im Terminal vor mehrzeiligem Einfügen  [ ]
