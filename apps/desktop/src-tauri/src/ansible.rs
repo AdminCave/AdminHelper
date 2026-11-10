@@ -40,6 +40,12 @@ pub fn check_targets(targets: &[AnsibleTarget]) -> Result<(), AppError> {
             if tag.contains(['[', ']']) {
                 return Err(AppError::Validation("Ungueltiger Gruppenname".to_string()));
             }
+            // The group name ends up in the inventory, which Ansible renders as Jinja here.
+            if tag.contains(['{', '}']) {
+                return Err(AppError::Validation(
+                    "A group name of an Ansible target must not contain { or }".to_string(),
+                ));
+            }
         }
         if let Some(connection) = target.connection.as_ref() {
             crate::validation::validate_connection_input(connection)?;
@@ -1419,6 +1425,19 @@ mod tests {
             connection: None,
         }];
         assert!(generate_inventory(&dir.0, &bad_group).is_err());
+
+        // A group name lands in the inventory, which Ansible renders as a Jinja template here.
+        for name in ["{{ evil }}", "a{b", "a}b"] {
+            let templated_group = vec![AnsibleTarget {
+                hostname: "host".to_string(),
+                groups: vec![name.to_string()],
+                connection: None,
+            }];
+            assert!(
+                generate_inventory(&dir.0, &templated_group).is_err(),
+                "{name}"
+            );
+        }
 
         // A clean target still passes.
         let ok = vec![AnsibleTarget {
