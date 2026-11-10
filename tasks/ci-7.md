@@ -15,8 +15,10 @@ Dedup-Key: bug:ci:.github/workflows/ci.yml:tauri-deps-apt-step-timeout
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T3
 
-### T2 — R-1142: Job rdp-embedded fährt die xrdp-Suite je PR  [ ]
+### T2 — R-1142: Job rdp-embedded fährt die xrdp-Suite je PR  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9995ddb7f 2026-11-10T07:54:19+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neuer Job `rdp-embedded` („Desktop (embedded RDP vs xrdp)“) auf `ubuntu-26.04`, Limit 45 min: Tauri-Pakete wie in T1, frpc-Sidecar, Rust-Toolchain, `Swatinem/rust-cache`, `cargo install tauri-cli --locked --version "2.12.4"` (Lockstep-Kommentar), dann `bash scripts/tests/desktop_e2e_rdp_embedded.sh`. Der Kommentar am Ende von `ci.yml` (Desktop-E2E bewusst nicht in CI) nennt die Ausnahme. Beweis ist der PR-Lauf des Jobs.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T3
