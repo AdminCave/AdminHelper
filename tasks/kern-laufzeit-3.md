@@ -5,8 +5,10 @@ Heavy: linux-full — `docker-compose*.yml` und `scripts/tests/integration_stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1139: Redis im eigenen Netz, ohne ladbare Module  [ ]
+### T1 — R-1139: Redis im eigenen Netz, ohne ladbare Module  [x]
 Komponente: server · Dateien: docker-compose.yml, docker-compose.test.yml, scripts/tests/integration_stack_test.sh, apps/server/tests/test_compose_hardening.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9a276a6c5 2026-11-10T06:25:06+01:00
+Review: approve (.ah-out/review/kern-laufzeit-3/T1.verdict.json)
 Änderung: Netz `redis` (intern) nur für `redis`, `server`, `scheduler`; `redis` startet `redis-server` direkt als
 `redis`; Test-Compose nimmt `internal` für den Loopback-Port zurück; Stack-Test: Platzhalter `victoria`, neue
 Negativ-Probe aus dem Default-Netz und `MODULE LIST`; Compose-Tests für Netz, Mitglieder und Entrypoint.
