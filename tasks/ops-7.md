@@ -1,5 +1,5 @@
 # Betriebsskripte: .env-Leser, Rollen-Passwörter, PostgreSQL-18-Umzug — Task-Ledger
-Status: aktiv · Branch: feature/ops-7 · Review: pro Task
+Status: bereit · Branch: feature/ops-7 · Review: pro Task
 Spec: docs/features/ops-7.md (Roadmap R-1114, R-1115, R-1138)
 Heavy: linux-full — `scripts/backup.sh`, `scripts/restore.sh` und `scripts/update.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -35,8 +35,10 @@ Docker-Stub: falscher Mount, falsche Version.
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (Rollback-Verhalten unverändert dokumentiert; CHANGELOG → T4)
 
-### T4 — Doku und CHANGELOG  [ ]
+### T4 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, changelog.d/ops-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @099da56cb 2026-11-10T05:51:47+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: DE+EN: Rollen-Passwörter beim Restore (`$$`, Ausweg über die Umgebung); CHANGELOG-Eintrag neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
