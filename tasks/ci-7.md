@@ -1,5 +1,5 @@
 # Downloads der CI wiederholen, xrdp-Suite je PR — Task-Ledger
-Status: bereit · Branch: feature/ci-7 · Review: am Ende
+Status: aktiv · Branch: feature/ci-7 · Review: am Ende
 Spec: docs/features/ci-7.md (Roadmap R-1130, R-1160, R-1194, R-1142)
 Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbst (die geänderten Jobs laufen im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,4 +34,13 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T1, T2
 
+### T4 — Abschlussprüfung: Test für retry.sh, install-deps ohne Abbruch, shellcheck-Gate  [ ]
+Komponente: scripts · Dateien: .github/scripts/retry.sh, .github/scripts/retry_test.sh, .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html
+Review: am Ende (Branch-Review)
+Änderung: Neu `.github/scripts/retry_test.sh` (SPDX, hermetisch: Erfolg sofort, Erfolg im n-ten Versuch, Exit des letzten Versuchs, 124 nach Frist, Usage 2), als Schritt im Job `ops-scripts`; `retry.sh` liest die Pause aus `RETRY_PAUSE` (Standard 5 s). `npx playwright install-deps chromium` läuft ohne `retry.sh` (dpkg), mit einem apt-Drop-in `Acquire::Retries`/`Acquire::http::Timeout`. `.github/scripts/*.sh` in die shellcheck-Zeile von `ops-scripts`. Doku DE+EN zum Playwright-Schritt nachgezogen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
+Abhängt von: T1
+
 ## Entscheidungen
+- T4 (Abschlussprüfung): `retry_test.sh` läuft als eigener Schritt in `ops-scripts`, nicht über `run.sh` (Harness-Pfad); lokal belegt mit `retry_test.sh: 10 passed, 0 failed` und drei Mutanten von `retry.sh`, die je rot werden.
