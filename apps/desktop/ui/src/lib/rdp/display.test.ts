@@ -43,17 +43,17 @@ describe('display (R-1100)', () => {
     expect(fitDisplay(800, 500, 'auto', 0)).toEqual({ width: 800, height: 500, scale: 100 });
   });
 
-  it('keeps the fixed size from the settings, 1280×720 without a valid one', () => {
+  it('keeps the fixed size from the settings, 1920×1080 without a valid one', () => {
     expect(parseSize('1920x1080')).toEqual({ width: 1920, height: 1080 });
-    expect(parseSize(null)).toEqual({ width: 1280, height: 720 });
-    expect(parseSize('big')).toEqual({ width: 1280, height: 720 });
+    expect(parseSize(null)).toEqual({ width: 1920, height: 1080 });
+    expect(parseSize('big')).toEqual({ width: 1920, height: 1080 });
     expect(parseSize('99999x70000')).toEqual({ width: 8192, height: 8192 });
     expect(fixedDisplay('1920x1080', 'auto', 1.5)).toEqual({
       width: 1920,
       height: 1080,
       scale: 150,
     });
-    expect(fixedDisplay(undefined, 'normal', 2)).toEqual({ width: 1280, height: 720, scale: 100 });
+    expect(fixedDisplay(undefined, 'normal', 2)).toEqual({ width: 1920, height: 1080, scale: 100 });
   });
 
   it('lays out fixed as fixed and every other mode as fit for now', () => {
