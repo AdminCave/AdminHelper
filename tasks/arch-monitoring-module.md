@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -174,6 +174,12 @@ Review: approve (.ah-out/review/arch-monitoring-module/T18.verdict.json)
 Änderung: Aus der PR-CI (`Go Agent (test, Windows)`, sechs Tests in `internal/discovery` rot): `cleanPath` prüft die Marker-Pfade des Katalogs (Linux-Pfade) mit `path.Clean` statt `filepath.Clean`, das unter Windows `/` zu `\` umschreibt und jeden Pfad-Marker verwarf; unter Linux gleich. Die bestehenden Marker-Tests sind der Beweis auf dem Windows-Runner.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Marker laufen nur unter Linux; kein dokumentiertes Verhalten ändert sich)
+
+### T19 — Desktop-UI: `MonitorCheck` trägt die Modul-Felder des Monitoring-Vertrags (R-1223)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts
+Änderung: Aus der Abschlussprüfung und der PR-CI (`Desktop-UI … vitest`, `types.contract.test.ts` rot): `MonitorCheckOut` trägt seit T6 `moduleId`, `moduleInstance` und `silent`; das Desktop-Interface `MonitorCheck` bekommt sie im Stil der übrigen Antwortfelder.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts
+Doku: keine (nur der Typ; die Anzeige baut arch-monitoring-ui)
 
 ## Entscheidungen
 - 2026-11-09 T1: Das Modul `port` prüft mit `proto` und `protocol: auto` (der Agent erkennt das Protokoll wie seine Erkennung und meldet es in `detail`) — ein Fund trägt das erkannte Protokoll, ohne Platzhalter in Katalog-Parametern bleibt jede Prüfung im eigenen Protokoll.
