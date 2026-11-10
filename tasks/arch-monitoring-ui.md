@@ -51,8 +51,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/monitoring
 Doku: → T12
 Abhängt von: T1
 
-### T4 — Desktop-UI: Klartext und Bausteine Karte, Querschnitts-Tabelle, Funde-Eingang (R-1225)  [ ]
+### T4 — Desktop-UI: Klartext und Bausteine Karte, Querschnitts-Tabelle, Funde-Eingang (R-1225)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/monitoringText.ts, apps/desktop/ui/src/lib/models/monitoringText.test.ts, apps/desktop/ui/src/components/monitoring/card/MonCard.svelte, apps/desktop/ui/src/components/monitoring/card/MonCard.test.ts, apps/desktop/ui/src/components/monitoring/cross/CrossTable.svelte, apps/desktop/ui/src/components/monitoring/cross/CrossTable.test.ts, apps/desktop/ui/src/components/monitoring/card/FindingsInbox.svelte, apps/desktop/ui/src/components/monitoring/card/FindingsInbox.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @37a8e5f39 2026-11-10T12:29:04+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T4.verdict.json)
 Änderung: `monitoringText.ts` (SPDX): Fühler-Status, Unterdrückungsgrund, Ablauf (Tage/Stunden, Einstufung nach Konzept §5 relativ zu L, mindestens 12 h), Alter und Einheiten als Sätze DE+EN. `MonCard` (Kopf mit Status, Titel, Kurzzeile; zu bei ok, auf bei Problem; Inhalt als Slot), `CrossTable` (Spalten, Sortierung, Filter, leere Ansicht), `FindingsInbox` (Liste mit übernehmen/alle übernehmen/ignorieren, Art neu/geändert/verschwunden) — nur Tokens und `components/ui/`. Neun Dateien: Bausteine und ihre Tests gehören in einen Commit, die Texte teilen sie.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitoringText.test.ts src/components/monitoring/card src/components/monitoring/cross
 Doku: → T12
