@@ -67,12 +67,12 @@ Verify: bash scripts/dev/verify.sh agent monitoring --strict
 Doku: → T9
 Abhängt von: T1, T3
 
-### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [?] (Frage 5: Firmware-Regel „Neustart nötig → warn“ beruht auf needs_reboot = „das anstehende Update braucht einen Neustart“ — update_reboot als info zusammen mit „Update verfügbar“ (Empfehlung), Regel streichen, oder warn behalten)
+### T5 — Monitoring: Katalogmodul `opnsense` (Erkennung, Checks, Regeln, Karte) (R-1248)  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/opnsense.py, apps/monitoring/tests/test_catalog_opnsense.py
 Änderung: `MODULE`:
 - Erkennung: `id: "opnsense"`, Marker `opnsense.core` (`/usr/local/opnsense/version/core`).
 - Ein Check je Ansicht mit den Feldern aus T4 und den Intervallen aus der Spec (5 min, `firmware` 1 h).
-- Regeln wie in der Spec §Datenmodell (Kevin 2026-11-10, Frage 4); die Karte zeigt Version, gestoppte Dienste, Gateways down, States in % und CARP-Rolle.
+- Regeln wie in der Spec §Datenmodell (Kevin 2026-11-10, Fragen 4 und 5); die Karte zeigt Version, gestoppte Dienste, Gateways down, States in % und CARP-Rolle.
 Tests:
 - das Modul lädt durch den Loader;
 - ein Bericht mit Marker-Treffer ergibt die Instanz `opnsense` mit allen Checks;
@@ -146,3 +146,4 @@ Task-Review: am Ende
 - 2026-11-10 T1: Statt `Read(ctx, view, run)` ein `Reader{Run, ModTime, Now}` mit `Read(ctx, view)`; so sind Aufrufer, mtime und Uhr für `check_age_s` an einer Stelle injizierbar, `nil` heißt `os.Stat`/`time.Now`.
 - 2026-11-10 T1: `gateways` zählt `force_down` getrennt als `forced_down` (vom Admin gewollt, kein Ausfall) und ein Gateway ohne Monitoring (`none` ohne Messwert, Quelle `StaticRoute::getMonitorStatus`) gar nicht; `max_loss_pct`/`max_delay_ms` fehlen ohne Messwert.
 - 2026-11-10 T1: `firmware` liefert `update_reboot` statt `needs_reboot`: `needs_reboot` aus `check.sh` heißt „das anstehende Update braucht einen Neustart“ (oder die Einstellung „immer neu starten“), nicht „Neustart steht aus“; das Feld ist nur mit Update wahr. Dazu `checked`, `connection`, `updates`, `major_upgrade`; `product_mirror` und `product_license` verlassen den Parser nie.
+- 2026-11-10 Kevin, Frage 5: `update_reboot` ist info, zusammen mit „Update verfügbar“ (Meldung nennt den Neustart); einen ausstehenden Neustart meldet der Systemcheck (`reboot_required`, warn), das Modul nicht (T5).

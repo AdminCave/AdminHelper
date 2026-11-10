@@ -104,7 +104,7 @@ Dazu ein Test mit Stubs wie `packaging_pkg_test.go`.
   - `services`: `total`, `running`, `stopped`, `stopped_names` (Komma-Liste). Ein Dienst mit `nocheck` zählt nicht.
   - `gateways`: `total`, `down`, `degraded` (delay/loss), `down_names`, `degraded_names`, `max_loss_pct`,
     `max_delay_ms`. Ein Gateway ohne Monitor (`none` bei abgeschaltetem dpinger) zählt nicht.
-  - `firmware`: `version`, `latest`, `update_available`, `needs_reboot`, `check_age_s` (Alter von
+  - `firmware`: `version`, `latest`, `update_available`, `update_reboot`, `check_age_s` (Alter von
     `/tmp/pkg_upgrade.json`, fehlt ohne Prüfung), `repository` (Status der letzten Prüfung).
   - `states`: `current`, `limit`, `used_pct`.
   - `carp`: `vips`, `master`, `backup`, `init`, `demotion`, `maintenance`.
@@ -113,7 +113,8 @@ Dazu ein Test mit Stubs wie `packaging_pkg_test.go`.
   - Gateway down → crit, Verlust oder Latenz → warn,
   - States ≥ 80 % → warn, ≥ 95 % → crit,
   - VIP in INIT → crit, Demotion > 0 → warn, Wartungsmodus → info,
-  - Firmware: Update verfügbar → info, Neustart nötig → warn.
+  - Firmware: Update verfügbar → info, auch wenn es einen Neustart braucht (`update_reboot`, Frage 5); einen
+    ausstehenden Neustart meldet der Systemcheck (`reboot_required`).
 - **Intervalle:** `services`, `gateways`, `states`, `carp` 5 min, `firmware` 1 h. Grund: `firmware product` startet
   mehrere PHP-Prozesse und `opnsense-update`/`opnsense-verify`.
 
@@ -202,8 +203,10 @@ Alles DE+EN (T9).
 
 ## Offene Fragen
 
-Keine. Kevin hat am 2026-11-10 alle vier Empfehlungen angenommen:
+Keine. Kevin hat am 2026-11-10 alle fünf Empfehlungen angenommen:
 1. **Verteilung:** signiertes Repo des Servers mit Vendor-Repo-Datei → T6.
 2. **Einstellungsseite:** Schalter und Status, Registrierung per Shell → T2.
 3. **HAProxy:** Modul in R-1231 für Linux und OPNsense, nicht hier.
 4. **Regeln und Schwellen:** wie oben → T5.
+5. **Firmware-Neustart:** `needs_reboot` heißt „das Update braucht einen Neustart“; `update_reboot` ist info mit
+   „Update verfügbar“, der ausstehende Neustart bleibt beim Systemcheck → T5.
