@@ -188,11 +188,26 @@ pub fn name_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// The last part of a remote path, for the name a download is saved under.
-pub fn remote_name(path: &str) -> &str {
-    path.rsplit('/')
-        .find(|part| !part.is_empty())
-        .unwrap_or("download")
+/// The name a download is offered under: the last part of its remote path. The server names it,
+/// so whatever a local file system reads as a separator or a drive, and control characters,
+/// become `_`; nothing usable left is "download".
+pub fn suggested_name(path: &str) -> String {
+    let last = path.rsplit('/').find(|part| !part.is_empty()).unwrap_or("");
+    let name: String = last
+        .chars()
+        .map(|c| {
+            if c == '\\' || c == ':' || c.is_control() || is_bidi_control(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if name.is_empty() || name == "." || name == ".." {
+        "download".to_string()
+    } else {
+        name
+    }
 }
 
 /// Why an action failed: on the server (its message, or the child's stderr when the child
@@ -390,9 +405,7 @@ impl Channel {
         let mut source = self.session.open(remote_path).await.map_err(remote)?;
         let part = part_path(local).map_err(Failure::App)?;
         let result = async {
-            let mut target = tokio::fs::File::create(&part)
-                .await
-                .map_err(Failure::Local)?;
+            let mut target = create_part(&part).await.map_err(Failure::Local)?;
             pump(
                 &mut source,
                 &mut target,
@@ -473,6 +486,32 @@ fn part_path(local: &Path) -> Result<PathBuf, AppError> {
     part.push(name);
     part.push(".ah-part");
     Ok(local.with_file_name(part))
+}
+
+/// The bidi controls a host could put into a name to make it read as another one (the set
+/// `HIDDEN` in `FilesPanel.svelte` shows as a replacement character).
+fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Creates the part file anew. Whatever already sits at its place (the rest of an aborted
+/// download, or a link someone put there) is removed and never written through.
+async fn create_part(part: &Path) -> std::io::Result<tokio::fs::File> {
+    match create_new(part).await {
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            tokio::fs::remove_file(part).await?;
+            create_new(part).await
+        }
+        other => other,
+    }
+}
+
+async fn create_new(path: &Path) -> std::io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await
 }
 
 /// Reads stderr to its end and keeps its tail.
@@ -800,11 +839,75 @@ mod tests {
 
     #[test]
     fn a_download_is_saved_under_the_last_part_of_its_path() {
-        assert_eq!(remote_name("/var/log/syslog"), "syslog");
-        assert_eq!(remote_name("notes.txt"), "notes.txt");
-        assert_eq!(remote_name("/srv/data/"), "data");
-        assert_eq!(remote_name("/"), "download");
-        assert_eq!(remote_name(""), "download");
+        assert_eq!(suggested_name("/var/log/syslog"), "syslog");
+        assert_eq!(suggested_name("notes.txt"), "notes.txt");
+        assert_eq!(suggested_name("/srv/data/"), "data");
+        assert_eq!(suggested_name("/"), "download");
+        assert_eq!(suggested_name(""), "download");
+    }
+
+    #[test]
+    fn a_suggested_name_names_no_other_folder_or_drive() {
+        assert_eq!(suggested_name("/srv/..\\..\\evil.bat"), ".._.._evil.bat");
+        assert_eq!(suggested_name("/srv/C:evil"), "C_evil");
+        assert_eq!(suggested_name("/srv/a\nb\u{1b}c"), "a_b_c");
+        assert_eq!(
+            suggested_name("/srv/invoice\u{202e}fdp.exe"),
+            "invoice_fdp.exe"
+        );
+        assert_eq!(
+            suggested_name("/srv/\u{061c}a\u{200e}\u{200f}\u{202a}\u{2066}\u{2069}"),
+            "_a_____"
+        );
+        assert_eq!(suggested_name("/srv/.."), "download");
+        assert_eq!(suggested_name("/srv/./"), "download");
+        assert_eq!(suggested_name("/srv/.hidden"), ".hidden");
+    }
+
+    #[tokio::test]
+    async fn a_part_file_left_behind_is_replaced_not_written_into() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-part-")
+            .expect("a private folder");
+        let part = dir.join(".x.ah-part");
+        std::fs::write(&part, b"old rest").unwrap();
+
+        let mut file = create_part(&part).await.expect("the part file");
+        file.write_all(b"new").await.unwrap();
+        file.flush().await.unwrap();
+        drop(file);
+        assert_eq!(std::fs::read(&part).unwrap(), b"new");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_link_at_the_part_file_is_not_followed() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-link-")
+            .expect("a private folder");
+        let elsewhere = dir.join("elsewhere");
+        std::fs::write(&elsewhere, b"keep").unwrap();
+        let part = dir.join(".x.ah-part");
+        std::os::unix::fs::symlink(&elsewhere, &part).unwrap();
+
+        let mut file = create_part(&part).await.expect("the part file");
+        file.write_all(b"new").await.unwrap();
+        file.flush().await.unwrap();
+        drop(file);
+        assert_eq!(std::fs::read(&elsewhere).unwrap(), b"keep");
+        assert!(!std::fs::symlink_metadata(&part).unwrap().is_symlink());
+        assert_eq!(std::fs::read(&part).unwrap(), b"new");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_folder_at_the_part_file_stops_the_download() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-dir-")
+            .expect("a private folder");
+        let part = dir.join(".x.ah-part");
+        std::fs::create_dir(&part).unwrap();
+        assert!(create_part(&part).await.is_err());
+        assert!(part.is_dir());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -5,19 +5,21 @@ Heavy: linux-full — Desktop-Journeys (eingebettetes Terminal, Dateien-Panel); 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1170, R-1171: Teildatei des Downloads exklusiv anlegen, Dateinamen-Vorschlag bereinigen  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/commands.rs
+### T1 — R-1170, R-1171: Teildatei des Downloads exklusiv anlegen, Dateinamen-Vorschlag bereinigen  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @d181e95ac 2026-11-10T02:03:03+01:00
+Review: approve (.ah-out/review/kern-terminal-3/T1.verdict.json)
 Änderung:
 - `download` legt die Teildatei mit `OpenOptions::create_new` an. Liegt eine alte Teildatei dort, wird sie entfernt
   und einmal neu exklusiv angelegt; scheitert auch das, bricht der Download mit Fehler ab.
 - Neue Funktion `sftp::suggested_name`: ersetzt `\`, `:`, `/` und Steuerzeichen durch `_`, `.`/`..`/leer →
   `download`. `sftp_download` schlägt diesen Namen vor; Fortschritt und Meldungen nennen ihn ebenso.
 - Tests: vorhandene Teildatei, eine Teildatei als Symlink (Ziel bleibt unverändert), Namensfälle.
-Verify: bash scripts/dev/verify.sh desktop --strict -- sftp::
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T7
 
 ### T2 — R-1155, R-1165, R-1166: PATH-Suche nur absolut, Fensterprüfung, `check` als bool  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/terminal.rs, apps/desktop/src-tauri/src/commands.rs
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/terminal.rs, apps/desktop/src-tauri/src/commands.rs
 Änderung:
 - `terminal::which` überspringt relative PATH-Einträge (alle Aufrufer).
 - `terminal_open_ssh` lehnt Fenster ab, die weder `main` noch ein losgelöstes Terminal-Fenster (`detached_id`) sind.
@@ -25,18 +27,18 @@ Komponente: desktop · Dateien: apps/desktop/src-tauri/src/terminal.rs, apps/des
 - `ansible_run` nimmt `check: bool`.
 - Tests: `which` mit relativem und absolutem Eintrag (der absolute gewinnt), Fensterprüfung (main, `terminal-3` ja;
   `rdp-…`, anderes nein).
-Verify: bash scripts/dev/verify.sh desktop --strict
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T7
 
 ### T3 — R-1174: SFTP wartet auf die Anmeldung der Sitzung  [ ]
-Komponente: desktop · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/commands.rs
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/commands.rs
 Änderung:
 - Hat die Sitzung einen ControlPath, wartet jeder SFTP-Befehl, bis der Socket existiert (Polling 250 ms, Deckel
   120 s). Endet die Sitzung vorher oder läuft der Deckel ab: Fehler „The session is not signed in yet“, der Nutzer
   aktualisiert danach. Ohne ControlPath (Windows) wie heute.
 - `pty.rs` wird nicht geändert (überlappt `feature/klein-kommentare-desktop-1`).
 - Tests: Socket erscheint nach kurzer Zeit (Befehl läuft), erscheint nie (Fehler nach dem Deckel, im Test kurz).
-Verify: bash scripts/dev/verify.sh desktop --strict -- sftp::
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
 Doku: → T7
 
 ### T4 — R-1144: Rückfrage vor mehrzeiligem Einfügen  [ ]
@@ -49,7 +51,7 @@ Komponente: desktop-ui · Dateien: apps/desktop/src-tauri/src/models.rs, apps/de
 - Tests: mehrzeilig fragt, Abbrechen fügt nichts ein, Bestätigen fügt ein, Einstellung aus fügt sofort ein; Rust:
   fehlendes Feld nimmt den Standard.
 - Begründung sieben Dateien: Einstellung über beide Seiten plus Dialog.
-Verify: bash scripts/dev/verify.sh desktop-ui desktop --strict
+Verify: bash scripts/dev/verify.sh desktop-ui desktop-rs --strict
 Doku: → T7
 
 ### T5 — R-1175: Broadcast an keine Sitzung meldet sich  [ ]

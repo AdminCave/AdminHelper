@@ -1132,7 +1132,7 @@ pub async fn sftp_download(
         ));
     }
     let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
-    let name = sftp::remote_name(&path).to_string();
+    let name = sftp::suggested_name(&path);
     let parent = window.clone();
     let suggested = name.clone();
     let chosen = blocking(move || {
