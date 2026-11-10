@@ -45,8 +45,8 @@ Ein Client, der heute einen Parameter doppelt sendet, bekommt 422. Rollback: die
 
 ## Doku-Impact
 
-Keine Seite unter `docs/` beschreibt das Verhalten bei doppelten Parametern; ein CHANGELOG-Eintrag
-(`changelog.d/kern-server-8.md`, Fixed).
+Die API-Referenz (`docs/developer/api-reference.html`, Abschnitt Fehler-Format, DE+EN) nennt den 422 bei doppelten
+Parametern (T2, aus der Abschlussprüfung); dazu ein CHANGELOG-Eintrag (`changelog.d/kern-server-8.md`, Fixed).
 
 ## Offene Fragen
 
