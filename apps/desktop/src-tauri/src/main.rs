@@ -24,6 +24,7 @@ mod probe;
 mod proxy;
 mod pty;
 mod rdp_embedded;
+mod renewal;
 mod session;
 mod sftp;
 mod storage;
@@ -145,6 +146,7 @@ fn main() {
         .manage(frpc_state)
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
+        .manage(renewal::new_state())
         .manage(session::SessionState::default())
         .manage(pty::PtyRegistry::default())
         .manage(rdp_embedded::RdpSessions::default())

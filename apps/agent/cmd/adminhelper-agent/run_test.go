@@ -5,12 +5,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/enroll"
 )
 
 // setStopWait shortens stopWait for one test.
@@ -270,5 +280,77 @@ func TestRunOnceFlagEndsWithASignal(t *testing.T) {
 
 	if got := pushErr.Load(); got != context.Canceled.Error() {
 		t.Fatalf("push context = %v, want %v", got, context.Canceled)
+	}
+}
+
+// captureLog sends the default slog logger into a buffer for one test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev, prevOut, prevFlags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	// SetDefault also redirects the log package, which restoring the slog default does not undo.
+	t.Cleanup(func() { slog.SetDefault(prev); log.SetOutput(prevOut); log.SetFlags(prevFlags) })
+	return &buf
+}
+
+// R-1054: the run names why it renewed the identity, and a failed query for the trust
+// generation is a warning, after which the run goes on.
+func TestRunRenewalLogNamesTheReason(t *testing.T) {
+	failure := errors.New("HTTP 429: slow down")
+	for name, c := range map[string]struct {
+		renewal enroll.Renewal
+		err     error
+		want    []string
+		absent  string
+	}{
+		"new trust generation": {enroll.NewTrust, nil,
+			[]string{"level=INFO", "mTLS client certificate renewed: the issuer has a new trust generation"}, "level=WARN"},
+		"half of the lifetime": {enroll.HalfLife, nil,
+			[]string{"level=INFO", "mTLS client certificate renewed: half of its lifetime has passed"}, "level=WARN"},
+		"no renewal": {enroll.NoRenewal, nil, nil, "renewed"},
+		"failed query": {enroll.NoRenewal, fmt.Errorf("trust generation: %w", failure),
+			[]string{"level=WARN", "Cert-Renew Fehler: trust generation: HTTP 429: slow down"}, "renewed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			monitorDir, frpDir := t.TempDir(), t.TempDir()
+			t.Setenv("ADMINHELPER_MONITOR_DIR", monitorDir)
+			t.Setenv("ADMINHELPER_FRP_DIR", frpDir)
+			conf := []byte("MONITOR_URL=https://192.0.2.10/api/v1/monitoring\n")
+			if err := os.WriteFile(filepath.Join(monitorDir, "monitor.conf"), conf, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dir := config.AgentPkiDir()
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{enroll.CertPath(dir), enroll.KeyPath(dir)} {
+				if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			old := maybeRenew
+			var gotDir, gotBase string
+			maybeRenew = func(_ context.Context, d, base string, _ time.Duration) (enroll.Renewal, error) {
+				gotDir, gotBase = d, base
+				return c.renewal, c.err
+			}
+			t.Cleanup(func() { maybeRenew = old })
+			out := captureLog(t)
+
+			maybeRenewIdentity(context.Background())
+
+			if gotDir != dir || gotBase != "https://192.0.2.10" {
+				t.Fatalf("maybeRenew(%q, %q), want (%q, %q)", gotDir, gotBase, dir, "https://192.0.2.10")
+			}
+			for _, want := range c.want {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("log %q is missing %q", out.String(), want)
+				}
+			}
+			if strings.Contains(out.String(), c.absent) {
+				t.Errorf("log %q holds %q", out.String(), c.absent)
+			}
+		})
 	}
 }

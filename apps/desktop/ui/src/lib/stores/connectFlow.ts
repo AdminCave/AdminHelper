@@ -118,7 +118,11 @@ export async function markRdpExit(correlationId: string): Promise<void> {
   if (!pending) return;
   rdpSessions.delete(correlationId);
   const open = await pending.catch(() => null);
-  if (!open) return;
+  if (open) await endOpenSession(open);
+}
+
+/** Ends `open` where it was begun: on the server or in the local history. */
+async function endOpenSession(open: OpenSession): Promise<void> {
   try {
     if (open.mode === 'server') {
       const { session } = get(sessionStore);
@@ -363,15 +367,23 @@ export async function initiateConnect(
 /**
  * Opens `resolved`, the target of the SSH connection `connection`, in a tab of the embedded
  * terminal. The tab shows how the start goes, so the status bar says nothing unless it failed.
+ * The session begun ends once the program of the tab ends or the tab is closed (R-1159); a
+ * program that ends before the session is written ends it right after.
  */
 async function connectEmbedded(
   connection: Connection,
   resolved: Connection,
   keepEditorOpen: boolean,
 ): Promise<void> {
-  if (!(await openTerminal(connection, resolved))) return;
+  let tabEnded!: () => void;
+  const ended = new Promise<void>((resolve) => (tabEnded = resolve));
+  if (!(await openTerminal(connection, resolved, () => tabEnded()))) return;
   try {
-    if (await markConnectionUsed(connection)) sessionsChanged();
+    const open = await markConnectionUsed(connection);
+    if (open) {
+      sessionsChanged();
+      void ended.then(() => endOpenSession(open));
+    }
   } catch (err) {
     reportError(errMsg(err));
   }

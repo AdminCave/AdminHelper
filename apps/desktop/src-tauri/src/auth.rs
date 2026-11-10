@@ -97,17 +97,11 @@ pub async fn login(
         )
         .await;
 
-    // Opportunistic auto-renew of the enrolled mTLS cert (~50% lifetime).
-    // Best-effort: a transient failure must not break a successful login. This
-    // is the only renew trigger now that startup re-authenticates with a fresh
-    // login instead of silently restoring the session from the keyring.
-    // Best-effort, but log a failure: login is the ONLY renew trigger, so a renew that fails for
-    // weeks (ca-issuer down, broken route) would otherwise be silent until the client cert expires
-    // and locks the user out under enforced mTLS. The warning lands in the diagnostics report
-    // (4.92).
-    if let Err(e) = crate::enrollment::maybe_renew(&user.server_url).await {
-        log::warn!("mTLS-Zertifikat-Renew fehlgeschlagen (best-effort, naechster Versuch beim naechsten Login): {e}");
-    }
+    // Opportunistic auto-renew of the enrolled mTLS cert: at ~50 % of its lifetime, or at
+    // once when the issuer has a new trust generation (R-1054). Best-effort: a transient
+    // failure must not break a successful login; the hourly check (`renewal.rs`, started by
+    // `commands::login`) tries again while the session lasts.
+    crate::renewal::renew_if_due(&user.server_url).await;
 
     Ok(user)
 }

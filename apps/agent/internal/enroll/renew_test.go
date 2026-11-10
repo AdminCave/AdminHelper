@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -356,14 +357,18 @@ func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
 	called := false
 	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
+	asked := answerTrust(t, "", nil)
 
 	dir := filepath.Join(t.TempDir(), "identity")
-	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-	if err != nil || done {
-		t.Fatalf("not provisioned -> (false, nil), got (%v, %v)", done, err)
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != NoRenewal {
+		t.Fatalf("not provisioned -> (NoRenewal, nil), got (%v, %v)", renewal, err)
 	}
 	if called {
 		t.Error("renewFunc darf bei nicht-provisioniert nicht laufen")
+	}
+	if n := asked.Load(); n != 0 {
+		t.Errorf("not provisioned -> no trust query, got %d", n)
 	}
 	// No lock either: taking it would create the directory and the lock file.
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
@@ -376,6 +381,7 @@ func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 	called := false
 	renewFunc = func(context.Context, string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
+	asked := answerTrust(t, "", nil)
 
 	dir := t.TempDir()
 	now := time.Now()
@@ -384,12 +390,15 @@ func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
 	mustWrite(t, CertPath(dir), certPEM)
 	mustWrite(t, KeyPath(dir), keyPEM)
 
-	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-	if err != nil || done {
-		t.Fatalf("not due -> (false, nil), got (%v, %v)", done, err)
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != NoRenewal {
+		t.Fatalf("not due -> (NoRenewal, nil), got (%v, %v)", renewal, err)
 	}
 	if called {
 		t.Error("renewFunc darf bei nicht-faelligem Cert nicht laufen")
+	}
+	if n := asked.Load(); n != 1 {
+		t.Errorf("not due -> one trust query, got %d", n)
 	}
 }
 
@@ -406,9 +415,9 @@ func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 	mustWrite(t, CertPath(dir), certPEM)
 	mustWrite(t, KeyPath(dir), keyPEM)
 
-	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-	if err != nil || !done {
-		t.Fatalf("due -> (true, nil), got (%v, %v)", done, err)
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != HalfLife {
+		t.Fatalf("due -> (HalfLife, nil), got (%v, %v)", renewal, err)
 	}
 	if !called {
 		t.Error("renewFunc muss bei faelligem Cert laufen")
@@ -419,8 +428,8 @@ func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 // commit, so it never interleaves with a provisioning and sees what one stored first.
 
 type renewResult struct {
-	done bool
-	err  error
+	renewal Renewal
+	err     error
 }
 
 // maybeRenewBehindLock stores a due identity in dir, takes the identity lock and starts
@@ -445,8 +454,8 @@ func maybeRenewBehindLock(t *testing.T, dir string) (<-chan renewResult, <-chan 
 	}
 	res := make(chan renewResult, 1)
 	go func() {
-		done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-		res <- renewResult{done, err}
+		renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+		res <- renewResult{renewal, err}
 	}()
 	select {
 	case <-renewed:
@@ -454,7 +463,7 @@ func maybeRenewBehindLock(t *testing.T, dir string) (<-chan renewResult, <-chan 
 		t.Fatal("MaybeRenew renewed while the identity lock was held")
 	case r := <-res:
 		unlock()
-		t.Fatalf("MaybeRenew returned (%v, %v) while the identity lock was held", r.done, r.err)
+		t.Fatalf("MaybeRenew returned (%v, %v) while the identity lock was held", r.renewal, r.err)
 	case <-time.After(500 * time.Millisecond):
 	}
 	return res, renewed, unlock
@@ -474,8 +483,8 @@ func awaitRenewResult(t *testing.T, res <-chan renewResult) renewResult {
 func TestMaybeRenewWaitsForTheIdentityLock(t *testing.T) {
 	res, renewed, unlock := maybeRenewBehindLock(t, t.TempDir())
 	unlock()
-	if r := awaitRenewResult(t, res); r.err != nil || !r.done {
-		t.Fatalf("after unlock -> (true, nil), got (%v, %v)", r.done, r.err)
+	if r := awaitRenewResult(t, res); r.err != nil || r.renewal != HalfLife {
+		t.Fatalf("after unlock -> (HalfLife, nil), got (%v, %v)", r.renewal, r.err)
 	}
 	select {
 	case <-renewed:
@@ -510,8 +519,8 @@ func TestMaybeRenewChecksTheIdentityUnderTheLock(t *testing.T) {
 			res, renewed, unlock := maybeRenewBehindLock(t, dir)
 			tc.change(t, dir)
 			unlock()
-			if r := awaitRenewResult(t, res); r.err != nil || r.done {
-				t.Fatalf("after unlock -> (false, nil), got (%v, %v)", r.done, r.err)
+			if r := awaitRenewResult(t, res); r.err != nil || r.renewal != NoRenewal {
+				t.Fatalf("after unlock -> (NoRenewal, nil), got (%v, %v)", r.renewal, r.err)
 			}
 			select {
 			case <-renewed:
@@ -553,6 +562,7 @@ func storeIdentityAt(t *testing.T, dir string, due bool) {
 func TestMaybeRenewDoesNotLockAnIdentityThatIsNotDue(t *testing.T) {
 	shortenLockWait(t, 300*time.Millisecond)
 	renewals := recordRenewals(t)
+	answerTrust(t, "", nil)
 	dir := t.TempDir()
 	storeIdentityAt(t, dir, false)
 	unlock, err := LockIdentity(context.Background(), dir)
@@ -562,9 +572,9 @@ func TestMaybeRenewDoesNotLockAnIdentityThatIsNotDue(t *testing.T) {
 	defer unlock()
 
 	// Had it waited for the held lock, it would return the error of LockIdentity.
-	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-	if err != nil || done {
-		t.Fatalf("not due, lock held -> (false, nil), got (%v, %v)", done, err)
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != NoRenewal {
+		t.Fatalf("not due, lock held -> (NoRenewal, nil), got (%v, %v)", renewal, err)
 	}
 	if *renewals != 0 {
 		t.Errorf("renewFunc ran %d times for an identity that is not due", *renewals)
@@ -584,13 +594,13 @@ func TestMaybeRenewGivesUpOnAnIdentityLockThatIsNotReleased(t *testing.T) {
 
 	res := make(chan renewResult, 1)
 	go func() {
-		done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-		res <- renewResult{done, err}
+		renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+		res <- renewResult{renewal, err}
 	}()
 	select {
 	case r := <-res:
-		if r.err == nil || r.done {
-			t.Fatalf("lock not released -> (false, error), got (%v, %v)", r.done, r.err)
+		if r.err == nil || r.renewal != NoRenewal {
+			t.Fatalf("lock not released -> (NoRenewal, error), got (%v, %v)", r.renewal, r.err)
 		}
 		if lockFile := filepath.Join(dir, LockFileName); !strings.Contains(r.err.Error(), lockFile) {
 			t.Fatalf("the error does not name the lock file %s: %v", lockFile, r.err)
@@ -611,9 +621,9 @@ func TestMaybeRenewReportsAnIdentityLockItCannotTake(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	done, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
-	if err == nil || done {
-		t.Fatalf("lock file unusable -> (false, error), got (%v, %v)", done, err)
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err == nil || renewal != NoRenewal {
+		t.Fatalf("lock file unusable -> (NoRenewal, error), got (%v, %v)", renewal, err)
 	}
 	if *renewals != 0 {
 		t.Errorf("renewFunc ran %d times without the identity lock", *renewals)
@@ -636,13 +646,13 @@ func TestMaybeRenewLockEndsWithTheContext(t *testing.T) {
 	defer cancel()
 	res := make(chan renewResult, 1)
 	go func() {
-		done, err := MaybeRenew(ctx, dir, "https://x", time.Second)
-		res <- renewResult{done, err}
+		renewal, err := MaybeRenew(ctx, dir, "https://x", time.Second)
+		res <- renewResult{renewal, err}
 	}()
 	select {
 	case r := <-res:
-		if r.err == nil || r.done {
-			t.Fatalf("ctx ended, lock held -> (false, error), got (%v, %v)", r.done, r.err)
+		if r.err == nil || r.renewal != NoRenewal {
+			t.Fatalf("ctx ended, lock held -> (NoRenewal, error), got (%v, %v)", r.renewal, r.err)
 		}
 		if !errors.Is(r.err, context.DeadlineExceeded) {
 			t.Fatalf("want an error that wraps context.DeadlineExceeded, got %v", r.err)
@@ -683,6 +693,7 @@ func TestStaleTempsRemovedByMaybeRenew(t *testing.T) {
 	orig := renewFunc
 	renewFunc = func(context.Context, string, string, time.Duration) error { return nil }
 	t.Cleanup(func() { renewFunc = orig })
+	answerTrust(t, "", nil)
 	now := time.Now()
 	day := 24 * time.Hour
 	for name, c := range map[string]struct {
@@ -705,5 +716,216 @@ func TestStaleTempsRemovedByMaybeRenew(t *testing.T) {
 		if _, err := os.Lstat(stale); os.IsNotExist(err) != c.removed {
 			t.Errorf("%s: stale staged file removed %v, want %v", name, os.IsNotExist(err), c.removed)
 		}
+	}
+}
+
+// R-1054: an identity that is not yet at half of its lifetime renews as soon as the issuer
+// names another trust generation than that of its ca.crt, at most once in a run.
+
+// answerTrust swaps trustFunc for one that answers generation and err and counts its calls.
+func answerTrust(t *testing.T, generation string, err error) *atomic.Int32 {
+	t.Helper()
+	orig := trustFunc
+	calls := new(atomic.Int32)
+	trustFunc = func(context.Context, string, string, time.Duration) (string, error) {
+		calls.Add(1)
+		return generation, err
+	}
+	t.Cleanup(func() { trustFunc = orig })
+	return calls
+}
+
+// renewWith swaps renewFunc for one that stores bundle as the new ca.crt, as Store keeps
+// the issuer's chain, and counts its calls.
+func renewWith(t *testing.T, bundle []byte) *atomic.Int32 {
+	t.Helper()
+	orig := renewFunc
+	calls := new(atomic.Int32)
+	renewFunc = func(_ context.Context, dir, _ string, _ time.Duration) error {
+		calls.Add(1)
+		return os.WriteFile(CAPath(dir), bundle, 0600)
+	}
+	t.Cleanup(func() { renewFunc = orig })
+	return calls
+}
+
+// rotatedBundle is a trust bundle of another generation than vectorPEM, and that generation.
+func rotatedBundle(t *testing.T) ([]byte, string) {
+	t.Helper()
+	now := time.Now()
+	bundle, _ := selfSigned(t, "AdminHelper Root CA 2", now.Add(-time.Hour), now.Add(time.Hour))
+	generation, err := TrustGeneration(bundle)
+	if err != nil || generation == vectorGeneration {
+		t.Fatalf("TrustGeneration(rotated) = (%q, %v), want another generation", generation, err)
+	}
+	return bundle, generation
+}
+
+// storeTrustedIdentity writes an identity into dir that is not due, with vectorPEM as ca.crt.
+func storeTrustedIdentity(t *testing.T, dir string) {
+	t.Helper()
+	storeIdentityAt(t, dir, false)
+	mustWrite(t, CAPath(dir), []byte(vectorPEM))
+}
+
+func TestMaybeRenewRenewsForANewTrustGeneration(t *testing.T) {
+	bundle, generation := rotatedBundle(t)
+	asked := answerTrust(t, generation, nil)
+	renewals := renewWith(t, bundle)
+	out := captureLog(t)
+	dir := t.TempDir()
+	storeTrustedIdentity(t, dir)
+
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != NewTrust {
+		t.Fatalf("new trust generation -> (NewTrust, nil), got (%v, %v)", renewal, err)
+	}
+	if a, r := asked.Load(), renewals.Load(); a != 1 || r != 1 {
+		t.Fatalf("asked %d times and renewed %d times, want once each", a, r)
+	}
+	if strings.Contains(out.String(), "level=WARN") {
+		t.Errorf("the renewed ca.crt has the issuer's generation, yet the log warns: %q", out.String())
+	}
+}
+
+// Should the agent and the issuer ever compute the generation differently, every run
+// renews again: the log names that.
+func TestMaybeRenewWarnsWhenTheRenewedTrustBundleStillDiffers(t *testing.T) {
+	_, generation := rotatedBundle(t)
+	answerTrust(t, generation, nil)
+	renewals := renewWith(t, []byte(vectorPEM))
+	out := captureLog(t)
+	dir := t.TempDir()
+	storeTrustedIdentity(t, dir)
+
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != NewTrust || renewals.Load() != 1 {
+		t.Fatalf("new trust generation -> (NewTrust, nil) and one renewal, got (%v, %v) and %d", renewal, err, renewals.Load())
+	}
+	for _, want := range []string{"level=WARN", vectorGeneration, generation, "the next run renews again"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("log %q is missing %q", out.String(), want)
+		}
+	}
+}
+
+// The same generation, or a server that does not know the route, renews nothing and
+// takes no lock: had it waited for the held lock, it would return the error of LockIdentity.
+func TestMaybeRenewKeepsAnIdentityOfTheIssuersTrustGeneration(t *testing.T) {
+	shortenLockWait(t, 300*time.Millisecond)
+	for name, generation := range map[string]string{
+		"the same generation":        vectorGeneration,
+		"a server without the route": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			asked := answerTrust(t, generation, nil)
+			renewals := recordRenewals(t)
+			dir := t.TempDir()
+			storeTrustedIdentity(t, dir)
+			unlock, err := LockIdentity(context.Background(), dir)
+			if err != nil {
+				t.Fatalf("LockIdentity: %v", err)
+			}
+			defer unlock()
+
+			renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+			if err != nil || renewal != NoRenewal {
+				t.Fatalf("-> (NoRenewal, nil), got (%v, %v)", renewal, err)
+			}
+			if a := asked.Load(); a != 1 || *renewals != 0 {
+				t.Fatalf("asked %d times and renewed %d times, want once and never", a, *renewals)
+			}
+		})
+	}
+}
+
+// A failed query (429, a network error) renews nothing and takes no lock; the error goes
+// to the run, which logs it and goes on.
+func TestMaybeRenewKeepsTheIdentityWhenTheTrustQueryFails(t *testing.T) {
+	shortenLockWait(t, 300*time.Millisecond)
+	failure := errors.New("HTTP 429: slow down")
+	answerTrust(t, "", failure)
+	renewals := recordRenewals(t)
+	dir := t.TempDir()
+	storeTrustedIdentity(t, dir)
+	unlock, err := LockIdentity(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	defer unlock()
+
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if !errors.Is(err, failure) || renewal != NoRenewal || !strings.Contains(err.Error(), "trust generation") {
+		t.Fatalf("failed query -> (NoRenewal, the query's error), got (%v, %v)", renewal, err)
+	}
+	if *renewals != 0 {
+		t.Errorf("renewFunc ran %d times after a failed query", *renewals)
+	}
+}
+
+// A due identity renews without asking: the renewal brings the current chain anyway.
+func TestMaybeRenewAsksNoTrustGenerationForADueIdentity(t *testing.T) {
+	asked := answerTrust(t, "", errors.New("asked"))
+	renewals := recordRenewals(t)
+	dir := t.TempDir()
+	storeIdentityAt(t, dir, true)
+	mustWrite(t, CAPath(dir), []byte(vectorPEM))
+
+	renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+	if err != nil || renewal != HalfLife {
+		t.Fatalf("due -> (HalfLife, nil), got (%v, %v)", renewal, err)
+	}
+	if a := asked.Load(); a != 0 || *renewals != 1 {
+		t.Fatalf("asked %d times and renewed %d times, want never and once", a, *renewals)
+	}
+}
+
+// A provisioning that holds the lock while the generations differ may store the new trust
+// bundle: MaybeRenew compares again under the lock and renews only what still differs.
+func TestMaybeRenewChecksTheTrustGenerationUnderTheLock(t *testing.T) {
+	for name, c := range map[string]struct {
+		provisioned bool
+		want        Renewal
+		renewals    int32
+	}{
+		"a provisioning stored the new bundle": {true, NoRenewal, 0},
+		"the old bundle stayed":                {false, NewTrust, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bundle, generation := rotatedBundle(t)
+			asked := answerTrust(t, generation, nil)
+			renewals := renewWith(t, bundle)
+			dir := t.TempDir()
+			storeTrustedIdentity(t, dir)
+			unlock, err := LockIdentity(context.Background(), dir)
+			if err != nil {
+				t.Fatalf("LockIdentity: %v", err)
+			}
+			res := make(chan renewResult, 1)
+			go func() {
+				renewal, err := MaybeRenew(context.Background(), dir, "https://x", time.Second)
+				res <- renewResult{renewal, err}
+			}()
+			select {
+			case r := <-res:
+				unlock()
+				t.Fatalf("MaybeRenew returned (%v, %v) while the identity lock was held", r.renewal, r.err)
+			case <-time.After(500 * time.Millisecond):
+			}
+			if a := asked.Load(); a != 1 {
+				unlock()
+				t.Fatalf("asked %d times before the lock, want once", a)
+			}
+			if c.provisioned {
+				mustWrite(t, CAPath(dir), bundle)
+			}
+			unlock()
+			if r := awaitRenewResult(t, res); r.err != nil || r.renewal != c.want {
+				t.Fatalf("after unlock -> (%v, nil), got (%v, %v)", c.want, r.renewal, r.err)
+			}
+			if r := renewals.Load(); r != c.renewals {
+				t.Fatalf("renewed %d times, want %d", r, c.renewals)
+			}
+		})
 	}
 }

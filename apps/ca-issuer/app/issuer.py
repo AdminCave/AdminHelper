@@ -189,7 +189,8 @@ class Issuer:
             raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
         return issued
 
-    def renew(self, verified_cert_pem: bytes, csr_pem: bytes) -> dict[str, str]:
+    def _presented(self, verified_cert_pem: bytes) -> tuple[x509.Certificate, str, str]:
+        """The certificate the gateway forwarded, with its CN and scope."""
         try:
             current = x509.load_pem_x509_certificate(verified_cert_pem)
         except ValueError as exc:
@@ -205,7 +206,17 @@ class Issuer:
         # Never trust the gateway header alone: the issuer holds the intermediates,
         # so it verifies the presented cert against the one of its scope itself (3.3).
         self._verify_ca_signed(current, scope)
+        return current, cn, scope
 
+    def trust_generation(self, verified_cert_pem: bytes) -> str:
+        """The trust generation of the presented certificate's scope (R-1054). Checked
+        like /renew but without the register: it signs nothing and tells only the hash of
+        public certificates every client of the scope receives as `chain` anyway."""
+        _, _, scope = self._presented(verified_cert_pem)
+        return self._intermediate(scope).trust_generation
+
+    def renew(self, verified_cert_pem: bytes, csr_pem: bytes) -> dict[str, str]:
+        current, cn, scope = self._presented(verified_cert_pem)
         csr = self._load_csr(csr_pem)
 
         # Renew at the CURRENT policy for the line's audience (browser vs native, as
