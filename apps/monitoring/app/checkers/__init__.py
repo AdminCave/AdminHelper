@@ -11,6 +11,7 @@ from app.checkers.forecast import DiskForecastChecker
 from app.checkers.http import HttpChecker
 from app.checkers.ping import PingChecker
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
+from app.checkers.probe import ProbeChecker
 from app.checkers.smart import SmartHealthChecker
 from app.checkers.system import SystemStateChecker
 from app.checkers.tcp import TcpChecker
@@ -53,6 +54,7 @@ _REGISTRY: dict[str, Checker] = {
     "smart_health": SmartHealthChecker(),
     "disk_forecast": DiskForecastChecker(),
     "system_state": SystemStateChecker(),
+    "probe": ProbeChecker(),
 }
 
 

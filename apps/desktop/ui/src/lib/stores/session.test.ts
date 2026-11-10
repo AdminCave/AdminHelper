@@ -53,6 +53,7 @@ const baseSettings = (over: Partial<Settings> = {}): Settings => ({
     copyOnSelect: true,
     rightClickPaste: true,
     confirmClose: true,
+    confirmMultilinePaste: false,
   },
   rdpScalingMode: 'auto',
   rdpWindowMode: 'fit',

@@ -19,11 +19,20 @@ proxyable and deliberately outside this contract.
 The developer docs (monitoring.html and api-reference.html, DE + EN) enumerate
 the same prefixes, and those enumerations drifted the same way (R-0382), so they
 are pinned to the tuple too.
+
+The guard itself is driven through the proxy at the end: each module prefix is
+forwarded with X-Internal-Key, and a path whose first segment merely starts with an
+allowed word (`agent-keys`, `findingsX`) is refused before anything is sent.
 """
 
 import re
 from pathlib import Path
 
+import httpx
+import pytest
+
+from app.core.config import MONITOR_API_KEY
+from app.modules.monitoring_proxy import router as proxy
 from app.modules.monitoring_proxy.router import _ALLOWED_PATH_PREFIXES
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -121,3 +130,77 @@ def test_docs_enumerate_exactly_the_allowlist():
         f"prefix list in the developer docs drifted from _ALLOWED_PATH_PREFIXES {expected}: "
         f"{documented}"
     )
+
+
+# --- the guard in the request path ------------------------------------------------------
+
+
+def _admin_headers(client) -> dict:
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+class _Monitoring:
+    """A real AsyncClient on a MockTransport: records what reached the monitoring service."""
+
+    def __init__(self, monkeypatch):
+        self.seen: list[httpx.Request] = []
+        monkeypatch.setattr(
+            proxy, "_client", httpx.AsyncClient(transport=httpx.MockTransport(self._handle))
+        )
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.seen.append(request)
+        return httpx.Response(200, json=[])
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "catalog"),
+        ("GET", "discovery/srv-1"),
+        ("POST", "discovery/srv-1/scan"),
+        ("GET", "findings"),
+        ("POST", "findings/f-1/adopt"),
+    ],
+)
+def test_the_module_prefixes_are_forwarded(
+    test_client, db_session, admin_user, monkeypatch, method, path
+):
+    monitoring = _Monitoring(monkeypatch)
+
+    resp = test_client.request(
+        method, f"/api/monitoring/{path}", headers=_admin_headers(test_client)
+    )
+
+    assert resp.status_code == 200, resp.text
+    [request] = monitoring.seen
+    assert (request.method, request.url.raw_path) == (method, f"/{path}".encode())
+    assert request.headers["x-internal-key"] == MONITOR_API_KEY
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # A prefix of the first segment is not the segment.
+        "findingsX",
+        "catalog-x",
+        "discoveryfoo/srv-1",
+        "checksum",
+        "agentx/srv-1/report",
+        # Internal-only routes start with an allowed word but are not under it.
+        "agent-keys",
+        "agent-keys/srv-1",
+        "servers/srv-1",
+    ],
+)
+def test_a_neighbour_of_an_allowed_prefix_is_refused(
+    test_client, db_session, admin_user, monkeypatch, path
+):
+    monitoring = _Monitoring(monkeypatch)
+
+    resp = test_client.get(f"/api/monitoring/{path}", headers=_admin_headers(test_client))
+
+    assert resp.status_code == 400, resp.text
+    assert monitoring.seen == []

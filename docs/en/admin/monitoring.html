@@ -50,6 +50,7 @@
               <tr><td><code>smart_health</code></td><td>SMART attributes + temperature for ATA (HDD/SSD) and NVMe; without data it names the reason (see <a href="#smart">SMART monitoring</a>)</td><td>Agent (push)</td></tr>
               <tr><td><code>system_state</code></td><td>System state of a Linux host: reboot required, clock not synchronized, pending security updates, OOM kills since the last report; at most <span class="badge badge-warning">warning</span> (see <a href="#system-state">System state</a>)</td><td>Agent (push)</td></tr>
               <tr><td><code>disk_forecast</code></td><td>"Disk full in X hours" prediction from the fill-rate history (see <a href="#disk-forecast">Disk forecast</a>)</td><td>Monitoring service (reads VictoriaMetrics)</td></tr>
+              <tr><td><code>probe</code></td><td>Measurement of a built-in agent sensor at a service on this host, adopted from a catalog module (see <a href="#modules">Modules and discovery</a>)</td><td>Agent (push)</td></tr>
             </tbody>
           </table>
           <div class="callout callout-note" data-reveal>
@@ -58,7 +59,7 @@
           </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <div><div class="callout-title">&ldquo;Run now&rdquo; exists for pull checks only</div><p>Push-evaluated checks (<code>agent_resources</code>, <code>service_process</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>docker_health</code>, <code>smart_health</code>, <code>system_state</code>) receive their data solely through the agent push and therefore <strong>cannot be triggered manually</strong> &ndash; the button is greyed out there and the API answers <code>409</code>. The same applies to disabled checks. <code>agent_ping</code> is deliberately exempt: it measures the <em>absence</em> of a push and is evaluated by the scheduler, so it can be run manually.</p></div>
+            <div><div class="callout-title">&ldquo;Run now&rdquo; exists for pull checks only</div><p>Push-evaluated checks (<code>agent_resources</code>, <code>service_process</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>docker_health</code>, <code>smart_health</code>, <code>system_state</code>, <code>probe</code>) receive their data solely through the agent push and therefore <strong>cannot be triggered manually</strong> &ndash; the button is greyed out there and the API answers <code>409</code>. The same applies to disabled checks. <code>agent_ping</code> is deliberately exempt: it measures the <em>absence</em> of a push and is evaluated by the scheduler, so it can be run manually.</p></div>
           </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -155,6 +156,7 @@
               <tr><td><code>docker_health</code></td><td><code>ignore_containers</code> (empty), <code>alert_on_unavailable</code> (true)</td></tr>
               <tr><td><code>system_state</code></td><td><code>check_reboot</code>, <code>check_time_sync</code>, <code>check_security_updates</code>, <code>check_oom</code> (true each, see <a href="#system-state">System state</a>)</td></tr>
               <tr><td><code>disk_forecast</code></td><td><code>warn_hours/crit_hours</code> (24/8), <code>window_hours</code> (24), <code>min_history_hours</code> (6)</td></tr>
+              <tr><td><code>probe</code></td><td>Rules from the catalog (<code>rules</code>), plus <code>interval_s</code> (300, 900, 3600 or 86400) and <code>timeout_s</code> (1–30, default 10), see <a href="#probe-status">Status of a probe check</a></td></tr>
             </tbody>
           </table>
 
@@ -254,6 +256,68 @@
 
           <h3 id="compare-servers">Compare servers (History tab)</h3>
           <p>The <strong>History</strong> tab of the monitoring page compares one metric across all servers with agent data: CPU, RAM, storage (the fullest mount of each server), load per CPU or network in (incoming traffic in Mbit/s, the bar relative to the busiest server), over the same periods as above. The <strong>ranking</strong> sorts the servers by their average in the shown window, with a bar, a sparkline, average and max; zooming in the chart reorders it. Up to four servers are in the chart, at first the four with the highest average; the checkbox or a click on the name selects a server, a fifth replaces the one chosen first. The choice stays when metric or period change.</p>
+
+          <h2 id="modules">Modules and discovery</h2>
+          <p>A <strong>module</strong> describes a service AdminHelper recognises on a host and watches with matching checks: how the agent recognises it (container image, systemd unit, process, marker file or package, port) and which measurements belong to it. The modules live in the <strong>catalog</strong> the monitoring service ships with; a new AdminHelper version can extend it. Today it holds the module <code>port</code> (<em>Listening port</em>): a TCP port that listens on an address other than loopback and belongs to no known service. The agent checks it every 15&nbsp;minutes in the protocol it recognised on it; if it does not answer as its protocol requires, the check turns <span class="badge badge-danger">critical</span>.</p>
+          <p>An adopted module becomes checks of type <code>probe</code>, one per measurement of the module, bound to the instance found (a container, a unit, a process or a port). These checks run in the agent, reach the monitoring service with the regular push and from then on behave like any other push check: status, <code>consecutive_fails</code>, maintenance windows and notifications apply unchanged. Adopting and discovery never delete a check. If you do not want a measurement, switch its check off rather than deleting it: a later catalog update creates a deleted check again (silent, see below).</p>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">User interface follows</div><p>The desktop client gets the findings inbox and the credentials dialog in one of the next versions. Until then you work through the monitoring API (<code>/api/monitoring/catalog</code>, <code>/api/monitoring/discovery/…</code>, <code>/api/monitoring/findings…</code>, admins only; routes in the <a href="../developer/monitoring.html#modules">monitoring stack</a>) and on the host through the agent CLI. The desktop client already shows the resulting <code>probe</code> checks in the check list.</p></div>
+          </div>
+
+          <h3 id="discovery">Discovery</h3>
+          <p>About once a day the agent collects an <strong>inventory</strong> of its host: right away on first contact, then at a random point 24 to 48&nbsp;hours after the last scan, and on the next agent run (at most 5&nbsp;minutes) after <code>POST /api/monitoring/discovery/{server_id}/scan</code>. The inventory holds:</p>
+          <ul>
+            <li>systemd units with their state,</li>
+            <li>listening TCP sockets with the process name and the container the process belongs to,</li>
+            <li>Docker containers in any state: name, image, compose project and service, state, health, ports and the paths they mount something at,</li>
+            <li>whether the marker paths and packages the catalog asks about exist,</li>
+            <li>the protocol on every port that listens on an address other than loopback.</li>
+          </ul>
+          <p>It holds names, ports and states only, <strong>never config contents, command lines or environment variables</strong>. The scan has a time frame of its own of 60&nbsp;seconds with a limit per part; if a part fails, the inventory counts as incomplete (<code>partial</code>). <code>GET /api/monitoring/discovery/{server_id}</code> returns a host's latest state.</p>
+          <p>To recognise a protocol the agent connects to the port, reads what the service sends unasked (SMTP, FTP, IMAP, POP3, SSH, a banner), otherwise sends a <code>HEAD / HTTP/1.0</code> without a <code>Host</code> header, and tries the same once inside TLS. It never touches ports 22, 3306 and 9100&ndash;9107 nor any port of <code>sshd</code>, <code>mysqld</code> and <code>mariadbd</code>: repeated connections lock the admin out there (OpenSSH penalties, MySQL <code>max_connect_errors</code>) or print the probe (raw printing on 9100&ndash;9107). They never become port findings either.</p>
+
+          <h3 id="findings">Findings inbox</h3>
+          <p>The monitoring service matches every inventory against the catalog. What it finds lands as a <strong>finding</strong> in the inbox (<code>GET /api/monitoring/findings?server_id=…&amp;status=open</code>), one per module instance:</p>
+          <table>
+            <thead><tr><th>Kind (<code>kind</code>)</th><th>Meaning</th><th>Adopting</th></tr></thead>
+            <tbody>
+              <tr><td><code>new</code></td><td>An instance that is not watched yet</td><td>creates the module's checks or switches the existing ones on again</td></tr>
+              <tr><td><code>changed</code></td><td>A watched instance whose module the catalog changed (measurements added or dropped)</td><td>creates missing checks and lifts the silence of new ones; what you switched off stays off</td></tr>
+              <tr><td><code>gone</code></td><td>A watched instance missing from two complete scans in a row</td><td>switches its checks off (they are kept)</td></tr>
+            </tbody>
+          </table>
+          <p>Adopt: <code>POST /api/monitoring/findings/{id}/adopt</code>, all open findings of a server with <code>POST /api/monitoring/findings/adopt-all?server_id=…</code>. The answer names the checks switched on, switched off and skipped; a check is skipped when the instance yields no target for it (no port or no matching container, say). Dismiss: <code>POST /api/monitoring/findings/{id}/dismiss</code>; the finding stays dismissed until the instance changes. An instance that was never adopted and disappears leaves the inbox silently. None of this deletes a check.</p>
+
+          <h3 id="silent-checks">Silent checks after a catalog update</h3>
+          <p>When a new version brings a measurement for a module you already watch, the monitoring service creates its check at start-up, but <strong>silent</strong> (<code>silent: true</code> in the check API): it is evaluated and shown but does not notify. The instance's finding turns <code>changed</code> and is open again; only once you adopt it does the new check notify like the others. A measurement the catalog removes leaves the existing check as you set it.</p>
+
+          <h3 id="probe-status">Status of a probe check</h3>
+          <p>A probe check rates the fields the agent's sensor returns (the <code>status_code</code> of an HTTP answer, the <code>days_left</code> of a certificate, the <code>ok</code> of a protocol answer, say) with the catalog's rules; the worst rule wins. Before that:</p>
+          <ul>
+            <li>The agent did not run the probe: without a stored credential (<code>no_credential</code>) or after a rejection with 401/403 (<code>denied</code>; the agent only tries again once the credential changes) <span class="badge badge-warning">warning</span>; a target that is no address of this host or that the agent never probes, an ambiguous target, a sensor the agent does not know, or invalid parameters <code>unknown</code>.</li>
+            <li>The last result is older than twice the interval (longer with a throttled agent) plus 5&nbsp;minutes: <code>unknown</code>, the agent no longer runs the probe.</li>
+            <li>The measurement failed (connection refused, time limit, wrong answer): <span class="badge badge-danger">critical</span> with the reason.</li>
+          </ul>
+          <p>The message names the measured values (<code>OK: field = value, …</code>). A probe runs at most every 5&nbsp;minutes (intervals 5&nbsp;min, 15&nbsp;min, 1&nbsp;h or 24&nbsp;h) and may take 1 to 30&nbsp;seconds (default 10).</p>
+
+          <h3 id="credentials">Credentials for probes</h3>
+          <p>Some measurements need a password or token, such as an application's status page. These credentials stay <strong>on the host</strong>: you store them there with the agent CLI; the monitoring service only knows their name (<code>&lt;module&gt;/&lt;instance&gt;/&lt;slot&gt;</code>) and learns with every report which names are stored, never their value.</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>sudo adminhelper-agent monitor credential set &lt;module&gt;/&lt;instance&gt;/default   # prompts without echo, or from stdin
+sudo adminhelper-agent monitor credential list                              # names only
+sudo adminhelper-agent monitor credential delete &lt;module&gt;/&lt;instance&gt;/default</code></pre>
+          <p>Depending on its use the value is a token (<code>bearer</code>, a header), <code>user:password</code> (<code>basic</code>) or a Redis password, at most 4000&nbsp;bytes without control characters. The file <code>credentials.json</code> sits next to <code>monitor.conf</code> (Linux <code>/etc/adminhelper/</code>, mode <code>0600</code>, owned by the agent's account; Windows <code>%ProgramData%\AdminHelper\</code>, SYSTEM and Administrators only). If it is open to other accounts, the agent uses no entry from it. The agent checks databases without a stored password through the local socket login (MariaDB <code>unix_socket</code> as root, PostgreSQL <code>peer</code> as <code>postgres</code>).</p>
+
+          <h3 id="security-model">Security model and residual risk</h3>
+          <ul>
+            <li><strong>Built-in sensors only:</strong> the monitoring service sends the agent a plan of sensor names and parameters. What a sensor does lives in the agent; an unknown sensor or a parameter outside its bounds does not run.</li>
+            <li><strong>Read-only:</strong> HTTP requests are <code>GET</code> or <code>HEAD</code> only, the database sensor runs fixed queries only (reachability, connections, replication, size), the log sensor returns counts only, never log lines.</li>
+            <li><strong>This host only:</strong> targets are loopback, the host's own addresses and its own containers. The agent refuses other hosts, ports 22, 3306 and 9100&ndash;9107, ports of <code>sshd</code>, <code>mysqld</code> and <code>mariadbd</code>, and the host's control daemons (container and VM management including the QEMU processes of the VMs, D-Bus, polkit, SSH and GPG agent).</li>
+            <li><strong>Credentials stay local</strong> and never appear in an error message; the agent only sends them to the target of the probe that names them.</li>
+            <li><strong>Self-throttle:</strong> the agent measures what each collector costs per run (duration, CPU time, time-limit hits) and reports it. If Docker, Proxmox, ZFS or SMART hit a time limit in two runs in a row, they run only every second run, up to every eighth if needed; three runs without a hit halve that again. For the probes the same factor stretches their intervals. Resources, system state and services always run. A collector held back leaves the status of its checks as it is.</li>
+          </ul>
+          <p><strong>Residual risk:</strong> whoever takes over the monitoring service can have the agent query single fields of local read endpoints with the built-in sensors, stored credentials included. The plan allows nothing beyond these read queries on the host itself.</p>
 
           <h2 id="templates">Templates</h2>
           <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
