@@ -1,5 +1,5 @@
 # Benachrichtigungen: Grenze für manuelle Verlaufseinträge, Eskalationsfrist beim Rückfall — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-5 · Review: pro Task
 Spec: docs/features/kern-notify-5.md (Roadmap R-1147, R-1186)
 Heavy: linux-full — Server-API (Benachrichtigungen); Sammellauf. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -36,8 +36,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_es
 Doku: diese Task
 Task-Review: am Ende
 
-### T4 — Abschlussprüfung: Kommentar an `critical_since`, Entwickler-Doku, Docstrings  [ ]
+### T4 — Abschlussprüfung: Kommentar an `critical_since`, Entwickler-Doku, Docstrings  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/models.py, apps/server/app/modules/notifications/escalation.py, apps/server/tests/test_notification_escalation.py, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ec765b9a3 2026-11-10T06:55:29+01:00
+Review: approve (.ah-out/review/kern-notify-5/T4.verdict.json)
 Änderung: Fund der Abschlussprüfung: der Kommentar an `critical_since` nennt den ersten kritischen Ping, seit T2 ist es
 der letzte Wechsel auf Kritisch, ein Rückfall auf Warnung leert ihn; dasselbe in der Entwickler-Doku DE+EN, dort auch
 die Grenze von 200 Einträgen von Hand; Docstrings aus T2 neu umbrochen.

@@ -4,11 +4,12 @@
 
 """R-1081: an unacknowledged critical incident escalates to the person's own channel.
 
-Pinned here: after the deadline since the first critical ping and not before; not once
+Pinned here: after the deadline since the incident last turned critical and not before; not once
 acknowledged or resolved, nor after a fall back to warning; once per person; again after a
-reopen and a new critical ping, and after critical again past a fall back; not for a muted row, server or category, a switched-off channel or one without a
-target; only while the person still sees the incident; regardless of the matrix; the quiet hours as for critical; the history entry; and a
-query count that does not grow with the candidates."""
+reopen and a new critical ping, and after critical again past a fall back; not for a muted
+row, server or category, a switched-off channel or one without a target; only while the
+person still sees the incident; regardless of the matrix; the quiet hours as for critical;
+the history entry; and a query count that does not grow with the candidates."""
 
 import json
 from datetime import timedelta
