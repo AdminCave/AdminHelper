@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui · Review: pro Task
 Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
 Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -139,8 +139,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui/T14.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts src/components/monitoring/MonitoringOverview.test.ts
 Doku: keine (nur Tests und Typen)
 
-### T15 — Desktop-UI: Test der Credential-Sitzung im Terminal ohne Snippets, Dateien und Broadcast (R-1225)  [ ]
+### T15 — Desktop-UI: Test der Credential-Sitzung im Terminal ohne Snippets, Dateien und Broadcast (R-1225)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/SshTerminal.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f0305bd1b 2026-11-10T16:41:32+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T15.verdict.json)
 Änderung: Fund der Abschlussprüfung (blocker): `SshTerminal.svelte` blendet in der Credential-Sitzung aus T10 (`session.credential`) Snippets, Dateien und den Broadcast-Hinweis aus, damit nichts in die Eingabe des Geheimnisses gerät, doch kein Test mountet eine solche Sitzung. Neuer Fall neben dem Playbook-Fall (R-1073): Credential-Sitzung zeigt ihr Ziel, aber weder Snippets noch Dateien noch den Broadcast-Hinweis; Gegenprobe ohne `!session.credential` rot.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/SshTerminal.test.ts
 Doku: keine (nur Test)
