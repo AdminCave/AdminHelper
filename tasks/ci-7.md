@@ -5,8 +5,10 @@ Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbs
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1130, R-1160, R-1194: Downloads mit Frist und Wiederholung  [ ]
+### T1 — R-1130, R-1160, R-1194: Downloads mit Frist und Wiederholung  [x]
 Komponente: scripts · Dateien: .github/scripts/retry.sh, .github/workflows/ci.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1a157292f 2026-11-10T07:44:17+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-1130 main@de42e484 Lauf 41888786175 (Desktop-Backend, Schritt-Timeout 10 min); R-1160 Lauf 42171086845 Job 127738815106 @358662df (Download Chrome Headless Shell hängt); R-1194 PR #418 Lauf 42465851987 (504 von github.com)
 Dedup-Key: bug:ci:.github/workflows/ci.yml:tauri-deps-apt-step-timeout
 Änderung: Neu `.github/scripts/retry.sh <versuche> <sekunden> <befehl…>` (SPDX), jeder Versuch unter `timeout`. Die beiden Schritte „Tauri system dependencies“ laden mit `apt-get update`/`install --download-only` unter `retry.sh 3 180` und `-o Acquire::Retries=3 -o Acquire::http::Timeout=30`, installieren danach aus dem Cache; Schritt-Limit 12 min. `frontend-e2e`: `actions/cache` auf `~/.cache/ms-playwright` (Schlüssel: Version von `playwright-core`), `install-deps chromium` und `install chromium` je unter `retry.sh`; der Kommentar nennt den CDN-Fall. curl an allen vier Stellen mit `--retry 5 --retry-delay 5 --connect-timeout 30`. Beweis ist der PR-Lauf; lokal `shellcheck` des Helfers und die Konsistenz-Tests, die `ci.yml` lesen.
