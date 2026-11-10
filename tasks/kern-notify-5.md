@@ -15,8 +15,10 @@ Beheben bleiben möglich. API-Test: an der Grenze 409 für Notiz und Wieder öff
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_incident_api.py tests/test_openapi_snapshot.py
 Doku: → T3
 
-### T2 — R-1186: Rückfall auf Warnung stoppt die Eskalationsfrist  [ ]
+### T2 — R-1186: Rückfall auf Warnung stoppt die Eskalationsfrist  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/escalation.py, apps/server/tests/test_notification_escalation.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @dc8ab7f06 2026-11-10T06:44:35+01:00
+Review: approve (.ah-out/review/kern-notify-5/T2.verdict.json)
 Änderung: Im `_trigger` setzt ein Vorfall, der nicht mehr kritisch ist, `critical_since` zurück und ruft `_rearm`;
 ein erneutes Kritisch beginnt eine neue Frist. Tests: kein Eskalieren nach Rückfall vor Fristende; neue Frist ab
 dem erneuten Kritisch; wer schon eskaliert war, eskaliert nach der neuen Frist erneut.
@@ -33,3 +35,4 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T2: Der Rückfall auf Warnung ruft `_rearm` (wie ein Reopen): ohne ihn eskaliert, wer in der ersten Frist schon eine Nachricht bekam, nach einem neuen Kritisch nicht mehr; Flattern eskaliert höchstens einmal je volle Frist am Stück kritisch.

@@ -263,8 +263,14 @@ def _problem(db: Session, event: IncomingEvent, level: int, now: datetime, done:
             incident.severity = severity
         # The escalation deadline runs from here, also for a reopen inside
         # REOPEN_WINDOW, which pings no one (escalation.escalate_due).
-        if incident.severity == "critical" and incident.critical_since is None:
-            incident.critical_since = now
+        # A fall back to warning stops it; critical again starts a new one, which may
+        # escalate to those the old one already reached.
+        if incident.severity == "critical":
+            if incident.critical_since is None:
+                incident.critical_since = now
+        elif incident.critical_since is not None:
+            incident.critical_since = None
+            _rearm(db, incident)
         # A single event folding into a bundle names its own server: the bundle keeps
         # the team text of its bundle events, which the other members' readers see.
         if not target.bundle or event.source_ids is not None:
