@@ -1,5 +1,5 @@
 # CI: Archiv-Cache aufräumen, tauri-cli-Pins vollständig prüfen — Task-Ledger
-Status: bereit · Branch: feature/ci-8 · Review: am Ende
+Status: erledigt · Branch: feature/ci-8 · Review: am Ende
 Spec: docs/features/ci-8.md (Roadmap R-1276, R-1277)
 Heavy: none — nur CI-Skripte und ein Prüfschritt; kein Stack-, Gateway-, PKI- oder Install-Pfad, die PR-CI fährt beides
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
