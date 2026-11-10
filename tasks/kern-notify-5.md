@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API (Benachrichtigungen); Sammellauf. Kein `scenari
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1147: höchstens 200 Verlaufseinträge von Hand, danach 409 für Notiz und Wieder öffnen  [ ]
+### T1 — R-1147: höchstens 200 Verlaufseinträge von Hand, danach 409 für Notiz und Wieder öffnen  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notification_incident_api.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @9e26e76bf 2026-11-10T06:36:17+01:00
+Review: approve (.ah-out/review/kern-notify-5/T1.verdict.json)
 Änderung: `MANUAL_MAX = 200` und Zählung der Einträge von Hand (Gegenstück zu `_AUTOMATIC`); `_team_action`
 antwortet für `note` und `reopened` 409, sobald der Vorfall `MANUAL_MAX` Einträge von Hand hat; Bestätigen und
 Beheben bleiben möglich. API-Test: an der Grenze 409 für Notiz und Wieder öffnen, Beheben und Bestätigen gehen.

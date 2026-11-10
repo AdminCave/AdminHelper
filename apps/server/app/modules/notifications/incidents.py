@@ -30,7 +30,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, not_, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core import config
@@ -54,6 +54,8 @@ from app.modules.users.models import User
 # The same span as HUB_COOLDOWN of the monitoring service, whose cooldown moved here.
 REOPEN_WINDOW = timedelta(minutes=30)
 HISTORY_MAX = 200
+# _cap_history keeps every entry a person made; past this many a note or a reopen is refused.
+MANUAL_MAX = 200
 TEXT_MAX = 2000
 ACTIVE = ("open", "acked")
 
@@ -803,6 +805,16 @@ def access(db: Session, user: User, incident_id: int, *, lock: bool = False) -> 
     if sight is None:
         return None
     return Access(row, incident, members, *sight)
+
+
+def history_full(db: Session, incident_id: int) -> bool:
+    """Whether the incident holds MANUAL_MAX entries a person made."""
+    count = (
+        db.query(func.count(_Entry.id))
+        .filter(_Entry.incident_id == incident_id, not_(_AUTOMATIC))
+        .scalar()
+    )
+    return count >= MANUAL_MAX
 
 
 def may_act(kind: str, state: str) -> bool:
