@@ -15,11 +15,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     setTab,
     type MonitoringTab,
   } from '$lib/stores/monitoring';
+  import { monitoringSilentMinutes } from '$lib/stores/monitoringPulse';
+  import { TriangleAlert } from '@lucide/svelte';
   import MonitoringOverview from '../components/monitoring/MonitoringOverview.svelte';
   import CompareView from '../components/monitoring/CompareView.svelte';
   import MonitoringAlerts from '../components/monitoring/MonitoringAlerts.svelte';
   import MonitoringTemplates from '../components/monitoring/MonitoringTemplates.svelte';
   import MonitoringLog from '../components/monitoring/MonitoringLog.svelte';
+  import Callout from '../components/ui/Callout.svelte';
   import Tabs from '../components/ui/Tabs.svelte';
   import { t } from '$lib/i18n';
 
@@ -49,6 +52,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   ]);
 </script>
 
+{#if $monitoringSilentMinutes !== null}
+  <div class="mon-silent" role="status">
+    <Callout
+      tone="warning"
+      icon={TriangleAlert}
+      title={$t('monitoring.silent.title', { minutes: $monitoringSilentMinutes })}
+    >
+      {$t('monitoring.silent.body')}
+    </Callout>
+  </div>
+{/if}
+
 <div class="mon-tabs">
   <Tabs
     {tabs}
@@ -75,6 +90,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 
 <style>
+  .mon-silent,
   .mon-tabs {
     margin-bottom: 18px;
   }

@@ -44,6 +44,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import FindingsInbox from './card/FindingsInbox.svelte';
   import ModuleCard from './card/ModuleCard.svelte';
   import MonCard, { opensByDefault } from './card/MonCard.svelte';
+  import MonCosts from './card/MonCosts.svelte';
   import SecLive from './section/SecLive.svelte';
   import SecNetwork from './section/SecNetwork.svelte';
   import SecHeartbeat from './section/SecHeartbeat.svelte';
@@ -445,6 +446,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {#each cards.rest as card (card.key)}
         {@render cardView(card)}
       {/each}
+      {#if realServer && selected}
+        <MonCosts serverId={selected} />
+      {/if}
     {/if}
   {/if}
 </div>

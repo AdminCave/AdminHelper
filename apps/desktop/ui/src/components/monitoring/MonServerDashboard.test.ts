@@ -7,8 +7,8 @@
 // "scan now" with the last scan, the cards (problems first and open, quiet ones closed
 // in a fixed order), one module card per instance with its catalog module, the
 // "Neu gefunden" card with adopt and its error states, what adopting left out, and the
-// muted note.
-// The sections, history, module card and modals are stubbed.
+// muted note. T6: the cost card closes the page, for a real server only.
+// The sections, history, module card, cost card and modals are stubbed.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   stub: vi.fn(),
   maint: vi.fn(),
   moduleCard: vi.fn(),
+  costs: vi.fn(),
   openCheckEditor: vi.fn(),
   requestScan: vi.fn(() => Promise.resolve(true)),
   adoptFinding: vi.fn((): Promise<unknown> => Promise.resolve(null)),
@@ -59,6 +60,7 @@ vi.mock('./MonitorCheckModal.svelte', () => ({ default: h.stub }));
 vi.mock('./MonHeartbeatBar.svelte', () => ({ default: h.stub }));
 vi.mock('./HistoryPanel.svelte', () => ({ default: h.stub }));
 vi.mock('./card/ModuleCard.svelte', () => ({ default: h.moduleCard }));
+vi.mock('./card/MonCosts.svelte', () => ({ default: h.costs }));
 vi.mock('./section/SecLive.svelte', () => ({ default: h.stub }));
 vi.mock('./section/SecNetwork.svelte', () => ({ default: h.stub }));
 vi.mock('./section/SecHeartbeat.svelte', () => ({ default: h.stub }));
@@ -368,6 +370,17 @@ describe('MonServerDashboard cards (R-1225)', () => {
     const el = await mount('srv-1', []);
     expect(el.querySelector('.mon-panel-empty-inline')?.textContent).toBe('Keine Checks vorhanden');
     expect(cardsOf(el)).toEqual([]);
+    expect(h.costs).not.toHaveBeenCalled();
+  });
+
+  it('closes the page with the cost card of a real server only', async () => {
+    await mount('srv-1');
+    expect(h.costs).toHaveBeenCalledTimes(1);
+    expect((h.costs.mock.calls[0] as unknown[])[1]).toMatchObject({ serverId: 'srv-1' });
+    cleanup();
+    h.costs.mockClear();
+    await mount('__none');
+    expect(h.costs).not.toHaveBeenCalled();
   });
 
   it('scan now asks the agent and holds while the request is open', async () => {
