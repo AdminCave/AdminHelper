@@ -46,7 +46,7 @@ Review: approve (.ah-out/review/kern-terminal-3/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T7
 
-### T4 — R-1144: Rückfrage vor mehrzeiligem Einfügen  [ ]
+### T4 — R-1144: Rückfrage vor mehrzeiligem Einfügen  [~] (verschoben in kern-terminal-4: überlappt feature/arch-namen (types.ts, dictionaries.ts))
 Komponente: desktop-ui · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/models/settings.ts, apps/desktop/ui/src/components/settings/TerminalSection.svelte, apps/desktop/ui/src/components/terminal/SshTerminal.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts
 Änderung:
 - `TerminalPrefs` bekommt `confirm_multiline_paste` (Standard true, serde default); die UI-Typen und Vorgaben folgen.
@@ -59,7 +59,7 @@ Komponente: desktop-ui · Dateien: apps/desktop/src-tauri/src/models.rs, apps/de
 Verify: bash scripts/dev/verify.sh desktop-ui desktop-rs --strict
 Doku: → T7
 
-### T5 — R-1175: Broadcast an keine Sitzung meldet sich  [ ]
+### T5 — R-1175: Broadcast an keine Sitzung meldet sich  [~] (verschoben in kern-terminal-4: überlappt feature/arch-namen (dictionaries.ts))
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts
 Änderung: `runSnippet` liest die Zahl aus `terminalBroadcast`; bei 0 eine Statusmeldung „An keine Sitzung gesendet“
 (DE/EN). Test: 0 meldet, 2 meldet nichts.
