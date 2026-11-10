@@ -2246,6 +2246,22 @@ mod tests {
     #[test]
     #[ignore = "needs the xrdp container (scripts/tests/desktop_e2e_rdp_embedded.sh)"]
     fn xrdp_live_session() {
+        // IronRDP logs why it ends a session; without a logger a red CI run shows only the
+        // closed WebSocket (R-1283).
+        struct StderrLog;
+        impl log::Log for StderrLog {
+            fn enabled(&self, metadata: &log::Metadata) -> bool {
+                metadata.level() <= log::Level::Info
+            }
+            fn log(&self, record: &log::Record) {
+                if self.enabled(record.metadata()) {
+                    eprintln!("{} {}: {}", record.level(), record.target(), record.args());
+                }
+            }
+            fn flush(&self) {}
+        }
+        let _ = log::set_logger(&StderrLog);
+        log::set_max_level(log::LevelFilter::Info);
         live_session::run();
     }
 
@@ -2340,6 +2356,11 @@ mod tests {
                         other => return other,
                     }
                 }
+            }
+
+            /// The phases reported so far, for the message of a failed step.
+            fn reported(&mut self) -> Vec<Report> {
+                std::iter::from_fn(|| self.phases.try_recv().ok()).collect()
             }
 
             /// Fails on any phase that came so far, but for automatic reconnects (R-1195).
@@ -2466,7 +2487,10 @@ mod tests {
                         Some(Ok(Message::Text(_) | Message::Ping(_) | Message::Pong(_))) => {
                             continue
                         }
-                        other => panic!("expected a picture, got {other:?}"),
+                        other => panic!(
+                            "expected a picture, got {other:?}; phases: {:?}",
+                            session.reported()
+                        ),
                     };
                     if header(&frame)[5..] == [1024, 768] {
                         break;

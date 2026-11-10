@@ -18,8 +18,10 @@ Beweis: reviewer kern-rdp-9 branch 2026-11-10, openh264.rs:168 (`removals(&dir)`
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::openh264
 Doku: changelog.d/kern-rdp-10.md
 
-### T3 — R-1283: Live-Test übersteht das Resize gegen xrdp  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs, changelog.d/kern-rdp-10.md
+### T3 — R-1283: Live-Test übersteht das Resize gegen xrdp  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/session.rs, changelog.d/kern-rdp-10.md, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f8764330f 2026-11-10T19:04:32+01:00
+Review: am Ende (Branch-Review)
 Beweis: PR #438 Lauf 42796178873 Job 129761820879 (main@8dd290b61 grün): „expected a picture, got Some(Err(Protocol(ResetWithoutClosingHandshake)))“ in der Resize-Phase; xrdp.log: „Core reset done“, „xrdp_egfx_create“, dann „SSL_read … unexpected eof“
 Dedup-Key: bug:desktop:session.rs:xrdp_live_session_resize_reset
 Änderung: Der Live-Test bekommt einen Logger und gibt beim Abbruch die gemeldete Phase aus. Mit lokaler Reproduktion (frischer Container je Lauf) die Ursache des Abbruchs nach Deactivate/Reactivate finden und beheben; Beweis: wiederholte Läufe von desktop_e2e_rdp_embedded ohne Abbruch, die Zahl steht in `## Entscheidungen`. Liegt die Ursache im Fork, gehört der Fork-Commit samt neuer `rev` (Cargo.toml, Cargo.lock) in diese Task.
@@ -27,3 +29,6 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- rdp_embedded::session
 Doku: changelog.d/kern-rdp-10.md
 
 ## Entscheidungen
+- 2026-11-10 T3: Ursache im Fork: xrdp sendet waehrend Deactivate/Reactivate PDUs auf statischen Kanaelen, `ConnectionActivationSequence` dekodierte jedes MCS-SDI als I/O-PDU und brach ab (Laenge 0x0400 sogar als Redirection gelesen) — Fork-Commit 2f1f0e30 stellt solche Frames zurueck, `ironrdp-client` verarbeitet sie nach der Finalisierung in Reihenfolge; Verwerfen haette Kanaldaten (rdpdr, cliprdr) verloren
+- 2026-11-10 T3: in der Erstverbindung werden zurueckgestellte Kanal-Frames nicht nachgereicht, nur nicht mehr zum Fehler — der Message-Kanal faengt connection.rs vorher ab, ein eigener Nachreich-Pfad dort waere neue Fork-Flaeche ohne Befund
+- 2026-11-10 T3: Beweis lokaler Repro (frischer xrdp-Container je Lauf, xrdp_live_session): vor dem Fix 1 von 15 rot, mit rev 2f1f0e30 0 von 30 rot; Fork-Test channel_pdu_during_activation_is_deferred rot ohne die Weiche
