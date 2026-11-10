@@ -1,5 +1,5 @@
 # Desktop-Terminal: Rückfrage vor mehrzeiligem Einfügen, Rückmeldung beim Broadcast — Task-Ledger
-Status: aktiv · Branch: feature/kern-terminal-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-terminal-4 · Review: pro Task
 Spec: docs/features/kern-terminal-4.md (Roadmap R-1144, R-1175)
 Heavy: none — nur Desktop-Einstellung und UI im Terminal-Tab; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Desktop-Journey
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/kern-terminal-4/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/terminals.test.ts src/components/terminal/SnippetsPanel.test.ts
 Doku: → T4
 
-### T4 — Doku DE+EN und Changelog  [ ]
+### T4 — Doku DE+EN und Changelog  [x]
 Komponente: desktop-ui · Dateien: docs/admin/index.html, docs/en/admin/index.html, changelog.d/kern-terminal-4.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @57a91cbf7 2026-11-10T10:17:40+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Liste der Terminal-Optionen nennt die Rückfrage (ab Werk aus), der Snippet-Absatz den Hinweis bei Broadcast ohne Sitzung; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/SshTerminal.test.ts
 Doku: diese Task
