@@ -1,5 +1,5 @@
 # kern-ansible-2 — Task-Ledger
-Status: bereit · Branch: feature/kern-ansible-2 · Review: am Ende
+Status: erledigt · Branch: feature/kern-ansible-2 · Review: am Ende
 Spec: docs/features/kern-ansible-2.md (Roadmap R-1213)
 Heavy: none — reine Eingabeprüfung im Desktop-Backend, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
