@@ -15,8 +15,10 @@ Baut auf R-1223 (`arch-monitoring-module`, PR #438: Fühler-Framework, Katalog, 
 bis T8 warten auf deren Merge, T7 zusätzlich auf R-1247 T8. Bake der Vorlage OPNsense 26.7 im Pool `adminhelper-ci`
 auf Kevins Wort aus der Roadmap-Zeile (2026-11-09).
 
-### T1 — Agent: OPNsense-Ansichten über configctl lesen und zu Feldern verdichten (R-1248)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/opnsense/opnsense.go, apps/agent/internal/opnsense/parse.go, apps/agent/internal/opnsense/opnsense_test.go, apps/agent/internal/opnsense/testdata
+### T1 — Agent: OPNsense-Ansichten über configctl lesen und zu Feldern verdichten (R-1248)  [x]
+Komponente: agent · Dateien: apps/agent/internal/opnsense/opnsense.go, apps/agent/internal/opnsense/parse.go, apps/agent/internal/opnsense/opnsense_test.go, apps/agent/internal/opnsense/testdata/carp_global.json, apps/agent/internal/opnsense/testdata/carp_ifconfig.json, apps/agent/internal/opnsense/testdata/carp_ifconfig_novip.json, apps/agent/internal/opnsense/testdata/firmware.json, apps/agent/internal/opnsense/testdata/firmware_unchecked.json, apps/agent/internal/opnsense/testdata/gateways.json, apps/agent/internal/opnsense/testdata/services.json, apps/agent/internal/opnsense/testdata/states.txt
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f879c7520 2026-11-10T08:52:57+01:00
+Review: approve (.ah-out/review/arch-opnsense-plugin/T1.verdict.json)
 Änderung: Neues Paket `internal/opnsense` ohne Build-Tag, alle Dateien mit SPDX. Es enthält die feste Allowlist der Ansichten `services|gateways|firmware|states|carp`. Jede Ansicht hat ein argv mit absolutem `/usr/local/sbin/configctl` und einen Zeitdeckel; `carp` hat zwei Aufrufe (`interface show carp`, `interface list ifconfig`). `Read(ctx, view, run)` bekommt den Aufrufer injiziert und gibt skalare Felder nach Spec §Datenmodell zurück. Die Parser verwerfen eine unbekannte Form ganz und nennen im Fehler weder Ausgabe noch Pfad. `check_age_s` kommt aus der mtime von `/tmp/pkg_upgrade.json`; auch das ist über eine injizierte Funktion ersetzbar. Fixtures unter `testdata/` sind aus den OPNsense-Quellen nachgebaut (Spec §Externe Integrationen) und gelten bis T8 als nicht verifiziert. Tests: jede Ansicht mit Normal-, Leer- und Fehlerfall, unbekannte Ansicht → Fehler, Abbruch über den Kontext, Textfelder ≤ 256 Zeichen.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
@@ -141,3 +143,6 @@ Task-Review: am Ende
 - 2026-11-10 Kevin, Frage 2: Einstellungsseite mit Schalter und Status; Registrierung nur per Shell, kein Token in `config.xml` (T2).
 - 2026-11-10 Kevin, Frage 3: HAProxy-Modul in R-1231 für Linux und OPNsense; R-1248 baut keines, `service list` liefert den Dienststatus.
 - 2026-11-10 Kevin, Frage 4: Regeln und Schwellen wie in der Spec vorgeschlagen (T5).
+- 2026-11-10 T1: Statt `Read(ctx, view, run)` ein `Reader{Run, ModTime, Now}` mit `Read(ctx, view)`; so sind Aufrufer, mtime und Uhr für `check_age_s` an einer Stelle injizierbar, `nil` heißt `os.Stat`/`time.Now`.
+- 2026-11-10 T1: `gateways` zählt `force_down` getrennt als `forced_down` (vom Admin gewollt, kein Ausfall) und ein Gateway ohne Monitoring (`none` ohne Messwert, Quelle `StaticRoute::getMonitorStatus`) gar nicht; `max_loss_pct`/`max_delay_ms` fehlen ohne Messwert.
+- 2026-11-10 T1: `firmware` liefert `update_reboot` statt `needs_reboot`: `needs_reboot` aus `check.sh` heißt „das anstehende Update braucht einen Neustart“ (oder die Einstellung „immer neu starten“), nicht „Neustart steht aus“; das Feld ist nur mit Update wahr. Dazu `checked`, `connection`, `updates`, `major_upgrade`; `product_mirror` und `product_license` verlassen den Parser nie.
