@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -167,8 +167,10 @@ Review: approve (.ah-out/review/arch-monitoring-module/T17.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html, docs/admin/monitoring.html (DE+EN)
 
-### T18 — Agent: Marker-Pfade der Erkennung auf jedem Betriebssystem in Schrägstrich-Form prüfen (R-1223)  [ ]
+### T18 — Agent: Marker-Pfade der Erkennung auf jedem Betriebssystem in Schrägstrich-Form prüfen (R-1223)  [x]
 Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fe23aff8e 2026-11-10T01:44:56+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T18.verdict.json)
 Änderung: Aus der PR-CI (`Go Agent (test, Windows)`, sechs Tests in `internal/discovery` rot): `cleanPath` prüft die Marker-Pfade des Katalogs (Linux-Pfade) mit `path.Clean` statt `filepath.Clean`, das unter Windows `/` zu `\` umschreibt und jeden Pfad-Marker verwarf; unter Linux gleich. Die bestehenden Marker-Tests sind der Beweis auf dem Windows-Runner.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Marker laufen nur unter Linux; kein dokumentiertes Verhalten ändert sich)

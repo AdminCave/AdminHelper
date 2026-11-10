@@ -17,7 +17,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"path"
 	"regexp"
 	"runtime"
 	"slices"
@@ -483,9 +483,10 @@ func validMarkers(markers []probe.Marker) []probe.Marker {
 	return valid
 }
 
-// cleanPath says whether p is an absolute path in its shortest form, without NUL.
+// cleanPath says whether p is an absolute path in its shortest form, without NUL. The catalog writes
+// Linux paths: path.Clean keeps their slashes on every OS, filepath.Clean turns them into "\" on Windows.
 func cleanPath(p string) bool {
-	return len(p) <= maxPathLen && strings.HasPrefix(p, "/") && filepath.Clean(p) == p && !strings.ContainsRune(p, 0)
+	return len(p) <= maxPathLen && strings.HasPrefix(p, "/") && path.Clean(p) == p && !strings.ContainsRune(p, 0)
 }
 
 // presentPaths returns which of paths exist and whether it got to check all of them. A stat that
