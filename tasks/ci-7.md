@@ -43,8 +43,9 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
 Abhängt von: T1
 
-### T5 — PR-CI: Server-Test zum Playwright-Schritt nachziehen  [ ]
+### T5 — PR-CI: Server-Test zum Playwright-Schritt nachziehen  [x]
 Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @80ab6e15a 2026-11-10T08:57:33+01:00
 Review: am Ende (Branch-Review)
 Beweis: PR #446 Lauf 42775105227, Job 129691660467: `FAILED tests/test_release_images.py::test_the_playwright_job_installs_chromium_alone` (erwartet `install --with-deps chromium`)
 Änderung: Der Test fährt den Schritt weiter mit einem `npx`-Stub, dazu ein `sudo`-Stub für das apt-Drop-in; er erwartet genau `install-deps chromium` und `install chromium` (Chromium allein) und dass das Drop-in nach `/etc/apt/apt.conf.d/` geht.
