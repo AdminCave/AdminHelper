@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Test, OpenH264-Download, Passwort beim Neu verbinden — Task-Ledger
-Status: geplant · Branch: feature/kern-rdp-9 · Review: pro Task
+Status: aktiv · Branch: feature/kern-rdp-9 · Review: pro Task
 Spec: docs/features/kern-rdp-9.md (Roadmap R-1258, R-1195, R-1201, R-1207, R-1196)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft nur in desktop_e2e_rdp_embedded (Teil gui des Sammellaufs); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
