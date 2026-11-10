@@ -91,6 +91,8 @@ import { closeEditor } from './editor';
 import { openRdp, openTerminal } from './terminals';
 import { requestPassword } from './passwordPrompt';
 
+const settleAll = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 const rdpConn = { id: 'r1', name: 'rdp', kind: 'rdp', host: 'h' } as never;
 
 // What resolve_connection rejects with for a loopback port of another workspace's tunnel.
@@ -701,6 +703,60 @@ describe('session history (R-1068)', () => {
     expect(sessionsChanged).toHaveBeenCalledTimes(1);
   });
 
+  // The end of the tab, as the last embedded start heard it.
+  const tabEnd = (): (() => void) => vi.mocked(openTerminal).mock.calls.at(-1)![2]!;
+  const embedded = (mode: 'local' | 'server', session: unknown = null) =>
+    state.setSession({
+      settings: { mode, storePasswords: false, sshConsole: 'embedded' },
+      session,
+    });
+
+  it('the end of an embedded SSH tab ends its session in the local history', async () => {
+    embedded('local');
+    await initiateConnect({ id: 's7', name: 's', kind: 'ssh', host: 'h' } as never);
+    expect(endSession).not.toHaveBeenCalled();
+    tabEnd()();
+    await vi.waitFor(() => expect(endSession).toHaveBeenCalledWith('local-s7'));
+    expect(endSession).toHaveBeenCalledTimes(1);
+    expect(sessionsChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it('the end of an embedded SSH tab ends its session on the server', async () => {
+    const session = { token: 't' };
+    embedded('server', session);
+    (connectionsApi.touch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 's7',
+      sessionId: 's-3',
+    });
+    await initiateConnect({ id: 's7', name: 's', kind: 'ssh', host: 'h' } as never);
+    tabEnd()();
+    await vi.waitFor(() =>
+      expect(connectionsApi.endSession).toHaveBeenCalledWith(session, 's7', 's-3'),
+    );
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
+  it('a tab that ended before its session was written ends that session right after', async () => {
+    embedded('local');
+    vi.mocked(openTerminal).mockImplementationOnce(async (_c, _r, onEnd) => {
+      onEnd?.();
+      return true;
+    });
+    await initiateConnect({ id: 's8', name: 's', kind: 'ssh', host: 'h' } as never);
+    await vi.waitFor(() => expect(endSession).toHaveBeenCalledWith('local-s8'));
+    expect(startSession).toHaveBeenCalledWith('s8');
+  });
+
+  it('an embedded start that did not open begins no session', async () => {
+    embedded('local');
+    vi.mocked(openTerminal).mockResolvedValueOnce(false);
+    await initiateConnect({ id: 's9', name: 's', kind: 'ssh', host: 'h' } as never);
+    tabEnd()();
+    await settleAll();
+    expect(startSession).not.toHaveBeenCalled();
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
   it('a start that fails ends its session at once; an unknown exit is ignored', async () => {
     (openConnection as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('no client'));
     await initiateConnect(rdpConn);
@@ -744,7 +800,7 @@ describe('SSH console (R-1069)', () => {
 
     await initiateConnect(sshConn);
 
-    expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved);
+    expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved, expect.any(Function));
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1', lastUsed: expect.any(String) }),
