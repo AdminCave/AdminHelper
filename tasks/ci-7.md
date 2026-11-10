@@ -1,5 +1,5 @@
 # Downloads der CI wiederholen, xrdp-Suite je PR — Task-Ledger
-Status: erledigt · Branch: feature/ci-7 · Review: am Ende
+Status: aktiv · Branch: feature/ci-7 · Review: am Ende
 Spec: docs/features/ci-7.md (Roadmap R-1130, R-1160, R-1194, R-1142)
 Heavy: none — nur `ci.yml`, ein CI-Helfer und Doku; Beweis ist die PR-CI selbst (die geänderten Jobs laufen im PR-Lauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -43,5 +43,24 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
 Abhängt von: T1
 
+### T5 — PR-CI: Server-Test zum Playwright-Schritt nachziehen  [ ]
+Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Review: am Ende (Branch-Review)
+Beweis: PR #446 Lauf 42775105227, Job 129691660467: `FAILED tests/test_release_images.py::test_the_playwright_job_installs_chromium_alone` (erwartet `install --with-deps chromium`)
+Änderung: Der Test fährt den Schritt weiter mit einem `npx`-Stub, dazu ein `sudo`-Stub für das apt-Drop-in; er erwartet genau `install-deps chromium` und `install chromium` (Chromium allein) und dass das Drop-in nach `/etc/apt/apt.conf.d/` geht.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
+Doku: keine (Test)
+Abhängt von: T4
+
+### T6 — PR-CI: Cache der Tauri-Systempakete  [ ]
+Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-7.md
+Review: am Ende (Branch-Review)
+Beweis: PR #446 Lauf 42775105227, Job 129691660617: der Spiegel lieferte rund 11 MB je Versuch von 3 min, 63,9 MB nötig; die Versuche setzten fort (52,4 → 41,0 MB offen), alle drei endeten mit 124
+Änderung: Die drei Schritte „Tauri system dependencies“ laden die .deb-Archive nach `~/apt-archives` (`-o Dir::Cache::Archives`), das `actions/cache` von Lauf zu Lauf hält (ein Schlüssel für alle drei Jobs); nach der Installation gehören die Dateien dem Runner, damit der Cache sie sichern kann. Ein langsamer Spiegel kostet dann nur noch die geänderten Pakete.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/ci-7.md
+Abhängt von: T1
+
 ## Entscheidungen
 - T4 (Abschlussprüfung): `retry_test.sh` läuft als eigener Schritt in `ops-scripts`, nicht über `run.sh` (Harness-Pfad); lokal belegt mit `retry_test.sh: 10 passed, 0 failed` und drei Mutanten von `retry.sh`, die je rot werden.
+- T6: Schlüssel des apt-Caches fest (`apt-tauri-<os>-v1`) statt je Lauf: ein veraltetes Archiv kostet nur den Download der geänderten Pakete (apt prüft jede Datei gegen den Index), ein Schlüssel je Lauf würde den Cache-Speicher mit 64 MB je Job füllen.
