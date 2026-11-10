@@ -42,16 +42,18 @@ func blockedPort(port uint16) bool {
 var blockedProcesses = map[string]bool{"sshd": true, "mysqld": true, "mariadbd": true}
 
 // hostDaemons are the processes, by name, that control this host or its guests (containers, virtual
-// machines, the system bus, its keys): a probe never talks to them, over TCP or a unix socket.
+// machines and the processes that run them, the system bus, its keys): a probe never talks to them,
+// over TCP or a unix socket.
 var hostDaemons = map[string]bool{
 	"dockerd": true, "containerd": true, "podman": true, "conmon": true, "crio": true, "lxd": true,
 	"incusd": true, "libvirtd": true, "snapd": true, "dbus-daemon": true, "dbus-broker": true,
-	"polkitd": true, "ssh-agent": true, "gpg-agent": true,
+	"polkitd": true, "ssh-agent": true, "gpg-agent": true, "kvm": true,
 }
 
-// hostDaemonPrefixes start the names of more such processes: the shims of containerd and the
-// daemons of libvirt and VirtualBox (virtqemud, virtlogd, VirtualBoxVM …).
-var hostDaemonPrefixes = []string{"containerd-shim", "virt"}
+// hostDaemonPrefixes start the names of more such processes: the shims of containerd, the daemons
+// of libvirt and VirtualBox (virtqemud, virtlogd, VirtualBoxVM …) and QEMU, which runs a virtual
+// machine and serves its monitor and consoles (qemu-system-x86, qemu-kvm; Proxmox names it kvm).
+var hostDaemonPrefixes = []string{"containerd-shim", "virt", "qemu"}
 
 // neverProbed says whether name (processKey) is a process a probe never talks to.
 func neverProbed(name string) bool {

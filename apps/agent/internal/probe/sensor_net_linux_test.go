@@ -82,7 +82,8 @@ func TestUnixSocketSensorConnects(t *testing.T) {
 	}
 
 	pid := int32(os.Getpid())
-	for _, name := range []string{"dockerd", "containerd-shim-runc-v2", "systemd", "systemd-resolved", "sshd", "Podman.exe"} {
+	for _, name := range []string{"dockerd", "containerd-shim-runc-v2", "systemd", "systemd-resolved", "sshd", "Podman.exe",
+		"kvm", "qemu-system-x86", "qemu-kvm"} {
 		h.names[pid] = name
 		if _, err := probe(path); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "belongs to "+name+", which the agent never probes") {
 			t.Errorf("a socket of %s = %v, want it refused", name, err)

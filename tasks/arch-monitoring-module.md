@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-module · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-module · Review: pro Task
 Spec: docs/features/arch-monitoring-module.md (Roadmap R-1223)
 Heavy: linux-full — `apps/agent` (neuer Plan-Abruf, Report v4) und eine neue Agent-Route im Server-Proxy; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -159,8 +159,10 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T14
 
-### T17 — Agent: Ziel-Wächter führt die QEMU-Prozesse der VMs als Steuerdienste (R-1223)  [ ]
+### T17 — Agent: Ziel-Wächter führt die QEMU-Prozesse der VMs als Steuerdienste (R-1223)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/discover_test.go, apps/agent/internal/probe/sensor_net_linux_test.go, docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @4a7fc10ac 2026-11-10T01:28:24+01:00
+Review: approve (.ah-out/review/arch-monitoring-module/T17.verdict.json)
 Änderung: Aus der Abschlussprüfung: `kvm` in `hostDaemons`, Präfix `qemu` in `hostDaemonPrefixes` (qemu-system-*, qemu-kvm); Tests für TCP (`NeverProbed`) und Unix-Socket (`checkPeer`); die Doku nennt die QEMU-Prozesse bei den Steuerdiensten.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html, docs/admin/monitoring.html (DE+EN)

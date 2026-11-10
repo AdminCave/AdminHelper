@@ -60,6 +60,9 @@ func TestNeverProbedTakesPortsAndProcesses(t *testing.T) {
 		{80, "MariaDBd", true},
 		{80, "dockerd", true},
 		{80, "containerd-shim-runc-v2", true},
+		{80, "kvm", true},
+		{80, "qemu-system-x86", true},
+		{80, "qemu-kvm", true},
 		{80, "nginx", false},
 		{9108, "", false},
 	} {
