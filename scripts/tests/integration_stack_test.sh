@@ -200,7 +200,7 @@ via_gateway() {
         -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000
 }
 
-# The container that holds the gateway's old address in (d): a one-off of the service redis,
+# The container that holds the gateway's old address in (d): a one-off of the service victoria,
 # which is on the default network alone, so the teardown's `down` removes it with the stack. A
 # container compose did not start would stay behind and keep the network in use, with `down`
 # still exiting 0.
@@ -220,7 +220,7 @@ gateway_moved() {
     # No fixed address: compose run takes none, and docker run --ip on a network without a subnet
     # of its own needs Docker 29.0.4 (moby#51583). Docker hands out the lowest free address (seen
     # on Docker 29; in CI the recreated gateway got its own back), the one the gateway just freed.
-    e2e_dc run -d --no-deps --name "$IP_PLACEHOLDER" --entrypoint sleep redis 600 >>"$log" 2>&1
+    e2e_dc run -d --no-deps --name "$IP_PLACEHOLDER" --entrypoint sleep victoria 600 >>"$log" 2>&1
     held=$(container_ip "$IP_PLACEHOLDER")
     echo "  info address the stopped gateway freed / the placeholder holds: '$old' / '$held'"
     [ "$held" = "$old" ] && ok "a placeholder holds the address the stopped gateway freed" \
@@ -389,18 +389,18 @@ rm -f "$E2E_REPO_ROOT/repo/apt/probe" 2>/dev/null || true
 # ca-issuer:8090, else it could forge the gateway's mTLS headers and mint certs. The
 # positive side (the gateway CAN reach it) is already proven by steps 1-9's enrollment,
 # which renews through the gateway→issuer path.
-# Positive control (server CAN reach a default-net peer, redis) + negative (NOT the
-# pki-only ca-issuer), so a broken exec/DNS can't masquerade as "isolated".
+# Positive control (server CAN reach redis, on the network it shares with it) + negative (NOT
+# the pki-only ca-issuer), so a broken exec/DNS can't masquerade as "isolated".
 if e2e_dc exec -T server python -c "
 import socket, sys
-socket.create_connection(('redis', 6379), timeout=4).close()          # default net: must work
+socket.create_connection(('redis', 6379), timeout=4).close()          # redis net: must work
 try:
     socket.create_connection(('ca-issuer', 8090), timeout=4).close()  # pki plane: must NOT
     sys.exit(2)
 except OSError:
     sys.exit(0)
 " >/dev/null 2>&1; then
-    ok "PKI plane isolated: server reaches redis (default) but NOT ca-issuer:8090 (1.1)"
+    ok "PKI plane isolated: server reaches redis but NOT ca-issuer:8090 (1.1)"
 else
     bad "segmentation check failed: server reached ca-issuer:8090, or the redis control failed"
 fi
@@ -890,8 +890,8 @@ frps_takeover() {
 frps_takeover
 
 # ── 12. frps is fenced off the internal net (3.28) ────────────────────────────
-# frps sits on its own frpedge net; redis:6379 + victoria:8428 (both auth-less) are on
-# the default net. A compromised frps must not reach them. redis is already up (server
+# frps sits on its own frpedge net; redis:6379 (on its own redis net) + victoria:8428 (on the
+# default net), both auth-less, are elsewhere. A compromised frps must not reach them. redis is already up (server
 # needs it); frps + victoria aren't in the gateway dependency chain, so start them here.
 e2e_dc up -d frps victoria >/dev/null 2>&1
 for _ in $(seq 1 15); do
@@ -905,6 +905,21 @@ elif e2e_dc exec -T frps sh -c 'nc -z -w2 redis 6379 || nc -z -w2 victoria 8428'
 else
     ok "frps (frpedge) cannot reach auth-less redis:6379 / victoria:8428 (3.28)"
 fi
+
+# ── 12b. redis sits on its own network with server and scheduler ──────────────
+# victoria stands for every other service of the default net: it reaches the server there
+# (positive control, so a broken exec/nc can't pass as isolated) but not redis:6379. redis-server
+# runs without the image's entrypoint, so no module of the image is loaded; vectorset is built in.
+if ! e2e_dc exec -T victoria sh -c 'nc -z -w2 server 8080' >/dev/null 2>&1; then
+    bad "victoria does not reach server:8080 on the default net — redis isolation check inconclusive"
+elif e2e_dc exec -T victoria sh -c 'nc -z -w2 redis 6379' >/dev/null 2>&1; then
+    bad "victoria reached redis:6379 from the default net — redis network not isolated"
+else
+    ok "a service of the default net reaches server:8080 but not redis:6379"
+fi
+modules=$(e2e_dc exec -T redis redis-cli MODULE LIST 2>&1 | awk 'prev == "name" { print } { prev = $0 }' | sort | tr '\n' ' ')
+[ "$modules" = "vectorset " ] && ok "redis loads no module of the image (MODULE LIST: $modules)" \
+    || bad "redis modules: '$modules', expected only the built-in vectorset"
 
 # ── 13. Processes of app in server, scheduler, ca-issuer and monitoring are not dumpable ──
 # Their images leave every ELF program in the bin directories and below /usr/lib/postgresql for

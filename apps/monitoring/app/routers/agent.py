@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime
+from itertools import islice
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.exceptions import RequestValidationError
@@ -31,12 +33,45 @@ from app.core.bounds import find_unstorable
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, victoria
+from app.discovery import apply_credentials, apply_discovery
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
+from app.module_plan import build_plan
+from app.schemas import AgentPlanOut
 from app.template_suggestions import store_host_facts
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# The collector a push check lives on. A collector the agent's self-throttle skipped in
+# this run sent no data: its checks keep their state instead of turning unknown.
+_COLLECTOR_OF_CHECK = {
+    "docker_health": "docker",
+    "proxmox_backup": "proxmox",
+    "zfs_health": "zfs",
+    "smart_health": "smart",
+}
+_MAX_COLLECTORS = 32
+_COLLECTOR_NAME = re.compile(r"[a-z0-9_]{1,32}")
+_COLLECTOR_NUMBERS = ("duration_ms", "cpu_ms", "timeouts", "factor")
+
+
+def _require_own_server(auth_server_id: str, server_id: str) -> None:
+    if auth_server_id != "__internal__" and auth_server_id != server_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="API key does not belong to this server"
+        )
+
+
+@router.get("/agent/{server_id}/plan", response_model=AgentPlanOut)
+def agent_plan(
+    server_id: str,
+    db: Session = Depends(get_db),
+    auth_server_id: str = Depends(require_agent),
+):
+    """The agent's next run: its probe checks, the markers to look for and whether to scan."""
+    _require_own_server(auth_server_id, server_id)
+    return build_plan(db, server_id)
 
 
 @router.post("/agent/{server_id}/report")
@@ -48,17 +83,17 @@ def agent_report(
     auth_server_id: str = Depends(require_agent),
 ):
     """Agent pushes metrics directly to the monitoring service."""
-    if auth_server_id != "__internal__" and auth_server_id != server_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="API key does not belong to this server"
-        )
+    _require_own_server(auth_server_id, server_id)
 
     record_agent_report(server_id)
     _record_liveness(db, server_id)
     _refuse_unstorable_report(server_id, report)
 
     _store_host_facts(db, server_id, report)
-    lines = _report_lines(server_id, report)
+    _store_discovery(db, server_id, report)
+    collectors = _collectors(report)
+    lines = _report_lines(server_id, report) + _collector_lines(server_id, collectors)
+    throttled = {name for name, entry in collectors.items() if entry.get("throttled") is True}
     if lines:
         victoria.write(lines)
 
@@ -73,6 +108,8 @@ def agent_report(
     check_lines: list[str] = []
     now = utcnow_naive()
     for check in _push_checks(db, server_id):
+        if _COLLECTOR_OF_CHECK.get(check.check_type) in throttled:
+            continue
         # Isolate each check: a single broken check.config (or a checker raising)
         # must not abort the evaluation of all other checks for this server
         # (same isolation as the scheduler path in check_engine.execute_check).
@@ -144,6 +181,49 @@ def _store_host_facts(db: Session, server_id: str, report: dict) -> None:
     host = report.get("host")
     if isinstance(host, dict):
         store_host_facts(db, server_id, host)
+
+
+def _store_discovery(db: Session, server_id: str, report: dict) -> None:
+    # Before the check loop like the host facts: each store commits or rolls back the
+    # request's session on its own, which must not drop check states not yet committed.
+    # Each block on its own: a broken one costs only itself, never the report.
+    for key, store in (("discovery", apply_discovery), ("credentials", apply_credentials)):
+        if key not in report:
+            continue
+        try:
+            store(db, server_id, report[key])
+        except Exception as exc:
+            db.rollback()
+            logger.error(
+                "Agent report block %s of %s dropped: %s", key, server_id, type(exc).__name__
+            )
+
+
+def _collectors(report: dict) -> dict[str, dict]:
+    own = report.get("self")
+    collectors = own.get("collectors") if isinstance(own, dict) else None
+    if not isinstance(collectors, dict):
+        return {}
+    return {
+        name: entry
+        for name, entry in islice(collectors.items(), _MAX_COLLECTORS)
+        if isinstance(name, str) and _COLLECTOR_NAME.fullmatch(name) and isinstance(entry, dict)
+    }
+
+
+def _collector_lines(server_id: str, collectors: dict[str, dict]) -> list[str]:
+    ts = int(time.time())
+    lines = []
+    for name, entry in collectors.items():
+        tags = {"server_id": server_id, "collector": name}
+        for key in _COLLECTOR_NUMBERS:
+            value = agent_number(entry.get(key))
+            if value is not None and value >= 0:
+                lines.append(format_line(f"monitor_agent_collector_{key}", tags, value, ts))
+        throttled = entry.get("throttled")
+        if isinstance(throttled, bool):
+            lines.append(format_line("monitor_agent_collector_throttled", tags, int(throttled), ts))
+    return lines
 
 
 def _report_lines(server_id: str, report: dict) -> list[str]:
@@ -242,6 +322,10 @@ def _evaluate_push_check(
     nothing of a check is returned before its block has ended."""
     with db.begin_nested():
         config = json.loads(check.config) if check.config else {}
+        if check.check_type == "probe":
+            # A probe's result sits under its check id in the report; the config, stored
+            # as written, cannot carry the id of its own row.
+            config["_check_id"] = check.id
 
         # Reuse the checker registry instead of a hand-written if/elif that
         # duplicated the push-checker list across imports, the in_-filter and

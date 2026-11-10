@@ -17,7 +17,7 @@ import pytest
 
 from app.core.auth import create_access_token
 from app.modules.notifications import stream_hub
-from app.modules.notifications.incidents import ingest
+from app.modules.notifications.incidents import MANUAL_MAX, ingest
 from app.modules.notifications.models import (
     Notification,
     NotificationIncident,
@@ -407,6 +407,43 @@ class TestTeamActions:
         res = test_client.post(url, headers=h, json={"text": "rebooted"})
         assert res.status_code == 200, res.text
         assert res.json()["state"] == "resolved"
+
+    def test_a_full_history_refuses_notes_and_reopens_but_not_ack_or_resolve(
+        self, test_client, db_session, servers
+    ):
+        admin = _admin(db_session)
+        ingest(db_session, _check("critical"), now=_at(0))
+        (incident,) = _incidents(db_session)
+        db_session.add_all(
+            NotificationIncidentEvent(
+                incident_id=incident.id, at=_at(1), kind="note", actor_id=admin.id, text="n"
+            )
+            for _ in range(MANUAL_MAX - 1)
+        )
+        db_session.commit()
+        h = _auth(admin)
+        url = f"{API}/incidents/{incident.id}"
+
+        last = test_client.post(f"{url}/notes", headers=h, json={"text": "the last one"})
+        assert last.status_code == 200, "automatic entries do not count"
+        full = test_client.post(f"{url}/notes", headers=h, json={"text": "one too many"})
+        assert full.status_code == 409
+        assert full.json()["detail"] == (
+            f"The history of this incident is full ({MANUAL_MAX} entries by hand)"
+        )
+
+        ack = test_client.post(f"{API}/incidents/ack", headers=h, json={"ids": [incident.id]})
+        assert ack.json() == {"updated": 1, "skipped": []}
+        assert test_client.post(f"{url}/resolve", headers=h).status_code == 200
+        assert test_client.post(f"{url}/reopen", headers=h).status_code == 409
+        db_session.refresh(incident)
+        assert incident.state == "resolved"
+        notes = (
+            db_session.query(NotificationIncidentEvent)
+            .filter(NotificationIncidentEvent.kind == "note")
+            .count()
+        )
+        assert notes == MANUAL_MAX
 
     def test_a_team_action_nudges_every_holder(
         self, test_client, db_session, servers, reader, published

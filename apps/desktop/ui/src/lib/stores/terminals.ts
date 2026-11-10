@@ -555,10 +555,25 @@ export function openRdp(connection: Connection, password?: string): Promise<RdpO
   return startRdp(key, run, true);
 }
 
-/** Starts the RDP session of tab `key` anew; one still running ends first. */
-export function reconnectRdp(key: string): Promise<boolean> {
+/** A login asked anew for a tab: the connection with the user as typed, and the password typed
+ * for it; without one Rust takes the stored one. */
+export interface RdpLogin {
+  connection: Connection;
+  password: string | undefined;
+}
+
+/**
+ * Starts the RDP session of tab `key` anew; one still running ends first. With `login` this and
+ * every later start of the tab use it instead of what the tab started with.
+ */
+export function reconnectRdp(key: string, login?: RdpLogin): Promise<boolean> {
   const run = rdpRuns.get(key);
-  return run ? startRdp(key, run).then((open) => open === 'started') : Promise.resolve(false);
+  if (!run) return Promise.resolve(false);
+  if (login) {
+    run.password = login.password;
+    update(key, { connection: login.connection, resolved: login.connection });
+  }
+  return startRdp(key, run).then((open) => open === 'started');
 }
 
 /** Ends the RDP session of tab `key`; the tab stays and shows it disconnected. */

@@ -4,11 +4,12 @@
 
 """R-1081: an unacknowledged critical incident escalates to the person's own channel.
 
-Pinned here: after the deadline since the first critical ping and not before; not once
-acknowledged or resolved; once per person; again after a reopen and a new critical
-ping; not for a muted row, server or category, a switched-off channel or one without a
-target; only while the person still sees the incident; regardless of the matrix; the quiet hours as for critical; the history entry; and a
-query count that does not grow with the candidates."""
+Pinned here: after the deadline since the incident last turned critical and not before; not once
+acknowledged or resolved, nor after a fall back to warning; once per person; again after a
+reopen and a new critical ping, and after critical again past a fall back; not for a muted
+row, server or category, a switched-off channel or one without a target; only while the
+person still sees the incident; regardless of the matrix; the quiet hours as for critical;
+the history entry; and a query count that does not grow with the candidates."""
 
 import json
 from datetime import timedelta
@@ -219,6 +220,36 @@ class TestStop:
 
         assert escalate_due(db_session, _at(23)) == 0
         assert escalate_due(db_session, _at(24)) == 1
+        assert len(_escalations(db_session, user)) == 2
+
+    def test_not_after_a_fall_back_to_warning(self, db_session, web01, published):
+        _person(db_session)
+        ingest(db_session, _check(), now=T0)
+        ingest(db_session, _check("warning", severity="warning"), now=_at(5))
+
+        assert _incident(db_session).severity == "warning"
+        assert _incident(db_session).critical_since is None
+        assert escalate_due(db_session, _at(10)) == 0
+
+    def test_critical_again_starts_a_new_deadline(self, db_session, web01, published):
+        _person(db_session)
+        ingest(db_session, _check(), now=T0)
+        ingest(db_session, _check("warning", severity="warning"), now=_at(5))
+        ingest(db_session, _check(), now=_at(8))
+
+        assert _incident(db_session).critical_since == _at(8)
+        assert escalate_due(db_session, _at(17)) == 0
+        assert escalate_due(db_session, _at(18)) == 1
+
+    def test_again_after_a_fall_back_and_a_new_deadline(self, db_session, web01, published):
+        user = _person(db_session)
+        ingest(db_session, _check(), now=T0)
+        assert escalate_due(db_session, _at(10)) == 1
+        ingest(db_session, _check("warning", severity="warning"), now=_at(12))
+        ingest(db_session, _check(), now=_at(20))
+
+        assert escalate_due(db_session, _at(29)) == 0
+        assert escalate_due(db_session, _at(30)) == 1
         assert len(_escalations(db_session, user)) == 2
 
 
