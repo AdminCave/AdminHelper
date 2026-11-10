@@ -1,5 +1,5 @@
 # Betriebsskripte: .env-Leser, Rollen-Passwörter, PostgreSQL-18-Umzug — Task-Ledger
-Status: bereit · Branch: feature/ops-7 · Review: pro Task
+Status: erledigt · Branch: feature/ops-7 · Review: pro Task
 Spec: docs/features/ops-7.md (Roadmap R-1114, R-1115, R-1138)
 Heavy: linux-full — `scripts/backup.sh`, `scripts/restore.sh` und `scripts/update.sh` im Diff: der Sammellauf über `main` fährt `upgrade-path` und `backup-restore`. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
