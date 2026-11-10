@@ -124,6 +124,16 @@ pub(crate) fn control_args(path: &Path, master: bool) -> Vec<String> {
     args
 }
 
+/// The ControlMaster socket an argv of [`control_args`] (not `master`) goes over, if any.
+pub(crate) fn control_socket_of(args: &[String]) -> Option<PathBuf> {
+    args.windows(4).find_map(|w| {
+        (w[0] == "-o" && w[1] == "ControlMaster=no" && w[2] == "-o")
+            .then(|| w[3].strip_prefix("ControlPath="))
+            .flatten()
+            .map(PathBuf::from)
+    })
+}
+
 /// The switches of `connection` and its target; forwards and agent forwarding only for the
 /// `terminal`.
 fn base_args(connection: &Connection, terminal: bool) -> Result<(Vec<String>, String), AppError> {
@@ -526,6 +536,19 @@ mod tests {
         assert_eq!(
             control_args(&path, false),
             ["-o", "ControlMaster=no", "-o", control.as_str()]
+        );
+    }
+
+    #[test]
+    fn the_control_socket_is_read_back_from_the_sftp_argv() {
+        let path = Path::new("/tmp/d").join(CONTROL_SOCKET);
+        let c = conn(Some("h"), Some(22), Some("u"), None);
+        let args = build_sftp_args(&c, Some(&path)).unwrap();
+        assert_eq!(control_socket_of(&args), Some(path));
+        assert_eq!(control_socket_of(&build_sftp_args(&c, None).unwrap()), None);
+        assert_eq!(
+            control_socket_of(&control_args(Path::new("/m"), true)),
+            None
         );
     }
 
