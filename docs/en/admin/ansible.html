@@ -88,7 +88,7 @@ DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)</code></pre
     }
   }
 }</code></pre>
-          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server entry (desktop client, <em>Infrastructure</em>) that drive selection in tag mode.</p>
+          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server entry (desktop client, <em>Infrastructure</em>) that drive selection in tag mode. A tag containing <code>[</code>, <code>]</code>, <code>{</code> or <code>}</code> stops the run with an error, as a user or key path containing <code>{</code> or <code>}</code> already does.</p>
 
           <h3>Which SSH connection Ansible takes</h3>
           <ul>

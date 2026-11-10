@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """FRP tunnel CRUD (/api/frp/tunnels): the visitor-port conflict (409), automatic port assignment +
-STCP secret autogeneration, and the duplicate-name conflict — none of which had a test, so a
-regression removing the conflict check would only surface as frps misbehaviour in production (6.74)."""
+STCP secret autogeneration — none of which had a test, so a regression removing the conflict check
+would only surface as frps misbehaviour in production (6.74). Names may repeat since frpc knows a
+tunnel by its ID (R-1210)."""
 
 import tomllib
 
@@ -70,11 +71,15 @@ def test_visitor_port_conflict_is_409(test_client, db_session, admin_user):
     assert r.status_code == 409, r.text  # 6000 is already bound by t-a
 
 
-def test_duplicate_name_is_409(test_client, db_session, admin_user):
+def test_a_repeated_name_is_no_conflict(test_client, db_session, admin_user):
+    # The proxy name is the tunnel's ID (R-1210): a second tunnel with the same own text is
+    # a tunnel of its own, not a clash in frps.
     _seed(db_session)
     h = _login(test_client, "admin", "adminpass")
     r = test_client.post("/api/frp/tunnels", json=_body(name="a-ssh", visitor_port=6002), headers=h)
-    assert r.status_code == 409, r.text  # name a-ssh already exists
+    assert r.status_code == 201, r.text
+    assert r.json()["id"] != "t-a"
+    assert db_session.query(FrpTunnel).filter_by(name="a-ssh").count() == 2
 
 
 def _stored_secret(db, tunnel_id: str) -> str | None:
@@ -389,7 +394,8 @@ def test_a_lost_race_on_update_with_an_auto_connection_is_409(
     assert r.status_code == 409, r.text
     db_session.expire_all()
     assert db_session.get(FrpTunnel, "t-b").visitor_port == 6001
-    assert db_session.query(Connection).filter(Connection.name.like("% (via FRP)")).count() == 0
+    # The auto-connection stores no name (R-1210): none at all may be left over.
+    assert db_session.query(Connection).count() == 0
 
 
 # R-0570: a visitor port outside 1-65535 stored before R-0533 stayed on a PUT without

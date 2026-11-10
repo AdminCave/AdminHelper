@@ -6,7 +6,10 @@ export type ConnectionKind = 'ssh' | 'rdp' | 'web';
 
 export interface Connection {
   id: string;
+  /** The display name the server derives (R-1210); without a server the name itself. */
   name: string;
+  /** The stored own text of the display name; without a server the name itself. */
+  label?: string;
   kind: ConnectionKind;
   host?: string | null;
   url?: string | null;
@@ -63,7 +66,10 @@ export interface ConnectionOptions {
 export interface Server {
   id: string;
   name: string;
+  /** Where the server is reached: its own hostname, else its name (R-1210). */
   hostname: string;
+  /** True when an own hostname is stored, false when the address follows the name. */
+  customHostname?: boolean;
   osType?: string | null;
   tags?: string[];
   notes?: string | null;
@@ -146,7 +152,10 @@ export interface FrpTunnel {
   id: string;
   serverId: string;
   frpConfigId: string;
+  /** The display name the server derives (R-1210): "{server} · {label|SSH|RDP|Web} (FRP)". */
   name: string;
+  /** The stored own text of the display name, '' for none. */
+  label?: string;
   tunnelType: FrpTunnelType;
   protocol: FrpProtocol;
   localIp: string | null;
@@ -164,6 +173,8 @@ export interface FrpTunnelInput {
   server_id: string;
   frp_config_id: string;
   name: string;
+  /** The own text of the display name (R-1210); a server from before ignores it. */
+  label?: string;
   tunnel_type: FrpTunnelType;
   protocol: FrpProtocol;
   local_ip: string;
@@ -186,6 +197,8 @@ export interface FrpStatusProxy {
   todayTrafficOut: number;
   lastStartTime?: string;
   lastCloseTime?: string;
+  /** The tunnel the proxy belongs to; its `name` is the display name the server derives (R-1210). */
+  tunnel?: { id: string; name: string } | null;
 }
 
 export interface FrpStatus {

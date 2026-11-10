@@ -88,7 +88,7 @@ DELETE /api/ansible/playbooks/{id}         # Playbook löschen (Admin)</code></p
     }
   }
 }</code></pre>
-          <p>Die Gruppen entstehen direkt aus den <strong>Tags der Server</strong> – dieselben Tags, die am Server-Eintrag (Desktop-Client, <em>Infrastruktur</em>) gesetzt sind und im Tag-Modus die Auswahl steuern.</p>
+          <p>Die Gruppen entstehen direkt aus den <strong>Tags der Server</strong> – dieselben Tags, die am Server-Eintrag (Desktop-Client, <em>Infrastruktur</em>) gesetzt sind und im Tag-Modus die Auswahl steuern. Ein Tag mit <code>[</code>, <code>]</code>, <code>{</code> oder <code>}</code> l&auml;sst den Lauf mit einer Fehlermeldung abbrechen, wie schon ein Benutzer oder Schl&uuml;sselpfad mit <code>{</code> oder <code>}</code>.</p>
 
           <h3>Welche SSH-Verbindung Ansible nimmt</h3>
           <ul>

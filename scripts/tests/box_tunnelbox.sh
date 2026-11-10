@@ -23,14 +23,15 @@ AGENT_LOG=/var/log/adminhelper/agent.log
 # What mark notes for reload. Outside the checkout: a later `vm.py run --sync` replaces it.
 MARK_FILE="$HOME/.mb-tunnel-mark"
 
-# proxy_started <TUNNEL> — poll the frpc journal for the tunnel instead of a fixed sleep, it
+# proxy_started <TUNNEL-ID> — poll the frpc journal for the tunnel instead of a fixed sleep, it
 # can lag on a loaded box (6.137). frp v0.72.0 logs "[<proxy>] start proxy success" once frps
-# took the proxy (client/control.go).
+# took the proxy (client/control.go); the proxy is the tunnel's ID since R-1210, also with the
+# frpc user before it.
 proxy_started() {
   local journal
   for _ in $(seq 1 30); do
     journal="$(sudo journalctl -u frpc --no-pager -n 300 2>/dev/null)"
-    grep -qF "[$1] start proxy success" <<<"$journal" && return 0
+    grep -qE "\[([^]]*\.)?$1\] start proxy success" <<<"$journal" && return 0
     sleep 1
   done
   return 1

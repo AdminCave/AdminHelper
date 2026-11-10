@@ -10,6 +10,8 @@ import {
   toCardMeta,
   emptyConnection,
   DEFAULT_PORTS,
+  ownTextOf,
+  shownName,
 } from './connection';
 
 describe('normalizeConnection', () => {
@@ -108,5 +110,33 @@ describe('toCardMeta', () => {
   it('uses url for web', () => {
     const c = { ...emptyConnection('web'), url: 'https://x' };
     expect(toCardMeta(c)).toBe('https://x');
+  });
+});
+
+describe('display names of a server (R-1210)', () => {
+  it('shownName mirrors the server: own text, else the kind, FRP marked', () => {
+    expect(shownName('web01.example.org', ' root ', 'ssh')).toBe('web01.example.org · root');
+    expect(shownName('web01.example.org', '', 'rdp')).toBe('web01.example.org · RDP');
+    expect(shownName('web01.example.org', '', 'web', true)).toBe('web01.example.org · Web (FRP)');
+  });
+
+  const server = {
+    name: 'web01.example.org',
+    connections: [{ id: 'c-label', label: 'backup' }],
+  };
+
+  it('ownTextOf takes the stored label from the server list', () => {
+    const c = { id: 'c-label', name: 'web01.example.org · backup', kind: 'ssh' as const };
+    expect(ownTextOf(c, server)).toBe('backup');
+  });
+
+  it('ownTextOf reads a connection the list lacks back from its display name', () => {
+    const own = { id: 'c-x', name: 'web01.example.org · root (FRP)', kind: 'ssh' as const };
+    const none = { id: 'c-y', name: 'web01.example.org · RDP', kind: 'rdp' as const };
+    const other = { id: 'c-z', name: 'Prod-Gateway', kind: 'ssh' as const };
+    expect(ownTextOf(own, server)).toBe('root');
+    expect(ownTextOf(none, server)).toBe('');
+    expect(ownTextOf(other, server)).toBe('Prod-Gateway');
+    expect(ownTextOf(other, undefined)).toBe('Prod-Gateway');
   });
 });

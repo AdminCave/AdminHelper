@@ -119,7 +119,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
       <div class="form-grid">
         <label class="field">
-          <span class="field-label">{$t('infra.field.name')}</span>
+          <span class="field-label">{$t('infra.field.serverName')}</span>
           <input
             type="text"
             name="name"
@@ -129,14 +129,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
           />
         </label>
 
+        <!-- Empty: the address follows the name (R-1210), the placeholder shows which. -->
         <label class="field">
-          <span class="field-label">{$t('infra.field.hostname')}</span>
+          <span class="field-label">{$t('infra.field.address')}</span>
           <input
             type="text"
             name="hostname"
             bind:value={form.hostname}
-            placeholder={$t('infra.field.hostname.placeholder')}
-            required
+            placeholder={form.name.trim() || $t('infra.field.address.placeholder')}
           />
         </label>
 

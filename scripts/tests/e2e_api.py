@@ -84,10 +84,20 @@ def main(argv):
         tunnels = _call(base, token, "GET", "/api/frp/tunnels")
         print(sum(1 for t in tunnels if server_id in (t.get("serverId"), t.get("server_id"))))
     elif op == "visitor-port":
-        # Empty if no tunnel has that name or it has no visitor port (not STCP).
+        # Empty if no tunnel has that name or it has no visitor port (not STCP). The name a
+        # tunnel was created with is its label; `name` is the display name (R-1210).
         (name,) = rest
         tunnels = _call(base, token, "GET", "/api/frp/tunnels")
-        print(next((t.get("visitorPort") or "" for t in tunnels if t.get("name") == name), ""))
+        print(
+            next(
+                (
+                    t.get("visitorPort") or ""
+                    for t in tunnels
+                    if t.get("label", t.get("name")) == name
+                ),
+                "",
+            )
+        )
     elif op == "tunnel-conn":
         # STCP tunnel linked to a connection (so the desktop resolves the
         # connection through it). protocol is ssh/rdp/web.

@@ -15,9 +15,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/bridge/types';
   import {
     DEFAULT_PORTS,
+    KIND_LABELS,
     emptyConnection,
     normalizeConnection,
+    ownTextOf,
     parseTags,
+    shownName,
     validateConnection,
   } from '$lib/models/connection';
   import { editorState, closeEditor } from '$lib/stores/editor';
@@ -42,6 +45,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let ssh = $state<SshOptions & { forwards: SshForward[] }>({ forwards: [] });
   let rdp = $state<RdpConnectionOptions>({});
   let tagsInput = $state('');
+  // A connection of a server shows a name the server derives from its own (R-1210); the editor
+  // edits only the own text in it. Read from the server's list: the bridge brings no label.
+  let opened = $state<Connection | null>(null);
+  let ownInput = $state<string | null>(null);
+  const editServer = $derived($infraServers.find((s) => s.id === form.serverId));
+  const ownText = $derived(
+    ownInput ??
+      (opened?.serverId
+        ? ownTextOf(
+            opened,
+            $infraServers.find((s) => s.id === opened?.serverId),
+          )
+        : form.name),
+  );
   let isNew = $state(true);
   let tab = $state<EditorTab>('general');
   // Servers exist only behind a server session, and only an admin may list them (GET /api/servers)
@@ -73,6 +90,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!st.open) return;
     const base = st.target ? { ...st.target } : emptyConnection();
     form = base;
+    opened = st.target ?? null;
+    ownInput = null;
     tagsInput = (base.tags ?? []).join(', ');
     const own = base.options ?? {};
     ssh = { ...own.ssh, forwards: (own.ssh?.forwards ?? []).map((f) => ({ ...f })) };
@@ -89,8 +108,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   function collect(): Connection {
+    // With a server the own text goes as the name, or the server's name without one: the server
+    // stores no own text for a name that only repeats it (R-1210), and a server from before
+    // takes it as the name it requires.
+    const name = editServer ? ownText.trim() || editServer.name : form.name;
     return normalizeConnection({
       ...form,
+      name,
       tags: parseTags(tagsInput),
       id: form.id,
       options: { ssh, rdp },
@@ -223,16 +247,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
       {#if tab === 'general' || form.kind === 'web'}
         <div class="form-grid" role={tabs.length > 0 ? 'tabpanel' : undefined}>
-          <label class="field">
-            <span class="field-label">{$t('editor.field.name')}</span>
-            <input
-              type="text"
-              name="name"
-              bind:value={form.name}
-              placeholder={$t('editor.field.name.placeholder')}
-              required
-            />
-          </label>
+          {#if editServer}
+            <label class="field">
+              <span class="field-label">{$t('editor.field.label')}</span>
+              <input
+                type="text"
+                name="name"
+                value={ownText}
+                oninput={(e) => (ownInput = (e.currentTarget as HTMLInputElement).value)}
+                placeholder={KIND_LABELS[form.kind]}
+              />
+              <span class="field-hint" data-testid="shown-as"
+                >{$t('editor.field.shownAs')}
+                {shownName(
+                  editServer.name,
+                  ownText,
+                  form.kind,
+                  opened?.name.endsWith(' (FRP)') ?? false,
+                )}</span
+              >
+            </label>
+          {:else}
+            <label class="field">
+              <span class="field-label">{$t('editor.field.name')}</span>
+              <input
+                type="text"
+                name="name"
+                bind:value={form.name}
+                placeholder={$t('editor.field.name.placeholder')}
+                required
+              />
+            </label>
+          {/if}
 
           {#if assignServer}
             <label class="field">
@@ -242,7 +288,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 value={form.serverId ?? ''}
                 onchange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;
-                  form = { ...form, serverId: v === '' ? null : v };
+                  const chosen = $infraServers.find((s) => s.id === v);
+                  // An empty host starts at the chosen server's address (R-1210).
+                  const host = form.host?.trim() ? form.host : (chosen?.hostname ?? form.host);
+                  form = { ...form, serverId: v === '' ? null : v, host };
                 }}
               >
                 <option value="">{$t('editor.field.server.none')}</option>

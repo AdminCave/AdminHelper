@@ -155,7 +155,7 @@ class TestConfigHash:
         key = _agent_key(db_session, "srv-sync")
         toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
         assert toml.status_code == 200, toml.text
-        assert [p["name"] for p in tomllib.loads(toml.text)["proxies"]] == ["on-ssh"]
+        assert [p["name"] for p in tomllib.loads(toml.text)["proxies"]] == ["t-on-ssh"]
         assert 'auth.token = "sync-frps-auth-token"' in toml.text.splitlines()
         res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
         assert res.status_code == 200, res.text
@@ -187,7 +187,7 @@ class TestConfigHash:
         assert toml.status_code == 200, toml.text
         parsed = tomllib.loads(toml.text)
         assert parsed["serverAddr"] == "frps.example.test"
-        assert [p["name"] for p in parsed["proxies"]] == ["own-ssh"]
+        assert [p["name"] for p in parsed["proxies"]] == ["t-own-ssh"]
         res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
         assert res.status_code == 200, res.text
         assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
@@ -327,6 +327,8 @@ def _config() -> FrpServerConfig:
 
 def _tunnel(name: str, tunnel_type: str = "stcp", **kw) -> FrpTunnel:
     fields = dict(
+        id=f"t-{name}",
+        server_id="srv-host",
         name=name,
         tunnel_type=tunnel_type,
         protocol="ssh" if tunnel_type == "stcp" else "web",
@@ -410,7 +412,7 @@ def test_active_tunnels_are_the_proxies_the_generator_writes(make_tunnels):
     tunnels = make_tunnels()
     text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"])
     proxies = tomllib.loads(text).get("proxies", [])
-    assert [t.name for t in active_tunnels(tunnels)] == [p["name"] for p in proxies]
+    assert [t.id for t in active_tunnels(tunnels)] == [p["name"] for p in proxies]
 
 
 def test_frpc_toml_is_the_same_in_every_order_of_the_tunnels():
@@ -419,8 +421,8 @@ def test_frpc_toml_is_the_same_in_every_order_of_the_tunnels():
     text = generate_frpc_toml(_config(), _three_tunnels(), "host", allow_users=["admin"])
     for order in itertools.permutations(_three_tunnels()):
         assert generate_frpc_toml(_config(), list(order), "host", allow_users=["admin"]) == text
-    names = [p["name"] for p in tomllib.loads(text)["proxies"]]
-    assert names == sorted(names)
+    ids = [p["name"] for p in tomllib.loads(text)["proxies"]]
+    assert ids == sorted(ids)
 
 
 @pytest.mark.parametrize(
