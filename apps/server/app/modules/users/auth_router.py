@@ -13,7 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core import config
+from app.core import config, identity
 from app.core.auth import (
     blacklist_token,
     create_access_token,
@@ -109,15 +109,20 @@ _REFRESH_COOKIE_MAX_AGE = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 
 
 def _set_refresh_cookie(request: Request, response: Response, token: str) -> None:
-    # Secure follows the request scheme: True on real https (and proxies that
-    # forward the proto), False on http://localhost dev / the test client, where
-    # the browser would otherwise drop the cookie. HttpOnly + SameSite hold either way.
+    # Secure follows the request scheme: True on real https, False on http://localhost
+    # dev / the test client, where the browser would otherwise drop the cookie. Behind
+    # the gateway the server speaks plain HTTP, so there the gateway's forwarded scheme
+    # counts, and only from the gateway itself (the peer check warns for any other peer,
+    # hence only when the header is there). HttpOnly + SameSite hold either way.
+    secure = request.url.scheme == "https" or (
+        request.headers.get("x-forwarded-proto") == "https" and identity.from_gateway(request)
+    )
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=token,
         max_age=_REFRESH_COOKIE_MAX_AGE,
         httponly=True,
-        secure=request.url.scheme == "https",
+        secure=secure,
         samesite="strict",
         path=_REFRESH_COOKIE_PATH,
     )
