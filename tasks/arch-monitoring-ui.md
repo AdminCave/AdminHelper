@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui · Review: pro Task
 Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
 Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -131,8 +131,10 @@ Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
 
-### T14 — Desktop-UI: Vertragstest und Monitoring-Übersicht nach den neuen Monitor-Typen (R-1225)  [ ]
+### T14 — Desktop-UI: Vertragstest und Monitoring-Übersicht nach den neuen Monitor-Typen (R-1225)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.contract.test.ts, apps/desktop/ui/src/components/monitoring/MonitoringOverview.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d8c2dfa02 2026-11-10T16:19:47+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui/T14.verdict.json)
 Änderung: Fund der ganzen Desktop-UI-Suite nach dem Basis-Merge (die Task-Verifys fuhren nur ihre Tests): `types.contract.test.ts` (R-0687) ordnet die neuen Interfaces ihren Schemas im Monitoring-Snapshot zu (`StatusSummaryOut`, `ServerCostsOut`, `CollectorCostOut`, `Catalog*Out`, `DiscoveryOut`, `FindingOut`, `AdoptOut`, `AdoptAllOut`), `MonitorCheck` beiden Antworten (`MonitorCheckOut` und `MonitorCheckStatusOut` mit `mutedReason`); die freien `details` von HTTP- und Probe-Check kommen nach `EXEMPT`. `MonitoringOverview.test.ts` mockt `sessionStore` mit, den `connections.ts` beim Import liest (seit T10 über `ModuleCard.svelte`). Drift zwischen Typ und Schema wird in `types.ts` behoben, nicht im Test.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/types.contract.test.ts src/components/monitoring/MonitoringOverview.test.ts
 Doku: keine (nur Tests und Typen)

@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   fetchServers: vi.fn(),
   fetchTemplates: vi.fn(),
   assignTemplate: vi.fn(),
+  // The server page's costs card: left pending, so it never renders in these tests.
+  fetchServerCosts: vi.fn(() => new Promise(() => {})),
 }));
 
 vi.mock('$lib/api/monitoring', () => ({
@@ -27,6 +29,7 @@ vi.mock('$lib/api/monitoring', () => ({
     fetchServers: h.fetchServers,
     fetchTemplates: h.fetchTemplates,
     assignTemplate: h.assignTemplate,
+    fetchServerCosts: h.fetchServerCosts,
   },
 }));
 vi.mock('$lib/stores/session', async () => {
@@ -34,6 +37,8 @@ vi.mock('$lib/stores/session', async () => {
   return {
     currentSession: () => ({ session: {}, settings: {} }),
     session: writable({ session: {}, settings: {} }),
+    // stores/connections derives its favorites from it on import (via ModuleCard).
+    sessionStore: writable({ session: {}, settings: {} }),
   };
 });
 
