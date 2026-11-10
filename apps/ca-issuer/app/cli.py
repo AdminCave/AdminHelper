@@ -42,7 +42,8 @@ from app.root_rollover import ROTATE_ROOT
 # a root renewal stopped part way (2 is argparse's usage error). Retired intermediates
 # never raise it by their time: they run out by design. An entry of a retired file that
 # the boot skips with a WARNING (not an intermediate of its scope under a root it trusts,
-# pki.intermediate_problem_among) is 1, marked SKIPPED.
+# pki.intermediate_problem_among, or listed in <scope>-compromised.pem) is 1, marked
+# SKIPPED; a current intermediate listed there is 3, marked COMPROMISED, the boot refuses it.
 OK, WARN, BAD = 0, 1, 3
 
 _ROLE_WIDTH = len(f"{max(pki.SCOPES, key=len)} (retired)")
@@ -80,9 +81,18 @@ def status(pki_dir: Path) -> int:
     if renewal is not None:
         worst = max(worst, _show_renewal_roots(pki_dir, renewal, now))
     for scope in pki.SCOPES:
-        worst = max(worst, _show_current(scope, pki_dir / f"{scope}.crt", now))
+        register = rotation.compromised_path(pki_dir, scope)
+        try:
+            banned = frozenset(
+                rotation.public_key_der(c) for c in rotation.read_compromised(register)
+            )
+        except (OSError, ValueError) as exc:
+            worst = max(worst, _unreadable(f"{scope} (compromised)", register, exc))
+            banned = frozenset()
+        worst = max(worst, _show_current(scope, pki_dir / f"{scope}.crt", now, banned=banned))
         signers = () if root is None else _signers(renewal, root, scope)
-        worst = max(worst, _show_retired(scope, pki_dir / f"{scope}-retired.pem", now, signers))
+        retired = pki_dir / f"{scope}-retired.pem"
+        worst = max(worst, _show_retired(scope, retired, now, signers, banned))
     if renewal is None:
         print(f"root renewal: unreadable, {renewal_error}")
         return BAD
@@ -90,12 +100,19 @@ def status(pki_dir: Path) -> int:
 
 
 def _show_current(
-    role: str, path: Path, now: datetime.datetime, warn_days: int = pki.EXPIRY_WARN_DAYS
+    role: str,
+    path: Path,
+    now: datetime.datetime,
+    warn_days: int = pki.EXPIRY_WARN_DAYS,
+    banned: frozenset[bytes] = frozenset(),
 ) -> int:
     try:
         cert = pki.cert_from_pem(path.read_bytes())
     except (OSError, ValueError) as exc:
         return _unreadable(role, path, exc)
+    if rotation.public_key_der(cert) in banned:
+        print(f"{_line(role, cert, now)}  COMPROMISED (rotate-intermediates --compromised {role})")
+        return BAD
     if not cert.not_valid_before_utc <= now < cert.not_valid_after_utc:
         print(_line(role, cert, now))
         return BAD
@@ -203,7 +220,11 @@ def _coverage(
 
 
 def _show_retired(
-    scope: str, path: Path, now: datetime.datetime, signers: tuple[x509.Certificate, ...]
+    scope: str,
+    path: Path,
+    now: datetime.datetime,
+    signers: tuple[x509.Certificate, ...],
+    banned: frozenset[bytes],
 ) -> int:
     role = f"{scope} (retired)"
     try:
@@ -222,6 +243,9 @@ def _show_retired(
         # The boot's rule (storage.ensure_hierarchy): such an entry is skipped whatever its time.
         if signers and (problem := pki.intermediate_problem_among(cert, scope, signers)):
             print(f"{_line(role, cert, now)}  SKIPPED ({problem})")
+            worst = WARN
+        elif rotation.public_key_der(cert) in banned:
+            print(f"{_line(role, cert, now)}  SKIPPED (replaced with --compromised)")
             worst = WARN
         else:
             print(_line(role, cert, now))

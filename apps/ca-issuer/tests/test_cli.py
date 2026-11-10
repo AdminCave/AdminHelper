@@ -174,6 +174,37 @@ def test_status_marks_a_retired_entry_the_boot_skips(pki_dir, capsys):
     assert pki.read_identity(valid)[0] in retired[1] and "SKIPPED" not in retired[1]
 
 
+def test_status_marks_what_a_compromised_rotation_replaced(pki_dir, capsys):
+    replaced = pki.cert_from_pem((pki_dir / "access.crt").read_bytes())
+    saved = {
+        n: (pki_dir / n).read_bytes() for n in ("access.crt", "access.key", "access-chain.pem")
+    }
+    rotation.rotate_intermediates(pki_dir, PW, compromised=frozenset({"access"}))
+    (pki_dir / "access-retired.pem").write_bytes(pki.cert_to_pem(replaced))
+
+    assert cli.main(["status"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    retired = [line for line in out if line.startswith("access (retired)")]
+    assert len(retired) == 1 and "SKIPPED (replaced with --compromised)" in retired[0]
+    assert sum("SKIPPED" in line for line in out) == 1
+
+    # Back as the current one, the boot refuses it: 3.
+    for name, data in saved.items():
+        (pki_dir / name).write_bytes(data)
+    assert cli.main(["status"]) == 3
+    out = capsys.readouterr().out.splitlines()
+    current = [x for x in out if x.startswith("access ") and "(retired)" not in x]
+    assert len(current) == 1
+    assert "COMPROMISED (rotate-intermediates --compromised access)" in current[0]
+
+
+def test_status_of_an_unreadable_register_is_3(pki_dir, capsys):
+    rotation.compromised_path(pki_dir, "tunnel").write_bytes(b"-----BEGIN CERTIFICATE-----\nx\n")
+
+    assert cli.main(["status"]) == 3
+    assert "tunnel (compromised)" in capsys.readouterr().out
+
+
 def test_status_without_a_root_lists_retired_ones_unchecked(monkeypatch, pki_dir, capsys):
     # Nothing to check them against: the missing root is the finding (3).
     other = _cert_with_days_left(monkeypatch, "access", 10)  # from a throwaway root

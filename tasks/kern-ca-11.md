@@ -5,8 +5,10 @@ Heavy: linux-full — `apps/ca-issuer` im Diff: der Sammellauf über `main` fäh
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1113: Register `<scope>-compromised.pem` für mit --compromised verworfene Zwischenzertifikate  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/app/cli.py, apps/ca-issuer/tests/test_rotation.py, apps/ca-issuer/tests/test_storage.py, apps/ca-issuer/tests/test_cli.py
+### T1 — R-1113: Register `<scope>-compromised.pem` für mit --compromised verworfene Zwischenzertifikate  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/rotation.py, apps/ca-issuer/app/storage.py, apps/ca-issuer/app/cli.py, apps/ca-issuer/tests/test_rotation.py, apps/ca-issuer/tests/test_cli.py
+Evidenz: run.sh[quick] ca-issuer: 3 passed, 0 failed, 15 skipped @496551f4c 2026-11-10T06:07:29+01:00
+Review: approve (.ah-out/review/kern-ca-11/T1.verdict.json)
 Änderung: Rotation (auch der Switch) mit `--compromised` schreibt das ersetzte Zwischenzertifikat und die Einträge
 des Retired-Files vor dem Retired-File in `<scope>-compromised.pem` (Abgleich über den öffentlichen Schlüssel,
 abgelaufene fallen heraus); Rotation und finish behalten keinen Eintrag daraus, der Start überspringt ihn im
@@ -33,3 +35,4 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: Register und Leser (`compromised_path`, `read_compromised`, `public_key_der`) in `rotation.py`, `storage` importiert `rotation` (kein Zyklus); Abgleich über SubjectPublicKeyInfo. Im Retired-File greift das Register nach der Signer-Prüfung: ein Eintrag unter der alten Root behält seinen Grund aus `Switch.compromised` (test_storage unverändert). Rotation und finish verwerfen Register-Einträge im Retired-File ohne Abbruch; abgelaufene Einträge verlassen das Register beim nächsten Schreiben mit `--compromised`.
