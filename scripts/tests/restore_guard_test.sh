@@ -34,6 +34,7 @@
 # there the passphrase's own value may begin). 15f: a commented line that holds that
 # closing quote stays with it; 15g: a statement compose reads behind it goes whole.
 # 15h: in a file compose refuses, the passphrase statement goes whole, no quote kept.
+# 15l: a key with a byte from \200 on counts as one compose may refuse (as 15h).
 # 15i: a line with an empty key compose takes: the closing quote of another value stays.
 # 15j: the quoted value of an empty key runs on to its closing quote, like any other;
 # 15k: that closing quote stays.
@@ -530,6 +531,21 @@ sanitized=$(bk_env "$WORK/bk/f8")
 { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f8/expected" "$sanitized"; } \
   && ok "env.sanitized drops the passphrase statement whole in a file compose refuses" \
   || bad "refused file: rc=$rc env.sanitized=[$(sed 's/cd13secret/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+
+# --- 15l. backup.sh: a key with a non-ASCII byte counts as one compose may refuse ─
+# compose refuses a key that holds no letter or digit, a symbol (\342\202\254) or a
+# byte outside UTF-8 (\377); awk under LC_ALL=C cannot tell those from a letter, so
+# the passphrase statement goes whole as in 15h, no quote of it kept.
+for kb in '\342\202\254' '\377'; do
+  mkdir -p "$WORK/bk/f15l"; rm -rf "$WORK/bk/f15l/out" "$WORK/bk/f15l/x"
+  printf "$kb"'="\nCA_ROOT_PASSPHRASE=ab"cd13secret\n' > "$WORK/bk/run/.env"
+  printf "$kb"'="\n' > "$WORK/bk/f15l/expected"
+  out=$(bk_run "$WORK/bk/f15l" "$WORK/bk/f15l/out"); rc=$?
+  sanitized=$(bk_env "$WORK/bk/f15l")
+  { [ $rc -eq 0 ] && cmp -s "$WORK/bk/f15l/expected" "$sanitized"; } \
+    && ok "env.sanitized drops the passphrase statement whole behind a key with byte $kb" \
+    || bad "non-ASCII key $kb: rc=$rc env.sanitized=[$(sed 's/cd13secret/<VALUE>/g' "$sanitized" 2>/dev/null | cat -A | tr '\n' ' ')] out=[$out]"
+done
 
 # --- 15i. backup.sh: an empty key is no refused file ─────────────────────────────
 # compose passes over "=abc" and reads on; the quote that closes A stays, or the
@@ -1151,13 +1167,15 @@ calls="$WORK/roles/forms/calls.log"
   || bad "role password forms: rc=$rc out=[$out] calls=[$(cat "$calls" 2>/dev/null)]"
 # (b) a value compose would expand or refuses: the restore stops before any docker
 # call, names the key, never the value
-for v in dollar open break; do
+for v in dollar odd open break backslash; do
   mkdir -p "$WORK/roles/$v"
   grep -v '^SERVER_DB_PASSWORD=' "$WORK/.env" > "$WORK/roles/$v/.env"
   case $v in
-    dollar) printf '%s\n' 'SERVER_DB_PASSWORD="zz9$HOME"' ;;
-    open)   printf '%s\n' 'SERVER_DB_PASSWORD="zz9-open' ;;
-    break)  printf '%s\n' 'SERVER_DB_PASSWORD="zz9-a' 'zz9-b"' ;;
+    dollar)    printf '%s\n' 'SERVER_DB_PASSWORD="zz9$HOME"' ;;
+    odd)       printf '%s\n' 'SERVER_DB_PASSWORD=zz9$$$HOME' ;;
+    open)      printf '%s\n' 'SERVER_DB_PASSWORD="zz9-open' ;;
+    break)     printf '%s\n' 'SERVER_DB_PASSWORD="zz9-a' 'zz9-b"' ;;
+    backslash) printf '%s\n' 'SERVER_DB_PASSWORD="zz9\\x"' ;;
   esac >> "$WORK/roles/$v/.env"
   out=$( cd "$WORK/roles/$v" && STUB_DIR="$WORK/roles/$v" PATH="$WORK/roles/bin:$PATH" \
       bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
@@ -1165,6 +1183,37 @@ for v in dollar open break; do
       && [ ! -e "$WORK/roles/$v/calls.log" ]; } \
     && ok "a role password restore cannot read as compose does ($v): stop before any docker call" \
     || bad "role password ($v): rc=$rc out=[$out] calls=[$(cat "$WORK/roles/$v/calls.log" 2>/dev/null)]"
+done
+grep -q 'Write a literal \$ as \$\$, or set SERVER_DB_PASSWORD in the environment instead' <<<"$out" \
+  && ok "a role password restore cannot read: the message names the way out" || bad "no way out named: $out"
+# (c) the scheduler's password is read like the others: a value compose would expand
+# stops the restore with its key
+mkdir -p "$WORK/roles/sched"
+{ grep -v '^SCHEDULER_DB_PASSWORD=' "$WORK/.env"; printf '%s\n' 'SCHEDULER_DB_PASSWORD=zz9$HOME'; } > "$WORK/roles/sched/.env"
+out=$( cd "$WORK/roles/sched" && STUB_DIR="$WORK/roles/sched" PATH="$WORK/roles/bin:$PATH" \
+    bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+{ [ $rc -eq 1 ] && grep -q 'SCHEDULER_DB_PASSWORD in .env is no plain value' <<<"$out" && ! grep -q zz9 <<<"$out" \
+    && [ ! -e "$WORK/roles/sched/calls.log" ]; } \
+  && ok "the scheduler's password is read as compose does: a \$ in it stops the restore" \
+  || bad "scheduler password: rc=$rc out=[$out]"
+# (d) "$$" outside single quotes is one "$", as compose reads it; inside single quotes
+# every "$" stays as it is
+for v in dd sq; do
+  mkdir -p "$WORK/roles/$v"
+  grep -v '^SERVER_DB_PASSWORD=\|^MONITOR_DB_PASSWORD=' "$WORK/.env" > "$WORK/roles/$v/.env"
+  case $v in
+    dd) printf '%s\n' 'SERVER_DB_PASSWORD=pw$$srv$$' 'MONITOR_DB_PASSWORD="pw$$$$mon"'
+        want_s='pw$srv$' want_m='pw$$mon' ;;
+    sq) printf '%s\n' "SERVER_DB_PASSWORD='pw\$srv'" "MONITOR_DB_PASSWORD='pw\$\$mon'"
+        want_s='pw$srv' want_m='pw$$mon' ;;
+  esac >> "$WORK/roles/$v/.env"
+  out=$( cd "$WORK/roles/$v" && STUB_DIR="$WORK/roles/$v" PATH="$WORK/roles/bin:$PATH" \
+      bash "$RESTORE" "$WORK/roles/both.tar.gz" --yes </dev/null 2>&1 ); rc=$?
+  calls="$WORK/roles/$v/calls.log"
+  { [ $rc -eq 0 ] && grep -qF "pw=[$want_s] " "$calls" && grep -F "pw=[$want_s] " "$calls" | grep -q 'pg_restore .*-U ah_server ' \
+      && grep -F "pw=[$want_m] " "$calls" | grep -q 'pg_restore .*-U ah_monitor '; } \
+    && ok "a role password with \$ ($v): read as compose reads it" \
+    || bad "role password \$ ($v): rc=$rc out=[$out] calls=[$(cat "$calls" 2>/dev/null)]"
 done
 
 echo
