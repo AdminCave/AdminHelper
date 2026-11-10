@@ -471,7 +471,8 @@ async function connectRdpInTab(
 export async function reconnectRdpTab(key: string): Promise<boolean> {
   const session = get(terminals).sessions.find((s) => s.key === key);
   if (!session?.rdp) return false;
-  if (session.rdp.code !== 'auth') return reconnectRdp(key);
+  // A detached window mounts no PasswordPrompt: a prompt there would wait for ever.
+  if (session.rdp.code !== 'auth' || session.detached) return reconnectRdp(key);
   const tab = await tabPassword(session.connection, true, false);
   if (!tab) return false;
   return reconnectRdp(key, { connection: tab.listed, password: tab.password });

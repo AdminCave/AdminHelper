@@ -1125,4 +1125,18 @@ describe('reconnect of an RDP tab (R-1196)', () => {
     expect(requestPassword).not.toHaveBeenCalled();
     expect(reconnectRdp).toHaveBeenCalledWith(KEY);
   });
+
+  it('asks nothing in a detached window, which shows no prompt', async () => {
+    state.setTerminals({
+      sessions: [
+        { key: KEY, connection: listed, detached: true, rdp: { phase: 'failed', code: 'auth' } },
+      ],
+      active: KEY,
+    });
+
+    expect(await reconnectRdpTab(KEY)).toBe(true);
+
+    expect(requestPassword).not.toHaveBeenCalled();
+    expect(reconnectRdp).toHaveBeenCalledWith(KEY);
+  });
 });

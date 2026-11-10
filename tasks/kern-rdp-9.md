@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Test, OpenH264-Download, Passwort beim Neu verbinden — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-9 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-9 · Review: pro Task
 Spec: docs/features/kern-rdp-9.md (Roadmap R-1258, R-1195, R-1201, R-1207, R-1196)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft nur in desktop_e2e_rdp_embedded (Teil gui des Sammellaufs); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -42,8 +42,10 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T2, T3
 
-### T5 — R-1196: Im abgelösten Fenster verbindet Neu verbinden ohne Passwortabfrage (aus der PR-CI)  [ ]
+### T5 — R-1196: Im abgelösten Fenster verbindet Neu verbinden ohne Passwortabfrage (aus der PR-CI)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/components/terminal/DetachedRdp.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2d93e1bd0 2026-11-10T09:16:28+01:00
+Review: approve (.ah-out/review/kern-rdp-9/T5.verdict.json)
 Änderung: Das abgelöste RDP-Fenster (`DetachedRdp`, ohne `AppShell`) hat keinen `PasswordPrompt`; `reconnectRdpTab` wartete dort nach `auth` auf einen Dialog, den niemand zeigt. Eine abgelöste Sitzung verbindet daher wie vor T3 mit `reconnectRdp(key)`. Test dazu; der Mock von `$lib/stores/session` in `DetachedRdp.test.ts` liefert `sessionStore` (PR-CI #445 rot: „No "sessionStore" export is defined“).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts src/components/terminal/DetachedRdp.test.ts src/components/terminal/RdpSession.test.ts
 Doku: keine (die Doku nennt die Abfrage im Tab; das abgelöste Fenster verhält sich wie vor dem Zug)
