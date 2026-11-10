@@ -1,5 +1,5 @@
 # Benachrichtigungen: Zielprüfung, Sperrreihenfolge, Zusammenfassung — Task-Ledger
-Status: bereit · Branch: feature/kern-notify-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-4 · Review: pro Task
 Spec: docs/features/kern-notify-4.md (Roadmap R-1178, R-1179, R-1149, R-1188)
 Heavy: linux-full — Server-API (Benachrichtigungen) und Monitoring; Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -48,7 +48,15 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
+### T5 — Testorakel und Hook-Doku der Zielprüfung nachziehen  [ ]
+Komponente: server · Dateien: apps/server/tests/test_ssrf_properties.py, docs/developer/hooks.html, docs/en/developer/hooks.html
+Änderung: Fund der Abschlussprüfung: das Orakel des Eigenschaftstests kennt die
+neuen gesperrten Bereiche aus T1, je ein Beispiel dazu; die Hook-Doku nennt sie neutral.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf_properties.py tests/test_ssrf.py tests/test_ssrf_parity.py
+Doku: docs/developer/hooks.html, docs/en/developer/hooks.html
+
 ## Entscheidungen
 - T4: die Sperrliste der Zielprüfung bleibt in betrieb.html/operations.html allgemein formuliert (übrige Metadaten-Adressen, übrige private Bereiche); sie trifft das neue Verhalten schon.
 - R-1147, R-1180, R-1186, R-1187 → tasks/kern-notify-5.md (Fragen an Kevin).
-- T2: die Erholung sperrt vorab in einer id-geordneten Abfrage; ein Reopen, der zwischen dieser Sperre und `_containing` committet, kann noch eine Sperre außer der Reihe auslösen. Restrisiko als Frage an Kevin (Empfehlung: hinnehmen; das Fenster ist klein, ein uncommitteter Reopen wird von FOR UPDATE nicht erfasst, Postgres bricht einen Deadlock ab).
+- T2: die Erholung sperrt vorab in einer id-geordneten Abfrage; ein Reopen, der zwischen dieser Sperre und `_containing` committet, kann noch eine Sperre außer der Reihe auslösen. Restrisiko: Kevin 2026-11-10: hingenommen (das Fenster ist klein, Postgres bricht einen Deadlock ab).
+- T3: die Zusammenfassung zeigt die ältesten 200 Einträge, spätere kritische nur gezählt: Kevin 2026-11-10: hingenommen.
