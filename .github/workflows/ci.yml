@@ -1002,11 +1002,19 @@ jobs:
           sha_win_rel=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
           test -n "$sha_win_ci" && test "$sha_win_ci" = "$sha_win_rel" || {
             echo "::error::FRP_SHA256_WINDOWS_AMD64 differs between ci.yml and release.yml"; exit 1; }
-          # tauri-cli pin (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
-          tauri_ci=$(grep -m1 'cargo install tauri-cli' .github/workflows/ci.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
-            echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
+          # tauri-cli pins (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
+          # Every `run: cargo install tauri-cli` line counts, not just the first per file, and
+          # each must name a version; the pattern skips this step's own lines.
+          re='^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*cargo install tauri-cli'
+          n_ci=$(grep -cE "$re" .github/workflows/ci.yml || true)
+          n_rel=$(grep -cE "$re" .github/workflows/release.yml || true)
+          pins=$(grep -hE "$re" .github/workflows/ci.yml .github/workflows/release.yml |
+            sed -E 's/.*--version[[:space:]]+"?([0-9]+\.[0-9]+\.[0-9]+)"?([[:space:]].*)?$/\1/;t;s/.*/none/')
+          vers=$(sort -u <<<"$pins" | tr '\n' ' ')
+          echo "tauri-cli pins: ci.yml $n_ci, release.yml $n_rel, versions: $vers"
+          test "$n_ci" -ge 1 && test "$n_rel" -ge 1 && test "$vers" = "$(head -n1 <<<"$pins") " &&
+            ! grep -qx none <<<"$pins" || {
+            echo "::error::tauri-cli pins must all name the same version (ci.yml: $n_ci, release.yml: $n_rel, versions: $vers)"; exit 1; }
       - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff, oasdiff)
         # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
         # pin only compiles while x/vuln's own `go` directive stays at or below the

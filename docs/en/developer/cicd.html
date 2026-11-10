@@ -479,7 +479,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
             <li><code>SHA256SUMS</code> over all assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign signature) once armed</li>
           </ul>
-          <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>. The <code>tauri-cli</code> is pinned to an exact version in CI and release (<code>cargo install tauri-cli --locked --version &hellip;</code>) so a new CLI release cannot break a tag build.</p>
+          <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>. The <code>tauri-cli</code> is pinned to an exact version in CI and release (<code>cargo install tauri-cli --locked --version &hellip;</code>) so a new CLI release cannot break a tag build; the lockstep step in <code>ci.yml</code> checks every such line in both files, each must name a version, and all must be the same.</p>
 
           <h2>Release assertions</h2>
           <p>All six release-blocking defects of the 0.43.x/0.44.0 series came out of <em>execution</em>, none
