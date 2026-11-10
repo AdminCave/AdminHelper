@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui — Task-Ledger
-Status: erledigt · Branch: feature/arch-monitoring-ui · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-ui · Review: pro Task
 Spec: docs/features/arch-monitoring-ui.md (Roadmap R-1225)
 Heavy: linux-full — Monitoring-API hinter dem Server-Proxy und eine neue Desktop-Journey; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -145,6 +145,12 @@ Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f0305bd1b 202
 Review: approve (.ah-out/review/arch-monitoring-ui/T15.verdict.json)
 Änderung: Fund der Abschlussprüfung (blocker): `SshTerminal.svelte` blendet in der Credential-Sitzung aus T10 (`session.credential`) Snippets, Dateien und den Broadcast-Hinweis aus, damit nichts in die Eingabe des Geheimnisses gerät, doch kein Test mountet eine solche Sitzung. Neuer Fall neben dem Playbook-Fall (R-1073): Credential-Sitzung zeigt ihr Ziel, aber weder Snippets noch Dateien noch den Broadcast-Hinweis; Gegenprobe ohne `!session.credential` rot.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/SshTerminal.test.ts
+Doku: keine (nur Test)
+
+### T16 — Monitoring: Test der Status-Zusammenfassung mit den Feldern aus T1 (R-1225, PR-CI)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_pagination.py
+Änderung: PR-CI (#450, Job „Monitoring (pytest)“): `test_pagination.py::test_status_summary_counts_per_status` vergleicht die Antwort von `/status/summary` als ganzes Dict und kennt die Felder `lastResultAt` und `minIntervalS` aus T1 nicht; das gezielte Verify von T1 fuhr die Datei nicht. Die Erwartung nimmt beide Felder auf (`None`: keine Ergebnisse, kein aktiver Check), der Vergleich bleibt exakt.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_pagination.py tests/test_status_page_api.py tests/test_response_shapes.py
 Doku: keine (nur Test)
 
 ## Entscheidungen
