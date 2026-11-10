@@ -1,5 +1,5 @@
 # Eingebettetes RDP: eine Vorgabe für die eigene Größe — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-11 · Review: am Ende
+Status: bereit · Branch: feature/kern-rdp-11 · Review: am Ende
 Spec: docs/features/kern-rdp-11.md (Roadmap R-1218)
 Heavy: none — nur der Ersatzwert der Webview für eine fehlende eigene Größe; kein Stack-, Gateway-, PKI- oder Install-Pfad, die Desktop-Journeys prüfen keine Größe
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -15,8 +15,10 @@ Semantik: docs/admin/index.html „<em>Benutzerdefiniert</em> hält die Größe 
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/rdp/display.test.ts
 Doku: docs/admin/index.html docs/en/admin/index.html changelog.d/kern-rdp-11.md
 
-### T2 — R-1218: die Komponententests der RDP-Sitzung erwarten die neue Vorgabe 1920x1080  [ ]
+### T2 — R-1218: die Komponententests der RDP-Sitzung erwarten die neue Vorgabe 1920x1080  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/terminal/RdpSession.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fe5d17f49 2026-11-10T15:28:37+01:00
+Review: am Ende (Branch-Review)
 Änderung: Abschlussprüfung: `RdpSession.test.ts:358/377/382/388` mounten ohne eigene Größe und schrieben 1280x720 fest (Größe, Canvas-Breite, 25 % und 200 %); sie erwarten jetzt 1920x1080, 480px und 2160px.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/RdpSession.test.ts src/lib/rdp/display.test.ts
 Doku: keine (nur Tests)

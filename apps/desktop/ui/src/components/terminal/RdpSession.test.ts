@@ -355,7 +355,7 @@ describe('RdpSession (R-1098)', () => {
     expect(h.setRdpScaling).toHaveBeenCalledWith(KEY, 'hdpi');
 
     await rerender({ session: session(view({ window: 'custom', scaling: 'hdpi' })) });
-    expect(sizes().at(-1)).toEqual({ t: 'size', w: 1280, h: 720, scale: 175 });
+    expect(sizes().at(-1)).toEqual({ t: 'size', w: 1920, h: 1080, scale: 175 });
     // A fixed desktop does not follow the tab.
     vi.useFakeTimers();
     const before = sizes().length;
@@ -374,18 +374,18 @@ describe('RdpSession (R-1098)', () => {
     const canvas = container.querySelector('canvas')!;
     const zoom = () => container.querySelector('.rdp-zoom')!.textContent!.trim();
     expect(zoom()).toBe('100 %');
-    expect(canvas.style.width).toBe('1280px');
+    expect(canvas.style.width).toBe('1920px');
     expect(container.querySelector('.rdp-view')!.classList.contains('zoomed')).toBe(true);
 
     for (let i = 0; i < 4; i += 1) await fireEvent.click(button('Zoom out'));
     expect(zoom()).toBe('25 %');
-    expect(canvas.style.width).toBe('320px');
+    expect(canvas.style.width).toBe('480px');
     expect((button('Zoom out') as HTMLButtonElement).disabled).toBe(true);
 
     await fireEvent.click(button('1:1'));
     for (let i = 0; i < 5; i += 1) await fireEvent.click(button('Zoom in'));
     expect(zoom()).toBe('200 %');
-    expect(canvas.style.height).toBe('1440px');
+    expect(canvas.style.height).toBe('2160px');
     expect((button('Zoom in') as HTMLButtonElement).disabled).toBe(true);
 
     await fireEvent.click(button('Fit'));
