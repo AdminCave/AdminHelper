@@ -1,5 +1,5 @@
 # Eingebettetes RDP: Live-Test, OpenH264-Download, Passwort beim Neu verbinden — Task-Ledger
-Status: aktiv · Branch: feature/kern-rdp-9 · Review: pro Task
+Status: bereit · Branch: feature/kern-rdp-9 · Review: pro Task
 Spec: docs/features/kern-rdp-9.md (Roadmap R-1258, R-1195, R-1201, R-1207, R-1196)
 Heavy: linux-full — der Live-Test xrdp_live_session läuft nur in desktop_e2e_rdp_embedded (Teil gui des Sammellaufs); kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,8 +32,10 @@ Review: approve (.ah-out/review/kern-rdp-9/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/terminals.test.ts src/lib/stores/connectFlow.test.ts src/components/terminal/RdpSession.test.ts
 Doku: → T4
 
-### T4 — Doku und CHANGELOG  [ ]
+### T4 — Doku und CHANGELOG  [x]
 Komponente: desktop-ui · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-rdp-9.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0f1a43700 2026-11-10T07:26:05+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: DE und EN: H.264 nur unter Linux auf x86_64, „aus“ gewinnt gegen einen laufenden Download, Passwortabfrage beim Neu verbinden nach einem Anmeldefehler; CHANGELOG `### Fixed` und `### Changed`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts
 Doku: diese Task
