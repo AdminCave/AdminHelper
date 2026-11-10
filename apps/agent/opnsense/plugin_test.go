@@ -627,3 +627,310 @@ func TestReconfigureRefusesAnyOtherArgument(t *testing.T) {
 		}
 	}
 }
+
+const (
+	repoScript = src + "/opnsense/scripts/firmware/repos/AdminHelper.sh"
+	repoConf   = "/usr/local/etc/pkg/repos/AdminHelper.conf"
+	repoPubkey = "/usr/local/etc/pkg/keys/AdminHelper.pub"
+	pkgEtc     = "/usr/local/etc/pkg/"
+)
+
+// noOtherPath fails when a line of script names an absolute path that the test does not move into
+// its root, so a run could not reach the real host.
+func noOtherPath(t *testing.T, name, script string, moved ...string) {
+	t.Helper()
+	pairs := []string{"/dev/null", ""}
+	for _, m := range moved {
+		pairs = append(pairs, m, "")
+	}
+	r := strings.NewReplacer(pairs...)
+	for _, line := range strings.Split(script, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") && regexp.MustCompile(`(^|[^A-Za-z0-9_.])/[A-Za-z]`).MatchString(r.Replace(line)) {
+			t.Fatalf("%s: %q names a path the test does not move", name, line)
+		}
+	}
+}
+
+// repoHost is an OPNsense box for the repository script: the agent's files and pkg's directories
+// below a temporary root.
+type repoHost struct {
+	*host
+	ca string // the enrolled CA, read from the agent's source
+}
+
+func newRepoHost(t *testing.T) *repoHost {
+	t.Helper()
+	h := &repoHost{host: newHost(t)}
+	pki := goValues(t, "../internal/config/paths.go")["AgentPkiDir"]
+	ca := goValues(t, "../internal/enroll/enroll.go")["CAFileName"]
+	if pki == "" || ca == "" {
+		t.Fatalf("AgentPkiDir %q or CAFileName %q not found in the agent's source", pki, ca)
+	}
+	h.ca = h.n.etc + "/" + pki + "/" + ca
+	h.write(t, repoPubkey, "public key\n")
+	return h
+}
+
+// run runs the repository script as system_firmware_configure does, its paths moved into the root,
+// and returns the repository file it leaves, "" for none.
+func (h *repoHost) run(t *testing.T) string {
+	t.Helper()
+	body := read(t, repoScript)
+	noOtherPath(t, "AdminHelper.sh", body, h.n.etc, pkgEtc)
+	body = strings.NewReplacer(h.n.etc, h.root+h.n.etc, pkgEtc, h.root+pkgEtc).Replace(body)
+	out, err := exec.Command("/bin/sh", "-c", body).CombinedOutput()
+	// OPNsense shows what the script writes to stderr on the firmware page.
+	if err != nil || len(out) != 0 {
+		t.Fatalf("AdminHelper.sh: %v, output %q", err, out)
+	}
+	entries, err := os.ReadDir(filepath.Join(h.root, filepath.Dir(repoConf)))
+	if errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(repoConf) {
+		t.Fatalf("the repository directory holds %v, want %s alone", entries, filepath.Base(repoConf))
+	}
+	return read(t, filepath.Join(h.root, repoConf))
+}
+
+// wantRepo is the repository file for host and the fetch(3) environment env, its paths below root.
+func wantRepo(t *testing.T, root, host, env string) string {
+	t.Helper()
+	// The repo plane's port of agent-install.sh, where the server serves the packages.
+	port := regexp.MustCompile(`(?m)^REPO_PORT=([0-9]+)$`).FindStringSubmatch(read(t, "../../../scripts/agent-install.sh"))
+	if port == nil {
+		t.Fatal("REPO_PORT not found in agent-install.sh")
+	}
+	// The priority stays below the 11 of OPNsense's own repository, which wins a name both carry.
+	return "# Written by os-adminhelper from the agent's configuration; changes do not last.\n" +
+		"AdminHelper: {\n" +
+		`  url: "https://` + host + ":" + port[1] + `/freebsd/${ABI}",` + "\n" +
+		`  signature_type: "pubkey",` + "\n" +
+		`  pubkey: "` + root + repoPubkey + `",` + "\n" +
+		"  env: { " + env + " },\n" +
+		"  priority: 5,\n" +
+		"  enabled: yes\n" +
+		"}\n"
+}
+
+const unverified = `SSL_NO_VERIFY_PEER: "1", SSL_NO_VERIFY_HOSTNAME: "1"`
+
+func TestTheRepositoryScriptPointsPkgAtTheAgentsServer(t *testing.T) {
+	n := readAgentNames(t)
+	cases := []struct {
+		name, frp, monitor, host string
+	}{
+		{"tunnel URL", `ADMINHELPER_URL="https://ah.example.org"`, "", "ah.example.org"},
+		{"port and path", `ADMINHELPER_URL="https://ah.example.org:8443/api/"`, "", "ah.example.org"},
+		{"tunnel URL first", `ADMINHELPER_URL="https://ah.example.org"`, `MONITOR_URL="https://other.example.org"`, "ah.example.org"},
+		{"monitoring alone", "", `MONITOR_URL="https://192.0.2.10:443"`, "192.0.2.10"},
+		{"tunnel URL unusable", `ADMINHELPER_URL="http://ah.example.org"`, `MONITOR_URL="https://198.51.100.7"`, "198.51.100.7"},
+		{"IPv6", "", `MONITOR_URL="https://[2001:db8::1]:443/"`, "[2001:db8::1]"},
+		{"as the agent reads it", "# ADMINHELPER_URL=\"https://comment.example.org\"\n  ADMINHELPER_URL = \"https://old.example.org\"  \nADMINHELPER_URL=https://ah.example.org\r", "", "ah.example.org"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newRepoHost(t)
+			if c.frp != "" {
+				h.write(t, n.frpConf, c.frp+"\n")
+			}
+			if c.monitor != "" {
+				h.write(t, n.monitorConf, c.monitor+"\n")
+			}
+			if got, want := h.run(t), wantRepo(t, h.root, c.host, unverified); got != want {
+				t.Errorf("repository file\n%s\nwant\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestTheRepositoryScriptVerifiesTheServerOnceTheAgentIsEnrolled(t *testing.T) {
+	n := readAgentNames(t)
+	h := newRepoHost(t)
+	h.write(t, n.frpConf, `ADMINHELPER_URL="https://ah.example.org"`+"\n")
+	if got, want := h.run(t), wantRepo(t, h.root, "ah.example.org", unverified); got != want {
+		t.Fatalf("before the enrollment\n%s\nwant\n%s", got, want)
+	}
+	h.write(t, h.ca, "ca\n")
+	if got, want := h.run(t), wantRepo(t, h.root, "ah.example.org", `SSL_CA_CERT_FILE: "`+h.root+h.ca+`"`); got != want {
+		t.Errorf("after the enrollment\n%s\nwant\n%s", got, want)
+	}
+}
+
+// The host goes into a UCL string that pkg expands and fetches from: anything but a host name, an
+// address and a port is refused, and the file stays as it was.
+func TestTheRepositoryScriptRefusesAnUnusableURL(t *testing.T) {
+	n := readAgentNames(t)
+	for _, url := range []string{
+		"http://ah.example.org", "ftp://ah.example.org", "https://", "https:///path", "https://user@ah.example.org",
+		"https://ah.example.org?x=1", "https://ah.example.org#f", `https://ah.example.org\`, "https://ah.example.org:84a5",
+		"https://ah.example.org:8443:1", "https://ah.example.org:8443\"x", "https://-ah.example.org", "https://.example.org",
+		"https://ah example.org", "https://ah.exa$mple.org", "https://ah.example.org}", "https://ah.example.org,{x:1}",
+		"https://ah.exämple.org", "https://[]", "https://[2001:db8::g]", "https://[2001:db8::1", "https://[2001:db8::1]x",
+		"https://[2001:db8::1]@ah.example.org", "HTTPS://ah.example.org",
+	} {
+		for _, existing := range []string{"", "by hand\n"} {
+			h := newRepoHost(t)
+			h.write(t, n.frpConf, `ADMINHELPER_URL="`+url+`"`+"\n")
+			if existing != "" {
+				h.write(t, repoConf, existing)
+			}
+			if got := h.run(t); got != existing {
+				t.Errorf("URL %q: repository file %q, want %q", url, got, existing)
+			}
+		}
+	}
+}
+
+func TestTheRepositoryScriptNeedsTheKeyAndAServer(t *testing.T) {
+	n := readAgentNames(t)
+	registered := map[string]string{n.frpConf: `ADMINHELPER_URL="https://ah.example.org"`}
+	for _, c := range []struct {
+		name  string
+		key   bool
+		files map[string]string
+	}{
+		{"no key", false, registered},
+		{"not registered", true, nil},
+		{"no URL in the files", true, map[string]string{n.frpConf: `ADMINHELPER_URL=""`, n.monitorConf: `MONITOR_URL=`}},
+		{"other keys alone", true, map[string]string{n.frpConf: `URL="https://ah.example.org"`}},
+	} {
+		for _, existing := range []string{"", "by hand\n"} {
+			h := newRepoHost(t)
+			if !c.key {
+				if err := os.Remove(filepath.Join(h.root, repoPubkey)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for path, data := range c.files {
+				h.write(t, path, data+"\n")
+			}
+			if existing != "" {
+				h.write(t, repoConf, existing)
+			}
+			if got := h.run(t); got != existing {
+				t.Errorf("%s: repository file %q, want %q", c.name, got, existing)
+			}
+		}
+	}
+}
+
+// OPNsense runs the scripts of the repos directory only when they are executable.
+func TestTheRepositoryScriptIsExecutable(t *testing.T) {
+	st, err := os.Stat(repoScript)
+	if err != nil || st.Mode()&0o111 != 0o111 {
+		t.Errorf("%s is not executable: %v", repoScript, err)
+	}
+}
+
+// pkgScripts are the commands the package's scripts call, as plugins.mk generates them, and the
+// arguments they get in order.
+var pkgScripts = map[string]string{
+	"/usr/local/etc/rc.d/configd":                               "configd",
+	"/usr/local/opnsense/mvc/script/run_migrations.php":         "run_migrations.php",
+	"/usr/local/etc/rc.configure_plugins":                       "rc.configure_plugins",
+	"/usr/local/sbin/configctl":                                 "configctl",
+	"/usr/local/opnsense/scripts/firmware/repos/AdminHelper.sh": "AdminHelper.sh",
+}
+
+// runPkgScript runs post-install or post-deinstall of the package as pkg does, with /usr/local
+// moved into the host's root, where stubs of the commands it calls log them; a file fail in the
+// state makes every stub fail. It returns the calls. pkg in developer mode fails on any exit
+// status but 0.
+func (h *host) runPkgScript(t *testing.T, script string, env ...string) []string {
+	t.Helper()
+	for path, name := range pkgScripts {
+		h.write(t, path, "#!/bin/sh\necho \""+name+"${*:+ $*}\" >> \"$AH_STATE/calls\"\n[ ! -f \"$AH_STATE/fail\" ]\n")
+	}
+	body := read(t, script)
+	noOtherPath(t, script, body, "/usr/local/")
+	body = strings.ReplaceAll(body, "/usr/local/", h.root+"/usr/local/")
+	_ = os.Remove(filepath.Join(h.state, "calls"))
+	cmd := exec.Command("/bin/sh", "-c", "set -- os-adminhelper-0.47.0\n"+body)
+	cmd.Env = append(os.Environ(), "AH_STATE="+h.state, "PKG_NAME=os-adminhelper", "PKG_PREFIX=/usr/local", "PKG_ROOTDIR=/")
+	cmd.Env = append(cmd.Env, env...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%s %v: %v\n%s", script, env, err, out)
+	}
+	data, err := os.ReadFile(filepath.Join(h.state, "calls"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+}
+
+func TestPostInstallDoesWhatPluginsMkGenerates(t *testing.T) {
+	want := []string{"configd restart", "run_migrations.php OPNsense/AdminHelper", "rc.configure_plugins POST_INSTALL",
+		"configctl template reload OPNsense/AdminHelper", "AdminHelper.sh"}
+	for _, fail := range []bool{false, true} {
+		h := newHost(t)
+		if fail {
+			h.set(t, "fail")
+		}
+		if calls := h.runPkgScript(t, "post-install"); !slices.Equal(calls, want) {
+			t.Errorf("fail=%v: post-install calls %q, want %q", fail, calls, want)
+		}
+	}
+}
+
+func TestPostDeinstallRemovesTheRepositoryFile(t *testing.T) {
+	h := newHost(t)
+	h.write(t, repoConf, "repo\n")
+	h.write(t, pkgEtc+"repos/OPNsense.conf", "opnsense\n")
+	if calls := h.runPkgScript(t, "post-deinstall"); !slices.Equal(calls, []string{"rc.configure_plugins POST_DEINSTALL"}) {
+		t.Errorf("post-deinstall calls %q", calls)
+	}
+	if h.exists(repoConf) {
+		t.Error("the repository file is still there")
+	}
+	if !h.exists(pkgEtc + "repos/OPNsense.conf") {
+		t.Error("post-deinstall removed OPNsense's repository")
+	}
+}
+
+// Under pkg -r the scripts run on the host for a package in another root, under pkg -c inside a
+// chroot that shares the host's processes; neither may reconfigure the running system.
+func TestPkgScriptsLeaveTheSystemAloneInAnotherRoot(t *testing.T) {
+	other := t.TempDir()
+	for _, c := range []struct {
+		name string
+		env  []string
+		root string // the root the package is in, from the host's view
+	}{
+		{"pkg -r", []string{"PKG_ROOTDIR=" + other}, other},
+		{"pkg -r with a final slash", []string{"PKG_ROOTDIR=" + other + "/"}, other},
+		{"pkg -c", []string{"PKG_CHROOTED=true"}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHost(t)
+			// runPkgScript moves /usr/local into h.root; the package's root lies before that.
+			pkgConf := filepath.Join(c.root, h.root, repoConf)
+			if err := os.MkdirAll(filepath.Dir(pkgConf), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(pkgConf, []byte("repo\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if c.root != "" {
+				h.write(t, repoConf, "host\n")
+			}
+			for _, script := range []string{"post-install", "post-deinstall"} {
+				if calls := h.runPkgScript(t, script, c.env...); calls != nil {
+					t.Errorf("%s calls %q, want nothing", script, calls)
+				}
+			}
+			if _, err := os.Stat(pkgConf); err == nil {
+				t.Errorf("repository file of the package's root %s left behind", pkgConf)
+			}
+			if c.root != "" && !h.exists(repoConf) {
+				t.Error("a removal from another root deleted the host's repository file")
+			}
+		})
+	}
+}

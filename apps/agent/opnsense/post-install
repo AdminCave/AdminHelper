@@ -1,0 +1,22 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The +POST_INSTALL of os-adminhelper, on an install and on an upgrade. It does what OPNsense's
+# plugins.mk generates for a plugin with configd actions, a model, a template and a repository
+# script, in the same order: configd reads the new actions, the model's migrations run, the
+# plugins configure themselves, the template writes the tunnel client's rcvar, and the repository
+# script writes the pkg repository of the server the agent is registered with.
+#
+# As in the agent's scripts nothing runs under pkg -r (PKG_ROOTDIR) or pkg -c (PKG_CHROOTED): the
+# package belongs to another root, but these commands act on the running system.
+
+if [ "${PKG_ROOTDIR:-/}" = / ] && [ -z "${PKG_CHROOTED:-}" ]; then
+	if [ -f /usr/local/etc/rc.d/configd ]; then /usr/local/etc/rc.d/configd restart; fi
+	if [ -f /usr/local/opnsense/mvc/script/run_migrations.php ]; then /usr/local/opnsense/mvc/script/run_migrations.php OPNsense/AdminHelper; fi
+	if [ -f /usr/local/etc/rc.configure_plugins ]; then echo "Reloading plugin configuration"; /usr/local/etc/rc.configure_plugins POST_INSTALL; fi
+	if [ -f /usr/local/sbin/configctl ]; then echo -n "Reloading template OPNsense/AdminHelper: "; /usr/local/sbin/configctl template reload OPNsense/AdminHelper; fi
+	/usr/local/opnsense/scripts/firmware/repos/AdminHelper.sh
+fi
+exit 0
