@@ -1,5 +1,5 @@
 # Desktop-Terminal: Rückfrage vor mehrzeiligem Einfügen, Rückmeldung beim Broadcast — Task-Ledger
-Status: bereit · Branch: feature/kern-terminal-4 · Review: pro Task
+Status: aktiv · Branch: feature/kern-terminal-4 · Review: pro Task
 Spec: docs/features/kern-terminal-4.md (Roadmap R-1144, R-1175)
 Heavy: none — nur Desktop-Einstellung und UI im Terminal-Tab; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Desktop-Journey
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,6 +38,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/terminal/SshTerminal.test.ts
 Doku: diese Task
 Task-Review: am Ende
+
+### T5 — Test: der Schalter der Rückfrage wird gespeichert (R-1144)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.save.test.ts
+Änderung: Der Speichertest des Abschnitts Terminal schaltet auch `confirmMultilinePaste` und erwartet `true` (Fund der Abschlussprüfung: kein Test deckte den Schalter in TerminalOptions.svelte ab).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.save.test.ts
+Doku: keine (nur Test)
 
 ## Entscheidungen
 - Die Zeilen überlappen `feature/arch-namen` in `types.ts` und `dictionaries.ts`, dort aber an anderen Stellen (TunnelMapping, Tunnel-Texte); der Zug fährt trotzdem, sonst wartet er auf PR #432 (Kevins Merge). Wer später merged, löst einen rein textuellen Konflikt.
