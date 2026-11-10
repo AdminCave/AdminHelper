@@ -5,7 +5,8 @@
 // arch-monitoring-ui T4 (R-1225): the plain-text sentences of the monitoring cards.
 // Pins the certificate thresholds of concept §5 at their boundaries (90 days: 22.5/9 d,
 // 6 days: 36/14.4 h, a short-lived certificate: never under 12 h), the expiry sentences,
-// the UTC reading of zone-less timestamps, units by field name and the finding detail.
+// the UTC reading of zone-less timestamps, units by field name, the finding detail and a
+// card's closed line and muted note.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,9 +15,12 @@ vi.mock('$lib/utils/timeAgo', () => ({ timeAgo: vi.fn(() => 'AGO') }));
 import { get } from 'svelte/store';
 import { setLanguage, t } from '$lib/i18n';
 import { timeAgo } from '$lib/utils/timeAgo';
+import type { MonitorCheck, MonitorMutedReason, MonStatus } from '$lib/api/types';
 import {
   ageText,
   bytesText,
+  cardNote,
+  cardSummary,
   expiryLevel,
   expiryText,
   findingDetail,
@@ -73,6 +77,53 @@ describe('mutedReasonText', () => {
     );
     expect(mutedReasonText(tr, null)).toBeNull();
     expect(mutedReasonText(tr, undefined)).toBeNull();
+  });
+});
+
+function check(status: MonStatus, mutedReason: MonitorMutedReason | null = null): MonitorCheck {
+  return {
+    id: `${status}-${mutedReason}`,
+    name: 'c',
+    checkType: 'probe',
+    interval: '5m',
+    severity: 'warning',
+    enabled: true,
+    state: { status },
+    mutedReason,
+  };
+}
+
+describe('cardNote', () => {
+  it('names host down before a maintenance window, as soon as one check has it', () => {
+    const tr = get(t);
+    expect(
+      cardNote(tr, [check('ok', 'maintenance window'), check('ok', 'host down'), check('ok')]),
+    ).toBe('Host down — Meldungen unterdrückt');
+    expect(cardNote(tr, [check('ok'), check('ok', 'maintenance window')])).toBe(
+      'Wartungsfenster — Meldungen unterdrückt',
+    );
+  });
+
+  it('calls a card silent only when every check is silent', () => {
+    const tr = get(t);
+    expect(cardNote(tr, [check('ok', 'silent check'), check('pending', 'silent check')])).toBe(
+      'Stiller Check — meldet erst nach dem Übernehmen',
+    );
+    expect(cardNote(tr, [check('ok', 'silent check'), check('ok')])).toBeNull();
+    expect(cardNote(tr, [])).toBeNull();
+  });
+});
+
+describe('cardSummary', () => {
+  it('counts the problems by status, worst first', () => {
+    const tr = get(t);
+    expect(
+      cardSummary(tr, [check('unknown'), check('warning'), check('critical'), check('warning')]),
+    ).toBe('1 Kritisch · 2 Warnung · 1 Unknown');
+  });
+
+  it('counts the checks when nothing is wrong', () => {
+    expect(cardSummary(get(t), [check('ok'), check('pending')])).toBe('2 Checks');
   });
 });
 

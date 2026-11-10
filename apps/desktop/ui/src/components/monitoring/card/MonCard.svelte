@@ -21,33 +21,49 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   interface Props {
     title: string;
-    status: MonStatus;
+    /** null: a card without a status of its own (the findings inbox), no dot. */
+    status: MonStatus | null;
     /** One line under the title, read while the card is closed. */
     summary?: string | null;
     /** Why the card's notifications are held back (`mutedReasonText`); shown open or closed. */
     note?: string | null;
     /** Buttons beside the toggle, e.g. "Store credentials". */
     actions?: Snippet;
+    /** Open or closed before the admin chooses, in place of the status rule. */
+    defaultOpen?: boolean;
     children: Snippet;
   }
 
-  let { title, status, summary = null, note = null, actions, children }: Props = $props();
+  let {
+    title,
+    status,
+    summary = null,
+    note = null,
+    actions,
+    defaultOpen,
+    children,
+  }: Props = $props();
 
   const uid = $props.id();
   const bodyId = `${uid}-body`;
   // The admin's choice holds for the status it was made at: a card closed on a
   // warning opens again when it turns critical.
-  let choice = $state<{ status: MonStatus; open: boolean } | null>(null);
-  const open = $derived(choice && choice.status === status ? choice.open : opensByDefault(status));
+  let choice = $state<{ status: MonStatus | null; open: boolean } | null>(null);
+  const open = $derived(
+    choice && choice.status === status
+      ? choice.open
+      : (defaultOpen ?? (status !== null && opensByDefault(status))),
+  );
 
   const statusLabel = $derived(
-    {
-      ok: $t('monitoring.status.ok'),
-      warning: $t('monitoring.status.warning'),
-      critical: $t('monitoring.status.critical'),
-      unknown: $t('monitoring.status.unknown'),
-      pending: $t('monitoring.status.pending'),
-    }[status],
+    status &&
+      {
+        ok: $t('monitoring.status.ok'),
+        warning: $t('monitoring.status.warning'),
+        critical: $t('monitoring.status.critical'),
+        unknown: $t('monitoring.status.unknown'),
+        pending: $t('monitoring.status.pending'),
+      }[status],
   );
 
   function toggle(): void {
@@ -55,7 +71,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 </script>
 
-<section class="mon-card" data-status={status}>
+<section class="mon-card" data-status={status ?? undefined}>
   <div class="mon-card-head">
     <button
       type="button"
@@ -64,7 +80,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       aria-controls={open ? bodyId : undefined}
       onclick={toggle}
     >
-      <Dot st={status} label={statusLabel} />
+      {#if status}
+        <Dot st={status} label={statusLabel ?? undefined} />
+      {/if}
       <span class="mon-card-titles">
         <span class="mon-card-title">{title}</span>
         {#if summary}

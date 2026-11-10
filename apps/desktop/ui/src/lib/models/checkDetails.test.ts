@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   containerDetails,
   forecastDetails,
+  probeDetails,
   resourceDetails,
   serviceDetails,
   smartDetails,
@@ -19,6 +20,7 @@ const ALL = {
   zfsDetails,
   smartDetails,
   forecastDetails,
+  probeDetails,
 };
 
 describe.each(Object.entries(ALL))('%s', (_name, narrow) => {
@@ -232,5 +234,35 @@ describe('forecastDetails', () => {
       mounts: [{ percent: 3 }, { mount: '/', hours_left: 'soon', percent: 70 }],
     });
     expect(d).toEqual({ mounts: [{ mount: '/', percent: 70 }] });
+  });
+});
+
+describe('probeDetails', () => {
+  const valid = {
+    ts: 1_800_000_000,
+    status: 'ok',
+    error: null,
+    measured_ts: 1_799_999_990,
+    values: { duration_ms: 12, detail: 'HTTP/1.1 200', healthy: true, version: null },
+    baseline: null,
+    problems: ['duration_ms 12 > 10'],
+  };
+
+  it('returns valid details unchanged', () => {
+    expect(probeDetails(valid)).toEqual(valid);
+  });
+
+  it('keeps only scalar values and text problems', () => {
+    const d = probeDetails({
+      ...valid,
+      status: 3,
+      values: { a: [1], b: { c: 1 }, d: Number.NaN, e: 'x' },
+      baseline: { a: 1, b: [2] },
+      problems: ['p', 7],
+    });
+    expect(d).not.toHaveProperty('status');
+    expect(d?.values).toEqual({ e: 'x' });
+    expect(d?.baseline).toEqual({ a: 1 });
+    expect(d?.problems).toEqual(['p']);
   });
 });

@@ -6,8 +6,9 @@
 // notification is muted, certificate expiry, age and values with their unit.
 // The translator comes from the caller (`$t`), so a language switch re-renders.
 
-import type { MonitorMutedReason, MonitorProbeValue } from '$lib/api/types';
+import type { MonitorCheck, MonitorMutedReason, MonitorProbeValue } from '$lib/api/types';
 import { currentLocale, type TranslateFn } from '$lib/i18n';
+import { computeSummary } from '$lib/models/monitoring';
 import { timeAgo } from '$lib/utils/timeAgo';
 
 // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
@@ -44,6 +45,31 @@ export function mutedReasonText(
   if (!reason) return null;
   const key = MUTED_KEY.get(reason);
   return key ? t(key) : null;
+}
+
+/**
+ * Why a card's notifications are held back. Host down outranks a maintenance window as
+ * soon as one check has it; "silent" only when every check is silent, otherwise the
+ * card marks its silent checks one by one. Null when the card alerts as usual.
+ */
+export function cardNote(t: TranslateFn, checks: MonitorCheck[]): string | null {
+  for (const reason of ['host down', 'maintenance window'] as const) {
+    if (checks.some((c) => c.mutedReason === reason)) return mutedReasonText(t, reason);
+  }
+  if (checks.length > 0 && checks.every((c) => c.mutedReason === 'silent check')) {
+    return mutedReasonText(t, 'silent check');
+  }
+  return null;
+}
+
+/** A closed card's line: its problems by status, else how many checks it has. */
+export function cardSummary(t: TranslateFn, checks: MonitorCheck[]): string {
+  const s = computeSummary(checks);
+  const parts: string[] = [];
+  if (s.critical) parts.push(`${s.critical} ${t('monitoring.status.critical')}`);
+  if (s.warning) parts.push(`${s.warning} ${t('monitoring.status.warning')}`);
+  if (s.unknown) parts.push(`${s.unknown} ${t('monitoring.status.unknown')}`);
+  return parts.length ? parts.join(' · ') : `${checks.length} ${t('monitoring.grid.checks')}`;
 }
 
 export type ExpiryLevel = 'expired' | 'critical' | 'warning' | 'ok';

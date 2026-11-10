@@ -14,16 +14,36 @@ SPDX-License-Identifier: GPL-3.0-or-later
     closeCheckEditor,
     loadMonitoring,
     loadMaintenanceWindows,
+    monitoringCatalog,
+    monitoringDiscovery,
+    monitoringFindings,
+    monitoringFindingsError,
+    requestScan,
+    adoptFinding,
+    adoptAllFindings,
+    dismissFinding,
   } from '$lib/stores/monitoring';
-  import { computeSummary, worstStatus } from '$lib/models/monitoring';
-  import type { MonitorCheck, MonitorCheckType } from '$lib/api/types';
-  import { Plus, Wrench } from '@lucide/svelte';
+  import { STATUS_PRIORITY, computeSummary, worstStatus } from '$lib/models/monitoring';
+  import { ageText, cardNote, cardSummary } from '$lib/models/monitoringText';
+  import type {
+    MonitorAdoptResult,
+    MonitorCheck,
+    MonitorCheckType,
+    MonitorFinding,
+  } from '$lib/api/types';
+  import { Plus, RefreshCw, TriangleAlert, Wrench, X } from '@lucide/svelte';
   import Button from '../ui/Button.svelte';
+  import Callout from '../ui/Callout.svelte';
   import Dot from '../ui/Dot.svelte';
+  import EmptyState from '../ui/EmptyState.svelte';
+  import IconButton from '../ui/IconButton.svelte';
   import Pill from '../ui/Pill.svelte';
   import MaintenanceModal from './MaintenanceModal.svelte';
   import MonitorCheckModal from './MonitorCheckModal.svelte';
   import MonHeartbeatBar from './MonHeartbeatBar.svelte';
+  import FindingsInbox from './card/FindingsInbox.svelte';
+  import ModuleCard from './card/ModuleCard.svelte';
+  import MonCard, { opensByDefault } from './card/MonCard.svelte';
   import SecLive from './section/SecLive.svelte';
   import SecNetwork from './section/SecNetwork.svelte';
   import SecHeartbeat from './section/SecHeartbeat.svelte';
@@ -37,7 +57,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import HistoryPanel from './HistoryPanel.svelte';
   import { t } from '$lib/i18n';
 
+  type CardKind = 'system' | 'services' | 'docker' | 'backups' | 'module';
+  interface Card {
+    key: string;
+    kind: CardKind;
+    checks: MonitorCheck[];
+    moduleId: string;
+    instance: string;
+  }
+
   let selected = $derived($selectedServerId);
+  let realServer = $derived(!!selected && selected !== '__none');
 
   let serverName = $derived.by(() => {
     if (!selected) return '';
@@ -69,12 +99,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
       pending: $t('monitoring.status.pending'),
     }[worst],
   );
+  let problems = $derived(summary.critical + summary.warning + summary.unknown);
+  let problemText = $derived(
+    problems === 0
+      ? $t('monitoring.server.problems.none')
+      : problems === 1
+        ? $t('monitoring.server.problems.one')
+        : $t('monitoring.server.problems.many', { count: problems }),
+  );
 
   let maintOpen = $state(false);
 
+  // Module checks belong to their instance's card whatever their type; the rest go by
+  // type into the fixed cards. A probe without a module (made by hand) gets a card of
+  // its own rather than none.
+  let moduleChecks = $derived(serverChecks.filter((c) => c.moduleId || c.checkType === 'probe'));
+  let plainChecks = $derived(serverChecks.filter((c) => !c.moduleId && c.checkType !== 'probe'));
+
   function pick(type: MonitorCheckType | MonitorCheckType[]): MonitorCheck[] {
     const types = Array.isArray(type) ? type : [type];
-    return serverChecks.filter((c) => types.includes(c.checkType));
+    return plainChecks.filter((c) => types.includes(c.checkType));
   }
 
   let liveChecks = $derived(pick('agent_resources'));
@@ -87,7 +131,203 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let zfsChecks = $derived(pick('zfs_health'));
   let smartChecks = $derived(pick('smart_health'));
   let forecastChecks = $derived(pick('disk_forecast'));
+  let systemCardChecks = $derived([
+    ...heartbeatChecks,
+    ...liveChecks,
+    ...networkChecks,
+    ...systemChecks,
+    ...zfsChecks,
+    ...smartChecks,
+    ...forecastChecks,
+  ]);
+
+  function moduleOf(id: string) {
+    return $monitoringCatalog?.modules.find((m) => m.id === id) ?? null;
+  }
+
+  let moduleCards = $derived.by(() => {
+    const groups: Record<string, Card> = {};
+    for (const c of moduleChecks) {
+      const moduleId = c.moduleId || c.checkType;
+      const instance = c.moduleInstance ?? '';
+      const key = `module:${moduleId}/${instance}`;
+      const card = groups[key];
+      if (card) card.checks.push(c);
+      else groups[key] = { key, kind: 'module', checks: [c], moduleId, instance };
+    }
+    const name = (card: Card) => moduleOf(card.moduleId)?.name ?? card.moduleId;
+    return Object.values(groups).sort(
+      (a, b) =>
+        name(a).localeCompare(name(b)) ||
+        a.instance.localeCompare(b.instance, undefined, { numeric: true }),
+    );
+  });
+
+  // Concept §3.14: problems first (worst first, else in the fixed order), then what was
+  // newly found, then the quiet cards in the fixed order.
+  let cards = $derived.by(() => {
+    const fixed: Card[] = [
+      { kind: 'system' as const, checks: systemCardChecks },
+      { kind: 'services' as const, checks: serviceChecks },
+      { kind: 'docker' as const, checks: dockerChecks },
+      { kind: 'backups' as const, checks: backupChecks },
+    ]
+      .filter((c) => c.checks.length > 0)
+      .map((c) => ({ ...c, key: c.kind, moduleId: '', instance: '' }));
+    const all = [...fixed, ...moduleCards];
+    const rank = (card: Card) => {
+      const status = worstStatus(card.checks);
+      return opensByDefault(status) ? STATUS_PRIORITY[status] : 0;
+    };
+    return {
+      problems: all.filter((c) => rank(c) > 0).sort((a, b) => rank(b) - rank(a)),
+      rest: all.filter((c) => rank(c) === 0),
+    };
+  });
+
+  // A failed load keeps the old list (the store), so the card stays and says the list
+  // is not current; without any list it says the findings cannot be loaded.
+  let findings = $derived(
+    realServer ? $monitoringFindings.filter((f) => f.serverId === selected) : [],
+  );
+  let findingsError = $derived(realServer ? $monitoringFindingsError : null);
+  let showFindings = $derived(findings.length > 0 || !!findingsError);
+
+  let discovery = $derived(realServer && selected ? $monitoringDiscovery[selected] : undefined);
+  let scanInfo = $derived(
+    discovery
+      ? discovery.scannedAt
+        ? $t('monitoring.scan.last', { age: ageText($t, discovery.scannedAt) })
+        : $t('monitoring.scan.never')
+      : null,
+  );
+  // Requested and not yet run: the agent picks it up with its next report.
+  let scanRequested = $derived(!!discovery?.scanRequestedAt);
+  let scanning = $state(false);
+
+  async function scanNow(): Promise<void> {
+    if (!selected || !realServer || scanning) return;
+    scanning = true;
+    try {
+      await requestScan(selected);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  // What adopting left out (a check the instance cannot carry, a finding that failed)
+  // stays visible until closed or the next adopt: the finding itself is gone from the
+  // list, so the module card would show fewer checks than the catalog plans, unexplained.
+  let adoptNote = $state<{ serverId: string; lines: string[] } | null>(null);
+  let adoptLines = $derived(adoptNote?.serverId === selected ? adoptNote.lines : []);
+
+  function findingLabel(f: MonitorFinding): string {
+    const name = f.moduleName ?? f.moduleId;
+    return f.instanceKey !== f.moduleId ? `${name} · ${f.instanceKey}` : name;
+  }
+  function skippedLines(result: MonitorAdoptResult): string[] {
+    const module = moduleOf(result.finding.moduleId);
+    return result.skippedChecks.map((s) =>
+      $t('monitoring.findings.skipped', {
+        module: findingLabel(result.finding),
+        check: module?.checks.find((c) => c.key === s.key)?.name ?? s.key,
+        reason: s.reason,
+      }),
+    );
+  }
+  function showAdoptNote(serverId: string, lines: string[]): void {
+    adoptNote = lines.length > 0 ? { serverId, lines } : null;
+  }
+
+  async function adopt(f: MonitorFinding): Promise<void> {
+    adoptNote = null;
+    const result = await adoptFinding(f.id);
+    if (result) showAdoptNote(f.serverId, skippedLines(result));
+  }
+  async function dismiss(f: MonitorFinding): Promise<void> {
+    await dismissFinding(f.id);
+  }
+  async function adoptAll(): Promise<void> {
+    if (!selected) return;
+    adoptNote = null;
+    const serverId = selected;
+    const before = findings;
+    const result = await adoptAllFindings(serverId);
+    if (!result) return;
+    showAdoptNote(serverId, [
+      ...result.adopted.flatMap(skippedLines),
+      ...result.failed.map((f) => {
+        const found = before.find((x) => x.id === f.findingId);
+        return $t('monitoring.findings.failed', {
+          module: found ? findingLabel(found) : f.findingId,
+          reason: f.reason,
+        });
+      }),
+    ]);
+  }
+
+  function cardTitle(kind: Exclude<CardKind, 'module'>): string {
+    return {
+      system: $t('monitoring.card.system'),
+      services: $t('monitoring.section.services'),
+      docker: $t('monitoring.section.docker'),
+      backups: $t('monitoring.section.backups'),
+    }[kind];
+  }
 </script>
+
+{#snippet cardView(card: Card)}
+  {#if card.kind === 'module'}
+    <ModuleCard
+      module={moduleOf(card.moduleId)}
+      moduleId={card.moduleId}
+      instance={card.instance}
+      checks={card.checks}
+    />
+  {:else}
+    <MonCard
+      title={cardTitle(card.kind)}
+      status={worstStatus(card.checks)}
+      summary={cardSummary($t, card.checks)}
+      note={cardNote($t, card.checks)}
+    >
+      <div class="card-sections" class:single={card.kind !== 'system'}>
+        {#if card.kind === 'system'}
+          {#if liveChecks.length > 0 && selected && selected !== '__none'}
+            <HistoryPanel serverId={selected} {serverName} latencyChecks={networkChecks} />
+          {/if}
+          {#if heartbeatChecks.length > 0}
+            <SecHeartbeat checks={heartbeatChecks} />
+          {/if}
+          {#if liveChecks.length > 0}
+            <SecLive checks={liveChecks} />
+          {/if}
+          {#if networkChecks.length > 0}
+            <SecNetwork checks={networkChecks} />
+          {/if}
+          {#if systemChecks.length > 0}
+            <SecSystem checks={systemChecks} />
+          {/if}
+          {#if zfsChecks.length > 0}
+            <SecZfs checks={zfsChecks} />
+          {/if}
+          {#if smartChecks.length > 0}
+            <SecSmart checks={smartChecks} />
+          {/if}
+          {#if forecastChecks.length > 0}
+            <SecForecast checks={forecastChecks} />
+          {/if}
+        {:else if card.kind === 'services'}
+          <SecServices checks={card.checks} />
+        {:else if card.kind === 'docker'}
+          <SecDocker checks={card.checks} />
+        {:else}
+          <SecBackups checks={card.checks} />
+        {/if}
+      </div>
+    </MonCard>
+  {/if}
+{/snippet}
 
 <div class="mon-dashboard">
   {#if !selected}
@@ -120,8 +360,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <Pill>{summary.pending} {$t('monitoring.status.pending')}</Pill>
           {/if}
         </div>
-        {#if selected !== '__none'}
+        {#if realServer}
           <div class="mon-dashboard-actions">
+            <Button
+              variant="ghost"
+              size="sm"
+              iconLeft={RefreshCw}
+              data-action="scan-now"
+              loading={scanning}
+              disabled={scanning || scanRequested}
+              onclick={scanNow}
+              >{scanRequested ? $t('monitoring.scan.requested') : $t('monitoring.scan.now')}</Button
+            >
             <Button
               variant="ghost"
               size="sm"
@@ -139,47 +389,62 @@ SPDX-License-Identifier: GPL-3.0-or-later
           </div>
         {/if}
       </div>
+      <p class="mon-dashboard-line">
+        <span class="mon-dashboard-problems" class:has-problems={problems > 0}>{problemText}</span>
+        {#if scanInfo}
+          <span class="mon-dashboard-scan">{scanInfo}</span>
+        {/if}
+      </p>
       {#if heartbeatChecks.length > 0}
         <MonHeartbeatBar checkId={heartbeatChecks[0].id} />
       {/if}
     </header>
 
-    {#if serverChecks.length === 0}
+    {#if adoptLines.length > 0}
+      <div class="adopt-note" role="status">
+        <Callout tone="warning" icon={TriangleAlert} title={$t('monitoring.findings.partial')}>
+          <ul class="adopt-note-list">
+            {#each adoptLines as line, i (i)}
+              <li>{line}</li>
+            {/each}
+          </ul>
+          {#snippet action()}
+            <IconButton
+              icon={X}
+              size="sm"
+              label={$t('action.close')}
+              onclick={() => (adoptNote = null)}
+            />
+          {/snippet}
+        </Callout>
+      </div>
+    {/if}
+
+    {#if serverChecks.length === 0 && !showFindings}
       <div class="mon-panel-empty-inline">{$t('monitoring.panel.noChecks')}</div>
     {:else}
-      {#if liveChecks.length > 0 && selected !== '__none'}
-        <HistoryPanel serverId={selected} {serverName} latencyChecks={networkChecks} />
+      {#each cards.problems as card (card.key)}
+        {@render cardView(card)}
+      {/each}
+      {#if showFindings}
+        <MonCard
+          title={$t('monitoring.card.findings', { count: findings.length })}
+          status={null}
+          defaultOpen={findings.length > 0}
+          note={findingsError ? $t('monitoring.findings.stale', { error: findingsError }) : null}
+        >
+          {#if findings.length > 0}
+            <div class="findings-body">
+              <FindingsInbox {findings} onAdopt={adopt} onDismiss={dismiss} onAdoptAll={adoptAll} />
+            </div>
+          {:else}
+            <EmptyState framed={false} message={$t('monitoring.findings.unavailable')} />
+          {/if}
+        </MonCard>
       {/if}
-      {#if heartbeatChecks.length > 0}
-        <SecHeartbeat checks={heartbeatChecks} />
-      {/if}
-      {#if liveChecks.length > 0}
-        <SecLive checks={liveChecks} />
-      {/if}
-      {#if networkChecks.length > 0}
-        <SecNetwork checks={networkChecks} />
-      {/if}
-      {#if serviceChecks.length > 0}
-        <SecServices checks={serviceChecks} />
-      {/if}
-      {#if systemChecks.length > 0}
-        <SecSystem checks={systemChecks} />
-      {/if}
-      {#if dockerChecks.length > 0}
-        <SecDocker checks={dockerChecks} />
-      {/if}
-      {#if backupChecks.length > 0}
-        <SecBackups checks={backupChecks} />
-      {/if}
-      {#if zfsChecks.length > 0}
-        <SecZfs checks={zfsChecks} />
-      {/if}
-      {#if smartChecks.length > 0}
-        <SecSmart checks={smartChecks} />
-      {/if}
-      {#if forecastChecks.length > 0}
-        <SecForecast checks={forecastChecks} />
-      {/if}
+      {#each cards.rest as card (card.key)}
+        {@render cardView(card)}
+      {/each}
     {/if}
   {/if}
 </div>
@@ -206,13 +471,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mon-dashboard {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-3);
   }
   .mon-dashboard-head {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 18px;
+    gap: var(--space-3);
+    padding: var(--space-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background: var(--surface);
@@ -221,21 +486,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     min-width: 0;
   }
   .mon-dashboard-titles {
     display: flex;
-    flex: 1 1 160px;
+    flex: 1 1 10rem;
     flex-direction: column;
-    gap: 3px;
+    gap: var(--space-1);
     min-width: 0;
   }
   .mon-dashboard-name {
     overflow: hidden;
     margin: 0;
     color: var(--text-strong);
-    font-size: 18px;
+    font-size: var(--text-lg);
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -244,7 +509,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     overflow: hidden;
     color: var(--text-subtle);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -252,23 +517,63 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mon-dashboard-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-2);
+  }
+  .mon-dashboard-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+  .mon-dashboard-problems {
+    color: var(--text-muted);
+  }
+  .mon-dashboard-problems.has-problems {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .mon-dashboard-scan {
+    color: var(--text-subtle);
+  }
+  /* The sections keep their frame elsewhere; inside a card the card is the frame. */
+  .card-sections :global(.mon-section) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .card-sections :global(.mon-section + .mon-section) {
+    border-top: 1px solid var(--border-faint);
+  }
+  /* A card of one section already shows its title, dot and count. */
+  .card-sections.single :global(.mon-section-head) {
+    display: none;
+  }
+  .card-sections.single :global(.mon-section-body) {
+    padding-top: var(--space-2);
+  }
+  .findings-body {
+    padding: var(--space-2) var(--space-4) var(--space-4);
+  }
+  .adopt-note-list {
+    margin: 0;
+    padding-left: var(--space-4);
   }
   .mon-panel-empty,
   .mon-panel-empty-inline {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 28px 16px;
+    gap: var(--space-2);
+    padding: var(--space-6) var(--space-4);
     border: 1px dashed var(--border);
     border-radius: var(--radius-lg);
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--text-sm);
     text-align: center;
   }
   .mon-panel-empty-icon {
-    font-size: 24px;
+    font-size: var(--text-2xl);
     opacity: 0.5;
   }
 </style>
