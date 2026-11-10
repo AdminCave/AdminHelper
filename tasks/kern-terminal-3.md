@@ -1,5 +1,5 @@
 # Desktop-Terminal: Dateien, Befehle, Einfügen, Sitzungsverlauf — Task-Ledger
-Status: aktiv · Branch: feature/kern-terminal-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-terminal-3 · Review: pro Task
 Spec: docs/features/kern-terminal-3.md (Roadmap R-1170, R-1171, R-1174, R-1155, R-1165, R-1166, R-1144, R-1175, R-1159)
 Heavy: linux-full — Desktop-Journeys (eingebettetes Terminal, Dateien-Panel); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -79,11 +79,14 @@ Review: approve (.ah-out/review/kern-terminal-3/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts src/lib/stores/terminals.test.ts
 Doku: → T7
 
-### T7 — Doku und CHANGELOG  [ ]
+### T7 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/index.html, docs/en/admin/index.html, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-terminal-3.md
-Änderung: DE+EN: Rückfrage beim Einfügen und ihr Schalter, Dateien-Panel wartet auf die Anmeldung, Sitzungsverlauf
-des eingebetteten Terminals; Entwicklerdoku: `ansible_run` mit `check` (bool), Fensterprüfung von
-`terminal_open_ssh`, PATH-Suche nur absolut. CHANGELOG-Eintrag neutral.
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ff2de0b3c 2026-11-10T02:39:46+01:00
+Review: am Ende (nur Doku, Branch-Review)
+Änderung: DE+EN: Dateien-Panel wartet auf die Anmeldung, bereinigter Download-Name, Sitzungsverlauf des
+eingebetteten Terminals (Rückfrage beim Einfügen fährt mit T4 nach kern-terminal-4); Entwicklerdoku: `ansible_run`
+mit `check` (bool), Fensterprüfung von `terminal_open_ssh`, PATH-Suche nur absolut, Warten auf den Socket,
+exklusive Teildatei, `suggested_name`, Ende des Verlaufseintrags. CHANGELOG-Eintrag neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
