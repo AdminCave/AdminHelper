@@ -1,5 +1,5 @@
 # Desktop-Terminal: Rückfrage vor mehrzeiligem Einfügen, Rückmeldung beim Broadcast — Task-Ledger
-Status: aktiv · Branch: feature/kern-terminal-4 · Review: pro Task
+Status: bereit · Branch: feature/kern-terminal-4 · Review: pro Task
 Spec: docs/features/kern-terminal-4.md (Roadmap R-1144, R-1175)
 Heavy: none — nur Desktop-Einstellung und UI im Terminal-Tab; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Desktop-Journey
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/termina
 Doku: diese Task
 Task-Review: am Ende
 
-### T5 — Test: der Schalter der Rückfrage wird gespeichert (R-1144)  [ ]
+### T5 — Test: der Schalter der Rückfrage wird gespeichert (R-1144)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.save.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @383ae3793 2026-11-10T10:34:01+01:00
+Review: approve (.ah-out/review/kern-terminal-4/T5.verdict.json)
 Änderung: Der Speichertest des Abschnitts Terminal schaltet auch `confirmMultilinePaste` und erwartet `true` (Fund der Abschlussprüfung: kein Test deckte den Schalter in TerminalOptions.svelte ab).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.save.test.ts
 Doku: keine (nur Test)

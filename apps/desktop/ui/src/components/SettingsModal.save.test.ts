@@ -223,6 +223,7 @@ describe('SettingsModal — the section Terminal (R-1069)', () => {
       'terminal.options.copyOnSelect',
       'terminal.options.rightClickPaste',
       'terminal.options.confirmClose',
+      'terminal.options.confirmMultilinePaste',
     ]) {
       await fireEvent.click(pane.getByRole('switch', { name: tNow(key) }));
     }
@@ -246,7 +247,7 @@ describe('SettingsModal — the section Terminal (R-1069)', () => {
         copyOnSelect: false,
         rightClickPaste: false,
         confirmClose: false,
-        confirmMultilinePaste: false,
+        confirmMultilinePaste: true,
       },
     });
   });
