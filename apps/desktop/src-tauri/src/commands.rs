@@ -992,6 +992,19 @@ pub fn terminal_broadcast_state(registry: State<'_, PtyRegistry>) -> bool {
 
 // ── SFTP of a terminal session (R-1072): main only, as the file panel sits in main ──
 
+/// The SFTP channel of `session` once it has signed in ([`sftp::wait_for_sign_in`], R-1174).
+async fn sftp_channel(
+    window: &tauri::Window,
+    session: u64,
+) -> Result<(PathBuf, Vec<String>), AppError> {
+    sftp::wait_for_sign_in(
+        || window.state::<PtyRegistry>().sftp(session),
+        sftp::SIGN_IN_WAIT,
+        sftp::SIGN_IN_POLL,
+    )
+    .await
+}
+
 /// The entries of `path` on the host of `session`; `.` is the login directory.
 #[tauri::command]
 pub async fn sftp_list(
@@ -1004,7 +1017,7 @@ pub async fn sftp_list(
             "only the main window reaches the files of a session".into(),
         ));
     }
-    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let (program, args) = sftp_channel(&window, session).await?;
     sftp::list(program.as_os_str(), &args, &path).await
 }
 
@@ -1015,7 +1028,7 @@ pub async fn sftp_mkdir(window: tauri::Window, session: u64, path: String) -> Re
             "only the main window reaches the files of a session".into(),
         ));
     }
-    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let (program, args) = sftp_channel(&window, session).await?;
     sftp::mkdir(program.as_os_str(), &args, &path).await
 }
 
@@ -1035,7 +1048,7 @@ pub async fn sftp_upload(
             "only the main window reaches the files of a session".into(),
         ));
     }
-    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let (program, args) = sftp_channel(&window, session).await?;
     let parent = window.clone();
     // The dialog waits for the user, and must not on the main thread.
     let picked = blocking(move || {
@@ -1079,7 +1092,7 @@ pub async fn sftp_upload_dropped(
             "only the main window reaches the files of a session".into(),
         ));
     }
-    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let (program, args) = sftp_channel(&window, session).await?;
     upload_picked(&window, &program, &args, &dir, drop, overwrite, &progress).await
 }
 
@@ -1144,7 +1157,7 @@ pub async fn sftp_download(
             "only the main window reaches the files of a session".into(),
         ));
     }
-    let (program, args) = window.state::<PtyRegistry>().sftp(session)?;
+    let (program, args) = sftp_channel(&window, session).await?;
     let name = sftp::suggested_name(&path);
     let parent = window.clone();
     let suggested = name.clone();

@@ -35,6 +35,41 @@ const MESSAGE_MAX: usize = 512;
 /// How long the child may take to end once its stdin is closed.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
 
+/// How long an action waits for its session to sign in (R-1174).
+pub const SIGN_IN_WAIT: Duration = Duration::from_secs(120);
+
+/// How often an action looks for the connection of its session while it signs in.
+pub const SIGN_IN_POLL: Duration = Duration::from_millis(250);
+
+/// The program and argv of the SFTP channel from `channel`, once the session is signed in: an
+/// argv over a ControlMaster socket waits until the socket is there, as OpenSSH creates it only
+/// after the login (a child before that would sign in itself and fail under `BatchMode`).
+/// `channel` is asked again each round, so a session that ends meanwhile ends the wait with its
+/// error.
+pub async fn wait_for_sign_in(
+    mut channel: impl FnMut() -> Result<(PathBuf, Vec<String>), AppError>,
+    wait: Duration,
+    poll: Duration,
+) -> Result<(PathBuf, Vec<String>), AppError> {
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        let (program, args) = channel()?;
+        let ready = match crate::connection::ssh::control_socket_of(&args) {
+            None => true,
+            Some(socket) => tokio::fs::try_exists(&socket).await.unwrap_or(false),
+        };
+        if ready {
+            return Ok((program, args));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(AppError::Connection(
+                "the session is not signed in yet; refresh once it is".to_string(),
+            ));
+        }
+        tokio::time::sleep(poll).await;
+    }
+}
+
 /// What a directory entry is; a symlink is not followed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -920,5 +955,92 @@ mod tests {
             part_path(Path::new("/home/u/x.tar")).unwrap(),
             Path::new("/home/u/.x.tar.ah-part")
         );
+    }
+
+    fn channel_over(socket: &Path) -> (PathBuf, Vec<String>) {
+        let mut args = vec!["-o".to_string(), "BatchMode=yes".to_string()];
+        args.extend(crate::connection::ssh::control_args(socket, false));
+        (PathBuf::from("/usr/bin/ssh"), args)
+    }
+
+    #[tokio::test]
+    async fn an_action_waits_until_the_session_has_signed_in() {
+        let dir =
+            crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-wait-").unwrap();
+        let socket = dir.join("cm");
+        let maker = {
+            let socket = socket.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                tokio::fs::write(&socket, b"").await.unwrap();
+            })
+        };
+        let mut asked = 0;
+        let got = wait_for_sign_in(
+            || {
+                asked += 1;
+                Ok(channel_over(&socket))
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(20),
+        )
+        .await;
+        maker.await.unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(got.unwrap(), channel_over(&socket));
+        assert!(asked > 1, "the first round found no socket and waited");
+    }
+
+    #[tokio::test]
+    async fn an_action_gives_up_when_the_session_never_signs_in() {
+        let socket = std::env::temp_dir().join("ah-sftp-wait-missing").join("cm");
+        let err = wait_for_sign_in(
+            || Ok(channel_over(&socket)),
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.code(), "ERR_CONNECTION");
+        assert!(err.to_string().contains("not signed in yet"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn an_action_ends_with_the_session_it_waits_for() {
+        let socket = std::env::temp_dir().join("ah-sftp-wait-ended").join("cm");
+        let mut rounds = 0;
+        let err = wait_for_sign_in(
+            || {
+                rounds += 1;
+                if rounds < 3 {
+                    Ok(channel_over(&socket))
+                } else {
+                    Err(AppError::Connection(
+                        "the terminal session has ended".to_string(),
+                    ))
+                }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.to_string(), "the terminal session has ended");
+    }
+
+    #[tokio::test]
+    async fn an_action_without_a_control_socket_goes_at_once() {
+        let channel = (
+            PathBuf::from("ssh.exe"),
+            vec!["-s".to_string(), "sftp".to_string()],
+        );
+        let got = wait_for_sign_in(
+            || Ok(channel.clone()),
+            Duration::ZERO,
+            Duration::from_secs(60),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got, channel);
     }
 }

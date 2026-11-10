@@ -32,15 +32,18 @@ Review: approve (.ah-out/review/kern-terminal-3/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T7
 
-### T3 — R-1174: SFTP wartet auf die Anmeldung der Sitzung  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/commands.rs
+### T3 — R-1174: SFTP wartet auf die Anmeldung der Sitzung  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/connection/ssh.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @892839227 2026-11-10T02:11:44+01:00
+Review: approve (.ah-out/review/kern-terminal-3/T3.verdict.json)
 Änderung:
 - Hat die Sitzung einen ControlPath, wartet jeder SFTP-Befehl, bis der Socket existiert (Polling 250 ms, Deckel
   120 s). Endet die Sitzung vorher oder läuft der Deckel ab: Fehler „The session is not signed in yet“, der Nutzer
   aktualisiert danach. Ohne ControlPath (Windows) wie heute.
 - `pty.rs` wird nicht geändert (überlappt `feature/klein-kommentare-desktop-1`).
-- Tests: Socket erscheint nach kurzer Zeit (Befehl läuft), erscheint nie (Fehler nach dem Deckel, im Test kurz).
-Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::
+- Tests: Socket erscheint nach kurzer Zeit (Befehl läuft), erscheint nie (Fehler nach dem Deckel, im Test kurz),
+  Sitzung endet beim Warten; `control_socket_of` liest den Socket aus dem SFTP-argv (`connection/ssh.rs`).
+Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T7
 
 ### T4 — R-1144: Rückfrage vor mehrzeiligem Einfügen  [ ]
