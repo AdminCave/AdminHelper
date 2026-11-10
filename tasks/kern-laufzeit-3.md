@@ -1,5 +1,5 @@
 # Laufzeit: Redis-Netz und -Module, Proxy-Header des Servers — Task-Ledger
-Status: bereit · Branch: feature/kern-laufzeit-3 · Review: pro Task
+Status: erledigt · Branch: feature/kern-laufzeit-3 · Review: pro Task
 Spec: docs/features/kern-laufzeit-3.md (Roadmap R-1139, R-1125)
 Heavy: linux-full — `docker-compose*.yml` und `scripts/tests/integration_stack_test.sh` im Diff: der Sammellauf über `main` fährt den Stack; vor dem Merge der Stack-Job per `gh workflow run ci.yml --ref feature/kern-laufzeit-3`. Kein `scenario`, kein `windows`.
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
