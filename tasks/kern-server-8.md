@@ -1,5 +1,5 @@
 # Server: wiederholter Skalar-Query-Parameter ergibt 422 — Task-Ledger
-Status: geplant · Branch: feature/kern-server-8 · Review: am Ende
+Status: aktiv · Branch: feature/kern-server-8 · Review: am Ende
 Spec: docs/features/kern-server-8.md (Roadmap R-1132)
 Heavy: linux-full — Server-API: eine App-weite Abhängigkeit vor jeder Route
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
