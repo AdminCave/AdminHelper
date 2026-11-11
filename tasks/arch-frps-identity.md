@@ -1,5 +1,5 @@
 # frps prüft Proxy-Anmeldungen — Task-Ledger
-Status: aktiv · Branch: feature/arch-frps-identity · Review: pro Task
+Status: bereit · Branch: feature/arch-frps-identity · Review: pro Task
 Spec: docs/features/arch-frps-identity.md (Roadmap R-1215)
 Heavy: scenario --tunnel — der echte Datenpfad Agent-frpc → frps mit Plugin → Desktop-Visitor beweist, dass ein Agent nach dem Sync seinen Schlüssel mitbringt und frps ihn zulässt; ask-first (Spec, Frage 3). Agent-Modul und Compose-Overlay fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -93,8 +93,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_policy_liv
 Doku: → T7
 Abhängt von: T3, T5
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/arch-frps-identity.md
+### T7 — Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/arch-frps-identity.md, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1623d9632 2026-11-11T12:01:20+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: frp-tunnel: frps lässt nur die Proxies zu, die der Server für den Host erzeugt; nach dem Update kommen Tunnel mit dem nächsten Agent-Sync zurück (bis 5 min), manuell verteilte frpc.toml neu verteilen, ein `SECRET_KEY`-Wechsel verteilt neue Schlüssel über den Sync. betrieb/operations: zweiter Prozess im frps-Container, Neustart durch den Supervisor, Log-Zeilen. server.html: Policy-Datei, Schlüssel, Schreibzeitpunkte. Weitere Seiten zum Build des frps-Images per grep (`apps/frps`, `cicd.html`) nachziehen und in `Dateien:` aufnehmen. CHANGELOG-Fragment neutral (Changed; ohne SPDX-Kopf wie die übrigen Fragmente).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html DE+EN · docs/admin/betrieb.html + docs/en/admin/operations.html · docs/developer/server.html DE+EN · changelog.d/arch-frps-identity.md
