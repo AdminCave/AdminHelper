@@ -15,10 +15,10 @@ push built, once the signature that push made checks out.
 The frps image builds on the frps image of the FRP release that ci.yml and release.yml pin as
 FRP_VERSION; the lockstep job frp-consistency compares that base with the other pins. The server
 job of ci.yml pulls the bases of the frps image (that one and the Go image its plugin builds on)
-along with those of the gateway and of the Python images, so the tests that run an image run
-there instead of skipping, and in that leg a step reads the JUnit XML of pytest and fails on any
-test that skipped. The ops-scripts job shellchecks the supervisor as
-the POSIX sh the image runs it with.
+along with those of the gateway and of the Python images and the frpc image the live test of the
+plugin pins, so the tests that run an image run there instead of skipping, and in that leg a step
+reads the JUnit XML of pytest and fails on any test that skipped. The ops-scripts job shellchecks
+the supervisor as the POSIX sh the image runs it with.
 
 The Playwright job of ci.yml installs Chromium alone, the one browser its suite runs, and gives
 the install a deadline of its own below that of the job.
@@ -42,6 +42,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from .test_frps_policy_live import FRPC_IMAGE
 from .test_frps_supervisor import _bases
 from .test_images_exec_only import _base
 
@@ -455,8 +456,8 @@ def test_the_server_job_pulls_the_base_of_every_image_test_before_the_tests(tmp_
     assert pull.returncode == 0, pull.stdout + pull.stderr
     # The references the image tests look up before they build or start a container, each
     # pulled once: those of frps (the Go stage of its plugin among them), the last stage of the
-    # Python images and the gateway.
-    bases = [*_bases(), _base(), _gateway_base()]
+    # Python images, the gateway and the frpc the live test of the plugin runs.
+    bases = [*_bases(), _base(), _gateway_base(), FRPC_IMAGE]
     assert sorted(pull.stdout.splitlines()) == sorted(f"pull {base}" for base in bases)
 
 

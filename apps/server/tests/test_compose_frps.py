@@ -239,6 +239,7 @@ def test_everyone_may_read_the_status_file_the_supervisor_writes(tmp_path):
         # Without root, no user to switch to, and no process of one to look for.
         "FRPS_USER": "",
         "FRPS_FETCH_USER": "",
+        "FRPS_POLICY_USER": "",
         "FRPS_PROC_ROOT": str(tmp_path / "proc"),
     }
     supervisor = subprocess.Popen(

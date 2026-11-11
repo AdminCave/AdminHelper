@@ -1,5 +1,5 @@
 # frps prüft Proxy-Anmeldungen — Task-Ledger
-Status: aktiv · Branch: feature/arch-frps-identity · Review: pro Task
+Status: bereit · Branch: feature/arch-frps-identity · Review: pro Task
 Spec: docs/features/arch-frps-identity.md (Roadmap R-1215)
 Heavy: scenario --tunnel — der echte Datenpfad Agent-frpc → frps mit Plugin → Desktop-Visitor beweist, dass ein Agent nach dem Sync seinen Schlüssel mitbringt und frps ihn zulässt; ask-first (Spec, Frage 3). Agent-Modul und Compose-Overlay fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -103,8 +103,10 @@ Doku: docs/admin/frp-tunnel.html DE+EN · docs/admin/betrieb.html + docs/en/admi
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5
 
-### T8 — Server-Tests: Bestandstests auf Plugin, Pull-Liste und Startup nachziehen  [ ]
+### T8 — Server-Tests: Bestandstests auf Plugin, Pull-Liste und Startup nachziehen  [x]
 Komponente: server · Dateien: apps/server/tests/test_compose_frps.py, apps/server/tests/test_release_images.py, apps/server/tests/test_frp_extra_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0e7a07e0c 2026-11-11T12:31:22+01:00
+Review: approve (.ah-out/review/arch-frps-identity/T8.verdict.json)
 Änderung: Aus der Abschlussprüfung: drei Bestandstests kennen T3, T5 und T6 nicht. `test_compose_frps` startet den Supervisor ohne Root und setzt darum auch `FRPS_POLICY_USER` leer; `test_release_images` erwartet im Pull-Schritt zusätzlich das `FRPC_IMAGE` des Live-Tests; `test_frp_extra_config` stubbt `frp_policy.sync_policy` und prüft die Reihenfolge admin, check, write, policy.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py tests/test_release_images.py tests/test_frp_extra_config.py
 Doku: keine (nur Tests)
