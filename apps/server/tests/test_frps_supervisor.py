@@ -1466,7 +1466,15 @@ def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
     box.write_input(_dashboard_toml(box, dashboard))
     box.env.update({"FRPS_POLL_SECONDS": "1", **env})
     box.run(frps=True)
-    box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists")
+    try:
+        box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists")
+    except AssertionError as err:
+        # The supervisor log alone does not say whether a poll ever reached the dashboard (R-1293):
+        # no request means the supervisor or curl, requests without lists mean the answers.
+        raise AssertionError(
+            f"{err}\ndashboard requests seen: {[path for path, _ in dashboard.requests]}"
+            f"\nlists present: {sorted(_proxy_files(box))}"
+        ) from err
 
 
 def _proxy_files(box: Box) -> dict[str, bytes]:
@@ -1511,6 +1519,18 @@ def test_while_frps_runs_every_poll_puts_the_answers_of_its_dashboard_into_the_s
     for proxy_type in PROXY_TYPES:
         assert (box.state / f"proxy-{proxy_type}.json").stat().st_mtime_ns > mtimes[proxy_type]
     assert _state(box, in_flight=True) == ALL_LISTS
+
+
+def test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait(box, dashboard):
+    dashboard.hang = True
+
+    with pytest.raises(AssertionError) as caught:
+        _with_dashboard(box, dashboard, FRPS_READ_SECONDS="1")
+
+    message = str(caught.value)
+    assert "not the proxy lists within" in message
+    assert "dashboard requests seen: ['/api/proxy/" in message
+    assert "lists present: []" in message
 
 
 # Stands in for curl: records the arguments of each call, one line a call, then becomes the
