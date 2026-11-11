@@ -28,7 +28,7 @@ Einzelheiten der Sicherheitszeilen stehen nur in der privaten Roadmap.
 - `devtype` nimmt `/` nur, wenn smartctl solche Typen belegt ausgibt.
 - Die Ziel-Zuordnung (cgroups, veröffentlichte Ports) ist eindeutig.
 - `cleanPath` lehnt Backslash und `:` ab.
-- R-1252 und R-1266 nach Kevins Entscheidung der Variante (Tasks `[?]`).
+- R-1252 und R-1266 fahren in `kern-monitoring-19`, sobald Kevin die Variante gewählt hat.
 - Nicht-Ziele: neue Fühler, neue Werkzeuge, Änderungen am Wire-Format des Reports.
 
 ## Betroffene Komponenten & Dateien
@@ -52,7 +52,7 @@ smartmontools: `smartctl --scan` und Gerätetypen (`-d`), Quelle: smartctl(8) un
 - **Gemeinsame Freigabeliste:** Die Liste kommt in ein eigenes Paket, das `monitor`, `probe` und `discovery`
   importieren. `probe` kann `monitor` nicht importieren, ohne einen Zyklus zu bilden. Die Alternative, je Paket eine
   eigene Liste, verdoppelt Klassen und Test. Empfehlung: gemeinsames Paket.
-- **R-1252, R-1266:** Varianten und Empfehlung stehen in der privaten Roadmap; Kevin wählt (Tasks `[?]`).
+- **R-1252, R-1266:** Varianten und Empfehlung stehen in der privaten Roadmap; gebaut in `kern-monitoring-19`.
 
 ## Risiken & Rollback
 - Eine zu enge Freigabeliste lässt einen Fühler scheitern (Status `error` mit „not on the command allowlist“). Der
@@ -64,4 +64,4 @@ smartmontools: `smartctl --scan` und Gerätetypen (`-d`), Quelle: smartctl(8) un
 auch `docs/admin/monitoring.html` und die EN-Fassung (Bedienung `credential set`); dazu `changelog.d/kern-monitoring-15.md`.
 
 ## Offene Fragen
-1. R-1252 und R-1266: Variante nach Kevins Wahl (private Roadmap) → T6, T7 `[?]`
+1. R-1252 und R-1266: Variante nach Kevins Wahl (private Roadmap), verschoben nach `kern-monitoring-19` (T6, T7 `[~]`).
