@@ -22,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import validates
 
-from app.check_configs import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
+from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
 

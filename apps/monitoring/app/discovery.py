@@ -34,8 +34,8 @@ from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
 from app.catalog.model import Module
-from app.check_configs import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.checkers.agent import agent_number
+from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.core.time import utcnow_naive
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding
 

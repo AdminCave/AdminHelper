@@ -1,5 +1,5 @@
 # Monitoring-Module: Nachlese zu Bindung, Grenzen, Erkennung und Zugangsdaten-Datei — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-16 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-16 · Review: pro Task
 Spec: docs/features/kern-monitoring-16.md (Roadmap R-1254, R-1260, R-1262, R-1263, R-1295)
 Heavy: linux-full — apps/agent (Zugangsdaten-Datei) und apps/monitoring (Grenzen, Erkennung); Windows über die PR-CI (go-windows)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -139,8 +139,10 @@ Beweis: PR #460 CI 2026-11-11 · ci.yml run 42981418721, job Go Agent (test, Win
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/credentials/...
 Doku: keine (internes Dateiverhalten)
 
-### T12 — PR-CI: Credential-Ref-Muster nach app.core.bounds  [ ]
+### T12 — PR-CI: Credential-Ref-Muster nach app.core.bounds  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/bounds.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/models.py, apps/monitoring/app/discovery.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @abae70886 2026-11-11T08:59:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T12.verdict.json)
 Änderung: `CREDENTIAL_REF_PATTERN`/`CREDENTIAL_REF_MAX` wandern aus `check_configs` nach `app.core.bounds`; `models.py` importiert nur noch aus `app.core` (Modulgrenze von main, `test_models_import_only_app_core`).
 Beweis: PR #460 CI 2026-11-11 · ci.yml run 42981418721, job Monitoring (pytest), tests/test_module_boundaries.py::test_models_import_only_app_core
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_boundaries.py tests/test_check_configs.py tests/test_discovery_match.py
