@@ -1,5 +1,5 @@
 # CI: Caches ohne Werkzeug-Binaries, Browser-Cache am Lockfile — Task-Ledger
-Status: geplant · Branch: feature/ci-9 · Review: am Ende
+Status: aktiv · Branch: feature/ci-9 · Review: am Ende
 Spec: docs/features/ci-9.md (Roadmap R-1275)
 Heavy: none — nur Workflow-Einstellungen und ein Prüfskript; kein Stack-, Gateway-, PKI- oder Install-Pfad, die PR-CI fährt alles
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
