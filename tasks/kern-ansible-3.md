@@ -1,5 +1,5 @@
 # kern-ansible-3 — Task-Ledger
-Status: bereit · Branch: feature/kern-ansible-3 · Review: pro Task
+Status: erledigt · Branch: feature/kern-ansible-3 · Review: pro Task
 Spec: docs/features/kern-ansible-3.md (Roadmap R-1214)
 Heavy: none — Inventar-Erzeugung im Desktop-Backend, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
