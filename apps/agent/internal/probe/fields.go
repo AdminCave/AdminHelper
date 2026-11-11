@@ -24,8 +24,9 @@ var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9
 
 // release returns the values of raw that fields ask for, and nothing else of what a sensor read: at
 // most maxFields fields, scalars only (bool, number, text cut to maxTextRunes), each under the field
-// as asked. A field is a path of keys joined by "."; a key that holds a "." itself is found too. A
-// field that names no scalar (missing, null, a list, an object, a number that is no JSON number) is
+// as asked. A field is a path of keys joined by "."; a key that holds a "." itself is found only as
+// the last key of the path, since lookup tries the rest of the path as one key first. A field that
+// names no scalar (missing, null, a list, an object, a number that is no JSON number) is
 // left out, as is everything without fields.
 func release(raw map[string]any, fields []string) map[string]any {
 	values := map[string]any{}

@@ -12,7 +12,8 @@ so this checker needs no state beyond the previous details (delta rules).
 
 Order: the agent's own status first (a probe it did not run says why), then freshness
 (a result older than two intervals plus one agent run means the probe stopped; the agent's
-self-throttle stretches the interval by its probe factor), then the rules on the values. A rule describes the alerting case; the worst level that holds wins.
+self-throttle stretches the interval by its probe factor), then the rules on the values. A
+rule describes the alerting case; the worst level that holds wins.
 """
 
 from __future__ import annotations

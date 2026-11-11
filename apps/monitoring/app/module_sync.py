@@ -77,20 +77,22 @@ def _containers(db: Session, server_id: str) -> list[dict]:
 
 def _target_name(
     module: Module, kind: str, service: str, key: str, summary: dict, containers: list[dict]
-) -> str | None:
-    """The container, unit or process of the instance a check of this kind asks."""
+) -> tuple[str | None, str | None]:
+    """(the container, unit or process of the instance a check of this kind asks, None)
+    or (None, why there is none)."""
+    none = f"no {kind} for this instance"
     matched_by = summary.get("matched_by")
     if matched_by is not None:
         # Found outside its own kind of instance: only an unambiguous unit or process of
         # the match can be asked.
         names = [m.split(":", 1)[1] for m in matched_by if m.startswith(kind + ":")]
-        return names[0] if len(names) == 1 else None
+        return (names[0], None) if len(names) == 1 else (None, none)
     if kind == module.instance:
-        return key
+        return key, None
     if kind == "container" and module.instance == "compose_project":
         if "container" in summary:
             # A container of the module outside any project: it has no other services.
-            return None if service else summary["container"]
+            return (None, none) if service else (summary["container"], None)
         # The name as the last scan saw it; the agent asks this container, and a new
         # name (a rebuilt project) is a changed finding.
         prefixes = [image_repo(p) for p in module.detect.container_images]
@@ -104,8 +106,11 @@ def _target_name(
                 else image_matches(image_repo(c["image"]), prefixes)
             )
         )
-        return names[0] if names else None
-    return None
+        if len(names) > 1:
+            # The check's target must be unambiguous; with several replicas none is picked.
+            return None, f"several containers for this instance: {', '.join(names)}"
+        return (names[0], None) if names else (None, none)
+    return None, none
 
 
 def probe_config(
@@ -124,9 +129,9 @@ def probe_config(
             if port_hint is None:
                 return None, "no port for this instance"
         elif t.kind != "loopback":
-            name = _target_name(module, t.kind, t.service, key, summary, containers)
+            name, why = _target_name(module, t.kind, t.service, key, summary, containers)
             if not name:
-                return None, f"no {t.kind} for this instance"
+                return None, why
         target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": t.scheme}
     config = {
         "sensor": check.sensor,

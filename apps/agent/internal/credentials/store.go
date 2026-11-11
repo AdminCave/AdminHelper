@@ -217,7 +217,7 @@ func write(path string, creds map[string]Credential) error {
 	if err := config.OwnByAdministrators(name); err != nil {
 		return err
 	}
-	if err := os.Rename(name, path); err != nil {
+	if err := replace(name, path); err != nil {
 		return err
 	}
 	done = true

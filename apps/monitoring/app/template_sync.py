@@ -24,6 +24,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.check_configs import validate_check_config
 from app.models import (
     MonitorAlertRule,
     MonitorCheck,
@@ -75,6 +76,25 @@ def substitute_variables(obj, variables: dict):
     if isinstance(obj, list):
         return [substitute_variables(item, variables) for item in obj]
     return obj
+
+
+def holds_after_substitution(resolved: dict, server_id: str) -> bool:
+    """Whether a resolved probe def still fits ProbeConfig. The template was checked
+    with its placeholders (schemas.py); the server's values replace them afterwards and
+    can break the bounds (length, characters). A def that no longer holds is left out."""
+    if resolved.get("check_type") != "probe":
+        return True
+    try:
+        validate_check_config("probe", resolved.get("config", {}))
+    except ValueError as exc:
+        logger.warning(
+            "Template check %s does not hold for server %s: %s",
+            resolved.get("def_id", ""),
+            server_id,
+            exc,
+        )
+        return False
+    return True
 
 
 # C0 and DEL, the boundary of _no_control_characters (schemas.py): the substituted
@@ -444,6 +464,9 @@ def _sync_checks_for_server(
         target_def_ids.add(def_id)
 
         resolved = substitute_variables(check_def, variables)
+        if not holds_after_substitution(resolved, server_id):
+            # An existing check keeps what it has; it is still in the template.
+            continue
 
         if def_id in existing_by_def_id:
             # Update, except the fields the user changed on this check
@@ -586,6 +609,8 @@ def apply_template(
     for check_def in check_defs:
         def_id = check_def.get("def_id", "")
         resolved = substitute_variables(check_def, variables)
+        if not holds_after_substitution(resolved, server_id):
+            continue
 
         check = _create_check(db, template.id, server_id, def_id, resolved)
         if check.enabled:
