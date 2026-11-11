@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-kommentare-server-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-kommentare-server-1 · Review: am Ende
+Status: erledigt · Branch: feature/klein-kommentare-server-1 · Review: am Ende
 Spec: docs/features/klein-kommentare-server-1.md (Roadmap R-1181)
 Heavy: none — nur ein Kommentar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
