@@ -8,10 +8,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -58,5 +60,49 @@ func TestServeWindowsStopWaitsForTheCycle(t *testing.T) {
 	}
 	if !stopPending {
 		t.Fatalf("no StopPending with a WaitHint among %+v", states)
+	}
+}
+
+// R-1221: the service drops to the idle priority class before its first cycle, and a failure to
+// do so does not stop it.
+func TestServeWindowsLowersPriority(t *testing.T) {
+	old := setPriorityClass
+	t.Cleanup(func() { setPriorityClass = old })
+	for _, fail := range []bool{false, true} {
+		var gotProc windows.Handle
+		var gotClass uint32
+		calls := 0
+		setPriorityClass = func(p windows.Handle, class uint32) error {
+			calls++
+			gotProc, gotClass = p, class
+			if fail {
+				return errors.New("access denied")
+			}
+			return nil
+		}
+		started := make(chan struct{})
+		setCycle(t, func(ctx context.Context) {
+			if calls == 0 {
+				t.Error("cycle started before the priority was lowered")
+			}
+			close(started)
+			<-ctx.Done()
+		})
+
+		r := make(chan svc.ChangeRequest, 1)
+		changes := make(chan svc.Status, 8)
+		returned := make(chan struct{})
+		go func() {
+			(&agentService{}).Execute(nil, r, changes)
+			close(returned)
+		}()
+		within(t, started, 2*time.Second, "first cycle started")
+		r <- svc.ChangeRequest{Cmd: svc.Stop}
+		within(t, returned, 2*time.Second, "Execute returned after Stop")
+
+		if calls != 1 || gotProc != windows.CurrentProcess() || gotClass != windows.IDLE_PRIORITY_CLASS {
+			t.Errorf("fail=%v: SetPriorityClass calls=%d (%v, %#x), want 1 (current process, IDLE_PRIORITY_CLASS)",
+				fail, calls, gotProc, gotClass)
+		}
 	}
 }

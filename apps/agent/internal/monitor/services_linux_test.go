@@ -1106,7 +1106,7 @@ func TestBuildReportPassesItsContextToTheServiceCollectors(t *testing.T) {
 		return []byte(watchedBlocks["sshd"]), nil
 	}
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
-	buildReportWithState(ctx, []string{"sshd"}, reportState{}, time.Now())
+	buildReportWithState(ctx, []string{"sshd"}, nil, reportState{}, time.Now())
 	for name, got := range map[string]context.Context{"service health": health, "watched services": watched} {
 		if got == nil || got.Value(ctxKey{}) != t.Name() {
 			t.Errorf("%s collector got context %v, want the report's", name, got)

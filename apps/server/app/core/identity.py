@@ -132,12 +132,16 @@ def _from_gateway(request: Request) -> bool:
     return cached
 
 
+def from_gateway(request: Request) -> bool:
+    """Whether the request's direct peer is the gateway (see _from_gateway)."""
+    return _from_gateway(request)
+
+
 def _peer_is_gateway(request: Request) -> bool:
     """Whether the direct peer is a current address of _GATEWAY_NAMES. If not, a
     warning names the peer, at most once a minute each. The peer is uvicorn's
-    scope["client"], which it rewrites from X-Forwarded-For only for peers in
-    FORWARDED_ALLOW_IPS (default the loopback addresses), so a forwarded header
-    from another service cannot pose as the gateway."""
+    scope["client"], the TCP peer: the entrypoint starts uvicorn with
+    --no-proxy-headers, so no forwarded header can pose as the gateway."""
     peer = request.client.host if request.client else None
     if peer is not None and _GATEWAY.has_address(peer, wait=_GATEWAY_WAIT):
         return True

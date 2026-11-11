@@ -24,6 +24,7 @@ mod probe;
 mod proxy;
 mod pty;
 mod rdp_embedded;
+mod renewal;
 mod session;
 mod sftp;
 mod storage;
@@ -47,8 +48,9 @@ use commands::{
     sftp_mkdir, sftp_upload, sftp_upload_dropped, start_notification_stream, start_session,
     start_tunnel, stop_notification_stream, stop_tunnel, sync_connections, terminal_attach,
     terminal_broadcast, terminal_broadcast_state, terminal_close, terminal_close_all,
-    terminal_detach, terminal_dock, terminal_open_ansible, terminal_open_ssh, terminal_resize,
-    terminal_set_broadcast, terminal_write, tunnel_status, workspace_context, write_export_csv,
+    terminal_detach, terminal_dock, terminal_open_ansible, terminal_open_ssh,
+    terminal_open_ssh_credential, terminal_resize, terminal_set_broadcast, terminal_write,
+    tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -145,6 +147,7 @@ fn main() {
         .manage(frpc_state)
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
+        .manage(renewal::new_state())
         .manage(session::SessionState::default())
         .manage(pty::PtyRegistry::default())
         .manage(rdp_embedded::RdpSessions::default())
@@ -289,6 +292,7 @@ fn main() {
             open_workspace,
             open_launcher,
             terminal_open_ssh,
+            terminal_open_ssh_credential,
             terminal_write,
             terminal_broadcast,
             terminal_set_broadcast,

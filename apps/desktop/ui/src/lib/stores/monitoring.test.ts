@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import type { MonitorCheck } from '$lib/api/types';
+import type { MonitorCheck, MonitorDiscovery, MonitorFinding } from '$lib/api/types';
 
 // Hoisted mock state so the vi.mock factories (which run before imports) can close over it.
 const h = vi.hoisted(() => ({
@@ -20,6 +20,13 @@ const h = vi.hoisted(() => ({
   unassignTemplate: vi.fn(),
   assignTemplateTag: vi.fn(),
   unassignTemplateTag: vi.fn(),
+  fetchCatalog: vi.fn(),
+  fetchOpenFindings: vi.fn(),
+  fetchDiscovery: vi.fn(),
+  requestScan: vi.fn(),
+  adoptFinding: vi.fn(),
+  adoptAllFindings: vi.fn(),
+  dismissFinding: vi.fn(),
   reportError: vi.fn(),
   showStatus: vi.fn(),
 }));
@@ -33,6 +40,13 @@ vi.mock('$lib/api/monitoring', () => ({
     unassignTemplate: h.unassignTemplate,
     assignTemplateTag: h.assignTemplateTag,
     unassignTemplateTag: h.unassignTemplateTag,
+    fetchCatalog: h.fetchCatalog,
+    fetchOpenFindings: h.fetchOpenFindings,
+    fetchDiscovery: h.fetchDiscovery,
+    requestScan: h.requestScan,
+    adoptFinding: h.adoptFinding,
+    adoptAllFindings: h.adoptAllFindings,
+    dismissFinding: h.dismissFinding,
   },
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError, showStatus: h.showStatus }));
@@ -47,6 +61,22 @@ import {
   unassignTemplateFromServer,
   assignTagToTemplate,
   monitoringError,
+  loadCatalog,
+  loadFindings,
+  loadDiscovery,
+  requestScan,
+  adoptFinding,
+  adoptAllFindings,
+  dismissFinding,
+  monitoringCatalog,
+  monitoringFindings,
+  monitoringFindingsError,
+  monitoringDiscovery,
+  monitoring,
+  overviewView,
+  openServerPage,
+  setOverviewView,
+  setTab,
 } from './monitoring';
 import { IpcError, SESSION_EXPIRED } from '$lib/utils/errors';
 
@@ -179,5 +209,184 @@ describe('monitoring store: a failed load without the machine codes (R-0261)', (
     h.fetchStatus.mockRejectedValueOnce(new Error(SESSION_EXPIRED));
     await loadMonitoring();
     expect(get(monitoringError)).toBe(SESSION_EXPIRED);
+  });
+});
+
+describe('module data of the server page (arch-monitoring-ui T3)', () => {
+  const finding = (id: string) => ({ id, serverId: 'srv-1' }) as unknown as MonitorFinding;
+  const discovery = (serverId: string, scanRequestedAt: string | null) =>
+    ({ serverId, scanRequestedAt }) as unknown as MonitorDiscovery;
+
+  beforeEach(() => {
+    for (const fn of [
+      h.fetchStatus,
+      h.fetchCatalog,
+      h.fetchOpenFindings,
+      h.fetchDiscovery,
+      h.requestScan,
+      h.adoptFinding,
+      h.adoptAllFindings,
+      h.dismissFinding,
+      h.reportError,
+    ]) {
+      fn.mockReset();
+    }
+    h.fetchStatus.mockResolvedValue([check('srv-1', 'ok')]);
+  });
+
+  it('adopting a finding reloads the checks and the open findings', async () => {
+    const result = {
+      finding: finding('f1'),
+      enabledChecks: ['c1'],
+      disabledChecks: [],
+      skippedChecks: [],
+    };
+    h.adoptFinding.mockResolvedValue(result);
+    h.fetchOpenFindings.mockResolvedValue([]);
+
+    expect(await adoptFinding('f1')).toBe(result);
+    expect(h.adoptFinding).toHaveBeenCalledWith(h.session, 'f1');
+    expect(h.fetchStatus).toHaveBeenCalledTimes(1);
+    expect(h.fetchOpenFindings).toHaveBeenCalledTimes(1);
+    expect(get(monitoringFindings)).toEqual([]);
+  });
+
+  it('a failed adoption is reported, returns null and reloads nothing', async () => {
+    h.adoptFinding.mockRejectedValue(new Error('module not in catalog'));
+
+    expect(await adoptFinding('f1')).toBeNull();
+    expect(h.reportError).toHaveBeenCalledWith('module not in catalog');
+    expect(h.fetchStatus).not.toHaveBeenCalled();
+    expect(h.fetchOpenFindings).not.toHaveBeenCalled();
+  });
+
+  it('adopt all hands the partial failures to the caller and reloads both lists', async () => {
+    const result = { adopted: [], failed: [{ findingId: 'f2', reason: 'gone' }] };
+    h.adoptAllFindings.mockResolvedValue(result);
+    h.fetchOpenFindings.mockResolvedValue([finding('f2')]);
+
+    expect(await adoptAllFindings('srv-1')).toBe(result);
+    expect(h.adoptAllFindings).toHaveBeenCalledWith(h.session, 'srv-1');
+    expect(h.fetchStatus).toHaveBeenCalledTimes(1);
+    expect(get(monitoringFindings).map((f) => f.id)).toEqual(['f2']);
+  });
+
+  it('dismissing reloads only the findings', async () => {
+    h.dismissFinding.mockResolvedValue(finding('f1'));
+    h.fetchOpenFindings.mockResolvedValue([]);
+
+    expect(await dismissFinding('f1')).toBe(true);
+    expect(h.fetchOpenFindings).toHaveBeenCalledTimes(1);
+    expect(h.fetchStatus).not.toHaveBeenCalled();
+  });
+
+  it('a failed findings load keeps the list and its error until a load succeeds', async () => {
+    h.fetchOpenFindings.mockResolvedValueOnce([finding('f1')]);
+    await loadFindings();
+    h.fetchOpenFindings.mockRejectedValueOnce(new Error('monitoring unreachable'));
+    await loadFindings();
+
+    // An outage must not read as "nothing new found".
+    expect(get(monitoringFindings).map((f) => f.id)).toEqual(['f1']);
+    expect(get(monitoringFindingsError)).toBe('monitoring unreachable');
+
+    h.fetchOpenFindings.mockResolvedValueOnce([]);
+    await loadFindings();
+    expect(get(monitoringFindingsError)).toBeNull();
+    expect(get(monitoringFindings)).toEqual([]);
+  });
+
+  it('an expired session leaves no findings error behind', async () => {
+    h.fetchOpenFindings.mockRejectedValue(
+      new IpcError('Session expired, please sign in again', SESSION_EXPIRED),
+    );
+    await loadFindings();
+    expect(get(monitoringFindingsError)).toBeNull();
+  });
+
+  it('discards an out-of-order findings result (findingsGen guard)', async () => {
+    let resolveSlow!: (v: MonitorFinding[]) => void;
+    h.fetchOpenFindings.mockReturnValueOnce(
+      new Promise<MonitorFinding[]>((r) => {
+        resolveSlow = r;
+      }),
+    );
+    h.fetchOpenFindings.mockResolvedValueOnce([finding('fresh')]);
+
+    const p1 = loadFindings();
+    await loadFindings();
+    resolveSlow([finding('stale')]);
+    await p1;
+
+    expect(get(monitoringFindings).map((f) => f.id)).toEqual(['fresh']);
+  });
+
+  it('loads the catalog once per sign-in and again after a new one', async () => {
+    const before = h.session;
+    try {
+      h.session = { session: { token: 'a' }, settings: {} };
+      h.fetchCatalog.mockResolvedValue({ version: '1', modules: [] });
+      await loadCatalog();
+      await loadCatalog();
+      expect(h.fetchCatalog).toHaveBeenCalledTimes(1);
+      expect(get(monitoringCatalog)?.version).toBe('1');
+
+      h.session = { session: { token: 'b' }, settings: {} };
+      h.fetchCatalog.mockResolvedValue({ version: '2', modules: [] });
+      await loadCatalog();
+      expect(h.fetchCatalog).toHaveBeenCalledTimes(2);
+      expect(get(monitoringCatalog)?.version).toBe('2');
+    } finally {
+      h.session = before;
+    }
+  });
+
+  it('retries a failed catalog load on the next call', async () => {
+    const before = h.session;
+    try {
+      h.session = { session: { token: 'c' }, settings: {} };
+      h.fetchCatalog.mockRejectedValueOnce(new Error('down'));
+      await loadCatalog();
+      h.fetchCatalog.mockResolvedValueOnce({ version: '3', modules: [] });
+      await loadCatalog();
+      expect(h.fetchCatalog).toHaveBeenCalledTimes(2);
+      expect(get(monitoringCatalog)?.version).toBe('3');
+      expect(h.reportError).not.toHaveBeenCalled();
+    } finally {
+      h.session = before;
+    }
+  });
+
+  it('stores the discovery a scan request answers with', async () => {
+    h.requestScan.mockResolvedValue(discovery('srv-1', '2026-11-10T10:00:00Z'));
+
+    expect(await requestScan('srv-1')).toBe(true);
+    expect(get(monitoringDiscovery)['srv-1']?.scanRequestedAt).toBe('2026-11-10T10:00:00Z');
+  });
+
+  it('keeps the last discovery when a reload fails and skips the no-server key', async () => {
+    h.fetchDiscovery.mockResolvedValueOnce(discovery('srv-2', null));
+    await loadDiscovery('srv-2');
+    h.fetchDiscovery.mockRejectedValueOnce(new Error('down'));
+    await loadDiscovery('srv-2');
+    await loadDiscovery('__none');
+
+    expect(h.fetchDiscovery).toHaveBeenCalledTimes(2);
+    expect(get(monitoringDiscovery)['srv-2']?.serverId).toBe('srv-2');
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+});
+
+describe('server link of the cross views (arch-monitoring-ui T7)', () => {
+  it('opens the server page in the list view of the overview tab', () => {
+    setTab('certs');
+    setOverviewView('grid');
+    setSelectedServer('srv-a');
+
+    openServerPage('srv-b');
+
+    expect(get(monitoring).tab).toBe('overview');
+    expect(get(overviewView)).toBe('list');
+    expect(get(selectedServerId)).toBe('srv-b');
   });
 });

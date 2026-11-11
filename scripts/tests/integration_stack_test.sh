@@ -200,7 +200,7 @@ via_gateway() {
         -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000
 }
 
-# The container that holds the gateway's old address in (d): a one-off of the service redis,
+# The container that holds the gateway's old address in (d): a one-off of the service victoria,
 # which is on the default network alone, so the teardown's `down` removes it with the stack. A
 # container compose did not start would stay behind and keep the network in use, with `down`
 # still exiting 0.
@@ -220,7 +220,7 @@ gateway_moved() {
     # No fixed address: compose run takes none, and docker run --ip on a network without a subnet
     # of its own needs Docker 29.0.4 (moby#51583). Docker hands out the lowest free address (seen
     # on Docker 29; in CI the recreated gateway got its own back), the one the gateway just freed.
-    e2e_dc run -d --no-deps --name "$IP_PLACEHOLDER" --entrypoint sleep redis 600 >>"$log" 2>&1
+    e2e_dc run -d --no-deps --name "$IP_PLACEHOLDER" --entrypoint sleep victoria 600 >>"$log" 2>&1
     held=$(container_ip "$IP_PLACEHOLDER")
     echo "  info address the stopped gateway freed / the placeholder holds: '$old' / '$held'"
     [ "$held" = "$old" ] && ok "a placeholder holds the address the stopped gateway freed" \
@@ -389,18 +389,18 @@ rm -f "$E2E_REPO_ROOT/repo/apt/probe" 2>/dev/null || true
 # ca-issuer:8090, else it could forge the gateway's mTLS headers and mint certs. The
 # positive side (the gateway CAN reach it) is already proven by steps 1-9's enrollment,
 # which renews through the gateway→issuer path.
-# Positive control (server CAN reach a default-net peer, redis) + negative (NOT the
-# pki-only ca-issuer), so a broken exec/DNS can't masquerade as "isolated".
+# Positive control (server CAN reach redis, on the network it shares with it) + negative (NOT
+# the pki-only ca-issuer), so a broken exec/DNS can't masquerade as "isolated".
 if e2e_dc exec -T server python -c "
 import socket, sys
-socket.create_connection(('redis', 6379), timeout=4).close()          # default net: must work
+socket.create_connection(('redis', 6379), timeout=4).close()          # redis net: must work
 try:
     socket.create_connection(('ca-issuer', 8090), timeout=4).close()  # pki plane: must NOT
     sys.exit(2)
 except OSError:
     sys.exit(0)
 " >/dev/null 2>&1; then
-    ok "PKI plane isolated: server reaches redis (default) but NOT ca-issuer:8090 (1.1)"
+    ok "PKI plane isolated: server reaches redis but NOT ca-issuer:8090 (1.1)"
 else
     bad "segmentation check failed: server reached ca-issuer:8090, or the redis control failed"
 fi
@@ -890,8 +890,8 @@ frps_takeover() {
 frps_takeover
 
 # ── 12. frps is fenced off the internal net (3.28) ────────────────────────────
-# frps sits on its own frpedge net; redis:6379 + victoria:8428 (both auth-less) are on
-# the default net. A compromised frps must not reach them. redis is already up (server
+# frps sits on its own frpedge net; redis:6379 (on its own redis net) + victoria:8428 (on the
+# default net), both auth-less, are elsewhere. A compromised frps must not reach them. redis is already up (server
 # needs it); frps + victoria aren't in the gateway dependency chain, so start them here.
 e2e_dc up -d frps victoria >/dev/null 2>&1
 for _ in $(seq 1 15); do
@@ -905,6 +905,21 @@ elif e2e_dc exec -T frps sh -c 'nc -z -w2 redis 6379 || nc -z -w2 victoria 8428'
 else
     ok "frps (frpedge) cannot reach auth-less redis:6379 / victoria:8428 (3.28)"
 fi
+
+# ── 12b. redis sits on its own network with server and scheduler ──────────────
+# victoria stands for every other service of the default net: it reaches the server there
+# (positive control, so a broken exec/nc can't pass as isolated) but not redis:6379. redis-server
+# runs without the image's entrypoint, so no module of the image is loaded; vectorset is built in.
+if ! e2e_dc exec -T victoria sh -c 'nc -z -w2 server 8080' >/dev/null 2>&1; then
+    bad "victoria does not reach server:8080 on the default net — redis isolation check inconclusive"
+elif e2e_dc exec -T victoria sh -c 'nc -z -w2 redis 6379' >/dev/null 2>&1; then
+    bad "victoria reached redis:6379 from the default net — redis network not isolated"
+else
+    ok "a service of the default net reaches server:8080 but not redis:6379"
+fi
+modules=$(e2e_dc exec -T redis redis-cli MODULE LIST 2>&1 | awk 'prev == "name" { print } { prev = $0 }' | sort | tr '\n' ' ')
+[ "$modules" = "vectorset " ] && ok "redis loads no module of the image (MODULE LIST: $modules)" \
+    || bad "redis modules: '$modules', expected only the built-in vectorset"
 
 # ── 13. Processes of app in server, scheduler, ca-issuer and monitoring are not dumpable ──
 # Their images leave every ELF program in the bin directories and below /usr/lib/postgresql for
@@ -1451,8 +1466,62 @@ PY
 gateway_takes_client5() {
     [ "$(reach --cert "$E2E_WORK/client5-fullchain.pem" --key "$E2E_WORK/client5.key")" = 401 ]
 }
+# renew_into <fullchain> <key> <csr> <out> — /ca/renew with this certificate: the new leaf with
+# its intermediate into E2E_WORK/<out>-fullchain.pem, the chain field (what the device trusts
+# from now on) into <out>-chain.pem. Non-zero, the error in <out>-renew.err, when it fails.
+renew_into() {
+    python3 - "$E2E_SERVER_URL" "$E2E_WORK" "$@" <<'PY' 2>"$E2E_WORK/$4-renew.err"
+import json, ssl, sys, urllib.request
+base, work, chain, key, csr, out = sys.argv[1:7]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+ctx.load_cert_chain(chain, key)
+req = urllib.request.Request(f"{base}/ca/renew", data=json.dumps({"csr": open(csr).read()}).encode(),
+    headers={"Content-Type": "application/json"})
+body = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))
+fullchain, trust = body["fullchain"], body["chain"]
+open(f"{work}/{out}-fullchain.pem", "w").write(fullchain)
+open(f"{work}/{out}-chain.pem", "w").write(trust)
+PY
+}
+# trust_of <fullchain> <key> — the generation GET /ca/trust names to this client certificate,
+# "HTTP <code>" for another status, "error <type>" when no answer came; both empty: no
+# certificate at all (R-1054).
+trust_of() {
+    python3 - "$E2E_SERVER_URL" "$1" "$2" <<'PY' 2>/dev/null
+import json, ssl, sys, urllib.error, urllib.request
+base, chain, key = sys.argv[1:4]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+if chain:
+    ctx.load_cert_chain(chain, key)
+try:
+    with urllib.request.urlopen(f"{base}/ca/trust", context=ctx, timeout=10) as resp:
+        print(json.load(resp).get("generation", ""))
+except urllib.error.HTTPError as e:
+    print("HTTP", e.code)
+except Exception as e:
+    print("error", type(e).__name__)
+PY
+}
+# generation_of <pem file> — what a client computes from the chain field it holds: SHA-256 over
+# the DER of its certificates, concatenated in their order; empty without a certificate.
+generation_of() {
+    python3 - "$1" <<'PY'
+import hashlib, re, ssl, sys
+pems = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", open(sys.argv[1]).read(), re.S)
+print(hashlib.sha256(b"".join(ssl.PEM_cert_to_DER_cert(p) for p in pems)).hexdigest() if pems else "")
+PY
+}
+# der_hashes <pem file> — the SHA-256 of each certificate's DER in the file, one per line.
+der_hashes() {
+    python3 - "$1" <<'PY'
+import hashlib, re, ssl, sys
+for pem in re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", open(sys.argv[1]).read(), re.S):
+    print(hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest())
+PY
+}
+is_generation() { [[ $1 =~ ^[0123456789abcdef]{64}$ ]]; }
 ca_rotation() {
-    local token today status out leaf_only gw_issuer gw_chain frps_cns code
+    local token today status out leaf_only gw_issuer gw_chain frps_cns code gen0 gen1 chain1 chain2 inter1
     today=$(date -u +%Y-%m-%d)
     token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
     openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client5.key" 2>/dev/null
@@ -1460,6 +1529,20 @@ ca_rotation() {
     if [ -z "$token" ] || ! enroll "$token" client5; then
         bad "rotation: could not enroll a device before the rotation"; return
     fi
+
+    # Before the rotation /ca/trust names the hash of the chain field /ca/renew hands out, and
+    # the gateway lets nobody ask without a client certificate (R-1054).
+    if ! renew_into "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" gen0; then
+        bad "trust generation: renewing before the rotation failed: $(tail -1 "$E2E_WORK/gen0-renew.err")"; return
+    fi
+    gen0=$(generation_of "$E2E_WORK/gen0-chain.pem")
+    out=$(trust_of "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key")
+    is_generation "$gen0" && [ "$out" = "$gen0" ] \
+        && ok "trust generation: before the rotation /ca/trust names the hash of the chain field" \
+        || bad "trust generation before the rotation: /ca/trust '$out', hash of the chain field '$gen0'"
+    out=$(trust_of "" "")
+    [ "$out" = "HTTP 400" ] && ok "trust generation: without a client certificate the gateway refuses /ca/trust (400)" \
+        || bad "trust generation without a client certificate: '$out', expected HTTP 400"
 
     if out=$(e2e_dc run --rm --no-deps -T ca-issuer python -m app.cli status 2>&1); then
         ok "rotation: status before the rotation exits 0"
@@ -1474,6 +1557,31 @@ ca_rotation() {
     e2e_dc restart ca-issuer >/dev/null 2>&1
     until_ok 90 eval '[ "$(health_of ca-issuer)" = healthy ]' \
         || { bad "rotation: ca-issuer not healthy within 90 s after the restart"; return; }
+
+    # The window before the gateway restart (R-1054): the gateway still holds the old
+    # client-ca.pem, yet already passes the new generation through, and a leaf renewed there
+    # under the new intermediate gets through it with its fullchain, the root anchoring it.
+    gen1=$(trust_of "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key")
+    is_generation "$gen1" && [ "$gen1" != "$gen0" ] \
+        && ok "trust generation: before the gateway restart /ca/trust already names a new generation" \
+        || bad "trust generation before the gateway restart: '$gen1', the one before the rotation '$gen0'"
+    if renew_into "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" gen1; then
+        chain1=$(generation_of "$E2E_WORK/gen1-chain.pem")
+        inter1=$(der_hashes "$E2E_WORK/gen1-fullchain.pem" | sed -n 2p)
+        code=$(reach --cert "$E2E_WORK/gen1-fullchain.pem" --key "$E2E_WORK/client5.key")
+        if [ "$chain1" = "$gen1" ] && [ -n "$inter1" ] \
+            && [ "$inter1" = "$(der_hashes "$E2E_WORK/gen1-chain.pem" | sed -n 1p)" ] \
+            && [ "$inter1" != "$(der_hashes "$E2E_WORK/client5-fullchain.pem" | sed -n 2p)" ] \
+            && [ "$code" = 401 ]; then
+            ok "trust generation: a leaf renewed in the window comes from the new intermediate, its chain" \
+                "field hashes to the new generation, and its fullchain gets through the old gateway"
+        else
+            bad "trust generation, leaf renewed in the window: chain field '$chain1' (generation '$gen1')," \
+                "its intermediate '$inter1', HTTP '$code' through the old gateway, expected 401"
+        fi
+    else
+        bad "trust generation: renewing in the window failed: $(tail -1 "$E2E_WORK/gen1-renew.err")"
+    fi
     e2e_dc restart gateway >/dev/null 2>&1
     until_ok 60 gateway_takes_client5 \
         || { bad "rotation: the gateway does not take a device certificate within 60 s after its restart"; return; }
@@ -1540,6 +1648,21 @@ ca_rotation() {
     else
         bad "rotation: frps-certs/ca.crt holds: $(tr '\n' ';' <<<"$frps_cns")"
     fi
+
+    # g. After the gateway restart the device enrolled before learns the new generation, and
+    #    once renewed it holds a chain field of that generation, which it is told again (R-1054).
+    out=$(trust_of "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key")
+    if [ "$out" = "$gen1" ] && [ "$out" != "$gen0" ] \
+        && renew_into "$E2E_WORK/client5-fullchain.pem" "$E2E_WORK/client5.key" "$E2E_WORK/client5.csr" gen2; then
+        chain2=$(generation_of "$E2E_WORK/gen2-chain.pem")
+        out=$(trust_of "$E2E_WORK/gen2-fullchain.pem" "$E2E_WORK/client5.key")
+        [ "$chain2" = "$gen1" ] && [ "$out" = "$gen1" ] \
+            && ok "trust generation: after the restart the old device learns the new generation, and its renewal holds it" \
+            || bad "trust generation after the renewal: chain field '$chain2', /ca/trust '$out', expected '$gen1'"
+    else
+        bad "trust generation after the gateway restart: /ca/trust '$out' (expected '$gen1')," \
+            "renewal: $(tail -1 "$E2E_WORK/gen2-renew.err" 2>/dev/null)"
+    fi
 }
 ca_rotation
 
@@ -1562,24 +1685,6 @@ pem_at() {
 }
 # cns_of <file> — the subject CNs of the certificates in the file, joined by ";".
 cns_of() { chain_cns <"$1" | paste -sd';'; }
-
-# renew_into <fullchain> <key> <csr> <out> — /ca/renew with this certificate: the new leaf with
-# its intermediate into E2E_WORK/<out>-fullchain.pem, the chain field (what the device trusts
-# from now on) into <out>-chain.pem. Non-zero, the error in <out>-renew.err, when it fails.
-renew_into() {
-    python3 - "$E2E_SERVER_URL" "$E2E_WORK" "$@" <<'PY' 2>"$E2E_WORK/$4-renew.err"
-import json, ssl, sys, urllib.request
-base, work, chain, key, csr, out = sys.argv[1:7]
-ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-ctx.load_cert_chain(chain, key)
-req = urllib.request.Request(f"{base}/ca/renew", data=json.dumps({"csr": open(csr).read()}).encode(),
-    headers={"Content-Type": "application/json"})
-body = json.load(urllib.request.urlopen(req, context=ctx, timeout=10))
-fullchain, trust = body["fullchain"], body["chain"]
-open(f"{work}/{out}-fullchain.pem", "w").write(fullchain)
-open(f"{work}/{out}-chain.pem", "w").write(trust)
-PY
-}
 
 # tunnel_leaf [name] — an agent leaf for itest-agent under the current tunnel intermediate,
 # minted in a one-off ca-issuer: E2E_WORK/<name>-fullchain.pem (leaf + intermediate) and

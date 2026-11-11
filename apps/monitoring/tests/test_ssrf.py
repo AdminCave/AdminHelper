@@ -52,6 +52,8 @@ def _hanging_resolver(release: threading.Event, entered: threading.Semaphore):
         "http://[::ffff:127.0.0.1]",  # IPv4-mapped IPv6 (was allowed)
         "http://[fc00::1]",  # unique-local IPv6
         "http://[fe80::1]",  # link-local IPv6
+        "http://[fec0::1]",  # deprecated site-local IPv6, global to ipaddress
+        "http://168.63.129.16",  # cloud metadata on a public address
         "http://nonexistent.invalid.example",  # unresolvable -> fail closed (was allowed)
         "",  # no hostname
         "not-a-url",

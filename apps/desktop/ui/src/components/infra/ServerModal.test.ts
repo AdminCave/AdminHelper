@@ -86,6 +86,39 @@ describe('ServerModal monitoring-template opt-in', () => {
     );
   });
 
+  it('creates with the name alone, which is then the address (R-1210)', async () => {
+    const utils = render(ServerModal);
+    await tick();
+    const name = utils.container.querySelector('input[name="name"]') as HTMLInputElement;
+    const address = utils.container.querySelector('input[name="hostname"]') as HTMLInputElement;
+    expect(address.required).toBe(false);
+    await fireEvent.input(name, { target: { value: 'web01.example.org' } });
+    expect(address.placeholder).toBe('web01.example.org');
+    await fireEvent.click(utils.getByText('Speichern'));
+    await waitFor(() =>
+      expect(mocks.saveServer).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'web01.example.org', hostname: 'web01.example.org' }),
+        null,
+        null,
+      ),
+    );
+  });
+
+  it('editing a server whose address follows its name leaves the field empty', async () => {
+    mocks.editorState.target = {
+      id: 'srv-1',
+      name: 'web01.example.org',
+      hostname: 'web01.example.org',
+      customHostname: false,
+    };
+    const { container } = render(ServerModal);
+    await tick();
+    const address = container.querySelector('input[name="hostname"]') as HTMLInputElement;
+    expect(address.value).toBe('');
+    expect(address.placeholder).toBe('web01.example.org');
+    mocks.editorState.target = null;
+  });
+
   it('editing an existing server shows no template dropdown', async () => {
     mocks.editorState.target = { id: 'srv-1', name: 'web01', hostname: 'web01.example' };
     const { container } = render(ServerModal);

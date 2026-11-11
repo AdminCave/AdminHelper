@@ -338,6 +338,44 @@ class TestRefreshCookie:
         denied = test_client.post("/api/auth/refresh", json={"refresh_token": refresh_before})
         assert denied.status_code == 401
 
+    def test_refresh_cookie_is_secure_behind_the_gateway(self, test_client, admin_user):
+        # The server speaks plain HTTP behind the gateway, which forwards its own scheme.
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert login.status_code == 200
+        assert "; secure" in login.headers.get("set-cookie", "").lower()
+
+    def test_refresh_cookie_without_forwarded_https_is_not_secure(self, test_client, admin_user):
+        for headers in ({}, {"X-Forwarded-Proto": "http"}):
+            login = test_client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "adminpass"},
+                headers=headers,
+            )
+            assert login.status_code == 200
+            set_cookie = login.headers.get("set-cookie", "").lower()
+            assert "refresh_token=" in set_cookie
+            assert "; secure" not in set_cookie, headers
+
+    def test_forwarded_https_from_another_peer_does_not_count(
+        self, test_client, admin_user, monkeypatch
+    ):
+        from app.core import identity
+
+        monkeypatch.setattr(identity, "_from_gateway", lambda _request: False)
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert login.status_code == 200
+        set_cookie = login.headers.get("set-cookie", "").lower()
+        assert "refresh_token=" in set_cookie
+        assert "; secure" not in set_cookie
+
     def test_body_refresh_still_works_for_non_browser_clients(self, test_client, admin_user):
         # Backward compatibility: desktop/CLI send the token in the body and must
         # keep working unchanged.

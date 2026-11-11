@@ -25,6 +25,10 @@ from app.modules.notifications.sender import send_email
 
 logger = logging.getLogger("adminhelper.notifications")
 
+# Lines of one digest mail; what waited beyond them is counted in a closing line and
+# sent all the same: the bell lists every entry.
+DIGEST_MAX_LINES = 200
+
 
 def send_digests(db: Session, now: datetime) -> tuple[int, int]:
     """Send the due digests. Returns (mails sent, entries failed for good)."""
@@ -69,8 +73,10 @@ def _send(
     tz = zone(settings)
     lines = [
         f"{e.created_at.astimezone(tz):%Y-%m-%d %H:%M} [{e.severity or 'info'}] {e.title or ''}"
-        for e in entries
+        for e in entries[:DIGEST_MAX_LINES]
     ]
+    if len(entries) > DIGEST_MAX_LINES:
+        lines.append(f"... and {len(entries) - DIGEST_MAX_LINES} more")
     noun = "notification" if len(entries) == 1 else "notifications"
     subject = f"AdminHelper digest: {len(entries)} {noun}"
     try:

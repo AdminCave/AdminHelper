@@ -85,12 +85,8 @@ const MAPPINGS: Mapping[] = [
     direction: 'response',
     omit: { extraConfig: 'free form frps settings; no client reads or edits them' },
   },
-  {
-    ts: 'FrpStatusProxy',
-    schema: 'FrpStatusProxy',
-    direction: 'response',
-    omit: { tunnel: 'the matched tunnel row; no client reads it' },
-  },
+  // The status view names a proxy by its tunnel (R-1210), so `tunnel` is described.
+  { ts: 'FrpStatusProxy', schema: 'FrpStatusProxy', direction: 'response' },
   { ts: 'FrpStatus', schema: 'FrpStatus', direction: 'response' },
   { ts: 'AuditEntry', schema: 'AuditLogOut', direction: 'response' },
   { ts: 'InfraCertificate', schema: 'InfraCertificateOut', direction: 'response' },

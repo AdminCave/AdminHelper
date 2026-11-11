@@ -59,9 +59,11 @@ def _make_tunnel(**overrides):
         visitor_port=6001,
         enabled=True,
         extra_config=None,
-        target_server=SimpleNamespace(name="srv1"),
+        server_id="srv1",
     )
     defaults.update(overrides)
+    # The generator knows a tunnel by its ID; a test that does not care names both alike.
+    defaults.setdefault("id", defaults["name"])
     return SimpleNamespace(**defaults)
 
 
@@ -147,6 +149,20 @@ class TestGenerateFrpcToml:
         assert "localPort = 22" in toml
         assert 'secretKey = "tunnel-secret"' in toml
 
+    def test_proxies_carry_the_ids_never_a_name(self):
+        # R-1210: frps knows a proxy as "{user}.{name}". The user is the server's ID and the
+        # name the tunnel's, so renaming a server or tunnel changes nothing in the config.
+        tunnel = _make_tunnel(
+            id="2f6b1c3e-0d4a-4e8b-9a71-5c2d8e9f0a1b",
+            name="web01.kunde.example \u00b7 SSH",
+            server_id="7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d",
+        )
+        toml = generate_frpc_toml(_make_config(), [tunnel], tunnel.server_id)
+        parsed = tomllib.loads(toml)
+        assert parsed["user"] == "7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d"
+        assert [p["name"] for p in parsed["proxies"]] == ["2f6b1c3e-0d4a-4e8b-9a71-5c2d8e9f0a1b"]
+        assert "web01" not in toml
+
     def test_disabled_tunnel_excluded(self):
         config = _make_config()
         tunnel = _make_tunnel(enabled=False)
@@ -218,9 +234,10 @@ class TestGenerateFrpcToml:
             bind_port=7000,
             auth_token="frps-token-placeholder",
         )
-        # Not in name order: the order in the fixture is the one active_tunnels sorts to.
+        # Not in ID order: the order in the fixture is the one active_tunnels sorts to.
         tunnels = [
             _make_tunnel(
+                id="c3d4e5f6-0718-4293-a4b5-c6d7e8f90a1b",
                 name="host-01-web",
                 tunnel_type="https",
                 protocol="web",
@@ -229,6 +246,7 @@ class TestGenerateFrpcToml:
                 custom_domains="web.example, www.web.example",
             ),
             _make_tunnel(
+                id="a1b2c3d4-e5f6-4071-8293-a4b5c6d7e8f9",
                 name="host-01-ssh",
                 local_port=22,
                 secret_key="stcp-secret-placeholder",
@@ -241,7 +259,9 @@ class TestGenerateFrpcToml:
                 ),
             ),
         ]
-        toml = generate_frpc_toml(config, tunnels, "host-01", ["ops-admin", "ops-backup"])
+        toml = generate_frpc_toml(
+            config, tunnels, "0f1e2d3c-4b5a-4968-8776-655443322110", ["ops-admin", "ops-backup"]
+        )
         # Bytes, not read_text: universal newlines would turn \r\n into \n, and the agent
         # refuses a \r.
         assert toml == AGENT_FIXTURE.read_bytes().decode("utf-8")
@@ -257,6 +277,21 @@ class TestGenerateVisitorToml:
         assert 'name = "srv1-ssh-visitor"' in toml
         assert 'serverName = "srv1-ssh"' in toml
         assert 'serverUser = "srv1"' in toml
+
+    def test_visitor_finds_the_proxy_by_the_ids_never_a_name(self):
+        # R-1210: the visitor reaches "{serverUser}.{serverName}", the IDs the agent's frpc
+        # registers its proxy under (generate_frpc_toml); the names stay out.
+        tunnel = _make_tunnel(
+            id="2f6b1c3e-0d4a-4e8b-9a71-5c2d8e9f0a1b",
+            name="web01.kunde.example \u00b7 SSH",
+            server_id="7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d",
+        )
+        toml = generate_visitor_toml(_make_config(), [tunnel])
+        [visitor] = tomllib.loads(toml)["visitors"]
+        assert visitor["name"] == "2f6b1c3e-0d4a-4e8b-9a71-5c2d8e9f0a1b-visitor"
+        assert visitor["serverName"] == "2f6b1c3e-0d4a-4e8b-9a71-5c2d8e9f0a1b"
+        assert visitor["serverUser"] == "7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d"
+        assert "web01" not in toml
         assert "bindPort = 6001" in toml
 
     def test_non_stcp_excluded(self):
@@ -310,9 +345,8 @@ class TestLocalPortOutsideRange:
         warned = [r.getMessage() for r in caplog.records if "local_port" in r.getMessage()]
         for tunnel in bad:
             assert any(
-                tunnel.name in m and repr(tunnel.local_port) in m and "left out" in m
-                for m in warned
-            ), (tunnel.name, warned)
+                tunnel.id in m and repr(tunnel.local_port) in m and "left out" in m for m in warned
+            ), (tunnel.id, warned)
 
     def test_frpc_keeps_the_edges(self):
         tunnels = [
@@ -395,8 +429,8 @@ class TestStcpWithoutVisitorPort:
         assert len(warned) == len(self.BAD_PORTS), warned
         for tunnel in tunnels[:-1]:
             assert any(
-                tunnel.name in m and f"visitor_port {tunnel.visitor_port!r}" in m for m in warned
-            ), (tunnel.name, warned)
+                tunnel.id in m and f"visitor_port {tunnel.visitor_port!r}" in m for m in warned
+            ), (tunnel.id, warned)
 
     def test_visitor_keeps_the_edge_ports(self):
         tunnels = [
@@ -416,7 +450,7 @@ class TestStcpWithoutVisitorPort:
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
             toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
         proxies = tomllib.loads(toml)["proxies"]
-        assert sorted(p["name"] for p in proxies) == sorted(t.name for t in tunnels)
+        assert sorted(p["name"] for p in proxies) == sorted(t.id for t in tunnels)
         assert not caplog.records, [r.getMessage() for r in caplog.records]
 
 
@@ -474,11 +508,11 @@ class TestRefusedExtraConfigWarning:
 
 
 class TestFieldsTheApiRefuses:
-    # R-0894: rows stored before the schema checked name, local_ip, custom_domains and
-    # secret_key are left out of the frpc and visitor TOML, logged by name only; the tunnels
-    # next to them are untouched.
+    # R-0894: rows stored before the schema checked local_ip, custom_domains and secret_key
+    # are left out of the frpc and visitor TOML, logged by ID only; the tunnels next to them
+    # are untouched. The name is no field of either TOML (R-1210).
     BAD_VALUES = ('a"b', "a\\b", "a\nb", "a\x7fb", "a{{b", "a\ud800b")
-    FIELDS = ("name", "local_ip", "custom_domains", "secret_key")
+    FIELDS = ("local_ip", "custom_domains", "secret_key")
 
     def _bad(self):
         return [
@@ -505,10 +539,25 @@ class TestFieldsTheApiRefuses:
         assert [p["name"] for p in tomllib.loads(frpc)["proxies"]] == ["ok"]
         warned = self._warnings(caplog)
         for tunnel in tunnels[:-1]:
-            assert any(repr(tunnel.name) in m and "left out" in m for m in warned), (
-                tunnel.name,
+            assert any(repr(tunnel.id) in m and "left out" in m for m in warned), (
+                tunnel.id,
                 warned,
             )
+
+    def test_a_name_the_api_refuses_leaves_nothing_out(self, caplog):
+        # Rows from before the schema checked the name may hold such characters; neither TOML
+        # writes the name, so the tunnel stays.
+        tunnels = [
+            _make_tunnel(id=f"tun-{i}", name=value, visitor_port=6001 + i)
+            for i, value in enumerate(self.BAD_VALUES)
+        ]
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            frpc = tomllib.loads(generate_frpc_toml(_make_config(), tunnels, "srv1"))
+            visitor = tomllib.loads(generate_visitor_toml(_make_config(), tunnels))
+        ids = [t.id for t in tunnels]
+        assert [p["name"] for p in frpc["proxies"]] == ids
+        assert [v["serverName"] for v in visitor["visitors"]] == ids
+        assert not self._warnings(caplog)
 
     def test_the_warning_carries_no_value(self, caplog):
         tunnel = _make_tunnel(name="leaky", secret_key="s3cr3t-value-0123456789\n")

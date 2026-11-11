@@ -33,15 +33,16 @@ use crate::workspace::WorkspaceId;
 /// Keeps the RDP pins apart from the server pins (`host:port`) in the same keyring namespace.
 const IDENTITY_PREFIX: &str = "rdp/";
 const DEFAULT_RDP_PORT: u16 = 3389;
-/// Room for a workspace id, a tunnel name and a DNS name; a keyring key has to end somewhere.
+/// Room for a workspace id, a tunnel ID and a DNS name; a keyring key has to end somewhere.
 const MAX_IDENTITY_LEN: usize = 512;
 
 /// The pin identity of an RDP target: `rdp/<workspace>/<host>:<port>`, or
-/// `rdp/<workspace>/<tunnel>/<host>:<port>` through a tunnel. Host and port are those of the
+/// `rdp/<workspace>/<tunnel-id>/<host>:<port>` through a tunnel. Host and port are those of the
 /// stored connection, not of the local visitor: private addresses repeat between sites, and one
-/// pin for the same address at two sites would refuse the second as changed. The workspace comes
-/// first for the same reason: tunnel names are unique per server only, and the servers of two
-/// workspaces may name a tunnel and an address alike.
+/// pin for the same address at two sites would refuse the second as changed. The tunnel goes by
+/// its ID, not its name: since R-1210 the name derives from the server's, changes with a rename
+/// and may repeat, and a pin that a rename forgot would ask anew instead of refusing a changed
+/// certificate. The workspace comes first: the servers of two workspaces are separate.
 pub(crate) fn pin_identity(
     workspace: &WorkspaceId,
     stored: &Connection,
@@ -60,7 +61,7 @@ pub(crate) fn pin_identity(
     };
     let host = segment(&host);
     let port = stored.port.unwrap_or(DEFAULT_RDP_PORT);
-    match resolved.tunnel_name.as_deref() {
+    match resolved.tunnel_id.as_deref() {
         Some(tunnel) if resolved.via_tunnel => format!(
             "{IDENTITY_PREFIX}{workspace}/{}/{host}:{port}",
             segment(tunnel)
@@ -69,7 +70,7 @@ pub(crate) fn pin_identity(
     }
 }
 
-/// A tunnel name or a host as one part of an identity: `%` and `/` become `%25` and `%2F`, so a
+/// A tunnel ID or a host as one part of an identity: `%` and `/` become `%25` and `%2F`, so a
 /// `/` in an identity only ever separates its parts.
 fn segment(part: &str) -> String {
     part.replace('%', "%25").replace('/', "%2F")
@@ -318,21 +319,54 @@ mod tests {
             connection: stored.clone(),
             via_tunnel: false,
             tunnel_name: None,
+            tunnel_id: None,
             tunnel_type: None,
         }
     }
 
-    /// Resolved to the local visitor of `tunnel`, the way `resolve_connection` does for STCP.
+    /// Resolved to the local visitor of the tunnel with ID `tunnel`, the way `resolve_connection`
+    /// does for STCP; its display name is made up from the ID.
     fn tunneled(stored: &Connection, tunnel: &str) -> ResolvedConnection {
+        named_tunnel(stored, tunnel, &format!("srv · {tunnel} (FRP)"))
+    }
+
+    fn named_tunnel(stored: &Connection, id: &str, name: &str) -> ResolvedConnection {
         let mut local = stored.clone();
         local.host = Some("127.0.0.1".to_string());
         local.port = Some(23000);
         ResolvedConnection {
             connection: local,
             via_tunnel: true,
-            tunnel_name: Some(tunnel.to_string()),
+            tunnel_name: Some(name.to_string()),
+            tunnel_id: Some(id.to_string()),
             tunnel_type: Some("stcp".to_string()),
         }
+    }
+
+    #[test]
+    fn tofu_identity_names_the_tunnel_by_its_id_not_its_display_name() {
+        // R-1210: the display name follows the server's name and may repeat; the pin must survive
+        // a rename and must not join two tunnels that read alike.
+        let ws = ws("kunde-a");
+        let stored = rdp("192.0.2.10", Some(3389), false);
+        let before = pin_identity(
+            &ws,
+            &stored,
+            &named_tunnel(&stored, "t-1", "web01 · RDP (FRP)"),
+        );
+        let renamed = pin_identity(
+            &ws,
+            &stored,
+            &named_tunnel(&stored, "t-1", "web02 · RDP (FRP)"),
+        );
+        let twin = pin_identity(
+            &ws,
+            &stored,
+            &named_tunnel(&stored, "t-2", "web01 · RDP (FRP)"),
+        );
+        assert_eq!(before, renamed);
+        assert_ne!(before, twin);
+        assert_eq!(before, "rdp/kunde-a/t-1/192.0.2.10:3389");
     }
 
     /// The destination a session to `resolved` connects to.

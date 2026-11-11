@@ -10,6 +10,9 @@
 import { login, gotoInfrastructure, openServerTab, texts } from '../lib/live.js';
 
 const TUNNEL_NAME = 'e2e-ssh';
+// The list shows the display name the server derives from its server (R-1210); the orchestrator
+// seeds the server e2e-server.
+const TUNNEL_SHOWN = `e2e-server · ${TUNNEL_NAME} (FRP)`;
 
 describe('AdminHelper desktop — create a tunnel against a live server', () => {
   it('logs in and opens Infrastructure → the seeded server → the Tunnels tab', async () => {
@@ -38,7 +41,7 @@ describe('AdminHelper desktop — create a tunnel against a live server', () => 
     // The modal closes and TunnelsTab reloads from the server.
     await browser.waitUntil(
       async () => {
-        return (await texts('.tun-row .tun-name')).includes(TUNNEL_NAME);
+        return (await texts('.tun-row .tun-name')).includes(TUNNEL_SHOWN);
       },
       { timeout: 15000, timeoutMsg: 'the created tunnel never appeared in the list' },
     );

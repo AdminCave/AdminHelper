@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.bounds import IntPk
@@ -24,7 +24,6 @@ from app.modules.frp.config_generator import (
     name_refused,
     without_refused_extra_config,
     without_refused_fields,
-    without_refused_server_name,
     without_secretless_stcp,
     without_unbindable_visitor,
     without_unreachable_local,
@@ -77,16 +76,10 @@ def _visible_stcp_tunnels(db: Session, config: FrpServerConfig, user: User) -> l
     else only those on the user's own servers. Centralised because it is a security
     invariant — a non-admin must never see foreign tunnels, and duplicating it
     risks breaking that at one site (2.44)."""
-    # Eager-load target_server: generate_visitor_toml reads tunnel.target_server.name per tunnel,
-    # which would otherwise fire one SELECT per tunnel (the backref is lazy) (5.29).
-    q = (
-        db.query(FrpTunnel)
-        .options(joinedload(FrpTunnel.target_server))
-        .filter(
-            FrpTunnel.frp_config_id == config.id,
-            FrpTunnel.tunnel_type == "stcp",
-            FrpTunnel.enabled.is_(True),
-        )
+    q = db.query(FrpTunnel).filter(
+        FrpTunnel.frp_config_id == config.id,
+        FrpTunnel.tunnel_type == "stcp",
+        FrpTunnel.enabled.is_(True),
     )
     if user.is_admin:
         return q.all()
@@ -112,10 +105,6 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
-    # A name the API refuses gets no tunnel from the generator (generate_frpc_toml).
-    if name_refused(server.name):
-        raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
-
     # The inputs of the agent's sync and of the provisioning bundle (frpc_sync_inputs), so
     # an admin sees the text the host runs. Without an active tunnel (active_tunnels) the
     # text carries no tunnel to configure, so it is refused rather than shown.
@@ -126,7 +115,7 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     if not active_tunnels(tunnels):
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
 
-    toml = generate_frpc_toml(config, tunnels, server.name, allow_users)
+    toml = generate_frpc_toml(config, tunnels, server.id, allow_users)
     return PlainTextResponse(toml, media_type="application/toml")
 
 
@@ -145,10 +134,8 @@ def gen_visitor_toml(
         if not user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    tunnels = without_refused_server_name(
-        without_unbindable_visitor(
-            without_refused_fields(without_secretless_stcp(_visible_stcp_tunnels(db, config, user)))
-        )
+    tunnels = without_unbindable_visitor(
+        without_refused_fields(without_secretless_stcp(_visible_stcp_tunnels(db, config, user)))
     )
     # The visitor TOML embeds the shared frps auth token; without visible STCP
     # tunnels the user has no legitimate reason for it, so refuse rather than hand
@@ -177,11 +164,9 @@ def gen_visitor_bundle(
     empty for backward compatibility with the desktop's response shape."""
     config = _resolve_config(db, config_id)
 
-    tunnels = without_refused_server_name(
-        without_unbindable_visitor(
-            without_refused_fields(
-                without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
-            )
+    tunnels = without_unbindable_visitor(
+        without_refused_fields(
+            without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
         )
     )
     # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
@@ -208,9 +193,6 @@ def gen_bulk_zip(
 
         all_tunnels = (
             db.query(FrpTunnel)
-            .options(
-                joinedload(FrpTunnel.target_server)
-            )  # 5.29: no per-tunnel target_server SELECT
             .filter(
                 FrpTunnel.frp_config_id == config.id,
                 FrpTunnel.enabled.is_(True),
@@ -237,18 +219,18 @@ def gen_bulk_zip(
 
         for server_id, tunnels in by_server.items():
             server = servers_by_id.get(server_id)
-            # A refused name gets no tunnel (generate_frpc_toml).
+            # The name is the folder of the server's frpc.toml in the ZIP, not part of it.
             if not server or name_refused(server.name) or _path_refused(server.name):
                 continue
             allow_users = get_allow_users(db, server_id)
-            frpc = generate_frpc_toml(config, tunnels, server.name, allow_users)
+            frpc = generate_frpc_toml(config, tunnels, server.id, allow_users)
             zf.writestr(f"clients/{server.name}/frpc.toml", frpc)
 
         # Once as well, after the frpc.toml files: a tunnel without a usable visitor port
         # keeps its proxy above, no visitor TOML carries it, and it is warned about once,
         # not per user; a user whose tunnels all lack one gets no visitor TOML.
-        stcp_tunnels = without_refused_server_name(
-            without_unbindable_visitor([t for t in all_tunnels if t.tunnel_type == "stcp"])
+        stcp_tunnels = without_unbindable_visitor(
+            [t for t in all_tunnels if t.tunnel_type == "stcp"]
         )
         users_with_servers = db.query(User).filter(User.servers.any()).all()
         if users_with_servers:

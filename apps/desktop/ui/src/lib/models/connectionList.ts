@@ -139,11 +139,25 @@ export function sortConnections(
 }
 
 /**
+ * The server a connection groups under 'host' ("by server"): its server's name, from
+ * `serverNames` where the caller knows the servers, else from the display name the server
+ * derived (R-1210). A connection without a server groups by its host.
+ */
+function groupingServer(c: Connection, serverNames: Readonly<Record<string, string>>): string {
+  if (!c.serverId) return connectionGroupingHost(c).toLowerCase();
+  return serverNames[c.serverId] ?? c.name.split(' · ')[0];
+}
+
+/**
  * Groups the (already sorted) connections, keeping their order inside each group. Under
  * 'tag' a connection appears once per tag. NO_GROUP collects those without a host or tag
  * and comes last; 'none' gives a single group.
  */
-export function groupConnections(items: readonly Connection[], grouping: Grouping): ListGroup[] {
+export function groupConnections(
+  items: readonly Connection[],
+  grouping: Grouping,
+  serverNames: Readonly<Record<string, string>> = {},
+): ListGroup[] {
   if (grouping === 'none') return [{ key: NO_GROUP, connections: [...items] }];
   const groups = new Map<string, Connection[]>();
   const add = (key: string, c: Connection) => {
@@ -153,7 +167,7 @@ export function groupConnections(items: readonly Connection[], grouping: Groupin
   };
   for (const c of items) {
     if (grouping === 'kind') add(c.kind, c);
-    else if (grouping === 'host') add(connectionGroupingHost(c).toLowerCase(), c);
+    else if (grouping === 'host') add(groupingServer(c, serverNames), c);
     else if ((c.tags ?? []).length === 0) add(NO_GROUP, c);
     else for (const t of c.tags) add(t, c);
   }

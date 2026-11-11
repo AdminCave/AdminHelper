@@ -12,22 +12,21 @@ describe('Server CRUD via the GUI', () => {
     await login();
     await gotoInfrastructure();
 
-    // create via "+ Add Server" (ServerModal: name, hostname, ...)
+    // create via "+ Add Server" with its name alone: the address follows it (R-1210)
     await $('[data-action="server-new"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     // Fill by field name, not input index — a reordered/added field would otherwise
     // silently populate the wrong column (4.33). The inputs carry name="…" attrs.
-    await $('.editor-overlay input[name="name"]').setValue('crud-server');
-    await $('.editor-overlay input[name="hostname"]').setValue('crud.example');
+    await $('.editor-overlay input[name="name"]').setValue('crud-server.example');
     await clickInModal('.btn.primary');
-    await waitForRow('.srv-item .srv-item-name', 'crud-server');
+    await waitForRow('.srv-item .srv-item-name', 'crud-server.example');
 
     // select it, open its editor (detail header "Edit"), delete (two-step)
-    await clickItemByName('.srv-item', '.srv-item-name', 'crud-server');
+    await clickItemByName('.srv-item', '.srv-item-name', 'crud-server.example');
     await $('[data-action="server-edit"]').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
     await clickInModal('.btn.danger');
     await clickInModal('.btn.danger');
-    await waitForRow('.srv-item .srv-item-name', 'crud-server', false);
+    await waitForRow('.srv-item .srv-item-name', 'crud-server.example', false);
   });
 });

@@ -104,7 +104,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <TunnelModal
   open={modalOpen}
   {editing}
-  serverId={server.id}
+  {server}
   {configs}
   onClose={() => (modalOpen = false)}
   onSaved={load}

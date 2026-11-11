@@ -299,6 +299,8 @@ _EVERYTHING = (_NET("0.0.0.0/0"), _NET("::/0"))
         ("100.127.255.254", "100.64.0.0/10"),
         ("fc00::1", "fc00::/7"),
         ("fd12:3456::1", "fd12:3456::/32"),
+        ("fec0::1", "fec0::/10"),  # deprecated site-local, global to ipaddress
+        ("feff:ffff::1", "fec0::/10"),
         ("::ffff:192.168.1.10", "192.168.1.0/24"),  # IPv4-mapped, matched as IPv4
     ],
 )
@@ -319,6 +321,7 @@ def test_a_private_address_passes_only_inside_a_listed_network(monkeypatch, addr
         ("10.0.0.1", ("100.64.0.0/10",)),
         ("100.64.0.1", ("10.0.0.0/8",)),
         ("fd12:3456::1", ("fd99::/16",)),
+        ("fec0::1", ("fc00::/7",)),
         ("::ffff:10.0.0.1", ("::ffff:0:0/96",)),  # the mapped form is matched as IPv4
     ],
 )
@@ -346,6 +349,9 @@ def test_a_private_address_outside_the_listed_networks_stays_blocked(
         "fd00:ec2::23",
         "fd20:ce::254",
         "100.100.100.200",  # cloud metadata inside CGNAT
+        "168.63.129.16",  # cloud metadata on a public address
+        "::ffff:168.63.129.16",
+        "2002:a83f:8110::1",  # 6to4 around 168.63.129.16
         "0.0.0.0",
         "0.1.2.3",
         "::",

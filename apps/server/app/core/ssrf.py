@@ -37,16 +37,18 @@ logger = logging.getLogger(__name__)
 # (0.0.0.0/8 = "this network", which resolves to localhost on Linux).
 # The cloud metadata services that live outside link-local stay blocked as well, even
 # inside a network a caller allows (allow_networks): AWS over IPv6, GCP on IPv6-only
-# instances, Alibaba Cloud inside CGNAT.
+# instances, Alibaba Cloud inside CGNAT, and Azure's WireServer on a public address.
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("fd00:ec2::/32"),
     ipaddress.ip_network("fd20:ce::254/128"),
     ipaddress.ip_network("100.100.100.200/32"),
+    ipaddress.ip_network("168.63.129.16/32"),
 ]
 # Blocked unless the caller allows a network that holds the address: CGNAT is where a
-# Tailscale or carrier-NAT host lives, private in all but name.
-_PRIVATE_NETWORKS = [ipaddress.ip_network("100.64.0.0/10")]
+# Tailscale or carrier-NAT host lives, private in all but name; the deprecated IPv6
+# site-local range (RFC 3879) is site-internal, yet ipaddress counts it as global.
+_PRIVATE_NETWORKS = [ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fec0::/10")]
 
 IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 

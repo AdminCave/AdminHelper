@@ -40,7 +40,7 @@ const h = vi.hoisted(() => {
     FakeSocket,
     draw: vi.fn(),
     disconnectRdp: vi.fn(),
-    reconnectRdp: vi.fn(async () => true),
+    reconnectRdpTab: vi.fn(async () => true),
     setRdpPerformance: vi.fn(async () => true),
     setRdpDisplay: vi.fn(),
     setRdpWindow: vi.fn(),
@@ -69,7 +69,6 @@ vi.mock('$lib/stores/terminals', async () => {
   return {
     terminals: writable({ sessions: [], active: 'terminal-1' }),
     disconnectRdp: h.disconnectRdp,
-    reconnectRdp: h.reconnectRdp,
     setRdpPerformance: h.setRdpPerformance,
     setRdpDisplay: h.setRdpDisplay,
     setRdpWindow: h.setRdpWindow,
@@ -79,6 +78,7 @@ vi.mock('$lib/stores/terminals', async () => {
     closeRdpMonitor: h.closeRdpMonitor,
   };
 });
+vi.mock('$lib/stores/connectFlow', () => ({ reconnectRdpTab: h.reconnectRdpTab }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return { settings: writable(null) };
@@ -213,7 +213,7 @@ describe('RdpSession (R-1098)', () => {
     });
     expect(overlay()!.textContent).toContain('The network connection broke off.');
     await fireEvent.click(within(overlay()!).getByRole('button', { name: 'Reconnect' }));
-    expect(h.reconnectRdp).toHaveBeenCalledWith(KEY);
+    expect(h.reconnectRdpTab).toHaveBeenCalledWith(KEY);
 
     await rerender({
       session: session(view({ phase: 'disconnected', code: 'closed', sessionId: null })),
@@ -268,7 +268,7 @@ describe('RdpSession (R-1098)', () => {
     await fireEvent.click(button('Disconnect'));
     expect(h.disconnectRdp).toHaveBeenCalledWith(KEY);
     await fireEvent.click(screen.getAllByRole('button', { name: 'Reconnect' })[0]);
-    expect(h.reconnectRdp).toHaveBeenCalledWith(KEY);
+    expect(h.reconnectRdpTab).toHaveBeenCalledWith(KEY);
     await fireEvent.click(button('End session'));
     expect(onClose).toHaveBeenCalled();
   });
@@ -355,7 +355,7 @@ describe('RdpSession (R-1098)', () => {
     expect(h.setRdpScaling).toHaveBeenCalledWith(KEY, 'hdpi');
 
     await rerender({ session: session(view({ window: 'custom', scaling: 'hdpi' })) });
-    expect(sizes().at(-1)).toEqual({ t: 'size', w: 1280, h: 720, scale: 175 });
+    expect(sizes().at(-1)).toEqual({ t: 'size', w: 1920, h: 1080, scale: 175 });
     // A fixed desktop does not follow the tab.
     vi.useFakeTimers();
     const before = sizes().length;
@@ -374,18 +374,18 @@ describe('RdpSession (R-1098)', () => {
     const canvas = container.querySelector('canvas')!;
     const zoom = () => container.querySelector('.rdp-zoom')!.textContent!.trim();
     expect(zoom()).toBe('100 %');
-    expect(canvas.style.width).toBe('1280px');
+    expect(canvas.style.width).toBe('1920px');
     expect(container.querySelector('.rdp-view')!.classList.contains('zoomed')).toBe(true);
 
     for (let i = 0; i < 4; i += 1) await fireEvent.click(button('Zoom out'));
     expect(zoom()).toBe('25 %');
-    expect(canvas.style.width).toBe('320px');
+    expect(canvas.style.width).toBe('480px');
     expect((button('Zoom out') as HTMLButtonElement).disabled).toBe(true);
 
     await fireEvent.click(button('1:1'));
     for (let i = 0; i < 5; i += 1) await fireEvent.click(button('Zoom in'));
     expect(zoom()).toBe('200 %');
-    expect(canvas.style.height).toBe('1440px');
+    expect(canvas.style.height).toBe('2160px');
     expect((button('Zoom in') as HTMLButtonElement).disabled).toBe(true);
 
     await fireEvent.click(button('Fit'));

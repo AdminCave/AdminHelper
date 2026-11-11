@@ -24,10 +24,15 @@ pub enum TerminalMode {
     Wezterm,
 }
 
+/// `binary` in the first absolute directory of PATH that holds it. A relative entry (also the
+/// empty one, which means the working directory) is skipped: what it finds would depend on
+/// where the app was started.
 pub fn which(binary: &str) -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    let paths = std::env::split_paths(&path_var);
-    for path in paths {
+    which_in(binary, &std::env::var_os("PATH")?)
+}
+
+fn which_in(binary: &str, path_var: &std::ffi::OsStr) -> Option<PathBuf> {
+    for path in std::env::split_paths(path_var).filter(|path| path.is_absolute()) {
         let candidate = path.join(binary);
         if candidate.is_file() {
             return Some(candidate);
@@ -323,6 +328,25 @@ mod tests {
         // the quoting early (the injection this guards against).
         assert_eq!(shell_escape("O'Brien"), "'O'\\''Brien'");
         assert_eq!(shell_escape("'; id; '"), "''\\''; id; '\\'''");
+    }
+
+    #[test]
+    fn which_skips_relative_path_entries() {
+        // cargo runs the tests in the crate folder, which holds Cargo.toml.
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-which-")
+            .expect("a private folder");
+        std::fs::write(dir.join("Cargo.toml"), b"").unwrap();
+        let path = |entries: &[&std::path::Path]| std::env::join_paths(entries).unwrap();
+        let here = std::path::Path::new(".");
+        let empty = std::path::Path::new("");
+
+        assert_eq!(which_in("Cargo.toml", &path(&[here])), None);
+        assert_eq!(which_in("Cargo.toml", &path(&[empty])), None);
+        assert_eq!(
+            which_in("Cargo.toml", &path(&[here, &dir])),
+            Some(dir.join("Cargo.toml"))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn strings(values: &[&str]) -> Vec<String> {

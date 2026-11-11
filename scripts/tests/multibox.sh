@@ -263,7 +263,8 @@ fi
 # srv_api <clear|add|docker-assign|docker-state> <server-id> [<frp-config-id> <tunnel>] — the
 # admin API of the server box, called ON that box: under --enforce only it holds the admin
 # client certificate (box_serverbox.sh enrolls it into /tmp). clear deletes the tunnels of a
-# host; add creates an STCP tunnel to its sshd and prints the visitor.toml that has it.
+# host; add creates an STCP tunnel to its sshd and prints its ID (frpc and frps know the tunnel
+# by it since R-1210) and the visitor.toml that has it.
 # `srv_api frps-config <frp-config-id> <n>` sets max_ports_per_client of an FRP config.
 # docker-assign gives a host the standard template Docker Host; docker-state names the state
 # of its Docker Health check, the monitoring service answering through the proxy of the
@@ -302,10 +303,11 @@ if action == "clear":
     print("MB_API_CLEARED=%d" % len(tunnels))
 elif action == "add":
     config_id, name = sys.argv[4:6]
-    call("POST", "/api/frp/tunnels", token, {"server_id": server_id, "frp_config_id": config_id,
-                                             "name": name, "tunnel_type": "stcp",
-                                             "protocol": "ssh", "local_port": 22})
+    created = json.loads(call("POST", "/api/frp/tunnels", token, {
+        "server_id": server_id, "frp_config_id": config_id, "name": name,
+        "tunnel_type": "stcp", "protocol": "ssh", "local_port": 22}))
     print("MB_API_TUNNEL=" + name)
+    print("MB_API_TUNNEL_ID=" + created["id"])
     print("MB_VISITOR_B64=" + base64.b64encode(call("GET", "/api/frp/generate/visitor-toml", token)).decode())
 elif action == "frps-config":
     # The third word names an FRP config here. max_ports_per_client goes into frps.toml
@@ -366,15 +368,16 @@ srv_api() {
   local action="$1"; shift
   ask "$SRV_VM" 300 "printf %s $(srv_api_py | base64 -w0) | base64 -d | python3 -I - $action $ADMIN_PW $*"
 }
-# frps_registered <tunnel> — frps logged the STCP registration of this tunnel; frp v0.72.0
-# writes "new proxy [<frpc user>.<tunnel>] type [stcp] success" (server/control.go).
+# frps_registered <tunnel-id> — frps logged the STCP registration of this tunnel; frp v0.72.0
+# writes "new proxy [<frpc user>.<proxy>] type [stcp] success" (server/control.go), the user
+# the server's ID and the proxy the tunnel's (R-1210).
 frps_registered() {
   local log
   log="$(ask "$SRV_VM" 300 'mb-dc logs --no-color frps 2>/dev/null | grep -F "new proxy ["' 2>/dev/null)"
   grep -qE "new proxy \[[^]]*\.$1\] type \[stcp\] success" <<<"$log"
 }
 
-# frps_restart <tunnel…> — R-0411, once the visitor got through: a change of the FRP config over
+# frps_restart <tunnel-id…> — R-0411, once the visitor got through: a change of the FRP config over
 # the API. The supervisor in the frps container takes it over and restarts frps exactly once;
 # the agent's frpc logs in again by itself, so frps registers each tunnel anew; and a new
 # visitor connection goes through the first. box_serverbox.sh watches frps on the server box,
@@ -452,14 +455,16 @@ if [ "$TUNNEL" = 1 ]; then
       && ok "tunnel agent: provisioned before its tunnel existed (sync config written, no frpc)" \
       || bad "tunnel agent: provisioning without a tunnel (TUNNEL_BEFORE_OK missing, see output above)"
     API="$(srv_api add "$TUN_SID" "$TUN_CFG" "$LATE_TUNNEL" 2>&1)"
-    LATE_VIS_B64=""
+    LATE_VIS_B64=""; LATE_ID=""
     if [ "$(vm_marker MB_API_TUNNEL "$API")" = "$LATE_TUNNEL" ]; then
       ok "tunnel $LATE_TUNNEL created over the API after the provisioning"
       LATE_VIS_B64="$(vm_marker MB_VISITOR_B64 "$API")"
+      LATE_ID="$(vm_marker MB_API_TUNNEL_ID "$API")"
     else
       echo "$API" | tail -5; bad "could not create tunnel $LATE_TUNNEL over the API (see output above)"
     fi
-    LOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh late "$LATE_TUNNEL" 2>&1)"
+    # The logs name the tunnel by its ID; without one (the create failed above) the name.
+    LOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh late "${LATE_ID:-$LATE_TUNNEL}" 2>&1)"
     echo "$LOUT" | tail -40
     grep -q TUNNEL_FRPC_CONNECTED <<<"$LOUT" \
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
@@ -476,7 +481,7 @@ if [ "$TUNNEL" = 1 ]; then
       && ok "tunnel agent: frpc sync got config-hash over its server's route, the hash its run applied$SYNC_CERT" \
       || bad "tunnel agent: frpc sync over its server's route: ${SYNC_MARK:-no marker} (see output above)"
     # Independent check on the server: frps logged the STCP registration cross-host.
-    frps_registered "$LATE_TUNNEL" \
+    frps_registered "${LATE_ID:-$LATE_TUNNEL}" \
       && ok "frps registered the agent's STCP tunnel $LATE_TUNNEL (cross-host)" \
       || bad "frps shows no STCP registration of $LATE_TUNNEL from the agent"
     # Phase 2: a visitor on a THIRD box completes the data path (visitor -> frps ->
@@ -506,13 +511,14 @@ if [ "$TUNNEL" = 1 ]; then
       [ "$(vm_marker MB_API_TUNNEL "$API")" = "$RELOAD_TUNNEL" ] \
         && ok "second tunnel $RELOAD_TUNNEL created over the API" \
         || { echo "$API" | tail -5; bad "could not create tunnel $RELOAD_TUNNEL over the API (see output above)"; }
-      RLOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh reload "$RELOAD_TUNNEL" 2>&1)"
+      RELOAD_ID="$(vm_marker MB_API_TUNNEL_ID "$API")"
+      RLOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh reload "${RELOAD_ID:-$RELOAD_TUNNEL}" 2>&1)"
       echo "$RLOUT" | tail -40
       RELOAD_MARK="$(grep -oE 'TUNNEL_RELOAD_[A-Z_]+' <<<"$RLOUT" | head -1)"
       [ "$RELOAD_MARK" = TUNNEL_RELOAD_OK ] \
         && ok "tunnel agent: frpc took $RELOAD_TUNNEL by a reload, no restart (same frpc PID, agent log)" \
         || bad "tunnel agent: $RELOAD_TUNNEL without a clean reload: ${RELOAD_MARK:-no marker} (see output above)"
-      frps_registered "$RELOAD_TUNNEL" \
+      frps_registered "${RELOAD_ID:-$RELOAD_TUNNEL}" \
         && ok "frps registered the second tunnel $RELOAD_TUNNEL" \
         || bad "frps shows no STCP registration of $RELOAD_TUNNEL from the agent"
       if [ "$HOLD_MARK" = VIS_SESSION_OPEN ]; then
@@ -529,7 +535,7 @@ if [ "$TUNNEL" = 1 ]; then
       # After R-0398, whose check stops the visitor's frpc: the visitor after the restart is a
       # new frpc and a new SSH session.
       if grep -q VIS_TUNNEL_SSH_OK <<<"$VOUT"; then
-        frps_restart "$LATE_TUNNEL" "$RELOAD_TUNNEL"
+        frps_restart "${LATE_ID:-$LATE_TUNNEL}" "${RELOAD_ID:-$RELOAD_TUNNEL}"
       else
         skipped "the frps restart for a config change (the visitor never got through before it) — R-0411 is unverified"
       fi

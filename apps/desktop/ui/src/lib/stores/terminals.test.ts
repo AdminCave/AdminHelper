@@ -29,6 +29,7 @@ import type {
 
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
+  terminalOpenSshCredential: vi.fn(async (..._a: unknown[]) => 77),
   terminalOpenAnsible: vi.fn(async (..._a: unknown[]) => 99),
   terminalClose: vi.fn(async () => {}),
   terminalCloseAll: vi.fn(async () => {}),
@@ -54,6 +55,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('$lib/bridge', () => ({
   terminalOpenSsh: h.terminalOpenSsh,
+  terminalOpenSshCredential: h.terminalOpenSshCredential,
   terminalOpenAnsible: h.terminalOpenAnsible,
   terminalClose: h.terminalClose,
   terminalCloseAll: h.terminalCloseAll,
@@ -312,6 +314,39 @@ describe('reconnect (R-1069)', () => {
     expect(only()).toMatchObject({ status: 'disconnected' });
     expect(h.reportError).toHaveBeenCalledWith(refusal);
     expect(h.terminalOpenSsh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the end of an SSH tab is heard once (R-1159)', () => {
+  it('when its program ends; a reconnect and its end call nothing more', async () => {
+    const onEnd = vi.fn();
+    await openTerminal(CONN, RESOLVED, onEnd);
+    const { key } = only();
+    programs[0].send(out('x'));
+    expect(onEnd).not.toHaveBeenCalled();
+    programs[0].send({ exitCode: 0 });
+    expect(onEnd).toHaveBeenCalledOnce();
+
+    await reconnectTerminal(key);
+    programs[1].send(out('y'));
+    programs[1].send({ exitCode: 1 });
+    closeTerminal(key);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('when its tab is closed while the program runs', async () => {
+    const onEnd = vi.fn();
+    await openTerminal(CONN, RESOLVED, onEnd);
+    programs[0].send(out('x'));
+    closeTerminal(only().key);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('when its program did not start', async () => {
+    const onEnd = vi.fn();
+    h.terminalOpenSsh.mockRejectedValueOnce(new Error('no ssh'));
+    expect(await openTerminal(CONN, RESOLVED, onEnd)).toBe(false);
+    expect(onEnd).toHaveBeenCalledOnce();
   });
 });
 
@@ -889,7 +924,7 @@ describe('snippets (R-1071)', () => {
   it('a snippet goes to its session line by line, each with Enter', async () => {
     await openTerminal(CONN, RESOLVED);
     const { key } = only();
-    await runSnippet(key, 'cd /tmp\nls -la\n\n');
+    await expect(runSnippet(key, 'cd /tmp\nls -la\n\n')).resolves.toBeNull();
     await settle();
     expect(h.terminalWrite).toHaveBeenCalledTimes(1);
     expect(h.terminalWrite).toHaveBeenCalledWith(1, encoded('cd /tmp\rls -la\r'));
@@ -901,14 +936,17 @@ describe('snippets (R-1071)', () => {
     const { key } = only();
     await watch();
     report(true);
-    await runSnippet(key, 'uptime');
+    await expect(runSnippet(key, 'uptime')).resolves.toBe(2);
     await settle();
     expect(h.terminalBroadcast).toHaveBeenCalledTimes(1);
     expect(h.terminalBroadcast).toHaveBeenCalledWith(encoded('uptime\r'));
     expect(h.terminalWrite).not.toHaveBeenCalled();
 
+    h.terminalBroadcast.mockResolvedValueOnce(0);
+    await expect(runSnippet(key, 'uptime')).resolves.toBe(0);
+
     h.terminalBroadcast.mockRejectedValueOnce(new Error('only the main window broadcasts'));
-    await runSnippet(key, 'uptime');
+    await expect(runSnippet(key, 'uptime')).resolves.toBeNull();
     expect(h.reportError).toHaveBeenCalledWith('only the main window broadcasts');
   });
 
@@ -952,6 +990,44 @@ describe('a playbook in a tab (R-1073)', () => {
     expect(h.terminalOpenAnsible).toHaveBeenCalledTimes(1);
     expect(h.terminalClose).not.toHaveBeenCalled();
     expect(openSessionIds([s, { ...s, ansible: undefined, connection: CONN }])).toEqual(['c1']);
+  });
+});
+
+// arch-monitoring-ui T10: the agent's prompt for a monitoring credential, over SSH.
+describe('a credential prompt in a tab', () => {
+  const REF = 'mysql/3306/monitor';
+
+  it('opens in a tab in front and starts the prompt for its ref, not a shell', async () => {
+    expect(await openTerminal(CONN, RESOLVED, undefined, REF)).toBe(true);
+    const s = only();
+    expect(s).toMatchObject({ connection: CONN, resolved: RESOLVED, credential: { ref: REF } });
+    expect(s.backendId).toBe(77);
+    expect(get(terminals).active).toBe(s.key);
+    expect(h.terminalOpenSshCredential).toHaveBeenCalledExactlyOnceWith(
+      RESOLVED,
+      REF,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+  });
+
+  it('reconnects to the prompt again and is not kept for the next run', async () => {
+    await openTerminal(CONN, RESOLVED, undefined, REF);
+    const s = only();
+    h.resolveConnection.mockResolvedValueOnce({ connection: MOVED });
+    expect(await reconnectTerminal(s.key)).toBe(true);
+    expect(h.terminalOpenSshCredential).toHaveBeenLastCalledWith(
+      MOVED,
+      REF,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+    expect(openSessionIds([s])).toEqual([]);
+    expect(openSessionIds([s, { ...s, credential: undefined }])).toEqual(['c1']);
   });
 });
 
@@ -1149,6 +1225,21 @@ describe('an RDP session in a tab (R-1098)', () => {
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, 'typed', undefined);
     await openRdp(RDP);
     expect(h.rdpSessionStart).toHaveBeenLastCalledWith(RDP, undefined, undefined);
+  });
+
+  it('starts this and every later start with a login asked anew (R-1196)', async () => {
+    await openRdp(RDP, 'typed');
+    const key = only().key;
+    const alice = { ...RDP, username: 'alice' };
+    expect(await reconnectRdp(key, { connection: alice, password: 'new' })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+    expect(only()).toMatchObject({ connection: alice, resolved: alice });
+    expect(await reconnectRdp(key)).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, 'new', undefined);
+
+    // A remembered password: Rust takes the stored one from then on.
+    expect(await reconnectRdp(key, { connection: alice, password: undefined })).toBe(true);
+    expect(h.rdpSessionStart).toHaveBeenLastCalledWith(alice, undefined, undefined);
   });
 
   it('leaves a connection only the OS client can open to it, without a tab', async () => {

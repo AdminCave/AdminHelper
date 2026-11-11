@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -190,6 +191,57 @@ func TestReportStateRoundtrip(t *testing.T) {
 	}
 }
 
+func TestReportStateProxmoxBackups(t *testing.T) {
+	// The backup index survives the state file, an empty one as empty (read, no backups yet), not as
+	// nil (never read), which would read the storages again in every report. A state an older agent
+	// saved has none.
+	path := filepath.Join(t.TempDir(), ".report-state.json")
+	for name, index := range map[string]map[int]int64{"empty": {}, "two": {100: 1760000000, 101: 1760000001}} {
+		t.Run(name, func(t *testing.T) {
+			want := backupIndexCheck{CheckedUnix: 1760090000, Node: "pve", Storages: []string{"local", "nas"}, Index: index}
+			if err := saveReportState(path, reportState{ProxmoxBackups: &want}); err != nil {
+				t.Fatalf("saveReportState: %v", err)
+			}
+			got := loadReportState(path).ProxmoxBackups
+			if got == nil || got.Index == nil || !reflect.DeepEqual(*got, want) {
+				t.Errorf("roundtrip: got %+v, want %+v", got, want)
+			}
+		})
+	}
+	if err := os.WriteFile(path, []byte(`{"cpu":{"unix":1,"total":2,"busy":1}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(path); st.ProxmoxBackups != nil {
+		t.Errorf("older state: got %+v, want no backup index", st.ProxmoxBackups)
+	}
+}
+
+func TestBuildReportCarriesProxmoxBackups(t *testing.T) {
+	// The report hands the collector the saved index and the time of the report, and saves what it
+	// returns: nil as well, when Proxmox is gone.
+	stubReportHost(t)
+	saved := &backupIndexCheck{CheckedUnix: 1, Node: "pve", Index: map[int]int64{}}
+	read := &backupIndexCheck{CheckedUnix: 2, Node: "pve", Index: map[int]int64{100: 3}}
+	now := time.Unix(1760090000, 0)
+	for name, ret := range map[string]*backupIndexCheck{"read": read, "gone": nil} {
+		t.Run(name, func(t *testing.T) {
+			var gotSaved *backupIndexCheck
+			var gotNow time.Time
+			pluginCollectors.proxmox = func(_ context.Context, s *backupIndexCheck, n time.Time) (map[string]any, *backupIndexCheck) {
+				gotSaved, gotNow = s, n
+				return nil, ret
+			}
+			_, next := buildReportWithState(context.Background(), nil, nil, reportState{ProxmoxBackups: saved}, now)
+			if gotSaved != saved || !gotNow.Equal(now) {
+				t.Errorf("collector got %+v at %v, want %+v at %v", gotSaved, gotNow, saved, now)
+			}
+			if next.ProxmoxBackups != ret {
+				t.Errorf("next.ProxmoxBackups = %+v, want %+v", next.ProxmoxBackups, ret)
+			}
+		})
+	}
+}
+
 func TestReportStateOOMKillSource(t *testing.T) {
 	// The state keeps where the OOM counter came from; a file from before the source was saved holds a
 	// /proc/vmstat counter.
@@ -253,6 +305,11 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 	status.Store(http.StatusOK)
 	received := make(chan float64, 8)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// The plan: none, as from a monitoring service without probes.
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		var body struct {
 			Resources struct {
 				CPUPercent float64 `json:"cpu_percent"`
@@ -318,17 +375,20 @@ func TestReportStatePushSavesOnlyAfterSuccess(t *testing.T) {
 		t.Fatalf("state after the second push = %+v, want total 1400, busy 300", st)
 	}
 
-	// 3) A lost push (both attempts fail) leaves the file as it was.
-	saved, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 3) A lost push (both attempts fail) leaves the state as it was, but for the self-throttle: that
+	// counts the run all the same (here the third clean one, which resets the count).
+	saved := loadReportState(statePath)
 	status.Store(http.StatusBadGateway)
 	if _, err := push(900, 1500); err == nil {
 		t.Fatal("push against 502: want an error")
 	}
-	if after, _ := os.ReadFile(statePath); !bytes.Equal(after, saved) {
-		t.Fatalf("state file after a failed push = %s, want it unchanged %s", after, saved)
+	after := loadReportState(statePath)
+	if th := after.Throttle[probesCollector]; th != (throttle{Factor: 1}) || saved.Throttle[probesCollector].Clean != 2 {
+		t.Errorf("probes throttle after a failed push = %+v (before %+v), want the third clean run counted", th, saved.Throttle[probesCollector])
+	}
+	after.Throttle, saved.Throttle = nil, nil
+	if !reflect.DeepEqual(after, saved) {
+		t.Fatalf("state after a failed push = %+v, want it unchanged %+v", after, saved)
 	}
 
 	// 4) The next successful push measures since the last successful one: (600-300)/(2400-1400).

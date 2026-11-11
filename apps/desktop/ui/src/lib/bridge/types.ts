@@ -145,6 +145,7 @@ export interface TerminalPrefs {
   copyOnSelect: boolean;
   rightClickPaste: boolean;
   confirmClose: boolean;
+  confirmMultilinePaste: boolean;
 }
 
 // One reachability probe: probe_targets answers with the connect time in ms or null per target.
@@ -229,7 +230,10 @@ export interface TunnelMapping {
 export interface ResolvedConnection {
   connection: Connection;
   viaTunnel: boolean;
+  /** The name the server shows for the tunnel (R-1210); for display only. */
   tunnelName?: string | null;
+  /** The tunnel's ID, by which the RDP pins name it; the UI does not read it. */
+  tunnelId?: string | null;
   tunnelType?: string | null;
 }
 

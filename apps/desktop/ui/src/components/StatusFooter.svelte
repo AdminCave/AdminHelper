@@ -11,6 +11,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { settings, session } from '$lib/stores/session';
   import { tunnel } from '$lib/stores/tunnel';
   import { monitoringChecks, monitoringHasLoaded, monitoringError } from '$lib/stores/monitoring';
+  import { monitoringSilentMinutes } from '$lib/stores/monitoringPulse';
+  import { navigate } from '$lib/router';
   import { lastSyncedAt } from '$lib/stores/connections';
   import { settingsModalOpen } from '$lib/stores/settings';
   import { dndUntil } from '$lib/stores/dnd';
@@ -135,6 +137,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {problems > 0 ? $t('footer.problems', { count: problems }) : $t('footer.problemsNone')}
       </span>
     {/if}
+    {#if $monitoringSilentMinutes !== null}
+      <button
+        type="button"
+        class="status-footer-item status-footer-silent"
+        data-field="silent"
+        title={$t('monitoring.silent.hint')}
+        onclick={() => navigate('/monitoring')}
+      >
+        {$t('monitoring.silent.title', { minutes: $monitoringSilentMinutes })}
+      </button>
+    {/if}
     {#if certLabel}
       <span class="status-footer-item" data-field="cert">{certLabel}</span>
     {/if}
@@ -146,3 +159,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="status-footer-item" data-field="dnd">{dndLabel}</span>
   {/if}
 </footer>
+
+<style>
+  .status-footer-silent {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--warning);
+    cursor: pointer;
+  }
+
+  .status-footer-silent:hover {
+    text-decoration: underline;
+  }
+</style>

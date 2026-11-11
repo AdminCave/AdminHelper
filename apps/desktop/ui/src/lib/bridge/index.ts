@@ -307,6 +307,26 @@ export function terminalOpenSsh(
   return invoke<number>('terminal_open_ssh', { connection, cols, rows, output });
 }
 
+// Opens `connection` as terminalOpenSsh, but runs only `sudo adminhelper-agent monitor credential
+// set <credentialRef>` there: the admin types the secret into the agent's prompt. Main window
+// only; Rust builds the command and refuses a ref the agent would not take.
+export function terminalOpenSshCredential(
+  connection: Connection,
+  credentialRef: string,
+  cols: number,
+  rows: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<number> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke<number>('terminal_open_ssh_credential', {
+    connection,
+    credentialRef,
+    cols,
+    rows,
+    output,
+  });
+}
+
 // The bytes as typed. Two writes in flight for one session may reach the program in either
 // order: the caller sends the next one after the last has settled.
 export function terminalWrite(id: number, data: Uint8Array): Promise<void> {

@@ -762,6 +762,7 @@ mod tests {
                     "copyOnSelect": true,
                     "rightClickPaste": true,
                     "confirmClose": true,
+                    "confirmMultilinePaste": false,
                 },
             })
         );
@@ -930,6 +931,7 @@ mod tests {
                     "copyOnSelect": true,
                     "rightClickPaste": true,
                     "confirmClose": true,
+                    "confirmMultilinePaste": false,
                 },
             })
         );

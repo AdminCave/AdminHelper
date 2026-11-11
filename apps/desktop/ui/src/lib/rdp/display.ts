@@ -15,7 +15,7 @@ import { RDP_CUSTOM_SIZE_PATTERN } from '$lib/models/settings';
 /** How the tab lays the desktop out; full screen fits it, two monitors fit each of theirs. */
 export type RdpLayout = 'fit' | 'custom';
 
-export const FIXED_DEFAULT = { width: 1280, height: 720 } as const;
+export const FIXED_DEFAULT = { width: 1920, height: 1080 } as const;
 export const ZOOM = { min: 25, max: 200, step: 25 } as const;
 /** How long the tab has to keep its size before the session follows. */
 export const RESIZE_DEBOUNCE_MS = 300;
@@ -42,7 +42,7 @@ function density(scaling: RdpScalingMode, ratio: number): { pixels: number; scal
 // larger one would fail the whole start.
 const MAX_SIDE = 8192;
 
-/** `rdp_custom_size` as width and height; a missing or malformed one is 1280×720. */
+/** `rdp_custom_size` as width and height; a missing or malformed one is 1920×1080. */
 export function parseSize(size: string | null | undefined): { width: number; height: number } {
   if (!size || !RDP_CUSTOM_SIZE_PATTERN.test(size)) return { ...FIXED_DEFAULT };
   const [width, height] = size.split('x').map((side) => Math.min(Number(side), MAX_SIDE));

@@ -21,7 +21,13 @@ from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
-from app.modules.connections.models import Connection, ConnectionSession, _compact
+from app.modules.connections.models import (
+    Connection,
+    ConnectionSession,
+    _compact,
+    own_text,
+    shown_name,
+)
 from app.modules.connections.schemas import (
     ConnectionCreate,
     ConnectionImportResult,
@@ -195,6 +201,19 @@ def _reject_unknown_server(db: Session, server_id: str | None) -> None:
         )
 
 
+def _default_names(server: Server | None, kind: str) -> tuple[str, ...]:
+    """The display names a connection of `kind` on `server` shows without an own text."""
+    if server is None:
+        return ()
+    return tuple(shown_name(server.name, "", kind, frp) for frp in (False, True))
+
+
+def _stored_name(label: str | None, name: str | None, server: Server | None, kind: str) -> str:
+    """The name column of a connection from what a client sent (R-1210): the label, else the
+    name of a client from before; with a server only an own text, not a repeat of it."""
+    return own_text(label if label is not None else name, server, *_default_names(server, kind))
+
+
 @router.get("", response_model=list[ConnectionOut], response_model_exclude_unset=True)
 def get_connections(
     response: Response,
@@ -228,6 +247,8 @@ def create_connection(
     _reject_unknown_server(db, connection.serverId)
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
+    server = db.get(Server, connection.serverId) if connection.serverId else None
+    data["name"] = _stored_name(data.pop("label"), data.get("name"), server, connection.kind)
     conn = Connection.from_dict(data)
     db.add(conn)
     db.commit()
@@ -269,7 +290,30 @@ def update_connection(
         _require_login_to_trust(_auth, connection.trustCert, bool(conn.trust_cert))
     _require_login_to_move(_auth, conn, connection)
     _reject_unknown_server(db, connection.serverId)
-    conn.update_from_dict(connection.model_dump(exclude_unset=True))
+    data = connection.model_dump(exclude_unset=True)
+    server_id = data["serverId"] if "serverId" in data else conn.server_id
+    server = db.get(Server, server_id) if server_id else None
+    label = data.pop("label", None)
+    if (
+        label is None
+        and data.get("name") is not None
+        and (data["name"].strip().lower() == conn.display_name().strip().lower())
+    ):
+        # A client from before R-1210 sends back the display name it was shown: unchanged.
+        del data["name"]
+    # Handed on as the label: update_from_dict takes a label as the stored name as it is.
+    if label is not None or "name" in data:
+        data["label"] = _stored_name(
+            label, data.pop("name", None), server, data.get("kind", conn.kind)
+        )
+    elif conn.server_id and server is None:
+        # Taken off its server: the name it showed keeps it nameable.
+        data["label"] = conn.display_name()
+    if server is None and not (data["label"] if "label" in data else conn.name):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name darf nicht leer sein"
+        )
+    conn.update_from_dict(data)
     db.commit()
     db.refresh(conn)
     result = conn.to_dict()
@@ -326,7 +370,7 @@ def touch_connection(
         actor=actor_from_request(request),
         object_type="connection",
         object_id=conn_id,
-        object_label=conn.name,
+        object_label=conn.display_name(),
     )
     return {**conn.to_dict(), "sessionId": session.id}
 
@@ -456,9 +500,7 @@ def import_connections(
     # One query for every serverId the import names, not one per entry (R-0068).
     server_ids = {p["serverId"] for _, p in validated if p.get("serverId") is not None}
     known = (
-        {sid for (sid,) in db.query(Server.id).filter(Server.id.in_(server_ids))}
-        if server_ids
-        else set()
+        {s.id: s for s in db.query(Server).filter(Server.id.in_(server_ids))} if server_ids else {}
     )
     for idx, payload in validated:
         if payload.get("serverId") is not None and payload["serverId"] not in known:
@@ -488,6 +530,11 @@ def import_connections(
     imported = []
     for _, payload in validated:
         payload["id"] = str(uuid.uuid4())
+        # An export carries the display name as `name` and the stored one as `label`.
+        server = known.get(payload["serverId"]) if payload.get("serverId") else None
+        payload["name"] = _stored_name(
+            payload.pop("label"), payload.get("name"), server, payload["kind"]
+        )
         conn = Connection.from_dict(payload)
         db.add(conn)
         imported.append(conn)

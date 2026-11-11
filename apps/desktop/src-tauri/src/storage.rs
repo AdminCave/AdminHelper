@@ -1078,6 +1078,7 @@ mod settings_tests {
             copy_on_select: false,
             right_click_paste: false,
             confirm_close: false,
+            confirm_multiline_paste: true,
         };
         settings.restore_sessions = true;
         settings.open_sessions = vec!["c2".to_string(), "c1".to_string()];
@@ -1111,6 +1112,7 @@ mod settings_tests {
                     "copyOnSelect": false,
                     "rightClickPaste": false,
                     "confirmClose": false,
+                    "confirmMultilinePaste": true,
                 },
                 "restoreSessions": true,
             })
@@ -1403,6 +1405,7 @@ mod settings_tests {
                 "copyOnSelect": true,
                 "rightClickPaste": true,
                 "confirmClose": true,
+                "confirmMultilinePaste": false,
             })
         );
 

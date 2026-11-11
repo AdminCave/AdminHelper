@@ -37,7 +37,7 @@ for t in bash sh dirname basename pwd mktemp rm cat grep sed awk timeout env pri
 done
 # Every binary e2e_require checks. The blanket docker stub also answers its
 # `docker compose version` and `docker info` probes, since it succeeds at anything.
-for t in docker openssl curl python3 node xvfb-run WebKitWebDriver tauri-driver \
+for t in docker openssl curl python3 ssh ssh-keygen node xvfb-run WebKitWebDriver tauri-driver \
          dbus-run-session dbus-send gnome-keyring-daemon go; do
   printf '#!/bin/sh\nexit 0\n' > "$SHIM/$t"; chmod +x "$SHIM/$t"
 done
