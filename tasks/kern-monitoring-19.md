@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/kern-monitoring-19/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
 Doku: → T5
 
-### T2 — R-1252 (Agent): Steuerdienste und Socket-Pfade, die der Agent nie anspricht  [ ]
+### T2 — R-1252 (Agent): Steuerdienste und Socket-Pfade, die der Agent nie anspricht  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_unixsocket.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @882be1194 2026-11-11T12:35:49+01:00
+Review: approve (.ah-out/review/kern-monitoring-19/T2.verdict.json)
 Änderung:
 - `hostDaemons`/`hostDaemonPrefixes` um die Proxmox-API-Dienste und weitere VM-Prozesse ergänzen (Liste aus der
   Roadmap-Notiz R-1252).
@@ -80,3 +82,10 @@ Task-Review: am Ende
   `consecutive_*` und in der Config `rules`, `interval_s`, `timeout_s` änderbar; fehlende Mess-Teile der Config gelten
   mit ihren Vorgaben als gleich. Ein Wechsel des Servers wird abgelehnt (der Check gehört zum Modul seines Servers).
   Die Ablehnung beim Anlegen steht im Schema `CheckCreate` (vor dem Config-Abgleich), nicht in der Route.
+- 2026-11-11 (T2): Die Sperrliste der Socket-Pfade (`controlSockets`) prüft den angegebenen und den aufgelösten Pfad
+  (`/var/run` gilt als `/run`), gewählt wird dann der aufgelöste. Neben den Prozessen aus der Roadmap-Notiz sperrt sie
+  auch `spiceproxy` (Konsolen der Proxmox-Gäste), `xenstored`, die API-Dienste von Proxmox Backup Server und Mail
+  Gateway, kubelet, k3s und buildkitd (Prüfer-Nits). VirtualBox und Cloud Hypervisor stehen als
+  Präfix, weil der Kernel Namen auf 15 Zeichen kürzt. Ein Katalog-Modul mit Unix-Socket gibt es auf `main` noch
+  nicht; der Test prüft die üblichen Pfade von php-fpm, Redis, HAProxy, PostgreSQL und nginx.
+

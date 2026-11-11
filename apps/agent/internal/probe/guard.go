@@ -47,13 +47,18 @@ var blockedProcesses = map[string]bool{"sshd": true, "mysqld": true, "mariadbd":
 var hostDaemons = map[string]bool{
 	"dockerd": true, "containerd": true, "podman": true, "conmon": true, "crio": true, "lxd": true,
 	"incusd": true, "libvirtd": true, "snapd": true, "dbus-daemon": true, "dbus-broker": true,
-	"polkitd": true, "ssh-agent": true, "gpg-agent": true, "kvm": true,
+	"polkitd": true, "ssh-agent": true, "gpg-agent": true, "kvm": true, "firecracker": true, "crosvm": true,
+	"xenconsoled": true, "xenstored": true, "kubelet": true, "buildkitd": true, "pmgdaemon": true, "pmgproxy": true,
 }
 
 // hostDaemonPrefixes start the names of more such processes: the shims of containerd, the daemons
-// of libvirt and VirtualBox (virtqemud, virtlogd, VirtualBoxVM …) and QEMU, which runs a virtual
-// machine and serves its monitor and consoles (qemu-system-x86, qemu-kvm; Proxmox names it kvm).
-var hostDaemonPrefixes = []string{"containerd-shim", "virt", "qemu"}
+// of libvirt and VirtualBox (virtqemud, virtlogd, VirtualBoxVM, VBoxHeadless, VBoxSVC …), QEMU, which
+// runs a virtual machine and serves its monitor and consoles (qemu-system-x86, qemu-kvm; Proxmox names
+// it kvm), Cloud Hypervisor (the kernel cuts the name to cloud-hyperviso), k3s and the API and console
+// daemons of Proxmox VE with their workers (pvedaemon worker, pveproxy worker, spiceproxy) and of
+// Proxmox Backup Server (proxmox-backup-api, proxmox-backup-proxy).
+var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cloud-hyperv", "k3s", "pvedaemon",
+	"pveproxy", "spiceproxy", "proxmox-backup"}
 
 // neverProbed says whether name (processKey) is a process a probe never talks to.
 func neverProbed(name string) bool {
@@ -63,6 +68,33 @@ func neverProbed(name string) bool {
 	}
 	for _, prefix := range hostDaemonPrefixes {
 		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// controlSockets are where the services that control this host, its guests and its sessions keep
+// their unix sockets: a probe never connects to a socket at or below one of them, whichever process
+// serves it (neverProbedSocket). A path that ends in a slash is a directory, one that ends in a hyphen
+// starts the names of such directories (ssh-agent makes /tmp/ssh-XXXXXX).
+var controlSockets = []string{
+	"/run/docker.sock", "/run/docker/", "/run/containerd/", "/run/podman/", "/run/crio/", "/run/cri-dockerd.sock",
+	"/run/k3s/", "/run/buildkit/", "/run/lxc/", "/run/libvirt/", "/run/qemu-server/", "/run/lxd/", "/run/incus/", "/run/snapd.socket",
+	"/run/snapd-snap.socket", "/run/dbus/", "/run/systemd/", "/run/udev/", "/run/user/", "/run/xen/", "/run/xenstored/",
+	"/var/lib/docker/", "/var/lib/containerd/", "/var/lib/kubelet/", "/var/lib/libvirt/", "/var/lib/lxd/", "/var/lib/incus/", "/var/snap/lxd/",
+	"/tmp/.X11-unix/", "/tmp/ssh-",
+}
+
+// neverProbedSocket says whether path (clean and absolute) is at or below one of controlSockets;
+// /var/run is the /run of older systems.
+func neverProbedSocket(path string) bool {
+	if rest, ok := strings.CutPrefix(path, "/var/run/"); ok {
+		path = "/run/" + rest
+	}
+	for _, c := range controlSockets {
+		prefix := strings.HasSuffix(c, "/") || strings.HasSuffix(c, "-")
+		if path == c || prefix && strings.HasPrefix(path, c) {
 			return true
 		}
 	}

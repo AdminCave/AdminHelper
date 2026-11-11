@@ -457,3 +457,35 @@ func TestDockerSocketServes(t *testing.T) {
 		t.Error("a socket the agent may not reach does not count as serving")
 	}
 }
+
+func TestUnixSocketSensorNeverConnectsToASocketOfAControlService(t *testing.T) {
+	servedBy(t, "nginx")
+	path, _ := unixFake(t, func(c *fakeConn) { c.drain() })
+	probe := func(path string) (map[string]any, error) {
+		return unixSocketSensor(context.Background(), unixProbe(map[string]any{"path": path}), "")
+	}
+	if got, err := probe(path); err != nil || got["connected"] != true {
+		t.Fatalf("before = %v, %v; want it connected", got, err)
+	}
+	link := filepath.Join(filepath.Dir(socketIn(t)), "l.sock")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	old := controlSockets
+	t.Cleanup(func() { controlSockets = old })
+	controlSockets = append(slices.Clone(old), filepath.Dir(path)+"/")
+
+	for _, p := range []string{path, link} {
+		if got, err := probe(p); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "a socket of a service the agent never probes") {
+			t.Errorf("%s = %v, %v; want it refused", p, got, err)
+		}
+	}
+	for _, p := range []string{"/run/docker.sock", "/var/run/docker.sock", "/run/user/0/bus"} {
+		if got, err := probe(p); !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("%s = %v, %v; want it refused before any dial", p, got, err)
+		}
+	}
+	if got, err := probe(filepath.Join(filepath.Dir(link), "gone.sock")); err != nil || fmt.Sprint(got) != "map[connected:false]" {
+		t.Errorf("a missing socket = %v, %v; want it not connected", got, err)
+	}
+}

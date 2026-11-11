@@ -628,3 +628,47 @@ func TestGuardReadsThePublishedPortsOncePerSnapshot(t *testing.T) {
 		t.Fatalf("published ports read %d times, want a new read after %s", h.pubsCalls, listenerTTL)
 	}
 }
+
+func TestNeverProbedNamesTheDaemonsOfHostsAndGuests(t *testing.T) {
+	for _, name := range []string{"pvedaemon", "pvedaemon worke", "pveproxy", "pveproxy worker", "spiceproxy",
+		"VBoxHeadless", "VBoxSVC", "cloud-hypervisor", "cloud-hyperviso", "firecracker", "crosvm", "xenconsoled",
+		"xenstored", "kvm", "qemu-system-x86", "proxmox-backup-api", "proxmox-backup-proxy", "proxmox-backup-",
+		"pmgdaemon", "pmgproxy", "kubelet", "k3s-server", "k3s", "buildkitd"} {
+		if !neverProbed(name) {
+			t.Errorf("%s: want it never probed", name)
+		}
+	}
+	for _, name := range []string{"nginx", "php-fpm", "postgres", "redis-server", "haproxy", "pve-exporter"} {
+		if neverProbed(name) {
+			t.Errorf("%s: want it probed", name)
+		}
+	}
+}
+
+func TestNeverProbedSocketCoversTheRuntimeDirectoriesOfTheControlServices(t *testing.T) {
+	for _, c := range controlSockets {
+		path := c
+		if strings.HasSuffix(c, "/") || strings.HasSuffix(c, "-") {
+			path += "x/s.sock"
+		}
+		if !neverProbedSocket(path) {
+			t.Errorf("%s: want it never probed", path)
+		}
+	}
+	for _, path := range []string{"/var/run/docker.sock", "/var/run/dbus/system_bus_socket", "/run/user/1000/docker.sock",
+		"/run/user/1000/bus", "/run/systemd/private", "/run/qemu-server/100.qmp", "/var/run/libvirt/libvirt-sock",
+		"/run/containerd/containerd.sock", "/tmp/ssh-XXXXabcd/agent.42", "/tmp/.X11-unix/X0",
+		"/run/buildkit/buildkitd.sock", "/var/run/lxc/x.sock"} {
+		if !neverProbedSocket(path) {
+			t.Errorf("%s: want it never probed", path)
+		}
+	}
+	// The sockets of the services the catalog measures stay allowed.
+	for _, path := range []string{"/run/php/php8.2-fpm.sock", "/run/redis/redis-server.sock", "/var/run/redis/redis.sock",
+		"/run/haproxy/admin.sock", "/run/postgresql/.s.PGSQL.5432", "/run/nginx.sock", "/run/gunicorn.sock",
+		"/run/docker.socket", "/run/dockerd/x.sock", "/run/userdb/x.sock", "/tmp/sshd.sock", "/var/lib/dockerx/s.sock"} {
+		if neverProbedSocket(path) {
+			t.Errorf("%s: want it allowed", path)
+		}
+	}
+}
