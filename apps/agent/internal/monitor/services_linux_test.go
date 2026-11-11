@@ -226,6 +226,7 @@ func stubShow(t *testing.T, props string, fn func(units []string) ([]byte, error
 		if len(args) <= len(prefix) || !reflect.DeepEqual(args[:len(prefix)], prefix) {
 			t.Fatalf("unexpected systemctl call %q", args)
 		}
+		checkAllowed(t, "systemctl", args)
 		units := append([]string(nil), args[len(prefix):]...)
 		*calls = append(*calls, units)
 		return fn(units)
@@ -500,6 +501,7 @@ func stubCollector(t *testing.T, replies map[string]systemctlReply) *[]string {
 	runSystemctl = func(_ context.Context, args ...string) ([]byte, error) {
 		call := strings.Join(args, " ")
 		*calls = append(*calls, call)
+		checkAllowed(t, "systemctl", args)
 		key := call
 		if args[0] == "show" && len(args) > 2 {
 			key = strings.Join(args[:3], " ")

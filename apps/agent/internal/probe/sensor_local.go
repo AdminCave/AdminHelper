@@ -24,7 +24,7 @@ import (
 
 	"github.com/shirou/gopsutil/v4/process"
 
-	"adminhelper-agent/internal/execx"
+	"adminhelper-agent/internal/allowlist"
 )
 
 // The local sensors read this host's own state: a unit, a process, a listening socket, a container,
@@ -51,7 +51,7 @@ const (
 // The seams of the local sensors to the host; tests stand in their own.
 var (
 	now           = time.Now
-	runTool       = execx.Run
+	runTool       = allowlist.Run
 	findProcesses = processesNamed
 	statPath      = os.Stat
 )

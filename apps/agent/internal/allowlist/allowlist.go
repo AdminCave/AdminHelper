@@ -1,0 +1,282 @@
+// SPDX-FileCopyrightText: 2026 Kevin Stenzel
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package allowlist
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"time"
+
+	"adminhelper-agent/internal/execx"
+	"adminhelper-agent/internal/logging"
+)
+
+var logger = logging.For("allowlist")
+
+// ErrNotAllowed is the error of a call Run or RunEnv refused: the command or its arguments are not on
+// the list, so it never started.
+var ErrNotAllowed = errors.New("not on the command allowlist")
+
+// classes are the variable parts a call may carry, each a whole argument or a part of one (`<node>` in
+// a pvesh path). None may begin with '-', so none can pass for an option; unitarg alone may, and only
+// stands right after "--" or behind a literal option in the same argument.
+var classes = map[string]string{
+	// A Proxmox node name: a hostname label (the short name collectProxmox cuts from the hostname).
+	"node": `[A-Za-z0-9][A-Za-z0-9-]*`,
+	// A Proxmox storage ID (pve-storage: a letter, then letters, digits, '-', '_', '.').
+	"storage": `[A-Za-z][A-Za-z0-9._-]*`,
+	// A device path from smartctl --scan, below /dev; no segment begins with '.', so no "..".
+	"device": `/dev(/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
+	// A smartctl device type from the scan (sat, nvme, megaraid,N, sat,12 …).
+	"devtype": `[a-z0-9][a-z0-9_,+]*`,
+	// A systemd unit name (systemd.unit(5): letters, digits, ":-_.\", '@' for instances).
+	"unit": `[A-Za-z0-9:_.@\\][A-Za-z0-9:_.@\\-]*`,
+	// A unit after "--" or inside an option: a unit name, or a root unit (-.slice, -.mount: systemd
+	// escapes the path "/" to "-"), whose leading '-' cannot be read as an option there.
+	"unitarg": `-\.[a-z]+|[A-Za-z0-9:_.@\\][A-Za-z0-9:_.@\\-]*`,
+	// A container ID as docker ps prints it: 12 hex digits, 64 untruncated.
+	"container": `[0-9a-f]{12,64}`,
+	// A container name or ID as the probe's container target takes it (containerPattern).
+	"containername": `[A-Za-z0-9][A-Za-z0-9_.-]*`,
+	// A Windows service name, the class collectWatchedServices lets through (reWinServiceName).
+	"winservice": `[A-Za-z0-9._$][A-Za-z0-9._$-]*`,
+	// A journal priority, 0 emerg … 7 debug.
+	"priority": `[0-7]`,
+	// A whole number of seconds.
+	"seconds": `[0-9]+`,
+	// A journal cursor as journalctl --show-cursor prints it (sd_journal_get_cursor(3): s=…;i=…;b=…;
+	// m=…;t=…;x=…, hex values).
+	"cursor": `[a-z0-9=;]+`,
+	// A journal match on who logged an entry, as the log sensor takes it (logMatchPattern).
+	"journalmatch": `(?:SYSLOG_IDENTIFIER|_COMM|CONTAINER_NAME)=[A-Za-z0-9._@/:+-]+`,
+	// A package name as discovery asks for it (packagePattern).
+	"package": `[a-z0-9][a-z0-9+._-]*`,
+}
+
+// Classes returns a copy of the argument classes by name, each an unanchored pattern.
+func Classes() map[string]string {
+	return maps.Clone(classes)
+}
+
+// The journalctl calls of the log sensor: its fixed head, then a unit or none, a cursor or the
+// interval, a match or none.
+var (
+	journalHead  = []string{"--no-pager", "--quiet", "--output=cat", "--output-fields=PRIORITY", "--show-cursor", "--priority=<priority>"}
+	journalCalls = journalVariants()
+)
+
+func journalVariants() [][]string {
+	var calls [][]string
+	for _, unit := range [][]string{nil, {"--unit=<unitarg>"}} {
+		for _, from := range []string{"--after-cursor=<cursor>", "--since=-<seconds>s"} {
+			for _, match := range [][]string{nil, {"--", "<journalmatch>"}} {
+				call := append(append(append(append([]string{}, journalHead...), unit...), from), match...)
+				calls = append(calls, call)
+			}
+		}
+	}
+	return calls
+}
+
+// The sql sensor's MariaDB calls, by the client mariadb or, before 10.4.6, mysql. Each query is the
+// sensor's own (mariadbQueries), under a statement timeout; probe's tests run every one through here.
+var mariadbCalls = func() [][]string {
+	var calls [][]string
+	for _, query := range []string{
+		"SELECT 1 AS ok",
+		"SELECT VARIABLE_VALUE AS connections, @@GLOBAL.max_connections AS max_connections " +
+			"FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'THREADS_CONNECTED'",
+		"SHOW ALL SLAVES STATUS",
+		"SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS size_bytes FROM information_schema.TABLES",
+	} {
+		calls = append(calls, []string{"--host=localhost", "--protocol=socket", "--batch", "--column-names",
+			"--connect-timeout=5", "--execute=SET STATEMENT max_statement_time=5 FOR " + query})
+	}
+	return calls
+}()
+
+// The sql sensor's PostgreSQL calls: psql as the user postgres, with the sensor's own queries
+// (postgresQueries).
+var postgresCalls = func() [][]string {
+	var calls [][]string
+	for _, query := range []string{
+		"SELECT 1",
+		"SELECT count(*) FILTER (WHERE backend_type = 'client backend'), " +
+			"current_setting('max_connections')::int FROM pg_stat_activity",
+		"SELECT pg_is_in_recovery(), " +
+			"EXISTS (SELECT 1 FROM pg_stat_wal_receiver WHERE status = 'streaming'), " +
+			"CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0 " +
+			"ELSE GREATEST(0, floor(extract(epoch FROM now() - pg_last_xact_replay_timestamp())))::bigint END",
+		"SELECT sum(pg_database_size(oid))::bigint FROM pg_database",
+	} {
+		calls = append(calls, []string{"-u", "postgres", "--", "psql", "--no-psqlrc", "--no-align",
+			"--tuples-only", "--quiet", "--field-separator=\t", "--set=ON_ERROR_STOP=1",
+			"--dbname=dbname=postgres connect_timeout=5 application_name=adminhelper-agent " +
+				"options='-c statement_timeout=5s'",
+			"--command=" + query})
+	}
+	return calls
+}()
+
+// commands is every call the agent's collectors (monitor), sensors (probe) and discovery may start:
+// per command its argument lists, a literal argument as written, `<class>` for a variable part from
+// classes, and `<class>...` as the last argument for one or more of them. They only read; a new call
+// needs its entry here, and the tests of each package check its calls against it. Kept out on purpose
+// (Konzept §3.6): calls that write, repair or touch the network, such as `apt-get check`, `zpool
+// scrub`, `postfix check`, `docker exec` and the storage list `pvesh get /nodes/<n>/storage`, which
+// activates every storage.
+var commands = map[string][][]string{
+	"docker": {
+		{"info"},
+		{"ps", "-a", "--format", "{{json .}}"},
+		{"ps", "--all", "--quiet", "--no-trunc"},
+		{"inspect", "--type", "container", "<container>..."},
+		{"inspect", "--type", "container", "--", "<containername>"},
+	},
+	"pvesh": {
+		{"get", "/nodes/<node>/status", "--output-format", "json"},
+		{"get", "/cluster/resources", "--type", "vm", "--output-format", "json"},
+		{"get", "/cluster/resources", "--type", "storage", "--output-format", "json"},
+		{"get", "/nodes/<node>/storage/<storage>/content", "--content", "backup", "--output-format", "json"},
+	},
+	"zpool": {
+		{"list", "-H", "-o", "name,size,alloc,free,cap,health"},
+		{"status", "-x"},
+	},
+	"smartctl": {
+		{"--scan", "--json=c"},
+		{"--all", "--json=c", "<device>"},
+		{"--all", "--json=c", "-d", "<devtype>", "<device>"},
+	},
+	"systemctl": {
+		{"list-units", "--type=service", "--all", "--no-legend", "--plain", "--no-pager"},
+		{"list-units", "--type=service", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
+		{"list-unit-files", "--type=service", "--no-legend", "--no-pager"},
+		{"list-units", "--state=failed", "--no-legend", "--plain"},
+		{"show", "-p", "Id,Names", "--", "<unit>..."},
+		{"show", "-p", "Id,Names,ActiveState,MainPID", "--", "<unit>..."},
+		{"show", "-p", "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", "--", "<unit>..."},
+		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "<unitarg>"},
+		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
+	},
+	"journalctl": journalCalls,
+	"mariadb":    mariadbCalls,
+	"mysql":      mariadbCalls,
+	"runuser":    postgresCalls,
+	"dpkg-query": {{"--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "<package>..."}},
+	"rpm":        {{"--query", `--queryformat=%{NAME}\n`, "<package>..."}},
+	"sc": {
+		{"query", "state=", "all"},
+		{"query", "<winservice>"},
+		{"queryex", "<winservice>"},
+	},
+	"needs-restarting": {{"-r"}},
+	"timedatectl":      {{"show"}},
+	"apt-get":          {{"-s", "dist-upgrade"}},
+	"dnf":              {{"-C", "-q", "updateinfo", "list", "--security"}},
+}
+
+// call is one argument list of commands, compiled: one pattern per argument, the last one repeated
+// when variadic.
+type call struct {
+	args     []*regexp.Regexp
+	variadic bool
+}
+
+var (
+	reClass  = regexp.MustCompile(`<([a-z]+)>`)
+	compiled = compile(commands)
+)
+
+// compile turns the table into anchored patterns; an unknown class is a programming error.
+func compile(list map[string][][]string) map[string][]call {
+	out := make(map[string][]call, len(list))
+	for name, calls := range list {
+		for _, args := range calls {
+			var c call
+			for i, arg := range args {
+				if i == len(args)-1 && strings.HasSuffix(arg, "...") {
+					arg, c.variadic = strings.TrimSuffix(arg, "..."), true
+				}
+				c.args = append(c.args, regexp.MustCompile("^"+argPattern(arg)+"$"))
+			}
+			out[name] = append(out[name], c)
+		}
+	}
+	return out
+}
+
+// argPattern quotes the literal parts of one argument and replaces each `<class>` by its pattern.
+func argPattern(arg string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range reClass.FindAllStringSubmatchIndex(arg, -1) {
+		class, ok := classes[arg[m[2]:m[3]]]
+		if !ok {
+			panic("allowlist: unknown argument class: " + arg)
+		}
+		b.WriteString(regexp.QuoteMeta(arg[last:m[0]]) + "(?:" + class + ")")
+		last = m[1]
+	}
+	b.WriteString(regexp.QuoteMeta(arg[last:]))
+	return b.String()
+}
+
+// Allowed reports whether name with args is on the list, by Key(name).
+func Allowed(name string, args []string) bool {
+	for _, c := range compiled[Key(name, runtime.GOOS == "windows")] {
+		if c.matches(args) {
+			return true
+		}
+	}
+	return false
+}
+
+// Key is the list key of name. An absolute name counts by its base name: smartctl runs by the path
+// exec.LookPath found, which on Windows ends in ".exe" (PATHEXT), so there the extension goes too, in
+// any case.
+func Key(name string, windows bool) string {
+	if filepath.IsAbs(name) {
+		name = filepath.Base(name)
+	}
+	if windows && strings.EqualFold(filepath.Ext(name), ".exe") {
+		name = name[:len(name)-len(".exe")]
+	}
+	return name
+}
+
+func (c call) matches(args []string) bool {
+	if len(args) < len(c.args) || (!c.variadic && len(args) != len(c.args)) {
+		return false
+	}
+	for i, arg := range args {
+		if !c.args[min(i, len(c.args)-1)].MatchString(arg) {
+			return false
+		}
+	}
+	return true
+}
+
+// Run runs a command under timeout and ctx, whichever ends first; see RunEnv.
+func Run(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	return RunEnv(ctx, timeout, nil, name, args...)
+}
+
+// RunEnv is the one place the agent's collectors, sensors and discovery start a command (execx.RunEnv,
+// its errors there). A call off the list does not start and returns ErrNotAllowed. env is added to the
+// agent's environment; a later entry of the same key wins (os/exec).
+func RunEnv(ctx context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
+	if !Allowed(name, args) {
+		logger.Warnf("%s call refused, %s", filepath.Base(name), ErrNotAllowed)
+		return nil, fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
+	}
+	return execx.RunEnv(ctx, timeout, env, name, args...)
+}
