@@ -1,5 +1,5 @@
 # Harness: kein gemergter Ledger-Slug für einen neuen Zug — Task-Ledger
-Status: geplant · Branch: feature/kern-harness-6 · Review: am Ende
+Status: aktiv · Branch: feature/kern-harness-6 · Review: am Ende
 Spec: docs/features/kern-harness-6.md (Roadmap R-1291)
 Heavy: none — nur roadmap.py, sein hermetischer Test und Harness-Text, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
