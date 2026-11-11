@@ -43,8 +43,10 @@ Komponente: agent · Dateien: apps/agent/internal/probe/probe.go, apps/agent/int
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/... ./internal/monitor/...
 Doku: → T5
 
-### T4 — R-1252 (Monitoring): Probe-Checks nur aus übernommenen Modulen  [ ]
+### T4 — R-1252 (Monitoring): Probe-Checks nur aus übernommenen Modulen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/module_plan.py, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/tests/test_agent_plan.py, apps/monitoring/tests/test_templates_router.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @55c838097 2026-11-11T12:25:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-19/T4.verdict.json)
 Änderung:
 - `POST /checks` mit `check_type=probe` → 422; `PUT /checks/{id}` mit Wechsel von oder zu `probe` → 422; an einer
   Probe-Config ändern sich nur `rules`, `interval_s`, `timeout_s` (Mess-Teile gleich, sonst 422).
@@ -74,3 +76,7 @@ Task-Review: am Ende
   Prozess). Ohne Docker heißt: kein Daemon am Socket; antwortet einer, scheitert der Guard bei jedem Lesefehler
   geschlossen, auch ohne CLI im PATH. Fehlt in der Antwort von `docker inspect` ein Container, muss er auch aus
   `docker ps` verschwunden sein. Ein Lesefehler wird nicht zwischengespeichert (nächster Dial fragt neu).
+- 2026-11-11 (T4): An einem Probe-Check bleiben über die API Name, Beschreibung, Schweregrad, an/aus,
+  `consecutive_*` und in der Config `rules`, `interval_s`, `timeout_s` änderbar; fehlende Mess-Teile der Config gelten
+  mit ihren Vorgaben als gleich. Ein Wechsel des Servers wird abgelehnt (der Check gehört zum Modul seines Servers).
+  Die Ablehnung beim Anlegen steht im Schema `CheckCreate` (vor dem Config-Abgleich), nicht in der Route.
