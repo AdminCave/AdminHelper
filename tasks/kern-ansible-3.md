@@ -1,5 +1,5 @@
 # kern-ansible-3 — Task-Ledger
-Status: aktiv · Branch: feature/kern-ansible-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-ansible-3 · Review: pro Task
 Spec: docs/features/kern-ansible-3.md (Roadmap R-1214)
 Heavy: none — Inventar-Erzeugung im Desktop-Backend, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Abhängt von: T1
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible::
 Doku: → T3
 
-### T3 — R-1214: Doku DE+EN und CHANGELOG  [ ]
+### T3 — R-1214: Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/ansible.html, docs/en/admin/ansible.html, changelog.d/kern-ansible-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5ddfddfe5 2026-11-11T09:01:26+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Inventar-Abschnitt und Kasten SSH-Erreichbarkeit nennen, dass das Sprung-Bein in Läufen mit `--ask-pass` als eigenes `ProxyCommand` ohne Passwort-Anmeldung läuft, auch für `ProxyJump` aus `~/.ssh/config`. Ein eigenes `ProxyCommand` aus der Konfiguration bleibt, wie es ist. CHANGELOG neutral unter Security.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/ansible.html, docs/en/admin/ansible.html, changelog.d/kern-ansible-3.md
