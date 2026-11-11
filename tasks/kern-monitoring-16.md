@@ -92,13 +92,16 @@ Dedup-Key: bug:monitoring:discovery.py:nachlese-arch-monitoring-module
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py tests/test_catalog.py
 Doku: → T9
 
-### T8 — R-1262: Erkennung: Ersatz-Instanz und Scan-Rhythmus  [ ]
+### T8 — R-1262: Erkennung: Ersatz-Instanz und Scan-Rhythmus  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3a8225934 2026-11-11T07:43:38+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T8.verdict.json)
 Änderung:
 - Die Ersatz-Instanz (`matched_by`, `discovery.py:277`) hängt nicht am Unit-Zustand; ein gestoppter Dienst ergibt
   kein `changed`.
-- Ein Teil-Scan setzt `next_scan_at` (`discovery.py:508`) nicht wie ein voller; ein voller Scan kommt auch bei Hosts,
-  deren Teil-Scan stets abläuft, und `gone` wird erreichbar.
+- Ein Teil-Scan setzt `next_scan_at` (`discovery.py:508`) nicht wie ein voller: nach einem Teil-Scan kommt der
+  nächste bald. Ein Host, dessen Scan stets abgeschnitten wird, bleibt ohne `gone` (Rest: R-1302, braucht
+  Vollständigkeit je Abschnitt vom Agenten).
 - Test je Fall: vorher rot, nachher grün.
 Beweis: Prüfungen arch-monitoring-module 2026-11-09/10 · feature/arch-monitoring-module@4bcb9f4b0 discovery.py:277,508
 Dedup-Key: bug:monitoring:discovery.py:nachlese-arch-monitoring-module
@@ -151,3 +154,13 @@ Task-Review: am Ende
 - T7: `target.name` für `container`/`unit`/`process` verlangt `ProbeConfig` schon seit 2cb54b962 (Tests in
   `test_check_configs.py` vorhanden); T7 ändert dort nichts. `LogParams.unit` und `match` übernehmen die Muster des
   Agents wörtlich (leer bleibt erlaubt), geprüft im Katalog und an der API.
+- T8: Die Ersatz-Instanz (`matched_by`) nennt jede installierte Unit des Moduls, laufend oder nicht; entstehen lässt
+  sie weiter nur ein Gebrauch (Container, nicht gestoppte Unit, Prozess, Marker). Folge für die Bindung
+  (`module_sync._target_name`): eine zweite, gestoppte Unit macht die Unit-Bindung mehrdeutig, der Check entsteht dann
+  nicht (statt an die gerade laufende zu binden). Und: hat ein Modul genau eine installierte, gestoppte Unit und
+  daneben einen anderen Gebrauch (etwa einen Marker), bindet das Übernehmen jetzt an diese Unit, ihr Check entsteht
+  und meldet `inactive` (bisher entstand er nicht); im mitgelieferten Katalog betrifft das kein Modul. Nach einem Teil-Scan kommt der nächste nach 2–4 h, je weiterem
+  Teil-Scan in Folge doppelt so spät bis zu den üblichen 24–48 h (Zähler `partial_scans` im gespeicherten Inventar,
+  keine Migration). Ein Host, dessen Scans immer ablaufen, bekommt so keinen vollen Scan erzwungen und meldet weiter
+  kein `gone`: was abgeschnitten wurde, darf nicht als verschwunden gelten. Das löst nur Vollständigkeit je
+  Abschnitt im Report (Agent und Abgleich, außerhalb dieser Task): Roadmap R-1302, zur Triage.

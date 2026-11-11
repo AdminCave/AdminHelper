@@ -54,6 +54,10 @@ MAX_CREDENTIALS = 256
 
 SCAN_AFTER_MIN = timedelta(hours=24)
 SCAN_AFTER_MAX = timedelta(hours=48)
+# After a partial scan the agent looks again sooner, so a scan cut short once is followed by
+# a full one soon; doubling per partial scan in a row, a host whose scans always run out of
+# time is not asked more often than every 24 to 48 h for long.
+RETRY_AFTER_PARTIAL = timedelta(hours=2)
 
 # Never a port finding, whatever the agent sent: probing these on a cycle locks the admin
 # out (OpenSSH penalties, MySQL max_connect_errors) or prints the probe (raw printing
@@ -191,10 +195,18 @@ def clean_inventory(block: object) -> dict | None:
 # --- when the agent looks again ---------------------------------------------------------
 
 
-def next_scan_at(now: datetime, rng: random.Random | None = None) -> datetime:
-    """24 to 48 h after `now`, at random: the hosts of one install do not all scan at once."""
-    spread = (SCAN_AFTER_MAX - SCAN_AFTER_MIN).total_seconds()
-    return now + SCAN_AFTER_MIN + timedelta(seconds=(rng or random).uniform(0, spread))
+def next_scan_at(
+    now: datetime, rng: random.Random | None = None, partial_scans: int = 0
+) -> datetime:
+    """24 to 48 h after `now`, at random: the hosts of one install do not all scan at once.
+    After `partial_scans` partial scans in a row sooner: 2 to 4 h after the first, twice
+    that after each further one, until it reaches the usual 24 to 48 h."""
+    low, high = SCAN_AFTER_MIN, SCAN_AFTER_MAX
+    if partial_scans > 0:
+        retry = RETRY_AFTER_PARTIAL * 2 ** min(partial_scans - 1, 8)
+        if retry < SCAN_AFTER_MIN:
+            low, high = retry, 2 * retry
+    return now + low + timedelta(seconds=(rng or random).uniform(0, (high - low).total_seconds()))
 
 
 def scan_due(row: MonitorDiscovery | None, now: datetime) -> bool:
@@ -240,6 +252,7 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         c for c in inv["containers"] if prefixes and image_matches(image_repo(c["image"]), prefixes)
     ]
     wanted_units = {_unit_name(u) for u in detect.units}
+    installed_units = sorted({u["name"] for u in inv["units"] if u["name"] in wanted_units})
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
     units = sorted(
         {u["name"] for u in inv["units"] if u["name"] in wanted_units and u["state"] != "inactive"}
@@ -274,13 +287,15 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         found = {name: {"unit": name} for name in units}
     elif module.instance == "process":
         found = {name: {"process": name} for name in processes}
-    matched_by = (
-        [f"image:{r}" for r in sorted({image_repo(c["image"]) for c in containers})]
-        + [f"unit:{u}" for u in units]
-        + [f"process:{p}" for p in processes]
-        + [f"marker:{m}" for m in markers]
-    )
-    if not found and matched_by:
+    if not found and (containers or units or processes or markers):
+        # Every installed unit, running or not: a service stopped for a while must not
+        # change the stand-in's summary (and reopen an adopted finding as "changed").
+        matched_by = (
+            [f"image:{r}" for r in sorted({image_repo(c["image"]) for c in containers})]
+            + [f"unit:{u}" for u in installed_units]
+            + [f"process:{p}" for p in processes]
+            + [f"marker:{m}" for m in markers]
+        )
         # Installed, but not in the module's own kind of instance (a package instead of a
         # container): one instance named after the module.
         found = {module.id: {"matched_by": matched_by}}
@@ -469,12 +484,25 @@ def _update_findings(
             db.delete(row)
 
 
-def _full_scan_at(inventory: str | None) -> datetime | None:
+def _stored(inventory: str | None) -> dict:
     try:
-        stamp = json.loads(inventory or "{}").get("full_scan_at")
+        stored = json.loads(inventory or "{}")
+    except ValueError:
+        return {}
+    return stored if isinstance(stored, dict) else {}
+
+
+def _full_scan_at(stored: dict) -> datetime | None:
+    stamp = stored.get("full_scan_at")
+    try:
         return datetime.fromisoformat(stamp) if isinstance(stamp, str) else None
-    except (AttributeError, ValueError):
+    except ValueError:
         return None
+
+
+def _partial_scans(stored: dict) -> int:
+    count = stored.get("partial_scans")
+    return count if isinstance(count, int) and not isinstance(count, bool) and count > 0 else 0
 
 
 def apply_discovery(
@@ -501,13 +529,15 @@ def apply_discovery(
             if row is None:
                 row = MonitorDiscovery(server_id=server_id)
                 db.add(row)
-            previous_full_scan = _full_scan_at(row.inventory)
+            stored = _stored(row.inventory)
+            previous_full_scan = _full_scan_at(stored)
             full_scan = not inventory["partial"]
             last_full = now if full_scan else previous_full_scan
             inventory["full_scan_at"] = last_full.isoformat() if last_full else None
+            inventory["partial_scans"] = 0 if full_scan else _partial_scans(stored) + 1
             row.inventory = _dump(inventory)
             row.scanned_at = now
-            row.next_scan_at = next_scan_at(now, rng)
+            row.next_scan_at = next_scan_at(now, rng, inventory["partial_scans"])
             # A "scan now" pressed while this scan ran is answered by it too.
             row.scan_requested_at = None
             row.updated_at = now

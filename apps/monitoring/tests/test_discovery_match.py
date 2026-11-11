@@ -81,6 +81,13 @@ CATALOG = load_catalog(
             units=["example"],
             markers=[{"id": "example.config", "paths": ["/etc/example"]}],
         ),
+        _module(
+            "gitea",
+            "container",
+            container_images=["gitea/gitea"],
+            units=["gitea"],
+            markers=[{"id": "gitea.config", "paths": ["/etc/gitea"]}],
+        ),
         ("port", PORT_MODULE),
     ]
 )
@@ -271,6 +278,22 @@ def test_next_scan_spreads_randomly_between_24_and_48_hours():
     assert all(T0 + timedelta(hours=24) <= p <= T0 + timedelta(hours=48) for p in picks)
 
 
+def test_after_a_partial_scan_the_next_comes_sooner_backing_off_to_the_usual(db):
+    def hours_to_next(at, partial):
+        assert apply_discovery(
+            db, "srv-1", _block(partial=partial), catalog=CATALOG, now=at, rng=_Edge(False)
+        )
+        return (db.get(MonitorDiscovery, "srv-1").next_scan_at - at) / timedelta(hours=1)
+
+    assert hours_to_next(T0, False) == 24
+    partial_runs = [hours_to_next(T0 + i * DAY, True) for i in range(1, 7)]
+    assert partial_runs == [2, 4, 8, 16, 24, 24]
+    # A full scan ends the run; the next partial one starts it again.
+    assert hours_to_next(T0 + 7 * DAY, False) == 24
+    assert hours_to_next(T0 + 8 * DAY, True) == 2
+    assert next_scan_at(T0, _Edge(True), partial_scans=1) == T0 + timedelta(hours=4)
+
+
 def test_scan_now_forces_the_next_scan_and_the_scan_answers_it(db):
     assert apply_discovery(db, "srv-1", _block(), catalog=CATALOG, now=T0)
     row = db.get(MonitorDiscovery, "srv-1")
@@ -368,8 +391,9 @@ def test_units_processes_and_markers_make_instances():
     assert match_inventory(inv, CATALOG) == {
         ("nginx", "nginx.service"): {"unit": "nginx.service"},
         ("squid", "squid"): {"process": "squid"},
-        # A stopped unit is not in use; the marker still finds the module.
-        ("example", "example"): {"matched_by": ["marker:example.config"]},
+        # A stopped unit is not in use; the marker still finds the module, and the
+        # stand-in names the unit all the same.
+        ("example", "example"): {"matched_by": ["unit:example.service", "marker:example.config"]},
         # A failed unit is, and without a container the instance is named after the module.
         ("paperless", "paperless"): {"matched_by": ["unit:paperless-scheduler.service"]},
     }
@@ -649,6 +673,24 @@ def test_seen_in_a_partial_scan_restarts_the_count(db):
     _scan(db, T0 + 2 * DAY, partial=True, **_paperless("web"))
     _scan(db, T0 + 3 * DAY)
     assert (_finding(db).kind, _finding(db).status) == ("new", "adopted")
+
+
+def test_a_stopped_unit_leaves_a_stand_in_as_it_was(db):
+    marker = {"gitea.config": True}
+    _scan(db, T0, units=[_unit("gitea.service")], markers=marker)
+    row = _finding(db, "gitea", "gitea")
+    assert json.loads(row.summary) == {"matched_by": ["unit:gitea.service", "marker:gitea.config"]}
+    row.status, row.decided_at = "adopted", T0
+    db.commit()
+
+    _scan(db, T0 + DAY, units=[_unit("gitea.service", state="inactive")], markers=marker)
+    row = _finding(db, "gitea", "gitea")
+    assert (row.kind, row.status, row.decided_at) == ("new", "adopted", T0)
+
+
+def test_a_stopped_unit_alone_makes_no_stand_in():
+    inv = clean_inventory(_block(units=[_unit("gitea.service", state="inactive")]))
+    assert match_inventory(inv, CATALOG) == {}
 
 
 def test_a_cut_list_makes_the_scan_partial_too(db):
