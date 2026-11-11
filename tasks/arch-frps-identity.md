@@ -1,5 +1,5 @@
 # frps prüft Proxy-Anmeldungen — Task-Ledger
-Status: bereit · Branch: feature/arch-frps-identity · Review: pro Task
+Status: erledigt · Branch: feature/arch-frps-identity · Review: pro Task
 Spec: docs/features/arch-frps-identity.md (Roadmap R-1215)
 Heavy: scenario --tunnel — der echte Datenpfad Agent-frpc → frps mit Plugin → Desktop-Visitor beweist, dass ein Agent nach dem Sync seinen Schlüssel mitbringt und frps ihn zulässt; ask-first (Spec, Frage 3). Agent-Modul und Compose-Overlay fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
