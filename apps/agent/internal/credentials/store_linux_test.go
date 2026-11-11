@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestSetWritesAFileOfTheAgentsAccountAlone(t *testing.T) {
@@ -94,5 +96,32 @@ func TestLoadUsesNoFileOfAnotherAccount(t *testing.T) {
 	t.Cleanup(func() { euid = os.Geteuid })
 	if creds, err := Load(path); err == nil || !strings.Contains(err.Error(), "not to the agent's account") {
 		t.Fatalf("Load of a file of another account = %v, %v; want an error", creds, err)
+	}
+}
+
+func TestLoadRefusesAFIFOWithoutWaitingForAWriter(t *testing.T) {
+	path := storePath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := Load(path)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "no regular file") {
+			t.Fatalf("Load = %v; want an error that names no regular file", err)
+		}
+	case <-time.After(5 * time.Second):
+		// A writer lets the blocked open return, so the goroutine ends with the test.
+		if f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_ = f.Close()
+		}
+		t.Fatal("Load still waits for a writer on the FIFO after 5 s")
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -141,5 +142,60 @@ func TestDaclPrivate(t *testing.T) {
 				t.Fatalf("daclPrivate(%s) = %v, want %v", c.sddl, got, c.want)
 			}
 		})
+	}
+}
+
+func TestSetReplacesAFileThatIsOpenForReading(t *testing.T) {
+	ctx := context.Background()
+	path := storePath(t)
+	if err := Set(ctx, path, "a", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	h, err := openForRead(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+	// No waiting: the reader's handle alone must not hold up the rename.
+	old := replaceWait
+	replaceWait = 0
+	defer func() { replaceWait = old }()
+	if err := Set(ctx, path, "b", "secret"); err != nil {
+		t.Fatalf("Set while the file is open for reading: %v", err)
+	}
+}
+
+func TestSetWaitsForAHolderThatSharesNoDelete(t *testing.T) {
+	ctx := context.Background()
+	path := storePath(t)
+	if err := Set(ctx, path, "a", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What a virus scanner does: read the file and share no delete access.
+	h, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_ = windows.CloseHandle(h)
+		close(released)
+	}()
+	err = Set(ctx, path, "b", "secret")
+	<-released
+	if err != nil {
+		t.Fatalf("Set while another process holds the file: %v", err)
+	}
+	creds, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(creds) != 2 {
+		t.Fatalf("stored %v; want a and b", Refs(creds))
 	}
 }

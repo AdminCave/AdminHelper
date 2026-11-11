@@ -7,9 +7,11 @@
 package credentials
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -24,14 +26,9 @@ const (
 // readPrivate reads the file at path if SYSTEM or the Administrators own it and its DACL grants
 // access to them alone; a deny entry is fine, it only takes rights away. It opens the file without
 // following a reparse point and checks the open handle, so a swap between the check and the read
-// does not count.
+// does not count. It shares delete access, so a Set that replaces the file meanwhile does not fail.
 func readPrivate(path string) ([]byte, error) {
-	name, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return nil, err
-	}
-	h, err := windows.CreateFile(name, windows.GENERIC_READ|windows.READ_CONTROL,
-		windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	h, err := openForRead(path)
 	if err != nil {
 		// A PathError keeps errors.Is(err, fs.ErrNotExist) working for a missing file.
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
@@ -56,6 +53,17 @@ func readPrivate(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s is larger than %d bytes", path, maxFileBytes)
 	}
 	return data, nil
+}
+
+// openForRead opens the file at path for reading and for its security, without following a reparse
+// point and sharing read and delete access.
+func openForRead(path string) (windows.Handle, error) {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return windows.InvalidHandle, err
+	}
+	return windows.CreateFile(name, windows.GENERIC_READ|windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 }
 
 // checkPrivate returns an error unless SYSTEM or the Administrators own the file h and its DACL
@@ -104,4 +112,25 @@ func daclPrivate(dacl *windows.ACL) bool {
 		}
 	}
 	return true
+}
+
+// replaceWait is how long replace keeps trying; tests shorten it.
+var replaceWait = 2 * time.Second
+
+// replace moves the file from to path, replacing what is there. Another process that holds path
+// open without sharing delete access, a virus scanner or an indexer, makes MoveFileEx fail with
+// ERROR_ACCESS_DENIED or ERROR_SHARING_VIOLATION until it lets go; replace tries again until
+// replaceWait has passed, the way the Go toolchain's robustio does.
+func replace(from, path string) error {
+	deadline := time.Now().Add(replaceWait)
+	pause := time.Millisecond
+	for {
+		err := os.Rename(from, path)
+		if err == nil || !(errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)) ||
+			!time.Now().Add(pause).Before(deadline) {
+			return err
+		}
+		time.Sleep(pause)
+		pause = min(2*pause, 100*time.Millisecond)
+	}
 }

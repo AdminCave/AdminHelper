@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Zugangsdaten-Datei) und apps/monitoring (Grenz
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1295, R-1263: Zugangsdaten-Datei lesen, ohne Rename und FIFO zu blockieren  [ ]
-Komponente: agent · Dateien: apps/agent/internal/credentials/store_windows.go, apps/agent/internal/credentials/store_linux.go, apps/agent/internal/credentials/store_test.go
+### T1 — R-1295, R-1263: Zugangsdaten-Datei lesen, ohne Rename und FIFO zu blockieren  [x]
+Komponente: agent · Dateien: apps/agent/internal/credentials/store_windows.go, apps/agent/internal/credentials/store_linux.go, apps/agent/internal/credentials/store_test.go, apps/agent/internal/credentials/store.go, apps/agent/internal/credentials/store_linux_test.go, apps/agent/internal/credentials/store_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @44d2400e8 2026-11-11T07:08:54+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T1.verdict.json)
 Änderung:
 - Windows: `readPrivate` öffnet mit `FILE_SHARE_READ|FILE_SHARE_DELETE` (`store_windows.go:34`), damit ein
   gleichzeitiges `os.Rename` (`store.go:220`, `MoveFileExW`) nicht mit „Access is denied“ scheitert. Verhalten vorher in
@@ -105,3 +107,8 @@ Task-Review: am Ende
 ## Entscheidungen
 - Plan: R-1264 fährt nicht mit (Migration für Grabsteine, sichtbares Verhalten beim Katalog-Rollout: Frage an Kevin),
   eigener Zug.
+- T1: Neben `FILE_SHARE_DELETE` beim Lesen bekommt der Rename unter Windows einen Wiederholversuch (bis 2 s, nur bei
+  `ERROR_ACCESS_DENIED`/`ERROR_SHARING_VIOLATION`, wie Go `cmd/internal/robustio`). Grund: im Test laufen alle Leser
+  unter dem Sperr-Lock (`update` → `enroll.LockFile`), der eigene Leser kann den Rename dort also nicht stören; den
+  Flake erklärt ein fremder Leser ohne Delete-Freigabe (Virenscanner, Indexer), den nur ein Wiederholversuch abfängt.
+  `FILE_SHARE_DELETE` bleibt für den Agent-Dienst, der `Load` ohne Lock liest, während `monitor credential set` schreibt.
