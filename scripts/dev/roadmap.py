@@ -750,6 +750,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         raise UsageError(f"--pr names PRs as '#42' — sync reads nothing else: {args.pr!r}")
 
     def change(roadmap: Roadmap) -> str:
+        if args.ledger and args.ledger != roadmap.find(args.id)[1].cells[LEDGER]:
+            refuse_merged_ledger(args.ledger)
         roadmap.set_status(args.id, args.value, args.note, args.today, args.ledger, args.pr)
         return args.id
 
@@ -784,6 +786,8 @@ def cmd_add(args: argparse.Namespace) -> int:
         raise UsageError("a row needs a --title and a --source")
     if args.dedup_key is not None and (not args.dedup_key or len(args.dedup_key.split()) != 1):
         raise UsageError(f"a Dedup-Key is one token: {args.dedup_key!r}")
+    if args.ledger:
+        refuse_merged_ledger(args.ledger)
 
     def change(roadmap: Roadmap) -> str:
         rows = [r for _, r in roadmap.rows() if r.well_formed]
@@ -864,6 +868,15 @@ def repo_git(*args: str, stdin: str | None = None) -> subprocess.CompletedProces
         return subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return None
+
+
+def refuse_merged_ledger(ledger: str) -> None:
+    """A ledger on origin/main belongs to a merged train: planning a new one
+    under its path overwrites its spec, ledger and changelog fragment (R-1291).
+    Without git or without origin/main there is nothing to protect."""
+    r = repo_git("cat-file", "-e", f"origin/main:{ledger}")
+    if r is not None and r.returncode == 0:
+        raise UsageError(f"{ledger} is on origin/main, a merged train: name a new slug")
 
 
 def branches() -> list[str]:
