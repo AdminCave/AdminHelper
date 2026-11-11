@@ -1,5 +1,5 @@
 # frps prüft Proxy-Anmeldungen — Task-Ledger
-Status: geplant · Branch: feature/arch-frps-identity · Review: pro Task
+Status: aktiv · Branch: feature/arch-frps-identity · Review: pro Task
 Spec: docs/features/arch-frps-identity.md (Roadmap R-1215)
 Heavy: scenario --tunnel — der echte Datenpfad Agent-frpc → frps mit Plugin → Desktop-Visitor beweist, dass ein Agent nach dem Sync seinen Schlüssel mitbringt und frps ihn zulässt; ask-first (Spec, Frage 3). Agent-Modul und Compose-Overlay fährt der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,7 +13,9 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   Standardbibliothek; es ändert den Inhalt einer Anmeldung nie und prüft genau die Felder, die der Generator schreibt.
 - Session 2026-11-11: Plugin-Port fest auf Loopback, der Supervisor weicht bei Belegung durch `bindPort`,
   `vhostHTTPSPort` oder `webServer.port` aus (keine neue API-Ablehnung).
-- Offen für Kevin: Spec, Fragen 1–3 (keine Task hängt daran; ein Übergangsfenster käme als eigene Task dazu).
+- Kevin 2026-11-11 (Gate, Spec Fragen 1–3): Update ohne Übergangsfenster, Hinweis in CHANGELOG und Doku; manuell
+  verteilte frpc.toml nach dem Update neu verteilen, Hinweis in der Doku; `scenario --tunnel` vor dem Merge: ja;
+  die Restrisiken trägt er.
 
 ### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [ ]
 Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml
