@@ -19,6 +19,13 @@ const rcScriptPath = "../../freebsd/adminhelper_frpc"
 // platform_freebsd.go compares the two there.
 const rcScriptFrpcConfig = "/usr/local/etc/adminhelper/frp/frpc.toml"
 
+// rcFrpcLog is where daemon(8) writes frpc's output; newsyslogConfPath rotates it. Both sit in
+// config.LogDir() on FreeBSD, next to agent.log.
+const (
+	rcFrpcLog         = "/var/log/adminhelper/frpc.log"
+	newsyslogConfPath = "../../freebsd/newsyslog.conf"
+)
+
 func readRCScript(t *testing.T) []string {
 	t.Helper()
 	data, err := os.ReadFile(rcScriptPath)
@@ -98,7 +105,7 @@ func TestRCScriptOrdersAsAService(t *testing.T) {
 	if !reflect.DeepEqual(block["PROVIDE"], []string{rcName}) {
 		t.Errorf("PROVIDE = %q, want %q", block["PROVIDE"], rcName)
 	}
-	// frpc needs the network and logs to syslog; LOGIN comes after both.
+	// frpc needs the network; LOGIN comes after it.
 	if !slices.Contains(block["REQUIRE"], "LOGIN") {
 		t.Errorf("REQUIRE = %q, want LOGIN", block["REQUIRE"])
 	}
@@ -129,13 +136,13 @@ func TestRCScriptRunsFrpcUnderDaemon(t *testing.T) {
 
 	opts, program, programArgs := daemonCommandLine(t, strings.Fields(vars["command_args"]))
 	for opt, want := range map[string]string{
-		"f": "",                 // daemon lets go of the caller's stdout and stderr
-		"r": "",                 // restarts frpc when it exits
-		"R": "5",                // five seconds later
-		"P": vars["pidfile"],    // the pid rc.subr stops and checks: the daemon's
-		"p": rcChildPidFile,     // frpc's pid, empty while daemon waits to restart it (frpcDown)
-		"S": "",                 // frpc's output to syslog
-		"T": "adminhelper-frpc", // under this tag
+		"f": "",              // daemon lets go of the caller's stdout and stderr
+		"r": "",              // restarts frpc when it exits
+		"R": "5",             // five seconds later
+		"P": vars["pidfile"], // the pid rc.subr stops and checks: the daemon's
+		"p": rcChildPidFile,  // frpc's pid, empty while daemon waits to restart it (frpcDown)
+		"o": rcFrpcLog,       // frpc's output to a file only root reads (daemon creates it 0600)
+		"H": "",              // reopened on SIGHUP, which newsyslog sends after rotating it
 	} {
 		got, ok := opts[opt]
 		if !ok || got != want {
@@ -184,5 +191,50 @@ func TestRCScriptLoadsItsConfigAndRunsTheCommand(t *testing.T) {
 	}
 	if lines[0] != "#!/bin/sh" {
 		t.Errorf("first line = %q, want #!/bin/sh", lines[0])
+	}
+}
+
+func TestRCScriptCreatesTheLogDirectoryForRootOnly(t *testing.T) {
+	lines := readRCScript(t)
+	vars := rcAssignments(lines)
+	fn := vars["start_precmd"]
+	if fn == "" {
+		t.Fatal("the script sets no start_precmd; daemon -o fails without the log directory")
+	}
+	// The function's body, up to its closing brace.
+	var body []string
+	for i, line := range lines {
+		if line == fn+"()" {
+			for _, l := range lines[i+1:] {
+				if l == "}" {
+					break
+				}
+				body = append(body, strings.TrimSpace(l))
+			}
+		}
+	}
+	want := "[ -d /var/log/adminhelper ] || mkdir -m 0700 /var/log/adminhelper"
+	if !slices.Contains(body, want) {
+		t.Errorf("%s() = %q, want the line %q", fn, body, want)
+	}
+}
+
+// newsyslog.conf(5): logfile owner:group mode count size when flags pid_file [signal]; without a
+// signal newsyslog sends SIGHUP, which daemon -H takes as "reopen the output file".
+func TestNewsyslogRotatesTheFrpcLog(t *testing.T) {
+	data, err := os.ReadFile(newsyslogConfPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries [][]string
+	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+		if f := strings.Fields(line); len(f) > 0 && !strings.HasPrefix(f[0], "#") {
+			entries = append(entries, f)
+		}
+	}
+	vars := rcAssignments(readRCScript(t))
+	want := [][]string{{rcFrpcLog, "root:wheel", "600", "7", "1000", "*", "J", vars["pidfile"]}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Errorf("newsyslog entries = %q, want %q", entries, want)
 	}
 }
