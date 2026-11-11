@@ -78,8 +78,10 @@ Review: approve (.ah-out/review/kern-monitoring-16/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_agent_report_v4.py
 Doku: → T9
 
-### T7 — R-1262: Grenzen für Probe-Ziel und Log-Fühler  [ ]
+### T7 — R-1262: Grenzen für Probe-Ziel und Log-Fühler  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_check_configs.py, apps/monitoring/tests/test_catalog.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d5fd86794 2026-11-11T07:39:17+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T7.verdict.json)
 Änderung:
 - `ProbeTarget.name` (`check_configs.py:182`) ist für `container`, `unit` und `process` Pflicht (nicht leer).
 - `LogParams` (`catalog/sensors.py:145`) lehnt Glob-Units und `match`-Werte ab, die der Agent als `invalid` ablehnt
@@ -146,3 +148,6 @@ Task-Review: am Ende
   × 9, über dem Drosselfaktor 8 des Agents); ein Check ohne Bewertung wird nicht geschont. Der Report-Endpunkt nimmt
   höchstens 10 MiB wie das Gateway, gezählt beim Lesen (auch ohne Content-Length); die Grenze sitzt innerhalb der
   NUL-Prüfung, weil ein BaseHTTPMiddleware dazwischen ihr 413 in ein 400 verwandelt.
+- T7: `target.name` für `container`/`unit`/`process` verlangt `ProbeConfig` schon seit 2cb54b962 (Tests in
+  `test_check_configs.py` vorhanden); T7 ändert dort nichts. `LogParams.unit` und `match` übernehmen die Muster des
+  Agents wörtlich (leer bleibt erlaubt), geprüft im Katalog und an der API.
