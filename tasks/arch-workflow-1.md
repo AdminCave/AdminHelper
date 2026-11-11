@@ -69,15 +69,17 @@ Doku: DEVELOPMENT.md, docs/developer/cicd.html DE+EN
 Task-Review: am Ende
 Abhängt von: T3, T4, T5, T6
 
-### T9 — R-1346: Release-Takt — wöchentlich Beta nach grünem weekly  [ ]
+### T9 — R-1346: Release-Takt — wöchentlich Beta nach grünem weekly  [x]
 Komponente: scripts · Dateien: .claude/rules/release.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @02fa28d13 2026-11-11T19:54:19+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T9.verdict.json)
 Änderung: release.md, „Ablauf und Kanäle“: Beta ist ab dem ersten grünen `weekly` mit Capstone ein wöchentliches Pre-release-Tag vom `main` (Kevin taggt, die Session bereitet Bump-Commit und `check-versions.sh` vor). „Latest“ (Stable) bleibt an den Umfang von R-1110 gebunden. Vor jedem Beta-Tag gelten die drei Ebenen wie bisher.
 Beweis: Workflow-Analyse 2026-11-11: Merge → Release Median 9,5 d, p90 29 d, 215 Merges unveröffentlicht · Dedup-Key: ref:harness:release:weekly-beta
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (release.md ist die Stelle; cicd.html verweist für Kanäle dorthin — in T7 prüfen)
 
 ### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen  [ ]
-Komponente: — · Dateien: CLAUDE.md
+Komponente: scripts · Dateien: CLAUDE.md
 Änderung: Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Kevin hat die Änderung durch die Session am 2026-11-11 freigegeben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (CLAUDE.md ist die Stelle)
@@ -90,3 +92,4 @@ Abhängt von: T2, T5
 - T3 (2026-11-11): nightly.sh lädt keine Provider-Umgebung. vm.py und lib.sh lesen `~/.config/adminhelper/pve.env` und den `env`-Block von `.claude/settings.local.json` selbst (vm.py Kopfkommentar, `read_pve_env`). Damit gelangen in nightly.sh weder Token noch Env-Werte. Die Liste von `vm.py list` (Boxen, Adressen) geht nur nach `.ah-out/nightly-vmlist.out`.
 - T6 (2026-11-11): Probe VM gegen CI. CI (main-Lauf 43029762530, py3.14, beide Shards): 1660 + 1659 = 3319 passed, 0 skipped. Box (Sammellauf 2026-11-11-0725, junit server-pytest.xml): 3317 Tests, 39 skipped (Alembic ohne Postgres-URL, Image-Tests ohne Docker-Image, Redis). Die Box fährt keinen Test, den die CI überspringt; einzig der testcontainers-Modus läuft nur dort (R-0824 war ein Testfehler in diesem Modus). Umsetzung (Schritt im Teil rest auslassen, Pflichtmenge anpassen, iter.sh-Weiterleitung) in arch-workflow-2.
 - Kevin 2026-11-11 (Antworten in der Session): CLAUDE.md darf die Session ändern (T8); T2 bekommt eine dritte Prüfrunde; Release: wöchentlich Beta nach grünem weekly mit Capstone, Latest wie R-1110 (T9, R-1346, Notiz an R-1110); Cron-Zeile nach dem Merge installieren, Restrisiko (unbeaufsichtigter Lauf mit Proxmox-Zugriff) von Kevin getragen.
+- T9 (2026-11-11, reviewer + security, Kevins Antworten): Jedes Wochen-Beta ist das nächste Minor (das erste 0.47.0); Latest wird das erste Beta mit dem Umfang von R-1110. Getaggt wird der vom `weekly` geprüfte Commit: Release-Branch `release/vX.Y.Z` ab diesem Commit, Bump darauf, nur Bump-Dateien im Diff; Kevin taggt, publiziert und merged den Branch per PR nach `main`.

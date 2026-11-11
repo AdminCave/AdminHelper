@@ -71,6 +71,15 @@ Docker-Images schlüssellos via cosign (GitHub-OIDC). `SHA256SUMS` via minisign:
 
 Bump-Commit → Kevin: `git push origin main` → annotierter Tag `vX.Y.Z` → Tag pushen → alle Workflows per `gh run watch`
 bis grün begleiten → Draft prüfen → Kevin publiziert als Beta. Drafts sind Konvention.
+**Takt (Kevin 2026-11-11):** Ab dem ersten grünen `weekly` mit Capstone gibt es jede Woche ein Beta-Tag, nach dem
+grünen Samstags-`weekly` des nächtlichen Sammellaufs (`scripts/tests/nightly.sh`). Jedes Wochen-Beta ist das nächste
+Minor (das erste 0.47.0). Getaggt wird genau der Commit, den dieses `weekly` geprüft hat (`commit` im Report bzw. in
+`tasks/private/history.csv`), nicht der spätere `main`: Die Session legt `release/vX.Y.Z` ab diesem Commit an und setzt
+den Bump-Commit darauf; `git diff <weekly-commit> <bump>` berührt nur die Dateien aus „Bump-Commit … synchron ändern“
+(`check-versions.sh` grün), sonst fällt die Woche aus. Sie nennt Kevin den `weekly`-Commit und die Befehle; Kevin taggt
+den Bump-Commit, publiziert als Pre-release und merged den Branch danach per PR nach `main`. Ist das `weekly` rot oder
+UNVERIFIED, fällt die Woche aus. „Latest“ (Stable) wird das erste Wochen-Beta, das den Umfang der Release-Zeile
+enthält (für den ersten Stable-Schnitt R-1110), nicht jedes Beta.
 Kanäle (Kevin 2026-10-20): `beta` ist der Tag `vX.Y.Z` ohne Suffix, fortlaufend nach grünem Wochenlauf, veröffentlicht
 als „Pre-release“ (`gh release edit vX.Y.Z --draft=false --prerelease`). `stable` ist kein eigener Schnitt und kein RC
 mehr, sondern dasselbe Release auf „Latest“ (`gh release edit vX.Y.Z --prerelease=false --latest`), ohne neuen Tag. Den
