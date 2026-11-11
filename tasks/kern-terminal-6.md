@@ -1,12 +1,14 @@
 # Terminal-Tab: Schließen trotz unbeantworteter Cursor-Abfrage — Task-Ledger
-Status: aktiv · Branch: feature/kern-terminal-6 · Review: am Ende
+Status: bereit · Branch: feature/kern-terminal-6 · Review: am Ende
 Spec: docs/features/kern-terminal-6.md (Roadmap R-1312)
 Heavy: none — nur Desktop-Rust (pty), kein Stack-, Gateway-, PKI- oder Install-Pfad; den Windows-Pfad prüft der CI-Job rust-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1312: eine geschlossene Sitzung mit offener Cursor-Abfrage endet  [ ]
+### T1 — R-1312: eine geschlossene Sitzung mit offener Cursor-Abfrage endet  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs, changelog.d/kern-terminal-6.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f67a1f733 2026-11-11T14:12:47+01:00
+Review: am Ende (Branch-Review)
 Änderung: Test zuerst (rot unter Unix lokal, unter Windows per `rust-windows` auf einem Wegwerf-Branch): Sitzung mit
 lauschender Senke, die Abfrage bleibt unbeantwortet, `close_all_of`, die Sitzung muss das Registry verlassen. Dann
 der Merker in `Session` (gesetzt im Lese-Thread, gelöscht in `PtyRegistry::write` bei einer Cursor-Antwort), und

@@ -32,13 +32,19 @@ const RING: usize = 1024 * 1024;
 
 /// On Windows the pseudo console asks its terminal where the cursor is (portable-pty creates it
 /// with PSEUDOCONSOLE_INHERIT_CURSOR) and does not close before the answer: xterm.js answers in
-/// the app, the session itself once nobody listens.
-#[cfg(any(windows, test))]
+/// the app, the session itself once nobody listens or once it is closed with the query open.
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
-#[cfg(any(windows, test))]
 const CURSOR_ANSWER: &[u8] = b"\x1b[1;1R";
 
-#[cfg(any(windows, test))]
+/// Whether `data` is a cursor position report (`ESC [ row ; col R`), as xterm.js answers.
+fn is_cursor_answer(data: &[u8]) -> bool {
+    data.strip_prefix(b"\x1b[")
+        .and_then(|rest| rest.strip_suffix(b"R"))
+        .is_some_and(|inner| {
+            !inner.is_empty() && inner.iter().all(|b| b.is_ascii_digit() || *b == b';')
+        })
+}
+
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
@@ -116,6 +122,9 @@ struct Session {
     stream: Mutex<Stream>,
     /// Set by a close: the session then leaves the registry at its end, listened to or not.
     closing: std::sync::atomic::AtomicBool,
+    /// A cursor query went to a listening sink and its answer is not in yet: a close answers it
+    /// first, or the pseudo console on Windows never ends (R-1312).
+    cursor_asked: std::sync::atomic::AtomicBool,
     /// [`Spawn::broadcast`].
     broadcast: bool,
     /// The program and argv of [`Spawn::sftp`].
@@ -143,6 +152,12 @@ impl Session {
     /// Ends the program, and the session with it once its end is in.
     fn close(&self) {
         self.closing.store(true, Ordering::SeqCst);
+        if self.cursor_asked.swap(false, Ordering::SeqCst) {
+            let mut writer = lock(&self.writer);
+            let _ = writer
+                .write_all(CURSOR_ANSWER)
+                .and_then(|()| writer.flush());
+        }
         self.kill();
     }
 }
@@ -227,6 +242,7 @@ impl PtyRegistry {
                 ended: None,
             }),
             closing: std::sync::atomic::AtomicBool::new(false),
+            cursor_asked: std::sync::atomic::AtomicBool::new(false),
             broadcast: spawn.broadcast,
             sftp: spawn.sftp.map(|args| (spawn.program.clone(), args)),
             cleanup: spawn.cleanup,
@@ -257,15 +273,23 @@ impl PtyRegistry {
                 match reader.read(&mut block) {
                     Ok(0) => break,
                     Ok(n) => {
+                        let asked = contains(&block[..n], CURSOR_QUERY);
                         let listening = {
                             let mut stream = lock(&session.stream);
                             stream.keep(&block[..n]);
+                            // Before the send: the answer may come before it returns.
+                            if asked {
+                                session.cursor_asked.store(true, Ordering::SeqCst);
+                            }
                             stream.send(Output::Data(block[..n].to_vec()))
                         };
+                        let unanswered = asked
+                            && !listening
+                            && session.cursor_asked.swap(false, Ordering::SeqCst);
                         #[cfg(not(windows))]
-                        let _ = listening;
+                        let _ = unanswered;
                         #[cfg(windows)]
-                        if !listening && contains(&block[..n], CURSOR_QUERY) {
+                        if unanswered {
                             let mut writer = lock(&session.writer);
                             let _ = writer
                                 .write_all(CURSOR_ANSWER)
@@ -335,6 +359,9 @@ impl PtyRegistry {
         let mut writer = lock(&session.writer);
         writer.write_all(data)?;
         writer.flush()?;
+        if is_cursor_answer(data) {
+            session.cursor_asked.store(false, Ordering::SeqCst);
+        }
         Ok(())
     }
 
@@ -880,6 +907,72 @@ mod tests {
         registry.close_all_of("main");
         until_exit(&registry, theirs, &theirs_rx2, Vec::new());
         until_gone(&registry);
+    }
+
+    #[test]
+    fn closing_a_session_whose_cursor_query_nobody_answered_ends_it() {
+        let registry = PtyRegistry::default();
+        // Unix asks nothing itself: the program asks, ignores the hangup and waits for the
+        // answer, as the pseudo console on Windows does.
+        #[cfg(unix)]
+        let spawn = shell(
+            "stty raw -echo; trap '' HUP; printf '\\033[6n'; \
+             x=$(dd bs=1 count=6 2>/dev/null); printf 'got%s' \"${x#?}\"",
+        );
+        #[cfg(windows)]
+        let spawn = long_running();
+        let (id, rx) = open_for(&registry, spawn, "main");
+        let mut text = Vec::new();
+        while !contains(&text, CURSOR_QUERY) {
+            match rx
+                .recv_timeout(WAIT)
+                .expect("the cursor query comes in time")
+            {
+                Output::Data(bytes) => text.extend_from_slice(&bytes),
+                other => panic!("no cursor query before {other:?}"),
+            }
+        }
+        // The webview reloaded before xterm.js answered.
+        registry.close_all_of("main");
+        #[cfg(unix)]
+        until_text(&registry, id, &rx, "got[1;1R");
+        #[cfg(windows)]
+        let _ = id;
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn an_answer_from_the_terminal_settles_the_cursor_query() {
+        let registry = PtyRegistry::default();
+        #[cfg(unix)]
+        let spawn = shell("stty raw -echo; printf '\\033[6n'; sleep 30");
+        #[cfg(windows)]
+        let spawn = long_running();
+        let (id, rx) = open(&registry, spawn);
+        let mut text = Vec::new();
+        while !contains(&text, CURSOR_QUERY) {
+            if let Output::Data(bytes) = rx.recv_timeout(WAIT).expect("the cursor query comes") {
+                text.extend_from_slice(&bytes);
+            }
+        }
+        let session = registry.session(id).expect("the session runs");
+        assert!(session.cursor_asked.load(Ordering::SeqCst));
+        registry
+            .write(id, b"\x1b[12;40R")
+            .expect("the answer goes in");
+        assert!(!session.cursor_asked.load(Ordering::SeqCst));
+        registry.close_all();
+        until_gone(&registry);
+    }
+
+    #[test]
+    fn only_a_cursor_position_report_counts_as_the_answer() {
+        assert!(is_cursor_answer(b"\x1b[1;1R"));
+        assert!(is_cursor_answer(b"\x1b[24;80R"));
+        assert!(!is_cursor_answer(b"\x1b[R"));
+        assert!(!is_cursor_answer(b"\x1b[1;1Rls"));
+        assert!(!is_cursor_answer(b"\x1b[A"));
+        assert!(!is_cursor_answer(b"R"));
     }
 
     #[test]
