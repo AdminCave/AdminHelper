@@ -6,10 +6,16 @@
 
 from __future__ import annotations
 
+import email.parser
+import email.policy
+import hashlib
 import json
+import lzma
 import os
+import re
 import subprocess
 import time
+import urllib.parse
 
 import pytest
 import vm
@@ -439,6 +445,7 @@ MINIMAL = {
     "reap": [],
     "list": [],
     "bake": ["--profile", "linux-full"],
+    "import": ["--profile", "base-freebsd"],
 }
 
 
@@ -555,26 +562,30 @@ def test_the_newest_build_of_a_template_wins():
 
 
 # ── doctor ───────────────────────────────────────────────────────────────────
+# The templates our own verbs build: T12's bake of linux-server and the import
+# of FreeBSD's image (R-1247 T8). Neither is in the recording.
+BUILT_TEMPLATES = [
+    {
+        "vmid": 3900,
+        "name": "ah-tpl-linux-server-20260916",
+        "tags": "ah-tpl-linux-server;built-20260916",
+    },
+    {
+        "vmid": 3901,
+        "name": "ah-tpl-base-freebsd-20261111",
+        "tags": "ah-tpl-base-freebsd;built-20261111",
+    },
+]
+
+
 def green_doctor(http, resources=None, node=None):
     """Wire every call a green `doctor` makes, in the order it makes them."""
     http.add("GET", "/version", "version")
     http.add("GET", "/access/permissions", "permissions")
     http.add("GET", "/storage/raid5/status", "storage_status")
-    reply = (
-        resources
-        if resources is not None
-        else tagged_resources(
-            extra_templates=[
-                {
-                    "vmid": 3900,
-                    "name": "ah-tpl-linux-server-20260916",
-                    "tags": "ah-tpl-linux-server;built-20260916",
-                }
-            ]
-        )
-    )
+    reply = resources if resources is not None else tagged_resources(BUILT_TEMPLATES)
     http.add("GET", "/cluster/resources", body=reply["body"], status=reply["status"])
-    for vmid in (3900, 9400, 9401, 9402):
+    for vmid in (3900, 3901, 9400, 9401, 9402):
         http.add("GET", "/qemu/%d/config" % vmid, "template_config")
     http.add("GET", "/nodes/<node>/status", node or "node_status")
     return http
@@ -603,7 +614,7 @@ def test_doctor_is_green_when_everything_is_in_place(cfg, api, http, capsys):
 
 def test_doctor_names_the_missing_privileges(cfg, api, http, capsys):
     stripped = fixture("permissions")
-    stripped["body"]["data"]["/pool/adminhelper-ci"]["VM.Clone"] = 0
+    del stripped["body"]["data"]["/pool/adminhelper-ci"]["VM.Clone"]
     del stripped["body"]["data"]["/pool/adminhelper-ci"]["VM.Snapshot.Rollback"]
     http.add("GET", "/version", "version")
     http.add("GET", "/access/permissions", body=stripped["body"])
@@ -627,10 +638,10 @@ def test_doctor_reports_a_storage_that_cannot_snapshot(cfg, api, http, capsys):
 
 
 def test_doctor_names_the_profiles_without_a_template(cfg, api, http, capsys):
-    green_doctor(http, resources=tagged_resources())  # no linux-server template baked yet
+    green_doctor(http, resources=tagged_resources())  # nothing baked or imported yet
     assert doctor(cfg, api, "--roles", "probe") == 74
     out = capsys.readouterr().out
-    assert "FAIL templates: no template tagged for linux-server" in out
+    assert "FAIL templates: no template tagged for base-freebsd, linux-server" in out
     assert "linux-full 20260910 (9402)" in out
     assert "base-ubuntu undated (9400)" in out  # the base images carry no build date
 
@@ -668,12 +679,8 @@ def test_capacity_charges_what_our_vms_have_not_taken_yet(cfg, api, http, capsys
     # 3050 is a crabbox leftover without the `ah` tag: the pool is shared during
     # 2a (spec, trade-off 3) and a VM that is not ours is not ours to budget for.
     crowded = tagged_resources(
-        extra_templates=[
-            {
-                "vmid": 3900,
-                "name": "ah-tpl-linux-server-20260916",
-                "tags": "ah-tpl-linux-server;built-20260916",
-            },
+        extra_templates=BUILT_TEMPLATES
+        + [
             {
                 "vmid": 3050,
                 "name": "crabbox-ah-warm-1",
@@ -3045,6 +3052,479 @@ def test_a_listing_that_fails_only_later_still_keeps_the_template(
     out = capsys.readouterr().out
     assert "could not be read" in out
     assert out.splitlines()[-1].startswith("3900 ah-tpl-linux-full-")
+
+
+# ── import ───────────────────────────────────────────────────────────────────
+IMAGE_URL = (
+    "https://download.example/releases/FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+)
+# A qcow2 header and enough bytes to cross a chunk boundary; every byte value
+# occurs, \r and \n included, so the multipart framing cannot lean on them.
+DISK = b"QFI\xfb" + bytes(range(256)) * 5000
+
+
+def form_parts(call) -> list:
+    """The multipart body of an upload, read by a parser that is not ours."""
+    head = b"Content-Type: " + call.headers["content-type"].encode() + b"\r\n\r\n"
+    message = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(head + call.raw)
+    return [
+        (
+            part.get_param("name", header="content-disposition"),
+            part.get_filename(),
+            part.get_payload(decode=True),
+        )
+        for part in message.iter_parts()
+    ]
+
+
+def test_upload_streams_a_form_pveproxy_can_check(api, http, tmp_path):
+    disk = tmp_path / "ah-base-freebsd.qcow2"
+    disk.write_bytes(DISK)
+    sha = hashlib.sha256(DISK).hexdigest()
+    http.add("POST", "/storage/files/upload", "upload_post")
+    upid = api.upload("files", "import", str(disk), "ah-base-freebsd.qcow2", sha)
+    assert upid == fixture("upload_post")["body"]["data"]
+
+    call = http.calls[0]
+    assert call.path.endswith("/nodes/<node>/storage/files/upload")
+    # pveproxy refuses a chunked body: the length has to be known up front, and
+    # it has to be the length of what is actually sent.
+    assert int(call.headers["content-length"]) == len(call.raw)
+    assert "transfer-encoding" not in call.headers
+    assert call.headers["authorization"] == "PVEAPIToken=user@pve!vm=<secret>"
+    # pveproxy answers once the whole file is in, not before.
+    assert call.timeout == vm.UPLOAD_TIMEOUT
+    parts = form_parts(call)
+    # The file comes last: the checksum it is checked against must be in first.
+    assert [(name, filename) for name, filename, _ in parts] == [
+        ("content", None),
+        ("checksum-algorithm", None),
+        ("checksum", None),
+        ("filename", "ah-base-freebsd.qcow2"),
+    ]
+    assert [payload for _, _, payload in parts] == [b"import", b"sha256", sha.encode(), DISK]
+
+
+def test_a_refused_upload_is_not_sent_twice(api, http, tmp_path):
+    disk = tmp_path / "seed.raw"
+    disk.write_bytes(b"seed")
+    http.add("POST", "/upload", status=500, body='{"message":"pveproxy is restarting"}')
+    with pytest.raises(vm.Infra) as caught:
+        api.upload("files", "import", str(disk), "seed.raw", "0" * 64)
+    assert "pveproxy is restarting" in str(caught.value)
+    # The generator is spent after one attempt; a retry would send an empty file.
+    assert len(http.calls) == 1
+
+
+def packed_image() -> dict:
+    packed = lzma.compress(DISK)
+    return {"url": IMAGE_URL, "sha256": hashlib.sha256(packed).hexdigest(), "packed": packed}
+
+
+def test_a_cached_image_is_used_without_a_download(image_cache):
+    image = packed_image()
+    image_cache.mkdir()
+    cached = image_cache / os.path.basename(IMAGE_URL)
+    cached.write_bytes(image["packed"])
+    # No `http` fixture: a download here would trip no_network.
+    assert vm.cached_image(image) == str(cached)
+
+
+def test_a_download_is_checked_against_the_pinned_hash(image_cache, http):
+    image = packed_image()
+    http.add("GET", "download.example", body=image["packed"])
+    path = vm.cached_image(image)
+    with open(path, "rb") as fh:
+        assert fh.read() == image["packed"]
+    assert os.listdir(image_cache) == [os.path.basename(IMAGE_URL)]  # no .part left
+
+
+def test_a_stale_cached_copy_is_fetched_again(image_cache, http):
+    image = packed_image()
+    image_cache.mkdir()
+    (image_cache / os.path.basename(IMAGE_URL)).write_bytes(b"cut short")
+    http.add("GET", "download.example", body=image["packed"])
+    with open(vm.cached_image(image), "rb") as fh:
+        assert fh.read() == image["packed"]
+    assert len(http.calls) == 1
+
+
+def test_a_download_with_another_hash_never_lands_in_the_cache(image_cache, http):
+    image = packed_image()
+    http.add("GET", "download.example", body=b"a re-rolled release")
+    with pytest.raises(vm.Infra) as caught:
+        vm.cached_image(image)
+    assert "the profile pins %s" % image["sha256"] in str(caught.value)
+    assert os.listdir(image_cache) == []
+
+
+def test_a_failed_download_is_infrastructure(image_cache, http):
+    http.add("GET", "download.example", status=404, body="Not Found")
+    with pytest.raises(vm.Infra) as caught:
+        vm.cached_image(packed_image())
+    assert "cannot download %s" % IMAGE_URL in str(caught.value)
+    assert os.listdir(image_cache) == []
+
+
+def test_unpack_returns_the_hash_of_what_it_wrote(tmp_path):
+    source = tmp_path / "disk.qcow2.xz"
+    source.write_bytes(lzma.compress(DISK))
+    target = tmp_path / "disk.qcow2"
+    assert vm.unpack_image(str(source), str(target)) == hashlib.sha256(DISK).hexdigest()
+    assert target.read_bytes() == DISK
+
+
+def test_an_image_that_is_not_xz_is_infrastructure(tmp_path):
+    source = tmp_path / "disk.qcow2.xz"
+    source.write_bytes(DISK)
+    with pytest.raises(vm.Infra) as caught:
+        vm.unpack_image(str(source), str(tmp_path / "disk.qcow2"))
+    assert "cannot unpack" in str(caught.value)
+
+
+@pytest.fixture
+def iso(monkeypatch):
+    """Stands in for genisoimage: records the tree it was given, writes a seed."""
+
+    class Iso:
+        def __init__(self):
+            self.argv = None
+            self.timeout = None
+            self.files = {}
+            self.code = 0
+            self.tools = {"genisoimage"}
+
+        def which(self, name):
+            return "/usr/bin/" + name if name in self.tools else None
+
+        def __call__(self, argv, capture_output=False, text=False, timeout=None, **kw):
+            if os.path.basename(argv[0]) not in vm.ISO_TOOLS:
+                return real(argv, capture_output=capture_output, text=text, timeout=timeout, **kw)
+            self.argv, self.timeout = argv, timeout
+            root = argv[argv.index("-r") + 1]
+            for folder, _, names in os.walk(root):
+                for name in names:
+                    with open(os.path.join(folder, name)) as fh:
+                        self.files[os.path.relpath(os.path.join(folder, name), root)] = fh.read()
+            if self.code == 0:
+                with open(argv[argv.index("-o") + 1], "wb") as fh:
+                    fh.write(b"CD001 seed")
+            return subprocess.CompletedProcess(
+                argv, self.code, "", "bad option\n" if self.code else ""
+            )
+
+    real = subprocess.run
+    fake = Iso()
+    monkeypatch.setattr(vm.subprocess, "run", fake)
+    monkeypatch.setattr(vm.shutil, "which", fake.which)
+    return fake
+
+
+def test_the_seed_is_a_config_drive_with_our_user_and_key(iso, tmp_path):
+    folder = tmp_path / "work"
+    folder.mkdir()
+    target = folder / "seed.raw"
+    key = "ssh-ed25519 AAAAC3Nz+key/here== kevin@dev"
+    sha = vm.seed_image(vm.iso_tool(), str(target), "ah-tpl-base-freebsd-20261111", key)
+    assert sha == hashlib.sha256(b"CD001 seed").hexdigest()
+    # config-2 is the label nuageinit looks for first; the tree is OpenStack's.
+    assert iso.argv[:7] == [
+        "/usr/bin/genisoimage",
+        "-quiet",
+        "-o",
+        str(target),
+        "-V",
+        "config-2",
+        "-J",
+    ]
+    assert iso.timeout == vm.SEED_LIMIT
+    assert sorted(iso.files) == ["openstack/latest/meta_data.json", "openstack/latest/user_data"]
+    meta = json.loads(iso.files["openstack/latest/meta_data.json"])
+    assert meta["hostname"] == "ah-tpl-base-freebsd-20261111"
+    user_data = iso.files["openstack/latest/user_data"]
+    assert user_data.startswith("#cloud-config\n")
+    config = json.loads(user_data.split("\n", 1)[1])
+    # One user, ours: the image's "default" one comes with a known password.
+    assert [u["name"] for u in config["users"]] == ["freebsd"]
+    assert config["users"][0]["ssh_authorized_keys"] == [key]
+    assert config["users"][0]["sudo"] == "ALL=(ALL) NOPASSWD: ALL"
+    assert config["ssh_pwauth"] is False
+    assert config["packages"] == list(vm.IMPORT_PACKAGES)
+    assert "sysrc qemu_guest_agent_enable=YES" in config["runcmd"]
+    assert os.listdir(folder) == ["seed.raw"]  # the tree is gone again
+
+
+def test_a_seed_tool_that_fails_is_infrastructure(iso, tmp_path):
+    folder = tmp_path / "work"
+    folder.mkdir()
+    iso.code = 2
+    with pytest.raises(vm.Infra) as caught:
+        vm.seed_image("/usr/bin/genisoimage", str(folder / "seed.raw"), "h", "key")
+    assert str(caught.value) == "genisoimage exited 2: bad option"
+    assert os.listdir(folder) == []
+
+
+def test_any_of_the_iso_tools_will_do(iso):
+    iso.tools = {"xorrisofs"}
+    assert vm.iso_tool() == "/usr/bin/xorrisofs"
+    iso.tools = set()
+    with pytest.raises(vm.Infra) as caught:
+        vm.iso_tool()
+    assert "install genisoimage or xorriso" in str(caught.value)
+
+
+@pytest.fixture
+def importer(keyed, iso, shell, clock, monkeypatch):
+    """`import --profile base-freebsd` with a small image in place of FreeBSD's."""
+    keyed.values["AH_PVE_IMPORT_STORAGE"] = "files"
+    packed = lzma.compress(DISK)
+    real = vm.load_profiles
+
+    def profiles(path=vm.PROFILES_FILE):
+        loaded = real(path)
+        loaded["profiles"]["base-freebsd"]["image"] = {
+            "url": IMAGE_URL,
+            "sha256": hashlib.sha256(packed).hexdigest(),
+        }
+        return loaded
+
+    monkeypatch.setattr(vm, "load_profiles", profiles)
+    monkeypatch.setenv("AH_LANE", "main")
+    return {"cfg": keyed, "packed": packed}
+
+
+def importable(http, packed, tags_put=None):
+    """Every call a successful `import` makes, in the order it makes them."""
+    day = time.strftime("%Y%m%d")
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"], times=2)
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("GET", "download.example", body=packed)
+    http.add("POST", "/storage/files/upload", "upload_post")
+    # Task status is asked for by the quoted UPID, so its type is in the path.
+    http.add("GET", "imgcopy", "task_imgcopy")
+    http.add("GET", "qmcreate", "task_qmcreate")
+    http.add("GET", "/tasks/", "task_ok")
+    # times=1: every later POST under /qemu/3900 contains this path too.
+    http.add("POST", "/nodes/<node>/qemu", "create_post", times=1)
+    http.add("POST", "/qemu/3900/status/start", "status_start")
+    http.add("POST", "/qemu/3900/agent/ping", "agent_ping_ok")
+    http.add("GET", "/qemu/3900/agent/network-get-interfaces", "agent_ifaces")
+    guest = fixture("clone_config")
+    guest["body"]["data"]["ciuser"] = "freebsd"
+    http.add("GET", "/qemu/3900/config", body=guest["body"])
+    http.add("POST", "/qemu/3900/status/shutdown", "status_stop")
+    if tags_put is None:
+        http.add("PUT", "/qemu/3900/config", "config_put")
+    else:
+        http.add("PUT", "/qemu/3900/config", "config_put", times=1)
+        http.add("PUT", "/qemu/3900/config", **tags_put)
+    http.add("POST", "/qemu/3900/template", "status_start")
+    done = tagged_resources(
+        extra_templates=[
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-base-freebsd-%s" % day,
+                "template": 1,
+                "tags": "ah-tpl-base-freebsd;built-%s" % day,
+            }
+        ]
+    )
+    http.add("GET", "/cluster/resources", body=done["body"])
+    return http
+
+
+def test_import_uploads_the_unpacked_disk_and_the_seed(importer, api, http, iso, image_cache):
+    importable(http, importer["packed"])
+    assert verb("import", importer["cfg"], api, "--profile", "base-freebsd") == 0
+    uploads = [c for c in http.calls if c.path.endswith("/upload")]
+    assert [form_parts(c)[-1][1] for c in uploads] == [
+        "ah-base-freebsd.qcow2",
+        "ah-base-freebsd-seed.raw",
+    ]
+    # The disk goes up unpacked — import-from reads qcow2, not xz — and under
+    # the hash of what is uploaded, not of the download.
+    disk = form_parts(uploads[0])
+    assert disk[-1][2] == DISK
+    assert disk[2][2] == hashlib.sha256(DISK).hexdigest().encode()
+    assert form_parts(uploads[1])[-1][2] == b"CD001 seed"
+    # Only the download stays in the cache; the unpacked disk and the seed go.
+    assert os.listdir(image_cache) == [os.path.basename(IMAGE_URL)]
+
+
+def test_import_creates_the_vm_with_its_disks_and_its_drive(importer, api, http):
+    importable(http, importer["packed"])
+    verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    created = next(c for c in http.calls if c.method == "POST" and c.path.endswith("/qemu"))
+    body = created.body
+    assert body["vmid"] == "3900"  # the template band, the way bake does it
+    assert body["pool"] == "adminhelper-ci"
+    assert body["name"] == "ah-tpl-base-freebsd-%s" % time.strftime("%Y%m%d")
+    tags = set(body["tags"].split(";"))
+    assert tags >= {"ah", "role-bake", "lane-main"}  # a failed import is reapable
+    assert int(vm.tag_value(tags, "ttl-")) - int(time.time()) > 3 * 3600
+    assert body["virtio0"] == "raid5:0,import-from=files:import/ah-base-freebsd.qcow2"
+    assert body["virtio1"] == "raid5:0,import-from=files:import/ah-base-freebsd-seed.raw"
+    assert body["boot"] == "order=virtio0"
+    # The token holds no VM.Config.CDROM: the cloud-init drive comes with the
+    # create call or not at all.
+    assert body["ide2"] == "raid5:cloudinit"
+    assert body["citype"] == "nocloud"  # read by nobody: config-2 on the seed comes first
+    assert body["ciuser"] == "freebsd"
+    assert body["ciupgrade"] == "0"
+    assert body["agent"] == "enabled=1"
+    assert body["net0"] == "virtio,bridge=vmbr1"
+    assert body["sshkeys"] == "ssh-ed25519%20AAAAC3Nz%2Bkey%2Fhere%3D%3D%20kevin%40dev"
+    # Both uploads and the create are waited for, each by the UPID it returned.
+    waited = [
+        urllib.parse.unquote(p.split("/tasks/", 1)[1]) for p in http.paths("GET") if "/tasks/" in p
+    ]
+    upload, create = (fixture(n)["body"]["data"] for n in ("upload_post", "create_post"))
+    assert waited[:3] == ["%s/status" % u for u in (upload, upload, create)]
+
+
+def test_import_checks_and_cleans_the_guest_before_it_becomes_a_template(
+    importer, api, http, shell, capsys
+):
+    importable(http, importer["packed"])
+    verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    runs = shell.of("ssh")
+    assert all(r["argv"][-2].startswith("freebsd@") for r in runs)
+    commands = [r["argv"][-1] for r in runs[1:]]  # [0] is wait_for's reachability probe
+    assert "/firstboot" in commands[0]
+    assert "sshd -T" in commands[1] and "pkg info -e" in commands[1]
+    clean = commands[2]
+    for leftover in (
+        "/etc/ssh/ssh_host_*",
+        "/etc/hostid",
+        "authorized_keys",
+        "/var/cache/nuageinit",
+    ):
+        assert leftover in clean
+    assert "pw usermod freebsd -h -" in clean and "pw usermod root -h -" in clean
+    assert clean.endswith("sudo -n touch /firstboot")  # each clone runs nuageinit again
+    assert [r["timeout"] for r in runs[1:]] == [vm.CLOUD_INIT_LIMIT, 120, vm.CLEAN_LIMIT]
+
+    day = time.strftime("%Y%m%d")
+    puts = [c for c in http.calls if c.method == "PUT"]
+    # The seed goes, and the clones get PVE's own drive as config-2.
+    assert puts[0].body == {"delete": "virtio1", "force": "1", "citype": "configdrive2"}
+    assert puts[-1].body == {"tags": "ah-tpl-base-freebsd;built-%s" % day}
+    shutdown_i = next(i for i, c in enumerate(http.calls) if c.path.endswith("/status/shutdown"))
+    template_i = next(i for i, c in enumerate(http.calls) if c.path.endswith("/template"))
+    put_i = [i for i, c in enumerate(http.calls) if c.method == "PUT"]
+    assert shutdown_i < put_i[0] < template_i < put_i[1]
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        "3900 ah-tpl-base-freebsd-%s ah-tpl-base-freebsd;built-%s" % (day, day)
+    )
+
+
+@pytest.mark.parametrize("failing", [0, 1, 2])  # first boot, check, clean
+def test_a_failed_import_step_takes_the_vm_with_it(importer, api, http, shell, failing):
+    importable(http, importer["packed"])
+    bake_cleanup(http)
+    shell.ssh_codes = [0] + [0] * failing + [1]
+    with pytest.raises(vm.Infra) as caught:
+        verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    assert "on 3900 (exit 1)" in str(caught.value)
+    assert "VM 3900 was removed again" in str(caught.value)
+    assert [c for c in http.calls if c.method == "DELETE"]
+    assert not [c for c in http.calls if c.path.endswith("/template")]
+
+
+def test_a_failed_tag_put_takes_the_imported_template_with_it(importer, api, http):
+    importable(http, importer["packed"], tags_put={"status": 500, "body": '{"message":"no"}'})
+    bake_cleanup(http)
+    with pytest.raises(vm.Infra) as caught:
+        verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    assert "VM 3900 was removed again" in str(caught.value)
+    # A template without its tag is nobody's: `doctor` cannot see it, `reap`
+    # cannot take it, and the next import would build a second one.
+    assert [c for c in http.calls if c.path.endswith("/template")]
+    assert [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_a_failed_upload_creates_nothing(importer, api, http, image_cache):
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("GET", "download.example", body=importer["packed"])
+    http.add(
+        "POST",
+        "/upload",
+        status=403,
+        body='{"message":"Permission check failed (/storage/files, Datastore.AllocateTemplate)"}',
+    )
+    with pytest.raises(vm.Infra) as caught:
+        verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    assert "Datastore.AllocateTemplate missing on /storage/files" in str(caught.value)
+    assert not [c for c in http.calls if c.path.endswith("/qemu")]
+    assert os.listdir(image_cache) == [os.path.basename(IMAGE_URL)]
+
+
+def test_import_checks_capacity_before_it_downloads(importer, api, http, image_cache):
+    thin = fixture("node_status")
+    thin["body"]["data"]["memory"]["free"] = 5 * 1024**3
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", body=thin["body"])
+    with pytest.raises(vm.Infra) as caught:
+        verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    assert str(caught.value).startswith("capacity:")
+    assert not [c for c in http.calls if "download.example" in c.url or c.method == "POST"]
+
+
+def test_only_a_profile_with_an_image_can_be_imported(importer, api, http):
+    with pytest.raises(vm.Usage) as caught:
+        verb("import", importer["cfg"], api, "--profile", "linux-full")
+    assert "linux-full has no image to import — try base-freebsd" in str(caught.value)
+    assert http.calls == []
+
+
+def test_import_needs_an_import_storage_before_it_asks_anything(importer, api, http):
+    del importer["cfg"].values["AH_PVE_IMPORT_STORAGE"]
+    with pytest.raises(vm.Usage) as caught:
+        verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    assert "AH_PVE_IMPORT_STORAGE" in str(caught.value)
+    assert http.calls == []
+
+
+def test_import_without_an_iso_tool_stops_before_anything_is_fetched(importer, api, http, iso):
+    iso.tools = set()
+    with pytest.raises(vm.Infra):
+        verb("import", importer["cfg"], api, "--profile", "base-freebsd")
+    assert http.calls == []
+
+
+def test_the_freebsd_image_is_pinned_to_the_project_download():
+    image = vm.load_profiles()["profiles"]["base-freebsd"]["image"]
+    assert image["url"].startswith("https://download.freebsd.org/")
+    assert image["url"].endswith("-BASIC-CLOUDINIT-ufs.qcow2.xz")
+    assert re.fullmatch(r"[0-9a-f]{64}", image["sha256"])
+
+
+def test_doctor_asks_for_the_import_rights_only_where_an_import_storage_is_set(
+    cfg, api, http, capsys
+):
+    cfg.values["AH_PVE_IMPORT_STORAGE"] = "files"
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    out = capsys.readouterr().out
+    assert "Datastore.AllocateTemplate on /storage/files" in out
+    assert "Datastore.Audit on /storage/files" in out
+
+
+def test_a_grant_without_propagation_still_counts(cfg, api, http, capsys):
+    # /access/permissions answers each privilege with the ACL's propagate flag,
+    # not with whether it is granted: the import storage's grant has none.
+    granted = fixture("permissions")
+    granted["body"]["data"]["/storage/files"] = {
+        "Datastore.AllocateTemplate": 0,
+        "Datastore.Audit": 0,
+    }
+    cfg.values["AH_PVE_IMPORT_STORAGE"] = "files"
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", body=granted["body"])
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe") == 0
+    assert "/storage/files" in capsys.readouterr().out
 
 
 # ── destroy --no-scenario ────────────────────────────────────────────────────

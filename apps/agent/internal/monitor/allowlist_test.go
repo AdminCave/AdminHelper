@@ -127,6 +127,11 @@ func TestAllowlistTakesEveryCollectorCall(t *testing.T) {
 		{"sc", "query", "state=", "all"},
 		{"sc", "query", "MSSQL$SQLEXPRESS"},
 		{"sc", "queryex", "wuauserv"},
+		{"/usr/sbin/service", "local_unbound", "status"},
+		{"/usr/sbin/service", "php_fpm.sh", "status"},
+		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1"},
+		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1", "FreeBSD-kernel-15.1"},
+		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-14.3_12", "FreeBSD-kernel-14.3_11"},
 	}
 	for _, call := range calls {
 		if !commandAllowed(call[0], call[1:]) {
@@ -201,6 +206,25 @@ func TestAllowlistRefusesTheTraps(t *testing.T) {
 		{"timedatectl", "set-time", "2026-01-01"},
 		{"dnf", "-q", "updateinfo", "list", "--security"},
 		{"sh", "-c", "true"},
+		{"pkg", "audit", "-F"},
+		{"pkg", "audit", "-q", "-F"},
+		{"pkg", "audit", "-Fq"},
+		{"pkg", "audit", "-q", "-r", "/"},
+		{"pkg", "audit", "-q", "nginx"},
+		{"pkg", "audit", "-q", "FreeBSD-15.1-RELEASE"},
+		{"pkg", "audit", "-q", "FreeBSD-15.1", "-F"},
+		{"pkg", "install", "-y", "nginx"},
+		{"pkg", "upgrade", "-n"},
+		{"service", "cron", "restart"},
+		{"service", "cron", "onestart"},
+		{"service", "../x", "status"},
+		{"service", "-R"},
+		{"service", "-e", "-v"},
+		{"service", "-v", "status"},
+		{"service", "cron"},
+		{"freebsd-version"},
+		{"freebsd-version", "-k"},
+		{"freebsd-version", "-kru", "-j", "web"},
 	}
 	for _, call := range calls {
 		if commandAllowed(call[0], call[1:]) {
