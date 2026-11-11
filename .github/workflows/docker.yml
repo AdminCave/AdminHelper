@@ -48,7 +48,8 @@ jobs:
             context: apps/gateway
             dockerfile: apps/gateway/Dockerfile
           - image: frps
-            context: apps/frps
+            # The repository root: the image builds its plugin from the Go module of the agent.
+            context: .
             dockerfile: apps/frps/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

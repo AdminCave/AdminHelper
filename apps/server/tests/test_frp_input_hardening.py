@@ -738,6 +738,10 @@ REFUSED_EXTRA_CONFIGS = {
     "a generator key as a prefix": {"localIP.x": "a"},
     "two keys apart only in case": {"foo": 1, "FOO": 2},
     "one key a prefix of another": {"a": 1, "a.b": 2},
+    # frps' policy plugin checks the host key the generator writes (proxy_key.py).
+    "the proxy key": {"metadatas.ahProxyKey": "forged"},
+    "the proxy key in another case": {"Metadatas.AHPROXYKEY": "forged"},
+    "the table of the proxy key": {"metadatas": "forged"},
 }
 TAKEN_EXTRA_CONFIGS = {
     "int at the top": {"bandwidthLimitMode": 2**63 - 1},
@@ -745,6 +749,7 @@ TAKEN_EXTRA_CONFIGS = {
     "dotted key": {"transport.useEncryption": True},
     "two keys of a table": {"transport.useEncryption": True, "transport.useCompression": True},
     "plain key": {"bandwidthLimit": "1MB"},
+    "another field of metadatas": {"metadatas.owner": "ops"},
 }
 
 
@@ -802,9 +807,18 @@ def test_the_clash_rule_knows_every_key_the_generator_writes_into_a_proxy():
             visitor_port=None,
         ),
     ]
+
+    def key_paths(table, prefix=""):
+        # A dotted key such as metadatas.ahProxyKey reads back as a table.
+        for key, value in table.items():
+            if isinstance(value, dict):
+                yield from key_paths(value, f"{prefix}{key}.")
+            else:
+                yield prefix + key
+
     written = set()
     for proxy in tomllib.loads(generate_frpc_toml(_legacy_row(), tunnels, "srv1"))["proxies"]:
-        written |= set(proxy)
+        written |= set(key_paths(proxy))
     assert written == set(_GENERATOR_PROXY_KEYS)
 
 

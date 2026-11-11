@@ -19,6 +19,7 @@ from app.modules.audit import service as audit
 from app.modules.frp.config_generator import frps_bind_port
 from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 from app.modules.frp.models import FrpServerConfig
+from app.modules.frp.policy import sync_policy
 from app.modules.frp.schemas import (
     FrpServerConfigCreate,
     FrpServerConfigDetail,
@@ -174,6 +175,7 @@ def update_server_config(
         write_frps_config(config, warn_restart=True)
     except Exception:
         logger.exception("frps.toml schreiben nach Config-Update fehlgeschlagen (id=%s)", config.id)
+    sync_policy(db)
     fire_event("frp.config.updated", {"id": config.id, "name": config.name})
     audit.record(
         db,
@@ -206,6 +208,7 @@ def delete_server_config(
     # hooks/notifications having observed a deletion that never happened (2.48).
     fire_event("frp.config.deleted", {"id": config_id, "name": config_name})
     remove_frps_config()
+    sync_policy(db)
     audit.record(
         db,
         "frp.config.deleted",

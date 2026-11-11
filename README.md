@@ -500,6 +500,7 @@ cargo tauri build
 │  ├─ gateway/               # nginx reverse proxy: TLS/header/mTLS termination, rate limit
 │  ├─ agent/                 # unified Go agent (Linux + Windows)
 │  │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
+│  │  ├─ cmd/frps-policy/        # frps plugin: admits only the proxies the server generated (built into the frps image)
 │  │  ├─ internal/               # config, frpc, monitor, service
 │  │  ├─ deb/, rpm/              # package metadata
 │  │  ├─ systemd/                # adminhelper-agent.service + .timer
