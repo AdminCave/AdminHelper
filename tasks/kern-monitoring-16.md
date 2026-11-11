@@ -121,8 +121,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T10 — Abschlussprüfung: Doku zu gestoppten Units eingrenzen  [ ]
+### T10 — Abschlussprüfung: Doku zu gestoppten Units eingrenzen  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-16.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c10311934 2026-11-11T08:35:08+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Der Satz zu gestoppten Units gilt nur, wenn der Dienst außer über die Unit auch über Container, Prozess oder Markerdatei erkannt wird; eine Instanz, die nur an der Unit hängt, wird nach zwei vollständigen Scans `gone` (DE, EN, CHANGELOG).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task

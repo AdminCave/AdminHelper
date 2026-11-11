@@ -13,6 +13,7 @@
 - **Monitoring: Log-Sensor und Probe-Ziele:** Die API nimmt fuer den Log-Sensor nur Units und Filter an, die der Agent
   ausfuehrt (sonst 422), statt dass der Check dauerhaft `unknown` bleibt.
 - **Monitoring-Erkennung:** Nach einem unvollstaendigen Scan kommt der naechste nach 2 bis 4 Stunden statt erst nach
-  24 bis 48. Ein gestoppter Dienst laesst seinen Fund unveraendert, statt ihn als geaendert zu melden.
+  24 bis 48. Wird ein Dienst ausser ueber seine Unit auch ueber Container, Prozess oder Markerdatei erkannt, laesst ein
+  Stopp der Unit seinen Fund unveraendert, statt ihn als geaendert zu melden.
 - **Monitoring: gebremste Sammler:** Ein vom Agenten gebremster Sammler laesst den Status seiner Checks hoechstens
   45 Minuten stehen; danach werden sie wieder bewertet.
