@@ -1,5 +1,5 @@
 # Agent: Härtung der Werkzeugaufrufe, der Probe-Parameter und der Probe-Zugangsdaten — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-15 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-15 · Review: pro Task
 Spec: docs/features/kern-monitoring-15.md (Roadmap R-1252, R-1259, R-1266, R-1261, R-1255, R-1256, R-1270)
 Heavy: linux-full — apps/agent (Fühler, Erkennung, Freigabeliste)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -88,8 +88,10 @@ Komponente: agent · Dateien: apps/agent/internal/credentials/store.go, apps/age
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/credentials/... ./internal/probe/... ./cmd/...
 Doku: → T8
 
-### T8 — Doku: Freigabeliste und Zugangsdaten DE+EN, CHANGELOG-Fragment  [ ]
+### T8 — Doku: Freigabeliste und Zugangsdaten DE+EN, CHANGELOG-Fragment  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-15.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4f260e95c 2026-11-11T06:46:54+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - `agent.html` DE+EN: Die Freigabeliste gilt für `monitor`, `probe` und `discovery`, mit dem AST-Test über alle
   drei Pakete. Dazu der Abschnitt Zugangsdaten nach T7.
