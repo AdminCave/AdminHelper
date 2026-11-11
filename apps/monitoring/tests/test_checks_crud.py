@@ -7,6 +7,8 @@ interval and severity against the VALID_* sets by hand (400); before this only t
 tested. A regression (e.g. dropping the interval check on update) would let an invalid interval into the
 DB that throws an unhandled ValueError at the next add_check. Uses the shared client_db fixture."""
 
+import json
+
 import pytest
 
 from app.models import MonitorCheck
@@ -283,11 +285,153 @@ def test_a_check_says_whether_a_module_brought_it(client_db):
     assert status["mod"]["moduleCheckKey"] == "web"
 
 
-def test_a_probe_without_its_instances_name_is_rejected(client_db):
+# --- probe checks only from a module (R-1252) ---------------------------------
+
+_PROBE = {
+    "sensor": "http",
+    "target": {"kind": "container", "name": "paperless-web-1", "port_hint": 8000, "scheme": "http"},
+    "params": {"path": "/api/status/"},
+    "interval_s": 900,
+    "timeout_s": 5,
+    "fields": ["status_code"],
+    "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+    "credential": {"ref": "paperless/paperless/api", "use": "bearer"},
+    "test_object": False,
+}
+
+
+def _add_module_probe(factory, check_id="mod", config=None):
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id=check_id,
+                server_id="srv-1",
+                name="Paperless (paperless): Web",
+                check_type="probe",
+                config=json.dumps(_PROBE if config is None else config),
+                enabled=True,
+                interval="15m",
+                severity="critical",
+                module_id="paperless",
+                module_instance="paperless",
+                module_check_key="web",
+            )
+        )
+        db.commit()
+    return check_id
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        _PROBE,
+        # The catalog's rules for the config no longer get a say: the type is refused first.
+        {"sensor": "container", "target": {"kind": "container"}, "fields": ["state"]},
+    ],
+)
+def test_create_check_refuses_a_probe(client_db, config):
     client, _ = client_db
-    config = {"sensor": "container", "target": {"kind": "container"}, "fields": ["state"]}
 
     r = client.post("/checks", json=_payload(check_type="probe", config=config))
 
     assert r.status_code == 422, r.text
-    assert "target.name is required for kind 'container'" in r.text
+    assert "only from a module of the catalog" in r.text
+    assert client.get("/checks").json() == []
+
+
+def test_a_module_probe_keeps_its_rules_interval_and_timeout_editable(client_db):
+    client, factory = client_db
+    cid = _add_module_probe(factory)
+    config = {
+        **_PROBE,
+        "rules": [{"field": "status_code", "op": "ge", "value": 500, "level": "warning"}],
+        "interval_s": 300,
+        "timeout_s": 10,
+    }
+    change = {
+        "config": config,
+        "name": "Web",
+        "description": "mine",
+        "severity": "warning",
+        "interval": "5m",
+        "enabled": False,
+        "consecutive_fails": 2,
+        "server_id": "srv-1",
+    }
+
+    r = client.put(f"/checks/{cid}", json=change)
+
+    assert r.status_code == 200, r.text
+    got = client.get(f"/checks/{cid}").json()
+    assert got["config"] == config
+    assert (got["name"], got["severity"], got["interval"], got["enabled"]) == (
+        "Web",
+        "warning",
+        "5m",
+        False,
+    )
+
+
+def test_a_module_probe_config_may_leave_out_the_measuring_parts_at_their_defaults(client_db):
+    client, factory = client_db
+    cid = _add_module_probe(factory)
+    config = {k: v for k, v in _PROBE.items() if k != "test_object"}
+
+    assert client.put(f"/checks/{cid}", json={"config": config}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "part, value",
+    [
+        ("sensor", "tcp"),
+        ("target", {"kind": "container", "name": "other-1", "port_hint": 8000, "scheme": "http"}),
+        ("target", {"kind": "host", "port_hint": 22}),
+        ("target", None),
+        ("params", {"path": "/admin/"}),
+        ("fields", ["status_code", "body"]),
+        ("credential", {"ref": "paperless/paperless/api", "use": "basic"}),
+        ("credential", {"ref": "other/other/api", "use": "bearer"}),
+        ("credential", None),
+        ("test_object", True),
+    ],
+)
+def test_a_module_probe_refuses_a_change_of_what_it_measures(client_db, part, value):
+    client, factory = client_db
+    cid = _add_module_probe(factory)
+    before = client.get(f"/checks/{cid}").json()
+
+    r = client.put(f"/checks/{cid}", json={"config": {**_PROBE, part: value}})
+
+    assert r.status_code == 422, r.text
+    assert "its module sets the rest" in r.text
+    assert client.get(f"/checks/{cid}").json() == before
+
+
+def test_a_module_probe_refuses_a_config_of_another_form(client_db):
+    client, factory = client_db
+    cid = _add_module_probe(factory)
+
+    r = client.put(f"/checks/{cid}", json={"config": ["sensor"]})
+
+    assert r.status_code == 422, r.text
+
+
+def test_a_probe_stays_a_probe_and_on_its_server(client_db):
+    client, factory = client_db
+    cid = _add_module_probe(factory)
+    plain = _make_check(client)
+    before = client.get(f"/checks/{cid}").json()
+
+    for body in (
+        {"check_type": "ping", "config": {"target": "127.0.0.1"}},
+        {"server_id": "srv-2"},
+        {"server_id": None},
+    ):
+        r = client.put(f"/checks/{cid}", json=body)
+        assert r.status_code == 422, (body, r.text)
+    assert client.get(f"/checks/{cid}").json() == before
+
+    r = client.put(f"/checks/{plain}", json={"check_type": "probe", "config": _PROBE})
+    assert r.status_code == 422, r.text
+    assert "only through a module of the catalog" in r.text
+    assert client.get(f"/checks/{plain}").json()["checkType"] == "ping"

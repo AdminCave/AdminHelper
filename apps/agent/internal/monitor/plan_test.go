@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -583,6 +585,87 @@ func TestPushSendsTheStoredRefsAndKeepsTheBrakeUntilTheCredentialIsSetAnew(t *te
 	}
 	if st := loadReportState(statePath); st.Brake != nil {
 		t.Fatalf("state brake after the credential was set anew = %v, want none", st.Brake)
+	}
+}
+
+func TestACredentialsBindingOutlivesALostPushUntilTheCredentialIsSetAnew(t *testing.T) {
+	stubReportHost(t)
+	shortenRetryDelay(t)
+	stubCPU(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	credPath := config.MonitorCredentialsFile()
+	if err := credentials.Set(context.Background(), credPath, "db", "pw1"); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := credentials.Load(credPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundID := stored["db"].ID
+	var seen []map[string]probe.Binding
+	stubRunProbe(t, func(_ context.Context, p probe.Probe, start time.Time, acc *probe.Access) probe.Result {
+		// As probe.Run does: the run sees the bindings kept so far and binds the credential it presents.
+		seen = append(seen, maps.Clone(acc.Bindings))
+		if acc.Bindings == nil {
+			acc.Bindings = map[string]probe.Binding{}
+		}
+		acc.Bindings[p.Credential.Ref] = probe.Binding{ID: acc.Credentials[p.Credential.Ref].ID, Target: "t1"}
+		return probe.Result{TS: start.Unix(), Status: probe.StatusOK, Values: map[string]any{}}
+	})
+
+	var reportStatus atomic.Int32
+	reportStatus.Store(http.StatusBadGateway)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(planCredentialProbe))
+			return
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(int(reportStatus.Load()))
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statePath := config.MonitorReportStateFile()
+	want := map[string]probe.Binding{"db": {ID: boundID, Target: "t1"}}
+
+	// 1) The push is lost: the binding the probe made stays in the state.
+	if err := Push(context.Background()); err == nil {
+		t.Fatal("push against 502: want an error")
+	}
+	if len(seen) != 1 || seen[0] != nil {
+		t.Fatalf("bindings seen by the runs = %v, want one run without a binding", seen)
+	}
+	if st := loadReportState(statePath); !reflect.DeepEqual(st.Bindings, want) {
+		t.Fatalf("state bindings after a lost push = %v, want %v", st.Bindings, want)
+	}
+
+	// 2) The next push keeps it.
+	reportStatus.Store(http.StatusOK)
+	if err := Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(statePath); !reflect.DeepEqual(st.Bindings, want) {
+		t.Fatalf("state bindings after the next push = %v, want %v", st.Bindings, want)
+	}
+
+	// 3) The credential is set anew: its binding is done, though the probe is not due yet.
+	if err := os.Remove(credPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := credentials.Set(context.Background(), credPath, "db", "pw2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(statePath); st.Bindings != nil || len(seen) != 1 {
+		t.Fatalf("state bindings after the credential was set anew = %v after %d runs, want none and no new run", st.Bindings, len(seen))
 	}
 }
 

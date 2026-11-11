@@ -17,7 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.alerter import muted_reasons
-from app.check_configs import validate_check_config
+from app.check_configs import ProbeConfig, validate_check_config
 from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.bounds import Offset
@@ -106,6 +106,46 @@ def _same_config(a, b) -> bool:
     if isinstance(a, list) and isinstance(b, list):
         return len(a) == len(b) and all(_same_config(x, y) for x, y in zip(a, b))
     return a == b
+
+
+# The parts of a probe config that say what the agent measures and where. Only a module
+# of the catalog sets them; the API leaves rules, interval and timeout to the admin.
+_PROBE_MEASURE = ("sensor", "target", "params", "fields", "credential", "test_object")
+
+
+def _probe_measure(config) -> dict | None:
+    """The measuring parts of a probe config, missing ones at their default; None for a
+    config of another form."""
+    if not isinstance(config, dict):
+        return None
+    out = {}
+    for key in _PROBE_MEASURE:
+        field = ProbeConfig.model_fields[key]
+        out[key] = config.get(key, None if field.is_required() else field.get_default())
+    return out
+
+
+def _probe_change_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]) -> str | None:
+    """Why the update would make, unmake or re-aim a probe check, or None. A probe check
+    comes only from a module of the catalog (R-1252)."""
+    if "check_type" in sent and (data.check_type == "probe") != (check.check_type == "probe"):
+        return "A check becomes or stops being a probe only through a module of the catalog"
+    if check.check_type != "probe":
+        return None
+    if "server_id" in sent and data.server_id != check.server_id:
+        return "A probe check stays on the server of its module"
+    if "config" in sent:
+        try:
+            stored = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            stored = None
+        new, old = _probe_measure(data.config), _probe_measure(stored)
+        if new is None or old is None or not _same_config(new, old):
+            return (
+                "Only rules, interval_s and timeout_s of a probe config can be changed; "
+                "its module sets the rest"
+            )
+    return None
 
 
 router = APIRouter()
@@ -271,6 +311,8 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         raise HTTPException(400, "Invalid interval")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Invalid severity")
+    if refused := _probe_change_refused(check, data, sent):
+        raise HTTPException(422, refused)
 
     # Validate the effective (type, config) pair whenever either changes — a
     # type switch that keeps the old config must fail here, not surface as a
