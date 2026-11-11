@@ -6,7 +6,16 @@
 // writes settings.json whole, so a field missing from the object is gone: every
 // save dropped lastUsername, and the login screen no longer pre-filled the name.
 
-import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+  type MockInstance,
+} from 'vitest';
 import { get } from 'svelte/store';
 import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { language, setLanguage, tNow } from '$lib/i18n';
@@ -109,6 +118,19 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn(async () => null) }));
 vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: vi.fn(async () => true) }));
 
 import SettingsModal from './SettingsModal.svelte';
+
+// The first render of the dialog and the first role query on its large DOM are cold (component
+// init, jsdom, JIT) and under CPU load they alone took seconds of a test's 5 s budget (R-1212).
+// Paying them here moves them into the hook timeout.
+beforeAll(async () => {
+  settingsModalOpen.set(true);
+  const { container } = render(SettingsModal);
+  await fireEvent.click(container.querySelector('[role="tab"][data-section="terminal"]')!);
+  within(container).getByRole('slider', { name: tNow('terminal.options.fontSize') });
+  cleanup();
+  settingsModalOpen.set(false);
+  vi.clearAllMocks();
+});
 
 beforeEach(() => {
   // Saving applies the chosen language app-wide.
