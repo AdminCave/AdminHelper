@@ -86,15 +86,21 @@ jobs:
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
         # hashed requirements.txt lock the image ships is python-lock-server's.
         run: pip install -r requirements-dev.txt
-      # The tests that build or start an image skip without its base image at hand: those
-      # of frps, of the gateway and of the Python images, whose last stage builds on the
-      # base of apps/ca-issuer. They do not depend on the Python version, so one leg runs them.
+      # The tests that build or start an image skip without its base images at hand: those
+      # of frps (the frps image and the Go image its plugin builds on), of the gateway and of
+      # the Python images, whose last stage builds on the base of apps/ca-issuer. They do not
+      # depend on the Python version, so one leg runs them. The image of each FROM, without
+      # the name of its stage; and the frpc image the live test of frps' plugin pins.
       - name: Pull the base images of the image tests
         if: matrix.python-version == '3.14'
         run: |
           for dockerfile in apps/frps/Dockerfile apps/gateway/Dockerfile apps/ca-issuer/Dockerfile; do
-            docker pull "$(sed -n 's/^FROM //p' "$dockerfile")"
+            for base in $(sed -n 's/^FROM \([^ ]*\).*/\1/p' "$dockerfile"); do
+              docker pull "$base"
+            done
           done
+          frpc=$(sed -n 's/^FRPC_IMAGE = "\(.*\)"$/\1/p' apps/server/tests/test_frps_policy_live.py)
+          docker pull "$frpc"
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.
@@ -956,7 +962,8 @@ jobs:
             context: apps/gateway
             dockerfile: apps/gateway/Dockerfile
           - image: frps
-            context: apps/frps
+            # The repository root: the image builds its plugin from the Go module of the agent.
+            context: .
             dockerfile: apps/frps/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

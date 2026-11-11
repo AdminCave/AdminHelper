@@ -18,6 +18,7 @@ from app.modules.audit import service as audit
 from app.modules.connections.models import Connection, own_text, shown_name
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.policy import sync_policy
 from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
@@ -221,6 +222,7 @@ def create_tunnel(
         db.rollback()
         raise HTTPException(status_code=409, detail="Visitor-Port ist bereits belegt")
     db.refresh(tunnel)
+    sync_policy(db)
     fire_event(
         "frp.tunnel.created",
         {"id": tunnel.id, "name": tunnel.display_name(), "serverId": server.id},
@@ -338,6 +340,7 @@ def update_tunnel(
         db.rollback()
         raise HTTPException(status_code=409, detail="Visitor-Port ist bereits belegt")
     db.refresh(tunnel)
+    sync_policy(db)
     fire_event("frp.tunnel.updated", {"id": tunnel.id, "name": tunnel.display_name()})
     audit.record(
         db,
@@ -363,6 +366,7 @@ def delete_tunnel(
     tunnel_name = tunnel.display_name()
     db.delete(tunnel)
     db.commit()
+    sync_policy(db)
     # Fire only after the commit succeeds — a rolled-back delete must not leave
     # hooks/notifications having observed a deletion that never happened (2.48).
     fire_event("frp.tunnel.deleted", {"id": tunnel_id, "name": tunnel_name})

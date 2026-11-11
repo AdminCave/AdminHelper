@@ -323,8 +323,9 @@ fn main() {
         .expect("error while building tauri application")
         .run(move |app, event| {
             if let tauri::RunEvent::Exit = event {
-                // No ssh of the embedded terminal outlives the app.
-                app.state::<pty::PtyRegistry>().close_all();
+                // No ssh of the embedded terminal outlives the app, and no run directory of a tab.
+                app.state::<pty::PtyRegistry>()
+                    .shutdown(std::time::Duration::from_secs(2));
                 let _ = frpc::stop_frpc(&frpc_state_exit);
                 notifications::stop(&stream_state_exit);
                 // A `TERMSRV/…` entry whose time has not come goes now, not with the logon

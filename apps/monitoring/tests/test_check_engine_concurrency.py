@@ -405,7 +405,7 @@ def test_bell_newer_reservation_outlives_the_first_post(pg_sessionmaker, monkeyp
         ("ok", "critical", ("critical", datetime(2026, 10, 20, 11, 55, 0, 654321))),
         ("ok", "critical", ("critical", None)),
     ],
-    ids=["alarm-first", "alarm-after-cooldown", "recovery", "recovery-after-backfill"],
+    ids=["alarm-first", "alarm-after-ok-record", "recovery", "recovery-after-backfill"],
 )
 def test_bell_failed_post_without_a_newer_dispatch_changes_nothing(
     pg_sessionmaker, monkeypatch, status, notified, hub_before

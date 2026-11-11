@@ -169,34 +169,54 @@ func TestResourcesNetwork(t *testing.T) {
 func TestResourcesSwapAndCPUCount(t *testing.T) {
 	cases := []struct {
 		name  string
-		setup func(s *resourceStub)
+		setup func(s *resourceStub, goos string)
 		want  string
 	}{
-		{"swap in use", func(*resourceStub) {},
+		{"swap in use", func(*resourceStub, string) {},
 			`{"cpu_count": 8, "swap_total_mb": 2048, "swap_used_mb": 84, "swap_percent": 4.1}`},
-		// gopsutil reports 0 % without a swap device; that must not read as a healthy swap.
-		{"no swap device", func(s *resourceStub) { s.swap = &mem.SwapMemoryStat{} },
+		// gopsutil reports 0 % without a swap device on Linux and an error on FreeBSD
+		// (mem_freebsd.go, vm.nswapdev 0); either must read as 0 MB, not as a healthy swap.
+		{"no swap device", func(s *resourceStub, goos string) {
+			if goos == "freebsd" {
+				s.swapErr = errors.New("no swap devices found")
+			} else {
+				s.swap = &mem.SwapMemoryStat{}
+			}
+		},
 			`{"cpu_count": 8, "swap_total_mb": 0, "swap_used_mb": 0}`},
-		{"swap unreadable", func(s *resourceStub) { s.swapErr = errors.New("open /proc/vmstat") },
+		{"swap unreadable", func(s *resourceStub, _ string) { s.swapErr = errors.New("open /proc/vmstat") },
 			`{"cpu_count": 8}`},
-		{"cpu count unreadable", func(s *resourceStub) { s.countErr = errors.New("open /proc/stat") },
+		{"cpu count unreadable", func(s *resourceStub, _ string) { s.countErr = errors.New("open /proc/stat") },
 			`{"swap_total_mb": 2048, "swap_used_mb": 84, "swap_percent": 4.1}`},
-		{"cpu count 0", func(s *resourceStub) { s.count = 0 },
+		{"cpu count 0", func(s *resourceStub, _ string) { s.count = 0 },
 			`{"swap_total_mb": 2048, "swap_used_mb": 84, "swap_percent": 4.1}`},
-		{"both unreadable", func(s *resourceStub) {
+		{"both unreadable", func(s *resourceStub, _ string) {
 			s.swapErr = errors.New("open /proc/vmstat")
 			s.countErr = errors.New("open /proc/stat")
 		}, `{}`},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			s := stubResources(t, "linux")
-			c.setup(s)
-			got := dockerWire(t, collectSwapAndCPUCount())
-			if want := wantDockerWire(t, c.want); !reflect.DeepEqual(got, want) {
-				t.Errorf("resources = %v, want %v", got, want)
-			}
-		})
+	// FreeBSD reports the same fields: its load is rated per CPU like Linux's (R-1253).
+	for _, goos := range []string{"linux", "freebsd"} {
+		for _, c := range cases {
+			t.Run(goos+"/"+c.name, func(t *testing.T) {
+				s := stubResources(t, goos)
+				c.setup(s, goos)
+				got := dockerWire(t, collectSwapAndCPUCount())
+				if want := wantDockerWire(t, c.want); !reflect.DeepEqual(got, want) {
+					t.Errorf("resources = %v, want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+// Only FreeBSD's gopsutil uses that error for "no swap"; on Linux it stays an unreadable swap.
+func TestResourcesNoSwapErrorIsZeroOnlyOnFreeBSD(t *testing.T) {
+	s := stubResources(t, "linux")
+	s.swapErr = errors.New("no swap devices found")
+	got := dockerWire(t, collectSwapAndCPUCount())
+	if want := wantDockerWire(t, `{"cpu_count": 8}`); !reflect.DeepEqual(got, want) {
+		t.Errorf("resources = %v, want %v", got, want)
 	}
 }
 
@@ -292,5 +312,21 @@ func TestResourcesDiskInfo(t *testing.T) {
 				t.Errorf("disk = %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+func TestSkipFSTypesFreeBSD(t *testing.T) {
+	// FreeBSD's pseudo filesystems and nullfs (a directory of another filesystem mounted again, as in
+	// jails) store nothing of their own, tmpfs nothing on a disk (same name as on Linux); ufs, zfs,
+	// msdosfs and nfs do.
+	for _, fstype := range []string{"devfs", "fdescfs", "procfs", "linprocfs", "linsysfs", "nullfs", "tmpfs"} {
+		if !skipFSTypes[fstype] {
+			t.Errorf("%s is not skipped", fstype)
+		}
+	}
+	for _, fstype := range []string{"ufs", "zfs", "msdosfs", "nfs"} {
+		if skipFSTypes[fstype] {
+			t.Errorf("%s is skipped, it stores files of its own", fstype)
+		}
 	}
 }

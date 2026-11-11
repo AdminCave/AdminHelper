@@ -220,6 +220,21 @@ class Module(_Model):
         if len(set(keys)) != len(keys):
             raise ValueError("duplicate check keys")
         by_key = {c.key: c for c in self.checks}
+        # The agent binds a credential to the target it goes to first and refuses it to any
+        # other (probe.go bindingOf), so the checks of one slot must ask the same target.
+        slot_targets: dict[str, tuple[str, tuple]] = {}
+        for check in self.checks:
+            if check.credential is None:
+                continue
+            path = check.params.get("path") if check.sensor == "unixsocket" else None
+            target = check.target.model_dump() if check.target else None
+            seen = (check.key, (check.sensor, check.credential.use, target, path))
+            first = slot_targets.setdefault(check.credential.slot, seen)
+            if first[1] != seen[1]:
+                raise ValueError(
+                    f"checks {first[0]!r} and {check.key!r} share credential slot "
+                    f"{check.credential.slot!r} but differ in sensor, use or target"
+                )
         for check in self.checks:
             if check.target and check.target.service and self.instance != "compose_project":
                 raise ValueError(

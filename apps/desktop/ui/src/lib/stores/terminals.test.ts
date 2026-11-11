@@ -1190,6 +1190,37 @@ describe('an RDP session in a tab (R-1098)', () => {
     });
   });
 
+  it('hears the end of its tab once, and a certificate question is no end (R-1273)', async () => {
+    const onEnd = vi.fn();
+    await openRdp(RDP, undefined, onEnd);
+    phase({
+      session_id: 's1',
+      phase: 'certificate',
+      identity: 'win:3389',
+      fingerprint: 'ab:cd',
+      reason: 'unknown',
+    });
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(await trustRdpCertificate(only().key)).toBe(true);
+    phase({ session_id: 's2', phase: 'connected' });
+    expect(onEnd).not.toHaveBeenCalled();
+    phase({ session_id: 's2', phase: 'disconnected' });
+    expect(onEnd).toHaveBeenCalledOnce();
+
+    expect(await reconnectRdp(only().key)).toBe(true);
+    phase({ session_id: 's3', phase: 'disconnected' });
+    closeTerminal(only().key);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('hears the end of its tab when the tab is closed', async () => {
+    const onEnd = vi.fn();
+    await openRdp(RDP, undefined, onEnd);
+    phase({ session_id: 's1', phase: 'connected' });
+    closeTerminal(only().key);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
   it('pins the refused certificate and starts anew; a refused pin stays', async () => {
     await openRdp(RDP);
     phase({

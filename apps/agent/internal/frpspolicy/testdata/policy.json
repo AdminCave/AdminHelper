@@ -1,0 +1,48 @@
+{
+  "servers": {
+    "0f1e2d3c-4b5a-4968-8776-655443322110": {
+      "keyHash": "2be2b9b0687e05ce69b061f6756e6698dd5bbf15a37c9b456f7698fb496c2528",
+      "proxies": {
+        "t-lb": {
+          "customDomains": [
+            "lb.example"
+          ],
+          "group": "web",
+          "groupKeyHash": "a830687cc353952117697369c14cfcb26af1e97a938f28c29b5fdce68fb3fedb",
+          "subdomain": "lb",
+          "type": "https"
+        },
+        "t-ssh": {
+          "customDomains": [],
+          "group": "",
+          "groupKeyHash": "",
+          "subdomain": "",
+          "type": "stcp"
+        },
+        "t-web": {
+          "customDomains": [
+            "web.example",
+            "www.web.example"
+          ],
+          "group": "",
+          "groupKeyHash": "",
+          "subdomain": "",
+          "type": "https"
+        }
+      }
+    },
+    "7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d": {
+      "keyHash": "42b5574350a2d827538c723a4db1e2d6babb9c09a6a22061489965cd76b1338c",
+      "proxies": {
+        "t-db": {
+          "customDomains": [],
+          "group": "",
+          "groupKeyHash": "",
+          "subdomain": "",
+          "type": "stcp"
+        }
+      }
+    }
+  },
+  "version": 1
+}

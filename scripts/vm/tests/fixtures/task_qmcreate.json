@@ -1,0 +1,18 @@
+{
+  "body": {
+    "data": {
+      "exitstatus": "OK",
+      "id": "3900",
+      "node": "<node>",
+      "pid": 4016011,
+      "pstart": 1030676409,
+      "starttime": 1794389840,
+      "status": "stopped",
+      "tokenid": "<tokenid>",
+      "type": "qmcreate",
+      "upid": "UPID:<node>:003D478B:3D6EDFB9:6AF43750:qmcreate:3900:<user>@pve!<tokenid>:",
+      "user": "<user>@pve"
+    }
+  },
+  "status": 200
+}
