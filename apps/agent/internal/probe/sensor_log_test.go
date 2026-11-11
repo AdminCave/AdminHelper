@@ -69,6 +69,7 @@ func stubTools(t *testing.T, answers ...answer) *[][]string {
 	old := runTool
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{name}, args...))
+		checkAllowed(t, name, args)
 		if len(calls) > len(answers) {
 			t.Errorf("call %q past the %d answers", calls[len(calls)-1], len(answers))
 			return nil, errors.New("no answer")

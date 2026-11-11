@@ -280,20 +280,28 @@ func parseCgroups(data []byte) Cgroups {
 	return c
 }
 
-// Holds says whether the process that runs in p runs in one of the cgroups c or below it, in a
-// hierarchy both name: the processes of a container run in the cgroup of its first one or below it.
-// The root holds every process and counts for none; a path that merely names c's, as one a user may
-// create in the cgroup delegated to them, does not count either.
+// Holds says whether the process that runs in p runs in the cgroups c or below them: the processes
+// of a container run in the cgroups of its first one or below them. Every hierarchy both name must
+// agree, and at least one must, so that a cgroup the container shares with host processes (the
+// unified hierarchy in hybrid mode) does not hold those. The root holds every process and counts
+// for none; a path that merely names c's, as one a user may create in the cgroup delegated to them,
+// does not count either.
 func (c Cgroups) Holds(p Cgroups) bool {
+	held := false
 	for h, path := range c {
 		if path == "" || path == "/" {
 			continue
 		}
-		if q, ok := p[h]; ok && (q == path || strings.HasPrefix(q, path+"/")) {
-			return true
+		q, ok := p[h]
+		if !ok {
+			continue
 		}
+		if q != path && !strings.HasPrefix(q, path+"/") {
+			return false
+		}
+		held = true
 	}
-	return false
+	return held
 }
 
 // containerInfo holds the fields of `docker inspect` the container sensor and target read (Engine

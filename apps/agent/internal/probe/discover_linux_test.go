@@ -12,7 +12,7 @@ import (
 )
 
 func TestCgroupsTellTheContainerAProcessRunsIn(t *testing.T) {
-	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	a, b, c := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
 	stubProc(t, map[string]string{
 		// The first processes of two containers, under cgroup v2 and v1.
 		"/proc/100/cgroup": "0::/system.slice/docker-" + b + ".scope\n",
@@ -25,8 +25,13 @@ func TestCgroupsTellTheContainerAProcessRunsIn(t *testing.T) {
 		"/proc/11/cgroup": "0::/system.slice/docker-" + b + ".scope2\n",
 		// Only in the root of a hierarchy the container shares with every process.
 		"/proc/12/cgroup": "12:pids:/\n11:memory:/user.slice\n1:name=systemd:/\n",
+		// Hybrid mode: a container whose unified hierarchy names a cgroup it shares with host
+		// processes; only a process in its own cgroups of every hierarchy runs in it.
+		"/proc/300/cgroup": "12:pids:/docker/" + c + "\n0::/system.slice/containerd.service\n",
+		"/proc/14/cgroup":  "12:pids:/\n0::/system.slice/containerd.service\n",
+		"/proc/15/cgroup":  "12:pids:/docker/" + c + "/sub\n0::/system.slice/containerd.service\n",
 	})
-	containers := map[string]Cgroups{"a": CgroupsOf(200), "b": CgroupsOf(100)}
+	containers := map[string]Cgroups{"a": CgroupsOf(200), "b": CgroupsOf(100), "c": CgroupsOf(300)}
 	for _, c := range []struct {
 		pid  int32
 		want string
@@ -37,12 +42,14 @@ func TestCgroupsTellTheContainerAProcessRunsIn(t *testing.T) {
 		{10, ""},
 		{11, ""},
 		{12, ""},
+		{14, ""},
+		{15, "c"},
 		// A process that cannot be read runs in none.
 		{13, ""},
 	} {
 		got := ""
 		own := CgroupsOf(c.pid)
-		for _, name := range []string{"a", "b"} {
+		for _, name := range []string{"a", "b", "c"} {
 			if containers[name].Holds(own) {
 				got += name
 			}
