@@ -1,5 +1,5 @@
 # Monitoring: Härtung der Probe-Anlage, der Probe-Ziele und der Probe-Zugangsdaten — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-19 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-19 · Review: pro Task
 Spec: docs/features/kern-monitoring-19.md (Roadmap R-1252, R-1266, R-1299)
 Heavy: linux-full — apps/agent (Ziel-Abgleich, Fühler, Zugangsdaten) und apps/monitoring (Checks-API, Plan)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,6 +71,15 @@ was der Agent nie anspricht; CHANGELOG-Fragment neutral (`### Security`/`### Cha
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-19.md
 Task-Review: am Ende
+
+### T6 — Katalog: ein Credential-Slot gehört zu einem Ziel  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/tests/test_catalog.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Änderung: `Module._consistent` lehnt ein Modul ab, dessen Checks einen Credential-Slot mit anderem Sensor, anderer
+Übergabe, anderem Ziel oder (bei `unixsocket`) anderem Pfad teilen; der Agent bindet die Zugangsdaten beim ersten
+Einsatz an ein Ziel (T3), ein zweites bliebe dauerhaft `not_allowed`. Tests: gleiches Ziel erlaubt, je abweichendes
+Teil abgelehnt. Quelle: Abschlussprüfung (R-1266).
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py
+Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html
 
 ## Entscheidungen
 - 2026-11-11: Bindung der Zugangsdaten beim ersten Einsatz nach dem Setzen (Spec, Trade-offs), innerhalb von Kevins
