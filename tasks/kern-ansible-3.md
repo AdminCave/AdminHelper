@@ -5,8 +5,10 @@ Heavy: none — Inventar-Erzeugung im Desktop-Backend, kein Stack-, Gateway-, PK
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1214: Sprung-Host der Verbindung als ProxyCommand-Kette bei --ask-pass  [ ]
+### T1 — R-1214: Sprung-Host der Verbindung als ProxyCommand-Kette bei --ask-pass  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5001f0937 2026-11-11T08:39:11+01:00
+Review: approve (.ah-out/review/kern-ansible-3/T1.verdict.json)
 Änderung: In einem Lauf mit `--ask-pass` ersetzt `host_vars` das `-o ProxyJump=<hops>` aus `option_switches` durch `-o ProxyCommand=ssh -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no [-o ProxyCommand=<inneres Bein, %% verdoppelt>] -W [%h]:%p [-l u] [-p p] <hop>`, verschachtelt je Hop der Kette, jeder Wert shell-gequotet. Ohne `--ask-pass` bleibt `ProxyJump`. Tests: Kette mit einem und drei Hops samt IPv6 im letzten Hop, Lauf ohne `--ask-pass` unverändert; unter Unix prüft ein Test mit dem echten `ssh -G -F /dev/null`, dass ssh `proxycommand` und kein `proxyjump` sieht.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible::
 Doku: → T3
