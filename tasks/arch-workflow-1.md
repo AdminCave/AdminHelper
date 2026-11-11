@@ -46,8 +46,10 @@ Beweis: Sammelläufe 09-25, 11-02, 11-04-0628, 11-04-1951: schemathesis-Produktf
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: → T7
 
-### T5 — R-1337: Regeln auf den nächtlichen Sammellauf umstellen  [ ]
+### T5 — R-1337: Regeln auf den nächtlichen Sammellauf umstellen  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/test/SKILL.md, .claude/rules/testing.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a848521c4 2026-11-11T20:01:32+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T5.verdict.json)
 Änderung: /feature-build §5 neu. Der Sammellauf läuft nachts per `nightly.sh`, die Session startet ihn nicht mehr nach Merges. Beim Start und nach jedem Merge liest sie den neuesten Report. Rot → Verursacher suchen, REG-Zeile; bis der rote Schritt per `--step`-Lauf über `main` wieder grün ist, gibt es keinen `linux-full`-Merge (außer Fix, Revert, SEC auf Kevins Wort). `fund` ist eine BUG-Zeile ohne Sperre, UNVERIFIED wie bisher. Dazu §4.3 und §4.8 angleichen. test-Skill: `all` und `weekly` startet der Cron-Lauf (Kevin 2026-11-11) als Ausnahme zu „nichts startet von selbst“; kein ff-merge im Haupt-Checkout, solange `ah-nightly` läuft. testing.md „Lange Läufe“ und CLAUDE.md §3 („ist der Sammellauf fällig“ → „braucht der Report der Nacht eine Reaktion“) und §5 (Heavy) angleichen.
 Beweis: wie T3 · Dedup-Key: ref:harness:sammellauf:nachts
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test session_status_test
@@ -79,8 +81,8 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (release.md ist die Stelle; cicd.html verweist für Kanäle dorthin — in T7 prüfen)
 
 ### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen  [ ]
-Komponente: scripts · Dateien: CLAUDE.md
-Änderung: Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Kevin hat die Änderung durch die Session am 2026-11-11 freigegeben.
+Komponente: scripts · Dateien: CLAUDE.md, .claude/rules/release.md, docs/features/arch-workflow-1.md
+Änderung: Dazu die Nits aus der T9-Prüfung in release.md (allgemeiner Ablauf verweist auf den Takt; Evidenz kommt vom nächtlichen Samstags-`weekly`). Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Kevin hat die Änderung durch die Session am 2026-11-11 freigegeben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (CLAUDE.md ist die Stelle)
 Abhängt von: T2, T5
@@ -93,3 +95,4 @@ Abhängt von: T2, T5
 - T6 (2026-11-11): Probe VM gegen CI. CI (main-Lauf 43029762530, py3.14, beide Shards): 1660 + 1659 = 3319 passed, 0 skipped. Box (Sammellauf 2026-11-11-0725, junit server-pytest.xml): 3317 Tests, 39 skipped (Alembic ohne Postgres-URL, Image-Tests ohne Docker-Image, Redis). Die Box fährt keinen Test, den die CI überspringt; einzig der testcontainers-Modus läuft nur dort (R-0824 war ein Testfehler in diesem Modus). Umsetzung (Schritt im Teil rest auslassen, Pflichtmenge anpassen, iter.sh-Weiterleitung) in arch-workflow-2.
 - Kevin 2026-11-11 (Antworten in der Session): CLAUDE.md darf die Session ändern (T8); T2 bekommt eine dritte Prüfrunde; Release: wöchentlich Beta nach grünem weekly mit Capstone, Latest wie R-1110 (T9, R-1346, Notiz an R-1110); Cron-Zeile nach dem Merge installieren, Restrisiko (unbeaufsichtigter Lauf mit Proxmox-Zugriff) von Kevin getragen.
 - T9 (2026-11-11, reviewer + security, Kevins Antworten): Jedes Wochen-Beta ist das nächste Minor (das erste 0.47.0); Latest wird das erste Beta mit dem Umfang von R-1110. Getaggt wird der vom `weekly` geprüfte Commit: Release-Branch `release/vX.Y.Z` ab diesem Commit, Bump darauf, nur Bump-Dateien im Diff; Kevin taggt, publiziert und merged den Branch per PR nach `main`.
+- T5 Runde 2 (2026-11-11, reviewer wichtig): Jeder rote Schritt außer `fund` sperrt wie bisher; eine REG-Zeile gibt es nur bei `reg` (legt heavy.sh an), `unbestaetigt`, `extern`, `fail` sichtet Kevin. Mitgenommen: manueller Lauf prüft vorher auf `ah-nightly`, Abschnitt „Rhythm“, security-Nit „im Zweifel neutrale SEC-Zeile“. Die drei T9-Nits (release.md) trägt T8.

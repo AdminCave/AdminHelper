@@ -102,8 +102,8 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
    „Ein Zug wartet nicht“), sonst wartet der Abschluss auf Kevins Antwort (bauen oder `[~]`).
 2. Keine volle Komponenten-Suite lokal: die fährt die PR-CI (CLAUDE.md §5).
 3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts; `linux-full` → kein Lauf
-   hier, das Vorhaben geht in den Sammellauf (§5), der PR-Text sagt „Heavy: Sammellauf“ (Ausnahme: der Fix eines
-   REG-Ledgers aus dem Sammellauf, §5); `scenario <flags>` und `windows` → vor dem Merge, Kevin fragen. Danach
+   hier, das Vorhaben geht in den nächtlichen Sammellauf (§5), der PR-Text sagt „Heavy: Sammellauf“ (Ausnahme: der
+   Fix eines REG-Ledgers aus dem Sammellauf, §5); `scenario <flags>` und `windows` → vor dem Merge, Kevin fragen. Danach
    `python3 scripts/vm/vm.py list`.
 4. **Abschlussprüfung:** `reviewer` mit Einsatzart `branch` (WT, Slug, eigenes Scratch-Verzeichnis; keine
    Diff-Auswahl, keine Bewertung), bei Risikopfad im Branch (`bash WT/scripts/dev/review.sh risk --range
@@ -133,19 +133,33 @@ sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet 
    <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id> --exit-status`; rot → nichts weiter
    mergen, Revert nach CLAUDE.md §2. Dann `python3 scripts/dev/roadmap.py sync`, `git -C tasks/private push`,
    `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`, `git worktree list` und
-   `python3 scripts/vm/vm.py list` sauber. Dann §5: ist der Sammellauf jetzt fällig?
+   `python3 scripts/vm/vm.py list` sauber. Dann §5: braucht der Report der Nacht eine Reaktion?
 
 ## 5. Sammellauf (schwere Suite über `main`)
 
-Fällig, sobald seit dem letzten grünen Lauf (`tasks/private/history.csv`, letzte Zeile mit `all,-,pass`, ihr
-Commit `C`) drei Vorhaben mit `Heavy: linux-full` auf `main` gemergt sind (`git log --merges C..origin/main`, deren
-Ledger), das erste davon sieben Tage alt ist oder ein Release ansteht. Die Session prüft das beim Start und nach
-jedem Merge (§4.8) und startet ihn dann selbst (Kevin, 2026-10-15): Haupt-Checkout sauber auf `main`, `git fetch
-origin`, `git merge --ff-only origin/main`, dann `/test all`. Rot → Verursacher über die Merge-Commits suchen,
-REG-Zeile; bis er wieder grün ist, merged die Session kein weiteres Vorhaben mit `Heavy: linux-full`, außer dem Fix
-oder Revert des roten Schritts und SEC auf Kevins Wort. Ein REG-Ledger aus dem Sammellauf beweist seinen Fix vor
-dem Merge mit dem `--step`-Lauf aus seinem `Heavy:`. `UNVERIFIED` (Infrastruktur) ist weder grün noch rot: melden,
-keine Merge-Sperre, und die Session startet ihn nicht von selbst neu; die Wiederholung ist Kevins Wort (`/test`).
+Der Sammellauf läuft nachts (Kevin 2026-11-11): `scripts/tests/nightly.sh` startet per Cron um 01:30 `heavy.sh all`,
+samstags `weekly` mit Capstone (Einrichtung und Stand: `bash scripts/tests/nightly.sh install|status`). Die Session
+startet ihn nicht mehr nach Merges. Beim Start und nach jedem Merge (§4.8) liest sie den neuesten Report (`/test
+status`) und die letzte Zeile von `.ah-out/nightly.log`; eine übersprungene Nacht meldet sie mit ihrem Grund,
+ohne Merge-Sperre, ein Lauf von Hand ist Kevins Wort (`/test`).
+- PASS → nichts.
+- FAIL: Jeder rote Schritt außer `fund` sperrt. Bis er per `--step`-Lauf über `main` wieder grün ist, merged die
+  Session kein Vorhaben mit `Heavy: linux-full`, außer dem Fix oder Revert des roten Schritts und SEC auf Kevins
+  Wort. Je Klasse:
+  - `reg`: die REG-Zeile hat `heavy.sh` schon angelegt; die Session sucht den Verursacher über die Merge-Commits
+    seit dem letzten grünen Lauf. Ein REG-Ledger beweist seinen Fix vor dem Merge mit dem `--step`-Lauf aus
+    seinem `Heavy:`.
+  - `unbestaetigt`, `extern`, `fail`: melden, Kevin sichtet (Report „Kevin sichtet“); keine REG-Zeile von der
+    Session.
+- `fund` (schemathesis, nicht wiederholt) → eine BUG-Zeile mit dem Beispiel aus dem Log; berührt es Auth,
+  Enrollment, Tokens oder einen Pfad aus `scripts/dev/review-risk.txt`, oder ist die Sicherheitswirkung unklar
+  (etwa ein 500 mit Stacktrace), eine neutral benannte SEC-Zeile mit den Einzelheiten nur unter `tasks/private/`.
+  Keine Merge-Sperre.
+- `UNVERIFIED` (Infrastruktur) ist weder grün noch rot: melden, keine Merge-Sperre; die Wiederholung ist Kevins
+  Wort (`/test`).
+
+Solange `ah-nightly` läuft (`tmux has-session -t ah-nightly`), ändert keine Session den Haupt-Checkout: kein
+`merge --ff-only`, kein Branch-Wechsel.
 
 ## Recovery
 

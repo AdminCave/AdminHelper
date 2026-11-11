@@ -43,8 +43,8 @@ Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungen
   nachgezogen, wo eine Zeile sonst etwas Falsches behauptet. Schwere Läufe stehen als eigene Zeile `Heavy:`.
   Env-Bedarf löst das Skript auf, nicht der Aufrufer; Server-pytest bekommt `AH_TEST_DB` über `verify.sh`.
 - **Lange Läufe:** `/test weekly|all|capstone` startet `heavy.sh` in tmux und wacht bis zum Report (Ablauf im
-  `/test`-Skill); Start auf Kevins Zuruf, `all` auch als fälliger Sammellauf (`/feature-build` §5); Abbruch nur auf
-  Kevins Zuruf.
+  `/test`-Skill); Start auf Kevins Zuruf. Der Sammellauf startet nachts von selbst (`scripts/tests/nightly.sh`, Cron,
+  `/feature-build` §5); Abbruch nur auf Kevins Zuruf.
 - **Neue oder geänderte User-Journey ⇒ Live-E2E** auf der passenden Ebene (Web: Playwright; Desktop: `*.live.js`).
 - **Wackler** (Kevin 2026-11-11): Ein Fix für einen belegten Wackler gilt erst nach einem grünen Dauerlauf: 50 grüne
   Läufe des betroffenen Tests auf seiner Plattform. Go in einem Aufruf (`bash scripts/dev/verify.sh agent --strict --
