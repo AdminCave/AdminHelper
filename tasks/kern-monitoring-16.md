@@ -1,5 +1,5 @@
 # Monitoring-Module: Nachlese zu Bindung, Grenzen, Erkennung und Zugangsdaten-Datei — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-16 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-16 · Review: pro Task
 Spec: docs/features/kern-monitoring-16.md (Roadmap R-1254, R-1260, R-1262, R-1263, R-1295)
 Heavy: linux-full — apps/agent (Zugangsdaten-Datei) und apps/monitoring (Grenzen, Erkennung); Windows über die PR-CI (go-windows)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
