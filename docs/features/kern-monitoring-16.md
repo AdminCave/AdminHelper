@@ -47,8 +47,9 @@ Report-Format bleibt.
 Windows `CreateFileW` (`FILE_SHARE_DELETE`) und `MoveFileExW` (Go `os.Rename`), Microsoft-Doku, im Bau nachgelesen.
 
 ## Trade-offs & Alternativen
-- **Windows-Rename:** `FILE_SHARE_DELETE` beim Lesen statt eines Wiederholversuchs beim Rename. Die Ursache sitzt
-  beim Leser; ein Retry verschiebt sie nur.
+- **Windows-Rename:** `FILE_SHARE_DELETE` beim eigenen Lesen und ein begrenzter Wiederholversuch beim Rename (wie Go
+  `cmd/internal/robustio`). Die eigenen Leser im Test laufen unter dem Lock; einen fremden Leser ohne Delete-Freigabe
+  (Virenscanner) fängt nur der Wiederholversuch ab.
 - R-1254 und R-1260: Varianten und Begründung in der privaten Roadmap; ohne Kevin-Entscheidung, weil das sichtbare
   Verhalten nur strenger wird und kein API-Vertrag bricht.
 
