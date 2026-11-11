@@ -56,6 +56,8 @@ def _probes(db: Session, server_id: str) -> list[dict]:
             MonitorCheck.server_id == server_id,
             MonitorCheck.check_type == "probe",
             MonitorCheck.enabled.is_(True),
+            # R-1252: the agent runs only the probes a module of the catalog brought.
+            MonitorCheck.module_id.isnot(None),
         )
         .order_by(MonitorCheck.id)
         .all()

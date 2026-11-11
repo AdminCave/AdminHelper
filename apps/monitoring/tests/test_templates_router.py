@@ -378,9 +378,24 @@ _PROBE_DEF = {
 }
 
 
+def test_a_template_refuses_a_probe_def(client):
+    c, _factory = client
+
+    r = c.post("/templates", json={"name": "T", "check_definitions": [_PROBE_DEF]})
+    assert r.status_code == 422, r.text
+    assert "only from a module of the catalog" in r.text
+    assert all(t["name"] != "T" for t in c.get("/templates").json())
+
+    tid = _template(c, _PING_DEF)
+    r = c.put(f"/templates/{tid}", json={"check_definitions": [_PING_DEF, _PROBE_DEF]})
+    assert r.status_code == 422, r.text
+
+
 def test_reset_with_server_values_that_break_the_probe_is_409_and_changes_nothing(client):
+    # A probe def from before R-1252 stays in the database; the router takes none any more.
     c, factory = client
-    tid = _template(c, _PROBE_DEF)
+    tid = _template(c, _PING_DEF)
+    _set_check_definitions(factory, tid, [_PROBE_DEF])
     _assign(c, tid)
     cid = _checks(c)["def-probe"]["id"]
     before = c.get(f"/checks/{cid}").json()
