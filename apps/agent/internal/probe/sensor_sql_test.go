@@ -301,3 +301,25 @@ func TestTheSqlSensorRunsOnLinuxAlone(t *testing.T) {
 		t.Errorf("err = %v after %d calls, want unsupported before a client", err, len(*calls))
 	}
 }
+
+// TestEveryQueryOfTheSqlSensorIsOnTheAllowlist runs each query of both engines, and of both MariaDB
+// clients, into a stub that checks the call against the command allowlist (stubTools): a query added
+// to the sensor alone would be refused on the host.
+func TestEveryQueryOfTheSqlSensorIsOnTheAllowlist(t *testing.T) {
+	stubSQLHere(t, true)
+	failed := answer{err: errors.New("stub")}
+	for _, query := range slices.Sorted(maps.Keys(mariadbQueries)) {
+		calls := stubTools(t, answer{err: notInstalled("mariadb")}, failed)
+		_, _ = sqlSensor(context.Background(), sqlProbe("mariadb", query), "")
+		if want := [][]string{mariadbArgs("mariadb", query), mariadbArgs("mysql", query)}; !reflect.DeepEqual(*calls, want) {
+			t.Errorf("mariadb %s: calls = %q, want %q", query, *calls, want)
+		}
+	}
+	for _, query := range slices.Sorted(maps.Keys(postgresQueries)) {
+		calls := stubTools(t, failed)
+		_, _ = sqlSensor(context.Background(), sqlProbe("postgres", query), "")
+		if want := [][]string{psqlArgs(query)}; !reflect.DeepEqual(*calls, want) {
+			t.Errorf("postgres %s: calls = %q, want %q", query, *calls, want)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/netip"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"adminhelper-agent/internal/allowlist"
 	"adminhelper-agent/internal/probe"
 )
 
@@ -85,6 +87,9 @@ func stubHost(t *testing.T) *fakeHost {
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		h.mu.Lock()
 		h.calls = append(h.calls, append([]string{name}, args...))
+		if !allowlist.Allowed(name, args) {
+			t.Errorf("call %q is not on the command allowlist", append([]string{name}, args...))
+		}
 		tool, ok := h.tools[name]
 		h.mu.Unlock()
 		if !ok {
@@ -679,7 +684,7 @@ func TestTheListsAreCutAtTheContractsCaps(t *testing.T) {
 			if args[0] == "ps" {
 				var ids []string
 				for i := range maxContainers + 1 {
-					ids = append(ids, strconv.Itoa(i))
+					ids = append(ids, fmt.Sprintf("%064x", i))
 				}
 				return []byte(strings.Join(ids, "\n")), nil
 			}

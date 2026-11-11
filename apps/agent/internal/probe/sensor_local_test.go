@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"adminhelper-agent/internal/allowlist"
 )
 
 const containerID = "4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c3b5d7a9f1e3c5b7d9f1a3c5e7b9d1f3a"
@@ -57,6 +59,7 @@ func stubTool(t *testing.T, out string, err error) *tool {
 	old := runTool
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		tl.args = append([]string{name}, args...)
+		checkAllowed(t, name, args)
 		return []byte(tl.out), tl.err
 	}
 	t.Cleanup(func() { runTool = old })
@@ -391,5 +394,14 @@ func TestUnitAndContainerSensorsTakeNoParams(t *testing.T) {
 	}
 	if tl.args != nil {
 		t.Errorf("an invalid probe ran %v", tl.args)
+	}
+}
+
+// checkAllowed fails the test if the call a stub of runTool got is not on the command allowlist, which
+// the real runTool would refuse.
+func checkAllowed(t *testing.T, name string, args []string) {
+	t.Helper()
+	if !allowlist.Allowed(name, args) {
+		t.Errorf("call %q is not on the command allowlist", append([]string{name}, args...))
 	}
 }

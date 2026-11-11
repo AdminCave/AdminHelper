@@ -20,26 +20,33 @@ import (
 	"time"
 )
 
-// TestOnlyAllowlistStartsCommands parses every non-test file of the package, whatever its build tag,
-// and fails on a start of a command outside allowlist.go: exec.Command, exec.CommandContext,
-// os.StartProcess, execx.Run, execx.RunEnv, or a call of execTimed, which skips the allowlist check.
+// TestOnlyAllowlistStartsCommands parses every non-test file of the packages that start tools, this
+// one, probe and discovery, whatever its build tag, and fails on a start of a command outside the
+// allowlist: exec.Command, exec.CommandContext, os.StartProcess, execx.Run, execx.RunEnv, or a call of
+// execTimed, which skips the allowlist check. Only this package's allowlist.go may: execTimed is there.
+// The least number of files per package is its counter-check: a glob that found few would pass.
 func TestOnlyAllowlistStartsCommands(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no Go files found: %v", err)
-	}
-	checked := 0
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") || file == "allowlist.go" {
-			continue
+	for _, pkg := range []struct {
+		dir   string
+		least int
+	}{{".", 10}, {"../probe", 15}, {"../discovery", 3}} {
+		files, err := filepath.Glob(filepath.Join(pkg.dir, "*.go"))
+		if err != nil || len(files) == 0 {
+			t.Fatalf("no Go files found in %s: %v", pkg.dir, err)
 		}
-		checked++
-		for _, call := range commandStarts(t, file) {
-			t.Errorf("%s starts a command outside allowlist.go: %s", file, call)
+		checked := 0
+		for _, file := range files {
+			if strings.HasSuffix(file, "_test.go") || file == "allowlist.go" {
+				continue
+			}
+			checked++
+			for _, call := range commandStarts(t, file) {
+				t.Errorf("%s starts a command outside the allowlist: %s", file, call)
+			}
 		}
-	}
-	if checked < 10 {
-		t.Fatalf("checked %d files, want the whole package", checked)
+		if checked < pkg.least {
+			t.Fatalf("checked %d files in %s, want the whole package", checked, pkg.dir)
+		}
 	}
 }
 

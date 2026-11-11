@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Fühler, Erkennung, Freigabeliste)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1259: Gemeinsame Befehls-Freigabeliste für monitor, probe und discovery  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_log.go, apps/agent/internal/probe/sensor_sql.go, apps/agent/internal/discovery/discovery.go
+### T1 — R-1259: Gemeinsame Befehls-Freigabeliste für monitor, probe und discovery  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_log.go, apps/agent/internal/probe/sensor_sql.go, apps/agent/internal/discovery/discovery.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/sensor_local_test.go, apps/agent/internal/probe/sensor_log_test.go, apps/agent/internal/probe/sensor_sql_test.go, apps/agent/internal/discovery/discovery_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2d780983e 2026-11-11T05:57:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-15/T1.verdict.json)
 Änderung:
 - Die Freigabeliste (Klassen, Einträge, `commandAllowed`, der prüfende Start) zieht in ein eigenes Paket unter
   `apps/agent/internal/`. Neue Dateien bekommen einen SPDX-Header; der Pfad wird im Bau per `set-files` nachgetragen.
@@ -92,3 +94,11 @@ Doku: (diese Task)
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: Neues Paket `internal/allowlist` (Tabelle, Klassen, `Run`/`RunEnv`); `monitor/allowlist.go` bleibt als dünne
+  Hülle, damit die Collector-Aufrufer und ihre Tests unverändert bleiben. `execTimed` bleibt für die Timeout-Tests.
+- T1: Klasse `unitarg` (`-.slice`, `-.mount` oder ein Unit-Name) nur direkt nach `--` oder hinter einer Option im
+  selben Argument; der probe-Fühler nahm Wurzel-Units schon vorher an, ein Test erzwingt die Stellung.
+- T1: Die SQL-Abfragen stehen als Literale in der Tabelle; ein probe-Test fährt jede Abfrage beider Engines durch
+  einen Stub, der `allowlist.Allowed` prüft. So fällt eine Drift auf, ohne dass `allowlist` `probe` importiert.
+- T1: Die Stubs von probe und discovery prüfen jeden Aufruf mit `allowlist.Allowed`; der Kappungstest bekam echte
+  64-stellige Container-IDs statt Zählnummern.

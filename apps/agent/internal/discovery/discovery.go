@@ -27,7 +27,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"adminhelper-agent/internal/execx"
+	"adminhelper-agent/internal/allowlist"
 	"adminhelper-agent/internal/logging"
 	"adminhelper-agent/internal/probe"
 )
@@ -71,7 +71,7 @@ const (
 var (
 	// linuxHost says whether the units, containers and markers of this host can be read: on Linux alone.
 	linuxHost     = runtime.GOOS == "linux"
-	runTool       = execx.Run
+	runTool       = allowlist.Run
 	statPath      = os.Stat
 	listSockets   = probe.Listeners
 	processName   = probe.ProcessName
