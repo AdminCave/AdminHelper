@@ -1,5 +1,5 @@
 # Harness: Wackler-Politik, Triage-Dauerauftrag, Sammellauf nachts — Task-Ledger
-Status: bereit · Branch: feature/arch-workflow-1 · Review: pro Task
+Status: erledigt · Branch: feature/arch-workflow-1 · Review: pro Task
 Spec: docs/features/arch-workflow-1.md (Roadmap R-1335, R-1336, R-1337, R-1338, R-1346)
 Heavy: none — Harness-Text und Harness-Skripte mit hermetischen Tests; den echten Beweis für nightly.sh und die heavy.sh-Klasse `fund` liefert der erste nächtliche Lauf nach dem Merge
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
