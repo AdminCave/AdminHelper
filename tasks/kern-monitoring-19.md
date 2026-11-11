@@ -1,5 +1,5 @@
 # Monitoring: Härtung der Probe-Anlage, der Probe-Ziele und der Probe-Zugangsdaten — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-19 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-19 · Review: pro Task
 Spec: docs/features/kern-monitoring-19.md (Roadmap R-1252, R-1266, R-1299)
 Heavy: linux-full — apps/agent (Ziel-Abgleich, Fühler, Zugangsdaten) und apps/monitoring (Checks-API, Plan)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
