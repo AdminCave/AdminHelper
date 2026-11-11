@@ -38,7 +38,9 @@ installiert sonst neu (`--force`).
 
 ## Risiken & Rollback
 Ein falsch gelesener Pin macht den CI-Schritt „Toolchain pins in lockstep“ rot (laut, kein stiller Schaden). Die
-Neuinstallation kostet auf einer Box mit alter tauri-cli einmalig ~18 min Kompilierzeit. Rollback: Revert.
+Neuinstallation kostet ~18 min Kompilierzeit bei jedem Warm im full-Profil (`warm.sh desktop|gui`,
+`box_desktopbox.sh`, also auch je Sammellauf), solange die Vorlage noch eine andere tauri-cli trägt; Klone sind
+Wegwerf-Boxen. Das Neu-Backen der Vorlage ist Kevins Wort (`/vm bake`). Rollback: Revert.
 
 ## Doku-Impact
 `docs/developer/cicd.html` DE+EN: ein Halbsatz, dass auch der Bootstrap-Standard mitgeprüft wird. Kein CHANGELOG
