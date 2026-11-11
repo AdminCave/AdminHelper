@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-freebsd-agent — Task-Ledger
-Status: erledigt · Branch: feature/arch-freebsd-agent · Review: pro Task
+Status: aktiv · Branch: feature/arch-freebsd-agent · Review: pro Task
 Spec: docs/features/arch-freebsd-agent.md (Roadmap R-1247, R-1281)
 Heavy: linux-full — Agent (Plattform-Umbenennungen, Paketierung), Gateway-Repo-Ebene und Monitoring-Annahme; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` (T9) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -133,6 +133,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
+
+### T14 — Agent: Freigabeliste nimmt FreeBSD-Pfade auch in den Windows-Tests (R-1281)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Änderung: Die PR-CI von #469 (Lauf 43015038213, Job „Go Agent (test, Windows)“) ist rot: unter Windows lehnt die Freigabeliste `/usr/sbin/service`, `/usr/local/sbin/pkg`, `/bin/freebsd-version` und `/usr/bin/sockstat` ab (`TestAllowlistTakesEveryCollectorCall`, `TestAllowlistTakesEveryProbeAndDiscoveryCall`, `TestSockstatCallIsAllowed`, die Stubs in `pkgaudit_test.go`/`rcservice_test.go` über `checkAllowed`). Ursache: `Key` kürzt nur Namen, die `filepath.IsAbs` absolut nennt, und unter Windows ist ein Pfad ohne Laufwerk nicht absolut, also bleibt der volle Pfad der Schlüssel. Im Betrieb ohne Wirkung (die Aufrufe laufen nur unter FreeBSD), aber die Tests ohne Build-Tag laufen auf jeder Plattform. `Key` nimmt einen mit `/` beginnenden Namen auf jedem Host als absolut; ein relativer Name bleibt wie er ist. Unter Windows öffnet das nichts Neues: `C:\…\sc.exe` zählt schon nach dem Basisnamen. Neuer Test für `Key` mit Host-unabhängigen Fällen; nativ beweist es der Windows-Job der PR-CI.
+Verify: bash scripts/dev/verify.sh agent --strict -- -run TestKeyTakesASlashRootedName|TestAllowlistTakesEveryProbeAndDiscoveryCall|TestAllowlistTakesEveryCollectorCall|TestCommandKeyDropsTheWindowsExtension|TestSockstatCallIsAllowed
+Doku: keine (Verhalten im Betrieb unverändert)
 
 ## Entscheidungen
 - 2026-11-09 T2: Aktivieren über `service adminhelper_frpc enable` (rc.subr ruft `sysrc -s`) statt `sysrc` direkt, Start und Neustart mit `onestart`/`onerestart`, Stopp mit `faststop` vor `disable` — rc.subr lässt `start`/`restart` bei abgeschaltetem rcvar still mit Exit 0 aus, `stop` ohne laufenden Dienst endet mit 1 (rc.subr 14.3 gelesen).
