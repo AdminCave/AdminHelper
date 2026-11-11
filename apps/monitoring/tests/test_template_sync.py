@@ -36,6 +36,7 @@ from app.template_sync import (
     apply_template,
     remove_template,
     substitute_variables,
+    sync_assignment,
     sync_template,
 )
 
@@ -636,3 +637,66 @@ def test_only_the_disk_forecast_of_the_shipped_templates_recovers_on_the_first_o
         ("windows-base", "disk-forecast"): 1,
     }
     assert (got[("linux-base", "smart-health")], got[("windows-base", "smart-health")]) == (2, 2)
+
+
+# --- probe defs after the substitution (R-1260) ------------------------------------
+
+PROBE_DEF = {
+    "def_id": "web",
+    "name": "Web {{server_name}}",
+    "check_type": "probe",
+    "config": {
+        "sensor": "http",
+        "target": {
+            "kind": "container",
+            "name": "{{server_name}}",
+            "port_hint": 8000,
+            "scheme": "http",
+        },
+        "params": {"path": "/", "method": "GET"},
+        "interval_s": 300,
+        "timeout_s": 10,
+        "fields": ["status_code"],
+        "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+        "credential": None,
+        "test_object": False,
+    },
+    "interval": "5m",
+    "severity": "critical",
+}
+
+
+def _probe_check(db):
+    return db.query(MonitorCheck).filter_by(template_def_id="web").one_or_none()
+
+
+def test_a_probe_def_that_breaks_with_the_server_values_is_left_out(db):
+    tpl = _template(db, [PING_DEF, PROBE_DEF])
+
+    result = apply_template(db, tpl, "srv-1", "web01.example", "w" * 256)
+
+    assert len(result["checksCreated"]) == 1
+    assert _probe_check(db) is None
+    assert db.query(MonitorCheck).filter_by(template_def_id="ping").one()
+
+
+def test_a_probe_check_keeps_its_config_when_new_server_values_break_it(db):
+    tpl = _template(db, [PROBE_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "web01")
+    db.commit()
+    assignment = db.query(MonitorTemplateAssignment).one()
+    assignment.server_name = "w" * 256
+
+    sync_assignment(db, tpl, assignment)
+
+    check = _probe_check(db)
+    assert json.loads(check.config)["target"]["name"] == "web01"
+    assert check.name == "Web web01"
+
+
+def test_a_probe_def_that_holds_is_created_with_the_server_values(db):
+    tpl = _template(db, [PROBE_DEF])
+
+    apply_template(db, tpl, "srv-1", "web01.example", "web01")
+
+    assert json.loads(_probe_check(db).config)["target"]["name"] == "web01"

@@ -7,10 +7,12 @@ Each is read on its own, a broken one costs only itself, a collector the agent
 throttled leaves its checks as they were, and a report without them works as before."""
 
 import json
+from datetime import timedelta
 
 import pytest
 
 from app.core import victoria as victoria_mod
+from app.core.time import utcnow_naive
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
 from app.routers import agent as agent_router
 
@@ -46,9 +48,16 @@ def _add_check(factory, check_id, check_type, config=None):
         db.commit()
 
 
-def _set_state(factory, check_id, status, message):
+def _set_state(factory, check_id, status, message, rated_ago=timedelta(minutes=5)):
     with factory() as db:
-        db.add(MonitorState(check_id=check_id, status=status, message=message))
+        db.add(
+            MonitorState(
+                check_id=check_id,
+                status=status,
+                message=message,
+                last_check=utcnow_naive() - rated_ago,
+            )
+        )
         db.commit()
 
 
@@ -241,6 +250,30 @@ def test_throttled_collector_leaves_its_checks_as_they_were(client_db):
     assert _state(factory, "chk-docker") == ("unknown", "No Docker data in report")
 
 
+def test_a_throttled_collector_spares_its_checks_only_for_a_while(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-docker", "docker_health")
+    # Longer than eight agent runs of five minutes: the collector stopped.
+    _set_state(factory, "chk-docker", "ok", "All 3 containers healthy", timedelta(minutes=46))
+    throttled = {"self": {"collectors": {"docker": {"throttled": True}}}}
+
+    body = _post(client, throttled)
+
+    assert body["checksUpdated"] == 1
+    assert _state(factory, "chk-docker") == ("unknown", "No Docker data in report")
+
+
+def test_a_throttled_collector_spares_no_check_without_a_rating(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-docker", "docker_health")
+    throttled = {"self": {"collectors": {"docker": {"throttled": True}}}}
+
+    body = _post(client, throttled)
+
+    assert body["checksUpdated"] == 1
+    assert _state(factory, "chk-docker") == ("unknown", "No Docker data in report")
+
+
 @pytest.mark.parametrize("flag", ["true", 1, None])
 def test_only_a_real_true_throttles(client_db, flag):
     client, factory = client_db
@@ -255,11 +288,12 @@ def test_a_throttled_collector_spares_only_its_own_checks(client_db):
     client, factory = client_db
     _add_check(factory, "chk-docker", "docker_health")
     _add_check(factory, "chk-zfs", "zfs_health")
+    _set_state(factory, "chk-zfs", "ok", "Pool healthy")
 
     body = _post(client, {"self": {"collectors": {"zfs": {"throttled": True}}}})
 
     assert body["checksUpdated"] == 1
-    assert _state(factory, "chk-zfs") is None
+    assert _state(factory, "chk-zfs") == ("ok", "Pool healthy")
     assert _state(factory, "chk-docker")[0] == "unknown"
 
 
