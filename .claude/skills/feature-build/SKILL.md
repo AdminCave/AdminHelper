@@ -72,7 +72,8 @@ WT/scripts/dev/ledger.sh mark-skip WT/tasks/<slug>.md <id> "verschoben in <näch
    aus dem Log. Rot durch die Änderung → beheben; bleibt sie nach zwei Versuchen rot → zurücknehmen und `[~]`
    (CLAUDE.md §7); ist die Ursache nach zwei ähnlichen Versuchen unklar, vorher einmal `advisor` (CLAUDE.md §6). Rot
    unabhängig von der Änderung oder nicht lauffähig (Exit 2, 74, ein Pflicht-SKIP) → STOPP für diese Task, die
-   Infrastruktur melden, kein stärkeres Modell.
+   Infrastruktur melden, kein stärkeres Modell. Fixt die Task einen Wackler: zusätzlich der Dauerlauf aus
+   `.claude/rules/testing.md` („Wackler“), seine Summary in den Commit-Body.
 4. **Review** (bei `Review: pro Task`; eine Task mit `Task-Review: am Ende`, die nur Doku stagt, geht gleich zu 5):
    `reviewer` mit Einsatzart `task`, WT, Slug, Task-ID, Diff-Pfaden (`git -C WT diff HEAD -- <pfade>` plus die neuen
    Dateien), Summary-Zeile und eigenem Scratch-Verzeichnis (`mktemp -d -p <Scratchpad der Session>`); in einem

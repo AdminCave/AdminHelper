@@ -5,8 +5,10 @@ Heavy: none — Harness-Text und Harness-Skripte mit hermetischen Tests; den ech
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1335: Wackler-Fix nur mit Dauerlauf, keine kurzen festen Fristen in Tests  [ ]
+### T1 — R-1335: Wackler-Fix nur mit Dauerlauf, keine kurzen festen Fristen in Tests  [x]
 Komponente: scripts · Dateien: .claude/rules/testing.md, .claude/agents/reviewer.md, .claude/skills/feature-build/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @63b8a3380 2026-11-11T17:16:17+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T1.verdict.json)
 Änderung: testing.md bekommt die Regel „Wackler“: Ein Fix für einen belegten Wackler gilt erst nach einem grünen Dauerlauf des betroffenen Tests (50 Wiederholungen: Go `-count=50`, Rust/Python als Schleife über den Einzeltest), dessen Summary in den Commit-Body gehört. Für einen Windows-only-Wackler ohne Schleifenweg heißt der Fix „nicht verifiziert“. Dazu die Regel „Fristen“: Tests warten auf eine Bedingung mit einer Obergrenze von mindestens 30 s statt auf eine kurze feste Frist; ausgenommen ist ein Test, der die Frist selbst prüft. reviewer.md Kriterium 3: eine neue kurze feste Frist und ein Wackler-Fix ohne Dauerlauf-Beleg sind `wichtig`. /feature-build §3 Schritt 3 verweist darauf.
 Beweis: Workflow-Analyse 2026-11-11 (privat), Wackler-Tabelle: Wiederkehr nach #423, #310, #461, #445, #277/#336/#446 · Dedup-Key: ref:harness:wackler:politik
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test

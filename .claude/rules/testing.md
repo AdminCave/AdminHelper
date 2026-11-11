@@ -46,6 +46,17 @@ Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungen
   `/test`-Skill); Start auf Kevins Zuruf, `all` auch als fälliger Sammellauf (`/feature-build` §5); Abbruch nur auf
   Kevins Zuruf.
 - **Neue oder geänderte User-Journey ⇒ Live-E2E** auf der passenden Ebene (Web: Playwright; Desktop: `*.live.js`).
+- **Wackler** (Kevin 2026-11-11): Ein Fix für einen belegten Wackler gilt erst nach einem grünen Dauerlauf: 50 grüne
+  Läufe des betroffenen Tests auf seiner Plattform. Go in einem Aufruf (`bash scripts/dev/verify.sh agent --strict --
+  -run '^<Test>$' -count=50`, Beleg ist dessen Summary-Zeile); Python und Rust als Schleife mit Zähler, weil `break`
+  allein mit 0 endet: `n=0; for i in $(seq 50); do bash scripts/dev/verify.sh <komp> --strict -- <test> >/dev/null
+  2>&1 || break; n=$((n + 1)); done; echo "Dauerlauf <test>: $n/50 grün"`. Beleg ist nur `50/50 grün`, im Commit-Body
+  der Task. Ein Windows-only-Wackler ohne Schleifenweg heißt „nicht verifiziert", im Commit-Body und in der
+  Roadmap-Notiz.
+- **Fristen:** Ein Test wartet auf eine Bedingung mit einer Obergrenze von mindestens 30 s (Abfrage in kurzen
+  Abständen), nicht auf eine kurze feste Frist (`sleep`, `recv_timeout`, `wait_for` mit wenigen Sekunden) — kurze
+  Fristen waren die häufigste Ursache wiederkehrender Wackler. Ausgenommen ist ein Test, der die Frist selbst prüft;
+  er sagt das in einem Kommentar.
 - **Plattform-Code** wird auf der Plattform verifiziert: Linux auf der VM; für Windows läuft die **Go**-Suite nativ
   (CI-Job `agent-windows`: `go test -v ./...`, Build und `version`-Smoke der `.exe`), Rust per `rust-windows`
   (`cargo test --locked`). Alles andere unter Windows — Desktop-GUI, Dienst-Installation, Enrollment-Journey —

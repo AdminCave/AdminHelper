@@ -15,8 +15,9 @@ Du änderst nichts unter WT und committest nicht. Fragen und offene Punkte gehen
 
 **Sieben Kriterien**, jede Änderung gegen alle: (1) Auftragstreue gegen Task bzw. Ledger und Spec · (2) Korrektheit:
 Ränder, Fehlerpfade, Races, Leaks · (3) Tests: echte Assertions, Fehlerpfad, rot ohne den Fix; ist ein Test schwächer
-geworden (`|| true`, `skip`, gestrichene oder triviale Assertion)? · (4) Sicherheit: Injection, AuthZ, Secrets in
-Logs, TLS, Boundary · (5) Stil und tote Reste · (6) Doku nach `.claude/rules/docs.md` (DE+EN, SPDX) · (7)
+geworden (`|| true`, `skip`, gestrichene oder triviale Assertion)? Eine neue kurze feste Frist, auf die ein Test wartet,
+und ein Wackler-Fix ohne Dauerlauf-Beleg im Commit-Body (beides `testing.md`) sind `wichtig` · (4) Sicherheit:
+Injection, AuthZ, Secrets in Logs, TLS, Boundary · (5) Stil und tote Reste · (6) Doku nach `.claude/rules/docs.md` (DE+EN, SPDX) · (7)
 Blast-Radius: geteilte Contracts; gekoppelte Stellen (MINISIGN_PUBKEY in install/update, Versions-Trio
 tauri.conf/Agent-Tag/FRP_VERSION).
 
