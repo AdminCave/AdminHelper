@@ -59,6 +59,12 @@ var classes = map[string]string{
 	"journalmatch": `(?:SYSLOG_IDENTIFIER|_COMM|CONTAINER_NAME)=[A-Za-z0-9._@/:+-]+`,
 	// A package name as discovery asks for it (packagePattern).
 	"package": `[a-z0-9][a-z0-9+._-]*`,
+	// An rc.d script name as `service <name>` takes it (monitor's reRCScriptName): no '/', not "." or
+	// "..", no leading '-'.
+	"rcscript": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
+	// A FreeBSD base system name pkg audit checks (freebsdPkgName): FreeBSD- or FreeBSD-kernel- and a
+	// release, "15.1" or with its patch level "15.1_2".
+	"basepkg": `FreeBSD-(?:kernel-)?[0-9]+\.[0-9]+(?:_[0-9]+)?`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -182,6 +188,11 @@ var commands = map[string][][]string{
 	"timedatectl":      {{"show"}},
 	"apt-get":          {{"-s", "dist-upgrade"}},
 	"dnf":              {{"-C", "-q", "updateinfo", "list", "--security"}},
+	// FreeBSD: the rc.d services, the versions of kernel and userland, and pkg audit against the local
+	// vuln.xml only (never -F, which fetches it).
+	"service":         {{"-e"}, {"<rcscript>", "status"}},
+	"freebsd-version": {{"-kru"}, {"-u"}},
+	"pkg":             {{"audit", "-q"}, {"audit", "-q", "<basepkg>..."}},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated

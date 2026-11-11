@@ -73,8 +73,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T11
 Abhängt von: T2
 
-### T12 — Agent: FreeBSD-Aufrufe auf die Befehls-Freigabeliste (R-1281)  [ ]
+### T12 — Agent: FreeBSD-Aufrufe auf die Befehls-Freigabeliste (R-1281)  [x]
 Komponente: agent · Dateien: apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/rcservice.go, apps/agent/internal/monitor/rcservice_test.go, apps/agent/internal/monitor/pkgaudit_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6f4d02655 2026-11-11T08:47:10+01:00
+Review: approve (.ah-out/review/arch-freebsd-agent/T12.verdict.json)
 Beweis: feature/arch-freebsd-agent@6cadad3d3, die Stubs `fakeService` (`rcservice_test.go`) und `stubFreeBSDCalls` (`pkgaudit_test.go`) rufen `checkAllowed`; in `apps/agent`: `go test -count=1 -run 'TestRCServiceHealth$|TestFreebsdSystemState$' ./internal/monitor/` → dreimal identisch rot, 20× „call off the command allowlist“, u. a. `/usr/sbin/service ["-e"]`, `/usr/sbin/service ["cron" "status"]`, `/bin/freebsd-version ["-kru"]`, `/usr/local/sbin/pkg ["audit" "-q" "FreeBSD-15.0_3" "FreeBSD-kernel-15.0_3"]`
 Orakel: contract — die Freigabeliste ist der Vertrag, jeder Aufruf eines Stubs muss sie bestehen
 Dedup-Key: bug:agent:allowlist.go:commandAllowlist-freebsd
