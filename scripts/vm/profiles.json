@@ -19,6 +19,14 @@
     "base-debian": {
       "template_tag": "ah-tpl-base-debian",
       "note": "plain cloud image for the .deb/apt-repo roles"
+    },
+    "base-freebsd": {
+      "template_tag": "ah-tpl-base-freebsd",
+      "note": "FreeBSD's own cloud image, imported by `vm.py import` — the agent's FreeBSD box",
+      "image": {
+        "url": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+        "sha256": "e4ca4db889f8559c9b9dfcacc70405c038476f4b6d41649b152d3809a2ed9e1f"
+      }
     }
   },
   "roles": {
@@ -31,6 +39,7 @@
     "moncheck": {"memory": 2048, "cores": 2},
     "rpm": {"memory": 2048, "cores": 2},
     "probe": {"memory": 2048, "cores": 2},
+    "freebsd": {"memory": 2048, "cores": 2},
     "bake": {"memory": 4096, "cores": 6}
   }
 }

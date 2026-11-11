@@ -20,7 +20,8 @@ import (
 	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
-// Filesystem types to skip (Linux-specific; Windows ignores these).
+// Filesystem types to skip (Linux and FreeBSD; Windows ignores these). On FreeBSD the pseudo
+// filesystems and nullfs, whose mounts show a directory of another filesystem again (jails).
 var skipFSTypes = map[string]bool{
 	"squashfs": true, "tmpfs": true, "devtmpfs": true, "overlay": true,
 	"proc": true, "sysfs": true, "devpts": true, "cgroup": true,
@@ -28,6 +29,8 @@ var skipFSTypes = map[string]bool{
 	"tracefs": true, "securityfs": true, "configfs": true, "fusectl": true,
 	"mqueue": true, "hugetlbfs": true, "autofs": true, "binfmt_misc": true,
 	"efivarfs": true, "fuse.lxcfs": true,
+	"devfs": true, "fdescfs": true, "procfs": true, "linprocfs": true,
+	"linsysfs": true, "nullfs": true,
 }
 
 // Mount prefixes to skip (Linux-specific).
