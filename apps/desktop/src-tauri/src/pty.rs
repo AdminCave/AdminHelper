@@ -841,6 +841,10 @@ mod tests {
         let registry = PtyRegistry::default();
         let (mine, mine_rx) = open_for(&registry, long_running(), "main");
         let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-9");
+        // Windows: a pseudo console closed before its cursor query was answered may never end,
+        // as the answer then reaches a session that is already closing (R-1217).
+        until_ready(&registry, mine, &mine_rx);
+        until_ready(&registry, theirs, &theirs_rx);
         registry.close_all_of("main");
         until_exit(&registry, mine, &mine_rx, Vec::new());
         until_len(&registry, 1);
