@@ -157,9 +157,13 @@ echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.ad
 AH_RDP_MARKS="$E2E_WORK/rdp-marks"; mkdir -p "$AH_RDP_MARKS"; export AH_RDP_MARKS
 (
     for _ in $(seq 1 1200); do
-        if [ ! -f "$AH_RDP_MARKS/session" ] && docker exec "$GFX_C" cat /var/log/xrdp.log 2>/dev/null \
-            | grep -Eq 'session is available on display [[:digit:]]+ for user e2e$'; then
-            touch "$AH_RDP_MARKS/session"
+        # In a variable first: under pipefail a "grep -q" that stops at its match gives the "cat" in
+        # front of it a SIGPIPE, and the mark would come late or never.
+        if [ ! -f "$AH_RDP_MARKS/session" ]; then
+            xrdp_log=$(docker exec "$GFX_C" cat /var/log/xrdp.log 2>/dev/null)
+            if grep -Eq 'session is available on display [[:digit:]]+ for user e2e$' <<<"$xrdp_log"; then
+                touch "$AH_RDP_MARKS/session"
+            fi
         fi
         docker exec "$GFX_C" test -f /home/e2e/ahkey 2>/dev/null && { touch "$AH_RDP_MARKS/key"; break; }
         sleep 0.5
