@@ -68,8 +68,10 @@ Review: approve (.ah-out/review/kern-monitoring-16/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py tests/test_templates_router.py
 Doku: → T9
 
-### T6 — R-1260: Nachlese Report-Endpunkt  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_agent_report_v4.py
+### T6 — R-1260: Nachlese Report-Endpunkt  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py, apps/monitoring/tests/test_agent_report_v4.py, apps/monitoring/app/core/middleware.py, apps/monitoring/app/main.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @aaac70d4b 2026-11-11T07:33:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T6.verdict.json)
 Änderung:
 - Nach der privaten Roadmap (`routers/agent.py`, `agent_report`).
 - Test je Fall.
@@ -138,3 +140,9 @@ Task-Review: am Ende
   sonst still erst am Agenten. Andere Typen prüft der Sync weiter nicht nach: ein Ping mit leerem Hostnamen entstünde
   sonst nicht mehr, das wäre sichtbares Verhalten außerhalb dieser Zeile. Eine Vorlage, die nach dem Ersetzen nicht
   hält, legt keinen Check an; ein bestehender Check behält seinen Stand und wird nicht gelöscht.
+- T5 (Nachtrag): Der Reset eines Vorlagen-Checks prüft dieselbe Bedingung und antwortet 409, statt Werte zu
+  schreiben, die nicht halten.
+- T6: Ein gedrosselter Collector schont seine Checks höchstens 45 min seit ihrer letzten Bewertung (Agent-Takt 5 min
+  × 9, über dem Drosselfaktor 8 des Agents); ein Check ohne Bewertung wird nicht geschont. Der Report-Endpunkt nimmt
+  höchstens 10 MiB wie das Gateway, gezählt beim Lesen (auch ohne Content-Length); die Grenze sitzt innerhalb der
+  NUL-Prüfung, weil ein BaseHTTPMiddleware dazwischen ihr 413 in ein 400 verwandelt.

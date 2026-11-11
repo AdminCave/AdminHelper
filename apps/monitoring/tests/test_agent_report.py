@@ -1395,3 +1395,55 @@ def test_report_refused_for_a_nul_leaves_host_facts_alone(client_db, monkeypatch
     assert r.json()["detail"][0]["loc"] == ["body", "host", "subsystems", 0]
     assert _stored_facts(factory) == _STORED
     assert _facts_updated_at(factory) == t1
+
+
+def _liveness_rows(factory) -> int:
+    from app.models import MonitorAgentLiveness
+
+    with factory() as db:
+        return db.query(MonitorAgentLiveness).count()
+
+
+def test_a_report_over_the_size_limit_is_413_before_the_route(client_db, monkeypatch):
+    client, factory = client_db
+    monkeypatch.setattr("app.core.middleware.REPORT_BODY_LIMIT", 64)
+    body = json.dumps({"resources": {"cpu_percent": 10.0}, "pad": "x" * 64}).encode()
+
+    r = client.post(
+        "/agent/srv-1/report", content=body, headers={"Content-Type": "application/json"}
+    )
+
+    assert r.status_code == 413
+    assert _liveness_rows(factory) == 0
+
+
+def test_a_chunked_report_is_cut_off_at_the_size_limit(client_db, monkeypatch):
+    client, factory = client_db
+    monkeypatch.setattr("app.core.middleware.REPORT_BODY_LIMIT", 64)
+    body = json.dumps({"resources": {"cpu_percent": 10.0}, "pad": "x" * 64}).encode()
+
+    def chunks():
+        # Without a Content-Length: only counting while reading catches it.
+        for i in range(0, len(body), 16):
+            yield body[i : i + 16]
+
+    r = client.post(
+        "/agent/srv-1/report", content=chunks(), headers={"Content-Type": "application/json"}
+    )
+
+    assert "content-length" not in {k.lower() for k in r.request.headers}
+    assert r.status_code == 413
+    assert _liveness_rows(factory) == 0
+
+
+def test_a_report_at_the_size_limit_is_taken(client_db, monkeypatch):
+    client, factory = client_db
+    body = json.dumps({"resources": {"cpu_percent": 10.0}}).encode()
+    monkeypatch.setattr("app.core.middleware.REPORT_BODY_LIMIT", len(body))
+
+    r = client.post(
+        "/agent/srv-1/report", content=body, headers={"Content-Type": "application/json"}
+    )
+
+    assert r.status_code == 200, r.text
+    assert _liveness_rows(factory) == 1

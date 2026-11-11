@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import islice
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -51,6 +51,10 @@ _COLLECTOR_OF_CHECK = {
     "zfs_health": "zfs",
     "smart_health": "smart",
 }
+# The agent reports every 5 minutes (defaultInterval, apps/agent/cmd/adminhelper-agent) and
+# runs a throttled collector at least every 8th time (maxThrottleFactor). A check whose
+# collector sent nothing for longer than that is rated again: the collector stopped.
+_THROTTLE_SPARES_AT_MOST = timedelta(minutes=5 * 9)
 _MAX_COLLECTORS = 32
 _COLLECTOR_NAME = re.compile(r"[a-z0-9_]{1,32}")
 _COLLECTOR_NUMBERS = ("duration_ms", "cpu_ms", "timeouts", "factor")
@@ -108,7 +112,7 @@ def agent_report(
     check_lines: list[str] = []
     now = utcnow_naive()
     for check in _push_checks(db, server_id):
-        if _COLLECTOR_OF_CHECK.get(check.check_type) in throttled:
+        if _spared_by_throttle(db, check, throttled, now):
             continue
         # Isolate each check: a single broken check.config (or a checker raising)
         # must not abort the evaluation of all other checks for this server
@@ -137,6 +141,19 @@ def agent_report(
         background_tasks.add_task(dispatch_alert_bg, check_id, old_s, new_s)
 
     return {"status": "ok", "metricsWritten": len(lines), "checksUpdated": checks_updated}
+
+
+def _spared_by_throttle(
+    db: Session, check: MonitorCheck, throttled: set[str], now: datetime
+) -> bool:
+    """Whether the check keeps its state because the agent throttled its collector:
+    only while its last rating is recent, never for a check without one."""
+    if _COLLECTOR_OF_CHECK.get(check.check_type) not in throttled:
+        return False
+    state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+    if state is None or state.last_check is None:
+        return False
+    return now - state.last_check < _THROTTLE_SPARES_AT_MOST
 
 
 def _record_liveness(db: Session, server_id: str) -> None:
