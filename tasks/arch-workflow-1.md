@@ -63,8 +63,10 @@ Beweis: Teil rest p50 111 min seit 11-05, Server-pytest p50 1 817 s; einziger VM
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: → T7
 
-### T7 — Doku: Wochenlauf nachts, Klasse `fund`, Timer  [ ]
+### T7 — Doku: Wochenlauf nachts, Klasse `fund`, Timer  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b2a0e40c6 2026-11-11T20:03:37+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: DEVELOPMENT.md, Abschnitt „Wochenlauf (heavy.sh)“: Auslöser nachts per `nightly.sh` (install/uninstall/status, Logdatei), samstags `weekly`; ggf. Server-pytest außerhalb des Box-Laufs. cicd.html DE+EN, Abschnitt „Wochenlauf“: Auslöser und die Klasse `fund`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md, docs/developer/cicd.html DE+EN
