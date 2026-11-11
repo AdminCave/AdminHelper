@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-ansible-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible::
 Doku: → T3
 
-### T2 — R-1214: ProxyJump aus der SSH-Konfiguration bei --ask-pass  [ ]
+### T2 — R-1214: ProxyJump aus der SSH-Konfiguration bei --ask-pass  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/ansible.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @2f5509a45 2026-11-11T08:54:29+01:00
+Review: approve (.ah-out/review/kern-ansible-3/T2.verdict.json)
 Abhängt von: T1
 Änderung: In einem Lauf mit `--ask-pass` ermittelt `generate_inventory` je Ziel die ganze Sprung-Kette, wie ssh sie gehen würde: Hat die Verbindung keinen Sprung-Host, `ProxyJump` aus `ssh -G [-l user] [-p port] <host>` (auch für Ziele ohne Verbindung); dann, solange der erste Hop laut `ssh -G` selbst ein `ProxyJump` hat, dessen Hops davor (ssh baut nur das erste Bein mit der Konfiguration). Hops aus `ssh -G` werden normalisiert (`[v4/Name]:port` → `v4/Name:port`), die Kette wie in T1 zum `ProxyCommand`. `none` aus der Verbindung → keine Auflösung. Bricht `ssh -G` ab, wird die Kette länger als 8 Hops oder lehnt die Jump-Prüfung (`JUMP_RE`) sie ab, startet der Lauf nicht; die Meldung ist englisch und nennt das Ziel. Den Resolver kann der Test einsetzen. Tests: Resolver liefert Kette → ProxyCommand; Hop mit eigenem ProxyJump → Kette verlängert; `none` und leer → unverändert; Fehler, Zyklus, abgelehnter Hop → Validation-Fehler; unter Unix das echte `ssh -G -F <Temp-Konfig>` mit `ProxyJump`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- ansible::
