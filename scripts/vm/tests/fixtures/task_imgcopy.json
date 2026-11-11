@@ -1,0 +1,18 @@
+{
+  "body": {
+    "data": {
+      "exitstatus": "OK",
+      "id": "",
+      "node": "<node>",
+      "pid": 4016004,
+      "pstart": 1030676324,
+      "starttime": 1794389839,
+      "status": "stopped",
+      "tokenid": "<tokenid>",
+      "type": "imgcopy",
+      "upid": "UPID:<node>:003D4784:3D6EDF64:6AF4374F:imgcopy::<user>@pve!<tokenid>:",
+      "user": "<user>@pve"
+    }
+  },
+  "status": 200
+}
