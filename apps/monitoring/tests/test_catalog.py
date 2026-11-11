@@ -133,6 +133,45 @@ def test_required_sensor_params_are_enforced():
     assert "query" in error
 
 
+def _log_check(**params):
+    raw = _check(sensor="log", target=None, params=params, fields=["count"], rules=[])
+    raw.pop("credential")
+    return raw
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"unit": "nginx.service", "match": "SYSLOG_IDENTIFIER=sshd"},
+        {"unit": "getty@tty1.service", "match": "CONTAINER_NAME=paperless-web-1"},
+        {"unit": r"systemd-fsck@dev-disk-by\x2duuid-1.service"},
+        {"unit": "a" * 255, "match": "_COMM=" + "b" * 100},
+    ],
+)
+def test_log_params_the_agent_takes_are_valid(params):
+    assert _load(_module(checks=[_log_check(**params)], card=[])).errors == ()
+
+
+@pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        # The agent takes one unit name, no glob, and answers anything else with invalid.
+        ({"unit": "nginx*"}, "unit"),
+        ({"unit": "ngi nx.service"}, "unit"),
+        ({"unit": "ä.service"}, "unit"),
+        ({"unit": "nginx.service\n"}, "unit"),
+        ({"match": "nginx"}, "match"),
+        ({"match": "MESSAGE=x"}, "match"),
+        ({"match": "_COMM="}, "match"),
+        ({"match": "_COMM=a b"}, "match"),
+        ({"match": "_COMM=" + "b" * 101}, "match"),
+    ],
+)
+def test_log_params_the_agent_refuses_are_rejected(params, field):
+    assert field in _only_error(_load(_module(checks=[_log_check(**params)], card=[])))
+
+
 def test_sql_query_is_a_fixed_name_not_sql_text():
     sql = _check(
         sensor="sql",
