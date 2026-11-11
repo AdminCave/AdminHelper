@@ -27,6 +27,14 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   des Kontexts baut ein `scratch`-Image aus genau diesem Kontext. `COPY --chmod` setzt BuildKit voraus (Compose v2,
   buildx in den Workflows, `docker build` ab Docker 23). Dass kein Programm im Image setuid/setgid trägt, belegt
   weiter der bestehende Image-Test in `test_frps_supervisor.py`.
+- Session 2026-11-11 (T5): Die Wartezeit auf `/healthz` ist `FRPS_READ_SECONDS` (wie die Dashboard-Abfragen), keine
+  eigene Variable. Das Plugin läuft unter eigener UID, nicht unter der von `frps-fetch` (der Supervisor lehnt root,
+  die UIDs von frps und den Abfragen und die Gruppe von frps ab). Es läuft bis zum Ende des Supervisors, über
+  Neustarts von frps und eine entfernte Eingabe hinweg, und zieht nur um, wenn eine neue Kopie seinen Port belegt.
+  Eine Kopie aus einem früheren Lauf ohne genau den angehängten Block (auch nach geändertem `FRPS_POLICY_PORT`)
+  verwirft er. Ein hängendes Plugin endet per KILL, nicht TERM. frps startet auch, wenn das Plugin nicht antwortet:
+  frps lehnt dann jede Anmeldung ab (fail-closed), der nächste Poll startet das Plugin neu. Die Tests nehmen den
+  Plugin-Port vom Kernel, nicht den festen Standard (parallele Läufe).
 
 ### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml, apps/server/tests/test_frp_input_hardening.py
@@ -62,8 +70,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_policy_ima
 Doku: → T7
 Abhängt von: T2
 
-### T5 — frps-Supervisor: Plugin starten, überwachen, anbinden  [ ]
-Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor_policy.py
+### T5 — frps-Supervisor: Plugin starten, überwachen, anbinden  [x]
+Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor_policy.py, apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @cd40e8a62 2026-11-11T11:34:06+01:00
+Review: approve (.ah-out/review/arch-frps-identity/T5.verdict.json)
 Änderung: Der Supervisor startet das Plugin als `frps-policy` vor frps auf `127.0.0.1` (fester Standard-Port, Ausweichen bei Belegung durch `bindPort`, `vhostHTTPSPort`, `webServer.port` der geprüften Konfiguration), wartet auf `/healthz`, hängt an seine geprüfte Kopie von frps.toml einen festen Block `[[httpPlugins]]` (`ops = ["NewProxy"]`) und lehnt `[[httpPlugins]]` im Eingang weiter ab. Jeder Poll prüft das Plugin (als `frps-fetch`, kurzes `--max-time`); bleibt es aus, beendet er es hart und startet es neu, das Log nennt den Neustart; beim Ende des Supervisors endet auch das Plugin. `kill_left` trifft das Plugin nicht (eigene UID). Tests in neuer Datei (die Helfer aus `test_frps_supervisor.py` mitbenutzt): Block in `current/frps.toml`, Port-Ausweichen, Eingang mit Plugin-Block abgelehnt, Neustart nach Ausfall, sauberes Ende; shellcheck wie in der CI.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor_policy.py tests/test_frps_supervisor.py
 Doku: → T7
