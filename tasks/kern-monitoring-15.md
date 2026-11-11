@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/kern-monitoring-15/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/...
 Doku: → T8
 
-### T2 — R-1256: Collector-Stubs prüfen jeden Aufruf gegen die Freigabeliste  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist_test.go
+### T2 — R-1256: Collector-Stubs prüfen jeden Aufruf gegen die Freigabeliste  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/updates_linux_test.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f20b7be95 2026-11-11T06:07:06+01:00
+Review: approve (.ah-out/review/kern-monitoring-15/T2.verdict.json)
 Änderung:
 - Die Stubs der Collector-Tests (`stubPvesh`, `stubZpool` …) prüfen jeden aufgezeichneten Aufruf mit
   `commandAllowed`. Ein Aufruf außerhalb der Liste lässt den Test scheitern.
@@ -102,3 +104,6 @@ Task-Review: am Ende
   einen Stub, der `allowlist.Allowed` prüft. So fällt eine Drift auf, ohne dass `allowlist` `probe` importiert.
 - T1: Die Stubs von probe und discovery prüfen jeden Aufruf mit `allowlist.Allowed`; der Kappungstest bekam echte
   64-stellige Container-IDs statt Zählnummern.
+- T2: Die Tabelle in `TestAllowlistTakesEveryCollectorCall` behält nur, was kein Stub zeigt: smartctl über einen
+  absoluten Pfad der Plattform, die `sc`-Aufrufe (Windows) und Formen variabler Teile, die die Stub-Antworten nicht
+  tragen. Der smartctl-Stub prüft den Basisnamen, weil `/usr/sbin/smartctl` unter Windows kein absoluter Pfad ist.
