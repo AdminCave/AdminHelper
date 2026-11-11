@@ -15,7 +15,7 @@ Komponente: server · Dateien: apps/server/tests/test_frps_supervisor.py
 Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e97a297d5 2026-11-11T08:21:46+01:00
 Review: am Ende (Branch-Review)
 Beweis: reviewer ci-8 branch 2026-11-10 · PR #453 Lauf 42859714863 (a2fa262), Datei vom Branch nicht berührt · Dedup-Key: bug:server:test_frps_supervisor:dashboard-poll-timeout
-Änderung: `_with_dashboard` fängt das Timeout des Wartens auf die vier Listen und wirft es mit den Requests, die das Dashboard sah (`dashboard.requests`, `dashboard.clients`), und den vorhandenen Listen (`_proxy_files`) neu. Gegenprobe: ein Dashboard, das nie antwortet (hang), liefert die Diagnose in der Meldung; grüner Pfad unverändert.
+Änderung: `_with_dashboard` fängt das Timeout des Wartens auf die vier Listen und wirft es mit den Requests, die das Dashboard sah (`dashboard.requests`), und den vorhandenen Listen (`_proxy_files`) neu. Gegenprobe: ein Dashboard, das nie antwortet (hang), liefert die Diagnose in der Meldung; grüner Pfad unverändert.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: keine (Tests)
 

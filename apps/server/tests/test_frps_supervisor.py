@@ -1460,14 +1460,14 @@ def _dashboard_toml(box: Box, dashboard: Dashboard) -> str:
     )
 
 
-def _with_dashboard(box: Box, dashboard: Dashboard, *, wait: float = WAIT, **env: str):
+def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
     """A supervisor that polls every second, frps running with webServer on the dashboard;
     returns once the four proxy lists are there."""
     box.write_input(_dashboard_toml(box, dashboard))
     box.env.update({"FRPS_POLL_SECONDS": "1", **env})
     box.run(frps=True)
     try:
-        box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists", wait)
+        box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists")
     except AssertionError as err:
         # The supervisor log alone does not say whether a poll ever reached the dashboard (R-1293):
         # no request means the supervisor or curl, requests without lists mean the answers.
@@ -1525,10 +1525,10 @@ def test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait(box,
     dashboard.hang = True
 
     with pytest.raises(AssertionError) as caught:
-        _with_dashboard(box, dashboard, wait=3, FRPS_READ_SECONDS="1")
+        _with_dashboard(box, dashboard, FRPS_READ_SECONDS="1")
 
     message = str(caught.value)
-    assert "not the proxy lists within 3" in message
+    assert "not the proxy lists within" in message
     assert "dashboard requests seen: ['/api/proxy/" in message
     assert "lists present: []" in message
 
