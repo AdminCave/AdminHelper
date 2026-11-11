@@ -90,7 +90,7 @@ jobs:
       # of frps (the frps image and the Go image its plugin builds on), of the gateway and of
       # the Python images, whose last stage builds on the base of apps/ca-issuer. They do not
       # depend on the Python version, so one leg runs them. The image of each FROM, without
-      # the name of its stage.
+      # the name of its stage; and the frpc image the live test of frps' plugin pins.
       - name: Pull the base images of the image tests
         if: matrix.python-version == '3.14'
         run: |
@@ -99,6 +99,8 @@ jobs:
               docker pull "$base"
             done
           done
+          frpc=$(sed -n 's/^FRPC_IMAGE = "\(.*\)"$/\1/p' apps/server/tests/test_frps_policy_live.py)
+          docker pull "$frpc"
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.

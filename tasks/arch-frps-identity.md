@@ -35,6 +35,11 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   verwirft er. Ein hängendes Plugin endet per KILL, nicht TERM. frps startet auch, wenn das Plugin nicht antwortet:
   frps lehnt dann jede Anmeldung ab (fail-closed), der nächste Poll startet das Plugin neu. Die Tests nehmen den
   Plugin-Port vom Kernel, nicht den festen Standard (parallele Läufe).
+- Session 2026-11-11 (T6): Das frpc-Image ist im Test per Digest gepinnt (eine Zeile `FRPC_IMAGE`, der CI-Schritt
+  der Image-Tests zieht es von dort); ein Test bindet seine Version an das `FROM` des frps-Images, das der Job
+  `frp-consistency` schon mit `FRP_VERSION` abgleicht, daher kein weiterer Pin dort. Der `tcp`-Fall mit
+  `remotePort` endet am Typ (`other type`), weil das Plugin den Typ vor dem Port prüft; den Zweig `remote port`
+  decken die Go-Tests des Plugins.
 
 ### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml, apps/server/tests/test_frp_input_hardening.py
@@ -79,8 +84,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor
 Doku: → T7
 Abhängt von: T4
 
-### T6 — Live: frps mit Plugin gegen echten frpc  [ ]
+### T6 — Live: frps mit Plugin gegen echten frpc  [x]
 Komponente: server · Dateien: apps/server/tests/test_frps_policy_live.py, .github/workflows/ci.yml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d4a318c32 2026-11-11T11:48:55+01:00
+Review: approve (.ah-out/review/arch-frps-identity/T6.verdict.json)
 Änderung: Neuer Docker-Test (SPDX-Header) mit dem gebauten frps-Image und `snowdreamtech/frpc` in der Version aus `FRP_VERSION`: Policy und frpc.toml aus dem echten Generator (T1, T3). Ein eigener `stcp`- und `https`-Proxy meldet sich an; abgelehnt werden: ohne oder mit falschem Schlüssel, ein Proxy-Name eines anderen Servers unter eigenem `user`, ein fremder `user` mit eigenem Schlüssel, eine nicht zugeordnete Domain, ein `tcp`-Proxy mit `remotePort`, eine gesetzte Gruppe; ohne Policy-Datei meldet sich nichts an. Der CI-Schritt der Image-Tests zieht zusätzlich das frpc-Image. Unter `--strict` ist ein Skip bei vorhandenem Docker rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_policy_live.py
 Doku: → T7
