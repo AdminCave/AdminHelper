@@ -570,7 +570,7 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
 
   # Whatever the exit code says, the artifact is what the box actually did.
   local art="$pull/last-all.json" tsv="$OUT/steps-all.tsv" name result secs part verdict
-  local reds=0 redsteps=0 unretried="" steps_read=0 theirs ours=0
+  local reds=0 redsteps=0 funds=0 unretried="" steps_read=0 theirs ours=0
   if [ -f "$art" ]; then
     theirs="$(artifact_is_ours "$art" "$label")" || ours=$?
     if [ "$ours" = 3 ]; then
@@ -624,6 +624,7 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
         case "$verdict" in
           flaky) ;;
           infra) unretried="${unretried:+$unretried, }$name" ;;
+          fund) funds=$((funds + 1)) ;;
           *) reds=$((reds + 1)) ;;
         esac
       fi
@@ -644,8 +645,11 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
     # nothing about it was learned, so the part is UNVERIFIED (R-1206).
     PART_RESULT=infra PART_DETAIL="red step(s) could not be retried (not addressable by --step): $unretried"
     [ "$reds" -gt 0 ] && PART_DETAIL="$PART_DETAIL; $reds step(s) red after retries"
+    [ "$funds" -gt 0 ] && PART_DETAIL="$PART_DETAIL; $funds fuzz find(s), not retried"
   elif [ "$reds" -gt 0 ]; then
     PART_RESULT=fail PART_DETAIL="$reds step(s) red after retries"
+  elif [ "$funds" -gt 0 ]; then
+    PART_RESULT=fail PART_DETAIL="$funds fuzz find(s), not retried"
   elif [ "$redsteps" -gt 0 ]; then
     # Red steps, all of them green again on a retry: the wrapper's non-zero exit
     # is explained, and a quarantined flake is not a failing run (spec 3b).
@@ -722,9 +726,19 @@ rerun_step() {  # rerun_step <slot> <step> <spec-or-empty> <logfile> -> rc
 
 classify_red_step() {  # classify_red_step <step> <all-log> <box> <slot>; sets CLASS_VERDICT
   local step="$1" log="$2" box="$3" slot="$4" spec i rc rlog marker first="" same=1 safe
+  CLASS_VERDICT="fail"; STEP_DETAIL=""
+  # A fuzz find does not repeat on demand: schemathesis draws new examples each
+  # run, so a green retry proves nothing, and the base commit carries the same
+  # latent bug. Retry and counter-check labelled four product bugs flaky or
+  # extern (09-25 to 11-04, R-1337). The failing example is in the log: a FUND,
+  # red, for a BUG row — never quarantined, never a regression claim.
+  if [ "$step" = schemathesis ]; then
+    CLASS_VERDICT="fund"; STEP_DETAIL="fuzz find, not retried: the failing example is in the log — a BUG row, a neutral SEC row instead if it touches auth, enrollment, tokens or a path of scripts/dev/review-risk.txt"
+    note "red step 'schemathesis' -> fund (a fuzz find does not repeat on demand; no retry)"
+    return 0
+  fi
   spec="$(failing_spec "$step" "$log")"
   safe="$(printf '%s' "$step" | tr -c 'A-Za-z0-9._-' '_')"
-  CLASS_VERDICT="fail"; STEP_DETAIL=""
   note "red step '$step'${spec:+ (spec $spec)} — up to $RETRIES retries on $box"
   for i in $(seq 1 "$RETRIES"); do
     rlog="$OUT/retry-$safe-$i.log"
@@ -1288,7 +1302,7 @@ write_report() {
     local sichten=""
     for e in ${FINDINGS+"${FINDINGS[@]}"}; do
       IFS='|' read -r ebene schritt ergebnis secs vm detail <<<"$e"
-      case "$ergebnis" in unbestaetigt|extern) sichten="$sichten- \`$schritt\` ($ergebnis): $detail
+      case "$ergebnis" in unbestaetigt|extern|fund) sichten="$sichten- \`$schritt\` ($ergebnis): $detail
 " ;; esac
     done
     if [ -n "$sichten" ]; then

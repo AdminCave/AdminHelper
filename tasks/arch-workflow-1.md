@@ -35,8 +35,10 @@ Beweis: Sammelläufe 10-15…11-11: 14 je Woche nach der Schwelle 3 Merges, Caps
 Verify: bash scripts/dev/verify.sh scripts --strict -- nightly_test run_flags_test
 Doku: → T7
 
-### T4 — R-1337: heavy.sh — schemathesis-Rot ist `fund`, nicht flaky/extern  [ ]
+### T4 — R-1337: heavy.sh — schemathesis-Rot ist `fund`, nicht flaky/extern  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ac1aebc91 2026-11-11T17:58:53+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T4.verdict.json)
 Änderung: classify_red_step gibt dem Schritt `schemathesis` sofort das Urteil `fund`: kein Retry, keine Zweit-VM, Detail „Fuzz-Fund: Beispiel im Log, BUG-Zeile anlegen“. Der Teil zählt den Schritt als rot (FAIL). Der Report führt `fund` in der Sichtungsliste, ohne REG-Zeile. Prüfen und nötigenfalls ergänzen, dass `weekly` vor der Capstone die eigene warm gehaltene Box des Teils `all` freigibt. heavy_test.sh deckt `fund` ab (Teil FAIL, kein Retry-Aufruf, kein REG-Eintrag).
 Beweis: Sammelläufe 09-25, 11-02, 11-04-0628, 11-04-1951: schemathesis-Produktfehler als flaky/extern etikettiert (R-0089, R-1107, R-1131) · Dedup-Key: ref:harness:heavy:schemathesis-fund
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
