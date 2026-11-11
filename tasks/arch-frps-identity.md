@@ -21,6 +21,12 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   Workern: ein veralteter Stand hält höchstens bis zum nächsten Abgleich (60 s), frps prüft nur bei der Anmeldung,
   frpc meldet einen abgelehnten Proxy erneut an. Kein Hook beim Anlegen einer FRP-Konfiguration (noch keine
   Tunnel); keine conftest-Umleitung von `FRP_CONFIG_DIR` (API-Tests schreiben wie bisher frps.toml dorthin).
+- Session 2026-11-11 (T4): Das `golang`-Image ist per Index-Digest gepinnt (jede Architektur), seine Go-Version
+  muss mindestens die `toolchain` aus `apps/agent/go.mod` sein, nicht gleich (ein neueres Go-Image für einen
+  Sicherheitsfix braucht keinen go.mod-Bump). Tests und `testdata` bleiben außerhalb des Build-Kontexts; der Test
+  des Kontexts baut ein `scratch`-Image aus genau diesem Kontext. `COPY --chmod` setzt BuildKit voraus (Compose v2,
+  buildx in den Workflows, `docker build` ab Docker 23). Dass kein Programm im Image setuid/setgid trägt, belegt
+  weiter der bestehende Image-Test in `test_frps_supervisor.py`.
 
 ### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml, apps/server/tests/test_frp_input_hardening.py
@@ -47,8 +53,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py t
 Doku: → T7
 Abhängt von: T1, T2
 
-### T4 — frps-Image: mehrstufiger Build mit dem Plugin  [ ]
+### T4 — frps-Image: mehrstufiger Build mit dem Plugin  [x]
 Komponente: server · Dateien: apps/frps/Dockerfile, apps/frps/Dockerfile.dockerignore, docker-compose.test.yml, .github/workflows/ci.yml, .github/workflows/docker.yml, apps/server/tests/test_frps_policy_image.py, apps/server/tests/test_compose_frps.py, apps/server/tests/test_release_images.py, apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @923fc9626 2026-11-11T10:26:54+01:00
+Review: approve (.ah-out/review/arch-frps-identity/T4.verdict.json)
 Änderung: Go-Stufe auf einem per Digest gepinnten `golang`-Image ≥ der Toolchain aus `apps/agent/go.mod` baut `./cmd/frps-policy` statisch (`CGO_ENABLED=0`, `GOTOOLCHAIN=local`, `GOPROXY=off`, `-trimpath`); die frps-Stufe bleibt auf der gepinnten snowdreamtech-Basis, bekommt das Binary root-eigen mit 0711 und einen eigenen Nutzer `frps-policy` (UID/GID 10004, nicht in der Gruppe `frps`). Build-Kontext wird die Repo-Wurzel, `Dockerfile.dockerignore` (SPDX-Kommentar) lässt nur Supervisor und die Go-Quellen des Plugins zu. Mitgezogen: Compose-Overlay, CI-Matrix `docker-build`, `docker.yml`, der CI-Schritt, der die Basen der Image-Tests zieht (jede `FROM`-Basis, keine Stufen-Alias), und die Tests, die Kontext und Basis lesen (`_image()`/`_built_frps_image` in `test_frps_supervisor.py`; vorher `origin/main` mit #461 hineinmergen, das dieselbe Datei ändert). Neue Tests: Image baut, Binary vorhanden mit 0711 und root-eigen, Nutzer 10004 ohne Gruppe `frps`, kein setuid/setgid. Neun Dateien: jeder Ort, der das frps-Image baut, wechselt den Kontext gemeinsam. Der PR ändert damit `.github/workflows/`: Kevin merged.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_policy_image.py tests/test_compose_frps.py tests/test_release_images.py tests/test_frps_supervisor.py
 Doku: → T7

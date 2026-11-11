@@ -30,10 +30,11 @@ directory (proxy-<type>.json, 0644), each answer as it came; a failed request or
 
 The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
 off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
-HTTP server stands in for the dashboard. Some tests run the frps image built from apps/frps,
-with the capabilities and security options compose gives it, the real frps under its own user
-and the requests to its dashboard under another, each from a program its user can only execute
-and so not dumpable; they skip when Docker or the pinned base image is not at hand."""
+HTTP server stands in for the dashboard. Some tests run the frps image built from
+apps/frps/Dockerfile, with the capabilities and security options compose gives it, the real frps
+under its own user and the requests to its dashboard under another, each from a program its user
+can only execute and so not dumpable; they skip when Docker or a pinned base image is not at
+hand."""
 
 import base64
 import contextlib
@@ -67,7 +68,8 @@ from app.modules.frp.supervisor_status import SupervisorStatus, read_supervisor_
 
 FRPS_DIR = Path(__file__).resolve().parents[2] / "frps"
 SCRIPT = FRPS_DIR / "frps-supervisor.sh"
-COMPOSE = FRPS_DIR.parents[1] / "docker-compose.yml"
+REPO_ROOT = FRPS_DIR.parents[1]
+COMPOSE = REPO_ROOT / "docker-compose.yml"
 TOKEN = "test-token-0123456789abcdef"
 NEW_TOKEN = "next-token-fedcba9876543210"
 PEMS = ("frps.crt", "frps.key", "ca.crt")
@@ -2038,14 +2040,21 @@ def test_the_supervisor_asks_the_dashboard_as_a_user_of_its_own_the_image_create
     assert uid not in (0, _frps_user()[1])
 
 
+def _bases() -> list[str]:
+    """The image of each FROM in the Dockerfile, without the name of its stage."""
+    bases = re.findall(r"^FROM (\S+)", (FRPS_DIR / "Dockerfile").read_text(), re.M)
+    assert bases, "no FROM in the frps Dockerfile"
+    return bases
+
+
 def _image() -> tuple[str, str, list[str]]:
-    """Base image, the script's place in the image and the entrypoint, as in the Dockerfile."""
+    """Base image of the last stage, the script's place in the image and the entrypoint, as in
+    the Dockerfile."""
     dockerfile = (FRPS_DIR / "Dockerfile").read_text()
-    base = re.search(r"^FROM (\S+)$", dockerfile, re.M)
-    target = re.search(r"^COPY frps-supervisor\.sh (\S+)$", dockerfile, re.M)
+    target = re.search(r"^COPY apps/frps/frps-supervisor\.sh (\S+)$", dockerfile, re.M)
     entrypoint = re.search(r"^ENTRYPOINT (\[.*\])$", dockerfile, re.M)
-    assert base and target and entrypoint, dockerfile
-    return base[1], target[1], json.loads(entrypoint[1])
+    assert target and entrypoint, dockerfile
+    return _bases()[-1], target[1], json.loads(entrypoint[1])
 
 
 def _compose_frps() -> dict:
@@ -2065,17 +2074,20 @@ def _security_args(frps: dict) -> list[str]:
 
 
 def _built_frps_image():
-    """Builds the image from apps/frps, yields (docker, tag) and removes the image again; skips
-    when Docker or the pinned base image is not at hand."""
-    base, _, _ = _image()
+    """Builds the image of apps/frps/Dockerfile from the repository root, as compose and the
+    workflows do, yields (docker, tag) and removes the image again; skips when Docker or one of
+    the pinned base images is not at hand."""
     docker = shutil.which("docker")
     if docker is None:
         pytest.skip("docker is not available")
-    if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
-        pytest.skip(f"no docker daemon or {base} not present locally")
+    for base in _bases():
+        if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
+            pytest.skip(f"no docker daemon or {base} not present locally")
     tag = f"adminhelper-test/frps-supervisor:{uuid.uuid4().hex[:12]}"
     build = subprocess.run(
-        [docker, "build", "-q", "-t", tag, str(FRPS_DIR)], capture_output=True, text=True
+        [docker, "build", "-q", "-t", tag, "-f", str(FRPS_DIR / "Dockerfile"), str(REPO_ROOT)],
+        capture_output=True,
+        text=True,
     )
     assert build.returncode == 0, build.stderr
     try:

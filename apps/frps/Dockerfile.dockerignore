@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The context of apps/frps/Dockerfile is the repository root; it takes the supervisor and the
+# Go sources of the plugin frps-policy, nothing else (no tests, no test data).
+*
+!apps/frps/frps-supervisor.sh
+!apps/agent/go.mod
+!apps/agent/go.sum
+!apps/agent/cmd/frps-policy/*.go
+!apps/agent/internal/frpspolicy/*.go
+apps/agent/**/*_test.go
