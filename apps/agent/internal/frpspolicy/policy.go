@@ -1,0 +1,243 @@
+// SPDX-FileCopyrightText: 2026 Kevin Stenzel
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Package frpspolicy is frps' server plugin for the op NewProxy: it admits a proxy only if
+// the policy file the AdminHelper server writes (apps/server/app/modules/frp/policy.py)
+// holds it for the host that registers it, with the fields the server's frpc.toml
+// generator writes for that tunnel. Everything else is refused, and so is every proxy
+// while the policy file is missing or broken.
+package frpspolicy
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"slices"
+	"strings"
+	"sync"
+)
+
+// Version is the policy format this plugin reads.
+const Version = 1
+
+// KeyMeta is the proxy metadatas field that carries the host's key (proxy_key.py).
+const KeyMeta = "ahProxyKey"
+
+// MaxPolicySize bounds the policy file; a few hundred bytes per tunnel leave room for
+// tens of thousands.
+const MaxPolicySize = 8 << 20
+
+// Proxy is one tunnel of a host, with the fields the generator writes for it.
+type Proxy struct {
+	Type          string   `json:"type"`
+	CustomDomains []string `json:"customDomains"`
+	Subdomain     string   `json:"subdomain"`
+	Group         string   `json:"group"`
+	// SHA-256 of loadBalancer.groupKey as hex, "" without one.
+	GroupKeyHash string `json:"groupKeyHash"`
+}
+
+// Server is one host: the SHA-256 of its key as hex and its tunnels by ID.
+type Server struct {
+	KeyHash string           `json:"keyHash"`
+	Proxies map[string]Proxy `json:"proxies"`
+}
+
+// Policy is the content of the policy file: the hosts by server ID.
+type Policy struct {
+	Version int               `json:"version"`
+	Servers map[string]Server `json:"servers"`
+}
+
+// NewProxy holds the fields of frps' NewProxy content (frp v0.72.0,
+// pkg/plugin/server/types.go NewProxyContent) the decision reads.
+type NewProxy struct {
+	User struct {
+		User string `json:"user"`
+	} `json:"user"`
+	ProxyName     string            `json:"proxy_name"`
+	ProxyType     string            `json:"proxy_type"`
+	Group         string            `json:"group"`
+	GroupKey      string            `json:"group_key"`
+	Metas         map[string]string `json:"metas"`
+	RemotePort    int               `json:"remote_port"`
+	CustomDomains []string          `json:"custom_domains"`
+	SubDomain     string            `json:"subdomain"`
+}
+
+// Parse reads a policy and holds it to the format: version 1, no unknown field, hashes
+// as 64 lowercase hex digits, the tunnel types the server writes.
+func Parse(data []byte) (*Policy, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var p Policy
+	if err := dec.Decode(&p); err != nil {
+		return nil, fmt.Errorf("policy: %w", err)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("policy: data after the JSON object")
+	}
+	if p.Version != Version {
+		return nil, fmt.Errorf("policy: version %d, want %d", p.Version, Version)
+	}
+	if p.Servers == nil {
+		return nil, errors.New("policy: no servers")
+	}
+	for id, srv := range p.Servers {
+		if id == "" {
+			return nil, errors.New("policy: a server without an ID")
+		}
+		if !isHash(srv.KeyHash) {
+			return nil, fmt.Errorf("policy: server %q: keyHash is no SHA-256 in hex", id)
+		}
+		for name, proxy := range srv.Proxies {
+			if name == "" {
+				return nil, fmt.Errorf("policy: server %q: a proxy without an ID", id)
+			}
+			if proxy.Type != "stcp" && proxy.Type != "https" {
+				return nil, fmt.Errorf("policy: proxy %q: type %q", name, proxy.Type)
+			}
+			if proxy.GroupKeyHash != "" && !isHash(proxy.GroupKeyHash) {
+				return nil, fmt.Errorf("policy: proxy %q: groupKeyHash is no SHA-256 in hex", name)
+			}
+		}
+	}
+	return &p, nil
+}
+
+func isHash(s string) bool {
+	if len(s) != 2*sha256.Size {
+		return false
+	}
+	for _, c := range s {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// hashEqual compares the SHA-256 of secret with wantHex in constant time.
+func hashEqual(secret, wantHex string) bool {
+	want, err := hex.DecodeString(wantHex)
+	if err != nil || len(want) != sha256.Size {
+		return false
+	}
+	sum := sha256.Sum256([]byte(secret))
+	return subtle.ConstantTimeCompare(sum[:], want) == 1
+}
+
+// Decide returns "" if the policy admits the proxy, otherwise why not. The reason goes to
+// the plugin's log only; it names no value from the request.
+func (p *Policy) Decide(np *NewProxy) string {
+	user := np.User.User
+	srv, ok := p.Servers[user]
+	if user == "" || !ok {
+		return "unknown user"
+	}
+	key, ok := np.Metas[KeyMeta]
+	if !ok || key == "" {
+		return "no key"
+	}
+	if !hashEqual(key, srv.KeyHash) {
+		return "wrong key"
+	}
+	// frpc registers a proxy as "<user>.<name>"; the name is the tunnel ID.
+	tunnel, ok := strings.CutPrefix(np.ProxyName, user+".")
+	if !ok {
+		return "name without the user prefix"
+	}
+	want, ok := srv.Proxies[tunnel]
+	if !ok {
+		return "no tunnel of this user"
+	}
+	switch {
+	case np.ProxyType != want.Type:
+		return "other type"
+	case !slices.Equal(np.CustomDomains, want.CustomDomains):
+		return "other custom domains"
+	case np.SubDomain != want.Subdomain:
+		return "other subdomain"
+	case np.Group != want.Group:
+		return "other group"
+	case want.GroupKeyHash == "" && np.GroupKey != "":
+		return "other group key"
+	case want.GroupKeyHash != "" && !hashEqual(np.GroupKey, want.GroupKeyHash):
+		return "other group key"
+	case np.RemotePort != 0:
+		return "remote port"
+	}
+	return ""
+}
+
+// Source reads the policy file and reads it again only when it changed: another file at
+// the path (the server replaces it atomically), another size or another mtime.
+type Source struct {
+	path string
+
+	mu     sync.Mutex
+	info   os.FileInfo // of the file policy and err come from; nil to read again
+	policy *Policy
+	err    error
+}
+
+// NewSource returns a Source for the policy file at path.
+func NewSource(path string) *Source {
+	return &Source{path: path}
+}
+
+// Current returns the policy the file holds now, or why there is none: the file is
+// missing, no regular file (a link counts as none), larger than MaxPolicySize or broken.
+func (s *Source) Current() (*Policy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fi, err := os.Lstat(s.path)
+	if err != nil {
+		s.info = nil
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		s.info = nil
+		return nil, fmt.Errorf("policy: %s is no regular file", s.path)
+	}
+	if s.info != nil && os.SameFile(s.info, fi) && s.info.Size() == fi.Size() &&
+		s.info.ModTime().Equal(fi.ModTime()) {
+		return s.policy, s.err
+	}
+	info, policy, err := read(s.path, fi)
+	s.info, s.policy, s.err = info, policy, err
+	return policy, err
+}
+
+// read opens the file Lstat found and parses it. The returned info is nil when the file
+// changed in between, so the next call reads again.
+func read(path string, lstat os.FileInfo) (os.FileInfo, *Policy, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	if !os.SameFile(lstat, info) {
+		return nil, nil, fmt.Errorf("policy: %s changed while it was opened", path)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxPolicySize+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(data) > MaxPolicySize {
+		return info, nil, fmt.Errorf("policy: %s is larger than %d bytes", path, MaxPolicySize)
+	}
+	policy, err := Parse(data)
+	return info, policy, err
+}
