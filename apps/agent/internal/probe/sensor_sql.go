@@ -219,6 +219,8 @@ func askPostgres(ctx context.Context, query string) (map[string]any, error) {
 		return nil, toolError("psql", err)
 	}
 	row := strings.TrimRight(string(out), "\n")
+	// A second row would otherwise run into the last cell; the checks per query below would catch
+	// that only by chance.
 	if strings.Contains(row, "\n") {
 		return nil, errors.New("psql: an answer of another form")
 	}

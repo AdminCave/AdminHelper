@@ -22,8 +22,10 @@ Dedup-Key: bug:agent:apps/agent/internal/credentials/store.go:Set_windows_rename
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/credentials/...
 Doku: keine (internes Dateiverhalten)
 
-### T2 — R-1263: Agent-Nits in probe (fields.go, sensor_sql.go)  [ ]
+### T2 — R-1263: Agent-Nits in probe (fields.go, sensor_sql.go)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/fields.go, apps/agent/internal/probe/sensor_sql.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c6e858954 2026-11-11T07:11:53+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T2.verdict.json)
 Änderung:
 - Docstring von `release` (`fields.go:24`) zu Punkt-Schlüsseln genau fassen (wie der Code sucht).
 - Redundantes `strings.Contains(row, "\n")` (`sensor_sql.go:222`) entfernen, wenn die Zeile schon vorher geteilt
@@ -112,3 +114,6 @@ Task-Review: am Ende
   unter dem Sperr-Lock (`update` → `enroll.LockFile`), der eigene Leser kann den Rename dort also nicht stören; den
   Flake erklärt ein fremder Leser ohne Delete-Freigabe (Virenscanner, Indexer), den nur ein Wiederholversuch abfängt.
   `FILE_SHARE_DELETE` bleibt für den Agent-Dienst, der `Load` ohne Lock liest, während `monitor credential set` schreibt.
+- T2: `strings.Contains(row, "\n")` in `askPostgres` bleibt. `TrimRight` entfernt nur Zeilenenden am Schluss, eine
+  zweite Antwortzeile steht danach noch im Text und liefe in die letzte Zelle; die Prüfungen je Abfrage fingen das nur
+  zufällig ab (Zellenzahl, Zahlformat). Ein Kommentar sagt jetzt das Warum.
