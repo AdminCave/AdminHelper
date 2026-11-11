@@ -193,6 +193,8 @@ var commands = map[string][][]string{
 	"service":         {{"-e"}, {"<rcscript>", "status"}},
 	"freebsd-version": {{"-kru"}, {"-u"}},
 	"pkg":             {{"audit", "-q"}, {"audit", "-q", "<basepkg>..."}},
+	// FreeBSD: the listening TCP sockets for the sensors' guard and discovery (probe, sockstatArgs).
+	"sockstat": {{"-46", "-l", "-n", "-q", "-w", "-P", "tcp"}},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated

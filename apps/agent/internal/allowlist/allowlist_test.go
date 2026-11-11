@@ -41,6 +41,7 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 		{"docker", "inspect", "--type", "container", strings.Repeat("a", 64), strings.Repeat("0", 64)},
 		{"dpkg-query", "--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "nginx", "libc6", "g++-12"},
 		{"rpm", "--query", `--queryformat=%{NAME}\n`, "nginx", "postgresql16-server"},
+		{"/usr/bin/sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp"},
 	}
 	for _, args := range mariadbCalls {
 		calls = append(calls, append([]string{"mariadb"}, args...), append([]string{"mysql"}, args...))
@@ -95,6 +96,11 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 		append([]string{"runuser"}, append(append([]string{}, pg[:len(pg)-1]...), "--command=SELECT * FROM pg_authid")...),
 		append([]string{"runuser", "-u", "root"}, pg[2:]...),
 		{"psql", "--command=SELECT 1"},
+		{"sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp", "-j", "web"},
+		{"sockstat", "-46", "-c", "-n", "-q", "-w", "-P", "tcp"},
+		{"sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp", "-p", "22"},
+		{"sockstat", "-u", "-l", "-n", "-q", "-w"},
+		{"sockstat"},
 		{"sh", "-c", "true"},
 	}
 	for _, call := range calls {

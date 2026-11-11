@@ -31,9 +31,11 @@ gleichen Wire-Format wie unter Linux:
   Paket installiert.
 
 **Nicht-Ziele (YAGNI):**
-- `net.Connections` (gopsutil ruft dafür `lsof`): der Agent nutzt Verbindungen mit PID nirgends. Der Roadmap-Punkt
-  „Verbindungen ohne lsof“ betrifft nur die eine Stelle, die einen Port prüft (`frpcOwnsAdminPort`); sie liest
-  unter FreeBSD `sockstat`.
+- `lsof` als Abhängigkeit und ein allgemeiner FreeBSD-Ersatz für gopsutils `net.Connections` (das dort `lsof` ruft).
+  Der Agent ordnet Ports an zwei Stellen ihren Prozessen zu, und beide lesen unter FreeBSD `sockstat` aus dem
+  Basissystem: `frpcOwnsAdminPort` und die lauschenden TCP-Sockets in `internal/probe`, aus denen der Wächter der
+  Sensoren, die Zielauflösung und die Dienst-Erkennung schöpfen (T13; die erste Fassung dieser Spec übersah sie, der
+  erste Box-Lauf fand sie).
 - Ein Install-Einzeiler wie `scripts/agent-install.sh` und ein FreeBSD-Weg im Desktop-Dialog „Agent installieren“:
   die Doku nennt die Handgriffe (Repo-Datei, Schlüssel, CA, `pkg install`, `provision`). Ein Einzeiler wäre eine
   eigene Zeile.
