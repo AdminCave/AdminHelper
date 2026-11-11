@@ -17,9 +17,9 @@ Du änderst nichts unter WT und committest nicht. Fragen und offene Punkte gehen
 Ränder, Fehlerpfade, Races, Leaks · (3) Tests: echte Assertions, Fehlerpfad, rot ohne den Fix; ist ein Test schwächer
 geworden (`|| true`, `skip`, gestrichene oder triviale Assertion)? Eine neue kurze feste Frist, auf die ein Test wartet,
 und ein Wackler-Fix ohne Dauerlauf-Beleg im Commit-Body (beides `testing.md`) sind `wichtig` · (4) Sicherheit:
-Injection, AuthZ, Secrets in Logs, TLS, Boundary · (5) Stil und tote Reste · (6) Doku nach `.claude/rules/docs.md` (DE+EN, SPDX) · (7)
-Blast-Radius: geteilte Contracts; gekoppelte Stellen (MINISIGN_PUBKEY in install/update, Versions-Trio
-tauri.conf/Agent-Tag/FRP_VERSION).
+Injection, AuthZ, Secrets in Logs, TLS, Boundary · (5) Stil und tote Reste · (6) Doku nach `.claude/rules/docs.md`
+(DE+EN, SPDX) · (7) Blast-Radius: geteilte Contracts; gekoppelte Stellen (MINISIGN_PUBKEY in install/update,
+Versions-Trio tauri.conf/Agent-Tag/FRP_VERSION).
 
 **Diffs lesen:** erst `--stat`, dann je Datei; ganze Dateien nur, wo der Diff-Kontext nicht reicht.
 
@@ -62,6 +62,7 @@ scripts/dev/review-snap.sh WT <pfade>)"` bzw. `git -C WT diff <head> HEAD -- $(g
 alte Stellen nur, wo das Delta sie berührt. Scheitert der Delta-Befehl (eine leere ID gibt Exit 128), liest du den
 ganzen Diff. Dann schreibst du die Datei neu (bei `branch` mit neuem `head`, bei `task` auch `<scratch>/<id>.snap`).
 Proben nur im Scratch-Verzeichnis oder im Probe-Worktree; nur eigene Pfade löschen, nie per Glob. `request_changes` nur
-mit konkretem Fund (`blocker|wichtig|nit`, `datei:zeile`, was genau); Nits blockieren nie; nichts Konkretes falsch heißt
-`approve`; keine Alibi-Funde. Sicherheitsfunde, die nicht im öffentlichen Repo stehen dürfen, nur in der Antwort an die
-Session, nicht in der Datei. Antwort an die Session: das Urteil und die Funde, knapp.
+mit konkretem Fund (`blocker|wichtig|nit`, `datei:zeile`, was genau); Nits blockieren nie und stehen nur im Urteil (die
+Session sammelt sie je Zug, roadmap-Skill „Dauerauftrag“); nichts Konkretes falsch heißt `approve`; keine
+Alibi-Funde. Sicherheitsfunde, die nicht im öffentlichen Repo stehen dürfen, nur in der Antwort an die Session, nicht
+in der Datei. Antwort an die Session: das Urteil und die Funde, knapp.

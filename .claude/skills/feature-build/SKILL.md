@@ -91,7 +91,9 @@ WT/scripts/dev/ledger.sh mark-skip WT/tasks/<slug>.md <id> "verschoben in <näch
    reparieren, erneut; 3 → Suite rot: wie 3; Urteil fehlt oder ist älter als eine Datei: 4 erneut; dann erneut
    schließen; 4 → STOPP, Kevin; 74 → STOPP, berichten. Wiederholbar.
 
-Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledger (CLAUDE.md §4).
+Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledger (CLAUDE.md §4). Deckt der
+Dauerauftrag (`/roadmap`, Abschnitt „Dauerauftrag“) einen Fund, plant die Session ihn gleich in einen `klein-`-Zug,
+sobald CLAUDE.md §4 den Dauerauftrag nennt (vorher `neu`); Prüfer-Nits ordnet sie nach der Nit-Regel dort (gilt sofort).
 
 ## 4. Abschluss
 

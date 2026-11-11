@@ -14,8 +14,10 @@ Beweis: Workflow-Analyse 2026-11-11 (privat), Wackler-Tabelle: Wiederkehr nach #
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Ablauf steht in .claude/; cicd.html verweist dorthin)
 
-### T2 — R-1336: Triage-Dauerauftrag und Nit-Sammelzeile  [ ]
+### T2 — R-1336: Triage-Dauerauftrag und Nit-Sammelzeile  [x]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/agents/reviewer.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @475078937 2026-11-11T18:14:56+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T2.verdict.json)
 Änderung: roadmap-Skill, neuer Abschnitt „Dauerauftrag (Kevin 2026-11-11)“: Bedingungen (BUG/REF mit Beweis, klein-Bereich; kein SEC, kein `security`-Fund, keine Datei aus `review-risk.txt`, kein Harness-Pfad, keine Verhaltens-/API-/Migrationsänderung). Annahme und Einplanung ohne Triage gelten erst, wenn CLAUDE.md §4 den Dauerauftrag nennt (T8); bis dahin bleiben gedeckte Funde `neu`. `/roadmap` zählt die ungesichteten Dauerauftrag-Zeilen, `/roadmap triage` legt sie zum Veto vor und vermerkt „gesichtet“. Nit-Regel (gilt sofort): mitbeheben nur in einer laufenden Korrekturrunde; sonst Sammelzeile aus Nits, die die Bedingungen erfüllen, Harness-Nits `zurückgestellt`, Sicherheits-Nits neutral in Kevins Triage. /feature-build §3 und reviewer.md verweisen darauf.
 Beweis: Roadmap-Historie 09-09…11-11: 29 Zeilen/Tag seit 10-29, Triage Median 15,4 h, 91 von 115 Nits gebaut · Dedup-Key: ref:harness:roadmap:triage-dauerauftrag
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
