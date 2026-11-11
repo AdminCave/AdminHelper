@@ -116,3 +116,10 @@ class RequestModel(BaseModel):
     @classmethod
     def _reject_unstorable_anywhere(cls, data: Any) -> Any:
         return _refuse_unstorable(data, cls.__name__)
+
+
+# <module id>/<instance key>/<slot>: the key of a secret in the host's credential file,
+# never the secret. No segment starts with a dot, so none reads as a way up. The agent's
+# credentials block reports these keys too (discovery.clean_credentials).
+CREDENTIAL_REF_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*$"
+CREDENTIAL_REF_MAX = 255

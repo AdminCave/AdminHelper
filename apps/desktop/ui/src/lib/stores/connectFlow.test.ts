@@ -968,7 +968,7 @@ describe('RDP in a tab (R-1098)', () => {
 
     await initiateConnect(rdpConn);
 
-    expect(openRdp).toHaveBeenCalledExactlyOnceWith(rdpConn, undefined);
+    expect(openRdp).toHaveBeenCalledExactlyOnceWith(rdpConn, undefined, expect.any(Function));
     expect(requestPassword).not.toHaveBeenCalled();
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'r1' }));
@@ -1004,7 +1004,7 @@ describe('RDP in a tab (R-1098)', () => {
 
     expect(requestPassword).toHaveBeenCalledWith(rdpConn, true, true);
     expect(savePassword).not.toHaveBeenCalled();
-    expect(openRdp).toHaveBeenCalledExactlyOnceWith(typed, 'pw');
+    expect(openRdp).toHaveBeenCalledExactlyOnceWith(typed, 'pw', expect.any(Function));
     expect(closeEditor).not.toHaveBeenCalled();
   });
 
@@ -1014,7 +1014,7 @@ describe('RDP in a tab (R-1098)', () => {
     await initiateConnect(rdpConn);
 
     expect(savePassword).toHaveBeenCalledWith(typed, 'pw');
-    expect(openRdp).toHaveBeenCalledExactlyOnceWith(typed, undefined);
+    expect(openRdp).toHaveBeenCalledExactlyOnceWith(typed, undefined, expect.any(Function));
   });
 
   it('asks without a store and offers no remembering, and keeps the typed one on a failed save', async () => {
@@ -1023,14 +1023,14 @@ describe('RDP in a tab (R-1098)', () => {
     await initiateConnect(rdpConn);
     expect(passwordState).not.toHaveBeenCalled();
     expect(requestPassword).toHaveBeenLastCalledWith(rdpConn, false, false);
-    expect(openRdp).toHaveBeenLastCalledWith(typed, 'pw');
+    expect(openRdp).toHaveBeenLastCalledWith(typed, 'pw', expect.any(Function));
 
     withClient('embedded');
     prompted('pw2', true);
     vi.mocked(savePassword).mockRejectedValueOnce(new Error('keyring locked'));
     await initiateConnect(rdpConn);
     expect(reportError).toHaveBeenCalledWith('error.passwordStore');
-    expect(openRdp).toHaveBeenLastCalledWith(typed, 'pw2');
+    expect(openRdp).toHaveBeenLastCalledWith(typed, 'pw2', expect.any(Function));
   });
 
   it('starts nothing once the prompt is cancelled', async () => {
@@ -1041,6 +1041,42 @@ describe('RDP in a tab (R-1098)', () => {
     expect(openRdp).not.toHaveBeenCalled();
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
+  });
+
+  // The end of the tab, as the last RDP tab heard it.
+  const rdpTabEnd = (): (() => void) => vi.mocked(openRdp).mock.calls.at(-1)![2]!;
+
+  it('the end of the tab ends its session in the local history once (R-1273)', async () => {
+    withClient('embedded');
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+    await initiateConnect(rdpConn);
+    expect(startSession).toHaveBeenCalledWith('r1');
+    expect(endSession).not.toHaveBeenCalled();
+    rdpTabEnd()();
+    await vi.waitFor(() => expect(endSession).toHaveBeenCalledWith('local-r1'));
+    rdpTabEnd()();
+    await settleAll();
+    expect(endSession).toHaveBeenCalledTimes(1);
+    expect(sessionsChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it('the end of the tab ends its session on the server (R-1273)', async () => {
+    const session = { token: 't' };
+    state.setSession({
+      settings: { mode: 'server', storePasswords: true, rdpClient: 'embedded' },
+      session,
+    });
+    vi.mocked(passwordState).mockResolvedValueOnce({ canStore: true, stored: true });
+    (connectionsApi.touch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'r1',
+      sessionId: 's-5',
+    });
+    await initiateConnect(rdpConn);
+    rdpTabEnd()();
+    await vi.waitFor(() =>
+      expect(connectionsApi.endSession).toHaveBeenCalledWith(session, 'r1', 's-5'),
+    );
+    expect(endSession).not.toHaveBeenCalled();
   });
 
   it('marks nothing used and keeps the editor when the tab did not start', async () => {

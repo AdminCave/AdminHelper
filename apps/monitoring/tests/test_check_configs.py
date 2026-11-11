@@ -949,6 +949,26 @@ class TestProbeConfig:
         with pytest.raises(ValueError, match=re.escape(reason)):
             validate_check_config("probe", _probe(**changes))
 
+    @pytest.mark.parametrize(
+        ("params", "valid"),
+        [
+            ({"unit": "nginx.service", "match": "_COMM=nginx"}, True),
+            ({"unit": r"systemd-fsck@dev-disk-by\x2duuid-1.service"}, True),
+            ({"unit": "nginx*"}, False),
+            ({"match": "MESSAGE=x"}, False),
+        ],
+    )
+    def test_the_api_takes_only_log_params_the_agent_takes(self, params, valid):
+        # Same models as the catalog: a log probe the agent would answer with
+        # "invalid" never gets stored.
+        config = _probe(sensor="log", target=None, params=params, fields=["count"], rules=[])
+        config.pop("credential")
+        if valid:
+            validate_check_config("probe", config)
+        else:
+            with pytest.raises(ValueError, match=next(iter(params))):
+                validate_check_config("probe", config)
+
     def test_the_router_key_cannot_come_from_the_api(self):
         # The push path sets _check_id from the row; a stored one would only be overwritten,
         # but the boundary does not take it at all.

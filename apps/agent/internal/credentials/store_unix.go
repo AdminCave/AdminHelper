@@ -18,9 +18,10 @@ var euid = os.Geteuid
 
 // readPrivate reads the file at path if it is a regular file of the agent's account that no other
 // account may read or change (no bit in 0077). It opens the file without following a link and
-// checks the open file, so a swap between the check and the read does not count.
+// checks the open file, so a swap between the check and the read does not count. It opens without
+// blocking: a FIFO at path would otherwise hold the open until a writer comes.
 func readPrivate(path string) ([]byte, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -45,4 +46,9 @@ func readPrivate(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s is larger than %d bytes", path, maxFileBytes)
 	}
 	return data, nil
+}
+
+// replace moves the file from to path, replacing what is there.
+func replace(from, path string) error {
+	return os.Rename(from, path)
 }
