@@ -101,12 +101,18 @@ Review: approve (.ah-out/review/arch-freebsd-agent/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T11
 
+### T13 — Agent: Listener unter FreeBSD über sockstat statt lsof (R-1247)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/listen_gopsutil.go, apps/agent/internal/probe/listen_freebsd.go, apps/agent/internal/probe/sockstat.go, apps/agent/internal/probe/sockstat_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, docs/features/arch-freebsd-agent.md
+Änderung: Der erste T9-Lauf (2026-11-11) zeigte: der Wächter der Sensoren (`internal/probe`, `listenTCP`) liest Listener über gopsutil `net.Connections`, das unter FreeBSD `lsof` ruft; das fehlt im Basissystem, also scheitert unter FreeBSD jeder Netz-Sensor und die Discovery der Listener (`TestTheHostSeamsReadTheListenersAndTheirProcesses`, `TestResolveFindsAListenerOfThisHost`: `exec: "lsof": executable file not found`). Die Spec nahm `net.Connections` fälschlich aus (Nicht-Ziele), R-1247 nennt „Verbindungen ohne lsof“. Unter FreeBSD liest `listenTCP` `/usr/bin/sockstat -46 -l -n -q -w -P tcp` über die Freigabeliste (`runTool`); der Parser ohne Build-Tag (`sockstat.go`) nimmt beide Formen (14.x: IPv6 ohne Klammern, 15.x: `[addr]:port`), `*` je Familie als unspezifiziert, `?`/`??` als unbekannten Besitzer (pid 0, wie gopsutil), und verwirft die ganze Ausgabe bei einer fremden Zeile (der Wächter lässt dann nichts durch). `-w`, weil 15.1 lange Adressen sonst auf 21 Zeichen kürzt (auf der Box gesehen). Linux und Windows bleiben bei gopsutil (`listen_gopsutil.go`, `!freebsd`). Die Freigabeliste nimmt genau diesen Aufruf auf; Spec-Nicht-Ziel korrigiert. Nativ prüft T9 (`internal/probe` auf der Box).
+Verify: bash scripts/dev/verify.sh agent --strict -- -run TestParseSockstat|TestAllowlistTakesEveryProbeAndDiscoveryCall|TestAllowlistRefusesTheProbeAndDiscoveryTraps|TestTheHostSeams|TestResolve
+Doku: → T11
+
 ### T9 — Test: FreeBSD-Box-Lauf (Agent-Tests nativ, Paket, Dienst) (R-1247)  [ ]
 Komponente: scripts · Dateien: scripts/tests/freebsd_box.sh, scripts/tests/box_freebsdbox.sh
 Änderung: `freebsd_box.sh` (SPDX, Dev-Box): baut die Testbinaries mit `GOOS=freebsd go test -c -o <dir>/ ./...`, das Agent-Binary und das Paket (`build-pkg.sh`, Wegwerf-RSA-Schlüssel im eigenen Temp-Verzeichnis), least eine VM mit `vm.py clone --profile base-freebsd --role freebsd`, kopiert alles hinüber, fährt `box_freebsdbox.sh` und reapt am Ende (bei Fehler bleibt die VM stehen, wie die anderen Box-Läufe). `box_freebsdbox.sh` (POSIX sh, SPDX, auf der VM als root): alle Testbinaries; lokales Repo mit Signatur anlegen und `pkg install adminhelper-agent` daraus; `adminhelper-agent service install` schreibt die cron.d-Datei; `service adminhelper_frpc start` mit einer Wegwerf-`frpc.toml` und `status` meldet „is running“; `adminhelper-agent run --once` mit einem Monitor-Ziel ohne Gegenstelle läuft durch die Sammler (Report-JSON per `monitor show` o. ä., `host.os` = `freebsd`, `system_state` vorhanden); `pkg delete` räumt cron.d und Dienst. Ergebnis als `N passed, M failed` und Exit ≠ 0 bei Fail; fehlt die VM-Vorlage, endet der Lauf mit 75 (SKIP = rot).
 Verify: bash scripts/dev/verify.sh scripts --strict -- box_scripts_guard_test
 Doku: → T11
-Abhängt von: T4, T6, T8
+Abhängt von: T4, T6, T8, T13
 
 ### T10 — CI und Release: pkg aus den Quellen, FreeBSD-Pakete und signiertes Repo (R-1247)  [~] (verschoben in ci-10 (R-1303): Kevin 2026-11-11 Frage 3, Workflows als eigene Zeile mit Kevin-Merge)
 Komponente: scripts · Dateien: .github/workflows/ci.yml, .github/workflows/release.yml, apps/agent/freebsd/adminhelper-pkg.pub, apps/agent/build-repo.sh
