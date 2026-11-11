@@ -19,3 +19,7 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty::tests
 Doku: changelog.d/kern-terminal-6.md (keine Seite beschreibt die Cursor-Abfrage)
 
 ## Entscheidungen
+- T1: Windows-Beweis vor dem Fix: nur der neue Test auf einem Wegwerf-Branch (27dde8067), CI-Lauf 43026363748, Job
+  rust-windows rot (`the session stays in the registry`, 923 passed; 1 failed); lokal unter Linux ebenso rot
+  (Timeout). Mit dem Fix grün. Der Merker gilt auf allen Plattformen; das automatische Antworten ohne Zuhörer bleibt
+  Windows-only.
