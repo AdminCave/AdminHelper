@@ -353,6 +353,46 @@ def test_reset_without_the_definition_is_409_and_changes_nothing(client):
     assert (got["interval"], got["overriddenFields"]) == ("15m", ["interval"])
 
 
+_PROBE_DEF = {
+    "def_id": "def-probe",
+    "name": "Web {{server_name}}",
+    "check_type": "probe",
+    "config": {
+        "sensor": "http",
+        "target": {
+            "kind": "container",
+            "name": "{{server_name}}",
+            "port_hint": 8000,
+            "scheme": "http",
+        },
+        "params": {"path": "/", "method": "GET"},
+        "interval_s": 300,
+        "timeout_s": 10,
+        "fields": ["status_code"],
+        "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+        "credential": None,
+        "test_object": False,
+    },
+    "interval": "5m",
+    "severity": "critical",
+}
+
+
+def test_reset_with_server_values_that_break_the_probe_is_409_and_changes_nothing(client):
+    c, factory = client
+    tid = _template(c, _PROBE_DEF)
+    _assign(c, tid)
+    cid = _checks(c)["def-probe"]["id"]
+    before = c.get(f"/checks/{cid}").json()
+    assert before["config"]["target"]["name"] == "srv-1"
+    with factory() as db:
+        db.query(MonitorTemplateAssignment).one().server_name = "w" * 256
+        db.commit()
+
+    assert c.post(f"/checks/{cid}/reset").status_code == 409
+    assert c.get(f"/checks/{cid}").json() == before
+
+
 def test_reset_without_the_assignment_is_409(client):
     c, factory = client
     tid = _template(c, _PING_DEF)

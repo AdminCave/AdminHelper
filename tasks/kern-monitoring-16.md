@@ -58,12 +58,14 @@ Review: approve (.ah-out/review/kern-monitoring-16/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: → T9
 
-### T5 — R-1260: Nachlese Vorlagen-Sync  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_template_sync.py
+### T5 — R-1260: Nachlese Vorlagen-Sync  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_templates_router.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @572295013 2026-11-11T07:25:05+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T5.verdict.json)
 Änderung:
 - Nach der privaten Roadmap (`template_sync.py`, Aufrufe von `substitute_variables`).
 - Test je Fall.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py tests/test_templates_router.py
 Doku: → T9
 
 ### T6 — R-1260: Nachlese Report-Endpunkt  [ ]
@@ -132,3 +134,7 @@ Task-Review: am Ende
   `changed` (`discovery.py`, `_seen_again`), nach dem Update kippte so jeder compose-Fund; das wäre sichtbares
   Verhalten außerhalb dieser Task; der Rest steht als Folgezeile R-1301 zur Triage. Die Fixture verliert die zweite Replika, deren Bindung an den ersten Namen genau
   das alte Verhalten prüfte; der neue Test deckt den Fall mit dem neuen Ergebnis ab.
+- T5: Nach dem Ersetzen der Platzhalter wird nur eine Probe-Vorlage erneut gegen ihr Schema geprüft; sie bricht
+  sonst still erst am Agenten. Andere Typen prüft der Sync weiter nicht nach: ein Ping mit leerem Hostnamen entstünde
+  sonst nicht mehr, das wäre sichtbares Verhalten außerhalb dieser Zeile. Eine Vorlage, die nach dem Ersetzen nicht
+  hält, legt keinen Check an; ein bestehender Check behält seinen Stand und wird nicht gelöscht.

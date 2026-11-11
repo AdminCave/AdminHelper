@@ -50,7 +50,12 @@ from app.schemas import (
     ServerHistoryOut,
     StatusSummaryOut,
 )
-from app.template_sync import mark_overrides, resolve_template_check, tombstone_check
+from app.template_sync import (
+    holds_after_substitution,
+    mark_overrides,
+    resolve_template_check,
+    tombstone_check,
+)
 
 # Moved to core/victoria.py (shared with the forecast checker); alias kept so
 # the existing call sites and tests stay untouched.
@@ -384,6 +389,11 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
     if template_values is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "The check's template no longer defines it for this server"
+        )
+    if not holds_after_substitution(template_values, check.server_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The template's values for this server do not form a valid check",
         )
 
     for field, value in template_values.items():
