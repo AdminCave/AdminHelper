@@ -33,8 +33,10 @@ Review: approve (.ah-out/review/kern-monitoring-16/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
 Doku: keine (Kommentar und toter Zweig)
 
-### T3 — R-1263: Monitoring-Nits (apply_discovery, credentials-Spalte, probe.py)  [ ]
+### T3 — R-1263: Monitoring-Nits (apply_discovery, credentials-Spalte, probe.py)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/models.py, apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ca9461773 2026-11-11T07:15:17+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T3.verdict.json)
 Änderung:
 - `apply_discovery` (`discovery.py:480`) schreibt in einem `begin_nested`-Savepoint statt `commit`/`rollback` auf der
   übergebenen Session (`discovery.py:514/516`); der Aufrufer committet.
@@ -117,3 +119,9 @@ Task-Review: am Ende
 - T2: `strings.Contains(row, "\n")` in `askPostgres` bleibt. `TrimRight` entfernt nur Zeilenenden am Schluss, eine
   zweite Antwortzeile steht danach noch im Text und liefe in die letzte Zelle; die Prüfungen je Abfrage fingen das nur
   zufällig ab (Zellenzahl, Zahlformat). Ein Kommentar sagt jetzt das Warum.
+- T3: `apply_discovery` und `apply_credentials` (gleiches Muster, gleiche Datei) schreiben in einem Savepoint und
+  committen erst danach selbst; der Report-Endpunkt verlässt sich auf diesen Commit (die gemeinsame Auswertung
+  committet nur bei Agent-Checks), ihn zum Aufrufer zu verschieben hieße `routers/agent.py` ändern (T6). Ein Fehler
+  im Block nimmt nur den Savepoint zurück, ein Fehler beim Commit geht an `_store_discovery`, das zurückrollt und
+  loggt. Die Formprüfung der Spalte `credentials` sitzt als `@validates` am Modell statt in einem Schreib-Helfer:
+  sie greift so bei jedem Schreiben.

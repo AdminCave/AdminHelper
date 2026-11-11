@@ -23,6 +23,7 @@ from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.discovery import (
     MAX_CONTAINERS,
     MAX_UNITS,
+    apply_credentials,
     apply_discovery,
     clean_inventory,
     image_repo,
@@ -763,3 +764,31 @@ def test_a_failure_stores_nothing_and_is_only_logged(db, monkeypatch, caplog):
     assert db.query(MonitorDiscovery).count() == 0
     assert db.query(MonitorFinding).count() == 0
     assert "Storing the discovery failed (srv-1): RuntimeError" in caplog.text
+
+
+def test_a_failure_keeps_what_the_session_held_before(db, monkeypatch):
+    def broken(inv, catalog):
+        raise RuntimeError("boom")
+
+    db.add(MonitorDiscovery(server_id="srv-0"))
+    db.flush()
+    monkeypatch.setattr(discovery, "match_inventory", broken)
+
+    assert apply_discovery(db, "srv-1", _block(), catalog=CATALOG, now=T0) is False
+    assert apply_credentials(db, "srv-1", {"db/main/password": True}, now=T0) is True
+
+    assert {row.server_id for row in db.query(MonitorDiscovery)} == {"srv-0", "srv-1"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ['{"db/main/password": false}', '{"-bad": true}', '["db/main/password"]', '{"a": 1}'],
+)
+def test_the_credentials_column_takes_references_only(value):
+    with pytest.raises(ValueError):
+        MonitorDiscovery(server_id="srv-1", credentials=value)
+
+
+def test_the_credentials_column_takes_references():
+    row = MonitorDiscovery(server_id="srv-1", credentials='{"db/main/password": true}')
+    assert json.loads(row.credentials) == {"db/main/password": True}

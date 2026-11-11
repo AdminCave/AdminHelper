@@ -487,36 +487,37 @@ def apply_discovery(
     rng: random.Random | None = None,
 ) -> bool:
     """Store a discovery block of a report, plan the next scan and update the server's
-    findings. Own commit; a failure is rolled back and only logged, it must never cost
-    the report. Returns whether the block was stored."""
+    findings. Own commit; a failure rolls back only its own savepoint and is only logged,
+    it must never cost the report nor what the session already held. Returns whether the
+    block was stored."""
     inventory = clean_inventory(block)
     if inventory is None:
         return False
     catalog = catalog or get_catalog()
     now = now or utcnow_naive()
     try:
-        row = db.get(MonitorDiscovery, server_id)
-        if row is None:
-            row = MonitorDiscovery(server_id=server_id)
-            db.add(row)
-        previous_full_scan = _full_scan_at(row.inventory)
-        full_scan = not inventory["partial"]
-        last_full = now if full_scan else previous_full_scan
-        inventory["full_scan_at"] = last_full.isoformat() if last_full else None
-        row.inventory = _dump(inventory)
-        row.scanned_at = now
-        row.next_scan_at = next_scan_at(now, rng)
-        # A "scan now" pressed while this scan ran is answered by it too.
-        row.scan_requested_at = None
-        row.updated_at = now
-        seen = match_inventory(inventory, catalog)
-        _update_findings(db, server_id, seen, catalog, now, full_scan, previous_full_scan)
-        db.commit()
+        with db.begin_nested():
+            row = db.get(MonitorDiscovery, server_id)
+            if row is None:
+                row = MonitorDiscovery(server_id=server_id)
+                db.add(row)
+            previous_full_scan = _full_scan_at(row.inventory)
+            full_scan = not inventory["partial"]
+            last_full = now if full_scan else previous_full_scan
+            inventory["full_scan_at"] = last_full.isoformat() if last_full else None
+            row.inventory = _dump(inventory)
+            row.scanned_at = now
+            row.next_scan_at = next_scan_at(now, rng)
+            # A "scan now" pressed while this scan ran is answered by it too.
+            row.scan_requested_at = None
+            row.updated_at = now
+            seen = match_inventory(inventory, catalog)
+            _update_findings(db, server_id, seen, catalog, now, full_scan, previous_full_scan)
     except Exception as exc:
-        db.rollback()
         # No traceback: an agent can trigger this on every scan.
         logger.error("Storing the discovery failed (%s): %s", server_id, type(exc).__name__)
         return False
+    db.commit()
     return True
 
 
@@ -543,22 +544,23 @@ def apply_credentials(
     db: Session, server_id: str, block: object, *, now: datetime | None = None
 ) -> bool:
     """Replace the server's stored credential references with the report's. Own commit;
-    a failure is rolled back and only logged. Returns whether the block was stored."""
+    a failure rolls back only its own savepoint and is only logged. Returns whether the
+    block was stored."""
     refs = clean_credentials(block)
     if refs is None:
         return False
     try:
-        row = db.get(MonitorDiscovery, server_id)
-        if row is None:
-            row = MonitorDiscovery(server_id=server_id)
-            db.add(row)
-        row.credentials = _dump(refs)
-        row.updated_at = now or utcnow_naive()
-        db.commit()
+        with db.begin_nested():
+            row = db.get(MonitorDiscovery, server_id)
+            if row is None:
+                row = MonitorDiscovery(server_id=server_id)
+                db.add(row)
+            row.credentials = _dump(refs)
+            row.updated_at = now or utcnow_naive()
     except Exception as exc:
-        db.rollback()
         logger.error(
             "Storing the credential references failed (%s): %s", server_id, type(exc).__name__
         )
         return False
+    db.commit()
     return True
