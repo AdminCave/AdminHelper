@@ -17,8 +17,8 @@ Adresse gepinnt hat (Fund aus dem security-Review von arch-ssh-terminal, Nit).
 - Nicht-Ziel: eine Produkt-Option für die known_hosts-Datei der App (die App setzt keine; das bleibt so).
 
 ## Betroffene Komponenten & Dateien
-`scripts/tests/desktop_e2e_connect.sh`, `apps/desktop/e2e/test/specs/ssh-connect.live.js` (nur der Kommentar,
-der das Entfernen durch den Orchestrator beschreibt).
+`scripts/tests/desktop_e2e_connect.sh`, `scripts/tests/desktop_e2e_skip_test.sh`,
+`apps/desktop/e2e/test/specs/ssh-connect.live.js` (nur der Kommentar, der das Entfernen durch den Orchestrator beschreibt).
 
 ## Datenmodell / API / Migrationen
 Keine.

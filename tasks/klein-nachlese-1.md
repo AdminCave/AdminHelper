@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-1 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-1 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-1 · Review: am Ende
 Spec: docs/features/klein-nachlese-1.md (Roadmap R-1269)
 Heavy: none — Kommentar und Planungsdokument
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -19,8 +19,10 @@ Beweis: Branch-Review kern-rdp-8 2026-11-09 (nit) · frame_ws.rs:14
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (Kommentar)
 
-### T2 — R-1269: Spec kern-harness-4 nennt desktop_e2e_skip_test.sh  [ ]
+### T2 — R-1269: Spec kern-harness-4 nennt desktop_e2e_skip_test.sh  [x]
 Komponente: scripts · Dateien: docs/features/kern-harness-4.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bae0961c2 2026-11-11T16:03:46+01:00
+Review: am Ende (Branch-Review)
 Beweis: Branch-Review kern-harness-4 2026-11-09 (nit) · docs/features/kern-harness-4.md:20 · tasks/kern-harness-4.md T1 (Dateien)
 Änderung: Unter „Betroffene Komponenten & Dateien“ kommt `scripts/tests/desktop_e2e_skip_test.sh` dazu.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
