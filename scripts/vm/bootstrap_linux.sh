@@ -21,7 +21,7 @@ GO_VERSION="${AH_GO_VERSION:-1.27.2}"
 # from go.dev's release JSON; override alongside a non-default GO_VERSION (4.123).
 GO_SHA256_LINUX_AMD64="${AH_GO_SHA256:-ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5}"
 NODE_MAJOR="${AH_NODE_MAJOR:-26}"
-TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
+TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.12.4}"
 # Pinned, and to the same version ci.yml installs: a bake picks up whatever pip
 # offers that day, and a newer ruff enables rules this repo never opted into.
 # The 2026-09-17 bake proved it — a fresh template's `run.sh lint` went red with
@@ -216,7 +216,11 @@ if [ "$PROFILE" = full ]; then
   log "tauri-driver + tauri-cli ${TAURI_CLI_VERSION} (for desktop build + GUI E2E)  [full profile only]"
   command -v tauri-driver >/dev/null 2>&1 || cargo install tauri-driver --locked \
     || { log "FATAL: tauri-driver install failed — the GUI E2E suites cannot run on this box"; exit 1; }
-  cargo tauri --version >/dev/null 2>&1 || cargo install tauri-cli --locked --version "$TAURI_CLI_VERSION" \
+  # The pinned one, not any: a box that kept an older tauri-cli built the desktop with another
+  # CLI than CI and the release (R-1294).
+  # clap prints "<name> <version>"; only the version is compared, the name is not pinned down.
+  [[ "$(cargo tauri --version 2>/dev/null)" == *" $TAURI_CLI_VERSION" ]] \
+    || cargo install tauri-cli --locked --force --version "$TAURI_CLI_VERSION" \
     || { log "FATAL: tauri-cli install failed — the seven desktop_e2e_*.sh suites would all SKIP"; exit 1; }
 else
   log "skipping Rust/Tauri toolchain (profile=$PROFILE — no Tauri on this box)"

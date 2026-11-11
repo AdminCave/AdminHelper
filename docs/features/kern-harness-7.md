@@ -27,8 +27,9 @@ Roadmap: R-1294 (REF, Harness; Kevin 2026-11-11 Triage: Harness-Änderung auf Ke
 Keine.
 
 ## Externe Integrationen
-`cargo tauri --version` gibt `tauri-cli X.Y.Z` aus (tauri-cli 2.x); nicht gegen eine Doku verifiziert, darum
-vergleicht der Bootstrap nur auf Gleichheit und installiert bei jeder anderen Ausgabe neu.
+`cargo tauri --version` gibt laut `crates/tauri-cli/src/lib.rs` (clap `version`, dev-Branch) `<name> <version>` aus;
+der Name ist nicht verifiziert. Darum vergleicht der Bootstrap nur, ob die Ausgabe auf ` <Pin>` endet, und
+installiert sonst neu (`--force`).
 
 ## Trade-offs & Alternativen
 - `tauri_cli_pins.sh` um den Bootstrap erweitern: braucht einen neuen Aufruf in `ci.yml` oder einen fest
