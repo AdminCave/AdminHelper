@@ -5,12 +5,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # arch-freebsd-agent — Task-Ledger
 Status: aktiv · Branch: feature/arch-freebsd-agent · Review: pro Task
-Spec: docs/features/arch-freebsd-agent.md (Roadmap R-1247)
+Spec: docs/features/arch-freebsd-agent.md (Roadmap R-1247, R-1281)
 Heavy: linux-full — Agent (Plattform-Umbenennungen, Paketierung), Gateway-Repo-Ebene und Monitoring-Annahme; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` (T9) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Stand `origin/main@726c51d13`. Risikopfade: T2 (`apps/agent/internal/frpc/*`), T7 (`apps/gateway/*`), T8
+Stand `origin/main@726c51d13`, am 2026-11-11 `origin/main@b9ed1782d` hineingemergt (`6cadad3d3`, samt FreeBSD-Anpassungen an `credentials` und `probe`; T12 prüft sie mit). Risikopfade: T2 (`apps/agent/internal/frpc/*`), T7 (`apps/gateway/*`), T8
 (`scripts/vm/*`), T10 (`.github/workflows/*`): `security` je Task. T7 erst nach dem Merge von PR #429
 (`feature/arch-ca-trust-generation` ändert `nginx.conf` und `test_gateway_container.py` in anderen Abschnitten) und
 einem Merge von `origin/main` in diesen Branch. T8 ändert Harness-Pfade unter `scripts/vm/` auf Kevins Wort aus der
@@ -73,15 +73,25 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T11
 Abhängt von: T2
 
+### T12 — Agent: FreeBSD-Aufrufe auf die Befehls-Freigabeliste (R-1281)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/rcservice.go, apps/agent/internal/monitor/rcservice_test.go, apps/agent/internal/monitor/pkgaudit_test.go
+Beweis: feature/arch-freebsd-agent@6cadad3d3, die Stubs `fakeService` (`rcservice_test.go`) und `stubFreeBSDCalls` (`pkgaudit_test.go`) rufen `checkAllowed`; in `apps/agent`: `go test -count=1 -run 'TestRCServiceHealth$|TestFreebsdSystemState$' ./internal/monitor/` → dreimal identisch rot, 20× „call off the command allowlist“, u. a. `/usr/sbin/service ["-e"]`, `/usr/sbin/service ["cron" "status"]`, `/bin/freebsd-version ["-kru"]`, `/usr/local/sbin/pkg ["audit" "-q" "FreeBSD-15.0_3" "FreeBSD-kernel-15.0_3"]`
+Orakel: contract — die Freigabeliste ist der Vertrag, jeder Aufruf eines Stubs muss sie bestehen
+Dedup-Key: bug:agent:allowlist.go:commandAllowlist-freebsd
+HEAD: 6cadad3d3
+Änderung: `commands` nimmt `service` (`-e`, `<rcscript> status`), `freebsd-version` (`-kru`, `-u`) und `pkg` (`audit -q`, `audit -q <basepkg>...`) auf; neue Klassen `rcscript` (der Name, den service(8) nimmt, wie `reRCScriptName`) und `basepkg` (`FreeBSD-` oder `FreeBSD-kernel-` mit `<major>.<minor>` und optional `_<patch>`, wie `freebsdPkgName` sie bildet). `reRCScriptName` liest seine Klasse aus `argClasses` (wie `reUnitName`). Die Stubs prüfen jeden Aufruf (`checkAllowed`); `TestAllowlistTakesEveryCollectorCall` nimmt Formen, die die Stubs nicht zeigen (Release ohne Patch-Level, Jail mit einem Namen, Skriptname mit `_` und `.`), `TestAllowlistRefusesTheTraps` die Fallen (`pkg audit -F`, `pkg audit -q -F`, `pkg install`, `pkg audit -q nginx`, `service cron restart`, `service ../x status`, `service -e -v`, `freebsd-version -k`).
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: → T11
+
 ### T7 — Gateway: pkg-Repo unter `/freebsd/` auf der Repo-Ebene :8445 (R-1247)  [ ]
 Komponente: server · Dateien: apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
 Änderung: die Location der Repo-Ebene (`nginx.conf:220`, heute `^/(apt|rpm)/`) lässt `freebsd` zu; Dateitypen und Methoden wie bei apt/rpm, alles andere bleibt 404. Test im echten nginx-Container: `/freebsd/FreeBSD:15:amd64/meta.conf` liefert 200, `/freebsd/../etc` und eine fremde Wurzel liefern 404.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: → T11
 
-### T8 — Test-Infrastruktur: VM-Vorlage FreeBSD 15.1 im Pool (R-1247)  [?] (Frage 1: Basis-Vorlage über ein Token-Recht `Datastore.AllocateTemplate` auf einem Datei-Storage mit Inhalt `import`, oder Import von Hand durch Kevin)
+### T8 — Test-Infrastruktur: VM-Vorlage FreeBSD 15.1 im Pool (R-1247)  [ ]
 Komponente: scripts · Dateien: scripts/vm/profiles.json, scripts/vm/vm.py, scripts/vm/tests/test_vm.py
-Änderung: Profil `base-freebsd` (`template_tag` `ah-tpl-base-freebsd`) und Rolle `freebsd`; was `vm.py` für einen FreeBSD-Gast anpassen muss (IP über den qemu-guest-agent, `sudo` aus `/usr/local/bin`, kein `bash` im Basissystem), mit Tests gegen aufgezeichnete Proxmox-Antworten. Je nach Antwort auf Frage 1 zusätzlich ein Import-Verb in `vm.py` (Image laden, als Vorlage taggen) oder die Handgriffe für Kevin in `DEVELOPMENT.md` (T11). Harness-Pfad auf Kevins Wort aus der Roadmap-Zeile.
+Änderung: Profil `base-freebsd` (`template_tag` `ah-tpl-base-freebsd`) und Rolle `freebsd`; was `vm.py` für einen FreeBSD-Gast anpassen muss (IP über den qemu-guest-agent, `sudo` aus `/usr/local/bin`, kein `bash` im Basissystem), mit Tests gegen aufgezeichnete Proxmox-Antworten. Frage 1 (Kevin 2026-11-11): `vm.py` importiert selbst. Ein Import-Verb lädt das offizielle FreeBSD-15.1-Cloud-Image samt Prüfsumme auf einen Datei-Storage mit Inhalt `import` und legt daraus die Vorlage mit Tag an; das Token-Recht `Datastore.AllocateTemplate` auf diesem Storage setzt Kevin, `doctor` meldet, ob es fehlt. Die Handgriffe stehen in `DEVELOPMENT.md` (T11). Harness-Pfad auf Kevins Wort aus der Roadmap-Zeile.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T11
 
@@ -92,7 +102,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- box_scripts_guard_test
 Doku: → T11
 Abhängt von: T4, T6, T8
 
-### T10 — CI und Release: pkg aus den Quellen, FreeBSD-Pakete und signiertes Repo (R-1247)  [?] (Frage 2: Signierschlüssel RSA-4096, Secret `PKG_REPO_SIGNING_KEY`, Public Key im Repo gepinnt; Frage 3: ein PR mit Kevin-Merge)
+### T10 — CI und Release: pkg aus den Quellen, FreeBSD-Pakete und signiertes Repo (R-1247)  [~] (verschoben in ci-10 (R-1303): Kevin 2026-11-11 Frage 3, Workflows als eigene Zeile mit Kevin-Merge)
 Komponente: scripts · Dateien: .github/workflows/ci.yml, .github/workflows/release.yml, apps/agent/freebsd/adminhelper-pkg.pub, apps/agent/build-repo.sh
 Änderung: `ci.yml`: der Job `agent` baut zusätzlich `GOOS=freebsd`; ein neuer Job baut `pkg` aus `freebsd/pkg` (Tag und Commit gepinnt, Cache), fährt `build-pkg.sh` mit einem Wegwerf-Schlüssel für beide ABIs und prüft Katalog und Signatur. `release.yml`: dasselbe mit dem Secret, fail-closed, wenn der Public Key des Secrets nicht `adminhelper-pkg.pub` ist; der Teilbaum `freebsd/` geht in `adminhelper-agent-repo-<tag>.tar.gz` (`build-repo.sh` nimmt ihn auf, wenn er da ist). `install.sh` und `update.sh` bleiben unverändert (sie entpacken den ganzen Tarball). frp-Archiv `freebsd_amd64` aus derselben `FRP_VERSION`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- toolchain_lockstep_test harness_consistency_test
@@ -100,8 +110,8 @@ Doku: → T11
 Abhängt von: T6
 
 ### T11 — Doku DE+EN und CHANGELOG (R-1247)  [ ]
-Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, changelog.d/arch-freebsd-agent.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
-Änderung: Agent-Verteilung: Abschnitt FreeBSD (Repo-Datei mit `${ABI}`, Schlüssel und Gateway-CA per `ENV`, `pkg install`, `provision`, Pfade, Dienst `adminhelper_frpc`, Takt über cron.d, Deinstallation). Monitoring: was FreeBSD meldet (`security_updates` aus pkg audit, nur ein RELEASE zählt die Basis, Aktualität der `vuln.xml` über periodic; `reboot_required`, Dienste aus `service -e` samt Einmal-Skripten, Jail/VM, ein Jail zählt als Container). Entwickler-Doku Agent und Monitoring: die Container-Liste nennt `jail` und verweist auf `hostfacts.go` statt `system_linux.go`; die `os`-Liste von `store_host_facts()` nennt `freebsd` ohne Standard-Template (`docs/developer/monitoring.html` Z. 238 f., DE+EN). Entwickler-Doku Agent: Plattformdateien, `_unix`-Konvention, Cross-Build-Wächter. CI/CD: pkg-Bau aus den Quellen und Signatur. DEVELOPMENT.md: `make build-freebsd`, `make pkg`, die Vorlage, `freebsd_box.sh`. CHANGELOG-Fragment.
+Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, DEVELOPMENT.md, changelog.d/arch-freebsd-agent.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Änderung: Agent-Verteilung: Abschnitt FreeBSD (Repo-Datei mit `${ABI}`, Schlüssel und Gateway-CA per `ENV`, `pkg install`, `provision`, Pfade, Dienst `adminhelper_frpc`, Takt über cron.d, Deinstallation). Monitoring: was FreeBSD meldet (`security_updates` aus pkg audit, nur ein RELEASE zählt die Basis, Aktualität der `vuln.xml` über periodic; `reboot_required`, Dienste aus `service -e` samt Einmal-Skripten, Jail/VM, ein Jail zählt als Container). Entwickler-Doku Agent und Monitoring: die Container-Liste nennt `jail` und verweist auf `hostfacts.go` statt `system_linux.go`; die `os`-Liste von `store_host_facts()` nennt `freebsd` ohne Standard-Template (`docs/developer/monitoring.html` Z. 238 f., DE+EN). Entwickler-Doku Agent: Plattformdateien, `_unix`-Konvention, Cross-Build-Wächter; die Befehls-Freigabeliste nennt rc.d-Skript und Basis-Paket unter den variablen Teilen (T12). Sensoren unter FreeBSD: Unit, Unix-Socket und Container-Ziel melden „nicht unterstützt“ (Merge `6cadad3d3`). Der CI/CD-Teil (pkg-Bau, Signatur) zieht mit R-1303 um. DEVELOPMENT.md: `make build-freebsd`, `make pkg`, die Vorlage, `freebsd_box.sh`. CHANGELOG-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende

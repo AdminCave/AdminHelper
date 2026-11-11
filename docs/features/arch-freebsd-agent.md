@@ -195,3 +195,8 @@ Keine Migration, kein neues Wire-Feld:
 4. **Updates über die Sicherheitszahl hinaus:** `pkg upgrade -n -U` und `freebsd-update updatesready` bräuchten
    neue Wire-Felder in Monitoring und Desktop.
    - *Empfehlung:* jetzt weglassen und mit R-1225/R-1227 („Updates und Neustarts“) für alle Plattformen einführen.
+
+**Antworten (Kevin 2026-11-11):** 1 wie empfohlen, das Token-Recht setzt Kevin und `vm.py` importiert selbst (T8).
+2 wie empfohlen; den Schlüssel erzeugt Kevin auf seinem eigenen Rechner. 3 die Alternative: Den Agent-Code merged
+die Session nach grünem Box-Lauf (T9), CI und Release (T10) ziehen in die eigene Zeile R-1303 (Zug `ci-10`, Merge
+durch Kevin), beide vor 0.47.0. 4 bleibt bei der Empfehlung.
