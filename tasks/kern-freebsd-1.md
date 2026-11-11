@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-freebsd-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-freebsd-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-freebsd-1 · Review: pro Task
 Spec: docs/features/kern-freebsd-1.md (Roadmap R-1253, R-1251)
 Heavy: linux-full — Agent (FreeBSD-Sammler, rc-Skript, Paket); dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,5 +30,11 @@ an), `newsyslog.conf` (SPDX-Kommentar; SIGHUP an `/var/run/adminhelper_frpc.pid`
 Elf Dateien: rc-Skript, Paket und ihre Tests gehören zusammen, dazu die Doku DE+EN.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-freebsd-1.md
+
+### T3 — Abschlussprüfung: FreeBSD ohne Swap-Gerät meldet 0/0, Box beweist das Wiederöffnen nach der Rotation  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, scripts/tests/box_freebsdbox.sh
+Änderung: Funde der Abschlussprüfung. gopsutil meldet unter FreeBSD ohne Swap-Gerät den Fehler „no swap devices found“ (mem_freebsd.go, vm.nswapdev 0); der Agent meldet dann 0/0 ohne swap_percent wie Linux, Test je OS plus Gegenprobe unter Linux (R-1253). Die Box prüft nach `newsyslog -F`, dass newsyslog nichts meldet und der daemon(8)-Supervisor die Inode der neuen Logdatei hält (fstat), statt nur den frpc-Prozess (R-1251).
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (Verhalten wie in T1 dokumentiert: ohne Swap-Gerät 0/0 ohne swap_percent)
 
 ## Entscheidungen
