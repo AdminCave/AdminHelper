@@ -120,6 +120,8 @@ struct Session {
     broadcast: bool,
     /// The program and argv of [`Spawn::sftp`].
     sftp: Option<(PathBuf, Vec<String>)>,
+    /// [`Spawn::cleanup`].
+    cleanup: Option<PathBuf>,
     writer: Mutex<Box<dyn Write + Send>>,
     /// Gone once the program exited: on Windows the pseudo console closes with it, and only
     /// then does the reader get its end.
@@ -227,6 +229,7 @@ impl PtyRegistry {
             closing: std::sync::atomic::AtomicBool::new(false),
             broadcast: spawn.broadcast,
             sftp: spawn.sftp.map(|args| (spawn.program.clone(), args)),
+            cleanup: spawn.cleanup,
             writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             killer: Mutex::new(Some(child.clone_killer())),
@@ -236,10 +239,9 @@ impl PtyRegistry {
 
         let (exited, exit_code) = mpsc::channel();
         let waited = session.clone();
-        let cleanup = spawn.cleanup;
         std::thread::spawn(move || {
             let code = child.wait().ok().map(|status| status.exit_code());
-            if let Some(dir) = &cleanup {
+            if let Some(dir) = &waited.cleanup {
                 let _ = std::fs::remove_dir_all(dir);
             }
             lock(&waited.killer).take();
@@ -447,6 +449,29 @@ impl PtyRegistry {
         let ids: Vec<u64> = lock(&self.sessions).keys().copied().collect();
         for id in ids {
             self.close(id);
+        }
+    }
+
+    /// [`close_all`](Self::close_all) as the app exits, and the run directories of the sessions
+    /// go with it: the wait thread that removes one after its program ended does not outlive the
+    /// process, and a program that ignores the end runs on. Waits up to `grace` for the programs
+    /// to end first, as Windows keeps the files a running program holds.
+    pub fn shutdown(&self, grace: std::time::Duration) {
+        let runs: Vec<(Arc<Session>, PathBuf)> = lock(&self.sessions)
+            .values()
+            .filter_map(|session| Some((session.clone(), session.cleanup.clone()?)))
+            .collect();
+        self.close_all();
+        let deadline = std::time::Instant::now() + grace;
+        while std::time::Instant::now() < deadline
+            && runs
+                .iter()
+                .any(|(session, _)| lock(&session.killer).is_some())
+        {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        for (_, dir) in &runs {
+            let _ = std::fs::remove_dir_all(dir);
         }
     }
 
@@ -841,6 +866,10 @@ mod tests {
         let registry = PtyRegistry::default();
         let (mine, mine_rx) = open_for(&registry, long_running(), "main");
         let (theirs, theirs_rx) = open_for(&registry, long_running(), "terminal-9");
+        // Windows: a pseudo console closed before its cursor query was answered may never end,
+        // as the answer then reaches a session that is already closing (R-1217).
+        until_ready(&registry, mine, &mine_rx);
+        until_ready(&registry, theirs, &theirs_rx);
         registry.close_all_of("main");
         until_exit(&registry, mine, &mine_rx, Vec::new());
         until_len(&registry, 1);
@@ -1004,6 +1033,35 @@ mod tests {
         let (_, code) = until_exit(&registry, id, &rx, Vec::new());
         assert_eq!(code, Some(0));
         assert!(!dir.exists(), "the run directory is left after the end");
+    }
+
+    #[test]
+    fn the_run_directory_goes_as_the_app_exits() {
+        let registry = PtyRegistry::default();
+        let dir = run_dir("cleanup-exit");
+        let mut spawn = long_running();
+        spawn.cleanup = Some(dir.clone());
+        let (_id, _rx) = open(&registry, spawn);
+        registry.shutdown(WAIT);
+        assert!(
+            !dir.exists(),
+            "the run directory is left after the app exit"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_run_directory_goes_as_the_app_exits_while_its_program_runs_on() {
+        let registry = PtyRegistry::default();
+        let dir = run_dir("cleanup-exit-hup");
+        let mut spawn = shell("trap '' HUP; sleep 5");
+        spawn.cleanup = Some(dir.clone());
+        let (_id, _rx) = open(&registry, spawn);
+        registry.shutdown(Duration::from_millis(300));
+        assert!(
+            !dir.exists(),
+            "the run directory is left after the app exit"
+        );
     }
 
     #[test]
