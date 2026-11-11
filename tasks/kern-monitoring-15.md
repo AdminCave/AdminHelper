@@ -72,7 +72,7 @@ Review: approve (.ah-out/review/kern-monitoring-15/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/discovery/...
 Doku: keine (unerreichbarer Pfad, kein dokumentiertes Verhalten)
 
-### T6 — R-1252: Probe-Parameter härten  [?] (Variante: siehe private Roadmap)
+### T6 — R-1252: Probe-Parameter härten  [~] (verschoben in kern-monitoring-19: wartet auf Kevins Wahl der Variante)
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_unixsocket.go, apps/agent/internal/probe/sensor_log.go
 Änderung:
 - Umsetzung nach Kevins Wahl der Variante (Spec, Trade-offs).
@@ -80,7 +80,7 @@ Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/int
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
 Doku: → T8
 
-### T7 — R-1266: Probe-Zugangsdaten härten  [?] (Variante: siehe private Roadmap)
+### T7 — R-1266: Probe-Zugangsdaten härten  [~] (verschoben in kern-monitoring-19: wartet auf Kevins Wahl der Variante)
 Komponente: agent · Dateien: apps/agent/internal/credentials/store.go, apps/agent/internal/credentials/store_test.go, apps/agent/internal/probe/probe.go, apps/agent/internal/probe/probe_test.go, apps/agent/cmd/adminhelper-agent/main.go
 Änderung:
 - Umsetzung nach Kevins Wahl der Variante (Spec, Trade-offs).
