@@ -18,7 +18,8 @@ Konfiguration. Beides ist im Quelltext gelesen (openssh-portable master, 2026-11
 
 - **Ziel:** In einem Lauf mit `--ask-pass` läuft jedes Sprung-Bein über ein eigenes `ProxyCommand`. Es ist ein
   `ssh -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no … -W [%h]:%p <hop>`, bei Ketten verschachtelt
-  je Bein. Das gilt für den Sprung-Host der Verbindung und für `ProxyJump` aus der SSH-Konfiguration (`ssh -G`).
+  je Bein. Das gilt für den Sprung-Host der Verbindung und für `ProxyJump` aus der SSH-Konfiguration (`ssh -G`),
+  für das Ziel ebenso wie für den ersten Hop der Kette (ssh liest die Konfiguration nur für das erste Bein).
 - Ohne `--ask-pass` bleibt alles wie heute (`-o ProxyJump=…`).
 - **Nicht-Ziele:**
   - Ein eigenes `ProxyCommand` aus `~/.ssh/config` umbauen. Es bleibt wie konfiguriert und wird in der Doku genannt.
