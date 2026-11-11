@@ -177,12 +177,14 @@ func (g *Guard) ownAddr(ip netip.Addr) error {
 }
 
 // checkListener returns an error if a blocked process listens on ip and port, or if that cannot be
-// told: a listener on the unspecified address takes connections to every address of the host.
+// told: a listener on the unspecified address takes connections to every address of the host. A
+// socket systemd alone holds, for socket activation, tells nothing of the service it starts.
 func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 	list, err := currentListeners(ctx)
 	if err != nil {
 		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
 	}
+	activator, served := false, false
 	for _, l := range list {
 		if l.port != port || (l.addr != ip && !l.addr.IsUnspecified()) {
 			continue
@@ -194,11 +196,19 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
-		if processKey(name) == "docker-proxy" {
+		switch processKey(name) {
+		case "systemd":
+			activator = true
+			continue
+		case "docker-proxy":
 			if err := checkProxy(ctx, l.pid, port); err != nil {
 				return err
 			}
 		}
+		served = true
+	}
+	if activator && !served {
+		return fmt.Errorf("%w: systemd holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, port)
 	}
 	return nil
 }

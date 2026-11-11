@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: keine (Klassen-Detail, die Liste ist in agent.html nur als Prinzip beschrieben)
 Abhängt von: T1
 
-### T4 — R-1261: Ziel-Zuordnung nachschärfen (cgroups, veröffentlichte Ports, Prozess-Abgleich)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go
+### T4 — R-1261: Ziel-Zuordnung nachschärfen (cgroups, veröffentlichte Ports, Prozess-Abgleich)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/probe/discover_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3820c2c78 2026-11-11T06:20:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-15/T4.verdict.json)
 Änderung:
 - `Cgroups.Holds` entscheidet je Hierarchie eindeutig, statt mit einem Treffer in irgendeiner auszukommen.
 - `collectSockets` schlüsselt veröffentlichte Ports nach Adresse und Port.
@@ -107,3 +109,13 @@ Task-Review: am Ende
 - T2: Die Tabelle in `TestAllowlistTakesEveryCollectorCall` behält nur, was kein Stub zeigt: smartctl über einen
   absoluten Pfad der Plattform, die `sc`-Aufrufe (Windows) und Formen variabler Teile, die die Stub-Antworten nicht
   tragen. Der smartctl-Stub prüft den Basisnamen, weil `/usr/sbin/smartctl` unter Windows kein absoluter Pfad ist.
+- T4: `Cgroups.Holds` verlangt, dass jede Hierarchie, die beide nennen (Nicht-Wurzel bei c), passt, und mindestens
+  eine; eine mit Host-Prozessen geteilte cgroup (Hybridmodus) hält diese nicht mehr.
+- T4: `collectSockets` ordnet einen docker-proxy über Adresse und Port seiner Bindung zu (unexportiertes Feld
+  `binds` am Container, aus `HostIp`/`HostPort`; leere `HostIp` zählt für 0.0.0.0 und ::). Das Wire-Format
+  `ContainerPort` bleibt unverändert.
+- T4: Socket-Aktivierung: hält allein systemd einen Listener, weist der Guard ab (sein Vertrag: abweisen, wenn der
+  Prozess nicht zu sagen ist). Der Fall „Dienst hält den Socket mit“ gilt nur im Test: gopsutil meldet je Socket den
+  ersten Prozess, bei system-weiter Socket-Aktivierung also systemd; ein socket-aktivierter Dienst ist damit
+  praktisch nicht prüfbar.
+- T4: Ein weiterer Fall der Ziel-Zuordnung ist als eigene Roadmap-Zeile abgetrennt.
