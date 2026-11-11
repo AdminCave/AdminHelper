@@ -691,14 +691,13 @@ jobs:
       # download gets three attempts of three minutes (retry.sh), so a stall costs an attempt.
       # install-deps runs apt-get install, so dpkg, which a kill must never hit: it runs
       # without retry.sh, and apt itself retries a stalled fetch (the drop-in below).
-      - name: Playwright version
-        id: playwright
-        working-directory: apps/web
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      # The key is the lockfile's hash, with no restore-keys: only an exact entry comes back.
+      # rust-cache runs with cache-bin: false everywhere, so tauri-cli is built from its pin in
+      # every run. .github/scripts/cache_settings.sh holds both (job ops-scripts).
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/package-lock.json') }}-chromium
       - name: Install Playwright browsers
         working-directory: apps/web
         timeout-minutes: 12
@@ -773,6 +772,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - name: cargo fmt
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --check
@@ -797,6 +797,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         shell: bash
         run: |
@@ -850,6 +851,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
@@ -923,6 +925,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - name: Install Tauri CLI
         # The suite's gate, not a build. Keep this pin in lockstep with tauri-build-smoke and
         # release.yml.
@@ -1177,6 +1180,8 @@ jobs:
         run: bash .github/scripts/apt_archives_verify_test.sh
       - name: tauri_cli_pins.sh test
         run: bash .github/scripts/tauri_cli_pins_test.sh
+      - name: cache_settings.sh test
+        run: bash .github/scripts/cache_settings_test.sh
       # Does the documentation still describe this tree? Every <code>apps/…</code>
       # in docs/**/*.html has to name a file that exists (--paths), and a <code>
       # that is one ALL_CAPS name has to be carried by the repository outside the
