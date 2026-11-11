@@ -5,8 +5,10 @@ Heavy: none — nur Desktop-Rust (pty, sftp) und Desktop-UI-Store, kein Stack-, 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1164: das Run-Verzeichnis eines Tabs geht auch beim App-Ende  [ ]
+### T1 — R-1164: das Run-Verzeichnis eines Tabs geht auch beim App-Ende  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/pty.rs, apps/desktop/src-tauri/src/main.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-terminal-5.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f8c1c007a 2026-11-11T10:51:07+01:00
+Review: am Ende (Branch-Review)
 Änderung: `Session` hält den Pfad aus `Spawn::cleanup`; neue Methode `PtyRegistry::shutdown(grace)`: `close_all()`,
 bis `grace` warten, bis die Wait-Threads der Sitzungen mit Run-Verzeichnis fertig sind, dann die übrigen Verzeichnisse
 selbst entfernen. `main.rs` (`RunEvent::Exit`) ruft `shutdown(2 s)` statt `close_all()`. Test (Unix, erst rot gegen
