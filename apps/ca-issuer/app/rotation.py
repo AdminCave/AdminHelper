@@ -32,6 +32,7 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -41,6 +42,27 @@ from app import pki, root_rollover
 from app.root_rollover import CROSS, NEXT_CRT, NEXT_KEY, RETIRED, ROTATE_ROOT, STATE
 
 LOCK_NAME = ".rotate.lock"
+# <scope>-compromised.pem: the intermediates a rotation with --compromised replaced or
+# dropped from the retired file, certificates only, until they expire. Matched by their
+# public key: what is compromised is the key, not one certificate of it.
+COMPROMISED_SUFFIX = "-compromised.pem"
+
+
+def compromised_path(pki_dir: Path, scope: str) -> Path:
+    return pki_dir / f"{scope}{COMPROMISED_SUFFIX}"
+
+
+def read_compromised(path: Path) -> list[x509.Certificate]:
+    """The entries of the register `path`; a missing file or one without text holds none.
+    OSError or ValueError for a file that cannot be read as PEM certificates."""
+    data = path.read_bytes() if path.exists() else b""
+    return x509.load_pem_x509_certificates(data) if data.strip() else []
+
+
+def public_key_der(holder: x509.Certificate | ec.EllipticCurvePrivateKey) -> bytes:
+    return holder.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
 
 class RotationError(Exception):
@@ -119,10 +141,10 @@ def _rotate(pki_dir: Path, passphrase: bytes, compromised: frozenset[str]) -> li
         )
         if new_switch != state.switch:
             _replace(pki_dir / STATE, new_switch.to_json(), 0o644)
-    for rotated, new_key, retired in planned:
-        _write_scope(pki_dir, rotated, new_key, retired, root_cert)
+    for plan in planned:
+        _write_scope(pki_dir, plan, root_cert)
     _sync_dir(pki_dir)
-    return [rotated for rotated, _, _ in planned]
+    return [plan.rotated for plan in planned]
 
 
 def stage_root(pki_dir: Path, next_passphrase: bytes) -> x509.Certificate:
@@ -282,8 +304,8 @@ def _switch(
     if cross_cert is not None and state.cross is None:
         _replace(pki_dir / CROSS, pki.cert_to_pem(cross_cert), 0o644)
     _sync_dir(pki_dir)
-    for rotated, key, retired in planned:
-        _write_scope(pki_dir, rotated, key, retired, new_root)
+    for plan in planned:
+        _write_scope(pki_dir, plan, new_root)
     for scope, current in moved:
         _replace(pki_dir / f"{scope}-chain.pem", pki.chain_pem(current, new_root), 0o644)
     _sync_dir(pki_dir)
@@ -293,7 +315,7 @@ def _switch(
     for name in (NEXT_CRT, NEXT_KEY):
         _remove(pki_dir / name)
     _sync_dir(pki_dir)
-    return SwitchedRoot(new_root, old_root, cross_cert, [r for r, _, _ in planned])
+    return SwitchedRoot(new_root, old_root, cross_cert, [plan.rotated for plan in planned])
 
 
 def finish_root(pki_dir: Path) -> None:
@@ -314,7 +336,13 @@ def finish_root(pki_dir: Path) -> None:
                 "from the backup of the last step"
             )
         kept = {
-            scope: _retired_under(pki_dir / f"{scope}-retired.pem", scope, root_cert, old_roots)
+            scope: _retired_under(
+                pki_dir / f"{scope}-retired.pem",
+                scope,
+                root_cert,
+                old_roots,
+                _banned(pki_dir, scope),
+            )
             for scope in pki.SCOPES
         }
 
@@ -389,6 +417,13 @@ def _state(pki_dir: Path) -> root_rollover.State:
         raise RotationError(str(exc)) from exc
 
 
+class _Planned(NamedTuple):
+    rotated: RotatedScope
+    key: ec.EllipticCurvePrivateKey
+    retired: list[x509.Certificate]
+    register: list[x509.Certificate] | None  # None: <scope>-compromised.pem stays as it is
+
+
 def _plan_scope(
     pki_dir: Path,
     scope: str,
@@ -398,16 +433,23 @@ def _plan_scope(
     compromised: bool,
     now: datetime.datetime,
     label: str,
-) -> tuple[RotatedScope, ec.EllipticCurvePrivateKey, list[x509.Certificate]]:
-    """The new intermediate of `scope` under `root_cert` and what its retired file holds
-    then; `roots` are the roots an intermediate kept as retired may be under."""
+) -> _Planned:
+    """The new intermediate of `scope` under `root_cert`, what its retired file holds
+    then and, with `compromised`, its register; `roots` are the roots an intermediate
+    kept as retired may be under."""
     crt = pki_dir / f"{scope}.crt"
     old = _read_cert(crt)
+    register = _read_register(pki_dir, scope)
     if compromised:
         # Its key may sign for someone else: neither it nor a predecessor stays
         # trusted, so the clock (which only decides what is kept) does not matter.
+        # The register keeps them out of the retired file for good, also when it is
+        # written back later; what has expired is trusted by no one and leaves it.
+        dropped = [*register, old, *_read_retired(pki_dir / f"{scope}-retired.pem")]
+        unique = {c.public_bytes(serialization.Encoding.DER): c for c in dropped}
+        kept = [c for c in unique.values() if now < c.not_valid_after_utc]
         new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key, label=label)
-        return RotatedScope(scope, old, new_cert), new_key, []
+        return _Planned(RotatedScope(scope, old, new_cert), new_key, [], kept)
     # An intermediate is valid from its issuing, so one not valid yet means this clock
     # is behind the one that issued it. Replaced under it, the intermediate would not
     # be kept as retired (it is not valid now), and once the clock is right nothing
@@ -421,19 +463,19 @@ def _plan_scope(
             f"{now.isoformat()}; check the host clock (NTP), it is behind the issuing "
             "of this intermediate; under this clock the rotation changes nothing"
         )
-    retired = _retired_after(pki_dir / f"{scope}-retired.pem", scope, old, roots, now)
+    banned = frozenset(public_key_der(c) for c in register)
+    retired = _retired_after(pki_dir / f"{scope}-retired.pem", scope, old, roots, now, banned)
     new_cert, new_key = pki.build_intermediate_ca(scope, root_cert, root_key, label=label)
-    return RotatedScope(scope, old, new_cert), new_key, retired
+    return _Planned(RotatedScope(scope, old, new_cert), new_key, retired, None)
 
 
-def _write_scope(
-    pki_dir: Path,
-    rotated: RotatedScope,
-    new_key: ec.EllipticCurvePrivateKey,
-    retired: list[x509.Certificate],
-    root_cert: x509.Certificate,
-) -> None:
+def _write_scope(pki_dir: Path, planned: _Planned, root_cert: x509.Certificate) -> None:
+    rotated, new_key, retired = planned.rotated, planned.key, planned.retired
     scope = rotated.scope
+    # The register before the retired file: a run that stops between them has dropped
+    # nothing that is not listed.
+    if planned.register is not None:
+        _replace(compromised_path(pki_dir, scope), pki.chain_pem(*planned.register), 0o644)
     _replace(pki_dir / f"{scope}-retired.pem", pki.chain_pem(*retired), 0o644)
     _replace(pki_dir / f"{scope}.key", pki.key_to_pem(new_key), 0o600)
     _replace(pki_dir / f"{scope}.crt", pki.cert_to_pem(rotated.new), 0o644)
@@ -504,10 +546,7 @@ def _is_key_of(path: Path, cert: x509.Certificate) -> bool:
         return False
 
 
-def _spki(holder: x509.Certificate | ec.EllipticCurvePrivateKey) -> bytes:
-    return holder.public_key().public_bytes(
-        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
-    )
+_spki = public_key_der
 
 
 def _read_bytes(path: Path) -> bytes:
@@ -524,6 +563,18 @@ def _read_cert(path: Path) -> x509.Certificate:
         raise RotationError(f"cannot read {path}: {exc}") from exc
 
 
+def _read_register(pki_dir: Path, scope: str) -> list[x509.Certificate]:
+    path = compromised_path(pki_dir, scope)
+    try:
+        return read_compromised(path)
+    except (OSError, ValueError) as exc:
+        raise RotationError(f"cannot read {path} as PEM certificates: {exc}") from exc
+
+
+def _banned(pki_dir: Path, scope: str) -> frozenset[bytes]:
+    return frozenset(public_key_der(c) for c in _read_register(pki_dir, scope))
+
+
 def _read_retired(path: Path) -> list[x509.Certificate]:
     try:
         data = path.read_bytes() if path.exists() else b""
@@ -538,18 +589,20 @@ def _retired_after(
     old: x509.Certificate,
     roots: tuple[x509.Certificate, ...],
     now: datetime.datetime,
+    banned: frozenset[bytes],
 ) -> list[x509.Certificate]:
     """What the retired file `path` holds after the rotation, newest first and each
     once: `old` if it is an intermediate of `scope` under one of `roots`
     (pki.intermediate_problem) and valid now, and the file's entries that have not
-    expired. An `old` that is not one (a restore with the scopes mixed up, a foreign
+    expired; neither `old` nor an entry whose public key is in `banned` (the register,
+    a decision already taken, so no stop for it). An `old` that is not one (a restore with the scopes mixed up, a foreign
     certificate) is replaced without being kept: the rotation is also the way to replace
     a wrong <scope>.crt, and kept it would be an entry the boot skips and the next
     rotation stops at. An entry of the file that is not an intermediate of `scope` under
     one of `roots` is a RotationError: the boot skips such an entry unattended, with a
     WARNING; a rotation that rewrites the file would either carry it on or drop it
     silently, and that is the operator's call."""
-    earlier = _read_retired(path)
+    earlier = [c for c in _read_retired(path) if public_key_der(c) not in banned]
     for cert in earlier:
         if problem := pki.intermediate_problem_among(cert, scope, roots):
             name = pki.read_identity(cert)[0]
@@ -562,6 +615,7 @@ def _retired_after(
     if (
         pki.intermediate_problem_among(old, scope, roots) is None
         and old.not_valid_before_utc <= now < old.not_valid_after_utc
+        and public_key_der(old) not in banned
     ):
         keep.append(old)
     der = serialization.Encoding.DER
@@ -574,11 +628,15 @@ def _retired_under(
     scope: str,
     root: x509.Certificate,
     old_roots: tuple[x509.Certificate, ...],
+    banned: frozenset[bytes],
 ) -> list[x509.Certificate]:
     """The entries of the retired file `path` under `root`, for finish: an entry under one
-    of `old_roots` leaves, any other entry is a RotationError, as in _retired_after."""
+    of `old_roots` or in the register `banned` leaves, any other entry is a RotationError,
+    as in _retired_after."""
     keep = []
     for cert in _read_retired(path):
+        if public_key_der(cert) in banned:
+            continue
         if pki.intermediate_problem(cert, scope, root) is None:
             keep.append(cert)
         elif problem := pki.intermediate_problem_among(cert, scope, (root, *old_roots)):

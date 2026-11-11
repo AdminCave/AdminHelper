@@ -35,6 +35,41 @@ const MESSAGE_MAX: usize = 512;
 /// How long the child may take to end once its stdin is closed.
 const EXIT_WAIT: Duration = Duration::from_secs(5);
 
+/// How long an action waits for its session to sign in (R-1174).
+pub const SIGN_IN_WAIT: Duration = Duration::from_secs(120);
+
+/// How often an action looks for the connection of its session while it signs in.
+pub const SIGN_IN_POLL: Duration = Duration::from_millis(250);
+
+/// The program and argv of the SFTP channel from `channel`, once the session is signed in: an
+/// argv over a ControlMaster socket waits until the socket is there, as OpenSSH creates it only
+/// after the login (a child before that would sign in itself and fail under `BatchMode`).
+/// `channel` is asked again each round, so a session that ends meanwhile ends the wait with its
+/// error.
+pub async fn wait_for_sign_in(
+    mut channel: impl FnMut() -> Result<(PathBuf, Vec<String>), AppError>,
+    wait: Duration,
+    poll: Duration,
+) -> Result<(PathBuf, Vec<String>), AppError> {
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        let (program, args) = channel()?;
+        let ready = match crate::connection::ssh::control_socket_of(&args) {
+            None => true,
+            Some(socket) => tokio::fs::try_exists(&socket).await.unwrap_or(false),
+        };
+        if ready {
+            return Ok((program, args));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(AppError::Connection(
+                "the session is not signed in yet; refresh once it is".to_string(),
+            ));
+        }
+        tokio::time::sleep(poll).await;
+    }
+}
+
 /// What a directory entry is; a symlink is not followed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -188,11 +223,26 @@ pub fn name_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// The last part of a remote path, for the name a download is saved under.
-pub fn remote_name(path: &str) -> &str {
-    path.rsplit('/')
-        .find(|part| !part.is_empty())
-        .unwrap_or("download")
+/// The name a download is offered under: the last part of its remote path. The server names it,
+/// so whatever a local file system reads as a separator or a drive, and control characters,
+/// become `_`; nothing usable left is "download".
+pub fn suggested_name(path: &str) -> String {
+    let last = path.rsplit('/').find(|part| !part.is_empty()).unwrap_or("");
+    let name: String = last
+        .chars()
+        .map(|c| {
+            if c == '\\' || c == ':' || c.is_control() || is_bidi_control(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if name.is_empty() || name == "." || name == ".." {
+        "download".to_string()
+    } else {
+        name
+    }
 }
 
 /// Why an action failed: on the server (its message, or the child's stderr when the child
@@ -390,9 +440,7 @@ impl Channel {
         let mut source = self.session.open(remote_path).await.map_err(remote)?;
         let part = part_path(local).map_err(Failure::App)?;
         let result = async {
-            let mut target = tokio::fs::File::create(&part)
-                .await
-                .map_err(Failure::Local)?;
+            let mut target = create_part(&part).await.map_err(Failure::Local)?;
             pump(
                 &mut source,
                 &mut target,
@@ -473,6 +521,32 @@ fn part_path(local: &Path) -> Result<PathBuf, AppError> {
     part.push(name);
     part.push(".ah-part");
     Ok(local.with_file_name(part))
+}
+
+/// The bidi controls a host could put into a name to make it read as another one (the set
+/// `HIDDEN` in `FilesPanel.svelte` shows as a replacement character).
+fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Creates the part file anew. Whatever already sits at its place (the rest of an aborted
+/// download, or a link someone put there) is removed and never written through.
+async fn create_part(part: &Path) -> std::io::Result<tokio::fs::File> {
+    match create_new(part).await {
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            tokio::fs::remove_file(part).await?;
+            create_new(part).await
+        }
+        other => other,
+    }
+}
+
+async fn create_new(path: &Path) -> std::io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await
 }
 
 /// Reads stderr to its end and keeps its tail.
@@ -800,11 +874,75 @@ mod tests {
 
     #[test]
     fn a_download_is_saved_under_the_last_part_of_its_path() {
-        assert_eq!(remote_name("/var/log/syslog"), "syslog");
-        assert_eq!(remote_name("notes.txt"), "notes.txt");
-        assert_eq!(remote_name("/srv/data/"), "data");
-        assert_eq!(remote_name("/"), "download");
-        assert_eq!(remote_name(""), "download");
+        assert_eq!(suggested_name("/var/log/syslog"), "syslog");
+        assert_eq!(suggested_name("notes.txt"), "notes.txt");
+        assert_eq!(suggested_name("/srv/data/"), "data");
+        assert_eq!(suggested_name("/"), "download");
+        assert_eq!(suggested_name(""), "download");
+    }
+
+    #[test]
+    fn a_suggested_name_names_no_other_folder_or_drive() {
+        assert_eq!(suggested_name("/srv/..\\..\\evil.bat"), ".._.._evil.bat");
+        assert_eq!(suggested_name("/srv/C:evil"), "C_evil");
+        assert_eq!(suggested_name("/srv/a\nb\u{1b}c"), "a_b_c");
+        assert_eq!(
+            suggested_name("/srv/invoice\u{202e}fdp.exe"),
+            "invoice_fdp.exe"
+        );
+        assert_eq!(
+            suggested_name("/srv/\u{061c}a\u{200e}\u{200f}\u{202a}\u{2066}\u{2069}"),
+            "_a_____"
+        );
+        assert_eq!(suggested_name("/srv/.."), "download");
+        assert_eq!(suggested_name("/srv/./"), "download");
+        assert_eq!(suggested_name("/srv/.hidden"), ".hidden");
+    }
+
+    #[tokio::test]
+    async fn a_part_file_left_behind_is_replaced_not_written_into() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-part-")
+            .expect("a private folder");
+        let part = dir.join(".x.ah-part");
+        std::fs::write(&part, b"old rest").unwrap();
+
+        let mut file = create_part(&part).await.expect("the part file");
+        file.write_all(b"new").await.unwrap();
+        file.flush().await.unwrap();
+        drop(file);
+        assert_eq!(std::fs::read(&part).unwrap(), b"new");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_link_at_the_part_file_is_not_followed() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-link-")
+            .expect("a private folder");
+        let elsewhere = dir.join("elsewhere");
+        std::fs::write(&elsewhere, b"keep").unwrap();
+        let part = dir.join(".x.ah-part");
+        std::os::unix::fs::symlink(&elsewhere, &part).unwrap();
+
+        let mut file = create_part(&part).await.expect("the part file");
+        file.write_all(b"new").await.unwrap();
+        file.flush().await.unwrap();
+        drop(file);
+        assert_eq!(std::fs::read(&elsewhere).unwrap(), b"keep");
+        assert!(!std::fs::symlink_metadata(&part).unwrap().is_symlink());
+        assert_eq!(std::fs::read(&part).unwrap(), b"new");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_folder_at_the_part_file_stops_the_download() {
+        let dir = crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-dir-")
+            .expect("a private folder");
+        let part = dir.join(".x.ah-part");
+        std::fs::create_dir(&part).unwrap();
+        assert!(create_part(&part).await.is_err());
+        assert!(part.is_dir());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -817,5 +955,92 @@ mod tests {
             part_path(Path::new("/home/u/x.tar")).unwrap(),
             Path::new("/home/u/.x.tar.ah-part")
         );
+    }
+
+    fn channel_over(socket: &Path) -> (PathBuf, Vec<String>) {
+        let mut args = vec!["-o".to_string(), "BatchMode=yes".to_string()];
+        args.extend(crate::connection::ssh::control_args(socket, false));
+        (PathBuf::from("/usr/bin/ssh"), args)
+    }
+
+    #[tokio::test]
+    async fn an_action_waits_until_the_session_has_signed_in() {
+        let dir =
+            crate::ansible::create_private_dir(&std::env::temp_dir(), "ah-sftp-wait-").unwrap();
+        let socket = dir.join("cm");
+        let maker = {
+            let socket = socket.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                tokio::fs::write(&socket, b"").await.unwrap();
+            })
+        };
+        let mut asked = 0;
+        let got = wait_for_sign_in(
+            || {
+                asked += 1;
+                Ok(channel_over(&socket))
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(20),
+        )
+        .await;
+        maker.await.unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(got.unwrap(), channel_over(&socket));
+        assert!(asked > 1, "the first round found no socket and waited");
+    }
+
+    #[tokio::test]
+    async fn an_action_gives_up_when_the_session_never_signs_in() {
+        let socket = std::env::temp_dir().join("ah-sftp-wait-missing").join("cm");
+        let err = wait_for_sign_in(
+            || Ok(channel_over(&socket)),
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.code(), "ERR_CONNECTION");
+        assert!(err.to_string().contains("not signed in yet"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn an_action_ends_with_the_session_it_waits_for() {
+        let socket = std::env::temp_dir().join("ah-sftp-wait-ended").join("cm");
+        let mut rounds = 0;
+        let err = wait_for_sign_in(
+            || {
+                rounds += 1;
+                if rounds < 3 {
+                    Ok(channel_over(&socket))
+                } else {
+                    Err(AppError::Connection(
+                        "the terminal session has ended".to_string(),
+                    ))
+                }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.to_string(), "the terminal session has ended");
+    }
+
+    #[tokio::test]
+    async fn an_action_without_a_control_socket_goes_at_once() {
+        let channel = (
+            PathBuf::from("ssh.exe"),
+            vec!["-s".to_string(), "sftp".to_string()],
+        );
+        let got = wait_for_sign_in(
+            || Ok(channel.clone()),
+            Duration::ZERO,
+            Duration::from_secs(60),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got, channel);
     }
 }

@@ -4,7 +4,7 @@
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin
 from app.core.config import FRP_BIND_PORT, FRPS_DASHBOARD_URL, FRPS_STATE_DIR
@@ -103,13 +103,15 @@ def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)
     if error:
         return {"proxies": [], "total": 0, "error": error}
 
-    tunnels = db.query(FrpTunnel).all()
-    tunnel_map = {t.name: t.to_dict(mask_secrets=True) for t in tunnels}
+    # frps lists a proxy as "{user}.{name}" of the agent's frpc: the server's ID and the
+    # tunnel's ID (generate_frpc_toml). Matched whole, so a name may hold dots (R-1211).
+    # selectin: each tunnel's display name reads its server (R-1210), in one query for all.
+    tunnels = db.query(FrpTunnel).options(selectinload(FrpTunnel.target_server)).all()
+    tunnel_map = {f"{t.server_id}.{t.id}": t.to_dict(mask_secrets=True) for t in tunnels}
 
     result = []
     for p in proxies:
-        proxy_name = p["name"].split(".")[-1] if "." in p["name"] else p["name"]
-        tunnel = tunnel_map.get(proxy_name)
+        tunnel = tunnel_map.get(p["name"])
         result.append(
             {
                 **p,

@@ -80,6 +80,7 @@ func stubSystemCLI(t *testing.T, replies map[string]dockerReply) *[][]string {
 	}
 	systemCLI.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{name}, args...))
+		checkAllowed(t, name, args)
 		reply, ok := replies[name]
 		if !ok {
 			t.Errorf("unexpected call %s %v", name, args)
@@ -129,7 +130,7 @@ func TestHelperSystemStateProcess(t *testing.T) {
 func exitStatus(t *testing.T, code int) error {
 	t.Helper()
 	t.Setenv(systemStateHelperEnv, strconv.Itoa(code))
-	_, err := runTimed(context.Background(), time.Minute, os.Args[0], "-test.run=^TestHelperSystemStateProcess$")
+	_, err := execTimed(context.Background(), time.Minute, nil, os.Args[0], "-test.run=^TestHelperSystemStateProcess$")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code ||
 		!strings.Contains(string(exitErr.Stderr), helperStderr) {

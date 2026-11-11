@@ -65,6 +65,23 @@ REPORTS=$(e2e_dc logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/repor
     && ok "monitoring ingested $REPORTS agent report(s)" \
     || { bad "monitoring saw $REPORTS reports (expected >= $AGENTS)"; e2e_dc logs --tail 15 monitoring; }
 
+# Each run asked the gateway for the trust generation (R-1054) and was told the one of the
+# ca.crt it had just enrolled with, so no agent renewed: the gateway logged GET /ca/trust with
+# 200 and no POST /ca/renew, and no agent log names a renewal or a renewal error.
+GW_LOG=$(e2e_dc logs gateway 2>/dev/null)
+TRUST=$(grep -cE '"GET /ca/trust HTTP/[0-9.]+" 200 ' <<<"$GW_LOG")
+RENEWS=$(grep -cE '"POST /ca/renew HTTP' <<<"$GW_LOG")
+AGENT_RENEWS=0
+for i in $(seq 1 "$AGENTS"); do
+    n=$(grep -cE 'mTLS client certificate renewed|Cert-Renew Fehler' "$E2E_WORK/agent-$i.log" 2>/dev/null)
+    AGENT_RENEWS=$((AGENT_RENEWS + ${n:-0}))
+done
+[ "$TRUST" -ge "$AGENTS" ] && [ "$RENEWS" = 0 ] && [ "$AGENT_RENEWS" = 0 ] \
+    && ok "the gateway answered $TRUST GET /ca/trust with 200, and no agent renewed" \
+    || { bad "trust generation: $TRUST GET /ca/trust with 200 (expected >= $AGENTS), $RENEWS POST /ca/renew" \
+            "and $AGENT_RENEWS renewal line(s) in the agent logs (expected 0 each)"
+         grep -F '/ca/' <<<"$GW_LOG" | tail -n 10 | sed 's/^/    /'; }
+
 echo ""
 echo "agent_monitoring: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

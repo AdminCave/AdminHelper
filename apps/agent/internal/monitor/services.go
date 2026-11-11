@@ -56,6 +56,9 @@ func commandFailure(name string, timeout time.Duration, err error) string {
 	if errors.Is(err, context.Canceled) {
 		return "canceled before it ended"
 	}
+	if errors.Is(err, errCommandNotAllowed) {
+		return name + " call not on the command allowlist"
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return exitErr.Error()

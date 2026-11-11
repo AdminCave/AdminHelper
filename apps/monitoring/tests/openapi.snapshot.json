@@ -1,6 +1,84 @@
 {
   "components": {
     "schemas": {
+      "AdoptAllOut": {
+        "properties": {
+          "adopted": {
+            "items": {
+              "$ref": "#/components/schemas/AdoptOut"
+            },
+            "title": "Adopted",
+            "type": "array"
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/components/schemas/AdoptFailedOut"
+            },
+            "title": "Failed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "adopted",
+          "failed"
+        ],
+        "title": "AdoptAllOut",
+        "type": "object"
+      },
+      "AdoptFailedOut": {
+        "properties": {
+          "findingId": {
+            "title": "Findingid",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "findingId",
+          "reason"
+        ],
+        "title": "AdoptFailedOut",
+        "type": "object"
+      },
+      "AdoptOut": {
+        "properties": {
+          "disabledChecks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disabledchecks",
+            "type": "array"
+          },
+          "enabledChecks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enabledchecks",
+            "type": "array"
+          },
+          "finding": {
+            "$ref": "#/components/schemas/FindingOut"
+          },
+          "skippedChecks": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedCheckOut"
+            },
+            "title": "Skippedchecks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "finding",
+          "enabledChecks",
+          "disabledChecks",
+          "skippedChecks"
+        ],
+        "title": "AdoptOut",
+        "type": "object"
+      },
       "AgentKeyDeletedOut": {
         "properties": {
           "deleted": {
@@ -48,6 +126,41 @@
           "createdAt"
         ],
         "title": "AgentKeyOut",
+        "type": "object"
+      },
+      "AgentPlanOut": {
+        "properties": {
+          "catalog_version": {
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "discovery": {
+            "$ref": "#/components/schemas/PlanDiscoveryOut"
+          },
+          "plan_version": {
+            "title": "Plan Version",
+            "type": "integer"
+          },
+          "probes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanProbeOut"
+            },
+            "title": "Probes",
+            "type": "array"
+          },
+          "scan": {
+            "title": "Scan",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "plan_version",
+          "catalog_version",
+          "scan",
+          "discovery",
+          "probes"
+        ],
+        "title": "AgentPlanOut",
         "type": "object"
       },
       "AlertLogOut": {
@@ -418,6 +531,169 @@
         "title": "BuiltinUpdateOut",
         "type": "object"
       },
+      "CatalogCardOut": {
+        "properties": {
+          "checkKey": {
+            "title": "Checkkey",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkKey",
+          "field",
+          "label"
+        ],
+        "title": "CatalogCardOut",
+        "type": "object"
+      },
+      "CatalogCheckOut": {
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogCredentialOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sensor": {
+            "title": "Sensor",
+            "type": "string"
+          },
+          "testObject": {
+            "title": "Testobject",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "sensor",
+          "interval",
+          "fields",
+          "testObject",
+          "credential"
+        ],
+        "title": "CatalogCheckOut",
+        "type": "object"
+      },
+      "CatalogCredentialOut": {
+        "properties": {
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          },
+          "use": {
+            "title": "Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slot",
+          "use"
+        ],
+        "title": "CatalogCredentialOut",
+        "type": "object"
+      },
+      "CatalogModuleOut": {
+        "properties": {
+          "card": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogCardOut"
+            },
+            "title": "Card",
+            "type": "array"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogCheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instance": {
+            "title": "Instance",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "instance",
+          "checks",
+          "card"
+        ],
+        "title": "CatalogModuleOut",
+        "type": "object"
+      },
+      "CatalogOut": {
+        "properties": {
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogModuleOut"
+            },
+            "title": "Modules",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "modules"
+        ],
+        "title": "CatalogOut",
+        "type": "object"
+      },
       "CheckCreate": {
         "properties": {
           "check_type": {
@@ -645,6 +921,79 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CollectorCostOut": {
+        "properties": {
+          "collector": {
+            "title": "Collector",
+            "type": "string"
+          },
+          "cpuMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpums"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factor"
+          },
+          "throttled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Throttled"
+          },
+          "timeouts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeouts"
+          }
+        },
+        "required": [
+          "collector",
+          "durationMs",
+          "cpuMs",
+          "timeouts",
+          "factor",
+          "throttled"
+        ],
+        "title": "CollectorCostOut",
+        "type": "object"
+      },
       "CompareServerOut": {
         "properties": {
           "points": {
@@ -681,6 +1030,180 @@
           "points"
         ],
         "title": "CompareServerOut",
+        "type": "object"
+      },
+      "DiscoveryOut": {
+        "properties": {
+          "credentials": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "inventory": {
+            "additionalProperties": true,
+            "title": "Inventory",
+            "type": "object"
+          },
+          "nextScanAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextscanat"
+          },
+          "scanRequestedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scanrequestedat"
+          },
+          "scannedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scannedat"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "scannedAt",
+          "nextScanAt",
+          "scanRequestedAt",
+          "inventory",
+          "credentials"
+        ],
+        "title": "DiscoveryOut",
+        "type": "object"
+      },
+      "FindingOut": {
+        "properties": {
+          "catalogVersion": {
+            "title": "Catalogversion",
+            "type": "string"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decidedat"
+          },
+          "droppedChecks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Droppedchecks",
+            "type": "array"
+          },
+          "firstSeen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firstseen"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instanceKey": {
+            "title": "Instancekey",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "lastSeen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastseen"
+          },
+          "moduleId": {
+            "title": "Moduleid",
+            "type": "string"
+          },
+          "moduleName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulename"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "silentChecks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Silentchecks",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "moduleId",
+          "moduleName",
+          "instanceKey",
+          "kind",
+          "status",
+          "summary",
+          "catalogVersion",
+          "firstSeen",
+          "lastSeen",
+          "decidedAt",
+          "silentChecks",
+          "droppedChecks"
+        ],
+        "title": "FindingOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1234,6 +1757,39 @@
             "title": "Interval",
             "type": "string"
           },
+          "moduleCheckKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulecheckkey"
+          },
+          "moduleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleid"
+          },
+          "moduleInstance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleinstance"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1259,6 +1815,10 @@
           "severity": {
             "title": "Severity",
             "type": "string"
+          },
+          "silent": {
+            "title": "Silent",
+            "type": "boolean"
           },
           "state": {
             "anyOf": [
@@ -1319,10 +1879,223 @@
           "templateId",
           "templateDefId",
           "overriddenFields",
+          "moduleId",
+          "moduleInstance",
+          "moduleCheckKey",
+          "silent",
           "createdAt",
           "updatedAt"
         ],
         "title": "MonitorCheckOut",
+        "type": "object"
+      },
+      "MonitorCheckStatusOut": {
+        "properties": {
+          "checkType": {
+            "title": "Checktype",
+            "type": "string"
+          },
+          "config": {
+            "title": "Config"
+          },
+          "consecutiveFails": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutivefails"
+          },
+          "consecutiveOks": {
+            "title": "Consecutiveoks",
+            "type": "integer"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "string"
+          },
+          "moduleCheckKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulecheckkey"
+          },
+          "moduleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleid"
+          },
+          "moduleInstance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleinstance"
+          },
+          "mutedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutedreason"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overriddenFields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overriddenfields",
+            "type": "array"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "silent": {
+            "title": "Silent",
+            "type": "boolean"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorStateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "templateDefId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templatedefid"
+          },
+          "templateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templateid"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "name",
+          "description",
+          "checkType",
+          "config",
+          "enabled",
+          "interval",
+          "severity",
+          "consecutiveFails",
+          "consecutiveOks",
+          "templateId",
+          "templateDefId",
+          "overriddenFields",
+          "moduleId",
+          "moduleInstance",
+          "moduleCheckKey",
+          "silent",
+          "createdAt",
+          "updatedAt",
+          "mutedReason"
+        ],
+        "title": "MonitorCheckStatusOut",
         "type": "object"
       },
       "MonitorStateOut": {
@@ -1405,6 +2178,175 @@
           "notifiedStatus"
         ],
         "title": "MonitorStateOut",
+        "type": "object"
+      },
+      "PlanCredentialOut": {
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "use": {
+            "title": "Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "use"
+        ],
+        "title": "PlanCredentialOut",
+        "type": "object"
+      },
+      "PlanDiscoveryOut": {
+        "properties": {
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/PlanMarkerOut"
+            },
+            "title": "Markers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "markers"
+        ],
+        "title": "PlanDiscoveryOut",
+        "type": "object"
+      },
+      "PlanMarkerOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "packages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "paths",
+          "packages"
+        ],
+        "title": "PlanMarkerOut",
+        "type": "object"
+      },
+      "PlanProbeOut": {
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCredentialOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "integer"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "sensor": {
+            "title": "Sensor",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanTargetOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeout_s": {
+            "title": "Timeout S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sensor",
+          "interval_s",
+          "timeout_s",
+          "target",
+          "params",
+          "fields",
+          "credential"
+        ],
+        "title": "PlanProbeOut",
+        "type": "object"
+      },
+      "PlanTargetOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port_hint": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Hint"
+          },
+          "scheme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "port_hint",
+          "scheme"
+        ],
+        "title": "PlanTargetOut",
         "type": "object"
       },
       "RestoreOut": {
@@ -1535,6 +2477,32 @@
         "title": "ServerCompareOut",
         "type": "object"
       },
+      "ServerCostsOut": {
+        "properties": {
+          "collectors": {
+            "items": {
+              "$ref": "#/components/schemas/CollectorCostOut"
+            },
+            "title": "Collectors",
+            "type": "array"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "window": {
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "window",
+          "collectors"
+        ],
+        "title": "ServerCostsOut",
+        "type": "object"
+      },
       "ServerHistoryOut": {
         "properties": {
           "end": {
@@ -1607,11 +2575,51 @@
         "title": "ServerHistoryOut",
         "type": "object"
       },
+      "SkippedCheckOut": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "reason"
+        ],
+        "title": "SkippedCheckOut",
+        "type": "object"
+      },
       "StatusSummaryOut": {
         "properties": {
           "critical": {
             "title": "Critical",
             "type": "integer"
+          },
+          "lastResultAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastresultat"
+          },
+          "minIntervalS": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minintervals"
           },
           "ok": {
             "title": "Ok",
@@ -1640,7 +2648,9 @@
           "warning",
           "critical",
           "unknown",
-          "pending"
+          "pending",
+          "lastResultAt",
+          "minIntervalS"
         ],
         "title": "StatusSummaryOut",
         "type": "object"
@@ -2378,6 +3388,46 @@
         "summary": "Create Agent Key"
       }
     },
+    "/agent/{server_id}/plan": {
+      "get": {
+        "description": "The agent's next run: its probe checks, the markers to look for and whether to scan.",
+        "operationId": "agent_plan_agent__server_id__plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Plan"
+      }
+    },
     "/agent/{server_id}/report": {
       "post": {
         "description": "Agent pushes metrics directly to the monitoring service.",
@@ -2734,6 +3784,25 @@
           }
         },
         "summary": "Toggle Alert Rule"
+      }
+    },
+    "/catalog": {
+      "get": {
+        "description": "The module catalog: modules with their checks and card figures.",
+        "operationId": "get_module_catalog_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Module Catalog"
       }
     },
     "/checks": {
@@ -3144,6 +4213,308 @@
         "summary": "Toggle Check"
       }
     },
+    "/discovery/{server_id}": {
+      "get": {
+        "description": "The server's last scan, a pending \"scan now\" and the credential references its\nagent holds.",
+        "operationId": "get_discovery_discovery__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Discovery"
+      }
+    },
+    "/discovery/{server_id}/scan": {
+      "post": {
+        "description": "Scan now: the agent's next plan asks for a discovery. Pressing it again while\nit is pending changes nothing.",
+        "operationId": "request_scan_discovery__server_id__scan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Scan"
+      }
+    },
+    "/findings": {
+      "get": {
+        "description": "The findings inbox, optionally of one server and in one status.",
+        "operationId": "list_findings_findings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "server_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Server Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "adopted",
+                    "dismissed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FindingOut"
+                  },
+                  "title": "Response List Findings Findings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Findings"
+      }
+    },
+    "/findings/adopt-all": {
+      "post": {
+        "description": "Adopts every open finding of the server.",
+        "operationId": "adopt_all_findings_findings_adopt_all_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdoptAllOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt All Findings"
+      }
+    },
+    "/findings/{finding_id}/adopt": {
+      "post": {
+        "description": "Adopts a finding: creates the instance's checks or switches them on; a \"gone\"\nfinding switches them off. Never deletes a check.",
+        "operationId": "adopt_finding_findings__finding_id__adopt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "title": "Finding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdoptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt Finding"
+      }
+    },
+    "/findings/{finding_id}/dismiss": {
+      "post": {
+        "description": "Dismisses a finding; it stays dismissed until it changes.",
+        "operationId": "dismiss_finding_findings__finding_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "title": "Finding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Finding"
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health_health_get",
@@ -3383,7 +4754,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/MonitorCheckOut"
+                    "$ref": "#/components/schemas/MonitorCheckStatusOut"
                   },
                   "title": "Response Get All Status Status Get",
                   "type": "array"
@@ -3479,7 +4850,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/MonitorCheckOut"
+                    "$ref": "#/components/schemas/MonitorCheckStatusOut"
                   },
                   "title": "Response Get Server Status Status Server  Server Id  Get",
                   "type": "array"
@@ -3500,6 +4871,46 @@
           }
         },
         "summary": "Get Server Status"
+      }
+    },
+    "/status/server/{server_id}/costs": {
+      "get": {
+        "description": "What monitoring costs one server, per agent collector over the last hour: mean\nduration and CPU time of a run, the time-limit hits, the current factor and whether\nthe agent throttles the collector.",
+        "operationId": "get_server_costs_status_server__server_id__costs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCostsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Server Costs"
       }
     },
     "/status/server/{server_id}/history": {
@@ -3565,7 +4976,7 @@
     },
     "/status/summary": {
       "get": {
-        "description": "Summary: count per status. Dict response (aggregate, not a list) —\ndeliberately unpaginated.",
+        "description": "Summary: count per status, the newest result of an enabled check and the\nshortest interval of the enabled checks (null without one). Dict response\n(aggregate, not a list) — deliberately unpaginated.",
         "operationId": "get_status_summary_status_summary_get",
         "responses": {
           "200": {

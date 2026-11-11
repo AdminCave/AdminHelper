@@ -226,6 +226,7 @@ func stubShow(t *testing.T, props string, fn func(units []string) ([]byte, error
 		if len(args) <= len(prefix) || !reflect.DeepEqual(args[:len(prefix)], prefix) {
 			t.Fatalf("unexpected systemctl call %q", args)
 		}
+		checkAllowed(t, "systemctl", args)
 		units := append([]string(nil), args[len(prefix):]...)
 		*calls = append(*calls, units)
 		return fn(units)
@@ -500,6 +501,7 @@ func stubCollector(t *testing.T, replies map[string]systemctlReply) *[]string {
 	runSystemctl = func(_ context.Context, args ...string) ([]byte, error) {
 		call := strings.Join(args, " ")
 		*calls = append(*calls, call)
+		checkAllowed(t, "systemctl", args)
 		key := call
 		if args[0] == "show" && len(args) > 2 {
 			key = strings.Join(args[:3], " ")
@@ -1106,7 +1108,7 @@ func TestBuildReportPassesItsContextToTheServiceCollectors(t *testing.T) {
 		return []byte(watchedBlocks["sshd"]), nil
 	}
 	ctx := context.WithValue(context.Background(), ctxKey{}, t.Name())
-	buildReportWithState(ctx, []string{"sshd"}, reportState{}, time.Now())
+	buildReportWithState(ctx, []string{"sshd"}, nil, reportState{}, time.Now())
 	for name, got := range map[string]context.Context{"service health": health, "watched services": watched} {
 		if got == nil || got.Value(ctxKey{}) != t.Name() {
 			t.Errorf("%s collector got context %v, want the report's", name, got)

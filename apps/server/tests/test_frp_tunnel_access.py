@@ -22,6 +22,7 @@ _FULL_FIELDS = {
     "serverId",
     "frpConfigId",
     "name",
+    "label",
     "tunnelType",
     "protocol",
     "localIp",

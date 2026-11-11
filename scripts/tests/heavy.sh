@@ -570,7 +570,7 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
 
   # Whatever the exit code says, the artifact is what the box actually did.
   local art="$pull/last-all.json" tsv="$OUT/steps-all.tsv" name result secs part verdict
-  local reds=0 redsteps=0 steps_read=0 theirs ours=0
+  local reds=0 redsteps=0 unretried="" steps_read=0 theirs ours=0
   if [ -f "$art" ]; then
     theirs="$(artifact_is_ours "$art" "$label")" || ours=$?
     if [ "$ours" = 3 ]; then
@@ -621,7 +621,11 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
         # progress output would end up inside the captured verdict.
         classify_red_step "$name" "$log" "$box" "$slot"
         verdict="$CLASS_VERDICT"
-        case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
+        case "$verdict" in
+          flaky) ;;
+          infra) unretried="${unretried:+$unretried, }$name" ;;
+          *) reds=$((reds + 1)) ;;
+        esac
       fi
       FINDINGS+=("all|$name|$verdict|$secs|$box|$STEP_DETAIL")
       if [ "$verdict" = kandidat ]; then
@@ -635,7 +639,12 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
     [ "$rc" = 0 ] || [ "$rc" = 2 ] || reds=1
   fi
 
-  if [ "$reds" -gt 0 ]; then
+  if [ -n "$unretried" ]; then
+    # A red step whose retry could not run is neither flaky nor a candidate:
+    # nothing about it was learned, so the part is UNVERIFIED (R-1206).
+    PART_RESULT=infra PART_DETAIL="red step(s) could not be retried (not addressable by --step): $unretried"
+    [ "$reds" -gt 0 ] && PART_DETAIL="$PART_DETAIL; $reds step(s) red after retries"
+  elif [ "$reds" -gt 0 ]; then
     PART_RESULT=fail PART_DETAIL="$reds step(s) red after retries"
   elif [ "$redsteps" -gt 0 ]; then
     # Red steps, all of them green again on a retry: the wrapper's non-zero exit
@@ -678,6 +687,13 @@ first_marker() {  # first_marker <logfile>
     | head -1 | sed 's/^[[:space:]]*//'
 }
 
+# A rerun by name that run.sh rejected in its dry pass (R-1206): the step never
+# ran, so the red exit says nothing about it. The base commit of the second VM
+# carries its own, older run.sh, so the log is the only place to read this off.
+step_unaddressable() {  # step_unaddressable <logfile>
+  grep -aqE '^(ambiguous|unknown) step: ' "$1" 2>/dev/null
+}
+
 # Desktop suites report per spec (`spec <name>: fail`), so the retry can target
 # the one spec that failed instead of re-running the whole GUI suite.
 failing_spec() {  # failing_spec <step> <log>
@@ -718,6 +734,11 @@ classify_red_step() {  # classify_red_step <step> <all-log> <box> <slot>; sets C
       STEP_DETAIL="green on retry $i — quarantined"
       CLASS_VERDICT="flaky"
       note "  retry $i: green -> flaky"
+      return 0
+    fi
+    if step_unaddressable "$rlog"; then
+      CLASS_VERDICT="infra"; STEP_DETAIL="step not addressable by --step, retry could not run"
+      note "  retry $i: run.sh rejected the step name ($(grep -aEm1 '^(ambiguous|unknown) step: ' "$rlog")) -> infra"
       return 0
     fi
     marker="$(first_marker "$rlog")"
@@ -857,6 +878,11 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     w2_teardown; return 0
   fi
   rc=0; w2_run "$step" "$spec" "$OUT/w2-head-$safe.log" || rc=$?
+  if [ "$rc" != 0 ] && step_unaddressable "$OUT/w2-head-$safe.log"; then
+    CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); step not addressable by --step on the second box"
+    note "  second box: run.sh rejected the step name — candidate stays unconfirmed"
+    w2_teardown; return 0
+  fi
   if [ "$rc" = 0 ]; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="green on a fresh box — the first box was the difference"
     note "  fresh box: green -> unbestaetigt"
@@ -876,6 +902,11 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
   fi
   note "  counter-check against the last PASS commit ${base:0:8}"
   rc=0; w2_run "$step" "$spec" "$OUT/w2-base-$safe.log" || rc=$?
+  if [ "$rc" != 0 ] && step_unaddressable "$OUT/w2-base-$safe.log"; then
+    CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="red on two boxes; step not addressable by --step on base ${base:0:8}"
+    note "  base ${base:0:8}: run.sh rejected the step name — no counter-check, candidate stays unconfirmed"
+    w2_teardown; return 0
+  fi
   if [ "$rc" = 0 ]; then
     CLASS_VERDICT="reg"; STEP_DETAIL="base ${base:0:8} green, HEAD red on two boxes ($marker)"
     note "  base green, HEAD red -> REG"

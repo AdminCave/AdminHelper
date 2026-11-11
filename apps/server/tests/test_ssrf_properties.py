@@ -33,13 +33,16 @@ from app.core.ssrf import is_private_url
 
 # Spelled out, NOT imported from app.core.ssrf: an oracle that takes its answer
 # from the code under test agrees with that code by construction, including when
-# the code is wrong. These two are what the guard adds on top of the categories
-# the ipaddress module already knows — 0.0.0.0/8 ("this network", which resolves
-# to localhost on Linux) and the CGNAT range. Change the guard's list and this
-# test goes red on purpose: the policy is the thing being pinned here.
+# the code is wrong. These are what the guard adds on top of the categories the
+# ipaddress module already knows — 0.0.0.0/8 ("this network", which resolves to
+# localhost on Linux), the CGNAT range, the deprecated IPv6 site-local range
+# (global to ipaddress) and a cloud metadata address on a public range. Change the
+# guard's list and this test goes red on purpose: the policy is pinned here.
 _EXTRA_BLOCKED = [
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fec0::/10"),
+    ipaddress.ip_network("168.63.129.16/32"),
 ]
 
 
@@ -80,6 +83,9 @@ def _oracle_is_private(ip) -> bool:
 @example(ip=ipaddress.ip_address("10.0.0.1"))
 @example(ip=ipaddress.ip_address("100.64.0.1"))  # CGNAT: no ipaddress category covers it
 @example(ip=ipaddress.ip_address("0.0.0.0"))  # "this network" -> localhost on Linux
+@example(ip=ipaddress.ip_address("fec0::1"))  # site-local: global to ipaddress
+@example(ip=ipaddress.ip_address("168.63.129.16"))  # metadata on a public address
+@example(ip=ipaddress.ip_address("168.63.129.17"))  # its neighbour, must be allowed
 @example(ip=ipaddress.ip_address("8.8.8.8"))  # public, must be allowed
 @example(ip=ipaddress.ip_address("::1"))
 @example(ip=ipaddress.ip_address("2001:4860:4860::8888"))

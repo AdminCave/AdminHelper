@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
+from app.modules.connections.models import shown_name
 
 
 class FrpServerConfig(Base):
@@ -88,7 +89,9 @@ class FrpTunnel(Base):
     frp_config_id = Column(
         String, ForeignKey("frp_server_config.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    name = Column(String, unique=True, nullable=False)  # proxy name, e.g. "k01-lnx1-ssh"
+    # The own text of the display name, '' for none (R-1210). Not the proxy name: frpc and the
+    # visitor know a tunnel by its ID.
+    name = Column(String, nullable=False)
     tunnel_type = Column(String, nullable=False)  # "stcp" or "https"
     protocol = Column(String, nullable=False)  # "ssh", "rdp", "web"
     local_ip = Column(String, default="127.0.0.1")
@@ -108,6 +111,13 @@ class FrpTunnel(Base):
     def generate_secret() -> str:
         return secrets.token_urlsafe(32)
 
+    def display_name(self) -> str:
+        """The name every client shows (R-1210): "{server} · {own text|SSH|RDP|Web} (FRP)"."""
+        server = self.target_server
+        if server is None:
+            return self.name or self.id
+        return shown_name(server.name, self.name or "", self.protocol or "", True)
+
     def to_dict(self, mask_secrets: bool = False) -> dict[str, Any]:
         # mask_secrets: JSON responses carry secretKey as None; the secret is only
         # needed in the generated TOML and the provisioning, which read the attribute.
@@ -115,7 +125,8 @@ class FrpTunnel(Base):
             "id": self.id,
             "serverId": self.server_id,
             "frpConfigId": self.frp_config_id,
-            "name": self.name,
+            "name": self.display_name(),
+            "label": self.name or "",
             "tunnelType": self.tunnel_type,
             "protocol": self.protocol,
             "localIp": self.local_ip,

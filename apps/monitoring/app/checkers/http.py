@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ssl
 import time
 import zlib
 from collections.abc import Callable, Iterator
@@ -63,6 +64,9 @@ class HttpChecker:
             hop_url, hop_target = url, target
             redirects = 0
             body, truncated = "", False
+            # The certificate of the first https hop, the one the check's address leads to.
+            cert: dict | None = None
+            https_seen = False
             while True:
                 remaining = deadline - _now()
                 if remaining <= 0:
@@ -79,6 +83,10 @@ class HttpChecker:
                         method, hop_url, timeout=remaining, follow_redirects=False
                     ) as resp,
                 ):
+                    if not https_seen and resp.url.scheme == "https":
+                        https_seen = True
+                        # Without verification ssl hands out no fields, only the DER bytes.
+                        cert = _peer_cert(resp) if verify_ssl else None
                     if not resp.is_redirect:
                         if search_string and resp.status_code == expected_status:
                             head = _read_head(resp, deadline)
@@ -124,6 +132,9 @@ class HttpChecker:
                 "http_response_ms": duration_ms,
                 "http_status_code": resp.status_code,
             }
+            if cert is not None:
+                # Popped by the check engine into the state's details; not a metric.
+                metrics["_details"] = {"cert": cert}
 
             if resp.status_code != expected_status:
                 return (
@@ -148,6 +159,32 @@ class HttpChecker:
             return "critical", f"Connection failed: {exc}", None
         except Exception as exc:
             return "unknown", f"Error: {exc}", None
+
+
+def _peer_cert(resp: httpx.Response) -> dict | None:
+    """not_before and not_after (Unix seconds), issuer (CN, else O) and subject_cn of the
+    certificate the response's TLS connection verified; None where the transport shows
+    no TLS connection. Read while the response is open: the stream closes with it."""
+    stream = resp.extensions.get("network_stream")
+    ssl_object = stream.get_extra_info("ssl_object") if stream is not None else None
+    peer = ssl_object.getpeercert() if ssl_object is not None else None
+    if not peer:
+        return None
+    issuer, subject = _names(peer.get("issuer")), _names(peer.get("subject"))
+    return {
+        # Always set on a verified certificate, in the "%b %d %H:%M:%S %Y GMT" form
+        # cert_time_to_seconds reads; Unix seconds as the agent's tls/certfile probes
+        # report not_after.
+        "not_before": int(ssl.cert_time_to_seconds(peer["notBefore"])),
+        "not_after": int(ssl.cert_time_to_seconds(peer["notAfter"])),
+        "issuer": issuer.get("commonName") or issuer.get("organizationName"),
+        "subject_cn": subject.get("commonName"),
+    }
+
+
+def _names(rdns) -> dict[str, str]:
+    """A getpeercert() name (a tuple of RDNs, each a tuple of (key, value)) as a dict."""
+    return {key: value for rdn in rdns or () for key, value in rdn}
 
 
 def _read_head(resp: httpx.Response, deadline: float) -> tuple[str, bool] | None:

@@ -8,6 +8,7 @@ package monitor
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -276,10 +277,40 @@ func parseSystemctlColumnsOutput(out string, col int) map[string]string {
 }
 
 // collectWatchedServices checks the status of specific systemd services.
+// A name outside the systemd unit characters (reUnitName) is reported not running without asking: on
+// the batch, the allowlist would refuse the whole call, and every watched unit would pass for down.
 func collectWatchedServices(ctx context.Context, names []string) []map[string]any {
 	if len(names) == 0 {
 		return nil
 	}
+	valid := make([]string, 0, len(names))
+	for _, name := range names {
+		if reUnitName.MatchString(name) {
+			valid = append(valid, name)
+		}
+	}
+	byName := map[string]map[string]any{}
+	if len(valid) > 0 {
+		for _, svc := range queryWatchedServices(ctx, valid) {
+			byName[svc["name"].(string)] = svc
+		}
+	}
+	services := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		svc, ok := byName[name]
+		if !ok {
+			svc = map[string]any{"name": name, "running": false, "pid": nil}
+		}
+		services = append(services, svc)
+	}
+	return services
+}
+
+// reUnitName is the unit class of the command allowlist, whole.
+var reUnitName = regexp.MustCompile("^(?:" + argClasses["unit"] + ")$")
+
+// queryWatchedServices asks systemctl for the status of names, all valid unit names.
+func queryWatchedServices(ctx context.Context, names []string) []map[string]any {
 	// One `systemctl show` for all watched units instead of is-active + show per unit — the 2N
 	// process spawns + D-Bus roundtrips per cycle become one (5.7). `--` terminates option parsing
 	// so a server-supplied name beginning with '-' is treated as an operand, not a systemctl flag

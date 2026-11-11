@@ -195,7 +195,8 @@ mkdir -p ~/.local/bin && ln -s ~/.cache/ah-venv/bin/ruff ~/.local/bin/ruff
 `monitoring` und `ca-issuer` sind reine Logik-Suiten und brauchen **kein** Postgres.
 Ihre Test-Deps stehen in der jeweiligen `requirements-dev.txt` — bei `ca-issuer` auch
 `httpx`, das nur der starlette-`TestClient` der Tests braucht, nicht die App selbst
-(deshalb steht es dort und nicht in `requirements.in`):
+(deshalb steht es dort und nicht in `requirements.in`). Der `TestClient` bevorzugt seit starlette 1.10 `httpx2`
+und warnt bei `httpx`; die Server-`requirements-dev.txt` nimmt deshalb `httpx2` dazu:
 
 ```bash
 apps/monitoring/.venv/bin/pip install -r apps/monitoring/requirements-dev.txt   # einmalig

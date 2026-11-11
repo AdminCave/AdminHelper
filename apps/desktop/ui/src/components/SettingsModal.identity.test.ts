@@ -7,7 +7,7 @@
 // where a leaf close to its end, or past it, becomes visible. An unreadable
 // certificate gets a fixed line, never the text of the command's error.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { tick } from 'svelte';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
@@ -91,6 +91,17 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn(async () => null) }));
 vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: vi.fn(async () => true) }));
 
 import SettingsModal from './SettingsModal.svelte';
+
+// The first render of the dialog is cold (component init, jsdom, JIT) and under CPU load it
+// alone took seconds of the first test's 5 s budget (R-1212). Paying it here moves it into
+// the hook timeout.
+beforeAll(() => {
+  settingsModalOpen.set(true);
+  render(SettingsModal);
+  cleanup();
+  settingsModalOpen.set(false);
+  vi.clearAllMocks();
+});
 
 beforeEach(() => {
   setLanguage('de');

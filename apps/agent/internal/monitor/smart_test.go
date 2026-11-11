@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -223,6 +224,8 @@ func stubSmartctl(t *testing.T, scan dockerReply, devices map[string]dockerReply
 		mu.Lock()
 		calls = append(calls, smartctlCall{timeout, args})
 		mu.Unlock()
+		// The base name: on Windows "/usr/sbin/smartctl" is no absolute path, and the stub checks the path itself.
+		checkAllowed(t, filepath.Base(name), args)
 		if name != "/usr/sbin/smartctl" {
 			t.Errorf("ran %q, want the smartctl found on the PATH", name)
 		}
@@ -474,7 +477,7 @@ func TestHelperSmartctlProcess(t *testing.T) {
 func smartctlExit(t *testing.T, code int) error {
 	t.Helper()
 	t.Setenv(smartctlHelperEnv, strconv.Itoa(code))
-	_, err := runTimed(context.Background(), time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
+	_, err := execTimed(context.Background(), time.Minute, nil, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
 		t.Fatalf("helper process: err = %v, want an ExitError with status %d", err, code)

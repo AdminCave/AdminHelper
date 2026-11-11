@@ -31,6 +31,8 @@ CHECK_TYPES: dict[str, dict[str, bool]] = {
     "smart_health": {"push_only": True},
     "disk_forecast": {"push_only": False},
     "system_state": {"push_only": True},
+    # A sensor of the agent run against a module (R-1223); the result comes with the report.
+    "probe": {"push_only": True},
 }
 
 VALID_CHECK_TYPES = set(CHECK_TYPES)

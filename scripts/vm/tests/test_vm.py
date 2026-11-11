@@ -1678,6 +1678,31 @@ def test_the_root_data_dir_survives_a_sync_with_delete(tmp_path):
     assert not (dst / "apps/x/data/stale.txt").exists()
 
 
+def test_the_root_repo_dir_survives_a_sync_with_delete(tmp_path):
+    """./repo on a used box is the stack's too (R-0736).
+
+    docker-compose binds ./repo for the :8445 repo plane; a stack start creates it
+    as root when it is missing, and the next sync's refused --delete ended in
+    rsync 23 like ./data did. Same check as for /data/: the root directory stays,
+    a deeper repo directory is still synced.
+    """
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    for path in (
+        src / "apps/x/keep.txt",
+        dst / "repo/dists/box-only.txt",
+        dst / "apps/x/repo/stale.txt",
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.name)
+    subprocess.run(
+        ["rsync", "-a", "--delete", "--exclude-from", vm.RSYNC_EXCLUDE, "%s/" % src, "%s/" % dst],
+        check=True,
+    )
+    assert (dst / "apps/x/keep.txt").read_text() == "keep.txt"
+    assert (dst / "repo/dists/box-only.txt").exists()
+    assert not (dst / "apps/x/repo/stale.txt").exists()
+
+
 def test_ssh_without_a_command_opens_a_login_shell(cfg, api, reachable, shell):
     assert verb("ssh", cfg, api, "3000") == 0
     argv = shell.of("ssh")[0]["argv"]
@@ -2386,6 +2411,18 @@ def test_a_report_has_no_side_effects(cfg, api, http, monkeypatch, verb_name):
     wired(monkeypatch, cfg, api, **{verb_name: lambda c, a, args: 0})
     assert vm.main([verb_name]) == 0
     assert swept == []
+
+
+def test_a_dry_run_reap_does_not_sweep(cfg, api, http, monkeypatch):
+    # R-1153: `reap --dry-run` reported what it would do, and the sweep after it
+    # then destroyed the expired boxes of the lane for real.
+    swept = []
+    monkeypatch.setattr(vm, "reap_lane", lambda *a, **k: swept.append(1) or [])
+    wired(monkeypatch, cfg, api, reap=lambda c, a, args: 0)
+    assert vm.main(["reap", "--dry-run"]) == 0
+    assert swept == []
+    assert vm.main(["reap"]) == 0
+    assert swept == [1]
 
 
 def test_the_sweep_can_be_switched_off(cfg, api, http, monkeypatch):

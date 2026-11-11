@@ -8,11 +8,19 @@ public URL bounce into the internal network unchecked. The first request and eve
 hop connect to an address the guard checked for their host (ssrf-pin). The body is
 read only for search_string and only up to 1 MiB, and timeout is one deadline over
 every hop and the read (R-0616). A compressed body is inflated a step at a time and
-no further than that MiB, as httpx would decode it."""
+no further than that MiB, as httpx would decode it. The certificate of the first https
+hop goes into the details, read from a real TLS connection."""
 
+import contextlib
+import http.server
 import socket
+import ssl
+import subprocess
+import threading
 import tracemalloc
 import zlib
+from datetime import datetime
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -972,3 +980,214 @@ def test_http_checker_inflater_stays_busy_while_zlib_holds_output():
     while layer.busy:
         out += layer.step(limit)
     assert out == text
+
+
+# details.cert: the certificate the first https hop verified, read from a real TLS
+# connection through the pinned transport. A test CA signs one leaf per name, made with
+# openssl: the monitoring test deps carry no X.509 builder.
+_PLAIN, _TLS, _MOVED = "plain.example", "checks.example", "moved.example"
+_LEAF_DAYS = {_TLS: 30, _MOVED: 90}
+_CA_CN = "AdminHelper Test CA"
+
+
+def _openssl(cwd, *args: str) -> str:
+    return subprocess.run(
+        ["openssl", *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout
+
+
+@pytest.fixture(scope="module")
+def pki(tmp_path_factory):
+    # Extensions as Python's default context checks them strictly (VERIFY_X509_STRICT).
+    d = tmp_path_factory.mktemp("pki")
+    ec = ("-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-noenc")
+    _openssl(
+        d, "req", "-x509", *ec, "-keyout", "ca.key", "-out", "ca.pem", "-days", "3650",
+        "-subj", f"/O=AdminHelper Test/CN={_CA_CN}",
+        "-addext", "basicConstraints=critical,CA:TRUE",
+        "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+    )  # fmt: skip
+    for name, days in _LEAF_DAYS.items():
+        (d / f"{name}.ext").write_text(
+            f"subjectAltName=DNS:{name}\n"
+            "basicConstraints=critical,CA:FALSE\n"
+            "keyUsage=critical,digitalSignature\n"
+            "extendedKeyUsage=serverAuth\n"
+            "subjectKeyIdentifier=hash\n"
+            "authorityKeyIdentifier=keyid\n"
+        )
+        _openssl(
+            d, "req", *ec, "-keyout", f"{name}.key", "-out", f"{name}.csr",
+            "-subj", f"/O=AdminHelper Test/CN={name}",
+        )  # fmt: skip
+        _openssl(
+            d, "x509", "-req", "-in", f"{name}.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
+            "-out", f"{name}.pem", "-days", str(days), "-extfile", f"{name}.ext",
+        )  # fmt: skip
+    return d
+
+
+def _expected_cert(pki, name: str) -> dict:
+    """The leaf's dates as openssl prints them, not as the checker's ssl reads them."""
+    out = _openssl(
+        pki, "x509", "-in", f"{name}.pem", "-noout", "-startdate", "-enddate",
+        "-dateopt", "iso_8601",
+    )  # fmt: skip
+    dates = dict(line.split("=", 1) for line in out.splitlines())
+    return {
+        "not_before": int(datetime.fromisoformat(dates["notBefore"]).timestamp()),
+        "not_after": int(datetime.fromisoformat(dates["notAfter"]).timestamp()),
+        "issuer": _CA_CN,
+        "subject_cn": name,
+    }
+
+
+class _Reply(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802 (BaseHTTPRequestHandler's name)
+        status, location = self.server.reply
+        self.send_response(status)
+        if location:
+            self.send_header("Location", location)
+        self.send_header("Content-Length", "5")
+        self.end_headers()
+        self.wfile.write(b"hello")
+
+    def log_message(self, *_args):
+        pass
+
+
+@contextlib.contextmanager
+def _serving(pki=None, name: str | None = None):
+    """A local server on 127.0.0.1, with name's leaf over TLS when name is given; the
+    test sets its reply (status, Location) before the check runs."""
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Reply)
+    server.reply = (200, None)
+    if name:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(pki / f"{name}.pem", pki / f"{name}.key")
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def _port(server) -> int:
+    return server.server_address[1]
+
+
+def _to_local(monkeypatch, pki, answers: dict[str, str]) -> None:
+    """The guard resolves each name to its public address, the connection to that
+    address lands on the local server of the same port, and the test CA is trusted. Host
+    header and TLS name stay the URL's name, so the pinned path runs as in production."""
+    _resolving(monkeypatch, answers)
+    real = socket.create_connection
+
+    def _connect(address, *args, **kwargs):
+        assert address[0] in answers.values()
+        return real(("127.0.0.1", address[1]), *args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", _connect)
+    monkeypatch.setenv("SSL_CERT_FILE", str(pki / "ca.pem"))
+
+
+@pytest.mark.parametrize(
+    ("served", "expected"), [(200, ("ok", "HTTP 200")), (503, ("critical", "Status 503"))]
+)
+def test_http_checker_reports_the_certificate_of_an_https_target(
+    monkeypatch, pki, served, expected
+):
+    # Status, message and metrics stay what they were; the certificate comes beside them.
+    _to_local(monkeypatch, pki, {_TLS: _FIRST})
+    with _serving(pki, _TLS) as tls:
+        tls.reply = (served, None)
+        status, msg, metrics = http_mod.HttpChecker().run({"url": f"https://{_TLS}:{_port(tls)}/"})
+
+    assert (status, msg.split(" (")[0]) == expected
+    assert "TLS" not in msg
+    details = metrics.pop("_details")
+    assert set(metrics) == {"http_response_ms", "http_status_code"}
+    assert metrics["http_status_code"] == served
+    assert details == {"cert": _expected_cert(pki, _TLS)}
+    cert = details["cert"]
+    assert cert["not_after"] - cert["not_before"] == _LEAF_DAYS[_TLS] * 86400
+
+
+def test_http_checker_reports_the_certificate_behind_a_redirect_to_https(monkeypatch, pki):
+    # http -> https: the first https hop is the redirect target.
+    _to_local(monkeypatch, pki, {_PLAIN: _FIRST, _TLS: _SECOND})
+    with _serving() as plain, _serving(pki, _TLS) as tls:
+        plain.reply = (301, f"https://{_TLS}:{_port(tls)}/")
+        status, _msg, metrics = http_mod.HttpChecker().run(
+            {"url": f"http://{_PLAIN}:{_port(plain)}/"}
+        )
+
+    assert status == "ok"
+    assert metrics["_details"] == {"cert": _expected_cert(pki, _TLS)}
+
+
+def test_http_checker_reports_the_certificate_of_the_first_https_hop(monkeypatch, pki):
+    # The check's own address carries the certificate it answers for, not the last hop.
+    _to_local(monkeypatch, pki, {_TLS: _FIRST, _MOVED: _SECOND})
+    with _serving(pki, _TLS) as first, _serving(pki, _MOVED) as moved:
+        first.reply = (302, f"https://{_MOVED}:{_port(moved)}/")
+        status, _msg, metrics = http_mod.HttpChecker().run(
+            {"url": f"https://{_TLS}:{_port(first)}/"}
+        )
+
+    assert status == "ok"
+    assert metrics["_details"] == {"cert": _expected_cert(pki, _TLS)}
+
+
+@pytest.mark.parametrize(
+    ("scheme", "verify", "note"),
+    [("https", False, " [TLS verification disabled]"), ("http", True, "")],
+)
+def test_http_checker_reports_no_certificate_it_did_not_verify(
+    monkeypatch, pki, scheme, verify, note
+):
+    # Without verification ssl hands out no fields; plain http has no certificate.
+    _to_local(monkeypatch, pki, {_TLS: _FIRST})
+    with _serving(pki, _TLS if scheme == "https" else None) as server:
+        status, msg, metrics = http_mod.HttpChecker().run(
+            {"url": f"{scheme}://{_TLS}:{_port(server)}/", "verify_ssl": verify}
+        )
+
+    assert (status, msg.endswith(f"ms){note}")) == ("ok", True)
+    assert set(metrics) == {"http_response_ms", "http_status_code"}
+
+
+def _stream_with(peer):
+    ssl_object = SimpleNamespace(getpeercert=lambda: peer)
+    stream = SimpleNamespace(
+        get_extra_info=lambda info: ssl_object if info == "ssl_object" else None
+    )
+    return httpx.Response(200, extensions={"network_stream": stream})
+
+
+def test_http_checker_peer_cert_names_the_issuer_by_organization_without_a_cn():
+    peer = {
+        "issuer": ((("countryName", "US"),), (("organizationName", "Example Trust"),)),
+        "subject": ((("commonName", "checks.example"),),),
+        "notBefore": "Jan  5 09:34:43 2026 GMT",
+        "notAfter": "Apr  5 09:34:43 2026 GMT",
+    }
+    assert http_mod._peer_cert(_stream_with(peer)) == {
+        "not_before": 1767605683,
+        "not_after": 1775381683,
+        "issuer": "Example Trust",
+        "subject_cn": "checks.example",
+    }
+
+
+@pytest.mark.parametrize(
+    "resp",
+    [httpx.Response(200), _stream_with({}), _stream_with(None)],
+    ids=["no-network-stream", "unverified", "no-peer-cert"],
+)
+def test_http_checker_peer_cert_is_none_without_a_verified_certificate(resp):
+    assert http_mod._peer_cert(resp) is None

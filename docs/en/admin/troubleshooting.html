@@ -127,7 +127,7 @@ sudo adminhelper-agent run --once --log-level debug</code></pre>
           <h2>FRP visitor connect hangs</h2>
           <ul>
             <li>Visitor-port pool exhausted? Scale <code>VISITOR_PORT_END</code>.</li>
-            <li>Client cert of the agent expired? Check it on the agent host: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. The agent renews it itself on every run once half of its lifetime is over; if that fails, <code>Cert-Renew Fehler</code> shows in the journal of <code>adminhelper-agent.service</code>.</li>
+            <li>Client cert of the agent expired? Check it on the agent host: <code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>. The agent renews it itself on every run once half of its lifetime is over, or once the <code>ca-issuer</code> names a new trust generation after a rotation (<a href="./operations.html#trust-generation">Operations</a>); if that fails, or already the query for the generation (<code>Cert-Renew Fehler: trust generation: …</code>), <code>Cert-Renew Fehler</code> shows in the journal of <code>adminhelper-agent.service</code>.</li>
             <li>Wrong <code>sk</code> on STCP tunnels – both sides must match.</li>
           </ul>
 

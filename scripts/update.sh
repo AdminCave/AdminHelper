@@ -616,6 +616,25 @@ pg18_space() {
         return 1
     fi
 }
+# The DROP below hits whatever compose started as postgres; an override may start
+# another server or volume there, and the old database must never be the one
+# that goes.
+pg18_target() {
+    local cid mounts num
+    cid=$(docker compose ps -q postgres 2>/dev/null | head -n 1)
+    [ -n "$cid" ] || { log "ERROR: the started postgres container is not found (docker compose ps -q postgres), nothing dropped."; return 1; }
+    mounts=" $(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$cid" 2>/dev/null) "
+    case "$mounts" in
+        *" $PG_NEW_VOL "*) ;;
+        *) log "ERROR: the started postgres does not run on ${PG_NEW_VOL} (volumes:${mounts% }), nothing dropped."; return 1 ;;
+    esac
+    num=$(docker exec "$cid" psql -X -U adminhelper -d postgres -tAc 'SHOW server_version_num' </dev/null 2>/dev/null \
+        | tr -d '[:space:]') || num=""
+    case "$num" in
+        18[0-9][0-9][0-9][0-9]) ;;
+        *) log "ERROR: the started postgres is not PostgreSQL 18 (server_version_num ${num:-unreadable}), nothing dropped."; return 1 ;;
+    esac
+}
 # One step, like migrate_env: the caller tests the status, so every part returns 1
 # itself. The services but postgres stop first, so the dump is consistent.
 pg18_migrate() {
@@ -634,6 +653,7 @@ pg18_migrate() {
     [ -s "$PG_DUMP" ] || return 1
     log "Starting PostgreSQL 18 on ${PG_NEW_VOL} and restoring the dump..."
     docker compose up -d --wait --wait-timeout "${AH_WAIT_TIMEOUT:-600}" postgres || return 1
+    pg18_target || return 1
     # The fresh cluster already has the role and the database of POSTGRES_USER and
     # POSTGRES_DB, the dump creates both again: the database goes, the role's
     # CREATE line (before the first \connect) is left out. ALTER ROLE then carries

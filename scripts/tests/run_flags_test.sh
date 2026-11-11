@@ -118,6 +118,19 @@ run_bare lint --step "ruff check (scripts)"
   && ok "the scripts ruff step is addressable on its own" \
   || bad "--step 'ruff check (scripts)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
 
+# A name that is the prefix of another step (R-1148: desktop_e2e_connect and
+# desktop_e2e_connect_tunnel) stays addressable: the step it equals wins.
+run_bare lint --step "ruff check"
+[ $rc -ne 2 ] && [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
+  && grep -qE '^  (PASS|SKIP|FAIL) +ruff check( \(|$)' <<<"$OUT" && ! grep -q 'ruff check (scripts)' <<<"$OUT" \
+  && ok "an exact step name wins over the longer one it prefixes" \
+  || bad "--step 'ruff check': rc=$rc, ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+
+# Without an exact match a shared substring stays ambiguous.
+run_bare lint --step "ruff format"
+[ $rc -eq 2 ] && grep -q "ambiguous step: 'ruff format' matches 2 steps" <<<"$OUT" \
+  && ok "a substring of two steps that equals neither stays ambiguous" || bad "--step 'ruff format': rc=$rc"
+
 # What the two ruff steps really lint, read off a stub's argv: roadmap.py and
 # doc-smoke.py sat outside every gate while the step covered scripts/vm only.
 RUFFSTUB="$WORK/bin-ruff"; mkdir -p "$RUFFSTUB"

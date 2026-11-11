@@ -79,8 +79,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // The side panel shown: one at a time.
   let panel = $state<'options' | 'snippets' | 'files' | null>(null);
   let pasteHint = $state(false);
+  // A paste of several lines held back until confirmed (option confirmMultilinePaste).
+  let pendingPaste = $state<string | null>(null);
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // A shell of the host: a playbook run has none, and the credential prompt (arch-monitoring-ui)
+  // takes no snippet and no broadcast (they would land in the secret) and has no SFTP.
+  let shell = $derived(!session.ansible && !session.credential);
   let target = $derived.by(() => {
     const c = session.connection;
     // A playbook run (R-1073) has no host of its own: it names the playbook.
@@ -172,8 +177,36 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function paste(text: string): void {
     const clean = sanitizePaste(text);
+    // Without bracketed paste on the other side, every line but the last runs at once.
+    if (clean && $terminalPrefs.confirmMultilinePaste && /[\r\n]/.test(clean)) {
+      pendingPaste = clean;
+      return;
+    }
     if (clean) term?.paste(clean);
     term?.focus();
+  }
+
+  function settlePaste(confirmed: boolean): void {
+    if (confirmed && pendingPaste) term?.paste(pendingPaste);
+    pendingPaste = null;
+    term?.focus();
+  }
+
+  // A final line break ends the last line and starts no new one.
+  function lineCount(text: string): number {
+    return text.replace(/(\r\n|\r|\n)$/, '').split(/\r\n|\r|\n/).length;
+  }
+
+  // xterm keeps Tab for itself, so the bar takes the focus, on Cancel: an Enter typed for the
+  // shell then drops the text instead of running it.
+  function focusCancel(node: HTMLElement): void {
+    node.querySelector<HTMLButtonElement>('button')?.focus();
+  }
+
+  function onConfirmKey(e: KeyboardEvent): void {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    settlePaste(false);
   }
 
   async function pasteClipboard(): Promise<void> {
@@ -242,6 +275,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // The new program starts on an empty terminal, without the modes the last one left set
     // (alternate screen, mouse reports).
     term?.reset();
+    pendingPaste = null;
     void reconnectTerminal(session.key);
     term?.focus();
   }
@@ -365,7 +399,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         disabled={$terminalPrefs.fontSize >= TERMINAL_FONT_SIZE.max}
         onclick={() => changeFont(1)}
       />
-      {#if !session.ansible}
+      {#if shell}
         <IconButton
           size="sm"
           icon={SquareCode}
@@ -430,7 +464,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <aside class="term-panel" aria-label={$t('terminal.options')}>
         <TerminalOptions prefs={$terminalPrefs} onChange={(p) => void saveTerminalPrefs(p)} />
       </aside>
-    {:else if panel === 'snippets' && !onDock && !session.ansible}
+    {:else if panel === 'snippets' && !onDock && shell}
       <aside class="term-panel" aria-label={$t('terminal.snippets')}>
         <SnippetsPanel
           sessionKey={session.key}
@@ -438,7 +472,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           onRun={() => term?.focus()}
         />
       </aside>
-    {:else if panel === 'files' && !onDock && !session.ansible}
+    {:else if panel === 'files' && !onDock && shell}
       <aside class="term-panel" aria-label={$t('terminal.files')}>
         <FilesPanel
           session={session.backendId}
@@ -449,12 +483,33 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/if}
   </div>
 
+  {#if pendingPaste !== null}
+    {@const confirmText = $t('terminal.pasteConfirm', { n: lineCount(pendingPaste) })}
+    <div
+      class="term-confirm"
+      role="alertdialog"
+      tabindex="-1"
+      aria-label={confirmText}
+      use:focusCancel
+      onkeydown={onConfirmKey}
+    >
+      <span>{confirmText}</span>
+      <span class="term-spacer"></span>
+      <Button size="sm" variant="secondary" onclick={() => settlePaste(false)}>
+        {$t('terminal.pasteConfirm.cancel')}
+      </Button>
+      <Button size="sm" onclick={() => settlePaste(true)}>
+        {$t('terminal.pasteConfirm.paste')}
+      </Button>
+    </div>
+  {/if}
+
   <footer class="term-foot">
     <span>{cols}×{rows}</span>
     {#if pasteHint}
       <span class="term-hint" role="status">{$t('terminal.pasteHint')}</span>
     {/if}
-    {#if $snippetBroadcast && !session.ansible}
+    {#if $snippetBroadcast && shell}
       <span class="term-broadcast">{$t('terminal.snippets.broadcastActive')}</span>
     {/if}
     <span class="term-spacer"></span>
@@ -550,6 +605,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     flex: 0 0 auto;
     overflow: hidden;
     white-space: nowrap;
+  }
+  .term-confirm {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-subtle);
+    font-size: 12px;
+    color: var(--warning);
+    flex: 0 0 auto;
   }
   .term-hint,
   .term-broadcast {

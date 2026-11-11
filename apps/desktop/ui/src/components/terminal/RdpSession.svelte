@@ -58,13 +58,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { FrameSocket, type FrameInput, type FrameStats } from '$lib/rdp/frameSocket';
   import { buttonsOf, grabKeyboard, toDesktop, wheelOf, type KeyboardGrab } from '$lib/rdp/input';
   import { createRenderer, type Renderer } from '$lib/rdp/renderer';
+  import { reconnectRdpTab } from '$lib/stores/connectFlow';
   import { settings } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
   import {
     closeRdpMonitor,
     disconnectRdp,
     openRdpMonitor,
-    reconnectRdp,
     setRdpDisplay,
     setRdpPerformance,
     setRdpScaling,
@@ -489,7 +489,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           size="sm"
           icon={RotateCw}
           label={$t('terminal.reconnect')}
-          onclick={() => void reconnectRdp(session.key)}
+          onclick={() => void reconnectRdpTab(session.key)}
         />
       {/if}
       <IconButton
@@ -621,7 +621,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {$t('rdp.certificate.review')}
           </Button>
         {:else}
-          <Button size="sm" iconLeft={RotateCw} onclick={() => void reconnectRdp(session.key)}>
+          <Button size="sm" iconLeft={RotateCw} onclick={() => void reconnectRdpTab(session.key)}>
             {$t('terminal.reconnect')}
           </Button>
         {/if}

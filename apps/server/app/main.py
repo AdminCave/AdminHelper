@@ -36,6 +36,7 @@ from app.core.errors import install_coded_errors
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
+from app.core.query_params import reject_repeated_scalar_query
 from app.modules.ansible.router import router as ansible_router
 from app.modules.api_keys.router import router as api_keys_router
 from app.modules.audit.router import router as audit_router
@@ -433,7 +434,13 @@ async def lifespan(app: FastAPI):
     await monitoring_proxy_mod._client.aclose()
 
 
-app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
+app = FastAPI(
+    title="AdminHelper Server",
+    docs_url="/api/docs",
+    redoc_url=None,
+    lifespan=lifespan,
+    dependencies=[Depends(reject_repeated_scalar_query)],
+)
 install_exact_int_bounds(app)
 install_coded_errors(app)
 
