@@ -36,7 +36,7 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/...
 Doku: keine (nur Tests)
 Abhängt von: T1
 
-### T3 — R-1255: smartctl-Gerätetypen mit '/' belegen, ggf. zulassen  [ ]
+### T3 — R-1255: smartctl-Gerätetypen mit '/' belegen, ggf. zulassen  [~] (nicht belegt: smartmontools master@9f83095a631f scan_smart_devices gibt unter Linux/Windows/FreeBSD nur Typen ohne '/' aus (ata, scsi, sat, nvme, usb, csmi, megaraid,N, sssraid,E,S, aacraid); areca/hpt-Geräte tragen dev_type 'areca'/'hpt' (os_linux.cpp, os_win32.cpp), 'areca,N/E' und 'hpt,L/M/N' sind nur Eingabe-Syntax; der Collector nimmt -d nur aus --scan (smart.go))
 Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist_test.go
 Änderung:
 - Zuerst belegen, ob `smartctl --scan` Typen mit `/` ausgibt (smartctl(8), Quelltext von smartmontools).
