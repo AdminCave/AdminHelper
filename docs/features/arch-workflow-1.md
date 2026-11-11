@@ -64,7 +64,7 @@ steht und Workflow-PRs Kevin merged.
 
   Solche Funde legt die Session mit `add` an und setzt sie sofort mit `status geplant --ledger tasks/<klein-zug>.md
   --note "Dauerauftrag Kevin 2026-11-11"` in einen Zug. `/roadmap` nennt ihre Zahl seit der letzten Triage,
-  `/roadmap triage` listet sie zum Veto. Prüfer-Nits: billig in derselben Task beheben, sonst eine Sammelzeile je Zug.
+  `/roadmap triage` listet sie zum Veto. Der Abschnitt gilt erst, wenn CLAUDE.md §4 ihn nennt (Kevin, T8). Prüfer-Nits: in einer ohnehin laufenden Korrekturrunde mitbeheben, sonst eine Sammelzeile je Zug aus Nits, die die Bedingungen erfüllen.
 
 ## Risiken und Rollback
 

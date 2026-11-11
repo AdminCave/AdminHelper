@@ -15,7 +15,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Ablauf steht in .claude/; cicd.html verweist dorthin)
 
 ### T2 — R-1336: Triage-Dauerauftrag und Nit-Sammelzeile  [ ]
-Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/agents/reviewer.md, CLAUDE.md
+Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/agents/reviewer.md
 Änderung: roadmap-Skill, neuer Abschnitt „Dauerauftrag (Kevin 2026-11-11)“ mit den Bedingungen aus der Spec. Die Session legt einen gedeckten Fund mit `add` an und setzt ihn sofort mit `status geplant --ledger tasks/<klein-zug>.md --note "Dauerauftrag Kevin 2026-11-11"` in einen Zug. `/roadmap` nennt die Zahl seit der letzten Triage, `/roadmap triage` listet sie zum Veto. /feature-build §3 („Neue Funde …“) verweist darauf. Nits: reviewer.md stellt klar, dass Nits im Urteil stehen und keine Zeilen werden; die Session behebt billige Nits in derselben Task, den Rest eines Zugs sammelt sie in einer Zeile. CLAUDE.md §4 und §11: Eine vom Dauerauftrag gedeckte Zeile gilt als von Kevin angenommen.
 Beweis: Roadmap-Historie 09-09…11-11: 29 Zeilen/Tag seit 10-29, Triage Median 15,4 h, 91 von 115 Nits gebaut · Dedup-Key: ref:harness:roadmap:triage-dauerauftrag
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
@@ -41,7 +41,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: → T7
 
 ### T5 — R-1337: Regeln auf den nächtlichen Sammellauf umstellen  [ ]
-Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/test/SKILL.md, .claude/rules/testing.md, CLAUDE.md
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/test/SKILL.md, .claude/rules/testing.md
 Änderung: /feature-build §5 neu. Der Sammellauf läuft nachts per `nightly.sh`, die Session startet ihn nicht mehr nach Merges. Beim Start und nach jedem Merge liest sie den neuesten Report. Rot → Verursacher suchen, REG-Zeile; bis der rote Schritt per `--step`-Lauf über `main` wieder grün ist, gibt es keinen `linux-full`-Merge (außer Fix, Revert, SEC auf Kevins Wort). `fund` ist eine BUG-Zeile ohne Sperre, UNVERIFIED wie bisher. Dazu §4.3 und §4.8 angleichen. test-Skill: `all` und `weekly` startet der Cron-Lauf (Kevin 2026-11-11) als Ausnahme zu „nichts startet von selbst“; kein ff-merge im Haupt-Checkout, solange `ah-nightly` läuft. testing.md „Lange Läufe“ und CLAUDE.md §3 („ist der Sammellauf fällig“ → „braucht der Report der Nacht eine Reaktion“) und §5 (Heavy) angleichen.
 Beweis: wie T3 · Dedup-Key: ref:harness:sammellauf:nachts
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test session_status_test
@@ -63,4 +63,13 @@ Doku: DEVELOPMENT.md, docs/developer/cicd.html DE+EN
 Task-Review: am Ende
 Abhängt von: T3, T4, T5, T6
 
+### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen (Kevin)  [?] (Übernimmt Kevin den CLAUDE.md-Diff (§3, §4, §5) oder gibt er die Änderung durch die Session frei?)
+Komponente: — · Dateien: CLAUDE.md
+Änderung: Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Die Session darf CLAUDE.md in diesem Modus nicht ändern; sie legt Kevin den Diff vor, Kevin übernimmt ihn oder gibt die Änderung frei.
+Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
+Doku: keine (CLAUDE.md ist die Stelle)
+Abhängt von: T2, T5
+
 ## Entscheidungen
+- T2 (2026-11-11): Die geplante Ergänzung in CLAUDE.md §4 („angenommen … oder der Dauerauftrag“) hat der Auto-Modus-Klassifikator der Session abgelehnt; CLAUDE.md bleibt in diesem Zug unverändert. Der roadmap-Skill stützt den Dauerauftrag auf „angenommen“ in §4. Die CLAUDE.md-Sätze legt die Session Kevin als Diff vor.
+- T2 Runde 2 (2026-11-11, reviewer + security): Der Dauerauftrag gilt erst, wenn CLAUDE.md §4 ihn nennt (T8, Kevin); ausgeschlossen sind zusätzlich Funde des `security`-Agenten und Dateien aus `review-risk.txt`, die Harness-Pfade sind ausdrücklich genannt. Nits: nur in einer laufenden Korrekturrunde mitbeheben, weil eine Änderung nach `approve` eine weitere Prüfrunde auslöst (88 solche Runden in vier Wochen); die Sammelzeile nimmt nur Nits, die die Bedingungen erfüllen, Harness-Nits werden `zurückgestellt`, Sicherheits-Nits gehen neutral in Kevins Triage. CLAUDE.md aus `Dateien:` von T2 und T5 genommen, T8 trägt es.
