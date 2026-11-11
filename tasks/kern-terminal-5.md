@@ -17,8 +17,10 @@ Beweis: review kern-terminal-1 2026-11-06; main@495f5797f pty.rs:239–244 (Entf
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- pty::tests
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Zeile Ansible: Run-Verzeichnis auch beim App-Ende), changelog.d/kern-terminal-5.md
 
-### T2 — R-1272: Download-Namensvorschlag unter Windows nur mit zulässigen Namen  [ ]
+### T2 — R-1272: Download-Namensvorschlag unter Windows nur mit zulässigen Namen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sftp.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-terminal-5.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @74702768e 2026-11-11T10:53:08+01:00
+Review: am Ende (Branch-Review)
 Änderung: reine Funktion `windows_name` (auf allen Plattformen getestet), angewandt in `suggested_name` nur unter
 `cfg(windows)`. Sie macht aus `<>"/|?*` jeweils `_`, schneidet Punkte und Leerzeichen am Ende ab (ohne Rest bleibt
 `download`) und setzt bei reservierten Namen (CON, PRN, AUX, NUL, COM1–9, COM¹²³, LPT1–9, LPT¹²³, ohne Rücksicht auf
@@ -38,3 +40,4 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- connectFlow terminals
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Verbindungsschritte: RDP im Tab wie SSH), changelog.d/kern-terminal-5.md
 
 ## Entscheidungen
+- T2: `windows_name` ist eine reine Funktion unter `cfg(any(windows, test))`, angewandt nur unter Windows; Linux und macOS behalten ihren Vorschlag. Ein roter Test vorher war nicht möglich, weil die Funktion neu ist; der Windows-Pfad über `suggested_name` läuft nur auf rust-windows.
