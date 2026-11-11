@@ -1427,11 +1427,13 @@ ueberwacht einen solchen Lauf bis zum Report und meldet das Ergebnis samt VM-Lis
 bash scripts/tests/nightly.sh install     # eine markierte Crontab-Zeile, idempotent
 bash scripts/tests/nightly.sh status      # die Zeile und die letzten Laeufe aus .ah-out/nightly.log
 bash scripts/tests/nightly.sh run --dry-run   # nur die Vorpruefung, startet nichts
+# vor install einmal wie unter Cron: env -i HOME="$HOME" PATH=/usr/bin:/bin bash scripts/tests/nightly.sh run --dry-run
 bash scripts/tests/nightly.sh uninstall   # entfernt genau diese Zeile
 ```
 
 `run` ueberspringt die Nacht (Grund in `.ah-out/nightly.log`), wenn der Haupt-Checkout nicht
-sauber auf `main` steht, eine tmux-Sitzung `ah-*` laeuft, `main` nicht auf `origin/main`
+sauber auf `main` steht (ausgenommen der ungetrackte REG-Entwurf `tasks/reg-*.md` von `heavy.sh`),
+eine tmux-Sitzung `ah-*` laeuft, `main` nicht auf `origin/main`
 vorspult oder `vm.py list` nicht sauber ist; die VM-Liste landet nur in
 `.ah-out/nightly-vmlist.out`. Solange `ah-nightly` laeuft, aendert keine Session den
 Haupt-Checkout.

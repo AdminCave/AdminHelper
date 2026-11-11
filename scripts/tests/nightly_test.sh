@@ -53,7 +53,8 @@ chmod +x "$FAKE/tmux" "$FAKE/crontab" "$WORK/vmpy.sh"
 g() { git -C "$1" -c user.name=t -c user.email=t@example.invalid "${@:2}"; }
 git init -q --bare -b main "$WORK/origin.git"
 git clone -q "$WORK/origin.git" "$WORK/seed" 2>/dev/null
-printf 'one\n' >"$WORK/seed/f"; g "$WORK/seed" add f; g "$WORK/seed" commit -qm one; g "$WORK/seed" push -q origin main
+mkdir -p "$WORK/seed/tasks"; : >"$WORK/seed/tasks/.keep"
+printf 'one\n' >"$WORK/seed/f"; g "$WORK/seed" add f tasks/.keep; g "$WORK/seed" commit -qm one; g "$WORK/seed" push -q origin main
 git clone -q "$WORK/origin.git" "$WORK/repo"
 printf 'two\n' >"$WORK/seed/f"; g "$WORK/seed" commit -qam two; g "$WORK/seed" push -q origin main
 AHEAD="$(git -C "$WORK/seed" rev-parse HEAD)"
@@ -84,9 +85,19 @@ touch "$WORK/repo/stray"
 AH_NIGHTLY_TODAY=3 n run
 [ $rc -eq 1 ] && grep -q 'skip: checkout not clean' <<<"$(lastlog)" && ok "untracked file -> skip" || bad "dirty: rc=$rc $(lastlog)"
 rm "$WORK/repo/stray"
+touch "$WORK/repo/tasks/notes.md"
+AH_NIGHTLY_TODAY=3 n run
+[ $rc -eq 1 ] && grep -q 'skip: checkout not clean' <<<"$(lastlog)" && ok "another untracked file under tasks/ -> skip" || bad "tasks dirty: rc=$rc $(lastlog)"
+rm "$WORK/repo/tasks/notes.md"
 
 FAKE_TMUX_SESSIONS="work ah-all" AH_NIGHTLY_TODAY=3 n run
 [ $rc -eq 1 ] && grep -q 'skip: tmux session ah-all is running' <<<"$(lastlog)" && ok "a running ah-* session -> skip" || bad "tmux: rc=$rc $(lastlog)"
+
+echo "── heavy.sh's REG draft ──"
+touch "$WORK/repo/tasks/reg-2026-11-12-server_pytest.md"
+AH_NIGHTLY_TODAY=3 n run --dry-run
+[ $rc -eq 0 ] && ok "an untracked REG draft of heavy.sh does not stop the night" || bad "reg draft: rc=$rc $OUT"
+rm "$WORK/repo/tasks/reg-2026-11-12-server_pytest.md"
 
 echo "── dry run ──"
 before="$(wc -l <"$WORK/out/nightly.log")"

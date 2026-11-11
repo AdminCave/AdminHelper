@@ -13,7 +13,8 @@
 #              weekly` (all, then the capstone) — detached in tmux `ah-nightly`.
 #              The pre-flight, in this order; the first check that fails skips
 #              the night:
-#                1. the checkout is on main and clean (untracked files count)
+#                1. the checkout is on main and clean (untracked files count —
+#                   except heavy.sh's own REG drafts, see below)
 #                2. no tmux session ah-* is running (a heavy run, or a session's)
 #                3. git fetch origin, git merge --ff-only origin/main
 #                4. `vm.py list` exits 0: nothing leaked, nothing foreign on the
@@ -84,6 +85,10 @@ preflight() {
   branch="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached)')"
   [ "$branch" = main ] || skip "checkout is on $branch, not main"
   dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null)" || skip "git status failed"
+  # heavy.sh's write_reg_ledger leaves its REG draft tasks/reg-<date>-<step>.md
+  # untracked in this checkout until a session takes it into its plan; counted,
+  # it would skip every following night.
+  dirty="$(printf '%s\n' "$dirty" | awk '$0 !~ /^\?\? tasks\/reg-[^\/]*\.md$/ && NF')"
   [ -z "$dirty" ] || skip "checkout not clean ($(printf '%s\n' "$dirty" | wc -l) path(s))"
   sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)"
   for s in $sessions; do

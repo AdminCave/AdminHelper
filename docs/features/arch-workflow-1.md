@@ -48,9 +48,8 @@ steht und Workflow-PRs Kevin merged.
     - der Haupt-Checkout ist auf `main` und sauber;
     - keine tmux-Sitzung `ah-*` läuft;
     - `git fetch` und `merge --ff-only origin/main` gelingen;
-    - die Provider-Umgebung lädt ohne Ausgabe aus `~/.config/adminhelper/pve.env` und dem `env`-Block von
-      `.claude/settings.local.json`;
-    - `vm.py list` endet mit 0.
+    - `vm.py list` endet mit 0 (vm.py liest `pve.env` und `settings.local.json` selbst, die Cron-Umgebung reicht).
+  - Den ungetrackten REG-Entwurf `tasks/reg-*.md` von heavy.sh zählt die Sauberkeitsprüfung nicht.
   - Danach startet `run` `heavy.sh all` bzw. samstags `heavy.sh weekly` in tmux `ah-nightly`. Ein übersprungener Lauf
     schreibt seinen Grund nach `.ah-out/nightly.log`.
   - `install` setzt eine markierte Crontab-Zeile (01:30), idempotent; `uninstall` entfernt genau diese Zeile.
@@ -72,8 +71,8 @@ steht und Workflow-PRs Kevin merged.
 
 - Ein Cron-Lauf ohne Session: Bei Rot schreibt heavy.sh Report, `history.csv` und REG-Zeilen wie heute; die nächste
   Session liest den Report beim Start (AH-STATUS). Rollback: `nightly.sh uninstall`.
-- Die Provider-Umgebung unter Cron: Fehlt sie, bricht `vm.py` ab. Die Probe `nightly.sh run --dry-run` unter `env -i`
-  belegt das Laden vor der Installation.
+- Die Provider-Umgebung unter Cron: vm.py liest seine Konfiguration selbst; die Probe `nightly.sh run --dry-run`
+  unter `env -i` belegt das vor der Installation.
 - Merge-Sperre: Rückmeldung Merge → Urteil wird länger (heute p50 4,9 h, künftig bis ~1 Tag). Gemessen gab es 1
   Regression in 52 Läufen.
 - Server-pytest aus dem Box-Lauf: nur bei belegter Gleichheit; sonst bleibt der Schritt (Task `[~]`).

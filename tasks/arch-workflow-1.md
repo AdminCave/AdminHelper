@@ -1,5 +1,5 @@
 # Harness: Wackler-Politik, Triage-Dauerauftrag, Sammellauf nachts — Task-Ledger
-Status: aktiv · Branch: feature/arch-workflow-1 · Review: pro Task
+Status: bereit · Branch: feature/arch-workflow-1 · Review: pro Task
 Spec: docs/features/arch-workflow-1.md (Roadmap R-1335, R-1336, R-1337, R-1338, R-1346)
 Heavy: none — Harness-Text und Harness-Skripte mit hermetischen Tests; den echten Beweis für nightly.sh und die heavy.sh-Klasse `fund` liefert der erste nächtliche Lauf nach dem Merge
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -91,8 +91,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (CLAUDE.md ist die Stelle)
 Abhängt von: T2, T5
 
-### T10 — R-1337: REG-Entwurf von heavy.sh hält den nächtlichen Lauf nicht an  [ ]
+### T10 — R-1337: REG-Entwurf von heavy.sh hält den nächtlichen Lauf nicht an  [x]
 Komponente: scripts · Dateien: scripts/tests/nightly.sh, scripts/tests/nightly_test.sh, scripts/tests/heavy.sh, .claude/skills/feature-build/SKILL.md, DEVELOPMENT.md, docs/features/arch-workflow-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @92bfd2998 2026-11-11T20:36:03+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T10.verdict.json)
 Änderung: nightly.sh nimmt in der Sauberkeitsprüfung genau die ungetrackten `tasks/reg-*.md` aus, die `write_reg_ledger` von heavy.sh im Haupt-Checkout anlegt; jede andere Änderung skippt weiter. Test: ungetrackter REG-Entwurf → Lauf startet; ein anderer ungetrackter Pfad unter `tasks/` → Skip. /feature-build §5 (`reg`): die Session übernimmt den Entwurf in den Plan ihres REG-Vorhabens und löscht ihn im Haupt-Checkout. Nits der Abschlussprüfung: heavy.sh nennt Fuzz-Funde auch neben roten Schritten im Teil-Detail; Spec ohne die gestrichene Env-Ladung; DEVELOPMENT.md nennt die Probe `nightly.sh run --dry-run` unter einer Cron-ähnlichen Umgebung vor `install`.
 Beweis: Abschlussprüfung arch-workflow-1 2026-11-11: heavy.sh write_reg_ledger schreibt `tasks/reg-<datum>-<schritt>.md` ungetrackt, nightly.sh zählt ungetrackte Dateien · Dedup-Key: bug:harness:nightly:reg-draft-blocks
 Verify: bash scripts/dev/verify.sh scripts --strict -- nightly_test heavy_test

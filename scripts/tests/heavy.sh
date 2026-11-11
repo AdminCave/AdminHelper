@@ -648,6 +648,7 @@ evaluate_all() {  # evaluate_all <log> <rc> <box> <pull-dir> <label> <slot> <sin
     [ "$funds" -gt 0 ] && PART_DETAIL="$PART_DETAIL; $funds fuzz find(s), not retried"
   elif [ "$reds" -gt 0 ]; then
     PART_RESULT=fail PART_DETAIL="$reds step(s) red after retries"
+    [ "$funds" -gt 0 ] && PART_DETAIL="$PART_DETAIL; $funds fuzz find(s), not retried"
   elif [ "$funds" -gt 0 ]; then
     PART_RESULT=fail PART_DETAIL="$funds fuzz find(s), not retried"
   elif [ "$redsteps" -gt 0 ]; then

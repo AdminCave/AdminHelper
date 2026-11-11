@@ -146,8 +146,9 @@ ohne Merge-Sperre, ein Lauf von Hand ist Kevins Wort (`/test`).
 - FAIL: Jeder rote Schritt außer `fund` sperrt. Bis er per `--step`-Lauf über `main` wieder grün ist, merged die
   Session kein Vorhaben mit `Heavy: linux-full`, außer dem Fix oder Revert des roten Schritts und SEC auf Kevins
   Wort. Je Klasse:
-  - `reg`: die REG-Zeile hat `heavy.sh` schon angelegt; die Session sucht den Verursacher über die Merge-Commits
-    seit dem letzten grünen Lauf. Ein REG-Ledger beweist seinen Fix vor dem Merge mit dem `--step`-Lauf aus
+  - `reg`: die REG-Zeile hat `heavy.sh` schon angelegt, dazu den Entwurf `tasks/reg-<datum>-<schritt>.md`
+    ungetrackt im Haupt-Checkout; die Session übernimmt ihn in den Plan ihres REG-Vorhabens (Worktree), löscht ihn
+    im Haupt-Checkout und sucht den Verursacher über die Merge-Commits seit dem letzten grünen Lauf. Ein REG-Ledger beweist seinen Fix vor dem Merge mit dem `--step`-Lauf aus
     seinem `Heavy:`.
   - `unbestaetigt`, `extern`, `fail`: melden, Kevin sichtet (Report „Kevin sichtet“); keine REG-Zeile von der
     Session.
