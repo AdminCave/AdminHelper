@@ -1,5 +1,5 @@
 # reg-pty-close-all — Task-Ledger
-Status: geplant · Branch: feature/reg-pty-close-all · Review: am Ende
+Status: aktiv · Branch: feature/reg-pty-close-all · Review: am Ende
 Spec: docs/features/reg-pty-close-all.md (Roadmap R-1217)
 Heavy: none — nur ein Unit-Test im Desktop-Backend; Windows prüft die PR-CI (rust-windows)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
