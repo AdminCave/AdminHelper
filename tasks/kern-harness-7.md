@@ -1,5 +1,5 @@
 # tauri-cli-Pin des Bootstraps im Gleichschritt — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-7 · Review: am Ende
+Status: erledigt · Branch: feature/kern-harness-7 · Review: am Ende
 Spec: docs/features/kern-harness-7.md (Roadmap R-1294)
 Heavy: none — nur Harness-Skripte und Doku; jeder Warm im full-Profil baut tauri-cli neu (~18 min), bis die Vorlage neu gebacken ist (Kevins Wort)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
