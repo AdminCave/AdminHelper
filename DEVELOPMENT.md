@@ -932,6 +932,11 @@ services:
     build:
       context: ./apps/gateway
     image: adminhelper-gateway:dev
+  frps:
+    build:
+      context: .            # das frps-Image baut sein Plugin frps-policy aus apps/agent
+      dockerfile: apps/frps/Dockerfile
+    image: adminhelper-frps:dev
 ```
 
 Mit so einer Override-Datei startet `docker compose up --build -d` den

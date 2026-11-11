@@ -24,8 +24,8 @@ A TERM while the supervisor stops frps waits for frps a second time, so the grac
 outlasts two stops. The health check runs the supervisor's health subcommand, nothing else.
 
 Only docker-compose.test.yml needs a loader of its own: it carries `!override`, which
-`yaml.safe_load` refuses. One test runs the frps image, built from apps/frps, with the settings
-compose gives it; it skips when Docker or the pinned base image is not at hand.
+`yaml.safe_load` refuses. One test runs the frps image, built from apps/frps/Dockerfile, with the
+settings compose gives it; it skips when Docker or a pinned base image is not at hand.
 """
 
 import contextlib
@@ -239,6 +239,7 @@ def test_everyone_may_read_the_status_file_the_supervisor_writes(tmp_path):
         # Without root, no user to switch to, and no process of one to look for.
         "FRPS_USER": "",
         "FRPS_FETCH_USER": "",
+        "FRPS_POLICY_USER": "",
         "FRPS_PROC_ROOT": str(tmp_path / "proc"),
     }
     supervisor = subprocess.Popen(
@@ -268,8 +269,9 @@ def test_the_test_overlay_builds_frps_from_this_checkout():
     overlay = yaml.load(_COMPOSE_TEST.read_text(encoding="utf-8"), Loader=_TestLoader)
     frps = overlay["services"]["frps"]
     assert frps["image"] == "adminhelper-test/frps:latest"
-    assert frps["build"] == {"context": "apps/frps"}
-    assert (_ROOT / frps["build"]["context"] / "Dockerfile").is_file()
+    # From the repository root: the image builds the plugin from the Go module of the agent.
+    assert frps["build"] == {"context": ".", "dockerfile": "apps/frps/Dockerfile"}
+    assert (_ROOT / frps["build"]["context"] / frps["build"]["dockerfile"]).is_file()
 
 
 def test_the_test_overlay_keeps_the_data_dir_out_of_the_checkout():

@@ -72,6 +72,7 @@ _GENERATOR_PROXY_KEYS = (
     "secretKey",
     "allowUsers",
     "customDomains",
+    "metadatas.ahProxyKey",
 )
 
 

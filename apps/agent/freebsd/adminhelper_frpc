@@ -9,8 +9,11 @@
 #
 # AdminHelper's FRP tunnel client. The agent enables and starts it when the server sends the
 # first tunnel and stops and disables it when none is left; adminhelper_frpc_enable is NO until
-# then. daemon(8) restarts frpc five seconds after it exits and sends its output to syslog; -f
-# detaches daemon itself from the caller's output, so a caller reading it is not held open.
+# then. daemon(8) restarts frpc five seconds after it exits and appends its output to
+# /var/log/adminhelper/frpc.log, which it creates 0600: syslog would put it into the world-readable
+# /var/log/messages. -H reopens the file on the SIGHUP newsyslog sends after rotating it
+# (newsyslog.conf.d/adminhelper.conf). -f detaches daemon itself from the caller's output, so a
+# caller reading it is not held open.
 
 . /etc/rc.subr
 
@@ -24,7 +27,14 @@ load_rc_config $name
 
 pidfile="/var/run/adminhelper_frpc.pid"
 command="/usr/sbin/daemon"
-command_args="-f -r -R 5 -P /var/run/adminhelper_frpc.pid -p /var/run/adminhelper_frpc.child.pid -S -T adminhelper-frpc /usr/local/libexec/adminhelper/frpc -c /usr/local/etc/adminhelper/frp/frpc.toml"
+command_args="-f -r -R 5 -P /var/run/adminhelper_frpc.pid -p /var/run/adminhelper_frpc.child.pid -H -o /var/log/adminhelper/frpc.log /usr/local/libexec/adminhelper/frpc -c /usr/local/etc/adminhelper/frp/frpc.toml"
 required_files="/usr/local/etc/adminhelper/frp/frpc.toml"
+start_precmd="adminhelper_frpc_prestart"
+
+# The agent creates the directory with its first log line; frpc may start before that.
+adminhelper_frpc_prestart()
+{
+	[ -d /var/log/adminhelper ] || mkdir -m 0700 /var/log/adminhelper
+}
 
 run_rc_command "$1"
