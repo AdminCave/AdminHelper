@@ -299,6 +299,33 @@ func TestGuardFailsClosedWhenItCannotTellTheListener(t *testing.T) {
 	}
 }
 
+// TestGuardFailsClosedOnASocketSystemdHoldsAlone: a socket systemd listens on for socket activation
+// tells nothing of the service behind it until that runs and holds the socket too.
+func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
+	stubHost(t, &fakeHost{
+		list: []listener{
+			lst("127.0.0.1", 2222, 1), lst("0.0.0.0", 5000, 900),
+			lst("127.0.0.1", 631, 1), lst("127.0.0.1", 631, 30),
+			lst("0.0.0.0", 16509, 1), lst("0.0.0.0", 16509, 31),
+		},
+		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd"},
+	})
+	g := NewGuard()
+
+	for _, c := range []struct{ address, want string }{
+		{"127.0.0.1:2222", "socket activation"},
+		{"127.0.0.1:5000", "socket activation"},
+		{"127.0.0.1:16509", "libvirtd"},
+	} {
+		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want ErrNotAllowed with %q", c.address, err, c.want)
+		}
+	}
+	if err := allowed(g, "tcp4", "127.0.0.1:631"); err != nil {
+		t.Errorf("a socket systemd and the service it started hold: %v, want it allowed", err)
+	}
+}
+
 func TestGuardReadsTheListenersOncePerSnapshot(t *testing.T) {
 	h := &fakeHost{}
 	stubHost(t, h)

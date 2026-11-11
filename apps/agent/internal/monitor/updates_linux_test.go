@@ -39,6 +39,7 @@ func stubUpdates(t *testing.T, now time.Time, reply dockerReply) *[]updatesCall 
 	updatesCalls.now = func() time.Time { return now }
 	updatesCalls.run = func(_ context.Context, timeout time.Duration, env []string, name string, args ...string) ([]byte, error) {
 		calls = append(calls, updatesCall{timeout, env, append([]string{name}, args...)})
+		checkAllowed(t, name, args)
 		return []byte(reply.out), reply.err
 	}
 	return &calls

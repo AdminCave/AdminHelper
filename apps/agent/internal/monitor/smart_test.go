@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -223,6 +224,8 @@ func stubSmartctl(t *testing.T, scan dockerReply, devices map[string]dockerReply
 		mu.Lock()
 		calls = append(calls, smartctlCall{timeout, args})
 		mu.Unlock()
+		// The base name: on Windows "/usr/sbin/smartctl" is no absolute path, and the stub checks the path itself.
+		checkAllowed(t, filepath.Base(name), args)
 		if name != "/usr/sbin/smartctl" {
 			t.Errorf("ran %q, want the smartctl found on the PATH", name)
 		}
