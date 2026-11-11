@@ -8,8 +8,6 @@ package monitor
 
 import (
 	"context"
-	"errors"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -203,15 +201,6 @@ func filterEnabledInactive(ctx context.Context, candidates []string) []string {
 		kept = append(kept, unit)
 	}
 	return kept
-}
-
-// answered reports whether a failed systemctl call still answered, i.e. exited non-zero on its own,
-// rather than being ended by the timeout or the end of ctx (context.DeadlineExceeded or
-// context.Canceled from runWithTimeout), killed by a signal (exit code -1) or never started. So the
-// per-unit fallbacks also end with ctx: once it has ended, the next call returns its error unstarted.
-func answered(err error) bool {
-	var exitErr *exec.ExitError
-	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0
 }
 
 // parseShowBlocks maps the blank-line-separated blocks of `systemctl show` to their properties,

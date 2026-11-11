@@ -35,6 +35,15 @@ func stubHostFacts(t *testing.T, found ...string) *[]string {
 	return &looked
 }
 
+// stubVirtualization makes the host facts report system and role as the virtualization, which tells
+// the agent whether it runs in a container.
+func stubVirtualization(t *testing.T, system, role string) {
+	t.Helper()
+	old := hostFactsCalls.virtualization
+	hostFactsCalls.virtualization = func() (string, string, error) { return system, role, nil }
+	t.Cleanup(func() { hostFactsCalls.virtualization = old })
+}
+
 // wantHostFacts is the expected block: os is the platform the test runs on, fields the rest.
 func wantHostFacts(t *testing.T, fields string) map[string]any {
 	t.Helper()
@@ -140,5 +149,29 @@ func TestBuildReportHost(t *testing.T) {
 		"virtualization": {"system": "kvm", "role": "guest"}, "subsystems": ["docker"]`)}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("report host = %v, want %v", got, want)
+	}
+}
+
+func TestFreebsdVirtualization(t *testing.T) {
+	cases := []struct {
+		name         string
+		jailed       bool
+		vmGuest      string
+		system, role string
+	}{
+		{"bare metal", false, "none", "", ""},
+		{"bhyve guest", false, "bhyve", "bhyve", "guest"},
+		{"kvm guest", false, "kvm", "kvm", "guest"},
+		{"jail on bare metal", true, "none", "jail", "guest"},
+		// kern.vm_guest is the host's: the jail is what the agent watches.
+		{"jail in a vmware guest", true, "vmware", "jail", "guest"},
+		{"empty sysctl", false, "", "", ""},
+	}
+	for _, c := range cases {
+		system, role := freebsdVirtualization(c.jailed, c.vmGuest)
+		if system != c.system || role != c.role {
+			t.Errorf("%s: freebsdVirtualization(%v, %q) = (%q, %q), want (%q, %q)",
+				c.name, c.jailed, c.vmGuest, system, role, c.system, c.role)
+		}
 	}
 }

@@ -36,6 +36,8 @@ def fixture(name: str) -> dict:
 
 
 def _encode(body) -> bytes:
+    if isinstance(body, bytes):
+        return body
     return (body if isinstance(body, str) else json.dumps(body)).encode()
 
 
@@ -62,8 +64,12 @@ class Call:
         self.path, _, query = self.url.partition("?")
         self.query = dict(urllib.parse.parse_qsl(query))
         self.headers = {k.lower(): v for k, v in req.headers.items()}
-        raw = req.data.decode() if req.data else ""
-        self.body = dict(urllib.parse.parse_qsl(raw)) if raw else {}
+        data = req.data or b""
+        # An upload hands urlopen a generator; http.client would send it chunk
+        # by chunk, and draining it here is what the server would have read.
+        self.raw = data if isinstance(data, bytes) else b"".join(data)
+        form = self.headers.get("content-type", "").startswith("multipart/")
+        self.body = {} if form or not self.raw else dict(urllib.parse.parse_qsl(self.raw.decode()))
 
     def __repr__(self):  # a failed assertion should say what was called
         return "<%s %s q=%r b=%r>" % (self.method, self.path, self.query, self.body)
@@ -244,6 +250,14 @@ def pve_env(tmp_path, monkeypatch):
     folder.mkdir(mode=0o700)
     path = folder / "pve.env"
     monkeypatch.setattr(vm, "PVE_ENV_FILE", str(path))
+    return path
+
+
+@pytest.fixture(autouse=True)
+def image_cache(tmp_path, monkeypatch):
+    """`import` keeps downloaded images in ~/.cache; the suite keeps them in tmp_path."""
+    path = tmp_path / "images"
+    monkeypatch.setattr(vm, "IMAGE_CACHE", str(path))
     return path
 
 

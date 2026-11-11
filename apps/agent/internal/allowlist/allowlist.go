@@ -59,6 +59,12 @@ var classes = map[string]string{
 	"journalmatch": `(?:SYSLOG_IDENTIFIER|_COMM|CONTAINER_NAME)=[A-Za-z0-9._@/:+-]+`,
 	// A package name as discovery asks for it (packagePattern).
 	"package": `[a-z0-9][a-z0-9+._-]*`,
+	// An rc.d script name as `service <name>` takes it (monitor's reRCScriptName): no '/', not "." or
+	// "..", no leading '-'.
+	"rcscript": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
+	// A FreeBSD base system name pkg audit checks (freebsdPkgName): FreeBSD- or FreeBSD-kernel- and a
+	// release, "15.1" or with its patch level "15.1_2".
+	"basepkg": `FreeBSD-(?:kernel-)?[0-9]+\.[0-9]+(?:_[0-9]+)?`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -182,6 +188,13 @@ var commands = map[string][][]string{
 	"timedatectl":      {{"show"}},
 	"apt-get":          {{"-s", "dist-upgrade"}},
 	"dnf":              {{"-C", "-q", "updateinfo", "list", "--security"}},
+	// FreeBSD: the rc.d services, the versions of kernel and userland, and pkg audit against the local
+	// vuln.xml only (never -F, which fetches it).
+	"service":         {{"-e"}, {"<rcscript>", "status"}},
+	"freebsd-version": {{"-kru"}, {"-u"}},
+	"pkg":             {{"audit", "-q"}, {"audit", "-q", "<basepkg>..."}},
+	// FreeBSD: the listening TCP sockets for the sensors' guard and discovery (probe, sockstatArgs).
+	"sockstat": {{"-46", "-l", "-n", "-q", "-w", "-P", "tcp"}},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated
@@ -242,9 +255,11 @@ func Allowed(name string, args []string) bool {
 
 // Key is the list key of name. An absolute name counts by its base name: smartctl runs by the path
 // exec.LookPath found, which on Windows ends in ".exe" (PATHEXT), so there the extension goes too, in
-// any case.
+// any case. A name that starts with "/" is absolute on every host: the FreeBSD calls name
+// /usr/sbin/service and the like, the tests without a build tag check them on Windows as well, and
+// there filepath.IsAbs wants a volume.
 func Key(name string, windows bool) string {
-	if filepath.IsAbs(name) {
+	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") {
 		name = filepath.Base(name)
 	}
 	if windows && strings.EqualFold(filepath.Ext(name), ".exe") {

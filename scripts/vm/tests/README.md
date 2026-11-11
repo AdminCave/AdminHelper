@@ -82,3 +82,26 @@ Wer neu aufzeichnet, prüft das Ergebnis mit
 - **Die Clone-Task läuft auf der QUELL-VMID.** `clone_post.json`/`task_ok.json` tragen
   `qmclone:9402` — die 9402 ist das Template, nicht der neue Klon. Wer einen Task über die
   `newid` wiederfinden will, sucht vergeblich; der UPID ist der einzige Handgriff.
+
+## Nachaufnahme 2026-11-11: Import (T8 von R-1247)
+
+**Herkunft.** Gegen dieselbe PVE 9.2.3, nach dem echten `vm.py import --profile base-freebsd`
+(VM 3900, heute die Vorlage `ah-tpl-base-freebsd`), nur lesend aus `GET /nodes/<node>/tasks` und
+`GET /nodes/<node>/tasks/<UPID>/status`. `task_imgcopy.json` und `task_qmcreate.json` sind diese
+Status-Antworten. `upload_post.json` und `create_post.json` tragen den UPID derselben Tasks in der
+Form, die jeder asynchrone `POST` liefert (`{"data": <UPID>}`, wie `clone_post.json`); die
+`POST`-Antworten selbst hat der Lauf nicht gesichert. Bereinigt nach der Regel oben (Knoten,
+Benutzer und Token); PIDs und Zeitstempel bleiben.
+
+**Was die Aufnahme gezeigt hat.**
+- Der Upload ist eine eigene Task `imgcopy` **ohne** VMID (`imgcopy::`): PVE kopiert die Datei
+  aus seinem Upload-Verzeichnis in den Storage; `import` wartet auf diesen UPID, bevor es die
+  VM anlegt.
+- `qmcreate` mit `import-from` (qcow2, rund 2,7 GB) brauchte 128 s; Start 3 s, Shutdown 8 s,
+  `template` 1 s. Rechte: `Datastore.AllocateTemplate` + `Datastore.Audit` auf dem Import-Storage
+  (ohne Vererbung) reichten für Upload und `import-from`.
+- Am ersten Klon: ssh bis zur Antwort 31 s, eigener Hostname und neue Host-Keys aus dem
+  config-2-Laufwerk, `freebsd` und `root` ohne Passwort (`*`), kein Paket-Upgrade beim Erstboot.
+  Der PATH einer ssh-Sitzung kommt aus `login.conf` und enthält `/usr/local/bin`. `vm.py run`
+  startet `bash -l`, das `~/.profile` liest, und das druckt auf FreeBSD einen `fortune`-Tipp:
+  wer die Ausgabe eines Box-Laufs auswertet, sucht Marker statt die erste Zeile zu lesen.

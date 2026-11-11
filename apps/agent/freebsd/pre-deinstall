@@ -1,0 +1,26 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The package's +PRE_DEINSTALL. pkg runs it with /bin/sh before it deletes the files: on a removal,
+# and on an upgrade as the old package's, with PKG_UPGRADE set (pkg-script(5)). An upgrade keeps the
+# tunnel and the cron entry; the new +POST_INSTALL restarts the tunnel.
+#
+# A removal stops the tunnel and deletes adminhelper_frpc_enable, so rc.conf keeps no rcvar of a
+# script that is gone, and deletes the cron entry, which would run a deleted binary every five
+# minutes. The configuration and the identity under /usr/local/etc/adminhelper stay, as on Linux.
+#
+# The services are left alone under pkg -r (PKG_ROOTDIR) or pkg -c (PKG_CHROOTED): there the
+# package belongs to another root, but service(8) and the process table are the host's.
+
+if [ -n "${PKG_UPGRADE:-}" ]; then
+	exit 0
+fi
+if [ "${PKG_ROOTDIR:-/}" = / ] && [ -z "${PKG_CHROOTED:-}" ]; then
+	/usr/sbin/service adminhelper_frpc faststop
+	# delete fails for an rcvar that was never set; there is nothing to delete then.
+	/usr/sbin/service adminhelper_frpc delete >/dev/null 2>&1
+fi
+rm -f "${PKG_ROOTDIR%/}/usr/local/etc/cron.d/adminhelper"
+exit 0

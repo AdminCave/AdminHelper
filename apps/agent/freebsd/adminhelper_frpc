@@ -1,0 +1,30 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# PROVIDE: adminhelper_frpc
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+# AdminHelper's FRP tunnel client. The agent enables and starts it when the server sends the
+# first tunnel and stops and disables it when none is left; adminhelper_frpc_enable is NO until
+# then. daemon(8) restarts frpc five seconds after it exits and sends its output to syslog; -f
+# detaches daemon itself from the caller's output, so a caller reading it is not held open.
+
+. /etc/rc.subr
+
+name="adminhelper_frpc"
+rcvar="adminhelper_frpc_enable"
+desc="AdminHelper FRP tunnel client"
+
+load_rc_config $name
+
+: ${adminhelper_frpc_enable:="NO"}
+
+pidfile="/var/run/adminhelper_frpc.pid"
+command="/usr/sbin/daemon"
+command_args="-f -r -R 5 -P /var/run/adminhelper_frpc.pid -p /var/run/adminhelper_frpc.child.pid -S -T adminhelper-frpc /usr/local/libexec/adminhelper/frpc -c /usr/local/etc/adminhelper/frp/frpc.toml"
+required_files="/usr/local/etc/adminhelper/frp/frpc.toml"
+
+run_rc_command "$1"

@@ -8,7 +8,7 @@
     python3 scripts/vm/vm.py <verb> [options]
 
 Verbs: doctor clone wait ssh sync run pull snap rollback delsnap destroy reap
-list bake. Python 3 standard library only — no proxmoxer, no pvesh, no qm: the
+list bake import. Python 3 standard library only — no proxmoxer, no pvesh, no qm: the
 REST API is the whole surface, and a dependency for ~25 endpoints buys nothing a
 hermetic test could not give us (spec: docs/features/harness-stufe-2.md).
 
@@ -18,7 +18,7 @@ lines, read, never sourced — where the token belongs) and from
 the settings file, and a real environment variable of the same name wins over
 both, so a runner can inject its own without a file (R-0229). Keys:
 
-    AH_PVE_URL NODE TOKEN CA STORAGE BRIDGE POOL VMID_RANGE
+    AH_PVE_URL NODE TOKEN CA STORAGE BRIDGE POOL VMID_RANGE IMPORT_STORAGE
     AH_VM_SSH_KEY MAX LINKED REMOTE_DIR
 
 State lives on the hypervisor, as tags: every VM this tool creates carries
@@ -35,18 +35,23 @@ Exit codes: 0 ok · 1 the thing you ran failed (a remote command's own exit) ·
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import lzma
 import os
 import re
 import shlex
+import shutil
 import ssl
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Everything this tool caches locally. Gitignored, and small on purpose: the
@@ -67,6 +72,8 @@ CLONE_LIMIT_FULL = 1800  # measured: ~11 min on the thin pool
 WAIT_TIMEOUT = 900  # agent ping -> IP -> ssh
 AGENT_POLL = 5
 SSH_CONNECT_TIMEOUT = 5
+UPLOAD_TIMEOUT = 300  # per socket operation; pveproxy answers only once the whole body is in
+UPLOAD_CHUNK = 1024 * 1024
 
 # A locked config is not an error worth failing on: PVE holds the lock for a few
 # seconds after `rollback --start`, and it surfaces in TWO shapes — as HTTP 500
@@ -106,6 +113,8 @@ ENV_KEYS = (
     "AH_PVE_STORAGE",
     "AH_PVE_BRIDGE",
     "AH_PVE_POOL",
+    # Only `import` and the privilege check of `doctor` read it.
+    "AH_PVE_IMPORT_STORAGE",
 )
 
 
@@ -337,11 +346,13 @@ class Api:
                 exc.retried = attempt > 0
                 raise
 
-    def _once(self, method: str, url: str, data: bytes | None):
+    def _once(self, method: str, url: str, data, headers: dict | None = None, timeout=HTTP_TIMEOUT):
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Authorization", "PVEAPIToken=" + self.cfg["AH_PVE_TOKEN"])
+        for name, value in (headers or {}).items():
+            req.add_header(name, value)
         try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=self.context()) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=self.context()) as resp:
                 return _unwrap(resp.read().decode())
         except urllib.error.HTTPError as exc:
             raise _http_error(exc, method, url) from exc
@@ -349,6 +360,46 @@ class Api:
             err = Infra("%s %s: %s" % (method, _redact(url), exc))
             err.retryable = True
             raise err from exc
+
+    def upload(self, storage: str, content: str, path: str, filename: str, sha256: str) -> str:
+        """Stream one file into a storage as `filename`; returns the UPID of PVE's copy task.
+
+        Exactly one attempt, unlike `_send`: the body is a generator the first
+        attempt has used up. pveproxy refuses a chunked body, so the length goes
+        in front; it checks the sha256 itself before the file lands, and the
+        file part has to come after the fields it is checked against.
+        """
+        boundary = "ah-" + uuid.uuid4().hex
+        fields = (("content", content), ("checksum-algorithm", "sha256"), ("checksum", sha256))
+        head = "".join(
+            '--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (boundary, k, v)
+            for k, v in fields
+        )
+        head += (
+            '--%s\r\nContent-Disposition: form-data; name="filename"; filename="%s"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n" % (boundary, filename)
+        )
+        head_bytes = head.encode()
+        tail = ("\r\n--%s--\r\n" % boundary).encode()
+
+        def body():
+            yield head_bytes
+            with open(path, "rb") as fh:
+                while chunk := fh.read(UPLOAD_CHUNK):
+                    yield chunk
+            yield tail
+
+        size = len(head_bytes) + os.path.getsize(path) + len(tail)
+        return self._once(
+            "POST",
+            self.base + "/nodes/%s/storage/%s/upload" % (self.node, storage),
+            body(),
+            headers={
+                "Content-Type": "multipart/form-data; boundary=" + boundary,
+                "Content-Length": str(size),
+            },
+            timeout=UPLOAD_TIMEOUT,
+        )
 
     # ── tasks ────────────────────────────────────────────────────────────────
     def wait_task(self, upid: str, limit: int = TASK_LIMIT) -> dict:
@@ -466,6 +517,8 @@ NEEDED_PRIVILEGES = {
     ),
     "storage": ("Datastore.AllocateSpace", "Datastore.Audit"),
     "node": ("Sys.Audit", "VM.Audit"),
+    # `import`: the upload needs AllocateTemplate, `import-from` reads the file with Audit.
+    "import": ("Datastore.AllocateTemplate", "Datastore.Audit"),
 }
 
 
@@ -531,6 +584,7 @@ VERBS = (
     "reap",
     "list",
     "bake",
+    "import",
 )
 
 
@@ -812,9 +866,14 @@ def verb_doctor(cfg: Config, api: Api, args) -> int:
             "storage": "/storage/" + cfg["AH_PVE_STORAGE"],
             "node": "/nodes/" + cfg["AH_PVE_NODE"],
         }
+        # Only a pool that imports its own templates names an import storage.
+        if cfg.get("AH_PVE_IMPORT_STORAGE"):
+            paths["import"] = "/storage/" + cfg["AH_PVE_IMPORT_STORAGE"]
         missing = []
         for kind, path in paths.items():
-            have = {name for name, on in (granted.get(path) or {}).items() if on}
+            # The value is the ACL's propagate flag, not whether the privilege is
+            # granted: a grant on the import storage alone reads 0 and still counts.
+            have = set(granted.get(path) or {})
             missing += ["%s on %s" % (n, path) for n in NEEDED_PRIVILEGES[kind] if n not in have]
         if missing:
             return False, "missing " + ", ".join(missing)
@@ -1015,6 +1074,37 @@ def verb_clone(cfg: Config, api: Api, args) -> int:
     return 0
 
 
+def submit_new_vm(cfg: Config, api: Api, newid: int, label: str, submit) -> str:
+    """Submit the call that creates VM `newid`; returns its UPID.
+
+    Submit and wait are split on purpose. A rejected submit created nothing —
+    and "config file already exists" may well mean a parallel lane grabbed the
+    same free VMID a moment earlier, so purging on that would destroy someone
+    else's VM. Once the UPID is out, the VM is ours whatever happens next: a
+    task that outruns our patience keeps running on the server and finishes an
+    UNTAGGED VM, which `destroy` and `reap` would then refuse to touch forever.
+    That one belongs in the caller's purge.
+    """
+    try:
+        return submit()
+    except VmError as exc:
+        # "config file already exists" after a RETRY means our own first attempt
+        # landed and only its answer was lost — the VM at newid is ours, carries
+        # no tags yet, and nothing would ever look at it again. Without a retry
+        # the same message means a parallel lane took the VMID, and purging it
+        # would destroy their VM.
+        if getattr(exc, "retried", False) and "already exists" in str(exc):
+            try:
+                purge_vm(cfg, api, newid)
+            except VmError as cleanup:
+                raise Infra(
+                    "%s was retried and may have landed; cleaning %d up failed too: %s"
+                    % (label, newid, cleanup)
+                ) from exc
+            raise Infra("%s failed: %s (the retry's leftover was removed)" % (label, exc)) from exc
+        raise Infra("%s failed: %s" % (label, exc)) from exc
+
+
 def create_vm(
     cfg: Config,
     api: Api,
@@ -1038,39 +1128,18 @@ def create_vm(
     body = {"newid": newid, "name": name, "full": 0 if linked else 1, "pool": cfg["AH_PVE_POOL"]}
     if not linked:
         body["storage"] = cfg["AH_PVE_STORAGE"]
-    # Submit and wait are split on purpose. A rejected submit created nothing —
-    # and "config file already exists" may well mean a parallel lane grabbed the
-    # same free VMID a moment earlier, so purging on that would destroy someone
-    # else's VM. Once the UPID is out, the VM is ours whatever happens next: a
-    # clone task that outruns our patience keeps running on the server and
-    # finishes an UNTAGGED VM, which `destroy` and `reap` would then refuse to
-    # touch forever. That one belongs in the purge.
-    try:
-        # lock_retry, because the source template can be locked by a second
-        # lane cloning from it (or by T8 tagging it) — and by the argument
-        # above, a submit that is refused has created nothing to clean up.
-        upid = api.request(
+    # lock_retry, because the source template can be locked by a second lane
+    # cloning from it (or by T8 tagging it) — and a submit that is refused has
+    # created nothing to clean up (submit_new_vm).
+    upid = submit_new_vm(
+        cfg,
+        api,
+        newid,
+        "clone of %d into %d" % (template, newid),
+        lambda: api.request(
             "POST", "/nodes/%s/qemu/%d/clone" % (node, template), body=body, lock_retry=True
-        )
-    except VmError as exc:
-        # "config file already exists" after a RETRY means our own first attempt
-        # landed and only its answer was lost — the VM at newid is ours, carries
-        # no tags yet, and nothing would ever look at it again. Without a retry
-        # the same message means a parallel lane took the VMID, and purging it
-        # would destroy their VM.
-        if getattr(exc, "retried", False) and "already exists" in str(exc):
-            try:
-                purge_vm(cfg, api, newid)
-            except VmError as cleanup:
-                raise Infra(
-                    "clone of %d into %d was retried and may have landed; cleaning %d up "
-                    "failed too: %s" % (template, newid, newid, cleanup)
-                ) from exc
-            raise Infra(
-                "clone of %d into %d failed: %s (the retry's leftover was removed)"
-                % (template, newid, exc)
-            ) from exc
-        raise Infra("clone of %d into %d failed: %s" % (template, newid, exc)) from exc
+        ),
+    )
 
     try:
         api.wait_task(upid, limit=CLONE_LIMIT_LINKED if linked else CLONE_LIMIT_FULL)
@@ -1823,6 +1892,54 @@ CLEAN_SCRIPT = (
 )
 
 
+def await_template(cfg: Config, api: Api, template_tag: str, newid: int, profile: str) -> None:
+    """Wait until `clone --profile` would find the template just built at `newid`.
+
+    The resource list is a cache, and it lagged behind the fresh template by
+    seconds in the T12 run: `bake` said done and the very next `clone
+    --profile <what was just baked>` answered "no template tagged …". Waiting
+    for our own result to become visible is what makes the two commands
+    composable. `bake` and `import` both end here.
+    """
+    deadline = time.monotonic() + TEMPLATE_VISIBLE_LIMIT
+    while True:
+        try:
+            # One snapshot per round, and inside the guard: the template is
+            # built, tagged and ours by now, so a listing that cannot be read
+            # must not throw that away — nor eat the caller's result line.
+            vms = pool_vms(cfg, api)
+        except VmError as exc:
+            print(
+                "note: %d is built and tagged; the resource list could not be read (%s)"
+                % (newid, exc)
+            )
+            break
+        seen = newest_template(vms, template_tag)
+        if seen is not None and seen["vmid"] == newid:
+            break
+        # "Visible" has to mean what `clone` means by it — a template carrying
+        # our tag. During the lag the entry IS in the list, with its old fields
+        # (still a running VM, still wearing its lease tags), and a bare VMID
+        # test would end the wait on exactly the case it exists for.
+        mine = any(
+            v["vmid"] == newid and v.get("template") and template_tag in tags_of(v) for v in vms
+        )
+        if mine and seen is not None:
+            print(
+                "note: %d is built, but %d wins the tie-break for %s — "
+                "`clone --profile %s` would take %d"
+                % (newid, seen["vmid"], template_tag, profile, seen["vmid"])
+            )
+            break
+        if time.monotonic() >= deadline:
+            print(
+                "note: %d is built and tagged, but the cluster resource list still does not "
+                "show it — give it a moment before cloning from it" % newid
+            )
+            break
+        time.sleep(2)
+
+
 def verb_bake(cfg: Config, api: Api, args) -> int:
     profiles = load_profiles()
     meta = profiles["profiles"].get(args.profile)
@@ -1962,50 +2079,320 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
             raise Infra("%s (VM %d was removed again)" % (exc, newid)) from exc
         raise
 
-    # The resource list is a cache, and it lagged behind the fresh template by
-    # seconds in the T12 run: `bake` said done and the very next `clone
-    # --profile <what was just baked>` answered "no template tagged …". Waiting
-    # for our own result to become visible is what makes the two commands
-    # composable.
-    deadline = time.monotonic() + TEMPLATE_VISIBLE_LIMIT
-    while True:
-        try:
-            # One snapshot per round, and inside the guard: the template is
-            # built, tagged and ours by now, so a listing that cannot be read
-            # must not throw that away — nor eat the result line below.
-            vms = pool_vms(cfg, api)
-        except VmError as exc:
-            print(
-                "note: %d is built and tagged; the resource list could not be read (%s)"
-                % (newid, exc)
-            )
-            break
-        seen = newest_template(vms, meta["template_tag"])
-        if seen is not None and seen["vmid"] == newid:
-            break
-        # "Visible" has to mean what `clone` means by it — a template carrying
-        # our tag. During the lag the entry IS in the list, with its old fields
-        # (still a running VM, still wearing its lease tags), and a bare VMID
-        # test would end the wait on exactly the case it exists for.
-        mine = any(
-            v["vmid"] == newid and v.get("template") and meta["template_tag"] in tags_of(v)
-            for v in vms
-        )
-        if mine and seen is not None:
-            print(
-                "note: %d is built, but %d wins the tie-break for %s — "
-                "`clone --profile %s` would take %d"
-                % (newid, seen["vmid"], meta["template_tag"], args.profile, seen["vmid"])
-            )
-            break
-        if time.monotonic() >= deadline:
-            print(
-                "note: %d is built and tagged, but the cluster resource list still does not "
-                "show it — give it a moment before cloning from it" % newid
-            )
-            break
-        time.sleep(2)
+    await_template(cfg, api, meta["template_tag"], newid, args.profile)
+    print("%d %s %s;built-%s" % (newid, name, meta["template_tag"], day))
+    return 0
 
+
+# ── import ───────────────────────────────────────────────────────────────────
+IMPORT_USER = "freebsd"  # the guest user the imported template carries (ciuser)
+# Where downloaded images are kept between imports; expanded on use, so a test
+# can point it elsewhere.
+IMAGE_CACHE = "~/.cache/adminhelper/vm-images"
+UPLOAD_LIMIT = 1800  # PVE's copy out of its upload directory into the storage
+SEED_LIMIT = 60
+ISO_TOOLS = ("genisoimage", "mkisofs", "xorrisofs")
+IMPORT_PACKAGES = ("sudo", "bash", "rsync", "qemu-guest-agent")
+IMPORT_CHECK = """
+fail() { echo "check: $*" >&2; exit 1; }
+for p in %(packages)s; do pkg info -e "$p" || fail "package $p is not installed"; done
+sudo -n true || fail "no passwordless sudo"
+bash -lc true || fail "no bash"
+sudo -n sshd -T | grep -qx 'passwordauthentication no' || fail "sshd takes passwords"
+sudo -n sshd -T | grep -qx 'permitrootlogin no' || fail "sshd takes root"
+grep -qx 'firstboot_pkg_upgrade_enable="NO"' /etc/rc.conf.d/firstboot_pkg_upgrade \\
+    || fail "firstboot_pkg_upgrade is still on"
+[ "$(sysrc -n qemu_guest_agent_enable)" = YES ] || fail "qemu-guest-agent is not enabled"
+[ "$(sysrc -f /boot/loader.conf -n virtio_console_load)" = YES ] \\
+    || fail "virtio_console is not loaded at boot"
+df -h /
+""" % {"packages": " ".join(IMPORT_PACKAGES)}
+# What a clone must not inherit: the keys, ids and leases of this one boot, the
+# bake's own ssh key, and any password. /firstboot makes nuageinit run again on
+# each clone, which is where the clone's own key and hostname come from.
+IMPORT_CLEAN = (
+    "sudo -n pkg clean -ay && "
+    "sudo -n rm -rf /var/cache/nuageinit && "
+    "sudo -n rm -f /var/log/nuageinit.log /etc/ssh/ssh_host_* /etc/hostid /etc/machine-id "
+    "/var/db/dhclient.leases.* && "
+    "sudo -n pw usermod %s -h - && "
+    "sudo -n pw usermod root -h - && "
+    'rm -f "$HOME/.ssh/authorized_keys" && '
+    "sudo -n touch /firstboot" % IMPORT_USER
+)
+
+
+def file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while chunk := fh.read(UPLOAD_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def cached_image(image: dict) -> str:
+    """The profile's image in the local cache, checked against its pinned sha256 on every use.
+
+    A copy that does not match (a download cut short, a re-rolled release under
+    the same name) is fetched again; a download that does not match either ends
+    the import — nothing unverified ever reaches the hypervisor.
+    """
+    cache = os.path.expanduser(IMAGE_CACHE)
+    os.makedirs(cache, mode=0o700, exist_ok=True)
+    url = image["url"]
+    path = os.path.join(cache, os.path.basename(urllib.parse.urlsplit(url).path))
+    if os.path.exists(path) and file_sha256(path) == image["sha256"]:
+        return path
+    print("downloading %s" % url)
+    fd, part = tempfile.mkstemp(dir=cache, suffix=".part")
+    try:
+        digest = hashlib.sha256()
+        with os.fdopen(fd, "wb") as out:
+            with urllib.request.urlopen(urllib.request.Request(url), timeout=HTTP_TIMEOUT) as resp:
+                while chunk := resp.read(UPLOAD_CHUNK):
+                    digest.update(chunk)
+                    out.write(chunk)
+        if digest.hexdigest() != image["sha256"]:
+            raise Infra(
+                "%s has sha256 %s, the profile pins %s" % (url, digest.hexdigest(), image["sha256"])
+            )
+        os.replace(part, path)
+    except (urllib.error.URLError, OSError) as exc:
+        raise Infra("cannot download %s: %s" % (url, exc)) from exc
+    finally:
+        if os.path.exists(part):
+            os.remove(part)
+    return path
+
+
+def unpack_image(source: str, target: str) -> str:
+    """xz-unpack `source` into `target`; returns the sha256 of what was written."""
+    digest = hashlib.sha256()
+    try:
+        with lzma.open(source) as src, open(target, "wb") as out:
+            while chunk := src.read(UPLOAD_CHUNK):
+                digest.update(chunk)
+                out.write(chunk)
+    except (lzma.LZMAError, OSError) as exc:
+        raise Infra("cannot unpack %s: %s" % (source, exc)) from exc
+    return digest.hexdigest()
+
+
+def iso_tool() -> str:
+    for name in ISO_TOOLS:
+        found = shutil.which(name)
+        if found:
+            return found
+    raise Infra("no tool for the seed image — install genisoimage or xorriso")
+
+
+def seed_user_data(hostname: str, key: str) -> str:
+    """The cloud-config of the import boot, for FreeBSD's nuageinit.
+
+    JSON is YAML, and json.dumps quotes what a hand-written YAML would have to.
+    nuageinit only warns when a package fails, so `IMPORT_CHECK` looks again.
+    """
+    config = {
+        "hostname": hostname,
+        "ssh_pwauth": False,
+        "packages": list(IMPORT_PACKAGES),
+        # No "default" entry: that one is created with a known password.
+        "users": [
+            {
+                "name": IMPORT_USER,
+                "groups": "wheel",
+                "shell": "/bin/sh",
+                "sudo": "ALL=(ALL) NOPASSWD: ALL",
+                "ssh_authorized_keys": [key],
+            }
+        ],
+        # Every clone would otherwise upgrade its packages on its first boot,
+        # and leases run on the template's packages (create_vm, ciupgrade).
+        "write_files": [
+            {
+                "path": "/etc/rc.conf.d/firstboot_pkg_upgrade",
+                "content": 'firstboot_pkg_upgrade_enable="NO"\n',
+            }
+        ],
+        # The guest agent talks over a virtio console, which FreeBSD does not
+        # load on its own; without the agent, `wait` never learns the address.
+        "runcmd": [
+            "sysrc -f /boot/loader.conf virtio_console_load=YES",
+            "kldload -n virtio_console",
+            "sysrc qemu_guest_agent_enable=YES",
+            "service qemu-guest-agent start",
+        ],
+    }
+    return "#cloud-config\n" + json.dumps(config, indent=2) + "\n"
+
+
+def seed_image(tool: str, target: str, hostname: str, key: str) -> str:
+    """A config-2 seed (OpenStack config drive) at `target`; returns its sha256.
+
+    config-2 and not PVE's own drive: that one can carry neither packages nor
+    commands, and its snippets would need rights on a snippet storage. nuageinit
+    looks for config-2 before cidata, so the PVE drive of the same VM (nocloud
+    during the import) stays unread.
+    """
+    work = tempfile.mkdtemp(dir=os.path.dirname(target))
+    try:
+        latest = os.path.join(work, "openstack", "latest")
+        os.makedirs(latest)
+        with open(os.path.join(latest, "meta_data.json"), "w") as fh:
+            json.dump({"uuid": str(uuid.uuid4()), "hostname": hostname}, fh)
+        with open(os.path.join(latest, "user_data"), "w") as fh:
+            fh.write(seed_user_data(hostname, key))
+        argv = [tool, "-quiet", "-o", target, "-V", "config-2", "-J", "-r", work]
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True, timeout=SEED_LIMIT)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise Infra("cannot build the seed image with %s: %s" % (tool, exc)) from exc
+        if done.returncode != 0:
+            raise Infra(
+                "%s exited %d: %s" % (os.path.basename(tool), done.returncode, done.stderr.strip())
+            )
+    finally:
+        shutil.rmtree(work)
+    return file_sha256(target)
+
+
+def verb_import(cfg: Config, api: Api, args) -> int:
+    """A vendor's cloud image, made into a base template in the pool.
+
+    Only FreeBSD's nuageinit images so far: the seed, the check and the
+    clean-up are written for them. The disks and the cloud-init drive all come
+    with the create call, because the token holds no VM.Config.CDROM to add a
+    drive later.
+    """
+    profiles = load_profiles()
+    meta = profiles["profiles"].get(args.profile)
+    if not meta:
+        raise Usage(
+            "unknown profile %r — known: %s"
+            % (args.profile, ", ".join(sorted(profiles["profiles"])))
+        )
+    image = meta.get("image")
+    if not image:
+        raise Usage(
+            "%s has no image to import — try %s"
+            % (
+                args.profile,
+                ", ".join(sorted(p for p, m in profiles["profiles"].items() if m.get("image"))),
+            )
+        )
+    if not image["url"].endswith(".qcow2.xz"):
+        raise Usage("%s: only an xz-packed qcow2 image can be imported" % args.profile)
+    store = cfg["AH_PVE_IMPORT_STORAGE"]
+    key = public_key(cfg)
+    shape = role_shape(profiles, "bake")
+    tool = iso_tool()
+    lane = current_lane()
+    node = cfg["AH_PVE_NODE"]
+    day = time.strftime("%Y%m%d")
+    name = "ah-tpl-%s-%s" % (args.profile, day)
+
+    vms = pool_vms(cfg, api)
+    spare, detail = capacity_report(cfg, api, vms, shape["memory"], "import")
+    if spare < 0:
+        raise Infra("capacity: " + detail)
+
+    # Fixed names: a second import overwrites the first one's upload, and the
+    # token cannot delete either (that takes Datastore.Allocate).
+    disk = "ah-%s.qcow2" % args.profile
+    seed = "ah-%s-seed.raw" % args.profile
+    source = cached_image(image)
+    work = tempfile.mkdtemp(dir=os.path.dirname(source))
+    try:
+        print("unpacking %s" % os.path.basename(source))
+        disk_sha = unpack_image(source, os.path.join(work, disk))
+        seed_sha = seed_image(tool, os.path.join(work, seed), name, key)
+        for filename, sha in ((disk, disk_sha), (seed, seed_sha)):
+            print("uploading %s to %s" % (filename, store))
+            upid = api.upload(store, "import", os.path.join(work, filename), filename, sha)
+            api.wait_task(upid, limit=UPLOAD_LIMIT)
+    finally:
+        shutil.rmtree(work)
+
+    vms = pool_vms(cfg, api)
+    newid = free_template_vmid(cfg, vms)
+    vmstore = cfg["AH_PVE_STORAGE"]
+    body = {
+        "vmid": newid,
+        "name": name,
+        "pool": cfg["AH_PVE_POOL"],
+        "tags": ";".join(
+            [OURS, "role-bake", "lane-" + lane, "ttl-%d" % (int(time.time()) + BAKE_TTL)]
+        ),
+        "ostype": "other",
+        "memory": shape["memory"],
+        "cores": shape["cores"],
+        "agent": "enabled=1",
+        "net0": "virtio,bridge=%s" % cfg["AH_PVE_BRIDGE"],
+        "virtio0": "%s:0,import-from=%s:import/%s" % (vmstore, store, disk),
+        "virtio1": "%s:0,import-from=%s:import/%s" % (vmstore, store, seed),
+        "boot": "order=virtio0",
+        "ide2": "%s:cloudinit" % vmstore,
+        "citype": "nocloud",
+        "ciuser": IMPORT_USER,
+        "ciupgrade": 0,
+        "ipconfig0": "ip=dhcp",
+        "sshkeys": urllib.parse.quote(key, safe=""),
+    }
+    upid = submit_new_vm(
+        cfg,
+        api,
+        newid,
+        "creating %d" % newid,
+        lambda: api.request("POST", "/nodes/%s/qemu" % node, body=body),
+    )
+    print("importing %s in VM %d" % (args.profile, newid))
+
+    try:
+        api.wait_task(upid, limit=CLONE_LIMIT_FULL)
+        api.task("POST", "/nodes/%s/qemu/%d/status/start" % (node, newid))
+        ip = wait_for(cfg, api, newid, CLOUD_INIT_LIMIT)
+        steps = [
+            # /etc/rc removes /firstboot once every first-boot script is through.
+            ("first boot", "while [ -e /firstboot ]; do sleep 5; done", CLOUD_INIT_LIMIT),
+            ("check", IMPORT_CHECK, 120),
+            ("clean", IMPORT_CLEAN, CLEAN_LIMIT),
+        ]
+        for label, script, limit in steps:
+            print("--- %s" % label)
+            code = run_ssh(cfg, IMPORT_USER, ip, [script], timeout=limit)
+            if code != 0:
+                raise Infra("%s failed on %d (exit %d)" % (label, newid, code))
+        api.task(
+            "POST",
+            "/nodes/%s/qemu/%d/status/shutdown" % (node, newid),
+            body={"forceStop": 1, "timeout": 240},
+            limit=SHUTDOWN_LIMIT,
+        )
+        # The seed goes, or every clone would boot this import's config-2 a
+        # second time; the clones get theirs from PVE's drive, as config-2.
+        api.request(
+            "PUT",
+            "/nodes/%s/qemu/%d/config" % (node, newid),
+            body={"delete": "virtio1", "force": 1, "citype": "configdrive2"},
+            lock_retry=True,
+        )
+        api.task("POST", "/nodes/%s/qemu/%d/template" % (node, newid))
+        api.request(
+            "PUT",
+            "/nodes/%s/qemu/%d/config" % (node, newid),
+            body={"tags": "%s;built-%s" % (meta["template_tag"], day)},
+            lock_retry=True,
+        )
+    except BaseException as exc:
+        try:
+            purge_vm(cfg, api, newid)
+        except VmError as cleanup:
+            raise Infra("%s; and the cleanup of %d failed too: %s" % (exc, newid, cleanup)) from exc
+        if isinstance(exc, VmError):
+            raise Infra("%s (VM %d was removed again)" % (exc, newid)) from exc
+        raise
+
+    await_template(cfg, api, meta["template_tag"], newid, args.profile)
     print("%d %s %s;built-%s" % (newid, name, meta["template_tag"], day))
     return 0
 
@@ -2103,6 +2490,9 @@ def build_parser() -> argparse.ArgumentParser:
     bake.add_argument("--profile", required=True)
     bake.add_argument("--from", dest="from_tag")
 
+    imp = sub.add_parser("import", help="import a vendor's cloud image as a base template")
+    imp.add_argument("--profile", required=True)
+
     return parser
 
 
@@ -2121,6 +2511,7 @@ VERB_TABLE["destroy"] = verb_destroy
 VERB_TABLE["reap"] = verb_reap
 VERB_TABLE["list"] = verb_list
 VERB_TABLE["bake"] = verb_bake
+VERB_TABLE["import"] = verb_import
 
 
 def auto_reap(cfg: Config, api: Api, verb: str, dry_run: bool = False) -> None:
