@@ -10,8 +10,10 @@ Heavy: none — Kommentar und Planungsdokument
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1269: Modulkommentar in frame_ws.rs umbrechen  [ ]
+### T1 — R-1269: Modulkommentar in frame_ws.rs umbrechen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/rdp_embedded/frame_ws.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @ac755f837 2026-11-11T16:01:40+01:00
+Review: am Ende (Branch-Review)
 Beweis: Branch-Review kern-rdp-8 2026-11-09 (nit) · frame_ws.rs:14
 Änderung: Die Zeilen 14–16 des `//!`-Kommentars werden neu umbrochen (Z. 14 ist über 100 Zeichen lang, der Absatz bricht dort nicht um); der Wortlaut bleibt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
