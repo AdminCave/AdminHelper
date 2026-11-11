@@ -1,5 +1,5 @@
 # tauri-cli-Pin des Bootstraps im Gleichschritt — Task-Ledger
-Status: geplant · Branch: feature/kern-harness-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-harness-7 · Review: am Ende
 Spec: docs/features/kern-harness-7.md (Roadmap R-1294)
 Heavy: none — nur Harness-Skripte und Doku; der Bootstrap wirkt erst beim nächsten Backen einer Vorlage (Kevins Wort)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
