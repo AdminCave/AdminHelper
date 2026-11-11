@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-freebsd-agent — Task-Ledger
-Status: aktiv · Branch: feature/arch-freebsd-agent · Review: pro Task
+Status: bereit · Branch: feature/arch-freebsd-agent · Review: pro Task
 Spec: docs/features/arch-freebsd-agent.md (Roadmap R-1247, R-1281)
 Heavy: linux-full — Agent (Plattform-Umbenennungen, Paketierung), Gateway-Repo-Ebene und Monitoring-Annahme; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` (T9) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -125,8 +125,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- toolchain_lockstep_test h
 Doku: → T11
 Abhängt von: T6
 
-### T11 — Doku DE+EN und CHANGELOG (R-1247)  [ ]
+### T11 — Doku DE+EN und CHANGELOG (R-1247)  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, DEVELOPMENT.md, changelog.d/arch-freebsd-agent.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e1b6f9937 2026-11-11T12:33:41+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Agent-Verteilung: Abschnitt FreeBSD (Repo-Datei mit `${ABI}`, Schlüssel und Gateway-CA per `ENV`, `pkg install`, `provision`, Pfade, Dienst `adminhelper_frpc`, Takt über cron.d, Deinstallation). Monitoring: was FreeBSD meldet (`security_updates` aus pkg audit, nur ein RELEASE zählt die Basis, Aktualität der `vuln.xml` über periodic; `reboot_required`, Dienste aus `service -e` samt Einmal-Skripten, Jail/VM, ein Jail zählt als Container). Entwickler-Doku Agent und Monitoring: die Container-Liste nennt `jail` und verweist auf `hostfacts.go` statt `system_linux.go`; die `os`-Liste von `store_host_facts()` nennt `freebsd` ohne Standard-Template (`docs/developer/monitoring.html` Z. 238 f., DE+EN). Entwickler-Doku Agent: Plattformdateien, `_unix`-Konvention, Cross-Build-Wächter; die Befehls-Freigabeliste nennt rc.d-Skript und Basis-Paket unter den variablen Teilen (T12). Sensoren unter FreeBSD: Unit, Unix-Socket und Container-Ziel melden „nicht unterstützt“ (Merge `6cadad3d3`). Der CI/CD-Teil (pkg-Bau, Signatur) zieht mit R-1303 um. DEVELOPMENT.md: `make build-freebsd`, `make pkg`, die Vorlage, `freebsd_box.sh`. CHANGELOG-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
@@ -169,3 +171,6 @@ Task-Review: am Ende
 - 2026-11-11 T9: `TestAgentPackagesBuildForFreeBSD` (der Cross-Vet-Wächter) ruft `go`, das die Box nicht hat: die Box lässt ihn per `-test.skip` aus, `freebsd_box.sh` fährt ihn vorher auf der Dev-Box und zählt ihn mit. Jede Box-Zeile nennt, was sie auslässt.
 - 2026-11-11 T9: `pkg update` meldet ein Repo mit fremder Signatur („Invalid signature, removing repository“) und endet trotzdem mit 0 (pkg auf 15.1, auf der Box gesehen). Die Prüfung verlangt daher die Meldung und dass aus diesem Repo weder `rquery` noch `install` etwas liefert; dieselbe `rquery` gegen das Repo mit dem gepinnten Schlüssel findet das Paket (Gegenprobe).
 - 2026-11-11 T9: `TestPkgAuditNative` prüft das Exit-Verhalten von `pkg audit` gegen eine eigene `vuln.xml` (`-f`), die der Agent nie übergibt und die Freigabeliste daher ablehnt. Diese Aufrufe gehen an der Liste vorbei (`execTimed`); der Aufruf des Agents selbst läuft durch sie und darf nur an pkg scheitern. Die Liste bekommt kein `-f`.
+- 2026-11-11 T11: Die Repo-Datei setzt Gateway-CA bzw. Bootstrap-Ausnahme per `ENV` je Repo statt global in `pkg.conf`, damit kein anderes Repo des Hosts die Ausnahme erbt; auf der Box geprüft (pkg 2.8.4 auf 15.1: `SSL_CA_CERT_FILE` und `SSL_NO_VERIFY_PEER` wirken je Repo, Probe 6 bestanden, 0 gescheitert). Die Echtheit trägt in beiden Varianten die Repo-Signatur.
+- 2026-11-11 T11: Der öffentliche Repo-Schlüssel kommt tag-gepinnt aus dem Repo (`raw.githubusercontent.com/…/v${VERSION}/apps/agent/freebsd/adminhelper-pkg.pub`) und wird gegen eine veröffentlichte SHA-256 geprüft. Datei und Wert entstehen erst mit R-1303 (Schlüssel erzeugt Kevin); bis dahin steht in der Verteilungs-Doku DE+EN der Platzhalter `<sha256-aus-cicd>`/`<sha256-from-cicd>`, den R-1303 samt `cicd.html` ersetzt. Der CI/CD-Teil (pkg-Bau, Signatur) zieht mit R-1303 um.
+- 2026-11-11 T11: Die Log-Ziele von frpc unter FreeBSD stehen nach daemon(8) (`-S` ohne `-l`/`-s`: Facility `daemon`, Priorität `notice`) und der mitgelieferten `/etc/syslog.conf` (`daemon.log` und `messages`) in der Doku, nicht nach einer Messung.

@@ -970,11 +970,18 @@ make build-linux
 # Windows-Binary bauen (Cross-Compile):
 make build-windows
 
+# FreeBSD-Binary bauen (Cross-Compile, amd64):
+make build-freebsd
+
 # DEB-Paket erstellen:
 make deb
 
 # RPM-Paket erstellen:
 make rpm
+
+# FreeBSD-Paket samt signiertem Repo (braucht pkg im PATH und
+# frpc-freebsd aus dem frp-Release freebsd_amd64 im Repo-Root):
+make pkg
 
 # Alles bauen:
 make all
@@ -986,6 +993,22 @@ Der Agent laesst sich auch direkt starten:
 go run ./cmd/adminhelper-agent version
 go run ./cmd/adminhelper-agent run --once
 ```
+
+`make all` baut nur Linux und Windows. Den FreeBSD-Teil prueft lokal `go vet` mit
+`GOOS=freebsd` (`crossbuild_test.go`); auf echtem FreeBSD laeuft er im Box-Test:
+
+```bash
+bash scripts/tests/freebsd_box.sh [--keep]
+```
+
+Er baut auf der Dev-Box die Test-Binaries, den Agenten und einen Monitoring-Ersatz, holt frpc
+(gepinnte sha256), least eine Box aus der Vorlage `ah-tpl-base-freebsd` und faehrt dort
+`scripts/tests/box_freebsdbox.sh` in drei Phasen: die Tests als Box-Benutzer, die wenigen mit
+root, dann Paket, signiertes Repo, cron-Eintrag, rc.d-Tunnel und einen Agent-Lauf als root.
+Ohne Vorlage oder ohne Go endet er mit Exit 75 (nicht verifiziert). Ein roter Lauf laesst die
+Box stehen (bis zu ihrer TTL) und nennt den `destroy`-Aufruf; `--keep` laesst sie auch nach
+einem gruenen Lauf stehen. Die Vorlage legt `vm.py import --profile base-freebsd` an
+(Abschnitt „VMs mit vm.py“).
 
 ### Monitoring (lokal ohne Docker)
 
@@ -1153,6 +1176,7 @@ Gruppe und Andere nicht schreiben — sonst bricht `vm.py` mit Exit 2 und dem pa
 | `AH_PVE_CA` | Pfad zur Root-CA des Hypervisors (PEM). |
 | `AH_PVE_STORAGE` · `AH_PVE_BRIDGE` · `AH_PVE_POOL` | Storage, Bridge und Pool der Klone. |
 | `AH_PVE_VMID_RANGE` | `3000-3999`. Klone liegen im **unteren**, Templates im **oberen** Hundert. |
+| `AH_PVE_IMPORT_STORAGE` | Datei-Storage mit Inhalt `import`, nur fuer `vm.py import`. Das Token braucht dort `Datastore.AllocateTemplate` (Upload) und `Datastore.Audit` (`import-from`); eine Gewaehrung nur auf diesem Storage (`propagate 0`) genuegt. `doctor` prueft beides nur, wenn der Schluessel gesetzt ist. |
 | `AH_VM_SSH_KEY` | Privater Schluessel; der `.pub` daneben wird per cloud-init in den Klon injiziert. |
 | `AH_VM_MAX` | Deckel fuer gleichzeitige Leases **je Lane** (Default 8 — der Capstone haelt sieben). |
 | `AH_VM_LINKED` | `1` (Default) = Linked Clone in ~2 s statt ~11 min Vollklon. |
@@ -1234,6 +1258,7 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). Nur dieser Klon bootet mit Paket-Upgrade (`ciupgrade=1`); `bake` wartet vor dem `sync` auf `cloud-init status --wait` (Exit 0 oder 2 = fertig) und bringt so den Paketstand der Leases auf den neuesten Stand. |
+| `import --profile base-freebsd` | Laedt das Cloud-Image des Profils (Pruefsumme in `scripts/vm/profiles.json`, Cache `~/.cache/adminhelper/vm-images`; eine abweichende Kopie bricht ab, bevor etwas den Hypervisor erreicht) auf `AH_PVE_IMPORT_STORAGE` und legt daraus die Vorlage `ah-tpl-<profil>-<yyyymmdd>` an. Der Import-Boot liest einen eigenen config-2-Seed (braucht `genisoimage`, `mkisofs` oder `xorrisofs`), installiert `sudo`, `bash`, `rsync` und den qemu-guest-agent und sperrt die Passwoerter; die Klone holen Schluessel und Hostname aus PVEs config-2-Laufwerk. Bisher nur FreeBSDs nuageinit-Images. Die Uploads tragen feste Namen: ein zweiter Import ueberschreibt den ersten. |
 
 SSH merkt sich **keine** Host-Keys (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`):
 diese VMs leben Minuten, jedes Bake loescht `/etc/ssh/ssh_host_*`, und der Pool vergibt dieselbe
