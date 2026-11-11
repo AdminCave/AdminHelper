@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-desktop-4 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-desktop-4 · Review: am Ende
+Status: erledigt · Branch: feature/klein-tests-desktop-4 · Review: am Ende
 Spec: docs/features/klein-tests-desktop-4.md (Roadmap R-1212)
 Heavy: none — nur Vitest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
