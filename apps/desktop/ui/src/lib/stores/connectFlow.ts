@@ -454,7 +454,8 @@ async function tabPassword(
 
 /**
  * Opens the RDP connection `connection` in a tab of AdminHelper. One only the OS client can
- * open (a gateway, printers) starts there instead, and the status bar says so.
+ * open (a gateway, printers) starts there instead, and the status bar says so. The session begun
+ * ends once the tab shows the session ended or is closed, as with SSH (R-1273).
  */
 async function connectRdpInTab(
   connection: Connection,
@@ -464,7 +465,9 @@ async function connectRdpInTab(
   const tab = await tabPassword(connection, keepEditorOpen);
   if (!tab) return;
   const { listed, password } = tab;
-  const open = await openRdp(listed, password);
+  let tabEnded!: () => void;
+  const ended = new Promise<void>((resolve) => (tabEnded = resolve));
+  const open = await openRdp(listed, password, () => tabEnded());
   if (open === 'os-client') {
     const target = listed === connection ? resolved : await resolveTarget(listed);
     if (!target) return;
@@ -476,7 +479,11 @@ async function connectRdpInTab(
   }
   if (open === 'failed') return;
   try {
-    if (await markConnectionUsed(listed)) sessionsChanged();
+    const begun = await markConnectionUsed(listed);
+    if (begun) {
+      sessionsChanged();
+      void ended.then(() => endOpenSession(begun));
+    }
   } catch (err) {
     reportError(errMsg(err));
   }

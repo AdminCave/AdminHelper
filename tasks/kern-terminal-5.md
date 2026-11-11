@@ -1,5 +1,5 @@
 # Run-Verzeichnis beim App-Ende, Windows-Downloadnamen, Ende der RDP-Sitzung im Verlauf — Task-Ledger
-Status: aktiv · Branch: feature/kern-terminal-5 · Review: am Ende
+Status: bereit · Branch: feature/kern-terminal-5 · Review: am Ende
 Spec: docs/features/kern-terminal-5.md (Roadmap R-1164, R-1272, R-1273)
 Heavy: none — nur Desktop-Rust (pty, sftp) und Desktop-UI-Store, kein Stack-, Gateway-, PKI- oder Install-Pfad; die Windows-Pfade prüft der PR-CI-Job rust-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Beweis: security-review kern-terminal-3 T1 2026-11-10; main@495f5797f sftp.rs:22
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sftp::tests
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Absatz SFTP, `suggested_name`), changelog.d/kern-terminal-5.md
 
-### T3 — R-1273: RDP im Tab beendet seinen Eintrag im Sitzungsverlauf  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-terminal-5.md
+### T3 — R-1273: RDP im Tab beendet seinen Eintrag im Sitzungsverlauf  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-terminal-5.md, apps/desktop/ui/src/lib/stores/terminals.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @50c15f823 2026-11-11T11:00:27+01:00
+Review: am Ende (Branch-Review)
 Änderung: `openRdp` nimmt wie `openTerminal` ein optionales `onEnd` (`watchEnd`). `connectRdpInTab` beendet die Sitzung
 aus `markConnectionUsed` damit einmal, wie `connectEmbedded` (R-1159). Test erst rot: RDP-Tab gestartet, Tab
 `disconnected` → `endSession` genau einmal, auch nach einem Neuverbinden nicht noch einmal.
@@ -41,3 +43,4 @@ Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Verbindungss
 
 ## Entscheidungen
 - T2: `windows_name` ist eine reine Funktion unter `cfg(any(windows, test))`, angewandt nur unter Windows; Linux und macOS behalten ihren Vorschlag. Ein roter Test vorher war nicht möglich, weil die Funktion neu ist; der Windows-Pfad über `suggested_name` läuft nur auf rust-windows.
+- T3: Ein RDP-Tab, der nach dem Zertifikat fragt, zeigt `disconnected`, ist aber nicht beendet: `watchEnd` wartet in der Phase `certificate`, denn Vertrauen startet die Sitzung im selben Tab neu. Die bestehenden `openRdp`-Assertions in `connectFlow.test.ts` nehmen das neue dritte Argument als `expect.any(Function)` auf.

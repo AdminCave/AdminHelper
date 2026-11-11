@@ -250,7 +250,8 @@ function newRuntime(key: string): Runtime {
 
 /**
  * Calls `onEnd` once, as soon as the tab `key` shows its program ended or is gone. A reconnect
- * after that calls nothing more.
+ * after that calls nothing more. An RDP tab that asks about the certificate has not ended: the
+ * user decides, and trusting it starts the session anew.
  */
 function watchEnd(key: string, onEnd: () => void): void {
   let ended = false;
@@ -258,7 +259,9 @@ function watchEnd(key: string, onEnd: () => void): void {
   stop = state.subscribe((s) => {
     if (ended) return;
     const session = s.sessions.find((x) => x.key === key);
-    if (session && session.status !== 'disconnected') return;
+    if (session && (session.status !== 'disconnected' || session.rdp?.phase === 'certificate')) {
+      return;
+    }
     ended = true;
     stop?.();
     onEnd();
@@ -539,7 +542,11 @@ async function startRdp(key: string, run: RdpRun, first = false): Promise<RdpOpe
  * Opens `connection`, an RDP connection as listed, as an embedded session in a new tab in front,
  * with `password` when the user typed one, else the stored one. Rust resolves and checks it.
  */
-export function openRdp(connection: Connection, password?: string): Promise<RdpOpen> {
+export function openRdp(
+  connection: Connection,
+  password?: string,
+  onEnd?: () => void,
+): Promise<RdpOpen> {
   opened += 1;
   const key = `terminal-${opened}`;
   const run: RdpRun = { attempt: 0, sessionId: null, unlisten: null, password };
@@ -566,6 +573,7 @@ export function openRdp(connection: Connection, password?: string): Promise<RdpO
     },
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
+  if (onEnd) watchEnd(key, onEnd);
   return startRdp(key, run, true);
 }
 
