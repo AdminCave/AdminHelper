@@ -203,6 +203,27 @@ phase_pkg() {
     esac
     pgrep -f '^/usr/local/libexec/adminhelper/frpc -c ' >/dev/null \
       && ok "frpc runs under daemon(8)" || bad "no frpc process"
+    log=/var/log/adminhelper/frpc.log
+    if [ -f "$log" ]; then
+      mode="$(stat -f %Lp "$log")"
+      [ "$mode" = 600 ] && ok "frpc log $log ($mode)" || bad "frpc log $log has mode $mode, want 600"
+      [ -s "$log" ] && ok "frpc writes to $log" || bad "frpc wrote nothing to $log"
+    else
+      bad "daemon(8) wrote no $log"
+    fi
+    grep -q adminhelper-frpc /var/log/messages \
+      && bad "frpc output reached /var/log/messages" || ok "no frpc output in /var/log/messages"
+    # newsyslog finds the package's entry through /etc/newsyslog.conf's include of newsyslog.conf.d.
+    if newsyslog -F "$log" >"$WORK/newsyslog.log" 2>&1 && [ -f "$log.0.bz2" ] && [ -f "$log" ]; then
+      mode="$(stat -f %Lp "$log") $(stat -f %Lp "$log.0.bz2")"
+      [ "$mode" = "600 600" ] && ok "newsyslog -F rotated $log (modes $mode)" \
+        || bad "newsyslog -F: modes of the new log and its archive are $mode, want 600 600"
+      sleep 2
+      pgrep -f '^/usr/local/libexec/adminhelper/frpc -c ' >/dev/null \
+        && ok "frpc runs after the rotation's SIGHUP" || bad "no frpc process after the rotation"
+    else
+      bad "newsyslog -F did not rotate $log"; sed 's/^/      /' "$WORK/newsyslog.log"
+    fi
   else
     bad "service adminhelper_frpc start"; sed 's/^/      /' "$WORK/frpc-start.log"
   fi
