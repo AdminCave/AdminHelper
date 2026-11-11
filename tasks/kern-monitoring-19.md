@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/kern-monitoring-19/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
 Doku: → T5
 
-### T3 — R-1266: Zugangsdaten an das Ziel ihres Moduls binden  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/probe.go, apps/agent/internal/probe/probe_test.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_unixsocket.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go
+### T3 — R-1266: Zugangsdaten an das Ziel ihres Moduls binden  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/probe.go, apps/agent/internal/probe/probe_test.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_unixsocket.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/plan_test.go, docs/features/kern-monitoring-19.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1c702f707 2026-11-11T12:45:36+01:00
+Review: approve (.ah-out/review/kern-monitoring-19/T3.verdict.json)
 Änderung:
 - Ein Sensor bekommt das Secret erst, nachdem er sein Ziel aufgelöst hat (Sensor, Übergabe, Ziel-Art und -Name,
   Port bzw. Socket-Pfad). Beim ersten Einsatz einer Credential-ID bindet der Agent sie daran; ein anderes Ziel ergibt
@@ -88,4 +90,8 @@ Task-Review: am Ende
   Gateway, kubelet, k3s und buildkitd (Prüfer-Nits). VirtualBox und Cloud Hypervisor stehen als
   Präfix, weil der Kernel Namen auf 15 Zeichen kürzt. Ein Katalog-Modul mit Unix-Socket gibt es auf `main` noch
   nicht; der Test prüft die üblichen Pfade von php-fpm, Redis, HAProxy, PostgreSQL und nginx.
-
+- 2026-11-11 (T3): Die Bindung gilt dem Ziel, wie der Plan es nennt (Sensor, Übergabe, Art, Name, Port-Hinweis,
+  Schema, bei `unixsocket` der Pfad), nicht dem aufgelösten Port: sie steht vor dem Sensor fest, die Sensoren bleiben
+  unverändert, und das Ziel löst der Guard ohnehin nur auf diesem Host auf. Ein anderer Pfad derselben HTTP-Seite oder
+  andere Felder sind dasselbe Ziel. Ein Neustart des Dienstes auf anderem Port bricht die Bindung nicht. `register` im
+  Test schreibt den vorigen Sensor zurück (der Test mit dem echten Namen `unixsocket` löschte ihn sonst).

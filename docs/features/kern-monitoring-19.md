@@ -50,8 +50,8 @@ privaten Roadmap.
 
 ## Trade-offs & Alternativen
 - **Bindung (R-1266):** Kevin hat entschieden: im Agent, an Ziel und Port des Moduls. Umsetzung: beim ersten Einsatz
-  nach dem Setzen bindet der Agent die Credential-ID an Sensor, Übergabe, Ziel (Art und Name) und den aufgelösten Port
-  bzw. Socket-Pfad; danach verweigert er jedes andere. Alternative wäre, das Ziel bei `credential set` mitzugeben —
+  nach dem Setzen bindet der Agent die Credential-ID an Sensor, Übergabe, Ziel (Art, Name, Port-Hinweis, Schema) und
+  bei `unixsocket` den Socket-Pfad, so wie sie im Plan stehen; danach verweigert er jedes andere. Alternative wäre, das Ziel bei `credential set` mitzugeben —
   verworfen: der Admin müsste Port und Ziel des Moduls kennen und tippen. Empfehlung: Bindung beim ersten Einsatz,
   Neusetzen löst sie.
 - **Probe-Anlage (R-1252):** Durchgesetzt an allen drei Wegen (API, Templates, Plan); der Plan ist die letzte Stelle
