@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-freebsd-agent — Task-Ledger
-Status: aktiv · Branch: feature/arch-freebsd-agent · Review: pro Task
+Status: bereit · Branch: feature/arch-freebsd-agent · Review: pro Task
 Spec: docs/features/arch-freebsd-agent.md (Roadmap R-1247, R-1281)
 Heavy: linux-full — Agent (Plattform-Umbenennungen, Paketierung), Gateway-Repo-Ebene und Monitoring-Annahme; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` (T9) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -134,8 +134,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T14 — Agent: Freigabeliste nimmt FreeBSD-Pfade auch in den Windows-Tests (R-1281)  [ ]
+### T14 — Agent: Freigabeliste nimmt FreeBSD-Pfade auch in den Windows-Tests (R-1281)  [x]
 Komponente: agent · Dateien: apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @55dd03dd5 2026-11-11T13:00:34+01:00
+Review: approve (.ah-out/review/arch-freebsd-agent/T14.verdict.json)
 Änderung: Die PR-CI von #469 (Lauf 43015038213, Job „Go Agent (test, Windows)“) ist rot: unter Windows lehnt die Freigabeliste `/usr/sbin/service`, `/usr/local/sbin/pkg`, `/bin/freebsd-version` und `/usr/bin/sockstat` ab (`TestAllowlistTakesEveryCollectorCall`, `TestAllowlistTakesEveryProbeAndDiscoveryCall`, `TestSockstatCallIsAllowed`, die Stubs in `pkgaudit_test.go`/`rcservice_test.go` über `checkAllowed`). Ursache: `Key` kürzt nur Namen, die `filepath.IsAbs` absolut nennt, und unter Windows ist ein Pfad ohne Laufwerk nicht absolut, also bleibt der volle Pfad der Schlüssel. Im Betrieb ohne Wirkung (die Aufrufe laufen nur unter FreeBSD), aber die Tests ohne Build-Tag laufen auf jeder Plattform. `Key` nimmt einen mit `/` beginnenden Namen auf jedem Host als absolut; ein relativer Name bleibt wie er ist. Unter Windows öffnet das nichts Neues: `C:\…\sc.exe` zählt schon nach dem Basisnamen. Neuer Test für `Key` mit Host-unabhängigen Fällen; nativ beweist es der Windows-Job der PR-CI.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestKeyTakesASlashRootedName|TestAllowlistTakesEveryProbeAndDiscoveryCall|TestAllowlistTakesEveryCollectorCall|TestCommandKeyDropsTheWindowsExtension|TestSockstatCallIsAllowed
 Doku: keine (Verhalten im Betrieb unverändert)
@@ -180,3 +182,4 @@ Doku: keine (Verhalten im Betrieb unverändert)
 - 2026-11-11 T11: Die Repo-Datei setzt Gateway-CA bzw. Bootstrap-Ausnahme per `ENV` je Repo statt global in `pkg.conf`, damit kein anderes Repo des Hosts die Ausnahme erbt; auf der Box geprüft (pkg 2.8.4 auf 15.1: `SSL_CA_CERT_FILE` und `SSL_NO_VERIFY_PEER` wirken je Repo, Probe 6 bestanden, 0 gescheitert). Die Echtheit trägt in beiden Varianten die Repo-Signatur.
 - 2026-11-11 T11: Der öffentliche Repo-Schlüssel kommt tag-gepinnt aus dem Repo (`raw.githubusercontent.com/…/v${VERSION}/apps/agent/freebsd/adminhelper-pkg.pub`) und wird gegen eine veröffentlichte SHA-256 geprüft. Datei und Wert entstehen erst mit R-1303 (Schlüssel erzeugt Kevin); bis dahin steht in der Verteilungs-Doku DE+EN der Platzhalter `<sha256-aus-cicd>`/`<sha256-from-cicd>`, den R-1303 samt `cicd.html` ersetzt. Der CI/CD-Teil (pkg-Bau, Signatur) zieht mit R-1303 um.
 - 2026-11-11 T11: Die Log-Ziele von frpc unter FreeBSD stehen nach daemon(8) (`-S` ohne `-l`/`-s`: Facility `daemon`, Priorität `notice`) und der mitgelieferten `/etc/syslog.conf` (`daemon.log` und `messages`) in der Doku, nicht nach einer Messung.
+- 2026-11-11 T14: `allowlist.Key` nimmt einen mit `/` beginnenden Namen auf jedem Host als absolut, statt die FreeBSD-Tests unter Windows auszunehmen oder ihre Pfade je Host umzuschreiben: die Liste ist eine Tabelle für alle Plattformen, ihr Schlüssel soll nicht vom Host abhängen. Unter Windows ändert sich nichts Wirksames, ein absoluter Pfad zählt dort schon nach dem Basisnamen. Rot → grün zeigt nur der Windows-Job der PR-CI (rot in Lauf 43015038213); unter Linux war `TestKeyTakesASlashRootedName` schon vorher grün, weil `filepath.IsAbs` dort `/…` nimmt.

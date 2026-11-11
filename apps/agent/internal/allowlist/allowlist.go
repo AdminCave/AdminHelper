@@ -255,9 +255,11 @@ func Allowed(name string, args []string) bool {
 
 // Key is the list key of name. An absolute name counts by its base name: smartctl runs by the path
 // exec.LookPath found, which on Windows ends in ".exe" (PATHEXT), so there the extension goes too, in
-// any case.
+// any case. A name that starts with "/" is absolute on every host: the FreeBSD calls name
+// /usr/sbin/service and the like, the tests without a build tag check them on Windows as well, and
+// there filepath.IsAbs wants a volume.
 func Key(name string, windows bool) string {
-	if filepath.IsAbs(name) {
+	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") {
 		name = filepath.Base(name)
 	}
 	if windows && strings.EqualFold(filepath.Ext(name), ".exe") {

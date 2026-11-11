@@ -169,6 +169,32 @@ func TestRunStartsAnAllowedCall(t *testing.T) {
 	}
 }
 
+// TestKeyTakesASlashRootedName: the FreeBSD calls' absolute paths count by their base name on every
+// host, Windows included (no volume there); a relative name with a slash stays as it is.
+func TestKeyTakesASlashRootedName(t *testing.T) {
+	cases := []struct {
+		name    string
+		windows bool
+		want    string
+	}{
+		{"/usr/sbin/service", false, "service"},
+		{"/usr/sbin/service", true, "service"},
+		{"/usr/local/sbin/pkg", true, "pkg"},
+		{"/bin/freebsd-version", true, "freebsd-version"},
+		{"/usr/bin/sockstat", true, "sockstat"},
+		{"sbin/service", false, "sbin/service"},
+		{"sbin/service", true, "sbin/service"},
+	}
+	for _, c := range cases {
+		if got := Key(c.name, c.windows); got != c.want {
+			t.Errorf("Key(%q, %v) = %q, want %q", c.name, c.windows, got, c.want)
+		}
+	}
+	if !Allowed("/usr/sbin/service", []string{"-e"}) || Allowed("sbin/service", []string{"-e"}) {
+		t.Error("the list takes a relative service, or refuses /usr/sbin/service -e")
+	}
+}
+
 // TestClassesIsACopy: what a caller does to the map Classes returns does not change the list.
 func TestClassesIsACopy(t *testing.T) {
 	c := Classes()
