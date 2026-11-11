@@ -1,5 +1,5 @@
 # Harness: Wackler-Politik, Triage-Dauerauftrag, Sammellauf nachts — Task-Ledger
-Status: aktiv · Branch: feature/arch-workflow-1 · Review: pro Task
+Status: bereit · Branch: feature/arch-workflow-1 · Review: pro Task
 Spec: docs/features/arch-workflow-1.md (Roadmap R-1335, R-1336, R-1337, R-1338, R-1346)
 Heavy: none — Harness-Text und Harness-Skripte mit hermetischen Tests; den echten Beweis für nightly.sh und die heavy.sh-Klasse `fund` liefert der erste nächtliche Lauf nach dem Merge
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -82,8 +82,10 @@ Beweis: Workflow-Analyse 2026-11-11: Merge → Release Median 9,5 d, p90 29 d, 2
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (release.md ist die Stelle; cicd.html verweist für Kanäle dorthin — in T7 prüfen)
 
-### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen  [ ]
+### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen  [x]
 Komponente: scripts · Dateien: CLAUDE.md, .claude/rules/release.md, docs/features/arch-workflow-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @181ff3f15 2026-11-11T20:08:07+01:00
+Review: approve (.ah-out/review/arch-workflow-1/T8.verdict.json)
 Änderung: Dazu die Nits aus der T9-Prüfung in release.md (allgemeiner Ablauf verweist auf den Takt; Evidenz kommt vom nächtlichen Samstags-`weekly`). Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Kevin hat die Änderung durch die Session am 2026-11-11 freigegeben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (CLAUDE.md ist die Stelle)

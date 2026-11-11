@@ -29,7 +29,8 @@ steht und Workflow-PRs Kevin merged.
 - Ziel: der Sammellauf startet nachts per Cron (`scripts/tests/nightly.sh`), samstags als `weekly` mit Capstone; die
   Session startet ihn nicht mehr nach Merges. Ein schemathesis-Fund ist nie „flaky“ oder „extern“, sondern `fund`.
 - Ziel: die Server-Suite fällt aus dem Box-Lauf, wenn die Probe zeigt, dass die CI dieselben Tests fährt.
-- Ziel (R-1346, Kevin 2026-11-11): ab dem ersten grünen `weekly` mit Capstone jede Woche ein Beta-Tag vom `main`;
+- Ziel (R-1346, Kevin 2026-11-11): ab dem ersten grünen `weekly` mit Capstone jede Woche ein Beta-Tag auf genau dem vom `weekly` geprüften Commit
+  (Release-Branch, nächstes Minor);
   Latest bleibt an den Umfang von R-1110 gebunden (`.claude/rules/release.md`).
 - Nicht-Ziel: `ci.yml`, `nightly.yml`, Merge Queue (Zug `arch-workflow-ci-1`, R-1344/R-1345).
 

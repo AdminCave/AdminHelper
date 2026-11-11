@@ -30,7 +30,7 @@ begleitende FAIL die Evidenz. `--capstone` schließt `--enforce` ein.
 enrollt die Desktop-Etappe seit Stufe 3 vor jedem Spec eine Geräte-Identität über die certlose Ebene :8444.
 Die Einmal-Tokens mintet der Orchestrator kurz vor der Etappe, eines je Spec. Ob das trägt, zeigt erst der
 erste echte Capstone-Lauf.
-Die Evidenz liefert `/test weekly`.
+Die Evidenz liefert das nächtliche Samstags-`weekly` (`scripts/tests/nightly.sh`), von Hand `/test weekly`.
 
 ## Bump-Commit `chore(release): bump version to X.Y.Z` — synchron ändern
 
@@ -69,7 +69,8 @@ Docker-Images schlüssellos via cosign (GitHub-OIDC). `SHA256SUMS` via minisign:
 
 ## Ablauf und Kanäle
 
-Bump-Commit → Kevin: `git push origin main` → annotierter Tag `vX.Y.Z` → Tag pushen → alle Workflows per `gh run watch`
+Bump-Commit (beim Wochen-Beta auf `release/vX.Y.Z`, siehe „Takt“) → Kevin: `git push origin main` bzw. den
+Release-Branch → annotierter Tag `vX.Y.Z` → Tag pushen → alle Workflows per `gh run watch`
 bis grün begleiten → Draft prüfen → Kevin publiziert als Beta. Drafts sind Konvention.
 **Takt (Kevin 2026-11-11):** Ab dem ersten grünen `weekly` mit Capstone gibt es jede Woche ein Beta-Tag, nach dem
 grünen Samstags-`weekly` des nächtlichen Sammellaufs (`scripts/tests/nightly.sh`). Jedes Wochen-Beta ist das nächste
