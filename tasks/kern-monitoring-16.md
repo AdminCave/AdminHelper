@@ -47,8 +47,10 @@ Review: approve (.ah-out/review/kern-monitoring-16/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py
 Doku: → T9
 
-### T4 — R-1254: Bindung eines compose_project-Moduls im Fund  [ ]
+### T4 — R-1254: Bindung eines compose_project-Moduls im Fund  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b3d35135a 2026-11-11T07:18:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T4.verdict.json)
 Änderung:
 - Nach der privaten Roadmap (`module_sync._target_name`, `module_sync.py:78`); die Fund-Zusammenfassung nennt den
   gebundenen Container.
@@ -125,3 +127,8 @@ Task-Review: am Ende
   im Block nimmt nur den Savepoint zurück, ein Fehler beim Commit geht an `_store_discovery`, das zurückrollt und
   loggt. Die Formprüfung der Spalte `credentials` sitzt als `@validates` am Modell statt in einem Schreib-Helfer:
   sie greift so bei jedem Schreiben.
+- T4: Mehrere passende Container eines compose-Dienstes binden keinen Check; der Grund (`skippedChecks`) nennt die
+  Kandidaten. Die Fund-Zusammenfassung selbst bleibt ohne Containernamen: jede Änderung an ihr macht einen Fund
+  `changed` (`discovery.py`, `_seen_again`), nach dem Update kippte so jeder compose-Fund; das wäre sichtbares
+  Verhalten außerhalb dieser Task; der Rest steht als Folgezeile R-1301 zur Triage. Die Fixture verliert die zweite Replika, deren Bindung an den ersten Namen genau
+  das alte Verhalten prüfte; der neue Test deckt den Fall mit dem neuen Ergebnis ab.
