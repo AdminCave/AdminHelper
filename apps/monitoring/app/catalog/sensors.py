@@ -143,10 +143,15 @@ class DnsParams(_Params):
 
 
 class LogParams(_Params):
-    unit: str = Field("", max_length=255)
+    # The agent's own rules (sensor_log.go journalUnitPattern, logMatchPattern): what it
+    # would answer with "invalid" is turned away here; empty means all units, no match.
+    # The backslash is part of systemd's escaping (dev-disk-by\x2duuid-….service).
+    unit: str = Field("", pattern=r"^([A-Za-z0-9:_.@\\\-]{1,255})?$")
     # journald priority: 0 emerg … 7 debug; counts entries at this level or worse.
     priority: int = Field(3, ge=0, le=7, strict=True)
-    match: str = Field("", max_length=128)
+    match: str = Field(
+        "", pattern=r"^((SYSLOG_IDENTIFIER|_COMM|CONTAINER_NAME)=[A-Za-z0-9._@/:+\-]{1,100})?$"
+    )
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {

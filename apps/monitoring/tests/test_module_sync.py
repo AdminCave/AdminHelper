@@ -142,9 +142,8 @@ def _container(name, image, project="", service=""):
     }
 
 
-# Two web containers of the project (scaled): the first by name is asked.
+# One container per service of the project; several of one service bind none (own test).
 CONTAINERS = [
-    _container("paperless-web-2", PAPERLESS_IMAGE + ":2.14", "paperless", "webserver"),
     _container("paperless-web-1", PAPERLESS_IMAGE + ":2.14", "paperless", "webserver"),
     _container("paperless-broker-1", "docker.io/library/redis:7", "paperless", "broker"),
     _container("other-broker-1", "docker.io/library/redis:7", "other", "broker"),
@@ -295,6 +294,24 @@ def test_target_names(module_id, key, check_key, summary, name, reason):
 
     assert why == reason
     assert (None if config is None else config["target"]["name"]) == name
+
+
+def test_several_containers_of_a_service_bind_none_and_are_named(db, actions):
+    replicas = [
+        *CONTAINERS,
+        _container("paperless-web-0", PAPERLESS_IMAGE + ":2.14", "paperless", "webserver"),
+    ]
+    reason = "several containers for this instance: paperless-web-0, paperless-web-1"
+
+    assert _bind("paperless", "paperless", "web", PROJECT_SUMMARY, containers=replicas) == (
+        None,
+        reason,
+    )
+    _inventory(db, containers=replicas)
+    result = adopt(db, _finding(db).id, catalog=V1)
+
+    assert {"key": "web", "reason": reason} in result.skipped
+    assert "web" not in _checks(db, result.finding)
 
 
 def test_no_inventory_no_container():

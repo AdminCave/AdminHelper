@@ -20,7 +20,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
-from app.core.middleware import NulByteMiddleware
+from app.core.middleware import NulByteMiddleware, ReportBodyLimitMiddleware
 from app.core.query_params import reject_repeated_scalar_query
 from app.models import (  # noqa: F401
     MonitorAgentKey,
@@ -157,6 +157,9 @@ async def _validation_error(request: Request, exc: RequestValidationError) -> Re
 
 
 app.add_exception_handler(RequestValidationError, _validation_error)
+# Added first, so it sits inside the NUL guard, next to the routes: a BaseHTTPMiddleware
+# between it and the route would turn its 413 from reading the body into a 400.
+app.add_middleware(ReportBodyLimitMiddleware)
 app.add_middleware(NulByteMiddleware)
 
 from app.routers import all_routers  # noqa: E402
