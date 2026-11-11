@@ -130,8 +130,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T11 — PR-CI: Ersetzen der Zugangsdaten-Datei unter Windows trotz offenem Leser  [ ]
+### T11 — PR-CI: Ersetzen der Zugangsdaten-Datei unter Windows trotz offenem Leser  [x]
 Komponente: agent · Dateien: apps/agent/internal/credentials/store_windows.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c99fe2df0 2026-11-11T08:59:06+01:00
+Review: approve (.ah-out/review/kern-monitoring-16/T11.verdict.json)
 Änderung: `replace` benennt über `os.Root.Rename` um (`FILE_RENAME_POSIX_SEMANTICS` mit Rückfall, Go `internal/syscall/windows.Renameat`) statt `os.Rename` (`MoveFileEx`): ersetzt die Datei auch, wenn ein Leser sie mit `FILE_SHARE_DELETE` offen hält (Microsoft-Doku `FILE_RENAME_INFORMATION`). Der Wiederholversuch für Halter ohne Delete-Freigabe bleibt.
 Beweis: PR #460 CI 2026-11-11 · ci.yml run 42981418721, job Go Agent (test, Windows), store_windows_test.go:164 (`TestSetReplacesAFileThatIsOpenForReading`: rename … Access is denied)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/credentials/...

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 	"unsafe"
 
@@ -117,15 +118,23 @@ func daclPrivate(dacl *windows.ACL) bool {
 // replaceWait is how long replace keeps trying; tests shorten it.
 var replaceWait = 2 * time.Second
 
-// replace moves the file from to path, replacing what is there. Another process that holds path
-// open without sharing delete access, a virus scanner or an indexer, makes MoveFileEx fail with
-// ERROR_ACCESS_DENIED or ERROR_SHARING_VIOLATION until it lets go; replace tries again until
-// replaceWait has passed, the way the Go toolchain's robustio does.
+// replace moves the file from, in the directory of path, to path, replacing what is there. os.Rename
+// (MoveFileEx) cannot replace a file another handle holds open, even one that shares delete access;
+// os.Root.Rename asks for POSIX semantics (FILE_RENAME_POSIX_SEMANTICS), which can, and falls back
+// on file systems without them. A process that holds path open without sharing delete access, a
+// virus scanner or an indexer, still makes it fail with ERROR_ACCESS_DENIED or
+// ERROR_SHARING_VIOLATION until it lets go; replace tries again until replaceWait has passed, the
+// way the Go toolchain's robustio does.
 func replace(from, path string) error {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	deadline := time.Now().Add(replaceWait)
 	pause := time.Millisecond
 	for {
-		err := os.Rename(from, path)
+		err = root.Rename(filepath.Base(from), filepath.Base(path))
 		if err == nil || !(errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)) ||
 			!time.Now().Add(pause).Before(deadline) {
 			return err
