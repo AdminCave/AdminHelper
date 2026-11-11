@@ -1,5 +1,5 @@
 # Run-Verzeichnis beim App-Ende, Windows-Downloadnamen, Ende der RDP-Sitzung im Verlauf — Task-Ledger
-Status: geplant · Branch: feature/kern-terminal-5 · Review: am Ende
+Status: aktiv · Branch: feature/kern-terminal-5 · Review: am Ende
 Spec: docs/features/kern-terminal-5.md (Roadmap R-1164, R-1272, R-1273)
 Heavy: none — nur Desktop-Rust (pty, sftp) und Desktop-UI-Store, kein Stack-, Gateway-, PKI- oder Install-Pfad; die Windows-Pfade prüft der PR-CI-Job rust-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
