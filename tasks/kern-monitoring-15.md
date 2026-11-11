@@ -62,8 +62,10 @@ Review: approve (.ah-out/review/kern-monitoring-15/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/... ./internal/discovery/...
 Doku: keine (interne Zuordnung, Verhalten wie dokumentiert)
 
-### T5 — R-1270: cleanPath lehnt Backslash und ':' ab  [ ]
+### T5 — R-1270: cleanPath lehnt Backslash und ':' ab  [x]
 Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @129084380 2026-11-11T06:25:38+01:00
+Review: approve (.ah-out/review/kern-monitoring-15/T5.verdict.json)
 Änderung:
 - `cleanPath` lehnt Pfade mit `\` oder `:` ab, unabhängig vom Betriebssystem.
 - Test: beide Fälle abgelehnt, ein gültiger Pfad bleibt.

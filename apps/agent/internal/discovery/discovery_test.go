@@ -645,6 +645,8 @@ func TestOnlyValidMarkersAreChecked(t *testing.T) {
 		{ID: "unclean", Paths: []string{"/etc/../x"}},
 		{ID: "trailing", Paths: []string{"/etc/x/"}},
 		{ID: "nul", Paths: []string{"/etc/x\x00"}},
+		{ID: "backslash", Paths: []string{`/etc\x`}},
+		{ID: "colon", Paths: []string{"/etc/c:x"}},
 		{ID: "long", Paths: []string{long}},
 		{ID: "paths", Paths: many(func(i int) string { return "/p" + strconv.Itoa(i) })},
 		{ID: "option", Packages: []string{"-x"}},

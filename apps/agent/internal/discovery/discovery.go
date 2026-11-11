@@ -518,8 +518,10 @@ func validMarkers(markers []probe.Marker) []probe.Marker {
 
 // cleanPath says whether p is an absolute path in its shortest form, without NUL. The catalog writes
 // Linux paths: path.Clean keeps their slashes on every OS, filepath.Clean turns them into "\" on Windows.
+// "\" and ":" are refused on every OS: on Windows they would turn a catalog path into a drive or a
+// network path the SYSTEM agent stats.
 func cleanPath(p string) bool {
-	return len(p) <= maxPathLen && strings.HasPrefix(p, "/") && path.Clean(p) == p && !strings.ContainsRune(p, 0)
+	return len(p) <= maxPathLen && strings.HasPrefix(p, "/") && path.Clean(p) == p && !strings.ContainsAny(p, "\x00\\:")
 }
 
 // presentPaths returns which of paths exist and whether it got to check all of them. A stat that
