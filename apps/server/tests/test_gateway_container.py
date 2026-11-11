@@ -16,6 +16,9 @@ list, its workers run as a user other than root, and it stops within the grace p
 code 0. Without any one capability of the list, one of these fails. They skip when Docker or the
 pinned base image is not at hand.
 
+Of the repo's root the repo plane serves the subtrees apt, rpm and freebsd (the FreeBSD pkg
+repo) and nothing else, dot segments in the path included.
+
 The certless planes :8444 and :8445 cap concurrent requests per client address and per plane and
 close idle connections after short timeouts; the mTLS plane :443 keeps nginx's defaults. Read
 from nginx.conf, and in the container on the repo plane: one address gets 429 beyond its cap
@@ -60,6 +63,10 @@ PROBE = "/apt/probe"
 # stays in progress for the whole test.
 LARGE = "/apt/large"
 LARGE_SIZE = 32 * 1024 * 1024
+# The FreeBSD pkg repo as build-pkg.sh lays it out, and files of the repo root outside the served
+# subtrees: on disk, so only the location rules keep them back.
+FREEBSD = ["/freebsd/FreeBSD:15:amd64/meta.conf", "/freebsd/FreeBSD:15:amd64/All/agent.pkg"]
+OUTSIDE = ["/outside/meta.conf", "/freebsd.old/meta.conf"]
 
 CERTLESS_ZONES = [
     ["$binary_remote_addr", "zone=certless_addr:10m"],
@@ -306,6 +313,13 @@ def gateway_setup(tmp_path_factory):
         path.chmod(0o755)
     (setup.repo / "apt" / "probe").chmod(0o644)
     large.chmod(0o644)
+    for name in FREEBSD + OUTSIDE:
+        file = setup.repo / name.lstrip("/")
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("served only under /freebsd/\n")
+        file.chmod(0o644)
+        for parent in file.relative_to(setup.repo).parents[:-1]:
+            (setup.repo / parent).chmod(0o755)
 
     uid = _issuer_uid()
     # As the ca-issuer leaves it: the directory and the files its user's, the key 0600.
@@ -371,11 +385,12 @@ class Gateway:
         assert result.returncode == 0 and result.stdout.strip(), result.stderr
         return result.stdout.strip()
 
-    def fetch(self) -> str:
-        """HTTP status of the probe on the repo plane as the client container gets it; 000 for
-        no answer."""
-        url = f"https://{self.name}:8445{PROBE}"
-        curl = ["curl", "-sk", "--max-time", "2", "-o", "/dev/null", "-w", "%{http_code}", url]
+    def fetch(self, path: str = PROBE) -> str:
+        """HTTP status of path on the repo plane as the client container gets it, the path sent
+        as is (dot segments included); 000 for no answer."""
+        url = f"https://{self.name}:8445{path}"
+        curl = ["curl", "-sk", "--path-as-is", "--max-time", "2", "-o", "/dev/null"]
+        curl += ["-w", "%{http_code}", url]
         result = subprocess.run(
             [self.docker, "exec", self.setup.client, *curl], capture_output=True, text=True
         )
@@ -462,6 +477,16 @@ def test_without_any_one_of_them_the_gateway_does_not_start_serve_or_stop_cleanl
     with _gateway(gateway_setup, gateway) as box:
         outcome = (box.answer(), box.stop())
         assert outcome != ("200", "0"), box.logs()
+
+
+def test_the_repo_plane_serves_the_freebsd_repo_and_nothing_else_of_its_root(gateway_setup):
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        served = {path: box.fetch(path) for path in FREEBSD}
+        traps = OUTSIDE + ["/freebsd/../outside/meta.conf", "/freebsd/%2e%2e/outside/meta.conf"]
+        refused = {path: box.fetch(path) for path in traps}
+        assert served == dict.fromkeys(FREEBSD, "200"), box.logs()
+        assert refused == dict.fromkeys(traps, "404"), box.logs()
 
 
 def test_on_the_repo_plane_one_address_gets_429_beyond_its_cap_while_its_downloads_go_on(

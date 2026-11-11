@@ -15,7 +15,7 @@ import (
 // reportState is what the next report is measured against, persisted in config.MonitorReportStateFile
 // between two runs of the oneshot. Push saves it only after a successful push, like the inventory
 // state: a lost push then widens the next CPU window instead of dropping a part of it, and its OOM
-// kills count again in the next report. Probes, Throttle, Brake and Cursors alone are saved after a
+// kills count again in the next report. Probes, Throttle, Brake, Bindings and Cursors alone are saved after a
 // lost push too (Push).
 type reportState struct {
 	CPU *cpuSample `json:"cpu,omitempty"`
@@ -25,7 +25,7 @@ type reportState struct {
 	// OOMKillSource names where OOMKill was read (oomSourceVMStat or oomSourceCgroup): the counters of
 	// two sources cannot be subtracted from each other.
 	OOMKillSource string `json:"oom_kill_source,omitempty"`
-	// Updates is the last hourly count of pending security updates (Linux only).
+	// Updates is the last hourly count of pending security updates (Linux and FreeBSD).
 	Updates *updatesCheck `json:"updates,omitempty"`
 	// Probes is the last result of every probe of the plan; its ts also says when the probe is due.
 	Probes probe.Results `json:"probes,omitempty"`
@@ -34,6 +34,9 @@ type reportState struct {
 	// Brake is the access brake (probe.Access.Brake): by credential ref, the id of the credential its
 	// target refused. The probes with it rest until it is set anew.
 	Brake map[string]string `json:"brake,omitempty"`
+	// Bindings is where each stored credential went first (probe.Access.Bindings), by credential ref.
+	// Lost, it would let the next plan bind a credential to another target.
+	Bindings map[string]probe.Binding `json:"bindings,omitempty"`
 	// Cursors is where the last run of each counting probe stopped (probe.Access.Cursors), by probe id.
 	// It goes with Probes: the next run of a probe counts from where the run of its kept result stopped.
 	Cursors map[string]string `json:"cursors,omitempty"`

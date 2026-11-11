@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//go:build linux
+//go:build linux || freebsd
 
 package logging
 
@@ -15,7 +15,7 @@ import (
 )
 
 // With a stdout that cannot be written, as for a Windows service, Init still writes
-// each line to agent.log. A closed file stands in for that stdout. Linux only: on
+// each line to agent.log. A closed file stands in for that stdout. Not on Windows: on
 // Windows the open file logger would keep the temp directory from being removed.
 func TestFanOutInitWritesTheLogFileWhenStdoutFails(t *testing.T) {
 	logDir := t.TempDir()

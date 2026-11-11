@@ -1216,9 +1216,31 @@ def test_report_stores_the_host_facts(client_db):
 def test_report_drops_unknown_os_and_subsystems(client_db):
     # Only values a suggestion can be made from are kept; the rest of the block counts.
     client, factory = client_db
-    host = _host(os="freebsd", subsystems=["kubernetes", "docker", "lxc"])
+    host = _host(os="openbsd", subsystems=["kubernetes", "docker", "lxc"])
     assert client.post("/agent/srv-1/report", json={"host": host}).status_code == 200
     assert _stored_facts(factory) == {**_STORED, "os": None, "subsystems": ["docker"]}
+
+
+def test_report_stores_the_host_facts_of_a_freebsd_jail(client_db):
+    # The FreeBSD agent (R-1247): gopsutil's platform is kern.ostype and the
+    # lowercased kern.osrelease, and a jail reports itself as jail/guest.
+    client, factory = client_db
+    host = _host(
+        os="freebsd",
+        platform="freebsd",
+        platform_version="15.0-release-p2",
+        virtualization={"system": "jail", "role": "guest"},
+        subsystems=["zfs"],
+    )
+    assert client.post("/agent/srv-1/report", json={"host": host}).status_code == 200
+    assert _stored_facts(factory) == {
+        "os": "freebsd",
+        "platform": "freebsd",
+        "platform_version": "15.0-release-p2",
+        "virt_system": "jail",
+        "virt_role": "guest",
+        "subsystems": ["zfs"],
+    }
 
 
 def test_report_cuts_host_strings_to_64_chars(client_db):

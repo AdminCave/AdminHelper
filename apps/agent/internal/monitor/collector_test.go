@@ -294,3 +294,19 @@ func TestResourcesDiskInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestSkipFSTypesFreeBSD(t *testing.T) {
+	// FreeBSD's pseudo filesystems and nullfs (a directory of another filesystem mounted again, as in
+	// jails) store nothing of their own, tmpfs nothing on a disk (same name as on Linux); ufs, zfs,
+	// msdosfs and nfs do.
+	for _, fstype := range []string{"devfs", "fdescfs", "procfs", "linprocfs", "linsysfs", "nullfs", "tmpfs"} {
+		if !skipFSTypes[fstype] {
+			t.Errorf("%s is not skipped", fstype)
+		}
+	}
+	for _, fstype := range []string{"ufs", "zfs", "msdosfs", "nfs"} {
+		if skipFSTypes[fstype] {
+			t.Errorf("%s is skipped, it stores files of its own", fstype)
+		}
+	}
+}

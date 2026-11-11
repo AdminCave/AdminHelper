@@ -338,6 +338,51 @@ def test_credential_use_outside_the_list_is_rejected(use):
     assert _load(_module(checks=[_check(credential={"use": use})])).modules == {}
 
 
+def _sock(key, path, slot="default"):
+    return {
+        "key": key,
+        "name": key,
+        "sensor": "unixsocket",
+        "params": {"path": path, "protocol": "redis"},
+        "interval": 300,
+        "fields": ["connected"],
+        "credential": {"slot": slot, "use": "redis_auth"},
+    }
+
+
+def test_checks_of_one_credential_slot_may_ask_the_same_target():
+    # Another path of the same HTTP target is the same target for the agent's binding.
+    other_path = _check(key="health", params={"path": "/health"}, rules=[])
+    assert _load(_module(checks=[_check(), other_path])).errors == ()
+    socks = [_sock("a", "/run/redis/redis.sock"), _sock("b", "/run/redis/redis.sock")]
+    assert _load(_module(checks=socks, card=[])).errors == ()
+    apart = [_sock("a", "/run/redis/a.sock"), _sock("b", "/run/redis/b.sock", slot="other")]
+    assert _load(_module(checks=apart, card=[])).errors == ()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"target": {"kind": "container", "service": "api", "port_hint": 8000}},
+        {"target": {"kind": "container", "service": "web", "port_hint": 8001}},
+        {"target": {"kind": "container", "service": "web", "port_hint": 8000, "scheme": "https"}},
+        {"credential": {"use": "basic"}},
+        {"sensor": "proto", "params": {"protocol": "redis"}, "fields": ["ok"]},
+    ],
+    ids=["service", "port", "scheme", "use", "sensor"],
+)
+def test_checks_of_one_credential_slot_on_different_targets_are_rejected(changes):
+    second = _check(key="other", rules=[], **changes)
+    error = _only_error(_load(_module(checks=[_check(), second])))
+    assert "share credential slot 'default'" in error
+
+
+def test_unix_socket_checks_of_one_slot_on_different_paths_are_rejected():
+    socks = [_sock("a", "/run/redis/a.sock"), _sock("b", "/run/redis/b.sock")]
+    error = _only_error(_load(_module(checks=socks, card=[])))
+    assert "share credential slot 'default'" in error
+
+
 def test_unknown_keys_are_rejected_at_every_level():
     assert _load(_module(owner="x")).modules == {}
     assert _load(_module(checks=[_check(command="id")])).modules == {}
