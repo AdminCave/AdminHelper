@@ -17,8 +17,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
   verteilte frpc.toml nach dem Update neu verteilen, Hinweis in der Doku; `scenario --tunnel` vor dem Merge: ja;
   die Restrisiken trägt er.
 
-### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml
+### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml, apps/server/tests/test_frp_input_hardening.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @42a29b5ba 2026-11-11T09:22:44+01:00
+Review: approve (.ah-out/review/arch-frps-identity/T1.verdict.json)
 Änderung: `proxy_key.py` (neu, SPDX-Header) leitet den Schlüssel je Server-ID ab (Spec, „Datenmodell“; `hmac.compare_digest`-taugliche Hex-Form) und liefert seinen SHA-256 für die Policy. `generate_frpc_toml` schreibt in jede `[[proxies]]`-Tabelle `metadatas.ahProxyKey`; der Schlüssel kommt in `_GENERATOR_PROXY_KEYS`, sodass `extra_config` ihn nicht setzen kann und gespeicherte Zeilen, die ihn tragen, aus der Konfiguration fallen. Tests: Ableitung deterministisch, je Server verschieden, hängt an `SECRET_KEY`; jede Proxy-Tabelle trägt ihn, ohne aktive Tunnel keiner; `extra_config` mit dem Schlüssel → 422. Die Agent-Fixture `server_frpc.toml` ist wieder die Generator-Ausgabe (`test_agent_fixture_is_the_generator_output`); Zusatzbeleg `verify.sh agent --strict` (die Go-Tests lesen dieselbe Fixture und belegen, dass heutige Agents den Schlüssel durchreichen).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_proxy_key.py tests/test_config_generator.py tests/test_frp_toml_roundtrip.py tests/test_frp_input_hardening.py tests/test_frp_provision_sync.py tests/test_frp_permissions.py tests/test_frp_tunnels.py
 Doku: → T7
