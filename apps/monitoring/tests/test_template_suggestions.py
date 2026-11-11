@@ -156,8 +156,9 @@ def test_linux_with_docker_suggests_both_templates(client_db):
         ("windows", (), [("windows-base", "os:windows")]),
         (None, ("zfs",), [("zfs-storage", "subsystem:zfs")]),
         (None, ("proxmox",), [("proxmox-host", "subsystem:proxmox")]),
-        # No standard template for macOS, and no OS reported at all.
+        # No standard template for macOS or FreeBSD, and no OS reported at all.
         ("darwin", (), []),
+        ("freebsd", (), []),
         (None, (), []),
     ],
 )

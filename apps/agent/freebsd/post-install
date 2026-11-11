@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The package's +POST_INSTALL. pkg runs it with /bin/sh after it installed the files, with
+# PKG_UPGRADE set on an upgrade (pkg-script(5)). A fresh install starts nothing: the agent enables
+# and starts the tunnel when the server sends the first one, and the setup (provision, monitor init)
+# writes the cron entry.
+#
+# On an upgrade the running frpc still runs the replaced binary; a restart runs the new one. Only an
+# enabled tunnel is restarted: rc.subr refuses restart for a disabled one anyway, with a message.
+# As in +PRE_DEINSTALL, the services are left alone under pkg -r or pkg -c.
+
+if [ -n "${PKG_UPGRADE:-}" ] && [ "${PKG_ROOTDIR:-/}" = / ] && [ -z "${PKG_CHROOTED:-}" ] &&
+	/usr/sbin/service adminhelper_frpc enabled; then
+	/usr/sbin/service adminhelper_frpc restart
+fi
+exit 0

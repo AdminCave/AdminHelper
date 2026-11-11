@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 LDFLAGS  = -ldflags "-s -w -X main.version=$(VERSION)"
 BINARY   = adminhelper-agent
 
-.PHONY: build build-linux build-windows clean tidy deb rpm all
+.PHONY: build build-linux build-windows build-freebsd clean tidy deb rpm pkg all
 
 build: build-linux
 
@@ -15,11 +15,18 @@ build-linux:
 build-windows:
 	GOOS=windows GOARCH=amd64 go build -trimpath $(LDFLAGS) -o bin/$(BINARY).exe ./cmd/adminhelper-agent
 
+build-freebsd:
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -trimpath $(LDFLAGS) -o bin/$(BINARY)-freebsd ./cmd/adminhelper-agent
+
 deb: build-linux
 	cd ../.. && VERSION=$(VERSION) bash apps/agent/build-deb.sh
 
 rpm: build-linux
 	cd ../.. && VERSION=$(VERSION) bash apps/agent/build-rpm.sh
+
+# frpc of the frp release freebsd_amd64 is expected at the repo root as frpc-freebsd (FRPC_BINARY).
+pkg: build-freebsd
+	cd ../.. && VERSION=$(VERSION) bash apps/agent/build-pkg.sh
 
 clean:
 	rm -rf bin/ build-deb/ build-rpm/
