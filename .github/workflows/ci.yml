@@ -1002,11 +1002,8 @@ jobs:
           sha_win_rel=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
           test -n "$sha_win_ci" && test "$sha_win_ci" = "$sha_win_rel" || {
             echo "::error::FRP_SHA256_WINDOWS_AMD64 differs between ci.yml and release.yml"; exit 1; }
-          # tauri-cli pin (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
-          tauri_ci=$(grep -m1 'cargo install tauri-cli' .github/workflows/ci.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
-            echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
+          # tauri-cli pins (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
+          bash .github/scripts/tauri_cli_pins.sh .github/workflows/ci.yml .github/workflows/release.yml
       - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff, oasdiff)
         # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
         # pin only compiles while x/vuln's own `go` directive stays at or below the
@@ -1178,6 +1175,8 @@ jobs:
         run: bash .github/scripts/retry_test.sh
       - name: apt_archives_verify.sh test
         run: bash .github/scripts/apt_archives_verify_test.sh
+      - name: tauri_cli_pins.sh test
+        run: bash .github/scripts/tauri_cli_pins_test.sh
       # Does the documentation still describe this tree? Every <code>apps/…</code>
       # in docs/**/*.html has to name a file that exists (--paths), and a <code>
       # that is one ALL_CAPS name has to be carried by the repository outside the
