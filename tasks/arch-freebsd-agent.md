@@ -85,8 +85,10 @@ HEAD: 6cadad3d3
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T11
 
-### T7 — Gateway: pkg-Repo unter `/freebsd/` auf der Repo-Ebene :8445 (R-1247)  [ ]
+### T7 — Gateway: pkg-Repo unter `/freebsd/` auf der Repo-Ebene :8445 (R-1247)  [x]
 Komponente: server · Dateien: apps/gateway/nginx.conf, apps/server/tests/test_gateway_container.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e468d7352 2026-11-11T08:52:43+01:00
+Review: approve (.ah-out/review/arch-freebsd-agent/T7.verdict.json)
 Änderung: die Location der Repo-Ebene (`nginx.conf:220`, heute `^/(apt|rpm)/`) lässt `freebsd` zu; Dateitypen und Methoden wie bei apt/rpm, alles andere bleibt 404. Test im echten nginx-Container: `/freebsd/FreeBSD:15:amd64/meta.conf` liefert 200, `/freebsd/../etc` und eine fremde Wurzel liefern 404.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: → T11
