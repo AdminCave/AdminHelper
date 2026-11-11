@@ -190,8 +190,9 @@ class NotificationOutbox(Base):
     # e-mail address, telegram chat id, or the ntfy/webhook URL (a secret: ?auth=)
     address = Column(String, nullable=False)
     # The text of the ping that queued it, for this channel (incidents._queue): a
-    # later ping rewrites the bell row, and a bundle's channel names only the servers
-    # of the subscriptions that asked for it. NULL (entries from before R-1079) = the
+    # later ping rewrites the bell row, not this entry. It names the servers the bell
+    # row named at that ping (the person's matrix picks the channels, not the
+    # servers: resolve_recipients). NULL (entries from before R-1079) = the
     # notification's text.
     title = Column(String, nullable=True)
     body = Column(Text, nullable=True)
