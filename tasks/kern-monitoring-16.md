@@ -1,5 +1,5 @@
 # Monitoring-Module: Nachlese zu Bindung, Grenzen, Erkennung und Zugangsdaten-Datei — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-16 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-16 · Review: pro Task
 Spec: docs/features/kern-monitoring-16.md (Roadmap R-1254, R-1260, R-1262, R-1263, R-1295)
 Heavy: linux-full — apps/agent (Zugangsdaten-Datei) und apps/monitoring (Grenzen, Erkennung); Windows über die PR-CI (go-windows)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -109,8 +109,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_m
 Doku: → T9
 Abhängt von: T3
 
-### T9 — Doku DE+EN und CHANGELOG  [ ]
+### T9 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-16.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d839c2f59 2026-11-11T08:08:04+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - Admin-Doku: Bindung im Fund, Pflicht-Zielname, Log-Fühler-Grenzen, Scan-Rhythmus.
 - Entwickler-Doku: Downgrade von `b8d0f2a4c6e8` verwirft `monitor_checks.silent`.
