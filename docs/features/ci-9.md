@@ -22,7 +22,7 @@ Einzelheiten stehen in `tasks/private/`.
   - Der Playwright-Cache hat den Schlüssel `playwright-<os>-<hashFiles(apps/web/package-lock.json)>-chromium`,
     ohne `restore-keys`.
   - Das neue Skript `.github/scripts/cache_settings.sh` prüft beides im Job `ops-scripts` und meldet jeden
-    Verstoß mit Datei und Zeile. Sein hermetischer Test ist `scripts/tests/ci_cache_settings_test.sh`; dort findet ihn `verify.sh` lokal.
+    Verstoß mit Datei und Zeile. Sein hermetischer Test ist `.github/scripts/cache_settings_test.sh`, wie `tauri_cli_pins_test.sh`; er läuft im Job `ops-scripts`.
 - **Nicht-Ziele:**
   - `~/.cargo/registry`, `~/.cargo/git` und `target/`: Restrisiko, von Kevin am 2026-11-11 hingenommen.
   - Der apt-Archiv-Cache und das Entpacken von Caches allgemein (R-1288, eigener Zug).
@@ -35,7 +35,7 @@ Einzelheiten stehen in `tasks/private/`.
   - Playwright-Cache Z. 694–701; der Schritt „Playwright version“ fällt weg.
   - Neuer Prüfschritt im Job `ops-scripts`, neben `tauri_cli_pins_test.sh` (Z. 1178).
 - `.github/workflows/release.yml`: `rust-cache` bei Z. 49 und 251.
-- Neu, mit SPDX-Header: `.github/scripts/cache_settings.sh` und `scripts/tests/ci_cache_settings_test.sh`.
+- Neu, mit SPDX-Header: `.github/scripts/cache_settings.sh` und `.github/scripts/cache_settings_test.sh`.
 - Doku: `docs/developer/cicd.html`, `docs/en/developer/cicd.html`, `changelog.d/ci-9.md`.
 
 ## Datenmodell / API / Migrationen
