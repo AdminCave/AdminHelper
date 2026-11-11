@@ -9,9 +9,10 @@
 #   frps-supervisor.sh          supervise frps (the image's entrypoint)
 #   frps-supervisor.sh health   exit 0 while the state is waiting, running or stopped
 #
-# The supervisor runs as root, frps as FRPS_USER and the requests to its dashboard (see below)
-# as FRPS_FETCH_USER, each through su-exec (empty: as the supervisor, for tests without root;
-# root refuses that). frps then holds no capability and owns no file it runs from. After every
+# The supervisor runs as root, frps as FRPS_USER, its plugin frps-policy (see below) as
+# FRPS_POLICY_USER and the requests to its dashboard and to the plugin as FRPS_FETCH_USER, each
+# through su-exec (empty: as the supervisor, for tests without root; root refuses that). frps
+# then holds no capability and owns no file it runs from. After every
 # end of frps, before a new copy is swapped in and before every start, the supervisor KILLs
 # every process of FRPS_USER, so that nothing frps forked outlives it; should one be left,
 # frps does not start and no copy is left (waiting, processes_left).
@@ -42,10 +43,25 @@
 # Every start of frps, a restart after it exited included, first compares current/ with the
 # copy the supervisor took over (a sha256 over frps.toml and the PEM files, kept in memory;
 # a copy found at the start counts as taken over then), and checks current/frps.toml again
-# (check_config). A copy that changed (event copy_changed) or fails starts nothing and is
-# removed; before a restart the input is then taken over anew as at the start, so frps starts
-# from a fresh copy of a valid input, and an invalid one leaves the state as without a valid
-# copy.
+# (check_config, on the copy without the block of the plugin, which has to be the one stage
+# appends: check_copy). A copy that changed (event copy_changed) or fails, one an earlier
+# version left without the block included, starts nothing and is removed; before a restart the
+# input is then taken over anew as at the start, so frps starts from a fresh copy of a valid
+# input, and an invalid one leaves the state as without a valid copy.
+#
+# frps asks the plugin frps-policy about every proxy a client registers (op NewProxy) and
+# registers none the plugin refuses, nor any while the plugin fails to answer. stage appends a
+# fixed [[httpPlugins]] block to the copy after check_config, which refuses one in the input,
+# and before frps verify. The plugin serves on 127.0.0.1 at FRPS_POLICY_PORT, or at the next
+# port up that bindPort, vhostHTTPSPort and webServer.port of the copy leave free
+# (plugin_port), and reads FRPS_POLICY, the file the server writes next to frps.toml. Before
+# every start of frps the supervisor sees to it that the plugin serves at the port of the copy
+# (check_plugin): started as FRPS_POLICY_USER, it has FRPS_READ_SECONDS to answer on /healthz,
+# and frps starts either way. frps waits for the plugin's answer within the loop that reads
+# the client, so every poll asks /healthz again, within FRPS_READ_SECONDS; a plugin that does
+# not answer is KILLed and started anew, with a log line. The plugin runs until the supervisor
+# ends. FRPS_POLICY_USER shares the UID neither of FRPS_USER, so kill_left never hits the
+# plugin, nor of FRPS_FETCH_USER, who holds the credentials of the dashboard.
 #
 # Events: started (frps started where none ran from a current/: at the start, or after
 # waiting or stopped), applied (a change restarted frps; tokenChanged compares hashes of the
@@ -57,8 +73,8 @@
 # frps exiting on its own is started again from current/ after 2, 4, 8 … FRPS_BACKOFF_MAX
 # seconds; the third exit within FRPS_CRASH_WINDOW seconds makes the state crashloop, until
 # frps has run that long again. TERM or INT KILL every child of the supervisor but frps (the
-# pause between polls, the requests to the dashboard), stop frps (KILL after
-# FRPS_STOP_SECONDS) and end the supervisor with 0, with no child of it left.
+# plugin, the pause between polls, the requests to the dashboard and to the plugin), stop frps
+# (KILL after FRPS_STOP_SECONDS) and end the supervisor with 0, with no child of it left.
 #
 # The state goes to $FRPS_STATE_DIR/status.json, rewritten at every poll as a heartbeat; its
 # format is the contract the server reads, apps/server/app/modules/frp/supervisor_status.py.
@@ -89,6 +105,12 @@ FRPS_USER="${FRPS_USER-frps}"
 # The user the requests to the dashboard run as (fetch_proxies); set but empty switches su-exec
 # off for them.
 FRPS_FETCH_USER="${FRPS_FETCH_USER-frps-fetch}"
+# The plugin, the policy it reads, the user it runs as (set but empty switches su-exec off for
+# it) and the port it serves at unless the copy's ports take it (plugin_port).
+FRPS_POLICY_BIN="${FRPS_POLICY_BIN:-frps-policy}"
+FRPS_POLICY="${FRPS_POLICY:-${FRPS_CONFIG%/*}/frps-policy.json}"
+FRPS_POLICY_USER="${FRPS_POLICY_USER-frps-policy}"
+FRPS_POLICY_PORT="${FRPS_POLICY_PORT:-7480}"
 # Whole seconds, as POSIX sleep takes them.
 FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
 FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
@@ -120,12 +142,16 @@ TOP_KEYS="bindPort vhostHTTPSPort subDomainHost maxPortsPerClient detailedErrors
     webServer.addr webServer.port webServer.user webServer.password auth.method auth.token
     transport.maxPoolCount transport.tcpMux transport.tcpMuxKeepaliveInterval
     transport.heartbeatTimeout transport.tcpKeepalive userConnTimeout log.level log.maxDays"
+# The path the plugin answers frps at, and the lines of the block stage appends (plugin_block).
+POLICY_PATH=/handler
+PLUGIN_LINES=6
 
 log() { echo "[frps-supervisor] $*"; }
 
 die() {
     log "error: $*" >&2
     stop_frps
+    stop_plugin
     exit 1
 }
 
@@ -275,11 +301,52 @@ point_at_current() {
     ' "$1" > "$1.new" && mv -f "$1.new" "$1"
 }
 
+# plugin_port <toml> — FRPS_POLICY_PORT, or the next port up that none of bindPort,
+# vhostHTTPSPort and webServer.port of a checked copy takes, as frps reads the numbers.
+plugin_port() {
+    BIND=$(top_value "$1" bindPort) VHOST=$(top_value "$1" vhostHTTPSPort) \
+        WEB=$(top_value "$1" webServer.port) PORT=$FRPS_POLICY_PORT awk 'BEGIN {
+        port = ENVIRON["PORT"] + 0
+        while (port == ENVIRON["BIND"] + 0 || port == ENVIRON["VHOST"] + 0 ||
+            port == ENVIRON["WEB"] + 0) port++
+        print port
+    }'
+}
+
+# plugin_block <port> — the block stage appends to a checked copy (PLUGIN_LINES lines): frps
+# asks the plugin at 127.0.0.1:<port> about every new proxy.
+plugin_block() {
+    printf '\n[[httpPlugins]]\nname = "frps-policy"\naddr = "127.0.0.1:%s"\npath = "%s"\nops = ["NewProxy"]\n' \
+        "$1" "$POLICY_PATH"
+}
+
+# check_copy — check_config on current/frps.toml without its last PLUGIN_LINES lines, provided
+# they are the block stage appends for the ports of the rest; anything else is verify_failed.
+# Sets reason, and copy_port, the port of the plugin in the copy (empty unless it passes).
+check_copy() {
+    rest="$FRPS_ACTIVE_DIR/check.toml"
+    reason=verify_failed
+    copy_port=""
+    if ! lines=$(awk 'END { print NR }' "$CURRENT/frps.toml" 2>/dev/null); then
+        reason=input_unreadable
+        return
+    fi
+    if [ "$lines" -ge "$PLUGIN_LINES" ] \
+        && head -n $((lines - PLUGIN_LINES)) "$CURRENT/frps.toml" > "$rest" 2>/dev/null; then
+        block_port=$(plugin_port "$rest")
+        if { cat "$rest" && plugin_block "$block_port"; } | cmp -s - "$CURRENT/frps.toml"; then
+            reason=$(check_config "$rest" "$CURRENT" 2>/dev/null) || reason=input_unreadable
+            if [ "$reason" = none ]; then copy_port=$block_port; fi
+        fi
+    fi
+    rm -f "$rest"
+}
+
 # stage — copies the input into next/ and checks the copy, so what is checked is what runs.
 # Sets REASON (none, or the code of the first failed check) and CANDIDATE_HASH (over the
 # copied input; over the input as the poll saw it when a file of it cannot be read; empty
 # without a frps.toml). A valid candidate is left in next/, ready for activate, with its TLS
-# paths pointed at current/.
+# paths pointed at current/ and the block of the plugin appended.
 stage() {
     CANDIDATE_HASH=""
     rm -rf "$NEXT"
@@ -329,6 +396,9 @@ stage() {
         return
     fi
     point_at_current "$NEXT/frps.toml" || die "cannot rewrite $NEXT/frps.toml"
+    # check_config passed no block of a plugin, so the copy has this one alone.
+    plugin_block "$(plugin_port "$NEXT/frps.toml")" >> "$NEXT/frps.toml" \
+        || die "cannot write $NEXT/frps.toml"
     # frps verify passes an empty file and missing certificates, hence the checks above. Its
     # output is dropped: an error message may quote a value from the file.
     if ! "$FRPS_BIN" verify -c "$NEXT/frps.toml" >/dev/null 2>&1; then
@@ -375,7 +445,7 @@ recover() {
     if [ ! -d "$CURRENT" ] && [ -d "$PREV" ]; then
         mv "$PREV" "$CURRENT" || die "cannot restore $CURRENT"
     fi
-    rm -rf "$PREV" "$NEXT"
+    rm -rf "$PREV" "$NEXT" "$FRPS_ACTIVE_DIR/check.toml"
 }
 
 applied_hash_of_current() {
@@ -384,17 +454,15 @@ applied_hash_of_current() {
 }
 
 # start_frps — starts frps from current/ as FRPS_USER, as long as current/ is still the copy
-# the supervisor took over (COPY_HASH), current/frps.toml passes check_config again and no
-# process of FRPS_USER is left (kill_left). A copy that changed (event copy_changed) or fails
-# starts nothing and is removed (drop_copy), and start_frps returns 1; with processes left, 2
-# (refuse_start).
+# the supervisor took over (COPY_HASH), current/frps.toml passes check_copy and no process of
+# FRPS_USER is left (kill_left), once the plugin serves at the port of the copy or had its
+# time (check_plugin). A copy that changed (event copy_changed) or fails starts nothing and is
+# removed (drop_copy), and start_frps returns 1; with processes left, 2 (refuse_start).
 start_frps() {
+    copy_port=""
     file_kind "$CURRENT/frps.toml"
     case $? in
-    0)
-        reason=$(check_config "$CURRENT/frps.toml" "$CURRENT" 2>/dev/null) \
-            || reason=input_unreadable
-        ;;
+    0) check_copy ;;
     1) reason=config_missing ;;
     *) reason=input_unreadable ;;
     esac
@@ -407,6 +475,7 @@ start_frps() {
         refuse_start
         return 2
     else
+        check_plugin "$copy_port"
         if [ -n "$FRPS_USER" ]; then
             su-exec "$FRPS_USER" "$FRPS_BIN" -c "$CURRENT/frps.toml" &
         else
@@ -460,6 +529,56 @@ stop_frps() {
     kill_left
     log "frps stopped"
     FRPS_PID=""
+}
+
+# start_plugin <port> — starts the plugin at 127.0.0.1:<port> as FRPS_POLICY_USER and waits
+# FRPS_READ_SECONDS at the most for it to answer.
+start_plugin() {
+    # su-exec execs the plugin: the child, $!, is the plugin itself.
+    ${FRPS_POLICY_USER:+su-exec "$FRPS_POLICY_USER"} "$FRPS_POLICY_BIN" \
+        -listen "127.0.0.1:$1" -path "$POLICY_PATH" -policy "$FRPS_POLICY" &
+    PLUGIN_PID=$!
+    PLUGIN_PORT=$1
+    log "frps-policy started on 127.0.0.1:$1 (pid $PLUGIN_PID)"
+    ready_by=$(($(epoch) + FRPS_READ_SECONDS))
+    until plugin_answers; do
+        if ! kill -0 "$PLUGIN_PID" 2>/dev/null || [ "$(epoch)" -ge "$ready_by" ]; then
+            log "frps-policy does not answer on 127.0.0.1:$1"
+            return
+        fi
+        sleep 0.1
+    done
+}
+
+# plugin_answers — GET /healthz of the plugin, as FRPS_FETCH_USER, within FRPS_READ_SECONDS;
+# in the background, so that TERM or INT ends the request at once (on_signal).
+plugin_answers() {
+    ${FRPS_FETCH_USER:+su-exec "$FRPS_FETCH_USER"} curl -q --silent --fail --noproxy '*' \
+        --max-time "$FRPS_READ_SECONDS" --output /dev/null \
+        "http://127.0.0.1:$PLUGIN_PORT/healthz" &
+    wait "$!"
+}
+
+# stop_plugin — KILL, then the plugin is waited for: it keeps no state worth a TERM.
+stop_plugin() {
+    [ -n "${PLUGIN_PID:-}" ] || return 0
+    kill -KILL "$PLUGIN_PID" 2>/dev/null
+    wait "$PLUGIN_PID" 2>/dev/null
+    PLUGIN_PID=""
+}
+
+# check_plugin [port] — sees to it that the plugin serves at <port>, by default where it was
+# started: one that does not answer there is KILLed and started anew, as is one at another
+# port. Nothing before the first start of frps.
+check_plugin() {
+    wanted_port=${1:-$PLUGIN_PORT}
+    [ -n "$wanted_port" ] || return 0
+    if [ -n "$PLUGIN_PID" ] && [ "$wanted_port" = "$PLUGIN_PORT" ]; then
+        plugin_answers && return 0
+        log "frps-policy did not answer, restarting it"
+    fi
+    stop_plugin
+    start_plugin "$wanted_port"
 }
 
 # frps_left — the pids of the processes of FRPS_USER that have not ended (a zombie has), from
@@ -772,6 +891,7 @@ drop_proxies() {
 # counts as unstable, with one rejected event for the series.
 poll() {
     check_frps
+    check_plugin
     INPUT=$(input_hash)
     if [ "$INPUT" != "$SEEN" ]; then
         SEEN=$INPUT
@@ -801,12 +921,13 @@ pause() {
     wait "$!"
 }
 
-# kill_children — KILL to every child of the supervisor but frps (FRPS_PID), the pause and the
-# requests to the dashboard among them. The children are found by their PPid, not by the pids
-# the supervisor keeps: the shell runs a trap once the command under way is done, so a signal
-# right after `… &` comes before $! is kept. KILL, since a child just forked holds the trap of
-# the shell until it has reset its traps, and a TERM in that time is lost (dash). From /proc,
-# not FRPS_PROC_ROOT: it hits children of this shell alone, in the tests too.
+# kill_children — KILL to every child of the supervisor but frps (FRPS_PID), the plugin, the
+# pause and the requests to the dashboard and to the plugin among them. The children are found
+# by their PPid, not by the pids the supervisor keeps: the shell runs a trap once the command
+# under way is done, so a signal right after `… &` comes before $! is kept. KILL, since a child
+# just forked holds the trap of the shell until it has reset its traps, and a TERM in that time
+# is lost (dash). From /proc, not FRPS_PROC_ROOT: it hits children of this shell alone, in the
+# tests too.
 kill_children() {
     for status in /proc/[0-9]*/status; do
         pid=${status%/status}
@@ -901,6 +1022,31 @@ if [ -n "$FRPS_FETCH_USER" ]; then
 elif [ "$(id -u)" -eq 0 ]; then
     die "FRPS_FETCH_USER must name the user the dashboard is asked as, not be empty under root"
 fi
+# A port up to 65532: plugin_port may go three ports up from it.
+case $FRPS_POLICY_PORT in
+0* | *[!0-9]* | ??????*) die "FRPS_POLICY_PORT must be a port number up to 65532" ;;
+*) [ "$FRPS_POLICY_PORT" -le 65532 ] || die "FRPS_POLICY_PORT must be a port number up to 65532" ;;
+esac
+if [ -n "$FRPS_POLICY_USER" ]; then
+    policy_uid=$(id -u "$FRPS_POLICY_USER" 2>/dev/null) \
+        || die "FRPS_POLICY_USER $FRPS_POLICY_USER is no user"
+    [ "$policy_uid" != 0 ] || die "FRPS_POLICY_USER must not be root"
+    # kill_left would hit the plugin.
+    [ "$policy_uid" != "$FRPS_UID" ] || die "FRPS_POLICY_USER must not share the UID of FRPS_USER"
+    # The plugin reads what clients send through frps; it must not reach the requests that carry
+    # the credentials of the dashboard.
+    [ "$policy_uid" != "${fetch_uid:-}" ] \
+        || die "FRPS_POLICY_USER must not share the UID of FRPS_FETCH_USER"
+    if [ -n "$FRPS_GID" ]; then
+        policy_gids=$(id -G "$FRPS_POLICY_USER" 2>/dev/null) \
+            || die "FRPS_POLICY_USER $FRPS_POLICY_USER has no group"
+        case " $policy_gids " in
+        *" $FRPS_GID "*) die "FRPS_POLICY_USER must not be in the group of FRPS_USER" ;;
+        esac
+    fi
+elif [ "$(id -u)" -eq 0 ]; then
+    die "FRPS_POLICY_USER must name the user frps-policy runs as, not be empty under root"
+fi
 
 # frps passes through to current/ and lists nothing.
 if ! { mkdir -p "$FRPS_ACTIVE_DIR" && chmod 0711 "$FRPS_ACTIVE_DIR"; }; then
@@ -939,6 +1085,8 @@ if [ -d "$CURRENT" ]; then COPY_HASH=$(copy_hash); fi
 REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0
+PLUGIN_PID=""
+PLUGIN_PORT=""
 FETCH_PIDS=""
 CHANGING_SINCE=""
 UNSTABLE=0

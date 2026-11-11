@@ -10,6 +10,7 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.core import config as core_config
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
@@ -223,12 +224,14 @@ class TestGenerateFrpcToml:
         toml = generate_frpc_toml(config, tunnels, "srv1")
         assert toml.count("[[proxies]]") == 2
 
-    def test_agent_fixture_is_the_generator_output(self):
+    def test_agent_fixture_is_the_generator_output(self, monkeypatch):
         """The agent applies a server frpc.toml only in the form this generator writes
         (checkServerConfig, apps/agent/internal/frpc/servertoml.go), and its tests check that
         against this fixture. When the generator's output changes, this test fails until the
         fixture and the agent's check follow; otherwise agents would refuse the new text and
         keep their old tunnels."""
+        # The proxy key in the fixture comes from this SECRET_KEY (proxy_key.py).
+        monkeypatch.setattr(core_config, "SECRET_KEY", "secret-key-placeholder")
         config = _make_config(
             server_addr="203.0.113.10",
             bind_port=7000,

@@ -10,6 +10,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from app.modules.frp.proxy_key import PROXY_KEY_META, proxy_key
 from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
@@ -434,7 +435,8 @@ def generate_frpc_toml(
         tunnels: All tunnels belonging to this host.
         frpc_user: The frpc user: the ID of the host's server. frps registers each proxy as
             "{user}.{name}", the proxy name is the tunnel's ID, so a renamed server or
-            tunnel changes nothing here (R-1210).
+            tunnel changes nothing here (R-1210). Every proxy carries the key of this ID
+            (proxy_key.py), which frps' policy plugin checks.
     """
     allowed = [u for u in allow_users or [] if not name_refused(u)]
     for refused_user in sorted(set(allow_users or []) - set(allowed)):
@@ -455,6 +457,8 @@ def generate_frpc_toml(
 
     lines.extend(_tls_agent_block())
 
+    # frps admits a proxy only with the key of the host it names as user (proxy_key.py).
+    host_key = proxy_key(frpc_user)
     for tunnel in active:
         lines.append("")
         lines.append("[[proxies]]")
@@ -462,6 +466,7 @@ def generate_frpc_toml(
         lines.append(f'type = "{tunnel.tunnel_type}"')
         lines.append(f'localIP = "{tunnel.local_ip}"')
         lines.append(f"localPort = {tunnel.local_port}")
+        lines.append(f'metadatas.{PROXY_KEY_META} = "{host_key}"')
 
         if tunnel.tunnel_type == "stcp":
             lines.append(f'secretKey = "{tunnel.secret_key}"')
