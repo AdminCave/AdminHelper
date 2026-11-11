@@ -10,8 +10,10 @@ Heavy: linux-full — Agent (FreeBSD-Sammler, rc-Skript, Paket); dazu vor dem Me
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1253: cpu_count und Swap auch unter FreeBSD melden  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-freebsd-1.md
+### T1 — R-1253: cpu_count und Swap auch unter FreeBSD melden  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-freebsd-1.md, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ea5762394 2026-11-11T14:52:38+01:00
+Review: approve (.ah-out/review/kern-freebsd-1/T1.verdict.json)
 Änderung: Test zuerst: ein Stub mit `goos` `freebsd` erwartet `cpu_count` und die Swap-Felder wie unter Linux (rot);
 dann lässt `collectSwapAndCPUCount` Linux und FreeBSD sammeln, Windows bleibt nil.
 Verify: bash scripts/dev/verify.sh agent --strict

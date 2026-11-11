@@ -188,15 +188,18 @@ func TestResourcesSwapAndCPUCount(t *testing.T) {
 			s.countErr = errors.New("open /proc/stat")
 		}, `{}`},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			s := stubResources(t, "linux")
-			c.setup(s)
-			got := dockerWire(t, collectSwapAndCPUCount())
-			if want := wantDockerWire(t, c.want); !reflect.DeepEqual(got, want) {
-				t.Errorf("resources = %v, want %v", got, want)
-			}
-		})
+	// FreeBSD reports the same fields: its load is rated per CPU like Linux's (R-1253).
+	for _, goos := range []string{"linux", "freebsd"} {
+		for _, c := range cases {
+			t.Run(goos+"/"+c.name, func(t *testing.T) {
+				s := stubResources(t, goos)
+				c.setup(s)
+				got := dockerWire(t, collectSwapAndCPUCount())
+				if want := wantDockerWire(t, c.want); !reflect.DeepEqual(got, want) {
+					t.Errorf("resources = %v, want %v", got, want)
+				}
+			})
+		}
 	}
 }
 

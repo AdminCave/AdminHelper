@@ -197,11 +197,11 @@ func collectNetwork() map[string]any {
 	return map[string]any{"net_rx_bytes_total": rx, "net_tx_bytes_total": tx}
 }
 
-// collectSwapAndCPUCount reports the logical CPUs and the swap on Linux only, like the load they put
-// into proportion (nil elsewhere). A failed part drops only its own fields. Without a swap device
-// there is no swap_percent: gopsutil's 0 there is no measurement.
+// collectSwapAndCPUCount reports the logical CPUs and the swap on Linux and FreeBSD, like the load
+// they put into proportion (nil elsewhere). A failed part drops only its own fields. Without a swap
+// device there is no swap_percent: gopsutil's 0 there is no measurement.
 func collectSwapAndCPUCount() map[string]any {
-	if resourceCalls.goos != "linux" {
+	if resourceCalls.goos != "linux" && resourceCalls.goos != "freebsd" {
 		return nil
 	}
 	res := map[string]any{}
