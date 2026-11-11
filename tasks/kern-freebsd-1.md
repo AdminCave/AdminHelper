@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-freebsd-1 — Task-Ledger
-Status: bereit · Branch: feature/kern-freebsd-1 · Review: pro Task
+Status: erledigt · Branch: feature/kern-freebsd-1 · Review: pro Task
 Spec: docs/features/kern-freebsd-1.md (Roadmap R-1253, R-1251)
 Heavy: linux-full — Agent (FreeBSD-Sammler, rc-Skript, Paket); dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
