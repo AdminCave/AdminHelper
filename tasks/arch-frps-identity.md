@@ -16,6 +16,11 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 - Kevin 2026-11-11 (Gate, Spec Fragen 1–3): Update ohne Übergangsfenster, Hinweis in CHANGELOG und Doku; manuell
   verteilte frpc.toml nach dem Update neu verteilen, Hinweis in der Doku; `scenario --tunnel` vor dem Merge: ja;
   die Restrisiken trägt er.
+- Session 2026-11-11 (T3): Die Policy entsteht aus der zurückgelesenen Generator-Ausgabe (TOML), nicht aus
+  eigenen Feldregeln; Server-IDs leer oder mit Punkt fallen heraus (Warnung). Keine Dateisperre zwischen den
+  Workern: ein veralteter Stand hält höchstens bis zum nächsten Abgleich (60 s), frps prüft nur bei der Anmeldung,
+  frpc meldet einen abgelehnten Proxy erneut an. Kein Hook beim Anlegen einer FRP-Konfiguration (noch keine
+  Tunnel); keine conftest-Umleitung von `FRP_CONFIG_DIR` (API-Tests schreiben wie bisher frps.toml dorthin).
 
 ### T1 — Server: Host-Schlüssel je Proxy im frpc.toml  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/proxy_key.py, apps/server/app/modules/frp/config_generator.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_proxy_key.py, apps/server/tests/test_config_generator.py, apps/agent/internal/frpc/testdata/server_frpc.toml, apps/server/tests/test_frp_input_hardening.py
@@ -33,8 +38,10 @@ Review: approve (.ah-out/review/arch-frps-identity/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T3 — Server: Policy-Datei für frps schreiben  [ ]
+### T3 — Server: Policy-Datei für frps schreiben  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/frp/docker_manager.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/app/modules/frp/config_router.py, apps/server/app/modules/servers/router.py, apps/server/app/main.py, apps/server/tests/test_frp_policy.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @759a99926 2026-11-11T10:02:25+01:00
+Review: approve (.ah-out/review/arch-frps-identity/T3.verdict.json)
 Änderung: `policy.py` (neu, SPDX-Header) baut die Policy aus `active_tunnels` je Server (dieselbe Auswahl wie `generate_frpc_toml`, Felder wie der Generator sie schreibt) und schreibt sie deterministisch, 0644, atomar über den Schreibweg von `write_frps_config` (gleiches Temp-Präfix, damit `remove_stale_temp_files` Reste findet) nach `FRP_CONFIG_DIR/frps-policy.json`, nur bei geändertem Inhalt. Aufrufe nach dem Commit von Tunnel anlegen/ändern/löschen (`tunnel_router.py`), FRP-Konfiguration ändern/löschen (`config_router.py`), Server löschen (`servers/router.py`), beim Start (`_run_startup_tasks`) und alle 60 s im `lifespan`; ein Fehler beim Schreiben wird geloggt und bricht keinen Request. Tests: Ausgabe für eine Fixture-DB gleich `apps/agent/internal/frpspolicy/testdata/policy.json`; ausgelassene Tunnel (ohne Secret, verweigerte `extra_config`, ungültiger Port) fehlen; jeder Hook schreibt; Rechte 0644; kein Klartext-Schlüssel in der Datei; der periodische Abgleich stellt eine gelöschte oder veränderte Datei wieder her.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py tests/test_frp_tunnels.py tests/test_frp_config.py tests/test_frp_docker_manager.py tests/test_servers_authz.py tests/test_frp_provision_sync.py
 Doku: → T7
