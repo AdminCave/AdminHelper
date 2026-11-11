@@ -1,6 +1,6 @@
 # Harness: Wackler-Politik, Triage-Dauerauftrag, Sammellauf nachts
 
-Zug `arch-workflow-1` (Roadmap R-1335, R-1336, R-1337, R-1338). Kevin hat die Vorschläge am 2026-11-11 diktiert; die
+Zug `arch-workflow-1` (Roadmap R-1335, R-1336, R-1337, R-1338, R-1346). Kevin hat die Vorschläge am 2026-11-11 diktiert; die
 Messwerte stehen in der privaten Workflow-Analyse. Der CI-Teil (Stack-Job auf PRs, schlanke PR-CI, Shard-Ausgleich,
 `merge_group`, `nightly.yml`) ist ein eigener Zug (`arch-workflow-ci-1`), weil `ci.yml` gerade in zwei offenen PRs
 steht und Workflow-PRs Kevin merged.
@@ -29,8 +29,9 @@ steht und Workflow-PRs Kevin merged.
 - Ziel: der Sammellauf startet nachts per Cron (`scripts/tests/nightly.sh`), samstags als `weekly` mit Capstone; die
   Session startet ihn nicht mehr nach Merges. Ein schemathesis-Fund ist nie „flaky“ oder „extern“, sondern `fund`.
 - Ziel: die Server-Suite fällt aus dem Box-Lauf, wenn die Probe zeigt, dass die CI dieselben Tests fährt.
-- Nicht-Ziel: `ci.yml`, `nightly.yml`, Merge Queue (Zug `arch-workflow-ci-1`, R-1344/R-1345), Release-Takt (Kevins
-  Entscheidung zu R-1110 steht aus).
+- Ziel (R-1346, Kevin 2026-11-11): ab dem ersten grünen `weekly` mit Capstone jede Woche ein Beta-Tag vom `main`;
+  Latest bleibt an den Umfang von R-1110 gebunden (`.claude/rules/release.md`).
+- Nicht-Ziel: `ci.yml`, `nightly.yml`, Merge Queue (Zug `arch-workflow-ci-1`, R-1344/R-1345).
 
 ## Betroffene Dateien
 
@@ -83,4 +84,4 @@ Auslöser und Klasse `fund`). Der Ablauf selbst steht in `CLAUDE.md` und `.claud
 
 ## Offene Fragen
 
-Keine für diesen Zug. Kevins Entscheidung zum Release-Takt (R-1110) betrifft einen eigenen Schritt.
+Keine. Kevin hat am 2026-11-11 entschieden: CLAUDE.md ändert die Session (T8), wöchentlich Beta (R-1346), Cron nach dem Merge.

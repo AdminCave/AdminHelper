@@ -1,6 +1,6 @@
 # Harness: Wackler-Politik, Triage-Dauerauftrag, Sammellauf nachts — Task-Ledger
 Status: aktiv · Branch: feature/arch-workflow-1 · Review: pro Task
-Spec: docs/features/arch-workflow-1.md (Roadmap R-1335, R-1336, R-1337, R-1338)
+Spec: docs/features/arch-workflow-1.md (Roadmap R-1335, R-1336, R-1337, R-1338, R-1346)
 Heavy: none — Harness-Text und Harness-Skripte mit hermetischen Tests; den echten Beweis für nightly.sh und die heavy.sh-Klasse `fund` liefert der erste nächtliche Lauf nach dem Merge
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
@@ -14,7 +14,7 @@ Beweis: Workflow-Analyse 2026-11-11 (privat), Wackler-Tabelle: Wiederkehr nach #
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (Ablauf steht in .claude/; cicd.html verweist dorthin)
 
-### T2 — R-1336: Triage-Dauerauftrag und Nit-Sammelzeile  [?] (Korrektur nach Runde 2 eingearbeitet, ohne Prüfurteil (keine dritte Runde): darf der reviewer eine dritte Runde fahren, oder geht T2 mit T8 an Kevin?)
+### T2 — R-1336: Triage-Dauerauftrag und Nit-Sammelzeile  [ ]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/agents/reviewer.md
 Änderung: roadmap-Skill, neuer Abschnitt „Dauerauftrag (Kevin 2026-11-11)“: Bedingungen (BUG/REF mit Beweis, klein-Bereich; kein SEC, kein `security`-Fund, keine Datei aus `review-risk.txt`, kein Harness-Pfad, keine Verhaltens-/API-/Migrationsänderung). Annahme und Einplanung ohne Triage gelten erst, wenn CLAUDE.md §4 den Dauerauftrag nennt (T8); bis dahin bleiben gedeckte Funde `neu`. `/roadmap` zählt die ungesichteten Dauerauftrag-Zeilen, `/roadmap triage` legt sie zum Veto vor und vermerkt „gesichtet“. Nit-Regel (gilt sofort): mitbeheben nur in einer laufenden Korrekturrunde; sonst Sammelzeile aus Nits, die die Bedingungen erfüllen, Harness-Nits `zurückgestellt`, Sicherheits-Nits neutral in Kevins Triage. /feature-build §3 und reviewer.md verweisen darauf.
 Beweis: Roadmap-Historie 09-09…11-11: 29 Zeilen/Tag seit 10-29, Triage Median 15,4 h, 91 von 115 Nits gebaut · Dedup-Key: ref:harness:roadmap:triage-dauerauftrag
@@ -67,9 +67,16 @@ Doku: DEVELOPMENT.md, docs/developer/cicd.html DE+EN
 Task-Review: am Ende
 Abhängt von: T3, T4, T5, T6
 
-### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen (Kevin)  [?] (Übernimmt Kevin den CLAUDE.md-Diff (§3, §4, §5) oder gibt er die Änderung durch die Session frei?)
+### T9 — R-1346: Release-Takt — wöchentlich Beta nach grünem weekly  [ ]
+Komponente: scripts · Dateien: .claude/rules/release.md
+Änderung: release.md, „Ablauf und Kanäle“: Beta ist ab dem ersten grünen `weekly` mit Capstone ein wöchentliches Pre-release-Tag vom `main` (Kevin taggt, die Session bereitet Bump-Commit und `check-versions.sh` vor). „Latest“ (Stable) bleibt an den Umfang von R-1110 gebunden. Vor jedem Beta-Tag gelten die drei Ebenen wie bisher.
+Beweis: Workflow-Analyse 2026-11-11: Merge → Release Median 9,5 d, p90 29 d, 215 Merges unveröffentlicht · Dedup-Key: ref:harness:release:weekly-beta
+Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
+Doku: keine (release.md ist die Stelle; cicd.html verweist für Kanäle dorthin — in T7 prüfen)
+
+### T8 — CLAUDE.md an Dauerauftrag und nächtlichen Sammellauf angleichen  [ ]
 Komponente: — · Dateien: CLAUDE.md
-Änderung: Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Die Session darf CLAUDE.md in diesem Modus nicht ändern; sie legt Kevin den Diff vor, Kevin übernimmt ihn oder gibt die Änderung frei.
+Änderung: Drei Sätze in CLAUDE.md: §4 nennt den Dauerauftrag des roadmap-Skills als Annahme durch Kevin; §3 fragt statt „ist der Sammellauf fällig“, ob der Report der Nacht eine Reaktion braucht; §5 (Heavy) sagt, dass `linux-full` in den nächtlichen Sammellauf über `main` geht (`nightly.sh`, Kevin 2026-11-11), den die Session nicht mehr selbst startet. Kevin hat die Änderung durch die Session am 2026-11-11 freigegeben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
 Doku: keine (CLAUDE.md ist die Stelle)
 Abhängt von: T2, T5
@@ -80,3 +87,4 @@ Abhängt von: T2, T5
 - T2 Runde 2 (2026-11-11): reviewer `request_changes` (wichtig: bis T8 regelte keine Stelle die Nits), security `approve`. Eingearbeitet: das Gate betrifft nur Annahme und Einplanung, die Nit-Regel gilt sofort, die Nachlese-Zeile bleibt bis T8 `neu`. Eine dritte Prüfrunde sieht /feature-build nicht vor: T2 steht auf `[?]` bis Kevin entscheidet (dritte Runde oder Übergabe), zusammen mit T8.
 - T3 (2026-11-11): nightly.sh lädt keine Provider-Umgebung. vm.py und lib.sh lesen `~/.config/adminhelper/pve.env` und den `env`-Block von `.claude/settings.local.json` selbst (vm.py Kopfkommentar, `read_pve_env`). Damit gelangen in nightly.sh weder Token noch Env-Werte. Die Liste von `vm.py list` (Boxen, Adressen) geht nur nach `.ah-out/nightly-vmlist.out`.
 - T6 (2026-11-11): Probe VM gegen CI. CI (main-Lauf 43029762530, py3.14, beide Shards): 1660 + 1659 = 3319 passed, 0 skipped. Box (Sammellauf 2026-11-11-0725, junit server-pytest.xml): 3317 Tests, 39 skipped (Alembic ohne Postgres-URL, Image-Tests ohne Docker-Image, Redis). Die Box fährt keinen Test, den die CI überspringt; einzig der testcontainers-Modus läuft nur dort (R-0824 war ein Testfehler in diesem Modus). Umsetzung (Schritt im Teil rest auslassen, Pflichtmenge anpassen, iter.sh-Weiterleitung) in arch-workflow-2.
+- Kevin 2026-11-11 (Antworten in der Session): CLAUDE.md darf die Session ändern (T8); T2 bekommt eine dritte Prüfrunde; Release: wöchentlich Beta nach grünem weekly mit Capstone, Latest wie R-1110 (T9, R-1346, Notiz an R-1110); Cron-Zeile nach dem Merge installieren, Restrisiko (unbeaufsichtigter Lauf mit Proxmox-Zugriff) von Kevin getragen.
