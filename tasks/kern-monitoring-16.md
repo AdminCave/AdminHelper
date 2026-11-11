@@ -121,6 +121,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
+### T10 — Abschlussprüfung: Doku zu gestoppten Units eingrenzen  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-16.md
+Änderung: Der Satz zu gestoppten Units gilt nur, wenn der Dienst außer über die Unit auch über Container, Prozess oder Markerdatei erkannt wird; eine Instanz, die nur an der Unit hängt, wird nach zwei vollständigen Scans `gone` (DE, EN, CHANGELOG).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: diese Task
+Task-Review: am Ende
+
 ## Entscheidungen
 - Plan: R-1264 fährt nicht mit (Migration für Grabsteine, sichtbares Verhalten beim Katalog-Rollout: Frage an Kevin),
   eigener Zug.
@@ -166,3 +173,4 @@ Task-Review: am Ende
   keine Migration). Ein Host, dessen Scans immer ablaufen, bekommt so keinen vollen Scan erzwungen und meldet weiter
   kein `gone`: was abgeschnitten wurde, darf nicht als verschwunden gelten. Das löst nur Vollständigkeit je
   Abschnitt im Report (Agent und Abgleich, außerhalb dieser Task): Roadmap R-1302, zur Triage.
+- Abschlussprüfung: der Kommentar an der Mehrdeutigkeits-Prüfung in `module_sync.py` ist neutral formuliert und vor dem ersten Push in den T4-Commit eingefaltet (Rebase des ungepushten Branches); die `@<sha>`-Angaben der Evidenz von T4–T9 nennen die Commits vor dem Rebase.
