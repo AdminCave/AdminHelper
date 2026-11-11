@@ -1,5 +1,5 @@
 # Agent: Härtung der Werkzeugaufrufe, der Probe-Parameter und der Probe-Zugangsdaten — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-15 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-15 · Review: pro Task
 Spec: docs/features/kern-monitoring-15.md (Roadmap R-1252, R-1259, R-1266, R-1261, R-1255, R-1256, R-1270)
 Heavy: linux-full — apps/agent (Fühler, Erkennung, Freigabeliste)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
