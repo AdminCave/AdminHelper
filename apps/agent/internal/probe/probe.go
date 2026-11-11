@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -155,6 +156,10 @@ type Access struct {
 	// run again until it is set anew, which gives it a new id. Run adds to it; the report state keeps
 	// it from run to run (KeptBrake).
 	Brake map[string]string
+	// Bindings holds, by ref, the credential id and the target (binding) the credential went to first:
+	// it goes to no other until it is set anew, which gives it a new id. credential adds to it; the
+	// report state keeps it from run to run (KeptBindings).
+	Bindings map[string]Binding
 	// Cursors holds, by probe id, where the last run of a counting sensor stopped (cursorSensor). Run
 	// sets it; the report state keeps it from run to run (KeptCursors).
 	Cursors map[string]string
@@ -200,6 +205,29 @@ func (a *Access) KeptCursors(probes []Probe) map[string]string {
 	return kept
 }
 
+// Binding is where a stored credential went first: its id and the target of the probe (bindingOf).
+type Binding struct {
+	ID     string `json:"id"`
+	Target string `json:"target"`
+}
+
+// bindingOf names the target p presents its credential to: sensor, use, the kind, name, port and
+// scheme of its target and the path of its socket. On this host they say where the sensor connects.
+func bindingOf(p Probe) string {
+	parts := []string{p.Sensor, p.Credential.Use}
+	if t := p.Target; t != nil {
+		parts = append(parts, t.Kind, t.Name, strconv.Itoa(t.PortHint), t.Scheme)
+	} else {
+		parts = append(parts, "", "", "", "")
+	}
+	path, _ := p.Params["path"].(string)
+	if p.Sensor != "unixsocket" {
+		path = ""
+	}
+	b, _ := json.Marshal(append(parts, path))
+	return string(b)
+}
+
 // credential returns the secret p presents, or the status and the reason why p does not run.
 func (a *Access) credential(p Probe) (secret, status, why string) {
 	if p.Credential == nil {
@@ -223,6 +251,14 @@ func (a *Access) credential(p Probe) (secret, status, why string) {
 		// Set anew since its target refused it: the probe runs again.
 		delete(a.Brake, ref)
 	}
+	target := bindingOf(p)
+	if b, ok := a.Bindings[ref]; ok && b.ID == c.ID && b.Target != target {
+		return "", StatusNotAllowed, fmt.Sprintf("credential %s belongs to another target; set it anew to use it here", ref)
+	}
+	if a.Bindings == nil {
+		a.Bindings = map[string]Binding{}
+	}
+	a.Bindings[ref] = Binding{ID: c.ID, Target: target}
 	return c.Secret, "", ""
 }
 
@@ -253,6 +289,25 @@ func (a *Access) KeptBrake() map[string]string {
 	for ref, id := range a.Brake {
 		if c, ok := a.Credentials[ref]; a.StoreErr != nil || (ok && c.ID == id) {
 			kept[ref] = id
+		}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
+
+// KeptBindings returns the bindings whose credential is still stored with the id they bound; the
+// binding of a credential set anew or deleted is done. When the credentials could not be read, it keeps
+// every binding: nothing says they changed.
+func (a *Access) KeptBindings() map[string]Binding {
+	if a == nil || len(a.Bindings) == 0 {
+		return nil
+	}
+	kept := map[string]Binding{}
+	for ref, b := range a.Bindings {
+		if c, ok := a.Credentials[ref]; a.StoreErr != nil || (ok && c.ID == b.ID) {
+			kept[ref] = b
 		}
 	}
 	if len(kept) == 0 {

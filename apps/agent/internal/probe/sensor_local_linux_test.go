@@ -282,3 +282,210 @@ func TestReadSmallFileNeverWaitsForAFIFO(t *testing.T) {
 	}
 	_ = f.Close()
 }
+
+// stubDockerServes makes the docker daemon of this host one that serves (true) or one that does not.
+func stubDockerServes(t *testing.T, serves bool) *int {
+	t.Helper()
+	calls := 0
+	old := dockerServes
+	dockerServes = func(context.Context) bool {
+		calls++
+		return serves
+	}
+	t.Cleanup(func() { dockerServes = old })
+	return &calls
+}
+
+const inspectTwo = `[
+ {"Id": "` + containerID + `", "State": {"Running": true}, "NetworkSettings": {"Ports": {
+   "3306/tcp": [{"HostIp": "", "HostPort": "13306"}, {"HostIp": "::", "HostPort": "13306"}],
+   "80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8092"}],
+   "53/udp": [{"HostIp": "0.0.0.0", "HostPort": "5353"}],
+   "9100/tcp": null}}},
+ {"Id": "abababababababababababababababababababababababababababababababab", "State": {"Running": false}, "NetworkSettings": {"Ports": {"22/tcp": [{"HostIp": "0.0.0.0", "HostPort": "2222"}]}}}
+]`
+
+func TestDockerPublicationsReadsThePublishedTCPPortsOfTheRunningContainers(t *testing.T) {
+	other := strings.Repeat("ab", 32)
+	calls := stubTools(t, answer{out: containerID + "\n" + other + "\n"}, answer{out: inspectTwo})
+
+	got, err := dockerPublications(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []publication{
+		{hostPort: 13306, to: 3306}, {hostIP: netip.MustParseAddr("::"), hostPort: 13306, to: 3306},
+		{hostIP: netip.MustParseAddr("127.0.0.1"), hostPort: 8092, to: 80},
+	}
+	sortPubs := func(l []publication) {
+		slices.SortFunc(l, func(a, b publication) int {
+			if a.hostPort != b.hostPort {
+				return int(a.hostPort) - int(b.hostPort)
+			}
+			return a.hostIP.Compare(b.hostIP)
+		})
+	}
+	sortPubs(got)
+	sortPubs(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	if wantArgs := []string{"docker", "inspect", "--type", "container", containerID, other}; !slices.Equal((*calls)[1], wantArgs) {
+		t.Fatalf("inspect called as %q, want %q", (*calls)[1], wantArgs)
+	}
+}
+
+func TestDockerPublicationsTakesTheAnswerOfDockerWhenTheContainersLeftOutAreGone(t *testing.T) {
+	other := strings.Repeat("cd", 32)
+	ids := containerID + "\n" + strings.Repeat("ab", 32) + "\n" + other + "\n"
+	calls := stubTools(t, answer{out: ids}, answer{out: inspectTwo, err: &exec.ExitError{}}, answer{out: containerID + "\n"})
+
+	got, err := dockerPublications(context.Background())
+	if err != nil || len(got) != 3 {
+		t.Fatalf("got %+v, %v, want the 3 publications docker printed", got, err)
+	}
+	if len(*calls) != 3 || (*calls)[2][1] != "ps" {
+		t.Fatalf("calls %q, want docker ps asked again for the container left out", *calls)
+	}
+}
+
+func TestDockerPublicationsFailsWhenDockerLeavesOutAContainerItStillLists(t *testing.T) {
+	stubDockerServes(t, true)
+	for name, answers := range map[string][]answer{
+		// A daemon gone between the calls: docker prints [] and fails.
+		"empty":    {{out: containerID + "\n"}, {out: "[]", err: &exec.ExitError{}}, {out: containerID + "\n"}},
+		"ps again": {{out: containerID + "\n"}, {out: "[]", err: &exec.ExitError{}}, {err: &exec.ExitError{}}},
+	} {
+		stubTools(t, answers...)
+		if got, err := dockerPublications(context.Background()); err == nil {
+			t.Errorf("%s: %+v, want an error", name, got)
+		}
+	}
+}
+
+func TestDockerPublicationsFindsNoneWithoutADaemon(t *testing.T) {
+	stubDockerServes(t, false)
+	for name, a := range map[string]answer{
+		"no CLI":    {err: &exec.Error{Name: "docker", Err: exec.ErrNotFound}},
+		"ps failed": {err: &exec.ExitError{}},
+	} {
+		stubTools(t, a)
+		if got, err := dockerPublications(context.Background()); err != nil || got != nil {
+			t.Errorf("%s: %+v, %v, want none", name, got, err)
+		}
+	}
+
+	stubTools(t, answer{out: "\n"})
+	if got, err := dockerPublications(context.Background()); err != nil || got != nil {
+		t.Fatalf("without containers: %+v, %v, want none", got, err)
+	}
+}
+
+func TestDockerPublicationsFailsForADaemonServingWithoutTheCLI(t *testing.T) {
+	stubDockerServes(t, true)
+	stubTools(t, answer{err: &exec.Error{Name: "docker", Err: exec.ErrNotFound}})
+
+	if got, err := dockerPublications(context.Background()); err == nil {
+		t.Fatalf("%+v, want an error: a daemon serves, its containers cannot be read", got)
+	}
+}
+
+func TestDockerPublicationsFailsWhenTheServingDaemonCannotBeRead(t *testing.T) {
+	stubDockerServes(t, true)
+	for name, answers := range map[string][]answer{
+		"ps":             {{err: &exec.ExitError{}}},
+		"inspect":        {{out: containerID}, {err: errors.New("signal: killed")}},
+		"inspect exit":   {{out: containerID}, {out: "permission denied", err: &exec.ExitError{}}},
+		"form":           {{out: containerID}, {out: `{"not": "a list"}`}},
+		"container port": {{out: containerID}, {out: `[{"State":{"Running":true},"NetworkSettings":{"Ports":{"x/tcp":[{"HostPort":"1"}]}}}]`}},
+		"host port":      {{out: containerID}, {out: `[{"State":{"Running":true},"NetworkSettings":{"Ports":{"22/tcp":[{"HostPort":"70000"}]}}}]`}},
+		"host address":   {{out: containerID}, {out: `[{"State":{"Running":true},"NetworkSettings":{"Ports":{"22/tcp":[{"HostIp":"x","HostPort":"1"}]}}}]`}},
+	} {
+		stubTools(t, answers...)
+		if got, err := dockerPublications(context.Background()); err == nil {
+			t.Errorf("%s: %+v, want an error", name, got)
+		}
+	}
+}
+
+// TestDockerSocketServes says no only without a socket or an acceptor on it; short for the socket paths.
+func TestDockerSocketServes(t *testing.T) {
+	dir := filepath.Dir(socketIn(t))
+	old := dockerSocket
+	t.Cleanup(func() { dockerSocket = old })
+
+	dockerSocket = filepath.Join(dir, "m.sock")
+	if dockerSocketServes(context.Background()) {
+		t.Error("a missing socket serves")
+	}
+
+	dockerSocket = filepath.Join(dir, "s.sock")
+	l, err := net.Listen("unix", dockerSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dockerSocketServes(context.Background()) {
+		t.Error("a socket with an acceptor does not serve")
+	}
+	// Closing the listener removes the socket file; one left behind takes no connection.
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = l.Close()
+	if dockerSocketServes(context.Background()) {
+		t.Error("a socket nobody accepts on serves")
+	}
+
+	// A socket the agent may not reach may well have a daemon behind it.
+	locked := filepath.Join(dir, "l")
+	if err := os.Mkdir(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dockerSocket = filepath.Join(locked, "s.sock")
+	l, err = net.Listen("unix", dockerSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	if os.Geteuid() == 0 {
+		t.Log("root reaches the locked socket; the denied path is not shown")
+		return
+	}
+	if !dockerSocketServes(context.Background()) {
+		t.Error("a socket the agent may not reach does not count as serving")
+	}
+}
+
+func TestUnixSocketSensorNeverConnectsToASocketOfAControlService(t *testing.T) {
+	servedBy(t, "nginx")
+	path, _ := unixFake(t, func(c *fakeConn) { c.drain() })
+	probe := func(path string) (map[string]any, error) {
+		return unixSocketSensor(context.Background(), unixProbe(map[string]any{"path": path}), "")
+	}
+	if got, err := probe(path); err != nil || got["connected"] != true {
+		t.Fatalf("before = %v, %v; want it connected", got, err)
+	}
+	link := filepath.Join(filepath.Dir(socketIn(t)), "l.sock")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	old := controlSockets
+	t.Cleanup(func() { controlSockets = old })
+	controlSockets = append(slices.Clone(old), filepath.Dir(path)+"/")
+
+	for _, p := range []string{path, link} {
+		if got, err := probe(p); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "a socket of a service the agent never probes") {
+			t.Errorf("%s = %v, %v; want it refused", p, got, err)
+		}
+	}
+	for _, p := range []string{"/run/docker.sock", "/var/run/docker.sock", "/run/user/0/bus"} {
+		if got, err := probe(p); !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("%s = %v, %v; want it refused before any dial", p, got, err)
+		}
+	}
+	if got, err := probe(filepath.Join(filepath.Dir(link), "gone.sock")); err != nil || fmt.Sprint(got) != "map[connected:false]" {
+		t.Errorf("a missing socket = %v, %v; want it not connected", got, err)
+	}
+}

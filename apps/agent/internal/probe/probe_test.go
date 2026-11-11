@@ -21,8 +21,15 @@ import (
 // register adds a sensor for the test and removes it afterwards.
 func register(t *testing.T, name string, sensor Sensor) {
 	t.Helper()
+	old, had := sensors[name]
 	sensors[name] = sensor
-	t.Cleanup(func() { delete(sensors, name) })
+	t.Cleanup(func() {
+		if had {
+			sensors[name] = old
+		} else {
+			delete(sensors, name)
+		}
+	})
 }
 
 var start = time.Unix(1762700000, 0)
@@ -445,5 +452,101 @@ func TestKeptCursorsKeepsOnlyThoseOfCountingProbesOfThePlan(t *testing.T) {
 	}
 	if got := (*Access)(nil).KeptCursors(probes); got != nil {
 		t.Errorf("kept without access = %v, want nil", got)
+	}
+}
+
+func TestACredentialGoesOnlyToTheTargetItWentToFirst(t *testing.T) {
+	var got []string
+	register(t, "fake", func(_ context.Context, _ Probe, secret string) (map[string]any, error) {
+		got = append(got, secret)
+		return map[string]any{"up": true}, nil
+	})
+	register(t, "other", func(_ context.Context, _ Probe, secret string) (map[string]any, error) {
+		got = append(got, secret)
+		return map[string]any{"up": true}, nil
+	})
+	first := Probe{ID: "c1", Sensor: "fake", TimeoutS: 1, Fields: []string{"up"},
+		Target: &Target{Kind: kindProcess, Name: "nginx", PortHint: 8080, Scheme: "http"},
+		Params: map[string]any{"path": "/status"}, Credential: &Credential{Ref: "db", Use: "bearer"}}
+	acc := access(map[string][2]string{"db": {"pw", "id1"}})
+
+	if res := Run(context.Background(), first, start, acc); res.Status != StatusOK || len(got) != 1 || got[0] != "pw" {
+		t.Fatalf("first run = %+v, secrets %q; want ok with the secret", res, got)
+	}
+	// Another path of the same target and other fields are the same target.
+	same := first
+	same.ID, same.Params, same.Fields = "c2", map[string]any{"path": "/health"}, nil
+	if res := Run(context.Background(), same, start, acc); res.Status != StatusOK || len(got) != 2 {
+		t.Fatalf("the same target = %+v, want ok", res)
+	}
+
+	other := func(change func(p *Probe)) Probe {
+		p := first
+		tg := *first.Target
+		p.Target, p.Credential = &tg, &Credential{Ref: "db", Use: "bearer"}
+		change(&p)
+		return p
+	}
+	for name, p := range map[string]Probe{
+		"sensor": other(func(p *Probe) { p.Sensor = "other" }),
+		"use":    other(func(p *Probe) { p.Credential.Use = "basic" }),
+		"kind":   other(func(p *Probe) { p.Target.Kind = kindPort }),
+		"name":   other(func(p *Probe) { p.Target.Name = "apache2" }),
+		"port":   other(func(p *Probe) { p.Target.PortHint = 8081 }),
+		"scheme": other(func(p *Probe) { p.Target.Scheme = "https" }),
+		"none":   other(func(p *Probe) { p.Target = nil }),
+	} {
+		got = nil
+		res := Run(context.Background(), p, start, acc)
+		if res.Status != StatusNotAllowed || !strings.Contains(res.Error, "belongs to another target") || len(got) != 0 {
+			t.Errorf("another %s = %+v, secrets %q; want not_allowed without the secret", name, res, got)
+		}
+	}
+
+	// Set anew, the credential binds again where it goes first.
+	acc.Credentials["db"] = credentials.Credential{Secret: "pw2", ID: "id2"}
+	moved := other(func(p *Probe) { p.Target.PortHint = 8081 })
+	got = nil
+	if res := Run(context.Background(), moved, start, acc); res.Status != StatusOK || len(got) != 1 || got[0] != "pw2" {
+		t.Fatalf("after it was set anew = %+v, secrets %q; want ok", res, got)
+	}
+	if res := Run(context.Background(), first, start, acc); res.Status != StatusNotAllowed {
+		t.Fatalf("the old target after the new binding = %+v, want not_allowed", res)
+	}
+}
+
+func TestACredentialOfAUnixSocketIsBoundToItsPath(t *testing.T) {
+	register(t, "unixsocket", func(context.Context, Probe, string) (map[string]any, error) {
+		return map[string]any{"connected": true}, nil
+	})
+	sock := func(path string) Probe {
+		return Probe{ID: "c1", Sensor: "unixsocket", TimeoutS: 1, Fields: []string{"connected"},
+			Params: map[string]any{"path": path, "protocol": "redis"}, Credential: &Credential{Ref: "redis", Use: "redis_auth"}}
+	}
+	acc := access(map[string][2]string{"redis": {"pw", "id1"}})
+	if res := Run(context.Background(), sock("/run/redis/redis.sock"), start, acc); res.Status != StatusOK {
+		t.Fatalf("first run = %+v, want ok", res)
+	}
+	if res := Run(context.Background(), sock("/run/other/redis.sock"), start, acc); res.Status != StatusNotAllowed {
+		t.Fatalf("another socket = %+v, want not_allowed", res)
+	}
+}
+
+func TestKeptBindingsKeepOnlyCredentialsStillAsBound(t *testing.T) {
+	bindings := func() map[string]Binding {
+		return map[string]Binding{"same": {ID: "id1", Target: "a"}, "anew": {ID: "id2", Target: "b"}, "deleted": {ID: "id3", Target: "c"}}
+	}
+	acc := access(map[string][2]string{"same": {"a", "id1"}, "anew": {"b", "id9"}})
+	acc.Bindings = bindings()
+	if got := acc.KeptBindings(); len(got) != 1 || got["same"] != (Binding{ID: "id1", Target: "a"}) {
+		t.Errorf("KeptBindings = %v, want same alone", got)
+	}
+	unread := &Access{StoreErr: errors.New("unreadable"), Bindings: bindings()}
+	if got := unread.KeptBindings(); len(got) != 3 {
+		t.Errorf("KeptBindings with unreadable credentials = %v, want every entry", got)
+	}
+	var none *Access
+	if got := none.KeptBindings(); got != nil {
+		t.Errorf("KeptBindings of no access = %v, want nil", got)
 	}
 }
