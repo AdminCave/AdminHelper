@@ -324,6 +324,11 @@ type containerInfo struct {
 			IPAddress         string
 			GlobalIPv6Address string
 		}
+		// Ports maps "<port>/<proto>" of the container to the host ports docker publishes it on.
+		Ports map[string][]struct {
+			HostIP   string `json:"HostIp"`
+			HostPort string
+		}
 	}
 }
 

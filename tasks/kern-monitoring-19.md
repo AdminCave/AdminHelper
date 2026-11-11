@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Ziel-Abgleich, Fühler, Zugangsdaten) und apps
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1299: Ziel-Abgleich bei veröffentlichten Container-Ports ohne Host-Listener  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local.go
+### T1 — R-1299: Ziel-Abgleich bei veröffentlichten Container-Ports ohne Host-Listener  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/sensor_local_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @28b198dfc 2026-11-11T12:23:30+01:00
+Review: approve (.ah-out/review/kern-monitoring-19/T1.verdict.json)
 Änderung:
 - Hat `checkListener` für Adresse und Port keinen Host-Listener, liest der Guard die Port-Maps der laufenden
   Container (`docker inspect`, Form vorher in der Docker-Engine-Doku nachlesen) mit TTL wie die Listener-Liste. Ist
@@ -67,3 +69,8 @@ Task-Review: am Ende
   Entscheidung „Secret im Agent an Ziel und Port seines Moduls binden“.
 - 2026-11-11: Überschneidung mit `feature/arch-freebsd-agent` und `feature/arch-opnsense-plugin` (`probe/guard.go`
   u. a.) wie bei kern-monitoring-15/16 hingenommen (Kevin 2026-11-11: der arch-Branch zieht main später nach).
+- 2026-11-11 (T1): Der Abgleich der veröffentlichten Ports läuft für jede Adresse und jeden Port, auch neben einem
+  Host-Listener (Docker leitet per NAT vor ihm um), und nur unter Linux (Docker Desktop lauscht immer mit eigenem
+  Prozess). Ohne Docker heißt: kein Daemon am Socket; antwortet einer, scheitert der Guard bei jedem Lesefehler
+  geschlossen, auch ohne CLI im PATH. Fehlt in der Antwort von `docker inspect` ein Container, muss er auch aus
+  `docker ps` verschwunden sein. Ein Lesefehler wird nicht zwischengespeichert (nächster Dial fragt neu).

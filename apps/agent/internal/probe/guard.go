@@ -85,6 +85,8 @@ var (
 	listeners      = listenTCP
 	processName    = nameOf
 	processArgs    = argsOf
+	publishedPorts = dockerPublications
+	dockerServes   = dockerSocketServes
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -210,7 +212,51 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 	if activator && !served {
 		return fmt.Errorf("%w: systemd holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, port)
 	}
+	return checkPublished(ctx, ip, port)
+}
+
+// checkPublished returns an error if docker forwards ip and port to a port of a container a probe
+// never connects to, or if that cannot be told. Without its userland proxy (userland-proxy=false)
+// docker forwards a published port by NAT alone, ahead of any process listening on the host port.
+func checkPublished(ctx context.Context, ip netip.Addr, port uint16) error {
+	list, err := currentPublications(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: the published ports of the containers cannot be read: %v", ErrNotAllowed, err)
+	}
+	for _, p := range list {
+		if p.hostPort != port || (p.hostIP.IsValid() && !p.hostIP.IsUnspecified() && p.hostIP != ip) {
+			continue
+		}
+		if blockedPort(p.to) {
+			return fmt.Errorf("%w: port %d forwards to port %d of a container, one the agent never probes", ErrNotAllowed, port, p.to)
+		}
+	}
 	return nil
+}
+
+// publications is the last list of the published ports, shared by every guard of the process.
+var publications struct {
+	sync.Mutex
+	at   time.Time
+	list []publication
+}
+
+// currentPublications returns the published ports of the running containers, at most listenerTTL old.
+func currentPublications(ctx context.Context) ([]publication, error) {
+	publications.Lock()
+	defer publications.Unlock()
+	if publications.list != nil && time.Since(publications.at) < listenerTTL {
+		return publications.list, nil
+	}
+	list, err := publishedPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = []publication{}
+	}
+	publications.list, publications.at = list, time.Now()
+	return list, nil
 }
 
 // checkProxy returns an error unless the docker-proxy pid, which listens on port for a container,

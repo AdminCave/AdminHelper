@@ -28,13 +28,20 @@ type fakeHost struct {
 	listCalls int
 	names     map[int32]string
 	args      map[int32][]string
+	pubs      []publication
+	pubsErr   error
+	pubsCalls int
 }
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
-	oldAddrs, oldList, oldName, oldArgs := interfaceAddrs, listeners, processName, processArgs
+	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
 	interfaceAddrs = func() ([]net.Addr, error) { return h.addrs, h.addrsErr }
+	publishedPorts = func(context.Context) ([]publication, error) {
+		h.pubsCalls++
+		return h.pubs, h.pubsErr
+	}
 	listeners = func(context.Context) ([]listener, error) {
 		h.listCalls++
 		return h.list, h.listErr
@@ -57,10 +64,13 @@ func stubHost(t *testing.T, h *fakeHost) {
 		snapshot.Lock()
 		snapshot.list, snapshot.at = nil, time.Time{}
 		snapshot.Unlock()
+		publications.Lock()
+		publications.list, publications.at = nil, time.Time{}
+		publications.Unlock()
 	}
 	resetSnapshot()
 	t.Cleanup(func() {
-		interfaceAddrs, listeners, processName, processArgs = oldAddrs, oldList, oldName, oldArgs
+		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
 		resetSnapshot()
 	})
 }
@@ -525,5 +535,96 @@ func TestTheHostSeamsReadTheListenersAndTheirProcesses(t *testing.T) {
 	}
 	if _, err := argsOf(context.Background(), 0); err == nil || !strings.Contains(err.Error(), "the owner is unknown") {
 		t.Errorf("argsOf(0) = %v, want the owner unknown", err)
+	}
+}
+
+func pub(hostIP string, hostPort, to uint16) publication {
+	var ip netip.Addr
+	if hostIP != "" {
+		ip = netip.MustParseAddr(hostIP)
+	}
+	return publication{hostIP: ip, hostPort: hostPort, to: to}
+}
+
+func TestGuardNeverProbesAPortDockerForwardsToABlockedOneWithoutAListener(t *testing.T) {
+	stubHost(t, &fakeHost{
+		addrs: []net.Addr{ipNet("192.0.2.10/24")},
+		list:  []listener{lst("127.0.0.1", 18080, 50)},
+		names: map[int32]string{50: "nginx"},
+		pubs: []publication{
+			pub("", 13306, 3306), pub("0.0.0.0", 2222, 22), pub("::", 19100, 9100), pub("127.0.0.1", 19107, 9107),
+			pub("192.0.2.10", 13307, 3306), pub("", 8080, 80), pub("", 18080, 22),
+		},
+	})
+	g := NewGuard()
+
+	for _, c := range []struct {
+		address string
+		refused bool
+	}{
+		{"127.0.0.1:13306", true},
+		{"192.0.2.10:13306", true},
+		{"127.0.0.1:2222", true},
+		{"127.0.0.1:19100", true},
+		{"127.0.0.1:19107", true},
+		{"192.0.2.10:19107", false},
+		{"192.0.2.10:13307", true},
+		{"127.0.0.1:13307", false},
+		{"127.0.0.1:8080", false},
+		{"127.0.0.1:9999", false},
+		// docker forwards by NAT ahead of the listener on the port.
+		{"127.0.0.1:18080", true},
+	} {
+		err := allowed(g, "tcp4", c.address)
+		if c.refused && (!errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "forwards to port")) {
+			t.Errorf("%s: %v, want it refused for the container port", c.address, err)
+		}
+		if !c.refused && err != nil {
+			t.Errorf("%s: %v, want it allowed", c.address, err)
+		}
+	}
+}
+
+func TestGuardRefusesWhenThePublishedPortsCannotBeRead(t *testing.T) {
+	h := &fakeHost{
+		list:    []listener{lst("127.0.0.1", 8080, 50)},
+		names:   map[int32]string{50: "nginx"},
+		pubsErr: errors.New("docker ps: exit status 1"),
+	}
+	stubHost(t, h)
+	g := NewGuard()
+
+	if err := allowed(g, "tcp4", "127.0.0.1:13306"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "published ports") {
+		t.Fatalf("got %v, want it refused because the published ports cannot be read", err)
+	}
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "published ports") {
+		t.Fatalf("a port with a listener: %v, want it refused as well, docker forwards ahead of it", err)
+	}
+	if h.pubsCalls != 2 {
+		t.Fatalf("published ports read %d times, want a new read per dial after a failure", h.pubsCalls)
+	}
+}
+
+func TestGuardReadsThePublishedPortsOncePerSnapshot(t *testing.T) {
+	h := &fakeHost{pubs: []publication{pub("", 8080, 80)}}
+	stubHost(t, h)
+	g := NewGuard()
+
+	for range 3 {
+		if err := allowed(g, "tcp4", "127.0.0.1:9999"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if h.pubsCalls != 1 {
+		t.Fatalf("published ports read %d times, want once within %s", h.pubsCalls, listenerTTL)
+	}
+	publications.Lock()
+	publications.at = publications.at.Add(-listenerTTL)
+	publications.Unlock()
+	if err := allowed(g, "tcp4", "127.0.0.1:9999"); err != nil {
+		t.Fatal(err)
+	}
+	if h.pubsCalls != 2 {
+		t.Fatalf("published ports read %d times, want a new read after %s", h.pubsCalls, listenerTTL)
 	}
 }
