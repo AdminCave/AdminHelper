@@ -1,5 +1,5 @@
 # Monitoring-Module: Nachlese zu Bindung, Grenzen, Erkennung und Zugangsdaten-Datei — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-16 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-16 · Review: pro Task
 Spec: docs/features/kern-monitoring-16.md (Roadmap R-1254, R-1260, R-1262, R-1263, R-1295)
 Heavy: linux-full — apps/agent (Zugangsdaten-Datei) und apps/monitoring (Grenzen, Erkennung); Windows über die PR-CI (go-windows)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -129,6 +129,20 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
+
+### T11 — PR-CI: Ersetzen der Zugangsdaten-Datei unter Windows trotz offenem Leser  [ ]
+Komponente: agent · Dateien: apps/agent/internal/credentials/store_windows.go
+Änderung: `replace` benennt über `os.Root.Rename` um (`FILE_RENAME_POSIX_SEMANTICS` mit Rückfall, Go `internal/syscall/windows.Renameat`) statt `os.Rename` (`MoveFileEx`): ersetzt die Datei auch, wenn ein Leser sie mit `FILE_SHARE_DELETE` offen hält (Microsoft-Doku `FILE_RENAME_INFORMATION`). Der Wiederholversuch für Halter ohne Delete-Freigabe bleibt.
+Beweis: PR #460 CI 2026-11-11 · ci.yml run 42981418721, job Go Agent (test, Windows), store_windows_test.go:164 (`TestSetReplacesAFileThatIsOpenForReading`: rename … Access is denied)
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/credentials/...
+Doku: keine (internes Dateiverhalten)
+
+### T12 — PR-CI: Credential-Ref-Muster nach app.core.bounds  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/bounds.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/models.py, apps/monitoring/app/discovery.py
+Änderung: `CREDENTIAL_REF_PATTERN`/`CREDENTIAL_REF_MAX` wandern aus `check_configs` nach `app.core.bounds`; `models.py` importiert nur noch aus `app.core` (Modulgrenze von main, `test_models_import_only_app_core`).
+Beweis: PR #460 CI 2026-11-11 · ci.yml run 42981418721, job Monitoring (pytest), tests/test_module_boundaries.py::test_models_import_only_app_core
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_boundaries.py tests/test_check_configs.py tests/test_discovery_match.py
+Doku: keine (interne Verschiebung)
 
 ## Entscheidungen
 - Plan: R-1264 fährt nicht mit (Migration für Grabsteine, sichtbares Verhalten beim Katalog-Rollout: Frage an Kevin),
