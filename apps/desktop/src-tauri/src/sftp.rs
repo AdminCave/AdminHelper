@@ -238,10 +238,42 @@ pub fn suggested_name(path: &str) -> String {
             }
         })
         .collect();
+    #[cfg(windows)]
+    let name = windows_name(&name);
     if name.is_empty() || name == "." || name == ".." {
         "download".to_string()
     } else {
         name
+    }
+}
+
+/// `name` as Windows takes it for a file (Microsoft, "Naming Files, Paths, and Namespaces"):
+/// `<>"|?*` become `_`, spaces and periods at the end go, and a reserved device name, also with an
+/// extension (`NUL.txt` is `NUL`), gets `_` before the extension. `\`, `:` and control
+/// characters are gone already.
+#[cfg(any(windows, test))]
+fn windows_name(name: &str) -> String {
+    let mapped: String = name
+        .chars()
+        .map(|c| if "<>\"|?*".contains(c) { '_' } else { c })
+        .collect();
+    let trimmed = mapped.trim_end_matches(['.', ' ']);
+    let stem = trimmed.split('.').next().unwrap_or("");
+    let device = stem.trim_end_matches(' ').to_uppercase();
+    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|port| {
+            device.strip_prefix(port).is_some_and(|n| {
+                let mut digits = n.chars();
+                matches!(
+                    (digits.next(), digits.next()),
+                    (Some('1'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+                )
+            })
+        });
+    if reserved {
+        format!("{stem}_{}", &trimmed[stem.len()..])
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -897,6 +929,43 @@ mod tests {
         assert_eq!(suggested_name("/srv/.."), "download");
         assert_eq!(suggested_name("/srv/./"), "download");
         assert_eq!(suggested_name("/srv/.hidden"), ".hidden");
+    }
+
+    #[test]
+    fn a_name_windows_does_not_take_is_made_one_it_does() {
+        assert_eq!(windows_name("NUL.tar.gz"), "NUL_.tar.gz");
+        assert_eq!(windows_name("con"), "con_");
+        assert_eq!(windows_name("Aux.txt"), "Aux_.txt");
+        assert_eq!(windows_name("com\u{b9}"), "com\u{b9}_");
+        assert_eq!(windows_name("LPT9.log"), "LPT9_.log");
+        assert_eq!(windows_name("a."), "a");
+        assert_eq!(windows_name("b "), "b");
+        assert_eq!(windows_name("nul. . "), "nul_");
+        assert_eq!(windows_name("x?y<z>|\"w*"), "x_y_z___w_");
+        assert_eq!(windows_name(".."), "");
+    }
+
+    #[test]
+    fn a_name_windows_takes_stays() {
+        for name in [
+            "notes.txt",
+            ".hidden",
+            "COM10",
+            "LPT0.txt",
+            "console.log",
+            "nullable",
+            "a b.c",
+        ] {
+            assert_eq!(windows_name(name), name);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_download_is_offered_under_a_name_windows_takes() {
+        assert_eq!(suggested_name("/srv/NUL.txt"), "NUL_.txt");
+        assert_eq!(suggested_name("/srv/what?.txt"), "what_.txt");
+        assert_eq!(suggested_name("/srv/..."), "download");
     }
 
     #[tokio::test]

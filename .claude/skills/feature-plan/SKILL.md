@@ -129,7 +129,9 @@ Ankündigung zählt nur committet, und der Plan-Commit am Gate ist der Weg dorth
 **`--zug tasks/<zug>.md`** — ein Zug (CLAUDE.md §2): die wartenden Zeilen, deren Spalte `Ledger` diesen Pfad nennt
 (`roadmap.py zuege`), jede Klasse:
 - Der Slug ist der des Zugs (`klein-doku-3` → `feature/klein-doku-3`); `klein-` plant nur die Klein-Session, alle
-  anderen die Kern-Session (`--stufe`).
+  anderen die Kern-Session (`--stufe`). Einen neuen Zug-Slug vorher gegen `origin/main:tasks/` und die
+  Remote-Branches prüfen: ein gemergter Slug überschriebe Spec, Ledger und `changelog.d`-Fragment des alten Zugs
+  (`roadmap.py status`/`add --ledger` lehnen einen Pfad auf `origin/main` ab, R-1291).
 - **Überlappung zuerst:** `bash scripts/dev/overlap.sh --except feature/<slug> <Dateien der Zeilen>`. Ändert ein
   offener Branch dieselben Dateien, fährt die Zeile nicht mit: `roadmap.py status R-nnnn geplant --ledger
   tasks/<nächster-zug>.md --note "<bisherige Notiz>; überlappt feature/<x>"`.

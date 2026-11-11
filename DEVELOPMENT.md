@@ -704,7 +704,10 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   ihre Zeile `abgeschlossen` in der Datei steht.
   `--ledger` schreibt die Spalte `Ledger` wie `add --ledger`, auch ohne Statuswechsel — so
   bekommt eine aeltere Zeile ihr Ledger nachgetragen; `next` und die Parallel-Pruefung am
-  Gate lesen es dort, nicht aus der Notiz. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
+  Gate lesen es dort, nicht aus der Notiz. Einen Pfad, der auf `origin/main` liegt (das Ledger
+  eines gemergten Zugs) und nicht schon in der Spalte der Zeile steht, lehnen `status` und `add`
+  mit Exit 2 ab: der Plan eines neuen Zugs ueberschriebe dessen Spec, Ledger und
+  `changelog.d`-Fragment (R-1291); ohne `origin/main` prueft das Skript nichts. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
   die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
   ist Exit 2.
 - `approve` ist `geplant` -> `freigegeben`, die Freigabe, die die Session nach dem Plan-Commit von `/feature-plan`
