@@ -119,8 +119,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onl
 Doku: → T14
 Abhängt von: T2
 
-### T10 — R-1242: Module Keycloak und OpenLDAP  [ ]
+### T10 — R-1242: Module Keycloak und OpenLDAP  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/keycloak.py, apps/monitoring/app/catalog/modules/openldap.py, apps/monitoring/tests/test_catalog_keycloak.py, apps/monitoring/tests/test_catalog_openldap.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b41cccd58 2026-11-12T16:08:22+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T10.verdict.json)
 Änderung: Keycloak `/health/ready` auf dem Management-Port 9000 (nur mit `health-enabled`, sonst 404: Grenze in den
 Docstring für die Doku), Feld `status`; OpenLDAP Unit `slapd` bzw. Container, LDAP-Protokoll (`proto` mit
 `ldap`), Zertifikat (StartTLS/636). `contextCSN` → T15.
@@ -290,3 +292,23 @@ Doku: → T14
   coolwsd, der annimmt und weder im Klartext noch in TLS HTTP antwortet, wäre sonst grün (`recognizeOn` meldet dann
   `ok` mit `unknown`). Ab 26.04 hat das Image einen HEALTHCHECK (`coolwsd --probe` → `/livez`), 25.04 keinen.
   `nextcloud/aio-collabora` und `nextcloud/aio-onlyoffice` bleiben draußen (eigene Images).
+- 2026-11-12 (T10): Keycloak abweichend vom Plan mit dem Feld `status_code` statt `status`: `/health/ready` antwortet
+  200 mit `UP` und 503 mit `DOWN`, der Code trägt die Aussage, und `fetch` liest JSON nur bei einem `data.*`-Feld; bei
+  einem 404 (ohne `health-enabled`) verdeckte die JSON-Fehlermeldung den Code. Port 9000, Schema fest `http` wie bei
+  Vaultwarden, Mattermost und GitLab: das Management erbt TLS vom Hauptserver (`http-management-scheme`) und den Pfad
+  von `http-relative-path`; beides steht als Grenze im Docstring, Schema-Erkennung → R-1395 `neu`. Images
+  `quay.io/keycloak/keycloak` und `keycloak/keycloak` (beide nötig, `image_repo` streift nur Docker-Hub-Präfixe),
+  ab 25.0 `EXPOSE 9000`, kein HEALTHCHECK; vor 25.0 bindet `_lacks_port` die Prüfung nicht. Keycloak liefert keine
+  Unit, `keycloak.service` ist die übliche Benennung (nicht verifiziert gegen eine Distribution). `bitnami/keycloak`
+  und `jboss/keycloak` sind eingestellt und bleiben draußen.
+- 2026-11-12 (T10): OpenLDAP mit anonymem WhoAmI (proto `ldap`) auf 389 an Container und Unit, jede LDAP-Antwort zählt
+  (auch ein Ergebniscode der ACL), `busy`/`unavailable` und Verbindungsfehler sind kritisch. Zertifikat abweichend vom
+  Plan nur per StartTLS auf 389 und nur am Paket: `osixia/openldap` 1.5.0 verlangt im TLS ein Client-Zertifikat
+  (`LDAP_TLS_VERIFY_CLIENT: demand`), ein Prüfer auf 636 träfe bei einem slapd ohne LDAPS über `pickPort` den
+  Klartext-Port. Schwellen fest 22/9 Tage (25/10 % der 90 Tage eines ACME-Zertifikats, Konzept §5), weil der
+  Agent-Fühler nur `days_left` kennt → R-1394 `neu`; Intervall 3600 s. Ohne TLS (Debian-Standard) ist die Prüfung
+  kritisch, der Docstring sagt das. Dazu `sub_state eq exited` kritisch: die aus dem Init-Skript erzeugte
+  `slapd.service` (ohne `pidfile:` `RemainAfterExit=yes`, keine Main-PID; systemd v257 `sysv-generator.c:163-170`,
+  `service.c` `service_good_except_bus_name`, `service_enter_exited_or_stop`) steht im Betrieb auf `running` und
+  nach dem Tod von slapd auf `active (exited)`; eine native Unit kommt dort nicht hin.
+  contextCSN und cn=Monitor bleiben bei T15.
