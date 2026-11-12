@@ -10,8 +10,10 @@ Heavy: none — Doku, UI-Texte, Sortierung und ein Filter im Monitoring-Dienst, 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1380: MonitorCheckModal ignoriert eine verspätete fetchStatus-Antwort  [ ]
+### T1 — R-1380: MonitorCheckModal ignoriert eine verspätete fetchStatus-Antwort  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitorCheckModal.svelte, apps/desktop/ui/src/components/monitoring/MonitorCheckModal.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c11ca1328 2026-11-12T16:22:37+01:00
+Review: approve (.ah-out/review/klein-nachlese-3/T1.verdict.json)
 Beweis: reviewer arch-monitoring-module-2 2026-11-12 · feature/arch-monitoring-module-2@af3a20207 MonitorCheckModal.svelte:79 (T11)
 Änderung: Die Antwort von `fetchStatus` setzt `serverChecks` nur, wenn das Modal seit dem Aufruf nicht geschlossen oder neu geöffnet wurde (Öffnungszähler oder Abbruchmarke). Test: Modal öffnen, schließen und für anderen Server neu öffnen, die erste Antwort danach auflösen, die Partnerliste bleibt die der zweiten.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitorCheckModal.test.ts
