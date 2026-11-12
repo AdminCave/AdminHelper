@@ -586,37 +586,47 @@ hc -a -m "commit -a, key"
   && ok "armed: commit -a with a sec dedup key is refused" || bad "commit -a key: rc=$rc out=$OUT"
 git -C "$HFIX" checkout -q -- docs/note.md
 printf 'clean line\n' >> "$HFIX/docs/note.md"
-hc -a -m "a clean change"
+hc -a -m "docs: a clean change"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a clean change is committed" || bad "clean: rc=$rc out=$OUT"
+# R-1359: the subject is a Conventional Commit; three task commits on main were not.
+H0=$(heads)
+for m in "a free subject" "Task: kern-x T1 (R-1)" "feat:no space" "feature: x" "feat(): x"; do
+  hc --allow-empty -m "$m"
+  [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "no Conventional Commit" <<<"$OUT" && ! grep -qF -- "$m" <<<"$OUT" \
+    && ok "armed: subject '$m' is refused, not echoed" || bad "subject '$m': rc=$rc out=$OUT"
+done
+hc --allow-empty -m "# a comment"$'\n\n'"fix(hooks)!: y"
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a typed subject with scope and ! below a comment is committed" \
+  || bad "conventional subject: rc=$rc out=$OUT"
 # commit-msg (R-0197): a token in the message stops the commit itself, not only the
 # push. The merge commits further down pass this hook with git's own message.
 H0=$(heads)
-hc --allow-empty -m "subject $T_GH"
+hc --allow-empty -m "test: subject $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:1 (a token pattern)" <<<"$OUT" \
   && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
-hc --allow-empty -m "subject with gh""p_short only"
+hc --allow-empty -m "test: subject with gh""p_short only"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
 # R-0213: a scissors line typed into -m or -F hides nothing; git keeps what follows
 # it. git runs the hook with GIT_EDITOR=: there, even when the caller set an editor.
 CUT='# ------------------------ >8 ------------------------'
 H0=$(heads)
-hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+hc --allow-empty -m "test: subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: a token below a scissors line typed into -m is refused (R-0213)" || bad "msg scissors -m: rc=$rc out=$OUT"
-printf 'subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$WORK/scissors-msg.txt"
+printf 'test: subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$WORK/scissors-msg.txt"
 hc --allow-empty -F "$WORK/scissors-msg.txt"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: ... and in -F" || bad "msg scissors -F: rc=$rc out=$OUT"
 rm -f -- "$WORK/scissors-msg.txt"
 # An editor that keeps the template git wrote and types a subject above it.
-printf '#!/bin/sh\n{ echo "typed subject"; cat "$1"; } > "$1.new" && mv "$1.new" "$1"\n' > "$WORK/ed-keep.sh"
+printf '#!/bin/sh\n{ echo "test: typed subject"; cat "$1"; } > "$1.new" && mv "$1.new" "$1"\n' > "$WORK/ed-keep.sh"
 chmod 755 "$WORK/ed-keep.sh"
-GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "test: subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: ... and in -m with GIT_EDITOR set (git hands the hook GIT_EDITOR=:)" || bad "msg scissors -m editor set: rc=$rc out=$OUT"
 # The same with a diff header typed below the line: without an editor the hook
 # says nothing of one, so review.sh reads on.
-TYPED="subject"$'\n\n'"$CUT"$'\n'"diff --git a/f b/f"$'\n'"+below $T_GH"
+TYPED="test: subject"$'\n\n'"$CUT"$'\n'"diff --git a/f b/f"$'\n'"+below $T_GH"
 hc --allow-empty -m "$TYPED"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
   && ok "armed: a diff header typed below the scissors line in -m hides nothing" || bad "msg typed diff -m: rc=$rc out=$OUT"
@@ -632,7 +642,7 @@ GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "$TYPED"
 # so a diff that removes a token line commits.
 printf 'clean\n' > "$HFIX/docs/old-token.md"; git -C "$HFIX" add -- docs/old-token.md
 GIT_EDITOR="$WORK/ed-keep.sh" hc -v
-[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "typed subject" ] \
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "test: typed subject" ] \
   && ok "armed: commit -v with an editor, whose diff removes a token line, is committed" || bad "msg commit -v: rc=$rc out=$OUT"
 rm -f -- "$WORK/ed-keep.sh"
 
@@ -646,7 +656,7 @@ git -C "$HFIX" -c core.hooksPath=/dev/null commit -qam "other hook" >/dev/null 2
 git -C "$HFIX" switch -q -
 git -C "$HFIX" worktree add -q "$WORK/hooked-wt" other 2>/dev/null
 printf 'x\n' >> "$WORK/hooked-wt/docs/note.md"
-( cd "$WORK/hooked-wt" && git commit -qam "in the worktree" >/dev/null 2>&1 )
+( cd "$WORK/hooked-wt" && git commit -qam "test: in the worktree" >/dev/null 2>&1 )
 [ -f "$WORK/hooked-wt/hook-ran.txt" ] && [ ! -f "$HFIX/hook-ran.txt" ] \
   && ok "a worktree runs the hook of its own branch" || bad "worktree hook: $(ls "$WORK/hooked-wt" "$HFIX")"
 
@@ -682,7 +692,7 @@ chmod 755 "$HFIX/scripts/dev/hooks/prepare-commit-msg"
 for b in pick-clean merge-clean; do
   git -C "$HFIX" switch -q -c "$b" "$MAIN"
   printf '%s\n' "$b" > "$HFIX/docs/$b.md"; git -C "$HFIX" add -- "docs/$b.md"
-  git -C "$HFIX" commit -qm "$b" >/dev/null 2>&1
+  git -C "$HFIX" commit -qm "test: $b" >/dev/null 2>&1
   git -C "$HFIX" switch -q "$MAIN"
 done
 OUT=$(git -C "$HFIX" cherry-pick pick-clean 2>&1); rc=$?
@@ -723,7 +733,7 @@ git -C "$HFIX" am --abort >/dev/null 2>&1
   && ok "... and git am --abort leaves nothing behind" || bad "am left behind: $(git -C "$HFIX" status --porcelain)"
 git -C "$HFIX" switch -q -c am-clean "$MAIN"
 printf 'am\n' > "$HFIX/docs/am-clean.md"; git -C "$HFIX" add -- docs/am-clean.md
-git -C "$HFIX" commit -qm "am-clean" >/dev/null 2>&1
+git -C "$HFIX" commit -qm "test: am-clean" >/dev/null 2>&1
 git -C "$HFIX" format-patch -1 --stdout am-clean > "$WORK/clean.patch" 2>/dev/null
 git -C "$HFIX" switch -q "$MAIN"
 OUT=$(git -C "$HFIX" am "$WORK/clean.patch" 2>&1); rc=$?

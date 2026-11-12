@@ -11,7 +11,8 @@
 # outside the model and turns that into one mechanical sequence:
 #
 #    1. input             a ledger under tasks/*.md (not the README or the
-#                         template, no symlink), the task exists, not on main
+#                         template, no symlink), the task exists, not on main,
+#                         a Conventional-Commit subject (as the commit-msg hook)
 #    2. manual task       `Komponente: —` is closed by hand (exit 74)
 #    3. staging           --stage stages exactly the task's `Dateien:`; no file
 #                         half staged; the index is held by git write-tree
@@ -83,6 +84,13 @@ LEDGER="$(realpath -m -s --relative-to="$ROOT" -- "$L_ABS")"
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"
+# The same subject check as the commit-msg hook (R-1359), here before the Verify,
+# so a free-text subject costs no suite run.
+SUBJECT_RE='^((feat|fix|chore|refactor|docs|test|perf|tune|build|ci|style|revert)(\([^)]+\))?!?: [^[:space:]]|Merge |Revert "|(fixup|squash|amend)! )'
+if [ -n "$MSGFILE" ]; then SUBJECT="$(awk '!/^[[:space:]]*(#|$)/ { print; exit }' "$MSGFILE")"
+else SUBJECT="$(awk '!/^[[:space:]]*(#|$)/ { print; exit }' <<<"$MSG")"; fi
+# Not echoed: a subject may carry what review.sh sec would refuse.
+[[ $SUBJECT =~ $SUBJECT_RE ]] || die "the subject is no Conventional Commit (<type>[(scope)][!]: <text>)"
 case "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" in
   main|master) die "refusing to commit on the default branch — a task is closed on its feature branch" ;;
 esac

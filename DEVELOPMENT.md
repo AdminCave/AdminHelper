@@ -606,7 +606,7 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
 - **Commit einer Task** nur ueber `task-close.sh` (Abschnitt „Task schliessen“).
 - **Token-Hooks:** `git config core.hooksPath scripts/dev/hooks`, einmal im Haupt-Checkout; Worktrees
   erben es. `pre-commit`, `prepare-commit-msg`, `pre-merge-commit` und `pre-applypatch` fahren
-  `review.sh sec --staged`, `commit-msg` prueft die Nachricht, `pre-push` jeden Commit, den ein Push
+  `review.sh sec --staged`, `commit-msg` prueft die Nachricht und verlangt einen Conventional-Commit-Betreff (`<typ>[(scope)][!]: <text>`; `Merge …`, `Revert "…"`, `fixup!`/`squash!`/`amend!` gehen durch, `task-close.sh` prueft ihn schon vor dem Verify), `pre-push` jeden Commit, den ein Push
   nach draussen bringt. Gemeldet werden Pfad oder Datei:Zeile, nie der Inhalt. Was an den Hooks
   vorbeigeht, faengt der CI-Job „Public repo guard (review.sh sec)“. Der PreToolUse-Hook
   `scripts/dev/hooks/harness-guard.sh` verweigert `git commit --no-verify`, Loeschen per Glob in

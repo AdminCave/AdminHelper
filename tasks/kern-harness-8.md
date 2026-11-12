@@ -1,5 +1,5 @@
 # Adressfilter im PR-Text, .github-Skripttests im scripts-Block, Commit-Betreff geprüft — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-8 · Review: am Ende
+Status: bereit · Branch: feature/kern-harness-8 · Review: am Ende
 Spec: docs/features/kern-harness-8.md (Roadmap R-1325, R-1352, R-1359)
 Heavy: none — nur Harness-Skripte und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,8 +26,10 @@ Pfad-Eintrag (grün und rot), `harness_consistency_test.sh` verlangt jedes `.git
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Harness-intern)
 
-### T3 — R-1359: commit-msg und task-close verlangen einen Conventional-Commit-Betreff  [ ]
+### T3 — R-1359: commit-msg und task-close verlangen einen Conventional-Commit-Betreff  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/commit-msg, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, scripts/tests/guard_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1c35ba5de 2026-11-12T15:22:34+01:00
+Review: am Ende (Branch-Review)
 Änderung: `commit-msg` und `task-close.sh` (Schritt 1, vor dem Verify, Exit 2) lesen die erste Zeile, die weder leer
 noch `#…` ist, und verlangen `<typ>[(scope)][!]: <text>` (Typen in der Spec) oder `Merge `, `Revert "`,
 `fixup!`/`squash!`/`amend!`. Tests: freier Betreff und Betreff `Task: …` rot, konformer und Merge-Betreff grün; die
