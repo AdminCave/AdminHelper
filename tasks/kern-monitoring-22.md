@@ -42,8 +42,10 @@ zweiter Name derselben Socket-Datei wird abgelehnt (Linux im Test-Verzeichnis, F
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T5 — R-1300: AST-Test erkennt jede Startform  [ ]
+### T5 — R-1300: AST-Test erkennt jede Startform  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @78c87c465 2026-11-12T11:03:35+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T5.verdict.json)
 Änderung: `commandStarts` erkennt zusätzlich ein `exec.Cmd`-Literal (auch `&exec.Cmd{}`), `syscall.ForkExec`,
 `syscall.Exec`, `syscall.StartProcess` und dieselben aus `golang.org/x/sys/unix`; `TestCommandStartsSeesAStart`
 nimmt jede Form als Gegenprobe auf.
@@ -78,3 +80,5 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Harness, Kommentar im Skript)
 
 ## Entscheidungen
+- T5: Der AST-Test meldet jeden Wert vom Typ exec.Cmd (Literal, new, Nullwert, Feld), nur ein Zeiger darauf gilt nicht als Start; dazu die Windows-Starts (CreateProcess, CreateProcessAsUser, ShellExecute). Ein roher syscall.Syscall mit SYS_EXECVE bleibt eine genannte Grenze.
+- T3: Läuft ein dockerd, ohne dass der Standard-Socket antwortet (rootless, eigener -H), lehnt der Guard jede TCP-Probe auf eigene Adressen ab (fail-closed); Doku in T7.

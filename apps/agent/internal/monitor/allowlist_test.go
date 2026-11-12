@@ -22,8 +22,9 @@ import (
 
 // TestOnlyAllowlistStartsCommands parses every non-test file of the packages that start tools, this
 // one, probe and discovery, whatever its build tag, and fails on a start of a command outside the
-// allowlist: exec.Command, exec.CommandContext, os.StartProcess, execx.Run, execx.RunEnv, or a call of
-// execTimed, which skips the allowlist check. Only this package's allowlist.go may: execTimed is there.
+// allowlist: exec.Command, exec.CommandContext, os.StartProcess, execx.Run, execx.RunEnv, a hand-built
+// exec.Cmd, the syscall, x/sys/unix and x/sys/windows process starts, or a call of execTimed, which
+// skips the allowlist check. Only this package's allowlist.go may: execTimed is there.
 // The least number of files per package is its counter-check: a glob that found few would pass.
 func TestOnlyAllowlistStartsCommands(t *testing.T) {
 	for _, pkg := range []struct {
@@ -71,12 +72,33 @@ func commandStarts(t *testing.T, file string) []string {
 	forbidden := map[string]bool{
 		"os/exec.Command": true, "os/exec.CommandContext": true, "os.StartProcess": true,
 		"adminhelper-agent/internal/execx.Run": true, "adminhelper-agent/internal/execx.RunEnv": true,
+		"syscall.ForkExec": true, "syscall.Exec": true, "syscall.StartProcess": true,
+		"syscall.CreateProcess": true, "syscall.CreateProcessAsUser": true,
+		"golang.org/x/sys/unix.Exec":             true,
+		"golang.org/x/sys/windows.CreateProcess": true, "golang.org/x/sys/windows.CreateProcessAsUser": true,
+		"golang.org/x/sys/windows.ShellExecute": true,
+	}
+	// An exec.Cmd value (literal, new, zero value, field) starts without exec.Command; only a pointer
+	// to one, as a parameter or a field, is no start. A raw syscall.Syscall(SYS_EXECVE) stays unseen.
+	isCmd := func(x ast.Expr) bool {
+		sel, ok := x.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		return ok && names[pkg.Name] == "os/exec" && sel.Sel.Name == "Cmd"
 	}
 	var found []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch e := n.(type) {
+		case *ast.StarExpr:
+			if isCmd(e.X) {
+				return false
+			}
 		case *ast.SelectorExpr:
-			if pkg, ok := e.X.(*ast.Ident); ok && forbidden[names[pkg.Name]+"."+e.Sel.Name] {
+			if isCmd(e) {
+				found = append(found, fmt.Sprintf("%d: exec.Cmd", fset.Position(e.Pos()).Line))
+			} else if pkg, ok := e.X.(*ast.Ident); ok && forbidden[names[pkg.Name]+"."+e.Sel.Name] {
 				found = append(found, fmt.Sprintf("%d: %s.%s", fset.Position(e.Pos()).Line, pkg.Name, e.Sel.Name))
 			}
 		case *ast.Ident:
@@ -90,7 +112,8 @@ func commandStarts(t *testing.T, file string) []string {
 }
 
 // TestCommandStartsSeesAStart is the counter-check of the AST test: a file that starts a command,
-// under an alias, through execx and through execTimed, is found.
+// under an alias, through execx, through execTimed, through a hand-built or zero exec.Cmd and through
+// the syscall forms, is found; a mere *exec.Cmd type is not.
 func TestCommandStartsSeesAStart(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "start.go")
 	src := "package monitor\n\nimport (\n\tx \"os/exec\"\n\t\"os\"\n\t\"adminhelper-agent/internal/execx\"\n)\n\n" +
@@ -98,12 +121,29 @@ func TestCommandStartsSeesAStart(t *testing.T) {
 		"func b() { _, _ = os.StartProcess(\"true\", nil, nil) }\n" +
 		"func c() { _, _ = execTimed(nil, 0, nil, \"true\") }\n" +
 		"func d() { _, _ = execx.Run(nil, 0, \"true\") }\n" +
-		"func e() { _, _ = execx.RunEnv(nil, 0, nil, \"true\") }\n"
+		"func e() { _, _ = execx.RunEnv(nil, 0, nil, \"true\") }\n" +
+		"func f() { _ = x.Cmd{Path: \"true\"} }\n" +
+		"func g() { _ = &x.Cmd{Path: \"true\"} }\n" +
+		"func h() { _ = new(x.Cmd) }\n" +
+		"func i() { _, _ = syscall.ForkExec(\"true\", nil, nil) }\n" +
+		"func j() { _ = syscall.Exec(\"true\", nil, nil) }\n" +
+		"func k() { _, _, _ = syscall.StartProcess(\"true\", nil, nil) }\n" +
+		"func l() { _ = unix.Exec(\"true\", nil, nil) }\n" +
+		"func m() { _ = syscall.CreateProcess }\n" +
+		"func n() { _ = windows.CreateProcess }\n" +
+		"func o() { var c *x.Cmd; _ = c }\n" +
+		"func p() { var c x.Cmd; _ = c.Start() }\n" +
+		"func q() { _ = windows.ShellExecute }\n"
+	src = strings.Replace(src, "\"os\"\n", "\"os\"\n\t\"syscall\"\n\t\"golang.org/x/sys/unix\"\n\t\"golang.org/x/sys/windows\"\n", 1)
 	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got := commandStarts(t, file)
-	want := []string{"9: x.Command", "10: os.StartProcess", "11: execTimed", "12: execx.Run", "13: execx.RunEnv"}
+	// Line numbers move by the three imports added above; o (a mere *exec.Cmd) is no start.
+	want := []string{"12: x.Command", "13: os.StartProcess", "14: execTimed", "15: execx.Run", "16: execx.RunEnv",
+		"17: exec.Cmd", "18: exec.Cmd", "19: exec.Cmd", "20: syscall.ForkExec", "21: syscall.Exec",
+		"22: syscall.StartProcess", "23: unix.Exec", "24: syscall.CreateProcess", "25: windows.CreateProcess",
+		"27: exec.Cmd", "28: windows.ShellExecute"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("found %q, want %q", got, want)
 	}
