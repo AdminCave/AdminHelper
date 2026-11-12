@@ -225,6 +225,30 @@ describe('AppShell: server-only pages', () => {
     expect(h.Infrastructure).not.toHaveBeenCalled();
   });
 
+  it('/monitoring is for an admin session: a plain user gets the dashboard and no entry', async () => {
+    await inWorkspace({ ...kundeA, kind: 'server', url: 'https://ah.example.com' });
+    settingsState.set({ mode: 'server' });
+    sessionState.set({ serverUrl: 'https://ah.example.com', username: 'alice', isAdmin: false });
+    replace('/monitoring');
+    const view = render(AppShell);
+
+    expect(h.Dashboard).toHaveBeenCalled();
+    expect(h.Monitoring).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-nav="monitoring"]')).toBeNull();
+    expect(view.container.querySelector('[data-nav="infrastructure"]')).not.toBeNull();
+  });
+
+  it('/monitoring with an admin session shows the page', async () => {
+    await inWorkspace({ ...kundeA, kind: 'server', url: 'https://ah.example.com' });
+    settingsState.set({ mode: 'server' });
+    sessionState.set({ serverUrl: 'https://ah.example.com', username: 'admin', isAdmin: true });
+    replace('/monitoring');
+    const view = render(AppShell);
+
+    expect(h.Monitoring).toHaveBeenCalled();
+    expect(view.container.querySelector('[data-nav="monitoring"]')).not.toBeNull();
+  });
+
   it('/infrastructure with a server session shows the page', async () => {
     await inWorkspace({ ...kundeA, kind: 'server', url: 'https://ah.example.com' });
     settingsState.set({ mode: 'server' });

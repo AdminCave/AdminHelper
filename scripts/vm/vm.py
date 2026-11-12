@@ -2030,14 +2030,29 @@ df -h /
 # up, and with it its home with the synced checkout and its key, and the
 # NOPASSWD rule nuageinit wrote for it (the firewall runs no nuageinit that
 # would rewrite it). /etc/rc makes a new hostid, the ssh plugin new host keys
-# under /conf/sshd.
+# under /conf/sshd. forget-webgui-cert.php drops the web GUI certificate of the
+# first boot, so each lease makes its own key; the config backups carry it too.
+# Both values are shell-quoted at the call.
+OPNSENSE_FORGET_CERT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "opnsense", "forget-webgui-cert.php"
+)
 OPNSENSE_CLEAN = OPNSENSE_PATH + (
+    "sudo -n php -r %(forget)s /conf/config.xml && "
+    "sudo -n sh -c 'rm -f /conf/backup/config-*.xml' && "
     "if id %(user)s >/dev/null 2>&1; then sudo -n pw userdel -n %(user)s -r; fi && "
     "sudo -n pkg clean -ay && "
     "sudo -n rm -rf /var/cache/nuageinit /tmp/opnsense-bootstrap && "
     "sudo -n rm -f /conf/sshd/ssh_host_* /etc/hostid /var/db/dhclient.leases.* "
     "/var/log/nuageinit.log /usr/local/etc/sudoers.d/90-nuageinit-users /firstboot"
 )
+
+
+def opnsense_clean(user: str) -> str:
+    """OPNSENSE_CLEAN for base-freebsd's user, with the PHP of forget-webgui-cert.php
+    inline (`php -r` takes no opening tag): the checkout goes with that user."""
+    with open(OPNSENSE_FORGET_CERT, encoding="utf-8") as f:
+        php = f.read().split("\n", 1)[1]
+    return OPNSENSE_CLEAN % {"user": shlex.quote(user), "forget": shlex.quote(php)}
 
 
 def bake_opnsense(cfg: Config, api: Api, newid: int, key: str) -> None:
@@ -2093,7 +2108,7 @@ def bake_opnsense(cfg: Config, api: Api, newid: int, key: str) -> None:
     ip = wait_for(cfg, api, newid, OPNSENSE_BOOT_LIMIT)
     for label, script, limit in (
         ("check", OPNSENSE_CHECK, 120),
-        ("clean", OPNSENSE_CLEAN % {"user": target.user}, CLEAN_LIMIT),
+        ("clean", opnsense_clean(target.user), CLEAN_LIMIT),
     ):
         print("--- %s" % label)
         code = run_ssh(cfg, BAKE_USER, ip, [script], timeout=limit)
