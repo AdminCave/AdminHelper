@@ -44,8 +44,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py 
 Doku: → T7
 Abhängt von: T3
 
-### T6 — R-1318: Plugin-Neustart als Warnung mit Zähler  [ ]
+### T6 — R-1318: Plugin-Neustart als Warnung mit Zähler  [x]
 Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor_policy.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d961ea0a5 2026-11-12T09:39:03+01:00
+Review: approve (.ah-out/review/kern-frp-5/T6.verdict.json)
 Änderung: Startet der Supervisor das Plugin neu, weil es nicht antwortet, schreibt er `warning:` mit der Zahl der Neustarts seit seinem Start; Test über den bestehenden Watchdog-Weg.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor_policy.py
 Doku: → T7
