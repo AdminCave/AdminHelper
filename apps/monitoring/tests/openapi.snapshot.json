@@ -4093,6 +4093,46 @@
         "summary": "Get Check Metrics"
       }
     },
+    "/checks/{check_id}/rebaseline": {
+      "post": {
+        "description": "Forgets the addresses a central dns check has learned; its next complete run learns them anew.",
+        "operationId": "rebaseline_check_checks__check_id__rebaseline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rebaseline Check"
+      }
+    },
     "/checks/{check_id}/reset": {
       "post": {
         "description": "Drops the user's changes to a template check: every template field gets\nthe template's value again.",

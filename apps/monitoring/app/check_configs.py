@@ -18,6 +18,9 @@ read true as 1."""
 
 from __future__ import annotations
 
+import ipaddress
+import re
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -255,6 +258,190 @@ class ProbeConfig(_StrictConfig):
         return self
 
 
+class TlsParams(_StrictConfig):
+    """The tls sensor takes no params; extra=forbid refuses any key."""
+
+
+class DnsParams(_StrictConfig):
+    """The addresses the name must resolve to; without them the first complete answer
+    becomes the baseline."""
+
+    expected: list[str] | None = Field(None, min_length=1, max_length=32)
+
+    @field_validator("expected")
+    @classmethod
+    def _addresses(cls, v: list[str] | None) -> list[str] | None:
+        for entry in v or []:
+            try:
+                ip = ipaddress.ip_address(entry)
+            except ValueError:
+                raise ValueError(f"{entry!r} is not an IP address") from None
+            if ip.version == 6 and ip.scope_id:
+                raise ValueError(f"{entry!r} carries a zone index")
+        return v
+
+
+class RdapParams(_StrictConfig):
+    """Days before the registry's expiry date from which the sensor warns or is critical."""
+
+    warn_days: int = Field(30, ge=1, le=365, strict=True)
+    crit_days: int = Field(7, ge=0, le=364, strict=True)
+
+    @model_validator(mode="after")
+    def _crit_before_warn(self):
+        if self.crit_days >= self.warn_days:
+            raise ValueError("crit_days must be below warn_days")
+        return self
+
+
+class MailParams(_StrictConfig):
+    """The mail sensors take no params; the port picks the protocol."""
+
+
+class MailDnsParams(_StrictConfig):
+    """The sensor mail_dns takes no params; extra=forbid refuses any key."""
+
+
+# The blocklists of the sensor dnsbl (app.central.dnsbl.LISTS).
+DnsblList = Literal["psbl", "spamcop", "uceprotect1", "spamhaus_zen"]
+
+
+class DnsblParams(_StrictConfig):
+    """The lists to ask; None asks the free ones, and Spamhaus ZEN when a DQS key is set."""
+
+    lists: list[DnsblList] | None = Field(None, min_length=1, max_length=4)
+
+    @field_validator("lists")
+    @classmethod
+    def _once_each(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and len(set(v)) != len(v):
+            raise ValueError("each list at most once")
+        return v
+
+
+@dataclass(frozen=True)
+class CentralSensor:
+    """One sensor of a central check (R-1224): its shortest and its default interval,
+    the port a config without one uses (None: the sensor takes no port), the model of
+    its params, whether the host must be a name, and the only ports it takes (None: any)."""
+
+    min_interval: str
+    default_interval: str
+    default_port: int | None
+    params: type[_StrictConfig]
+    needs_name: bool = False
+    ports: tuple[int, ...] | None = None
+
+
+CENTRAL_SENSORS: dict[str, CentralSensor] = {
+    "tls": CentralSensor("15m", "1h", 443, TlsParams),
+    "dns": CentralSensor("5m", "15m", None, DnsParams, needs_name=True),
+    "rdap": CentralSensor("24h", "24h", None, RdapParams, needs_name=True),
+    # A mail server is contacted at most every 15 minutes per address and port
+    # (postscreen, fail2ban): a shorter interval would only be skipped.
+    "smtp": CentralSensor("15m", "15m", 25, MailParams, ports=(25, 465, 587)),
+    "imap": CentralSensor("15m", "15m", 993, MailParams, ports=(143, 993, 995)),
+    # Mail records change seldom; hourly also bounds the MTA-STS policy fetches.
+    "mail_dns": CentralSensor("1h", "1h", None, MailDnsParams, needs_name=True),
+    # A listing changes within days; daily keeps the lists' query load negligible.
+    "dnsbl": CentralSensor("24h", "24h", None, DnsblParams, needs_name=True),
+}
+# The agent sensors whose view of the same service explains a central result (T10).
+CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
+# SSH and MySQL are never probed from outside: a cyclic connection there reads as an
+# attack to the target's fail2ban or fills its error log (concept §3.7).
+CENTRAL_FORBIDDEN_PORTS = frozenset({22, 3306})
+# On these ports the server greets in plain text and the client asks for TLS with
+# STARTTLS: the sensor tls would send its ClientHello before the greeting, a pregreet
+# to postscreen (R-1367). The value names the sensor that speaks the protocol.
+_STARTTLS_PORTS: dict[int, str | None] = {25: "smtp", 587: "smtp", 143: "imap", 110: None}
+
+_HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+def _is_ip(text: str) -> bool:
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    return True
+
+
+class CentralConfig(_StrictConfig):
+    """A probe the monitoring service runs itself against a public endpoint (R-1224)."""
+
+    sensor: str
+    host: str = Field(min_length=1, max_length=253)
+    port: int | None = Field(None, ge=1, le=65535, strict=True)
+    pair_check_id: str | None = Field(None, min_length=1, max_length=64)
+    params: dict[str, Any] = {}
+
+    @field_validator("sensor")
+    @classmethod
+    def _sensor_known(cls, v: str) -> str:
+        if v not in CENTRAL_SENSORS:
+            raise ValueError(f"unknown sensor; allowed: {', '.join(sorted(CENTRAL_SENSORS))}")
+        return v
+
+    @field_validator("host")
+    @classmethod
+    def _host_valid(cls, v: str) -> str:
+        try:
+            ip = ipaddress.ip_address(v)
+        except ValueError:
+            ip = None
+        if ip is not None:
+            # A zone index names an interface of this host, never a public endpoint.
+            if ip.version == 6 and ip.scope_id:
+                raise ValueError("an IPv6 address with a zone index is not public")
+            return v
+        labels = v.split(".")
+        # ASCII host names only (an IDN in its xn-- form): the name goes to the public
+        # resolvers and into the SNI as written. An all-digit last label is no TLD, so
+        # 1.2.3 or 999.1.1.1 cannot pass as a name.
+        if not all(_HOST_LABEL.fullmatch(label) for label in labels) or labels[-1].isdigit():
+            raise ValueError("must be a host name (letters, digits, hyphens) or an IP address")
+        return v
+
+    @field_validator("port")
+    @classmethod
+    def _port_allowed(cls, v: int | None) -> int | None:
+        if v in CENTRAL_FORBIDDEN_PORTS:
+            raise ValueError("ports 22 and 3306 are never probed from outside")
+        return v
+
+    @model_validator(mode="after")
+    def _fits_sensor(self):
+        sensor = CENTRAL_SENSORS[self.sensor]
+        if sensor.default_port is None and self.port is not None:
+            raise ValueError(f"the sensor {self.sensor} takes no port")
+        if sensor.ports is not None and self.port is not None and self.port not in sensor.ports:
+            allowed = ", ".join(map(str, sensor.ports[:-1])) + f" or {sensor.ports[-1]}"
+            raise ValueError(f"the sensor {self.sensor} takes port {allowed}")
+        if self.sensor == "tls" and self.port in _STARTTLS_PORTS:
+            other = _STARTTLS_PORTS[self.port]
+            hint = f"use the sensor {other}" if other else "the sensor tls cannot check it"
+            raise ValueError(f"port {self.port} starts in plain text with STARTTLS; {hint}")
+        if sensor.needs_name and _is_ip(self.host):
+            raise ValueError(f"the sensor {self.sensor} needs a host name, not an IP address")
+        return self
+
+    @model_validator(mode="after")
+    def _params_valid(self):
+        try:
+            CENTRAL_SENSORS[self.sensor].params.model_validate(self.params)
+        except ValidationError as exc:
+            raise ValueError(
+                "; ".join(
+                    f"params.{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
+                    if e["loc"]
+                    else f"params: {e['msg']}"
+                    for e in exc.errors()
+                )
+            ) from exc
+        return self
+
+
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "ping": PingConfig,
     "tcp": TcpConfig,
@@ -269,6 +456,7 @@ CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "disk_forecast": DiskForecastConfig,
     "system_state": SystemStateConfig,
     "probe": ProbeConfig,
+    "central": CentralConfig,
 }
 
 

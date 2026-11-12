@@ -793,3 +793,65 @@ def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
         state = db.query(MonitorState).filter_by(check_id="c1").one()
         assert (state.status, state.fail_count, state.notified_status) == ("unknown", 1, None)
     assert submitted == []
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        pytest.param("\x00", id="nul"),
+        pytest.param("\ud800", id="lone-high-surrogate"),
+        pytest.param("\udfff", id="lone-low-surrogate"),
+    ],
+)
+def test_execute_check_stores_a_text_the_database_cannot_take_replaced(monkeypatch, bad):
+    # R-1366, scheduler path: Postgres keeps no NUL in a text column and the driver cannot
+    # encode a lone surrogate. Message and details reach the state with U+FFFD in their
+    # place; every other character, one outside the BMP too, stays as it was.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    import app.core.database as database_mod
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                name="c1",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="ok"))
+        db.commit()
+
+    class _Text:
+        def run(self, config):
+            details = {f"k{bad}": [f"a{bad}b", {"x": f"\U0001f600{bad}"}], "n": 3}
+            return "critical", f"down{bad} at\U0001f600", {"_details": details}
+
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(ce, "get_checker", lambda _ct: _Text())
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    ce.execute_check("c1")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="c1").one()
+    assert state.status == "critical"
+    assert state.message == "down� at\U0001f600"
+    assert json.loads(state.details) == {
+        "k�": ["a�b", {"x": "\U0001f600�"}],
+        "n": 3,
+    }
