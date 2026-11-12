@@ -72,8 +72,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T8 — R-1365: OPNsense-Testvorlage und VM-Werkzeug nachgeschärft  [ ]
-Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/opnsense/bootstrap.sh, scripts/vm/tests/test_vm.py
+### T8 — R-1365: OPNsense-Testvorlage und VM-Werkzeug nachgeschärft  [x]
+Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/opnsense/bootstrap.sh, scripts/vm/tests/test_vm.py, scripts/vm/opnsense/forget-webgui-cert.php
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c2a677e12 2026-11-12T11:38:30+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T8.verdict.json)
 Änderung: `OPNSENSE_CLEAN` quotet den Nutzer (`shlex.quote`); der Clean-Schritt entfernt das beim ersten Boot
 erzeugte Web-GUI-Zertifikat, damit jede Lease ein eigenes erzeugt (vorher an der OPNsense-Quelle prüfen); der
 Bootstrap pinnt, was er nachlädt, soweit `opnsense-bootstrap` das zulässt, sonst Restrisiko in `tasks/private/`
@@ -84,3 +86,4 @@ Doku: keine (Harness, Kommentar im Skript)
 ## Entscheidungen
 - T5: Der AST-Test meldet jeden Wert vom Typ exec.Cmd (Literal, new, Nullwert, Feld), nur ein Zeiger darauf gilt nicht als Start; dazu die Windows-Starts (CreateProcess, CreateProcessAsUser, ShellExecute). Ein roher syscall.Syscall mit SYS_EXECVE bleibt eine genannte Grenze.
 - T3: Läuft ein dockerd, ohne dass der Standard-Socket antwortet (rootless, eigener -H), lehnt der Guard jede TCP-Probe auf eigene Adressen ab (fail-closed); Doku in T7.
+- T8: Das Core-Archiv, das opnsense-bootstrap lädt, lässt sich nicht pinnen (nur Release-Zweig, kein Commit, kein Hash); Restrisiko in der privaten Notiz. Das Web-GUI-Zertifikat entfernt der Clean-Schritt per PHP aus config.xml und den Backups, geprüft in php:8.3-cli; auf OPNsense wirkt es erst beim nächsten Bake.
