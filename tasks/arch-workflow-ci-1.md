@@ -1,5 +1,5 @@
 # CI-Workflow: Stack-Job auf PRs, Pfad-Steuerung, Shards nach Laufzeit, merge_group, Nightly — Task-Ledger
-Status: aktiv · Branch: feature/arch-workflow-ci-1 · Review: pro Task
+Status: bereit · Branch: feature/arch-workflow-ci-1 · Review: pro Task
 Spec: docs/features/arch-workflow-ci-1.md (Roadmap R-1339, R-1340, R-1341, R-1342, R-1343)
 Heavy: none — nur Workflows und Test-Infrastruktur; kein Produktcode, kein Stack-, Gateway-, PKI- oder Install-Pfad; Stack-Job und nightly.yml beweisen sich im PR-Lauf selbst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -57,8 +57,10 @@ Review: approve (.ah-out/review/arch-workflow-ci-1/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: → T6
 
-### T6 — Doku: CI-Seite DE+EN, CHANGELOG  [ ]
+### T6 — Doku: CI-Seite DE+EN, CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/arch-workflow-ci-1.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @56108137f 2026-11-12T08:26:24+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `cicd.html` DE+EN: Stack-Job auf PRs, Jobs auf PRs vs. `main`/`merge_group`/Dispatch, Pfad-Steuerung mit Fail-safe und Pflicht-Checks, Shards nach Laufzeit (Tabelle neu erzeugen), `nightly.yml`. CHANGELOG-Fragment (Changed, Entwickler-Infrastruktur).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/arch-workflow-ci-1.md
