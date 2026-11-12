@@ -83,6 +83,15 @@ async function setTheme(theme) {
   });
 }
 
+// An alarm toast sits in the corner of the screenshot and hides what is below it.
+async function dismissToasts() {
+  for (const button of await $$(".toast .dismiss")) await jsClick(button);
+  await browser.waitUntil(async () => (await $$(".toast")).length === 0, {
+    timeout: 30000,
+    timeoutMsg: "the toasts did not close",
+  });
+}
+
 // A screenshot of the step in the dark and the light theme, back in dark afterwards.
 async function shot(name) {
   step += 1;
@@ -91,6 +100,7 @@ async function shot(name) {
     await setTheme(theme);
     // Let the theme's transitions settle before the capture.
     await browser.pause(400);
+    await dismissToasts();
     await browser.saveScreenshot(path.join(ahOutDir, "screenshots", `${base}-${theme}.png`));
   }
   await setTheme("dark");

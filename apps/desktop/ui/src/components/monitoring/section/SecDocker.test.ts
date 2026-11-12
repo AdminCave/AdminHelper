@@ -454,8 +454,8 @@ describe('SecDocker details of the wrong form', () => {
 });
 
 // arch-monitoring-ui-2 T10 (R-1227): the containers grouped by compose project, the
-// worst first and the containers without a project last; uptime of a running one and
-// its published ports below it.
+// worst first (at equal severity the containers without a project after the projects);
+// uptime of a running one and its published ports below it.
 describe('SecDocker compose projects', () => {
   const NOW = Date.parse('2026-11-12T12:00:00Z') / 1000;
   const HOUR = 3600;
@@ -525,6 +525,27 @@ describe('SecDocker compose projects', () => {
     ).toEqual([['postfix', 'dovecot'], ['web', 'db'], ['lonely']]);
   });
 
+  it('puts a critical group without a project before healthy projects', async () => {
+    const down = rated('stray', 'exited', 'critical', 'exit:1', { exit_code: 1 });
+    const c = check({ status: 'critical', details: details([...shop, down]) });
+    const { container: el } = render(SecDocker, { props: { checks: [c] } });
+    await expand(el);
+    expect(groups(el).map((g) => g.dataset.project)).toEqual(['', 'shop']);
+  });
+
+  it('writes the uptime of several days with its plural', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    const old = rated('old', 'running', 'ok', null, {
+      compose_project: 'shop',
+      started_at: NOW - 5 * 24 * HOUR,
+    });
+    const c = check({ status: 'ok', details: details([old]) });
+    const { container: el } = render(SecDocker, { props: { checks: [c] } });
+    await expand(el);
+    expect(subLine(el, 'old')).toBe('Laufzeit 5 Tage');
+  });
+
   it('names uptime and ports of a running container, only the ports of a stopped one', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW * 1000);
@@ -532,9 +553,9 @@ describe('SecDocker compose projects', () => {
     const { container: el } = render(SecDocker, { props: { checks: [c] } });
     await expand(el);
 
-    expect(subLine(el, 'web')).toBe('läuft seit 3 h Ports 0.0.0.0:443->443/tcp [::]:443->443/tcp');
-    expect(subLine(el, 'db')).toBe('läuft seit 1 min');
-    expect(subLine(el, 'lonely')).toBe('läuft seit 30 s');
+    expect(subLine(el, 'web')).toBe('Laufzeit 3 h Ports 0.0.0.0:443->443/tcp [::]:443->443/tcp');
+    expect(subLine(el, 'db')).toBe('Laufzeit 1 min');
+    expect(subLine(el, 'lonely')).toBe('Laufzeit 30 s');
     // Exited: its start time says nothing about now.
     expect(subLine(el, 'postfix')).toBe('Ports 0.0.0.0:25->25/tcp');
     // Neither start time nor ports: no line.
