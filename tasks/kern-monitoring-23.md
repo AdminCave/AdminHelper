@@ -1,5 +1,5 @@
 # Monitoring: frps-Ports ohne Fehlalarm — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-23 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-23 · Review: am Ende
 Spec: docs/features/kern-monitoring-23.md (Roadmap R-1375)
 Heavy: linux-full — apps/agent (Protokoll-Erkennung) und apps/monitoring (Katalog-Modul); geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ bleibt eine `port`-Instanz.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_frps.py tests/test_discovery_match.py tests/test_catalog.py
 Doku: → T3
 
-### T3 — R-1375: Doku Modul-Katalog und Port-Check, Changelog  [ ]
+### T3 — R-1375: Doku Modul-Katalog und Port-Check, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-23.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ce096d0ca 2026-11-12T12:43:06+01:00
+Review: am Ende (Branch-Review)
 Änderung: Modul-Abschnitt nennt drei Module (`frps`: erkannt am Container, Check Containerzustand, seine Ports sind
 keine `port`-Instanzen); Port-Check: schließt der Dienst nach dem Connect ohne erkennbares Protokoll, ist das ok
 (`unknown`/`tls`), critical nur, wenn der Connect scheitert; alte frps-Port-Instanzen werden ein Fund „gone“.
