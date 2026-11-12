@@ -1,5 +1,5 @@
 # Monitoring: Katalog-Module für selbst betriebene Anwendungen — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-apps-1 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-apps-1 · Review: pro Task
 Spec: docs/features/arch-monitoring-apps-1.md (Roadmap R-1241, R-1242, R-1243)
 Heavy: linux-full — apps/agent (HTTP-Fühler, Parameter `host`); die Module sind Katalog-Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -161,8 +161,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_upt
 Doku: → T14
 Abhängt von: T2
 
-### T14 — Doku DE+EN und CHANGELOG (R-1241, R-1242, R-1243)  [ ]
+### T14 — Doku DE+EN und CHANGELOG (R-1241, R-1242, R-1243)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-apps-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c60316eeb 2026-11-12T17:54:41+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: „Module und Erkennung“ nennt die neuen Module; je Gruppe ein Unterabschnitt (Erkennung, Checks,
 Zugangsdaten mit Schlüssel für `monitor credential set`, Grenzen: nativ hinter Webserver ohne HTTP-Check, GitLab-
 Allowlist, Keycloak `health-enabled`, Mindestversion des Agents für `host`). Entwickler-Doku: Parameter `host` des
