@@ -115,13 +115,13 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T14
 Abhängt von: T5, T10
 
-### T12 — Agent: Last-Tor (R-1268)  [?] (Grenzen und Umfang der Last-Schonung: Empfehlung Last/CPU ≥ 2,0 oder I/O-Wartezeit ≥ 25 % oder verfügbarer RAM < 10 % in zwei Läufen, Austritt nach drei sauberen; ausgesetzt optionale Collector, Proben, Erkennung)
+### T12 — Agent: Last-Tor (R-1268)  [~] (verschoben in tasks/arch-monitoring-module-3.md: Kevins Antwort zu Grenzen und Sichtbarkeit der Last-Schonung steht aus)
 Komponente: agent · Dateien: apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/selfmeasure.go, apps/agent/internal/monitor/report_test.go
 Änderung: Aus den Kernwerten des Laufs (Last, I/O-Wartezeit, verfügbarer RAM) entscheidet ein Tor mit Hysterese im `reportState`, ob die nächsten Läufe schonen. Während der Schonung: `m.optional` und Proben laufen nicht, Erkennung verschoben; die ausgesetzten Collector melden `throttled: true, reason: "load"`; neuer Block `self.load_shed = {active, since, reason, values}`. Tests: Eintritt, Hysterese, Austritt, Kern läuft immer, Block-Form.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 
-### T13 — Monitoring: Last-Schonung auswerten (R-1268)  [?] (Sichtbarkeit der Last-Schonung: Empfehlung betroffene Checks behalten ihren Zustand mit „(nicht gemessen: Last-Schonung)“ ohne 45-min-Grenze, nach 30 min Warnung am Check agent_resources)
+### T13 — Monitoring: Last-Schonung auswerten (R-1268)  [~] (verschoben in tasks/arch-monitoring-module-3.md: Kevins Antwort zu Grenzen und Sichtbarkeit der Last-Schonung steht aus)
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_load_shed.py
 Änderung: `self.load_shed` lesen (beschränkt wie `self.collectors`); `_spared_by_throttle` schont bei `reason: "load"` für die Dauer der Schonung und ergänzt die Meldung; Proben-Frische entsprechend; nach 30 min durchgehender Schonung Warnung am Check `agent_resources`; Metrik `agent_load_shed`. Ein Report ohne Block bleibt wie heute.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py tests/test_agent_report.py tests/test_agent_report_v4.py
