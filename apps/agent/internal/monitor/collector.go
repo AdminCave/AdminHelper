@@ -67,7 +67,7 @@ func collectCPUSince(prev *cpuSample, now time.Time) (float64, *cpuSample) {
 		return collectCPU(), nil
 	}
 	total, busy := cpuBusyTimes(times[0])
-	cur := &cpuSample{Unix: now.Unix(), Total: total, Busy: busy}
+	cur := &cpuSample{Unix: now.Unix(), Total: total, Busy: busy, Iowait: times[0].Iowait}
 	if percent, ok := cpuPercentSince(prev, *cur); ok {
 		return round1(percent), cur
 	}
@@ -86,17 +86,23 @@ func cpuBusyTimes(t cpu.TimesStat) (total, busy float64) {
 }
 
 // cpuPercentSince is gopsutil's calculateBusy (cpu/cpu.go:118-129) between two saved samples, limited
-// to 0-100. ok is false when prev cannot open the window: missing, older than cpuStateMaxAge, from the
-// future (clock set back) or with a total that did not grow (reboot), where calculateBusy would say 100.
+// to 0-100. ok is false when prev cannot open the window (cpuWindowOpen).
 func cpuPercentSince(prev *cpuSample, cur cpuSample) (float64, bool) {
-	if prev == nil {
-		return 0, false
-	}
-	age := cur.Unix - prev.Unix
-	if age < 0 || age > int64(cpuStateMaxAge/time.Second) || cur.Total <= prev.Total {
+	if !cpuWindowOpen(prev, cur) {
 		return 0, false
 	}
 	return math.Min(100, math.Max(0, (cur.Busy-prev.Busy)/(cur.Total-prev.Total)*100)), true
+}
+
+// cpuWindowOpen says whether prev and cur open a window to measure the CPU in: not when prev is
+// missing, older than cpuStateMaxAge, from the future (clock set back) or with a total that did not
+// grow (reboot), where calculateBusy would say 100.
+func cpuWindowOpen(prev *cpuSample, cur cpuSample) bool {
+	if prev == nil {
+		return false
+	}
+	age := cur.Unix - prev.Unix
+	return age >= 0 && age <= int64(cpuStateMaxAge/time.Second) && cur.Total > prev.Total
 }
 
 func collectMemory() map[string]any {

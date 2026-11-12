@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Risikopfad: T2 (`apps/monitoring/app/routers/agent.py`) → `security` in der Abschlussprüfung.
 
-### T1 — Agent: Last-Tor (R-1268)  [ ]
+### T1 — Agent: Last-Tor (R-1268)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/loadgate.go, apps/agent/internal/monitor/loadgate_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/selfmeasure.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3f0d497db 2026-11-12T16:42:04+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neues `loadgate.go` (SPDX) entscheidet nach dem Kern aus Last je CPU (≥ 2,0, nicht im Container, nicht unter Windows), I/O-Wartezeit seit dem letzten CPU-Stand (≥ 25 %, nur Linux, neues `cpuSample.Iowait`) und verfügbarem RAM (< 10 %) mit Hysterese im `reportState` (zwei Läufe hinein, drei unauffällige hinaus). Bei Schonung laufen die optionalen Collector, die Proben und die Erkennung nicht; sie melden `throttled: true, reason: "load"`, ihre Drossel und die gespeicherten Probenergebnisse bleiben; neuer Block `self.load_shed`; nach verlorenem Push bleibt der Schonungs-Zustand. Tests: Eintritt, Hysterese, Austritt, Kern läuft immer, Container/Windows/fehlende Werte, Block-Form, verlorener Push.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T3
@@ -34,3 +36,7 @@ Task-Review: am Ende
 Abhängt von: T1, T2
 
 ## Entscheidungen
+- 2026-11-12 T1: `cpuSample.Iowait` ist ein Wert, kein Zeiger; 0 heißt „nicht gelesen“ (kein Linux, alter Zustand) — die bestehenden Vergleiche ganzer `cpuSample` in den Tests bleiben gültig, ein Host ohne jede I/O-Wartezeit verliert nur ein Kriterium, das er nicht erfüllen kann
+- 2026-11-12 T1: `reportState.LoadShed` mit `omitzero` (Go 1.24+, Modul auf 1.27) — eine Zustandsdatei ohne Schonung bleibt wie heute
+- 2026-11-12 T1: die Schonung lässt die Drossel eines Collectors unverändert und meldet ihren Faktor — was er kostet, misst erst sein nächster echter Lauf
+- 2026-11-12 T1: Integrationstests des Tors (fünf Läufe, verlorener Push) stehen in `loadgate_test.go`, nicht in `report_test.go` — eine Datei je Funktion, `report_test.go` bekommt nur den Stub

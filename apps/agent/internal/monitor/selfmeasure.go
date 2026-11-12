@@ -36,6 +36,9 @@ type collectorStat struct {
 	// Throttled means the collector did not run this time: its block is left out of the report, and the
 	// monitoring service keeps the state of the checks that live on it.
 	Throttled bool `json:"throttled"`
+	// Reason is why a throttled collector did not run when it is not its own throttle: shedReason for
+	// the load gate.
+	Reason string `json:"reason,omitempty"`
 }
 
 // throttle is the self-throttle of one optional collector, kept in the report state.
@@ -86,6 +89,8 @@ type selfMeasure struct {
 	prev  map[string]throttle
 	next  map[string]throttle
 	stats map[string]collectorStat
+	// shedding is set by the load gate: the optional collectors do not run.
+	shedding bool
 }
 
 func newSelfMeasure(prev map[string]throttle) *selfMeasure {
@@ -98,9 +103,13 @@ func (m *selfMeasure) core(ctx context.Context, name string, collect func(contex
 	m.stats[name] = measured(ctx, collect)
 }
 
-// optional runs an optional collector in the measuring frame unless its throttle holds it back this
-// run, and says whether it ran. A tool its own timeout ended is a time-limit hit.
+// optional runs an optional collector in the measuring frame unless the load gate or its throttle holds
+// it back this run, and says whether it ran. A tool its own timeout ended is a time-limit hit.
 func (m *selfMeasure) optional(ctx context.Context, name string, collect func(context.Context)) bool {
+	if m.shedding {
+		m.shed(name)
+		return false
+	}
 	t := m.prev[name]
 	if t.holdsBack() {
 		t.Skipped++
@@ -111,6 +120,16 @@ func (m *selfMeasure) optional(ctx context.Context, name string, collect func(co
 	st := measured(ctx, collect)
 	m.record(name, st, st.Timeouts)
 	return true
+}
+
+// shed holds name back for the load gate. Its throttle stays as the last run left it: what the
+// collector costs is measured again once it runs.
+func (m *selfMeasure) shed(name string) {
+	t, ok := m.prev[name]
+	if ok {
+		m.next[name] = t
+	}
+	m.stats[name] = collectorStat{Factor: t.factor(), Throttled: true, Reason: shedReason}
 }
 
 // record keeps st as name's entry with hits time-limit hits and moves name's throttle on by them.

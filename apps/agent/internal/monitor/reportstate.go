@@ -15,8 +15,8 @@ import (
 // reportState is what the next report is measured against, persisted in config.MonitorReportStateFile
 // between two runs of the oneshot. Push saves it only after a successful push, like the inventory
 // state: a lost push then widens the next CPU window instead of dropping a part of it, and its OOM
-// kills count again in the next report. Probes, Throttle, Brake, Bindings and Cursors alone are saved after a
-// lost push too (Push).
+// kills count again in the next report. Probes, Throttle, Brake, Bindings, Cursors and LoadShed alone are
+// saved after a lost push too (Push).
 type reportState struct {
 	CPU *cpuSample `json:"cpu,omitempty"`
 	// OOMKill is the oom_kill counter at the last report (Linux only), read from OOMKillSource. A
@@ -43,6 +43,8 @@ type reportState struct {
 	// ProxmoxBackups is the last backup index read from the backup storages' content (Proxmox nodes
 	// only). A state without it, saved by an older agent, reads them at once.
 	ProxmoxBackups *backupIndexCheck `json:"proxmox_backups,omitempty"`
+	// LoadShed is the load gate's state (loadgate.go). A state without it sheds nothing.
+	LoadShed loadShed `json:"load_shed,omitzero"`
 }
 
 // The sources of the OOM kill counter: /proc/vmstat counts the kills of the whole kernel, the
@@ -121,6 +123,9 @@ type cpuSample struct {
 	Unix  int64   `json:"unix"`
 	Total float64 `json:"total"`
 	Busy  float64 `json:"busy"`
+	// Iowait is the CPU time spent waiting for I/O, for the load gate (iowaitPercentSince). Of the
+	// agent's systems only Linux counts it; 0 elsewhere.
+	Iowait float64 `json:"iowait,omitempty"`
 }
 
 // loadReportState reads the persisted state; any error (missing file, corrupt JSON) yields the empty

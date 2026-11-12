@@ -51,14 +51,15 @@ var runDiscovery = discovery.Run
 // save once this report has been pushed. ctx ends the tool calls of the system state, service
 // (systemctl, sc), docker, proxmox, zfs and smart collectors and the probes. Every collector runs in a
 // measuring frame (self.collectors); the optional ones and the probes are throttled by their
-// time-limit hits. Without work no probe runs and the report names no credential.
+// time-limit hits, and under load the load gate holds them and a discovery back (self.load_shed).
+// Without work no probe runs and the report names no credential.
 func buildReportWithState(ctx context.Context, serviceNames []string, work *probeWork, prev reportState, now time.Time) (map[string]any, reportState) {
 	m := newSelfMeasure(prev.Throttle)
 	report := map[string]any{"report_version": 4}
 
 	var cpuNow *cpuSample
+	var resources map[string]any
 	m.core(ctx, "resources", func(context.Context) {
-		var resources map[string]any
 		resources, cpuNow = collectResources(prev.CPU, now)
 		report["resources"] = resources
 		report["uptime_seconds"] = collectUptime()
@@ -91,6 +92,11 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 		}
 		report["systemd"] = svcHealth
 	})
+
+	// The core always runs; what comes after it waits while the host is under load.
+	reading := readLoad(resources, prev.CPU, cpuNow)
+	next.LoadShed = prev.LoadShed.after(len(reading.over()) > 0, now)
+	m.shedding = next.LoadShed.Active
 
 	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
 	m.optional(ctx, "docker", func(ctx context.Context) {
@@ -137,18 +143,30 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			report["credentials"] = stored
 		}
 	}
-	postponed := 0
-	st := measured(ctx, func(ctx context.Context) {
-		next.Probes, _, postponed = runDueProbes(ctx, probes, prev.Probes, probeFactor, acc, time.Now())
-	})
-	m.record(probesCollector, st, postponed)
+	if m.shedding {
+		// No probe runs: the plan's probes send their last results, and they are due once it is over.
+		next.Probes = probe.Results{}
+		for _, p := range probes {
+			if res, ok := prev.Probes[p.ID]; ok {
+				next.Probes[p.ID] = res
+			}
+		}
+		m.shed(probesCollector)
+	} else {
+		postponed := 0
+		st := measured(ctx, func(ctx context.Context) {
+			next.Probes, _, postponed = runDueProbes(ctx, probes, prev.Probes, probeFactor, acc, time.Now())
+		})
+		m.record(probesCollector, st, postponed)
+	}
 	report["probes"] = next.Probes
 	next.Brake = acc.KeptBrake()
 	next.Bindings = acc.KeptBindings()
 	next.Cursors = acc.KeptCursors(probes)
 
 	// A discovery runs when the monitoring service asks for one, in what is left of ctx; it takes a
-	// frame of its own. Between two of them its throttle stays as it was.
+	// frame of its own. Between two of them its throttle stays as it was. A discovery the load gate
+	// holds back stays asked for until one is sent.
 	if work != nil && work.scan {
 		m.optional(ctx, discoveryCollector, func(ctx context.Context) {
 			report["discovery"] = runDiscovery(ctx, work.markers)
@@ -158,7 +176,7 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 	}
 
 	next.Throttle = m.next
-	report["self"] = map[string]any{"collectors": m.stats}
+	report["self"] = map[string]any{"collectors": m.stats, "load_shed": next.LoadShed.block(reading)}
 	return report, next
 }
 
