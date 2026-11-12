@@ -18,7 +18,7 @@ from app.modules.audit import service as audit
 from app.modules.connections.models import Connection, own_text, shown_name
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.policy import sync_policy
+from app.modules.frp.policy import domain_conflicts, sync_policy
 from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
@@ -143,6 +143,25 @@ def _reject_unknown_connection(db: Session, connection_id: str | None) -> None:
         )
 
 
+def _reject_domain_conflict(db: Session, tunnel: FrpTunnel) -> None:
+    """409 when frps would route a hostname of the tunnel (flushed, not committed) to a
+    tunnel of another server too (custom domain, subdomain or wildcard; policy._conflicts):
+    the policy leaves such proxies out."""
+    clash = sorted(
+        name
+        for name, proxies in domain_conflicts(db).items()
+        if (tunnel.server_id, tunnel.id) in proxies
+    )
+    if clash:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Hostname {clash[0]} is also routed to a tunnel of another server (custom "
+            "domain, subdomain or wildcard); keep it on one server, or give all tunnels with "
+            "exactly this name the same loadBalancer.group",
+        )
+
+
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
@@ -212,6 +231,7 @@ def create_tunnel(
     db.add(tunnel)
     try:
         db.flush()
+        _reject_domain_conflict(db, tunnel)
         if data.auto_create_connection:
             _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
@@ -333,6 +353,9 @@ def update_tunnel(
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
     try:
+        if sent & {"custom_domains", "enabled", "tunnel_type", "extra_config"}:
+            db.flush()
+            _reject_domain_conflict(db, tunnel)
         if data.auto_create_connection and not tunnel.connection_id:
             _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()

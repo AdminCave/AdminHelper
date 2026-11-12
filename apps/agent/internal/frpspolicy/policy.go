@@ -2,15 +2,17 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package frpspolicy is frps' server plugin for the op NewProxy: it admits a proxy only if
-// the policy file the AdminHelper server writes (apps/server/app/modules/frp/policy.py)
+// Package frpspolicy is frps' server plugin for the ops NewProxy and Login: it admits a proxy
+// only if the policy file the AdminHelper server writes (apps/server/app/modules/frp/policy.py)
 // holds it for the host that registers it, with the fields the server's frpc.toml
-// generator writes for that tunnel. Everything else is refused, and so is every proxy
-// while the policy file is missing or broken.
+// generator writes for that tunnel, and a login only for a host of the policy with its key.
+// Everything else is refused, and so is everything while the policy file is missing or
+// broken. An admitted proxy or login goes on without the host's key, so frps does not keep it.
 package frpspolicy
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -25,9 +27,10 @@ import (
 )
 
 // Version is the policy format this plugin reads.
-const Version = 1
+const Version = 2
 
-// KeyMeta is the proxy metadatas field that carries the host's key (proxy_key.py).
+// KeyMeta is the metadatas field of a proxy and of a login that carries the host's key
+// (proxy_key.py).
 const KeyMeta = "ahProxyKey"
 
 // MaxPolicySize bounds the policy file; a few hundred bytes per tunnel leave room for
@@ -42,6 +45,10 @@ type Proxy struct {
 	Group         string   `json:"group"`
 	// SHA-256 of loadBalancer.groupKey as hex, "" without one.
 	GroupKeyHash string `json:"groupKeyHash"`
+	// allowUsers of an stcp tunnel, compared as a set; empty for https.
+	AllowUsers []string `json:"allowUsers"`
+	// SHA-256 of secretKey as hex, "" without one.
+	SkHash string `json:"skHash"`
 }
 
 // Server is one host: the SHA-256 of its key as hex and its tunnels by ID.
@@ -70,9 +77,19 @@ type NewProxy struct {
 	RemotePort    int               `json:"remote_port"`
 	CustomDomains []string          `json:"custom_domains"`
 	SubDomain     string            `json:"subdomain"`
+	Sk            string            `json:"sk"`
+	AllowUsers    []string          `json:"allow_users"`
 }
 
-// Parse reads a policy and holds it to the format: version 1, no unknown field, hashes
+// Login holds the fields of frps' Login content (frp v0.72.0, pkg/msg/msg.go Login) the
+// decision reads.
+type Login struct {
+	User  string            `json:"user"`
+	RunID string            `json:"run_id"`
+	Metas map[string]string `json:"metas"`
+}
+
+// Parse reads a policy and holds it to the format: version 2, no unknown field, hashes
 // as 64 lowercase hex digits, the tunnel types the server writes.
 func Parse(data []byte) (*Policy, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -107,15 +124,20 @@ func Parse(data []byte) (*Policy, error) {
 			if proxy.GroupKeyHash != "" && !isHash(proxy.GroupKeyHash) {
 				return nil, fmt.Errorf("policy: proxy %q: groupKeyHash is no SHA-256 in hex", name)
 			}
+			if proxy.SkHash != "" && !isHash(proxy.SkHash) {
+				return nil, fmt.Errorf("policy: proxy %q: skHash is no SHA-256 in hex", name)
+			}
 		}
 	}
 	return &p, nil
 }
 
 func isHash(s string) bool {
-	if len(s) != 2*sha256.Size {
-		return false
-	}
+	return len(s) == 2*sha256.Size && isHex(s)
+}
+
+// isHex reports whether s holds lowercase hex digits only.
+func isHex(s string) bool {
 	for _, c := range s {
 		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
 			return false
@@ -134,20 +156,44 @@ func hashEqual(secret, wantHex string) bool {
 	return subtle.ConstantTimeCompare(sum[:], want) == 1
 }
 
+// host returns the user's entry if the metas carry its key, otherwise why not.
+func (p *Policy) host(user string, metas map[string]string) (Server, string) {
+	srv, ok := p.Servers[user]
+	if user == "" || !ok {
+		return Server{}, "unknown user"
+	}
+	key, ok := metas[KeyMeta]
+	if !ok || key == "" {
+		return Server{}, "no key"
+	}
+	if !hashEqual(key, srv.KeyHash) {
+		return Server{}, "wrong key"
+	}
+	return srv, ""
+}
+
+// DecideLogin returns "" if the policy admits the login: a host of the policy only with its key
+// in the login's metadatas. Another user is no host (the desktop's STCP visitor logs in as an
+// AdminHelper user) and gets no proxy through Decide; BoundRunID keeps it off the hosts'
+// controls. Otherwise why not, for the plugin's log only.
+func (p *Policy) DecideLogin(l *Login) string {
+	if l.User == "" {
+		return "no user"
+	}
+	if _, isHost := p.Servers[l.User]; !isHost {
+		return ""
+	}
+	_, reason := p.host(l.User, l.Metas)
+	return reason
+}
+
 // Decide returns "" if the policy admits the proxy, otherwise why not. The reason goes to
 // the plugin's log only; it names no value from the request.
 func (p *Policy) Decide(np *NewProxy) string {
 	user := np.User.User
-	srv, ok := p.Servers[user]
-	if user == "" || !ok {
-		return "unknown user"
-	}
-	key, ok := np.Metas[KeyMeta]
-	if !ok || key == "" {
-		return "no key"
-	}
-	if !hashEqual(key, srv.KeyHash) {
-		return "wrong key"
+	srv, reason := p.host(user, np.Metas)
+	if reason != "" {
+		return reason
 	}
 	// frpc registers a proxy as "<user>.<name>"; the name is the tunnel ID.
 	tunnel, ok := strings.CutPrefix(np.ProxyName, user+".")
@@ -171,10 +217,79 @@ func (p *Policy) Decide(np *NewProxy) string {
 		return "other group key"
 	case want.GroupKeyHash != "" && !hashEqual(np.GroupKey, want.GroupKeyHash):
 		return "other group key"
+	case !sameSet(np.AllowUsers, want.AllowUsers):
+		return "other allowed users"
+	case want.SkHash == "" && np.Sk != "":
+		return "other secret key"
+	case want.SkHash != "" && !hashEqual(np.Sk, want.SkHash):
+		return "other secret key"
 	case np.RemotePort != 0:
 		return "remote port"
 	}
 	return ""
+}
+
+// runIDRandom is the number of random bytes of a run ID BoundRunID hands out.
+const runIDRandom = 16
+
+// runIDPrefix is the part of a run ID that names its user: frps keys a client's control by
+// its run ID, and a login naming the run ID of a running control replaces that control.
+func runIDPrefix(user string) string {
+	sum := sha256.Sum256([]byte("frps-run-id:" + user))
+	return hex.EncodeToString(sum[:8]) + "-"
+}
+
+// BoundRunID returns the run ID an admitted login of user goes on with: runID if it lies under
+// the user's prefix, as frpc sends back the one it got on its last login, otherwise a fresh one
+// there. So a login can name only a control of its own user. frps takes at most 64 bytes;
+// these are 49.
+func BoundRunID(user, runID string) (string, error) {
+	prefix := runIDPrefix(user)
+	if rest, ok := strings.CutPrefix(runID, prefix); ok && len(rest) == 2*runIDRandom && isHex(rest) {
+		return runID, nil
+	}
+	b := make([]byte, runIDRandom)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return prefix + hex.EncodeToString(b), nil
+}
+
+// sameSet reports whether a and b hold the same strings, regardless of order and repeats.
+func sameSet(a, b []string) bool {
+	in := func(s string, list []string) bool { return slices.Contains(list, s) }
+	for _, s := range a {
+		if !in(s, b) {
+			return false
+		}
+	}
+	for _, s := range b {
+		if !in(s, a) {
+			return false
+		}
+	}
+	return true
+}
+
+// WithoutKey returns content, frps' NewProxy or Login content decoded with UseNumber, without
+// the host's key in its metas: frps takes the answer's content in place of its own, keeps it
+// for the proxy or the client and shows proxy metas on its dashboard. Everything else stays
+// as sent.
+func WithoutKey(content map[string]any) map[string]any {
+	out := make(map[string]any, len(content))
+	for k, v := range content {
+		out[k] = v
+	}
+	if metas, ok := content["metas"].(map[string]any); ok {
+		kept := make(map[string]any, len(metas))
+		for k, v := range metas {
+			if k != KeyMeta {
+				kept[k] = v
+			}
+		}
+		out["metas"] = kept
+	}
+	return out
 }
 
 // Source reads the policy file and reads it again only when it changed: another file at

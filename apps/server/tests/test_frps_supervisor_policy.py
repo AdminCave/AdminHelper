@@ -333,6 +333,13 @@ def test_a_new_copy_that_takes_the_port_of_the_plugin_moves_it(box):
     assert "did not answer" not in box._log()
 
 
+# The supervisor's warning for a restart of the plugin that did not answer, by its count.
+RESTART = (
+    "[frps-supervisor] warning: frps-policy did not answer, restarting it "
+    "(restart {} since the supervisor started)"
+)
+
+
 def test_a_plugin_that_ended_is_started_anew_at_the_next_poll(box):
     _polling(box)
     (plugin,) = _wait_plugins(box, 1)
@@ -341,7 +348,7 @@ def test_a_plugin_that_ended_is_started_anew_at_the_next_poll(box):
 
     (_, again) = _wait_plugins(box, 2)
     assert not _alive(plugin) and _alive(again)
-    assert "frps-policy did not answer, restarting it" in box._log()
+    assert RESTART.format(1) in box._log()
     assert box.policy_calls() == [_listen(box.policy_port, box)] * 2
     # frps is left alone.
     assert box.runs() == 1 and len(box.pids()) == 1
@@ -356,7 +363,7 @@ def test_a_plugin_that_hangs_is_killed_and_started_anew(box):
     (_, again) = _wait_plugins(box, 2)
     box.wait_until(lambda: not _alive(plugin), "the hanging plugin gone")
     assert _alive(again)
-    assert "frps-policy did not answer, restarting it" in box._log()
+    assert RESTART.format(1) in box._log()
     assert box.runs() == 1 and len(box.pids()) == 1
 
 
@@ -374,6 +381,8 @@ def test_frps_starts_while_the_plugin_does_not_answer_and_each_poll_tries_again(
 
     _polling(box, FRPS_READ_SECONDS="1")
     box.wait_until(lambda: box._log().count("did not answer, restarting it") >= 2, "two tries")
+    # Each restart is a warning that counts on.
+    assert RESTART.format(1) in box._log() and RESTART.format(2) in box._log()
 
     # frps registers no proxy then; it runs, so that it can once the plugin answers.
     assert (box.read().state, box.read().reason) == ("running", "none")

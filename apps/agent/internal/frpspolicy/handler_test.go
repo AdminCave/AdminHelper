@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +72,8 @@ func newProxyRequest(t *testing.T, change func(*NewProxy)) []byte {
 	return data
 }
 
-// answer decodes a plugin answer and holds it to frps' fields.
+// answer decodes a plugin answer and holds it to frps' fields; a refusal must leave the
+// content unchanged.
 func answer(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {
@@ -81,26 +83,101 @@ func answer(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["unchange"] != true {
-		t.Errorf("answer %v changes the content", got)
+	if got["reject"] == true && (got["unchange"] != true || got["content"] != nil) {
+		t.Errorf("refusal %v changes the content", got)
 	}
 	return got
 }
 
-func TestHandlerAdmitsTheOwnProxy(t *testing.T) {
+// fixtureContent is the content of the fixture request, generically decoded.
+func fixtureContent(t *testing.T) map[string]any {
+	t.Helper()
+	var req struct {
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(fixtureRequest(t), &req); err != nil {
+		t.Fatal(err)
+	}
+	return req.Content
+}
+
+func TestHandlerAdmitsTheOwnProxyWithoutItsKey(t *testing.T) {
 	h, _ := newTestHandler(t, fixturePolicy(t))
-	got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", fixtureRequest(t)))
-	if len(got) != 2 || got["reject"] != false {
-		t.Errorf("answer = %v, want reject false and unchange true alone", got)
+	rec := do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", fixtureRequest(t))
+	got := answer(t, rec)
+	if len(got) != 3 || got["reject"] != false || got["unchange"] != false {
+		t.Fatalf("answer = %v, want reject false, unchange false and the content", got)
+	}
+	want := fixtureContent(t)
+	delete(want["metas"].(map[string]any), KeyMeta)
+	if !reflect.DeepEqual(got["content"], want) {
+		t.Errorf("content = %v, want the request's content without the key: %v", got["content"], want)
+	}
+	if strings.Contains(rec.Body.String(), keyA) {
+		t.Errorf("answer holds the host's key: %s", rec.Body)
+	}
+}
+
+func TestHandlerKeepsEveryOtherFieldAsSent(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	// Fields the decision does not read, a number beyond float64 and a second metas entry:
+	// frps takes the answer's content in place of its own.
+	body := strings.Replace(string(fixtureRequest(t)), `"proxy_type": "stcp",`,
+		`"proxy_type": "stcp", "use_encryption": true, "bandwidth_limit": "1MB", "annotations": {"a": "b"},
+		"x_count": 9007199254740993, "x_list": [1.5, null, "s"],`, 1)
+	body = strings.Replace(body, `"ahProxyKey": "`+keyA+`"`, `"ahProxyKey": "`+keyA+`", "owner": "ops"`, 1)
+	rec := do(h, http.MethodPost, pluginPath+"?op=NewProxy", []byte(body))
+	got := answer(t, rec)
+	if got["reject"] != false {
+		t.Fatalf("answer = %v, want the proxy admitted", got)
+	}
+	if !strings.Contains(rec.Body.String(), `"x_count":9007199254740993`) {
+		t.Errorf("answer lost the exact number: %s", rec.Body)
+	}
+	var want, content struct {
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(body), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &content); err != nil {
+		t.Fatal(err)
+	}
+	delete(want.Content["metas"].(map[string]any), KeyMeta)
+	if !reflect.DeepEqual(content.Content, want.Content) {
+		t.Errorf("content = %v, want %v", content.Content, want.Content)
+	}
+	if m := content.Content["metas"].(map[string]any); len(m) != 1 || m["owner"] != "ops" {
+		t.Errorf("metas = %v, want the other entry alone", m)
+	}
+}
+
+func TestWithoutKeyLeavesItsInputAlone(t *testing.T) {
+	content := map[string]any{"metas": map[string]any{KeyMeta: keyA}, "proxy_name": "p"}
+	out := WithoutKey(content)
+	if _, ok := out["metas"].(map[string]any)[KeyMeta]; ok {
+		t.Errorf("WithoutKey = %v, still holds the key", out)
+	}
+	if content["metas"].(map[string]any)[KeyMeta] != keyA {
+		t.Errorf("WithoutKey changed its input: %v", content)
+	}
+	if out := WithoutKey(map[string]any{"proxy_name": "p"}); len(out) != 1 || out["proxy_name"] != "p" {
+		t.Errorf("WithoutKey without metas = %v", out)
 	}
 }
 
 func TestHandlerRefusesAForeignProxy(t *testing.T) {
 	h, _ := newTestHandler(t, fixturePolicy(t))
-	body := newProxyRequest(t, func(np *NewProxy) { np.ProxyName = serverA + ".t-db" })
-	got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", body))
-	if len(got) != 3 || got["reject"] != true || got["reject_reason"] != rejectReason {
-		t.Errorf("answer = %v, want reject true with the general reason", got)
+	for name, change := range map[string]func(*NewProxy){
+		"another host's tunnel": func(np *NewProxy) { np.ProxyName = serverA + ".t-db" },
+		"another allowed user":  func(np *NewProxy) { np.AllowUsers = []string{"*"} },
+		"a wrong secret key":    func(np *NewProxy) { np.Sk = "guess" },
+	} {
+		body := newProxyRequest(t, change)
+		got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", body))
+		if len(got) != 3 || got["reject"] != true || got["reject_reason"] != rejectReason {
+			t.Errorf("%s: answer = %v, want reject true with the general reason", name, got)
+		}
 	}
 }
 
@@ -124,7 +201,8 @@ func TestHandlerRefusesOtherRequests(t *testing.T) {
 		want                       int
 	}{
 		{"GET to the plugin", http.MethodGet, pluginPath + "?op=NewProxy", "", http.StatusMethodNotAllowed},
-		{"another op in the query", http.MethodPost, pluginPath + "?op=Login", string(fixtureRequest(t)), http.StatusBadRequest},
+		{"another op in the query", http.MethodPost, pluginPath + "?op=Ping", string(fixtureRequest(t)), http.StatusBadRequest},
+		{"Login in the query, NewProxy in the body", http.MethodPost, pluginPath + "?op=Login", string(fixtureRequest(t)), http.StatusBadRequest},
 		{"no op in the query", http.MethodPost, pluginPath, string(fixtureRequest(t)), http.StatusBadRequest},
 		{"another op in the body", http.MethodPost, pluginPath + "?op=NewProxy", login, http.StatusBadRequest},
 		{"no JSON", http.MethodPost, pluginPath + "?op=NewProxy", "op=NewProxy", http.StatusBadRequest},
@@ -161,6 +239,7 @@ func TestHandlerLogsTheDecisionWithoutSecrets(t *testing.T) {
 		np.ProxyName, np.ProxyType = serverA+".t-lb", "https"
 		np.CustomDomains, np.SubDomain = []string{"lb.example"}, "lb"
 		np.Group, np.GroupKey = "web", groupKey
+		np.Sk, np.AllowUsers = "", nil
 	}
 	wrongKey := func(np *NewProxy) {
 		lb(np)
@@ -305,7 +384,7 @@ func TestServeAnswersOverTCP(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusOK || got.Reject || !got.Unchange {
+	if resp.StatusCode != http.StatusOK || got.Reject || got.Unchange || got.Content == nil {
 		t.Errorf("answer = %d %+v, want 200 admitting the proxy", resp.StatusCode, got)
 	}
 }
@@ -343,5 +422,124 @@ func TestServeReturnsTheListenersError(t *testing.T) {
 	h, _ := newTestHandler(t, nil)
 	if err := Serve(context.Background(), ln, h, DefaultTimeouts); err == nil {
 		t.Error("Serve on a closed listener = nil, want an error")
+	}
+}
+
+// loginRequest is frps' Login request (frp v0.72.0 pkg/plugin/server LoginContent) of user
+// with key in its metadatas and the run ID runID.
+func loginRequest(t *testing.T, user, key, runID string) []byte {
+	t.Helper()
+	content := map[string]any{
+		"version": "0.72.0", "hostname": "host-01", "os": "linux", "arch": "amd64",
+		"user": user, "privilege_key": "privilege-key-placeholder", "timestamp": json.Number("1762934400"),
+		"run_id": runID, "metas": map[string]any{KeyMeta: key, "owner": "ops"}, "pool_count": json.Number("1"),
+		"client_spec": map[string]any{}, "client_address": "192.0.2.10:51000",
+	}
+	data, err := json.Marshal(map[string]any{"version": "0.1.0", "op": "Login", "content": content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// loginAnswer posts a login and returns the answer and its content.
+func loginAnswer(t *testing.T, h http.Handler, body []byte) (map[string]any, map[string]any) {
+	t.Helper()
+	rec := do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=Login", body)
+	got := answer(t, rec)
+	content, _ := got["content"].(map[string]any)
+	if strings.Contains(rec.Body.String(), keyA) || strings.Contains(rec.Body.String(), keyB) {
+		t.Errorf("answer holds a host's key: %s", rec.Body)
+	}
+	return got, content
+}
+
+func TestHandlerAdmitsALoginBoundToItsUser(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	body := loginRequest(t, serverA, keyA, "")
+	got, content := loginAnswer(t, h, body)
+	if len(got) != 3 || got["reject"] != false || got["unchange"] != false {
+		t.Fatalf("answer = %v, want reject false, unchange false and the content", got)
+	}
+	runID, _ := content["run_id"].(string)
+	if !strings.HasPrefix(runID, runIDPrefix(serverA)) || len(runID) != 49 {
+		t.Fatalf("run_id = %q, want one under A's prefix", runID)
+	}
+	var want struct {
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(body, &want); err != nil {
+		t.Fatal(err)
+	}
+	delete(want.Content["metas"].(map[string]any), KeyMeta)
+	want.Content["run_id"] = runID
+	if !reflect.DeepEqual(content, want.Content) {
+		t.Errorf("content = %v, want the request's content without the key and with the run ID: %v", content, want.Content)
+	}
+
+	// frpc sends the run ID back on its next login: it stays. A run ID of another user or one
+	// frps made itself is replaced, so a login never names another host's control.
+	if _, again := loginAnswer(t, h, loginRequest(t, serverA, keyA, runID)); again["run_id"] != runID {
+		t.Errorf("own run ID: run_id = %v, want %q", again["run_id"], runID)
+	}
+	_, ofB := loginAnswer(t, h, loginRequest(t, serverB, keyB, ""))
+	for _, foreign := range []string{ofB["run_id"].(string), "0123456789abcdef"} {
+		_, c := loginAnswer(t, h, loginRequest(t, serverA, keyA, foreign))
+		if c["run_id"] == foreign || !strings.HasPrefix(c["run_id"].(string), runIDPrefix(serverA)) {
+			t.Errorf("run ID %q: run_id = %v, want a fresh one under A's prefix", foreign, c["run_id"])
+		}
+	}
+}
+
+// The desktop's STCP visitor logs in as an AdminHelper user, no host: admitted without a key,
+// with a run ID under its own prefix, so it cannot replace a host's control either.
+func TestHandlerAdmitsAVisitorLoginBoundToItsUser(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	_, ofA := loginAnswer(t, h, loginRequest(t, serverA, keyA, ""))
+	got, content := loginAnswer(t, h, loginRequest(t, "ops-admin", "", ofA["run_id"].(string)))
+	if got["reject"] != false {
+		t.Fatalf("answer = %v, want reject false", got)
+	}
+	runID, _ := content["run_id"].(string)
+	if !strings.HasPrefix(runID, runIDPrefix("ops-admin")) || runID == ofA["run_id"] {
+		t.Errorf("run_id = %q, want a fresh one under the visitor's prefix", runID)
+	}
+}
+
+func TestHandlerRefusesALoginWithoutTheHostsKey(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	for name, body := range map[string][]byte{
+		"another host's key": loginRequest(t, serverA, keyB, ""),
+		"no key":             loginRequest(t, serverA, "", ""),
+		"no user":            loginRequest(t, "", keyA, ""),
+	} {
+		got, _ := loginAnswer(t, h, body)
+		if len(got) != 3 || got["reject"] != true || got["reject_reason"] != loginRejectReason {
+			t.Errorf("%s: answer = %v, want reject true with the general reason", name, got)
+		}
+	}
+	h, _ = newTestHandler(t, nil)
+	if got, _ := loginAnswer(t, h, loginRequest(t, serverA, keyA, "")); got["reject"] != true {
+		t.Errorf("without a policy: answer = %v, want reject true", got)
+	}
+}
+
+func TestHandlerLogsTheLoginWithoutSecrets(t *testing.T) {
+	h, log := newTestHandler(t, fixturePolicy(t))
+	_, content := loginAnswer(t, h, loginRequest(t, serverA, keyA, ""))
+	loginAnswer(t, h, loginRequest(t, serverA, keyB, ""))
+	text := log.String()
+	for _, want := range []string{
+		`level=INFO msg="login admitted" user=` + serverA,
+		`level=WARN msg="login refused" user=` + serverA + ` reason="wrong key"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("log lacks %q:\n%s", want, text)
+		}
+	}
+	for _, secret := range []string{keyA, keyB, "privilege-key-placeholder", content["run_id"].(string)} {
+		if strings.Contains(text, secret) {
+			t.Errorf("log holds %q:\n%s", secret, text)
+		}
 	}
 }
