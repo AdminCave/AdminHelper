@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ci-3 — Task-Ledger
-Status: bereit · Branch: feature/klein-ci-3 · Review: am Ende
+Status: erledigt · Branch: feature/klein-ci-3 · Review: am Ende
 Spec: docs/features/klein-ci-3.md (Roadmap R-1385, R-1386)
 Heavy: none — Wächter-Skript unter .github/scripts und Doku, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
