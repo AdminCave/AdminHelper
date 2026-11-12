@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ui-desktop-3 — Task-Ledger
-Status: geplant · Branch: feature/klein-ui-desktop-3 · Review: am Ende
+Status: aktiv · Branch: feature/klein-ui-desktop-3 · Review: am Ende
 Spec: docs/features/klein-ui-desktop-3.md (Roadmap R-1333, R-1358)
 Heavy: none — reine UI-Logik mit Vitest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
