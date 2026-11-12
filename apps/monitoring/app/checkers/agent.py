@@ -130,13 +130,14 @@ def agent_number(value: object) -> int | float | None:
 MAX_REPORT_ENTRIES = 500
 
 
-def capped_objects(value: object) -> list[dict]:
+def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]:
     """The entries of a report list that a checker rates: the objects among the first
-    MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
-    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
+    `limit` (at most MAX_REPORT_ENTRIES), [] for anything but a list. Capping first bounds
+    the work on a flooded list and lets an entry that is no object take its place in a
+    smaller limit; any other entry is skipped instead of failing the evaluation (R-0486)."""
     if not isinstance(value, list):
         return []
-    return [entry for entry in value[:MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+    return [entry for entry in value[: min(limit, MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
 
 
 def entry_text(entry: dict, key: str, default: str) -> str:
@@ -460,6 +461,49 @@ def _grade_temperatures(grader: _Grader, config: dict, resources: dict) -> list[
     return temperatures
 
 
+# How long the agent's load gate may hold the optional collectors, the probes and a discovery
+# back before agent_resources warns: their checks keep their last status meanwhile (R-1268).
+_LOAD_SHED_WARN_MINUTES = 30
+
+
+def load_shed_block(report: dict) -> dict:
+    """The report's self.load_shed block; {} without one or for anything but an object."""
+    own = report.get("self")
+    block = own.get("load_shed") if isinstance(own, dict) else None
+    return block if isinstance(block, dict) else {}
+
+
+def load_shed_since(report: dict) -> datetime | None:
+    """Since when the agent's load gate sheds, as naive UTC; None unless the block says
+    active (a real true) and gives the begin as the agent writes it."""
+    block = load_shed_block(report)
+    since = block.get("since")
+    if block.get("active") is not True or not isinstance(since, str):
+        return None
+    try:
+        return datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+
+
+def _grade_load_shed(grader: _Grader, report: dict) -> None:
+    # Only a warning: the load itself is graded above, and a host that sheds is still
+    # measured in its core. A begin in the future (the agent's clock ahead) counts as now.
+    since = load_shed_since(report)
+    if since is None:
+        return
+    minutes = max(0, int((utcnow_naive() - since).total_seconds() // 60))
+    grader.grade(
+        "load_shed",
+        minutes,
+        _LOAD_SHED_WARN_MINUTES,
+        math.inf,
+        f"Load shedding since {since:%Y-%m-%d %H:%M} UTC ({minutes} min)",
+        " min",
+        hysteresis=False,
+    )
+
+
 def _resources_message(problems: list[str], cpu, mem) -> str:
     if problems:
         return join_capped(problems, "; ")
@@ -471,7 +515,7 @@ def _resources_message(problems: list[str], cpu, mem) -> str:
     return ", ".join(parts) if parts else "OK"
 
 
-# The agent names at most five processes per list; the same cap here.
+# At most five processes per list are shown.
 _MAX_TOP_PROCESSES = 5
 
 
@@ -595,6 +639,7 @@ class AgentResourcesChecker:
         cpu, mem, swap, swap_total = _grade_usage(grader, config, resources)
         load_rated = not _in_container(report)
         cpu_count, load_per_cpu = _grade_load(grader, config, resources, load_rated)
+        _grade_load_shed(grader, report)
         disks, ignore_mounts = _grade_disks(grader, config, resources)
         temperatures = _grade_temperatures(grader, config, resources)
 

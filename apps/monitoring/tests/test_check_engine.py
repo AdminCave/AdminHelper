@@ -850,8 +850,8 @@ def test_execute_check_stores_a_text_the_database_cannot_take_replaced(monkeypat
     with factory() as db:
         state = db.query(MonitorState).filter_by(check_id="c1").one()
     assert state.status == "critical"
-    assert state.message == "down� at\U0001f600"
+    assert state.message == "down\ufffd at\U0001f600"
     assert json.loads(state.details) == {
-        "k�": ["a�b", {"x": "\U0001f600�"}],
+        "k\ufffd": ["a\ufffdb", {"x": "\U0001f600\ufffd"}],
         "n": 3,
     }

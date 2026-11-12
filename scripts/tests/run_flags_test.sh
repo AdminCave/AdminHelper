@@ -22,7 +22,7 @@ set -uo pipefail
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
 unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
-      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS AH_PART AH_EXCLUDE
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_SCRIPT_TESTS_ROOT AH_HEAD AH_TREE_HASH AH_ARGS AH_PART AH_EXCLUDE
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -737,8 +737,13 @@ printf '#!/bin/sh\n[ -z "$AH_ARGS" ]\n' > "$BLOCK/blockargs.sh"; chmod +x "$BLOC
 # file, so the nesting guard stays live for every other case: from T9 on this
 # test runs INSIDE the block, and only these cases need it out of the way. Each
 # passes a two- or three-entry list, so nothing recurses.
+BLOCKROOT="$WORK/blockroot"; mkdir -p "$BLOCKROOT/sub" "$BLOCK/sub"
+printf '#!/bin/sh\nexit 0\n' > "$BLOCKROOT/sub/pathpass.sh"
+printf '#!/bin/sh\nexit 1\n' > "$BLOCKROOT/sub/pathfail.sh"
+# A green twin under the test directory: a path entry must not be looked up there.
+printf '#!/bin/sh\nexit 0\n' > "$BLOCK/sub/pathfail.sh"
 block_run() { OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_SCRIPT_TESTS="$1" \
-  AH_SCRIPT_TESTS_DIR="$BLOCK" AH_IN_SCRIPTS_BLOCK='' \
+  AH_SCRIPT_TESTS_DIR="$BLOCK" AH_SCRIPT_TESTS_ROOT="$BLOCKROOT" AH_IN_SCRIPTS_BLOCK='' \
   "$BARE/bash" "$RUN" unit --only scripts "${@:2}" 2>&1); rc=$?; }
 
 block_run "blockpass blockpass"
@@ -769,6 +774,15 @@ grep -q "blockfail2: FAILED (rc=2)" <<<"$OUT" && grep -q "2 of 4 failed: blockfa
 block_run "blockskip blockfail"
 [ $rc -eq 1 ] && grep -q "FAIL  scripts (hermetic)" <<<"$OUT" && grep -q "1 of 2 failed: blockfail" <<<"$OUT" \
   && ok "block: a failure next to a skip is a FAIL, not a SKIP" || bad "fail+skip: rc=$rc"
+
+# R-1352: an entry with a slash is a path from the checkout root (.github/scripts/).
+block_run "blockpass sub/pathpass"
+[ $rc -eq 0 ] && grep -q "PASS  scripts (hermetic)" <<<"$OUT" && grep -q '^  ── sub/pathpass' <<<"$OUT" \
+  && ok "block: a path entry runs from the checkout root" || bad "path entry green: rc=$rc"
+block_run "blockpass sub/pathfail"
+[ $rc -eq 1 ] && grep -q "sub/pathfail: FAILED (rc=1)" <<<"$OUT" \
+  && ok "block: a red path entry fails the block, not its namesake in the test directory" \
+  || bad "path entry red: rc=$rc"
 
 block_run ""
 [ $rc -ne 0 ] && grep -q "AH_SCRIPT_TESTS is empty" <<<"$OUT" \

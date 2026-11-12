@@ -586,37 +586,53 @@ hc -a -m "commit -a, key"
   && ok "armed: commit -a with a sec dedup key is refused" || bad "commit -a key: rc=$rc out=$OUT"
 git -C "$HFIX" checkout -q -- docs/note.md
 printf 'clean line\n' >> "$HFIX/docs/note.md"
-hc -a -m "a clean change"
+hc -a -m "docs: a clean change"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a clean change is committed" || bad "clean: rc=$rc out=$OUT"
+# R-1359: the subject is a Conventional Commit; three task commits on main were not.
+H0=$(heads)
+for m in "a free subject" "Task: kern-x T1 (R-1)" "feat:no space" "feature: x" "feat(): x"; do
+  hc --allow-empty -m "$m"
+  [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "no Conventional Commit" <<<"$OUT" && ! grep -qF -- "$m" <<<"$OUT" \
+    && ok "armed: subject '$m' is refused, not echoed" || bad "subject '$m': rc=$rc out=$OUT"
+done
+# With -m git keeps a # line, so it is the subject; only an editor's # lines are comments.
+hc --allow-empty -m "# a comment"$'\n\n'"fix(hooks)!: y"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "no Conventional Commit" <<<"$OUT" \
+  && ok "armed: a # line given with -m is the subject and refused" || bad "-m comment: rc=$rc out=$OUT"
+printf '#!/bin/sh\nprintf "# c\\n\\nfix(hooks)!: y\\n" > "$1"\n' > "$WORK/ed-comment.sh"; chmod +x "$WORK/ed-comment.sh"
+GIT_EDITOR="$WORK/ed-comment.sh" hc --allow-empty
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "fix(hooks)!: y" ] \
+  && ok "armed: a typed subject with scope and ! below an editor comment is committed" \
+  || bad "editor subject: rc=$rc out=$OUT"
 # commit-msg (R-0197): a token in the message stops the commit itself, not only the
 # push. The merge commits further down pass this hook with git's own message.
 H0=$(heads)
-hc --allow-empty -m "subject $T_GH"
+hc --allow-empty -m "test: subject $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:1 (a token pattern)" <<<"$OUT" \
   && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
-hc --allow-empty -m "subject with gh""p_short only"
+hc --allow-empty -m "test: subject with gh""p_short only"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
 # R-0213: a scissors line typed into -m or -F hides nothing; git keeps what follows
 # it. git runs the hook with GIT_EDITOR=: there, even when the caller set an editor.
 CUT='# ------------------------ >8 ------------------------'
 H0=$(heads)
-hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+hc --allow-empty -m "test: subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: a token below a scissors line typed into -m is refused (R-0213)" || bad "msg scissors -m: rc=$rc out=$OUT"
-printf 'subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$WORK/scissors-msg.txt"
+printf 'test: subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$WORK/scissors-msg.txt"
 hc --allow-empty -F "$WORK/scissors-msg.txt"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: ... and in -F" || bad "msg scissors -F: rc=$rc out=$OUT"
 rm -f -- "$WORK/scissors-msg.txt"
 # An editor that keeps the template git wrote and types a subject above it.
-printf '#!/bin/sh\n{ echo "typed subject"; cat "$1"; } > "$1.new" && mv "$1.new" "$1"\n' > "$WORK/ed-keep.sh"
+printf '#!/bin/sh\n{ echo "test: typed subject"; cat "$1"; } > "$1.new" && mv "$1.new" "$1"\n' > "$WORK/ed-keep.sh"
 chmod 755 "$WORK/ed-keep.sh"
-GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "test: subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: ... and in -m with GIT_EDITOR set (git hands the hook GIT_EDITOR=:)" || bad "msg scissors -m editor set: rc=$rc out=$OUT"
 # The same with a diff header typed below the line: without an editor the hook
 # says nothing of one, so review.sh reads on.
-TYPED="subject"$'\n\n'"$CUT"$'\n'"diff --git a/f b/f"$'\n'"+below $T_GH"
+TYPED="test: subject"$'\n\n'"$CUT"$'\n'"diff --git a/f b/f"$'\n'"+below $T_GH"
 hc --allow-empty -m "$TYPED"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
   && ok "armed: a diff header typed below the scissors line in -m hides nothing" || bad "msg typed diff -m: rc=$rc out=$OUT"
@@ -632,7 +648,7 @@ GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "$TYPED"
 # so a diff that removes a token line commits.
 printf 'clean\n' > "$HFIX/docs/old-token.md"; git -C "$HFIX" add -- docs/old-token.md
 GIT_EDITOR="$WORK/ed-keep.sh" hc -v
-[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "typed subject" ] \
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "test: typed subject" ] \
   && ok "armed: commit -v with an editor, whose diff removes a token line, is committed" || bad "msg commit -v: rc=$rc out=$OUT"
 rm -f -- "$WORK/ed-keep.sh"
 
@@ -646,7 +662,7 @@ git -C "$HFIX" -c core.hooksPath=/dev/null commit -qam "other hook" >/dev/null 2
 git -C "$HFIX" switch -q -
 git -C "$HFIX" worktree add -q "$WORK/hooked-wt" other 2>/dev/null
 printf 'x\n' >> "$WORK/hooked-wt/docs/note.md"
-( cd "$WORK/hooked-wt" && git commit -qam "in the worktree" >/dev/null 2>&1 )
+( cd "$WORK/hooked-wt" && git commit -qam "test: in the worktree" >/dev/null 2>&1 )
 [ -f "$WORK/hooked-wt/hook-ran.txt" ] && [ ! -f "$HFIX/hook-ran.txt" ] \
   && ok "a worktree runs the hook of its own branch" || bad "worktree hook: $(ls "$WORK/hooked-wt" "$HFIX")"
 
@@ -682,7 +698,7 @@ chmod 755 "$HFIX/scripts/dev/hooks/prepare-commit-msg"
 for b in pick-clean merge-clean; do
   git -C "$HFIX" switch -q -c "$b" "$MAIN"
   printf '%s\n' "$b" > "$HFIX/docs/$b.md"; git -C "$HFIX" add -- "docs/$b.md"
-  git -C "$HFIX" commit -qm "$b" >/dev/null 2>&1
+  git -C "$HFIX" commit -qm "test: $b" >/dev/null 2>&1
   git -C "$HFIX" switch -q "$MAIN"
 done
 OUT=$(git -C "$HFIX" cherry-pick pick-clean 2>&1); rc=$?
@@ -723,7 +739,7 @@ git -C "$HFIX" am --abort >/dev/null 2>&1
   && ok "... and git am --abort leaves nothing behind" || bad "am left behind: $(git -C "$HFIX" status --porcelain)"
 git -C "$HFIX" switch -q -c am-clean "$MAIN"
 printf 'am\n' > "$HFIX/docs/am-clean.md"; git -C "$HFIX" add -- docs/am-clean.md
-git -C "$HFIX" commit -qm "am-clean" >/dev/null 2>&1
+git -C "$HFIX" commit -qm "test: am-clean" >/dev/null 2>&1
 git -C "$HFIX" format-patch -1 --stdout am-clean > "$WORK/clean.patch" 2>/dev/null
 git -C "$HFIX" switch -q "$MAIN"
 OUT=$(git -C "$HFIX" am "$WORK/clean.patch" 2>&1); rc=$?
@@ -908,7 +924,7 @@ Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-
 Review: approve (opus)
 ### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
 Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**, pve.home.arpa, nas.fritz.box, net 192.168.1.x and 10.0.0.*, VM-ID 3013, Template 3904 und 3905, net 172.16.x.x.
-Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902
+Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902 in pty::tests::closing_ and std::fs::read, IPv6:2001:db8::5, eth0:fd12:3456::7, Source:fd00::1, node:fd00::2, _fd00::3_, host_fd00::4, fd00::5er-Netz, host[fd00::6]:22
 ### T7 — die siebte Aufgabe
 ### Ergebnis des Laufs
 Evidenz: run.sh[quick] scripts: 99 passed, 0 failed, 0 skipped
@@ -928,11 +944,13 @@ grep -q '^### Offene Fragen' <<<"$OUT" && grep -q 'T3 — die dritte Aufgabe.*so
   && ok "a [?] task stands in its own section, with the question" || bad "[?]: $OUT"
 grep -q '^### Übersprungen' <<<"$OUT" && grep -q 'T4 — die vierte Aufgabe.*schon erledigt' <<<"$OUT" \
   && ok "a [~] task stands in its own section, with the reason" || bad "[~]: $OUT"
-! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902|home\.arpa|fritz\.box|10\.0\.0|3013|3904|3905|172\.16' <<<"$OUT" \
+! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902|home\.arpa|fritz\.box|10\.0\.0|3013|3904|3905|172\.16|fd00:' <<<"$OUT" \
   && ok "no address (v4, v6 compressed or bracketed, behind a word:), host name (also at a sentence end) or VMID" \
   || bad "leak: $OUT"
 grep -qF '.claude/settings.local.json on 127.0.0.1' <<<"$OUT" \
   && ok "a file name with .local and the loopback address stay" || bad "over-scrub: $OUT"
+grep -qF 'in pty::tests::closing_ and std::fs::read' <<<"$OUT" \
+  && ok "a path like a::b is no IPv6 address (R-1325)" || bad "over-scrub a::b: $OUT"
 t6="$(sed -n '/T6 — /,/^- /p' <<<"$OUT")"
 grep -q '9 passed' <<<"$t6" && ! grep -q '99 passed' <<<"$OUT" && ! grep -q '9 passed' <<<"$(sed -n '/T5 — /,/T6 — /p' <<<"$OUT" | sed '$d')" \
   && ok "every ### heading ends a task: a note after the box is read, a section's lines belong to none" || bad "sections: $OUT"

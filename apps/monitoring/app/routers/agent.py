@@ -17,7 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from app.check_engine import apply_result, dispatch_alert_bg, log_transition
+from app.check_engine import apply_result, dispatch_alert_bg, log_transition, with_skip_note
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import (
@@ -26,6 +26,8 @@ from app.checkers.agent import (
     agent_number,
     capped_objects,
     entry_text,
+    load_shed_block,
+    load_shed_since,
     record_agent_report,
 )
 from app.core.auth import require_agent
@@ -44,13 +46,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# The collector a push check lives on. A collector the agent's self-throttle skipped in
-# this run sent no data: its checks keep their state instead of turning unknown.
+# The collector a push check lives on. A collector the agent's self-throttle or its load
+# gate skipped in this run sent no data: its checks keep their state instead of turning
+# unknown. The probe phase only skips for the load gate.
 _COLLECTOR_OF_CHECK = {
     "docker_health": "docker",
     "proxmox_backup": "proxmox",
     "zfs_health": "zfs",
     "smart_health": "smart",
+    "probe": "probes",
 }
 # The agent reports every 5 minutes (defaultInterval, apps/agent/cmd/adminhelper-agent) and
 # runs a throttled collector at least every 8th time (maxThrottleFactor). A check whose
@@ -59,6 +63,10 @@ _THROTTLE_SPARES_AT_MOST = timedelta(minutes=5 * 9)
 _MAX_COLLECTORS = 32
 _COLLECTOR_NAME = re.compile(r"[a-z0-9_]{1,32}")
 _COLLECTOR_NUMBERS = ("duration_ms", "cpu_ms", "timeouts", "factor")
+# The reason of a collector the agent's load gate held back (shedReason, apps/agent) and the
+# note its checks carry meanwhile.
+_LOAD_SHED_REASON = "load"
+_LOAD_SHED_NOTE = "skipped: load shedding"
 
 
 def _require_own_server(auth_server_id: str, server_id: str) -> None:
@@ -98,12 +106,18 @@ def agent_report(
     _store_discovery(db, server_id, report)
     _store_services(db, server_id, report)
     collectors = _collectors(report)
-    lines = _report_lines(server_id, report) + _collector_lines(server_id, collectors)
+    lines = (
+        _report_lines(server_id, report)
+        + _collector_lines(server_id, collectors)
+        + _load_shed_lines(server_id, report)
+    )
     throttled = {name for name, entry in collectors.items() if entry.get("throttled") is True}
+    shed = _shed_collectors(report, collectors)
     if lines:
         victoria.write(lines)
 
     checks_updated = 0
+    noted = 0
     # (check_id, old_status, new_status) for each sent-state discrepancy; dispatched in
     # the background after the response so webhook/SMTP never block the request.
     pending_alerts: list[tuple[str, str, str]] = []
@@ -114,6 +128,15 @@ def agent_report(
     check_lines: list[str] = []
     now = utcnow_naive()
     for check in _push_checks(db, server_id):
+        # Before the throttle: a collector the load gate held back is throttled too.
+        try:
+            spared = _spared_by_load_shed(db, check, shed)
+        except Exception:
+            logger.exception("Load shedding note of check '%s' failed", check.name)
+            continue
+        if spared:
+            noted += 1
+            continue
         if _spared_by_throttle(db, check, throttled, now):
             continue
         # Isolate each check: a single broken check.config (or a checker raising)
@@ -133,7 +156,7 @@ def agent_report(
             pending_alerts.append(alert)
         checks_updated += 1
 
-    if checks_updated:
+    if checks_updated or noted:
         _commit_evaluation(db, transitions)
     # Flush all collected per-check metrics in a single write (5.20).
     if check_lines:
@@ -143,6 +166,33 @@ def agent_report(
         background_tasks.add_task(dispatch_alert_bg, check_id, old_s, new_s)
 
     return {"status": "ok", "metricsWritten": len(lines), "checksUpdated": checks_updated}
+
+
+def _shed_collectors(report: dict, collectors: dict[str, dict]) -> set[str]:
+    """The collectors the agent's load gate held back in this run. Only while the report's
+    self.load_shed says the gate is active: the spare without a time limit and the warning
+    of agent_resources after a long shedding stand on the same block."""
+    if load_shed_since(report) is None:
+        return set()
+    return {
+        name
+        for name, entry in collectors.items()
+        if entry.get("throttled") is True and entry.get("reason") == _LOAD_SHED_REASON
+    }
+
+
+def _spared_by_load_shed(db: Session, check: MonitorCheck, shed: set[str]) -> bool:
+    """Whether the check keeps its state because the agent's load gate held its collector
+    back: as long as the gate lasts, for a check with a rating, whose message then says
+    it went unmeasured. In a SAVEPOINT like an evaluation (R-0635)."""
+    if _COLLECTOR_OF_CHECK.get(check.check_type) not in shed:
+        return False
+    with db.begin_nested():
+        state = _locked_state(db, check.id)
+        if state is None or state.last_check is None:
+            return False
+        state.message = with_skip_note(state.message, _LOAD_SHED_NOTE)
+    return True
 
 
 def _spared_by_throttle(
@@ -253,6 +303,14 @@ def _collector_lines(server_id: str, collectors: dict[str, dict]) -> list[str]:
         if isinstance(throttled, bool):
             lines.append(format_line("monitor_agent_collector_throttled", tags, int(throttled), ts))
     return lines
+
+
+def _load_shed_lines(server_id: str, report: dict) -> list[str]:
+    active = load_shed_block(report).get("active")
+    if not isinstance(active, bool):
+        return []
+    tags = {"server_id": server_id}
+    return [format_line("monitor_agent_load_shed", tags, int(active), int(time.time()))]
 
 
 def _report_lines(server_id: str, report: dict) -> list[str]:
