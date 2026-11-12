@@ -1,5 +1,5 @@
 # Monitoring: Probe-Ziele, Socket-Pfade, Docker-Erkennung, Meldetext, Testvorlage — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-22 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-22 · Review: pro Task
 Spec: docs/features/kern-monitoring-22.md (Roadmap R-1319, R-1320, R-1324, R-1321, R-1300, R-1365)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring (Meldetext); dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (Socket-Dial unter FreeBSD, T4)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -66,8 +66,10 @@ rot: eine Ablehnung wegen Sperrliste nennt keine fremde Adresse.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_probe_checker.py
 Doku: → T7
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
+### T7 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-22.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @edc11a6b1 2026-11-12T12:06:24+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Probe-Ziel (Listener-Pflicht, Weiterleiter, Docker-Erkennung, Meldetext) in Admin- und Entwicklerdoku,
 neutral; `changelog.d/kern-monitoring-22.md`.
 Verify: bash scripts/dev/verify.sh scripts --strict
