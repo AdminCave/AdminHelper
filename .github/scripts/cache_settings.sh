@@ -13,7 +13,10 @@
 # A workflow given with --uncached (release.yml, R-1288) restores no cache at all: there every
 # Swatinem/rust-cache and actions/cache step is a violation, setup-node needs
 # `package-manager-cache: false` and no `cache:`, setup-go needs `cache: false`, and setup-python
-# or setup-java may not set `cache:`.
+# or setup-java may not set `cache:`, setup-dotnet no `cache:` other than false, setup-uv needs
+# `enable-cache: false`, setup-ruby no `bundler-cache:` other than false, and
+# docker/build-push-action needs `no-cache: true` and no `cache-from`/`cache-to`.
+# A `with:` written as a flow mapping (`with: { … }`) is a violation everywhere: it is not read.
 # A violation is printed as a GitHub error annotation with file and line; exit 1 then.
 set -euo pipefail
 
@@ -52,6 +55,8 @@ for i in "${!files[@]}"; do
                 printf "::error file=%s,line=%d::rust-cache cache-directories names .cargo/bin\n", file, start
             if (acache && binpath)
                 printf "::error file=%s,line=%d::actions/cache path names .cargo/bin\n", file, start
+            if (flow)
+                printf "::error file=%s,line=%d::with: as a flow mapping is not checked, write it as a block\n", file, start
             if (uncached) {
                 if (rust || acache)
                     printf "::error file=%s,line=%d::cache step in a workflow that runs without caches\n", file, start
@@ -61,6 +66,12 @@ for i in "${!files[@]}"; do
                     printf "::error file=%s,line=%d::setup-go without cache: false\n", file, start
                 if (spyjava && hascache)
                     printf "::error file=%s,line=%d::setup step with cache: in a workflow that runs without caches\n", file, start
+                if (suv && !uvoff)
+                    printf "::error file=%s,line=%d::setup-uv without enable-cache: false\n", file, start
+                if (sruby && bundler)
+                    printf "::error file=%s,line=%d::setup-ruby with bundler-cache in a workflow that runs without caches\n", file, start
+                if (bpa && (bcache || !nocache))
+                    printf "::error file=%s,line=%d::build-push-action with cache-from/cache-to or without no-cache: true\n", file, start
             }
             if (pw && !hashed)
                 printf "::error file=%s,line=%d::ms-playwright cache whose key does not use hashFiles(\n", file, start
@@ -76,17 +87,24 @@ for i in "${!files[@]}"; do
             # A dash deeper than the step is a list inside it (a path list), not a new step.
             if (line ~ /^[ ]*- / && (!start || ind <= dash)) {
                 check()
-                start = NR; dash = ind; keyind = ind + 2; first = 1
+                # The step keys sit where the first key after the dash starts.
+                match(line, /^[ ]*-[ ]+/)
+                start = NR; dash = ind; keyind = RLENGTH; first = 1
                 rust = acache = nobin = bindir = binpath = pw = hashed = restore = 0
                 snode = sgo = spyjava = hascache = cachefalse = pmfalse = 0
+                suv = uvoff = sruby = bundler = bpa = bcache = nocache = flow = 0
                 blk = ""; wkey = ""; withind = 0
-                sub(/^[ ]*- /, "", line)
+                sub(/^[ ]*-[ ]+/, "", line)
             }
             if (!start) next
             sub(/[ ]+#.*$/, "", line)
-            # Step keys sit at the dash + 2; the with: block is what lies deeper under `with:`.
-            if (first || ind == keyind) {
+            # The with: block is what lies deeper than the step keys under `with:`. A list item at
+            # the height of its key belongs to that key.
+            if (!first && ind == keyind && line ~ /^[ ]*- /) {
+                # a list under a step key: nothing to read
+            } else if (first || ind == keyind) {
                 k = keyof(line)
+                if (k == "with" && line ~ /^[ ]*with:[ ]*[{]/) flow = 1
                 blk = k; wkey = ""; withind = 0
                 if (k == "uses") {
                     u = tolower(line)
@@ -95,11 +113,14 @@ for i in "${!files[@]}"; do
                     if (u ~ /^actions\/cache(\/restore|\/save)?@/) acache = 1
                     if (u ~ /^actions\/setup-node@/) snode = 1
                     if (u ~ /^actions\/setup-go@/) sgo = 1
-                    if (u ~ /^actions\/setup-(python|java)@/) spyjava = 1
+                    if (u ~ /^actions\/setup-(python|java|dotnet)@/) spyjava = 1
+                    if (u ~ /^astral-sh\/setup-uv@/) suv = 1
+                    if (u ~ /^ruby\/setup-ruby@/) sruby = 1
+                    if (u ~ /^docker\/build-push-action@/) bpa = 1
                 }
             } else if (ind > keyind && blk == "with") {
                 if (!withind) withind = ind
-                if (ind == withind) {
+                if (ind == withind && line !~ /^[ ]*- /) {
                     wkey = keyof(line)
                     if (line ~ /^[ ]*cache-bin:[ ]*["\047]?false["\047]?[ ]*$/) nobin = 1
                     if (wkey == "cache") {
@@ -107,6 +128,10 @@ for i in "${!files[@]}"; do
                         else hascache = 1
                     }
                     if (line ~ /^[ ]*package-manager-cache:[ ]*["\047]?false["\047]?[ ]*$/) pmfalse = 1
+                    if (line ~ /^[ ]*enable-cache:[ ]*["\047]?false["\047]?[ ]*$/) uvoff = 1
+                    if (wkey == "bundler-cache" && line !~ /^[ ]*bundler-cache:[ ]*["\047]?false["\047]?[ ]*$/) bundler = 1
+                    if (wkey == "cache-from" || wkey == "cache-to") bcache = 1
+                    if (line ~ /^[ ]*no-cache:[ ]*["\047]?true["\047]?[ ]*$/) nocache = 1
                 }
                 if (line ~ /\.cargo\/bin/) {
                     if (wkey == "cache-directories") bindir = 1
