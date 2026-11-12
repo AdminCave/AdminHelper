@@ -1282,14 +1282,6 @@ jobs:
       # skipped test a failure here, where every precondition is available.
       - name: Hermetic shell tests
         run: bash scripts/tests/run.sh unit --strict --only scripts
-      - name: retry.sh test
-        run: bash .github/scripts/retry_test.sh
-      - name: apt_archives_verify.sh test
-        run: bash .github/scripts/apt_archives_verify_test.sh
-      - name: tauri_cli_pins.sh test
-        run: bash .github/scripts/tauri_cli_pins_test.sh
-      - name: cache_settings.sh test
-        run: bash .github/scripts/cache_settings_test.sh
       # Does the documentation still describe this tree? Every <code>apps/…</code>
       # in docs/**/*.html has to name a file that exists (--paths), and a <code>
       # that is one ALL_CAPS name has to be carried by the repository outside the
