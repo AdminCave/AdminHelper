@@ -319,6 +319,16 @@ check "docker buildx bake in a run: block (uncached): red" 1 "$(run --uncached "
 printf '    steps:\n      - run: |\n          docker buildx imagetools inspect x\n          echo docker-build\n' >"$work/runok.yml"
 check "imagetools and a mere mention in run: (uncached): green" 0 "$(run --uncached "$work/runok.yml")"
 
+# R-1385: a path before docker, any white space and the compose, image and builder subcommands are builds too.
+for form in '/usr/bin/docker build -t x .' $'docker\tbuild -t x .' 'docker compose build' 'docker image build -t x .' 'docker builder build -t x .' 'docker compose bake'; do
+    printf '    steps:\n      - run: |\n          %s\n' "$form" >"$work/runform.yml"
+    check "docker build form in run: (uncached): red: $form" 1 "$(run --uncached "$work/runform.yml")"
+done
+for form in 'docker compose up -d' 'docker image ls' 'docker builder prune -f' 'mydocker build -t x .' 'docker-build.sh' 'docker compose config'; do
+    printf '    steps:\n      - run: |\n          %s\n' "$form" >"$work/runform.yml"
+    check "no image build in run: (uncached): green: $form" 0 "$(run --uncached "$work/runform.yml")"
+done
+
 # R-1355: a flow mapping on the line below with: is a flow mapping too.
 printf '    steps:\n      - uses: Swatinem/rust-cache@v2\n        with:\n          {cache-bin: false}\n' >"$work/flownext.yml"
 check "flow mapping on the line below with:: red" 1 "$(run "$work/flownext.yml")"
