@@ -389,6 +389,20 @@ def _load_context(db: Session, check: MonitorCheck, config: dict) -> CheckContex
     return CheckContext(prev_details=prev_details, partner=partner)
 
 
+def with_skip_note(message: str | None, note: str) -> str:
+    """`message` with the note of a skipped run behind it, in place of an earlier note; the
+    note alone for a message that is empty or only a note. Held to MAX_MESSAGE."""
+    base = _SKIP_NOTE.sub("", message or "")
+    if base.startswith("skipped: "):
+        base = ""
+    if not base:
+        return note
+    suffix = f" ({note})"
+    if len(base) + len(suffix) > MAX_MESSAGE:
+        base = base[: MAX_MESSAGE - len(suffix) - 1] + "…"
+    return base + suffix
+
+
 def _note_skip(db: Session, check_id: str, note: str) -> None:
     """Notes a skipped run behind the stored message and changes nothing else.
 
@@ -401,16 +415,7 @@ def _note_skip(db: Session, check_id: str, note: str) -> None:
     )
     if state is None:
         return
-    base = _SKIP_NOTE.sub("", state.message or "")
-    if base.startswith("skipped: "):
-        base = ""
-    suffix = f" ({note})"
-    if not base:
-        state.message = note
-    else:
-        if len(base) + len(suffix) > MAX_MESSAGE:
-            base = base[: MAX_MESSAGE - len(suffix) - 1] + "…"
-        state.message = base + suffix
+    state.message = with_skip_note(state.message, note)
     db.commit()
     logger.info("Check %s %s", check_id, note)
 
