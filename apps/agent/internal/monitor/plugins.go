@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"os"
@@ -762,7 +763,7 @@ func collectZFS(ctx context.Context) map[string]any {
 	}
 
 	out, err := zpoolCLI.run(ctx, "list", "-H", "-o",
-		"name,size,alloc,free,cap,health")
+		"name,size,alloc,free,cap,health,frag")
 	if err != nil {
 		return zfsUnavailable(err)
 	}
@@ -778,6 +779,14 @@ func collectZFS(ctx context.Context) map[string]any {
 				result["errors"] = strings.TrimSpace(string(statusOut))
 			}
 			break
+		}
+	}
+
+	if len(pools) > 0 {
+		details := zpoolDetails(ctx)
+		for _, p := range pools {
+			name, _ := p["name"].(string)
+			maps.Copy(p, details[name])
 		}
 	}
 	return result
@@ -800,9 +809,10 @@ func zfsUnavailable(err error) map[string]any {
 	}
 }
 
-// parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health` (tab-separated) into pool
-// maps, skipping lines with too few columns and stripping the % from the capacity column — the
-// positional parsing, testable without running zpool (6.16).
+// parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health,frag` (tab-separated) into
+// pool maps, skipping lines with too few columns and stripping the % from the capacity column — the
+// positional parsing, testable without running zpool (6.16). fragmentation_percent is left out where
+// zpool prints "-" (unknown, zpoolprops(7)) or something else than a percentage.
 func parseZpoolList(out []byte) []map[string]any {
 	pools := []map[string]any{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -820,8 +830,113 @@ func parseZpoolList(out []byte) []map[string]any {
 			"capacity_percent": capPct,
 			"health":           parts[5],
 		})
+		if len(parts) > 6 {
+			if frag, ok := zpoolPercent(parts[6]); ok {
+				pools[len(pools)-1]["fragmentation_percent"] = frag
+			}
+		}
 	}
 	return pools
+}
+
+// zpoolPercent reads a percentage as `zpool list` prints it without -p ("12%", libzfs
+// zpool_get_prop), ok only for 0 to 100.
+func zpoolPercent(s string) (int, bool) {
+	digits, found := strings.CutSuffix(s, "%")
+	n, err := strconv.Atoi(digits)
+	if !found || err != nil || n < 0 || n > 100 {
+		return 0, false
+	}
+	return n, true
+}
+
+// maxZpoolVdevErrors caps the vdevs with errors named per pool.
+const maxZpoolVdevErrors = 32
+
+// zpoolScanStates are the states of a scan that zpool status -j writes (pool_scan_state_str in
+// cmd/zpool/zpool_main.c) and a scrub can be in; NONE means no scan. A paused scrub stays SCANNING
+// with scrub_pause set (print_scan_scrub_resilver_status), the agent sends it as PAUSED.
+var zpoolScanStates = map[string]bool{"SCANNING": true, "FINISHED": true, "CANCELED": true}
+
+// zpoolStatus is what the pool details read of `zpool status -j --json-int --json-flat-vdevs`
+// (zpool-status(8); zpool_main.c scan_status_nvlist, vdev_stats_nvlist): per pool, keyed by its name,
+// the last scan and the error counters of every vdev, the pool's root vdev and the log, cache, spare,
+// special and dedup vdevs included.
+type zpoolStatus struct {
+	Pools map[string]struct {
+		Scan *struct {
+			Function string `json:"function"`
+			State    string `json:"state"`
+			EndTime  uint64 `json:"end_time"`
+			Errors   uint64 `json:"errors"`
+			Pause    uint64 `json:"scrub_pause"`
+		} `json:"scan_stats"`
+		Vdevs map[string]struct {
+			Name     string `json:"name"`
+			Read     uint64 `json:"read_errors"`
+			Write    uint64 `json:"write_errors"`
+			Checksum uint64 `json:"checksum_errors"`
+		} `json:"vdevs"`
+	} `json:"pools"`
+}
+
+// zpoolDetails are the details of each pool by name (parseZpoolStatus). A zpool without -j (OpenZFS
+// 2.2 and older), a call that fails or times out, or output it cannot read gives none and no error:
+// the pools go out as before, like without `zpool status -x`.
+func zpoolDetails(ctx context.Context) map[string]map[string]any {
+	out, err := zpoolCLI.run(ctx, "status", "-j", "--json-int", "--json-flat-vdevs")
+	if err != nil {
+		return nil
+	}
+	return parseZpoolStatus(out)
+}
+
+// parseZpoolStatus reads per pool the last scrub — scrub {state, errors, end} where the last scan was
+// a scrub, state SCANNING, PAUSED, FINISHED or CANCELED, end once it is no longer running — and
+// vdev_errors, the vdevs with a read, write or checksum error {name, read, write, checksum}, sorted by
+// name, at most maxZpoolVdevErrors; a pool with neither has no entry. Output it cannot read, a count
+// as a string included, gives nil.
+func parseZpoolStatus(out []byte) map[string]map[string]any {
+	var status zpoolStatus
+	if err := json.Unmarshal(out, &status); err != nil {
+		return nil
+	}
+	details := map[string]map[string]any{}
+	for pool, st := range status.Pools {
+		detail := map[string]any{}
+		if scan := st.Scan; scan != nil && scan.Function == "SCRUB" && zpoolScanStates[scan.State] {
+			scrub := map[string]any{"state": scan.State, "errors": scan.Errors}
+			if scan.State == "SCANNING" && scan.Pause > 0 {
+				scrub["state"] = "PAUSED"
+			}
+			if scan.State != "SCANNING" && scan.EndTime > 0 {
+				scrub["end"] = scan.EndTime
+			}
+			detail["scrub"] = scrub
+		}
+		var vdevs []map[string]any
+		for _, v := range st.Vdevs {
+			if v.Read == 0 && v.Write == 0 && v.Checksum == 0 {
+				continue
+			}
+			vdevs = append(vdevs, map[string]any{
+				"name": labelText(v.Name), "read": v.Read, "write": v.Write, "checksum": v.Checksum,
+			})
+		}
+		slices.SortFunc(vdevs, func(a, b map[string]any) int {
+			return strings.Compare(a["name"].(string), b["name"].(string))
+		})
+		if len(vdevs) > maxZpoolVdevErrors {
+			vdevs = vdevs[:maxZpoolVdevErrors]
+		}
+		if len(vdevs) > 0 {
+			detail["vdev_errors"] = vdevs
+		}
+		if len(detail) > 0 {
+			details[pool] = detail
+		}
+	}
+	return details
 }
 
 // getFloat extracts a float64 value from a map.

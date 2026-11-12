@@ -169,8 +169,11 @@ var commands = map[string][][]string{
 		{"get", "/nodes/<node>/tasks/<upid>/log", "--limit", "10000", "--output-format", "json"},
 	},
 	"zpool": {
-		{"list", "-H", "-o", "name,size,alloc,free,cap,health"},
+		{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag"},
 		{"status", "-x"},
+		// The pool details (zpoolDetails): scrub and vdev error counters as numbers, every vdev in one
+		// map; OpenZFS 2.3 and newer (zpool-status(8)). Without -v: no names of damaged files.
+		{"status", "-j", "--json-int", "--json-flat-vdevs"},
 	},
 	"smartctl": {
 		{"--scan", "--json=c"},

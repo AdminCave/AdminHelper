@@ -203,6 +203,34 @@ func TestAllowlistProxmoxBackupDetails(t *testing.T) {
 	}
 }
 
+func TestAllowlistZFSDetails(t *testing.T) {
+	for _, args := range [][]string{
+		{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag"},
+		{"status", "-x"},
+		{"status", "-j", "--json-int", "--json-flat-vdevs"},
+	} {
+		if !Allowed("zpool", args) {
+			t.Errorf("refused: zpool %q", args)
+		}
+	}
+	for _, args := range [][]string{
+		{"list", "-H", "-o", "name,size,alloc,free,cap,health"},
+		{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag,comment"},
+		{"list", "-j"},
+		{"status", "-j"},
+		{"status", "-j", "-v"},
+		{"status", "-j", "--json-int", "--json-flat-vdevs", "-v"},
+		{"status", "-j", "--json-int", "--json-flat-vdevs", "tank"},
+		{"status", "-j", "--json-int", "--json-flat-vdevs", "--json-pool-key-guid"},
+		{"status", "-v"},
+		{"scrub", "tank"},
+	} {
+		if Allowed("zpool", args) {
+			t.Errorf("allowed: zpool %q", args)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

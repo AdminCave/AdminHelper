@@ -631,25 +631,52 @@ func TestCollectDockerComposeLabel(t *testing.T) {
 }
 
 func TestParseZpoolList(t *testing.T) {
-	out := []byte("tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\nbackup\t1T\t900G\t100G\t90%\tDEGRADED")
+	out := []byte("tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\t12%\nbackup\t1T\t900G\t100G\t90%\tDEGRADED\t-")
 	pools := parseZpoolList(out)
 	if len(pools) != 2 {
 		t.Fatalf("want 2 pools, got %d: %v", len(pools), pools)
 	}
-	if pools[0]["name"] != "tank" || pools[0]["capacity_percent"] != 33 || pools[0]["health"] != "ONLINE" {
+	if pools[0]["name"] != "tank" || pools[0]["capacity_percent"] != 33 || pools[0]["health"] != "ONLINE" ||
+		pools[0]["fragmentation_percent"] != 12 {
 		t.Errorf("tank: %v", pools[0])
 	}
 	if pools[1]["capacity_percent"] != 90 || pools[1]["health"] != "DEGRADED" {
 		t.Errorf("backup: %v", pools[1])
 	}
+	if frag, ok := pools[1]["fragmentation_percent"]; ok {
+		t.Errorf("backup: fragmentation_percent = %v, want none for \"-\" (unknown)", frag)
+	}
 	if short := parseZpoolList([]byte("tank\t3.62T")); len(short) != 0 {
 		t.Errorf("line with too few columns should be skipped: %v", short)
+	}
+
+	// The fragmentation column is read only as zpool prints a percentage, 0 to 100; anything else
+	// leaves the key out and the pool as before.
+	for frag, want := range map[string]any{
+		"0%": 0, "100%": 100, "7%": 7,
+		"-": nil, "": nil, "12": nil, "abc%": nil, "101%": nil, "-1%": nil, "1.5%": nil, "%": nil,
+	} {
+		pools := parseZpoolList([]byte("tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\t" + frag))
+		if len(pools) != 1 {
+			t.Fatalf("frag %q: want 1 pool, got %v", frag, pools)
+		}
+		got, ok := pools[0]["fragmentation_percent"]
+		if (want == nil && ok) || (want != nil && got != want) {
+			t.Errorf("frag %q: fragmentation_percent = %v (present %v), want %v", frag, got, ok, want)
+		}
+		if pools[0]["health"] != "ONLINE" || pools[0]["capacity_percent"] != 33 {
+			t.Errorf("frag %q: pool = %v, want the other columns unchanged", frag, pools[0])
+		}
+	}
+	if pools := parseZpoolList([]byte("tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE")); len(pools) != 1 ||
+		pools[0]["fragmentation_percent"] != nil {
+		t.Errorf("six columns: %v, want one pool without fragmentation_percent", pools)
 	}
 }
 
 // stubZpool swaps zpoolCLI for a fake zpool that is on the PATH and answers each call by its
-// subcommand (list, status) from replies, like stubDocker. It returns the recorded calls; a
-// subcommand without a reply fails the test.
+// subcommand (list, status; "status -j" for the pool details) from replies, like stubDocker. It
+// returns the recorded calls; a subcommand without a reply fails the test.
 func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
 	t.Helper()
 	old := zpoolCLI
@@ -659,7 +686,11 @@ func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
 	zpoolCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
 		checkAllowed(t, "zpool", args)
-		reply, ok := replies[args[0]]
+		key := args[0]
+		if len(args) > 1 && args[1] == "-j" {
+			key += " -j"
+		}
+		reply, ok := replies[key]
 		if !ok {
 			t.Errorf("unexpected zpool call %v", args)
 			return nil, errors.New("unexpected call")
@@ -669,7 +700,10 @@ func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
 	return &calls
 }
 
-var zpoolListArgs = []string{"list", "-H", "-o", "name,size,alloc,free,cap,health"}
+var (
+	zpoolListArgs   = []string{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag"}
+	zpoolStatusArgs = []string{"status", "-j", "--json-int", "--json-flat-vdevs"}
+)
 
 func assertZFSUnavailable(t *testing.T, wire map[string]any, code string) {
 	t.Helper()
@@ -749,43 +783,199 @@ func TestCollectZFSNoPools(t *testing.T) {
 }
 
 func TestCollectZFSPools(t *testing.T) {
-	const list = "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\nbackup\t1T\t900G\t100G\t90%\tDEGRADED\n"
+	const list = "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\t4%\nbackup\t1T\t900G\t100G\t90%\tDEGRADED\t-\n"
 	const status = "  pool: backup\n state: DEGRADED\n"
-	calls := stubZpool(t, map[string]dockerReply{"list": {out: list}, "status": {out: status}})
+	const details = `{"output_version": {"command": "zpool status", "vers_major": 0, "vers_minor": 1},
+		"pools": {
+		"tank": {"name": "tank", "state": "ONLINE", "error_count": 0, "vdevs": {
+			"tank": {"name": "tank", "vdev_type": "root", "read_errors": 0, "write_errors": 0, "checksum_errors": 0}}},
+		"backup": {"name": "backup", "state": "DEGRADED",
+			"scan_stats": {"function": "SCRUB", "state": "FINISHED", "start_time": 1794480000,
+				"end_time": 1794483164, "errors": 2, "scrub_pause": 0},
+			"vdevs": {
+			"backup": {"name": "backup", "vdev_type": "root", "read_errors": 0, "write_errors": 0, "checksum_errors": 0},
+			"ada1": {"name": "ada1", "vdev_type": "disk", "read_errors": 3, "write_errors": 0, "checksum_errors": 7}}}}}`
+	calls := stubZpool(t, map[string]dockerReply{
+		"list": {out: list}, "status": {out: status}, "status -j": {out: details},
+	})
 	got := dockerWire(t, collectZFS(context.Background()))
 	want := wantDockerWire(t, `{"available": true, "error": null, "pools": [
 		{"name": "tank", "size": "3.62T", "allocated": "1.2T", "free": "2.4T", "capacity_percent": 33,
-		 "health": "ONLINE"},
+		 "health": "ONLINE", "fragmentation_percent": 4},
 		{"name": "backup", "size": "1T", "allocated": "900G", "free": "100G", "capacity_percent": 90,
-		 "health": "DEGRADED"}
+		 "health": "DEGRADED", "scrub": {"state": "FINISHED", "errors": 2, "end": 1794483164},
+		 "vdev_errors": [{"name": "ada1", "read": 3, "write": 0, "checksum": 7}]}
 	], "errors": "pool: backup\n state: DEGRADED"}`)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("block =\n%v\nwant\n%v", got, want)
 	}
-	if !reflect.DeepEqual(*calls, [][]string{zpoolListArgs, {"status", "-x"}}) {
-		t.Errorf("calls = %v, want zpool list and zpool status -x", *calls)
+	if !reflect.DeepEqual(*calls, [][]string{zpoolListArgs, {"status", "-x"}, zpoolStatusArgs}) {
+		t.Errorf("calls = %v, want zpool list, zpool status -x and zpool status -j", *calls)
 	}
 
 	t.Run("all online", func(t *testing.T) {
-		calls := stubZpool(t, map[string]dockerReply{"list": {out: "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\n"}})
+		calls := stubZpool(t, map[string]dockerReply{
+			"list": {out: "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\t4%\n"}, "status -j": {out: details},
+		})
 		got := dockerWire(t, collectZFS(context.Background()))
 		if got["available"] != true || got["error"] != nil || len(got["pools"].([]any)) != 1 {
 			t.Errorf("block = %v, want one available pool", got)
 		}
-		if _, ok := got["errors"]; ok || len(*calls) != 1 {
-			t.Errorf("errors = %v, calls = %v, want neither errors nor zpool status", got["errors"], *calls)
+		if _, ok := got["errors"]; ok || !reflect.DeepEqual(*calls, [][]string{zpoolListArgs, zpoolStatusArgs}) {
+			t.Errorf("errors = %v, calls = %v, want no errors and no zpool status -x", got["errors"], *calls)
 		}
 	})
 
 	t.Run("status fails", func(t *testing.T) {
-		// As before: without zpool status -x the pools still go out, only the error details are missing.
-		stubZpool(t, map[string]dockerReply{"list": {out: list}, "status": {err: context.DeadlineExceeded}})
+		// As before: without zpool status the pools still go out, only the error details and the pool
+		// details are missing.
+		stubZpool(t, map[string]dockerReply{
+			"list": {out: list}, "status": {err: context.DeadlineExceeded}, "status -j": {err: context.DeadlineExceeded},
+		})
 		got := dockerWire(t, collectZFS(context.Background()))
-		if got["available"] != true || got["error"] != nil || len(got["pools"].([]any)) != 2 {
-			t.Errorf("block = %v, want both pools available", got)
+		want := wantDockerWire(t, `{"available": true, "error": null, "pools": [
+			{"name": "tank", "size": "3.62T", "allocated": "1.2T", "free": "2.4T", "capacity_percent": 33,
+			 "health": "ONLINE", "fragmentation_percent": 4},
+			{"name": "backup", "size": "1T", "allocated": "900G", "free": "100G", "capacity_percent": 90,
+			 "health": "DEGRADED"}
+		]}`)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("block =\n%v\nwant\n%v", got, want)
 		}
-		if _, ok := got["errors"]; ok {
-			t.Errorf("errors = %v, want none without zpool status", got["errors"])
+	})
+}
+
+// TestCollectZFSDetails drives collectZFS with the output of a real zpool status -j (OpenZFS 2.4.2 on
+// FreeBSD 15.1: a file-backed mirror with a log vdev, one side overwritten, then scrubbed) and with
+// the ways the call fails on a zpool that cannot give it: the pools go out as zpool list has them.
+func TestCollectZFSDetails(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/zpool-status-scrub.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const list = "probe\t240M\t64.3M\t176M\t26%\tONLINE\t15%\n"
+	plain := wantDockerWire(t, `{"available": true, "error": null, "pools": [
+		{"name": "probe", "size": "240M", "allocated": "64.3M", "free": "176M", "capacity_percent": 26,
+		 "health": "ONLINE", "fragmentation_percent": 15}]}`)
+
+	calls := stubZpool(t, map[string]dockerReply{"list": {out: list}, "status -j": {out: string(fixture)}})
+	got := dockerWire(t, collectZFS(context.Background()))
+	want := wantDockerWire(t, `{"available": true, "error": null, "pools": [
+		{"name": "probe", "size": "240M", "allocated": "64.3M", "free": "176M", "capacity_percent": 26,
+		 "health": "ONLINE", "fragmentation_percent": 15,
+		 "scrub": {"state": "FINISHED", "errors": 0, "end": 1794483164},
+		 "vdev_errors": [{"name": "/var/tmp/ahprobe/a", "read": 0, "write": 0, "checksum": 380}]}]}`)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("block =\n%v\nwant\n%v", got, want)
+	}
+	if !reflect.DeepEqual(*calls, [][]string{zpoolListArgs, zpoolStatusArgs}) {
+		t.Errorf("calls = %v, want zpool list and zpool status -j", *calls)
+	}
+
+	for name, reply := range map[string]dockerReply{
+		// OpenZFS 2.2 and older: zpool knows no -j and exits with its usage (status 2).
+		"old zpool":  {out: "invalid option 'j'\nusage:\n", err: errors.New("exit status 2")},
+		"timeout":    {err: context.DeadlineExceeded},
+		"garbage":    {out: "  pool: probe\n state: ONLINE\n"},
+		"other pool": {out: `{"pools": {"tank": {"scan_stats": {"function": "SCRUB", "state": "FINISHED", "end_time": 1, "errors": 0}}}}`},
+		// A call that fails gives no details, even where it printed some: they may be of only some pools.
+		"fails with output": {out: string(fixture), err: errors.New("exit status 1")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubZpool(t, map[string]dockerReply{"list": {out: list}, "status -j": reply})
+			if got := dockerWire(t, collectZFS(context.Background())); !reflect.DeepEqual(got, plain) {
+				t.Errorf("block =\n%v\nwant\n%v", got, plain)
+			}
+		})
+	}
+}
+
+// zpoolStatusWire is parseZpoolStatus(out) as JSON reads it back, nil for no details at all.
+func zpoolStatusWire(t *testing.T, out string) any {
+	t.Helper()
+	raw, err := json.Marshal(parseZpoolStatus([]byte(out)))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var wire any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	return wire
+}
+
+// zpoolScan is a zpool status -j of one pool "p" with the scan stats scan and no vdev errors.
+func zpoolScan(scan string) string {
+	return `{"pools": {"p": {"name": "p", "scan_stats": ` + scan + `, "vdevs": {
+		"p": {"name": "p", "read_errors": 0, "write_errors": 0, "checksum_errors": 0}}}}}`
+}
+
+func TestCollectZFSParseStatus(t *testing.T) {
+	// The states and times of the paused and the canceled scrub are those OpenZFS 2.4.2 wrote for
+	// `zpool scrub -p` and `zpool scrub -s` on the probe pool of the fixture.
+	cases := []struct {
+		name, out, want string
+	}{
+		{"finished", zpoolScan(`{"function": "SCRUB", "state": "FINISHED", "end_time": 1794483164, "errors": 3, "scrub_pause": 0}`),
+			`{"p": {"scrub": {"state": "FINISHED", "errors": 3, "end": 1794483164}}}`},
+		{"running", zpoolScan(`{"function": "SCRUB", "state": "SCANNING", "end_time": 0, "errors": 0, "scrub_pause": 0}`),
+			`{"p": {"scrub": {"state": "SCANNING", "errors": 0}}}`},
+		{"running with a stale end", zpoolScan(`{"function": "SCRUB", "state": "SCANNING", "end_time": 1794483164, "errors": 0}`),
+			`{"p": {"scrub": {"state": "SCANNING", "errors": 0}}}`},
+		{"paused", zpoolScan(`{"function": "SCRUB", "state": "SCANNING", "start_time": 1794483226, "end_time": 0, "errors": 0, "scrub_pause": 1794483226}`),
+			`{"p": {"scrub": {"state": "PAUSED", "errors": 0}}}`},
+		{"canceled", zpoolScan(`{"function": "SCRUB", "state": "CANCELED", "start_time": 1794483226, "end_time": 1794483226, "errors": 0, "scrub_pause": 1794483226}`),
+			`{"p": {"scrub": {"state": "CANCELED", "errors": 0, "end": 1794483226}}}`},
+		{"finished without an end", zpoolScan(`{"function": "SCRUB", "state": "FINISHED", "end_time": 0, "errors": 0}`),
+			`{"p": {"scrub": {"state": "FINISHED", "errors": 0}}}`},
+		// The pool keeps only its last scan: after a resilver or an error scrub there is no scrub to name.
+		{"resilver", zpoolScan(`{"function": "RESILVER", "state": "FINISHED", "end_time": 1794483164, "errors": 0}`), `{}`},
+		{"error scrub", zpoolScan(`{"function": "ERRORSCRUB", "state": "FINISHED", "end_time": 1794483164, "errors": 0}`), `{}`},
+		{"no scan", zpoolScan(`{"function": "NONE", "state": "NONE", "end_time": 0, "errors": 0}`), `{}`},
+		{"unknown state", zpoolScan(`{"function": "SCRUB", "state": "ERRORSCRUBBING", "end_time": 1, "errors": 0}`), `{}`},
+		{"vdev errors", `{"pools": {"p": {"vdevs": {
+			"p": {"name": "p", "read_errors": 1, "write_errors": 0, "checksum_errors": 0},
+			"mirror-0": {"name": "mirror-0", "read_errors": 0, "write_errors": 0, "checksum_errors": 0},
+			"da1": {"name": "da1", "read_errors": 0, "write_errors": 2, "checksum_errors": 0},
+			"bad": {"name": "da\u0007x", "read_errors": 0, "write_errors": 0, "checksum_errors": 9},
+			"spare": {"name": "da9"}}}}}`,
+			`{"p": {"vdev_errors": [
+				{"name": "", "read": 0, "write": 0, "checksum": 9},
+				{"name": "da1", "read": 0, "write": 2, "checksum": 0},
+				{"name": "p", "read": 1, "write": 0, "checksum": 0}]}}`},
+		{"no pools", `{"pools": {}}`, `{}`},
+		// Counts as strings are zpool status -j without --json-int: not what was asked for, so nothing.
+		{"counts as strings", `{"pools": {"p": {"vdevs": {"p": {"name": "p", "read_errors": "1", "write_errors": "0", "checksum_errors": "0"}}}}}`, `null`},
+		{"broken", `{"pools": {"p": `, `null`},
+		{"empty", ``, `null`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var want any
+			if err := json.Unmarshal([]byte(c.want), &want); err != nil {
+				t.Fatalf("bad want %s: %v", c.want, err)
+			}
+			if got := zpoolStatusWire(t, c.out); !reflect.DeepEqual(got, want) {
+				t.Errorf("details = %v, want %v", got, want)
+			}
+		})
+	}
+
+	t.Run("capped and sorted", func(t *testing.T) {
+		vdevs := []string{}
+		for i := 40; i > 0; i-- {
+			name := fmt.Sprintf("da%02d", i)
+			vdevs = append(vdevs, fmt.Sprintf(`%q: {"name": %q, "read_errors": 0, "write_errors": 0, "checksum_errors": %d}`, name, name, i))
+		}
+		got := parseZpoolStatus([]byte(`{"pools": {"p": {"vdevs": {` + strings.Join(vdevs, ",") + `}}}}`))
+		errs, _ := got["p"]["vdev_errors"].([]map[string]any)
+		if len(errs) != maxZpoolVdevErrors {
+			t.Fatalf("vdev_errors = %d entries, want %d", len(errs), maxZpoolVdevErrors)
+		}
+		for i, e := range errs {
+			if want := fmt.Sprintf("da%02d", i+1); e["name"] != want {
+				t.Errorf("vdev_errors[%d] = %v, want %s (sorted by name, the first %d kept)", i, e["name"], want, maxZpoolVdevErrors)
+			}
 		}
 	})
 }

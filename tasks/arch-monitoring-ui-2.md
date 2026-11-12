@@ -54,8 +54,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui-2/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestCollectProxmox|TestReportStateProxmoxBackups|TestBuildReportCarriesProxmoxBackups|TestAllowlist
 Doku: → T12
 
-### T5 — Agent: ZFS mit Scrub, vdev-Fehlern und Fragmentierung (R-1227)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T5 — Agent: ZFS mit Scrub, vdev-Fehlern und Fragmentierung (R-1227)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/testdata/zpool-status-scrub.json
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c85b93f8e 2026-11-12T12:44:19+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T5.verdict.json)
 Änderung: zpool-status(8) und zpoolprops(7) vorher lesen. `zpool list` um `fragmentation` (Allowlist-Eintrag und `parseZpoolList` zusammen; `-` heißt unbekannt); neuer Aufruf `zpool status -j` → je Pool `scrub` (Ende, Fehler, Zustand) und je vdev Lese-/Schreib-/Prüfsummenfehler (nur vdevs mit Fehlern, gekappt). Kennt `zpool` kein `-j` (OpenZFS ≤ 2.2): keine Zusatzdetails, kein Fehler, Gesundheit wie heute. Tests: JSON-Fixture mit Scrub und vdev-Fehlern, alter zpool, kaputtes JSON, Allowlist.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestParseZpoolList|TestCollectZFS|TestAllowlist
 Doku: → T12
@@ -129,3 +131,9 @@ Task-Review: am Ende
 - 2026-11-12 T4: der Log-Aufruf wird vorher gegen die Allowlist geprüft (`commandAllowed`), die UPID-Klasse nimmt nur `vzdump`-UPIDs ohne `/` und `:` im Benutzer — die UPID kommt aus der Ausgabe von pvesh, nicht aus eigenem Code
 - 2026-11-12 T4: dieselbe UPID wie im gespeicherten Zustand ⇒ Log nicht erneut lesen; ein Fehler gilt nur, solange seine Task nicht vor dem neuesten Backup des Gasts startete (ein späteres erfolgreiches Backup löscht ihn)
 - 2026-11-12 T4: nicht auf echter PVE verifiziert — Formate aus pve-manager/pve-common/pve-storage-Quellen und dem API-Viewer; Befund 1/2 bleibt nach §10 Entscheidung 7 Kevins Wort
+- 2026-11-12 T5: `zpool status -j --json-int --json-flat-vdevs` (alle drei ab OpenZFS 2.3.0) — Zähler als Zahlen statt `nicenum`-Text, jedes vdev einmal in einer Map (Wurzel, Log, Cache, Spare, Special eingeschlossen); ohne `-v`, also nie Namen beschädigter Dateien; eine Zahl als String ⇒ keine Details
+- 2026-11-12 T5: der Aufruf läuft je Zyklus nur, wenn `zpool list` Pools nennt; ein Fehlschlag (alter zpool ohne `-j`, Timeout, Exit ≠ 0 auch mit Ausgabe) oder unlesbare Ausgabe lässt die Details still weg wie bei `status -x` — Gesundheit und Kapazität wie bisher
+- 2026-11-12 T5: `scrub` nur, wenn der letzte Scan ein Scrub war (`function` SCRUB) — der Pool hält nur den letzten Scan, nach einem Resilver gibt es kein Scrub-Datum; Zustände SCANNING/FINISHED/CANCELED, ein pausierter Scrub (SCANNING mit `scrub_pause`) als PAUSED; `end` nur, wenn er nicht mehr läuft und > 0
+- 2026-11-12 T5: `vdev_errors` nur vdevs mit einem Zähler > 0, nach Name sortiert, höchstens 32 je Pool; Namen über `labelText` (Steuerzeichen oder über 255 Zeichen ⇒ leer)
+- 2026-11-12 T5: `fragmentation_percent` nur aus `NN%` mit 0–100 (`zpool_get_prop`); `-` (unbekannt, `ZFS_FRAG_INVALID`) oder anderes lässt das Feld weg; Allowlist-Eintrag von `zpool list` und Parser zusammen geändert
+- 2026-11-12 T5: Fixture aus echtem OpenZFS 2.4.2 (FreeBSD 15.1, Wegwerf-VM im Pool `adminhelper-ci`, dateibasierter Mirror mit Log-vdev, eine Seite überschrieben, dann Scrub; danach zerstört); pausierter und abgebrochener Scrub aus derselben Probe
