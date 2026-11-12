@@ -2,14 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//go:build !linux
+//go:build !linux && !freebsd
 
 package probe
 
 import "net/netip"
 
-// osPeerSocket: only Linux tells the socket that took a connection (sock_diag); elsewhere the guard
-// relies on its checks before the connect.
+// osPeerSocket: only Linux (sock_diag) and FreeBSD (getcred) tell the socket that took a connection;
+// elsewhere the guard relies on its checks before the connect.
 func osPeerSocket(netip.AddrPort, netip.AddrPort) (peerState, error) {
 	return peerNone, errPeerUnsupported
 }
