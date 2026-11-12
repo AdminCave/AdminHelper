@@ -1,5 +1,5 @@
 # frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-5 · Review: pro Task
 Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310, R-1368)
 Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den echten frps; Kevin 2026-11-12: vor dem Merge. Server-API und Agent-Modul fährt dazu der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -83,8 +83,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py t
 Doku: keine (Verhalten wie dokumentiert: die Doku spricht von HTTPS-Tunneln)
 Abhängt von: T8
 
-### T10 — API-Referenz: 409 bei Hostnamen-Konflikt, DELETE der FRP-Konfiguration  [ ]
+### T10 — API-Referenz: 409 bei Hostnamen-Konflikt, DELETE der FRP-Konfiguration  [x]
 Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @976d463ce 2026-11-12T10:26:31+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Fund der Abschlussprüfung: `POST`/`PUT /api/frp/tunnels` nennen die 409, wenn ein Hostname des Tunnels auch einem Tunnel eines anderen Servers zugeordnet ist (ohne gemeinsame Gruppe bei genau gleichem Namen); `DELETE /api/frp/server-config/{id}` löscht die Tunnel der Konfiguration mit.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
