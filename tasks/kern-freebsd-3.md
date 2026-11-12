@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Proben-Wächter: Prüfung nach dem Verbindungsaufbau auch unter FreeBSD — Task-Ledger
-Status: aktiv · Branch: feature/kern-freebsd-3 · Review: pro Task
+Status: bereit · Branch: feature/kern-freebsd-3 · Review: pro Task
 Spec: docs/features/kern-freebsd-3.md (Roadmap R-1402)
 Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge die root-Tests von internal/probe auf der FreeBSD-Pool-Box (T1, von Hand oder über T2)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,8 +29,10 @@ sie aus; Harness-Pfad nur auf Kevins Wort.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
 
-### T3 — Doku und Changelog  [ ]
+### T3 — Doku und Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-freebsd-3.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @87e1c57ac 2026-11-12T20:46:21+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku: die Prüfung nach dem Verbindungsaufbau gilt unter Linux und FreeBSD; Entwickler-Doku:
 `checkTaker` nennt `peer_freebsd.go` (getcred); Changelog-Fragment neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict
