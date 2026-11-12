@@ -10,6 +10,7 @@ import {
   resourceDetails,
   serviceDetails,
   smartDetails,
+  systemStateNames,
   zfsDetails,
 } from './checkDetails';
 
@@ -21,6 +22,7 @@ const ALL = {
   smartDetails,
   forecastDetails,
   probeDetails,
+  systemStateNames,
 };
 
 describe.each(Object.entries(ALL))('%s', (_name, narrow) => {
@@ -79,6 +81,57 @@ describe('resourceDetails', () => {
   it('reads the old details of another check type as empty fields', () => {
     // A check switched from agent_services keeps those details until its next push.
     expect(resourceDetails({ mode: 'auto', failed: ['a.service'] })).toEqual({});
+  });
+
+  // arch-monitoring-ui-2 T9 (R-1227): the busiest processes under high load.
+  const top = {
+    cpu: [{ pid: 812, name: 'php-fpm', cpu_pct: 87.5 }],
+    memory: [{ pid: 4021, name: 'clamd', rss: 1_288_490_188 }],
+  };
+
+  it('returns the top processes unchanged', () => {
+    expect(resourceDetails({ ...valid, top_processes: top })).toEqual({
+      ...valid,
+      top_processes: top,
+    });
+  });
+
+  it('drops a top process without pid, name or number and a list of the wrong type', () => {
+    const d = resourceDetails({
+      ...valid,
+      top_processes: {
+        cpu: [
+          { name: 'x', cpu_pct: 1 },
+          { pid: 2, cpu_pct: 1 },
+          { pid: 3, name: 'y', cpu_pct: '1' },
+          { pid: 4, name: 'z', rss: 1 },
+          top.cpu[0],
+        ],
+        memory: { pid: 1, name: 'clamd', rss: 1 },
+      },
+    });
+    expect(d?.top_processes).toEqual({ cpu: top.cpu });
+  });
+
+  it('drops a memory process without pid, name or a numeric rss', () => {
+    const d = resourceDetails({
+      ...valid,
+      top_processes: {
+        memory: [
+          { pid: 1, name: 'x' },
+          { pid: 2, name: 'y', rss: '1' },
+          { name: 'z', rss: 1 },
+          { pid: 3, rss: 1 },
+          { pid: 4, name: 'w', cpu_pct: 1 },
+          top.memory[0],
+        ],
+      },
+    });
+    expect(d?.top_processes).toEqual({ memory: top.memory });
+  });
+
+  it('leaves out top processes that are no object', () => {
+    expect(resourceDetails({ ...valid, top_processes: [top.cpu[0]] })).toEqual(valid);
   });
 });
 
@@ -264,5 +317,41 @@ describe('probeDetails', () => {
     expect(d?.values).toEqual({ e: 'x' });
     expect(d?.baseline).toEqual({ a: 1 });
     expect(d?.problems).toEqual(['p']);
+  });
+});
+
+// arch-monitoring-ui-2 T9 (R-1227): the names behind the counts of a system_state check.
+describe('systemStateNames', () => {
+  const valid = {
+    security_packages: ['openssl', 'libssl3'],
+    reboot_packages: ['linux-image-amd64'],
+    oom_processes: [{ pid: 4711, name: 'java' }],
+  };
+
+  it('returns valid names unchanged and ignores the counts beside them', () => {
+    expect(
+      systemStateNames({ ...valid, security_updates: 2, reboot_required: true, problems: [] }),
+    ).toEqual(valid);
+  });
+
+  it('keeps only text names and processes with pid and name', () => {
+    const d = systemStateNames({
+      security_packages: ['openssl', 3, null],
+      reboot_packages: 'linux-image-amd64',
+      oom_processes: [{ pid: 1 }, { name: 'x' }, { pid: '2', name: 'y' }, valid.oom_processes[0]],
+    });
+    expect(d).toEqual({ security_packages: ['openssl'], oom_processes: valid.oom_processes });
+  });
+
+  it('reads the details of an agent before the names as empty fields', () => {
+    expect(
+      systemStateNames({
+        reboot_required: true,
+        time_synchronized: true,
+        security_updates: 3,
+        oom_kills: 0,
+        problems: ['reboot'],
+      }),
+    ).toEqual({});
   });
 });

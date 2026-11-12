@@ -1859,6 +1859,20 @@ body {
   color: var(--text-muted);
   font-size: 0.9em;
 }
+/* The names behind a point (packages, killed processes): below its row, in line
+   with its name (dot column plus gap). */
+.mon-expand-names {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 10px 6px calc(10px + 10px + var(--sp-2));
+}
+.mon-expand-names-label {
+  margin-right: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
 
 /* Expand-Chart */
 .mon-expand-chart {

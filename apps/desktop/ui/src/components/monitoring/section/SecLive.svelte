@@ -6,8 +6,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitorCheck, MonitorResourceDetails } from '$lib/api/types';
-  import { resourceDetails } from '$lib/models/checkDetails';
+  import { resourceDetails, type CpuProcess, type MemoryProcess } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
+  import { bytesText } from '$lib/models/monitoringText';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
   import { t } from '$lib/i18n';
@@ -165,6 +166,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
       };
     });
   }
+
+  interface Top {
+    cpu: CpuProcess[];
+    memory: MemoryProcess[];
+  }
+  const WARNS = new Set(['warning', 'critical']);
+
+  // The busiest processes the agent names under high load; shown only while the check
+  // warns, so a list from a load the checker still damps does not stand next to green.
+  function top(check: MonitorCheck): Top | null {
+    if (!WARNS.has(check.state?.status ?? '')) return null;
+    const listed = resourceDetails(check.state?.details)?.top_processes;
+    const cpu = listed?.cpu ?? [];
+    const memory = listed?.memory ?? [];
+    return cpu.length > 0 || memory.length > 0 ? { cpu, memory } : null;
+  }
 </script>
 
 <section class="mon-section">
@@ -180,6 +197,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {@const rs = rings(check)}
       {@const ld = load(check)}
       {@const ds = disks(check)}
+      {@const tp = top(check)}
       <MonCheckLine {check}>
         {#snippet label()}
           <span class="mon-line-name">{check.name}</span>
@@ -253,6 +271,52 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 {/each}
               </div>
             {/if}
+            {#if tp}
+              <div class="top-row">
+                {#if tp.cpu.length > 0}
+                  <table class="top-table" data-top="cpu">
+                    <caption>{$t('monitoring.live.top.cpu')}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">{$t('monitoring.live.top.process')}</th>
+                        <th scope="col" class="numeric">PID</th>
+                        <th scope="col" class="numeric">CPU</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each tp.cpu as p, idx (idx)}
+                        <tr>
+                          <td>{p.name}</td>
+                          <td class="numeric">{p.pid}</td>
+                          <td class="numeric">{p.cpu_pct.toFixed(1)}%</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+                {#if tp.memory.length > 0}
+                  <table class="top-table" data-top="memory">
+                    <caption>{$t('monitoring.live.top.memory')}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">{$t('monitoring.live.top.process')}</th>
+                        <th scope="col" class="numeric">PID</th>
+                        <th scope="col" class="numeric">RAM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each tp.memory as p, idx (idx)}
+                        <tr>
+                          <td>{p.name}</td>
+                          <td class="numeric">{p.pid}</td>
+                          <td class="numeric">{bytesText(p.rss)}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/snippet}
       </MonCheckLine>
@@ -295,5 +359,37 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .mon-live-pill.level-unrated {
     color: var(--text-muted);
+  }
+  .top-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+  .top-table {
+    flex: 1 1 240px;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+  .top-table caption {
+    padding-bottom: var(--space-1);
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    text-align: left;
+  }
+  .top-table th,
+  .top-table td {
+    padding: var(--space-1) var(--space-2);
+    border-bottom: 1px solid var(--border-faint);
+    text-align: left;
+  }
+  .top-table thead th {
+    color: var(--text-subtle);
+    font-weight: 500;
+  }
+  .top-table .numeric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
   }
 </style>

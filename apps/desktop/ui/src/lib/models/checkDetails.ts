@@ -75,8 +75,23 @@ function details<T>(read: Reader<T>): (v: unknown) => T | null {
   return (v) => read(v) ?? null;
 }
 
+// The fields arch-monitoring-ui-2 adds to the details stay local here: lib/api/types.ts
+// mirrors the API, and the details are free JSON there.
+export interface NamedProcess {
+  pid: number;
+  name: string;
+}
+export type CpuProcess = NamedProcess & { cpu_pct: number };
+// rss in bytes.
+export type MemoryProcess = NamedProcess & { rss: number };
+export interface TopProcesses {
+  cpu?: CpuProcess[];
+  memory?: MemoryProcess[];
+}
+export type ResourceDetails = MonitorResourceDetails & { top_processes?: TopProcesses };
+
 export const resourceDetails = details(
-  shape<MonitorResourceDetails>({
+  shape<ResourceDetails>({
     cpu: nullable(num),
     memory: nullable(num),
     memory_used_mb: num,
@@ -110,6 +125,30 @@ export const resourceDetails = details(
         'critical',
       ]),
     ),
+    top_processes: shape<TopProcesses>({
+      cpu: listOf(
+        shape<CpuProcess>({ pid: num, name: str, cpu_pct: num }, ['pid', 'name', 'cpu_pct']),
+      ),
+      memory: listOf(
+        shape<MemoryProcess>({ pid: num, name: str, rss: num }, ['pid', 'name', 'rss']),
+      ),
+    }),
+  }),
+);
+
+// The names behind the counts of a system_state check. The counts themselves are read
+// where they are shown (SecSystem, UpdatesView).
+export interface SystemStateNames {
+  security_packages?: string[];
+  reboot_packages?: string[];
+  oom_processes?: NamedProcess[];
+}
+
+export const systemStateNames = details(
+  shape<SystemStateNames>({
+    security_packages: listOf(str),
+    reboot_packages: listOf(str),
+    oom_processes: listOf(shape<NamedProcess>({ pid: num, name: str }, ['pid', 'name'])),
   }),
 );
 
