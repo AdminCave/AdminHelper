@@ -18,8 +18,10 @@ Beweis: apps/agent/internal/probe/sensor_proto.go:1022 auf main@1b19e1f71 (`clos
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T3
 
-### T2 — R-1375: Katalog-Modul frps beansprucht den frps-Container  [ ]
+### T2 — R-1375: Katalog-Modul frps beansprucht den frps-Container  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/frps.py, apps/monitoring/tests/test_catalog_frps.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5ced858e1 2026-11-12T12:31:15+01:00
+Review: am Ende (Branch-Review)
 Änderung: neues Modul `frps` (SPDX-Header), `detect.container_images` `ghcr.io/admincave/adminhelper/frps` und
 `snowdreamtech/frps`, `instance: container`, ein Check `running` (Sensor `container`, `state != running` →
 critical). Tests: Katalog lädt das Modul fehlerfrei; ein Inventar mit frps-Container und veröffentlichten Ports
