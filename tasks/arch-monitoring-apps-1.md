@@ -25,8 +25,10 @@ Ziel bleibt abgewiesen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T14
 
-### T2 — Katalog: Parameter `host` und katalogweite Regeln für App-Module (R-1241, R-1242, R-1243)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_apps.py
+### T2 — Katalog: Parameter `host` und katalogweite Regeln für App-Module (R-1241, R-1242, R-1243)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_apps.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @60e14420b 2026-11-12T13:05:23+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T2.verdict.json)
 Änderung: `HttpParams.host: Literal["localhost"] | None` (fehlt = wie heute; Defaults füllen ihn nicht ins JSON, damit
 die Katalog-Version bestehender Module gleich bleibt). Neuer Test `test_catalog_apps.py` (SPDX) über den ganzen
 Katalog: kein HTTP-Pfad trifft eine Falle (`move-endpoints`, `/admin`, `cron.php`, `wp-cron.php`, `/api/push/`,
@@ -34,7 +36,7 @@ Katalog: kein HTTP-Pfad trifft eine Falle (`move-endpoints`, `/admin`, `cron.php
 von BookStack) tragen `test_object`; kein HTTP-Check zielt auf `loopback` (vHost-Regel der Spec); `detect` nennt
 keine generischen Namen (`nginx`, `apache2`, `httpd`, `php-fpm`, `postgres`, `redis`, `mariadb`, `node`, `python3`,
 `java`). Gegenprobe je Regel mit einem Modul, das sie bricht.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog_apps.py tests/test_catalog.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog_apps.py tests/test_catalog.py tests/test_check_configs.py
 Doku: → T14
 
 ### T3 — R-1241: Module Nextcloud, Paperless-ngx, Immich  [ ]
@@ -161,3 +163,6 @@ Doku: → T14
   ab, `localhost` ist dort immer vertraut; kein vHost-Name verlässt den Server.
 - 2026-11-12: PHP-Anwendungen hinter einem allgemeinen Webserver auf dem Host bekommen keinen HTTP-Check, bis R-1231
   die vHosts kennt (Folgezeile am Gate); HTTP-Checks zielen nie auf `loopback`.
+- 2026-11-12 (T2): `validate_params` lässt ungesetzte (None-)Parameter aus dem JSON (älterer Agent lehnt einen
+  unbekannten Parameter ab, Katalog-Version bestehender Module bleibt); ein ausdrückliches `host: null` lehnt das Modell
+  ab, weil eine Probe-Prüfung ihre Params ungefiltert an den Agenten gibt (dazu `test_check_configs.py` in T2).
