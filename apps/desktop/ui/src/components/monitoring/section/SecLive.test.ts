@@ -338,3 +338,121 @@ describe('SecLive details of the wrong form', () => {
     expect(pills(el).map(text)).toEqual(['RAM 40%', 'Swap 5%', 'Load 0.42/CPU']);
   });
 });
+
+// arch-monitoring-ui-2 T9 (R-1227): the agent names the busiest processes under high load
+// (pid and comm only). The section lists them while the check warns, below the bars.
+describe('SecLive top processes', () => {
+  const TOP = {
+    cpu: [
+      { pid: 812, name: 'php-fpm', cpu_pct: 87.5 },
+      { pid: 77, name: 'mysqld', cpu_pct: 4 },
+    ],
+    memory: [{ pid: 4021, name: 'clamd', rss: 1_610_612_736 }],
+  };
+
+  function warned(status: string, details: unknown): MonitorCheck {
+    return { ...check(v3()), state: { status, details } } as MonitorCheck;
+  }
+
+  function tables(el: HTMLElement): [string, string, string[], string[][]][] {
+    return Array.from(el.querySelectorAll<HTMLElement>('table.top-table')).map((t) => [
+      t.dataset.top ?? '',
+      text(t.querySelector('caption')),
+      Array.from(t.querySelectorAll('thead th')).map(text),
+      Array.from(t.querySelectorAll('tbody tr')).map((tr) =>
+        Array.from(tr.querySelectorAll('td')).map(text),
+      ),
+    ]);
+  }
+
+  it('lists the busiest processes of a warning check below the bars', async () => {
+    setLanguage('de');
+    const { container: el } = render(SecLive, {
+      props: { checks: [warned('warning', v3({ top_processes: TOP } as never))] },
+    });
+    // Never in the collapsed line, whose text is the one a glance reads.
+    expect(tables(el)).toEqual([]);
+    await expand(el);
+    expect(tables(el)).toEqual([
+      [
+        'cpu',
+        'Höchste CPU-Last',
+        ['Prozess', 'PID', 'CPU'],
+        [
+          ['php-fpm', '812', '87.5%'],
+          ['mysqld', '77', '4.0%'],
+        ],
+      ],
+      [
+        'memory',
+        'Höchster RAM-Verbrauch',
+        ['Prozess', 'PID', 'RAM'],
+        [['clamd', '4021', '1,5 GiB']],
+      ],
+    ]);
+    const after = el.querySelector('.mon-hero-bars ~ .top-row');
+    expect(after).not.toBeNull();
+  });
+
+  it('lists them for a critical check and only the list the agent sent', async () => {
+    setLanguage('de');
+    const { container: el } = render(SecLive, {
+      props: { checks: [warned('critical', v3({ top_processes: { cpu: TOP.cpu } } as never))] },
+    });
+    await expand(el);
+    expect(tables(el).map(([key]) => key)).toEqual(['cpu']);
+  });
+
+  it('lists none while the check is ok, also with a list from a still damped load', async () => {
+    setLanguage('de');
+    const { container: el } = render(SecLive, {
+      props: { checks: [warned('ok', v3({ top_processes: TOP } as never))] },
+    });
+    await expand(el);
+    expect(tables(el)).toEqual([]);
+  });
+
+  it('lists none for a warning check of an agent without the list', async () => {
+    setLanguage('de');
+    const { container: el } = render(SecLive, { props: { checks: [warned('warning', v3())] } });
+    const { rings, bars } = await expand(el);
+    expect(rings).toHaveLength(3);
+    expect(bars).toHaveLength(1);
+    expect(el.querySelector('.top-row')).toBeNull();
+  });
+
+  it('drops a process without pid, name or number and lists none without one', async () => {
+    setLanguage('de');
+    const broken = {
+      cpu: [{ name: 'x', cpu_pct: 1 }, { pid: 1, name: 'y', cpu_pct: '1' }, TOP.cpu[0]],
+      memory: [{ pid: 2, name: 'z' }],
+    };
+    const { container: el } = render(SecLive, {
+      props: {
+        checks: [
+          warned('warning', v3({ top_processes: broken } as never)),
+          {
+            ...warned('warning', v3({ top_processes: { cpu: [{ pid: 3 }] } } as never)),
+            id: 'chk-other',
+          },
+        ],
+      },
+    });
+    await expand(el);
+    expect(tables(el)).toEqual([
+      ['cpu', 'Höchste CPU-Last', ['Prozess', 'PID', 'CPU'], [['php-fpm', '812', '87.5%']]],
+    ]);
+  });
+
+  it('names the tables in English', async () => {
+    setLanguage('en');
+    const { container: el } = render(SecLive, {
+      props: { checks: [warned('warning', v3({ top_processes: TOP } as never))] },
+    });
+    await expand(el);
+    expect(tables(el).map(([, caption, head, body]) => [caption, head, body.at(-1)])).toEqual([
+      ['Highest CPU load', ['Process', 'PID', 'CPU'], ['mysqld', '77', '4.0%']],
+      ['Highest memory use', ['Process', 'PID', 'RAM'], ['clamd', '4021', '1.5 GiB']],
+    ]);
+  });
+});

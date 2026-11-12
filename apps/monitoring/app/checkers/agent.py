@@ -471,6 +471,31 @@ def _resources_message(problems: list[str], cpu, mem) -> str:
     return ", ".join(parts) if parts else "OK"
 
 
+# The agent names at most five processes per list; the same cap here.
+_MAX_TOP_PROCESSES = 5
+
+
+def _top_processes(value: object) -> dict | None:
+    """top_processes of the report, for the details only: per list (cpu with cpu_pct, memory
+    with rss) of the first _MAX_TOP_PROCESSES objects those with a pid from 1, a name and a
+    number from 0, the name cut by cap_agent_text. A list without such an entry is left out,
+    None without either list."""
+    if not isinstance(value, dict):
+        return None
+    top = {}
+    for key, number_key in (("cpu", "cpu_pct"), ("memory", "rss")):
+        entries = []
+        for entry in capped_objects(value.get(key))[:_MAX_TOP_PROCESSES]:
+            pid = agent_number(entry.get("pid"))
+            name = cap_agent_text(entry.get("name"))
+            number = agent_number(entry.get(number_key))
+            if isinstance(pid, int) and pid > 0 and name and number is not None and number >= 0:
+                entries.append({"pid": pid, "name": name, number_key: number})
+        if entries:
+            top[key] = entries
+    return top or None
+
+
 def _resources_details(
     resources: dict,
     *,
@@ -485,7 +510,7 @@ def _resources_details(
     ignore_mounts: set,
     temperatures: list[dict],
 ) -> dict:
-    return {
+    details = {
         "cpu": cpu,
         "memory": mem,
         # Next round's hysteresis memory (see _Grader.grade).
@@ -520,6 +545,11 @@ def _resources_details(
             for s in temperatures
         ],
     }
+    # Only when the agent sent it, so the details of an older agent stay as they were.
+    top = _top_processes(resources.get("top_processes"))
+    if top is not None:
+        details["top_processes"] = top
+    return details
 
 
 class AgentResourcesChecker:

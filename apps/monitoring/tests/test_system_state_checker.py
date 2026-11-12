@@ -247,6 +247,120 @@ def test_one_usable_field_is_enough_to_evaluate():
     assert metrics == {"_details": {**_NOTHING, "security_updates": 0}}
 
 
+# --- the names behind the counts (R-1227) ---
+
+_NAMED = {
+    "security_packages": ["libssl3", "openssl"],
+    "reboot_packages": ["linux-image-amd64"],
+    "oom_processes": [{"pid": 4711, "name": "java"}, {"pid": 4712, "name": "node"}],
+}
+
+_ALL_OFF = {
+    "check_reboot": False,
+    "check_time_sync": False,
+    "check_security_updates": False,
+    "check_oom": False,
+}
+
+
+@pytest.mark.parametrize("config", [{}, _ALL_OFF], ids=["default", "switched-off"])
+@pytest.mark.parametrize("fields", [_HEALTHY, _ALL_BAD], ids=["healthy", "all-bad"])
+def test_the_names_go_into_details_only(config, fields):
+    # Status and message stay those without the names: the message goes into mail and
+    # webhook, the names only to the desktop.
+    status, msg, metrics = _rate(config, **fields, **_NAMED)
+    plain_status, plain_msg, plain = _rate(config, **fields)
+    assert (status, msg) == (plain_status, plain_msg)
+    assert metrics == {"_details": {**plain["_details"], **_NAMED}}
+    for name in ("libssl3", "openssl", "linux-image-amd64", "java", "node", "4711"):
+        assert name not in msg
+
+
+@pytest.mark.parametrize("field", ["security_packages", "reboot_packages"])
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        pytest.param("openssl", None, id="string"),
+        pytest.param({"openssl": 1}, None, id="object"),
+        pytest.param(3, None, id="number"),
+        pytest.param(None, None, id="null"),
+        pytest.param([], None, id="empty"),
+        pytest.param(["", 5, None, ["x"], {"n": "x"}, True], None, id="no-string"),
+        pytest.param(["openssl", 5, "", None, "curl"], ["openssl", "curl"], id="mixed"),
+        pytest.param(["evil\nline\x1b[31m"], ["evil line [31m"], id="control-chars"),
+        pytest.param(["x" * 600], ["x" * 499 + "…"], id="long"),
+    ],
+)
+def test_a_name_list_keeps_only_strings_on_one_line(field, value, shown):
+    status, msg, metrics = _rate(security_updates=3, **{field: value})
+    assert (status, msg) == ("warning", "3 security updates pending")
+    details = metrics["_details"]
+    if shown is None:
+        assert field not in details
+    else:
+        assert details[field] == shown
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        pytest.param("java", None, id="string"),
+        pytest.param({"pid": 1, "name": "java"}, None, id="object"),
+        pytest.param([], None, id="empty"),
+        pytest.param(
+            [
+                "java",
+                {"name": "no-pid"},
+                {"pid": 0, "name": "pid-0"},
+                {"pid": -1, "name": "negative"},
+                {"pid": "12", "name": "pid-string"},
+                {"pid": True, "name": "pid-bool"},
+                {"pid": 1.5, "name": "pid-fraction"},
+                {"pid": 12},
+                {"pid": 13, "name": ""},
+                {"pid": 14, "name": ["java"]},
+            ],
+            None,
+            id="all-broken",
+        ),
+        pytest.param(
+            [
+                {"pid": 7, "name": "a\nb", "cmdline": "java -Dpass=x"},
+                {"pid": 8},
+                {"pid": 9, "name": "c"},
+            ],
+            [{"pid": 7, "name": "a b"}, {"pid": 9, "name": "c"}],
+            id="mixed",
+        ),
+    ],
+)
+def test_oom_processes_keep_only_pid_and_name(value, shown):
+    status, msg, metrics = _rate(oom_kills=2, oom_processes=value)
+    assert (status, msg) == ("warning", "2 OOM kills since last report")
+    details = metrics["_details"]
+    if shown is None:
+        assert "oom_processes" not in details
+    else:
+        assert details["oom_processes"] == shown
+
+
+def test_at_most_100_names_and_10_oom_processes():
+    names = [f"pkg{i:03d}" for i in range(150)]
+    processes = [{"pid": pid, "name": f"p{pid}"} for pid in range(1, 20)]
+    _, _, metrics = _rate(security_packages=names, reboot_packages=names, oom_processes=processes)
+    details = metrics["_details"]
+    assert details["security_packages"] == names[:100]
+    assert details["reboot_packages"] == names[:100]
+    assert details["oom_processes"] == processes[:10]
+    assert_every_reader_reads(details)
+
+
+def test_names_without_a_usable_count_count_as_no_block():
+    status, msg, metrics = SystemStateChecker().evaluate({}, {"system_state": _NAMED})
+    assert (status, msg) == ("ok", "Not evaluated: no system state in report")
+    assert metrics == {"_details": _NOTHING}
+
+
 # --- push path ---
 
 
@@ -297,3 +411,17 @@ def test_report_rates_a_system_state_check(client_db):
     )
     assert client.post("/agent/srv-1/report", json={"uptime_seconds": 3600}).status_code == 200
     assert _stored(factory) == ("ok", "Not evaluated: no system state in report", _NOTHING)
+
+
+def test_report_stores_the_names_in_details_not_in_the_message(client_db):
+    client, factory = client_db
+    _add_system_state_check(factory)
+
+    fields = {**_HEALTHY, "security_updates": 2, **_NAMED}
+    report = {"uptime_seconds": 3600, "system_state": fields}
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    assert _stored(factory) == (
+        "warning",
+        "2 security updates pending",
+        {**fields, "problems": ["security_updates"]},
+    )

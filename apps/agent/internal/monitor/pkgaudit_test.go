@@ -142,32 +142,34 @@ func TestFreebsdBaseNames(t *testing.T) {
 
 func TestCountPkgAudit(t *testing.T) {
 	// pkg audit -q prints "<name>-<version>" per vulnerable package and nothing else (pkg src/audit.c);
-	// any other line makes the output unreadable.
+	// any other line makes the output unreadable. The names are the lines without the version.
 	cases := []struct {
 		name  string
 		out   string
 		count int
+		names []string
 		ok    bool
 	}{
-		{"nothing vulnerable", "", 0, true},
-		{"two packages", "curl-8.11.0\nopenssl-3.0.15_1,1\n", 2, true},
-		{"name with dashes", "py311-cryptography-43.0.0_1\n", 1, true},
-		{"base system", "FreeBSD-15.0_1\nFreeBSD-kernel-15.0_1\n", 2, true},
-		{"without final newline", "curl-8.11.0", 1, true},
-		{"long form", "curl-8.11.0 is vulnerable:\n", 0, false},
-		{"summary line", "0 problem(s) in 0 installed package(s) found.\n", 0, false},
-		{"no version", "curl\n", 0, false},
-		{"empty version", "curl-\n", 0, false},
-		{"empty version after the last dash", "curl-8.11.0-\n", 0, false},
-		{"empty name", "-8.11.0\n", 0, false},
-		{"leading blank", " curl-8.11.0\n", 0, false},
-		{"carriage return", "curl-8.11.0\r\n", 0, false},
-		{"one good, one bad", "curl-8.11.0\nvulnxml file vuln.xml does not exist\n", 0, false},
+		{"nothing vulnerable", "", 0, nil, true},
+		{"two packages", "curl-8.11.0\nopenssl-3.0.15_1,1\n", 2, []string{"curl", "openssl"}, true},
+		{"name with dashes", "py311-cryptography-43.0.0_1\n", 1, []string{"py311-cryptography"}, true},
+		{"base system", "FreeBSD-15.0_1\nFreeBSD-kernel-15.0_1\n", 2, []string{"FreeBSD", "FreeBSD-kernel"}, true},
+		{"without final newline", "curl-8.11.0", 1, []string{"curl"}, true},
+		{"long form", "curl-8.11.0 is vulnerable:\n", 0, nil, false},
+		{"summary line", "0 problem(s) in 0 installed package(s) found.\n", 0, nil, false},
+		{"no version", "curl\n", 0, nil, false},
+		{"empty version", "curl-\n", 0, nil, false},
+		{"empty version after the last dash", "curl-8.11.0-\n", 0, nil, false},
+		{"empty name", "-8.11.0\n", 0, nil, false},
+		{"leading blank", " curl-8.11.0\n", 0, nil, false},
+		{"carriage return", "curl-8.11.0\r\n", 0, nil, false},
+		{"one good, one bad", "curl-8.11.0\nvulnxml file vuln.xml does not exist\n", 0, nil, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if count, ok := countPkgAudit([]byte(c.out)); count != c.count || ok != c.ok {
-				t.Errorf("countPkgAudit(%q) = %d, %v, want %d, %v", c.out, count, ok, c.count, c.ok)
+			count, names, ok := countPkgAudit([]byte(c.out))
+			if count != c.count || !reflect.DeepEqual(names, c.names) || ok != c.ok {
+				t.Errorf("countPkgAudit(%q) = %d, %q, %v, want %d, %q, %v", c.out, count, names, ok, c.count, c.names, c.ok)
 			}
 		})
 	}
@@ -225,8 +227,8 @@ func TestReadFreeBSDVersions(t *testing.T) {
 
 func TestFreebsdSystemState(t *testing.T) {
 	// reboot_required compares the installed kernel with the running one, outside a jail; the count
-	// adds the vulnerable packages and the vulnerable parts of a release's base system. pkg audit exits
-	// 1 when it finds one.
+	// adds the vulnerable packages and the vulnerable parts of a release's base system, and the names
+	// go with it, sorted. pkg audit exits 1 when it finds one.
 	const (
 		patched   = "15.0-RELEASE-p3\n15.0-RELEASE-p3\n15.0-RELEASE-p3\n"
 		notBooted = "15.0-RELEASE-p3\n15.0-RELEASE-p1\n15.0-RELEASE-p3\n"
@@ -253,7 +255,8 @@ func TestFreebsdSystemState(t *testing.T) {
 				baseAudit:       {out: "FreeBSD-15.0_3\n", err: found},
 			},
 			[]string{fbsdVersionHost, fbsdAudit, baseAudit},
-			map[string]any{"reboot_required": true, "security_updates": 3}},
+			map[string]any{"reboot_required": true, "security_updates": 3,
+				"security_packages": []string{"FreeBSD", "curl", "openssl"}}},
 		{"jail", "jail", true,
 			map[string]dockerReply{
 				fbsdVersionJail:               {out: "14.3-RELEASE-p5\n"},
@@ -261,11 +264,11 @@ func TestFreebsdSystemState(t *testing.T) {
 				fbsdAudit + " FreeBSD-14.3_5": {out: "FreeBSD-14.3_5\n", err: found},
 			},
 			[]string{fbsdVersionJail, fbsdAudit, fbsdAudit + " FreeBSD-14.3_5"},
-			map[string]any{"security_updates": 1}},
+			map[string]any{"security_updates": 1, "security_packages": []string{"FreeBSD"}}},
 		{"stable: packages only", "", true,
 			map[string]dockerReply{fbsdVersionHost: {out: stable}, fbsdAudit: {out: "curl-8.11.0\n", err: found}},
 			[]string{fbsdVersionHost, fbsdAudit},
-			map[string]any{"reboot_required": false, "security_updates": 1}},
+			map[string]any{"reboot_required": false, "security_updates": 1, "security_packages": []string{"curl"}}},
 		{"without pkg", "", false,
 			map[string]dockerReply{fbsdVersionHost: {out: notBooted}},
 			[]string{fbsdVersionHost},
@@ -306,9 +309,11 @@ func TestFreebsdSystemState(t *testing.T) {
 				if next.Updates != nil {
 					t.Errorf("state updates = %+v, want none without pkg", next.Updates)
 				}
-			} else if next.Updates == nil || next.Updates.CheckedUnix != pkgAuditNow.Unix() ||
-				next.Updates.Security == nil || *next.Updates.Security != c.want["security_updates"] {
-				t.Errorf("state updates = %+v, want %v counted at %d", next.Updates, c.want["security_updates"], pkgAuditNow.Unix())
+			} else if names, _ := c.want["security_packages"].([]string); next.Updates == nil ||
+				next.Updates.CheckedUnix != pkgAuditNow.Unix() || next.Updates.Security == nil ||
+				*next.Updates.Security != c.want["security_updates"] || !reflect.DeepEqual(next.Updates.Packages, names) {
+				t.Errorf("state updates = %+v, want %v counted at %d, names %q",
+					next.Updates, c.want["security_updates"], pkgAuditNow.Unix(), names)
 			}
 			assertFreeBSDLog(t, logs.String(), "")
 		})
@@ -444,8 +449,8 @@ func TestPkgSecurityUpdatesHourly(t *testing.T) {
 				return
 			}
 			if len(*calls) != 1 || check == nil || check.Security == nil || *check.Security != 1 ||
-				check.CheckedUnix != pkgAuditNow.Unix() {
-				t.Errorf("pkgSecurityUpdates = %+v after %d call(s), want 1 counted now in one call", check, len(*calls))
+				check.CheckedUnix != pkgAuditNow.Unix() || !reflect.DeepEqual(check.Packages, []string{"curl"}) {
+				t.Errorf("pkgSecurityUpdates = %+v after %d call(s), want 1 (curl) counted now in one call", check, len(*calls))
 			}
 		})
 	}

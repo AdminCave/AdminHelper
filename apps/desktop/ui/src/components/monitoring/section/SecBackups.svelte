@@ -6,9 +6,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitorCheck, MonitorBackupDetails } from '$lib/api/types';
+  import { backupGuestDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
+  import {
+    backupErrorText,
+    backupJobText,
+    backupStorageText,
+    backupVerifyText,
+  } from '$lib/models/monitoringText';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
+  import Tag from '../../ui/Tag.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -30,6 +38,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const OUTAGE_PILL = new Map<string, string>([
     ['critical', 'pill-crit'],
     ['warning', 'pill-warn'],
+  ]);
+  // Display only: the check's rating knows nothing of the verification.
+  const VERIFY_CHIP = new Map<string, string>([
+    ['ok', 'chip-ok'],
+    ['failed', 'chip-crit'],
   ]);
 
   type Vm = NonNullable<MonitorBackupDetails['vms']>[number];
@@ -129,6 +142,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {#snippet extraBody()}
           <div class="mon-expand-list">
             {#each [...i.vms].sort( (a) => (a.backupStatus === 'missing' ? -1 : a.backupStatus === 'outdated' ? 0 : 1) ) as v (v.vmid)}
+              {@const b = backupGuestDetails(v) ?? {}}
+              {@const storage = backupStorageText(b)}
+              {@const error = backupErrorText($t, b)}
               <div
                 class="mon-expand-row level-{v.backupStatus === 'missing'
                   ? 'crit'
@@ -157,6 +173,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   {/if}
                 </span>
               </div>
+              {#if storage !== null || b.backupJobs || b.backupVerify || error !== null}
+                <div class="mon-expand-names" data-vm={v.vmid}>
+                  {#if storage !== null}
+                    <span class="mon-expand-names-label">{$t('monitoring.proxmox.storage')}</span>
+                    <Tag tone="neutral" size="sm">{storage}</Tag>
+                  {/if}
+                  {#if b.backupJobs}
+                    <span class="mon-expand-names-label">{$t('monitoring.proxmox.jobs')}</span>
+                    {#each b.backupJobs as job, idx (idx)}
+                      <Tag tone="neutral" size="sm">{backupJobText(job)}</Tag>
+                    {:else}
+                      <span class="mon-chip chip-muted">{$t('monitoring.proxmox.noJob')}</span>
+                    {/each}
+                  {/if}
+                  {#if b.backupVerify}
+                    <span class="mon-chip {VERIFY_CHIP.get(b.backupVerify) ?? 'chip-muted'}"
+                      >{backupVerifyText($t, b.backupVerify)}</span
+                    >
+                  {/if}
+                  {#if error !== null}
+                    <span class="mon-expand-error">{error}</span>
+                  {/if}
+                </div>
+              {/if}
             {/each}
           </div>
         {/snippet}
