@@ -29,14 +29,22 @@ type inventoryState struct {
 }
 
 // inventoryHash computes a SHA-256 over a normalized, deterministically
-// sorted representation of all_services, alias_of included. The Linux
-// collector sends the entries sorted by unit, the Windows one in sc query
-// order; sorting here keeps the hash independent of either.
+// sorted representation of all_services, alias_of and the state facts
+// included. The Linux collector sends the entries sorted by unit, the Windows
+// one in sc query order; sorting here keeps the hash independent of either.
+// Left out: memory_bytes, which moves on every push and would send the full
+// inventory each time, and the since of an inactive unit, which a timer-driven
+// oneshot moves on every run; a restart of a running unit still changes its
+// since and restarts.
 func inventoryHash(services []ServiceEntry) string {
 	lines := make([]string, 0, len(services))
 	for _, svc := range services {
-		lines = append(lines, svc["unit"]+"\t"+svc["active_state"]+"\t"+svc["enabled_state"]+
-			"\t"+svc["alias_of"])
+		since := svc["since"]
+		if svc["active_state"] == "inactive" {
+			since = ""
+		}
+		lines = append(lines, strings.Join([]string{svc["unit"], svc["active_state"], svc["enabled_state"],
+			svc["alias_of"], svc["sub_state"], svc["result"], svc["exit"], svc["restarts"], since}, "\t"))
 	}
 	sort.Strings(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))

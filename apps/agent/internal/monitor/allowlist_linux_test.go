@@ -16,7 +16,7 @@ import (
 // TestAllowlistTakesTheSystemctlProperties ties the property lists of services_linux.go to the list:
 // a property added there without an entry would refuse every show call.
 func TestAllowlistTakesTheSystemctlProperties(t *testing.T) {
-	for _, props := range []string{aliasProps, watchedProps, enabledInactiveProps} {
+	for _, props := range []string{aliasProps, watchedProps, enabledInactiveProps, factProps} {
 		if !commandAllowed("systemctl", []string{"show", "-p", props, "--", "nginx.service"}) {
 			t.Errorf("show -p %s refused", props)
 		}

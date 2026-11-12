@@ -18,8 +18,10 @@ Quelldateien bekommen den SPDX-Header (`reuse annotate --copyright "Kevin Stenze
 `checkDetails.ts` in anderen Abschnitten; nach dessen Merge `origin/main` hereinziehen und die ganzen Suiten von
 `agent`, `monitoring` und `desktop-ui` fahren.
 
-### T1 — Agent (Linux): systemd-Fakten je Dienst und `failed_details` (R-1226, Stufe 1)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/inventory.go, apps/agent/internal/monitor/services_linux_test.go, apps/agent/internal/monitor/inventory_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T1 — Agent (Linux): systemd-Fakten je Dienst und `failed_details` (R-1226, Stufe 1)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/inventory.go, apps/agent/internal/monitor/services_linux_test.go, apps/agent/internal/monitor/inventory_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/allowlist_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @bebd6e486 2026-11-12T15:32:17+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T1.verdict.json)
 Änderung: Ein gebündeltes `systemctl show -p Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent -- <geladene Units>` (ohne Templates; ein gescheiterter Batch lässt die Fakten weg, kein Einzel-Fallback). Die Inventar-Einträge bekommen `sub_state`, `since`, `restarts`, `result`, `exit`, `memory_bytes` (Spec, Tabelle). `inventoryHash` deckt alle neuen Felder außer `memory_bytes`. Neuer Schlüssel `systemd.failed_details` je fehlgeschlagener Unit, dazu der Allowlist-Eintrag. Tests: Parser mit Fixtures (altes systemd ohne `NRestarts`, `MemoryCurrent=[not set]` und 2^64−1, Signal statt Exit-Code), Hash ignoriert RAM und erkennt einen Neustart, Batch-Fehler, Allowlist.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T12
@@ -111,3 +113,9 @@ Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/mon
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: docs/admin/monitoring.html, docs/developer/monitoring.html, docs/developer/api-reference.html, docs/developer/agent.html DE+EN · changelog.d/arch-monitoring-ui-3.md
 Task-Review: am Ende
+
+## Entscheidungen
+- 2026-11-12 T1: `inventoryHash` nimmt das `since` eines inaktiven Dienstes nicht auf (Spec: „die übrigen Felder gehen in den Hash ein“) — ein Timer-Oneshot verschiebt sein `since` bei jedem Lauf, sonst ginge das volle Inventar alle fünf Minuten mit statt stündlich; der Neustart eines laufenden Dienstes bleibt über `since` und `restarts` erkannt.
+- 2026-11-12 T1: `since` = Wanduhr minus `CLOCK_MONOTONIC` plus `StateChangeTimestampMonotonic`, nicht die Boot-Zeit aus `/proc/stat` — `btime` zählt Suspend mit, und LXCFS meldet in Containern den Container-Start.
+- 2026-11-12 T1: Der Fakten-Batch fragt die Units aus `list-units` und die fehlgeschlagenen jedes Typs; ein Name außerhalb der Unit-Klasse (etwa `-.mount`) bleibt draußen und steht in `failed_details` nur mit Namen — die Allowlist lehnte sonst den ganzen Batch ab.
+- 2026-11-12 T1: Der Allowlist-Test der neuen Property-Liste steht im Paket `monitor` (`allowlist_linux_test.go`), nicht in `allowlist/allowlist_test.go` — dort prüft das Paket nur Sonden- und Discovery-Aufrufe.

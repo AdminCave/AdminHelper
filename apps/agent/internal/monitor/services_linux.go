@@ -8,9 +8,15 @@ package monitor
 
 import (
 	"context"
+	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // collectServiceHealth collects systemd service status (port of collect_systemd_health). ctx ends
@@ -70,8 +76,137 @@ func collectServiceHealth(ctx context.Context) map[string]any {
 			}
 		}
 		health["counts"] = serviceCounts(loaded)
+		if facts, ok := queryServiceFacts(ctx, unitStates, failed); ok {
+			addServiceFacts(health["all_services"].([]ServiceEntry), facts)
+			health["failed_details"] = failedDetails(failed, facts)
+		}
 	}
 	return health
+}
+
+// factProps are the properties queryServiceFacts reads per unit.
+const factProps = "Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent"
+
+// queryServiceFacts asks one batched `systemctl show` for the state details of the units list-units
+// reported and the failed ones (a failed unit need not be a service), and maps each asked name to its
+// facts (serviceFacts). A name outside the unit class stays out, since the allowlist would refuse the
+// whole call. A failed batch yields nothing and no per-unit fallback, so the details never cost more
+// than this one call.
+func queryServiceFacts(ctx context.Context, unitStates map[string]string, failed []string) (map[string]ServiceEntry, bool) {
+	asked := map[string]bool{}
+	for unit := range unitStates {
+		asked[unit] = reUnitName.MatchString(unit)
+	}
+	for _, unit := range failed {
+		asked[unit] = reUnitName.MatchString(unit)
+	}
+	names := make([]string, 0, len(asked))
+	for unit, ok := range asked {
+		if ok {
+			names = append(names, unit)
+		}
+	}
+	if len(names) == 0 {
+		return nil, false
+	}
+	sort.Strings(names)
+	out, err := runSystemctl(ctx, append([]string{"show", "-p", factProps, "--"}, names...)...)
+	if err != nil {
+		return nil, false
+	}
+	epoch, epochErr := monotonicEpoch()
+	blocks := parseShowBlocks(out)
+	facts := make(map[string]ServiceEntry, len(names))
+	for _, unit := range names {
+		if props, ok := blocks[unit]; ok {
+			facts[unit] = serviceFacts(props, epoch, epochErr == nil)
+		}
+	}
+	return facts, true
+}
+
+// serviceFacts turns one `systemctl show` block into the inventory fields sub_state, result, exit,
+// restarts, since and memory_bytes; a field systemd does not report (an older systemd, a unit type
+// without it, no memory accounting) stays out. since needs the wall-clock time of monotonic zero
+// (monotonicEpoch); without it since stays out.
+func serviceFacts(props map[string]string, epoch time.Time, haveEpoch bool) ServiceEntry {
+	f := ServiceEntry{}
+	for key, prop := range map[string]string{"sub_state": "SubState", "result": "Result", "restarts": "NRestarts"} {
+		if v := props[prop]; v != "" {
+			f[key] = v
+		}
+	}
+	if exit := exitReason(props["ExecMainCode"], props["ExecMainStatus"]); exit != "" {
+		f["exit"] = exit
+	}
+	if us, err := strconv.ParseUint(props["StateChangeTimestampMonotonic"], 10, 64); err == nil && us > 0 && haveEpoch {
+		f["since"] = epoch.Add(time.Duration(us) * time.Microsecond).UTC().Truncate(time.Second).Format(time.RFC3339)
+	}
+	// MemoryCurrent is [not set] without memory accounting and 2^64-1 (CGROUP_LIMIT_MAX) when the
+	// cgroup cannot be read.
+	if b, err := strconv.ParseUint(props["MemoryCurrent"], 10, 64); err == nil && b != math.MaxUint64 {
+		f["memory_bytes"] = strconv.FormatUint(b, 10)
+	}
+	return f
+}
+
+// exitReason reads how the main process last ended from ExecMainCode, a waitid(2) si_code
+// (CLD_EXITED 1, CLD_KILLED 2, CLD_DUMPED 3), and ExecMainStatus, the exit status or the signal:
+// "status=1" or "signal=SIGKILL". Empty while the process has not ended (code 0).
+func exitReason(code, status string) string {
+	n, err := strconv.Atoi(status)
+	if err != nil {
+		return ""
+	}
+	switch code {
+	case "1":
+		return "status=" + status
+	case "2", "3":
+		if name := unix.SignalName(syscall.Signal(n)); name != "" {
+			return "signal=" + name
+		}
+		return "signal=" + status
+	}
+	return ""
+}
+
+// monotonicEpoch is the wall-clock time at CLOCK_MONOTONIC zero, the clock of systemd's
+// *TimestampMonotonic properties: now minus the monotonic time. Not the boot time from /proc/stat:
+// that one also counts suspended time, which CLOCK_MONOTONIC does not, and LXCFS may report the
+// container's start in a container that still sees the host's monotonic clock. A var so tests can fix
+// it.
+var monotonicEpoch = func() (time.Time, error) {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(0, time.Now().UnixNano()-ts.Nano()), nil
+}
+
+// addServiceFacts copies the facts onto the inventory entries of the units they were asked for; an
+// alias or an unloaded unit file, whose name was not asked, gets none.
+func addServiceFacts(entries []ServiceEntry, facts map[string]ServiceEntry) {
+	for _, e := range entries {
+		for key, v := range facts[e["unit"]] {
+			e[key] = v
+		}
+	}
+}
+
+// failedDetails lists every failed unit with the reason fields of its facts (result, exit, since,
+// restarts), the base of the reason in the check text even when the inventory itself is throttled.
+func failedDetails(failed []string, facts map[string]ServiceEntry) []map[string]string {
+	details := make([]map[string]string, 0, len(failed))
+	for _, unit := range failed {
+		d := map[string]string{"unit": unit}
+		for _, key := range []string{"result", "exit", "since", "restarts"} {
+			if v := facts[unit][key]; v != "" {
+				d[key] = v
+			}
+		}
+		details = append(details, d)
+	}
+	return details
 }
 
 // aliasProps are the properties resolveAliases reads per alias: the alias stands in Names, its
