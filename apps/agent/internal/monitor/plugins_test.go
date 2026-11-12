@@ -396,16 +396,17 @@ func TestCollectDockerInspectFields(t *testing.T) {
 	want := wantDockerWire(t, `{"available": true, "error": null, "containers": [
 		{"id": "611889c0d0d7", "name": "ah-t1-restart3", "image": "alpine:3.22", "state": "exited",
 		 "status": "Exited (1) 7 seconds ago", "restart_policy": "on-failure",
-		 "exit_code": 1, "oom_killed": false, "restart_count": 3, "health": ""},
+		 "exit_code": 1, "oom_killed": false, "restart_count": 3, "health": "", "started_at": 1792172471},
 		{"id": "c1f596e07951", "name": "ah-t1-oom", "image": "alpine:3.22", "state": "exited",
 		 "status": "Exited (137) 12 seconds ago", "restart_policy": "no",
-		 "exit_code": 137, "oom_killed": true, "restart_count": 0, "health": ""},
+		 "exit_code": 137, "oom_killed": true, "restart_count": 0, "health": "", "started_at": 1792172466},
 		{"id": "6ae4d13d53eb", "name": "ah-t1-unhealthy", "image": "alpine:3.22", "state": "running",
 		 "status": "Up 13 seconds (unhealthy)", "restart_policy": "no",
-		 "exit_code": 0, "oom_killed": false, "restart_count": 0, "health": "unhealthy"},
+		 "exit_code": 0, "oom_killed": false, "restart_count": 0, "health": "unhealthy",
+		 "started_at": 1792172464},
 		{"id": "a39b0754602d", "name": "ah-t1-exit3", "image": "alpine:3.22", "state": "exited",
 		 "status": "Exited (3) 15 seconds ago", "restart_policy": "no",
-		 "exit_code": 3, "oom_killed": false, "restart_count": 0, "health": ""}
+		 "exit_code": 3, "oom_killed": false, "restart_count": 0, "health": "", "started_at": 1792172463}
 	]}`)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("block =\n%v\nwant\n%v", got, want)
@@ -474,6 +475,157 @@ func TestCollectDockerStateFromInspect(t *testing.T) {
 	c := dockerWire(t, collectDocker(context.Background()))["containers"].([]any)[0].(map[string]any)
 	if c["state"] != "exited" || c["exit_code"] != float64(2) || c["restart_policy"] != "" {
 		t.Errorf("container = %v, want state exited, exit_code 2, restart_policy \"\"", c)
+	}
+}
+
+// Real `docker ps -a --format '{{json .}}'` and `docker inspect --type container` output of Docker 29.9
+// (API 1.56) for three throwaway containers: two with compose labels (one publishing 80/tcp on 127.0.0.1
+// and ::1 and 53/udp on 127.0.0.1 and exposing 9000/tcp unpublished, one exposing 80/tcp only) and one
+// created but never started, without compose labels. The inspect objects are trimmed to a subset of
+// their fields.
+const dockerComposePSFixture = `{"Command":"\"/docker-entrypoint.…\"","CreatedAt":"2026-11-12 11:56:46 +0100 CET","HealthStatus":"none","ID":"10cc445f4945","Image":"nginx:1.30.6-alpine","Labels":"maintainer=NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e","LocalVolumes":"0","Mounts":"","Names":"ah-t3-created","Networks":"bridge","Platform":{"architecture":"amd64","os":"linux"},"Ports":"","RunningFor":"1 second ago","Size":"4.1kB (virtual 66.6MB)","State":"created","Status":"Created"}
+{"Command":"\"/docker-entrypoint.…\"","CreatedAt":"2026-11-12 11:56:45 +0100 CET","HealthStatus":"none","ID":"84aeb0e7cb3d","Image":"nginx:1.30.6-alpine","Labels":"com.docker.compose.project=demo,com.docker.compose.service=db,maintainer=NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e","LocalVolumes":"0","Mounts":"","Names":"ah-t3-db","Networks":"bridge","Platform":{"architecture":"amd64","os":"linux"},"Ports":"80/tcp","RunningFor":"2 seconds ago","Size":"4.1kB (virtual 66.6MB)","State":"running","Status":"Up Less than a second"}
+{"Command":"\"/docker-entrypoint.…\"","CreatedAt":"2026-11-12 11:56:43 +0100 CET","HealthStatus":"none","ID":"9a8eff593ad7","Image":"nginx:1.30.6-alpine","Labels":"com.docker.compose.project=demo,com.docker.compose.service=web,maintainer=NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e","LocalVolumes":"0","Mounts":"","Names":"ah-t3-web","Networks":"bridge","Platform":{"architecture":"amd64","os":"linux"},"Ports":"9000/tcp, 127.0.0.1:18053-\u003e53/udp, 127.0.0.1:18080-\u003e80/tcp, [::1]:18080-\u003e80/tcp","RunningFor":"4 seconds ago","Size":"4.1kB (virtual 66.6MB)","State":"running","Status":"Up 2 seconds"}
+`
+
+const dockerComposeInspectFixture = `[
+{"Id":"10cc445f49455605e254058a1f5b9678e4b9ea657ceb22d428825b52526bfc59","Created":"2026-11-12T10:56:46.543835374Z","Name":"/ah-t3-created","RestartCount":0,"State":{"Status":"created","Running":false,"OOMKilled":false,"Pid":0,"ExitCode":0,"StartedAt":"0001-01-01T00:00:00Z","FinishedAt":"0001-01-01T00:00:00Z"},"HostConfig":{"NetworkMode":"bridge","PortBindings":{},"RestartPolicy":{"Name":"no","MaximumRetryCount":0}},"Config":{"Image":"nginx:1.30.6-alpine","ExposedPorts":{"80/tcp":{}},"Labels":{"maintainer":"NGINX Docker Maintainers <docker-maint@nginx.com>"}},"NetworkSettings":{"Ports":{}}},
+{"Id":"84aeb0e7cb3d0e34e3ba54cbfe64d988605e4ad3265b97b7a84231592fa3301e","Created":"2026-11-12T10:56:45.383148Z","Name":"/ah-t3-db","RestartCount":0,"State":{"Status":"running","Running":true,"OOMKilled":false,"Pid":2322333,"ExitCode":0,"StartedAt":"2026-11-12T10:56:46.095428722Z","FinishedAt":"0001-01-01T00:00:00Z"},"HostConfig":{"NetworkMode":"bridge","PortBindings":{},"RestartPolicy":{"Name":"no","MaximumRetryCount":0}},"Config":{"Image":"nginx:1.30.6-alpine","ExposedPorts":{"80/tcp":{}},"Labels":{"com.docker.compose.project":"demo","com.docker.compose.service":"db","maintainer":"NGINX Docker Maintainers <docker-maint@nginx.com>"}},"NetworkSettings":{"Ports":{"80/tcp":null}}},
+{"Id":"9a8eff593ad7c9c4238f524fe2c5cb3b8aaeda7e7fd58c69879add19c36542b5","Created":"2026-11-12T10:56:43.931982003Z","Name":"/ah-t3-web","RestartCount":0,"State":{"Status":"running","Running":true,"OOMKilled":false,"Pid":2322199,"ExitCode":0,"StartedAt":"2026-11-12T10:56:44.842674964Z","FinishedAt":"0001-01-01T00:00:00Z"},"HostConfig":{"NetworkMode":"bridge","PortBindings":{"53/udp":[{"HostIp":"127.0.0.1","HostPort":"18053"}],"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"18080"},{"HostIp":"::1","HostPort":"18080"}]},"RestartPolicy":{"Name":"no","MaximumRetryCount":0}},"Config":{"Image":"nginx:1.30.6-alpine","ExposedPorts":{"53/udp":{},"80/tcp":{},"9000/tcp":{}},"Labels":{"com.docker.compose.project":"demo","com.docker.compose.service":"web","maintainer":"NGINX Docker Maintainers <docker-maint@nginx.com>"}},"NetworkSettings":{"Ports":{"53/udp":[{"HostIp":"127.0.0.1","HostPort":"18053"}],"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"18080"},{"HostIp":"::1","HostPort":"18080"}],"9000/tcp":null}}}
+]
+`
+
+func TestCollectDockerComposeAndPorts(t *testing.T) {
+	stubDocker(t, map[string]dockerReply{
+		"info": {}, "ps": {out: dockerComposePSFixture}, "inspect": {out: dockerComposeInspectFixture},
+	})
+	got := dockerWire(t, collectDocker(context.Background()))
+	// The ports in the order the CLI's Ports column lists them; a never started container has no
+	// started_at, one without compose labels no compose fields, one without published ports no ports.
+	want := wantDockerWire(t, `{"available": true, "error": null, "containers": [
+		{"id": "10cc445f4945", "name": "ah-t3-created", "image": "nginx:1.30.6-alpine", "state": "created",
+		 "status": "Created", "restart_policy": "no", "exit_code": 0, "oom_killed": false,
+		 "restart_count": 0, "health": ""},
+		{"id": "84aeb0e7cb3d", "name": "ah-t3-db", "image": "nginx:1.30.6-alpine", "state": "running",
+		 "status": "Up Less than a second", "restart_policy": "no", "exit_code": 0, "oom_killed": false,
+		 "restart_count": 0, "health": "", "compose_project": "demo", "compose_service": "db",
+		 "started_at": 1794481006},
+		{"id": "9a8eff593ad7", "name": "ah-t3-web", "image": "nginx:1.30.6-alpine", "state": "running",
+		 "status": "Up 2 seconds", "restart_policy": "no", "exit_code": 0, "oom_killed": false,
+		 "restart_count": 0, "health": "", "compose_project": "demo", "compose_service": "web",
+		 "ports": ["127.0.0.1:18053->53/udp", "127.0.0.1:18080->80/tcp", "[::1]:18080->80/tcp"],
+		 "started_at": 1794481004}
+	]}`)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("block =\n%v\nwant\n%v", got, want)
+	}
+
+	t.Run("partial inspect objects", func(t *testing.T) {
+		// Labels and the port map null, StartedAt missing or unreadable: each field just stays out.
+		stubDocker(t, map[string]dockerReply{
+			"info": {},
+			"ps": {out: `{"ID":"0123456789ab","Names":"a","Image":"app:1","State":"running","Status":"Up"}
+{"ID":"123456789abc","Names":"b","Image":"app:1","State":"running","Status":"Up"}`},
+			"inspect": {out: `[
+				{"Id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","State":{"Status":"running"},
+				 "Config":{"Labels":null},"NetworkSettings":{"Ports":null}},
+				{"Id":"123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0","State":{"Status":"running",
+				 "StartedAt":"yesterday"},"Config":{"Labels":{"com.docker.compose.service":"only-service"}},
+				 "NetworkSettings":{}}]`},
+		})
+		containers := dockerWire(t, collectDocker(context.Background()))["containers"].([]any)
+		if len(containers) != 2 {
+			t.Fatalf("containers = %v, want 2", containers)
+		}
+		for _, key := range []string{"compose_project", "ports", "started_at"} {
+			for _, c := range containers {
+				if v, ok := c.(map[string]any)[key]; ok {
+					t.Errorf("%s = %v in %v, want it left out", key, v, c)
+				}
+			}
+		}
+		if _, ok := containers[0].(map[string]any)["compose_service"]; ok {
+			t.Errorf("container a = %v, want no compose_service", containers[0])
+		}
+		if s := containers[1].(map[string]any)["compose_service"]; s != "only-service" {
+			t.Errorf("compose_service = %v, want only-service (a service label without a project)", s)
+		}
+	})
+}
+
+func TestCollectDockerPublishedPorts(t *testing.T) {
+	b := func(ip, port string) dockerPortBinding { return dockerPortBinding{HostIP: ip, HostPort: port} }
+	cases := []struct {
+		name string
+		m    map[string][]dockerPortBinding
+		want []string
+	}{
+		{"nil map", nil, []string{}},
+		// `docker run -p 8080:80` binds both wildcards; the CLI writes them 0.0.0.0:8080 and [::]:8080.
+		{"IPv4 and IPv6 wildcard",
+			map[string][]dockerPortBinding{"80/tcp": {b("0.0.0.0", "8080"), b("::", "8080")}},
+			[]string{"0.0.0.0:8080->80/tcp", "[::]:8080->80/tcp"}},
+		{"binding without address", map[string][]dockerPortBinding{"80/tcp": {b("", "8080")}},
+			[]string{"8080->80/tcp"}},
+		{"sctp", map[string][]dockerPortBinding{"9/sctp": {b("192.0.2.1", "9")}}, []string{"192.0.2.1:9->9/sctp"}},
+		{"duplicate binding once", map[string][]dockerPortBinding{"80/tcp": {b("::", "80"), b("::", "80")}},
+			[]string{"[::]:80->80/tcp"}},
+		{"leading zeros normalized", map[string][]dockerPortBinding{"080/tcp": {b("::", "080"), b("", "0443")}},
+			[]string{"443->80/tcp", "[::]:80->80/tcp"}},
+		{"unreadable bindings left out", map[string][]dockerPortBinding{"80/tcp": {
+			b("::", ""), b("::", "0"), b("::", "65536"), b("::", "8080-8090"), b("not-an-ip", "1"),
+			b("192.0.2.1:1", "1")}}, []string{}},
+		{"unreadable keys left out", map[string][]dockerPortBinding{
+			"80": {b("::", "80")}, "80/http": {b("::", "80")}, "x/tcp": {b("::", "80")},
+			"0/tcp": {b("::", "80")}, "80/tcp/x": {b("::", "80")}}, []string{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := publishedPorts(c.m)
+			if len(got) == 0 && len(c.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("publishedPorts = %q, want %q", got, c.want)
+			}
+		})
+	}
+
+	t.Run("capped", func(t *testing.T) {
+		m := map[string][]dockerPortBinding{}
+		for port := 10000; port < 10000+maxDockerPorts+6; port++ {
+			m[fmt.Sprintf("%d/tcp", port)] = []dockerPortBinding{b("192.0.2.1", fmt.Sprint(port))}
+		}
+		got := publishedPorts(m)
+		if len(got) != maxDockerPorts || got[0] != "192.0.2.1:10000->10000/tcp" ||
+			got[maxDockerPorts-1] != fmt.Sprintf("192.0.2.1:%d->%d/tcp", 10000+maxDockerPorts-1, 10000+maxDockerPorts-1) {
+			t.Errorf("publishedPorts = %d ports from %q to %q, want the first %d in order",
+				len(got), got[0], got[len(got)-1], maxDockerPorts)
+		}
+	})
+}
+
+func TestCollectDockerComposeLabel(t *testing.T) {
+	const key = "com.docker.compose.project"
+	long := strings.Repeat("ä", maxComposeLabel)
+	cases := []struct {
+		name, label, want string
+	}{
+		{"plain", "mailcow", "mailcow"},
+		{"at the limit in characters, not bytes", long, long},
+		{"over the limit is dropped, not cut", long + "x", ""},
+		{"control character", "demo\nother", ""},
+		{"DEL", "demo\x7f", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := composeLabel(map[string]string{key: c.label}, key); got != c.want {
+				t.Errorf("composeLabel(%q) = %q, want %q", c.label, got, c.want)
+			}
+		})
+	}
+	if got := composeLabel(nil, key); got != "" {
+		t.Errorf("composeLabel(nil) = %q, want \"\"", got)
 	}
 }
 

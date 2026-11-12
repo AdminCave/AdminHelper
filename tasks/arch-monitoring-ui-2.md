@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSystemStateOOM|Tes
 Doku: → T12
 Abhängt von: T1
 
-### T3 — Agent: Docker nach Compose-Projekt, Ports, Laufzeit (R-1227)  [ ]
+### T3 — Agent: Docker nach Compose-Projekt, Ports, Laufzeit (R-1227)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ebc8a1357 2026-11-12T12:01:37+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T3.verdict.json)
 Änderung: Aus dem `docker inspect`, das `collectDocker` schon fährt (kein neuer Aufruf): je Container `compose_project` und `compose_service` aus `Config.Labels`, `ports` aus `NetworkSettings.Ports` (nur veröffentlichte, `host_ip:host_port->port/proto`, gekappt) und `started_at` aus `State.StartedAt`. Fehlende Felder bleiben weg. Tests: Inspect-Fixture mit und ohne Compose-Labels, ohne Ports, IPv4+IPv6, Teilantwort.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestCollectDocker|TestParseDockerPS
 Doku: → T12
@@ -113,3 +115,7 @@ Task-Review: am Ende
 - 2026-11-12 T2: gelesen wird nur `Killed process <pid> (<comm>) total-vm:` am Zeilenanfang (optional hinter einem Präfix ohne Doppelpunkt) — eine zitierte Kill-Zeile in einer anderen Meldung ist kein Kill; `(.*)` gierig bis zum letzten `) total-vm:`, weil comm Klammern tragen kann; ältere Kernel ohne Ursachen-Präfix nicht verifiziert
 - 2026-11-12 T2: die neuesten 10 in Log-Reihenfolge, comm über `capPackageName` (128 Byte, UTF-8-sicher) — begrenzt den Report bei Kill-Serien, die jüngsten Kills sind die relevanten
 - 2026-11-12 T2: `systemCLI.now` als Uhr-Naht neben `run`/`lookPath` — macht das Fenster ohne echte Wartezeit testbar
+- 2026-11-12 T3: `compose_project`/`compose_service` nach der Regel der Discovery (`contractText`: höchstens 255 Zeichen, kein Steuerzeichen, sonst weggelassen statt gekürzt) — ein gekürzter Name gruppierte den Container unter ein anderes Projekt; Labelnamen aus docker/compose `pkg/api/labels.go`
+- 2026-11-12 T3: `ports` als `host_ip:host_port->port/proto` wie die Ports-Spalte von `docker ps` (IPv6 in Klammern über `net.JoinHostPort`, Bindung ohne Adresse ohne Host-Teil), sortiert, dedupliziert, höchstens 64 (wie `maxContainerPorts` der Discovery); Adresse über `netip.ParseAddr`, Ports als Zahl 1–65535 normalisiert, Protokoll nur tcp/udp/sctp — der Daemon-Ausgabe wird nicht ungeprüft vertraut
+- 2026-11-12 T3: `started_at` als Unix-Sekunden wie `last_backup_ts`, auch für gestoppte Container (letzter Start); die Nullzeit eines nie gestarteten Containers lässt das Feld weg — der Desktop rechnet die Laufzeit nur für laufende
+- 2026-11-12 T3: Fixture aus echtem Docker 29.9 (API 1.56, drei Wegwerf-Container auf der Dev-Box, Ports nur auf Loopback, danach entfernt)

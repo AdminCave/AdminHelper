@@ -10,12 +10,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // dockerTimeout caps every docker CLI call: a hanging daemon must not stall
@@ -114,7 +117,7 @@ func collectDocker(ctx context.Context) map[string]any {
 		if in.State.Health != nil {
 			health = in.State.Health.Status
 		}
-		containers = append(containers, map[string]any{
+		entry := map[string]any{
 			"id":             c["id"],
 			"name":           c["name"],
 			"image":          c["image"],
@@ -125,9 +128,89 @@ func collectDocker(ctx context.Context) map[string]any {
 			"oom_killed":     in.State.OOMKilled,
 			"restart_count":  in.RestartCount,
 			"health":         health,
-		})
+		}
+		putDockerDetails(entry, in)
+		containers = append(containers, entry)
 	}
 	return map[string]any{"available": true, "error": nil, "containers": containers}
+}
+
+// maxDockerPorts caps the published ports listed per container, as the discovery caps its port list.
+const maxDockerPorts = 64
+
+// maxComposeLabel is the longest compose project or service name sent, the discovery's limit.
+const maxComposeLabel = 255
+
+// putDockerDetails sets the compose project and service, the published ports and the start time of
+// the inspected container in entry, each only when inspect has it.
+func putDockerDetails(entry map[string]any, in dockerInspect) {
+	if project := composeLabel(in.Config.Labels, "com.docker.compose.project"); project != "" {
+		entry["compose_project"] = project
+	}
+	if service := composeLabel(in.Config.Labels, "com.docker.compose.service"); service != "" {
+		entry["compose_service"] = service
+	}
+	if ports := publishedPorts(in.NetworkSettings.Ports); len(ports) > 0 {
+		entry["ports"] = ports
+	}
+	// A container that never ran carries the zero time 0001-01-01T00:00:00Z.
+	if started, err := time.Parse(time.RFC3339Nano, in.State.StartedAt); err == nil && !started.IsZero() {
+		entry["started_at"] = started.Unix()
+	}
+}
+
+// composeLabel is the label key of labels if it fits maxComposeLabel characters without a control
+// character, else "" — the discovery's rule: a cut name would group the container under another
+// project.
+func composeLabel(labels map[string]string, key string) string {
+	s := labels[key]
+	control := func(r rune) bool { return r < 0x20 || r == 0x7f }
+	if utf8.RuneCountInString(s) > maxComposeLabel || strings.ContainsFunc(s, control) {
+		return ""
+	}
+	return s
+}
+
+// publishedPorts are the host bindings of the port map m (keyed <port>/<protocol>) as
+// host_ip:host_port->port/protocol, the host part as the docker CLI writes it ([::]:8080 for IPv6, no
+// address for a binding without one); sorted, at most maxDockerPorts. A port without bindings (null)
+// or with an unreadable one is not published.
+func publishedPorts(m map[string][]dockerPortBinding) []string {
+	var ports []string
+	for spec, bindings := range m {
+		port, proto, _ := strings.Cut(spec, "/")
+		port, ok := portNumber(port)
+		if !ok || (proto != "tcp" && proto != "udp" && proto != "sctp") {
+			continue
+		}
+		for _, b := range bindings {
+			hostPort, ok := portNumber(b.HostPort)
+			if !ok {
+				continue
+			}
+			host := hostPort
+			if b.HostIP != "" {
+				addr, err := netip.ParseAddr(b.HostIP)
+				if err != nil {
+					continue
+				}
+				host = net.JoinHostPort(addr.String(), hostPort)
+			}
+			ports = append(ports, host+"->"+port+"/"+proto)
+		}
+	}
+	slices.Sort(ports)
+	ports = slices.Compact(ports)
+	return ports[:min(len(ports), maxDockerPorts)]
+}
+
+// portNumber is s as a port number 1-65535 in decimal without leading zeros.
+func portNumber(s string) (string, bool) {
+	n, err := strconv.ParseUint(s, 10, 16)
+	if err != nil || n == 0 {
+		return "", false
+	}
+	return strconv.FormatUint(n, 10), true
 }
 
 // dockerUnavailable is the block for an installed docker that could not be read. code is what the
@@ -198,11 +281,24 @@ type dockerInspect struct {
 		Status    string
 		ExitCode  int
 		OOMKilled bool
+		StartedAt string
 		Health    *struct{ Status string }
 	}
 	HostConfig struct {
 		RestartPolicy struct{ Name string }
 	}
+	Config struct {
+		Labels map[string]string
+	}
+	NetworkSettings struct {
+		Ports map[string][]dockerPortBinding
+	}
+}
+
+// dockerPortBinding is one host binding of a container port (Engine API PortBinding).
+type dockerPortBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string
 }
 
 // pveshCLI indirects collectProxmox's pvesh lookup and calls, and the hostname its node name comes
