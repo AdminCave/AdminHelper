@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -101,25 +102,27 @@ func TestPkgAuditNative(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := []struct {
-		names []string
-		count int
+		names      []string
+		count      int
+		vulnerable []string
 	}{
-		{[]string{"FreeBSD-15.0_1"}, 1},
-		{[]string{"FreeBSD-15.0_2"}, 0},
-		{[]string{"FreeBSD-15.0_1", "FreeBSD-kernel-15.0_1"}, 2},
-		{[]string{"FreeBSD-15.0_2", "FreeBSD-kernel-15.0"}, 1},
-		{[]string{"FreeBSD-14.3_5"}, 0},
+		{[]string{"FreeBSD-15.0_1"}, 1, []string{"FreeBSD"}},
+		{[]string{"FreeBSD-15.0_2"}, 0, nil},
+		{[]string{"FreeBSD-15.0_1", "FreeBSD-kernel-15.0_1"}, 2, []string{"FreeBSD", "FreeBSD-kernel"}},
+		{[]string{"FreeBSD-15.0_2", "FreeBSD-kernel-15.0"}, 1, []string{"FreeBSD-kernel"}},
+		{[]string{"FreeBSD-14.3_5"}, 0, nil},
 	}
 	for _, c := range cases {
 		args := append([]string{"-f", vulnXML}, c.names...)
-		if count, ok := pkgAudit(context.Background(), "pkg audit -q", args...); count != c.count || !ok {
-			t.Errorf("pkgAudit(%q) = %d, %v, want %d, true", c.names, count, ok, c.count)
+		count, names, ok := pkgAudit(context.Background(), "pkg audit -q", args...)
+		if count != c.count || !reflect.DeepEqual(packageNames(names), c.vulnerable) || !ok {
+			t.Errorf("pkgAudit(%q) = %d, %q, %v, want %d, %q, true", c.names, count, names, ok, c.count, c.vulnerable)
 		}
 	}
 	logs := captureWarnings(t)
 	missing := filepath.Join(dir, "missing.xml")
-	if count, ok := pkgAudit(context.Background(), "pkg audit -q", "-f", missing, "FreeBSD-15.0_1"); count != 0 || ok {
-		t.Errorf("pkgAudit without vuln.xml = %d, %v, want 0, false", count, ok)
+	if count, names, ok := pkgAudit(context.Background(), "pkg audit -q", "-f", missing, "FreeBSD-15.0_1"); count != 0 || names != nil || ok {
+		t.Errorf("pkgAudit without vuln.xml = %d, %q, %v, want 0, none, false", count, names, ok)
 	}
 	if !strings.Contains(logs.String(), "pkg audit -q failed: exit status 1") {
 		t.Errorf("log = %q, want the failure named", logs.String())
@@ -130,7 +133,7 @@ func TestPkgAuditNative(t *testing.T) {
 	// refusal of the call.
 	freebsdCalls.run = run
 	logs.Reset()
-	count, ok := pkgAudit(context.Background(), "pkg audit -q", "FreeBSD-15.0_1")
+	count, _, ok := pkgAudit(context.Background(), "pkg audit -q", "FreeBSD-15.0_1")
 	if strings.Contains(logs.String(), "not on the command allowlist") ||
 		!(ok || strings.Contains(logs.String(), "pkg audit -q failed: exit status")) {
 		t.Errorf("pkgAudit through the allowlist = %d, %v, log %q; want pkg run", count, ok, logs.String())

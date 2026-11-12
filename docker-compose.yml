@@ -538,6 +538,10 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
+      # Central checks (R-1224): resolvers asked directly for the rule public/internal
+      # (empty = 9.9.9.9,1.1.1.1) and the optional Spamhaus DQS key (empty = Spamhaus off).
+      - MONITOR_PUBLIC_RESOLVERS=${MONITOR_PUBLIC_RESOLVERS:-}
+      - MONITOR_SPAMHAUS_DQS_KEY=${MONITOR_SPAMHAUS_DQS_KEY:-}
       # Notification hub: push check-status transitions to the server, which
       # resolves which users to notify (best-effort; auth via MONITOR_API_KEY as
       # X-Internal-Key). No depends_on — the push tolerates the server being down

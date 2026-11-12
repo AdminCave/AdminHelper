@@ -690,12 +690,17 @@ restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test log_digest_test harness_consistency_test iter_flags_test guard_test ledger_test review_scripts_test review_snap_test overlap_test start_session_test task_close_test gitignore_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
-multibox_test worktree_setup_test pg_url_test schemathesis_determinism_test nightly_test"
+multibox_test worktree_setup_test pg_url_test schemathesis_determinism_test nightly_test
+.github/scripts/retry_test .github/scripts/apt_archives_verify_test .github/scripts/tauri_cli_pins_test
+.github/scripts/cache_settings_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
 # shift every later tree_hash, which is the evidence this stage is built on.
 AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
+# An entry with a slash is a path from the checkout root (the tests under
+# .github/scripts/, R-1352); overridable for the same reason as the directory.
+AH_SCRIPT_TESTS_ROOT="${AH_SCRIPT_TESTS_ROOT:-$ROOT}"
 scripts_block() {
   local t rc skipped=0 ran=0 nfail=0 failed=""
   # Two of the block's tests start run.sh themselves. They pin --step or a layer
@@ -706,7 +711,10 @@ scripts_block() {
   for t in $AH_SCRIPT_TESTS; do
     ran=$((ran + 1))
     printf '  ── %s\n' "$t"
-    rc=0; bash "$AH_SCRIPT_TESTS_DIR/$t.sh" || rc=$?
+    case "$t" in
+      */*) rc=0; bash "$AH_SCRIPT_TESTS_ROOT/$t.sh" || rc=$? ;;
+      *)   rc=0; bash "$AH_SCRIPT_TESTS_DIR/$t.sh" || rc=$? ;;
+    esac
     case "$rc" in
       0)  ;;
       75) skipped=$((skipped + 1)); echo "     $t: SKIP (75)" ;;

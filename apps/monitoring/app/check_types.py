@@ -33,6 +33,8 @@ CHECK_TYPES: dict[str, dict[str, bool]] = {
     "system_state": {"push_only": True},
     # A sensor of the agent run against a module (R-1223); the result comes with the report.
     "probe": {"push_only": True},
+    # A probe the monitoring service runs itself against a public endpoint (R-1224).
+    "central": {"push_only": False},
 }
 
 VALID_CHECK_TYPES = set(CHECK_TYPES)

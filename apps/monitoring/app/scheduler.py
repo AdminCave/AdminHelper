@@ -11,6 +11,7 @@ Dedicated APScheduler instance (independent of the AdminHelper server).
 from __future__ import annotations
 
 import logging
+import random
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -56,11 +57,25 @@ _INTERVAL_MAP = {
 }
 
 
-def _parse_trigger(interval: str):
-    """Converts a fixed-interval string into an APScheduler trigger."""
-    if interval in _INTERVAL_MAP:
-        return IntervalTrigger(**_INTERVAL_MAP[interval])
-    raise ValueError(f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)}")
+def _parse_trigger(interval: str, *, random_phase: bool = False):
+    """Converts a fixed-interval string into an APScheduler trigger.
+
+    With `random_phase` the first run comes at a random point of the first period
+    instead of at its end; the period itself stays exact.
+    """
+    if interval not in _INTERVAL_MAP:
+        raise ValueError(
+            f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)}"
+        )
+    period = _INTERVAL_MAP[interval]
+    if not random_phase:
+        return IntervalTrigger(**period)
+    # Central checks (R-1224): loaded at start-up or created together they would all
+    # fire at once, and app.central.limits would skip most of them. APScheduler's
+    # jitter moves every single run, so two runs of a mail check could come closer
+    # than the mail spacing; a random phase spreads the checks and keeps each period.
+    start = datetime.now(timezone.utc) + timedelta(**period) * random.random()
+    return IntervalTrigger(**period, start_date=start)
 
 
 def interval_timedelta(interval: str) -> timedelta | None:
@@ -86,7 +101,7 @@ def add_check(check_id: str, interval: str, check_type: str | None) -> None:
         remove_check(check_id)
         return
 
-    trigger = _parse_trigger(interval)
+    trigger = _parse_trigger(interval, random_phase=check_type == "central")
     scheduler.add_job(
         execute_check,
         trigger=trigger,

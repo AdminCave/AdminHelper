@@ -44,6 +44,50 @@ def _outage_message(label: str, block: dict, codes: frozenset[str]) -> tuple[str
     return msg, code
 
 
+def _positive(value: object) -> int | None:
+    """A time or size from the report: a whole number from 1, else None."""
+    number = _whole_number(value)
+    return number if number is not None and number > 0 else None
+
+
+# The agent's limit on the jobs per guest and the form of a verification state
+# (putBackupDetails and reVerifyState in apps/agent/internal/monitor/plugins.go).
+_MAX_BACKUP_JOBS = 64
+_BACKUP_JOB_KEYS = ("id", "schedule", "storage")
+_VERIFY_STATE = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+
+
+def _backup_details(vm: dict) -> dict:
+    """The backup details of a guest, for _details only and each only when usable: storage and
+    error as cap_agent_text gives them, size and error time as whole numbers from 1 (the time only
+    with an error), the verification state in the agent's form, and of the jobs among the first
+    _MAX_BACKUP_JOBS objects only id, schedule and storage. A job list without one stays [], the
+    agent's word that no job covers the guest."""
+    details: dict = {}
+    storage = cap_agent_text(vm.get("backup_storage"))
+    if storage:
+        details["backupStorage"] = storage
+    size = _positive(vm.get("backup_size"))
+    if size is not None:
+        details["backupSize"] = size
+    verify = vm.get("backup_verify")
+    if isinstance(verify, str) and _VERIFY_STATE.fullmatch(verify):
+        details["backupVerify"] = verify
+    jobs = vm.get("backup_jobs")
+    if isinstance(jobs, list):
+        details["backupJobs"] = [
+            {key: text for key in _BACKUP_JOB_KEYS if (text := cap_agent_text(job.get(key)))}
+            for job in capped_objects(jobs)[:_MAX_BACKUP_JOBS]
+        ]
+    error = cap_agent_text(vm.get("backup_error"))
+    if error:
+        details["backupError"] = error
+        error_ts = _positive(vm.get("backup_error_ts"))
+        if error_ts is not None:
+            details["backupErrorTs"] = error_ts
+    return details
+
+
 class ProxmoxBackupChecker:
     """Checks whether VMs/CTs have up-to-date backups.
 
@@ -134,6 +178,7 @@ class ProxmoxBackupChecker:
                     "type": vm_type,
                     "backupStatus": vm_status,
                     "ageHours": age_hours,
+                    **_backup_details(vm),
                 }
             )
 
@@ -167,6 +212,46 @@ def _pool_name(pool: dict) -> str:
     """name of a pool as message and _details show it: only a string, capped and on one line
     by cap_agent_text, else "?". The metric name still reads the raw value."""
     return cap_agent_text(pool.get("name")) or "?"
+
+
+# The scrub states and the vdev limit of the agent (parseZpoolStatus, maxZpoolVdevErrors).
+_SCRUB_STATES = frozenset({"SCANNING", "PAUSED", "FINISHED", "CANCELED"})
+_MAX_VDEV_ERRORS = 32
+_VDEV_COUNTERS = ("read", "write", "checksum")
+
+
+def _counter(value: object) -> int | None:
+    """An error counter from the report: a whole number from 0, else None."""
+    number = _whole_number(value)
+    return number if number is not None and number >= 0 else None
+
+
+def _zfs_details(pool: dict) -> dict:
+    """The details of a pool, for _details only and each only when usable: the fragmentation as a
+    whole number 0-100; the last scrub with a known state, its errors as a counter and its end as
+    a whole number from 1; of the first _MAX_VDEV_ERRORS vdev objects those whose three counters
+    are counters, the name as cap_agent_text gives it or "?"."""
+    details: dict = {}
+    fragmentation = _whole_number(pool.get("fragmentation_percent"))
+    if fragmentation is not None and 0 <= fragmentation <= 100:
+        details["fragmentationPercent"] = fragmentation
+    scrub = pool.get("scrub")
+    if isinstance(scrub, dict):
+        state = scrub.get("state")
+        errors = _counter(scrub.get("errors"))
+        if isinstance(state, str) and state in _SCRUB_STATES and errors is not None:
+            details["scrub"] = {"state": state, "errors": errors}
+            end = _positive(scrub.get("end"))
+            if end is not None:
+                details["scrub"]["end"] = end
+    vdevs = []
+    for vdev in capped_objects(pool.get("vdev_errors"))[:_MAX_VDEV_ERRORS]:
+        counts = {key: _counter(vdev.get(key)) for key in _VDEV_COUNTERS}
+        if None not in counts.values():
+            vdevs.append({"name": cap_agent_text(vdev.get("name")) or "?", **counts})
+    if vdevs:
+        details["vdevErrors"] = vdevs
+    return details
 
 
 class ZfsHealthChecker:
@@ -243,6 +328,7 @@ class ZfsHealthChecker:
                     # The rating above reads the raw health; _details only gets a capped string.
                     "health": cap_agent_text(p.get("health")) or "UNKNOWN",
                     "capacityPercent": _pool_capacity(p),
+                    **_zfs_details(p),
                 }
                 for p in pools
             ],
@@ -334,6 +420,30 @@ def _problem_text(name: str, reason: str, state: str) -> str:
     if reason == "unknown_state":
         return f"{name}: unknown state {state!r}"
     return f"{name}: {reason}"
+
+
+# The agent's limit on the published ports per container (maxDockerPorts).
+_MAX_DOCKER_PORTS = 64
+
+
+def _docker_details(c: dict) -> dict:
+    """The details of a container, for _details only and each only when usable: compose project
+    and service as cap_agent_text gives them, of the first _MAX_DOCKER_PORTS ports the strings
+    likewise, the start time as a whole number from 1."""
+    details: dict = {}
+    for key in ("compose_project", "compose_service"):
+        text = cap_agent_text(c.get(key))
+        if text:
+            details[key] = text
+    ports = c.get("ports")
+    if isinstance(ports, list):
+        shown = [text for port in ports[:_MAX_DOCKER_PORTS] if (text := cap_agent_text(port))]
+        if shown:
+            details["ports"] = shown
+    started_at = _positive(c.get("started_at"))
+    if started_at is not None:
+        details["started_at"] = started_at
+    return details
 
 
 class DockerHealthChecker:
@@ -435,6 +545,7 @@ class DockerHealthChecker:
                     "reason": reason,
                     "exit_code": _container_exit_code(c),
                     "restart_count": _whole_number(c.get("restart_count")),
+                    **_docker_details(c),
                 }
             )
 

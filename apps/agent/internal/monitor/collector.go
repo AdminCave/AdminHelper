@@ -197,6 +197,11 @@ func collectNetwork() map[string]any {
 	return map[string]any{"net_rx_bytes_total": rx, "net_tx_bytes_total": tx}
 }
 
+// freebsdNoSwap is the error text of gopsutil's FreeBSD SwapMemory (mem/mem_freebsd.go) on a
+// host without a swap device. gopsutil exports no error value for it, so a bump that changes the
+// text would turn "no swap" into "swap unreadable"; TestFreeBSDNoSwapMatchesGopsutil pins it.
+const freebsdNoSwap = "no swap devices found"
+
 // collectSwapAndCPUCount reports the logical CPUs and the swap on Linux and FreeBSD, like the load
 // they put into proportion (nil elsewhere). A failed part drops only its own fields. Without a swap
 // device there is no swap_percent: gopsutil's 0 there is no measurement.
@@ -210,9 +215,9 @@ func collectSwapAndCPUCount() map[string]any {
 		res["cpu_count"] = n
 	}
 	s, err := resourceCalls.swap()
-	// gopsutil's FreeBSD SwapMemory (mem_freebsd.go) fails with exactly this message when
-	// vm.nswapdev is 0; that is "no swap", which Linux reports as 0/0, not an unreadable swap.
-	if err != nil && resourceCalls.goos == "freebsd" && err.Error() == "no swap devices found" {
+	// gopsutil's FreeBSD SwapMemory fails with freebsdNoSwap when vm.nswapdev is 0; that is
+	// "no swap", which Linux reports as 0/0, not an unreadable swap.
+	if err != nil && resourceCalls.goos == "freebsd" && err.Error() == freebsdNoSwap {
 		s, err = &mem.SwapMemoryStat{}, nil
 	}
 	if err == nil {

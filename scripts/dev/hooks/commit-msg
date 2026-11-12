@@ -20,12 +20,29 @@
 # `git commit --no-verify` skips this hook like pre-commit; the harness guard
 # refuses that flag (R-0102).
 #
-# Exit ≠ 0 aborts the commit: 4 for a finding, anything else when review.sh could
-# not run — fail closed, like pre-commit.
+# The subject — the first line that is neither empty nor a # comment — must be a
+# Conventional Commit (R-1359): three task commits on main carry `Task: …` or
+# running text as their subject. Merge, revert and fixup!/squash!/amend! subjects,
+# which git writes itself, pass. task-close.sh runs the same check before its Verify.
+#
+# Exit ≠ 0 aborts the commit: 1 for a subject that is no Conventional Commit, 4 for
+# a finding, anything else when review.sh could not run — fail closed, like
+# pre-commit.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
 MSG="${1:?commit-msg: git passes the message file}"
+SUBJECT_RE='^((feat|fix|chore|refactor|docs|test|perf|tune|build|ci|style|revert)(\([^)]+\))?!?: [^[:space:]]|Merge |Revert "|(fixup|squash|amend)! )'
+# A # line is a comment only when git ran an editor (it then strips it); with
+# -m or -F (GIT_EDITOR=:) git keeps it, and it is the subject.
+SKIP='^[[:space:]]*(#|$)'
+[ "${GIT_EDITOR-}" = : ] && SKIP='^[[:space:]]*$'
+SUBJECT="$(awk -v skip="$SKIP" '$0 !~ skip { print; exit }' "$MSG")" || exit 2
+[[ $SUBJECT =~ $SUBJECT_RE ]] || {
+  # Not echoed: a subject may carry what review.sh sec would refuse.
+  echo "commit-msg: the subject is no Conventional Commit (<type>[(scope)][!]: <text>)" >&2
+  exit 1
+}
 [ "${GIT_EDITOR-}" = : ] && exec bash "$ROOT/scripts/dev/review.sh" sec --message "$MSG"
 exec bash "$ROOT/scripts/dev/review.sh" sec --message "$MSG" --editor

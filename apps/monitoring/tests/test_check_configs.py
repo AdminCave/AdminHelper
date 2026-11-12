@@ -317,6 +317,7 @@ _REQUIRED = {
     "tcp": {"target": "192.0.2.1", "port": 22},
     "http": {"url": "http://192.0.2.1/"},
     "probe": {"sensor": "socket", "target": {"kind": "port"}, "fields": ["listening"]},
+    "central": {"sensor": "tls", "host": "www.example.test"},
 }
 
 
@@ -365,6 +366,7 @@ class TestStrictNumberFields:
             "disk_forecast",
             "probe",
             "probe.target",
+            "central",
         }
         int_fields = {(t, path) for t, path, _ in _INT_FIELDS}
         assert {("tcp", ("port",)), ("http", ("expected_status",))} <= int_fields <= found

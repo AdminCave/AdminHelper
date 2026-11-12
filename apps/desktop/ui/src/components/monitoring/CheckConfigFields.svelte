@@ -5,8 +5,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheckConfig, MonitorCheckType } from '$lib/api/types';
+  import type { MonitorCheck, MonitorCheckConfig, MonitorCheckType } from '$lib/api/types';
   import { t } from '$lib/i18n';
+  import {
+    CENTRAL_SENSORS,
+    CENTRAL_SENSOR_NAMES,
+    DNSBL_LISTS,
+    centralConfigFor,
+    centralSensorOf,
+    partnersFor,
+    sensorTakesPartner,
+    type CentralSensorName,
+  } from '$lib/models/monitorCheck';
   import DiskOverridesField from './DiskOverridesField.svelte';
 
   interface Props {
@@ -14,8 +24,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // The parent's reactive $state config object — we mutate config.<field> in
     // place so Svelte 5 fine-grained reactivity keeps the form value in sync.
     config: MonitorCheckConfig;
+    // The checks of the same server, for a central check's partner; until they
+    // are loaded the partner select offers none but the stored one.
+    serverChecks?: MonitorCheck[];
+    // A central check's sensor changed; the parent moves the interval along.
+    onSensorChange?: (sensor: CentralSensorName) => void;
   }
-  let { checkType, config }: Props = $props();
+  let { checkType, config, serverChecks = [], onSensorChange }: Props = $props();
 
   // ── Field helpers ──────────────────────────────────────────────────────────
   // Empty number ⇒ drop the key (server fills defaults). Empty csv ⇒ drop the key.
@@ -174,6 +189,69 @@ SPDX-License-Identifier: GPL-3.0-or-later
       return typeof w === 'number' && typeof c === 'number' && w >= c;
     }).map((pair) => pair.label),
   );
+
+  // ── Central checks (R-1224) ────────────────────────────────────────────────
+  // The sensor's own settings live in config.params; an empty params object goes,
+  // the server fills the defaults.
+
+  const sensor = $derived(centralSensorOf(config));
+  const sensorSpec = $derived(sensor === null ? null : CENTRAL_SENSORS[sensor]);
+  const partners = $derived(sensor === null ? [] : partnersFor(sensor, serverChecks));
+  const storedPartner = $derived(
+    typeof config.pair_check_id === 'string' ? config.pair_check_id : '',
+  );
+
+  function changeSensor(next: CentralSensorName): void {
+    const fresh = centralConfigFor(next, config);
+    for (const key of Object.keys(config)) delete config[key];
+    Object.assign(config, fresh);
+    onSensorChange?.(next);
+  }
+
+  function params(): Record<string, unknown> {
+    const p = config.params;
+    return typeof p === 'object' && p !== null && !Array.isArray(p)
+      ? (p as Record<string, unknown>)
+      : {};
+  }
+  function setParam(key: string, value: unknown): void {
+    const next = { ...params() };
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+    if (Object.keys(next).length === 0) delete config.params;
+    else config.params = next;
+  }
+  function paramNum(key: string): string {
+    const v = params()[key];
+    return typeof v === 'number' ? String(v) : '';
+  }
+  function setParamNum(key: string, raw: string): void {
+    setParam(key, raw.trim() === '' ? undefined : Number(raw));
+  }
+  function paramCsv(key: string): string {
+    const v = params()[key];
+    return Array.isArray(v) ? v.join(', ') : '';
+  }
+  function setParamCsv(key: string, raw: string): void {
+    const vals = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    setParam(key, vals.length === 0 ? undefined : vals);
+  }
+  function listOn(key: string): boolean {
+    const v = params().lists;
+    return Array.isArray(v) && v.includes(key);
+  }
+  // In the table's order, each list once; none checked asks the server's default.
+  function setList(key: string, on: boolean): void {
+    const chosen = DNSBL_LISTS.map((l) => l.key).filter((k) => (k === key ? on : listOn(k)));
+    setParam('lists', chosen.length === 0 ? undefined : chosen);
+  }
+  function setPartner(id: string): void {
+    if (id === '') delete config.pair_check_id;
+    else config.pair_check_id = id;
+  }
 </script>
 
 {#snippet numField(f: NumField)}
@@ -449,6 +527,121 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <span>{$t(sw.labelKey)}</span>
     </label>
   {/each}
+{:else if checkType === 'central'}
+  <label class="field">
+    <span class="field-label">{$t('monitoring.checkCfg.sensor')}</span>
+    <select
+      value={sensor ?? ''}
+      onchange={(e) => changeSensor(e.currentTarget.value as CentralSensorName)}
+    >
+      {#if sensor === null}<option value="" disabled>—</option>{/if}
+      {#each CENTRAL_SENSOR_NAMES as s (s)}
+        <option value={s}>{s}</option>
+      {/each}
+    </select>
+  </label>
+  <label class="field">
+    <span class="field-label">{$t('monitoring.checkCfg.host')}</span>
+    <input
+      type="text"
+      value={strVal('host')}
+      oninput={(e) => setStr('host', e.currentTarget.value)}
+    />
+    <span class="field-hint">
+      {sensorSpec?.needsName
+        ? $t('monitoring.checkCfg.hostNameOnly')
+        : $t('monitoring.checkCfg.hostPublic')}
+    </span>
+  </label>
+  {#if sensorSpec?.ports}
+    <label class="field">
+      <span class="field-label">{$t('monitoring.checkCfg.port')}</span>
+      <select
+        value={String(config.port ?? sensorSpec.defaultPort)}
+        onchange={(e) => setNum('port', e.currentTarget.value)}
+      >
+        {#each sensorSpec.ports as p (p)}
+          <option value={String(p)}>{p}</option>
+        {/each}
+      </select>
+    </label>
+  {:else if sensorSpec?.defaultPort != null}
+    <label class="field">
+      <span class="field-label">{$t('monitoring.checkCfg.port')}</span>
+      <input
+        type="number"
+        min="1"
+        max="65535"
+        value={numVal('port')}
+        oninput={(e) => setNum('port', e.currentTarget.value)}
+      />
+      <span class="field-hint">{$t('monitoring.checkCfg.tlsPortHint')}</span>
+    </label>
+  {/if}
+  {#if sensor === 'dns'}
+    <label class="field" style="grid-column: span 2;">
+      <span class="field-label">{$t('monitoring.checkCfg.dnsExpected')}</span>
+      <input
+        type="text"
+        placeholder="192.0.2.10, 2001:db8::10"
+        value={paramCsv('expected')}
+        oninput={(e) => setParamCsv('expected', e.currentTarget.value)}
+      />
+      <span class="field-hint">{$t('monitoring.checkCfg.dnsExpectedHint')}</span>
+    </label>
+  {:else if sensor === 'rdap'}
+    <label class="field">
+      <span class="field-label">{$t('monitoring.checkCfg.rdapWarnDays')}</span>
+      <input
+        type="number"
+        min="1"
+        max="365"
+        placeholder="30"
+        value={paramNum('warn_days')}
+        oninput={(e) => setParamNum('warn_days', e.currentTarget.value)}
+      />
+    </label>
+    <label class="field">
+      <span class="field-label">{$t('monitoring.checkCfg.rdapCritDays')}</span>
+      <input
+        type="number"
+        min="0"
+        max="364"
+        placeholder="7"
+        value={paramNum('crit_days')}
+        oninput={(e) => setParamNum('crit_days', e.currentTarget.value)}
+      />
+    </label>
+  {:else if sensor === 'dnsbl'}
+    {#each DNSBL_LISTS as list (list.key)}
+      <label class="field checkbox">
+        <input
+          type="checkbox"
+          checked={listOn(list.key)}
+          onchange={(e) => setList(list.key, e.currentTarget.checked)}
+        />
+        <span>{list.label}</span>
+      </label>
+    {/each}
+    <div class="field-hint" style="grid-column: span 2;">
+      {$t('monitoring.checkCfg.dnsblListsHint')}
+    </div>
+  {/if}
+  {#if sensor !== null && sensorTakesPartner(sensor)}
+    <label class="field" style="grid-column: span 2;">
+      <span class="field-label">{$t('monitoring.checkCfg.pairCheck')}</span>
+      <select value={storedPartner} onchange={(e) => setPartner(e.currentTarget.value)}>
+        <option value="">{$t('monitoring.checkCfg.pairNone')}</option>
+        {#if storedPartner !== '' && !partners.some((p) => p.id === storedPartner)}
+          <option value={storedPartner}>{storedPartner}</option>
+        {/if}
+        {#each partners as p (p.id)}
+          <option value={p.id}>{p.name} ({String(p.config?.sensor)})</option>
+        {/each}
+      </select>
+      <span class="field-hint">{$t('monitoring.checkCfg.pairHint')}</span>
+    </label>
+  {/if}
 {/if}
 
 {#if thresholdWarnings.length > 0}

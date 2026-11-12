@@ -6,7 +6,9 @@ package monitor
 
 import (
 	"context"
+	"slices"
 	"time"
+	"unicode/utf8"
 )
 
 // updatesTimeout caps a call of the security update count (apt-get, dnf, pkg audit). It runs once an
@@ -37,4 +39,50 @@ func updatesDue(saved *updatesCheck, now time.Time) bool {
 	}
 	age := now.Sub(time.Unix(saved.CheckedUnix, 0))
 	return age < 0 || age >= updatesCheckEvery
+}
+
+// maxPackageNames caps the names of a count or of a pending reboot and maxPackageNameBytes each name:
+// they go out with every report, and the count says how many there are.
+const (
+	maxPackageNames     = 100
+	maxPackageNameBytes = 128
+)
+
+// packageNames returns names as a report carries them: each cut to maxPackageNameBytes on a rune
+// boundary, sorted, each once, the first maxPackageNames; nil for none.
+func packageNames(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	capped := make([]string, len(names))
+	for i, name := range names {
+		capped[i] = capPackageName(name)
+	}
+	slices.Sort(capped)
+	capped = slices.Compact(capped)
+	return capped[:min(len(capped), maxPackageNames)]
+}
+
+// capPackageName cuts name to maxPackageNameBytes without splitting a rune.
+func capPackageName(name string) string {
+	if len(name) <= maxPackageNameBytes {
+		return name
+	}
+	cut := maxPackageNameBytes
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut]
+}
+
+// putSecurityUpdates sets security_updates and, when it names any, security_packages in block from a
+// count that succeeded.
+func putSecurityUpdates(block map[string]any, check *updatesCheck) {
+	if check == nil || check.Security == nil {
+		return
+	}
+	block["security_updates"] = *check.Security
+	if len(check.Packages) > 0 {
+		block["security_packages"] = check.Packages
+	}
 }

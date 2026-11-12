@@ -13,13 +13,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     MonitorSeverity,
   } from '$lib/api/types';
   import {
-    CHECK_TYPES,
-    INTERVALS,
+    CENTRAL_SENSORS,
+    SERVER_CHECK_TYPES,
     SEVERITIES,
+    centralConfigFor,
     emptyCheckForm,
     checkToForm,
     failsAfterTypeChange,
     formToInput,
+    intervalsFor,
+    learnsBaseline,
     validateCheckForm,
     type CheckForm,
   } from '$lib/models/monitorCheck';
@@ -48,13 +51,54 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // type with its suggested 1 gives it back (failsAfterTypeChange).
   let failsBefore: number | undefined;
 
+  // The server's checks, for a central check's partner (R-1224); loaded once per
+  // opening and only once the form is a central check, the other types never need them.
+  let serverChecks = $state<MonitorCheck[]>([]);
+  let checksLoaded = false;
+
   let isNew = $derived(target === null);
+  // A central dns check compares each answer with the one it learned first.
+  let canRebaseline = $derived(learnsBaseline(target));
 
   $effect(() => {
     if (!open) return;
     form = target ? checkToForm(target) : emptyCheckForm(serverId);
     failsBefore = undefined;
+    checksLoaded = false;
+    serverChecks = [];
   });
+
+  $effect(() => {
+    if (!open || form.checkType !== 'central' || checksLoaded) return;
+    const s = $session;
+    if (!s) return;
+    checksLoaded = true;
+    const sid = form.serverId;
+    monitoringApi
+      .fetchStatus(s)
+      .then((all) => (serverChecks = all.filter((c) => c.serverId === sid)))
+      .catch((err: unknown) => reportError(errMsg(err)));
+  });
+
+  async function onRebaseline(): Promise<void> {
+    const s = $session;
+    if (!s || !form.id) return;
+    // Learned again while an answer is wrong, the wrong answer becomes the baseline.
+    const confirmed = await confirmDialog($t('monitoring.checkEdit.rebaselineConfirm'), {
+      confirmLabel: $t('monitoring.checkEdit.rebaseline'),
+    });
+    if (!confirmed) return;
+    saving = true;
+    try {
+      await monitoringApi.rebaseline(s, form.id);
+      showStatus($t('monitoring.checkEdit.rebaselined'));
+      onSaved();
+    } catch (err) {
+      reportError(errMsg(err));
+    } finally {
+      saving = false;
+    }
+  }
 
   async function onSave(): Promise<void> {
     const s = $session;
@@ -130,10 +174,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
             failsBefore,
           );
           form.checkType = next;
-          form.config = {};
+          if (next === 'central') {
+            form.config = centralConfigFor('tls', {});
+            form.interval = CENTRAL_SENSORS.tls.defaultInterval;
+          } else {
+            form.config = {};
+          }
         }}
       >
-        {#each CHECK_TYPES as ct (ct)}
+        {#each SERVER_CHECK_TYPES as ct (ct)}
           <option value={ct}>{ct}</option>
         {/each}
       </select>
@@ -145,7 +194,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         value={form.interval}
         onchange={(e) => (form.interval = e.currentTarget.value as MonitorInterval)}
       >
-        {#each INTERVALS as iv (iv)}
+        {#each intervalsFor(form.checkType, form.config) as iv (iv)}
           <option value={iv}>{iv}</option>
         {/each}
       </select>
@@ -189,12 +238,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <textarea rows="2" bind:value={form.description}></textarea>
     </label>
 
-    <CheckConfigFields checkType={form.checkType} config={form.config} />
+    <CheckConfigFields
+      checkType={form.checkType}
+      config={form.config}
+      {serverChecks}
+      onSensorChange={(sensor) => (form.interval = CENTRAL_SENSORS[sensor].defaultInterval)}
+    />
   </div>
 
   {#snippet footer()}
     {#if !isNew}
       <button class="btn danger" onclick={onDelete} disabled={saving}>{$t('action.delete')}</button>
+    {/if}
+    {#if canRebaseline}
+      <button class="btn" onclick={onRebaseline} disabled={saving}>
+        {$t('monitoring.checkEdit.rebaseline')}
+      </button>
     {/if}
     <div style="flex: 1;"></div>
     <button class="btn" onclick={onClose} disabled={saving}>{$t('action.cancel')}</button>

@@ -77,6 +77,7 @@ describe('updateRows', () => {
         serverName: 'db-1',
         reboot: false,
         securityUpdates: 0,
+        packages: [],
         problems: [],
         state: 'ok',
         checkStatus: 'ok',
@@ -87,6 +88,7 @@ describe('updateRows', () => {
         serverName: 'web-1',
         reboot: true,
         securityUpdates: 3,
+        packages: [],
         // In this view's order, the clock's problem left out.
         problems: ['reboot', 'security_updates'],
         state: 'action',
@@ -221,5 +223,113 @@ describe('UpdatesView', () => {
     });
     await fireEvent.click(getByRole('button', { name: 'web-1' }));
     expect(onOpen).toHaveBeenCalledWith('srv-web');
+  });
+});
+
+// arch-monitoring-ui-2 T9 (R-1227): the agent names the packages behind the count. The
+// view lists the security packages in a column of their own, which only appears once a
+// server names them, and cuts a long list in the cell while its title keeps all.
+describe('UpdatesView package names', () => {
+  function headers(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('thead th')].map(
+      (th) => th.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    );
+  }
+
+  const PACKAGES = ['openssl', 'libssl3', 'curl', 'libcurl4', 'sudo', 'tzdata', 'bind9'];
+
+  it('reads the names and drops what is no name', () => {
+    const list = updateRows(
+      [
+        system('web', 'srv-web', 'warning', {
+          reboot_required: false,
+          security_updates: 3,
+          security_packages: ['openssl', 7, null, 'curl', 'openssl'],
+          reboot_packages: ['linux-image-amd64'],
+          problems: ['security_updates'],
+        }),
+        system('db', 'srv-db', 'ok', { security_packages: 'openssl' }),
+        system('mail', 'srv-mail', 'ok', ['openssl']),
+      ],
+      SERVERS,
+    );
+    expect(list.map((r) => [r.key, r.packages])).toEqual([
+      ['db', []],
+      ['mail', []],
+      // A name twice stays: the agent's list as it came, the reboot packages left out.
+      ['web', ['openssl', 'curl', 'openssl']],
+    ]);
+  });
+
+  it('adds no column while no server names its packages', () => {
+    const { container } = render(UpdatesView, {
+      checks: [system('web', 'srv-web', 'ok', { reboot_required: false, security_updates: 2 })],
+      servers: SERVERS,
+      onOpen: () => {},
+    });
+    expect(headers(container)).toEqual([
+      'Server',
+      'Neustart nötig',
+      'Offene Sicherheits-Updates',
+      'Bewertung',
+    ]);
+  });
+
+  it('lists the names between the count and the state, cut after five', () => {
+    const checks = [
+      system('web', 'srv-web', 'warning', {
+        reboot_required: false,
+        security_updates: 7,
+        security_packages: PACKAGES,
+        problems: ['security_updates'],
+      }),
+      system('db', 'srv-db', 'warning', {
+        reboot_required: false,
+        security_updates: 2,
+        security_packages: ['openssl', 'curl'],
+        problems: ['security_updates'],
+      }),
+      system('mail', 'srv-mail', 'ok', { reboot_required: false, security_updates: 0 }),
+    ];
+    const { container } = render(UpdatesView, { checks, servers: SERVERS, onOpen: () => {} });
+    expect(headers(container)).toEqual([
+      'Server',
+      'Neustart nötig',
+      'Offene Sicherheits-Updates',
+      'Pakete',
+      'Bewertung',
+    ]);
+    expect(rows(container).map((r) => r[3])).toEqual([
+      'openssl, curl',
+      'openssl, libssl3, curl, libcurl4, sudo +2 weitere',
+      '—',
+    ]);
+    const titles = [...container.querySelectorAll('tbody span[title]')].map((el) =>
+      el.getAttribute('title'),
+    );
+    expect(titles).toEqual(['openssl, curl', PACKAGES.join(', ')]);
+    expect(container.querySelectorAll('.packages-more')).toHaveLength(1);
+  });
+
+  it('names the column in English', () => {
+    setLanguage('en');
+    try {
+      const { container } = render(UpdatesView, {
+        checks: [
+          system('web', 'srv-web', 'warning', {
+            reboot_required: false,
+            security_updates: 6,
+            security_packages: PACKAGES.slice(0, 6),
+            problems: ['security_updates'],
+          }),
+        ],
+        servers: SERVERS,
+        onOpen: () => {},
+      });
+      expect(headers(container)[3]).toBe('Packages');
+      expect(rows(container)[0][3]).toBe('openssl, libssl3, curl, libcurl4, sudo +1 more');
+    } finally {
+      setLanguage('de');
+    }
   });
 });

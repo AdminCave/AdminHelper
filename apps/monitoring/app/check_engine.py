@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.alerter import process_alert, resolve_notification
+from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
-from app.checkers import get_checker
+from app.checkers import CheckContext, PartnerState, get_checker
 from app.core import database
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
@@ -39,6 +42,15 @@ _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 # from MonitorState.message into the transition log, webhook and mail. Four agent texts
 # of 500 (R-0517).
 MAX_MESSAGE = 2000
+
+# The note a skipped central run leaves behind the message; the next one replaces it.
+_SKIP_NOTE = re.compile(r" \(skipped: [^()]*\)\Z")
+
+# What the state write cannot take: Postgres keeps no NUL in a text column, and the driver
+# cannot encode a lone surrogate (U+D800 to U+DFFF) — nor can a response that later carries
+# the stored details. The agent report refuses both at its boundary (core/bounds.py); a
+# scheduler checker's text has no sender to refuse, so apply_result replaces them.
+_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
 
 
 def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
@@ -207,6 +219,8 @@ def apply_result(
 
     Returns (old_status, effective status, notification decision).
     """
+    message = _storable(message)
+    details = _storable(details)
     old_status = state.status if state else "pending"
     eff_status, message, new_fail_count, new_ok_count = _damp(
         check, state, old_status, result_status, message
@@ -235,6 +249,23 @@ def apply_result(
     if decision == "silent_ack":
         state.notified_status = eff_status
     return old_status, eff_status, decision
+
+
+def _storable(value: Any) -> Any:
+    """`value` with every _UNSTORABLE character in its strings, dict keys included, as U+FFFD.
+
+    Recursive like the json.dumps that writes the details: a checker builds them, so the
+    depth is the checker's."""
+    if isinstance(value, str):
+        return _UNSTORABLE.sub("\ufffd", value)
+    if isinstance(value, dict):
+        return {
+            (_storable(key) if isinstance(key, str) else key): _storable(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [_storable(item) for item in value]
+    return value
 
 
 def _damp(
@@ -313,6 +344,77 @@ def _write_state(
     return state
 
 
+def _json_object(text: str | None) -> dict | None:
+    """A stored JSON text as a mapping; None for none, broken JSON or a non-object."""
+    try:
+        value = json.loads(text) if text else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _load_context(db: Session, check: MonitorCheck, config: dict) -> CheckContext:
+    """The previous details of `check` and the state of its partner (`pair_check_id`).
+
+    Only an enabled probe check of the same server counts as partner: the pair
+    explains a central result by the agent's view of the same service, and a check
+    of another server, or a disabled one with a stale state, explains nothing.
+    """
+    row = db.query(MonitorState.details).filter(MonitorState.check_id == check.id).first()
+    prev_details = _json_object(row[0]) if row else None
+
+    partner = None
+    pair_id = config.get("pair_check_id")
+    if isinstance(pair_id, str) and pair_id and check.server_id is not None:
+        pair = (
+            db.query(MonitorCheck)
+            .filter(
+                MonitorCheck.id == pair_id,
+                MonitorCheck.check_type == "probe",
+                MonitorCheck.enabled == True,  # noqa: E712
+                MonitorCheck.server_id == check.server_id,
+            )
+            .first()
+        )
+        if pair is not None:
+            pair_state = db.query(MonitorState).filter(MonitorState.check_id == pair.id).first()
+            sensor = (_json_object(pair.config) or {}).get("sensor")
+            partner = PartnerState(
+                check_id=pair.id,
+                sensor=sensor if isinstance(sensor, str) else None,
+                status=pair_state.status if pair_state else "pending",
+                details=_json_object(pair_state.details) if pair_state else None,
+                last_check=pair_state.last_check if pair_state else None,
+            )
+    return CheckContext(prev_details=prev_details, partner=partner)
+
+
+def _note_skip(db: Session, check_id: str, note: str) -> None:
+    """Notes a skipped run behind the stored message and changes nothing else.
+
+    The run did not happen: no metric, no damping step, no alert. Status, since,
+    last_check and details stay, so the age of last_check shows how long the check
+    has gone unmeasured, and a skip never raises the alarm the limits exist to spare.
+    """
+    state = (
+        db.query(MonitorState).filter(MonitorState.check_id == check_id).with_for_update().first()
+    )
+    if state is None:
+        return
+    base = _SKIP_NOTE.sub("", state.message or "")
+    if base.startswith("skipped: "):
+        base = ""
+    suffix = f" ({note})"
+    if not base:
+        state.message = note
+    else:
+        if len(base) + len(suffix) > MAX_MESSAGE:
+            base = base[: MAX_MESSAGE - len(suffix) - 1] + "…"
+        state.message = base + suffix
+    db.commit()
+    logger.info("Check %s %s", check_id, note)
+
+
 def execute_check(check_id: str) -> None:
     """Called by the scheduler for each check interval."""
     db = database.SessionLocal()
@@ -329,6 +431,9 @@ def execute_check(check_id: str) -> None:
             config = json.loads(check.config) if check.config else {}
         except (json.JSONDecodeError, TypeError):
             config = None
+        # A stored list or number is as corrupt as broken JSON: every checker reads a mapping.
+        if not isinstance(config, dict):
+            config = None
 
         # Do not run push-only checks from the scheduler
         if check.check_type in PUSH_ONLY_TYPES:
@@ -338,11 +443,15 @@ def execute_check(check_id: str) -> None:
         config = resolve_config_server_id(config, check_type, server_id)
 
         checker = None
+        context = None
         if config is not None:
             try:
                 checker = get_checker(check_type)
             except ValueError as exc:
                 logger.warning("Check %s: %s", name, exc)
+            # Read in this transaction, before the rollback below ends it.
+            if getattr(checker, "wants_context", False) is True:
+                context = _load_context(db, check, config)
 
         # End the read transaction before the run: the checker takes up to its configured
         # timeout (at most 300 s) and the metric write follows. Held over both, the 30
@@ -362,7 +471,13 @@ def execute_check(check_id: str) -> None:
             result_status, message, metrics = "unknown", "Unknown check type", None
         else:
             try:
-                result_status, message, metrics = checker.run(config)
+                if context is not None:
+                    result_status, message, metrics = checker.run_with_context(config, context)
+                else:
+                    result_status, message, metrics = checker.run(config)
+            except RunSkipped as skip:
+                _note_skip(db, check_id, str(skip))
+                return
             except Exception as exc:
                 result_status = "unknown"
                 message = f"Unexpected error: {exc}"

@@ -532,7 +532,8 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 `task-close.sh` laeuft ausserhalb der Modell-Session, ist wiederholbar und geht in dieser Reihenfolge vor:
 
 1. **Eingabe:** das Ledger liegt unter `tasks/*.md` (nicht README oder Vorlage, kein Symlink), die Task
-   existiert, der Branch ist nicht `main`/`master` (sonst Exit 2).
+   existiert, der Branch ist nicht `main`/`master`, der Betreff ist ein Conventional Commit (sonst
+   Exit 2).
 2. **Handarbeit:** eine Task mit `Komponente: —` ist Exit 74; sie wird von Hand geschlossen.
 3. **Staging:** `--stage` stagt genau die Pfade aus `Dateien:` (nie `git add -A`; Verzeichnisse werden
    abgelehnt, Loeschungen mitgenommen). Eine halb gestagte Datei bricht ab (Exit 2, mit Hinweis auf
@@ -606,7 +607,11 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
 - **Commit einer Task** nur ueber `task-close.sh` (Abschnitt „Task schliessen“).
 - **Token-Hooks:** `git config core.hooksPath scripts/dev/hooks`, einmal im Haupt-Checkout; Worktrees
   erben es. `pre-commit`, `prepare-commit-msg`, `pre-merge-commit` und `pre-applypatch` fahren
-  `review.sh sec --staged`, `commit-msg` prueft die Nachricht, `pre-push` jeden Commit, den ein Push
+  `review.sh sec --staged`, `commit-msg` prueft die Nachricht und verlangt einen
+  Conventional-Commit-Betreff (`<typ>[(scope)][!]: <text>`; `Merge …`, `Revert "…"`,
+  `fixup!`/`squash!`/`amend!` gehen durch; eine `#`-Zeile ist nur im Editor ein Kommentar, mit `-m`
+  oder `-F` ist sie der Betreff; `task-close.sh` prueft ihn schon vor dem Verify), `pre-push` jeden
+  Commit, den ein Push
   nach draussen bringt. Gemeldet werden Pfad oder Datei:Zeile, nie der Inhalt. Was an den Hooks
   vorbeigeht, faengt der CI-Job „Public repo guard (review.sh sec)“. Der PreToolUse-Hook
   `scripts/dev/hooks/harness-guard.sh` verweigert `git commit --no-verify`, Loeschen per Glob in
@@ -1051,6 +1056,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 **`DATA_DIR`:** Der Dienst legt das Verzeichnis beim Import an; der Default `/app/data` gehört dem Container, ohne Root scheitert der Start dort mit `PermissionError: '/app'` (`apps/monitoring/app/core/config.py`). Im Verzeichnis liegt die automatisch erzeugte `.api_key`, solange `MONITOR_API_KEY` nicht gesetzt ist.
 
 **Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut im Stack nur der Einmal-Dienst `db-init` (`python -m app.db_roles setup`, `apps/server/app/db_roles.py`).
+
+**Zentrale Checks:** Die Fühler fragen die Resolver aus `MONITOR_PUBLIC_RESOLVERS` (Standard `9.9.9.9,1.1.1.1`) direkt über Port 53 und holen HTTPS aus dem Internet (RDAP, MTA-STS, ACME-CAs). Ohne diesen Weg, etwa auf einer Dev-Box ohne ausgehendes DNS, melden zentrale Checks `unknown` („public resolvers unreachable“); die Tests ersetzen Resolver und Netz durch Fakes. Dafür braucht der Dienst `cryptography`, `dnspython` und `certifi` (`requirements.in`).
 
 **Hinweis:** Fuer den vollen Monitoring-Stack wird VictoriaMetrics benoetigt, die per `docker compose up` automatisch mitgestartet wird.
 
@@ -1650,7 +1657,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
 │  │  ├─ app/
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast, probe, central
+│  │  │  ├─ central/             # Fühler der zentralen Checks (tls, dns, rdap, Mail, Mail-DNS, DNSBL), Grenzen
 │  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks

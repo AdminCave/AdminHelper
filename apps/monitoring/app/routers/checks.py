@@ -17,7 +17,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.alerter import muted_reasons
-from app.check_configs import ProbeConfig, validate_check_config
+from app.check_configs import (
+    CENTRAL_PAIR_SENSORS,
+    CENTRAL_SENSORS,
+    ProbeConfig,
+    validate_check_config,
+)
 from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.bounds import Offset
@@ -125,6 +130,64 @@ def _probe_measure(config) -> dict | None:
     return out
 
 
+def _central_refused(db: Session, check_type, config, interval, server_id) -> str | None:
+    """Why a central check with these effective values is refused, or None (R-1224).
+
+    The interval must not be shorter than the sensor allows (the targets are other
+    people's services), and a partner must be an agent probe of the same server
+    whose sensor sees the same service.
+    """
+    if check_type != "central" or not isinstance(config, dict):
+        return None
+    name = config.get("sensor")
+    sensor = CENTRAL_SENSORS.get(name) if isinstance(name, str) else None
+    if sensor is None:
+        # The config schema refuses an unknown sensor; a stored one stays editable and
+        # the checker reports it.
+        return None
+    period = interval_timedelta(interval)
+    if period is not None and period < interval_timedelta(sensor.min_interval):
+        return f"Interval too short for sensor {name}: at least {sensor.min_interval}"
+    pair_id = config.get("pair_check_id")
+    if pair_id is None:
+        return None
+    pair = None
+    if isinstance(pair_id, str) and server_id is not None:
+        pair = (
+            db.query(MonitorCheck)
+            .filter(
+                MonitorCheck.id == pair_id,
+                MonitorCheck.check_type == "probe",
+                MonitorCheck.server_id == server_id,
+            )
+            .first()
+        )
+    if pair is None:
+        return "pair_check_id must name a probe check of the same server"
+    try:
+        pair_config = json.loads(pair.config) if pair.config else None
+    except (json.JSONDecodeError, TypeError):
+        pair_config = None
+    pair_config = pair_config if isinstance(pair_config, dict) else {}
+    pair_sensor = pair_config.get("sensor")
+    # A stored list or dict as sensor would make the set lookup raise.
+    if not isinstance(pair_sensor, str) or pair_sensor not in CENTRAL_PAIR_SENSORS:
+        return "pair_check_id must name a probe check with sensor " + ", ".join(
+            sorted(CENTRAL_PAIR_SENSORS)
+        )
+    if pair_sensor != "certfile":
+        return None
+    # The file's date only means something next to the certificate the sensor tls
+    # fetches, and the probe keeps it only as a field it stores; without either the
+    # partner would never tell anything.
+    if name != "tls":
+        return "pair_check_id may name a certfile probe only for the sensor tls"
+    fields = pair_config.get("fields")
+    if not isinstance(fields, list) or "not_after" not in fields:
+        return "pair_check_id must name a certfile probe that stores the field not_after"
+    return None
+
+
 def _probe_change_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]) -> str | None:
     """Why the update would make, unmake or re-aim a probe check, or None. A probe check
     comes only from a module of the catalog (R-1252)."""
@@ -194,6 +257,13 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
     "system_state": [],
     # Likewise: the values of a probe stay in its details; only the status timeline is drawn.
     "probe": [],
+    "central": [
+        "monitor_check_duration_ms_value",
+        "monitor_days_left_value",
+        "monitor_lifetime_pct_value",
+        "monitor_resolvers_agree_value",
+        "monitor_listed_count_value",
+    ],
 }
 
 # Check types with dynamic metric names (regex query)
@@ -250,6 +320,12 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
         raise HTTPException(
             400, f"Invalid severity. Allowed: {', '.join(sorted(VALID_SEVERITIES))}"
         )
+    interval = data.interval
+    if data.check_type == "central" and "interval" not in data.model_fields_set:
+        # The general default (5m) is shorter than most sensors allow.
+        interval = CENTRAL_SENSORS[data.config["sensor"]].default_interval
+    if refused := _central_refused(db, data.check_type, data.config, interval, data.server_id):
+        raise HTTPException(400, refused)
 
     check = MonitorCheck(
         id=str(uuid.uuid4()),
@@ -259,7 +335,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
         check_type=data.check_type,
         config=json.dumps(data.config),
         enabled=data.enabled,
-        interval=data.interval,
+        interval=interval,
         severity=data.severity,
         consecutive_fails=data.consecutive_fails,
         consecutive_oks=data.consecutive_oks,
@@ -346,6 +422,23 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
                 validate_check_config(effective_type, effective_config)
             except ValueError as exc:
                 raise HTTPException(422, str(exc))
+
+    if sent & {"check_type", "config", "interval", "server_id"}:
+        if "config" in sent:
+            central_config = data.config
+        else:
+            try:
+                central_config = json.loads(check.config) if check.config else {}
+            except (json.JSONDecodeError, TypeError):
+                central_config = None
+        if refused := _central_refused(
+            db,
+            data.check_type if "check_type" in sent else check.check_type,
+            central_config,
+            data.interval if "interval" in sent else check.interval,
+            data.server_id if "server_id" in sent else check.server_id,
+        ):
+            raise HTTPException(400, refused)
 
     for field in [
         "server_id",
@@ -486,6 +579,37 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    return check.to_dict(state=state)
+
+
+@router.post(
+    "/checks/{check_id}/rebaseline",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
+def rebaseline_check(check_id: str, db: Session = Depends(get_db)):
+    """Forgets the addresses a central dns check has learned; its next complete run learns them anew."""
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if not check:
+        raise HTTPException(404, "Check not found")
+    try:
+        config = json.loads(check.config) if check.config else None
+    except (json.JSONDecodeError, TypeError):
+        config = None
+    if (
+        check.check_type != "central"
+        or not isinstance(config, dict)
+        or config.get("sensor") != "dns"
+    ):
+        raise HTTPException(400, "Only a central check with sensor dns has a baseline")
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    details = json.loads(state.details) if state is not None and state.details else None
+    # A run in progress may still write the old baseline back; the next call removes it.
+    if isinstance(details, dict) and "baseline" in details:
+        del details["baseline"]
+        state.details = json.dumps(details)
+        db.commit()
     return check.to_dict(state=state)
 
 

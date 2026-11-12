@@ -7,6 +7,9 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
+from app.checkers.central import CentralChecker
+from app.checkers.context import CheckContext as CheckContext
+from app.checkers.context import PartnerState as PartnerState
 from app.checkers.forecast import DiskForecastChecker
 from app.checkers.http import HttpChecker
 from app.checkers.ping import PingChecker
@@ -39,6 +42,14 @@ class PushChecker(Checker, Protocol):
         ...
 
 
+class ContextChecker(Checker, Protocol):
+    wants_context: bool
+
+    def run_with_context(self, config: dict, context: CheckContext) -> tuple[str, str, dict | None]:
+        """Runs the check like `run`, with what the previous runs and the partner left."""
+        ...
+
+
 # Instantiated once at import. get_checker runs on every scheduled check (hundreds
 # per minute at target scale), so the registry must not be rebuilt per call.
 _REGISTRY: dict[str, Checker] = {
@@ -55,6 +66,7 @@ _REGISTRY: dict[str, Checker] = {
     "disk_forecast": DiskForecastChecker(),
     "system_state": SystemStateChecker(),
     "probe": ProbeChecker(),
+    "central": CentralChecker(),
 }
 
 
