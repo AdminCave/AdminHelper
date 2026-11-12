@@ -123,20 +123,20 @@ def agent_number(value: object) -> int | float | None:
     return value if finite else None
 
 
-# The one cap on a report list for the checkers and the push handler (routers/agent.py),
-# applied in two places: capped_objects for lists of objects, ServiceProcessChecker._capped
-# for the unit lists. A compromised or misconfigured agent must not flood the service with
-# a huge list (3.76, R-0632).
-_MAX_REPORT_ENTRIES = 500
+# The one cap on a report list for the checkers, the push handler (routers/agent.py) and the
+# service inventory it stores (service_inventory), applied through capped_objects for lists of
+# objects and ServiceProcessChecker._capped for the unit lists. A compromised or misconfigured
+# agent must not flood the service with a huge list (3.76, R-0632).
+MAX_REPORT_ENTRIES = 500
 
 
 def capped_objects(value: object) -> list[dict]:
     """The entries of a report list that a checker rates: the objects among the first
-    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
+    MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
     flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
     if not isinstance(value, list):
         return []
-    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+    return [entry for entry in value[:MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
 
 
 def entry_text(entry: dict, key: str, default: str) -> str:
@@ -716,7 +716,7 @@ class ServiceProcessChecker:
     def _capped(raw) -> list:
         """Caps a unit list from the report so a huge/hostile array can't drive a DoS through
         the glob matching (3.76); a non-list value is treated as empty."""
-        return raw[:_MAX_REPORT_ENTRIES] if isinstance(raw, list) else []
+        return raw[:MAX_REPORT_ENTRIES] if isinstance(raw, list) else []
 
     @staticmethod
     def _parse_counts(raw) -> tuple[int, int] | None:
@@ -738,6 +738,21 @@ class ServiceProcessChecker:
         reason = cap_agent_text(error)
         return f"Services not queryable: {reason}" if reason else "Services not queryable"
 
+    @staticmethod
+    def _reasons(raw) -> dict[str, str]:
+        """Per unit of systemd.failed_details the reason the message names: its result and exit,
+        each on one line and cut ("exit-code, status=1"); the first entry of a unit counts. A
+        unit without either has none. Restarts and since stay out: the text must not change
+        while the same failure lasts, or every push would rewrite the state message."""
+        reasons: dict[str, str] = {}
+        for entry in capped_objects(raw):
+            unit = entry.get("unit")
+            parts = [cap_agent_text(entry.get(key)) for key in ("result", "exit")]
+            reason = ", ".join(p for p in parts if p)
+            if isinstance(unit, str) and reason and unit not in reasons:
+                reasons[unit] = reason
+        return reasons
+
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         """Auto mode: checks systemd health from the report.
 
@@ -749,8 +764,11 @@ class ServiceProcessChecker:
         all_services, the large, mostly-static inventory, is throttled: v2 agents OMIT the
         key on most pushes. It only adds failed services systemd.failed lacks, after
         systemd.failed, so a full and a throttled push of the same state give the same
-        result. The inventory is not persisted server-side, so nothing is lost by a
-        throttled push.
+        result. The push handler keeps the inventory for the desktop (service_inventory);
+        the rating never reads it, so a throttled push loses nothing.
+
+        failed_details, sent with every push, gives the reason a failed unit names in the
+        message; the error lines (failed_logs) stay out of message and _details.
         """
         systemd = report.get("systemd")
         if not isinstance(systemd, dict) or not systemd:
@@ -796,11 +814,16 @@ class ServiceProcessChecker:
         # warning, like an enabled but inactive unit (Kevin 2026-10-19).
         failed_services = [u for u in failed if self._is_service(u)]
         failed_units = [u for u in failed if not self._is_service(u)]
+        reasons = self._reasons(systemd.get("failed_details"))
+
+        def named(units: list[str]) -> list[str]:
+            return [f"{u} ({reasons[u]})" if u in reasons else u for u in units]
+
         parts = []
         if failed_services:
-            parts.append(f"Failed: {join_capped(failed_services)}")
+            parts.append(f"Failed: {join_capped(named(failed_services))}")
         if failed_units:
-            parts.append(f"Failed units: {join_capped(failed_units)}")
+            parts.append(f"Failed units: {join_capped(named(failed_units))}")
         if enabled_inactive:
             parts.append(f"Inactive (autostart): {join_capped(enabled_inactive)}")
 

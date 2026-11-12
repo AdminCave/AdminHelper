@@ -37,6 +37,7 @@ from app.discovery import apply_credentials, apply_discovery
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 from app.module_plan import build_plan
 from app.schemas import AgentPlanOut
+from app.service_inventory import store_service_report
 from app.template_suggestions import store_host_facts
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ def agent_report(
 
     _store_host_facts(db, server_id, report)
     _store_discovery(db, server_id, report)
+    _store_services(db, server_id, report)
     collectors = _collectors(report)
     lines = _report_lines(server_id, report) + _collector_lines(server_id, collectors)
     throttled = {name for name, entry in collectors.items() if entry.get("throttled") is True}
@@ -214,6 +216,16 @@ def _store_discovery(db: Session, server_id: str, report: dict) -> None:
             logger.error(
                 "Agent report block %s of %s dropped: %s", key, server_id, type(exc).__name__
             )
+
+
+def _store_services(db: Session, server_id: str, report: dict) -> None:
+    # Before the check loop for the same reason as the discovery; a broken systemd block
+    # costs only the inventory and the error lines, the checks still rate it.
+    try:
+        store_service_report(db, server_id, report.get("systemd"))
+    except Exception as exc:
+        db.rollback()
+        logger.error("Agent report block systemd of %s dropped: %s", server_id, type(exc).__name__)
 
 
 def _collectors(report: dict) -> dict[str, dict]:

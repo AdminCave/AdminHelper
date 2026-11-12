@@ -476,6 +476,99 @@ def test_auto_mode_caps_a_list_before_it_skips_entries():
     assert_every_reader_reads(metrics["_details"])
 
 
+def _with_details(failed: list[str], details) -> dict:
+    return {"systemd": {"failed": failed, "enabled_inactive": [], "failed_details": details}}
+
+
+def test_auto_mode_names_the_reason_of_a_failed_unit():
+    report = _with_details(
+        ["nginx.service", "data.mount", "cron.service"],
+        [
+            {"unit": "nginx.service", "result": "exit-code", "exit": "status=1"},
+            {"unit": "data.mount", "result": "timeout"},
+            {"unit": "cron.service"},
+        ],
+    )
+    status, message, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == (
+        "critical",
+        "Failed: nginx.service (exit-code, status=1), cron.service;"
+        " Failed units: data.mount (timeout)",
+    )
+    # _details keeps the bare names: the desktop matches them against the inventory.
+    assert metrics["_details"]["failed"] == ["nginx.service", "data.mount", "cron.service"]
+
+
+def test_auto_mode_the_reason_does_not_change_while_the_failure_lasts():
+    # Restarts and since move with every push; the message must not.
+    def message(restarts, since):
+        detail = {
+            "unit": "nginx.service",
+            "result": "exit-code",
+            "exit": "status=1",
+            "restarts": restarts,
+            "since": since,
+        }
+        return ServiceProcessChecker().evaluate(
+            {"mode": "auto"}, _with_details(["nginx.service"], [detail])
+        )[1]
+
+    assert message("3", "2026-11-12T10:00:00Z") == message("4", "2026-11-12T10:05:00Z")
+    assert message("3", "2026-11-12T10:00:00Z") == "Failed: nginx.service (exit-code, status=1)"
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        pytest.param("x", id="no-list"),
+        pytest.param(["x", None, 5], id="no-objects"),
+        pytest.param([{"result": "exit-code"}], id="no-unit"),
+        pytest.param([{"unit": 5, "result": "exit-code"}], id="unit-no-text"),
+        pytest.param([{"unit": "nginx.service", "result": 1, "exit": ["a"]}], id="no-text"),
+        pytest.param([{"unit": "nginx.service", "result": "", "exit": ""}], id="empty"),
+        pytest.param([{"unit": "other.service", "result": "exit-code"}], id="other-unit"),
+    ],
+)
+def test_auto_mode_without_a_readable_reason_names_the_unit_alone(details):
+    report = _with_details(["nginx.service"], details)
+    status, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("critical", "Failed: nginx.service")
+
+
+def test_auto_mode_the_first_reason_of_a_unit_counts_and_each_part_is_cut():
+    long_exit = "status=" + "9" * 600
+    report = _with_details(
+        ["nginx.service"],
+        [
+            {"unit": "nginx.service", "result": "signal\nforged", "exit": long_exit},
+            {"unit": "nginx.service", "result": "timeout"},
+        ],
+    )
+    _, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    # join_capped cuts the whole entry once more to MAX_AGENT_TEXT.
+    assert message.startswith("Failed: nginx.service (signal forged, status=999")
+    assert "timeout" not in message
+    assert "\n" not in message
+    assert len(message) == len("Failed: ") + MAX_AGENT_TEXT
+
+
+def test_each_part_of_a_reason_is_cut_before_the_join():
+    # The message cannot show it, join_capped cuts the whole entry once more: read directly.
+    reasons = ServiceProcessChecker._reasons(
+        [{"unit": "nginx.service", "result": "r" * 600, "exit": "status=1\n"}]
+    )
+    assert reasons == {"nginx.service": "r" * (MAX_AGENT_TEXT - 1) + "…, status=1 "}
+
+
+def test_auto_mode_reads_the_reasons_only_up_to_the_cap():
+    filler = [{"unit": f"u{i}.service", "result": "exit-code"} for i in range(500)]
+    late = {"unit": "nginx.service", "result": "exit-code"}
+    _, message, _ = ServiceProcessChecker().evaluate(
+        {"mode": "auto"}, _with_details(["nginx.service"], filler + [late])
+    )
+    assert message == "Failed: nginx.service"
+
+
 def test_list_mode_unaffected_by_throttling():
     # Watched services are always sent; list mode must work without all_services.
     status, message, _ = ServiceProcessChecker().evaluate(
