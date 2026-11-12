@@ -5,11 +5,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck, MonitorContainerDetails } from '$lib/api/types';
-  import { containerDetails } from '$lib/models/checkDetails';
+  import type { MonitorCheck } from '$lib/api/types';
+  import { containerDetails, type DockerContainer } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
+  import { spanText } from '$lib/models/monitoringText';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
+  import MonSectionIcon from './MonSectionIcon.svelte';
+  import Tag from '../../ui/Tag.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -47,8 +50,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } as const;
   // Problems first in their own order, as before; stopped containers last.
   const ORDER = { crit: 0, warn: 0, ok: 1, none: 2 } as const;
+  // A compose project takes the level of its worst container.
+  const SEVERITY = { crit: 0, warn: 1, ok: 2, none: 3 } as const;
 
-  type Container = NonNullable<MonitorContainerDetails['containers']>[number];
+  type Container = DockerContainer;
   type Level = keyof typeof DOT;
   interface Note {
     key: string;
@@ -61,10 +66,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // null without a reason: the raw state, as before R-0419.
     note: Note | null;
   }
+  interface Group {
+    // null: the containers without a compose project.
+    project: string | null;
+    rows: Row[];
+    level: Level;
+    running: number;
+  }
   interface Info {
     // The error's text key when the agent could not read docker; no rows then.
     unavailable: string | null;
     rows: Row[];
+    // null: no container names a compose project (an agent before them), the flat list.
+    groups: Group[] | null;
     total: number;
     crit: number;
     warn: number;
@@ -84,6 +98,36 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // A code this UI does not know yet (a newer server) still says something.
     const key = REASON_KEY.get(reason) ?? 'monitoring.docker.reason.other';
     return { key, vars: { state: c.state } };
+  }
+
+  function groupsOf(rows: Row[]): Group[] | null {
+    if (!rows.some((r) => r.c.compose_project)) return null;
+    const projectOf = (r: Row) => r.c.compose_project || null;
+    return [...new Set(rows.map(projectOf))]
+      .map<Group>((project) => {
+        const list = rows.filter((r) => projectOf(r) === project);
+        return {
+          project,
+          rows: list,
+          level: list.reduce<Level>(
+            (w, r) => (SEVERITY[r.level] < SEVERITY[w] ? r.level : w),
+            'none',
+          ),
+          running: list.filter((r) => r.c.state === 'running').length,
+        };
+      })
+      .sort(
+        (a, b) =>
+          SEVERITY[a.level] - SEVERITY[b.level] ||
+          Number(a.project === null) - Number(b.project === null) ||
+          (a.project ?? '').localeCompare(b.project ?? ''),
+      );
+  }
+
+  // Only for a running container: the start time of a stopped one says nothing about now.
+  function uptime(c: Container): string | null {
+    if (c.state !== 'running' || c.started_at === undefined) return null;
+    return $t('monitoring.docker.upFor', { span: spanText($t, Date.now() / 1000 - c.started_at) });
   }
 
   function info(check: MonitorCheck): Info {
@@ -107,6 +151,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           ? (ERROR_KEY.get(d.error ?? '') ?? 'monitoring.docker.error.unknown')
           : null,
       rows,
+      groups: groupsOf(rows),
       total: rows.length,
       crit,
       warn,
@@ -137,6 +182,33 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return '';
   }
 </script>
+
+{#snippet containerRow(r: Row)}
+  {@const up = uptime(r.c)}
+  {@const ports = r.c.ports ?? []}
+  <div class="mon-expand-row level-{r.level}">
+    <span class="mon-dot {DOT[r.level]}"></span>
+    {#if r.c.image}
+      <span class="mon-expand-badge">{r.c.image.split(':')[0].split('/').pop()}</span>
+    {/if}
+    <span class="mon-expand-name">{r.c.name}</span>
+    <span class="mon-expand-note">{r.note ? $t(r.note.key, r.note.vars) : r.c.state}</span>
+  </div>
+  {#if up !== null || ports.length > 0}
+    <div class="mon-expand-names" data-container={r.key}>
+      {#if up !== null}
+        <span class="mon-expand-names-label" data-uptime>{up}</span>
+      {/if}
+      {#if ports.length > 0}
+        <span class="mon-expand-names-label">{$t('monitoring.docker.ports')}</span>
+        <!-- Keyed by position: a port text twice must not break the list. -->
+        {#each ports as port, idx (idx)}
+          <Tag tone="neutral" size="sm">{port}</Tag>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+{/snippet}
 
 <section class="mon-section">
   <MonSectionHeader
@@ -186,18 +258,40 @@ SPDX-License-Identifier: GPL-3.0-or-later
               {#if i.allOk}
                 <div class="mon-expand-hint">{countText(i, 'monitoring.docker.allOkHint')}</div>
               {/if}
-              {#each i.rows as r (r.key)}
-                <div class="mon-expand-row level-{r.level}">
-                  <span class="mon-dot {DOT[r.level]}"></span>
-                  {#if r.c.image}
-                    <span class="mon-expand-badge">{r.c.image.split(':')[0].split('/').pop()}</span>
-                  {/if}
-                  <span class="mon-expand-name">{r.c.name}</span>
-                  <span class="mon-expand-note"
-                    >{r.note ? $t(r.note.key, r.note.vars) : r.c.state}</span
+              {#if i.groups}
+                {#each i.groups as g (g.project ?? '')}
+                  <!-- A project with a problem starts open. -->
+                  <details
+                    class="mon-expand-group"
+                    data-project={g.project ?? ''}
+                    open={g.level === 'crit' || g.level === 'warn'}
                   >
-                </div>
-              {/each}
+                    <summary class="mon-expand-group-head level-{g.level}">
+                      <span class="mon-dot {DOT[g.level]}"></span>
+                      <span class="mon-expand-name"
+                        >{g.project ?? $t('monitoring.docker.noProject')}</span
+                      >
+                      <span class="mon-expand-note"
+                        >{$t('monitoring.docker.okRunning', {
+                          running: g.running,
+                          total: g.rows.length,
+                        })}</span
+                      >
+                      <span class="mon-expand-group-chevron"><MonSectionIcon name="chevron" /></span
+                      >
+                    </summary>
+                    <div class="mon-expand-group-body">
+                      {#each g.rows as r (r.key)}
+                        {@render containerRow(r)}
+                      {/each}
+                    </div>
+                  </details>
+                {/each}
+              {:else}
+                {#each i.rows as r (r.key)}
+                  {@render containerRow(r)}
+                {/each}
+              {/if}
             </div>
           {/if}
         {/snippet}

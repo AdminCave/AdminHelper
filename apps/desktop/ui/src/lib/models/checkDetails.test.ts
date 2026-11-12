@@ -4,16 +4,19 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  backupGuestDetails,
   containerDetails,
   forecastDetails,
   probeDetails,
   resourceDetails,
   serviceDetails,
   smartDetails,
+  systemStateNames,
   zfsDetails,
 } from './checkDetails';
 
 const ALL = {
+  backupGuestDetails,
   resourceDetails,
   serviceDetails,
   containerDetails,
@@ -21,6 +24,7 @@ const ALL = {
   smartDetails,
   forecastDetails,
   probeDetails,
+  systemStateNames,
 };
 
 describe.each(Object.entries(ALL))('%s', (_name, narrow) => {
@@ -79,6 +83,57 @@ describe('resourceDetails', () => {
   it('reads the old details of another check type as empty fields', () => {
     // A check switched from agent_services keeps those details until its next push.
     expect(resourceDetails({ mode: 'auto', failed: ['a.service'] })).toEqual({});
+  });
+
+  // arch-monitoring-ui-2 T9 (R-1227): the busiest processes under high load.
+  const top = {
+    cpu: [{ pid: 812, name: 'php-fpm', cpu_pct: 87.5 }],
+    memory: [{ pid: 4021, name: 'clamd', rss: 1_288_490_188 }],
+  };
+
+  it('returns the top processes unchanged', () => {
+    expect(resourceDetails({ ...valid, top_processes: top })).toEqual({
+      ...valid,
+      top_processes: top,
+    });
+  });
+
+  it('drops a top process without pid, name or number and a list of the wrong type', () => {
+    const d = resourceDetails({
+      ...valid,
+      top_processes: {
+        cpu: [
+          { name: 'x', cpu_pct: 1 },
+          { pid: 2, cpu_pct: 1 },
+          { pid: 3, name: 'y', cpu_pct: '1' },
+          { pid: 4, name: 'z', rss: 1 },
+          top.cpu[0],
+        ],
+        memory: { pid: 1, name: 'clamd', rss: 1 },
+      },
+    });
+    expect(d?.top_processes).toEqual({ cpu: top.cpu });
+  });
+
+  it('drops a memory process without pid, name or a numeric rss', () => {
+    const d = resourceDetails({
+      ...valid,
+      top_processes: {
+        memory: [
+          { pid: 1, name: 'x' },
+          { pid: 2, name: 'y', rss: '1' },
+          { name: 'z', rss: 1 },
+          { pid: 3, rss: 1 },
+          { pid: 4, name: 'w', cpu_pct: 1 },
+          top.memory[0],
+        ],
+      },
+    });
+    expect(d?.top_processes).toEqual({ memory: top.memory });
+  });
+
+  it('leaves out top processes that are no object', () => {
+    expect(resourceDetails({ ...valid, top_processes: [top.cpu[0]] })).toEqual(valid);
   });
 });
 
@@ -149,6 +204,31 @@ describe('containerDetails', () => {
     delete rest.exit_code;
     expect(d?.containers).toEqual([rest]);
   });
+
+  // arch-monitoring-ui-2 T10 (R-1227): compose project, ports and start time per container.
+  const compose = {
+    ...valid.containers[0],
+    compose_project: 'mailcow',
+    ports: ['0.0.0.0:443->443/tcp', '[::]:443->443/tcp'],
+    started_at: 1_762_900_000,
+  };
+
+  it('returns compose project, ports and start time unchanged', () => {
+    expect(containerDetails({ ...valid, containers: [compose] })).toEqual({
+      ...valid,
+      containers: [compose],
+    });
+  });
+
+  it('drops a compose field of the wrong type and keeps the container', () => {
+    const d = containerDetails({
+      containers: [
+        { ...compose, compose_project: 7, ports: '443/tcp', started_at: '1762900000' },
+        { ...compose, ports: ['443/tcp', 443, null] },
+      ],
+    });
+    expect(d?.containers).toEqual([valid.containers[0], { ...compose, ports: ['443/tcp'] }]);
+  });
 });
 
 describe('zfsDetails', () => {
@@ -172,6 +252,75 @@ describe('zfsDetails', () => {
 
   it('reads pools that are no list as none', () => {
     expect(zfsDetails({ pools: { name: 'tank' } })).toEqual({});
+  });
+
+  // arch-monitoring-ui-2 T10 (R-1227): scrub, vdev errors and fragmentation per pool.
+  const detailed = {
+    ...valid.pools[0],
+    fragmentationPercent: 12,
+    scrub: { state: 'FINISHED', errors: 0, end: 1_762_900_000 },
+    vdevErrors: [{ name: 'sda', read: 0, write: 1, checksum: 3 }],
+  };
+
+  it('returns scrub, vdev errors and fragmentation unchanged', () => {
+    expect(zfsDetails({ pools: [detailed] })).toEqual({ pools: [detailed] });
+  });
+
+  it('drops a scrub without state or errors, a partial vdev and a wrong fragmentation', () => {
+    const d = zfsDetails({
+      pools: [
+        { ...detailed, scrub: { state: 'FINISHED' }, fragmentationPercent: '12' },
+        { ...detailed, scrub: { errors: 0 } },
+        {
+          ...detailed,
+          scrub: { state: 'SCANNING', errors: 0, end: 'soon' },
+          vdevErrors: [{ name: 'sdb', read: 1, write: 0 }, 'sdc', ...detailed.vdevErrors],
+        },
+      ],
+    });
+    const vdevErrors = detailed.vdevErrors;
+    expect(d?.pools).toEqual([
+      { ...valid.pools[0], vdevErrors },
+      { ...valid.pools[0], fragmentationPercent: 12, vdevErrors },
+      { ...detailed, scrub: { state: 'SCANNING', errors: 0 } },
+    ]);
+  });
+});
+
+// arch-monitoring-ui-2 T10 (R-1227): the backup details of one guest.
+describe('backupGuestDetails', () => {
+  const valid = {
+    backupStorage: 'pbs',
+    backupSize: 12_884_901_888,
+    backupVerify: 'ok',
+    backupJobs: [{ id: 'backup-nightly', schedule: '02:00', storage: 'pbs' }],
+    backupError: 'ERROR: Backup of VM 104 failed - job failed',
+    backupErrorTs: 1_762_900_000,
+  };
+
+  it('returns valid details unchanged and ignores the fields of the guest beside them', () => {
+    expect(
+      backupGuestDetails({ ...valid, vmid: 104, name: 'web', backupStatus: 'ok', ageHours: 3 }),
+    ).toEqual(valid);
+  });
+
+  it('keeps an empty job list: no job covers the guest', () => {
+    expect(backupGuestDetails({ backupJobs: [] })).toEqual({ backupJobs: [] });
+  });
+
+  it('drops a field of the wrong type and a job that is no object', () => {
+    const d = backupGuestDetails({
+      ...valid,
+      backupSize: '12 GiB',
+      backupVerify: null,
+      backupJobs: ['backup-nightly', { id: 7, schedule: 'daily' }, ...valid.backupJobs],
+      backupErrorTs: '1762900000',
+    });
+    expect(d).toEqual({
+      backupStorage: 'pbs',
+      backupJobs: [{ schedule: 'daily' }, ...valid.backupJobs],
+      backupError: valid.backupError,
+    });
   });
 });
 
@@ -264,5 +413,41 @@ describe('probeDetails', () => {
     expect(d?.values).toEqual({ e: 'x' });
     expect(d?.baseline).toEqual({ a: 1 });
     expect(d?.problems).toEqual(['p']);
+  });
+});
+
+// arch-monitoring-ui-2 T9 (R-1227): the names behind the counts of a system_state check.
+describe('systemStateNames', () => {
+  const valid = {
+    security_packages: ['openssl', 'libssl3'],
+    reboot_packages: ['linux-image-amd64'],
+    oom_processes: [{ pid: 4711, name: 'java' }],
+  };
+
+  it('returns valid names unchanged and ignores the counts beside them', () => {
+    expect(
+      systemStateNames({ ...valid, security_updates: 2, reboot_required: true, problems: [] }),
+    ).toEqual(valid);
+  });
+
+  it('keeps only text names and processes with pid and name', () => {
+    const d = systemStateNames({
+      security_packages: ['openssl', 3, null],
+      reboot_packages: 'linux-image-amd64',
+      oom_processes: [{ pid: 1 }, { name: 'x' }, { pid: '2', name: 'y' }, valid.oom_processes[0]],
+    });
+    expect(d).toEqual({ security_packages: ['openssl'], oom_processes: valid.oom_processes });
+  });
+
+  it('reads the details of an agent before the names as empty fields', () => {
+    expect(
+      systemStateNames({
+        reboot_required: true,
+        time_synchronized: true,
+        security_updates: 3,
+        oom_kills: 0,
+        problems: ['reboot'],
+      }),
+    ).toEqual({});
   });
 });

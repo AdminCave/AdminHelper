@@ -12,15 +12,40 @@
 // opens, so the dead man's warning (10 min without a result) does not count the app build
 // and the first spec, and again after the adoption, so the new card shows the agent's own
 // result for the port.
+//
+// The second part (arch-monitoring-ui-2 T11, R-1227) shows the detail views on a second
+// server: its agent is provisioned and never runs, and the spec pushes a fixed report through
+// the real agent route with that agent's own key, so every view has data a test box does not
+// have (compose projects, Proxmox guests, ZFS pools, package and process names).
 
 import path from "node:path";
+import https from "node:https";
 import { spawnSync } from "node:child_process";
 import { ahOutDir } from "../../wdio.conf.js";
 import { login, clickItemByName, jsClick, textContentOf } from "../lib/live.js";
 
 const AGENT = process.env.AH_E2E_AGENT;
 const FINDING = process.env.AH_E2E_FINDING;
+const FIXTURE_AGENT = process.env.AH_E2E_FIXTURE_AGENT;
 const SERVER_NAME = "e2e-server";
+const FIXTURE_SERVER = "e2e-fixture";
+// One check per detail view; every type is push only, so only the pushed report rates it.
+const FIXTURE_CHECKS = {
+  "fixture-live": "agent_resources",
+  "fixture-system": "system_state",
+  "fixture-zfs": "zfs_health",
+  "fixture-docker": "docker_health",
+  "fixture-backups": "proxmox_backup",
+};
+const SECURITY_PACKAGES = [
+  "openssl",
+  "libssl3",
+  "linux-image-amd64",
+  "libc6",
+  "curl",
+  "libcurl4",
+  "sudo",
+];
 const CARD = ".mon-card";
 const SILENT = '.status-footer [data-field="silent"]';
 // The System card's title, the same in every language of the app.
@@ -228,6 +253,198 @@ describe("Monitoring server page with its cards (arch-monitoring-ui T11)", () =>
   });
 });
 
+describe("Monitoring detail views with a fixture report (arch-monitoring-ui-2 T11)", () => {
+  before(async () => {
+    if (!FIXTURE_AGENT) {
+      throw new Error(
+        "AH_E2E_FIXTURE_AGENT is not set: run the spec through scripts/tests/desktop_e2e_monitoring.sh",
+      );
+    }
+    const conf = fixtureAgentConf();
+    for (const [name, type] of Object.entries(FIXTURE_CHECKS)) {
+      await createCheck(conf.SERVER_ID, name, type);
+    }
+    const url = `${conf.MONITOR_URL}/agent/${encodeURIComponent(conf.SERVER_ID)}/report`;
+    const res = await postReport(url, conf.API_KEY, fixtureReport());
+    if (res.status !== 200) throw new Error(`the fixture report was refused: ${res.status} ${res.text}`);
+    expect(JSON.parse(res.text).checksUpdated).toBe(Object.keys(FIXTURE_CHECKS).length);
+  });
+
+  it("opens the fixture server's page with every check of the report", async () => {
+    await $('.mon-tabs [data-tab="overview"]').click();
+    await $('.mon-overview-toolbar [role="radio"]').click();
+    // The checks were made past the app's store: the list names the server, and its page shows
+    // them, only after the store's refresh, which is slower than clickItemByName waits.
+    await browser.waitUntil(
+      async () =>
+        (
+          await browser.execute(() =>
+            [...document.querySelectorAll(".mon-srv-item .mon-srv-name")].map((el) =>
+              el.textContent.trim(),
+            ),
+          )
+        ).includes(FIXTURE_SERVER),
+      { timeout: REFRESH_WAIT, timeoutMsg: `the server list does not name ${FIXTURE_SERVER}` },
+    );
+    await clickItemByName(".mon-srv-item", ".mon-srv-name", FIXTURE_SERVER);
+    await $(".mon-dashboard-name").waitForExist({ timeout: 30000 });
+    expect(await textContentOf(await $(".mon-dashboard-name"))).toBe(FIXTURE_SERVER);
+    await browser.waitUntil(
+      async () => {
+        const names = await openCardsAndListLines();
+        return Object.keys(FIXTURE_CHECKS).every((n) => names.includes(n));
+      },
+      { timeout: REFRESH_WAIT, timeoutMsg: "the fixture checks are not on the server page" },
+    );
+  });
+
+  it("shows the top processes of a warning resource check", async () => {
+    await expandLine("fixture-live");
+    const top = await browser.execute(() =>
+      ["cpu", "memory"].map((key) =>
+        [...document.querySelectorAll(`table.top-table[data-top="${key}"] tbody tr`)].map(
+          (tr) => tr.querySelector("td").textContent.trim(),
+        ),
+      ),
+    );
+    expect(top[0]).toEqual(["php-fpm8.2", "mysqld", "clamd", "dovecot", "nginx"]);
+    expect(top[1]).toEqual(["mysqld", "clamd", "php-fpm8.2", "redis-server", "dovecot"]);
+    await shot("fixture-live");
+  });
+
+  it("names the packages and the killed process behind the system state", async () => {
+    await expandLine("fixture-system");
+    const points = await browser.execute(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll(".mon-expand-names[data-point]")].map((el) => [
+          el.dataset.point,
+          [...el.querySelectorAll(".ui-tag")].map((t) => t.textContent.trim()),
+        ]),
+      ),
+    );
+    expect(points.reboot).toEqual(["linux-image-amd64"]);
+    expect(points.security_updates).toEqual(SECURITY_PACKAGES);
+    expect(points.oom).toEqual(["php-fpm8.2 (PID 48213)"]);
+    await shot("fixture-system");
+  });
+
+  it("shows scrub, fragmentation and vdev errors under each ZFS pool", async () => {
+    await expandLine("fixture-zfs");
+    const pools = await browser.execute(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll(".mon-expand-names.under-bar[data-pool]")].map((el) => [
+          el.dataset.pool,
+          [...el.querySelectorAll(".mon-chip")].map((c) => c.textContent.trim()),
+        ]),
+      ),
+    );
+    expect(Object.keys(pools).sort()).toEqual(["rpool", "tank"]);
+    expect(pools.rpool.length).toBe(2);
+    // Scrub, fragmentation and the one vdev with errors.
+    expect(pools.tank.length).toBe(3);
+    expect(pools.tank[2]).toContain("sdc");
+    expect(pools.tank[2]).toContain("14");
+    await shot("fixture-zfs");
+  });
+
+  it("groups the containers by compose project with uptime and ports", async () => {
+    await expandLine("fixture-docker");
+    const groups = await browser.execute(() =>
+      [...document.querySelectorAll("details.mon-expand-group")].map((g) => ({
+        project: g.dataset.project,
+        open: g.open,
+      })),
+    );
+    // A project with a problem first and open, a healthy one closed.
+    expect(groups[0]).toEqual({ project: "shop", open: true });
+    expect(groups.find((g) => g.project === "mailcow")).toEqual({ project: "mailcow", open: false });
+    expect(groups.map((g) => g.project)).toContain("");
+    const web = await browser.execute(() => {
+      const el = document.querySelector('.mon-expand-names[data-container="id:5b0e7d21c4a9"]');
+      return el && { uptime: el.querySelector("[data-uptime]") !== null, text: el.textContent };
+    });
+    expect(web).not.toBeNull();
+    expect(web.uptime).toBe(true);
+    expect(web.text).toContain("127.0.0.1:8080->80/tcp");
+    await scrollToLine("fixture-docker");
+    await shot("fixture-docker");
+
+    await browser.execute(() => {
+      document.querySelector('details.mon-expand-group[data-project="mailcow"]').open = true;
+    });
+    const mailcow = await browser.execute(
+      () =>
+        document.querySelector('.mon-expand-names[data-container="id:9c41f0a7be32"]')?.textContent ??
+        "",
+    );
+    expect(mailcow).toContain("0.0.0.0:443->443/tcp");
+    await scrollToLine("fixture-docker");
+    await shot("fixture-docker-mailcow");
+  });
+
+  it("shows storage, jobs, verification and the last error of each guest", async () => {
+    await expandLine("fixture-backups");
+    const guests = await browser.execute(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll(".mon-expand-names[data-vm]")].map((el) => [
+          el.dataset.vm,
+          {
+            text: el.textContent,
+            error: el.querySelector(".mon-expand-error")?.textContent ?? null,
+            muted: el.querySelectorAll(".mon-chip.chip-muted").length,
+          },
+        ]),
+      ),
+    );
+    expect(guests["101"].text).toContain("pbs-main");
+    expect(guests["101"].text).toContain("backup-nightly");
+    expect(guests["101"].error).toBeNull();
+    expect(guests["104"].error).toContain("ERROR: Backup of VM 104 failed");
+    // No job covers the container: its one chip says so.
+    expect(guests["110"].muted).toBe(1);
+    await shot("fixture-backups");
+  });
+
+  it("lists the guests and the last error in the backups tab", async () => {
+    await $('.mon-tabs [data-tab="backups"]').click();
+    const content = '.mon-tab-content[data-tab="backups"]';
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute((sel) => document.querySelectorAll(`${sel} [data-state]`).length, content)) >= 3,
+      { timeout: 30000, timeoutMsg: "the backups tab does not list the fixture guests" },
+    );
+    const tab = await browser.execute(
+      (sel) => ({
+        states: [...document.querySelectorAll(`${sel} [data-state]`)].map((el) => el.dataset.state),
+        text: document.querySelector(sel).textContent,
+      }),
+      content,
+    );
+    expect([...tab.states].sort()).toEqual(["missing", "ok", "outdated"]);
+    expect(tab.text).toContain("No space left on device");
+    await shot("fixture-tab-backups");
+  });
+
+  it("names the first packages with updates in the updates tab", async () => {
+    await $('.mon-tabs [data-tab="updates"]').click();
+    const content = '.mon-tab-content[data-tab="updates"]';
+    await $(`${content} .packages`).waitForExist({
+      timeout: 30000,
+      timeoutMsg: "the updates tab names no packages",
+    });
+    const cell = await browser.execute(
+      (sel) => ({
+        shown: document.querySelector(`${sel} .packages`).textContent.trim(),
+        more: document.querySelector(`${sel} .packages-more`)?.textContent.trim() ?? "",
+      }),
+      content,
+    );
+    expect(cell.shown).toBe(SECURITY_PACKAGES.slice(0, 5).join(", "));
+    expect(cell.more).toMatch(new RegExp(`^\\+${SECURITY_PACKAGES.length - 5} `));
+    await shot("fixture-tab-updates");
+  });
+});
+
 // The texts of every match in one call: the page re-renders on its refresh, and a handle per
 // element (texts() of live.js) can go stale between two of them.
 async function domTexts(selector) {
@@ -242,4 +459,280 @@ async function findingItem(instance) {
     if ((await textContentOf(await item.$(".inbox-instance"))) === instance) return item;
   }
   throw new Error(`no finding ${instance} in the inbox`);
+}
+
+// The provisioned fixture agent's monitor.conf (KEY="value" lines). Its output holds the
+// agent's API key: an error names the exit code only.
+function fixtureAgentConf() {
+  const run = spawnSync(
+    "docker",
+    ["exec", FIXTURE_AGENT, "cat", "/etc/adminhelper/monitor.conf"],
+    { encoding: "utf8", timeout: 30000 },
+  );
+  if (run.status !== 0) throw new Error(`cannot read the fixture agent's config (exit ${run.status})`);
+  const conf = {};
+  for (const line of run.stdout.split("\n")) {
+    const m = /^([A-Z_]+)="(.*)"$/.exec(line);
+    if (m) conf[m[1]] = m[2];
+  }
+  for (const key of ["MONITOR_URL", "API_KEY", "SERVER_ID"]) {
+    if (!conf[key]) throw new Error(`the fixture agent's config has no ${key}`);
+  }
+  return conf;
+}
+
+// Creates a check through the app's own API proxy, as the check editor does.
+async function createCheck(serverId, name, checkType) {
+  const body = JSON.stringify({
+    name,
+    server_id: serverId,
+    check_type: checkType,
+    interval: "5m",
+    // The first bad report rates the check, so the views show their problem state.
+    consecutive_fails: 1,
+    config: {},
+  });
+  const result = await browser.execute(
+    async (b) =>
+      window.__TAURI__.core
+        .invoke("api_proxy", { method: "POST", path: "/api/monitoring/checks", body: b })
+        .then((value) => ({ value }))
+        .catch((e) => ({ rejected: String((e && e.message) || e) })),
+    body,
+  );
+  if (result.rejected !== undefined) throw new Error(`creating ${name}: ${result.rejected}`);
+}
+
+// The agent's push, with its key as the agent sends it. The local test stack's gateway has a
+// self-signed certificate, which the app accepts with allowSelfSignedCerts.
+function postReport(url, apiKey, report) {
+  const data = JSON.stringify(report);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(data),
+          "X-API-Key": apiKey,
+        },
+        rejectUnauthorized: false,
+        timeout: 30000,
+      },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => (text += chunk));
+        res.on("end", () => resolve({ status: res.statusCode, text }));
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("the fixture report timed out")));
+    req.on("error", reject);
+    req.end(data);
+  });
+}
+
+// A fixed report in the agent's wire form, invented for the look of the views: a mail and a
+// shop stack, three guests (one backed up, one outdated with a failed run, one never), a
+// healthy and a degraded pool, pending security updates with a reboot and an OOM kill, and a
+// busy CPU. Times are relative to the push.
+function fixtureReport() {
+  const now = Math.floor(Date.now() / 1000);
+  const hour = 3600;
+  const day = 24 * hour;
+  const mib = 1024 * 1024;
+  const container = (fields) => ({
+    state: "running",
+    restart_count: 0,
+    exit_code: 0,
+    oom_killed: false,
+    restart_policy: "unless-stopped",
+    ports: [],
+    ...fields,
+  });
+  const mailcow = (id, service, image, ports) =>
+    container({
+      id,
+      name: `mailcowdockerized-${service}-mailcow-1`,
+      image,
+      compose_project: "mailcow",
+      compose_service: `${service}-mailcow`,
+      ports,
+      started_at: now - 12 * day,
+    });
+  return {
+    uptime_seconds: 3 * day,
+    docker: {
+      available: true,
+      containers: [
+        mailcow("3f8a1c6d2e07", "postfix", "ghcr.io/mailcow/postfix:1.80", [
+          "0.0.0.0:25->25/tcp",
+          "0.0.0.0:587->587/tcp",
+        ]),
+        mailcow("9c41f0a7be32", "nginx", "ghcr.io/mailcow/nginx:1.03", [
+          "0.0.0.0:80->80/tcp",
+          "0.0.0.0:443->443/tcp",
+        ]),
+        mailcow("d27b5e90a1f4", "dovecot", "ghcr.io/mailcow/dovecot:2.33", ["0.0.0.0:993->993/tcp"]),
+        container({
+          id: "5b0e7d21c4a9",
+          name: "shop-web-1",
+          image: "nginx:1.27",
+          compose_project: "shop",
+          compose_service: "web",
+          ports: ["127.0.0.1:8080->80/tcp"],
+          started_at: now - 2 * hour,
+        }),
+        container({
+          id: "e61c09b47d58",
+          name: "shop-worker-1",
+          image: "registry.example.com/shop/worker:2.4",
+          state: "exited",
+          exit_code: 1,
+          restart_policy: "no",
+          compose_project: "shop",
+          compose_service: "worker",
+          started_at: now - 40 * 60,
+        }),
+        container({
+          id: "a90d3b7c55e1",
+          name: "watchtower",
+          image: "containrrr/watchtower:latest",
+          started_at: now - 3 * day,
+        }),
+      ],
+    },
+    proxmox: {
+      available: true,
+      vms: [
+        {
+          vmid: 101,
+          name: "mail",
+          type: "qemu",
+          status: "running",
+          last_backup_ts: now - 6 * hour,
+          backup_storage: "pbs-main",
+          backup_size: 18_400 * mib,
+          backup_verify: "ok",
+          backup_jobs: [{ id: "backup-nightly", schedule: "21:00", storage: "pbs-main" }],
+        },
+        {
+          vmid: 104,
+          name: "shop-db",
+          type: "qemu",
+          status: "running",
+          last_backup_ts: now - 50 * hour,
+          backup_storage: "pbs-main",
+          backup_size: 41_200 * mib,
+          backup_verify: "failed",
+          backup_jobs: [{ id: "backup-nightly", schedule: "21:00", storage: "pbs-main" }],
+          backup_error:
+            "ERROR: Backup of VM 104 failed - vma_queue_write: write error - No space left on device",
+          backup_error_ts: now - 3 * hour,
+        },
+        { vmid: 110, name: "ci-runner", type: "lxc", status: "running", backup_jobs: [] },
+      ],
+    },
+    zfs: {
+      available: true,
+      pools: [
+        {
+          name: "rpool",
+          health: "ONLINE",
+          capacity_percent: 41,
+          fragmentation_percent: 12,
+          scrub: { state: "FINISHED", errors: 0, end: now - 4 * day },
+          vdev_errors: [],
+        },
+        {
+          name: "tank",
+          health: "DEGRADED",
+          capacity_percent: 83,
+          fragmentation_percent: 37,
+          scrub: { state: "SCANNING", errors: 0 },
+          vdev_errors: [{ name: "sdc", read: 0, write: 0, checksum: 14 }],
+        },
+      ],
+    },
+    system_state: {
+      reboot_required: true,
+      time_synchronized: true,
+      security_updates: SECURITY_PACKAGES.length,
+      oom_kills: 1,
+      security_packages: SECURITY_PACKAGES,
+      reboot_packages: ["linux-image-amd64"],
+      oom_processes: [{ pid: 48213, name: "php-fpm8.2" }],
+    },
+    resources: {
+      cpu_percent: 93.4,
+      memory_percent: 71.2,
+      memory_used_mb: 11665,
+      memory_total_mb: 16384,
+      swap_percent: 4.1,
+      swap_total_mb: 2048,
+      swap_used_mb: 84,
+      load_1m: 7.9,
+      load_5m: 5.2,
+      load_15m: 3.4,
+      cpu_count: 8,
+      disks: [{ mount: "/", percent: 58, used_gb: 116, total_gb: 200, free_gb: 84, fstype: "ext4" }],
+      top_processes: {
+        cpu: [
+          { pid: 48213, name: "php-fpm8.2", cpu_pct: 41.7 },
+          { pid: 2210, name: "mysqld", cpu_pct: 22.3 },
+          { pid: 31877, name: "clamd", cpu_pct: 12.9 },
+          { pid: 1543, name: "dovecot", cpu_pct: 6.1 },
+          { pid: 912, name: "nginx", cpu_pct: 3.8 },
+        ],
+        memory: [
+          { pid: 2210, name: "mysqld", rss: 4300 * mib },
+          { pid: 31877, name: "clamd", rss: 1330 * mib },
+          { pid: 48213, name: "php-fpm8.2", rss: 512 * mib },
+          { pid: 4411, name: "redis-server", rss: 310 * mib },
+          { pid: 1543, name: "dovecot", rss: 96 * mib },
+        ],
+      },
+    },
+  };
+}
+
+// Opens every closed card of the server page (a closed card renders no lines) and returns the
+// names of the check lines shown.
+async function openCardsAndListLines() {
+  return browser.execute(() => {
+    for (const toggle of document.querySelectorAll('.mon-card-toggle[aria-expanded="false"]')) {
+      toggle.click();
+    }
+    return [...document.querySelectorAll(".mon-line-name")].map((el) => el.textContent.trim());
+  });
+}
+
+// Expands the line of the named check (the page keeps one line open) and scrolls it to the
+// top, retried in one call per round: the page re-renders on its refresh.
+async function expandLine(name) {
+  await browser.waitUntil(
+    () =>
+      browser.execute((n) => {
+        const wrapper = [...document.querySelectorAll(".mon-line-wrapper")].find(
+          (w) => w.querySelector(".mon-line-name")?.textContent.trim() === n,
+        );
+        if (!wrapper) return false;
+        if (!wrapper.classList.contains("open")) {
+          wrapper.querySelector(".mon-line").click();
+          return false;
+        }
+        return wrapper.querySelector(".mon-line-expand") !== null;
+      }, name),
+    { timeout: 30000, interval: 500, timeoutMsg: `the line ${name} did not open` },
+  );
+  await scrollToLine(name);
+}
+
+async function scrollToLine(name) {
+  await browser.execute((n) => {
+    [...document.querySelectorAll(".mon-line-wrapper")]
+      .find((w) => w.querySelector(".mon-line-name")?.textContent.trim() === n)
+      ?.scrollIntoView({ block: "start" });
+  }, name);
 }

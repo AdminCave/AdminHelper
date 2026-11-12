@@ -1165,3 +1165,248 @@ def test_docker_restart_count_finds_the_previous_value_of_the_id_as_stored(cid):
 def test_docker_id_of_up_to_500_characters_stays_as_it_is():
     _, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(id="c" * 500)))
     assert _rows(metrics)[0]["id"] == "c" * 500
+
+
+# --- Details of the agent since arch-monitoring-ui-2 (R-1227) ---
+# Compose project, ports and start time per container; storage, size, verification, jobs and the
+# last vzdump error per guest; scrub, vdev errors and fragmentation per pool. They go into _details
+# only, for the desktop: status, message (mail, webhook) and metrics stay as they are without them,
+# and the exact detail tests above, those of an older agent, stay as they are. A field the checker
+# cannot use is left out, as if the agent had not sent it.
+_CONTAINER_FIELDS = {
+    "compose_project": "mailcow",
+    "compose_service": "postfix-mailcow",
+    "ports": ["0.0.0.0:25->25/tcp", "[::]:25->25/tcp"],
+    "started_at": 1_700_000_000,
+}
+_GUEST_JOB = {"id": "backup-a1b2c3d4-e5f6", "schedule": "21:00", "storage": "pbs-main"}
+_GUEST_FIELDS = {
+    "backup_storage": "pbs-main",
+    "backup_size": 4_294_967_296,
+    "backup_verify": "ok",
+    "backup_jobs": [_GUEST_JOB],
+    "backup_error": "job failed with err -5 - Input/output error",
+    "backup_error_ts": 999_000,
+}
+_GUEST_SHOWN = {
+    "backupStorage": "pbs-main",
+    "backupSize": 4_294_967_296,
+    "backupVerify": "ok",
+    "backupJobs": [_GUEST_JOB],
+    "backupError": "job failed with err -5 - Input/output error",
+    "backupErrorTs": 999_000,
+}
+_POOL_FIELDS = {
+    "fragmentation_percent": 12,
+    "scrub": {"state": "FINISHED", "errors": 3, "end": 990_000},
+    "vdev_errors": [{"name": "da0", "read": 0, "write": 0, "checksum": 3}],
+}
+_POOL_SHOWN = {
+    "fragmentationPercent": 12,
+    "scrub": {"state": "FINISHED", "errors": 3, "end": 990_000},
+    "vdevErrors": [{"name": "da0", "read": 0, "write": 0, "checksum": 3}],
+}
+_PLAIN = {"docker": _ctr(), "proxmox": _VM, "zfs": _pool()}
+_NEW_FIELDS = {"docker": _CONTAINER_FIELDS, "proxmox": _GUEST_FIELDS, "zfs": _POOL_FIELDS}
+
+
+def _without_details(metrics):
+    return {key: value for key, value in metrics.items() if key != "_details"}
+
+
+def _new_row(kind, **fields):
+    """The detail row of the regular entry of kind with fields in place of the new ones."""
+    return _detail_row(kind, _rate(kind, {**_PLAIN[kind], **fields})[2])
+
+
+@pytest.mark.parametrize(
+    ("kind", "entry", "shown"),
+    [
+        pytest.param("docker", _ctr(), _CONTAINER_FIELDS, id="docker-running"),
+        pytest.param(
+            "docker",
+            _ctr(state="exited", status="Exited (3) 1 minute ago", exit_code=3),
+            _CONTAINER_FIELDS,
+            id="docker-crashed",
+        ),
+        pytest.param("proxmox", _VM, _GUEST_SHOWN, id="proxmox-ok"),
+        pytest.param("proxmox", _MISSING_BACKUP, _GUEST_SHOWN, id="proxmox-missing"),
+        pytest.param("zfs", _pool(), _POOL_SHOWN, id="zfs-ok"),
+        pytest.param(
+            "zfs", _pool(health="DEGRADED", capacity_percent=95), _POOL_SHOWN, id="zfs-degraded"
+        ),
+    ],
+)
+def test_the_new_fields_go_into_details_only(monkeypatch, kind, entry, shown):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    status, msg, metrics = _rate(kind, {**entry, **_NEW_FIELDS[kind]})
+    plain_status, plain_msg, plain = _rate(kind, entry)
+    assert (status, msg) == (plain_status, plain_msg)
+    assert _without_details(metrics) == _without_details(plain)
+    expected_row = {**_detail_row(kind, plain), **shown}
+    assert metrics["_details"] == {**plain["_details"], _DETAIL_LISTS[kind]: [expected_row]}
+    assert_every_reader_reads(metrics["_details"])
+
+
+_SCRUBS_WITHOUT_STATE_OR_ERRORS = [
+    "FINISHED",
+    ["FINISHED"],
+    {"state": "RESILVERING", "errors": 0},
+    {"state": "finished", "errors": 0},
+    {"state": ["FINISHED"], "errors": 0},
+    {"state": {"FINISHED": 1}, "errors": 0},
+    {"state": "FINISHED"},
+    {"state": "FINISHED", "errors": -1},
+    {"state": "FINISHED", "errors": "0"},
+    {"state": "FINISHED", "errors": 0.5},
+    {"state": "FINISHED", "errors": True},
+    {"state": "FINISHED", "errors": _BIG_INT},
+]
+_VDEV = {"name": "da0", "read": 1, "write": 0, "checksum": 0}
+_VDEV_LISTS_WITHOUT_COUNTERS = [
+    "da0",
+    _VDEV,
+    [],
+    [42, "da0"],
+    [{**_VDEV, "read": -1}],
+    [{**_VDEV, "write": "1"}],
+    [{**_VDEV, "checksum": 1.5}],
+    [{**_VDEV, "read": True}],
+    [{**_VDEV, "write": math.nan}],
+    [_without(_VDEV, "checksum")],
+]
+# (kind, field, values the checker cannot use)
+_UNUSABLE = [
+    ("docker", "compose_project", ["", 42, ["mailcow"], None]),
+    ("docker", "compose_service", ["", 42, ["postfix"], None]),
+    ("docker", "ports", ["0.0.0.0:80->80/tcp", {"80/tcp": 1}, [], [42, None, ""]]),
+    ("docker", "started_at", [0, -1, 1.5, "1700000000", True, math.nan, _BIG_INT]),
+    ("proxmox", "backup_storage", ["", 42, ["pbs-main"]]),
+    ("proxmox", "backup_size", [0, -1, 1.5, "4096", True, math.inf, _BIG_INT]),
+    ("proxmox", "backup_verify", ["", "OK", "ok\n", "ok ", "1ok", "o" * 33, 42, ["ok"]]),
+    ("proxmox", "backup_jobs", ["backup-1", {"id": "backup-1"}, 42, None]),
+    ("proxmox", "backup_error", ["", 42, ["failed"]]),
+    ("proxmox", "backup_error_ts", [0, -1, 1.5, "999000", True, math.nan]),
+    ("zfs", "fragmentation_percent", [-1, 101, 12.5, "12", True, None]),
+    ("zfs", "scrub", _SCRUBS_WITHOUT_STATE_OR_ERRORS),
+    ("zfs", "vdev_errors", _VDEV_LISTS_WITHOUT_COUNTERS),
+]
+
+
+@pytest.mark.parametrize(
+    ("kind", "field", "value"),
+    [
+        pytest.param(kind, field, value, id=f"{field}-{n}")
+        for kind, field, values in _UNUSABLE
+        for n, value in enumerate(values)
+    ],
+)
+def test_a_new_field_the_checker_cannot_use_is_left_out(monkeypatch, kind, field, value):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    entry = {**_PLAIN[kind], **_NEW_FIELDS[kind]}
+    status, msg, metrics = _rate(kind, {**entry, field: value})
+    assert (status, msg, metrics) == _rate(kind, _without(entry, field))
+    assert_every_reader_reads(metrics["_details"])
+
+
+def test_the_smallest_and_largest_usable_values_are_kept():
+    assert _new_row("docker", started_at=1)["started_at"] == 1
+    guest = _new_row("proxmox", backup_size=1, backup_error="x", backup_error_ts=1)
+    assert (guest["backupSize"], guest["backupErrorTs"]) == (1, 1)
+    vdev = {"name": "da0", "read": 0, "write": 0, "checksum": 0}
+    pool = _new_row(
+        "zfs",
+        fragmentation_percent=0,
+        scrub={"state": "FINISHED", "errors": 0, "end": 1},
+        vdev_errors=[vdev],
+    )
+    assert pool["fragmentationPercent"] == 0
+    assert pool["scrub"] == {"state": "FINISHED", "errors": 0, "end": 1}
+    assert pool["vdevErrors"] == [vdev]
+    assert _new_row("zfs", fragmentation_percent=100)["fragmentationPercent"] == 100
+    assert _new_row("proxmox", backup_verify="a" + "z" * 31)["backupVerify"] == "a" + "z" * 31
+
+
+@pytest.mark.parametrize("state", ["SCANNING", "PAUSED", "FINISHED", "CANCELED"])
+def test_every_scrub_state_of_the_agent_is_kept(state):
+    scrub = {"state": state, "errors": 0}
+    assert _new_row("zfs", scrub=scrub)["scrub"] == scrub
+
+
+@pytest.mark.parametrize("end", [0, -1, 1.5, "990000", True, None, _BIG_INT])
+def test_a_scrub_end_that_is_no_time_leaves_only_the_end_out(end):
+    scrub = {"state": "CANCELED", "errors": 2, "end": end}
+    assert _new_row("zfs", scrub=scrub)["scrub"] == {"state": "CANCELED", "errors": 2}
+
+
+def test_a_backup_error_time_counts_only_with_an_error():
+    guest = _detail_row("proxmox", _rate("proxmox", {**_VM, "backup_error_ts": 999_000})[2])
+    assert "backupErrorTs" not in guest and "backupError" not in guest
+
+
+def test_backup_jobs_keep_only_id_schedule_and_storage():
+    jobs = [
+        {**_GUEST_JOB, "mailto": "root@example.org", "comment": "nightly", "notes-template": "x"},
+        {"id": 42, "schedule": ["21:00"], "storage": ""},
+        "backup-2",
+        {"id": "backup-3"},
+    ]
+    shown = _new_row("proxmox", backup_jobs=jobs)["backupJobs"]
+    assert shown == [_GUEST_JOB, {}, {"id": "backup-3"}]
+
+
+def test_an_empty_job_list_stays_the_word_that_no_job_covers_the_guest():
+    assert _new_row("proxmox", backup_jobs=[])["backupJobs"] == []
+
+
+def test_the_detail_lists_keep_the_agent_limits():
+    ports = [f"0.0.0.0:{port}->{port}/tcp" for port in range(1, 101)]
+    jobs = [{"id": f"backup-{n}"} for n in range(100)]
+    vdevs = [{**_VDEV, "name": f"da{n}"} for n in range(100)]
+    assert _new_row("docker", ports=ports)["ports"] == ports[:64]
+    assert _new_row("proxmox", backup_jobs=jobs)["backupJobs"] == jobs[:64]
+    assert _new_row("zfs", vdev_errors=vdevs)["vdevErrors"] == vdevs[:32]
+
+
+def test_the_limits_count_unusable_entries_too():
+    # A broken entry takes its place in the limit instead of letting a later one move up.
+    assert "ports" not in _new_row("docker", ports=[42] * 64 + ["0.0.0.0:80->80/tcp"])
+    jobs = [{"id": 42}] * 64 + [{"id": "backup-1"}]
+    assert _new_row("proxmox", backup_jobs=jobs)["backupJobs"] == [{}] * 64
+    vdevs = [{**_VDEV, "read": -1}] * 32 + [_VDEV]
+    assert "vdevErrors" not in _new_row("zfs", vdev_errors=vdevs)
+
+
+def test_a_vdev_list_keeps_its_usable_entries_in_order():
+    vdevs = [{**_VDEV, "name": "da1"}, {**_VDEV, "read": "1"}, 42, {**_VDEV, "name": "da2"}]
+    shown = _new_row("zfs", vdev_errors=vdevs)["vdevErrors"]
+    assert [vdev["name"] for vdev in shown] == ["da1", "da2"]
+
+
+@pytest.mark.parametrize("name", ["", 42, None, ["da0"]], ids=["empty", "int", "null", "list"])
+def test_a_vdev_without_a_usable_name_is_named_by_a_question_mark(name):
+    assert _new_row("zfs", vdev_errors=[{**_VDEV, "name": name}])["vdevErrors"][0]["name"] == "?"
+    unnamed = _new_row("zfs", vdev_errors=[_without(_VDEV, "name")])
+    assert unnamed["vdevErrors"][0]["name"] == "?"
+
+
+@pytest.mark.parametrize(
+    ("kind", "field", "key"),
+    [
+        ("docker", "compose_project", "compose_project"),
+        ("docker", "compose_service", "compose_service"),
+        ("proxmox", "backup_storage", "backupStorage"),
+        ("proxmox", "backup_error", "backupError"),
+    ],
+)
+def test_a_long_detail_text_is_cut_on_one_line(kind, field, key):
+    assert _new_row(kind, **{field: _LONG_TEXT})[key] == _LONG_SHOWN
+
+
+def test_long_texts_in_the_detail_lists_are_cut_on_one_line():
+    assert _new_row("docker", ports=[_LONG_TEXT])["ports"] == [_LONG_SHOWN]
+    job = {"id": _LONG_TEXT, "schedule": _LONG_TEXT, "storage": _LONG_TEXT}
+    shown = {"id": _LONG_SHOWN, "schedule": _LONG_SHOWN, "storage": _LONG_SHOWN}
+    assert _new_row("proxmox", backup_jobs=[job])["backupJobs"] == [shown]
+    vdev = _new_row("zfs", vdev_errors=[{**_VDEV, "name": _LONG_TEXT}])["vdevErrors"][0]
+    assert vdev["name"] == _LONG_SHOWN
