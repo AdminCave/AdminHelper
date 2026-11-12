@@ -135,6 +135,10 @@ class TemplateCheckDef(RequestModel):
         if v == "probe":
             # R-1252: a probe check comes only from a module of the catalog.
             raise ValueError("A probe check comes only from a module of the catalog")
+        if v == "central":
+            # R-1224: in v1 the admin creates each central check itself, a template
+            # would fan one public target out to every server it is assigned to.
+            raise ValueError("A central check is created by the admin, not from a template")
         return v
 
     @field_validator("interval")

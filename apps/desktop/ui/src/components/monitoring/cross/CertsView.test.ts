@@ -82,6 +82,25 @@ function sensor(
   });
 }
 
+// A central check (R-1224): the monitoring service's own look from outside. The
+// server stores its dates as RFC 3339 in UTC.
+function central(
+  id: string,
+  status: MonStatus,
+  config: Record<string, unknown>,
+  details: Record<string, unknown>,
+): MonitorCheck {
+  return check(id, {
+    checkType: 'central',
+    config: config as MonitorCheckConfig,
+    state: { status, details },
+  });
+}
+
+function iso(seconds: number): string {
+  return new Date(seconds * 1000).toISOString().replace('.000Z', 'Z');
+}
+
 function rows(container: HTMLElement): string[][] {
   return [...container.querySelectorAll('tbody tr')].map((tr) =>
     [...tr.querySelectorAll('td')].map((td) => td.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
@@ -198,6 +217,72 @@ describe('certRows', () => {
   });
 });
 
+describe('certRows central (R-1224)', () => {
+  it('rates a central certificate relative to its lifetime and keeps one without a date', () => {
+    const list = certRows(
+      [
+        central(
+          'web-tls',
+          'ok',
+          { sensor: 'tls', host: 'web.example', port: 443 },
+          {
+            host: 'web.example',
+            port: 443,
+            not_before: iso(NOW - 60 * DAY),
+            not_after: iso(NOW + 30 * DAY),
+            issuer: "CN=R11,O=Let's Encrypt,C=US",
+          },
+        ),
+        central(
+          'mail-tls',
+          'ok',
+          { sensor: 'tls', host: 'mail.example', port: 465 },
+          { not_before: iso(NOW - 85 * DAY), not_after: iso(NOW + 5 * DAY) },
+        ),
+        // No handshake, no certificate: the row stays with the check's status.
+        central('down-tls', 'critical', { sensor: 'tls', host: 'down.example', port: 443 }, {}),
+      ],
+      SERVERS,
+      NOW,
+    );
+    expect(list.map((r) => [r.key, r.level, r.target, r.issuer, r.notAfter, r.source])).toEqual([
+      ['web-tls', 'ok', 'web.example', 'R11', NOW + 30 * DAY, 'central'],
+      ['mail-tls', 'critical', 'mail.example:465', null, NOW + 5 * DAY, 'central'],
+      ['down-tls', 'critical', 'down.example', null, null, 'central'],
+    ]);
+  });
+
+  it('rates a domain by its check status, an expired one by the date', () => {
+    const list = certRows(
+      [
+        central(
+          'reg',
+          'warning',
+          { sensor: 'rdap', host: 'example.org' },
+          { rdap: { domain: 'example.org', expires: iso(NOW + 20 * DAY) } },
+        ),
+        central(
+          'gone',
+          'ok',
+          { sensor: 'rdap', host: 'example.com' },
+          { rdap: { domain: 'example.com', expires: iso(NOW - DAY) } },
+        ),
+        central('noreg', 'unknown', { sensor: 'rdap', host: 'example.net' }, {}),
+        // The other central sensors carry no expiry date.
+        central('dns', 'ok', { sensor: 'dns', host: 'example.org' }, {}),
+        central('mx', 'ok', { sensor: 'mail_dns', host: 'example.org' }, {}),
+      ],
+      SERVERS,
+      NOW,
+    );
+    expect(list.map((r) => [r.key, r.level, r.target, r.issuer, r.notAfter])).toEqual([
+      ['reg', 'warning', 'example.org', null, NOW + 20 * DAY],
+      ['gone', 'expired', 'example.com', null, NOW - DAY],
+      ['noreg', 'unknown', 'example.net', null, null],
+    ]);
+  });
+});
+
 describe('issuerName', () => {
   it('takes the CN, else the O of a distinguished name, else the text', () => {
     expect(issuerName("CN=R11,O=Let's Encrypt,C=US")).toBe('R11');
@@ -233,15 +318,30 @@ describe('CertsView', () => {
       'Zertifikate und Domains aller Server',
     );
     expect(rows(container)).toEqual([
-      ['pve-1', 'tls tls.example', 'E5', '12.01.2027', 'Seit 3 Tagen abgelaufen'],
-      ['web-1', 'soon https://soon.example/', 'R11', '18.01.2027', 'Läuft in 3 Tagen ab'],
-      ['web-1', 'later https://later.example/', 'R11', '16.03.2027', 'Läuft in 60 Tagen ab'],
+      ['pve-1', 'tls tls.example', 'E5', '12.01.2027', 'Seit 3 Tagen abgelaufen', 'Agent'],
+      [
+        'web-1',
+        'soon https://soon.example/',
+        'R11',
+        '18.01.2027',
+        'Läuft in 3 Tagen ab',
+        'HTTP-Check',
+      ],
+      [
+        'web-1',
+        'later https://later.example/',
+        'R11',
+        '16.03.2027',
+        'Läuft in 60 Tagen ab',
+        'HTTP-Check',
+      ],
       [
         'pve-1',
         'denied /etc/ssl/x.pem',
         '—',
         '—',
         'Zugriff verweigert, der Agent wartet auf neue Zugangsdaten',
+        'Agent',
       ],
     ]);
     const levels = [...container.querySelectorAll('[data-level]')].map((el) => [
@@ -253,6 +353,28 @@ describe('CertsView', () => {
       ['critical', 'crit'],
       ['ok', 'ok'],
       ['unknown', 'muted'],
+    ]);
+  });
+
+  it('names who saw each date', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW * 1000);
+    const checks = [
+      https('soon', 3),
+      sensor('tls', 'ok', { not_after: NOW + 40 * DAY }),
+      central(
+        'mail',
+        'ok',
+        { sensor: 'tls', host: 'mail.example', port: 993 },
+        { not_after: iso(NOW + 20 * DAY) },
+      ),
+    ];
+    const { container } = render(CertsView, { checks, servers: SERVERS, onOpen: () => {} });
+    const heads = [...container.querySelectorAll('th')].map((th) => th.textContent?.trim());
+    expect(heads.at(-1)).toContain('Quelle');
+    expect(rows(container).map((r) => [r[1], r[5]])).toEqual([
+      ['soon https://soon.example/', 'HTTP-Check'],
+      ['mail mail.example:993', 'Zentral'],
+      ['tls tls.example', 'Agent'],
     ]);
   });
 

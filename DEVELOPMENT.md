@@ -1052,6 +1052,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8081
 
 **Datenbank:** Ohne `DATABASE_URL` meldet sich der Monitoring-Dienst mit dem Dev-Fallback `adminhelper:adminhelper@localhost:5432/adminhelper_monitor` an (`apps/monitoring/app/core/config.py`). Hat die Rolle `adminhelper` ein eigenes Passwort (Abschnitt „Python-Tests lokal (ohne Docker)“), scheitert diese Anmeldung; dann `DATABASE_URL` mit dem Passwort setzen. Die Datenbank `adminhelper_monitor` legt lokal niemand an, das tut im Stack nur der Einmal-Dienst `db-init` (`python -m app.db_roles setup`, `apps/server/app/db_roles.py`).
 
+**Zentrale Checks:** Die Fühler fragen die Resolver aus `MONITOR_PUBLIC_RESOLVERS` (Standard `9.9.9.9,1.1.1.1`) direkt über Port 53 und holen HTTPS aus dem Internet (RDAP, MTA-STS, ACME-CAs). Ohne diesen Weg, etwa auf einer Dev-Box ohne ausgehendes DNS, melden zentrale Checks `unknown` („public resolvers unreachable“); die Tests ersetzen Resolver und Netz durch Fakes. Dafür braucht der Dienst `cryptography`, `dnspython` und `certifi` (`requirements.in`).
+
 **Hinweis:** Fuer den vollen Monitoring-Stack wird VictoriaMetrics benoetigt, die per `docker compose up` automatisch mitgestartet wird.
 
 ---
@@ -1650,7 +1652,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
 │  │  ├─ app/
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast, probe, central
+│  │  │  ├─ central/             # Fühler der zentralen Checks (tls, dns, rdap, Mail, Mail-DNS, DNSBL), Grenzen
 │  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks

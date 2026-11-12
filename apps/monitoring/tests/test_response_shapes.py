@@ -56,6 +56,7 @@ def _ref_name(schema: dict) -> str:
         ("/checks/{check_id}/toggle", "post", "MonitorCheckOut"),
         ("/checks/{check_id}/reset", "post", "MonitorCheckOut"),
         ("/checks/{check_id}/run", "post", "MonitorCheckOut"),
+        ("/checks/{check_id}/rebaseline", "post", "MonitorCheckOut"),
         ("/status", "get", "MonitorCheckStatusOut"),
         ("/status/server/{server_id}", "get", "MonitorCheckStatusOut"),
         ("/status/summary", "get", "StatusSummaryOut"),
