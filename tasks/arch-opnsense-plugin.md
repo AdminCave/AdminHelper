@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-opnsense-plugin — Task-Ledger
-Status: bereit · Branch: feature/arch-opnsense-plugin · Review: pro Task
+Status: aktiv · Branch: feature/arch-opnsense-plugin · Review: pro Task
 Spec: docs/features/arch-opnsense-plugin.md (Roadmap R-1248)
 Heavy: linux-full — Agent (neuer Fühler, Paketierung) und Monitoring (Katalogmodul); dazu vor dem Merge der OPNsense-Box-Lauf `bash scripts/tests/opnsense_box.sh` (T8) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -162,6 +162,13 @@ Review: approve (.ah-out/review/arch-opnsense-plugin/T10.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_plan.py
 Doku: keine (nur ein Test)
 Abhängt von: T5
+
+### T11 — Agent: Pfadsperre des Fühlers `unixsocket` auch unter FreeBSD (R-1248)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_freebsd_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-opnsense-plugin.md
+Änderung: Gleichstand mit Linux. Dort weist `dialUnix` einen Socket ab, dessen Pfad, wie angegeben oder mit aufgelösten Links, in `controlSockets` liegt; unter FreeBSD (T3) gleicht er bisher nur den Prozess dahinter ab. Die Pfadprüfung wandert in einen gemeinsamen Helfer, den beide `dialUnix` vor dem Verbinden rufen; verbunden wird mit dem aufgelösten Pfad. `controlSockets` nimmt den Socket von configd auf (OPNsense, `/var/run/configd.socket`), einem Steuerdienst des Hosts, dessen Prozess (Python) kein Prozessname erfasst. Tests: `guard_test` nennt den Pfad gesperrt (vorher rot), ein FreeBSD-Test weist Socket, Link und configd-Pfad mit `ErrNotAllowed` ab. Native Tests kompiliert der Cross-Vet; sie laufen im OPNsense-Box-Lauf (T8), der danach neu läuft.
+Verify: bash scripts/dev/verify.sh agent scripts --strict
+Doku: in der Task — admin/monitoring.html und developer/agent.html (DE+EN) nennen configd unter den Steuerdiensten, das Changelog-Fragment die Pfadsperre unter FreeBSD
+Abhängt von: T3
 
 ## Entscheidungen
 - 2026-11-10 Kevin, Frage 1: `os-adminhelper` kommt aus demselben signierten pkg-Repo des Servers wie der Agent; das Plugin legt die Repo-Datei nach dem Vendor-Muster an; die Doku nennt „Fremd-Repo, nicht unterstützt“ (T6, T9).
