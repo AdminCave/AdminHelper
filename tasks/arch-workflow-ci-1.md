@@ -40,8 +40,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py tests/
 Doku: → T6
 Abhängt von: T3
 
-### T7 — Nachzug T2 (R-1342): review_scripts_test erwartet die concurrency-Gruppe mit merge_group  [ ]
+### T7 — Nachzug T2 (R-1342): review_scripts_test erwartet die concurrency-Gruppe mit merge_group  [x]
 Komponente: scripts · Dateien: scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5d183e7d7 2026-11-12T08:13:03+01:00
+Review: approve (.ah-out/review/arch-workflow-ci-1/T7.verdict.json)
 Änderung: Der Abgleich der `concurrency:`-Zeilen von `ci.yml` (R-0174) erwartet wörtlich die Gruppe vor T2; der Dispatch-Lauf 43169817646 (fc70df0bd) ist deshalb im Job „Ops scripts“ rot (243 passed, 1 failed). Erwartung, Kommentar und Meldung nennen jetzt die Gruppe je Commit auch für `merge_group`; der Vergleich bleibt wörtlich.
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: keine (Test zieht die Konfiguration aus T2 nach)
