@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,6 +92,11 @@ func journalVariants() [][]string {
 	}
 	return calls
 }
+
+// The journalctl call of the system state after an OOM kill (monitor, oomProcesses): the kernel
+// messages of this boot, err and above, of the last seconds. Its own entry, apart from the log
+// sensor's calls: --dmesg and the priority are fixed.
+var oomJournalCall = []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-<seconds>s"}
 
 // The sql sensor's MariaDB calls, by the client mariadb or, before 10.4.6, mysql. Each query is the
 // sensor's own (mariadbQueries), under a statement timeout; probe's tests run every one through here.
@@ -173,7 +179,7 @@ var commands = map[string][][]string{
 		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
 	},
-	"journalctl": journalCalls,
+	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
 	"mariadb":    mariadbCalls,
 	"mysql":      mariadbCalls,
 	"runuser":    postgresCalls,

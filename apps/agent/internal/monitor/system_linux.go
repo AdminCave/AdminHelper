@@ -12,8 +12,10 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // vmstatPath is a variable so tests can point the OOM counter at a fixture.
@@ -32,13 +34,37 @@ var rebootRequiredPath = "/var/run/reboot-required"
 var rebootRequiredPkgsPath = "/var/run/reboot-required.pkgs"
 
 // systemCLI indirects the lookups and calls of the system state tools (needs-restarting,
-// timedatectl) so tests can drive every path without them (same reason as dockerCLI). run runs one
-// call under pluginTimeout and ctx. apt-get and dnf are looked up here as well, so the package family
-// is told apart in one place; their update counts run through updatesCalls.
+// timedatectl, journalctl) and the clock of the OOM window so tests can drive every path without them
+// (same reason as dockerCLI). run runs one call under pluginTimeout and ctx. apt-get and dnf are looked
+// up here as well, so the package family is told apart in one place; their update counts run through
+// updatesCalls.
 var systemCLI = struct {
 	lookPath func(file string) (string, error)
 	run      func(ctx context.Context, name string, args ...string) ([]byte, error)
-}{exec.LookPath, runWithTimeout}
+	now      func() time.Time
+}{exec.LookPath, runWithTimeout, time.Now}
+
+// maxOOMProcesses caps the processes of oom_processes, maxOOMWindow the seconds of journal they are
+// read from: a push lost while the server was away widens the window, the cap bounds what one call
+// reads.
+const (
+	maxOOMProcesses = 10
+	maxOOMWindow    = int64(time.Hour / time.Second)
+)
+
+// oomProcess is a process the kernel's OOM killer killed, as oom_processes carries it.
+type oomProcess struct {
+	PID  int    `json:"pid"`
+	Name string `json:"name"`
+}
+
+// reOOMKilled finds the line the kernel logs for each OOM kill (mm/oom_kill.c, __oom_kill_process:
+// "<cause>: Killed process <pid> (<comm>) total-vm:…", cause "Out of memory" or "Memory cgroup out of
+// memory", without a colon); older kernels logged it without the cause (not verified here). It is no
+// documented interface, so only pid and comm are read, and only from the start of a message: a kill
+// line quoted in another message is no kill. comm is the process's own name and may hold spaces,
+// colons and parentheses; everything after it is numbers, so the name runs to the last ") total-vm:".
+var reOOMKilled = regexp.MustCompile(`^(?:[^:]*: )?Killed process ([0-9]+) \((.*)\) total-vm:`)
 
 // collectSystemState reports the system_state block and returns st, the state the last successful
 // push saved, with what it measured replaced. A field is set only when measured; why one is missing
@@ -51,7 +77,15 @@ func collectSystemState(ctx context.Context, st reportState) (map[string]any, re
 		// saved counter came from (an agent update, a container detected anew): no field, only the
 		// counter for the next one.
 		if st.OOMKill != nil && st.oomKillSource() == source {
-			block["oom_kills"] = oomKillsSince(*st.OOMKill, count)
+			kills := oomKillsSince(*st.OOMKill, count)
+			block["oom_kills"] = kills
+			// Only after a kill, and not in a container: the kernel log there is the host's, whose
+			// kills its own counter leaves out.
+			if kills > 0 && source == oomSourceVMStat {
+				if processes := oomProcesses(ctx, oomWindow(st.CPU, systemCLI.now())); len(processes) > 0 {
+					block["oom_processes"] = processes
+				}
+			}
 		}
 		st.OOMKill = &count
 		st.OOMKillSource = source
@@ -115,6 +149,58 @@ func oomKillsSince(saved, count uint64) uint64 {
 		return count
 	}
 	return count - saved
+}
+
+// oomWindow is the journal window in seconds that holds the kills counted since the last report: from
+// prev, the CPU sample the last successful push saved with the counter, up to now, rounded up, at most
+// maxOOMWindow. Without a sample, or with one from the future (the clock was set back), it is the cap.
+func oomWindow(prev *cpuSample, now time.Time) int64 {
+	if prev == nil {
+		return maxOOMWindow
+	}
+	seconds := now.Unix() - prev.Unix + 1
+	if seconds < 1 || seconds > maxOOMWindow {
+		return maxOOMWindow
+	}
+	return seconds
+}
+
+// oomProcesses names the processes the OOM killer killed in the last seconds, from the kernel's own
+// lines in the journal (journalctl(1): --dmesg the kernel messages of this boot, --priority=3 err and
+// above, the level of the kill line, --output=cat each bare message). Without journalctl, or when the
+// call fails, it names none and the log says why; oom_kills stays as counted.
+func oomProcesses(ctx context.Context, seconds int64) []oomProcess {
+	if _, err := systemCLI.lookPath("journalctl"); err != nil {
+		logger.Warnf("system state: journalctl not found, oom_processes left out")
+		return nil
+	}
+	out, err := systemCLI.run(ctx, "journalctl", "--no-pager", "--quiet", "--dmesg", "--output=cat",
+		"--priority=3", "--since=-"+strconv.FormatInt(seconds, 10)+"s")
+	if err != nil {
+		logger.Warnf("system state: journalctl --dmesg failed: %s, oom_processes left out",
+			commandFailure("journalctl", pluginTimeout, err))
+		return nil
+	}
+	return parseOOMProcesses(out)
+}
+
+// parseOOMProcesses reads the processes of the OOM kill lines in out, one message per line in the
+// order logged, and drops every other line. It keeps the newest maxOOMProcesses, each name cut like a
+// package name (the kernel's comm has at most 15 bytes, TASK_COMM_LEN).
+func parseOOMProcesses(out []byte) []oomProcess {
+	var processes []oomProcess
+	for _, line := range strings.Split(string(out), "\n") {
+		m := reOOMKilled.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		pid, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
+		processes = append(processes, oomProcess{PID: pid, Name: capPackageName(m[2])})
+	}
+	return processes[max(0, len(processes)-maxOOMProcesses):]
 }
 
 // rebootRequired says whether the host waits for a reboot and, if so, names the packages behind it

@@ -119,6 +119,42 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 	}
 }
 
+// TestAllowlistOOMJournal: the system state's journalctl call after an OOM kill takes a number of
+// seconds and nothing else. The traps bend it into another output, the whole journal, other
+// priorities, an option or another time in the seconds field, another file or a match, or the log
+// sensor's head with the kernel messages.
+func TestAllowlistOOMJournal(t *testing.T) {
+	oom := func(since string) []string {
+		return []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", since}
+	}
+	for _, since := range []string{"--since=-1s", "--since=-301s", "--since=-3600s"} {
+		if !Allowed("journalctl", oom(since)) {
+			t.Errorf("refused: %q", oom(since))
+		}
+	}
+	for _, args := range [][]string{
+		{"--no-pager", "--quiet", "--dmesg", "--output=json", "--priority=3", "--since=-60s"},
+		{"--no-pager", "--quiet", "--dmesg", "--output=verbose", "--priority=3", "--since=-60s"},
+		{"--no-pager", "--quiet", "--output=cat", "--priority=3", "--since=-60s"},
+		{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=7", "--since=-60s"},
+		{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--since=-60s"},
+		oom("--since=--help"),
+		oom("--since=---helps"),
+		oom("--since=-60"),
+		oom("--since=yesterday"),
+		oom("--since=-1x2s"),
+		append(oom("--since=-60s"), "--file=/etc/shadow"),
+		append(oom("--since=-60s"), "--", "_COMM=sshd"),
+		{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--after-cursor=" + cursor},
+		{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--output-fields=PRIORITY", "--show-cursor", "--priority=3", "--since=-60s"},
+		{"--no-pager", "--quiet", "--output=cat", "--output-fields=PRIORITY", "--show-cursor", "--priority=3", "--since=-60s", "--dmesg"},
+	} {
+		if Allowed("journalctl", args) {
+			t.Errorf("allowed: journalctl %q", args)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

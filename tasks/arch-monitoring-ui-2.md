@@ -29,8 +29,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSystemStateUpdates|TestSystemStateReboot|TestCountPkgAudit|TestPkgSecurityUpdates|TestFreebsdSystemState|TestReportState|TestSystemStateBlock
 Doku: → T12
 
-### T2 — Agent: Prozess hinter dem OOM-Kill (R-1227)  [ ]
+### T2 — Agent: Prozess hinter dem OOM-Kill (R-1227)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @432ac0a2f 2026-11-12T11:55:29+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T2.verdict.json)
 Änderung: Nur wenn `oom_kills` in diesem Bericht > 0 und nicht im Container: ein neuer Allowlist-Aufruf `journalctl` mit `--dmesg`, Priorität `err` und festem Fenster seit dem letzten Bericht (`--since=-<seconds>s`, gedeckelt; Ausgabeform nach journalctl(1) wählen, getrennt von den Aufrufen des Log-Sensors), daraus nur `Killed process <pid> (<comm>)` (Kernel `mm/oom_kill.c` nachlesen) → `oom_processes: [{pid, name}]`, höchstens 10, `comm` gekappt. Fehlt journalctl oder scheitert der Aufruf: keine Namen, Zähler unverändert. Tests: Fixture mit globalem und cgroup-OOM, fremde Zeilen verworfen, kein Aufruf ohne Kill und im Container, Allowlist positiv und Fallen (andere Ausgabe, ohne `--dmesg`, Option im Sekundenfeld).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSystemStateOOM|TestAllowlist
 Doku: → T12
@@ -106,3 +108,8 @@ Task-Review: am Ende
 - 2026-11-12 T1: `putSecurityUpdates` setzt Zahl und Namen für Linux und FreeBSD an einer Stelle — beide Systemzustands-Blöcke trugen die Zahl doppelt
 - 2026-11-12 T1: Namen aus apt `Inst`-Zeilen (Feld 2, `:arch` nur bei Fremdarchitektur, apt `pkgcache.cc`), dnf `updateinfo list` (Spalte 3 ohne Version), `pkg audit -q` (bis zum letzten `-`), `/var/run/reboot-required.pkgs` (update-notifier, Namen können doppelt stehen), `needs-restarting -r` (`  * <name>`, dnf-plugins-core) — die Zahl bleibt wie bisher, die Namen sind die der gezählten Zeilen
 - 2026-11-12 T1: unlesbare `reboot-required.pkgs` (nicht „fehlt“) loggt eine Warnung und lässt nur `reboot_packages` weg — `reboot_required` steht über die Flag-Datei fest
+- 2026-11-12 T2: Zeitfenster der OOM-Namen = jetzt − Zeitpunkt des letzten erfolgreichen Reports (`prev.CPU.Unix`) + 1 s, gedeckelt auf 1 h (auch ohne Vorgänger und bei zurückgestellter Uhr) — best effort: ein Kill, der im letzten Report gezählt, aber erst danach geloggt wurde, kann noch einmal genannt werden; ein Name, den journald verspätet annimmt, kann fehlen; der Zähler bleibt die Wahrheit
+- 2026-11-12 T2: kein `--lines` neben `--since` — journalctl(1) beschreibt nicht, wie beide zusammenwirken; die Menge begrenzen Fenster, `--priority=3` und `--dmesg` (nur der aktuelle Boot)
+- 2026-11-12 T2: gelesen wird nur `Killed process <pid> (<comm>) total-vm:` am Zeilenanfang (optional hinter einem Präfix ohne Doppelpunkt) — eine zitierte Kill-Zeile in einer anderen Meldung ist kein Kill; `(.*)` gierig bis zum letzten `) total-vm:`, weil comm Klammern tragen kann; ältere Kernel ohne Ursachen-Präfix nicht verifiziert
+- 2026-11-12 T2: die neuesten 10 in Log-Reihenfolge, comm über `capPackageName` (128 Byte, UTF-8-sicher) — begrenzt den Report bei Kill-Serien, die jüngsten Kills sind die relevanten
+- 2026-11-12 T2: `systemCLI.now` als Uhr-Naht neben `run`/`lookPath` — macht das Fenster ohne echte Wartezeit testbar
