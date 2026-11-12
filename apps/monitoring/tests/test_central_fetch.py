@@ -90,6 +90,16 @@ def test_the_request_goes_to_the_pinned_address_under_the_host_name(rule, transp
     assert request.extensions["sni_hostname"] == HOST
 
 
+def test_the_content_type_is_handed_on(rule, transport):
+    transport["outcomes"] = [
+        httpx.Response(200, headers={"Content-Type": "text/plain; charset=utf-8"}, content=b"x")
+    ]
+
+    answer = fetch.get(f"https://{HOST}/.well-known/mta-sts.txt", accept="text/plain")
+
+    assert answer == HttpAnswer(200, None, b"x", "text/plain; charset=utf-8")
+
+
 def test_without_a_port_the_host_header_is_the_name(rule, transport):
     transport["outcomes"] = [httpx.Response(204)]
 

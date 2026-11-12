@@ -298,6 +298,10 @@ class MailParams(_StrictConfig):
     """The mail sensors take no params; the port picks the protocol."""
 
 
+class MailDnsParams(_StrictConfig):
+    """The sensor mail_dns takes no params; extra=forbid refuses any key."""
+
+
 @dataclass(frozen=True)
 class CentralSensor:
     """One sensor of a central check (R-1224): its shortest and its default interval,
@@ -320,6 +324,8 @@ CENTRAL_SENSORS: dict[str, CentralSensor] = {
     # (postscreen, fail2ban): a shorter interval would only be skipped.
     "smtp": CentralSensor("15m", "15m", 25, MailParams, ports=(25, 465, 587)),
     "imap": CentralSensor("15m", "15m", 993, MailParams, ports=(143, 993, 995)),
+    # Mail records change seldom; hourly also bounds the MTA-STS policy fetches.
+    "mail_dns": CentralSensor("1h", "1h", None, MailDnsParams, needs_name=True),
 }
 # The agent sensors whose view of the same service explains a central result (T10).
 CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})

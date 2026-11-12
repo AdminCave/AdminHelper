@@ -51,6 +51,8 @@ def _config(**over):
         _config(sensor="imap"),
         _config(sensor="imap", port=143),
         _config(sensor="imap", port=995),
+        _config(sensor="mail_dns"),
+        _config(sensor="mail_dns", host="example.test"),
     ],
 )
 def test_valid_configs_pass(config):
@@ -111,6 +113,9 @@ def test_valid_configs_pass(config):
         (_config(sensor="smtp", port=22), "ports 22 and 3306"),
         (_config(sensor="smtp", params={"ehlo": "mx.example.test"}), "params"),
         (_config(sensor="imap", params={"x": 1}), "params"),
+        (_config(sensor="mail_dns", port=25), "the sensor mail_dns takes no port"),
+        (_config(sensor="mail_dns", host="192.0.2.10"), "the sensor mail_dns needs a host name"),
+        (_config(sensor="mail_dns", params={"x": 1}), "params"),
     ],
 )
 def test_invalid_configs_are_refused(config, fragment):
@@ -235,6 +240,22 @@ def test_the_rdap_sensor_runs_at_most_daily(client_db, interval, code):
     assert default.status_code == 201, default.text
     with factory() as db:
         assert db.get(MonitorCheck, default.json()["id"]).interval == "24h"
+
+
+@pytest.mark.parametrize(("interval", "code"), [("30m", 400), ("1h", 201)])
+def test_the_mail_dns_sensor_runs_at_most_hourly(client_db, interval, code):
+    client, factory = client_db
+    config = _config(sensor="mail_dns", host="example.test")
+
+    r = client.post("/checks", json=_payload(config=config, interval=interval))
+    default = client.post("/checks", json=_payload(config=config))
+
+    assert r.status_code == code, r.text
+    if code == 400:
+        assert r.json()["detail"] == "Interval too short for sensor mail_dns: at least 1h"
+    assert default.status_code == 201, default.text
+    with factory() as db:
+        assert db.get(MonitorCheck, default.json()["id"]).interval == "1h"
 
 
 def test_create_refuses_a_forbidden_port_at_the_schema(client_db):

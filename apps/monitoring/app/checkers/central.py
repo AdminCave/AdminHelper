@@ -9,9 +9,9 @@ the sensor against the global addresses the rule handed on. A target that was
 public once (`public_since` in the details) stays watched: a later failure to
 reach it is critical, never a quiet move to "checked by the agent".
 
-A sensor that asks a registry about the host instead of the host itself (rdap)
-skips the rule: the host need not have an address, a mail-only domain has none,
-and the agent could not ask the registry in its place either.
+A sensor that asks third parties about the host instead of the host itself (rdap,
+mail_dns) skips the rule: the host need not have an address, a mail-only domain has
+none, and the agent could not ask in its place either.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from app.central import dns as dns_sensor
-from app.central import mail, rdap, resolve, tls
+from app.central import mail, maildns, rdap, resolve, tls
 from app.central.limits import LIMITS, SKIPPED_BUSY_MESSAGE, RunSkipped
 from app.central.resolve import Classification, Reach
 from app.central.tls import SensorResult
@@ -55,7 +55,7 @@ def _mail(
 _PROBES: dict[str, Probe] = {"tls": _tls, "dns": _dns, "smtp": _mail, "imap": _mail}
 # host, params, the previous details for this host.
 RegistryProbe = Callable[[str, dict, dict], SensorResult]
-_REGISTRY_PROBES: dict[str, RegistryProbe] = {"rdap": rdap.probe}
+_REGISTRY_PROBES: dict[str, RegistryProbe] = {"rdap": rdap.probe, "mail_dns": maildns.probe}
 # The states a sensor carries from run to run. A run that does not reach the target
 # hands them on unchanged, so that the next one does not start over.
 _KEPT: dict[str, tuple[str, ...]] = {

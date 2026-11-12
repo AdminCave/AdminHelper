@@ -79,10 +79,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_mai
 Doku: → T14
 Abhängt von: T3
 
-### T8 — Fühler `mail_dns` (SPF, DMARC, MTA-STS, TLS-RPT, FCrDNS) (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/maildns.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_maildns.py
+### T8 — Fühler `mail_dns` (SPF, DMARC, MTA-STS, TLS-RPT, FCrDNS) (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/maildns.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_maildns.py, apps/monitoring/app/central/fetch.py, apps/monitoring/app/checkers/central.py, apps/monitoring/tests/test_central_fetch.py, apps/monitoring/tests/test_central_checker.py, apps/monitoring/tests/test_central_config.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fc0124e65 2026-11-12T11:03:19+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T8.verdict.json)
 Änderung: SPF nach RFC 7208 (genau ein Record, ≤ 10 Lookups, ≤ 2 leere, Rekursion in `include`/`redirect`), DMARC nach RFC 9989 (Baumsuche, `p=none` → Hinweis), MTA-STS nach RFC 8461 (TXT, Policy über `https://mta-sts.<domain>/.well-known/mta-sts.txt`, gepinnt, MX in der Policy), TLS-RPT nach RFC 8460 (Syntax), FCrDNS jeder MX-Adresse. Je Teil eine Stufe; der schlechteste gewinnt.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_maildns.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_maildns.py tests/test_central_fetch.py tests/test_central_checker.py tests/test_central_config.py
 Doku: → T14
 Abhängt von: T3
 
@@ -197,3 +199,11 @@ Task-Review: am Ende
 - 2026-11-12 T7: eine Zeitüberschreitung, die die Gesamtfrist (60 s) abschneidet, meldet die Frist, nicht „keine Antwort in N s“.
 - 2026-11-12 T7: lehnt ein Server unter implizitem TLS (465, 993, 995) ab, trägt die Meldung zusätzlich das Zertifikatsurteil — das Zertifikat ist dann schon gesehen.
 - 2026-11-12 T7 (Prüfrunde security): das IMAP-Statuswort läuft wie aller Servertext durch `_show`. Prüfer-Nit `tls` auf Mail-Ports: Roadmap-Zeile R-1367.
+- 2026-11-12 T8: `mail_dns` läuft wie `rdap` ohne Regel öffentlich/intern und ohne Zustand zwischen Läufen — er fragt öffentliche Resolver und `mta-sts.<domain>`, nicht den Host; Intervall-Minimum und Vorgabe 1 h (Mail-Records ändern sich selten, 1 h begrenzt die Policy-Abrufe beim Webserver der Domain).
+- 2026-11-12 T8: SPF wird statisch im schlimmsten Fall gezählt: jedes `include`/`a`/`mx`/`ptr`/`exists`/`redirect` zählt, Ziele mit Makros und `ptr` werden gezählt, nicht verfolgt (sie hängen am Absender); leere Antworten je Adressfamilie (ein IPv6-Absender trifft andere als ein IPv4-Absender), `exists` fragt nur A (§5.7), `mx:` mit mehr als 10 MX ist permerror, `redirect` neben `all` wird ignoriert (§6.1).
+- 2026-11-12 T8: je Lauf höchstens 150 DNS-Fragen und 45 s für DNS, jedes (Name, Typ) einmal; danach werden die übrigen Teile nicht beurteilt („<Teil>: more than 150 lookups or 45 s“) — wer die DNS-Zone der Domain hält, kann den Lauf nicht verlängern. Mit der zuletzt begonnenen Frage (2 s), der Auflösung von `mta-sts.<domain>` vor dem Abruf (A und AAAA nacheinander, je 2 s) und dem Policy-Abruf (`fetch.DEADLINE_S` 20 s) dauert ein Lauf höchstens etwa 71 s; diese Zahl nennt T14. Bleibt der Teil MX unbeurteilt, ist es FCrDNS mit demselben Grund.
+- 2026-11-12 T8: ein Teil, dessen Namen kein Resolver beantwortet, wird nicht beurteilt; Befunde der anderen Teile gehen vor, ohne Befund ist der Lauf `unknown` — eine fehlende Antwort ist kein fehlender Record.
+- 2026-11-12 T8: DMARC ohne `p` gilt als `p=none` (RFC 9989 §4.7), zwei Records an einem Namen gelten als keiner; Baumsuche nach §4.10 mit `psd=y/n`, höchstens 8 Namen.
+- 2026-11-12 T8: MTA-STS: TXT-Filter auf `v=STSv1;` (§3.1); Policy über `fetch.get` (gepinnt, Gesamtfrist, Body-Grenze, keine Redirects) mit `Accept: text/plain`, Medientyp muss `text/plain` sein (§3.2) — dafür `HttpAnswer.content_type`; MX außerhalb der Policy bei `enforce` kritisch, bei `testing` Warnung; Wildcard nur für das linke Label (§4.1).
+- 2026-11-12 T8: Parser ohne verschachtelte Quantoren (lineare Laufzeit, Test mit 200 000 Zeichen); Text aus DNS und HTTP nur über `_show` in Meldung und Details; Records in den Details höchstens 512 Zeichen, Adressen je MX-Host und FCrDNS höchstens 10, PTR-Namen 3, MX-Hosts 10, `mx`-Muster der MTA-STS-Policy 10 (dazu `mx_count`, wenn es mehr sind) — eine DNS-Antwort über TCP kann tausende Records tragen, eine Policy bis 64 KiB tausende Zeilen.
+- 2026-11-12 T8: acht Dateien: `fetch.py` (Content-Type), `checkers/central.py` (Registry-Fühler) und ihre Tests per `set-files`, `Verify:` um diese Tests erweitert.

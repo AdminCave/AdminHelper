@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""HTTPS requests of central checks to third parties: ACME CAs, RDAP (R-1224).
+"""HTTPS requests of central checks to third parties: ACME CAs, RDAP, MTA-STS (R-1224).
 
 Pinned like the probes: the rule public/internal resolves the name over the public
 resolvers, and the connection goes to one of the global addresses it handed on.
@@ -41,6 +41,7 @@ class HttpAnswer:
     status: int
     retry_after: str | None
     body: bytes
+    content_type: str = ""
 
 
 class FetchError(Exception):
@@ -201,7 +202,12 @@ def _read(
         # Where TLS lets an unexpected EOF pass, the shut down socket reads as the
         # end of a body that runs until the close.
         raise _deadline(str(request.url.host))
-    return HttpAnswer(response.status_code, response.headers.get("retry-after"), bytes(body))
+    return HttpAnswer(
+        response.status_code,
+        response.headers.get("retry-after"),
+        bytes(body),
+        response.headers.get("content-type", ""),
+    )
 
 
 def _deadline(address: str) -> FetchError:
