@@ -262,19 +262,41 @@ class TlsParams(_StrictConfig):
     """The tls sensor takes no params; extra=forbid refuses any key."""
 
 
+class DnsParams(_StrictConfig):
+    """The addresses the name must resolve to; without them the first complete answer
+    becomes the baseline."""
+
+    expected: list[str] | None = Field(None, min_length=1, max_length=32)
+
+    @field_validator("expected")
+    @classmethod
+    def _addresses(cls, v: list[str] | None) -> list[str] | None:
+        for entry in v or []:
+            try:
+                ip = ipaddress.ip_address(entry)
+            except ValueError:
+                raise ValueError(f"{entry!r} is not an IP address") from None
+            if ip.version == 6 and ip.scope_id:
+                raise ValueError(f"{entry!r} carries a zone index")
+        return v
+
+
 @dataclass(frozen=True)
 class CentralSensor:
     """One sensor of a central check (R-1224): its shortest and its default interval,
-    the port a config without one uses, and the model of its params."""
+    the port a config without one uses (None: the sensor takes no port), the model of
+    its params, and whether the host must be a name."""
 
     min_interval: str
     default_interval: str
-    default_port: int
+    default_port: int | None
     params: type[_StrictConfig]
+    needs_name: bool = False
 
 
 CENTRAL_SENSORS: dict[str, CentralSensor] = {
     "tls": CentralSensor("15m", "1h", 443, TlsParams),
+    "dns": CentralSensor("5m", "15m", None, DnsParams, needs_name=True),
 }
 # The agent sensors whose view of the same service explains a central result (T10).
 CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
@@ -283,6 +305,14 @@ CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
 CENTRAL_FORBIDDEN_PORTS = frozenset({22, 3306})
 
 _HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+def _is_ip(text: str) -> bool:
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    return True
 
 
 class CentralConfig(_StrictConfig):
@@ -327,6 +357,15 @@ class CentralConfig(_StrictConfig):
         if v in CENTRAL_FORBIDDEN_PORTS:
             raise ValueError("ports 22 and 3306 are never probed from outside")
         return v
+
+    @model_validator(mode="after")
+    def _fits_sensor(self):
+        sensor = CENTRAL_SENSORS[self.sensor]
+        if sensor.default_port is None and self.port is not None:
+            raise ValueError(f"the sensor {self.sensor} takes no port")
+        if sensor.needs_name and _is_ip(self.host):
+            raise ValueError(f"the sensor {self.sensor} needs a host name, not an IP address")
+        return self
 
     @model_validator(mode="after")
     def _params_valid(self):

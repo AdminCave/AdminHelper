@@ -249,6 +249,7 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
         "monitor_check_duration_ms_value",
         "monitor_days_left_value",
         "monitor_lifetime_pct_value",
+        "monitor_resolvers_agree_value",
     ],
 }
 
@@ -565,6 +566,37 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    return check.to_dict(state=state)
+
+
+@router.post(
+    "/checks/{check_id}/rebaseline",
+    response_model=MonitorCheckOut,
+    response_model_exclude_unset=True,
+    dependencies=[Depends(require_internal)],
+)
+def rebaseline_check(check_id: str, db: Session = Depends(get_db)):
+    """Forgets the addresses a central dns check has learned; its next complete run learns them anew."""
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if not check:
+        raise HTTPException(404, "Check not found")
+    try:
+        config = json.loads(check.config) if check.config else None
+    except (json.JSONDecodeError, TypeError):
+        config = None
+    if (
+        check.check_type != "central"
+        or not isinstance(config, dict)
+        or config.get("sensor") != "dns"
+    ):
+        raise HTTPException(400, "Only a central check with sensor dns has a baseline")
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    details = json.loads(state.details) if state is not None and state.details else None
+    # A run in progress may still write the old baseline back; the next call removes it.
+    if isinstance(details, dict) and "baseline" in details:
+        del details["baseline"]
+        state.details = json.dumps(details)
+        db.commit()
     return check.to_dict(state=state)
 
 

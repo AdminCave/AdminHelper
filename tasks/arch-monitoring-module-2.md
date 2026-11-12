@@ -52,10 +52,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_ari
 Doku: → T14
 Abhängt von: T3
 
-### T5 — Fühler `dns`: Basislinie, Delegation, DNSSEC, Route `rebaseline` (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/dns.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_central_dns.py, apps/monitoring/tests/test_central_rebaseline.py, apps/monitoring/tests/openapi.snapshot.json
+### T5 — Fühler `dns`: Basislinie, Delegation, DNSSEC, Route `rebaseline` (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/dns.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_central_dns.py, apps/monitoring/tests/test_central_rebaseline.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/app/checkers/central.py, apps/monitoring/tests/test_central_checker.py, apps/monitoring/tests/test_central_config.py, apps/monitoring/tests/test_response_shapes.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @24727af52 2026-11-12T09:02:50+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T5.verdict.json)
 Änderung: A/AAAA über beide Resolver; erste vollständige Antwort wird Basislinie in `details` (oder `params.expected`); Abweichung → Warnung „geändert“, Resolver uneins → Warnung. Stündlich: NS der Zone antworten autoritativ (lame → Warnung); DNSSEC nur mit DS: SERVFAIL ohne CD, Antwort mit CD → kritisch, RRSIG läuft in < 3 Tagen ab → Warnung. `POST /checks/{id}/rebaseline` (nur `central`/`dns`, sonst 400) verwirft die Basislinie.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns.py tests/test_central_rebaseline.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns.py tests/test_central_rebaseline.py tests/test_central_checker.py tests/test_central_config.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
 Doku: → T14
 Abhängt von: T3
 
@@ -167,3 +169,12 @@ Task-Review: am Ende
 - 2026-11-12 T4: ARI/CAA nur bei gültigem, vertrauenswürdigem, nicht abgelaufenem Zertifikat; ihre Befunde machen aus ok eine Warnung, ein kritischer Status bleibt kritisch, die Befunde hängen an der Meldung.
 - 2026-11-12 T4 (Prüfrunde): `fetch.get` hat eine Gesamtfrist von 20 s — die Zeitlimits von httpx gelten je Operation; ein Watchdog-Timer schließt den Socket per `shutdown` (Basisklasse, der blockierte TLS-Read kehrt zurück), Connect und Handshake bekommen ein auf die Restzeit gekürztes Timeout, nach Ablauf wird keine weitere Adresse versucht. Der Watchdog stoppt, bevor httpx den Socket schließt; schließt httpcore ihn auf einem Fehlerpfad selbst, bleibt ein Wettlauf mit der Wiederverwendung des Deskriptors im Bereich weniger Mikrosekunden (hingenommen).
 - 2026-11-12 T4 (Prüfrunde): `Accept-Encoding: identity`; eine Antwort mit Content-Coding wird abgelehnt — die Body-Grenze zählt empfangene Bytes (`iter_raw`), nicht entpackte.
+- 2026-11-12 T5: RRSIG-Schwelle relativ — Warnung, wenn weniger als 5 % der Gültigkeit übrig sind, statt „< 3 Tage“ (Plan): Fenster reichen von 2 Tagen (Online-Signer, live gelesen) bis zu einem Monat, eine feste Grenze von 3 Tagen warnte bei 2-Tage-Fenstern dauerhaft; Signer erneuern weit vorher (BIND bei 25 % Restlaufzeit, Knot bei etwa 10 %). Abgelaufen → kritisch. Kevin erfährt es im Bericht.
+- 2026-11-12 T5: RRSIG wird an den autoritativen Servern gelesen (RD=0, DO), nicht beim Resolver — der liefert zwischengespeicherte Signaturen; je Nameserver höchstens 2 SOA-Fragen (zweite Adresse oder dieselbe noch einmal), höchstens 8 Nameserver (Rest als `unchecked`), Abstand je Adresse über `address_turn`; verweigert er eine Adresse oder sind die Resolver stumm, bleibt der alte Zustand und der Blick kommt nach 15 min wieder.
+- 2026-11-12 T5: antwortet kein einziger Nameserver, wird das nur festgehalten, ohne Warnung — wahrscheinlicher ist der eigene ausgehende Port 53 gesperrt; ein stummer neben antwortenden warnt.
+- 2026-11-12 T5: `resolvers_agree` nur mit mindestens zwei antwortenden Resolvern; Basislinie = Vereinigung der ersten vollständigen Antwort (jeder Resolver hat geantwortet); ohne Vollständigkeit meldet der Vergleich nur neue Adressen — ein stummer Resolver kann die fehlenden halten. Resolver-Uneinigkeit warnt auch bei geo-verteilten CDNs (Plan); T14 dokumentiert es.
+- 2026-11-12 T5: Ein Lauf ohne Ergebnis (nicht öffentlich, Resolver stumm, tls nicht erreicht) übernimmt Basislinie und Zonen-Zustand (dns) bzw. ARI und CAA (tls) aus den vorigen Details desselben Hosts — sonst lernte der nächste Lauf eine neue Basislinie und ein Ausfall verdeckte einen Adresswechsel.
+- 2026-11-12 T5: Antworten alle Resolver mit SERVFAIL, fragt der Checker bei `dns` ohne und mit CD nach: Antwort nur mit CD → kritisch „DNSSEC validation fails“, SERVFAIL bei jedem → kritisch; sonst bleibt es „unknown“ — dann ist eher der eigene Weg nach draußen gestört.
+- 2026-11-12 T5: `dns` verweigert Port und IP-Literal als Host (422) — der Fühler fragt nach einem Namen und verbindet sich mit keinem Dienst-Port.
+- 2026-11-12 T5: `rebaseline` mitten in einem laufenden Lauf: der Lauf kann die alte Basislinie zurückschreiben, ein zweiter Aufruf entfernt sie (hingenommen, Kommentar in der Route) — eine Sperre gegen den Scheduler wäre für einen seltenen Klick zu viel.
+- 2026-11-12 T5: zehn Dateien statt höchstens acht, `Verify:` um `test_central_checker.py` und `test_central_config.py` erweitert — der Checker reicht Regel und Parameter an den Fühler durch, die Fühler-Tabelle bekommt `dns`.

@@ -15,18 +15,36 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from app.central import dns as dns_sensor
 from app.central import resolve, tls
 from app.central.limits import LIMITS, SKIPPED_BUSY_MESSAGE, RunSkipped
-from app.central.resolve import Reach
+from app.central.resolve import Classification, Reach
 from app.central.tls import SensorResult
 from app.check_configs import CENTRAL_SENSORS
 from app.checkers.context import CheckContext
 from app.core.time import iso_utc
 
-# host, the rule's global addresses, port, the previous details for this host.
-Probe = Callable[[str, tuple[str, ...], int, dict], SensorResult]
+# host, the rule for it, port (None for a sensor without one), params, the previous
+# details for this host.
+Probe = Callable[[str, Classification, int | None, dict, dict], SensorResult]
 
-_PROBES: dict[str, Probe] = {"tls": tls.probe}
+
+def _tls(
+    host: str, rule: Classification, port: int | None, params: dict, prev: dict
+) -> SensorResult:
+    return tls.probe(host, rule.addresses, port, prev)
+
+
+def _dns(
+    host: str, rule: Classification, port: int | None, params: dict, prev: dict
+) -> SensorResult:
+    return dns_sensor.probe(host, rule, params, prev)
+
+
+_PROBES: dict[str, Probe] = {"tls": _tls, "dns": _dns}
+# The states a sensor carries from run to run. A run that does not reach the target
+# hands them on unchanged, so that the next one does not start over.
+_KEPT: dict[str, tuple[str, ...]] = {"tls": ("ari", "caa"), "dns": ("baseline", "zone")}
 
 
 class CentralChecker:
@@ -41,22 +59,36 @@ class CentralChecker:
         if probe is None or not isinstance(host, str) or not host:
             return "unknown", f"Unknown sensor or no host: {sensor!r}", None
         port = config.get("port") or CENTRAL_SENSORS[sensor].default_port
+        params = config.get("params")
+        params = params if isinstance(params, dict) else {}
         prev = context.prev_details or {}
         # A changed host starts over: the old one's history says nothing about it.
         if prev.get("host") != host:
             prev = {}
         public_since = prev.get("public_since")
 
+        silence = None
         with LIMITS.slot() as acquired:
             if not acquired:
                 raise RunSkipped(SKIPPED_BUSY_MESSAGE)
             rule = resolve.classify(host)
-            result = probe(host, rule.addresses, port, prev) if rule.reach is Reach.PUBLIC else None
+            result = probe(host, rule, port, params, prev) if rule.reach is Reach.PUBLIC else None
+            if rule.reach is Reach.RESOLVERS_UNREACHABLE and sensor == "dns":
+                # For the sensor dns a name no resolver answers for may itself be the finding.
+                silence = dns_sensor.diagnose_silence(host)
 
-        details: dict = {"host": host, "port": port}
+        details: dict = {"host": host}
+        if port is not None:
+            details["port"] = port
+        if result is None or not result.reached:
+            details.update({k: prev[k] for k in _KEPT.get(sensor, ()) if k in prev})
         if rule.notes:
             details["notes"] = list(rule.notes)
         if rule.reach is Reach.RESOLVERS_UNREACHABLE:
+            if silence:
+                if public_since:
+                    return "critical", silence, _with(details, public_since)
+                return "unknown", f"{resolve.NOT_PUBLIC_MESSAGE} ({silence})", _with(details, None)
             # Our own way out is down, not the target: no verdict, the history stays.
             return "unknown", rule.message, _with(details, public_since)
         if rule.reach is Reach.NOT_PUBLIC:

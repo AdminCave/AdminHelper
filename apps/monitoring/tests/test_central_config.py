@@ -37,6 +37,9 @@ def _config(**over):
         _config(host="localhost"),  # a name; the rule public/internal decides at run time
         _config(pair_check_id="p1"),
         _config(params={}),
+        _config(sensor="dns"),
+        _config(sensor="dns", params={"expected": ["192.0.2.10", "2001:db8::10"]}),
+        _config(sensor="dns", params={"expected": None}),
     ],
 )
 def test_valid_configs_pass(config):
@@ -70,6 +73,17 @@ def test_valid_configs_pass(config):
         (_config(params={"x": 1}), "params"),
         (_config(extra=1), "extra"),
         ({"host": "www.example.test"}, "sensor"),
+        (_config(sensor="dns", port=53), "the sensor dns takes no port"),
+        (_config(sensor="dns", host="192.0.2.10"), "the sensor dns needs a host name"),
+        (_config(sensor="dns", host="2001:db8::10"), "the sensor dns needs a host name"),
+        (_config(sensor="dns", params={"expected": []}), "params.expected"),
+        (_config(sensor="dns", params={"expected": "192.0.2.10"}), "params.expected"),
+        (_config(sensor="dns", params={"expected": ["www.example.test"]}), "not an IP address"),
+        (_config(sensor="dns", params={"expected": ["fe80::1%eth0"]}), "zone index"),
+        (_config(sensor="dns", params={"expected": ["192.0.2.10"] * 33}), "params.expected"),
+        (_config(sensor="dns", params={"expected": [10]}), "params.expected"),
+        (_config(sensor="dns", params={"other": 1}), "params"),
+        (_config(params={"expected": ["192.0.2.10"]}), "params"),  # tls takes none
     ],
 )
 def test_invalid_configs_are_refused(config, fragment):
@@ -145,6 +159,22 @@ def test_create_refuses_an_interval_below_the_sensor_floor(client_db, interval, 
     assert r.status_code == code, r.text
     if code == 400:
         assert r.json()["detail"] == "Interval too short for sensor tls: at least 15m"
+
+
+@pytest.mark.parametrize(("interval", "code"), [("1m", 400), ("5m", 201)])
+def test_the_dns_sensor_has_its_own_floor_and_default(client_db, interval, code):
+    client, factory = client_db
+    config = _config(sensor="dns")
+
+    r = client.post("/checks", json=_payload(config=config, interval=interval))
+    default = client.post("/checks", json=_payload(config=config))
+
+    assert r.status_code == code, r.text
+    if code == 400:
+        assert r.json()["detail"] == "Interval too short for sensor dns: at least 5m"
+    assert default.status_code == 201, default.text
+    with factory() as db:
+        assert db.get(MonitorCheck, default.json()["id"]).interval == "15m"
 
 
 def test_create_refuses_a_forbidden_port_at_the_schema(client_db):

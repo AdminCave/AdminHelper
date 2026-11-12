@@ -29,6 +29,7 @@ class _Probe:
     def __init__(self, result=None, raises=None):
         self.calls: list[tuple] = []
         self.prevs: list[dict] = []
+        self.params: list[dict] = []
         self.result = result or SensorResult(
             "ok",
             "certificate valid until …",
@@ -38,8 +39,9 @@ class _Probe:
         )
         self.raises = raises
 
-    def __call__(self, host, addresses, port, prev):
-        self.calls.append((host, addresses, port))
+    def __call__(self, host, rule, port, params, prev):
+        self.calls.append((host, rule.addresses, port))
+        self.params.append(params)
         self.prevs.append(prev)
         if self.raises:
             raise self.raises
@@ -66,12 +68,19 @@ def world(monkeypatch):
         state["classified"].append(host)
         return state["rule"]
 
+    def diagnose_silence(host):
+        state["diagnosed"].append(host)
+        return state["silence"]
+
     probe = _Probe()
+    dns_probe = _Probe(SensorResult("ok", "resolves to 192.0.2.10", True, {}, {"host": HOST}))
     slots = _Slots()
     monkeypatch.setattr(resolve, "classify", classify)
     monkeypatch.setitem(central._PROBES, "tls", probe)
+    monkeypatch.setitem(central._PROBES, "dns", dns_probe)
+    monkeypatch.setattr(central.dns_sensor, "diagnose_silence", diagnose_silence)
     monkeypatch.setattr(central, "LIMITS", slots)
-    state.update(probe=probe, slots=slots)
+    state.update(probe=probe, dns_probe=dns_probe, slots=slots, silence=None, diagnosed=[])
     return state
 
 
@@ -264,3 +273,108 @@ def test_run_without_a_context_starts_without_history(world):
     assert status == "ok"
     assert metrics["_details"]["public_since"].endswith("Z")
     assert world["slots"].taken == 1
+
+
+# --- states a sensor carries across runs ---
+
+
+def test_an_unreached_run_hands_the_tls_states_on(world):
+    world["probe"].result = _unreached()
+    prev = {"host": HOST, "public_since": SINCE, "ari": {"cert_id": "x"}, "caa": {"ca": "y"}}
+
+    _, _, metrics = _run(prev=prev)
+
+    details = metrics["_details"]
+    assert (details["ari"], details["caa"]) == ({"cert_id": "x"}, {"ca": "y"})
+
+
+@pytest.mark.parametrize("reach", [Reach.NOT_PUBLIC, Reach.RESOLVERS_UNREACHABLE])
+def test_a_run_without_the_sensor_hands_its_states_on(world, reach):
+    world["rule"] = Classification(reach)
+    prev = {"host": HOST, "public_since": SINCE, "baseline": {"addresses": ["192.0.2.10"]}}
+
+    _, _, metrics = _run({"sensor": "dns", "host": HOST}, prev)
+
+    assert metrics["_details"]["baseline"] == {"addresses": ["192.0.2.10"]}
+
+
+def test_a_reached_run_takes_the_sensor_s_states_not_the_old_ones(world):
+    prev = {"host": HOST, "public_since": SINCE, "ari": {"cert_id": "old"}}
+
+    _, _, metrics = _run(prev=prev)
+
+    assert "ari" not in metrics["_details"]
+
+
+def test_another_host_s_states_are_not_handed_on(world):
+    world["rule"] = Classification(Reach.NOT_PUBLIC)
+
+    _, _, metrics = _run(prev={"host": "old.example.test", "ari": {"cert_id": "x"}})
+
+    assert "ari" not in metrics["_details"]
+
+
+# --- the sensor dns ---
+
+
+def test_the_dns_sensor_gets_the_rule_and_the_params_and_has_no_port(world):
+    config = {"sensor": "dns", "host": HOST, "params": {"expected": ["192.0.2.10"]}}
+
+    status, _, metrics = _run(config)
+
+    assert status == "ok"
+    assert world["dns_probe"].calls == [(HOST, ADDRESSES, None)]
+    assert world["dns_probe"].params == [{"expected": ["192.0.2.10"]}]
+    assert "port" not in metrics["_details"]
+    assert world["probe"].calls == []
+
+
+def test_params_that_are_no_mapping_reach_the_sensor_empty(world):
+    _run({"sensor": "dns", "host": HOST, "params": ["192.0.2.10"]})
+
+    assert world["dns_probe"].params == [{}]
+
+
+def test_a_name_no_resolver_answers_for_is_diagnosed_for_the_sensor_dns(world):
+    world["rule"] = Classification(Reach.RESOLVERS_UNREACHABLE)
+    world["silence"] = "DNSSEC validation fails: the resolvers answer only with checking disabled"
+
+    status, message, metrics = _run(
+        {"sensor": "dns", "host": HOST}, {"host": HOST, "public_since": SINCE}
+    )
+
+    assert (status, message) == ("critical", world["silence"])
+    assert world["diagnosed"] == [HOST]
+    assert metrics["_details"]["public_since"] == SINCE
+
+
+def test_a_diagnosed_name_without_history_is_left_to_the_agent(world):
+    world["rule"] = Classification(Reach.RESOLVERS_UNREACHABLE)
+    world["silence"] = f"{HOST} cannot be resolved (SERVFAIL)"
+
+    status, message, metrics = _run({"sensor": "dns", "host": HOST})
+
+    assert status == "unknown"
+    assert message == f"not public – checked by the agent ({HOST} cannot be resolved (SERVFAIL))"
+    assert "public_since" not in metrics["_details"]
+
+
+def test_without_a_diagnosis_unreachable_resolvers_stay_without_verdict_for_dns(world):
+    world["rule"] = Classification(Reach.RESOLVERS_UNREACHABLE)
+
+    status, message, metrics = _run(
+        {"sensor": "dns", "host": HOST}, {"host": HOST, "public_since": SINCE}
+    )
+
+    assert (status, message) == ("unknown", "public resolvers unreachable")
+    assert metrics["_details"]["public_since"] == SINCE
+
+
+def test_the_tls_sensor_asks_for_no_diagnosis(world):
+    world["rule"] = Classification(Reach.RESOLVERS_UNREACHABLE)
+    world["silence"] = "never asked"
+
+    status, _, _ = _run()
+
+    assert status == "unknown"
+    assert world["diagnosed"] == []
