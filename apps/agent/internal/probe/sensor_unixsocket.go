@@ -115,7 +115,7 @@ func unixHTTP(ctx context.Context, conn net.Conn, path, httpPath, use, secret st
 		}
 		return bind(ctx, c), nil
 	}
-	values, err := fetch(ctx, httpClient(dial, nil), http.MethodGet, "http://localhost"+httpPath, use, secret, fields)
+	values, err := fetch(ctx, httpClient(dial, nil), http.MethodGet, "http://localhost"+httpPath, "", use, secret, fields)
 	mu.Lock()
 	if first != nil {
 		_ = first.Close()

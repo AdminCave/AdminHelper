@@ -13,8 +13,10 @@ Inventar-Fixture (Docker und, wo vorgesehen, nativ) ergibt die erwartete Instanz
 beanspruchten Ports, `probe_config` bindet die Checks (nicht bindbare werden übersprungen, mit Grund), jede Regel
 feuert an ihrer Schwelle und nicht darunter (`ProbeChecker().evaluate`), Karte wie erwartet.
 
-### T1 — Agent: HTTP-Fühler sendet auf Wunsch `Host: localhost` (R-1241)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go
+### T1 — Agent: HTTP-Fühler sendet auf Wunsch `Host: localhost` (R-1241)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/sensor_unixsocket.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @cd482a5c8 2026-11-12T12:58:33+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T1.verdict.json)
 Änderung: optionaler Parameter `host` des Fühlers `http`, einziger erlaubter Wert `localhost` (`knownParams` und
 `choiceParam`); gesetzt, trägt die Anfrage `Host: localhost`, sonst bleibt der Host-Header `IP:Port`. Ziel-Wächter,
 Weiterleitungen (`sameTarget`) und TLS unverändert. Tests: Server prüft den empfangenen Host-Header mit und ohne
