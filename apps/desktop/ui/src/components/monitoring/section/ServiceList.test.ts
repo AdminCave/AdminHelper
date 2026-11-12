@@ -8,11 +8,14 @@
 // "—" for fields a platform does not send, and the empty, no-agent, error and late states.
 // T8: the error lines of a failed service fold out as text, never as HTML, and the switch
 // per server saves, goes back when saving fails and drops a late answer.
+// T10: "Mehr Log" opens the journal of a systemd unit over an SSH connection of the server.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import type { Writable } from 'svelte/store';
 import type { MonitorServiceEntry, MonitorServiceInventory } from '$lib/api/types';
+import type { Connection } from '$lib/bridge/types';
 import { IpcError } from '$lib/utils/errors';
 
 const SESSION = { serverUrl: 'https://hub.example' };
@@ -20,6 +23,7 @@ const h = vi.hoisted(() => ({
   fetch: vi.fn(),
   save: vi.fn(),
   session: null as { serverUrl: string } | null,
+  connectServiceLog: vi.fn(async (..._a: unknown[]) => {}),
 }));
 // A wait gets a bound of 30 s (testing.md, Fristen); testing-library's default is 1 s.
 const WAIT = { timeout: 30_000 };
@@ -28,9 +32,17 @@ vi.mock('$lib/api/monitoring', () => ({
   monitoringApi: { fetchServerServices: h.fetch, setServiceLogLines: h.save },
 }));
 vi.mock('$lib/stores/session', () => ({ currentSession: () => h.session }));
+vi.mock('$lib/stores/connectFlow', () => ({ connectServiceLog: h.connectServiceLog }));
+vi.mock('$lib/stores/connections', async () => {
+  const { writable } = await import('svelte/store');
+  return { connections: writable([]) };
+});
 
 import { setLanguage } from '$lib/i18n';
+import * as connectionStore from '$lib/stores/connections';
 import ServiceList, { filterRows, reasonOf, serviceRows, stateOf } from './ServiceList.svelte';
+
+const connectionList = connectionStore.connections as unknown as Writable<Connection[]>;
 
 function ago(minutes: number): string {
   return new Date(Date.now() - minutes * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -134,7 +146,9 @@ beforeAll(() => setLanguage('de'));
 beforeEach(() => {
   h.fetch.mockReset();
   h.save.mockReset();
+  h.connectServiceLog.mockClear();
   h.session = SESSION;
+  connectionList.set([]);
 });
 afterEach(() => cleanup());
 
@@ -588,5 +602,87 @@ describe('error lines and their switch', () => {
     await tick();
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('"Mehr Log" of a service', () => {
+  function ssh(id: string, serverId: string, kind = 'ssh'): Connection {
+    return { id, name: `${id}-name`, kind, host: `${id}.example`, serverId } as Connection;
+  }
+
+  function journalButtons(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll<HTMLElement>('tbody button'))
+      .map((b) => b.getAttribute('aria-label') ?? '')
+      .filter((l) => l.startsWith('Mehr Log'));
+  }
+
+  it('opens the journal of a systemd unit over the SSH connection of this server', async () => {
+    connectionList.set([ssh('other', 'srv-2'), ssh('rdp', 'srv-1', 'rdp'), ssh('web', 'srv-1')]);
+    const onJournal = vi.fn();
+    h.fetch.mockResolvedValue(inventory());
+    const { container } = render(ServiceList, { serverId: 'srv-1', onJournal });
+    await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), WAIT);
+
+    // Every systemd service, alias targets included; a Windows name carries no journal.
+    expect(journalButtons(container).sort()).toEqual([
+      'Mehr Log von backup.service im Terminal öffnen',
+      'Mehr Log von nginx.service im Terminal öffnen',
+      'Mehr Log von ssh.service im Terminal öffnen',
+    ]);
+    expect(container.querySelector('select')).toBeNull();
+    expect(container.textContent).toContain('nur die letzten 200 Journal-Zeilen');
+
+    const nginx = container.querySelector<HTMLElement>(
+      'button[aria-label="Mehr Log von nginx.service im Terminal öffnen"]',
+    ) as HTMLElement;
+    await fireEvent.click(nginx);
+    expect(h.connectServiceLog).toHaveBeenCalledExactlyOnceWith(
+      ssh('web', 'srv-1'),
+      'nginx.service',
+    );
+    expect(onJournal).toHaveBeenCalledOnce();
+  });
+
+  it('takes the SSH connection the admin picks when the server has several', async () => {
+    connectionList.set([ssh('a', 'srv-1'), ssh('b', 'srv-1')]);
+    const container = await shown();
+    const select = container.querySelector('select') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['a-name', 'b-name']);
+    expect(select.value).toBe('a');
+
+    await fireEvent.change(select, { target: { value: 'b' } });
+    await fireEvent.click(
+      container.querySelector(
+        'button[aria-label="Mehr Log von ssh.service im Terminal öffnen"]',
+      ) as HTMLElement,
+    );
+    expect(h.connectServiceLog).toHaveBeenCalledExactlyOnceWith(ssh('b', 'srv-1'), 'ssh.service');
+  });
+
+  it('offers no journal without an SSH connection of this server and says why', async () => {
+    connectionList.set([ssh('other', 'srv-2'), ssh('rdp', 'srv-1', 'rdp')]);
+    const container = await shown();
+    expect(journalButtons(container)).toEqual([]);
+    expect(container.textContent).toContain(
+      'Für „Mehr Log“ braucht der Server eine SSH-Verbindung.',
+    );
+    expect(h.connectServiceLog).not.toHaveBeenCalled();
+  });
+
+  it('offers no journal on a server without systemd services and says why', async () => {
+    connectionList.set([ssh('web', 'srv-1')]);
+    // Windows and FreeBSD report service names without the systemd suffix.
+    const container = await shown({
+      services: [
+        { unit: 'Spooler', active_state: 'failed', exit: 'win32=1067' },
+        { unit: 'sshd', active_state: 'active' },
+      ],
+    });
+    expect(names(container).sort()).toEqual(['Spooler', 'sshd']);
+    expect(journalButtons(container)).toEqual([]);
+    expect(container.textContent).toContain(
+      '„Mehr Log“ gibt es nur für systemd-Dienste unter Linux.',
+    );
+    expect(container.textContent).not.toContain('nur die letzten 200 Journal-Zeilen');
   });
 });

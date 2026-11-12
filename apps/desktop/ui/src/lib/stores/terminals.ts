@@ -61,6 +61,13 @@ export interface TerminalSession {
    * for the next run.
    */
   credential?: { ref: string };
+  /**
+   * Shows only the last lines of the journal of the systemd unit `unit` on the host, with the
+   * rights of the login (arch-monitoring-ui-3): no shell, no snippets, no files. Its `connection`
+   * carries the unit after the name, so the tab says whose journal it shows. Reconnected the same
+   * way, and not kept for the next run.
+   */
+  journal?: { unit: string };
   /** An embedded RDP session (R-1098) instead of a program of a terminal. */
   rdp?: RdpView;
 }
@@ -269,30 +276,35 @@ function watchEnd(key: string, onEnd: () => void): void {
   if (ended) stop();
 }
 
+/** A fixed program an SSH tab runs on the host instead of a shell. */
+export type TerminalAction = Pick<TerminalSession, 'credential' | 'journal'>;
+
 /**
  * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
  * not start: the tab then shows the session disconnected, the status bar why. `onEnd` hears once
- * when the program of the tab ends or the tab is closed (R-1159). With `credentialRef` the tab
- * runs the agent's prompt for that monitoring credential instead of a shell.
+ * when the program of the tab ends or the tab is closed (R-1159). With an `action` the tab runs
+ * it instead of a shell.
  */
 export function openTerminal(
   connection: Connection,
   resolved: Connection,
   onEnd?: () => void,
-  credentialRef?: string,
+  action?: TerminalAction,
 ): Promise<boolean> {
   opened += 1;
   const key = `terminal-${opened}`;
   const runtime = newRuntime(key);
+  const unit = action?.journal?.unit;
   const session: TerminalSession = {
     key,
-    connection,
+    connection:
+      unit === undefined ? connection : { ...connection, name: `${connection.name} · ${unit}` },
     resolved,
     status: 'connecting',
     exitCode: null,
     connectedAt: null,
     backendId: null,
-    ...(credentialRef === undefined ? {} : { credential: { ref: credentialRef } }),
+    ...action,
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
   if (onEnd) watchEnd(key, onEnd);
@@ -304,6 +316,11 @@ function sshLaunch(session: TerminalSession, resolved: Connection): Launch {
   if (ref !== undefined) {
     return (cols, rows, onMessage) =>
       bridge.terminalOpenSshCredential(resolved, ref, cols, rows, onMessage);
+  }
+  const unit = session.journal?.unit;
+  if (unit !== undefined) {
+    return (cols, rows, onMessage) =>
+      bridge.terminalOpenSshJournal(resolved, unit, cols, rows, onMessage);
   }
   return (cols, rows, onMessage) => bridge.terminalOpenSsh(resolved, cols, rows, onMessage);
 }
@@ -1171,6 +1188,7 @@ export function openSessionIds(sessions: TerminalSession[]): string[] {
     if (
       !s.ansible &&
       !s.credential &&
+      !s.journal &&
       s.connection.kind === 'ssh' &&
       s.connection.id &&
       !ids.includes(s.connection.id)

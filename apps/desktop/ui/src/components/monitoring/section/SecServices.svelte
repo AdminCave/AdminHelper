@@ -212,6 +212,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     width="1040px"
     onClose={() => (listOpen = false)}
   >
-    <ServiceList {serverId} />
+    <ServiceList {serverId} onJournal={() => (listOpen = false)} />
   </Modal>
 {/if}

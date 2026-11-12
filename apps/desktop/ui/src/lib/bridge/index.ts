@@ -327,6 +327,20 @@ export function terminalOpenSshCredential(
   });
 }
 
+// Opens `connection` as terminalOpenSsh, but shows only the last lines of the journal of the
+// systemd unit `unit` there, with the rights of the login (arch-monitoring-ui-3). Main window
+// only; Rust builds the command and refuses a unit name the agent would not report.
+export function terminalOpenSshJournal(
+  connection: Connection,
+  unit: string,
+  cols: number,
+  rows: number,
+  onMessage: (message: TerminalMessage) => void,
+): Promise<number> {
+  const output = new Channel<TerminalMessage>(onMessage);
+  return invoke<number>('terminal_open_ssh_journal', { connection, unit, cols, rows, output });
+}
+
 // The bytes as typed. Two writes in flight for one session may reach the program in either
 // order: the caller sends the next one after the last has settled.
 export function terminalWrite(id: number, data: Uint8Array): Promise<void> {

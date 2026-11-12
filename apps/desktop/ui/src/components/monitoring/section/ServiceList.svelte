@@ -108,22 +108,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { SvelteSet } from 'svelte/reactivity';
   import { monitoringApi } from '$lib/api/monitoring';
   import type { MonitorServiceInventory } from '$lib/api/types';
+  import type { Connection } from '$lib/bridge/types';
   import { ageText, bytesText, epochAgeText } from '$lib/models/monitoringText';
+  import { connectServiceLog } from '$lib/stores/connectFlow';
+  import { connections } from '$lib/stores/connections';
   import { currentSession } from '$lib/stores/session';
   import { errMsg, errStatus } from '$lib/utils/errors';
   import { t } from '$lib/i18n';
   import Button from '../../ui/Button.svelte';
   import EmptyState from '../../ui/EmptyState.svelte';
+  import FormField from '../../ui/FormField.svelte';
   import Pill from '../../ui/Pill.svelte';
   import Segmented from '../../ui/Segmented.svelte';
+  import Select from '../../ui/Select.svelte';
   import Switch from '../../ui/Switch.svelte';
   import CrossTable, { type CrossColumn } from '../cross/CrossTable.svelte';
 
   interface Props {
     serverId: string;
+    /** Heard once "Mehr Log" opens a terminal tab: the list makes way for it. */
+    onJournal?: () => void;
   }
 
-  let { serverId }: Props = $props();
+  let { serverId, onJournal }: Props = $props();
 
   // undefined while the answer for this server is out.
   let inventory = $state<MonitorServiceInventory | undefined>(undefined);
@@ -164,6 +171,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   const rows = $derived(inventory ? serviceRows(inventory.services, inventory.logs) : []);
   const shown = $derived(filterRows(rows, filter));
+
+  // "Mehr Log" runs journalctl over an SSH connection of the admin to this server.
+  const sshConnections = $derived(
+    $connections.filter((c) => c.kind === 'ssh' && c.serverId === serverId),
+  );
+  let chosen = $state('');
+  // The first connection until the admin picks another.
+  const sshConnection = $derived(sshConnections.find((c) => c.id === chosen) ?? sshConnections[0]);
+  // A journal is systemd's: Windows and FreeBSD report their names without the suffix.
+  const hasJournal = (r: ServiceRow): boolean => r.unit.endsWith('.service');
+  const anyJournal = $derived(rows.some(hasJournal));
+
+  function openJournal(connection: Connection, unit: string): void {
+    void connectServiceLog(connection, unit);
+    onJournal?.();
+  }
 
   async function setLogLines(on: boolean): Promise<void> {
     const auth = currentSession();
@@ -270,6 +293,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >{$t('monitoring.services.list.aliases', { names: r.aliases.join(', ') })}</span
     >
   {/if}
+  {#if sshConnection && hasJournal(r)}
+    {@const connection = sshConnection}
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-label={$t('monitoring.services.journal.openFor', { unit: r.unit })}
+      onclick={() => openJournal(connection, r.unit)}
+      >{$t('monitoring.services.journal.open')}</Button
+    >
+  {/if}
 {/snippet}
 
 {#snippet stateCell(r: ServiceRow)}
@@ -321,6 +354,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <p class="svc-error" role="alert">
           {$t('monitoring.services.logs.saveError', { error: saveError })}
         </p>
+      {/if}
+      {#if rows.length > 0 && !anyJournal}
+        <p class="svc-muted">{$t('monitoring.services.journal.notLinux')}</p>
+      {:else if rows.length > 0 && !sshConnection}
+        <p class="svc-muted">{$t('monitoring.services.journal.noSsh')}</p>
+      {:else if sshConnection}
+        {#if sshConnections.length > 1}
+          <FormField label={$t('monitoring.services.journal.connection')}>
+            <Select
+              size="sm"
+              value={sshConnection.id}
+              options={sshConnections.map((c) => ({ value: c.id, label: c.name }))}
+              onChange={(v) => (chosen = v)}
+            />
+          </FormField>
+        {/if}
+        <p class="svc-muted">{$t('monitoring.services.journal.hint')}</p>
       {/if}
     </div>
     {#if rows.length === 0}

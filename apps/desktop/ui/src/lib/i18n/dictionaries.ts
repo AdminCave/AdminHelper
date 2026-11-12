@@ -1195,6 +1195,14 @@ export const translations: Translations = {
     'monitoring.services.logs.saveError': 'Schalter nicht gespeichert: {error}',
     'monitoring.services.logs.toggle': 'Fehlerzeilen ({count})',
     'monitoring.services.logs.hint': 'Geschwärzt, nur am Vorfall gespeichert · erfasst {age}',
+    'monitoring.services.journal.open': 'Mehr Log',
+    'monitoring.services.journal.openFor': 'Mehr Log von {unit} im Terminal öffnen',
+    'monitoring.services.journal.connection': 'Verbindung für „Mehr Log“',
+    'monitoring.services.journal.hint':
+      '„Mehr Log“ öffnet ein Terminal über SSH, das nur die letzten 200 Journal-Zeilen des Dienstes zeigt, mit den Rechten des Logins. Gespeichert wird nichts.',
+    'monitoring.services.journal.noSsh': 'Für „Mehr Log“ braucht der Server eine SSH-Verbindung.',
+    'monitoring.services.journal.notLinux':
+      '„Mehr Log“ gibt es nur für systemd-Dienste unter Linux.',
     'monitoring.docker.allOk': 'Alle {count} Container laufen',
     'monitoring.docker.allOkHint': 'Alle {count} Container laufen',
     'monitoring.docker.okRunning': '{running} von {total} laufen',
@@ -2727,6 +2735,13 @@ export const translations: Translations = {
     'monitoring.services.logs.saveError': 'Switch not saved: {error}',
     'monitoring.services.logs.toggle': 'Error lines ({count})',
     'monitoring.services.logs.hint': 'Redacted, stored with the incident only · collected {age}',
+    'monitoring.services.journal.open': 'More log',
+    'monitoring.services.journal.openFor': 'Open more log of {unit} in the terminal',
+    'monitoring.services.journal.connection': 'Connection for “More log”',
+    'monitoring.services.journal.hint':
+      '“More log” opens a terminal over SSH that shows only the last 200 journal lines of the service, with the rights of the login. Nothing is stored.',
+    'monitoring.services.journal.noSsh': '“More log” needs an SSH connection to the server.',
+    'monitoring.services.journal.notLinux': '“More log” exists only for systemd services on Linux.',
     'monitoring.docker.allOk': 'All {count} containers running',
     'monitoring.docker.allOkHint': 'All {count} containers running',
     'monitoring.docker.okRunning': '{running} of {total} running',
