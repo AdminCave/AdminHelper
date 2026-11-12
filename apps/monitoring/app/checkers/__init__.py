@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 from typing import Protocol
 
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
+from app.checkers.central import CentralChecker
+from app.checkers.context import CheckContext as CheckContext
+from app.checkers.context import PartnerState as PartnerState
 from app.checkers.forecast import DiskForecastChecker
 from app.checkers.http import HttpChecker
 from app.checkers.ping import PingChecker
@@ -41,30 +42,6 @@ class PushChecker(Checker, Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class PartnerState:
-    """The stored state of the agent check paired with a central one (`pair_check_id`).
-
-    `status` is "pending" while the partner has no state yet; `sensor` is the
-    partner's probe sensor (tls, certfile, http) as its config names it.
-    """
-
-    check_id: str
-    sensor: str | None
-    status: str
-    details: dict | None
-    last_check: datetime | None
-
-
-@dataclass(frozen=True)
-class CheckContext:
-    """What execute_check hands a checker with `wants_context`: its own previous
-    `_details` and, if a valid partner is configured, the partner's state."""
-
-    prev_details: dict | None = None
-    partner: PartnerState | None = None
-
-
 class ContextChecker(Checker, Protocol):
     wants_context: bool
 
@@ -89,6 +66,7 @@ _REGISTRY: dict[str, Checker] = {
     "disk_forecast": DiskForecastChecker(),
     "system_state": SystemStateChecker(),
     "probe": ProbeChecker(),
+    "central": CentralChecker(),
 }
 
 

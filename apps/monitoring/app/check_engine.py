@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -17,6 +18,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.alerter import process_alert, resolve_notification
+from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import CheckContext, PartnerState, get_checker
 from app.core import database
@@ -39,6 +41,9 @@ _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 # from MonitorState.message into the transition log, webhook and mail. Four agent texts
 # of 500 (R-0517).
 MAX_MESSAGE = 2000
+
+# The note a skipped central run leaves behind the message; the next one replaces it.
+_SKIP_NOTE = re.compile(r" \(skipped: [^()]*\)\Z")
 
 
 def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
@@ -358,6 +363,32 @@ def _load_context(db: Session, check: MonitorCheck, config: dict) -> CheckContex
     return CheckContext(prev_details=prev_details, partner=partner)
 
 
+def _note_skip(db: Session, check_id: str, note: str) -> None:
+    """Notes a skipped run behind the stored message and changes nothing else.
+
+    The run did not happen: no metric, no damping step, no alert. Status, since,
+    last_check and details stay, so the age of last_check shows how long the check
+    has gone unmeasured, and a skip never raises the alarm the limits exist to spare.
+    """
+    state = (
+        db.query(MonitorState).filter(MonitorState.check_id == check_id).with_for_update().first()
+    )
+    if state is None:
+        return
+    base = _SKIP_NOTE.sub("", state.message or "")
+    if base.startswith("skipped: "):
+        base = ""
+    suffix = f" ({note})"
+    if not base:
+        state.message = note
+    else:
+        if len(base) + len(suffix) > MAX_MESSAGE:
+            base = base[: MAX_MESSAGE - len(suffix) - 1] + "…"
+        state.message = base + suffix
+    db.commit()
+    logger.info("Check %s %s", check_id, note)
+
+
 def execute_check(check_id: str) -> None:
     """Called by the scheduler for each check interval."""
     db = database.SessionLocal()
@@ -373,6 +404,9 @@ def execute_check(check_id: str) -> None:
         try:
             config = json.loads(check.config) if check.config else {}
         except (json.JSONDecodeError, TypeError):
+            config = None
+        # A stored list or number is as corrupt as broken JSON: every checker reads a mapping.
+        if not isinstance(config, dict):
             config = None
 
         # Do not run push-only checks from the scheduler
@@ -415,6 +449,9 @@ def execute_check(check_id: str) -> None:
                     result_status, message, metrics = checker.run_with_context(config, context)
                 else:
                     result_status, message, metrics = checker.run(config)
+            except RunSkipped as skip:
+                _note_skip(db, check_id, str(skip))
+                return
             except Exception as exc:
                 result_status = "unknown"
                 message = f"Unexpected error: {exc}"

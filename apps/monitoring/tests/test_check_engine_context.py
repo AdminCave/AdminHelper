@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
 import app.core.database as database_mod
+from app.central.limits import SKIPPED_BUSY_MESSAGE, SKIPPED_SPACING_MESSAGE, RunSkipped
 from app.checkers import CheckContext, PartnerState
 from app.models import Base, MonitorCheck, MonitorState
 
@@ -305,3 +306,123 @@ def test_run_with_context_holds_no_pooled_connection(monkeypatch, file_engine):
     assert held == [0]
     assert checker.contexts[0].prev_details == {"k": 1}
     assert checker.contexts[0].partner.status == "critical"
+
+
+# --- a stored config that is no mapping, a skipped run (R-1224 T3) ---
+
+
+class _Refusing(_ContextChecker):
+    def run_with_context(self, config, context):
+        raise AssertionError("a corrupt config never reaches the checker")
+
+
+@pytest.mark.parametrize("stored", ["[1, 2]", "42", '"tls"', "null"])
+def test_a_config_that_is_no_mapping_is_an_invalid_configuration(monkeypatch, stored):
+    factory = _factory()
+    with factory() as db:
+        _add_check(db, "c1", config=stored)
+        db.commit()
+    _wire(monkeypatch, factory, _Refusing())
+
+    ce.execute_check("c1")
+
+    with factory() as db:
+        st = db.get(MonitorState, "c1")
+        assert (st.status, st.message) == ("unknown", "Invalid check configuration")
+
+
+class _Skipping(_ContextChecker):
+    def __init__(self, note):
+        super().__init__()
+        self.note = note
+
+    def run_with_context(self, config, context):
+        raise RunSkipped(self.note)
+
+
+def _seed_skip(factory, message, *, state=True):
+    with factory() as db:
+        _add_check(db, "c1", config={"sensor": "tls", "host": "www.example.test"})
+        if state:
+            db.add(
+                MonitorState(
+                    check_id="c1",
+                    status="warning",
+                    fail_count=2,
+                    since=SEEN,
+                    last_check=SEEN,
+                    message=message,
+                    details=json.dumps({"public_since": "2026-11-01T00:00:00Z"}),
+                )
+            )
+        db.commit()
+
+
+def _skip(monkeypatch, factory, note):
+    written, alerted = [], []
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(ce, "get_checker", lambda t: _Skipping(note))
+    monkeypatch.setattr(ce.victoria, "write_check_result", lambda **kw: written.append(kw))
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: alerted.append(a)))
+    ce.execute_check("c1")
+    return written, alerted
+
+
+def test_a_skipped_run_only_notes_itself_behind_the_message(monkeypatch):
+    factory = _factory()
+    _seed_skip(factory, "certificate due for renewal")
+
+    written, alerted = _skip(monkeypatch, factory, SKIPPED_SPACING_MESSAGE)
+
+    assert (written, alerted) == ([], [])
+    with factory() as db:
+        st = db.get(MonitorState, "c1")
+        assert st.message == "certificate due for renewal (skipped: minimum spacing)"
+        assert (st.status, st.fail_count, st.since, st.last_check) == ("warning", 2, SEEN, SEEN)
+        assert json.loads(st.details) == {"public_since": "2026-11-01T00:00:00Z"}
+
+
+def test_a_second_skip_replaces_the_note_instead_of_stacking(monkeypatch):
+    factory = _factory()
+    _seed_skip(factory, "certificate due for renewal (skipped: minimum spacing)")
+
+    _skip(monkeypatch, factory, SKIPPED_BUSY_MESSAGE)
+
+    with factory() as db:
+        assert db.get(MonitorState, "c1").message == (
+            "certificate due for renewal (skipped: too many central checks at once)"
+        )
+
+
+@pytest.mark.parametrize("message", [None, "", "skipped: minimum spacing"])
+def test_a_skip_without_a_result_message_is_the_note_alone(monkeypatch, message):
+    factory = _factory()
+    _seed_skip(factory, message)
+
+    _skip(monkeypatch, factory, SKIPPED_BUSY_MESSAGE)
+
+    with factory() as db:
+        assert db.get(MonitorState, "c1").message == SKIPPED_BUSY_MESSAGE
+
+
+def test_the_noted_message_stays_within_the_cap(monkeypatch):
+    factory = _factory()
+    _seed_skip(factory, "x" * ce.MAX_MESSAGE)
+
+    _skip(monkeypatch, factory, SKIPPED_SPACING_MESSAGE)
+
+    with factory() as db:
+        message = db.get(MonitorState, "c1").message
+    assert len(message) == ce.MAX_MESSAGE
+    assert message.endswith("… (skipped: minimum spacing)")
+
+
+def test_a_skip_before_the_first_result_leaves_no_state(monkeypatch):
+    factory = _factory()
+    _seed_skip(factory, None, state=False)
+
+    written, alerted = _skip(monkeypatch, factory, SKIPPED_SPACING_MESSAGE)
+
+    assert (written, alerted) == ([], [])
+    with factory() as db:
+        assert db.get(MonitorState, "c1") is None

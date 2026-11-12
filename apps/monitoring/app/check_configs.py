@@ -18,6 +18,9 @@ read true as 1."""
 
 from __future__ import annotations
 
+import ipaddress
+import re
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -255,6 +258,92 @@ class ProbeConfig(_StrictConfig):
         return self
 
 
+class TlsParams(_StrictConfig):
+    """The tls sensor takes no params; extra=forbid refuses any key."""
+
+
+@dataclass(frozen=True)
+class CentralSensor:
+    """One sensor of a central check (R-1224): its shortest and its default interval,
+    the port a config without one uses, and the model of its params."""
+
+    min_interval: str
+    default_interval: str
+    default_port: int
+    params: type[_StrictConfig]
+
+
+CENTRAL_SENSORS: dict[str, CentralSensor] = {
+    "tls": CentralSensor("15m", "1h", 443, TlsParams),
+}
+# The agent sensors whose view of the same service explains a central result (T10).
+CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
+# SSH and MySQL are never probed from outside: a cyclic connection there reads as an
+# attack to the target's fail2ban or fills its error log (concept §3.7).
+CENTRAL_FORBIDDEN_PORTS = frozenset({22, 3306})
+
+_HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+class CentralConfig(_StrictConfig):
+    """A probe the monitoring service runs itself against a public endpoint (R-1224)."""
+
+    sensor: str
+    host: str = Field(min_length=1, max_length=253)
+    port: int | None = Field(None, ge=1, le=65535, strict=True)
+    pair_check_id: str | None = Field(None, min_length=1, max_length=64)
+    params: dict[str, Any] = {}
+
+    @field_validator("sensor")
+    @classmethod
+    def _sensor_known(cls, v: str) -> str:
+        if v not in CENTRAL_SENSORS:
+            raise ValueError(f"unknown sensor; allowed: {', '.join(sorted(CENTRAL_SENSORS))}")
+        return v
+
+    @field_validator("host")
+    @classmethod
+    def _host_valid(cls, v: str) -> str:
+        try:
+            ip = ipaddress.ip_address(v)
+        except ValueError:
+            ip = None
+        if ip is not None:
+            # A zone index names an interface of this host, never a public endpoint.
+            if ip.version == 6 and ip.scope_id:
+                raise ValueError("an IPv6 address with a zone index is not public")
+            return v
+        labels = v.split(".")
+        # ASCII host names only (an IDN in its xn-- form): the name goes to the public
+        # resolvers and into the SNI as written. An all-digit last label is no TLD, so
+        # 1.2.3 or 999.1.1.1 cannot pass as a name.
+        if not all(_HOST_LABEL.fullmatch(label) for label in labels) or labels[-1].isdigit():
+            raise ValueError("must be a host name (letters, digits, hyphens) or an IP address")
+        return v
+
+    @field_validator("port")
+    @classmethod
+    def _port_allowed(cls, v: int | None) -> int | None:
+        if v in CENTRAL_FORBIDDEN_PORTS:
+            raise ValueError("ports 22 and 3306 are never probed from outside")
+        return v
+
+    @model_validator(mode="after")
+    def _params_valid(self):
+        try:
+            CENTRAL_SENSORS[self.sensor].params.model_validate(self.params)
+        except ValidationError as exc:
+            raise ValueError(
+                "; ".join(
+                    f"params.{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
+                    if e["loc"]
+                    else f"params: {e['msg']}"
+                    for e in exc.errors()
+                )
+            ) from exc
+        return self
+
+
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "ping": PingConfig,
     "tcp": TcpConfig,
@@ -269,6 +358,7 @@ CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "disk_forecast": DiskForecastConfig,
     "system_state": SystemStateConfig,
     "probe": ProbeConfig,
+    "central": CentralConfig,
 }
 
 

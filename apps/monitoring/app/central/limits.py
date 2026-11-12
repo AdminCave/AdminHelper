@@ -33,6 +33,13 @@ SKIPPED_SPACING_MESSAGE = "skipped: minimum spacing"
 SKIPPED_BUSY_MESSAGE = "skipped: too many central checks at once"
 
 
+class RunSkipped(Exception):
+    """A central run left out to keep to the limits; the check keeps its state.
+
+    The message (one of the SKIPPED_* above) is noted in the check's message.
+    """
+
+
 class Limits:
     """The per-process bookkeeping; `clock` and `sleep` are injectable for tests."""
 
