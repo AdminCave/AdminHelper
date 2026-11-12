@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-2 — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-ui-2 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-ui-2 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-2.md (Roadmap R-1227)
 Heavy: linux-full — `apps/agent` (neue Allowlist-Aufrufe, Bericht) und Desktop-Ansichten; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
