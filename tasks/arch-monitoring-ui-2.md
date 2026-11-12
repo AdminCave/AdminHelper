@@ -102,8 +102,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/checkDe
 Doku: → T12
 Abhängt von: T8, T9
 
-### T11 — Desktop-E2E: Detail-Ansichten mit Fixture-Bericht und Screenshots (R-1227)  [ ]
+### T11 — Desktop-E2E: Detail-Ansichten mit Fixture-Bericht und Screenshots (R-1227)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-server-page.live.js, scripts/tests/desktop_e2e_monitoring.sh
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @61a72bb2b 2026-11-12T14:57:22+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T11.verdict.json)
 Änderung: Ein zweiter Server mit einem festen Fixture-Bericht (Compose-Projekte, Proxmox-Backups mit Fehler und Verify, ZFS mit Scrub und vdev-Fehler, Sicherheitsupdates, Reboot-Pakete, OOM, Top-5); der Weg dorthin ist Testcode, kein Produktpfad. Die Spec öffnet je neue Detail-Ansicht, prüft die Werte und speichert ein Bild hell und dunkel unter `.ah-out/screenshots/`. Läuft auf der warmen Desktop-VM (`Heavy:`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T12
