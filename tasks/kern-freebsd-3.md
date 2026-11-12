@@ -10,8 +10,10 @@ Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge die root-Tests
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1402: osPeerSocket unter FreeBSD über getcred  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/peer_freebsd.go, apps/agent/internal/probe/peer_freebsd_test.go, apps/agent/internal/probe/peer_other.go
+### T1 — R-1402: osPeerSocket unter FreeBSD über getcred  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/peer_freebsd.go, apps/agent/internal/probe/peer_freebsd_test.go, apps/agent/internal/probe/peer_other.go, apps/agent/internal/probe/peer_getcred.go, apps/agent/internal/probe/peer_getcred_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d5b49c580 2026-11-12T20:36:23+01:00
+Review: approve (.ah-out/review/kern-freebsd-3/T1.verdict.json)
 Änderung: Neue `peer_freebsd.go` (SPDX) fragt `net.inet.tcp.getcred` bzw. `net.inet6.tcp6.getcred` mit (Ziel,
 Quelle) über `SYS___SYSCTLBYNAME`: gefunden → `peerConnected`, `ENOENT` → `peerNone`, sonst Fehler; `peer_other.go`
 auf `!linux && !freebsd`. Tests (SPDX): Kodierung der Adresspaare (v4, v6, v4-mapped) plattformunabhängig wo
