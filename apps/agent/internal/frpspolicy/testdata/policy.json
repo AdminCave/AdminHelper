@@ -4,28 +4,36 @@
       "keyHash": "2be2b9b0687e05ce69b061f6756e6698dd5bbf15a37c9b456f7698fb496c2528",
       "proxies": {
         "t-lb": {
+          "allowUsers": [],
           "customDomains": [
             "lb.example"
           ],
           "group": "web",
           "groupKeyHash": "a830687cc353952117697369c14cfcb26af1e97a938f28c29b5fdce68fb3fedb",
+          "skHash": "",
           "subdomain": "lb",
           "type": "https"
         },
         "t-ssh": {
+          "allowUsers": [
+            "ops-admin"
+          ],
           "customDomains": [],
           "group": "",
           "groupKeyHash": "",
+          "skHash": "e217783bf79ce85b9dc8c4b2c4373262c47a967b0080eb0ce50659d85c543d0c",
           "subdomain": "",
           "type": "stcp"
         },
         "t-web": {
+          "allowUsers": [],
           "customDomains": [
             "web.example",
             "www.web.example"
           ],
           "group": "",
           "groupKeyHash": "",
+          "skHash": "",
           "subdomain": "",
           "type": "https"
         }
@@ -35,14 +43,18 @@
       "keyHash": "42b5574350a2d827538c723a4db1e2d6babb9c09a6a22061489965cd76b1338c",
       "proxies": {
         "t-db": {
+          "allowUsers": [
+            "ops-admin"
+          ],
           "customDomains": [],
           "group": "",
           "groupKeyHash": "",
+          "skHash": "e217783bf79ce85b9dc8c4b2c4373262c47a967b0080eb0ce50659d85c543d0c",
           "subdomain": "",
           "type": "stcp"
         }
       }
     }
   },
-  "version": 1
+  "version": 2
 }

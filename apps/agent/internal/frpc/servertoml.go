@@ -15,6 +15,8 @@ import (
 // serverRootKeys are the keys generate_frpc_toml (apps/server/app/modules/frp/config_generator.py)
 // writes before the first [[proxies]]; the transport.tls ones may also stand under a
 // [transport.tls] head. The keys of the local head are not among them: the agent alone sets those.
+// metadatas.ahProxyKey is the host's key for frps' login check (frpspolicy.KeyMeta); the
+// server writes it from the release after the agents can take it.
 var serverRootKeys = map[string]bool{
 	"serverAddr":                  true,
 	"serverPort":                  true,
@@ -25,6 +27,7 @@ var serverRootKeys = map[string]bool{
 	"transport.tls.trustedCaFile": true,
 	"transport.tls.certFile":      true,
 	"transport.tls.keyFile":       true,
+	"metadatas.ahProxyKey":        true,
 }
 
 // serverTLS are the values generate_frpc_toml (_tls_agent_block) writes for the TLS keys. A

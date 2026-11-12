@@ -33,11 +33,16 @@ PY="$VENV/bin"
 # Build the venv on-demand instead of skipping — neither run.sh nor bootstrap_linux
 # seeds it, so this cross-instance Redis fan-out path (the ONE thing unit tests can't
 # cover) was systematically skipped on hydrated boxes. One-time ~1 min, then cached (6.70).
-if [ ! -x "$PY/uvicorn" ]; then
-  echo "[sse-e2e] bootstrapping server venv at $VENV (one-time)..."
-  python3 -m venv "$VENV" && "$PY/pip" install -q -r "$SERVER/requirements.txt" \
-    || { echo "SKIP: server venv bootstrap failed (no network?)"; exit 75; }
+# The server's packages go in on every run, not only into a new venv: the venv is
+# shared, monitoring and ca-issuer bring uvicorn but not PyJWT, bcrypt or redis, and
+# part rest of the nightly run no longer has server-pytest to fill it (R-1338). A
+# satisfied set costs seconds.
+if [ ! -x "$PY/python" ]; then
+  echo "[sse-e2e] creating venv at $VENV (one-time)..."
+  python3 -m venv "$VENV" || { echo "SKIP: venv creation failed"; exit 75; }
 fi
+"$PY/pip" install -q -r "$SERVER/requirements.txt" \
+  || { echo "SKIP: server packages could not be installed (no network?)"; exit 75; }
 
 export DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5433/adminhelper"
 export REDIS_URL="redis://localhost:6380/0"

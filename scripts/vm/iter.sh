@@ -9,7 +9,7 @@
 # run. Minutes, not ~40. On failure the box is kept for `vm.py ssh`.
 #
 #   bash scripts/vm/iter.sh [--slot desktop|gui] <lint|unit|quick|integration|e2e|all> \
-#        [--strict] [--only <keys…>] [--step <name>] [--part <gui|rest>]
+#        [--strict] [--only <keys…>] [--step <name>] [--part <gui|rest>] [--exclude <ids…>]
 #       run run.sh <layer> on the warm full box, forwarding its flags (AH_ONLY=
 #       "server web" is the env form of --only — the per-task fast loop)
 #   bash scripts/vm/iter.sh [--slot desktop|gui] --cmd '<command>'
@@ -170,7 +170,7 @@ elif [ "${1:-}" = "--cmd" ]; then
 else
   LAYER="${1:-quick}"
   [ $# -gt 0 ] && shift
-  # Forward run.sh's flags (--strict, --only, --step, --part) instead of dropping them:
+  # Forward run.sh's flags (--strict, --only, --step, --part, --exclude) instead of dropping them:
   # `iter.sh quick --strict` used to run the box suite WITHOUT the strict mode
   # and still report green — the failure mode stage 1 exists to remove.
   # Each argument is shell-quoted because the result is embedded in the remote
@@ -182,7 +182,10 @@ else
       # run.sh reads an empty --part as no part and runs the whole layer: a run
       # meant for one box's part would run both parts there, without a word.
       --part) [ -n "${2:-}" ] || { echo "--part needs gui or rest"; exit 2; } ;;
-      --*) echo "unsupported flag for the box run: $1 (use --strict, --only, --step, --part)"; exit 2 ;;
+      # run.sh refuses an --exclude without an id too, but only on the box, after
+      # the lease. Its ids pass as plain words, like the keys of --only.
+      --exclude) case "${2:-}" in ''|--*) echo "--exclude needs at least one step id"; exit 2 ;; esac ;;
+      --*) echo "unsupported flag for the box run: $1 (use --strict, --only, --step, --part, --exclude)"; exit 2 ;;
     esac
     FLAGS="$FLAGS $(printf '%q' "$1")"; FLAGS_SHOWN="$FLAGS_SHOWN $1"; shift
   done

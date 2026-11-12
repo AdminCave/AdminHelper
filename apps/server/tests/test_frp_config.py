@@ -694,3 +694,21 @@ class TestConfigResponseShape:
         assert detail.json()["createdAt"].endswith("Z"), detail.text
         assert detail.json()["updatedAt"] == "2026-10-05T12:00:00Z"
         assert detail.json()["tunnels"][0]["createdAt"].endswith("Z"), detail.text
+
+    def test_delete_with_tunnels_removes_them(
+        self, test_client, db_session, admin_user, monkeypatch
+    ):
+        # R-1310: the ORM nulled frp_config_id instead of letting ON DELETE CASCADE run (500).
+        import app.modules.frp.config_router as cr
+        from app.modules.frp.models import FrpTunnel
+
+        monkeypatch.setattr(cr, "remove_frps_config", lambda: None)
+        monkeypatch.setattr(cr, "sync_policy", lambda db: None)
+        cid = self._sparse_config_with_tunnel(db_session)
+        h = _login(test_client)
+
+        deleted = test_client.delete(f"/api/frp/server-config/{cid}", headers=h)
+        assert deleted.status_code == 204, deleted.text
+        db_session.expire_all()
+        assert db_session.get(FrpServerConfig, cid) is None
+        assert db_session.query(FrpTunnel).filter(FrpTunnel.frp_config_id == cid).count() == 0

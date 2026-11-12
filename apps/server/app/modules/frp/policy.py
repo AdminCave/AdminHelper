@@ -4,13 +4,21 @@
 
 """The policy file of frps' plugin (apps/agent/internal/frpspolicy): for each host the
 SHA-256 of its key (proxy_key.py) and the proxies its frpc.toml carries, with the fields
-frps hands the plugin for a new proxy. The plugin admits only those.
+frps hands the plugin for a new proxy (allowUsers as written, secretKey as its SHA-256).
+The plugin admits only those.
 
 The proxies come from the text generate_frpc_toml writes for the host, read back as TOML:
-the same tunnels (active_tunnels), the same fields, so the policy cannot drift from what
-the agent runs. The server writes the file after each change of tunnels, the FRP config or
-servers, at startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
-registers, so a write changes nothing for proxies already up."""
+the same tunnels (active_tunnels), the same fields and the same allow users
+(get_allow_users), so the policy cannot drift from what the agent runs. The server writes
+the file after each change of tunnels, the FRP config, servers or users' access, at
+startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
+registers, so a write changes nothing for proxies already up.
+
+A hostname that frps routes to proxies of several servers is left out for all of them
+(domain_conflicts): frps hands it to whichever proxy registers first, and a wildcard takes
+the traffic of a name below it while that name's proxy is down. Only the same exact name in
+one non-empty group all of them share is no conflict. The tunnel API refuses to store a new
+one."""
 
 import asyncio
 import hashlib
@@ -22,7 +30,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.core import database
-from app.modules.frp._helpers import get_frp_config
+from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import _first_warning, generate_frpc_toml
 from app.modules.frp.docker_manager import write_frps_policy
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -31,7 +39,7 @@ from app.modules.frp.proxy_key import proxy_key_hash
 logger = logging.getLogger(__name__)
 
 # The format the plugin reads (frpspolicy.Version).
-POLICY_VERSION = 1
+POLICY_VERSION = 2
 # The types the plugin takes (frpspolicy.Parse); an entry of another type would make it
 # refuse the whole file, and so every host.
 _TYPES = ("stcp", "https")
@@ -53,6 +61,11 @@ def _flat(table: dict, prefix: str = "") -> dict:
     return fields
 
 
+def _hash(secret: str) -> str:
+    """The SHA-256 the plugin compares a secret with, or "" for no secret."""
+    return hashlib.sha256(secret.encode()).hexdigest() if secret else ""
+
+
 def _proxy(fields: dict) -> dict | None:
     """The policy entry of a proxy table, or None if the plugin could not read it: frpc
     reads these fields as strings and refuses its whole config otherwise."""
@@ -61,6 +74,8 @@ def _proxy(fields: dict) -> dict | None:
     subdomain = fields.get("subdomain", "")
     group = fields.get("loadbalancer.group", "")
     group_key = fields.get("loadbalancer.groupkey", "")
+    allow_users = fields.get("allowusers", [])
+    secret_key = fields.get("secretkey", "")
     if (
         tunnel_type not in _TYPES
         or not isinstance(custom_domains, list)
@@ -68,6 +83,9 @@ def _proxy(fields: dict) -> dict | None:
         or not isinstance(subdomain, str)
         or not isinstance(group, str)
         or not isinstance(group_key, str)
+        or not isinstance(allow_users, list)
+        or not all(isinstance(user, str) for user in allow_users)
+        or not isinstance(secret_key, str)
     ):
         return None
     return {
@@ -75,14 +93,20 @@ def _proxy(fields: dict) -> dict | None:
         "customDomains": custom_domains,
         "subdomain": subdomain,
         "group": group,
-        "groupKeyHash": hashlib.sha256(group_key.encode()).hexdigest() if group_key else "",
+        "groupKeyHash": _hash(group_key),
+        "allowUsers": allow_users,
+        "skHash": _hash(secret_key),
     }
 
 
-def _proxies(config: FrpServerConfig, server_id: str, tunnels: list[FrpTunnel]) -> dict:
-    """The proxies of the host's frpc.toml by tunnel ID; allowUsers plays no part."""
+def _proxies(
+    db: Session, config: FrpServerConfig, server_id: str, tunnels: list[FrpTunnel]
+) -> dict:
+    """The proxies of the host's frpc.toml by tunnel ID."""
     try:
-        doc = tomllib.loads(generate_frpc_toml(config, tunnels, server_id))
+        doc = tomllib.loads(
+            generate_frpc_toml(config, tunnels, server_id, get_allow_users(db, server_id))
+        )
     except tomllib.TOMLDecodeError:
         if _first_warning(repr(server_id), ("policy", "toml")):
             logger.warning("frpc.toml of server %r is no TOML, left out of the policy", server_id)
@@ -105,13 +129,14 @@ def _proxies(config: FrpServerConfig, server_id: str, tunnels: list[FrpTunnel]) 
     return proxies
 
 
-def build_policy(db: Session) -> dict:
-    """The policy for the DB's state: the hosts with at least one proxy, by server ID.
-    Without an FRP config no host has one (frpc_sync_inputs)."""
+def _servers(db: Session) -> tuple[dict, str]:
+    """The hosts with at least one proxy the plugin can read, by server ID, before the
+    domain conflicts are taken out, and the FRP config's subdomain host. Without an FRP
+    config no host has one (frpc_sync_inputs)."""
     servers: dict = {}
     config = get_frp_config(db)
     if config is None:
-        return {"servers": servers, "version": POLICY_VERSION}
+        return servers, ""
     by_server: dict[str, list[FrpTunnel]] = defaultdict(list)
     for tunnel in db.query(FrpTunnel).filter(FrpTunnel.frp_config_id == config.id):
         by_server[tunnel.server_id].append(tunnel)
@@ -125,9 +150,84 @@ def build_policy(db: Session) -> dict:
                     server_id,
                 )
             continue
-        proxies = _proxies(config, server_id, tunnels)
+        proxies = _proxies(db, config, server_id, tunnels)
         if proxies:
             servers[server_id] = {"keyHash": proxy_key_hash(server_id), "proxies": proxies}
+    return servers, (config.subdomain_host or "").strip().lower()
+
+
+def _hostnames(proxy: dict, subdomain_host: str) -> set[str]:
+    """The names frps routes to the proxy (frp v0.72 BaseProxy.buildDomains), trimmed and
+    in lower case: frps matches hostnames without regard to case."""
+    names = {d.strip().lower() for d in proxy["customDomains"] if d.strip()}
+    subdomain = proxy["subdomain"].strip().lower()
+    if subdomain and subdomain_host:
+        names.add(f"{subdomain}.{subdomain_host}")
+    return names
+
+
+def _covers(pattern: str, name: str) -> bool:
+    """Whether frps may route name to a proxy of pattern (vhost Routers.getByRoute): the same
+    name, "*" for all, "*.example.net" for every name below example.net. A superset of what
+    frps routes: it never matches a two-label name against a wildcard, so "*.com" covers
+    "example.com" here but not in frps."""
+    return (
+        pattern == name
+        or pattern == "*"
+        or (pattern.startswith("*.") and name.endswith(pattern[1:]))
+    )
+
+
+def _conflicts(servers: dict, subdomain_host: str) -> dict[str, set[tuple[str, str]]]:
+    """The hostnames frps would route to proxies of more than one server, with those
+    proxies as (server ID, proxy name). Only the same exact name in one non-empty group
+    is no conflict: frps balances a group, and a wildcard is a router of its own."""
+    carriers = [
+        (name, server_id, proxy_name, proxy["group"])
+        for server_id, entry in servers.items()
+        for proxy_name, proxy in entry["proxies"].items()
+        # frps builds hostnames only for HTTP(S) proxies; a subdomain on an STCP proxy routes nothing.
+        if proxy["type"] == "https"
+        for name in _hostnames(proxy, subdomain_host)
+    ]
+    conflicts: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for i, (name, server_id, proxy_name, group) in enumerate(carriers):
+        for other, other_server, other_proxy, other_group in carriers[i + 1 :]:
+            if server_id == other_server:
+                continue
+            if not (_covers(name, other) or _covers(other, name)):
+                continue
+            if name == other and group and group == other_group:
+                continue
+            for conflict in (name, other):
+                conflicts[conflict] |= {(server_id, proxy_name), (other_server, other_proxy)}
+    return dict(conflicts)
+
+
+def domain_conflicts(db: Session) -> dict[str, set[tuple[str, str]]]:
+    """The hostnames the policy leaves out, with the proxies (server ID, proxy name) that
+    carry them."""
+    return _conflicts(*_servers(db))
+
+
+def build_policy(db: Session) -> dict:
+    """The policy for the DB's state: the hosts with at least one proxy, by server ID,
+    without the proxies that carry a conflicting domain (domain_conflicts)."""
+    servers, subdomain_host = _servers(db)
+    conflicts = _conflicts(servers, subdomain_host)
+    for name in sorted(conflicts):
+        if _first_warning(repr(name), ("policy", "domain")):
+            logger.warning(
+                "hostname %r is routed to tunnels of several servers (custom domain, subdomain "
+                "or wildcard) without one shared loadBalancer.group, their proxies are left out "
+                "of the policy",
+                name,
+            )
+    for server_id, proxy_name in sorted(set().union(*conflicts.values())):
+        proxies = servers[server_id]["proxies"]
+        proxies.pop(proxy_name, None)
+        if not proxies:
+            servers.pop(server_id, None)
     return {"servers": servers, "version": POLICY_VERSION}
 
 
