@@ -9,9 +9,10 @@ a fixed measurement in the agent, and these models are the whole of what a catal
 entry or a probe check may set for it. The agent checks the same bounds again and
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
-Each sensor returns a fixed set of fields (SENSOR_FIELDS). The sensors that read a
-structured answer (a JSON body, Redis INFO, HAProxy stats) also return fields under
-``data.`` — a path into that answer, which the agent resolves to one scalar.
+Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense the set of its
+view). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
+stats) also return fields under ``data.`` — a path into that answer, which the agent
+resolves to one scalar.
 """
 
 from __future__ import annotations
@@ -35,7 +36,42 @@ SENSORS = (
     "sql",
     "dns",
     "log",
+    "opnsense",
 )
+
+# The views of the opnsense sensor and the fields each one returns: the allowlist of the
+# agent's internal/opnsense, read-only configd actions of the firewall (R-1248).
+OPNSENSE_VIEW_FIELDS: dict[str, frozenset[str]] = {
+    "services": frozenset({"total", "running", "stopped", "stopped_names"}),
+    "gateways": frozenset(
+        {
+            "total",
+            "down",
+            "degraded",
+            "forced_down",
+            "down_names",
+            "degraded_names",
+            "max_loss_pct",
+            "max_delay_ms",
+        }
+    ),
+    "firmware": frozenset(
+        {
+            "version",
+            "latest",
+            "checked",
+            "connection",
+            "repository",
+            "updates",
+            "update_available",
+            "update_reboot",
+            "major_upgrade",
+            "check_age_s",
+        }
+    ),
+    "states": frozenset({"current", "limit", "used_pct"}),
+    "carp": frozenset({"vips", "master", "backup", "init", "demotion", "maintenance"}),
+}
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
     "unit": frozenset({"active_state", "sub_state", "restarts", "active_since"}),
@@ -61,6 +97,7 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
     ),
     "dns": frozenset({"resolved", "duration_ms", "answers"}),
     "log": frozenset({"count"}),
+    "opnsense": frozenset().union(*OPNSENSE_VIEW_FIELDS.values()),
 }
 
 # Sensors whose answer is structured; they accept fields "data.<path>".
@@ -82,6 +119,7 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "sql": None,
     "dns": None,
     "log": None,
+    "opnsense": None,
 }
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
@@ -154,6 +192,10 @@ class LogParams(_Params):
     )
 
 
+class OpnsenseParams(_Params):
+    view: Literal["services", "gateways", "firmware", "states", "carp"]
+
+
 PARAM_MODELS: dict[str, type[_Params]] = {
     "unit": NoParams,
     "process": NoParams,
@@ -168,13 +210,16 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "sql": SqlParams,
     "dns": DnsParams,
     "log": LogParams,
+    "opnsense": OpnsenseParams,
 }
 
 
-def field_allowed(sensor: str, field: str) -> bool:
-    """Whether `sensor` can return `field`: one of its own, or a data path."""
+def field_allowed(sensor: str, field: str, params: dict) -> bool:
+    """Whether `sensor` with `params` can return `field`: one of its own, or a data path."""
     if not FIELD_PATTERN.fullmatch(field):
         return False
+    if sensor == "opnsense":
+        return field in OPNSENSE_VIEW_FIELDS[params["view"]]
     if field in SENSOR_FIELDS[sensor]:
         return True
     return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")

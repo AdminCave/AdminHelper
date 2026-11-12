@@ -42,6 +42,9 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 		{"dpkg-query", "--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "nginx", "libc6", "g++-12"},
 		{"rpm", "--query", `--queryformat=%{NAME}\n`, "nginx", "postgresql16-server"},
 		{"/usr/bin/sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp"},
+		{"/usr/sbin/service", "nginx", "onestatus"},
+		{"/usr/local/sbin/configctl", "interface", "gateways", "status"},
+		{"/usr/local/sbin/configctl", "firmware", "product"},
 	}
 	for _, args := range mariadbCalls {
 		calls = append(calls, append([]string{"mariadb"}, args...), append([]string{"mysql"}, args...))
@@ -101,6 +104,12 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 		{"sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp", "-p", "22"},
 		{"sockstat", "-u", "-l", "-n", "-q", "-w"},
 		{"sockstat"},
+		{"service", "nginx", "onestart"},
+		{"service", "-nginx", "onestatus"},
+		{"configctl", "firmware", "update"},
+		{"configctl", "firmware", "product", "now"},
+		{"configctl", "service", "restart", "all"},
+		{"configctl"},
 		{"sh", "-c", "true"},
 	}
 	for _, call := range calls {

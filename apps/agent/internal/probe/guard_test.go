@@ -658,7 +658,7 @@ func TestNeverProbedSocketCoversTheRuntimeDirectoriesOfTheControlServices(t *tes
 	for _, path := range []string{"/var/run/docker.sock", "/var/run/dbus/system_bus_socket", "/run/user/1000/docker.sock",
 		"/run/user/1000/bus", "/run/systemd/private", "/run/qemu-server/100.qmp", "/var/run/libvirt/libvirt-sock",
 		"/run/containerd/containerd.sock", "/tmp/ssh-XXXXabcd/agent.42", "/tmp/.X11-unix/X0",
-		"/run/buildkit/buildkitd.sock", "/var/run/lxc/x.sock"} {
+		"/run/buildkit/buildkitd.sock", "/var/run/lxc/x.sock", "/var/run/configd.socket"} {
 		if !neverProbedSocket(path) {
 			t.Errorf("%s: want it never probed", path)
 		}
