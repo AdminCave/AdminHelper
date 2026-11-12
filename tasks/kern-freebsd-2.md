@@ -35,8 +35,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/agent-deployment.html · docs/en/admin/agent-deployment.html · changelog.d/kern-freebsd-2.md
 Task-Review: am Ende
 
-### T4 — R-1330: gopsutil-Quelltest ruft go über PATH  [ ]
+### T4 — R-1330: gopsutil-Quelltest ruft go über PATH  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a4d603d53 2026-11-12T14:33:49+01:00
+Review: am Ende (Branch-Review)
 Beweis: FreeBSD-Box-Lauf 2026-11-12 auf 0bfd23d81: `TestFreeBSDNoSwapMatchesGopsutil` rot mit `fork/exec <GOROOT des Build-Hosts>/bin/go: no such file or directory`; Branch-Review-Nit (`runtime.GOROOT()` deprecated).
 Änderung: `TestFreeBSDNoSwapMatchesGopsutil` (`collector_test.go:342`) ruft `exec.Command("go", …)` wie `crossbuild_test.go:17` (go test legt sein go vorn auf PATH), Import `runtime` entfällt.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/

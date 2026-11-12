@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -339,8 +338,8 @@ func TestSkipFSTypesFreeBSD(t *testing.T) {
 // TestFreeBSDNoSwapMatchesGopsutil reads mem_freebsd.go of the gopsutil this module pins and
 // fails when it no longer creates freebsdNoSwap, so a bump cannot silently drop "no swap".
 func TestFreeBSDNoSwapMatchesGopsutil(t *testing.T) {
-	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
-	out, err := exec.Command(gobin, "list", "-m", "-f", "{{.Dir}}", "github.com/shirou/gopsutil/v4").Output()
+	// go test puts its own go first on PATH. The FreeBSD box has no go and leaves this test out.
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/shirou/gopsutil/v4").Output()
 	if err != nil {
 		t.Fatalf("go list gopsutil: %v", err)
 	}
