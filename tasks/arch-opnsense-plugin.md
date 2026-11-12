@@ -103,7 +103,7 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 Abhängt von: T2, R-1247 gemergt
 
-### T7 — Test-Infrastruktur: Vorlage OPNsense 26.7 im Pool (R-1248)  [?] (R-1247 Frage 1 entschieden (Kevin 2026-11-11); wartet auf das Token-Recht, das Kevin in Proxmox setzt, und auf R-1247 T8 (base-freebsd))
+### T7 — Test-Infrastruktur: Vorlage OPNsense 26.7 im Pool (R-1248)  [ ]
 Komponente: scripts · Dateien: scripts/vm/profiles.json, scripts/vm/vm.py, scripts/vm/tests/test_vm.py, scripts/vm/opnsense/config.xml.in, scripts/vm/opnsense/bootstrap.sh
 Änderung: Profil `base-opnsense` (Tag `ah-tpl-base-opnsense`, Rolle `opnsense`), gebacken aus einem Klon von `base-freebsd`.
 - `bootstrap.sh` (POSIX sh, SPDX) holt `opnsense-bootstrap.sh.in` gepinnt (Commit und SHA-256) und fährt es mit `-r 26.7 -y`.
@@ -148,6 +148,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/ DE+EN, DEVELOPMENT.md, changelog.d/arch-opnsense-plugin.md
 Task-Review: am Ende
 
+### T10 — Monitoring: Plan-Test einer neuen Box ohne die Marker des ausgelieferten Katalogs (R-1248)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_agent_plan.py
+Änderung: Seit T5 trägt der ausgelieferte Katalog den ersten Marker (`opnsense.core`). `test_plan_of_a_new_server_is_empty_and_scans_at_once` erwartete aus dem echten Katalog `"markers": []` und ist seitdem rot; das `Verify:` von T5 fuhr nur `tests/test_catalog_opnsense.py`. Der Test nimmt einen leeren Katalog über `monkeypatch` wie `test_markers_come_from_the_whole_catalog_sorted`; die Gleichheit des ganzen Plans bleibt, die Marker aus dem Katalog prüft weiter der Nachbartest.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_plan.py
+Doku: keine (nur ein Test)
+Abhängt von: T5
+
 ## Entscheidungen
 - 2026-11-10 Kevin, Frage 1: `os-adminhelper` kommt aus demselben signierten pkg-Repo des Servers wie der Agent; das Plugin legt die Repo-Datei nach dem Vendor-Muster an; die Doku nennt „Fremd-Repo, nicht unterstützt“ (T6, T9).
 - 2026-11-10 Kevin, Frage 2: Einstellungsseite mit Schalter und Status; Registrierung nur per Shell, kein Token in `config.xml` (T2).
@@ -179,3 +186,5 @@ Task-Review: am Ende
 - 2026-11-10 T6: Der öffentliche Schlüssel entsteht beim Bau aus `PKG_REPO_KEY` (`openssl rsa -pubout`, die Form aus pkg-repo(8)) als `/usr/local/etc/pkg/keys/AdminHelper.pub`; ohne Schlüssel packt der Bau keinen, und das Repo-Skript schreibt nichts. Dass der Release-Schlüssel zu `apps/agent/freebsd/adminhelper-pkg.pub` passt, prüft R-1247 T10; ein Box-Lauf mit Wegwerf-Schlüssel passt von selbst. Ein Nicht-RSA-Schlüssel scheitert vor dem Löschen der Ausgabe.
 - 2026-11-10 T6: Versionsdatei wie `plugins.mk`: `product_abi` je ABI die OPNsense-Serie (FreeBSD 14 → 26.1, 15 → 26.7), `product_tier` "4" (zeigt OPNsense für jedes fremde Repo ohnehin), `product_hash` leer; dieselbe JSON als Annotations (OPNsense liest die Stufe eines entfernten Plugins daraus). Abhängigkeit `adminhelper-agent` mit Origin und Version des Agentenpakets. Die Tests der Plugin-Skripte stehen in `apps/agent/opnsense/plugin_test.go` neben den Skripten; 29 Mutanten in einer Probe-Kopie, alle gefangen.
 - 2026-11-11 Kevin (Roadmap-Notiz R-1247): Frage 1 dort: Token-Recht `Datastore.AllocateTemplate` auf einem Datei-Storage mit Inhalt `import`, das Kevin setzt; `vm.py` importiert Vorlagen selbst. T7 baut weiter wie geplant auf einem Klon von `base-freebsd` und wartet auf R-1247 T8. Frage 3 dort: R-1247 T10 (CI/Release, signiertes Repo) wird eine eigene Zeile mit Kevin-Merge; da `build-pkg.sh` beide Pakete in ein Repo legt, liefert diese Zeile `os-adminhelper` ohne eigenen Schritt mit aus, die Doku (T9) nennt das Repo erst ab dem Release, das sie enthält.
+- 2026-11-12 Merge von origin/main (R-1247 gemergt, `b9b599693`): die FreeBSD-Listener aus main (`listen_freebsd.go`, `sockstat.go`; lehnt eine lokale Adresse `*:*` ab) ersetzen `parseSockstat` aus T3, `listeners_gopsutil.go` entfällt. Seit main jeden Werkzeugaufruf über `allowlist.Run` führt, trägt die Allowlist `service <rcscript> onestatus` (T3) und die sechs configctl-Aufrufe der Ansichten (T1); `TestEveryCallOfTheViewsIsOnTheCommandAllowlist` hält Ansichten und Allowlist zusammen.
+- 2026-11-12 T7: Die Sperre ist weg: R-1247 T8/T9 sind gemergt, `base-freebsd` steht im Pool (`vm.py doctor`: Vorlage vom 2026-11-11). T10 vor T7, damit der Branch vor dem Harness-Teil grün ist.
