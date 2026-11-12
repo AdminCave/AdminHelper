@@ -52,7 +52,7 @@ func NeverProbed(port uint16, name string) bool {
 
 // RecognizePort recognizes the protocol of the service that listens on port beyond loopback, as the
 // sensor proto does with protocol auto, and returns its name: http, https, smtp, imap, pop3, ftp and
-// their TLS forms, ssh, redis, banner, tls, unknown or closed. A port the guard refuses is an error
+// their TLS forms, ssh, redis, banner, tls or unknown. A port the guard refuses is an error
 // that wraps ErrNotAllowed.
 func RecognizePort(ctx context.Context, port uint16) (string, error) {
 	// Only the listeners beyond loopback: the one on 127.0.0.1 may be another service. One on the
