@@ -10,6 +10,7 @@ tunnel by its ID (R-1210)."""
 import tomllib
 
 import pytest
+from sqlalchemy import event
 
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
@@ -564,3 +565,44 @@ def test_a_disabled_tunnel_carries_no_domain(test_client, db_session, admin_user
     assert r.status_code == 201, r.text
     r = test_client.put("/api/frp/tunnels/t-b", json={"enabled": True}, headers=h)
     assert r.status_code == 409, r.text
+
+
+def test_the_config_detail_loads_the_servers_of_its_tunnels_in_one_query(
+    test_client, db_session, admin_user
+):
+    # display_name() reads target_server; without a preload that is one query per tunnel.
+    _seed(db_session)
+    for i in range(3):
+        db_session.add(Server(id=f"srv-{i}", name=f"s{i}", hostname=f"s{i}.example.test"))
+        db_session.add(
+            FrpTunnel(
+                id=f"t-{i}",
+                server_id=f"srv-{i}",
+                frp_config_id="cfg-1",
+                name=f"own-{i}",
+                tunnel_type="https",
+                protocol="web",
+                local_port=80 + i,
+                enabled=True,
+            )
+        )
+    db_session.commit()
+    db_session.expire_all()
+    h = _login(test_client, "admin", "adminpass")
+
+    statements = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    connection = db_session.connection()
+    event.listen(connection, "before_cursor_execute", _record)
+    try:
+        r = test_client.get("/api/frp/server-config/cfg-1", headers=h)
+    finally:
+        event.remove(connection, "before_cursor_execute", _record)
+
+    assert r.status_code == 200, r.text
+    assert len(r.json()["tunnels"]) == 4
+    on_servers = [s for s in statements if "FROM servers" in s]
+    assert len(on_servers) == 1, on_servers

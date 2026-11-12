@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The deep checks the pull request CI leaves out (R-1343): schema fuzzing with 100 generated
+# examples instead of the explicit phase only, and the backup and restore round trip of the
+# whole stack. Both ran only in the local nightly run before, and both found real defects
+# there. A red run gates nothing; it is the signal to look.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "23 2 * * *" # 02:23 UTC
+  workflow_dispatch:
+  # A pull request that changes this file runs it once: the probe of the jobs on the runners.
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  schemathesis:
+    name: Schema fuzzing, 100 examples (server + monitoring + ca-issuer)
+    runs-on: ubuntu-26.04
+    # 100 examples took 29 minutes for the three services on the test box.
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
+      DATA_DIR: /tmp/adminhelper-test-data
+      SECRET_KEY: ci-test-secret-key
+      ADMIN_PASSWORD: ciadmin
+      MTLS_ENFORCE: "false"
+      # Every phase with 100 generated examples, as the local nightly run (heavy.sh).
+      AH_SCHEMATHESIS_EXAMPLES: "100"
+      AH_VENV: /tmp/ci-venv
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: apps/*/requirements*
+      # The suites fix the seed (derandomize), but the generate phase does not repeat exactly
+      # (test_schemathesis.py): commit and budget say what ran, the failing case in the log
+      # is the reproduction.
+      - name: Name the commit and the budget
+        run: |
+          {
+            echo "### Schema fuzzing"
+            echo "Commit \`$GITHUB_SHA\`, AH_SCHEMATHESIS_EXAMPLES=$AH_SCHEMATHESIS_EXAMPLES (every phase)."
+            echo "The seed is fixed, the generated data is not: the failing case in the log is the reproduction."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Install dev dependencies of all three services
+        run: |
+          python -m venv "$AH_VENV"
+          "$AH_VENV/bin/pip" install -q \
+            -r apps/server/requirements-dev.txt \
+            -r apps/monitoring/requirements-dev.txt \
+            -r apps/ca-issuer/requirements-dev.txt
+      # The same aggregator call as the schemathesis job of ci.yml; --strict makes a skip red.
+      - name: Fuzz each service against its own schema
+        run: bash scripts/tests/run.sh unit --strict --step schemathesis --only server monitoring ca-issuer
+
+  backup-restore:
+    name: Backup and restore of the stack
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A missing precondition ends the script with 75, a skip to run.sh; here every exit but
+      # 0 is red, that one too.
+      - name: Backup, total loss, restore
+        run: bash scripts/tests/backup_restore_test.sh
