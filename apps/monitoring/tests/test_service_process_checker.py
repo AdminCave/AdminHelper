@@ -476,6 +476,99 @@ def test_auto_mode_caps_a_list_before_it_skips_entries():
     assert_every_reader_reads(metrics["_details"])
 
 
+def _with_details(failed: list[str], details) -> dict:
+    return {"systemd": {"failed": failed, "enabled_inactive": [], "failed_details": details}}
+
+
+def test_auto_mode_names_the_reason_of_a_failed_unit():
+    report = _with_details(
+        ["nginx.service", "data.mount", "cron.service"],
+        [
+            {"unit": "nginx.service", "result": "exit-code", "exit": "status=1"},
+            {"unit": "data.mount", "result": "timeout"},
+            {"unit": "cron.service"},
+        ],
+    )
+    status, message, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == (
+        "critical",
+        "Failed: nginx.service (exit-code, status=1), cron.service;"
+        " Failed units: data.mount (timeout)",
+    )
+    # _details keeps the bare names: the desktop matches them against the inventory.
+    assert metrics["_details"]["failed"] == ["nginx.service", "data.mount", "cron.service"]
+
+
+def test_auto_mode_the_reason_does_not_change_while_the_failure_lasts():
+    # Restarts and since move with every push; the message must not.
+    def message(restarts, since):
+        detail = {
+            "unit": "nginx.service",
+            "result": "exit-code",
+            "exit": "status=1",
+            "restarts": restarts,
+            "since": since,
+        }
+        return ServiceProcessChecker().evaluate(
+            {"mode": "auto"}, _with_details(["nginx.service"], [detail])
+        )[1]
+
+    assert message("3", "2026-11-12T10:00:00Z") == message("4", "2026-11-12T10:05:00Z")
+    assert message("3", "2026-11-12T10:00:00Z") == "Failed: nginx.service (exit-code, status=1)"
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        pytest.param("x", id="no-list"),
+        pytest.param(["x", None, 5], id="no-objects"),
+        pytest.param([{"result": "exit-code"}], id="no-unit"),
+        pytest.param([{"unit": 5, "result": "exit-code"}], id="unit-no-text"),
+        pytest.param([{"unit": "nginx.service", "result": 1, "exit": ["a"]}], id="no-text"),
+        pytest.param([{"unit": "nginx.service", "result": "", "exit": ""}], id="empty"),
+        pytest.param([{"unit": "other.service", "result": "exit-code"}], id="other-unit"),
+    ],
+)
+def test_auto_mode_without_a_readable_reason_names_the_unit_alone(details):
+    report = _with_details(["nginx.service"], details)
+    status, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("critical", "Failed: nginx.service")
+
+
+def test_auto_mode_the_first_reason_of_a_unit_counts_and_each_part_is_cut():
+    long_exit = "status=" + "9" * 600
+    report = _with_details(
+        ["nginx.service"],
+        [
+            {"unit": "nginx.service", "result": "signal\nforged", "exit": long_exit},
+            {"unit": "nginx.service", "result": "timeout"},
+        ],
+    )
+    _, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    # join_capped cuts the whole entry once more to MAX_AGENT_TEXT.
+    assert message.startswith("Failed: nginx.service (signal forged, status=999")
+    assert "timeout" not in message
+    assert "\n" not in message
+    assert len(message) == len("Failed: ") + MAX_AGENT_TEXT
+
+
+def test_each_part_of_a_reason_is_cut_before_the_join():
+    # The message cannot show it, join_capped cuts the whole entry once more: read directly.
+    reasons = ServiceProcessChecker._reasons(
+        [{"unit": "nginx.service", "result": "r" * 600, "exit": "status=1\n"}]
+    )
+    assert reasons == {"nginx.service": "r" * (MAX_AGENT_TEXT - 1) + "…, status=1 "}
+
+
+def test_auto_mode_reads_the_reasons_only_up_to_the_cap():
+    filler = [{"unit": f"u{i}.service", "result": "exit-code"} for i in range(500)]
+    late = {"unit": "nginx.service", "result": "exit-code"}
+    _, message, _ = ServiceProcessChecker().evaluate(
+        {"mode": "auto"}, _with_details(["nginx.service"], filler + [late])
+    )
+    assert message == "Failed: nginx.service"
+
+
 def test_list_mode_unaffected_by_throttling():
     # Watched services are always sent; list mode must work without all_services.
     status, message, _ = ServiceProcessChecker().evaluate(
@@ -773,6 +866,108 @@ def test_list_mode_finds_windows_services_without_suffix():
     )
     assert status == "critical"
     assert _watched(metrics) == {"W32Time": "running", "Spooler": "down"}
+
+
+def _reason_report() -> dict:
+    """Full Linux push: nginx failed with a reason, cron stopped on purpose, ssh failed behind
+    its alias sshd."""
+    report = _inventory_report()
+    cron, nginx, ssh, _ = report["systemd"]["all_services"]
+    cron.update(result="success", exit="status=0")
+    nginx.update(active_state="failed", result="exit-code", exit="status=1", restarts=3)
+    ssh.update(active_state="failed", result="signal", exit="signal=SIGKILL")
+    return report
+
+
+def _reason_message(report: dict, prev: dict | None = None) -> tuple[str, str, dict]:
+    config = {"mode": "list", "services": ["nginx", "cron", "sshd"]}
+    return ServiceProcessChecker().evaluate(config, report, prev)
+
+
+def test_list_mode_names_the_reason_of_a_down_service():
+    # Spec, Nicht-Ziele: the reason is in the list and in the list mode's message.
+    status, message, metrics = _reason_message(_reason_report())
+    assert (status, message) == (
+        "critical",
+        "Services not active: nginx (exit-code, status=1), cron, sshd (signal, signal=SIGKILL)",
+    )
+    assert metrics["_details"]["watched"] == [
+        {"name": "nginx", "state": "down", "running": False, "reason": "exit-code, status=1"},
+        # result success: stopped on purpose, no reason.
+        {"name": "cron", "state": "down", "running": False},
+        {"name": "sshd", "state": "down", "running": False, "reason": "signal, signal=SIGKILL"},
+    ]
+    assert metrics["services_down"] == 3
+
+
+def test_list_mode_the_reason_does_not_change_while_the_failure_lasts():
+    # Restarts, since and RAM move between pushes; the message must not.
+    first = _reason_message(_reason_report())
+    report = _reason_report()
+    nginx = report["systemd"]["all_services"][1]
+    nginx.update(restarts=4, since="2026-11-12T10:05:00Z", memory_bytes=1024)
+    assert _reason_message(report) == first
+
+    # A throttled push carries the reason over from the last evaluation.
+    throttled = _throttled_inventory_report()
+    assert _reason_message(throttled, first[2]["_details"]) == first
+
+
+def test_list_mode_names_the_windows_exit_code_without_a_new_alarm():
+    def report(**facts) -> dict:
+        spooler = {"unit": "Spooler", "active_state": "inactive", "enabled_state": "unknown"}
+        entries = [
+            {"unit": "W32Time", "active_state": "active", "enabled_state": "unknown"},
+            spooler | facts,
+        ]
+        return {"systemd": {"failed": [], "enabled_inactive": [], "all_services": entries}}
+
+    config = {"mode": "list", "services": ["W32Time", "Spooler"]}
+    without = ServiceProcessChecker().evaluate(config, report())
+    assert without[:2] == ("critical", "Services not active: Spooler")
+
+    for facts, reason in (
+        ({"exit": "win32=1067"}, "win32=1067"),
+        ({"exit": "service=42"}, "service=42"),
+        ({"exit": "win32=1067", "result": "crashed"}, "crashed, win32=1067"),
+    ):
+        status, message, metrics = ServiceProcessChecker().evaluate(config, report(**facts))
+        # The same rating as without the reason: the reason only joins the message.
+        assert (status, message) == ("critical", f"Services not active: Spooler ({reason})")
+        assert metrics["_details"]["watched"][1]["reason"] == reason
+        assert metrics["services_down"] == without[2]["services_down"]
+
+
+def test_list_mode_a_running_service_carries_no_reason():
+    # A stale result on a running unit says nothing; the agent watch list outranks the
+    # inventory, and an inventory reason only goes with an inventory down.
+    report = _reason_report()
+    report["systemd"]["all_services"][1].update(active_state="active")
+    report["services"] = [{"name": "cron", "running": True}, {"name": "nginx", "running": False}]
+    _, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "cron"]}, report
+    )
+    assert message == "Services not active: nginx"
+    assert all("reason" not in w for w in metrics["_details"]["watched"])
+
+
+def test_list_mode_reason_is_one_line_and_cut():
+    report = _reason_report()
+    report["systemd"]["all_services"][1].update(result="exit-code\nforged", exit="s" * 600)
+    _, message, metrics = _reason_message(report)
+    reason = metrics["_details"]["watched"][0]["reason"]
+    assert reason == "exit-code forged, " + "s" * (MAX_AGENT_TEXT - 1) + "…"
+    assert "\n" not in message
+
+
+@pytest.mark.parametrize("reason", [5, "", ["a"], None])
+def test_list_mode_ignores_an_unusable_stored_reason(reason):
+    prev = {"mode": "list", "watched": [{"name": "nginx", "state": "down", "reason": reason}]}
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx"]}, _throttled_inventory_report(), prev
+    )
+    assert (status, message) == ("critical", "Services not active: nginx")
+    assert metrics["_details"]["watched"] == [{"name": "nginx", "state": "down", "running": False}]
 
 
 @pytest.fixture()

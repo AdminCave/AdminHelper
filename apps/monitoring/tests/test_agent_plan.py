@@ -16,7 +16,12 @@ from app import module_plan
 from app.catalog.loader import load_catalog
 from app.core.auth import require_agent
 from app.core.time import utcnow_naive
-from app.models import MonitorAgentKey, MonitorCheck, MonitorDiscovery
+from app.models import (
+    MonitorAgentKey,
+    MonitorCheck,
+    MonitorDiscovery,
+    MonitorServiceInventory,
+)
 
 _PROBE = {
     "sensor": "http",
@@ -117,7 +122,21 @@ def test_plan_of_a_new_server_is_empty_and_scans_at_once(client_db, monkeypatch)
         "scan": True,
         "discovery": {"markers": []},
         "probes": [],
+        "service_logs": True,
     }
+
+
+@pytest.mark.parametrize(("switch", "sent"), [(None, True), (True, True), (False, False)])
+def test_service_logs_follow_the_servers_switch(client_db, switch, sent):
+    # R-1226: on without a row (the column default), off only where the switch is off.
+    client, factory = client_db
+    if switch is not None:
+        with factory() as db:
+            db.add(MonitorServiceInventory(server_id="srv-1", log_lines=switch))
+            db.add(MonitorServiceInventory(server_id="srv-2", log_lines=not switch))
+            db.commit()
+
+    assert _plan(client)["service_logs"] is sent
 
 
 def test_scan_flag_follows_the_schedule_and_scan_now(client_db):

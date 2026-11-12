@@ -8,6 +8,7 @@
 // in a fixed order), one module card per instance with its catalog module, the
 // "Neu gefunden" card with adopt and its error states, what adopting left out, and the
 // muted note. T6: the cost card closes the page, for a real server only.
+// arch-monitoring-ui-3 T7 (R-1226): the services section gets the server of its full list.
 // The sections, history, module card, cost card and modals are stubbed.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
@@ -19,6 +20,7 @@ const h = vi.hoisted(() => ({
   maint: vi.fn(),
   moduleCard: vi.fn(),
   costs: vi.fn(),
+  services: vi.fn(),
   openCheckEditor: vi.fn(),
   requestScan: vi.fn(() => Promise.resolve(true)),
   adoptFinding: vi.fn((): Promise<unknown> => Promise.resolve(null)),
@@ -64,7 +66,7 @@ vi.mock('./card/MonCosts.svelte', () => ({ default: h.costs }));
 vi.mock('./section/SecLive.svelte', () => ({ default: h.stub }));
 vi.mock('./section/SecNetwork.svelte', () => ({ default: h.stub }));
 vi.mock('./section/SecHeartbeat.svelte', () => ({ default: h.stub }));
-vi.mock('./section/SecServices.svelte', () => ({ default: h.stub }));
+vi.mock('./section/SecServices.svelte', () => ({ default: h.services }));
 vi.mock('./section/SecSystem.svelte', () => ({ default: h.stub }));
 vi.mock('./section/SecDocker.svelte', () => ({ default: h.stub }));
 vi.mock('./section/SecBackups.svelte', () => ({ default: h.stub }));
@@ -381,6 +383,17 @@ describe('MonServerDashboard cards (R-1225)', () => {
     h.costs.mockClear();
     await mount('__none');
     expect(h.costs).not.toHaveBeenCalled();
+  });
+
+  it('gives the services section its server for the full list, none without a server', async () => {
+    await mount('srv-1', [check('svc', 'service_process', 'critical')]);
+    expect(h.services).toHaveBeenCalledTimes(1);
+    expect((h.services.mock.calls[0] as unknown[])[1]).toMatchObject({ serverId: 'srv-1' });
+    cleanup();
+    h.services.mockClear();
+    await mount('__none', [check('svc', 'service_process', 'critical', { serverId: null })]);
+    expect(h.services).toHaveBeenCalledTimes(1);
+    expect((h.services.mock.calls[0] as unknown[])[1]).toMatchObject({ serverId: null });
   });
 
   it('scan now asks the agent and holds while the request is open', async () => {

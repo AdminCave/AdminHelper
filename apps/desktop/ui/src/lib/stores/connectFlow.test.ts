@@ -88,6 +88,7 @@ vi.mock('./connections', () => ({
 
 import {
   connectCredential,
+  connectServiceLog,
   initiateConnect,
   markRdpError,
   markRdpExit,
@@ -820,7 +821,7 @@ describe('SSH console (R-1069)', () => {
 
     await initiateConnect(sshConn);
 
-    // A shell: no credential ref (arch-monitoring-ui).
+    // A shell: no action instead (arch-monitoring-ui).
     expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved, expect.any(Function), undefined);
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
@@ -918,12 +919,9 @@ describe('SSH console (R-1069)', () => {
 
     await connectCredential(sshConn, 'mysql/3306/monitor');
 
-    expect(openTerminal).toHaveBeenCalledWith(
-      sshConn,
-      resolved,
-      expect.any(Function),
-      'mysql/3306/monitor',
-    );
+    expect(openTerminal).toHaveBeenCalledWith(sshConn, resolved, expect.any(Function), {
+      credential: { ref: 'mysql/3306/monitor' },
+    });
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1', lastUsed: expect.any(String) }),
@@ -936,6 +934,36 @@ describe('SSH console (R-1069)', () => {
     await connectCredential(sshConn, 'mysql/3306/monitor');
     vi.mocked(validateConnection).mockReturnValueOnce({ ok: false, message: 'bad host' });
     await connectCredential(sshConn, 'mysql/3306/monitor');
+
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);
+    expect(reportError).toHaveBeenCalledWith('bad host');
+  });
+
+  // arch-monitoring-ui-3 T10: "Mehr Log" shows the journal of a unit in the embedded terminal
+  // only, whatever the console; a session like any start, the editor left alone.
+  it('opens the journal of a unit embedded at the resolved target whatever the console', async () => {
+    withConsole('external');
+    const resolved: Connection = { ...sshConn, port: 23001 };
+    vi.mocked(resolveConnection).mockResolvedValueOnce({ connection: resolved, viaTunnel: true });
+
+    await connectServiceLog(sshConn, 'nginx.service');
+
+    expect(openTerminal).toHaveBeenCalledExactlyOnceWith(sshConn, resolved, expect.any(Function), {
+      journal: { unit: 'nginx.service' },
+    });
+    expect(openConnection).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1', lastUsed: expect.any(String) }),
+    );
+    expect(closeEditor).not.toHaveBeenCalled();
+  });
+
+  it('opens no journal for a refused resolution or an invalid connection', async () => {
+    vi.mocked(resolveConnection).mockRejectedValueOnce(new Error(FOREIGN_PORT));
+    await connectServiceLog(sshConn, 'nginx.service');
+    vi.mocked(validateConnection).mockReturnValueOnce({ ok: false, message: 'bad host' });
+    await connectServiceLog(sshConn, 'nginx.service');
 
     expect(openTerminal).not.toHaveBeenCalled();
     expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);

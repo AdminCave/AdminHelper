@@ -451,6 +451,7 @@ const (
 	listFailedArgs    = "list-units --state=failed --no-legend --plain"
 	recheckShow       = "show -p Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic"
 	aliasShow         = "show -p Id,Names"
+	factShow          = "show -p " + factProps
 )
 
 // aliasBlocks is real systemd 257 `systemctl show -p Id,Names -- smartd.service sshd.service`
@@ -535,6 +536,7 @@ func TestServiceHealthCollector(t *testing.T) {
 		listFailedArgs:    {out: "smartmontools.service loaded failed failed Self Monitoring and Reporting Technology (SMART) Daemon\n"},
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
+		factShow:          {},
 	})
 	got := collectServiceHealth(context.Background())
 
@@ -558,7 +560,9 @@ func TestServiceHealthCollector(t *testing.T) {
 	}
 	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
 		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service",
-		aliasShow + " -- smartd.service sshd.service"}
+		aliasShow + " -- smartd.service sshd.service",
+		factShow + " -- anacron.service cron.service e2scrub_reap.service getty@tty1.service smartmontools.service" +
+			" ssh.service systemd-pstore.service"}
 	if !reflect.DeepEqual(*calls, wantCalls) {
 		t.Errorf("calls = %q, want %q", *calls, wantCalls)
 	}
@@ -648,6 +652,7 @@ func TestAliasAndWatchAliasOf(t *testing.T) {
 		listFailedArgs:    {},
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks + "\nId=ghost.service\nNames=ghost.service\n"},
+		factShow:          {},
 	})
 	got := collectServiceHealth(context.Background())
 
@@ -682,6 +687,7 @@ func TestAliasAndWatchAliasShowFails(t *testing.T) {
 				listFailedArgs:    {},
 				recheckShow:       {out: showBlocks257},
 				aliasShow:         {out: partial, err: err},
+				factShow:          {},
 			})
 			got := collectServiceHealth(context.Background())
 			if a := aliasOf(got["all_services"].([]ServiceEntry)); len(a) != 0 {
@@ -712,6 +718,7 @@ func TestAliasAndWatchCountsSkipUnloaded(t *testing.T) {
 		listFailedArgs:    {},
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
+		factShow:          {},
 	})
 	got := collectServiceHealth(context.Background())
 	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
@@ -746,6 +753,7 @@ func TestServiceHealthNotFoundInactiveDropped(t *testing.T) {
 		listFailedArgs:    {},
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
+		factShow:          {},
 	})
 	got := collectServiceHealth(context.Background())
 
@@ -780,7 +788,9 @@ func TestServiceHealthNotFoundInactiveDropped(t *testing.T) {
 	}
 	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
 		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service",
-		aliasShow + " -- smartd.service sshd.service"}
+		aliasShow + " -- smartd.service sshd.service",
+		factShow + " -- anacron.service cron.service e2scrub_reap.service getty@tty1.service modprobe@fuse.service" +
+			" smartmontools.service ssh.service systemd-pstore.service"}
 	if !reflect.DeepEqual(*calls, wantCalls) {
 		t.Errorf("calls = %q, want %q", *calls, wantCalls)
 	}
@@ -797,6 +807,7 @@ func TestServiceHealthNotFoundActiveOrFailedKept(t *testing.T) {
 		listFailedArgs:    {out: "old.service not-found failed failed old.service\n"},
 		recheckShow:       {out: showBlocks257},
 		aliasShow:         {out: aliasBlocks},
+		factShow:          {},
 	})
 	got := collectServiceHealth(context.Background())
 
@@ -840,6 +851,278 @@ func TestServiceHealthNotFoundListUnitsFails(t *testing.T) {
 		if e["active_state"] != "unknown" {
 			t.Errorf("%s: active_state = %q, want unknown", e["unit"], e["active_state"])
 		}
+	}
+}
+
+// factBlocks257 is systemd 257 `systemctl show -p <factProps> -- <units>` output of a Debian 13 box
+// for the loaded units of collectorListUnits, set to the states there: cron stopped by hand (its main
+// process ended by SIGTERM), smartd ended with exit status 17, ssh restarted twice. systemd prints the
+// properties in its own order, not the asked one; a unit that never ran has a zero timestamp, a
+// stopped one no memory.
+const factBlocks257 = `Result=success
+NRestarts=0
+ExecMainCode=1
+ExecMainStatus=0
+MemoryCurrent=[not set]
+Id=anacron.service
+Names=anacron.service
+SubState=dead
+StateChangeTimestampMonotonic=1306312665009
+
+Result=success
+NRestarts=0
+ExecMainCode=2
+ExecMainStatus=15
+MemoryCurrent=[not set]
+Id=cron.service
+Names=cron.service
+SubState=dead
+StateChangeTimestampMonotonic=1295125803118
+
+Result=success
+NRestarts=0
+ExecMainCode=1
+ExecMainStatus=0
+MemoryCurrent=[not set]
+Id=e2scrub_reap.service
+Names=e2scrub_reap.service
+SubState=dead
+StateChangeTimestampMonotonic=525730148
+
+Result=success
+NRestarts=0
+ExecMainCode=0
+ExecMainStatus=0
+MemoryCurrent=286720
+Id=getty@tty1.service
+Names=getty@tty1.service autovt@tty1.service
+SubState=running
+StateChangeTimestampMonotonic=528112730
+
+Result=exit-code
+NRestarts=0
+ExecMainCode=1
+ExecMainStatus=17
+MemoryCurrent=[not set]
+Id=smartmontools.service
+Names=smartmontools.service smartd.service
+SubState=failed
+StateChangeTimestampMonotonic=531204517
+
+Result=success
+NRestarts=2
+ExecMainCode=0
+ExecMainStatus=0
+MemoryCurrent=6258688
+Id=ssh.service
+Names=ssh.service sshd.service
+SubState=running
+StateChangeTimestampMonotonic=528091222
+
+Result=success
+NRestarts=0
+ExecMainCode=0
+ExecMainStatus=0
+MemoryCurrent=[not set]
+Id=systemd-pstore.service
+Names=systemd-pstore.service
+SubState=dead
+StateChangeTimestampMonotonic=0
+`
+
+// factKeys are the inventory fields the facts add.
+var factKeys = []string{"sub_state", "result", "exit", "restarts", "since", "memory_bytes"}
+
+// factEpoch is the wall-clock time of monotonic zero the facts tests pin (fixEpoch).
+var factEpoch = time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+
+// fixEpoch pins monotonicEpoch to epoch for the test.
+func fixEpoch(t *testing.T, epoch time.Time) {
+	t.Helper()
+	old := monotonicEpoch
+	t.Cleanup(func() { monotonicEpoch = old })
+	monotonicEpoch = func() (time.Time, error) { return epoch, nil }
+}
+
+// factCalls lists the facts batches among calls.
+func factCalls(calls []string) []string {
+	found := []string{}
+	for _, c := range calls {
+		if strings.HasPrefix(c, factShow+" ") {
+			found = append(found, c)
+		}
+	}
+	return found
+}
+
+func TestServiceHealthFacts(t *testing.T) {
+	// The facts of one batched show reach the inventory entries of the units asked for, and every
+	// failed unit gets its reason in failed_details. An alias and the template, never asked, get none,
+	// though the alias shares its unit's block (Names).
+	fixEpoch(t, factEpoch)
+	stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {out: collectorListUnits},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs:    {out: "smartmontools.service loaded failed failed Self Monitoring and Reporting Technology (SMART) Daemon\n"},
+		recheckShow:       {out: showBlocks257},
+		aliasShow:         {out: aliasBlocks},
+		factShow:          {out: factBlocks257},
+	})
+	got := collectServiceHealth(context.Background())
+
+	byUnit := map[string]ServiceEntry{}
+	for _, e := range got["all_services"].([]ServiceEntry) {
+		byUnit[e["unit"]] = e
+	}
+	for _, want := range []ServiceEntry{
+		{"unit": "ssh.service", "active_state": "active", "enabled_state": "enabled", "sub_state": "running",
+			"result": "success", "restarts": "2", "since": "2026-11-12T09:08:48Z", "memory_bytes": "6258688"},
+		{"unit": "smartmontools.service", "active_state": "failed", "enabled_state": "enabled", "sub_state": "failed",
+			"result": "exit-code", "restarts": "0", "exit": "status=17", "since": "2026-11-12T09:08:51Z"},
+		{"unit": "cron.service", "active_state": "inactive", "enabled_state": "enabled", "sub_state": "dead",
+			"result": "success", "restarts": "0", "exit": "signal=SIGTERM", "since": "2026-11-27T08:45:25Z"},
+		{"unit": "systemd-pstore.service", "active_state": "inactive", "enabled_state": "enabled", "sub_state": "dead",
+			"result": "success", "restarts": "0"},
+	} {
+		if e := byUnit[want["unit"]]; !reflect.DeepEqual(e, want) {
+			t.Errorf("%s = %v, want %v", want["unit"], e, want)
+		}
+	}
+	for _, unit := range []string{"sshd.service", "smartd.service", "getty@.service"} {
+		for _, key := range factKeys {
+			if v, ok := byUnit[unit][key]; ok {
+				t.Errorf("%s: %s = %q, want no facts for a name not asked", unit, key, v)
+			}
+		}
+	}
+	wantDetails := []map[string]string{{"unit": "smartmontools.service", "result": "exit-code", "exit": "status=17",
+		"since": "2026-11-12T09:08:51Z", "restarts": "0"}}
+	if !reflect.DeepEqual(got["failed_details"], wantDetails) {
+		t.Errorf("failed_details = %v, want %v", got["failed_details"], wantDetails)
+	}
+}
+
+func TestServiceHealthFactsBatchFails(t *testing.T) {
+	// A failed facts batch adds nothing, not even from the blocks printed before the failure, and no
+	// unit is asked on its own: the inventory and the failed list stand without facts and without
+	// failed_details.
+	for name, err := range map[string]error{
+		"exit status": exitError(t, "exit 1"),
+		"killed":      exitError(t, "kill -9 $$"),
+		"timed out":   context.DeadlineExceeded,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixEpoch(t, factEpoch)
+			calls := stubCollector(t, map[string]systemctlReply{
+				listUnitsArgs:     {out: collectorListUnits},
+				listUnitFilesArgs: {out: collectorListUnitFiles},
+				listFailedArgs:    {out: "smartmontools.service loaded failed failed SMART Daemon\n"},
+				recheckShow:       {out: showBlocks257},
+				aliasShow:         {out: aliasBlocks},
+				factShow:          {out: factBlocks257, err: err},
+			})
+			got := collectServiceHealth(context.Background())
+			for _, e := range got["all_services"].([]ServiceEntry) {
+				for _, key := range factKeys {
+					if v, ok := e[key]; ok {
+						t.Errorf("%s: %s = %q, want no facts after a failed batch", e["unit"], key, v)
+					}
+				}
+			}
+			if d, ok := got["failed_details"]; ok {
+				t.Errorf("failed_details = %v, want none after a failed batch", d)
+			}
+			if !reflect.DeepEqual(got["failed"], []string{"smartmontools.service"}) {
+				t.Errorf("failed = %q, want [smartmontools.service]", got["failed"])
+			}
+			if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
+				t.Errorf("counts = %v, want active 2 of 7", got["counts"])
+			}
+			if f := factCalls(*calls); len(f) != 1 {
+				t.Errorf("facts calls = %q, want only the batch", f)
+			}
+		})
+	}
+}
+
+func TestServiceHealthFactsFailedOtherUnits(t *testing.T) {
+	// list-units --state=failed lists every unit type: a failed mount is asked in the facts batch too
+	// and gets its reason in failed_details, without exit (a mount has no main process: systemd 257
+	// prints no ExecMain* and no NRestarts for it). A failed name outside the unit class, here the root mount,
+	// stays out of the batch, which the allowlist would refuse whole, and keeps only its name.
+	fixEpoch(t, factEpoch)
+	mountBlock := "Result=exit-code\nMemoryCurrent=[not set]\nId=srv-data.mount\nNames=srv-data.mount\n" +
+		"SubState=failed\nStateChangeTimestampMonotonic=8123456\n"
+	calls := stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {out: collectorListUnits},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs: {out: "smartmontools.service loaded failed failed SMART Daemon\n" +
+			"srv-data.mount loaded failed failed /srv/data\n-.mount loaded failed failed Root Mount\n"},
+		recheckShow: {out: showBlocks257},
+		aliasShow:   {out: aliasBlocks},
+		factShow:    {out: factBlocks257 + "\n" + mountBlock},
+	})
+	got := collectServiceHealth(context.Background())
+	wantDetails := []map[string]string{
+		{"unit": "smartmontools.service", "result": "exit-code", "exit": "status=17", "since": "2026-11-12T09:08:51Z",
+			"restarts": "0"},
+		{"unit": "srv-data.mount", "result": "exit-code", "since": "2026-11-12T09:00:08Z"},
+		{"unit": "-.mount"},
+	}
+	if !reflect.DeepEqual(got["failed_details"], wantDetails) {
+		t.Errorf("failed_details = %v, want %v", got["failed_details"], wantDetails)
+	}
+	wantCall := factShow + " -- anacron.service cron.service e2scrub_reap.service getty@tty1.service" +
+		" smartmontools.service srv-data.mount ssh.service systemd-pstore.service"
+	if f := factCalls(*calls); !reflect.DeepEqual(f, []string{wantCall}) {
+		t.Errorf("facts calls = %q, want %q", f, wantCall)
+	}
+}
+
+func TestServiceFacts(t *testing.T) {
+	// One show block to the inventory fields: what systemd does not report stays out (NRestarts
+	// before systemd 235, MemoryCurrent without memory accounting, [not set], or unreadable, 2^64-1, as
+	// older systemd also prints it when unset), and a main process that ended reports its exit status
+	// or signal.
+	for name, tc := range map[string]struct {
+		block     string
+		haveEpoch bool
+		want      ServiceEntry
+	}{
+		"running": {"Result=success\nNRestarts=0\nExecMainCode=0\nExecMainStatus=0\nMemoryCurrent=250400768\n" +
+			"Id=systemd-journald.service\nNames=systemd-journald.service\nSubState=running\nStateChangeTimestampMonotonic=519580955\n",
+			true, ServiceEntry{"sub_state": "running", "result": "success", "restarts": "0",
+				"since": "2026-11-12T09:08:39Z", "memory_bytes": "250400768"}},
+		"systemd before 235": {"Result=success\nExecMainCode=0\nExecMainStatus=0\nMemoryCurrent=18446744073709551615\n" +
+			"Id=nginx.service\nNames=nginx.service\nSubState=running\nStateChangeTimestampMonotonic=8123456\n",
+			true, ServiceEntry{"sub_state": "running", "result": "success", "since": "2026-11-12T09:00:08Z"}},
+		"killed": {"Result=signal\nNRestarts=3\nExecMainCode=2\nExecMainStatus=9\nMemoryCurrent=[not set]\n" +
+			"Id=app.service\nNames=app.service\nSubState=failed\nStateChangeTimestampMonotonic=8123456\n",
+			true, ServiceEntry{"sub_state": "failed", "result": "signal", "restarts": "3", "exit": "signal=SIGKILL",
+				"since": "2026-11-12T09:00:08Z"}},
+		"core dump": {"Result=core-dump\nNRestarts=0\nExecMainCode=3\nExecMainStatus=11\nMemoryCurrent=[not set]\n" +
+			"Id=app.service\nNames=app.service\nSubState=failed\nStateChangeTimestampMonotonic=8123456\n",
+			true, ServiceEntry{"sub_state": "failed", "result": "core-dump", "restarts": "0", "exit": "signal=SIGSEGV",
+				"since": "2026-11-12T09:00:08Z"}},
+		"signal without a name": {"Result=signal\nExecMainCode=2\nExecMainStatus=34\nId=app.service\nSubState=failed\n",
+			true, ServiceEntry{"sub_state": "failed", "result": "signal", "exit": "signal=34"}},
+		"exit status": {"Result=exit-code\nNRestarts=0\nExecMainCode=1\nExecMainStatus=203\nMemoryCurrent=[not set]\n" +
+			"Id=app.service\nNames=app.service\nSubState=failed\nStateChangeTimestampMonotonic=8123456\n",
+			true, ServiceEntry{"sub_state": "failed", "result": "exit-code", "restarts": "0", "exit": "status=203",
+				"since": "2026-11-12T09:00:08Z"}},
+		"without epoch": {"Result=success\nNRestarts=0\nExecMainCode=0\nExecMainStatus=0\nId=app.service\n" +
+			"SubState=running\nStateChangeTimestampMonotonic=8123456\n",
+			false, ServiceEntry{"sub_state": "running", "result": "success", "restarts": "0"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var props map[string]string
+			for _, p := range parseShowBlocks([]byte(tc.block)) {
+				props = p // every name of the one block maps to it
+			}
+			if got := serviceFacts(props, factEpoch, tc.haveEpoch); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("serviceFacts = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1046,7 +1329,7 @@ func TestServiceFallbackEndsAtTheEndOfTheContext(t *testing.T) {
 }
 
 // Every systemctl call of the service collector runs under the collector's context, the batch, the
-// per-unit fallback and the alias lookup included: a call under a fresh context would outlast the end
+// per-unit fallback, the alias lookup and the facts included: a call under a fresh context would outlast the end
 // of the run (R-0883).
 func TestServiceCollectorPassesItsContextToEverySystemctlCall(t *testing.T) {
 	type ctxKey struct{}
@@ -1076,8 +1359,8 @@ func TestServiceCollectorPassesItsContextToEverySystemctlCall(t *testing.T) {
 	// An enabled-inactive candidate and an alias make the collector itself ask for both show calls.
 	setup(nil)
 	collectServiceHealth(ctx)
-	if len(calls) != 5 {
-		t.Errorf("collectServiceHealth ran %v, want the three lists, the candidate batch and the alias lookup", calls)
+	if len(calls) != 6 {
+		t.Errorf("collectServiceHealth ran %v, want the three lists, the candidate batch, the alias lookup and the facts", calls)
 	}
 
 	setup(exec.Command("false").Run()) // a batch that answers with exit 1 gets the per-unit fallback

@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The agent's plan (R-1223): the probes it runs, the markers its discovery looks for and
-whether it scans in this run."""
+"""The agent's plan (R-1223): the probes it runs, the markers its discovery looks for,
+whether it scans in this run and whether it sends the error lines of failed services."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.catalog.loader import Catalog, get_catalog
 from app.check_configs import ProbeConfig
 from app.core.time import utcnow_naive
 from app.discovery import scan_due
-from app.models import MonitorCheck, MonitorDiscovery
+from app.models import MonitorCheck, MonitorDiscovery, MonitorServiceInventory
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,15 @@ def build_plan(
         "scan": scan_due(db.get(MonitorDiscovery, server_id), now or utcnow_naive()),
         "discovery": {"markers": _markers(catalog)},
         "probes": _probes(db, server_id),
+        "service_logs": _service_logs(db, server_id),
     }
+
+
+def _service_logs(db: Session, server_id: str) -> bool:
+    """R-1226: the agent sends the error lines of failed services unless the server's
+    switch is off; a server without a row has the column default, on."""
+    row = db.get(MonitorServiceInventory, server_id)
+    return row is None or row.log_lines is not False
 
 
 def _markers(catalog: Catalog) -> list[dict]:

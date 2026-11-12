@@ -28,7 +28,7 @@ import { reportError, showStatus } from './statusBar';
 import { getMappings } from './tunnel';
 import { requestPassword } from './passwordPrompt';
 import { closeEditor } from './editor';
-import { openRdp, openTerminal, reconnectRdp, terminals } from './terminals';
+import { openRdp, openTerminal, reconnectRdp, terminals, type TerminalAction } from './terminals';
 import { tNow } from '$lib/i18n';
 
 const isLinux =
@@ -373,6 +373,20 @@ export async function connectCredential(
   connection: Connection,
   credentialRef: string,
 ): Promise<void> {
+  await connectAction(connection, { credential: { ref: credentialRef } });
+}
+
+/**
+ * Opens the SSH connection `connection` in a tab of the embedded terminal that shows only the
+ * last lines of the journal of the systemd unit `unit` on the host, with the rights of the login
+ * (arch-monitoring-ui-3). A session like any embedded start.
+ */
+export async function connectServiceLog(connection: Connection, unit: string): Promise<void> {
+  await connectAction(connection, { journal: { unit } });
+}
+
+// An SSH tab that runs `action`, whatever console the settings name: the action exists only there.
+async function connectAction(connection: Connection, action: TerminalAction): Promise<void> {
   const resolved = await resolveTarget(connection);
   if (!resolved) return;
   const validation = validateConnection(resolved);
@@ -380,7 +394,7 @@ export async function connectCredential(
     reportError(validation.message ?? tNow('error.invalidConnection'));
     return;
   }
-  await connectEmbedded(connection, resolved, true, credentialRef);
+  await connectEmbedded(connection, resolved, true, action);
 }
 
 /**
@@ -393,11 +407,11 @@ async function connectEmbedded(
   connection: Connection,
   resolved: Connection,
   keepEditorOpen: boolean,
-  credentialRef?: string,
+  action?: TerminalAction,
 ): Promise<void> {
   let tabEnded!: () => void;
   const ended = new Promise<void>((resolve) => (tabEnded = resolve));
-  if (!(await openTerminal(connection, resolved, () => tabEnded(), credentialRef))) return;
+  if (!(await openTerminal(connection, resolved, () => tabEnded(), action))) return;
   try {
     const open = await markConnectionUsed(connection);
     if (open) {

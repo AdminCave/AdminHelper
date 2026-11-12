@@ -294,7 +294,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <SecForecast checks={forecastChecks} />
           {/if}
         {:else if card.kind === 'services'}
-          <SecServices checks={card.checks} />
+          <SecServices checks={card.checks} serverId={realServer ? selected : null} />
         {:else if card.kind === 'docker'}
           <SecDocker checks={card.checks} />
         {:else}

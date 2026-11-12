@@ -30,6 +30,7 @@ import type {
 const h = vi.hoisted(() => ({
   terminalOpenSsh: vi.fn(),
   terminalOpenSshCredential: vi.fn(async (..._a: unknown[]) => 77),
+  terminalOpenSshJournal: vi.fn(async (..._a: unknown[]) => 78),
   terminalOpenAnsible: vi.fn(async (..._a: unknown[]) => 99),
   terminalClose: vi.fn(async () => {}),
   terminalCloseAll: vi.fn(async () => {}),
@@ -56,6 +57,7 @@ const h = vi.hoisted(() => ({
 vi.mock('$lib/bridge', () => ({
   terminalOpenSsh: h.terminalOpenSsh,
   terminalOpenSshCredential: h.terminalOpenSshCredential,
+  terminalOpenSshJournal: h.terminalOpenSshJournal,
   terminalOpenAnsible: h.terminalOpenAnsible,
   terminalClose: h.terminalClose,
   terminalCloseAll: h.terminalCloseAll,
@@ -998,7 +1000,7 @@ describe('a credential prompt in a tab', () => {
   const REF = 'mysql/3306/monitor';
 
   it('opens in a tab in front and starts the prompt for its ref, not a shell', async () => {
-    expect(await openTerminal(CONN, RESOLVED, undefined, REF)).toBe(true);
+    expect(await openTerminal(CONN, RESOLVED, undefined, { credential: { ref: REF } })).toBe(true);
     const s = only();
     expect(s).toMatchObject({ connection: CONN, resolved: RESOLVED, credential: { ref: REF } });
     expect(s.backendId).toBe(77);
@@ -1014,7 +1016,7 @@ describe('a credential prompt in a tab', () => {
   });
 
   it('reconnects to the prompt again and is not kept for the next run', async () => {
-    await openTerminal(CONN, RESOLVED, undefined, REF);
+    await openTerminal(CONN, RESOLVED, undefined, { credential: { ref: REF } });
     const s = only();
     h.resolveConnection.mockResolvedValueOnce({ connection: MOVED });
     expect(await reconnectTerminal(s.key)).toBe(true);
@@ -1028,6 +1030,47 @@ describe('a credential prompt in a tab', () => {
     expect(h.terminalOpenSsh).not.toHaveBeenCalled();
     expect(openSessionIds([s])).toEqual([]);
     expect(openSessionIds([s, { ...s, credential: undefined }])).toEqual(['c1']);
+  });
+});
+
+// arch-monitoring-ui-3 T10: "Mehr Log", the journal of a unit on the host, over SSH.
+describe('the journal of a unit in a tab', () => {
+  const UNIT = 'nginx.service';
+
+  it('opens in a tab in front named for its unit and shows the journal, not a shell', async () => {
+    expect(await openTerminal(CONN, RESOLVED, undefined, { journal: { unit: UNIT } })).toBe(true);
+    const s = only();
+    expect(s).toMatchObject({ resolved: RESOLVED, journal: { unit: UNIT } });
+    // The tab, the title and a detached window name the connection and the unit; the id stays.
+    expect(s.connection).toEqual({ ...CONN, name: 'db · nginx.service' });
+    expect(s.backendId).toBe(78);
+    expect(get(terminals).active).toBe(s.key);
+    expect(h.terminalOpenSshJournal).toHaveBeenCalledExactlyOnceWith(
+      RESOLVED,
+      UNIT,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+    expect(h.terminalOpenSshCredential).not.toHaveBeenCalled();
+  });
+
+  it('reconnects to the journal again and is not kept for the next run', async () => {
+    await openTerminal(CONN, RESOLVED, undefined, { journal: { unit: UNIT } });
+    const s = only();
+    h.resolveConnection.mockResolvedValueOnce({ connection: MOVED });
+    expect(await reconnectTerminal(s.key)).toBe(true);
+    expect(h.terminalOpenSshJournal).toHaveBeenLastCalledWith(
+      MOVED,
+      UNIT,
+      80,
+      24,
+      expect.any(Function),
+    );
+    expect(h.terminalOpenSsh).not.toHaveBeenCalled();
+    expect(openSessionIds([s])).toEqual([]);
+    expect(openSessionIds([s, { ...s, journal: undefined }])).toEqual(['c1']);
   });
 });
 

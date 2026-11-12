@@ -10,14 +10,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
+  import ServiceList from './ServiceList.svelte';
+  import Button from '../../ui/Button.svelte';
+  import Modal from '../../ui/Modal.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
     checks: MonitorCheck[];
+    /** The server of the full service list; null hides it (checks without a server). */
+    serverId?: string | null;
   }
-  let { checks }: Props = $props();
+  let { checks, serverId = null }: Props = $props();
 
   let worst = $derived(worstStatus(checks));
+  // The list loads when the dialog opens: the dashboard asks for nothing more.
+  let listOpen = $state(false);
 
   // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
   const NOTE_KEY = {
@@ -188,5 +195,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
       </MonCheckLine>
     {/each}
+    {#if serverId}
+      <div class="mon-section-foot">
+        <Button variant="ghost" size="sm" onclick={() => (listOpen = true)}>
+          {$t('monitoring.services.list.open')}
+        </Button>
+      </div>
+    {/if}
   </div>
 </section>
+
+{#if serverId}
+  <Modal
+    open={listOpen}
+    title={$t('monitoring.services.list.title')}
+    width="1040px"
+    onClose={() => (listOpen = false)}
+  >
+    <ServiceList {serverId} onJournal={() => (listOpen = false)} />
+  </Modal>
+{/if}

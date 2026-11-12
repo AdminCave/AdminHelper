@@ -97,6 +97,7 @@ SCOPES = {
         "apps/desktop/src-tauri/**",
         # include_str! in src/connection/ssh.rs
         "apps/agent/internal/credentials/store.go",
+        "apps/agent/internal/allowlist/allowlist.go",
     ),
 }
 

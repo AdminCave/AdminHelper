@@ -172,6 +172,7 @@ func TestAllowlistTakesEveryCollectorCall(t *testing.T) {
 		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1"},
 		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1", "FreeBSD-kernel-15.1"},
 		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-14.3_12", "FreeBSD-kernel-14.3_11"},
+		append([]string{"wevtutil"}, scmCrashArgs...),
 	}
 	for _, call := range calls {
 		if !commandAllowed(call[0], call[1:]) {
@@ -265,6 +266,12 @@ func TestAllowlistRefusesTheTraps(t *testing.T) {
 		{"freebsd-version"},
 		{"freebsd-version", "-k"},
 		{"freebsd-version", "-kru", "-j", "web"},
+		{"wevtutil", "cl", "System"},
+		{"wevtutil", "qe", "Security", "/q:" + scmCrashQuery, "/c:50", "/rd:true", "/f:xml"},
+		{"wevtutil", "qe", "System", "/c:50", "/rd:true", "/f:xml"},
+		{"wevtutil", "qe", "System", "/q:*", "/c:50", "/rd:true", "/f:xml"},
+		{"wevtutil", "qe", "System", "/q:" + scmCrashQuery, "/c:5000", "/rd:true", "/f:xml"},
+		{"wevtutil", "qe", "System", "/q:" + scmCrashQuery, "/c:50", "/rd:true", "/f:xml", "/lf:true"},
 	}
 	for _, call := range calls {
 		if commandAllowed(call[0], call[1:]) {

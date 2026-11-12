@@ -84,8 +84,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
   // A shell of the host: a playbook run has none, and the credential prompt (arch-monitoring-ui)
-  // takes no snippet and no broadcast (they would land in the secret) and has no SFTP.
-  let shell = $derived(!session.ansible && !session.credential);
+  // takes no snippet and no broadcast (they would land in the secret) and has no SFTP; a journal
+  // (arch-monitoring-ui-3) only shows lines.
+  let shell = $derived(!session.ansible && !session.credential && !session.journal);
   let target = $derived.by(() => {
     const c = session.connection;
     // A playbook run (R-1073) has no host of its own: it names the playbook.

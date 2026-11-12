@@ -14,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.alerter import muted_reasons
@@ -40,7 +41,14 @@ from app.history import (
     server_maintenance,
     server_thresholds,
 )
-from app.models import MonitorCheck, MonitorState
+from app.models import (
+    MonitorAgentKey,
+    MonitorAgentLiveness,
+    MonitorCheck,
+    MonitorServiceInventory,
+    MonitorServiceLog,
+    MonitorState,
+)
 from app.scheduler import add_check, interval_timedelta, remove_check
 from app.schemas import (
     VALID_INTERVALS,
@@ -53,6 +61,8 @@ from app.schemas import (
     ServerCompareOut,
     ServerCostsOut,
     ServerHistoryOut,
+    ServiceInventoryOut,
+    ServiceOptionsIn,
     StatusSummaryOut,
 )
 from app.template_sync import (
@@ -651,6 +661,88 @@ def get_server_status(server_id: str, db: Session = Depends(get_db)):
         .all()
     )
     return _serialize_status(db, checks)
+
+
+def _known_server(db: Session, server_id: str) -> bool:
+    """Whether the service knows the server: its agent holds a key or has reported, or its
+    switch was set. Anything else is a mistyped or a deleted server, for which a PUT must
+    not leave a row behind that no cleanup would remove."""
+    return (
+        db.get(MonitorAgentLiveness, server_id) is not None
+        or db.get(MonitorServiceInventory, server_id) is not None
+        or db.query(MonitorAgentKey.id).filter(MonitorAgentKey.server_id == server_id).first()
+        is not None
+    )
+
+
+def _services_out(db: Session, server_id: str, row: MonitorServiceInventory | None) -> dict:
+    log_lines = row is None or row.log_lines is not False
+    # A report already running when the switch went off may store its lines once more;
+    # they are not shown, and that report's successor deletes them.
+    logs = (
+        db.query(MonitorServiceLog)
+        .filter(MonitorServiceLog.server_id == server_id)
+        .order_by(MonitorServiceLog.unit)
+        .all()
+        if log_lines
+        else []
+    )
+    return {
+        "serverId": server_id,
+        "reportedAt": iso_utc(row.reported_at) if row is not None else None,
+        "logLines": log_lines,
+        "services": json.loads(row.services) if row is not None else [],
+        "logs": {
+            log.unit: {
+                "since": iso_utc(log.since),
+                "collectedAt": iso_utc(log.collected_at),
+                "lines": json.loads(log.lines),
+            }
+            for log in logs
+        },
+    }
+
+
+@router.get(
+    "/status/server/{server_id}/services",
+    response_model=ServiceInventoryOut,
+    dependencies=[Depends(require_internal)],
+)
+def get_server_services(server_id: str, db: Session = Depends(get_db)):
+    """The services the server's agent last reported, the switch for their error lines
+    and the redacted error lines of the failed ones."""
+    if not _known_server(db, server_id):
+        raise HTTPException(404, "Server not found")
+    return _services_out(db, server_id, db.get(MonitorServiceInventory, server_id))
+
+
+@router.put(
+    "/status/server/{server_id}/services/options",
+    response_model=ServiceInventoryOut,
+    dependencies=[Depends(require_internal)],
+)
+def set_server_service_options(
+    server_id: str, data: ServiceOptionsIn, db: Session = Depends(get_db)
+):
+    """Switches the error lines of failed services on or off for the server. Off deletes
+    the stored lines at once; the agent learns it with its next plan."""
+    if not _known_server(db, server_id):
+        raise HTTPException(404, "Server not found")
+    row = db.get(MonitorServiceInventory, server_id)
+    if row is None:
+        db.add(MonitorServiceInventory(server_id=server_id, log_lines=data.log_lines))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()  # a report created the row meanwhile
+        row = db.get(MonitorServiceInventory, server_id)
+    row.log_lines = data.log_lines
+    if not data.log_lines:
+        db.query(MonitorServiceLog).filter(MonitorServiceLog.server_id == server_id).delete(
+            synchronize_session=False
+        )
+    db.commit()
+    return _services_out(db, server_id, row)
 
 
 @router.get(

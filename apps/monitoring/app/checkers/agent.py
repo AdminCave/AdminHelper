@@ -123,21 +123,21 @@ def agent_number(value: object) -> int | float | None:
     return value if finite else None
 
 
-# The one cap on a report list for the checkers and the push handler (routers/agent.py),
-# applied in two places: capped_objects for lists of objects, ServiceProcessChecker._capped
-# for the unit lists. A compromised or misconfigured agent must not flood the service with
-# a huge list (3.76, R-0632).
-_MAX_REPORT_ENTRIES = 500
+# The one cap on a report list for the checkers, the push handler (routers/agent.py) and the
+# service inventory it stores (service_inventory), applied through capped_objects for lists of
+# objects and ServiceProcessChecker._capped for the unit lists. A compromised or misconfigured
+# agent must not flood the service with a huge list (3.76, R-0632).
+MAX_REPORT_ENTRIES = 500
 
 
-def capped_objects(value: object, limit: int = _MAX_REPORT_ENTRIES) -> list[dict]:
+def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]:
     """The entries of a report list that a checker rates: the objects among the first
-    `limit` (at most _MAX_REPORT_ENTRIES), [] for anything but a list. Capping first bounds
+    `limit` (at most MAX_REPORT_ENTRIES), [] for anything but a list. Capping first bounds
     the work on a flooded list and lets an entry that is no object take its place in a
     smaller limit; any other entry is skipped instead of failing the evaluation (R-0486)."""
     if not isinstance(value, list):
         return []
-    return [entry for entry in value[: min(limit, _MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
+    return [entry for entry in value[: min(limit, MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
 
 
 def entry_text(entry: dict, key: str, default: str) -> str:
@@ -761,7 +761,7 @@ class ServiceProcessChecker:
     def _capped(raw) -> list:
         """Caps a unit list from the report so a huge/hostile array can't drive a DoS through
         the glob matching (3.76); a non-list value is treated as empty."""
-        return raw[:_MAX_REPORT_ENTRIES] if isinstance(raw, list) else []
+        return raw[:MAX_REPORT_ENTRIES] if isinstance(raw, list) else []
 
     @staticmethod
     def _parse_counts(raw) -> tuple[int, int] | None:
@@ -783,6 +783,21 @@ class ServiceProcessChecker:
         reason = cap_agent_text(error)
         return f"Services not queryable: {reason}" if reason else "Services not queryable"
 
+    @staticmethod
+    def _reasons(raw) -> dict[str, str]:
+        """Per unit of systemd.failed_details the reason the message names: its result and exit,
+        each on one line and cut ("exit-code, status=1"); the first entry of a unit counts. A
+        unit without either has none. Restarts and since stay out: the text must not change
+        while the same failure lasts, or every push would rewrite the state message."""
+        reasons: dict[str, str] = {}
+        for entry in capped_objects(raw):
+            unit = entry.get("unit")
+            parts = [cap_agent_text(entry.get(key)) for key in ("result", "exit")]
+            reason = ", ".join(p for p in parts if p)
+            if isinstance(unit, str) and reason and unit not in reasons:
+                reasons[unit] = reason
+        return reasons
+
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         """Auto mode: checks systemd health from the report.
 
@@ -794,8 +809,11 @@ class ServiceProcessChecker:
         all_services, the large, mostly-static inventory, is throttled: v2 agents OMIT the
         key on most pushes. It only adds failed services systemd.failed lacks, after
         systemd.failed, so a full and a throttled push of the same state give the same
-        result. The inventory is not persisted server-side, so nothing is lost by a
-        throttled push.
+        result. The push handler keeps the inventory for the desktop (service_inventory);
+        the rating never reads it, so a throttled push loses nothing.
+
+        failed_details, sent with every push, gives the reason a failed unit names in the
+        message; the error lines (failed_logs) stay out of message and _details.
         """
         systemd = report.get("systemd")
         if not isinstance(systemd, dict) or not systemd:
@@ -841,11 +859,16 @@ class ServiceProcessChecker:
         # warning, like an enabled but inactive unit (Kevin 2026-10-19).
         failed_services = [u for u in failed if self._is_service(u)]
         failed_units = [u for u in failed if not self._is_service(u)]
+        reasons = self._reasons(systemd.get("failed_details"))
+
+        def named(units: list[str]) -> list[str]:
+            return [f"{u} ({reasons[u]})" if u in reasons else u for u in units]
+
         parts = []
         if failed_services:
-            parts.append(f"Failed: {join_capped(failed_services)}")
+            parts.append(f"Failed: {join_capped(named(failed_services))}")
         if failed_units:
-            parts.append(f"Failed units: {join_capped(failed_units)}")
+            parts.append(f"Failed units: {join_capped(named(failed_units))}")
         if enabled_inactive:
             parts.append(f"Inactive (autostart): {join_capped(enabled_inactive)}")
 
@@ -865,17 +888,20 @@ class ServiceProcessChecker:
         return "ok", "All services OK", metrics
 
     @staticmethod
-    def _inventory_state(entry: dict, inventory: dict, error) -> str | None:
+    def _resolve_alias(entry: dict, inventory: dict) -> dict | None:
+        """The all_services entry that holds a name's facts: its own, or for an alias its
+        target's. list-units knows a unit by its own name only, so an alias has the state of
+        its target, and without alias_of (the agent could not resolve it) none at all."""
+        if entry.get("enabled_state") != "alias":
+            return entry
+        target = entry.get("alias_of")
+        if not isinstance(target, str):
+            return None
+        return inventory.get(ServiceProcessChecker._unit_name(target))
+
+    @staticmethod
+    def _inventory_state(entry: dict, error) -> str | None:
         """running or down from an all_services entry, None if the entry says nothing."""
-        if entry.get("enabled_state") == "alias":
-            # list-units knows a unit by its own name only: an alias has the state of its
-            # target, and without alias_of (the agent could not resolve it) none at all.
-            target = entry.get("alias_of")
-            if not isinstance(target, str):
-                return None
-            entry = inventory.get(ServiceProcessChecker._unit_name(target))
-            if entry is None:
-                return None
         active = entry.get("active_state")
         if active == "active":
             return "running"
@@ -884,6 +910,19 @@ class ServiceProcessChecker:
         if active == "unknown" and error:
             return None
         return "down"
+
+    @staticmethod
+    def _inventory_reason(entry: dict) -> str | None:
+        """The reason a down service names in list mode, from its inventory facts: result and
+        exit, each on one line and cut, as _reasons does. None for result success, a service
+        stopped on purpose. Windows sends result only after a crash event (crashed) and exit
+        only for a stop with an error code; both are in the inventory hash, so a throttled push
+        carries the last reason over."""
+        result = cap_agent_text(entry.get("result"))
+        if result == "success":
+            return None
+        parts = [result, cap_agent_text(entry.get("exit"))]
+        return ", ".join(p for p in parts if p) or None
 
     def _evaluate_list(
         self, config: dict, report: dict, prev_details: dict | None
@@ -899,6 +938,10 @@ class ServiceProcessChecker:
         gaps are not filled from prev_details. A name no source knows is nodata (a typo, no
         such unit, added since the last full inventory) and not down (Kevin 2026-10-16); only
         without data for any name is the check unknown.
+
+        A down name carries the reason of the same source (_inventory_reason, on a throttled
+        push the stored one) in its watched entry and behind its name in the message, so the
+        Windows exit code reaches the message too, without a new alarm (spec, Nicht-Ziele).
         """
         expected = config.get("services", [])
         if not expected:
@@ -911,6 +954,7 @@ class ServiceProcessChecker:
 
         # Lowest precedence first, so each later source overwrites what it knows.
         states: dict[str, str] = {}
+        reasons: dict[str, str] = {}
         if "all_services" in systemd:
             inventory = {
                 self._unit_name(s["unit"]): s
@@ -918,9 +962,13 @@ class ServiceProcessChecker:
                 if isinstance(s, dict) and isinstance(s.get("unit"), str)
             }
             for unit, entry in inventory.items():
-                state = self._inventory_state(entry, inventory, error)
+                target = self._resolve_alias(entry, inventory)
+                state = self._inventory_state(target, error) if target is not None else None
                 if state:
                     states[unit] = state
+                    reason = self._inventory_reason(target) if state == "down" else None
+                    if reason:
+                        reasons[unit] = reason
         else:
             for w in self._capped((prev_details or {}).get("watched")):
                 # Old details (running alone, no state) were written while a missing watch
@@ -931,6 +979,9 @@ class ServiceProcessChecker:
                     and w.get("state") in ("running", "down")
                 ):
                     states[self._unit_name(w["name"])] = w["state"]
+                    reason = cap_agent_text(w.get("reason"))
+                    if reason:
+                        reasons[self._unit_name(w["name"])] = reason
         for s in self._capped(report.get("services")):
             if isinstance(s, dict) and isinstance(s.get("name"), str):
                 states[self._unit_name(s["name"])] = "running" if s.get("running") else "down"
@@ -939,8 +990,16 @@ class ServiceProcessChecker:
         for name in expected:
             state = states.get(self._unit_name(name), "nodata")
             # running beside state: desktops before state read running alone (Kevin 2026-10-16).
-            watched.append({"name": name, "state": state, "running": state == "running"})
-        down = [w["name"] for w in watched if w["state"] == "down"]
+            entry = {"name": name, "state": state, "running": state == "running"}
+            reason = reasons.get(self._unit_name(name))
+            if state == "down" and reason:
+                entry["reason"] = reason
+            watched.append(entry)
+        down = [
+            f"{w['name']} ({w['reason']})" if "reason" in w else w["name"]
+            for w in watched
+            if w["state"] == "down"
+        ]
         up = [w["name"] for w in watched if w["state"] == "running"]
         nodata = [w["name"] for w in watched if w["state"] == "nodata"]
 

@@ -4,13 +4,20 @@
 
 package monitor
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // scServiceHealth builds the Windows service-health block from the result of `sc query state= all`,
 // in the format of the systemd block; no build tag, so it is tested on any platform. A failed sc
 // query sets error and leaves the inventory empty and the counts out: without error the server would
 // read the empty block as all OK, and counts would claim 0 of 0.
-func scServiceHealth(out []byte, err error) map[string]any {
+//
+// crashEvents runs the scmCrashArgs call, only when a stopped service carries an exit: its events
+// add result and since to those services (addScmCrashes). A failed call adds nothing, like the
+// facts batch on Linux.
+func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error)) map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
 		"enabled_inactive": []string{},
@@ -20,9 +27,17 @@ func scServiceHealth(out []byte, err error) map[string]any {
 		result["error"] = "sc query failed: " + commandFailure("sc", pluginTimeout, err)
 		return result
 	}
-	services := parseScQuery(string(out))
+	services, byName := parseScQuery(string(out))
 	result["all_services"] = services
 	result["counts"] = serviceCounts(services)
+	for _, svc := range services {
+		if svc["exit"] != "" {
+			if events, err := crashEvents(); err == nil {
+				addScmCrashes(services, byName, parseScmCrashes(events))
+			}
+			break
+		}
+	}
 	return result
 }
 
@@ -35,12 +50,12 @@ func scServiceHealth(out []byte, err error) map[string]any {
 // STOPPED services are deliberately NOT classified as enabled_inactive: `sc query` does not expose
 // the start type, so "enabled but inactive" is unknowable here. The monitoring service derives the
 // same empty result from all_services (enabled_state is always "unknown" on Windows).
-func parseScQuery(out string) []ServiceEntry {
-	var (
-		allServices  []ServiceEntry
-		currentName  string
-		currentState string
-	)
+//
+// byName maps every service name and display name, in lower case, to the service name; the SCM
+// keeps both unique across all services.
+func parseScQuery(out string) (allServices []ServiceEntry, byName map[string]string) {
+	var currentName, currentDisplay, currentState, currentWin32, currentSpecific string
+	byName = map[string]string{}
 
 	// flush the in-progress entry — called both when a new SERVICE_NAME starts the next record AND
 	// once after the loop, so the last service isn't dropped (off-by-one).
@@ -48,7 +63,17 @@ func parseScQuery(out string) []ServiceEntry {
 		if currentName == "" {
 			return
 		}
-		allServices = append(allServices, mapWindowsService(currentName, currentState))
+		svc := mapWindowsService(currentName, currentState)
+		if currentState == "STOPPED" {
+			if exit := windowsExit(currentWin32, currentSpecific); exit != "" {
+				svc["exit"] = exit
+			}
+		}
+		allServices = append(allServices, svc)
+		byName[strings.ToLower(currentName)] = currentName
+		if currentDisplay != "" {
+			byName[strings.ToLower(currentDisplay)] = currentName
+		}
 	}
 
 	for _, line := range strings.Split(out, "\n") {
@@ -56,7 +81,13 @@ func parseScQuery(out string) []ServiceEntry {
 		if strings.HasPrefix(line, "SERVICE_NAME:") {
 			flush()
 			currentName = strings.TrimSpace(strings.TrimPrefix(line, "SERVICE_NAME:"))
-			currentState = ""
+			currentDisplay, currentState, currentWin32, currentSpecific = "", "", "", ""
+		} else if strings.HasPrefix(line, "DISPLAY_NAME:") {
+			currentDisplay = strings.TrimSpace(strings.TrimPrefix(line, "DISPLAY_NAME:"))
+		} else if strings.HasPrefix(line, "WIN32_EXIT_CODE") {
+			currentWin32 = scCode(line)
+		} else if strings.HasPrefix(line, "SERVICE_EXIT_CODE") {
+			currentSpecific = scCode(line)
 		} else if strings.HasPrefix(line, "STATE") {
 			parts := strings.Fields(line)
 			for _, p := range parts {
@@ -69,7 +100,37 @@ func parseScQuery(out string) []ServiceEntry {
 	}
 	flush()
 
-	return allServices
+	return allServices, byName
+}
+
+// scCode is the decimal code of an sc query line like `WIN32_EXIT_CODE    : 1067  (0x42b)`, or ""
+// when the line carries none.
+func scCode(line string) string {
+	_, value, ok := strings.Cut(line, ":")
+	fields := strings.Fields(value)
+	if !ok || len(fields) == 0 {
+		return ""
+	}
+	if _, err := strconv.ParseInt(fields[0], 10, 64); err != nil {
+		return ""
+	}
+	return fields[0]
+}
+
+// windowsExit is the exit of a stopped service from its Win32 and service-specific exit codes, or ""
+// when it ended without an error: 0 (NO_ERROR) and 1077 (ERROR_SERVICE_NEVER_STARTED, a service not
+// started since boot) are none. 1066 (ERROR_SERVICE_SPECIFIC_ERROR) says the service's own code is in
+// SERVICE_EXIT_CODE, which counts only then (SERVICE_STATUS).
+func windowsExit(win32, specific string) string {
+	switch win32 {
+	case "", "0", "1077":
+		return ""
+	case "1066":
+		if specific != "" && specific != "0" {
+			return "service=" + specific
+		}
+	}
+	return "win32=" + win32
 }
 
 // mapWindowsService maps a Windows service to the systemd-compatible format.

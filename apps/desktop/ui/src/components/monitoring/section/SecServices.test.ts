@@ -15,7 +15,16 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // init calls matchMedia (missing in jsdom). SecServices never renders a chart
 // (showChart={false}) — stub the lib away, same as SecDocker.test.ts.
 vi.mock('uplot', () => ({ default: class {} }));
-import { render, cleanup } from '@testing-library/svelte';
+const h = vi.hoisted(() => ({ fetch: vi.fn() }));
+vi.mock('$lib/api/monitoring', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('$lib/api/monitoring')>();
+  return { ...orig, monitoringApi: { ...orig.monitoringApi, fetchServerServices: h.fetch } };
+});
+vi.mock('$lib/stores/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/stores/session')>()),
+  currentSession: () => ({ serverUrl: 'https://hub.example' }),
+}));
+import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import type { MonitorCheck, MonitorCheckState } from '$lib/api/types';
@@ -65,6 +74,7 @@ function row(r: HTMLElement): { name: string; note: string } {
 
 afterEach(() => {
   cleanup();
+  h.fetch.mockReset();
   if (get(monitoring).expandedCheckId === ID) toggleExpanded(ID);
   setLanguage('de');
 });
@@ -519,5 +529,47 @@ describe('SecServices details of the wrong form', () => {
     const { container: el } = render(SecServices, { props: { checks: [wrong] } });
     expect(texts(pills(el))).toEqual(['2 Probleme']);
     expect((await expand(el)).map(row).map((r) => r.name)).toEqual(['foo.service', 'bar.service']);
+  });
+});
+
+// arch-monitoring-ui-3 T7 (R-1226): the full service list of the server opens from the
+// section as a dialog and asks the monitoring service only then.
+describe('SecServices full list', () => {
+  const ok = check({ status: 'ok', details: { mode: 'auto', failed: [], enabled_inactive: [] } });
+
+  function allButton(): HTMLElement | null {
+    return (
+      Array.from(document.querySelectorAll<HTMLElement>('button')).find(
+        (b) => b.textContent?.trim() === 'Alle Dienste anzeigen',
+      ) ?? null
+    );
+  }
+
+  it('offers no list without a server', () => {
+    render(SecServices, { props: { checks: [ok] } });
+    expect(allButton()).toBeNull();
+    render(SecServices, { props: { checks: [ok], serverId: null } });
+    expect(allButton()).toBeNull();
+  });
+
+  it('loads the list only when the dialog opens, for this server', async () => {
+    h.fetch.mockResolvedValue({
+      serverId: 'srv-1',
+      reportedAt: null,
+      logLines: true,
+      services: [],
+      logs: {},
+    });
+    render(SecServices, { props: { checks: [ok], serverId: 'srv-1' } });
+    await tick();
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    await fireEvent.click(allButton() as HTMLElement);
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain('Alle Dienste');
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    expect(h.fetch.mock.calls[0][1]).toBe('srv-1');
   });
 });

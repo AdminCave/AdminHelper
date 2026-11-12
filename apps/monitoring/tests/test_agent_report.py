@@ -204,7 +204,7 @@ def test_capped_limits_length_and_rejects_non_list(client_db, monkeypatch):
     # non-list (a malicious agent sending disks="x" or null) as empty rather than
     # iterating it as chars. R-0632: the handler caps with capped_objects of the
     # checkers, one limit for both paths.
-    from app.checkers.agent import _MAX_REPORT_ENTRIES
+    from app.checkers.agent import MAX_REPORT_ENTRIES
     from app.core import victoria as vm
 
     client, _factory = client_db
@@ -220,7 +220,7 @@ def test_capped_limits_length_and_rejects_non_list(client_db, monkeypatch):
         for line in batch
         if line.startswith("monitor_agent_disk_percent,")
     ]
-    assert mounts == [f"/m{i}" for i in range(_MAX_REPORT_ENTRIES)]
+    assert mounts == [f"/m{i}" for i in range(MAX_REPORT_ENTRIES)]
 
     for value in (None, "string", {"a": 1}):
         writes.clear()

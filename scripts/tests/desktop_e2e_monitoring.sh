@@ -19,6 +19,11 @@
 # after the first spec so that spec sees one server only: a fixture agent is
 # provisioned for it and never runs (a run would scan and report the test box),
 # and the spec pushes a fixed report with that agent's key.
+#
+# The third spec (arch-monitoring-ui-3 T11) opens the service list of the fixture
+# server and "Mehr Log" of a unit. That needs an SSH connection of the fixture
+# server: an SSH target container whose journalctl is a stand-in that prints its
+# arguments, so the spec sees what the remote shell made of the fixed command.
 
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -34,7 +39,7 @@ FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
-e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker go
+e2e_require ssh ssh-keygen node xvfb-run WebKitWebDriver tauri-driver dbus-run-session dbus-send gnome-keyring-daemon docker go
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
@@ -61,7 +66,8 @@ SID=$(e2e_api "$TOKEN" server e2e-server e2e.local)
 # processes outside the container), so without them the scan finds no port.
 AGENT_CTR="$E2E_PROJECT-agent"
 FIX_CTR="$E2E_PROJECT-fixture"
-trap 'docker rm -f "$AGENT_CTR" "$FIX_CTR" >/dev/null 2>&1; e2e_teardown' EXIT
+SSH_CTR="$E2E_PROJECT-ssh"
+trap 'docker rm -f "$AGENT_CTR" "$FIX_CTR" "$SSH_CTR" >/dev/null 2>&1; e2e_teardown' EXIT
 docker run -d --rm --name "$AGENT_CTR" --network host --pid host \
     --cap-add SYS_PTRACE --security-opt apparmor=unconfined -v "$AGENT_BIN:/agent:ro" \
     debian:bookworm-slim sleep 7200 >/dev/null \
@@ -114,6 +120,66 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/monitoring-server-page.live.js
 ' && ok "monitoring-server-page GUI spec passed" || bad "monitoring-server-page GUI spec failed"
+
+# The SSH target of the fixture server's connection, on a port docker picks (the
+# image and its user as in desktop_e2e_connect.sh). Readiness and sign-ins come
+# from its log, so no probe from the host counts as a client.
+SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4"
+docker run -d --name "$SSH_CTR" -p 127.0.0.1::2222 \
+    -e PASSWORD_ACCESS=true -e USER_NAME=e2e -e USER_PASSWORD=e2e -e LOG_STDOUT=true \
+    "$SSH_IMAGE" >/dev/null || { bad "SSH target did not start"; exit 1; }
+SSH_PORT=$(docker port "$SSH_CTR" 2222/tcp | sed -n 's/^127\.0\.0\.1://p' | head -1)
+ssh_up=0
+for _ in $(seq 1 40); do
+    docker logs "$SSH_CTR" 2>&1 | grep -q "listening on port 2222" && { ssh_up=1; break; }
+    sleep 1
+done
+[ "$ssh_up" = 1 ] && [ -n "$SSH_PORT" ] && ok "SSH target listening on 127.0.0.1:$SSH_PORT" \
+    || { bad "SSH target never came up"; docker logs --tail 20 "$SSH_CTR"; exit 1; }
+# The image has no journalctl: the stand-in prints each argument on a line of its
+# own, then their count.
+docker exec -i "$SSH_CTR" sh -c 'cat > /usr/bin/journalctl && chmod 755 /usr/bin/journalctl' <<'JOURNALCTL' \
+    && ok "stand-in journalctl on the SSH target" || { bad "stand-in journalctl"; exit 1; }
+#!/bin/sh
+for a in "$@"; do printf 'AH_E2E_ARG %s\n' "$a"; done
+printf 'AH_E2E_ARGS %s\n' "$#"
+JOURNALCTL
+e2e_api "$TOKEN" connection fixture-ssh ssh 127.0.0.1 "$SSH_PORT" e2e "$FIX_SID" >/dev/null \
+    && ok "seeded the fixture server's SSH connection" || { bad "seed SSH connection"; exit 1; }
+
+# ssh would check the user's own known_hosts (the home of the passwd entry, not
+# $HOME): a shim gives the app's ssh a known_hosts of the run, empty at the start
+# (desktop_e2e_connect.sh). Only the third spec runs with it on its PATH.
+SHIM_DIR="$E2E_WORK/bin"; mkdir -p "$SHIM_DIR"
+REAL_SSH=$(command -v ssh) || { bad "ssh not found"; exit 1; }
+E2E_KNOWN_HOSTS="$E2E_WORK/known_hosts"; : > "$E2E_KNOWN_HOSTS"
+printf '#!/bin/bash\nexec %q -o %q "$@"\n' "$REAL_SSH" "UserKnownHostsFile=$E2E_KNOWN_HOSTS" > "$SHIM_DIR/ssh"
+chmod +x "$SHIM_DIR/ssh"
+
+echo "[mon] running the monitoring-services spec under xvfb..."
+export AH_E2E_SSH_CONNECTION="fixture-ssh"
+PATH="$SHIM_DIR:$PATH" dbus-run-session -- bash -c '
+    e2e_keyring_start || exit 1
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/monitoring-services.live.js
+' && ok "monitoring-services GUI spec passed" || bad "monitoring-services GUI spec failed"
+
+if ssh-keygen -F "[127.0.0.1]:$SSH_PORT" -f "$E2E_KNOWN_HOSTS" >/dev/null 2>&1; then
+    ok "the run's own known_hosts holds the SSH target's key"
+else
+    bad "the run's own known_hosts holds no key for the SSH target: ssh went past the shim"
+fi
+# "Mehr Log" signed in once, with the password the spec typed. The desktop reaches
+# the published port with an IPv4 source. Polled: the log can lag on a loaded box.
+signed_in=0
+for _ in $(seq 1 30); do
+    signed_in=$(docker logs "$SSH_CTR" 2>&1 \
+        | grep -cE 'Accepted password for e2e from [[:digit:]]+(\.[[:digit:]]+){3} port ')
+    [ "$signed_in" = 1 ] && break
+    sleep 1
+done
+[ "$signed_in" = 1 ] && ok "sshd logged the sign-in of \"Mehr Log\"" \
+    || { bad "sshd logged $signed_in sign-ins of e2e, expected 1"; docker logs --tail 25 "$SSH_CTR"; }
 
 echo ""
 echo "desktop_e2e_monitoring: $PASS passed, $FAIL failed"

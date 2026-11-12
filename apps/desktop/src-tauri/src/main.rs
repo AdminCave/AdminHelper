@@ -49,8 +49,8 @@ use commands::{
     start_tunnel, stop_notification_stream, stop_tunnel, sync_connections, terminal_attach,
     terminal_broadcast, terminal_broadcast_state, terminal_close, terminal_close_all,
     terminal_detach, terminal_dock, terminal_open_ansible, terminal_open_ssh,
-    terminal_open_ssh_credential, terminal_resize, terminal_set_broadcast, terminal_write,
-    tunnel_status, workspace_context, write_export_csv,
+    terminal_open_ssh_credential, terminal_open_ssh_journal, terminal_resize,
+    terminal_set_broadcast, terminal_write, tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -293,6 +293,7 @@ fn main() {
             open_launcher,
             terminal_open_ssh,
             terminal_open_ssh_credential,
+            terminal_open_ssh_journal,
             terminal_write,
             terminal_broadcast,
             terminal_set_broadcast,

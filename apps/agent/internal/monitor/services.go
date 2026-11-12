@@ -13,7 +13,8 @@ import (
 )
 
 // ServiceEntry is one service record in the all_services inventory (keys:
-// unit, active_state, enabled_state). Named alias so the wire contract between
+// unit, active_state, enabled_state, alias_of; optional state facts sub_state,
+// since, restarts, result, exit, memory_bytes). Named alias so the wire contract between
 // the platform collectors (services_linux.go / services_windows.go) and the
 // throttle/hash logic (inventory.go) has a single anchor: change the element
 // type here once instead of keeping three []map[string]string literals in sync.

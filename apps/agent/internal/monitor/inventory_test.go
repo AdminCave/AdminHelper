@@ -62,6 +62,47 @@ func TestAliasAndWatchInventoryHash(t *testing.T) {
 	}
 }
 
+func TestInventoryHashFacts(t *testing.T) {
+	// The state facts reach the server with the next push when they change: a restart moves since and
+	// restarts of a running unit, a failure its sub_state, result and exit. memory_bytes moves on every
+	// push and stays out, as does the since of an inactive unit, which a timer-driven oneshot moves
+	// with every run: otherwise the full inventory went along with every push instead of hourly.
+	base := ServiceEntry{"unit": "nginx.service", "active_state": "active", "enabled_state": "enabled",
+		"sub_state": "running", "result": "success", "restarts": "0", "since": "2026-11-12T09:08:48Z",
+		"memory_bytes": "6258688"}
+	with := func(e ServiceEntry, kv ...string) ServiceEntry {
+		out := ServiceEntry{}
+		for k, v := range e {
+			out[k] = v
+		}
+		for i := 0; i < len(kv); i += 2 {
+			out[kv[i]] = kv[i+1]
+		}
+		return out
+	}
+	hash := func(e ServiceEntry) string { return inventoryHash([]ServiceEntry{e}) }
+	for name, e := range map[string]ServiceEntry{
+		"since":     with(base, "since", "2026-11-12T10:00:00Z"),
+		"restarts":  with(base, "restarts", "1"),
+		"sub_state": with(base, "sub_state", "auto-restart"),
+		"result":    with(base, "result", "exit-code"),
+		"exit":      with(base, "exit", "status=1"),
+	} {
+		if hash(e) == hash(base) {
+			t.Errorf("hash unchanged although %s changed", name)
+		}
+	}
+	inactive := with(base, "active_state", "inactive", "sub_state", "dead")
+	for name, pair := range map[string][2]ServiceEntry{
+		"memory_bytes":              {base, with(base, "memory_bytes", "7340032")},
+		"since of an inactive unit": {inactive, with(inactive, "since", "2026-11-12T10:05:00Z")},
+	} {
+		if hash(pair[0]) != hash(pair[1]) {
+			t.Errorf("hash changed with only %s", name)
+		}
+	}
+}
+
 func TestShouldSendFullInventory(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	recent := &inventoryState{Hash: "h1", LastFullSentUnix: now.Add(-5 * time.Minute).Unix()}
