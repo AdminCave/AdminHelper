@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: keine (Test zieht die Konfiguration aus T2 nach)
 Abhängt von: T2
 
-### T5 — R-1343: nightly.yml mit schemathesis-tief und backup_restore  [ ]
-Komponente: server · Dateien: .github/workflows/nightly.yml, apps/server/tests/test_ci_workflow.py
+### T5 — R-1343: nightly.yml mit schemathesis-tief und backup_restore  [x]
+Komponente: server · Dateien: .github/workflows/nightly.yml, apps/server/tests/test_ci_workflow.py, .github/workflows/ci.yml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @588237e73 2026-11-12T08:17:54+01:00
+Review: approve (.ah-out/review/arch-workflow-ci-1/T5.verdict.json)
 Änderung: Neuer Workflow (SPDX) mit `schedule`, `workflow_dispatch` und `pull_request` (`paths` nur auf sich selbst). Job schemathesis wie in `ci.yml`, aber `AH_SCHEMATHESIS_EXAMPLES: "100"`, Commit und Beispielzahl in der Job-Summary; Job backup-restore fährt `bash scripts/tests/backup_restore_test.sh`, Exit 75 ist rot. `test_ci_workflow.py` prüft Trigger, Budget, die Schritte und dass kein Job ein Ereignis-`if` trägt. Die Probe auf GitHub-Runnern ist der PR-Lauf dieses Workflows (vor dem Merge, im Bericht an Kevin). Dazu direkt `bash .github/scripts/cache_settings_test.sh`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: → T6
@@ -74,3 +76,5 @@ Abhängt von: T5
 - 2026-11-12 T3: Der Pfad-Scan der Python-Suiten ist eine Heuristik: er löst auf `__file__` gebaute Pfade auf (`Path()`, `.resolve()`, `.parent`, `.parents[k]`, `/`, `.joinpath`, `.with_name`, `os.path`-Ketten, an solche gebundene Namen; Reviewer-Fund: die frpc-Testdaten unter `apps/agent/internal/frpc/testdata/`, jetzt im Server-Scope), sonst `/`- und `join`-Ketten ab einem Bereichs-Literal und Pfade in Strings; ein Treffer außerhalb der engen Bereiche schaltet ohnehin alles ein. Ausnahmen stehen mit Grund in `_NOT_READ` (Basis des frps-Kontexts und der Plugin-Pakete, Diff-Label in `test_ssrf_parity.py`), die Datei selbst (Pfade als Testdaten) in `_DATA`. Dazu prüft `test_what_a_gated_job_works_in_and_names_lies_in_its_scope` Arbeitsverzeichnis und genannte Pfade jedes gesteuerten Jobs (Lock-Jobs nur die Lock-Dateien, Kevins Trade-off). Gegenprobe: jeder Scope-Eintrag einzeln im Speicher entfernt macht einen Test rot (die `!`-Ausnahmen verbreitern nur), die Lock-Dockerfiles über die Wahrheitstabelle.
 - 2026-11-12 T3: `agent-windows` bekommt `docs/**` nicht (Reviewer-Nit, `docs_cli_test.go` liest die Doku): die Windows-Quellen des CLI-Pakets (`run_windows.go`) registrieren weder Befehl noch Flag, den Befehlsbaum prüft der Linux-Job `agent` auf jedem PR; ein Windows-Runner je Doku-PR stünde dagegen.
 - 2026-11-12 T3: Die Abgleich-Tests laufen in der Server-Suite; ein PR, der sie nicht fährt, wird auf `main` geprüft (Backstop der Spec). `WANT` (Ausdruck → `'true'`/`'false'` im env) bestätigt der PR-Lauf.
+- 2026-11-12 T5: Kein fester Reproduktions-Schlüssel aus Commit + Beispielzahl: `derandomize` macht die Generate-Phase nicht wiederholbar; die Summary nennt Commit und Budget, die Reproduktion ist der fehlschlagende Fall im Log (Abweichung von V7 „fester, geloggter Seed“).
+- 2026-11-12 T5: Prüfer-Nits nicht übernommen: `concurrency` für nightly.yml (nur PRs, die die Datei ändern, starten Läufe) und `persist-credentials: false` (ci.yml ebenso, `.git/` liegt nicht im Build-Kontext); im PR genannt.

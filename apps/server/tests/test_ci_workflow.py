@@ -251,3 +251,76 @@ def test_the_guard_fails_closed_on_a_push_without_before(tmp_path, guard_repo):
     assert run.returncode == 1, (run.stdout, run.stderr)
     assert "push without a usable 'before'" in run.stdout
     assert not (tmp_path / "guard.log").exists()
+
+
+# nightly.yml (R-1343): the deep checks the pull request CI leaves out.
+_NIGHTLY = _CI.with_name("nightly.yml")
+
+
+def _nightly() -> dict:
+    return yaml.safe_load(_NIGHTLY.read_text(encoding="utf-8"))
+
+
+def test_the_nightly_runs_once_a_day_by_hand_and_on_a_pull_request_that_changes_it():
+    triggers = _nightly()[True]
+    assert set(triggers) == {"schedule", "workflow_dispatch", "pull_request"}
+    (schedule,) = triggers["schedule"]
+    assert re.fullmatch(r"\d+ \d+ \* \* \*", schedule["cron"]), schedule
+    assert triggers["pull_request"] == {"paths": [".github/workflows/nightly.yml"]}
+
+
+def test_the_nightly_reads_the_tree_and_no_secret():
+    assert _nightly()["permissions"] == {"contents": "read"}
+    assert "secrets." not in _NIGHTLY.read_text(encoding="utf-8")
+
+
+def test_nothing_in_the_nightly_skips_itself_or_turns_a_failure_green():
+    for name, job in _nightly()["jobs"].items():
+        assert "if" not in job and "continue-on-error" not in job, name
+        for step in job["steps"]:
+            assert "if" not in step and "continue-on-error" not in step, (name, step)
+
+
+def test_the_deep_fuzzing_is_the_ci_job_with_100_examples():
+    ci = _workflow()["jobs"]["schemathesis"]
+    deep = _nightly()["jobs"]["schemathesis"]
+    assert ci["env"]["AH_SCHEMATHESIS_EXAMPLES"] == "0"
+    assert deep["env"] == ci["env"] | {"AH_SCHEMATHESIS_EXAMPLES": "100"}
+    assert deep["services"] == ci["services"]
+    assert deep["runs-on"] == ci["runs-on"]
+    (summary,) = (s for s in deep["steps"] if s.get("name") == "Name the commit and the budget")
+    assert [s for s in deep["steps"] if s is not summary] == ci["steps"]
+    assert deep["steps"].index(summary) < len(deep["steps"]) - 1
+
+
+def test_the_deep_fuzzing_names_the_commit_and_the_budget_before_it_starts(tmp_path):
+    (step,) = (
+        s
+        for s in _nightly()["jobs"]["schemathesis"]["steps"]
+        if s.get("name") == "Name the commit and the budget"
+    )
+    summary = tmp_path / "summary.md"
+    run = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={
+            "PATH": "/usr/bin:/bin",
+            "GITHUB_SHA": _SHA,
+            "AH_SCHEMATHESIS_EXAMPLES": "100",
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert run.returncode == 0, run.stderr
+    text = summary.read_text()
+    assert f"Commit `{_SHA}`, AH_SCHEMATHESIS_EXAMPLES=100" in text
+
+
+def test_the_nightly_restore_runs_the_round_trip_where_a_skip_is_red():
+    job = _nightly()["jobs"]["backup-restore"]
+    # The step's exit is the job's: the script's 75 (a missing precondition) is red here.
+    assert job["steps"][-1] == {
+        "name": "Backup, total loss, restore",
+        "run": "bash scripts/tests/backup_restore_test.sh",
+    }

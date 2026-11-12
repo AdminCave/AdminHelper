@@ -604,7 +604,7 @@ jobs:
       MTLS_ENFORCE: "false"
       # The same value a developer runs locally, so "green here" and "green on my
       # machine" mean the same thing: 0 = only the explicit phase, the same cases for
-      # the same tree. Depth is the weekly run's job, which sets 100 (every phase).
+      # the same tree. Depth is the job of nightly.yml and heavy.sh, which set 100 (every phase).
       AH_SCHEMATHESIS_EXAMPLES: "0"
       # run.sh installs into this venv; it is filled below so the step's
       # `import schemathesis` gate finds the package.
