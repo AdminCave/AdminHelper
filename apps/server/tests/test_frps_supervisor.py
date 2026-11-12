@@ -1624,8 +1624,25 @@ def test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait(box,
 def _without_plugin_checks(box: Box, record: str) -> list[str]:
     """The lines of a record of curl calls but those of the checks of the plugin, each asking
     its /healthz without credentials (test_frps_supervisor_policy.py)."""
-    health = f" --output /dev/null http://127.0.0.1:{box.policy_port}/healthz"
-    return [line for line in record.splitlines() if not line.endswith(health)]
+    # Any port: _free_port() lets go of its port, so the stub of the dashboard can get the very
+    # number of box.policy_port, and the supervisor then moves the plugin one port up (R-1357).
+    health = re.compile(r" --output /dev/null http://127\.0\.0\.1:\d+/healthz$")
+    return [line for line in record.splitlines() if not health.search(line)]
+
+
+def test_the_checks_of_the_plugin_are_told_from_the_dashboard_even_on_a_moved_port(box):
+    # The plugin of the supervisor moves one port up when the dashboard holds its number.
+    moved = box.policy_port + 1
+    record = "\n".join(
+        [
+            f"-sS --output /dev/null http://127.0.0.1:{moved}/healthz",
+            f"-sS --output /dev/null http://127.0.0.1:{box.policy_port}/healthz",
+            "-sS -u admin:x http://127.0.0.1:7500/api/proxy/stcp",
+        ]
+    )
+    assert _without_plugin_checks(box, record) == [
+        "-sS -u admin:x http://127.0.0.1:7500/api/proxy/stcp"
+    ]
 
 
 # Stands in for curl: records the arguments of each call, one line a call, then becomes the
