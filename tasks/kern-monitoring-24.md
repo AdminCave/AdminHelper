@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring; Windows-Teil
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1374: Probe auf eine eigene Adresse nur zu einem Port mit Listener  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+### T1 — R-1374: Probe auf eine eigene Adresse nur zu einem Port mit Listener  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_proto_test.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @cb5f09310 2026-11-12T17:55:51+01:00
+Review: approve (.ah-out/review/kern-monitoring-24/T1.verdict.json)
 Änderung: `checkListener` lehnt ip:port ohne Verbindung ab (`no process listens on port N`), wenn kein Listener des
 Snapshots ip:port trägt und `checkPublished` den Port nicht als Docker-Veröffentlichung kennt; Container-Adressen
 (`extra`) ausgenommen. Tests über die Seams: kein Listener → kein Dial; Veröffentlichung ohne Listener bleibt erlaubt;

@@ -31,6 +31,9 @@ type fakeHost struct {
 	pubs      []publication
 	pubsErr   error
 	pubsCalls int
+	// live lets the real listeners and processes of the test answer behind the fakes, for tests
+	// that serve on loopback themselves.
+	live bool
 }
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
@@ -42,20 +45,30 @@ func stubHost(t *testing.T, h *fakeHost) {
 		h.pubsCalls++
 		return h.pubs, h.pubsErr
 	}
-	listeners = func(context.Context) ([]listener, error) {
+	listeners = func(ctx context.Context) ([]listener, error) {
 		h.listCalls++
+		if h.live {
+			list, err := oldList(ctx)
+			return append(list, h.list...), err
+		}
 		return h.list, h.listErr
 	}
-	processName = func(_ context.Context, pid int32) (string, error) {
+	processName = func(ctx context.Context, pid int32) (string, error) {
 		name, ok := h.names[pid]
 		if !ok {
+			if h.live {
+				return oldName(ctx, pid)
+			}
 			return "", errors.New("access is denied")
 		}
 		return name, nil
 	}
-	processArgs = func(_ context.Context, pid int32) ([]string, error) {
+	processArgs = func(ctx context.Context, pid int32) ([]string, error) {
 		args, ok := h.args[pid]
 		if !ok {
+			if h.live {
+				return oldArgs(ctx, pid)
+			}
 			return nil, errors.New("access is denied")
 		}
 		return args, nil
@@ -98,13 +111,14 @@ func TestGuardLetsTheSensorsReachThisHostAlone(t *testing.T) {
 		ipNet("192.0.2.10/24"),
 		&net.IPAddr{IP: net.ParseIP("198.51.100.5")},
 		ipNet("2001:db8::10/64"),
-	}})
+	}, list: []listener{lst("0.0.0.0", 8080, 50), lst("::", 443, 50)}, names: map[int32]string{50: "nginx"}})
+	// The extra addresses are a container's: its listeners are not in the snapshot (6379).
 	g := NewGuard(netip.MustParseAddr("203.0.113.9"), netip.MustParseAddr("::ffff:203.0.113.10"))
 
 	for _, c := range []struct{ network, address string }{
 		{"tcp4", "127.0.0.1:8080"},
 		{"tcp4", "127.1.2.3:8080"},
-		{"tcp6", "[::1]:8080"},
+		{"tcp6", "[::1]:443"},
 		{"tcp4", "192.0.2.10:443"},
 		{"tcp6", "[::ffff:192.0.2.10]:443"},
 		{"tcp4", "198.51.100.5:443"},
@@ -145,7 +159,11 @@ func TestGuardRefusesEveryOtherTarget(t *testing.T) {
 }
 
 func TestGuardFailsClosedWithoutTheAddressesOfThisHost(t *testing.T) {
-	stubHost(t, &fakeHost{addrsErr: errors.New("netlink refused")})
+	stubHost(t, &fakeHost{
+		addrsErr: errors.New("netlink refused"),
+		list:     []listener{lst("0.0.0.0", 80, 50)},
+		names:    map[int32]string{50: "nginx"},
+	})
 	g := NewGuard()
 
 	if err := allowed(g, "tcp4", "192.0.2.10:80"); !errors.Is(err, ErrNotAllowed) {
@@ -157,7 +175,11 @@ func TestGuardFailsClosedWithoutTheAddressesOfThisHost(t *testing.T) {
 }
 
 func TestGuardNeverProbesTheBlockedPorts(t *testing.T) {
-	stubHost(t, &fakeHost{})
+	var list []listener
+	for _, port := range []uint16{21, 23, 3307, 9099, 9108} {
+		list = append(list, lst("127.0.0.1", port, 50))
+	}
+	stubHost(t, &fakeHost{list: list, names: map[int32]string{50: "nginx"}})
 	g := NewGuard()
 
 	for _, port := range []string{"0", "22", "3306", "9100", "9103", "9107"} {
@@ -189,6 +211,7 @@ func TestGuardNeverProbesTheListenersOfTheBlockedProcesses(t *testing.T) {
 			lst("127.0.0.1", 16509, 17),
 			lst("127.0.0.1", 8080, 18),
 			lst("127.0.0.1", 9000, 19),
+			lst("127.0.0.1", 6000, 19),
 		},
 		names: map[int32]string{
 			10: "sshd", 11: "MariaDBd.exe", 12: "nginx", 13: "mysqld", 14: "postgres",
@@ -365,8 +388,8 @@ func TestGuardFailsClosedWhenItCannotTellTheListener(t *testing.T) {
 	if err := allowed(g, "tcp4", "127.0.0.1:8081"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "cannot be read") {
 		t.Errorf("a listener without an owner: %v, want ErrNotAllowed", err)
 	}
-	if err := allowed(g, "tcp4", "127.0.0.1:8082"); err != nil {
-		t.Errorf("a port without a listener: %v, want it allowed (no process to ask)", err)
+	if err := allowed(g, "tcp4", "127.0.0.1:8082"); !errors.Is(err, errNoProcess) {
+		t.Errorf("a port without a listener: %v, want errNoProcess", err)
 	}
 	if h.listCalls != 2 {
 		t.Errorf("listeners read %d times, want the failed read and one snapshot", h.listCalls)
@@ -401,7 +424,7 @@ func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
 }
 
 func TestGuardReadsTheListenersOncePerSnapshot(t *testing.T) {
-	h := &fakeHost{}
+	h := &fakeHost{list: []listener{lst("127.0.0.1", 8080, 30)}, names: map[int32]string{30: "nginx"}}
 	stubHost(t, h)
 	g := NewGuard()
 
@@ -427,10 +450,10 @@ func TestGuardReadsTheListenersOncePerSnapshot(t *testing.T) {
 	}
 }
 
-// localServer serves h on 127.0.0.1 and lets the guard's seams see an empty host.
+// localServer serves h on 127.0.0.1 and lets the guard's seams see the test's own listeners alone.
 func localServer(t *testing.T, h http.Handler) *httptest.Server {
 	t.Helper()
-	stubHost(t, &fakeHost{})
+	stubHost(t, &fakeHost{live: true})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv
@@ -613,7 +636,7 @@ func pub(hostIP string, hostPort, to uint16) publication {
 func TestGuardNeverProbesAPortDockerForwardsToABlockedOneWithoutAListener(t *testing.T) {
 	stubHost(t, &fakeHost{
 		addrs: []net.Addr{ipNet("192.0.2.10/24")},
-		list:  []listener{lst("127.0.0.1", 18080, 50)},
+		list:  []listener{lst("127.0.0.1", 18080, 50), lst("192.0.2.10", 19107, 50), lst("127.0.0.1", 13307, 50)},
 		names: map[int32]string{50: "nginx"},
 		pubs: []publication{
 			pub("", 13306, 3306), pub("0.0.0.0", 2222, 22), pub("::", 19100, 9100), pub("127.0.0.1", 19107, 9107),
@@ -634,8 +657,8 @@ func TestGuardNeverProbesAPortDockerForwardsToABlockedOneWithoutAListener(t *tes
 		{"192.0.2.10:19107", false},
 		{"192.0.2.10:13307", true},
 		{"127.0.0.1:13307", false},
+		// published by docker without a listener on the host (userland-proxy=false).
 		{"127.0.0.1:8080", false},
-		{"127.0.0.1:9999", false},
 		// docker forwards by NAT ahead of the listener on the port.
 		{"127.0.0.1:18080", true},
 	} {
@@ -675,7 +698,7 @@ func TestGuardReadsThePublishedPortsOncePerSnapshot(t *testing.T) {
 	g := NewGuard()
 
 	for range 3 {
-		if err := allowed(g, "tcp4", "127.0.0.1:9999"); err != nil {
+		if err := allowed(g, "tcp4", "127.0.0.1:8080"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -685,7 +708,7 @@ func TestGuardReadsThePublishedPortsOncePerSnapshot(t *testing.T) {
 	publications.Lock()
 	publications.at = publications.at.Add(-listenerTTL)
 	publications.Unlock()
-	if err := allowed(g, "tcp4", "127.0.0.1:9999"); err != nil {
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); err != nil {
 		t.Fatal(err)
 	}
 	if h.pubsCalls != 2 {
@@ -748,5 +771,102 @@ func TestCheckPeerNameRefusesWhatItCannotPlace(t *testing.T) {
 		if err := checkPeerName(name, "/tmp/p.sock"); err != nil {
 			t.Errorf("%q = %v; want it allowed", name, err)
 		}
+	}
+}
+
+// TestGuardNeverConnectsToAPortNobodyListensOn: whatever took a connection to a port of this host
+// without a listener would be no process the guard has checked (R-1374).
+func TestGuardNeverConnectsToAPortNobodyListensOn(t *testing.T) {
+	stubHost(t, &fakeHost{
+		addrs: []net.Addr{ipNet("192.0.2.10/24"), ipNet("2001:db8::10/64")},
+		list:  []listener{lst("0.0.0.0", 8080, 50), lst("192.0.2.10", 8443, 50), lst("::", 8090, 50)},
+		names: map[int32]string{50: "nginx"},
+		pubs:  []publication{pub("", 9443, 443), pub("127.0.0.1", 9444, 443), pub("0.0.0.0", 9445, 443)},
+	})
+	g := NewGuard(netip.MustParseAddr("203.0.113.9"))
+
+	for _, address := range []string{
+		"127.0.0.1:8081", "192.0.2.10:8081", "[::1]:8081",
+		"127.0.0.1:8443",                    // the listener holds another address
+		"192.0.2.10:9444",                   // docker publishes it on another address
+		"[2001:db8::10]:8080", "[::1]:8080", // a socket on 0.0.0.0 takes no IPv6 connection
+		"[::1]:9445", // nor does a publication on 0.0.0.0
+	} {
+		network := "tcp4"
+		if strings.HasPrefix(address, "[") {
+			network = "tcp6"
+		}
+		err := allowed(g, network, address)
+		_, port, _ := net.SplitHostPort(address)
+		if !errors.Is(err, errNoProcess) || errors.Is(err, ErrNotAllowed) || err.Error() != "no process listens on port "+port {
+			t.Errorf("%s: %v, want %q, not ErrNotAllowed (the check is red, not unknown)", address, err, "no process listens on port "+port)
+		}
+	}
+	for _, c := range []struct{ network, address, why string }{
+		{"tcp4", "127.0.0.1:8080", "a listener on the unspecified address"},
+		{"tcp6", "[2001:db8::10]:8090", "a listener on ::"},
+		{"tcp4", "192.0.2.10:8090", "a listener on ::, which may take IPv4 too"},
+		{"tcp4", "127.0.0.1:9445", "published by docker on 0.0.0.0"},
+		{"tcp4", "192.0.2.10:8443", "a listener on the address"},
+		{"tcp4", "127.0.0.1:9443", "published by docker"},
+		{"tcp4", "127.0.0.1:9444", "published by docker on the address"},
+		{"tcp4", "203.0.113.9:6379", "an address of a container"},
+		{"udp4", "127.0.0.1:53", "udp has no listener to tell"},
+	} {
+		if err := allowed(g, c.network, c.address); err != nil {
+			t.Errorf("%s (%s): %v, want it allowed", c.address, c.why, err)
+		}
+	}
+}
+
+func TestGuardDialsNoPortNobodyListensOn(t *testing.T) {
+	stubHost(t, &fakeHost{})
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	// The fake host shows no listener, so the guard must refuse before it connects.
+	c, err := NewGuard().DialContext(context.Background(), "tcp4", ln.Addr().String())
+	if c != nil {
+		_ = c.Close()
+	}
+	if !errors.Is(err, errNoProcess) {
+		t.Fatalf("dial = %v, want errNoProcess", err)
+	}
+}
+
+// TestGuardTellsNoListenerOnAFreshSnapshot: a service that started after the last snapshot is no
+// port nobody listens on.
+func TestGuardTellsNoListenerOnAFreshSnapshot(t *testing.T) {
+	h := &fakeHost{names: map[int32]string{50: "nginx"}}
+	stubHost(t, h)
+	g := NewGuard()
+
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); !errors.Is(err, errNoProcess) {
+		t.Fatalf("no listener: %v, want errNoProcess", err)
+	}
+	if h.listCalls != 1 || h.pubsCalls != 1 {
+		t.Fatalf("read %d listener and %d publication lists, want one each on a fresh snapshot", h.listCalls, h.pubsCalls)
+	}
+
+	h.list = []listener{lst("0.0.0.0", 8080, 50)}
+	snapshot.Lock()
+	snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+	snapshot.Unlock()
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); err != nil {
+		t.Fatalf("a listener since the snapshot: %v, want it allowed", err)
+	}
+	if h.listCalls != 2 {
+		t.Errorf("listeners read %d times, want the miss told on a new snapshot", h.listCalls)
+	}
+
+	h.list = nil
+	if err := allowed(g, "tcp4", "127.0.0.1:8081"); !errors.Is(err, errNoProcess) {
+		t.Fatalf("no listener: %v, want errNoProcess", err)
+	}
+	if h.listCalls != 2 {
+		t.Errorf("listeners read %d times, want no new snapshot within %s", h.listCalls, listenerFresh)
 	}
 }
