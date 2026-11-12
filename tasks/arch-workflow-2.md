@@ -5,8 +5,10 @@ Heavy: linux-full — ändert, was der Sammellauf auf der Box fährt; Gesamtbewe
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1338: Schemathesis und sse_push_e2e installieren ihre Pakete selbst  [ ]
+### T1 — R-1338: Schemathesis und sse_push_e2e installieren ihre Pakete selbst  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/sse_push_e2e.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6c9b4557b 2026-11-12T08:48:38+01:00
+Review: approve (.ah-out/review/arch-workflow-2/T1.verdict.json)
 Änderung: Der Schemathesis-Schritt installiert je Dienst vor seinem pytest dessen `requirements-dev.txt` (ein Fehler macht den Schritt rot). `sse_push_e2e.sh` legt das Venv an, wenn es fehlt, und installiert die `requirements.txt` des Servers bei jedem Lauf statt nur bei fehlendem `uvicorn`; ein Fehlschlag bleibt SKIP 75 wie heute. Erst der rote Test in `run_flags_test.sh`: mit dem Python-Shim installiert `--step schemathesis` je Dienst vor dem pytest, und `sse_push_e2e.sh` installiert die Server-Pakete auch in ein Venv, das `uvicorn` schon hat.
 Beweis: run.sh:737 installiert die Server-Pakete nur im Schritt server-pytest; der Schemathesis-Block (run.sh:752-793) ruft kein pip; sse_push_e2e.sh:36 prüft nur auf uvicorn, das Monitoring mitbringt · Dedup-Key: ref:harness:sammellauf:server-pytest
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
@@ -37,3 +39,4 @@ Abhängt von: T2, T3
 - 2026-11-12: Vergleich frisch wiederholt (Spec, Problem): CI py3.14 3415 passed, 0 skipped; Box 3415 Tests, 54 skipped — die Bedingung der Zeile ist erfüllt.
 - 2026-11-12: `--exclude` in run.sh statt `AH_ONLY` (nähme Schemathesis und ruff für den Server mit) oder gekürztem `AH_REQUIRED` (Schritt liefe weiter); Spec, Trade-offs.
 - 2026-11-12: Die Option setzt heavy.sh (Teil rest), nicht nightly.sh: auch ein manueller `/test all` lässt den Schritt aus; vor einem Release bleiben main-CI und `run.sh quick --strict`.
+- 2026-11-12 (T1): Der Schemathesis-Schritt verliert die Vorprüfung `import schemathesis`. Er installiert das Paket selbst (es steht in allen drei `requirements-dev.txt`), und auf einem frischen Venv hätte die Vorprüfung ihn übersprungen, bevor er installieren kann. Ein fehlgeschlagenes `pip install` ist ein FAIL, auch ohne `--strict`. Der Test „missing package strict-fails“ wird dadurch ersetzt durch „failed install fails, runs no suite“, der strenger ist (FAIL statt Pflicht-SKIP). Der Kommentar in `ci.yml:521-522` („gate finds the package“) veraltet; ci.yml gehört dem Zug `arch-workflow-ci-1`, deshalb eine Roadmap-Zeile.

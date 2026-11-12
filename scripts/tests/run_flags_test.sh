@@ -257,11 +257,13 @@ case "$*" in
   # SHIM_VENV_LOG records where run.sh asks for the venv. Before the pip arm: a
   # temp path may well contain "pip".
   *"-m venv "*) [ -n "${SHIM_VENV_LOG:-}" ] && printf '%s\n' "$*" >> "$SHIM_VENV_LOG"; exit 0 ;;
+  # SHIM_CALL_LOG records every pip and pytest call with the directory it ran in,
+  # so a test sees the order; SHIM_PIP_RC stands in for an install that fails.
+  *"-m pip "*) [ -n "${SHIM_CALL_LOG:-}" ] && printf '%s: %s\n' "${PWD##*/}" "$*" >> "$SHIM_CALL_LOG"
+               exit "${SHIM_PIP_RC:-0}" ;;
   *pip*|*venv*) exit 0 ;;
-  # The schemathesis step probes for its package before running anything;
-  # SHIM_NO_SCHEMATHESIS stands in for a box where it is not installed.
-  *"import schemathesis"*) [ -n "${SHIM_NO_SCHEMATHESIS:-}" ] && exit 1; exit 0 ;;
 esac
+[ -n "${SHIM_CALL_LOG:-}" ] && printf '%s: %s\n' "${PWD##*/}" "$*" >> "$SHIM_CALL_LOG"
 [ -n "${SHIM_ECHO_ARGV:-}" ] && echo "ARGV: $*"
 # pytest writes its JUnit XML wherever --junitxml points, creating the directory;
 # the stub does the same, so a test sees WHERE run.sh asks for the file.
@@ -444,15 +446,31 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 [ $rc -eq 0 ] && grep -q "0 test-skips" <<<"$OUT" \
   && ok "printed output cannot forge a test-skip" || bad "forged skip: rc=$rc $(grep -m1 'run.sh\[' <<<"$OUT")"
 
-# The package is the schemathesis step's only precondition. Without it the step
-# self-SKIPs, and a required SKIP under --strict is a failure, not a note: a run
-# that never fuzzed an API may not read as one that did.
+# The step installs each service's dev packages, schemathesis among them, right
+# before that service's suite. It used to live off the pytest steps having filled
+# the shared venv, and a part rest without server-pytest (R-1338) could not even
+# collect the server suite.
+CALLS="$WORK/sth-calls.log"; : > "$CALLS"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \
-      SHIM_NO_SCHEMATHESIS=1 SHIM_SKIP="" \
+      SHIM_SKIP="" SHIM_CALL_LOG="$CALLS" \
       "$PYSHIM/bash" "$RUN" unit --strict --step "schemathesis" 2>&1); rc=$?
-[ $rc -eq 1 ] && grep -qF "strict-failed: schemathesis (SKIP)" <<<"$OUT" \
-  && ok "a missing schemathesis package strict-fails the step" \
-  || bad "schemathesis dep-gate: rc=$rc $(grep -m1 -E 'SKIP|strict-failed' <<<"$OUT")"
+seq_got=$(awk '/-m pip install .*-r requirements-dev\.txt/ { sub(/:.*/, ""); printf "%s:pip ", $0; next }
+               /-m pytest .*-m schemathesis/          { sub(/:.*/, ""); printf "%s:pytest ", $0 }' "$CALLS")
+[ $rc -eq 0 ] && [ "$seq_got" = "server:pip server:pytest monitoring:pip monitoring:pytest ca-issuer:pip ca-issuer:pytest " ] \
+  && ok "schemathesis installs each service's dev packages before its suite" \
+  || bad "schemathesis install order: rc=$rc seq='$seq_got'"
+
+# A failed install is a FAIL, without --strict too: a run that never fuzzed an
+# API may not read as one that did, and no suite starts in a venv that lacks
+# its packages.
+: > "$CALLS"
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
+      SHIM_SKIP="" SHIM_CALL_LOG="$CALLS" SHIM_PIP_RC=1 \
+      "$PYSHIM/bash" "$RUN" unit --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -qE '^  FAIL  schemathesis' <<<"$OUT" && ! grep -qE '^  SKIP  schemathesis' <<<"$OUT" \
+  && [ "$(grep -c -- '-m pip install' "$CALLS")" -eq 3 ] && [ "$(grep -c -- '-m pytest' "$CALLS")" -eq 0 ] \
+  && ok "a failed install fails the schemathesis step and runs no suite" \
+  || bad "schemathesis install failure: rc=$rc $(grep -m1 -E '^  (SKIP|FAIL|PASS)' <<<"$OUT") calls: $(tr '\n' '|' < "$CALLS")"
 
 # A targeted run (verify.sh … -- <test> exports AH_ARGS) leaves the fuzz suite to the
 # PR CI: the step SKIPs as AH_ARGS and, like an AH_ONLY skip, does not strict-fail,
@@ -664,6 +682,36 @@ got=$(env -u AH_VENV -u VENV HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "
 got=$(env -u VENV AH_VENV="$WORK/host-venv" HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
 [ "$got" = "$WORK/host-venv" ] \
   && ok "sse_push_e2e.sh follows an AH_VENV the host sets" || bad "sse_push_e2e.sh with AH_VENV: '$got'"
+
+# sse_push_e2e.sh installs the server's packages on every run. Monitoring and
+# ca-issuer bring uvicorn into the shared venv but not PyJWT, bcrypt or redis, and
+# a check for uvicorn alone let the step live off server-pytest (R-1338). A docker
+# stub that refuses `run` stops the script right after the install.
+SSEBIN="$WORK/bin-sse"; mkdir -p "$SSEBIN" "$WORK/sse-tmp"
+cp -a "$PYSHIM/." "$SSEBIN/"
+printf '#!/bin/sh\ncase "$1" in info|rm) exit 0 ;; esac\nexit 1\n' > "$SSEBIN/docker"; chmod +x "$SSEBIN/docker"
+SSEVENV="$WORK/sse-venv"; mkdir -p "$SSEVENV/bin"
+printf '#!/bin/sh\nexit 0\n' > "$SSEVENV/bin/python"
+cp "$SSEVENV/bin/python" "$SSEVENV/bin/uvicorn"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$SSE_PIP_LOG"\nexit "${SSE_PIP_RC:-0}"\n' > "$SSEVENV/bin/pip"
+chmod +x "$SSEVENV/bin/python" "$SSEVENV/bin/uvicorn" "$SSEVENV/bin/pip"
+SSE_PIP_LOG="$WORK/sse-pip.log"; : > "$SSE_PIP_LOG"
+OUT=$(PATH="$SSEBIN" VENV="$SSEVENV" TMPDIR="$WORK/sse-tmp" SSE_PIP_LOG="$SSE_PIP_LOG" \
+      "$SSEBIN/bash" "$REPO_ROOT/scripts/tests/sse_push_e2e.sh" 2>&1); rc=$?
+[ $rc -ne 75 ] && grep -qxF -- "install -q -r $REPO_ROOT/apps/server/requirements.txt" "$SSE_PIP_LOG" \
+  && ok "sse_push_e2e.sh installs the server packages into a venv that has uvicorn" \
+  || bad "sse_push_e2e.sh install: rc=$rc pip: $(tr '\n' '|' < "$SSE_PIP_LOG") $(grep -m1 SKIP <<<"$OUT")"
+# A failed install stays what it was before: SKIP, not a FAIL of the fan-out.
+OUT=$(PATH="$SSEBIN" VENV="$SSEVENV" TMPDIR="$WORK/sse-tmp" SSE_PIP_LOG="$SSE_PIP_LOG" SSE_PIP_RC=1 \
+      "$SSEBIN/bash" "$REPO_ROOT/scripts/tests/sse_push_e2e.sh" 2>&1); rc=$?
+[ $rc -eq 75 ] && grep -q '^SKIP: ' <<<"$OUT" \
+  && ok "sse_push_e2e.sh SKIPs when the install fails" || bad "sse_push_e2e.sh install failure: rc=$rc $OUT"
+# Without a venv it creates one, at the path it later starts the server from.
+VLOG="$WORK/sse-venv.log"; : > "$VLOG"
+OUT=$(PATH="$SSEBIN" VENV="$WORK/sse-novenv" TMPDIR="$WORK/sse-tmp" SHIM_VENV_LOG="$VLOG" \
+      "$SSEBIN/bash" "$REPO_ROOT/scripts/tests/sse_push_e2e.sh" 2>&1); rc=$?
+grep -qxF -- "-m venv $WORK/sse-novenv" "$VLOG" \
+  && ok "sse_push_e2e.sh creates a missing venv" || bad "sse_push_e2e.sh venv: rc=$rc log: $(tr '\n' '|' < "$VLOG")"
 
 # ══ the scripts block's own aggregation logic (T9) ════════════════════════════
 echo "── the scripts block ──"

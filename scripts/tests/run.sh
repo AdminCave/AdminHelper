@@ -749,6 +749,11 @@ layer_unit() {
   # pytest's exit 5 ("no tests collected") is turned into 75 = self-SKIP, never into a
   # pass: a service whose marker file is missing has NOT been verified, and --strict
   # has to say exactly that.
+  # Each service's requirements-dev.txt (schemathesis included) is installed right
+  # before its suite, so the step no longer lives off the pytest steps having filled
+  # the shared venv: part rest of the nightly run excludes server-pytest (R-1338).
+  # Hence no `import schemathesis` gate in front: on a fresh venv it would skip the
+  # step before it could install anything. A failed install is a FAIL.
   local sth=()
   only server     && sth+=("apps/server")
   only monitoring && sth+=("apps/monitoring")
@@ -757,7 +762,7 @@ layer_unit() {
   # A targeted run (verify.sh … -- <test>) is a task's quick Verify: the fuzz suite
   # added ~5 min to every one of them, and the PR CI runs it in full (R-0380).
   elif [ -n "$AH_ARGS" ]; then skip schemathesis "schemathesis" "AH_ARGS"
-  elif have python3 && python3 -c 'import schemathesis' 2>/dev/null; then
+  elif have python3; then
     run_py_step schemathesis "schemathesis" -- bash -c '
       export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-0}"
       rc=0
@@ -774,6 +779,9 @@ layer_unit() {
           else
             unset DATABASE_URL
           fi
+          # Exit 1, whatever pip returned: its code must not pass for pytest 5.
+          python3 -m pip install -q -r requirements-dev.txt \
+            || { echo "  ($d: pip install -r requirements-dev.txt failed)"; exit 1; }
           # No $AH_ARGS: this step selects by marker, and a targeted run never gets
           # here (the elif above skips it), so there is nothing to forward.
           # One XML per service: the loop runs pytest three times, and a single
@@ -790,7 +798,7 @@ layer_unit() {
       done
       exit "$rc"
     ' _ "${sth[@]}"
-  else skip schemathesis "schemathesis" "schemathesis not installed"; fi
+  else skip schemathesis "schemathesis" "python3 not installed"; fi
 
   # Go agent — fmt + vet + test + cross-compile (matches CI).
   # -race mirrors ci.yml's agent job: the agent is concurrent (monitor, frpc,
