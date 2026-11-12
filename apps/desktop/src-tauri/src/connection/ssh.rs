@@ -97,6 +97,41 @@ pub(crate) fn build_credential_args(
     Ok(args)
 }
 
+/// The units [`build_journal_args`] takes: the unit class of the agent's command allowlist
+/// (`argClasses["unit"]` in apps/agent), whole, and at most systemd's 255 characters
+/// (systemd.unit(5)). Its `\` is systemd's escape, as in `dev-disk-by\x2duuid.device`.
+const JOURNAL_UNIT_CLASS: &str = r"[A-Za-z0-9:_.@\\][A-Za-z0-9:_.@\\-]*";
+const JOURNAL_UNIT_MAX: usize = 255;
+
+static JOURNAL_UNIT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!("^(?:{JOURNAL_UNIT_CLASS})$")).expect("journal unit pattern")
+});
+
+/// The argv of the `ssh` that shows the last 200 journal lines of `unit` on the host of
+/// `connection` with the rights of the admin's login (R-1226): the switches of the connection
+/// without its forwards and agent forwarding, a pseudo terminal (journalctl colours by priority
+/// on one), then the fixed remote action. The login shell of the host reads the words after the
+/// target as one line, so the unit passes only in the unit class and in single quotes, which no
+/// character of the class ends.
+pub(crate) fn build_journal_args(
+    connection: &Connection,
+    unit: &str,
+) -> Result<Vec<String>, AppError> {
+    if unit.len() > JOURNAL_UNIT_MAX || !JOURNAL_UNIT_RE.is_match(unit) {
+        return Err(AppError::Validation(format!(
+            "invalid unit name: letters, digits and _ . : @ \\ -, not starting with -, \
+             at most {JOURNAL_UNIT_MAX} characters"
+        )));
+    }
+    let (mut args, target) = base_args(connection, false)?;
+    args.extend(["-t", "--"].map(String::from));
+    args.push(target);
+    args.extend(["journalctl", "--no-pager"].map(String::from));
+    args.push(format!("--unit='{unit}'"));
+    args.push("--lines=200".to_string());
+    Ok(args)
+}
+
 /// The switches of `connection` for a program that sets host, port, user and key itself
 /// (Ansible, R-1202): its options without forwards and agent forwarding, each as `-o key=value`.
 /// Ansible hands these to ssh, sftp and scp alike, and `-o ProxyJump=` reads the same in all three.
@@ -638,6 +673,114 @@ mod tests {
             (name.trim() == "maxRefBytes").then(|| value.trim().to_string())
         });
         assert_eq!(max, Some(CREDENTIAL_REF_MAX.to_string()));
+    }
+
+    #[test]
+    fn journal_args_run_the_fixed_action_on_a_pseudo_terminal_without_forwards() {
+        let c = with_ssh_options(serde_json::json!({
+            "jumpHost": "ops@bastion:2222",
+            "forwards": [{"type": "L", "listen": "8080", "target": "intranet:80"}],
+            "agentForwarding": true,
+            "compression": false,
+            "authMethod": "key"
+        }));
+        assert_eq!(
+            build_journal_args(&c, "nginx.service").unwrap(),
+            [
+                "-J",
+                "ops@bastion:2222",
+                "-o",
+                "Compression=no",
+                "-o",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "IdentitiesOnly=yes",
+                "-t",
+                "--",
+                "u@h",
+                "journalctl",
+                "--no-pager",
+                "--unit='nginx.service'",
+                "--lines=200",
+            ]
+        );
+        let plain = conn(Some("h"), Some(2222), Some("u"), Some("/k/id"));
+        assert_eq!(
+            build_journal_args(&plain, "cron.service").unwrap(),
+            [
+                "-p",
+                "2222",
+                "-i",
+                "/k/id",
+                "-t",
+                "--",
+                "u@h",
+                "journalctl",
+                "--no-pager",
+                "--unit='cron.service'",
+                "--lines=200",
+            ]
+        );
+    }
+
+    /// ssh hands the words after the target to the login shell of the host as one line: a unit
+    /// the agent would not report could be read there as more than the unit.
+    #[test]
+    fn journal_args_take_the_unit_names_of_the_agent_only() {
+        let c = conn(Some("h"), None, Some("u"), None);
+        let longest = "a".repeat(255);
+        for good in [
+            "nginx.service",
+            "getty@tty1.service",
+            r"systemd-fsck@dev-disk-by\x2duuid-1.service",
+            "a:b_c.d",
+            "0",
+            longest.as_str(),
+        ] {
+            let args = build_journal_args(&c, good).unwrap();
+            assert_eq!(args[args.len() - 2], format!("--unit='{good}'"), "{good}");
+        }
+        let too_long = "a".repeat(256);
+        for bad in [
+            "",
+            " ",
+            "a b",
+            "a;id",
+            "a&&id",
+            "a|id",
+            "$(id)",
+            "a$(id)",
+            "a`id`",
+            "a'x",
+            "a\"x",
+            "a>x",
+            "a*",
+            "a?",
+            "a[b]",
+            "-x",
+            "-oProxyCommand=x",
+            "a\n",
+            "a\nid",
+            "a\t",
+            "a/b",
+            "ä",
+            too_long.as_str(),
+        ] {
+            assert!(
+                matches!(build_journal_args(&c, bad), Err(AppError::Validation(_))),
+                "{bad:?}"
+            );
+        }
+    }
+
+    /// The same class as the agent's allowlist, whose inventory hands the unit names over.
+    #[test]
+    fn the_journal_unit_class_is_the_agents() {
+        let allowlist = include_str!("../../../../agent/internal/allowlist/allowlist.go");
+        assert!(
+            allowlist.contains(&format!("\"unit\": `{JOURNAL_UNIT_CLASS}`,")),
+            "the agent's unit class changed"
+        );
     }
 
     #[test]

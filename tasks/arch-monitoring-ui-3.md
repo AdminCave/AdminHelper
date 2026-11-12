@@ -95,8 +95,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T12
 Abhängt von: T7
 
-### T9 — Desktop-Rust: Befehl `terminal_open_ssh_journal` mit fester journalctl-Aktion (R-1226, Stufe 3)  [ ]
+### T9 — Desktop-Rust: Befehl `terminal_open_ssh_journal` mit fester journalctl-Aktion (R-1226, Stufe 3)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @b8487a230 2026-11-12T18:35:09+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T9.verdict.json)
 Änderung: `build_journal_args` nach dem Muster von `build_credential_args`:
 - Feste Aktion `journalctl --no-pager --unit='<unit>' --lines=200` über `base_args`.
 - Der Unit-Name wird gegen die Unit-Klasse geprüft (kein führendes `-`, kein `'`, Länge begrenzt) und für die entfernte Shell einfach quotiert.
@@ -146,3 +148,6 @@ Task-Review: am Ende
 - 2026-11-12 T7: Die Hilfsfunktionen stehen im Modul-Skript von `ServiceList.svelte` und nutzen Records ohne Prototyp statt `Map`/`Set` (`svelte/prefer-svelte-reactivity` verlangt in Svelte-Dateien sonst `SvelteMap`, die Werte sind aber nicht reaktiv); ohne Prototyp, weil Unit-Namen Agent-Text sind. Die Fußzeile mit dem Knopf ist eine globale Regel `.mon-section-foot` in `app.css` wie der Rest des Abschnitts: ein scoped `<style>` in `SecServices.svelte` hängte seinen Hash auch an die dynamischen `mon-dot`-Klassen.
 - 2026-11-12 T8: Die Fehlerzeilen klappen in der Grund-Spalte der vollen Liste auf (Knopf „Fehlerzeilen (n)“ mit `aria-expanded`, `<pre>` mit Text-Interpolation, nie HTML), nur an Units im Zustand `failed` mit eigenem Schlüssel in `logs` und mindestens einer Zeile. Welche Zeilen aufgeklappt sind, hält ein `SvelteSet`, geleert bei jedem Serverwechsel.
 - 2026-11-12 T8: Der Schalter steht über der Liste, sobald das Inventar geladen ist, auch vor dem ersten Bericht (T4: Zeile ohne Inventar). Er bindet einen eigenen Zustand, der beim Klick sofort umspringt und zurückspringt, wenn Speichern scheitert (Meldung `role="alert"`); während des Speicherns ist er gesperrt, die Antwort von PUT ersetzt Inventar und Schalterstand, eine späte Antwort oder ein später Fehler für den vorigen Server fällt weg. Der Hinweistext sagt „blendet sofort aus und löscht“: Zeilen aus einem Bericht, der beim Ausschalten schon unterwegs war, bleiben bis zum nächsten Bericht gespeichert, GET zeigt sie nicht (T6).
+- 2026-11-12 T9: Die Unit-Klasse ist die des Agenten (`argClasses["unit"]` in `apps/agent/internal/allowlist/allowlist.go`), ein Quelltext-Test hält beide gleich; dazu höchstens 255 Zeichen (systemd.unit(5)). Ein führendes `-` fällt durch die Klasse (`-.mount` steht nach T1 nicht im Inventar); Glob-Zeichen fehlen ihr, `--unit=` nimmt also nie ein Muster. Die Unit steht in einfachen Anführungszeichen, die kein Zeichen der Klasse beendet, weil die Login-Shell des Hosts die Wörter nach dem Ziel als eine Zeile liest.
+- 2026-11-12 T9: `journalctl` läuft ohne `sudo` mit den Rechten des Admin-Logins (Konzept §3.9, Stufe 3); fremde Dienste sieht nur, wer in `systemd-journal` oder `adm` ist (Doku T12). `-t` gibt journalctl ein Terminal, damit es nach Priorität färbt; `--no-pager`, weil die Sitzung mit der Aktion endet und der Verlauf im Terminal bleibt. Kein Broadcast, kein SFTP-Kanal, wie beim Zugangsdaten-Terminal.
+- 2026-11-12 T9: Neuer Quelltext-Test `terminal_commands_that_open_a_connection_check_its_port` über die drei Terminal-Befehle mit Verbindung: ohne ihn überlebte das Entfernen von `reject_foreign_port` jeden Test.

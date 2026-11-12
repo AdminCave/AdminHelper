@@ -735,6 +735,23 @@ fn ssh_credential_spawn(
     })
 }
 
+/// What the embedded terminal starts to show the journal of the service `unit` on the host of
+/// `connection` (R-1226): `ssh_spawn` with the argv of the fixed remote action. A broadcast of
+/// the snippet panel has no prompt to land in, and no SFTP channel comes with it.
+fn ssh_journal_spawn(
+    connection: &Connection,
+    unit: &str,
+    ssh: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Result<pty::Spawn, AppError> {
+    let spawn = ssh_spawn(connection, ssh, home)?;
+    Ok(pty::Spawn {
+        args: connection::ssh::build_journal_args(connection, unit)?,
+        broadcast: false,
+        ..spawn
+    })
+}
+
 /// `spawn` holding its connection for the SFTP channel of the session (R-1072): the socket in
 /// `dir`, which goes with the end of the session.
 fn with_control_master(mut spawn: pty::Spawn, dir: PathBuf) -> pty::Spawn {
@@ -847,6 +864,48 @@ pub async fn terminal_open_ssh_credential(
     let spawn = ssh_credential_spawn(
         &connection,
         &credential_ref,
+        crate::terminal::which("ssh"),
+        app.path().home_dir().ok(),
+    )?;
+    let owner = window.label().to_string();
+    blocking(move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
+        app.state::<PtyRegistry>()
+            .open(spawn, cols, rows, &owner, channel_sink(output))
+    })
+    .await
+}
+
+/// Opens the embedded terminal on the host of `connection`, resolved as for `terminal_open_ssh`,
+/// with one fixed action: the last journal lines of the service `unit`, read with the rights of
+/// the admin's login, stored nowhere (R-1226, "Mehr Log"). The UI hands over the unit name only,
+/// never a command; the session ends with the action. Main only, as the capability of a
+/// detached window lacks it.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn terminal_open_ssh_journal(
+    window: tauri::Window,
+    state: State<'_, frpc::FrpcState>,
+    session: State<'_, SessionState>,
+    connection: Connection,
+    unit: String,
+    cols: u16,
+    rows: u16,
+    output: Channel<InvokeResponseBody>,
+) -> Result<u64, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window shows a journal".into(),
+        ));
+    }
+    let app = window.app_handle().clone();
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
+        None => Vec::new(),
+    };
+    let spawn = ssh_journal_spawn(
+        &connection,
+        &unit,
         crate::terminal::which("ssh"),
         app.path().home_dir().ok(),
     )?;
@@ -1539,8 +1598,8 @@ mod tests {
         detached_label, enroll_with_token_in, list_workspaces_in, may_open_terminal, may_reach,
         open_launcher_with, open_workspace_in, reject_foreign_port, reject_foreign_targets,
         reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
-        sign_in_target, ssh_credential_spawn, ssh_spawn, sync_source, with_control_master,
-        with_sftp,
+        sign_in_target, ssh_credential_spawn, ssh_journal_spawn, ssh_spawn, sync_source,
+        with_control_master, with_sftp,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -3052,6 +3111,79 @@ mod tests {
         );
     }
 
+    /// The journal terminal (R-1226) runs the fixed action of its unit only, with no broadcast
+    /// and no SFTP channel.
+    #[test]
+    fn the_journal_terminal_runs_the_fixed_action_without_broadcast_or_sftp() {
+        let ssh = std::env::temp_dir().join("ssh");
+        let home = std::env::temp_dir().join("home");
+        let mut connection = loopback(2222);
+        connection.username = Some("admin".to_string());
+        let spawn = ssh_journal_spawn(
+            &connection,
+            "nginx.service",
+            Some(ssh.clone()),
+            Some(home.clone()),
+        )
+        .expect("an SSH connection opens");
+        assert_eq!(spawn.program, ssh);
+        assert_eq!(
+            spawn.args,
+            [
+                "-p",
+                "2222",
+                "-t",
+                "--",
+                "admin@127.0.0.1",
+                "journalctl",
+                "--no-pager",
+                "--unit='nginx.service'",
+                "--lines=200",
+            ]
+        );
+        assert_eq!(
+            spawn.env,
+            [("TERM".to_string(), "xterm-256color".to_string())]
+        );
+        assert_eq!(spawn.cwd, Some(home));
+        assert!(!spawn.broadcast, "the snippet panel reaches no journal");
+        assert_eq!(spawn.sftp, None);
+        assert_eq!(spawn.control_path, None);
+        assert_eq!(spawn.cleanup, None);
+    }
+
+    #[test]
+    fn the_journal_terminal_checks_the_connection_and_the_unit_first() {
+        let ssh = Some(std::env::temp_dir().join("ssh"));
+        for kind in [ConnectionKind::Rdp, ConnectionKind::Web] {
+            let mut connection = loopback(3389);
+            connection.kind = kind;
+            assert_refused(
+                ssh_journal_spawn(&connection, "nginx.service", ssh.clone(), None).map(|_| ()),
+                "SSH connections only",
+                "not ssh",
+            );
+        }
+        let mut connection = loopback(22);
+        connection.host = Some("-oProxyCommand=x".to_string());
+        assert!(matches!(
+            ssh_journal_spawn(&connection, "nginx.service", ssh.clone(), None),
+            Err(AppError::Validation(_))
+        ));
+        for bad in ["a;id", "$(id)", "a'x", "-x", "a b", ""] {
+            assert_refused(
+                ssh_journal_spawn(&loopback(22), bad, ssh.clone(), None).map(|_| ()),
+                "invalid unit name",
+                bad,
+            );
+        }
+        let refused = ssh_journal_spawn(&loopback(22), "nginx.service", None, None).map(|_| ());
+        assert!(
+            matches!(&refused, Err(AppError::Connection(msg)) if msg == "ssh was not found in PATH"),
+            "{refused:?}"
+        );
+    }
+
     /// A synchronous command runs on the main thread: the window stands still while the
     /// keyring or the settings lock keeps it waiting. These wait on either, so each is async
     /// and does its work through `blocking`.
@@ -3072,6 +3204,7 @@ mod tests {
             "delete_password",
             "terminal_open_ssh",
             "terminal_open_ssh_credential",
+            "terminal_open_ssh_journal",
             "terminal_write",
             "terminal_broadcast",
             "sftp_upload",
@@ -3117,6 +3250,7 @@ mod tests {
         }
         for name in [
             "terminal_open_ssh_credential",
+            "terminal_open_ssh_journal",
             "terminal_detach",
             "terminal_broadcast",
             "terminal_set_broadcast",
@@ -3143,6 +3277,31 @@ mod tests {
                 "{name} does not destroy the window"
             );
             assert!(!body.contains(".close()"), "{name} closes the window");
+        }
+    }
+
+    /// A terminal command checks the port of its connection as `open_connection` does: a
+    /// loopback port of another workspace's tunnel would reach a host of that workspace.
+    #[test]
+    fn terminal_commands_that_open_a_connection_check_its_port() {
+        let source = include_str!("commands.rs").replace("\r\n", "\n");
+        for name in [
+            "terminal_open_ssh",
+            "terminal_open_ssh_credential",
+            "terminal_open_ssh_journal",
+        ] {
+            let head = format!("#[tauri::command]\npub async fn {name}(");
+            let start = source
+                .find(&head)
+                .unwrap_or_else(|| panic!("{name} is not an async command"));
+            let body = &source[start..];
+            let body = &body[..body.find("\n}\n").expect("end of the command")];
+            assert!(
+                body.contains(
+                    "reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;"
+                ),
+                "{name} does not check the port"
+            );
         }
     }
 

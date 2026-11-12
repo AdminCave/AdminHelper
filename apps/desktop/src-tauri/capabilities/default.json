@@ -55,6 +55,7 @@
     "allow-open-launcher",
     "allow-terminal-open-ssh",
     "allow-terminal-open-ssh-credential",
+    "allow-terminal-open-ssh-journal",
     "allow-terminal-open-ansible",
     "allow-sftp-list",
     "allow-sftp-mkdir",
