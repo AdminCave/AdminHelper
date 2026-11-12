@@ -1,5 +1,5 @@
 # Adressfilter im PR-Text, .github-Skripttests im scripts-Block, Commit-Betreff geprüft — Task-Ledger
-Status: bereit · Branch: feature/kern-harness-8 · Review: am Ende
+Status: erledigt · Branch: feature/kern-harness-8 · Review: am Ende
 Spec: docs/features/kern-harness-8.md (Roadmap R-1325, R-1352, R-1359)
 Heavy: none — nur Harness-Skripte und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
