@@ -1,5 +1,5 @@
 # Monitoring: Katalog-Module für selbst betriebene Anwendungen — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-apps-1 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-apps-1 · Review: pro Task
 Spec: docs/features/arch-monitoring-apps-1.md (Roadmap R-1241, R-1242, R-1243)
 Heavy: linux-full — apps/agent (HTTP-Fühler, Parameter `host`); die Module sind Katalog-Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
