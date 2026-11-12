@@ -34,6 +34,8 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
      `aktiv`, `bereit` und `pr` (CLAUDE.md §2, „Parallel, wo es geht“) wie `neu` (`add` nimmt
      jede neue Zeile an, Kevin 2026-10-22). Die Zeilen von „In Arbeit" mit ID, Klasse, Status.
    - **Neu**: nur die Anzahl und `ALT` (abgelaufene Zeilen), keine Liste.
+   - **Dauerauftrag**: die Anzahl der `geplant`-Zeilen mit der Notiz „Dauerauftrag Kevin 2026-11-11“ und ohne
+     „gesichtet“ (Abschnitt „Dauerauftrag“, gilt erst mit CLAUDE.md §4).
    - Geplant, Zurückgestellt, Blockiert als Anzahl; Abgeschlossen und Archiv weglassen.
    - **Züge**: `python3 scripts/dev/roadmap.py zuege`, je Zug eine Zeile (Ledger, Stufe, wartet/unterwegs, Zeilen).
 3. `python3 scripts/dev/roadmap.py lint`. Funde: Anzahl und die ersten drei nennen, nichts
@@ -92,6 +94,34 @@ geändert (Kevin fragen, ob sein Editor offen ist; nicht wiederholen, bis er es 
 5. **Abschluss.** `roadmap.py show --wip`, `roadmap.py zuege` und eine Zeile je Entscheidung
    (ID → Status, Zug). Dann
    das private Repo pushen: `git -C tasks/private push` (CLAUDE.md §11).
+
+## Dauerauftrag (Kevin 2026-11-11)
+
+Kevin hat am 2026-11-11 diktiert, dass bestimmte Funde ohne Einzel-Triage in einen `klein-`-Zug gehen. **Annahme und
+Einplanung ohne Triage gelten erst, wenn CLAUDE.md §4 den Dauerauftrag als Annahme nennt**; bis dahin bleibt ein
+gedeckter Fund `neu` für Kevins Triage. Die Nit-Regel am Ende gilt sofort. Gedeckt ist ein Fund aus `reviewer` oder aus dem Bau, der alle Bedingungen erfüllt:
+- Klasse BUG oder REF, mit Beweis (`datei:zeile`, Befehl oder Lauf);
+- Bereich der Klein-Session nach dem Zug-Schlüssel aus 2a (Doku-Drift, Kommentare, Test-Lücken, kleine REF ohne
+  Verhaltensänderung, kleine UI-Fehler);
+- kein SEC, kein Fund des `security`-Agenten, keine Datei aus `scripts/dev/review-risk.txt`;
+- kein Harness-Pfad: `CLAUDE.md`, `.claude/`, `scripts/`, `tasks/README.md`, `.github/workflows/`;
+- keine Verhaltens-, API- oder Migrationsänderung, keine Frage aus Kevins Bereich (CLAUDE.md §2).
+
+Die bauende Session (`/feature-build` §3) legt ihn mit `roadmap.py add` an und setzt ihn sofort mit `roadmap.py
+status R-nnnn geplant --ledger tasks/<klein-zug>.md --note "Dauerauftrag Kevin 2026-11-11"` in den Zug aus 2a. Im
+Zweifel bleibt er `neu`. `/roadmap triage` legt Kevin die noch nicht gesichteten Zeilen (Notiz ohne „gesichtet“) vor
+den `neu`-Zeilen als eine Liste zum Veto vor: ablehnen oder zurückstellen wie in 3. Die übrigen bekommen die Notiz
+„<bisherige Notiz>; gesichtet <datum>“ und bleiben eingeplant.
+
+**Nits** (Schwere `nit`) werden keine Einzelzeilen. Die Session behebt einen Nit mit, wenn ohnehin eine
+Korrekturrunde läuft (`request_changes`); nach einem `approve` nicht, weil jede Änderung danach eine weitere
+Prüfrunde auslöst. Die übrigen Nits eines Zugs ordnet sie vor dem PR so:
+- Nits, die die Bedingungen oben erfüllen, in **eine** Zeile: Klasse REF, Titel „Nachlese <zug>: <n> Nits“, Beweis
+  die Task-IDs mit `datei:zeile`; der Dauerauftrag legt sie in einen `klein-nachlese-<n>`-Zug (bis CLAUDE.md §4 ihn
+  nennt: `neu`).
+- Nits auf Harness-Pfaden in eine Zeile, die gleich `zurückgestellt` wird (CLAUDE.md §4).
+- Nits des `security`-Agenten und Nits zu Risikopfaden in eine `neu`-Zeile mit neutralem Titel für Kevins Triage;
+  Einzelheiten nur unter `tasks/private/`.
 
 ## Was dieser Skill nicht tut
 

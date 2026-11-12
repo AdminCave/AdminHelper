@@ -1421,10 +1421,27 @@ Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Tes
 ### Wochenlauf (heavy.sh)
 
 Der schwere Tier laeuft nicht mehr „wenn man daran denkt", sondern als ein Lauf mit
-Report und Historie. Kevin startet ihn von Hand in `tmux` oder mit `/test weekly`; die Ebene
-`all` startet die Claude-Session ausserdem selbst als faelligen Sammellauf ueber `main`
-(`/feature-build` §5, seit 2026-10-15). Die Session startet denselben tmux-Lauf, ueberwacht
-ihn bis zum Report und meldet das Ergebnis samt VM-Liste (Regeln im `/test`-Skill):
+Report und Historie. Als Sammellauf ueber `main` startet ihn seit 2026-11-11 jede Nacht
+`scripts/tests/nightly.sh` per Cron (01:30: `all`, samstags `weekly` mit Capstone, in tmux
+`ah-nightly`); die Session startet ihn nicht mehr nach Merges, sondern liest den Report
+(`/feature-build` §5). Von Hand startet ihn Kevin in `tmux` oder mit `/test weekly`; die Session
+ueberwacht einen solchen Lauf bis zum Report und meldet das Ergebnis samt VM-Liste (Regeln im
+`/test`-Skill):
+
+```bash
+bash scripts/tests/nightly.sh install     # eine markierte Crontab-Zeile, idempotent
+bash scripts/tests/nightly.sh status      # die Zeile und die letzten Laeufe aus .ah-out/nightly.log
+bash scripts/tests/nightly.sh run --dry-run   # nur die Vorpruefung, startet nichts
+# vor install einmal wie unter Cron: env -i HOME="$HOME" PATH=/usr/bin:/bin bash scripts/tests/nightly.sh run --dry-run
+bash scripts/tests/nightly.sh uninstall   # entfernt genau diese Zeile
+```
+
+`run` ueberspringt die Nacht (Grund in `.ah-out/nightly.log`), wenn der Haupt-Checkout nicht
+sauber auf `main` steht (ausgenommen der ungetrackte REG-Entwurf `tasks/reg-*.md` von `heavy.sh`),
+eine tmux-Sitzung `ah-*` laeuft, `main` nicht auf `origin/main`
+vorspult oder `vm.py list` nicht sauber ist; die VM-Liste landet nur in
+`.ah-out/nightly-vmlist.out`. Solange `ah-nightly` laeuft, aendert keine Session den
+Haupt-Checkout.
 
 ```bash
 tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
@@ -1497,7 +1514,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
   Layer Pflicht (Box-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
-  `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
+  `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg|fund` (`skip` nur ohne `--strict`).
 - **Klassifikation.** `infra` gilt fuer die **ganze Ebene** (bei `all` fuer den ganzen Teil),
   nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `vm.py: capacity` oder
@@ -1528,6 +1545,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   rot ⇒ `extern`.
   Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die
   stabile Signatur, die eine Regressions-Behauptung braucht — keine Zweit-VM).
+  Ein roter Schritt `schemathesis` ⇒ sofort `fund`: keine Wiederholung, keine Zweit-VM, keine
+  Gegenprobe (ein Fuzz-Fund kehrt nicht auf Abruf wieder); der Lauf ist rot, aus dem Beispiel im
+  Log wird eine BUG-Zeile (`/feature-build` §5).
   `--no-second-vm` ueberspringt die Zweit-VM, `--base <sha>` setzt den Vergleichs-Commit.
   Vor der ersten Zweit-VM und vor dem Capstone (`weekly`) gibt `heavy.sh` die GUI-Box seines
   Laufs frei (`reap.sh --role gui`, einmal je Lauf, die Notizen nennen es), weil neben ihr und

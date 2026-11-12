@@ -26,14 +26,19 @@ about the suites.
 | `weekly`   | same for `heavy.sh weekly` |
 | `status`   | read the newest weekly report and quote its first line |
 
-**`capstone` and `weekly` start only on Kevin's explicit ask, `all` also as the due Sammellauf
-(`/feature-build` §5, Kevin 2026-10-15) — and then the session runs them SUPERVISED, never
-fire-and-forget (Kevin, 2026-09-15).** Nothing here starts by itself (CLAUDE.md §2): no
-timer, no cron, no "while I'm at it". But once Kevin says
+**The Sammellauf starts by itself at night (Kevin 2026-11-11):** `scripts/tests/nightly.sh` runs
+from cron at 01:30, `heavy.sh all` and on Saturdays `weekly` with the capstone, in tmux
+`ah-nightly`; it skips a night (reason in `.ah-out/nightly.log`) when the main checkout is not
+clean on `main`, an `ah-*` tmux session runs, `main` does not fast-forward or `vm.py list` is
+not clean. While `ah-nightly` runs, no session touches the main checkout (no ff-merge, no
+branch switch). **By hand, `capstone`, `weekly` and `all` start only on Kevin's explicit ask —
+and then the session runs them SUPERVISED, never fire-and-forget (Kevin, 2026-09-15).** Apart
+from that cron line nothing here starts by itself (CLAUDE.md §2). But once Kevin says
 `/test weekly`, the tmux line is not handed back to him — the session does this:
 
-1. Pre-flight, and stop on any red: `python3 scripts/vm/vm.py list` shows nothing of another
-   lane and nothing leaked on ours (a foreign box aborts the run with 74 in its first
+1. Pre-flight, and stop on any red: no `ah-nightly` tmux session is running (`tmux has-session -t
+   ah-nightly` fails — the nightly run holds the same lane and boxes); `python3 scripts/vm/vm.py list`
+   shows nothing of another lane and nothing leaked on ours (a foreign box aborts the run with 74 in its first
    minute); no `Status: aktiv` build touching `scripts/tests/heavy.sh` or
    `scripts/tests/multibox.sh` (a running bash script must never be edited in the same
    checkout); the checkout is the tree that should be measured (`git status --short --branch`) — for the
@@ -135,6 +140,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 | `extern` | red on the second VM AND on the last PASS commit | environment/dependency, not the change |
 | `reg` | red on the second VM, green on the last PASS commit | roadmap row (class REG, `neu`) + `tasks/reg-<datum>-<schritt>.md` |
 | `fail` | red all three times, but failing DIFFERENTLY each time | reproducibly broken without the stable signature a regression claim needs — no second VM |
+| `fund` | a red `schemathesis` step, at once: no retry, no second VM, no counter-check (a fuzz find does not repeat on demand) | the run is red; a BUG row, or a neutral SEC row for auth, enrollment, tokens or a risk path (`/feature-build` §5); no quarantine, no REG |
 
 The second VM is a **worktree** `.ah-worktrees/w2` with its own lane (`AH_LANE=w2`);
 heavy.sh reaps that lane and removes the worktree itself. Kevin's own warm box (lane `main`)
@@ -143,8 +149,8 @@ candidate unconfirmed; `--base <sha>` overrides the comparison commit.
 
 ### Rhythm
 
-Friday evening, one `weekly`. The first runs are noisy (the desktop chain flakes) — that is
-what the quarantine is for; `R reruns` in the run.sh summary stays 0 on purpose so the
+Every night at 01:30 `all`, on Saturdays `weekly` with the capstone (`nightly.sh`, cron). The
+first runs are noisy (the desktop chain flakes) — that is what the quarantine is for; `R reruns` in the run.sh summary stays 0 on purpose so the
 quarantine calibrates against un-retried suites.
 
 ## Fast loop — warm once → iterate → reap (the default; do NOT stop after each run)

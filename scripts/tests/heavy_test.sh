@@ -456,6 +456,31 @@ grep -q 'AH_NO_SYNC=1' "$SHIM_STATE/iter.args" && ok "the retry ran with AH_NO_S
 grep -q -- '--step web vitest' "$SHIM_STATE/iter.args" \
   && ok "the retry targeted exactly the red step" || bad "retry args: $(cat "$SHIM_STATE/iter.args")"
 
+# ── 4b2: a red schemathesis step is a FUND: red, no retry, no quarantine ────
+# A fuzz find does not repeat on demand; retrying it once turned real product
+# bugs into "flaky" (R-1337). It is filed for a BUG row instead.
+mk_case
+export SHIM_ITER_SEQ="1 0 0 0"      # a retry WOULD be green — it must not run
+export SHIM_ITER_OUT1="  FAIL  schemathesis
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "schemathesis:fail:1600"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "a red schemathesis -> exit 1" || bad "schemathesis -> rc=$rc; $out"
+[ "$(report_of | head -1)" = "FAIL" ] && ok "a fuzz find turns the run red" || bad "report head '$(report_of | head -1)'"
+[ "$(cat "$SHIM_STATE/iter.n")" = 1 ] && ok "no retry for a fuzz find (one layer run)" \
+  || bad "$(cat "$SHIM_STATE/iter.n") iter calls"
+history_of | grep -q ',all,schemathesis,fund,' && ok "history.csv: the step is recorded as fund" \
+  || bad "no fund row: $(history_of)"
+report_of | grep -q '`schemathesis` (fund)' && ok "the report lists it for Kevin to look at" \
+  || bad "not in the report's list: $(report_of)"
+report_of | grep -q 'neutral SEC row instead if it touches auth' && ok "the report says a fuzz find may be a SEC row" \
+  || bad "no SEC hint in the report: $(report_of)"
+report_of | grep -q 'red after retries' && bad "a fuzz find claims retries: $(report_of)" || ok "the part detail does not claim a retry"
+report_of | grep -q '1 fuzz find(s), not retried' && ok "the part detail counts the fuzz find" || bad "part detail: $(report_of)"
+[ -f "$AH_PRIVATE_DIR/seen.md" ] && bad "a fuzz find must not be quarantined" || ok "no quarantine for a fuzz find"
+[ "$(grep -c '^| R-' "$AH_PRIVATE_DIR/ROADMAP.md")" = 1 ] && ok "no REG row for a fuzz find" \
+  || bad "roadmap rows: $(grep '^| R-' "$AH_PRIVATE_DIR/ROADMAP.md")"
+
 # ── 4c: three reds with the same marker make a candidate ─────────────────────
 mk_case
 export SHIM_ITER_SEQ="1 1 1 1"

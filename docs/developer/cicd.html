@@ -165,9 +165,11 @@
           Zweit-VM h&auml;ngen an dieser Ebene; die Capstone-Ebene meldet ihre roten Assertionen direkt als
           <code>fail</code>.) Kevin startet
           ihn, von Hand in <code>tmux</code> oder per <code>/test weekly</code> aus einer Claude-Session, die den
-          Lauf bis zum Report &uuml;berwacht und das Ergebnis meldet. Die Ebene <code>all</code> startet die
-          Session au&szlig;erdem selbst als f&auml;lligen Sammellauf &uuml;ber <code>main</code>
-          (seit 2026-10-15).</p>
+          Lauf bis zum Report &uuml;berwacht und das Ergebnis meldet. Als Sammellauf &uuml;ber <code>main</code>
+          startet ihn seit 2026-11-11 jede Nacht <code>scripts/tests/nightly.sh</code> per Cron (01:30
+          <code>all</code>, samstags <code>weekly</code> mit Capstone); eine &uuml;bersprungene Nacht steht mit
+          Grund in <code>.ah-out/nightly.log</code>. Bedienung und Vorpr&uuml;fung: <code>DEVELOPMENT.md</code>,
+          Abschnitt &bdquo;Wochenlauf (heavy.sh)&ldquo;.</p>
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
@@ -220,6 +222,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td><code>unbestaetigt</code></td><td>3&times; rot, aber gr&uuml;n auf einer frischen zweiten VM &ndash; oder die Gegenprobe war nicht m&ouml;glich: kein PASS-Commit in <code>history.csv</code>, <code>--no-second-vm</code>, Worktree nicht anlegbar, zweite Box nicht leasbar, Basis-Commit nicht auscheckbar, <code>run.sh</code> auf der zweiten Box wies den Schrittnamen auf HEAD oder auf der Basis ab</td><td>Kevin sichtet; nie eine REG-Zeile.</td></tr>
               <tr><td><code>extern</code></td><td>rot auf der zweiten VM <em>und</em> auf dem letzten PASS-Commit</td><td>Umgebung, Abh&auml;ngigkeit, Netz &ndash; nicht der Code seit dem letzten PASS.</td></tr>
               <tr><td><code>reg</code></td><td>rot auf der zweiten VM, gr&uuml;n auf dem letzten PASS-Commit</td><td>Roadmap-Zeile (Klasse REG, Status <code>neu</code>) plus Kurz-Ledger <code>tasks/reg-&lt;datum&gt;-&lt;schritt&gt;.md</code>. Annehmen bleibt Kevins Haken (<code>/roadmap triage</code>); den Plan gibt danach die Session frei.</td></tr>
+              <tr><td><code>fund</code></td><td>ein roter Schritt <code>schemathesis</code>, sofort: keine Wiederholung, keine Zweit-VM, keine Gegenprobe (ein Fuzz-Fund kehrt nicht auf Abruf wieder)</td><td>Der Lauf ist rot; aus dem Beispiel im Log wird eine BUG-Zeile. Keine Quarant&auml;ne, keine REG-Zeile.</td></tr>
               <tr><td><code>fail</code></td><td>alle drei Wiederholungen rot, aber jedes Mal <em>anders</em>; jede rote Capstone-Assertion einer Rolle, deren Setup <em>nicht</em> abgebrochen wurde; die Ebenen-Zeile, wenn Schritte nach den Wiederholungen rot bleiben</td><td>Reproduzierbar kaputt, aber ohne die stabile Signatur, die eine Regressions-Behauptung braucht &ndash; keine Zweit-VM.</td></tr>
             </tbody>
           </table>
