@@ -1,5 +1,5 @@
 # Harness: Sammellauf ohne Server-pytest auf der Box — Task-Ledger
-Status: aktiv · Branch: feature/arch-workflow-2 · Review: pro Task
+Status: bereit · Branch: feature/arch-workflow-2 · Review: pro Task
 Spec: docs/features/arch-workflow-2.md (Roadmap R-1338)
 Heavy: linux-full — ändert, was der Sammellauf auf der Box fährt; Gesamtbeweis ist der erste nächtliche Lauf nach dem Merge, vorher gezielt `--step schemathesis` und `--step sse_push` auf einer frisch geleasten Lane-Box (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- iter_flags_test heavy_tes
 Doku: .claude/skills/test/SKILL.md (Teil rest); DEVELOPMENT.md und cicd.html DE+EN in T4
 Abhängt von: T1, T2
 
-### T4 — Doku: `--exclude` und Teil rest ohne Server-pytest  [ ]
+### T4 — Doku: `--exclude` und Teil rest ohne Server-pytest  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e0b85be62 2026-11-12T09:33:19+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `DEVELOPMENT.md`: die `run.sh`-Flag-Zeile bekommt `--exclude <ids…>`, und der Wochenlauf-Punkt `all` sagt, dass Teil `rest` `server-pytest` auslässt und warum. `cicd.html` DE+EN: eine Zeile `--exclude` in der Flag-Tabelle des Test-Aggregators und derselbe Satz im Abschnitt „Wochenlauf“.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md, docs/developer/cicd.html DE+EN

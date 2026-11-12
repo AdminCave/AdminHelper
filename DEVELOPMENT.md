@@ -1357,10 +1357,12 @@ Suites auf einer ephemeren Proxmox-VM (das Token in `~/.config/adminhelper/pve.e
 Konfiguration im gitignoreten `.claude/settings.local.json`; siehe „VMs mit vm.py“).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
-[--only <keys…>] [--step <name>] [--part gui|rest]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
-`--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
-Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Test,
-`--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil).
+[--only <keys…>] [--step <name>] [--part gui|rest] [--exclude <ids…>]` (schwere Layer
+verlangen `AH_ALLOW_REAL=1`; `--only server web` begrenzt lint/unit auf die genannten
+Komponenten — gefilterte Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten
+samt Smoke-Test, `--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil;
+`--exclude server-pytest` laesst die genannten Step-Ids aus: sie laufen nicht, melden kein
+SKIP und fehlen im Artefakt, die Summary nennt sie, eine unbekannte Id ist Exit 2).
 `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
@@ -1454,7 +1456,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 - `all` = `run.sh all --strict` auf **zwei Boxen gleichzeitig**: Teil `rest`
   (`--part rest`) auf der warmen Box des Slots `desktop`, Teil `gui` (`--part gui`, die
   Desktop-GUI-E2E samt Smoke-Test) auf einer zweiten Box derselben Lane (`warm.sh gui`,
-  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. `PASS` nur mit zwei
+  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. Teil `rest` laesst
+  `server-pytest` aus (`--exclude server-pytest`): die CI faehrt die Server-Suite auf jedem
+  `main`-Commit, die Notizen des Reports sagen es. `PASS` nur mit zwei
   gruenen Teilen: ein Teil, der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch
   Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
   roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
