@@ -34,3 +34,4 @@ Beweis: Abschlussprüfung branch 2026-11-12: `openapi-breaking.sh server --base 
 Änderung: `max_length=255` an `FrpTunnelCreate.name`/`FrpTunnelUpdate.name` und der dazugehörige Test fallen weg, der Snapshot geht auf den Stand von `main` zurück; das Limit wird eigene Roadmap-Zeile für Kevin. Das Vorladen und der Kommentar aus T1 bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_openapi_snapshot.py tests/test_frp_status.py
 Doku: keine (Rücknahme)
+Test-Löschung: apps/server/tests/test_frp_tunnels.py::test_a_tunnel_name_is_capped_at_255_characters_like_the_label — aus T1, das Limit entfällt (nie auf main)
