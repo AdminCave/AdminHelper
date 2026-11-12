@@ -597,6 +597,42 @@ export interface MonitorServerCosts {
   collectors: MonitorCollectorCost[];
 }
 
+/** One service of the agent's inventory as it sent it: text values only, and a field
+ * the platform does not report is missing (sc query knows no restarts, rc(8) no result). */
+export interface MonitorServiceEntry {
+  unit: string;
+  active_state?: string;
+  enabled_state?: string;
+  /** The target of an alias (enabled_state "alias"), which carries the state. */
+  alias_of?: string;
+  sub_state?: string;
+  result?: string;
+  /** "status=1" or "signal=SIGKILL". */
+  exit?: string;
+  /** ISO time with zone of the last state change. */
+  since?: string;
+  restarts?: string;
+  memory_bytes?: string;
+}
+
+/** The redacted error lines of a failed service. */
+export interface MonitorServiceLog {
+  since: string | null;
+  collectedAt: string | null;
+  lines: string[];
+}
+
+export interface MonitorServiceInventory {
+  serverId: string;
+  /** null until the agent's first report with the inventory. */
+  reportedAt: string | null;
+  /** The switch for the error lines of this server. */
+  logLines: boolean;
+  services: MonitorServiceEntry[];
+  /** By unit; empty while logLines is off. */
+  logs: Record<string, MonitorServiceLog>;
+}
+
 export interface MonitorCatalogCredential {
   slot: string;
   use: string;

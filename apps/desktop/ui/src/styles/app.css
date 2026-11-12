@@ -1582,6 +1582,13 @@ body {
   flex-direction: column;
   padding: 0 16px 16px;
 }
+/* An action below a section's lines (the full service list). Global like the rest of the
+   section: a scoped rule would scope the dynamic classes of the lines too. */
+.mon-section-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
 
 /* ── Check-Line (klickbare Zeile mit Expand) ────────────────────────── */
 .mon-line-wrapper {

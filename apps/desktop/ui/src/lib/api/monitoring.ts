@@ -29,6 +29,7 @@ import type {
   MonitorFinding,
   MonitoringStatusSummary,
   MonitorServerCosts,
+  MonitorServiceInventory,
   Server,
   ServerCompare,
   ServerHistory,
@@ -90,6 +91,14 @@ export const monitoringApi = {
       session,
       'GET',
       `/api/monitoring/status/server/${encodeURIComponent(serverId)}/costs`,
+    );
+  },
+  // 404 for a server whose agent the monitoring service does not know.
+  fetchServerServices(session: AuthSession, serverId: string): Promise<MonitorServiceInventory> {
+    return apiRequest<MonitorServiceInventory>(
+      session,
+      'GET',
+      `/api/monitoring/status/server/${encodeURIComponent(serverId)}/services`,
     );
   },
 

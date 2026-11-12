@@ -315,6 +315,18 @@ const MAPPINGS: Mapping[] = [
     schema: 'CollectorCostOut',
     direction: 'response',
   },
+  {
+    ts: 'MonitorServiceInventory',
+    snapshot: 'monitoring',
+    schema: 'ServiceInventoryOut',
+    direction: 'response',
+  },
+  {
+    ts: 'MonitorServiceLog',
+    snapshot: 'monitoring',
+    schema: 'ServiceLogOut',
+    direction: 'response',
+  },
   { ts: 'MonitorCatalog', snapshot: 'monitoring', schema: 'CatalogOut', direction: 'response' },
   {
     ts: 'MonitorCatalogModule',
@@ -373,6 +385,7 @@ const EXEMPT: Record<string, string> = {
     ].map((n) => [n, 'free form state.details of a checker, narrowed in models/checkDetails.ts']),
   ),
   MonitorHttpDetails: 'free form state.details of the http checker',
+  MonitorServiceEntry: "one entry of the free form services list, the agent's fields as sent",
   MonitorCertDetails: 'the certificate inside the free form state.details of the http checker',
 };
 
@@ -607,7 +620,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(66);
+    expect(MAPPINGS.length).toBe(68);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);
