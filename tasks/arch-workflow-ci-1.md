@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/arch-workflow-ci-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py tests/test_ci_workflow.py tests/test_release_images.py
 Doku: → T6
 
-### T2 — R-1342: merge_group als Trigger  [ ]
+### T2 — R-1342: merge_group als Trigger  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_workflow.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0b1ddd685 2026-11-12T06:37:37+01:00
+Review: approve (.ah-out/review/arch-workflow-ci-1/T2.verdict.json)
 Änderung: `on:` bekommt `merge_group:`. `public-repo-guard` benennt den Fall `merge_group` ausdrücklich (Bereich `origin/main...$SHA`, Basis `origin/main`), statt ihn dem `*`-Zweig zu überlassen; `concurrency` bleibt (Queue-Refs eindeutig, abgebrochen werden nur `pull_request`-Läufe). `test_ci_workflow.py` prüft Trigger, Gruppe und Abbruchregel je Ereignis und fährt den Bereichs-Schritt des Guards mit `EVENT=merge_group` gegen ein Wegwerf-Repo.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py tests/test_ci_shards.py
 Doku: → T6
@@ -49,3 +51,5 @@ Task-Review: am Ende
 Abhängt von: T5
 
 ## Entscheidungen
+- 2026-11-12 T2: merge_group bekommt eine eigene concurrency-Gruppe je Commit (`ci-merge_group-<sha>`, push bleibt `ci-push-<sha>`), statt die Gruppe nach `github.ref` zu lassen — die Doku sagt eindeutige Queue-Refs nicht zu (nur das Präfix `gh-readonly-queue/{base_branch}`), und ein verdrängter wartender Gruppenlauf hielte den PR in der Queue; Abbruch weiter nur bei pull_request.
+- 2026-11-12 T1: DEVELOPMENT.md (Stack-Job „kein PR-Gate“, Reviewer-Nit) zieht T6 nach.
