@@ -7,7 +7,8 @@
 // the dead man's switch says how long monitoring has been without a result (T6, R-1225).
 // The cross tabs for certificates and backups get the checks, the servers and the link to
 // a server page (T7, R-1225), so does the one for updates and reboots; the findings tab
-// gets the findings with their load error and counts a non-empty list (T8).
+// gets the findings with their load error and counts a non-empty list (T8). Only an admin
+// session gets the findings tab: the monitoring proxy answers everyone else 403 (R-1289).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -52,21 +53,29 @@ vi.mock('../components/monitoring/cross/BackupsView.svelte', () => ({ default: h
 vi.mock('../components/monitoring/cross/UpdatesView.svelte', () => ({ default: h.updates }));
 vi.mock('../components/monitoring/cross/FindingsView.svelte', () => ({ default: h.findings }));
 
+vi.mock('$lib/stores/session', async () => {
+  const { writable } = await import('svelte/store');
+  return { session: writable<object | null>({ username: 'admin', isAdmin: true }) };
+});
+
 import type { Writable } from 'svelte/store';
 import { setLanguage } from '$lib/i18n';
 import * as store from '$lib/stores/monitoring';
 import * as pulse from '$lib/stores/monitoringPulse';
+import * as sessionMod from '$lib/stores/session';
 import Monitoring from './Monitoring.svelte';
 
 const silent = pulse.monitoringSilentMinutes as unknown as Writable<number | null>;
 const state = store.monitoring as unknown as Writable<{ tab: string }>;
 const findings = store.monitoringFindings as unknown as Writable<{ id: string }[]>;
+const session = sessionMod.session as unknown as Writable<object | null>;
 
 setLanguage('de');
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   silent.set(null);
+  session.set({ username: 'admin', isAdmin: true });
   state.set({ tab: 'overview' });
   findings.set([{ id: 'f1' }, { id: 'f2' }, { id: 'f3' }]);
 });
@@ -102,6 +111,18 @@ describe('Monitoring page', () => {
     expect(h.setTab).toHaveBeenCalledWith('updates');
     await fireEvent.click(screen.getByRole('tab', { name: /Funde/ }));
     expect(h.setTab).toHaveBeenCalledWith('findings');
+  });
+
+  it('shows the findings tab to an admin only', async () => {
+    render(Monitoring);
+    await tick();
+    expect(screen.queryByRole('tab', { name: /Funde/ })).not.toBeNull();
+    cleanup();
+    session.set({ username: 'alice', isAdmin: false });
+    render(Monitoring);
+    await tick();
+    expect(screen.queryByRole('tab', { name: /Funde/ })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Uebersicht' })).toBeTruthy();
   });
 
   it('counts the open findings, never a 0', async () => {
