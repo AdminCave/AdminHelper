@@ -88,6 +88,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     href: string;
     icon: Component<{ class?: string }>;
     serverOnly?: boolean;
+    // The monitoring proxy answers non-admins 403 (R-1333).
+    adminOnly?: boolean;
   }
 
   const navItems: NavItem[] = [
@@ -116,6 +118,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       href: '/monitoring',
       icon: CircleCheck,
       serverOnly: true,
+      adminOnly: true,
     },
     {
       id: 'ansible',
@@ -127,7 +130,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   ];
 
   let isServerMode = $derived($settings?.mode === 'server' && $session !== null);
-  let visibleNav = $derived(navItems.filter((n) => !n.serverOnly || isServerMode));
+  let visibleNav = $derived(
+    navItems.filter(
+      (n) => (!n.serverOnly || isServerMode) && (!n.adminOnly || $session?.isAdmin === true),
+    ),
+  );
   let collapsed = $state(false);
 
   let routeId = $derived.by<NavItem['id']>(() => {

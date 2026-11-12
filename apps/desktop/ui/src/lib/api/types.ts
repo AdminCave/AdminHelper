@@ -237,7 +237,8 @@ export type MonitorCheckType =
   | 'smart_health'
   | 'disk_forecast'
   | 'system_state'
-  | 'probe';
+  | 'probe'
+  | 'central';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';

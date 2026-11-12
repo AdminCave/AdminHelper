@@ -13,11 +13,19 @@ import type { MonitorCheck } from '$lib/api/types';
 
 const mocks = vi.hoisted(() => ({
   createCheck: vi.fn().mockResolvedValue({}),
+  fetchStatus: vi.fn().mockResolvedValue([]),
+  rebaseline: vi.fn().mockResolvedValue({}),
+  confirmDialog: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('$lib/api/monitoring', () => ({
-  monitoringApi: { createCheck: mocks.createCheck },
+  monitoringApi: {
+    createCheck: mocks.createCheck,
+    fetchStatus: mocks.fetchStatus,
+    rebaseline: mocks.rebaseline,
+  },
 }));
+vi.mock('../ui/ConfirmDialog.svelte', () => ({ confirmDialog: mocks.confirmDialog }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return { session: writable({ session: {}, settings: {} }) };
@@ -142,5 +150,130 @@ describe('MonitorCheckModal fails from before system_state (T28)', () => {
 
     await pickType(container, 'ping');
     expect(field(container, FAILS).value).toBe('3');
+  });
+});
+
+// R-1224 T11: a central check — the monitoring service probes a public endpoint
+// itself; its partner is one of the server's agent probes, and a central dns
+// check without expected addresses can learn its baseline again.
+describe('MonitorCheckModal central (R-1224)', () => {
+  function stored(config: MonitorCheck['config']): MonitorCheck {
+    return {
+      id: 'c1',
+      name: 'DNS',
+      serverId: 'srv-1',
+      checkType: 'central',
+      interval: '15m',
+      severity: 'warning',
+      enabled: true,
+      config,
+    };
+  }
+
+  async function mountStored(target: MonitorCheck, onSaved = vi.fn()) {
+    const r = render(MonitorCheckModal, {
+      props: { open: true, target, serverId: 'srv-1', onClose: vi.fn(), onSaved },
+    });
+    await tick();
+    return r;
+  }
+
+  function options(el: HTMLInputElement | HTMLSelectElement): string[] {
+    return Array.from((el as HTMLSelectElement).options).map((o) => o.value);
+  }
+
+  it('creates a central check with the trimmed host and the interval of its sensor', async () => {
+    const { container, getByText } = await mount();
+    await fireEvent.input(field(container, 'Name'), { target: { value: 'Web' } });
+    await pickType(container, 'central');
+    expect(field(container, 'Intervall').value).toBe('1h');
+    expect(options(field(container, 'Intervall'))).toEqual([
+      '15m',
+      '30m',
+      '1h',
+      '6h',
+      '12h',
+      '24h',
+    ]);
+
+    await fireEvent.change(field(container, 'Fühler'), { target: { value: 'rdap' } });
+    await tick();
+    expect(options(field(container, 'Intervall'))).toEqual(['24h']);
+    expect(field(container, 'Intervall').value).toBe('24h');
+
+    await fireEvent.change(field(container, 'Fühler'), { target: { value: 'tls' } });
+    await tick();
+    await fireEvent.input(field(container, 'Host'), { target: { value: ' web.example ' } });
+    await fireEvent.click(getByText('Speichern'));
+
+    await waitFor(() => expect(mocks.createCheck).toHaveBeenCalledTimes(1));
+    expect(mocks.createCheck.mock.calls[0][1]).toMatchObject({
+      name: 'Web',
+      check_type: 'central',
+      interval: '1h',
+      config: { sensor: 'tls', host: 'web.example', port: 443 },
+    });
+  });
+
+  it('loads the checks only for a central check and offers those of its server', async () => {
+    mocks.fetchStatus.mockResolvedValueOnce([
+      { ...stored({ sensor: 'tls' }), id: 'p1', name: 'own', checkType: 'probe' },
+      {
+        ...stored({ sensor: 'tls' }),
+        id: 'p2',
+        name: 'other',
+        checkType: 'probe',
+        serverId: 'srv-2',
+      },
+    ]);
+    const { container } = await mount();
+    await pickType(container, 'ping');
+    expect(mocks.fetchStatus).not.toHaveBeenCalled();
+
+    await pickType(container, 'central');
+    await waitFor(() => expect(options(field(container, 'Agent-Partner'))).toEqual(['', 'p1']));
+    await pickType(container, 'ping');
+    await pickType(container, 'central');
+    expect(mocks.fetchStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('learns the baseline again after the confirmation', async () => {
+    const onSaved = vi.fn();
+    const { getByText } = await mountStored(
+      stored({ sensor: 'dns', host: 'example.org' }),
+      onSaved,
+    );
+    await fireEvent.click(getByText('Basislinie neu lernen'));
+
+    await waitFor(() => expect(mocks.rebaseline).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    expect(mocks.rebaseline.mock.calls[0][1]).toBe('c1');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the baseline when the confirmation is declined', async () => {
+    mocks.confirmDialog.mockResolvedValueOnce(false);
+    const onSaved = vi.fn();
+    const { getByText } = await mountStored(
+      stored({ sensor: 'dns', host: 'example.org' }),
+      onSaved,
+    );
+    await fireEvent.click(getByText('Basislinie neu lernen'));
+
+    await waitFor(() => expect(mocks.confirmDialog).toHaveBeenCalledTimes(1));
+    await tick();
+    expect(mocks.rebaseline).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('offers no relearning where no baseline is learned', async () => {
+    for (const config of [
+      { sensor: 'dns', host: 'example.org', params: { expected: ['192.0.2.1'] } },
+      { sensor: 'tls', host: 'example.org', port: 443 },
+    ]) {
+      const { queryByText } = await mountStored(stored(config));
+      expect(queryByText('Basislinie neu lernen')).toBeNull();
+      cleanup();
+    }
   });
 });

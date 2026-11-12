@@ -34,7 +34,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Callout from '../components/ui/Callout.svelte';
   import Tabs from '../components/ui/Tabs.svelte';
   import { t } from '$lib/i18n';
-  import { session } from '$lib/stores/session';
 
   onMount(() => {
     activateMonitoring();
@@ -56,16 +55,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     { id: 'certs', label: $t('monitoring.tab.certs') },
     { id: 'backups', label: $t('monitoring.tab.backups') },
     { id: 'updates', label: $t('monitoring.tab.updates') },
-    // The proxy answers non-admins 403, so only an admin gets the findings tab.
-    ...($session?.isAdmin === true
-      ? [
-          {
-            id: 'findings',
-            label: $t('monitoring.tab.findings'),
-            count: count($monitoringFindings.length),
-          },
-        ]
-      : []),
+    {
+      id: 'findings',
+      label: $t('monitoring.tab.findings'),
+      count: count($monitoringFindings.length),
+    },
     { id: 'alerts', label: $t('monitoring.tab.alerts'), count: count($monitoringAlerts.length) },
     {
       id: 'templates',

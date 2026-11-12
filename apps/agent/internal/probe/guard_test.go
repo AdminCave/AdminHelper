@@ -282,6 +282,70 @@ func TestGuardNeverProbesAContainerPortPublishedFromABlockedOne(t *testing.T) {
 	}
 }
 
+func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
+	stubHost(t, &fakeHost{
+		list: []listener{
+			lst("0.0.0.0", 8001, 60), lst("0.0.0.0", 8002, 61), lst("0.0.0.0", 8003, 62), lst("0.0.0.0", 8004, 63),
+			lst("0.0.0.0", 8005, 64), lst("0.0.0.0", 8006, 65), lst("0.0.0.0", 8007, 66), lst("::", 8008, 67),
+			lst("0.0.0.0", 8009, 68), lst("0.0.0.0", 8010, 69), lst("0.0.0.0", 8011, 70),
+			lst("127.0.0.1", 8012, 71), lst("127.0.0.1", 8013, 72), lst("127.0.0.1", 8014, 73),
+			lst("127.0.0.1", 8015, 74), lst("127.0.0.1", 8016, 75), lst("127.0.0.1", 8017, 76),
+			lst("127.0.0.1", 8018, 77), lst("127.0.0.1", 8019, 78), lst("127.0.0.1", 8020, 79),
+		},
+		names: map[int32]string{
+			60: "rootlesskit", 61: "rootlessport", 62: "slirp4netns", 63: "pasta.avx2", 64: "passt",
+			65: "kube-proxy", 66: "socat", 67: "exe", 68: "exe", 69: "exe", 70: "nginx",
+			71: "ssh", 72: "kubectl", 73: "gvproxy", 74: "vpnkit", 75: "autossh", 76: "exe", 77: "exe",
+			78: "exe", 79: "sshfs",
+		},
+		args: map[int32][]string{
+			67: {"rootlessport"},
+			68: {"/usr/libexec/podman/rootlessport", "--child"},
+			// 69: the arguments cannot be read.
+			70: {"nginx", "-g", "daemon off;"},
+			76: {},
+			77: {"/proc/self/exe", "--child"},
+			78: {"/usr/bin/caddy", "run"},
+			79: {"sshfs", "host:/srv", "/mnt"},
+		},
+	})
+	g := NewGuard()
+
+	for _, c := range []struct{ address, want string }{
+		{"127.0.0.1:8001", "belongs to rootlesskit"},
+		{"127.0.0.1:8002", "belongs to rootlessport"},
+		{"127.0.0.1:8003", "belongs to slirp4netns"},
+		{"127.0.0.1:8004", "belongs to pasta.avx2"},
+		{"127.0.0.1:8005", "belongs to passt"},
+		{"127.0.0.1:8006", "belongs to kube-proxy"},
+		{"127.0.0.1:8007", "belongs to socat"},
+		{"[::1]:8008", "belongs to rootlessport"},
+		{"127.0.0.1:8009", "belongs to rootlessport"},
+		{"127.0.0.1:8010", "cannot be told"},
+		{"127.0.0.1:8012", "belongs to ssh"},
+		{"127.0.0.1:8013", "belongs to kubectl"},
+		{"127.0.0.1:8014", "belongs to gvproxy"},
+		{"127.0.0.1:8015", "belongs to vpnkit"},
+		{"127.0.0.1:8016", "belongs to autossh"},
+		{"127.0.0.1:8017", "cannot be told"},
+		{"127.0.0.1:8018", "cannot be told"},
+	} {
+		network := "tcp4"
+		if strings.HasPrefix(c.address, "[") {
+			network = "tcp6"
+		}
+		if err := allowed(g, network, c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
+		}
+	}
+	// nginx, a reexec whose argv[0] is no forwarder, and sshfs (ssh matches whole, not as a prefix).
+	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020"} {
+		if err := allowed(g, "tcp4", address); err != nil {
+			t.Errorf("%s: %v, want it allowed", address, err)
+		}
+	}
+}
+
 func TestGuardFailsClosedWhenItCannotTellTheListener(t *testing.T) {
 	h := &fakeHost{listErr: errors.New("permission denied")}
 	stubHost(t, h)
@@ -669,6 +733,20 @@ func TestNeverProbedSocketCoversTheRuntimeDirectoriesOfTheControlServices(t *tes
 		"/run/docker.socket", "/run/dockerd/x.sock", "/run/userdb/x.sock", "/tmp/sshd.sock", "/var/lib/dockerx/s.sock"} {
 		if neverProbedSocket(path) {
 			t.Errorf("%s: want it allowed", path)
+		}
+	}
+}
+
+func TestCheckPeerNameRefusesWhatItCannotPlace(t *testing.T) {
+	for _, name := range []string{"", "@abstract", "rel/s.sock", "s.sock", "/run/docker.sock", "/var/run/configd.socket",
+		"/run/x/../docker.sock", "/run/user/1000/bus"} {
+		if err := checkPeerName(name, "/tmp/p.sock"); !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("%q = %v; want ErrNotAllowed", name, err)
+		}
+	}
+	for _, name := range []string{"/run/php/php8.2-fpm.sock", "/tmp/p.sock", "/var/run/redis/redis.sock"} {
+		if err := checkPeerName(name, "/tmp/p.sock"); err != nil {
+			t.Errorf("%q = %v; want it allowed", name, err)
 		}
 	}
 }

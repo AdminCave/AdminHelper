@@ -15,7 +15,10 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,6 +64,31 @@ var hostDaemons = map[string]bool{
 var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cloud-hyperv", "k3s", "pvedaemon",
 	"pveproxy", "spiceproxy", "proxmox-backup"}
 
+// forwarders start the names of the processes that forward a port of this host to a port they do
+// not name to the guard: rootless container networks (rootlesskit, Podman's rootlessport, slirp4netns,
+// pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
+// kubectl (port-forward), autossh and socat; forwarderNames are matched whole, since a prefix ssh would
+// also take sshd and ssh-agent. A probe never connects to a port one of them listens on, since the port
+// behind it cannot be checked.
+var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
+	"kube-proxy", "kubectl", "autossh", "socat"}
+
+var forwarderNames = []string{"ssh"}
+
+// forwarder says whether name (processKey, or the base of an argv[0]) is one of forwarders.
+func forwarder(name string) bool {
+	k := processKey(name)
+	if slices.Contains(forwarderNames, k) {
+		return true
+	}
+	for _, prefix := range forwarders {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // neverProbed says whether name (processKey) is a process a probe never talks to.
 func neverProbed(name string) bool {
 	k := processKey(name)
@@ -105,9 +133,9 @@ func neverProbedSocket(path string) bool {
 
 // socketToDial returns the path to connect to for the unix socket path: path with its links resolved.
 // A path at or below one of controlSockets, as given or resolved, is ErrNotAllowed; one that does not
-// exist is errNoListener. Dialing the resolved path means a final link swapped after the check leads
-// nowhere new; a directory on the path swapped for a link still could, so the peer check of dialUnix
-// stays behind it.
+// exist is errNoListener, and a second name of a single socket of controlSockets is ErrNotAllowed.
+// Dialing the resolved path means a final link swapped after the check leads nowhere new; a directory
+// on the path swapped for a link still could, so checkPeerName in dialUnix stays behind it.
 func socketToDial(path string) (string, error) {
 	if neverProbedSocket(path) {
 		return "", fmt.Errorf("%w: %s is a socket of a service the agent never probes", ErrNotAllowed, path)
@@ -122,7 +150,55 @@ func socketToDial(path string) (string, error) {
 	if neverProbedSocket(real) {
 		return "", fmt.Errorf("%w: %s leads to %s, a socket of a service the agent never probes", ErrNotAllowed, path, real)
 	}
+	if c, err := controlSocketFile(real); errors.Is(err, fs.ErrNotExist) {
+		return "", errNoListener
+	} else if err != nil {
+		return "", fmt.Errorf("%w: %s cannot be read: %v", ErrNotAllowed, real, err)
+	} else if c != "" {
+		return "", fmt.Errorf("%w: %s is %s under another name, a socket of a service the agent never probes", ErrNotAllowed, path, c)
+	}
 	return real, nil
+}
+
+// controlSocketFile returns the entry of controlSockets that names the same file as path, a second
+// name (hard link) of one socket of a control service, or "": neverProbedSocket sees names, not
+// files. Only the entries naming one socket are compared, under /run and /var/run; a link to a
+// socket inside a directory of controlSockets is left to checkPeerName.
+func controlSocketFile(path string) (string, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	for _, c := range controlSockets {
+		if strings.HasSuffix(c, "/") || strings.HasSuffix(c, "-") {
+			continue
+		}
+		names := []string{c}
+		if rest, ok := strings.CutPrefix(c, "/run/"); ok {
+			names = append(names, "/var/run/"+rest)
+		}
+		for _, name := range names {
+			if ci, err := os.Stat(name); err == nil && os.SameFile(fi, ci) {
+				return name, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// checkPeerName refuses the socket path unless name, the address its server bound (getpeername
+// on the connection), is absolute and outside controlSockets. It names the socket the connection
+// reached, whichever directory or link led there after socketToDial; a relative or abstract name
+// says nothing about where that socket is, so it is refused. name is slash-separated on every
+// platform, so package path judges it, not filepath.
+func checkPeerName(name, sock string) error {
+	if !path.IsAbs(name) {
+		return fmt.Errorf("%w: the server of %s bound no absolute path (%q)", ErrNotAllowed, sock, name)
+	}
+	if neverProbedSocket(path.Clean(name)) {
+		return fmt.Errorf("%w: %s reached %s, a socket of a service the agent never probes", ErrNotAllowed, sock, name)
+	}
+	return nil
 }
 
 // listenerTTL is how long one snapshot of the listening sockets serves the guard.
@@ -143,6 +219,7 @@ var (
 	processArgs    = argsOf
 	publishedPorts = dockerPublications
 	dockerServes   = dockerSocketServes
+	dockerdRunning = dockerdRuns
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -254,6 +331,9 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
+		if err := checkForwarder(ctx, l.pid, name, port); err != nil {
+			return err
+		}
 		switch processKey(name) {
 		case "systemd":
 			activator = true
@@ -269,6 +349,28 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		return fmt.Errorf("%w: systemd holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, port)
 	}
 	return checkPublished(ctx, ip, port)
+}
+
+// checkForwarder returns an error if the process pid, named name, that listens on port is one of
+// forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
+// exe by the kernel; its argv[0] tells which it is, and an argv that cannot be read is refused.
+func checkForwarder(ctx context.Context, pid int32, name string, port uint16) error {
+	if processKey(name) == "exe" {
+		args, err := processArgs(ctx, pid)
+		if err != nil {
+			return fmt.Errorf("%w: the process %s listening on port %d cannot be told: %v", ErrNotAllowed, name, port, err)
+		}
+		// An argv[0] that is again /proc/self/exe tells no more than none.
+		if len(args) == 0 || processKey(filepath.Base(args[0])) == "exe" {
+			return fmt.Errorf("%w: the process %s listening on port %d cannot be told", ErrNotAllowed, name, port)
+		}
+		name = filepath.Base(args[0])
+	}
+	if forwarder(name) {
+		// name may come from argv[0], which its process sets at will: the text keeps a bounded part.
+		return fmt.Errorf("%w: port %d belongs to %.64s, which forwards to a port the agent cannot check", ErrNotAllowed, port, name)
+	}
+	return nil
 }
 
 // checkPublished returns an error if docker forwards ip and port to a port of a container a probe

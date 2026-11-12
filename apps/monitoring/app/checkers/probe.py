@@ -41,7 +41,7 @@ _NOT_RUN: dict[str, tuple[str, str]] = {
         "Access denied (401/403); the agent waits until the credential changes",
     ),
     "no_credential": ("warning", "No credential stored on the host for this check"),
-    "not_allowed": ("unknown", "Target is no address of this host; the agent refused it"),
+    "not_allowed": ("unknown", "The agent refused the target"),
     "unsupported": ("unknown", "Sensor not supported on this host"),
     "ambiguous_target": ("unknown", "Target listens on several ports and none matches the hint"),
     "invalid": ("unknown", "Agent rejected the probe parameters"),

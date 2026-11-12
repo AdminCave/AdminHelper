@@ -756,8 +756,7 @@ export const translations: Translations = {
     'monitoring.probe.error': 'Fühler meldet einen Fehler',
     'monitoring.probe.denied': 'Zugriff verweigert, der Agent wartet auf neue Zugangsdaten',
     'monitoring.probe.noCredential': 'Zugangsdaten fehlen',
-    'monitoring.probe.notAllowed':
-      'Ziel ist keine Adresse dieses Hosts, der Agent fragt es nicht ab',
+    'monitoring.probe.notAllowed': 'Der Agent hat das Ziel abgewiesen',
     'monitoring.probe.unsupported': 'Fühler auf diesem Host nicht unterstützt',
     'monitoring.probe.ambiguousTarget': 'Ziel nicht eindeutig: mehrere Ports, keiner passt',
     'monitoring.probe.invalid': 'Der Agent hat die Fühler-Einstellungen abgelehnt',
@@ -801,11 +800,15 @@ export const translations: Translations = {
     'monitoring.tab.certs': 'Zertifikate & Domains',
     'monitoring.certs.label': 'Zertifikate und Domains aller Server',
     'monitoring.certs.empty':
-      'Kein Check meldet ein Ablaufdatum. HTTPS-Checks und die Fühler „tls“ und „certfile“ tragen es ein.',
+      'Kein Check meldet ein Ablaufdatum. HTTPS-Checks, die Fühler „tls“ und „certfile“ und die zentralen Checks „tls“ und „rdap“ tragen es ein.',
     'monitoring.certs.col.target': 'Ziel',
     'monitoring.certs.col.issuer': 'Aussteller',
     'monitoring.certs.col.expires': 'Ablauf',
     'monitoring.certs.col.level': 'Einstufung',
+    'monitoring.certs.col.source': 'Quelle',
+    'monitoring.certs.source.agent': 'Agent',
+    'monitoring.certs.source.central': 'Zentral',
+    'monitoring.certs.source.http': 'HTTP-Check',
     'monitoring.tab.backups': 'Backups',
     'monitoring.backups.label': 'Proxmox-Backups aller Server',
     'monitoring.backups.empty':
@@ -1042,6 +1045,11 @@ export const translations: Translations = {
     'monitoring.checkEdit.updated': 'Check gespeichert',
     'monitoring.checkEdit.deleted': 'Check gelöscht',
     'monitoring.checkEdit.nameRequired': 'Name darf nicht leer sein',
+    'monitoring.checkEdit.hostRequired': 'Host darf nicht leer sein',
+    'monitoring.checkEdit.rebaseline': 'Basislinie neu lernen',
+    'monitoring.checkEdit.rebaselineConfirm':
+      'Die nächste vollständige Antwort wird die neue Basislinie, auch eine falsche. Nur bestätigen, wenn die geänderten Adressen gewollt sind.',
+    'monitoring.checkEdit.rebaselined': 'Basislinie verworfen, der nächste Lauf lernt sie neu',
     'monitoring.checkCfg.target': 'Ziel',
     'monitoring.checkCfg.port': 'Port',
     'monitoring.checkCfg.timeout': 'Timeout (s)',
@@ -1113,6 +1121,24 @@ export const translations: Translations = {
     'monitoring.checkCfg.checkTimeSync': 'Nicht synchronisierte Uhr melden',
     'monitoring.checkCfg.checkSecurityUpdates': 'Offene Sicherheits-Updates melden',
     'monitoring.checkCfg.checkOom': 'OOM-Kills melden',
+    'monitoring.checkCfg.sensor': 'Fühler',
+    'monitoring.checkCfg.host': 'Host',
+    'monitoring.checkCfg.hostPublic':
+      'Öffentlicher Name oder öffentliche IP-Adresse; eine interne Adresse prüft der Monitoring-Dienst nicht (der Check meldet unknown, prüfen kann sie der Agent).',
+    'monitoring.checkCfg.hostNameOnly': 'Nur ein öffentlicher Name (Domain), keine IP-Adresse.',
+    'monitoring.checkCfg.tlsPortHint':
+      'Ports mit STARTTLS (25, 587, 110, 143) nimmt dieser Fühler nicht: 25, 587 und 143 prüfen die Fühler „smtp“ und „imap“; 22 und 3306 prüft der Dienst nie von außen.',
+    'monitoring.checkCfg.dnsExpected': 'Erwartete Adressen (optional, mit Komma getrennt)',
+    'monitoring.checkCfg.dnsExpectedHint':
+      'Leer: die erste vollständige Antwort wird die Basislinie, jede Abweichung davon meldet der Check.',
+    'monitoring.checkCfg.rdapWarnDays': 'Warnung ab Tagen vor Ablauf',
+    'monitoring.checkCfg.rdapCritDays': 'Kritisch ab Tagen vor Ablauf',
+    'monitoring.checkCfg.dnsblListsHint':
+      'Keine Auswahl: die freien Listen, dazu Spamhaus ZEN, wenn der Betreiber einen DQS-Schlüssel hinterlegt hat; ohne Schlüssel fragt der Dienst Spamhaus nie.',
+    'monitoring.checkCfg.pairCheck': 'Agent-Partner',
+    'monitoring.checkCfg.pairNone': 'Kein Partner',
+    'monitoring.checkCfg.pairHint':
+      'Die Probe des Agents auf demselben Dienst: zeigt ein roter Check von außen, ob der Weg oder der Dienst die Ursache ist.',
     'monitoring.log.empty': 'Keine Einträge',
     'monitoring.log.title': 'Gesendete Alerts',
     'monitoring.detail.loading': 'Lade…',
@@ -2236,7 +2262,7 @@ export const translations: Translations = {
     'monitoring.probe.error': 'Sensor reports an error',
     'monitoring.probe.denied': 'Access denied, the agent waits for new credentials',
     'monitoring.probe.noCredential': 'Credentials missing',
-    'monitoring.probe.notAllowed': 'Target is no address of this host, the agent does not query it',
+    'monitoring.probe.notAllowed': 'The agent refused the target',
     'monitoring.probe.unsupported': 'Sensor not supported on this host',
     'monitoring.probe.ambiguousTarget': 'Target is ambiguous: several ports, none matches',
     'monitoring.probe.invalid': 'The agent rejected the sensor settings',
@@ -2280,11 +2306,15 @@ export const translations: Translations = {
     'monitoring.tab.certs': 'Certificates & domains',
     'monitoring.certs.label': 'Certificates and domains of all servers',
     'monitoring.certs.empty':
-      'No check reports an expiry date. HTTPS checks and the sensors “tls” and “certfile” add one.',
+      'No check reports an expiry date. HTTPS checks, the sensors “tls” and “certfile” and the central checks “tls” and “rdap” add one.',
     'monitoring.certs.col.target': 'Target',
     'monitoring.certs.col.issuer': 'Issuer',
     'monitoring.certs.col.expires': 'Expires',
     'monitoring.certs.col.level': 'Rating',
+    'monitoring.certs.col.source': 'Source',
+    'monitoring.certs.source.agent': 'Agent',
+    'monitoring.certs.source.central': 'Central',
+    'monitoring.certs.source.http': 'HTTP check',
     'monitoring.tab.backups': 'Backups',
     'monitoring.backups.label': 'Proxmox backups of all servers',
     'monitoring.backups.empty':
@@ -2521,6 +2551,11 @@ export const translations: Translations = {
     'monitoring.checkEdit.updated': 'Check saved',
     'monitoring.checkEdit.deleted': 'Check deleted',
     'monitoring.checkEdit.nameRequired': 'Name must not be empty',
+    'monitoring.checkEdit.hostRequired': 'Host must not be empty',
+    'monitoring.checkEdit.rebaseline': 'Learn baseline again',
+    'monitoring.checkEdit.rebaselineConfirm':
+      'The next complete answer becomes the new baseline, a wrong one too. Confirm only when the changed addresses are intended.',
+    'monitoring.checkEdit.rebaselined': 'Baseline dropped, the next run learns it again',
     'monitoring.checkCfg.target': 'Target',
     'monitoring.checkCfg.port': 'Port',
     'monitoring.checkCfg.timeout': 'Timeout (s)',
@@ -2592,6 +2627,24 @@ export const translations: Translations = {
     'monitoring.checkCfg.checkTimeSync': 'Report unsynchronized clock',
     'monitoring.checkCfg.checkSecurityUpdates': 'Report pending security updates',
     'monitoring.checkCfg.checkOom': 'Report OOM kills',
+    'monitoring.checkCfg.sensor': 'Sensor',
+    'monitoring.checkCfg.host': 'Host',
+    'monitoring.checkCfg.hostPublic':
+      'Public name or public IP address; the monitoring service does not probe an internal address (the check reports unknown, the agent can check it).',
+    'monitoring.checkCfg.hostNameOnly': 'A public name (domain) only, no IP address.',
+    'monitoring.checkCfg.tlsPortHint':
+      'This sensor takes no STARTTLS port (25, 587, 110, 143): the sensors “smtp” and “imap” check 25, 587 and 143; 22 and 3306 are never probed from outside.',
+    'monitoring.checkCfg.dnsExpected': 'Expected addresses (optional, comma-separated)',
+    'monitoring.checkCfg.dnsExpectedHint':
+      'Empty: the first complete answer becomes the baseline, and the check reports any deviation from it.',
+    'monitoring.checkCfg.rdapWarnDays': 'Warning from days before expiry',
+    'monitoring.checkCfg.rdapCritDays': 'Critical from days before expiry',
+    'monitoring.checkCfg.dnsblListsHint':
+      'None chosen: the free lists, plus Spamhaus ZEN when the operator has set a DQS key; without a key the service never asks Spamhaus.',
+    'monitoring.checkCfg.pairCheck': 'Agent partner',
+    'monitoring.checkCfg.pairNone': 'No partner',
+    'monitoring.checkCfg.pairHint':
+      'The agent’s probe of the same service: when the check from outside is red, it tells whether the path or the service is the cause.',
     'monitoring.log.empty': 'No entries',
     'monitoring.log.title': 'Sent alerts',
     'monitoring.detail.loading': 'Loading…',

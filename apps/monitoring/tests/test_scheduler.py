@@ -46,6 +46,40 @@ def test_parse_trigger_invalid_raises():
         sched._parse_trigger("* * *")
 
 
+def test_parse_trigger_random_phase_moves_only_the_first_run(monkeypatch):
+    # R-1224: central checks start at a random point of their first period, then
+    # run at the exact period.
+    monkeypatch.setattr(sched.random, "random", lambda: 0.25)
+    before = datetime.now(timezone.utc)
+
+    trigger = sched._parse_trigger("1h", random_phase=True)
+
+    assert trigger.interval == timedelta(hours=1)
+    start = trigger.start_date
+    assert (
+        before + timedelta(minutes=15)
+        <= start
+        <= datetime.now(timezone.utc) + timedelta(minutes=15)
+    )
+
+
+def test_add_check_gives_central_checks_a_random_phase(monkeypatch):
+    monkeypatch.setattr(sched.random, "random", lambda: 0.0)
+    try:
+        before = datetime.now(timezone.utc)
+        sched.add_check("t-central", "1h", "central")
+        sched.add_check("t-ping", "1h", "ping")
+        central_start = sched.scheduler.get_job("mon_t-central").trigger.start_date
+        ping_start = sched.scheduler.get_job("mon_t-ping").trigger.start_date
+    finally:
+        sched.remove_check("t-central")
+        sched.remove_check("t-ping")
+
+    # Phase 0 starts now; every other type waits a full period first, as before.
+    assert central_start - before < timedelta(minutes=1)
+    assert ping_start - before >= timedelta(minutes=59)
+
+
 # --- add_check push-only skip -------------------------------------------------
 
 
