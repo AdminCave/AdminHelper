@@ -37,8 +37,10 @@ Beweis: reviewer arch-monitoring-ui-2 2026-11-12 (T8) plugins.py:80/248; agent.p
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_plugin_checkers.py
 Doku: keine (interne Grenze, Kommentar, Test)
 
-### T4 — R-1390: E2E-Screenshots ohne Alarm-Toasts  [ ]
+### T4 — R-1390: E2E-Screenshots ohne Alarm-Toasts  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-server-page.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @45fbf08b9 2026-11-12T16:42:16+01:00
+Review: approve (.ah-out/review/klein-nachlese-3/T4.verdict.json)
 Beweis: reviewer arch-monitoring-ui-2 Bau T11 · feature/arch-monitoring-ui-2@72e71d8ca monitoring-server-page.live.js:87
 Änderung: `shot()` schließt oder blendet vor der Aufnahme sichtbare Toasts aus (derselbe Weg wie andere Specs, vorher greppen). Lauf der Live-Spec ist Plattform-I/O ohne Display hier; verifiziert wird Lint, das Ergebnis wird so genannt.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
