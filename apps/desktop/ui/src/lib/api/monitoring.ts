@@ -101,6 +101,19 @@ export const monitoringApi = {
       `/api/monitoring/status/server/${encodeURIComponent(serverId)}/services`,
     );
   },
+  // Off deletes the stored error lines; the answer is the inventory as fetchServerServices.
+  setServiceLogLines(
+    session: AuthSession,
+    serverId: string,
+    logLines: boolean,
+  ): Promise<MonitorServiceInventory> {
+    return apiRequest<MonitorServiceInventory>(
+      session,
+      'PUT',
+      `/api/monitoring/status/server/${encodeURIComponent(serverId)}/services/options`,
+      { log_lines: logLines },
+    );
+  },
 
   // ── Modules: catalog, discovery, findings ──────────────────────────────────
   fetchCatalog(session: AuthSession): Promise<MonitorCatalog> {

@@ -6,6 +6,8 @@
 // Pins the state groups, the reason, aliases with their target, one row per unit, the
 // filter with its counts, the search over alias names, the sort with missing values last,
 // "—" for fields a platform does not send, and the empty, no-agent, error and late states.
+// T8: the error lines of a failed service fold out as text, never as HTML, and the switch
+// per server saves, goes back when saving fails and drops a late answer.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
@@ -13,14 +15,19 @@ import { tick } from 'svelte';
 import type { MonitorServiceEntry, MonitorServiceInventory } from '$lib/api/types';
 import { IpcError } from '$lib/utils/errors';
 
-const h = vi.hoisted(() => ({ fetch: vi.fn() }));
+const SESSION = { serverUrl: 'https://hub.example' };
+const h = vi.hoisted(() => ({
+  fetch: vi.fn(),
+  save: vi.fn(),
+  session: null as { serverUrl: string } | null,
+}));
 // A wait gets a bound of 30 s (testing.md, Fristen); testing-library's default is 1 s.
 const WAIT = { timeout: 30_000 };
 
-vi.mock('$lib/api/monitoring', () => ({ monitoringApi: { fetchServerServices: h.fetch } }));
-vi.mock('$lib/stores/session', () => ({
-  currentSession: () => ({ serverUrl: 'https://hub.example' }),
+vi.mock('$lib/api/monitoring', () => ({
+  monitoringApi: { fetchServerServices: h.fetch, setServiceLogLines: h.save },
 }));
+vi.mock('$lib/stores/session', () => ({ currentSession: () => h.session }));
 
 import { setLanguage } from '$lib/i18n';
 import ServiceList, { filterRows, reasonOf, serviceRows, stateOf } from './ServiceList.svelte';
@@ -126,6 +133,8 @@ beforeAll(() => setLanguage('de'));
 // A block body: a function beforeEach returns is a cleanup hook, and mockReset returns the mock.
 beforeEach(() => {
   h.fetch.mockReset();
+  h.save.mockReset();
+  h.session = SESSION;
 });
 afterEach(() => cleanup());
 
@@ -202,6 +211,28 @@ describe('service rows', () => {
     expect(filterRows(list, 'failed').map((r) => r.unit)).toEqual(['nginx.service']);
     expect(filterRows(list, 'active').map((r) => r.unit)).toEqual(['ssh.service']);
     expect(filterRows(list, 'inactive').map((r) => r.unit)).toEqual(['backup.service', 'Spooler']);
+  });
+
+  it("gives error lines to a failed unit only, and only from the unit's own key", () => {
+    const log = { since: ago(5), collectedAt: ago(4), lines: ['boom'] };
+    const list = serviceRows(
+      [
+        { unit: 'a.service', active_state: 'failed' },
+        { unit: 'b.service', active_state: 'active' },
+        { unit: 'c.service', active_state: 'failed' },
+        { unit: 'constructor', active_state: 'failed' },
+        { unit: 'toString', active_state: 'failed' },
+      ],
+      { 'a.service': log, 'b.service': log, 'c.service': { ...log, lines: [] } },
+    );
+    expect(list.map((r) => [r.unit, r.log])).toEqual([
+      ['a.service', log],
+      ['b.service', null],
+      ['c.service', null],
+      ['constructor', null],
+      ['toString', null],
+    ]);
+    expect(serviceRows([{ unit: 'a.service', active_state: 'failed' }])[0].log).toBeNull();
   });
 });
 
@@ -353,5 +384,209 @@ describe('ServiceList', () => {
     await tick();
     expect(names(container)).toEqual(['zfs.service']);
     expect(container.textContent).not.toContain('HTTP 502');
+  });
+});
+
+describe('error lines and their switch', () => {
+  const NGINX_LOG = {
+    since: ago(5),
+    collectedAt: ago(4),
+    lines: ['nginx: [emerg] bind() failed', 'password=***'],
+  };
+
+  function logButton(container: HTMLElement): HTMLButtonElement | null {
+    return container.querySelector<HTMLButtonElement>('button[aria-expanded]');
+  }
+
+  function switchOf(container: HTMLElement): HTMLButtonElement {
+    const sw = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    if (!sw) throw new Error('no switch');
+    return sw;
+  }
+
+  function zfs(): MonitorServiceInventory {
+    return inventory({ services: [{ unit: 'zfs.service', active_state: 'active' }] }, 'srv-2');
+  }
+
+  it('folds the error lines of a failed service out and in', async () => {
+    const container = await shown({ logs: { 'nginx.service': NGINX_LOG } });
+    expect(container.querySelectorAll('button[aria-expanded]')).toHaveLength(1);
+    expect(logButton(container)?.textContent?.trim()).toBe('Fehlerzeilen (2)');
+    expect(logButton(container)?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('.svc-log-lines')).toBeNull();
+
+    await fireEvent.click(logButton(container) as HTMLElement);
+    expect(logButton(container)?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('.svc-log-lines')?.textContent).toBe(
+      'nginx: [emerg] bind() failed\npassword=***',
+    );
+    expect(container.textContent).toContain(
+      'Geschwärzt, nur am Vorfall gespeichert · erfasst vor 4 min',
+    );
+
+    await fireEvent.click(logButton(container) as HTMLElement);
+    expect(container.querySelector('.svc-log-lines')).toBeNull();
+    // Folding is no reason to load again.
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the lines as text, never as HTML', async () => {
+    const line = '<b>x</b><img src=x onerror="alert(1)">';
+    const container = await shown({ logs: { 'nginx.service': { ...NGINX_LOG, lines: [line] } } });
+    await fireEvent.click(logButton(container) as HTMLElement);
+    const pre = container.querySelector('.svc-log-lines') as HTMLElement;
+    expect(pre.textContent).toBe(line);
+    expect(pre.querySelector('b, img')).toBeNull();
+  });
+
+  it('folds the lines in when another server is shown', async () => {
+    h.fetch.mockImplementation((_auth: unknown, id: string) =>
+      Promise.resolve(inventory({ logs: { 'nginx.service': NGINX_LOG } }, id)),
+    );
+    const { container, rerender } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(() => expect(logButton(container)).not.toBeNull(), WAIT);
+    await fireEvent.click(logButton(container) as HTMLElement);
+    expect(container.querySelector('.svc-log-lines')).not.toBeNull();
+
+    await rerender({ serverId: 'srv-2' });
+    await waitFor(() => expect(h.fetch).toHaveBeenCalledWith(SESSION, 'srv-2'), WAIT);
+    await waitFor(() => expect(logButton(container)).not.toBeNull(), WAIT);
+    expect(logButton(container)?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('.svc-log-lines')).toBeNull();
+  });
+
+  it('switches the lines off, which drops the stored ones and names what off does', async () => {
+    h.save.mockResolvedValue(inventory({ logLines: false, logs: {} }));
+    const container = await shown({ logs: { 'nginx.service': NGINX_LOG } });
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+    expect(container.textContent).toContain(
+      'Aus blendet gespeicherte Zeilen sofort aus und löscht sie; der Agent folgt mit seinem nächsten Plan.',
+    );
+
+    await fireEvent.click(switchOf(container));
+    expect(h.save).toHaveBeenCalledWith(SESSION, 'srv-1', false);
+    await waitFor(() => expect(logButton(container)).toBeNull(), WAIT);
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('false');
+    expect(switchOf(container).disabled).toBe(false);
+  });
+
+  it('switches the lines on and shows the switch as the service saved it', async () => {
+    h.save.mockResolvedValueOnce(
+      inventory({ logLines: true, logs: { 'nginx.service': NGINX_LOG } }),
+    );
+    const container = await shown({ logLines: false });
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(switchOf(container));
+    expect(h.save).toHaveBeenCalledWith(SESSION, 'srv-1', true);
+    await waitFor(() => expect(logButton(container)).not.toBeNull(), WAIT);
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+
+    // The service has the last word, e.g. when another admin switched it meanwhile.
+    h.save.mockResolvedValueOnce(inventory({ logLines: true, logs: {} }));
+    await fireEvent.click(switchOf(container));
+    await waitFor(() => expect(logButton(container)).toBeNull(), WAIT);
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('holds the switch while saving', async () => {
+    h.save.mockImplementation(() => new Promise(() => {}));
+    const container = await shown();
+    await fireEvent.click(switchOf(container));
+    expect(switchOf(container).disabled).toBe(true);
+  });
+
+  it('puts the switch back and says so when saving fails', async () => {
+    h.save.mockRejectedValueOnce(new IpcError('HTTP 502', 'ERR_HTTP', 502));
+    const container = await shown({ logs: { 'nginx.service': NGINX_LOG } });
+    await fireEvent.click(switchOf(container));
+    await waitFor(
+      () =>
+        expect(container.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+          'Schalter nicht gespeichert: HTTP 502',
+        ),
+      WAIT,
+    );
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+    expect(switchOf(container).disabled).toBe(false);
+    expect(logButton(container)).not.toBeNull();
+
+    h.save.mockResolvedValueOnce(inventory({ logLines: false, logs: {} }));
+    await fireEvent.click(switchOf(container));
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).toBeNull(), WAIT);
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it("does not carry a save error over to the next server's switch", async () => {
+    h.save.mockRejectedValueOnce(new IpcError('HTTP 502', 'ERR_HTTP', 502));
+    h.fetch.mockImplementation((_auth: unknown, id: string) =>
+      Promise.resolve(id === 'srv-1' ? inventory() : zfs()),
+    );
+    const { container, rerender } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), WAIT);
+    await fireEvent.click(switchOf(container));
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull(), WAIT);
+
+    await rerender({ serverId: 'srv-2' });
+    await waitFor(() => expect(names(container)).toEqual(['zfs.service']), WAIT);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('sends nothing without a session and leaves the switch as it was', async () => {
+    const container = await shown();
+    h.session = null;
+    await fireEvent.click(switchOf(container));
+    expect(h.save).not.toHaveBeenCalled();
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('offers the switch before the agent has sent a list', async () => {
+    h.fetch.mockResolvedValue(inventory({ reportedAt: null, services: [], logLines: false }));
+    const { container } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(
+      () =>
+        expect(container.textContent).toContain('Der Agent hat noch keine Dienste-Liste gemeldet.'),
+      WAIT,
+    );
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('drops a late save answer for the server shown before', async () => {
+    let answer: (inv: MonitorServiceInventory) => void = () => {};
+    h.save.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    h.fetch.mockImplementation((_auth: unknown, id: string) =>
+      Promise.resolve(id === 'srv-1' ? inventory() : zfs()),
+    );
+    const { container, rerender } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), WAIT);
+    await fireEvent.click(switchOf(container));
+    await rerender({ serverId: 'srv-2' });
+    await waitFor(() => expect(names(container)).toEqual(['zfs.service']), WAIT);
+    expect(switchOf(container).disabled).toBe(false);
+
+    answer(inventory({ logLines: false }));
+    await tick();
+    await tick();
+    expect(names(container)).toEqual(['zfs.service']);
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
+    expect(switchOf(container).disabled).toBe(false);
+  });
+
+  it('drops a late save error for the server shown before', async () => {
+    let refuse: (err: unknown) => void = () => {};
+    h.save.mockImplementation(() => new Promise((_resolve, reject) => (refuse = reject)));
+    h.fetch.mockImplementation((_auth: unknown, id: string) =>
+      Promise.resolve(id === 'srv-1' ? inventory() : zfs()),
+    );
+    const { container, rerender } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), WAIT);
+    await fireEvent.click(switchOf(container));
+    await rerender({ serverId: 'srv-2' });
+    await waitFor(() => expect(names(container)).toEqual(['zfs.service']), WAIT);
+
+    refuse(new IpcError('HTTP 502', 'ERR_HTTP', 502));
+    await tick();
+    await tick();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(switchOf(container).getAttribute('aria-checked')).toBe('true');
   });
 });

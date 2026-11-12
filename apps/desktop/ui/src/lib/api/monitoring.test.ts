@@ -105,6 +105,20 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     undefined,
   ],
   [
+    'setServiceLogLines off',
+    () => monitoringApi.setServiceLogLines(session, 's 1/x', false),
+    'PUT',
+    '/api/monitoring/status/server/s%201%2Fx/services/options',
+    JSON.stringify({ log_lines: false }),
+  ],
+  [
+    'setServiceLogLines on',
+    () => monitoringApi.setServiceLogLines(session, 's 1/x', true),
+    'PUT',
+    '/api/monitoring/status/server/s%201%2Fx/services/options',
+    JSON.stringify({ log_lines: true }),
+  ],
+  [
     'fetchCatalog',
     () => monitoringApi.fetchCatalog(session),
     'GET',
