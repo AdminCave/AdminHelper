@@ -183,6 +183,11 @@ CI_NODE="$(sed -n 's/^ *node-version: "\([0-9]*\)"$/\1/p' "$ROOT/.github/workflo
 
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$ROOT/scripts/tests/run.sh")"
 grep -qw 'harness_consistency_test' <<<"$LIST" && ok "registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
+# The tests under .github/scripts/ ran only as CI steps, so a task's evidence did not cover them (R-1352).
+for f in "$ROOT"/.github/scripts/*_test.sh; do
+  e=".github/scripts/$(basename "$f" .sh)"
+  grep -qF -- "$e" <<<"$LIST" && ok "$e is in AH_SCRIPT_TESTS_DEFAULT" || bad "$e is missing from AH_SCRIPT_TESTS_DEFAULT"
+done
 
 echo "harness_consistency_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

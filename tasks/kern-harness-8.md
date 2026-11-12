@@ -16,8 +16,10 @@ der Test verlangt sie unverändert, die bisherigen Leak-Fälle bleiben rot ohne 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Harness-intern)
 
-### T2 — R-1352: scripts-Block fährt .github/scripts/*_test.sh  [ ]
+### T2 — R-1352: scripts-Block fährt .github/scripts/*_test.sh  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, scripts/tests/harness_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @439f7adc7 2026-11-12T15:01:48+01:00
+Review: am Ende (Branch-Review)
 Änderung: Ein Eintrag mit `/` in `AH_SCRIPT_TESTS` gilt relativ zu `$ROOT` (`run.sh:709`); die vier
 `.github/scripts/*_test`-Einträge stehen in `AH_SCRIPT_TESTS_DEFAULT` (`run.sh:688`). `run_flags_test.sh` prüft einen
 Pfad-Eintrag (grün und rot), `harness_consistency_test.sh` verlangt jedes `.github/scripts/*_test.sh` in der Liste.
