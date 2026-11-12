@@ -20,10 +20,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T3
 
-### T2 — Monitoring: Last-Schonung auswerten (R-1268)  [ ]
+### T2 — Monitoring: Last-Schonung auswerten (R-1268)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/check_engine.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_load_shed.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @12d6135de 2026-11-12T17:02:22+01:00
+Review: am Ende (Branch-Review)
 Änderung: `_COLLECTOR_OF_CHECK` um `probe` → `probes`; ein Collector mit `throttled: true, reason: "load"` schont seine Checks ohne die 45-min-Grenze, sofern sie einen Zustand haben, und hängt über `note_skip` (bisher `_note_skip`, wird öffentlich) „(skipped: load shedding)“ an die Meldung; Metrik `monitor_agent_load_shed` aus `self.load_shed` (beschränkt gelesen); `agent_resources` warnt nach 30 min durchgehender Schonung. Ein Report ohne Block bleibt wie heute. Neue Testdatei mit SPDX.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py tests/test_agent_report.py tests/test_agent_report_v4.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py tests/test_agent_report.py tests/test_agent_report_v4.py tests/test_check_engine_context.py tests/test_agent_resources_checker.py
 Doku: → T3
 Abhängt von: T1
 
@@ -40,3 +42,10 @@ Abhängt von: T1, T2
 - 2026-11-12 T1: `reportState.LoadShed` mit `omitzero` (Go 1.24+, Modul auf 1.27) — eine Zustandsdatei ohne Schonung bleibt wie heute
 - 2026-11-12 T1: die Schonung lässt die Drossel eines Collectors unverändert und meldet ihren Faktor — was er kostet, misst erst sein nächster echter Lauf
 - 2026-11-12 T1: Integrationstests des Tors (fünf Läufe, verlorener Push) stehen in `loadgate_test.go`, nicht in `report_test.go` — eine Datei je Funktion, `report_test.go` bekommt nur den Stub
+- 2026-11-12 T2: statt `_note_skip` öffentlich zu machen, steckt die Textregel in der reinen Funktion `with_skip_note` (`check_engine.py`) — `_note_skip` committet selbst, der Push-Pfad braucht genau einen Commit am Ende des Reports
+- 2026-11-12 T2: die unbegrenzte Schonung verlangt den aktiven Block `self.load_shed` mit lesbarem `since` (derselbe Block wie die 30-min-Warnung); ohne ihn gilt für `reason: "load"` die 45-min-Grenze der Drossel
+- 2026-11-12 T2: die Dauer rechnet ab dem `since` des Agenten (Minuten-Genauigkeit), eine vorgehende Agenten-Uhr zählt als 0 min
+- 2026-11-12 T2: neuer Problem-Schlüssel `load_shed` in `problems` (nur `warning`); die UIs lesen `problems` nur je Metrik-Schlüssel, die Liste im Kommentar von `apps/desktop/ui/src/lib/api/types.ts` wird eine `klein-`-Zeile
+- 2026-11-12 T2: die Schonung mit Hinweis läuft wie eine Auswertung in einem SAVEPOINT mit eigenem Fehlerfang (R-0635); der Commit am Ende gilt auch, wenn nur Hinweise geschrieben wurden
+- 2026-11-12 T2: `test_agent_load_shed.py` schaltet die geteilte sqlite-Verbindung in den PEP-249-Modus (`autocommit = False`) — im Legacy-Modus committet das `RELEASE` des SAVEPOINTs selbst, ein fehlender Commit bliebe unsichtbar (Gegenprobe: ohne das Fixture blieb diese Mutation grün)
+- 2026-11-12 T2: `Verify:` um `test_check_engine_context.py` (Hinweis-Regel) und `test_agent_resources_checker.py` (Bewertung) erweitert

@@ -460,6 +460,49 @@ def _grade_temperatures(grader: _Grader, config: dict, resources: dict) -> list[
     return temperatures
 
 
+# How long the agent's load gate may hold the optional collectors, the probes and a discovery
+# back before agent_resources warns: their checks keep their last status meanwhile (R-1268).
+_LOAD_SHED_WARN_MINUTES = 30
+
+
+def load_shed_block(report: dict) -> dict:
+    """The report's self.load_shed block; {} without one or for anything but an object."""
+    own = report.get("self")
+    block = own.get("load_shed") if isinstance(own, dict) else None
+    return block if isinstance(block, dict) else {}
+
+
+def load_shed_since(report: dict) -> datetime | None:
+    """Since when the agent's load gate sheds, as naive UTC; None unless the block says
+    active (a real true) and gives the begin as the agent writes it."""
+    block = load_shed_block(report)
+    since = block.get("since")
+    if block.get("active") is not True or not isinstance(since, str):
+        return None
+    try:
+        return datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+
+
+def _grade_load_shed(grader: _Grader, report: dict) -> None:
+    # Only a warning: the load itself is graded above, and a host that sheds is still
+    # measured in its core. A begin in the future (the agent's clock ahead) counts as now.
+    since = load_shed_since(report)
+    if since is None:
+        return
+    minutes = max(0, int((utcnow_naive() - since).total_seconds() // 60))
+    grader.grade(
+        "load_shed",
+        minutes,
+        _LOAD_SHED_WARN_MINUTES,
+        math.inf,
+        f"Load shedding for {minutes} min",
+        " min",
+        hysteresis=False,
+    )
+
+
 def _resources_message(problems: list[str], cpu, mem) -> str:
     if problems:
         return join_capped(problems, "; ")
@@ -595,6 +638,7 @@ class AgentResourcesChecker:
         cpu, mem, swap, swap_total = _grade_usage(grader, config, resources)
         load_rated = not _in_container(report)
         cpu_count, load_per_cpu = _grade_load(grader, config, resources, load_rated)
+        _grade_load_shed(grader, report)
         disks, ignore_mounts = _grade_disks(grader, config, resources)
         temperatures = _grade_temperatures(grader, config, resources)
 
