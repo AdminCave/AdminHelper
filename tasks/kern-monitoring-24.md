@@ -71,3 +71,5 @@ Task-Review: am Ende
 ## Entscheidungen
 - 2026-11-12: `docs/admin/monitoring.html` überschneidet sich mit offenen Branches (arch-monitoring-module-3,
   klein-nachlese-3); die Doku-Task kommt zuletzt und nimmt vorher `origin/main` auf.
+- 2026-11-12 (Kevin): Proxys auf Anwendungsebene vor gesperrten Diensten sind hingenommenes Restrisiko; T2 nimmt
+  reine L4-Weiterleiter auf, die Doku nennt die Grenze neutral.
