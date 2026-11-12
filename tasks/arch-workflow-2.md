@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/arch-workflow-2/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: .claude/rules/testing.md (Flag-Liste); DEVELOPMENT.md und cicd.html DE+EN in T4
 
-### T3 — R-1338: iter.sh reicht `--exclude` weiter, heavy.sh lässt server-pytest in Teil rest aus  [ ]
-Komponente: scripts · Dateien: scripts/vm/iter.sh, scripts/tests/iter_flags_test.sh, scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, .claude/skills/test/SKILL.md
+### T3 — R-1338: iter.sh reicht `--exclude` weiter, heavy.sh lässt server-pytest in Teil rest aus  [x]
+Komponente: scripts · Dateien: scripts/vm/iter.sh, scripts/tests/iter_flags_test.sh, scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, .claude/skills/test/SKILL.md, .claude/skills/vm/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5270ed43a 2026-11-12T09:27:54+01:00
+Review: approve (.ah-out/review/arch-workflow-2/T3.verdict.json)
 Änderung: `iter.sh` nimmt `--exclude` in die Liste der weitergereichten Flags auf (Kopf, Fall-Liste, Fehlertext). `heavy.sh part_job` hängt für Teil `rest` `--exclude server-pytest` an, mit einem Kommentar zum Warum (CI fährt dieselbe Suite auf jedem `main`-Commit, R-1338), und der Report trägt dazu eine Notiz; der Kopfkommentar zu den Teilen zieht mit. Tests: `iter_flags_test` prüft per Probelauf die Weiterleitung samt Ids; `heavy_test` prüft die Argumente von Teil `rest` (mit `--exclude server-pytest`) und Teil `gui` (ohne), auch beim seriellen Ersatz auf der Desktop-Box, und die Notiz im Report. Der Abschnitt zu `all` im `/test`-Skill zieht mit.
 Verify: bash scripts/dev/verify.sh scripts --strict -- iter_flags_test heavy_test
 Doku: .claude/skills/test/SKILL.md (Teil rest); DEVELOPMENT.md und cicd.html DE+EN in T4
@@ -43,3 +45,4 @@ Abhängt von: T2, T3
 - 2026-11-12: Die Option setzt heavy.sh (Teil rest), nicht nightly.sh: auch ein manueller `/test all` lässt den Schritt aus; vor einem Release bleiben main-CI und `run.sh quick --strict`.
 - 2026-11-12 (T1): Der Schemathesis-Schritt verliert die Vorprüfung `import schemathesis`. Er installiert das Paket selbst (es steht in allen drei `requirements-dev.txt`), und auf einem frischen Venv hätte die Vorprüfung ihn übersprungen, bevor er installieren kann. Ein fehlgeschlagenes `pip install` ist ein FAIL, auch ohne `--strict`. Der Test „missing package strict-fails“ wird dadurch ersetzt durch „failed install fails, runs no suite“, der strenger ist (FAIL statt Pflicht-SKIP). Der Kommentar in `ci.yml:521-522` („gate finds the package“) veraltet; ci.yml gehört dem Zug `arch-workflow-ci-1`, deshalb eine Roadmap-Zeile.
 - 2026-11-12 (T2): `excluded()` vergleicht jede Id wörtlich nach Wortaufteilung von `AH_EXCLUDE` (Schritt-Ids tragen keine Leerzeichen); dieselbe Aufteilung prüft der Probelauf, also kann keine Id den Probelauf bestehen und im Lauf anders wirken. `--step X --exclude X` ist Exit 2 mit Hinweis, weil sonst ein strenger Lauf mit „no step ran“ endete, ohne den Grund zu nennen. Der alte Test zur Meldung „no step ran“ prüft jetzt `exclude=none` mit (strenger, nicht schwächer).
+- 2026-11-12 (T3): `iter.sh` lehnt `--exclude` ohne Id (oder vor einem Flag) selbst mit Exit 2 ab, bevor es eine Box least; `run.sh` täte es erst auf der Box. Die Notiz schreibt `part_job` für Teil `rest` dort, wo es die Option setzt (über `NOTE_FILE`, wie die Lease-Notizen des Hintergrund-Jobs), also auch beim seriellen Ersatz genau einmal. `.claude/skills/vm/SKILL.md` kam in `Dateien:`, weil seine `iter.sh`-Flag-Zeile sonst veraltet.
