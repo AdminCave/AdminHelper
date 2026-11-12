@@ -7,7 +7,12 @@ package monitor
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/shirou/gopsutil/v4/disk"
@@ -178,7 +183,7 @@ func TestResourcesSwapAndCPUCount(t *testing.T) {
 		// (mem_freebsd.go, vm.nswapdev 0); either must read as 0 MB, not as a healthy swap.
 		{"no swap device", func(s *resourceStub, goos string) {
 			if goos == "freebsd" {
-				s.swapErr = errors.New("no swap devices found")
+				s.swapErr = errors.New(freebsdNoSwap)
 			} else {
 				s.swap = &mem.SwapMemoryStat{}
 			}
@@ -213,7 +218,7 @@ func TestResourcesSwapAndCPUCount(t *testing.T) {
 // Only FreeBSD's gopsutil uses that error for "no swap"; on Linux it stays an unreadable swap.
 func TestResourcesNoSwapErrorIsZeroOnlyOnFreeBSD(t *testing.T) {
 	s := stubResources(t, "linux")
-	s.swapErr = errors.New("no swap devices found")
+	s.swapErr = errors.New(freebsdNoSwap)
 	got := dockerWire(t, collectSwapAndCPUCount())
 	if want := wantDockerWire(t, `{"cpu_count": 8}`); !reflect.DeepEqual(got, want) {
 		t.Errorf("resources = %v, want %v", got, want)
@@ -328,5 +333,26 @@ func TestSkipFSTypesFreeBSD(t *testing.T) {
 		if skipFSTypes[fstype] {
 			t.Errorf("%s is skipped, it stores files of its own", fstype)
 		}
+	}
+}
+
+// TestFreeBSDNoSwapMatchesGopsutil reads mem_freebsd.go of the gopsutil this module pins and
+// fails when it no longer creates freebsdNoSwap, so a bump cannot silently drop "no swap".
+func TestFreeBSDNoSwapMatchesGopsutil(t *testing.T) {
+	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
+	out, err := exec.Command(gobin, "list", "-m", "-f", "{{.Dir}}", "github.com/shirou/gopsutil/v4").Output()
+	if err != nil {
+		t.Fatalf("go list gopsutil: %v", err)
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		t.Fatal("go list gave no module directory for gopsutil")
+	}
+	src, err := os.ReadFile(filepath.Join(dir, "mem", "mem_freebsd.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `errors.New("` + freebsdNoSwap + `")`; !strings.Contains(string(src), want) {
+		t.Errorf("gopsutil's mem_freebsd.go no longer creates %s; adjust freebsdNoSwap", want)
 	}
 }

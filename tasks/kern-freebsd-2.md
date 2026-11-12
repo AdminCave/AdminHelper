@@ -10,8 +10,10 @@ Heavy: none — Agent nur Konstante und Test, Rest Doku und Box-Skript; dazu vor
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1330: Swap-Fehlertext von gopsutil als Konstante mit Pin-Test  [ ]
+### T1 — R-1330: Swap-Fehlertext von gopsutil als Konstante mit Pin-Test  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e7bbe1b63 2026-11-12T13:52:18+01:00
+Review: am Ende (Branch-Review)
 Änderung: `collector.go:215` vergleicht mit einer Konstante; ein Test liest `mem/mem_freebsd.go` aus dem Modulverzeichnis des gepinnten gopsutil (`go list -m`) und verlangt `errors.New("<Konstante>")`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (internes Verhalten unverändert)
