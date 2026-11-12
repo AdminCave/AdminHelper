@@ -14,8 +14,10 @@ Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/int
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T2 — R-1319: Weiterleiter im Userland ablehnen  [ ]
+### T2 — R-1319: Weiterleiter im Userland ablehnen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ecb3f09d1 2026-11-12T10:54:06+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T2.verdict.json)
 Änderung: Lauscht auf dem Port ein Weiterleiter ohne erkennbaren Zielport (rootlesskit, rootlessport, slirp4netns,
 pasta/passt als Präfix, kube-proxy, socat), lehnt der Guard nur diesen Port ab (`ErrNotAllowed`); erkannt über den
 Prozessnamen und `argv[0]` (`processArgs`, reexec). Tests über die Seams je Name und für reexec.

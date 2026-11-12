@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,6 +61,31 @@ var hostDaemons = map[string]bool{
 // Proxmox Backup Server (proxmox-backup-api, proxmox-backup-proxy).
 var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cloud-hyperv", "k3s", "pvedaemon",
 	"pveproxy", "spiceproxy", "proxmox-backup"}
+
+// forwarders start the names of the processes that forward a port of this host to a port they do
+// not name to the guard: rootless container networks (rootlesskit, Podman's rootlessport, slirp4netns,
+// pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
+// kubectl (port-forward), autossh and socat; forwarderNames are matched whole, since a prefix ssh would
+// also take sshd and ssh-agent. A probe never connects to a port one of them listens on, since the port
+// behind it cannot be checked.
+var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
+	"kube-proxy", "kubectl", "autossh", "socat"}
+
+var forwarderNames = []string{"ssh"}
+
+// forwarder says whether name (processKey, or the base of an argv[0]) is one of forwarders.
+func forwarder(name string) bool {
+	k := processKey(name)
+	if slices.Contains(forwarderNames, k) {
+		return true
+	}
+	for _, prefix := range forwarders {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
 // neverProbed says whether name (processKey) is a process a probe never talks to.
 func neverProbed(name string) bool {
@@ -254,6 +280,9 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
+		if err := checkForwarder(ctx, l.pid, name, port); err != nil {
+			return err
+		}
 		switch processKey(name) {
 		case "systemd":
 			activator = true
@@ -269,6 +298,28 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		return fmt.Errorf("%w: systemd holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, port)
 	}
 	return checkPublished(ctx, ip, port)
+}
+
+// checkForwarder returns an error if the process pid, named name, that listens on port is one of
+// forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
+// exe by the kernel; its argv[0] tells which it is, and an argv that cannot be read is refused.
+func checkForwarder(ctx context.Context, pid int32, name string, port uint16) error {
+	if processKey(name) == "exe" {
+		args, err := processArgs(ctx, pid)
+		if err != nil {
+			return fmt.Errorf("%w: the process %s listening on port %d cannot be told: %v", ErrNotAllowed, name, port, err)
+		}
+		// An argv[0] that is again /proc/self/exe tells no more than none.
+		if len(args) == 0 || processKey(filepath.Base(args[0])) == "exe" {
+			return fmt.Errorf("%w: the process %s listening on port %d cannot be told", ErrNotAllowed, name, port)
+		}
+		name = filepath.Base(args[0])
+	}
+	if forwarder(name) {
+		// name may come from argv[0], which its process sets at will: the text keeps a bounded part.
+		return fmt.Errorf("%w: port %d belongs to %.64s, which forwards to a port the agent cannot check", ErrNotAllowed, port, name)
+	}
+	return nil
 }
 
 // checkPublished returns an error if docker forwards ip and port to a port of a container a probe
