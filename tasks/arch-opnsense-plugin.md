@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-opnsense-plugin — Task-Ledger
-Status: bereit · Branch: feature/arch-opnsense-plugin · Review: pro Task
+Status: erledigt · Branch: feature/arch-opnsense-plugin · Review: pro Task
 Spec: docs/features/arch-opnsense-plugin.md (Roadmap R-1248)
 Heavy: linux-full — Agent (neuer Fühler, Paketierung) und Monitoring (Katalogmodul); dazu vor dem Merge der OPNsense-Box-Lauf `bash scripts/tests/opnsense_box.sh` (T8) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
