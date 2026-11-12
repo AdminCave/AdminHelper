@@ -58,10 +58,15 @@ func openNoWait(path string) (*os.File, error) {
 }
 
 // dialUnix connects to the unix socket path. A socket that does not exist or that nobody serves is
-// errNoListener; one served by a process the agent never probes is ErrNotAllowed.
+// errNoListener; one at a path of controlSockets, as given or with its links resolved, or served by a
+// process the agent never probes is ErrNotAllowed.
 func dialUnix(ctx context.Context, path string) (net.Conn, error) {
+	real, err := socketToDial(path)
+	if err != nil {
+		return nil, err
+	}
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", path)
+	conn, err := d.DialContext(ctx, "unix", real)
 	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {
 		return nil, errNoListener
 	}

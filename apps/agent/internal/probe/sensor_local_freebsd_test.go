@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -80,5 +81,71 @@ func TestDialUnixNamesTheProcessServingTheSocket(t *testing.T) {
 	}
 	if _, err := dialUnix(ctx, filepath.Join(t.TempDir(), "none.sock")); !errors.Is(err, errNoListener) {
 		t.Errorf("dialUnix of a missing socket = %v, want errNoListener", err)
+	}
+}
+
+// shortTempDir returns a new directory with its links resolved, short enough for a unix socket path
+// (104 bytes on FreeBSD; t.TempDir carries the test's name).
+func shortTempDir(t *testing.T) string {
+	dir, err := os.MkdirTemp("", "ah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestDialUnixNeverConnectsToASocketOfAControlService(t *testing.T) {
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, "s.sock")
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	stubHost(t, &fakeHost{names: map[int32]string{int32(os.Getpid()): "nginx"}})
+	ctx := context.Background()
+	if c, err := dialUnix(ctx, path); err != nil {
+		t.Fatalf("before = %v; want it connected", err)
+	} else {
+		_ = c.Close()
+	}
+	link := filepath.Join(shortTempDir(t), "l.sock")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	old := controlSockets
+	t.Cleanup(func() { controlSockets = old })
+	controlSockets = append(slices.Clone(old), dir+"/")
+
+	for _, p := range []string{path, link} {
+		c, err := dialUnix(ctx, p)
+		if c != nil {
+			_ = c.Close()
+		}
+		if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "a socket of a service the agent never probes") {
+			t.Errorf("dialUnix(%s) = %v; want it refused", p, err)
+		}
+	}
+	// OPNsense's configd, whether it serves on this host or not.
+	c, err := dialUnix(ctx, "/var/run/configd.socket")
+	if c != nil {
+		_ = c.Close()
+	}
+	if !errors.Is(err, ErrNotAllowed) {
+		t.Errorf("dialUnix(/var/run/configd.socket) = %v; want ErrNotAllowed", err)
 	}
 }

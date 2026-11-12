@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-opnsense-plugin — Task-Ledger
-Status: aktiv · Branch: feature/arch-opnsense-plugin · Review: pro Task
+Status: bereit · Branch: feature/arch-opnsense-plugin · Review: pro Task
 Spec: docs/features/arch-opnsense-plugin.md (Roadmap R-1248)
 Heavy: linux-full — Agent (neuer Fühler, Paketierung) und Monitoring (Katalogmodul); dazu vor dem Merge der OPNsense-Box-Lauf `bash scripts/tests/opnsense_box.sh` (T8) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -163,8 +163,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_plan.
 Doku: keine (nur ein Test)
 Abhängt von: T5
 
-### T11 — Agent: Pfadsperre des Fühlers `unixsocket` auch unter FreeBSD (R-1248)  [ ]
+### T11 — Agent: Pfadsperre des Fühlers `unixsocket` auch unter FreeBSD (R-1248)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_freebsd_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-opnsense-plugin.md
+Evidenz: run.sh[quick] agent scripts: 8 passed, 0 failed, 10 skipped @0954c8ecd 2026-11-12T09:54:46+01:00
+Review: approve (.ah-out/review/arch-opnsense-plugin/T11.verdict.json)
 Änderung: Gleichstand mit Linux. Dort weist `dialUnix` einen Socket ab, dessen Pfad, wie angegeben oder mit aufgelösten Links, in `controlSockets` liegt; unter FreeBSD (T3) gleicht er bisher nur den Prozess dahinter ab. Die Pfadprüfung wandert in einen gemeinsamen Helfer, den beide `dialUnix` vor dem Verbinden rufen; verbunden wird mit dem aufgelösten Pfad. `controlSockets` nimmt den Socket von configd auf (OPNsense, `/var/run/configd.socket`), einem Steuerdienst des Hosts, dessen Prozess (Python) kein Prozessname erfasst. Tests: `guard_test` nennt den Pfad gesperrt (vorher rot), ein FreeBSD-Test weist Socket, Link und configd-Pfad mit `ErrNotAllowed` ab. Native Tests kompiliert der Cross-Vet; sie laufen im OPNsense-Box-Lauf (T8), der danach neu läuft.
 Verify: bash scripts/dev/verify.sh agent scripts --strict
 Doku: in der Task — admin/monitoring.html und developer/agent.html (DE+EN) nennen configd unter den Steuerdiensten, das Changelog-Fragment die Pfadsperre unter FreeBSD

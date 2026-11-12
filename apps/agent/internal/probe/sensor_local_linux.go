@@ -10,11 +10,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -137,21 +135,10 @@ func openNoWait(path string) (*os.File, error) {
 // errNoListener; one at a path of controlSockets, as given or with its links resolved, or served by a
 // process the agent never probes is ErrNotAllowed.
 func dialUnix(ctx context.Context, path string) (net.Conn, error) {
-	if neverProbedSocket(path) {
-		return nil, fmt.Errorf("%w: %s is a socket of a service the agent never probes", ErrNotAllowed, path)
-	}
-	real, err := filepath.EvalSymlinks(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, errNoListener
-	}
+	real, err := socketToDial(path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: the links of %s cannot be resolved: %v", ErrNotAllowed, path, err)
+		return nil, err
 	}
-	if neverProbedSocket(real) {
-		return nil, fmt.Errorf("%w: %s leads to %s, a socket of a service the agent never probes", ErrNotAllowed, path, real)
-	}
-	// The resolved path is dialed: a final link swapped after the check leads nowhere new. A directory
-	// on the path swapped for a link still could; checkPeer stays behind it.
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", real)
 	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {

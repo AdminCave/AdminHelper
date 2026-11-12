@@ -12,6 +12,6 @@
   eine Zustandstabelle ab 80 % Warnung und ab 95 % kritisch, CARP-Adressen im Zustand INIT kritisch. Ein verfuegbares
   Update und der CARP-Wartungsmodus bewerten nichts, die Karte zeigt sie.
 - **Monitoring: Probes auf FreeBSD:** Units sind dort rc.d-Dienste (`service <name> onestatus`), Unix-Sockets prueft
-  der Agent am Gegenprozess, und die Erkennung findet Marker-Pfade auch unter FreeBSD.
+  der Agent wie unter Linux an Pfad und Gegenprozess, und die Erkennung findet Marker-Pfade auch unter FreeBSD.
 - **Tests: OPNsense-Box:** `vm.py bake --profile base-opnsense` macht aus der FreeBSD-Vorlage eine Vorlage mit
   OPNsense 26.7; `scripts/tests/opnsense_box.sh` prueft darauf Plugin und Agent gegen das echte `configctl`.
