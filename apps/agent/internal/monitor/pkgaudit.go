@@ -61,9 +61,7 @@ func freebsdSystemState(ctx context.Context, st reportState) (map[string]any, re
 		}
 	}
 	st.Updates = pkgSecurityUpdates(ctx, st.Updates, versions, why)
-	if st.Updates != nil && st.Updates.Security != nil {
-		block["security_updates"] = *st.Updates.Security
-	}
+	putSecurityUpdates(block, st.Updates)
 	return block, st
 }
 
@@ -101,7 +99,8 @@ func readFreeBSDVersions(ctx context.Context, jailed bool) (freebsdVersions, str
 // installed kernel of a release, matched as periodic's 405.pkg-base-audit matches them. pkg audit
 // reads the local vuln.xml, which periodic's daily security run fetches; the agent never fetches it
 // (-F). Without pkg there is nothing to count (nil). A failed part, or versions it could not read
-// (why), saves the attempt without a number, as a failed count on Linux does.
+// (why), saves the attempt without a number, as a failed count on Linux does. The names are those of
+// the vulnerable packages, the base system as FreeBSD and FreeBSD-kernel.
 func pkgSecurityUpdates(ctx context.Context, saved *updatesCheck, versions freebsdVersions, why string) *updatesCheck {
 	now := updatesCalls.now()
 	if !updatesDue(saved, now) {
@@ -115,19 +114,21 @@ func pkgSecurityUpdates(ctx context.Context, saved *updatesCheck, versions freeb
 		logger.Warnf("system state: %s, %s", why, updatesLeftOut)
 		return check
 	}
-	count, ok := pkgAudit(ctx, "pkg audit -q")
+	count, names, ok := pkgAudit(ctx, "pkg audit -q")
 	if !ok {
 		return check
 	}
-	if names := freebsdBaseNames(versions); len(names) > 0 {
+	if base := freebsdBaseNames(versions); len(base) > 0 {
 		// Without names pkg audit would audit the installed packages again.
-		base, ok := pkgAudit(ctx, "pkg audit -q of the base system", names...)
+		baseCount, baseNames, ok := pkgAudit(ctx, "pkg audit -q of the base system", base...)
 		if !ok {
 			return check
 		}
-		count += base
+		count += baseCount
+		names = append(names, baseNames...)
 	}
 	check.Security = &count
+	check.Packages = packageNames(names)
 	return check
 }
 
@@ -152,42 +153,42 @@ func freebsdPkgName(prefix, release string) string {
 	return prefix + strings.TrimSuffix(strings.Replace(release, "-RELEASE-p", "_", 1), "-RELEASE")
 }
 
-// pkgAudit runs pkg audit -q with args and counts the vulnerable packages, or logs why it could not
-// (what names the call). pkg audit exits 1 both for vulnerable packages and for an error, the missing
-// vuln.xml included; with -q only a vulnerable package prints a line, and every error stops before
+// pkgAudit runs pkg audit -q with args and counts and names the vulnerable packages, or logs why it
+// could not (what names the call). pkg audit exits 1 both for vulnerable packages and for an error, the
+// missing vuln.xml included; with -q only a vulnerable package prints a line, and every error stops before
 // one (pkg src/audit.c). So exit 1 with lines counts, exit 1 without fails. Its exit status is not
 // documented (pkg-audit(8)).
-func pkgAudit(ctx context.Context, what string, args ...string) (int, bool) {
+func pkgAudit(ctx context.Context, what string, args ...string) (int, []string, bool) {
 	out, err := freebsdCalls.run(ctx, updatesTimeout, pkgPath, append([]string{"audit", "-q"}, args...)...)
 	var exitErr *exec.ExitError
 	found := errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && len(bytes.TrimSpace(out)) > 0
 	if err != nil && !found {
 		logger.Warnf("system state: %s failed: %s, %s", what, commandFailure("pkg", updatesTimeout, err), updatesLeftOut)
-		return 0, false
+		return 0, nil, false
 	}
-	count, ok := countPkgAudit(out)
+	count, names, ok := countPkgAudit(out)
 	if !ok {
 		logger.Warnf("system state: unexpected output of %s, %s", what, updatesLeftOut)
 	}
-	return count, ok
+	return count, names, ok
 }
 
 // rePkgAuditLine is a line of pkg audit -q: name and version, the version after the last "-".
 var rePkgAuditLine = regexp.MustCompile(`^\S+-[^-\s]+$`)
 
 // countPkgAudit counts the lines of pkg audit -q, one "<name>-<version>" per vulnerable package
-// (pkg src/audit.c), each package once. A line of another form makes the whole output unreadable
-// rather than the count too small.
-func countPkgAudit(out []byte) (int, bool) {
-	count := 0
+// (pkg src/audit.c), each package once, and names them without the version. A line of another form
+// makes the whole output unreadable rather than the count too small.
+func countPkgAudit(out []byte) (int, []string, bool) {
+	var names []string
 	for _, line := range strings.Split(string(out), "\n") {
 		if line == "" {
 			continue
 		}
 		if !rePkgAuditLine.MatchString(line) {
-			return 0, false
+			return 0, nil, false
 		}
-		count++
+		names = append(names, line[:strings.LastIndex(line, "-")])
 	}
-	return count, true
+	return len(names), names, true
 }

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,6 +34,10 @@ var classes = map[string]string{
 	"node": `[A-Za-z0-9][A-Za-z0-9-]*`,
 	// A Proxmox storage ID (pve-storage: a letter, then letters, digits, '-', '_', '.').
 	"storage": `[A-Za-z][A-Za-z0-9._-]*`,
+	// The UPID of a vzdump task as PVE writes it (pve-common PVE/UPID.pm encode: node, pid, pstart up to
+	// nine digits, start time in upper-case hex, type, the VMID or nothing, the user): no other task
+	// type, no '/' (it stands in a path) and no whitespace.
+	"upid": `UPID:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:[0-9A-F]{8}:[0-9A-F]{8,9}:[0-9A-F]{8}:vzdump:[0-9]*:[\x21-\x2E\x30-\x39\x3B-\x7E]+:`,
 	// A device path from smartctl --scan, below /dev; no segment begins with '.', so no "..".
 	"device": `/dev(/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
 	// A smartctl device type from the scan (sat, nvme, megaraid,N, sat,12 …).
@@ -91,6 +96,11 @@ func journalVariants() [][]string {
 	}
 	return calls
 }
+
+// The journalctl call of the system state after an OOM kill (monitor, oomProcesses): the kernel
+// messages of this boot, err and above, of the last seconds. Its own entry, apart from the log
+// sensor's calls: --dmesg and the priority are fixed.
+var oomJournalCall = []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-<seconds>s"}
 
 // The sql sensor's MariaDB calls, by the client mariadb or, before 10.4.6, mysql. Each query is the
 // sensor's own (mariadbQueries), under a statement timeout; probe's tests run every one through here.
@@ -152,10 +162,18 @@ var commands = map[string][][]string{
 		{"get", "/cluster/resources", "--type", "vm", "--output-format", "json"},
 		{"get", "/cluster/resources", "--type", "storage", "--output-format", "json"},
 		{"get", "/nodes/<node>/storage/<storage>/content", "--content", "backup", "--output-format", "json"},
+		// The backup details (buildBackupIndex): the vzdump jobs, the last failed vzdump task of the
+		// node, and its log.
+		{"get", "/cluster/backup", "--output-format", "json"},
+		{"get", "/nodes/<node>/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1", "--output-format", "json"},
+		{"get", "/nodes/<node>/tasks/<upid>/log", "--limit", "10000", "--output-format", "json"},
 	},
 	"zpool": {
-		{"list", "-H", "-o", "name,size,alloc,free,cap,health"},
+		{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag"},
 		{"status", "-x"},
+		// The pool details (zpoolDetails): scrub and vdev error counters as numbers, every vdev in one
+		// map; OpenZFS 2.3 and newer (zpool-status(8)). Without -v: no names of damaged files.
+		{"status", "-j", "--json-int", "--json-flat-vdevs"},
 	},
 	"smartctl": {
 		{"--scan", "--json=c"},
@@ -174,7 +192,7 @@ var commands = map[string][][]string{
 		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
 	},
-	"journalctl": journalCalls,
+	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
 	"mariadb":    mariadbCalls,
 	"mysql":      mariadbCalls,
 	"runuser":    postgresCalls,

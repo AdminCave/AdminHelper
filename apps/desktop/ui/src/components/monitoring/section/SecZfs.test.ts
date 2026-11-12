@@ -15,8 +15,11 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // (showChart={false}) — stub the lib away, same as SecDocker.test.ts.
 vi.mock('uplot', () => ({ default: class {} }));
 import { render, cleanup } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { get } from 'svelte/store';
 import type { MonitorCheck, MonitorCheckState } from '$lib/api/types';
 import { setLanguage } from '$lib/i18n';
+import { monitoring, toggleExpanded } from '$lib/stores/monitoring';
 import SecZfs from './SecZfs.svelte';
 
 function check(state: MonitorCheckState, id = 'chk-zfs'): MonitorCheck {
@@ -51,6 +54,7 @@ function colored(list: HTMLElement[]): HTMLElement[] {
 setLanguage('de');
 afterEach(() => {
   cleanup();
+  if (get(monitoring).expandedCheckId === 'chk-zfs') toggleExpanded('chk-zfs');
   setLanguage('de');
 });
 
@@ -131,5 +135,109 @@ describe('SecZfs with a zpool that answers', () => {
     const all = pills(el);
     expect(texts(all)).toEqual(['tank 42%']);
     expect(all[0].classList.contains('pill-ok')).toBe(true);
+  });
+});
+
+// arch-monitoring-ui-2 T10 (R-1227): below each pool's bar the last scrub with its age and
+// errors, the fragmentation and the vdevs with errors, each only as far as the agent knew it.
+describe('SecZfs pool details', () => {
+  const NOW = Date.parse('2026-11-12T12:00:00Z') / 1000;
+  const DAY = 24 * 3600;
+
+  function pool(name: string, more: object) {
+    return { name, health: 'ONLINE', capacityPercent: 42, ...more };
+  }
+
+  const pools = [
+    pool('tank', {
+      fragmentationPercent: 12,
+      scrub: { state: 'FINISHED', errors: 0, end: NOW - 3 * DAY },
+    }),
+    pool('backup', {
+      health: 'DEGRADED',
+      scrub: { state: 'FINISHED', errors: 2, end: NOW - 2 * 3600 },
+      vdevErrors: [
+        { name: 'sda', read: 0, write: 0, checksum: 3 },
+        { name: 'sdb', read: 1, write: 2, checksum: 0 },
+      ],
+    }),
+    pool('fast', { scrub: { state: 'SCANNING', errors: 0 } }),
+    pool('cold', { scrub: { state: 'RESILVERING', errors: 0, end: NOW + DAY } }),
+    pool('plain', {}),
+    pool('odd', {
+      fragmentationPercent: '12',
+      scrub: { state: 'FINISHED' },
+      vdevErrors: [{ name: 'sdc', read: 1 }],
+    }),
+  ];
+
+  function line(el: HTMLElement, name: string): HTMLElement | null {
+    return el.querySelector<HTMLElement>(`[data-pool="${name}"]`);
+  }
+
+  function chips(el: HTMLElement, name: string): string[] {
+    return Array.from(line(el, name)?.querySelectorAll<HTMLElement>('.mon-chip') ?? []).map(
+      (c) => `${c.textContent?.replace(/\s+/g, ' ').trim()}|${/chip-(\w+)/.exec(c.className)?.[1]}`,
+    );
+  }
+
+  async function shown() {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    const c = check({ status: 'warning', details: { available: true, error: null, pools } });
+    const { container: el } = render(SecZfs, { props: { checks: [c] } });
+    toggleExpanded('chk-zfs');
+    await tick();
+    return el;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('names the finished scrub with its age and the fragmentation', async () => {
+    const el = await shown();
+    expect(chips(el, 'tank')).toEqual([
+      'Scrub abgeschlossen · vor 3 Tagen|ok',
+      'Fragmentierung 12 %|muted',
+    ]);
+  });
+
+  it('marks a scrub with errors and names each vdev with errors', async () => {
+    const el = await shown();
+    expect(chips(el, 'backup')).toEqual([
+      'Scrub abgeschlossen · vor 2 h · 2 Fehler|warn',
+      'sda: 0 Lesen · 0 Schreiben · 3 Prüfsumme|warn',
+      'sdb: 1 Lesen · 2 Schreiben · 0 Prüfsumme|warn',
+    ]);
+  });
+
+  it('shows a running scrub without age and an unknown state by its name', async () => {
+    const el = await shown();
+    expect(chips(el, 'fast')).toEqual(['Scrub läuft|muted']);
+    // An end ahead of this clock counts as now.
+    expect(chips(el, 'cold')).toEqual(['Scrub: RESILVERING · gerade eben|muted']);
+  });
+
+  it('adds no line for a pool without details or with fields of the wrong type', async () => {
+    const el = await shown();
+    expect(line(el, 'plain')).toBeNull();
+    expect(line(el, 'odd')).toBeNull();
+    // The bars themselves stay as they were.
+    expect(el.querySelectorAll('.mon-hero-bar-row')).toHaveLength(pools.length);
+  });
+
+  it('renders the details in English', async () => {
+    setLanguage('en');
+    const el = await shown();
+    expect(chips(el, 'tank')).toEqual([
+      'Scrub finished · 3 days ago|ok',
+      'Fragmentation 12 %|muted',
+    ]);
+    expect(chips(el, 'backup')).toEqual([
+      'Scrub finished · 2 h ago · 2 errors|warn',
+      'sda: 0 read · 0 write · 3 checksum|warn',
+      'sdb: 1 read · 2 write · 0 checksum|warn',
+    ]);
   });
 });

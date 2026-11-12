@@ -884,3 +884,91 @@ def test_detail_numbers_of_a_regular_report():
     ]
     assert details["temperatures"] == [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}]
     assert_every_reader_reads(details)
+
+
+# --- top processes (R-1227) ---
+
+_TOP = {
+    "cpu": [
+        {"pid": 101, "name": "postgres", "cpu_pct": 180.5},
+        {"pid": 102, "name": "java", "cpu_pct": 40},
+    ],
+    "memory": [{"pid": 102, "name": "java", "rss": 4294967296}],
+}
+
+
+@pytest.mark.parametrize(
+    "resources",
+    [_resources(), {"cpu_percent": 10, "memory_percent": 20}],
+    ids=["regular", "healthy"],
+)
+def test_top_processes_go_into_details_only(resources):
+    # Status and message stay those without the list: the message goes into mail and
+    # webhook, the processes only to the desktop.
+    status, msg, metrics = CHECKER.evaluate(T, {"resources": {**resources, "top_processes": _TOP}})
+    plain_status, plain_msg, plain = CHECKER.evaluate(T, {"resources": resources})
+    assert (status, msg) == (plain_status, plain_msg)
+    assert _without_details(metrics) == _without_details(plain)
+    assert metrics["_details"] == {**plain["_details"], "top_processes": _TOP}
+    assert "postgres" not in msg and "java" not in msg
+    assert_every_reader_reads(metrics["_details"])
+
+
+@pytest.mark.parametrize(
+    ("top", "shown"),
+    [
+        pytest.param(None, None, id="null"),
+        pytest.param([_TOP], None, id="list"),
+        pytest.param("postgres", None, id="string"),
+        pytest.param({}, None, id="empty"),
+        pytest.param({"cpu": "postgres", "memory": {"pid": 1}}, None, id="lists-no-list"),
+        pytest.param({"cpu": [{"pid": 1.5, "name": "x", "cpu_pct": 1}]}, None, id="pid-fraction"),
+        pytest.param(
+            {
+                "cpu": [
+                    {"pid": 0, "name": "pid-0", "cpu_pct": 1},
+                    {"pid": "1", "name": "pid-str", "cpu_pct": 1},
+                    {"pid": True, "name": "pid-bool", "cpu_pct": 1},
+                    {"pid": 2, "name": "", "cpu_pct": 1},
+                    {"pid": 3, "cpu_pct": 1},
+                ],
+                "memory": [
+                    {"pid": 4, "name": "no-rss"},
+                    {"pid": 5, "name": "rss-str", "rss": "1"},
+                    {"pid": 6, "name": "rss-negative", "rss": -1},
+                    {"pid": 7, "name": "rss-nan", "rss": math.nan},
+                    {"pid": 8, "name": "cpu-not-rss", "cpu_pct": 1},
+                ],
+            },
+            None,
+            id="all-broken",
+        ),
+        pytest.param(
+            {
+                "cpu": [
+                    {"pid": 9, "name": "a\nb", "cpu_pct": 0, "cmdline": "java -Dpass=x"},
+                    "x",
+                    {"pid": 10, "name": "c", "cpu_pct": -0.5},
+                ]
+            },
+            {"cpu": [{"pid": 9, "name": "a b", "cpu_pct": 0}]},
+            id="mixed-cpu-only",
+        ),
+    ],
+)
+def test_top_processes_keep_only_pid_name_and_number(top, shown):
+    status, msg, metrics = CHECKER.evaluate(T, _report(cpu_percent=99, top_processes=top))
+    assert (status, msg) == CHECKER.evaluate(T, _report(cpu_percent=99))[:2]
+    details = metrics["_details"]
+    if shown is None:
+        assert "top_processes" not in details
+    else:
+        assert details["top_processes"] == shown
+
+
+def test_at_most_five_top_processes_per_list():
+    cpu = [{"pid": pid, "name": f"p{pid}", "cpu_pct": 100 - pid} for pid in range(1, 9)]
+    memory = [{"pid": pid, "name": f"p{pid}", "rss": 1000 - pid} for pid in range(1, 9)]
+    top = {"cpu": cpu, "memory": memory}
+    _, _, metrics = CHECKER.evaluate(T, _report(cpu_percent=99, top_processes=top))
+    assert metrics["_details"]["top_processes"] == {"cpu": cpu[:5], "memory": memory[:5]}

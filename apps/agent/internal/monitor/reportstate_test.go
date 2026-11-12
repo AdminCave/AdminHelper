@@ -193,12 +193,31 @@ func TestReportStateRoundtrip(t *testing.T) {
 
 func TestReportStateProxmoxBackups(t *testing.T) {
 	// The backup index survives the state file, an empty one as empty (read, no backups yet), not as
-	// nil (never read), which would read the storages again in every report. A state an older agent
-	// saved has none.
+	// nil (never read), which would read the storages again in every report. So do its details, the
+	// jobs read without one as an empty list, not as nil (not read). A state an older agent saved has
+	// none.
 	path := filepath.Join(t.TempDir(), ".report-state.json")
-	for name, index := range map[string]map[int]int64{"empty": {}, "two": {100: 1760000000, 101: 1760000001}} {
+	index := func(m map[int]int64) backupIndexCheck {
+		return backupIndexCheck{CheckedUnix: 1760090000, Node: "pve", Storages: []string{"local", "nas"}, Index: m}
+	}
+	withDetails := index(map[int]int64{100: 1760000000, 101: 1760000001})
+	withDetails.Newest = map[int]backupDetail{100: {Storage: "nas", Size: 2147483648, Verify: "ok"}, 101: {Storage: "local"}}
+	withDetails.Jobs = []backupJob{
+		{ID: "backup-a", Schedule: "daily", Storage: "nas", VMIDs: []int{100, 101}, Node: "pve"},
+		{ID: "backup-b", Schedule: "sun 01:00", Storage: "local", Pool: "prod"},
+		{Schedule: "hourly", All: true, Exclude: []int{102}},
+	}
+	withDetails.ErrorTask = "UPID:pve:0000ABCD:0123ABCD:68E8A0D0:vzdump::root@pam:"
+	withDetails.Errors = map[int]backupError{102: {Unix: 1760050000, Text: "no space left on device"}}
+	noJobs := index(map[int]int64{100: 1760000000})
+	noJobs.Jobs = []backupJob{}
+	for name, want := range map[string]backupIndexCheck{
+		"empty":        index(map[int]int64{}),
+		"two":          index(map[int]int64{100: 1760000000, 101: 1760000001}),
+		"with details": withDetails,
+		"no jobs":      noJobs,
+	} {
 		t.Run(name, func(t *testing.T) {
-			want := backupIndexCheck{CheckedUnix: 1760090000, Node: "pve", Storages: []string{"local", "nas"}, Index: index}
 			if err := saveReportState(path, reportState{ProxmoxBackups: &want}); err != nil {
 				t.Fatalf("saveReportState: %v", err)
 			}
@@ -213,6 +232,35 @@ func TestReportStateProxmoxBackups(t *testing.T) {
 	}
 	if st := loadReportState(path); st.ProxmoxBackups != nil {
 		t.Errorf("older state: got %+v, want no backup index", st.ProxmoxBackups)
+	}
+}
+
+func TestReportStateUpdatesPackages(t *testing.T) {
+	// The counted package names survive the state file, so a count within the hour reports them
+	// again; a count without names keeps the file form without them.
+	path := filepath.Join(t.TempDir(), ".report-state.json")
+	cases := []struct {
+		name  string
+		check updatesCheck
+		file  string
+	}{
+		{"with names", updatesCheck{CheckedUnix: 1760000000, Security: new(2), Packages: []string{"curl", "openssl"}},
+			`{"updates":{"checked_unix":1760000000,"security":2,"packages":["curl","openssl"]}}`},
+		{"without names", updatesCheck{CheckedUnix: 1760000000, Security: new(0)},
+			`{"updates":{"checked_unix":1760000000,"security":0}}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if err := saveReportState(path, reportState{Updates: &c.check}); err != nil {
+				t.Fatalf("saveReportState: %v", err)
+			}
+			if got := loadReportState(path).Updates; got == nil || !reflect.DeepEqual(*got, c.check) {
+				t.Errorf("roundtrip: got %+v, want %+v", got, c.check)
+			}
+			if data, err := os.ReadFile(path); err != nil || string(data) != c.file {
+				t.Errorf("file = %s (%v), want %s", data, err, c.file)
+			}
+		})
 	}
 }
 
