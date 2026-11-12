@@ -55,12 +55,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // opening and only once the form is a central check, the other types never need them.
   let serverChecks = $state<MonitorCheck[]>([]);
   let checksLoaded = false;
+  // Counts the openings and closings: an answer that arrives after the modal closed or
+  // opened again belongs to the earlier opening and must not set its partner list.
+  let openings = 0;
 
   let isNew = $derived(target === null);
   // A central dns check compares each answer with the one it learned first.
   let canRebaseline = $derived(learnsBaseline(target));
 
   $effect(() => {
+    openings += 1;
     if (!open) return;
     form = target ? checkToForm(target) : emptyCheckForm(serverId);
     failsBefore = undefined;
@@ -74,9 +78,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!s) return;
     checksLoaded = true;
     const sid = form.serverId;
+    const opening = openings;
     monitoringApi
       .fetchStatus(s)
-      .then((all) => (serverChecks = all.filter((c) => c.serverId === sid)))
+      .then((all) => {
+        if (opening === openings) serverChecks = all.filter((c) => c.serverId === sid);
+      })
       .catch((err: unknown) => reportError(errMsg(err)));
   });
 
