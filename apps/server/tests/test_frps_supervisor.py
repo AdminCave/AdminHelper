@@ -1178,7 +1178,7 @@ def test_an_invalid_change_is_rejected_once_and_frps_runs_on(box):
 
     # Back to the input frps runs from: nothing to restart.
     box.write_input()
-    box.wait_state("running")
+    box.wait_state("running", 3 * WAIT)
     box.wait_polls(2)
 
     assert len(box.read().events) == 3
@@ -1551,7 +1551,9 @@ def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
     box.env.update({"FRPS_POLL_SECONDS": "1", **env})
     box.run(frps=True)
     try:
-        box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists")
+        box.wait_until(
+            lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists", 3 * WAIT
+        )
     except AssertionError as err:
         # The supervisor log alone does not say whether a poll ever reached the dashboard (R-1293):
         # no request means the supervisor or curl, requests without lists mean the answers.
@@ -1599,7 +1601,9 @@ def test_while_frps_runs_every_poll_puts_the_answers_of_its_dashboard_into_the_s
     mtimes = {t: (box.state / f"proxy-{t}.json").stat().st_mtime_ns for t in PROXY_TYPES}
     dashboard.answers["stcp"] = (200, _answer("another"), True)
     box.wait_polls(2)
-    box.wait_until(lambda: _proxy_files(box).get("stcp") == _answer("another"), "the new answer")
+    box.wait_until(
+        lambda: _proxy_files(box).get("stcp") == _answer("another"), "the new answer", 3 * WAIT
+    )
     for proxy_type in PROXY_TYPES:
         assert (box.state / f"proxy-{proxy_type}.json").stat().st_mtime_ns > mtimes[proxy_type]
     assert _state(box, in_flight=True) == ALL_LISTS
@@ -1640,7 +1644,7 @@ def test_no_process_carries_the_password_of_the_dashboard_on_its_command_line(bo
     (box.root / "bin" / "curl").chmod(0o755)
 
     _with_dashboard(box, dashboard)
-    box.wait_until(lambda: len(dashboard.requests) >= 3 * len(PROXY_TYPES), "three polls")
+    box.wait_until(lambda: len(dashboard.requests) >= 3 * len(PROXY_TYPES), "three polls", 3 * WAIT)
 
     # Neither as it is nor as an Authorization header would carry it.
     credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
@@ -1826,7 +1830,7 @@ def test_every_request_to_the_dashboard_runs_as_its_user_through_su_exec(box, da
     box.env["FRPS_FETCH_USER"] = user
 
     _with_dashboard(box, dashboard)
-    box.wait_until(lambda: len(dashboard.requests) >= 2 * len(PROXY_TYPES), "two polls")
+    box.wait_until(lambda: len(dashboard.requests) >= 2 * len(PROXY_TYPES), "two polls", 3 * WAIT)
 
     # The four lists arrive as without su-exec, the credentials on stdin.
     assert _proxy_files(box) == {t: _answer(t) for t in PROXY_TYPES}

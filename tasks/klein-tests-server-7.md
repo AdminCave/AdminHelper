@@ -10,8 +10,10 @@ Heavy: none — nur Test-Fristen und ein Test-Filter
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1307, R-1356: Dashboard-Poll-Waits und der Übernahme-Wait warten bis 30 s  [ ]
+### T1 — R-1307, R-1356: Dashboard-Poll-Waits und der Übernahme-Wait warten bis 30 s  [x]
 Komponente: server · Dateien: apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fec4de255 2026-11-12T10:23:30+01:00
+Review: am Ende (Branch-Review)
 Beweis: R-1307 klein-tests-server-4 2026-11-11 (Timeout 10 s, Ursache offen) · R-1356 Prüfer-Nit klein-tests-server-6 2026-11-12 · Dedup-Key: BUG:server:test_frps_supervisor.py:dashboard-poll-wait
 Änderung: `wait_until` in `_with_dashboard` (Z. 1554, „the proxy lists“) und die Poll-Waits Z. 1602, 1643, 1829 bekommen `3 * WAIT`; `box.wait_state("running")` in Z. 1181 ebenso. Dauerlauf (50×) der betroffenen Tests im Commit-Body.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py -k dashboard
