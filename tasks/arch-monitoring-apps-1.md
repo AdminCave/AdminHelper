@@ -1,5 +1,5 @@
 # Monitoring: Katalog-Module für selbst betriebene Anwendungen — Task-Ledger
-Status: erledigt · Branch: feature/arch-monitoring-apps-1 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-apps-1 · Review: pro Task
 Spec: docs/features/arch-monitoring-apps-1.md (Roadmap R-1241, R-1242, R-1243)
 Heavy: linux-full — apps/agent (HTTP-Fühler, Parameter `host`); die Module sind Katalog-Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -181,6 +181,15 @@ Komponente: agent · Dateien: (nach der Entscheidung)
 Allowlist und Sicherheitsprüfung.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T14
+
+### T16 — R-1243: WordPress-Cron-Konstante als wp-config-Zeile (CI doc-smoke)  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Die PR-CI (`doc-smoke.py --paths --env --strict`) meldet `DISABLE_WP_CRON` in der WordPress-Zeile beider
+Admin-Seiten als unbekannten Env-Namen; die Konstante steht in `wp-config.php`, nicht im Env. Text nennt die echte
+Zeile `define('DISABLE_WP_CRON', true);` in `wp-config.php`; lokal `doc-smoke.py --paths --env --strict` sauber.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/admin/monitoring.html · docs/en/admin/monitoring.html
+Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-12: Host-Header fest `localhost` statt freiem Namen (Spec, Trade-offs): Nextcloud lehnt die Container-IP
