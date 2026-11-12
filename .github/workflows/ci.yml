@@ -1251,14 +1251,21 @@ jobs:
       # exit 75 = SKIP, and --strict below turns that into a failure — which is
       # the point: this job must not go green on a signature path that never ran.
       - name: Install minisign
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+        run: |
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update -qq
+          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y -qq --download-only minisign
+          sudo apt-get $apt_opts install -y -qq minisign
       # gnome-keyring lets lib_e2e_stack_test.sh run its keyring cases against a
       # real daemon in a D-Bus session of the test's own. Without it the test exits
       # 75 = SKIP, and --strict below turns that into a failure. The runner has
       # dbus-run-session, dbus-send, python3 and pgrep already; the package lists
       # come from the apt-get update of the step above.
       - name: Install gnome-keyring
-        run: sudo apt-get install -y -qq --no-install-recommends gnome-keyring
+        run: |
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y -qq --no-install-recommends --download-only gnome-keyring
+          sudo apt-get $apt_opts install -y -qq --no-install-recommends gnome-keyring
       # The unit layer's `vm-pytest` step runs scripts/vm/tests here. Without
       # pytest the step SKIPs, and --strict turns that into a failure — which is
       # the point: this job must not go green on a suite that never ran.

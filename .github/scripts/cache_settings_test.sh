@@ -5,7 +5,8 @@
 #
 # Hermetic test of .github/scripts/cache_settings.sh: needs bash, awk and sed only. Runs in the
 # CI job ops-scripts, like tauri_cli_pins_test.sh.
-# Last, the real workflows must pass it: that is the guard on ci.yml and release.yml.
+# Last, the real workflows must pass it: that is the guard on ci.yml, release.yml (--uncached) and
+# docker.yml (--tag-uncached).
 
 set -uo pipefail
 
@@ -294,6 +295,42 @@ check "path list at key height on .cargo/bin: red" 1 "$(run "$work/flatlist.yml"
 check "red names the flat-list step" "::error file=$work/flatlist.yml,line=2::actions/cache path names .cargo/bin" "$(cat "$work/out")"
 printf '    steps:\n      - uses: actions/checkout@v7\n      - uses: Swatinem/rust-cache@v2\n        with:\n          cache-bin: false\n' >"$work/afterlist.yml"
 check "steps after each other stay apart: green" 0 "$(run "$work/afterlist.yml")"
+
+# R-1354: a tag-guarded cache must give the tag the empty value, nothing else.
+sed "s/ || '' }}\$/ || 'type=gha' }}/" "$work/t-good.yml" >"$work/t-else.yml"
+check "tag-uncached cache-from with a value of its own on tags: red" 1 "$(run --tag-uncached "$work/t-else.yml")"
+sed "s/ && format(/ \&\& 'x' || format(/" "$work/t-good.yml" >"$work/t-mid.yml"
+check "tag-uncached cache-from with a further || in the middle: red" 1 "$(run --tag-uncached "$work/t-mid.yml")"
+
+# R-1354: docker/bake-action and docker build in run: are not read, so a workflow without caches refuses them.
+printf '    steps:\n      - uses: docker/bake-action@v6\n        with:\n          no-cache: true\n' >"$work/bake.yml"
+check "bake-action (uncached): red" 1 "$(run --uncached "$work/bake.yml")"
+check "red names the bake step" "::error file=$work/bake.yml,line=2::docker/bake-action is not checked, build with build-push-action" "$(cat "$work/out")"
+check "bake-action (tag-uncached): red" 1 "$(run --tag-uncached "$work/bake.yml")"
+check "bake-action in a cached workflow: green" 0 "$(run "$work/bake.yml")"
+printf '    steps:\n      - name: build\n        run: docker buildx build --no-cache .\n' >"$work/runb.yml"
+check "docker buildx build in run: (tag-uncached): red" 1 "$(run --tag-uncached "$work/runb.yml")"
+check "red names the run step" "::error file=$work/runb.yml,line=2::docker build/bake in a run: step is not checked, build with build-push-action" "$(cat "$work/out")"
+check "docker buildx build in run: in a cached workflow: green" 0 "$(run "$work/runb.yml")"
+printf '    steps:\n      - run: |\n          set -e\n          docker build -t x .\n' >"$work/runblk.yml"
+check "docker build in a run: block (uncached): red" 1 "$(run --uncached "$work/runblk.yml")"
+printf '    steps:\n      - run: |\n          docker buildx bake all\n' >"$work/runbake.yml"
+check "docker buildx bake in a run: block (uncached): red" 1 "$(run --uncached "$work/runbake.yml")"
+printf '    steps:\n      - run: |\n          docker buildx imagetools inspect x\n          echo docker-build\n' >"$work/runok.yml"
+check "imagetools and a mere mention in run: (uncached): green" 0 "$(run --uncached "$work/runok.yml")"
+
+# R-1355: a flow mapping on the line below with: is a flow mapping too.
+printf '    steps:\n      - uses: Swatinem/rust-cache@v2\n        with:\n          {cache-bin: false}\n' >"$work/flownext.yml"
+check "flow mapping on the line below with:: red" 1 "$(run "$work/flownext.yml")"
+check "red names the next-line flow mapping" "::error file=$work/flownext.yml,line=2::with: as a flow mapping is not checked, write it as a block" \
+    "$(grep -F 'flow mapping' "$work/out")"
+
+# R-1355: a step named first, uses: one line below.
+printf '    steps:\n      - name: rust cache\n        uses: Swatinem/rust-cache@v2\n        with:\n          workspaces: x\n' >"$work/named.yml"
+check "named rust-cache step without cache-bin: red" 1 "$(run "$work/named.yml")"
+check "red names the named step" "::error file=$work/named.yml,line=2::rust-cache step without cache-bin: false" "$(cat "$work/out")"
+printf '    steps:\n      - name: rust cache\n        uses: Swatinem/rust-cache@v2\n        with:\n          cache-bin: false\n' >"$work/namedgood.yml"
+check "named rust-cache step with cache-bin: false: green" 0 "$(run "$work/namedgood.yml")"
 
 check "--uncached without a file: usage" 2 "$(run --uncached)"
 check "--tag-uncached without a file: usage" 2 "$(run --tag-uncached)"
