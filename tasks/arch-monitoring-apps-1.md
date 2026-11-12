@@ -151,8 +151,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_git
 Doku: → T14
 Abhängt von: T2
 
-### T13 — R-1243: Module Uptime Kuma und Home Assistant  [ ]
+### T13 — R-1243: Module Uptime Kuma und Home Assistant  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/uptime_kuma.py, apps/monitoring/app/catalog/modules/home_assistant.py, apps/monitoring/tests/test_catalog_uptime_kuma.py, apps/monitoring/tests/test_catalog_home_assistant.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @862183a67 2026-11-12T17:09:13+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T13.verdict.json)
 Änderung: Uptime Kuma `/api/entry-page` (nie `/api/push/…`); Home Assistant `GET /` ohne Zugangsdaten (eine
 401-Antwort erzeugt dort eine dauerhafte Meldung und ggf. eine IP-Sperre), Container auch mit `network_mode: host`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_uptime_kuma.py tests/test_catalog_home_assistant.py tests/test_catalog_apps.py tests/test_catalog.py
@@ -346,3 +348,15 @@ Doku: → T14
   (`fastify-favicon`, kein Seitenpfad: `RESERVED_ROOT_FILES`, keine Umleitung) aus `assets/` ohne Session und
   Datenbank: nur ein Lebenszeichen. Tag-Auswahl je Check: R-1397. Images `requarks/wiki`,
   `ghcr.io/requarks/wiki` und linuxserver.io (`Requarks/wiki-v2`, 3000).
+- 2026-11-12 (T13): Uptime Kuma fragt `/api/entry-page` an 3001 ohne Login, die Anfrage seiner Seite bei jedem Aufruf
+  (`api-router.js`, `trustProxy` aus einem Cache von 60 s), in Version 1 und 2; `data.type` `setup-database` (Version
+  2 wartet auf die Wahl seiner Datenbank und überwacht nichts) ist eine Warnung, alles außer 200 kritisch; nie
+  `/api/push/`. Images `louislam/uptime-kuma` und `ghcr.io/louislam/uptime-kuma`; ohne Image (node, pm2) und eigenes
+  HTTPS (`SSL_KEY`/`SSL_CERT`) nicht abgedeckt. Belegt aus dem Quelltext von 2.5.11 und 1.23.16, nicht live gefahren.
+- 2026-11-12 (T13): Home Assistant fragt GET `/` an 8123 ohne Token (`IndexView.get`: Seite aus dem Template-Cache,
+  vor dem Onboarding 302 auf `/onboarding.html`, dem der Agent folgt); keine API-Route, weil jede 401
+  `process_wrong_login` (`http/ban.py`) auslöst: dauerhafte Meldung, mit `login_attempts_threshold` Zählung zur
+  IP-Sperre. 403 heißt Agent-Adresse gesperrt (`ip_bans.yaml`), kritisch. Container laut Installationsanleitung mit
+  `network_mode: host`: der Scan sieht keine Ports, der Agent findet 8123 unter den Sockets des Containers. Images von
+  Home Assistant (ghcr.io, Docker Hub) und linuxserver.io; OS/Supervised (Image je Maschine), Core im venv und HTTPS
+  auf 8123 nicht abgedeckt. Belegt aus dem Quelltext von 2026.11.1, nicht live gefahren.
