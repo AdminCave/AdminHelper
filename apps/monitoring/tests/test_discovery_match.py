@@ -346,6 +346,21 @@ def test_image_prefix_matches_at_a_path_boundary():
     assert set(match_inventory(inv, catalog)) == {("immich", "server"), ("immich", "bare")}
 
 
+def test_an_official_image_takes_only_itself_not_the_namespace_of_its_name():
+    catalog = load_catalog([_module("nextcloud", "container", container_images=["nextcloud"])])
+    inv = clean_inventory(
+        _block(
+            containers=[
+                _container("app", "nextcloud:30-apache"),
+                _container("hub", "docker.io/library/nextcloud"),
+                _container("aio", "nextcloud/aio-nextcloud:latest"),
+                _container("fork", "nextcloud-fork"),
+            ]
+        )
+    )
+    assert set(match_inventory(inv, catalog)) == {("nextcloud", "app"), ("nextcloud", "hub")}
+
+
 def test_compose_instance_is_the_project_with_all_its_services():
     inv = clean_inventory(
         _block(

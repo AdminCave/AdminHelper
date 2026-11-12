@@ -189,6 +189,61 @@ func TestHTTPSensorPresentsItsCredential(t *testing.T) {
 	}
 }
 
+func TestHTTPSensorAsksAsLocalhostOnlyWhenTold(t *testing.T) {
+	var mu sync.Mutex
+	var hosts []string
+	srv := localServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hosts = append(hosts, r.URL.Path+" "+r.Host)
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/hop":
+			http.Redirect(w, r, "/end", http.StatusFound)
+		case "/away":
+			http.Redirect(w, r, "http://192.0.2.1/", http.StatusFound)
+		case "/named":
+			// The same listener under the name the param sends: the redirect names another target
+			// than the one the probe asked, so the param widens no redirect.
+			a, _ := r.Context().Value(http.LocalAddrContextKey).(*net.TCPAddr)
+			http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/end", a.Port), http.StatusFound)
+		}
+	}))
+	ctx := context.Background()
+	port := portOf(t, srv.URL)
+	asLocalhost := map[string]any{"host": "localhost"}
+	probe := func(path string, params map[string]any) error {
+		p := map[string]any{"path": path}
+		for k, v := range params {
+			p[k] = v
+		}
+		_, err := httpSensor(ctx, onLoopback("http", port, p), "")
+		return err
+	}
+
+	if err := probe("/plain", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := probe("/asked", asLocalhost); err != nil {
+		t.Fatal(err)
+	}
+	if err := probe("/hop", asLocalhost); err != nil {
+		t.Fatalf("a redirect on the target = %v", err)
+	}
+	for _, path := range []string{"/away", "/named"} {
+		if err := probe(path, asLocalhost); !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("%s: a redirect to another target = %v, want ErrNotAllowed", path, err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	addr := "127.0.0.1:" + strconv.Itoa(port)
+	want := "/plain " + addr + ",/asked localhost,/hop localhost,/end localhost,/away localhost,/named localhost"
+	if strings.Join(hosts, ",") != want {
+		t.Errorf("the server saw %v\nwant %s", hosts, want)
+	}
+}
+
 func TestHTTPSensorTakesOnlyWhatItCanSend(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
@@ -202,6 +257,10 @@ func TestHTTPSensorTakesOnlyWhatItCanSend(t *testing.T) {
 		{"a long path", onLoopback("http", 8080, map[string]any{"path": "/" + strings.Repeat("ä", 512)})},
 		{"an empty path", onLoopback("http", 8080, map[string]any{"path": ""})},
 		{"another param", onLoopback("http", 8080, map[string]any{"body": "x"})},
+		{"a host of a site", onLoopback("http", 8080, map[string]any{"host": "example.org"})},
+		{"an empty host", onLoopback("http", 8080, map[string]any{"host": ""})},
+		{"localhost with a port", onLoopback("http", 8080, map[string]any{"host": "localhost:80"})},
+		{"a host of another type", onLoopback("http", 8080, map[string]any{"host": 1})},
 		{"a scheme of another protocol", Probe{Sensor: "http", Target: &Target{Kind: kindLoopback, PortHint: 8080, Scheme: "ftp"}}},
 		{"no target", Probe{Sensor: "http"}},
 	} {

@@ -113,6 +113,15 @@ def _target_name(
     return None, none
 
 
+def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
+    """Whether the last scan saw the container with TCP ports, the hint not among them."""
+    for c in containers:
+        if c["name"] == name:
+            ports = {p["private"] for p in c["ports"] if p["proto"] == "tcp"}
+            return bool(ports) and port not in ports
+    return False
+
+
 def probe_config(
     module: Module, check: Check, key: str, summary: dict, containers: list[dict]
 ) -> tuple[dict | None, str | None]:
@@ -132,6 +141,12 @@ def probe_config(
             name, why = _target_name(module, t.kind, t.service, key, summary, containers)
             if not name:
                 return None, why
+            # The agent asks a container's only port when the hint does not listen (target.go
+            # pickPort): an HTTP check of Nextcloud's apache image would ask the FastCGI port
+            # of its fpm image and alert. Without seen ports (stopped, host network) the agent
+            # decides.
+            if t.kind == "container" and port_hint and _lacks_port(name, port_hint, containers):
+                return None, f"container {name} has no port {port_hint}"
         target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": t.scheme}
     config = {
         "sensor": check.sensor,

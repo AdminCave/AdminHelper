@@ -235,9 +235,10 @@ def image_repo(image: str) -> str:
 
 
 def image_matches(repo: str, prefixes: list[str]) -> bool:
-    # A prefix ends at a path boundary: ghcr.io/immich-app takes ghcr.io/immich-app/x,
-    # paperless-ngx does not take paperless-ngx-fork.
-    return any(repo == p or repo.startswith(p + "/") for p in prefixes)
+    # A prefix ends at a path boundary: ghcr.io/immich-app takes ghcr.io/immich-app/x, not
+    # ghcr.io/immich-app-fork. A name without a slash is a Docker Hub official image and
+    # takes only itself: nextcloud is not the namespace of the nextcloud/aio-* images.
+    return any(repo == p or ("/" in p and repo.startswith(p + "/")) for p in prefixes)
 
 
 def _unit_name(name: str) -> str:
