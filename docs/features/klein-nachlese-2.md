@@ -42,3 +42,9 @@ Keine (internes Laden, Testfrist, Kommentar; das Feldlimit steht im OpenAPI-Sche
 
 ## Offene Fragen
 Punkt 5 (ConnectionEditor, eigene Roadmap-Zeile): Empfehlung, das Namensfeld bis zur geladenen Serverliste zu sperren.
+
+## Nachtrag 2026-11-12
+
+Das Limit `max_length=255` an `name` (Punkt 2) ist zurückgenommen (T3): oasdiff wertet es als Vertragsbruch
+(`request-property-max-length-set`), die nötige Ausnahme liegt auf einem Harness-Pfad und der API-Vertrag ist Kevins
+Entscheidung. Die Zeilen oben zum 422 und zum Snapshot gelten damit nicht; das Limit führt R-1361.
