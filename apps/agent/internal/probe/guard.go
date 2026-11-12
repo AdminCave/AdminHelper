@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -188,13 +189,14 @@ func controlSocketFile(path string) (string, error) {
 // checkPeerName refuses the socket path unless name, the address its server bound (getpeername
 // on the connection), is absolute and outside controlSockets. It names the socket the connection
 // reached, whichever directory or link led there after socketToDial; a relative or abstract name
-// says nothing about where that socket is, so it is refused.
-func checkPeerName(name, path string) error {
-	if !filepath.IsAbs(name) {
-		return fmt.Errorf("%w: the server of %s bound no absolute path (%q)", ErrNotAllowed, path, name)
+// says nothing about where that socket is, so it is refused. name is slash-separated on every
+// platform, so package path judges it, not filepath.
+func checkPeerName(name, sock string) error {
+	if !path.IsAbs(name) {
+		return fmt.Errorf("%w: the server of %s bound no absolute path (%q)", ErrNotAllowed, sock, name)
 	}
-	if neverProbedSocket(filepath.Clean(name)) {
-		return fmt.Errorf("%w: %s reached %s, a socket of a service the agent never probes", ErrNotAllowed, path, name)
+	if neverProbedSocket(path.Clean(name)) {
+		return fmt.Errorf("%w: %s reached %s, a socket of a service the agent never probes", ErrNotAllowed, sock, name)
 	}
 	return nil
 }
