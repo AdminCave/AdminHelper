@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-3 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-3.md (Roadmap R-1226)
 Heavy: linux-full — `apps/agent` (neue systemctl-/journalctl-Aufrufe), der Berichtspfad des Monitoring-Dienstes und eine neue Desktop-Journey; der Sammellauf fährt agent-monitoring, den Stack und die Desktop-Live-Specs. Der Windows-Teil (T2) läuft über die PR-CI-Jobs `agent-windows` und `rust-windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -125,8 +125,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T10
 
-### T12 — Doku DE+EN und CHANGELOG-Fragment (R-1226)  [ ]
-Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-monitoring-ui-3.md
+### T12 — Doku DE+EN und CHANGELOG-Fragment (R-1226)  [x]
+Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-monitoring-ui-3.md, docs/features/arch-monitoring-ui-3.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b6dde475c 2026-11-12T20:45:33+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin-Doku: Dienste-Liste, Stufen 1–3, was in Mail und Webhook steht, Schwärzungsregeln, Speicherdauer, Schalter, Plattformgrenzen. Entwickler-Doku: neue Bericht-Schlüssel, Plan-Feld, Tabellen; API-Referenz: beide Routen. Agent-Doku: neue Allowlist-Aufrufe. Fragment unter `### Added`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: docs/admin/monitoring.html, docs/developer/monitoring.html, docs/developer/api-reference.html, docs/developer/agent.html DE+EN · changelog.d/arch-monitoring-ui-3.md

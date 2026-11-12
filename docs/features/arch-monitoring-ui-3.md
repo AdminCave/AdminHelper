@@ -116,7 +116,7 @@ wie viel RAM sie belegen. Fällt ein Dienst aus, steht in der Alarm-Mail nur sei
 ### Tabellen (eine additive Alembic-Revision, Downgrade löscht beide)
 
 - `monitor_service_inventory`: `server_id` PK, `reported_at` (naive UTC), `services` (JSON-Text, höchstens
-  `_MAX_REPORT_ENTRIES` = 500 Einträge, Felder gekürzt), `log_lines` (Boolean, `server_default` true) als Schalter
+  `MAX_REPORT_ENTRIES` = 500 Einträge, Felder gekürzt), `log_lines` (Boolean, `server_default` true) als Schalter
   je Server.
 - `monitor_service_logs`: PK (`server_id`, `unit`), `since`, `collected_at`, `lines` (JSON-Text, ≤ 10 × 300 Zeichen).
   - Eine Zeile lebt, solange die Unit in `systemd.failed` steht.
@@ -126,9 +126,9 @@ wie viel RAM sie belegen. Fällt ein Dienst aus, steht in der Alarm-Mail nur sei
 
 ### Admin-API (über den Server-Proxy, Präfix `status`)
 
-- `GET /status/server/{server_id}/services`: `{reported_at, log_lines, services: [...], logs: {<unit>: {since,
-  collected_at, lines}}}`; 404, wenn der Server unbekannt ist.
-- `PUT /status/server/{server_id}/services/options`: `{log_lines: bool}` (strict). Aus löscht die gespeicherten
+- `GET /status/server/{server_id}/services`: `{serverId, reportedAt, logLines, services: [...], logs: {<unit>: {since,
+  collectedAt, lines}}}` (Antwort camelCase); 404, wenn der Server unbekannt ist.
+- `PUT /status/server/{server_id}/services/options`: `{log_lines: bool}` (strict, Body snake_case). Aus löscht die gespeicherten
   Zeilen sofort; der Plan trägt die Änderung beim nächsten Abruf.
 
 ### Desktop
