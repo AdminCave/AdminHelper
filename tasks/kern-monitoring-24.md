@@ -1,5 +1,5 @@
 # kern-monitoring-24 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-24 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-24 · Review: pro Task
 Spec: docs/features/kern-monitoring-24.md (Roadmap R-1374, R-1370, R-1376, R-1381, R-1382)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring; Windows-Teil prüft der PR-CI-Job agent-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -80,6 +80,16 @@ weitere Weiterleiter, Unix-Sockets; zentrale Checks: RDAP-Weiterleitungen, NAT64
 Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-24.md
+Task-Review: am Ende
+
+### T8 — Entwickler-Doku: Wächter und zentrale Checks  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Änderung: Fund der Abschlussprüfung: Wächter-Absatz der Entwickler-Doku DE+EN um Listener-Pflicht
+(`errNoProcess`), Prüfung nach dem connect (`checkTaker`, `peerSocket`, `redirectTTL`), Windows-Dienst
+(`serviceForwarder`) und Weiterleiter hinter Unix-Sockets ergänzen; Monitoring-Entwickler-Doku um
+RDAP-Weiterleitungen und NAT64-Erkennung.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
 Task-Review: am Ende
 
 ## Entscheidungen
