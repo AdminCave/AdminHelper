@@ -1,5 +1,5 @@
 # CI-Workflow: Stack-Job auf PRs, Pfad-Steuerung, Shards nach Laufzeit, merge_group, Nightly — Task-Ledger
-Status: geplant · Branch: feature/arch-workflow-ci-1 · Review: pro Task
+Status: aktiv · Branch: feature/arch-workflow-ci-1 · Review: pro Task
 Spec: docs/features/arch-workflow-ci-1.md (Roadmap R-1339, R-1340, R-1341, R-1342, R-1343)
 Heavy: none — nur Workflows und Test-Infrastruktur; kein Produktcode, kein Stack-, Gateway-, PKI- oder Install-Pfad; Stack-Job und nightly.yml beweisen sich im PR-Lauf selbst
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
