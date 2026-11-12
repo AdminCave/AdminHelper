@@ -10,6 +10,7 @@ tunnel by its ID (R-1210)."""
 import tomllib
 
 import pytest
+from sqlalchemy import event
 
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
@@ -470,3 +471,60 @@ def test_a_stored_port_in_the_range_stays_for_the_auto_connection(
     assert r.json()["visitorPort"] == 6000
     conn = _auto_connection(db_session, "t-a")
     assert (conn.host, conn.port) == ("127.0.0.1", 6000)
+
+
+def test_the_config_detail_loads_the_servers_of_its_tunnels_in_one_query(
+    test_client, db_session, admin_user
+):
+    # display_name() reads target_server; without a preload that is one query per tunnel.
+    _seed(db_session)
+    for i in range(3):
+        db_session.add(Server(id=f"srv-{i}", name=f"s{i}", hostname=f"s{i}.example.test"))
+        db_session.add(
+            FrpTunnel(
+                id=f"t-{i}",
+                server_id=f"srv-{i}",
+                frp_config_id="cfg-1",
+                name=f"own-{i}",
+                tunnel_type="https",
+                protocol="web",
+                local_port=80 + i,
+                enabled=True,
+            )
+        )
+    db_session.commit()
+    db_session.expire_all()
+    h = _login(test_client, "admin", "adminpass")
+
+    statements = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    connection = db_session.connection()
+    event.listen(connection, "before_cursor_execute", _record)
+    try:
+        r = test_client.get("/api/frp/server-config/cfg-1", headers=h)
+    finally:
+        event.remove(connection, "before_cursor_execute", _record)
+
+    assert r.status_code == 200, r.text
+    assert len(r.json()["tunnels"]) == 4
+    on_servers = [s for s in statements if "FROM servers" in s]
+    assert len(on_servers) == 1, on_servers
+
+
+@pytest.mark.parametrize("method", ["post", "put"])
+def test_a_tunnel_name_is_capped_at_255_characters_like_the_label(
+    test_client, db_session, admin_user, method
+):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+
+    def send(name: str):
+        if method == "post":
+            return test_client.post("/api/frp/tunnels", json=_body(name=name), headers=h)
+        return test_client.put("/api/frp/tunnels/t-a", json={"name": name}, headers=h)
+
+    assert send("n" * 256).status_code == 422
+    assert send("n" * 255).status_code in (200, 201)

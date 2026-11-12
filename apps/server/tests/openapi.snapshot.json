@@ -2265,6 +2265,7 @@
           "name": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
@@ -2587,6 +2588,7 @@
           "name": {
             "anyOf": [
               {
+                "maxLength": 255,
                 "type": "string"
               },
               {
