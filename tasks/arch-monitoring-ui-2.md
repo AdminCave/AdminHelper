@@ -76,8 +76,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui-2/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_system_state_checker.py tests/test_agent_resources_checker.py
 Doku: → T12
 
-### T8 — Monitoring: Docker, Proxmox-Backup, ZFS reichen die Details durch (R-1227)  [ ]
+### T8 — Monitoring: Docker, Proxmox-Backup, ZFS reichen die Details durch (R-1227)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @10e15318c 2026-11-12T13:03:12+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T8.verdict.json)
 Änderung: `DockerHealthChecker` übernimmt `compose_project`, `compose_service`, `ports`, `started_at` je Container; `ProxmoxBackupChecker` Storage, Größe, Job, letzten Fehler, Verify-Status je Gast; `ZfsHealthChecker` Scrub, vdev-Fehler, Fragmentierung; alles gekappt. Status, Meldung, Metriken bitgleich (Vergleichstest je Checker).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: → T12
@@ -141,3 +143,5 @@ Task-Review: am Ende
 - 2026-11-12 T5: Fixture aus echtem OpenZFS 2.4.2 (FreeBSD 15.1, Wegwerf-VM im Pool `adminhelper-ci`, dateibasierter Mirror mit Log-vdev, eine Seite überschrieben, dann Scrub; danach zerstört); pausierter und abgebrochener Scrub aus derselben Probe
 - 2026-11-12 T7: neue Felder nur in `details`, nie in der Meldung (Mail, Webhook); jedes Feld nur, wenn der Agent ein brauchbares schickte — die Details eines älteren Agenten bleiben bitgleich, ein Block ohne brauchbaren Zähler bleibt „nicht bewertet“ ohne Namen
 - 2026-11-12 T7: dieselben Grenzen wie auf dem Agenten (100 Paketnamen, 10 OOM-Prozesse, 5 Top-Prozesse je Liste), Namen über `cap_agent_text`; von Prozessen nur `pid` (ganze Zahl ab 1), `name` und `cpu_pct`/`rss` (Zahl ab 0) — jedes weitere Feld eines Eintrags fällt weg (Feld-Freigabe), ein kaputter Eintrag ebenso, ohne die Liste aufzufüllen
+- 2026-11-12 T8: Schlüssel im Stil des jeweiligen Blocks — Docker snake_case (`compose_project`, `compose_service`, `ports`, `started_at`), Proxmox und ZFS camelCase (`backupStorage`, `backupSize`, `backupVerify`, `backupJobs`, `backupError`, `backupErrorTs`; `fragmentationPercent`, `scrub` {state, errors, end}, `vdevErrors` [{name, read, write, checksum}]); jedes nur, wenn brauchbar — die Details eines älteren Agenten bleiben bitgleich, ein unbrauchbares Feld fällt weg wie ein fehlendes
+- 2026-11-12 T8: dieselben Grenzen wie der Agent (64 Ports, 64 Jobs, 32 vdevs; ein kaputter Eintrag zählt mit), Texte über `cap_agent_text` (auch der vzdump-Fehler: die gemeinsame Grenze 500 statt der 200 des Agenten); Zeiten und Größe ganze Zahlen ab 1, Zähler ab 0, Fragmentierung ganze Zahl 0–100, Verify-Status nur in der Form des Agenten, Scrub nur mit bekanntem Zustand und Fehlerzähler; je Job nur `id`/`schedule`/`storage` (Feld-Freigabe), `[]` bleibt „kein Job deckt den Gast“, `backupErrorTs` nur mit `backupError`
