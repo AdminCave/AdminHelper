@@ -40,6 +40,13 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py tests/
 Doku: → T6
 Abhängt von: T3
 
+### T7 — Nachzug T2 (R-1342): review_scripts_test erwartet die concurrency-Gruppe mit merge_group  [ ]
+Komponente: scripts · Dateien: scripts/tests/review_scripts_test.sh
+Änderung: Der Abgleich der `concurrency:`-Zeilen von `ci.yml` (R-0174) erwartet wörtlich die Gruppe vor T2; der Dispatch-Lauf 43169817646 (fc70df0bd) ist deshalb im Job „Ops scripts“ rot (243 passed, 1 failed). Erwartung, Kommentar und Meldung nennen jetzt die Gruppe je Commit auch für `merge_group`; der Vergleich bleibt wörtlich.
+Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
+Doku: keine (Test zieht die Konfiguration aus T2 nach)
+Abhängt von: T2
+
 ### T5 — R-1343: nightly.yml mit schemathesis-tief und backup_restore  [ ]
 Komponente: server · Dateien: .github/workflows/nightly.yml, apps/server/tests/test_ci_workflow.py
 Änderung: Neuer Workflow (SPDX) mit `schedule`, `workflow_dispatch` und `pull_request` (`paths` nur auf sich selbst). Job schemathesis wie in `ci.yml`, aber `AH_SCHEMATHESIS_EXAMPLES: "100"`, Commit und Beispielzahl in der Job-Summary; Job backup-restore fährt `bash scripts/tests/backup_restore_test.sh`, Exit 75 ist rot. `test_ci_workflow.py` prüft Trigger, Budget, die Schritte und dass kein Job ein Ereignis-`if` trägt. Die Probe auf GitHub-Runnern ist der PR-Lauf dieses Workflows (vor dem Merge, im Bericht an Kevin). Dazu direkt `bash .github/scripts/cache_settings_test.sh`.
