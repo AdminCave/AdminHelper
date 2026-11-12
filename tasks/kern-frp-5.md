@@ -1,5 +1,5 @@
 # frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server — Task-Ledger
-Status: geplant · Branch: feature/kern-frp-5 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-5 · Review: pro Task
 Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310)
 Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den echten frps; Kevin 2026-11-12: vor dem Merge. Server-API und Agent-Modul fährt dazu der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
