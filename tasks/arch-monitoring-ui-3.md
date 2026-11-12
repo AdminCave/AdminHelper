@@ -116,8 +116,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: → T12
 Abhängt von: T8, T9
 
-### T11 — Desktop-Live-E2E: Dienste-Liste gegen den echten Agenten (R-1226)  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-services.live.js
+### T11 — Desktop-Live-E2E: Dienste-Liste gegen den echten Agenten (R-1226)  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-services.live.js, scripts/tests/desktop_e2e_monitoring.sh
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @75cd5c0b0 2026-11-12T20:29:42+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T11.verdict.json)
 Änderung: Live-Spec nach dem Muster `monitoring-server-page.live.js` (Agent im Container, `run --once`): Liste öffnen, Filter und Suche, Schalter umlegen, Screenshots in beiden Themes. Fehlerzeilen und „Mehr Log“, soweit die Agent-Box einen fehlgeschlagenen Dienst und SSH bietet; was sie nicht bietet, steht im Commit-Body als „nicht verifiziert“. Läuft im Sammellauf (`Heavy: linux-full`), lokal nur Lint.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
