@@ -53,15 +53,16 @@ Ledgers. Eine `Warnung:`-Zeile, einmal, vor der Arbeit, genau dann: (1) ein Vorh
 von` nicht gemergt ist, oder eine `freigegeben`-Zeile höherer Klasse würde übersprungen; (2) ein Commit, Push, Tag
 oder Merge direkt auf `main` steht bevor, oder ein Release ohne grünen Wochenlauf; (3) ein Feature-Branch würde
 Harness-Pfade mitändern; (4) Kevin will planen, mergen oder rebasen, und der Haupt-Checkout ist nicht auf `main`
-oder nicht sauber. Sonst keine Warnung und keine Bestätigungsfrage für Routine. Dazu: ist der Sammellauf fällig
-(`/feature-build` §5)?
+oder nicht sauber. Sonst keine Warnung und keine Bestätigungsfrage für Routine. Dazu: braucht der Report des
+nächtlichen Sammellaufs eine Reaktion (`/feature-build` §5)?
 
 ## 4. Lebenslauf eines Vorhabens
 Roadmap-Zeile (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE; Status neu → geplant → freigegeben → aktiv → bereit →
 pr → abgeschlossen) → `/feature-plan` (ein Zug: `--zug tasks/<slug>.md`) committet `docs/features/<slug>.md` und
 `tasks/<slug>.md` (`Status: geplant`) als ersten Commit auf `feature/<slug>` → die Session gibt sofort selbst frei, wenn
-Kevin die Zeile angenommen (`/roadmap triage`) oder das Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve
-R-nnnn` (Kevin 2026-10-21) → `/feature-build` (Kopf `aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
+Kevin die Zeile angenommen (`/roadmap triage` oder der Dauerauftrag im roadmap-Skill, Kevin 2026-11-11) oder das
+Vorhaben diktiert hat: `python3 scripts/dev/roadmap.py approve R-nnnn` (Kevin 2026-10-21) → `/feature-build` (Kopf
+`aktiv`, Task für Task, Abschluss, PR, Merge) → `roadmap.py sync`.
 Eine Entscheidung aus Kevins Bereich (§2), die weder die Roadmap-Zeile noch Kevins Wort (in der Session oder in der
 Notiz der Zeile) trifft, stellt das Gate als Frage mit Empfehlung; ihre Task steht auf `[?]`, die übrigen baut die
 Session; hängt jede Task an einer Frage, bleibt die Zeile `geplant`. Die Roadmap ist die einzige Reihenfolge-Wahrheit,
@@ -84,8 +85,9 @@ Vor dem ersten Lauf eines Vorhabens `.claude/rules/testing.md` lesen (Ebenen, SK
 - **Lange Läufe** (`/test`, Wochenlauf, Multibox, über zehn Minuten) in tmux ohne Modell:
   `( . ./.devenv.sh; … ) > log; echo $? > rc`; ein Hintergrund-Wächter wartet auf `rc`, keine Modellaufrufe zum Warten.
 - Ein Server-Lauf zur Zeit je Test-DB (jeder Worktree hat seine, §8); Gegenproben nur in einem Probe-Worktree.
-- **Heavy:** `Heavy:` im Ledger-Kopf (Zuordnung `/feature-plan` §3): `linux-full` im Sammellauf über `main`, den
-  die Session selbst startet (`/feature-build` §5, Kevin 2026-10-15); `scenario` und `windows` vor dem Merge;
+- **Heavy:** `Heavy:` im Ledger-Kopf (Zuordnung `/feature-plan` §3): `linux-full` im nächtlichen Sammellauf über
+  `main`, den `scripts/tests/nightly.sh` per Cron startet, nicht die Session (`/feature-build` §5, Kevin 2026-11-11);
+  `scenario` und `windows` vor dem Merge;
   Multibox nur nach Kevins Ja. VMs nur im Pool `adminhelper-ci` (klonen, baken, zerstören erlaubt, Kevin 2026-09-08),
   je Vorhaben in seiner Lane (`/vm`); danach `python3 scripts/vm/vm.py list`, eine geleakte VM ist ein Fehler.
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test; Feature → Test dazu; Refactor → Suite grün
