@@ -70,7 +70,7 @@ func TestDialUnixNamesTheProcessServingTheSocket(t *testing.T) {
 	} else {
 		_ = c.Close()
 	}
-	for _, name := range []string{"inetd", "sshd"} {
+	for _, name := range []string{"inetd", "sshd", "socat", "rinetd"} {
 		h.names[int32(os.Getpid())] = name
 		if c, err := dialUnix(ctx, path); !errors.Is(err, ErrNotAllowed) {
 			if c != nil {

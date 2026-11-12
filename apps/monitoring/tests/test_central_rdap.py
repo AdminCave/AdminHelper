@@ -471,7 +471,7 @@ def test_an_answer_that_is_no_json_object_is_unknown(registry, body):
     [
         (HttpAnswer(429, "60", b""), "RDAP rdap.nic.test: rate limited (HTTP 429)"),
         (HttpAnswer(500, None, b""), "RDAP rdap.nic.test: HTTP 500"),
-        (HttpAnswer(301, None, b""), "RDAP rdap.nic.test: HTTP 301"),
+        (HttpAnswer(301, None, b""), "RDAP rdap.nic.test: HTTP 301 without a Location"),
         (FetchError("timed out", temporary=True), "RDAP rdap.nic.test: timed out"),
     ],
 )
@@ -481,6 +481,76 @@ def test_a_registry_without_an_answer_gives_no_verdict(registry, answer, message
     result = _probe(prev=_known())
 
     assert (result.status, result.message, result.reached) == ("unknown", message, False)
+
+
+def _moved(location, status=301):
+    return HttpAnswer(status, None, b"", location=location)
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_a_redirect_of_the_registry_is_followed(registry, status):
+    registry.domains[f"{NIC}domain/example.test"] = _moved(
+        "https://rdap.other.test/v1/domain/example.test", status
+    )
+    registry.domains["https://rdap.other.test/v1/domain/example.test"] = _moved(
+        "../../v2/domain/example.test"
+    )
+    registry.domains["https://rdap.other.test/v2/domain/example.test"] = REGISTERED
+
+    result = _probe(prev=_known())
+
+    assert result.status == "ok" and result.reached
+    assert registry.asked == [
+        f"{NIC}domain/example.test",
+        "https://rdap.other.test/v1/domain/example.test",
+        "https://rdap.other.test/v2/domain/example.test",
+    ]
+    assert {kwargs["accept"] for url, kwargs in registry.calls if url != rdap.BOOTSTRAP_URL} == {
+        rdap.ACCEPT
+    }
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        (
+            _moved("http://rdap.other.test/domain/example.test"),
+            "redirect to a URL that is not https",
+        ),
+        (_moved("https://[::1"), "redirect to an invalid URL"),
+        (
+            FetchError("rdap.lan.test: no global address (private)"),
+            "rdap.lan.test: no global address",
+        ),
+    ],
+)
+def test_a_redirect_ends_unknown_where_fetch_would_not_go(registry, target, message):
+    registry.domains[f"{NIC}domain/example.test"] = _moved(
+        "https://rdap.lan.test/domain/example.test"
+    )
+    registry.domains["https://rdap.lan.test/domain/example.test"] = target
+
+    result = _probe(prev=_known())
+
+    assert (result.status, result.reached) == ("unknown", False)
+    assert result.message.startswith(f"RDAP rdap.nic.test: {message}")
+
+
+def test_a_redirect_loop_ends_unknown_after_three_redirects(registry):
+    registry.domains[f"{NIC}domain/example.test"] = _moved(
+        "https://rdap.other.test/domain/example.test"
+    )
+    registry.domains["https://rdap.other.test/domain/example.test"] = _moved(
+        f"{NIC}domain/example.test"
+    )
+
+    result = _probe(prev=_known())
+
+    assert (result.status, result.message) == (
+        "unknown",
+        "RDAP rdap.nic.test: more than 3 redirects",
+    )
+    assert len(registry.asked) == 4
 
 
 def test_a_failure_on_the_first_run_ends_the_search(registry):

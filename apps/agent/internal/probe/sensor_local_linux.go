@@ -156,8 +156,8 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 
 // checkPeer refuses the socket path unless the socket it reached lies outside controlSockets
 // (checkPeerName) and the process serving it may be probed: not a process the guard refuses on TCP
-// and not systemd, which holds the sockets it activates on behalf of other services (SO_PEERCRED
-// names the process that called listen). conn.RemoteAddr would not do for the name: Go falls back
+// and no forwarder (checkForwarder), and not systemd, which holds the sockets it activates on behalf
+// of other services (SO_PEERCRED names the process that called listen). conn.RemoteAddr would not do for the name: Go falls back
 // to the dialed address when getpeername names nothing.
 func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	raw, err := conn.SyscallConn()
@@ -190,5 +190,5 @@ func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	if k := processKey(name); neverProbed(name) || k == "systemd" || strings.HasPrefix(k, "systemd-") {
 		return fmt.Errorf("%w: %s belongs to %s, which the agent never probes", ErrNotAllowed, path, name)
 	}
-	return nil
+	return checkForwarder(ctx, cred.Pid, name, path)
 }

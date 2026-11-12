@@ -180,6 +180,7 @@ def test_a_redirect_is_not_followed(rule, transport):
     answer = fetch.get(f"https://{HOST}/directory")
 
     assert answer.status == 301
+    assert answer.location == "https://192.0.2.99/elsewhere"
     assert len(transport["requests"]) == 1
 
 

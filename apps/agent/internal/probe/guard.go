@@ -67,11 +67,12 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // forwarders start the names of the processes that forward a port of this host to a port they do
 // not name to the guard: rootless container networks (rootlesskit, Podman's rootlessport, slirp4netns,
 // pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
-// kubectl (port-forward), autossh and socat; forwarderNames are matched whole, since a prefix ssh would
-// also take sshd and ssh-agent. A probe never connects to a port one of them listens on, since the port
-// behind it cannot be checked.
+// kubectl (port-forward), autossh, socat, systemd-socket-proxyd (the kernel cuts the name to
+// systemd-socket-), sslh with sslh-ev and sslh-select, rinetd and redir; forwarderNames are matched
+// whole, since a prefix ssh would also take sshd and ssh-agent. A probe never connects to a port or a
+// socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
-	"kube-proxy", "kubectl", "autossh", "socat"}
+	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir"}
 
 var forwarderNames = []string{"ssh"}
 
@@ -204,6 +205,10 @@ func checkPeerName(name, sock string) error {
 // listenerTTL is how long one snapshot of the listening sockets serves the guard.
 const listenerTTL = 30 * time.Second
 
+// listenerFresh is how old a snapshot may be to tell that nobody listens on a port: a service may
+// have started since the last one.
+const listenerFresh = time.Second
+
 // listener is a listening TCP socket of this host and the process it belongs to.
 type listener struct {
 	addr netip.Addr
@@ -217,9 +222,13 @@ var (
 	listeners      = listenTCP
 	processName    = nameOf
 	processArgs    = argsOf
-	publishedPorts = dockerPublications
-	dockerServes   = dockerSocketServes
-	dockerdRunning = dockerdRuns
+	peerSocket     = osPeerSocket
+	// serviceForwarder names the service of the process pid if that service forwards the ports it
+	// listens on (Windows portproxy), else "".
+	serviceForwarder = osServiceForwarder
+	publishedPorts   = dockerPublications
+	dockerServes     = dockerSocketServes
+	dockerdRunning   = dockerdRuns
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -249,7 +258,112 @@ func NewGuard(extra ...netip.Addr) *Guard {
 // DialContext connects to address on network as net.Dialer does, if the guard allows the address
 // it connects to; else the error wraps ErrNotAllowed.
 func (g *Guard) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	return g.dialer.DialContext(ctx, network, address)
+	conn, err := g.dialer.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	tc, ok := conn.(*net.TCPConn)
+	if !ok {
+		return conn, nil
+	}
+	server := tc.RemoteAddr().(*net.TCPAddr).AddrPort()
+	client := tc.LocalAddr().(*net.TCPAddr).AddrPort()
+	if err := g.checkTaker(ctx, server, client); err != nil {
+		// Reset rather than close: the service behind a redirect sees no orderly end of a session.
+		_ = tc.SetLinger(0)
+		_ = tc.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// peerState is what took a connection, as the host tells it.
+type peerState int
+
+const (
+	peerNone      peerState = iota // no socket of this host has the connection's ends
+	peerListener                   // only the listener on the port answers, no socket of the connection
+	peerConnected                  // the socket that took the connection has its exact ends
+)
+
+// errPeerUnsupported: the host cannot tell which socket took a connection.
+var errPeerUnsupported = errors.New("the socket that took a connection cannot be told on this system")
+
+// peerTries and peerWait bound the wait for the kernel to list the socket that took the connection.
+const (
+	peerTries = 3
+	peerWait  = 10 * time.Millisecond
+)
+
+// redirectTTL is how long the guard refuses a port, before it connects, after a redirect took a
+// connection to it: the reset comes after the connect, and a service behind the redirect may count
+// each such connection against the agent's address (max_connect_errors, fail2ban).
+const redirectTTL = time.Hour
+
+// redirected holds the ports a redirect took a connection to, with the time it was told; shared by
+// every guard of the process.
+var redirected struct {
+	sync.Mutex
+	at map[netip.AddrPort]time.Time
+}
+
+// rememberRedirect records that a redirect took a connection to server.
+func rememberRedirect(server netip.AddrPort) {
+	redirected.Lock()
+	defer redirected.Unlock()
+	now := time.Now()
+	for k, at := range redirected.at {
+		if now.Sub(at) >= redirectTTL {
+			delete(redirected.at, k)
+		}
+	}
+	if redirected.at == nil {
+		redirected.at = map[netip.AddrPort]time.Time{}
+	}
+	redirected.at[server] = now
+}
+
+// checkRedirected returns an error if a redirect took a connection to ip:port within redirectTTL.
+func checkRedirected(ip netip.Addr, port uint16) error {
+	redirected.Lock()
+	defer redirected.Unlock()
+	if at, ok := redirected.at[netip.AddrPortFrom(ip, port)]; ok && time.Since(at) < redirectTTL {
+		return fmt.Errorf("%w: the connection to port %d was taken by another socket than the one listening there", ErrNotAllowed, port)
+	}
+	return nil
+}
+
+// checkTaker returns an error unless the connection from client to server was taken by a socket
+// bound to server itself: a NAT redirect hands it to another port or host, which the guard never
+// checked before the connect. A container's address and a port docker publishes are left out, their
+// sockets live in another network namespace.
+func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) error {
+	ip := server.Addr().Unmap()
+	if g.contained(ip) {
+		return nil
+	}
+	if published, err := checkPublished(ctx, ip, server.Port(), listenerTTL); err != nil || published {
+		return err
+	}
+	for try := 1; ; try++ {
+		state, err := peerSocket(server, client)
+		switch {
+		case errors.Is(err, errPeerUnsupported):
+			return nil
+		case err != nil:
+			return fmt.Errorf("%w: the socket that took the connection to port %d cannot be told: %v", ErrNotAllowed, server.Port(), err)
+		case state == peerConnected:
+			return nil
+		case try == peerTries:
+			rememberRedirect(netip.AddrPortFrom(ip, server.Port()))
+			return checkRedirected(ip, server.Port())
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", ErrNotAllowed, ctx.Err())
+		case <-time.After(peerWait):
+		}
+	}
 }
 
 // control runs for each address the dialer connects to, before it connects.
@@ -271,9 +385,18 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 		return fmt.Errorf("%w: port %d is one the agent never probes", ErrNotAllowed, port)
 	}
 	if network == "tcp4" || network == "tcp6" {
-		return checkListener(ctx, ip, port)
+		if err := checkRedirected(ip, port); err != nil {
+			return err
+		}
+		return checkListener(ctx, ip, port, g.contained(ip))
 	}
 	return nil
+}
+
+// contained says whether ip is one of the extra addresses, of a container of this host: its
+// listeners live in the container's network namespace, which the snapshot does not see.
+func (g *Guard) contained(ip netip.Addr) bool {
+	return slices.Contains(g.extra, ip.WithZone(""))
 }
 
 // ownAddr returns an error unless ip is loopback, an address of this host or one of the extra
@@ -311,11 +434,32 @@ func (g *Guard) ownAddr(ip netip.Addr) error {
 	return fmt.Errorf("%w: %s is no address of this host", ErrNotAllowed, ip)
 }
 
+// errNoProcess is a port of this host nobody listens on: whatever took a connection there would be
+// no process the guard has checked. It does not wrap ErrNotAllowed, so the probe reports an error.
+var errNoProcess = errors.New("no process listens on port")
+
 // checkListener returns an error if a blocked process listens on ip and port, or if that cannot be
 // told: a listener on the unspecified address takes connections to every address of the host. A
-// socket systemd alone holds, for socket activation, tells nothing of the service it starts.
-func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
-	list, err := currentListeners(ctx)
+// socket systemd alone holds, for socket activation, tells nothing of the service it starts. A port
+// without a listener is errNoProcess, unless docker publishes it or ip is a container's (contained).
+func checkListener(ctx context.Context, ip netip.Addr, port uint16, contained bool) error {
+	err := judgeListener(ctx, ip, port, contained, listenerTTL)
+	if errors.Is(err, errNoProcess) {
+		err = judgeListener(ctx, ip, port, contained, listenerFresh)
+	}
+	return err
+}
+
+// carries says whether a socket bound to bound takes connections to ip. A socket on 0.0.0.0 takes
+// no IPv6 connection; one on :: may take IPv4 ones too, unless it is IPv6-only, which is not told.
+func carries(bound, ip netip.Addr) bool {
+	return bound == ip || (bound.IsUnspecified() && (bound.Is6() || ip.Is4()))
+}
+
+// judgeListener is checkListener on snapshots at most maxAge old. A blocked process on an
+// unspecified address of either family is refused; only a socket that carries ip serves it.
+func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bool, maxAge time.Duration) error {
+	list, err := listenersAtMost(ctx, maxAge)
 	if err != nil {
 		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
 	}
@@ -331,8 +475,13 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
-		if err := checkForwarder(ctx, l.pid, name, port); err != nil {
+		if err := checkForwarder(ctx, l.pid, name, fmt.Sprintf("port %d", port)); err != nil {
 			return err
+		}
+		if service, err := serviceForwarder(ctx, l.pid); err != nil {
+			return fmt.Errorf("%w: the service of the process listening on port %d cannot be read: %v", ErrNotAllowed, port, err)
+		} else if service != "" {
+			return fmt.Errorf("%w: port %d belongs to the service %s, which forwards to an end the agent cannot check", ErrNotAllowed, port, service)
 		}
 		switch processKey(name) {
 		case "systemd":
@@ -343,53 +492,62 @@ func checkListener(ctx context.Context, ip netip.Addr, port uint16) error {
 				return err
 			}
 		}
-		served = true
+		served = served || carries(l.addr, ip)
 	}
 	if activator && !served {
 		return fmt.Errorf("%w: systemd holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, port)
 	}
-	return checkPublished(ctx, ip, port)
+	published, err := checkPublished(ctx, ip, port, maxAge)
+	if err != nil {
+		return err
+	}
+	if !served && !published && !contained {
+		return fmt.Errorf("%w %d", errNoProcess, port)
+	}
+	return nil
 }
 
-// checkForwarder returns an error if the process pid, named name, that listens on port is one of
-// forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
+// checkForwarder returns an error if the process pid, named name, that serves at (a port or a
+// socket) is one of forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
 // exe by the kernel; its argv[0] tells which it is, and an argv that cannot be read is refused.
-func checkForwarder(ctx context.Context, pid int32, name string, port uint16) error {
+func checkForwarder(ctx context.Context, pid int32, name, at string) error {
 	if processKey(name) == "exe" {
 		args, err := processArgs(ctx, pid)
 		if err != nil {
-			return fmt.Errorf("%w: the process %s listening on port %d cannot be told: %v", ErrNotAllowed, name, port, err)
+			return fmt.Errorf("%w: the process %s serving %s cannot be told: %v", ErrNotAllowed, name, at, err)
 		}
 		// An argv[0] that is again /proc/self/exe tells no more than none.
 		if len(args) == 0 || processKey(filepath.Base(args[0])) == "exe" {
-			return fmt.Errorf("%w: the process %s listening on port %d cannot be told", ErrNotAllowed, name, port)
+			return fmt.Errorf("%w: the process %s serving %s cannot be told", ErrNotAllowed, name, at)
 		}
 		name = filepath.Base(args[0])
 	}
 	if forwarder(name) {
 		// name may come from argv[0], which its process sets at will: the text keeps a bounded part.
-		return fmt.Errorf("%w: port %d belongs to %.64s, which forwards to a port the agent cannot check", ErrNotAllowed, port, name)
+		return fmt.Errorf("%w: %s belongs to %.64s, which forwards to an end the agent cannot check", ErrNotAllowed, at, name)
 	}
 	return nil
 }
 
 // checkPublished returns an error if docker forwards ip and port to a port of a container a probe
-// never connects to, or if that cannot be told. Without its userland proxy (userland-proxy=false)
-// docker forwards a published port by NAT alone, ahead of any process listening on the host port.
-func checkPublished(ctx context.Context, ip netip.Addr, port uint16) error {
-	list, err := currentPublications(ctx)
+// never connects to, or if that cannot be told; published says whether docker forwards them at all.
+// Without its userland proxy (userland-proxy=false) docker forwards a published port by NAT alone,
+// ahead of any process listening on the host port.
+func checkPublished(ctx context.Context, ip netip.Addr, port uint16, maxAge time.Duration) (published bool, err error) {
+	list, err := publicationsAtMost(ctx, maxAge)
 	if err != nil {
-		return fmt.Errorf("%w: the published ports of the containers cannot be read: %v", ErrNotAllowed, err)
+		return false, fmt.Errorf("%w: the published ports of the containers cannot be read: %v", ErrNotAllowed, err)
 	}
 	for _, p := range list {
 		if p.hostPort != port || (p.hostIP.IsValid() && !p.hostIP.IsUnspecified() && p.hostIP != ip) {
 			continue
 		}
 		if blockedPort(p.to) {
-			return fmt.Errorf("%w: port %d forwards to port %d of a container, one the agent never probes", ErrNotAllowed, port, p.to)
+			return false, fmt.Errorf("%w: port %d forwards to port %d of a container, one the agent never probes", ErrNotAllowed, port, p.to)
 		}
+		published = published || !p.hostIP.IsValid() || carries(p.hostIP, ip)
 	}
-	return nil
+	return published, nil
 }
 
 // publications is the last list of the published ports, shared by every guard of the process.
@@ -399,11 +557,11 @@ var publications struct {
 	list []publication
 }
 
-// currentPublications returns the published ports of the running containers, at most listenerTTL old.
-func currentPublications(ctx context.Context) ([]publication, error) {
+// publicationsAtMost returns the published ports of the running containers, at most maxAge old.
+func publicationsAtMost(ctx context.Context, maxAge time.Duration) ([]publication, error) {
 	publications.Lock()
 	defer publications.Unlock()
-	if publications.list != nil && time.Since(publications.at) < listenerTTL {
+	if publications.list != nil && time.Since(publications.at) < maxAge {
 		return publications.list, nil
 	}
 	list, err := publishedPorts(ctx)
@@ -470,9 +628,14 @@ func proxiedPort(args []string) (uint16, bool) {
 
 // currentListeners returns the listening TCP sockets of this host, at most listenerTTL old.
 func currentListeners(ctx context.Context) ([]listener, error) {
+	return listenersAtMost(ctx, listenerTTL)
+}
+
+// listenersAtMost returns the listening TCP sockets of this host, at most maxAge old.
+func listenersAtMost(ctx context.Context, maxAge time.Duration) ([]listener, error) {
 	snapshot.Lock()
 	defer snapshot.Unlock()
-	if snapshot.list != nil && time.Since(snapshot.at) < listenerTTL {
+	if snapshot.list != nil && time.Since(snapshot.at) < maxAge {
 		return snapshot.list, nil
 	}
 	list, err := listeners(ctx)

@@ -23,6 +23,7 @@ import pytest
 
 from app.central import dns as dns_sensor
 from app.central import resolve
+from app.central.limits import Limits
 from app.central.resolve import AnswerStatus, Classification, Reach, ResolverAnswer
 from app.core.time import iso_utc
 
@@ -474,6 +475,31 @@ def test_the_name_server_list_is_capped(world):
 
     assert len(zone["servers"]) == 8 and zone["unchecked"] == 2
     assert len(world.turns) == 8
+
+
+def test_name_servers_on_one_address_ask_it_once(world):
+    # A real spacing that never lets time pass: a second turn on the address within the
+    # look would wait, the sixth one past SPACING_WAIT_S (R-1381).
+    world.name_servers = {f"ns{i}.example.test": ("192.0.2.1",) for i in range(1, 9)}
+    limits = Limits(clock=lambda: 0.0, sleep=lambda _: None)
+
+    result = dns_sensor.probe(HOST, _rule(), {}, None, now=NOW, limits=limits, resolvers=RESOLVERS)
+
+    zone = result.details["zone"]
+    assert "error" not in zone
+    assert [s["state"] for s in zone["servers"]] == ["ok"] * 8
+    assert {s["sig_expires"] for s in zone["servers"]} == {iso_utc(NOW + timedelta(days=10))}
+    assert [q[2] for q in world.asked_servers()] == ["SOA", "A"]
+
+
+def test_a_silent_address_shared_by_name_servers_is_asked_twice_in_all(world):
+    world.name_servers = {f"ns{i}.example.test": ("192.0.2.1",) for i in range(1, 5)}
+    world.silent.add("192.0.2.1")
+
+    zone = _probe(world).details["zone"]
+
+    assert {s["state"] for s in zone["servers"]} == {"silent"}
+    assert world.turns == ["192.0.2.1", "192.0.2.1"]
 
 
 def test_a_zone_without_name_servers_postpones_the_look(world):

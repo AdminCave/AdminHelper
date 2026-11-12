@@ -271,7 +271,7 @@ func TestHTTPSensorTakesOnlyWhatItCanSend(t *testing.T) {
 }
 
 func TestHTTPSensorSpeaksHTTPSWithoutCheckingTheCertificate(t *testing.T) {
-	stubHost(t, &fakeHost{})
+	stubHost(t, &fakeHost{live: true})
 	ctx := context.Background()
 	p := onLoopback("http", quietHTTPS(t, newPKI(t).chain), nil)
 
@@ -345,11 +345,11 @@ func stubRoots(t *testing.T, roots *x509.CertPool) {
 	t.Cleanup(func() { certRoots = old })
 }
 
-// tlsServer serves cert on 127.0.0.1, lets the guard's seams see an empty host and returns its port and
-// the server names the clients asked for.
+// tlsServer serves cert on 127.0.0.1, lets the guard's seams see the test's own listeners alone and
+// returns its port and the server names the clients asked for.
 func tlsServer(t *testing.T, cert tls.Certificate) (int, chan string) {
 	t.Helper()
-	stubHost(t, &fakeHost{})
+	stubHost(t, &fakeHost{live: true})
 	names := make(chan string, 8)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	srv.TLS = &tls.Config{
