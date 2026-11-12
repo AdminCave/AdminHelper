@@ -285,6 +285,42 @@ def test_a_wildcard_does_not_cover_its_own_base_name(db_session):
     assert set(policy.domain_conflicts(db_session)) == {"*.web.example", "www.web.example"}
 
 
+def test_a_wildcard_conflicts_with_a_name_below_it_in_the_same_group(db_session):
+    # A three-label name is one frps does route to "*.web.example" (getByRoute).
+    _seed(db_session)
+    group = json.dumps({"loadBalancer.group": "shop"})
+    db_session.add_all(
+        [
+            _tunnel(
+                "t-www", SERVER_A, "https", custom_domains="www.web.example", extra_config=group
+            ),
+            _tunnel(
+                "t-wild", SERVER_B, "https", custom_domains="*.web.example", extra_config=group
+            ),
+        ]
+    )
+    db_session.commit()
+
+    assert policy.domain_conflicts(db_session)["*.web.example"] == {
+        (SERVER_A, "t-www"),
+        (SERVER_A, "t-web"),
+        (SERVER_B, "t-wild"),
+    }
+
+
+def test_a_subdomain_on_an_stcp_tunnel_is_no_hostname(db_session):
+    # frps builds hostnames for HTTP(S) proxies only (BaseProxy.buildDomains in https.go).
+    _seed(db_session)
+    db_session.get(FrpServerConfig, "cfg-1").subdomain_host = "example"
+    db_session.add(_tunnel("t-stcp", SERVER_B, extra_config=json.dumps({"subdomain": "lb"})))
+    db_session.commit()
+
+    assert policy.domain_conflicts(db_session) == {}
+    servers = policy.build_policy(db_session)["servers"]
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-lb", "t-ssh", "t-web"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db", "t-stcp"]
+
+
 def test_without_frp_config_the_policy_admits_nothing(db_session):
     assert policy.build_policy(db_session) == {"servers": {}, "version": 2}
 

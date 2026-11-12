@@ -168,8 +168,9 @@ def _hostnames(proxy: dict, subdomain_host: str) -> set[str]:
 
 def _covers(pattern: str, name: str) -> bool:
     """Whether frps may route name to a proxy of pattern (vhost Routers.getByRoute): the same
-    name, "*" for all, "*.example.net" for every name below example.net. Stricter than frps
-    for two-label names, which it keeps out of the wildcard walk."""
+    name, "*" for all, "*.example.net" for every name below example.net. A superset of what
+    frps routes: it never matches a two-label name against a wildcard, so "*.com" covers
+    "example.com" here but not in frps."""
     return (
         pattern == name
         or pattern == "*"
@@ -185,6 +186,8 @@ def _conflicts(servers: dict, subdomain_host: str) -> dict[str, set[tuple[str, s
         (name, server_id, proxy_name, proxy["group"])
         for server_id, entry in servers.items()
         for proxy_name, proxy in entry["proxies"].items()
+        # frps builds hostnames only for HTTP(S) proxies; a subdomain on an STCP proxy routes nothing.
+        if proxy["type"] == "https"
         for name in _hostnames(proxy, subdomain_host)
     ]
     conflicts: dict[str, set[tuple[str, str]]] = defaultdict(set)

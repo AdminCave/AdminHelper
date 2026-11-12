@@ -74,8 +74,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py 
 Doku: die genannten Dateien (Absatz Domain-Konflikt DE+EN, CHANGELOG-Zeile)
 Abhängt von: T5
 
-### T9 — R-1368: nur HTTPS-Proxys tragen Hostnamen, Platzhalter-Test dreiteilig  [ ]
+### T9 — R-1368: nur HTTPS-Proxys tragen Hostnamen, Platzhalter-Test dreiteilig  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/tests/test_frp_policy.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5f3cbd7db 2026-11-12T10:24:22+01:00
+Review: approve (.ah-out/review/kern-frp-5/T9.verdict.json)
 Änderung: Nits aus Review und Security T8: frps baut Hostnamen nur für HTTP(S)-Proxys, `_conflicts` zählt daher nur Proxys vom Typ `https` (eine `subdomain` per `extra_config` an einem STCP-Tunnel nimmt keinen HTTPS-Proxy mehr aus der Policy); Docstring von `_covers` genauer; Test „Platzhalter über gruppiertem Namen derselben Gruppe“ mit dreiteiligem Namen, wie frps ihn tatsächlich routet.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py tests/test_frp_tunnels.py
 Doku: keine (Verhalten wie dokumentiert: die Doku spricht von HTTPS-Tunneln)
