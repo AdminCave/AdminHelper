@@ -62,7 +62,7 @@ Review: approve (.ah-out/review/arch-monitoring-ui-2/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestParseZpoolList|TestCollectZFS|TestAllowlist
 Doku: → T12
 
-### T6 — Agent: Top-5-Prozesse bei hoher Last (R-1227)  [?] (Auslöser der Top-5-Prozesse: A Standard-Warnschwelle 80 % im Agenten (Empfehlung) oder B Schwellen über den Agent-Plan)
+### T6 — Agent: Top-5-Prozesse bei hoher Last (R-1227)  [~] (verschoben in arch-monitoring-ui-3: Ausloeser der Top-5 offen (Kevin-Frage A/B), R-1389)
 Komponente: agent · Dateien: apps/agent/internal/monitor/processes.go, apps/agent/internal/monitor/processes_test.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go
 Änderung: Neue Datei `processes.go` (SPDX, Test ebenso): liegt CPU bzw. RAM über dem Auslöser (Spec „Offene Fragen“ 1), sammelt der Agent mit gopsutil `process` die fünf Prozesse nach CPU (zwei Stichproben ~1 s, ctx-begrenzt) bzw. RSS: `top_processes: {cpu: [{pid, name, cpu_pct}], memory: [{pid, name, rss}]}` im Ressourcen-Block, nur `comm`, nie die Kommandozeile. Unter dem Auslöser: kein Aufruf. Tests mit gestubbter Prozessliste: unter/über dem Auslöser, Sortierung, Kappung, verschwundener Prozess.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestTopProcesses|TestResources
