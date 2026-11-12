@@ -26,7 +26,8 @@ func TestServiceHealthCounts(t *testing.T) {
 		t.Errorf("linux counts = %v, want active 2 of 5", got)
 	}
 	// Windows service names carry no .service suffix (parseScQuery): they count all the same.
-	if got := serviceCounts(parseScQuery(scFixture)); !reflect.DeepEqual(got, map[string]int{"active": 1, "total": 2}) {
+	windows, _ := parseScQuery(scFixture)
+	if got := serviceCounts(windows); !reflect.DeepEqual(got, map[string]int{"active": 1, "total": 2}) {
 		t.Errorf("windows counts = %v, want active 1 of 2", got)
 	}
 	// No inventory still yields both keys, so the server reads 0 of 0 rather than a missing count.

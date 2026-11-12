@@ -26,7 +26,9 @@ func collectServiceHealth(ctx context.Context) map[string]any {
 	// The block is built in scServiceHealth (no build tag) so it is unit-tested on any platform —
 	// see scquery.go / scquery_test.go (6.20).
 	out, err := runWithTimeout(ctx, "sc", "query", "state=", "all")
-	return scServiceHealth(out, err)
+	return scServiceHealth(out, err, func() ([]byte, error) {
+		return runWithTimeout(ctx, "wevtutil", scmCrashArgs...)
+	})
 }
 
 // collectWatchedServices checks the status of specific Windows services; ctx ends every sc call.

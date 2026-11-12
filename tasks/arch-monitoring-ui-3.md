@@ -26,8 +26,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui-3/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T12
 
-### T2 — Agent (Windows): Exit-Codes aus `sc query` und SCM-Ereignisse 7031/7034 (R-1226, Stufe 1)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/scquery_test.go, apps/agent/internal/monitor/scmevents.go, apps/agent/internal/monitor/scmevents_test.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T2 — Agent (Windows): Exit-Codes aus `sc query` und SCM-Ereignisse 7031/7034 (R-1226, Stufe 1)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/scquery_test.go, apps/agent/internal/monitor/scmevents.go, apps/agent/internal/monitor/scmevents_test.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/services_test.go, apps/agent/internal/monitor/scmevents_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @571b5a7a0 2026-11-12T15:46:11+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T2.verdict.json)
 Änderung: `parseScQuery` liest `DISPLAY_NAME`, `WIN32_EXIT_CODE` und `SERVICE_EXIT_CODE`; ein gestoppter Dienst mit Exit-Code ≠ 0 trägt `exit`. Nur dann ein fester `wevtutil qe System`-Aufruf (Ereignisse 7031/7034 der letzten 24 h, begrenzte Anzahl, XML), dessen Parser den Anzeigenamen auf den Dienst abbildet und `result=crashed` und `since` setzt. Syntax und Ereignis-Layout vorher bei Microsoft Learn nachlesen (Spec, Externe Integrationen). Kein neuer `failed`-Begriff. Parser ohne Build-Tag, Tests mit Fixtures; der Aufruf selbst läuft im CI-Job `agent-windows`.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T12
@@ -119,3 +121,6 @@ Task-Review: am Ende
 - 2026-11-12 T1: `since` = Wanduhr minus `CLOCK_MONOTONIC` plus `StateChangeTimestampMonotonic`, nicht die Boot-Zeit aus `/proc/stat` — `btime` zählt Suspend mit, und LXCFS meldet in Containern den Container-Start.
 - 2026-11-12 T1: Der Fakten-Batch fragt die Units aus `list-units` und die fehlgeschlagenen jedes Typs; ein Name außerhalb der Unit-Klasse (etwa `-.mount`) bleibt draußen und steht in `failed_details` nur mit Namen — die Allowlist lehnte sonst den ganzen Batch ab.
 - 2026-11-12 T1: Der Allowlist-Test der neuen Property-Liste steht im Paket `monitor` (`allowlist_linux_test.go`), nicht in `allowlist/allowlist_test.go` — dort prüft das Paket nur Sonden- und Discovery-Aufrufe.
+- 2026-11-12 T2: Kein `exit` für `WIN32_EXIT_CODE` 0 und 1077 (`ERROR_SERVICE_NEVER_STARTED`, jeder nie gestartete Dienst seit dem Boot — sonst trügen die meisten manuellen Dienste einen Exit und `wevtutil` liefe bei jedem Bericht); 1066 wird `service=<SERVICE_EXIT_CODE>`, nur dann gilt dieser Code (`SERVICE_STATUS`, Microsoft Learn).
+- 2026-11-12 T2: `param1` von 7031/7034 wird mit Anzeige- und Dienstname verglichen (beide sind im SCM eindeutig) — welcher Name drinsteht, dokumentiert Microsoft nicht; `scmevents_windows_test.go` prüft im CI-Job `agent-windows` an 7036 desselben Anbieters, dass `param1` den Anzeigenamen trägt.
+- 2026-11-12 T2: `result=crashed` und `since` nur für gestoppte Dienste mit `exit`; ein nach dem Absturz neu gestarteter Dienst bleibt unverändert. `/c:50`: ein Dienst, der im Kreis abstürzt, kann die Ereignisse der anderen verdrängen, die dann nur ihr `exit` behalten. Kein Cache: der Aufruf läuft nur, solange ein gestoppter Dienst einen Exit trägt.

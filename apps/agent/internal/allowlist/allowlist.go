@@ -185,6 +185,11 @@ var commands = map[string][][]string{
 		{"query", "<winservice>"},
 		{"queryex", "<winservice>"},
 	},
+	// Windows: the Service Control Manager's crash events 7031/7034 of the last 24 hours
+	// (monitor.scmCrashArgs).
+	"wevtutil": {{"qe", "System",
+		"/q:*[System[Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034) and TimeCreated[timediff(@SystemTime) <= 86400000]]]",
+		"/c:50", "/rd:true", "/f:xml"}},
 	"needs-restarting": {{"-r"}},
 	"timedatectl":      {{"show"}},
 	"apt-get":          {{"-s", "dist-upgrade"}},
