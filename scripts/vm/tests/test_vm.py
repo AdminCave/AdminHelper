@@ -13,6 +13,7 @@ import json
 import lzma
 import os
 import re
+import shlex
 import subprocess
 import time
 import urllib.parse
@@ -2931,6 +2932,21 @@ def test_an_opnsense_bake_starts_from_base_freebsd_with_its_user(
     )
 
 
+def test_the_opnsense_clean_quotes_the_user_and_carries_the_cert_php_whole():
+    script = vm.opnsense_clean("x; touch /tmp/owned")
+    assert "id 'x; touch /tmp/owned' >/dev/null" in script
+    assert "pw userdel -n 'x; touch /tmp/owned' -r" in script
+    assert "touch /tmp/owned;" not in script.replace("'x; touch /tmp/owned'", "")
+    # the PHP reaches the guest as one shell word, without its opening tag
+    lex = shlex.shlex(script.split("sudo -n php -r ", 1)[1], posix=True)
+    lex.whitespace_split = True
+    php, target = next(lex), next(lex)
+    assert target == "/conf/config.xml"
+    with open(vm.OPNSENSE_FORGET_CERT, encoding="utf-8") as f:
+        assert "<?php\n" + php == f.read()
+    assert "ssl-certref" in php
+
+
 def test_an_opnsense_bake_reboots_into_our_user_before_it_checks_and_cleans(
     keyed, api, http, clock, shell
 ):
@@ -2947,6 +2963,9 @@ def test_an_opnsense_bake_reboots_into_our_user_before_it_checks_and_cleans(
     assert "pw userdel -n freebsd -r" in commands[5]  # base-freebsd's user and its checkout
     # and its sudo rule: no nuageinit on the firewall rewrites it for a lease
     assert "/usr/local/etc/sudoers.d/90-nuageinit-users" in commands[5]
+    # the first boot's web GUI certificate goes before the user and its checkout
+    assert commands[5].index("sudo -n php -r ") < commands[5].index("pw userdel")
+    assert "/conf/backup/config-*.xml" in commands[5]
     assert not any("bash" in c for c in commands)  # the firewall has none
     assert [r["timeout"] for r in ssh[1:3]] == [vm.CLOUD_INIT_LIMIT, vm.BOOTSTRAP_LIMIT]
     assert [r["timeout"] for r in ssh[4:]] == [120, vm.CLEAN_LIMIT]
