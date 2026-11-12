@@ -87,8 +87,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_moo
 Doku: → T14
 Abhängt von: T2
 
-### T7 — R-1242: Module Jitsi Meet und Matrix Synapse  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/jitsi.py, apps/monitoring/app/catalog/modules/synapse.py, apps/monitoring/tests/test_catalog_jitsi.py, apps/monitoring/tests/test_catalog_synapse.py
+### T7 — R-1242: Module Jitsi Meet und Matrix Synapse  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/jitsi.py, apps/monitoring/app/catalog/modules/synapse.py, apps/monitoring/tests/test_catalog_jitsi.py, apps/monitoring/tests/test_catalog_synapse.py, apps/monitoring/app/catalog/modules/jitsi_videobridge.py, apps/monitoring/app/catalog/modules/jitsi_jicofo.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6110e641c 2026-11-12T15:00:35+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T7.verdict.json)
 Änderung: Jitsi: Docker (`jitsi/jvb`, `jitsi/jicofo` …) und Pakete; JVB `/about/health` (8080), Jicofo
 `/about/health` (8888), `colibri/stats` mit `stress_level` > 0,8 → warning, nur exakte Pfade (nie
 `move-endpoints`). Synapse: Docker und Paket, `/health` (8008).
@@ -237,3 +239,20 @@ Doku: → T14
   (graphql, webrtc-sfu, livekit, coturn …) bleiben bei Service Health aus linux-base: eine Unit-Instanz je Dienst
   bände den API-Check an jede. Kein Zertifikat (nginx-vHost, Hostname unbekannt → R-1231); `getMeetings`,
   `*.fail`, `bbb-conf --check` → T15.
+- 2026-11-12 (T7): Jitsi als zwei Module, `jitsi-videobridge` und `jitsi-jicofo` (Dateien `jitsi_videobridge.py`,
+  `jitsi_jicofo.py` statt `jitsi.py`): eine Bridge läuft oft auf einem eigenen Host, und ein Modul mit beiden
+  Paket-Units fände keine eindeutige Unit (Stellvertreter mit zwei `unit:`-Treffern bindet keinen Unit-Check).
+  Images `ghcr.io/jitsi/{jvb,jicofo}` (Compose-Standard von docker-jitsi-meet) und die alten `jitsi/{jvb,jicofo}`;
+  Units `jitsi-videobridge2.service` und `jicofo.service` (Paket startet `/etc/init.d/jicofo`, systemd erzeugt die
+  Unit; auf einer Box nicht verifiziert). Je Ziel nur `GET /about/health` mit `status_code` ≠ 200 → critical:
+  Bridge auf 8080 (Paket 127.0.0.1, Image 0.0.0.0 im Container; das Image hat keinen HEALTHCHECK, daher auch der
+  HTTP-Check am Container), Jicofo auf 8888 nur am Paket: im Image bleibt Jicofos REST ohne `JICOFO_ENABLE_REST`
+  auf der Container-Loopback, der Agent meldete „listens on no TCP port“ und damit critical bei jeder
+  Standard-Installation. Jicofos Health schlägt ohne operative Bridge hart fehl (`JicofoHealthChecker`), das deckt
+  „keine aktive Bridge → crit“. Kein `colibri/stats`/`stress_level` (aus ohne `videobridge.apis.rest.enabled`,
+  Paket und Image; `/metrics` ist Prometheus-Text) → R-1388 `neu`. Nie `/move-endpoints`, `/debug`, `/pin`, `/stats`.
+- 2026-11-12 (T7): Synapse wie Vaultwarden: Images `matrixdotorg/synapse` und `ghcr.io/element-hq/synapse`
+  (`docker.yml`) mit eigenem HEALTHCHECK (`curl localhost:8008/health`, 15 s), daher nur der Container-Check; Paket
+  `matrix-synapse.service` mit Unit-Check und `GET /health` auf 8008 per HTTP (generierte Konfig: `::1`,
+  `127.0.0.1`). `/health` antwortet immer 200, prüft die Datenbank nicht. Worker (mehrere Container des Images in
+  einem Projekt) binden keinen Container-Check; Föderation zentral, nicht im Agent.
