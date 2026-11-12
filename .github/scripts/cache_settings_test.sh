@@ -153,12 +153,55 @@ cat >"$work/binrun.yml" <<'YML'
 YML
 check ".cargo/bin in a run step: green" 0 "$(run "$work/binrun.yml")"
 
+# R-1288: a workflow given with --uncached restores no cache at all.
+cat >"$work/uncached.yml" <<'YML'
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          package-manager-cache: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+          cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+YML
+check "uncached settings in place: green" 0 "$(run --uncached "$work/uncached.yml")"
+check "good.yml uncached: red (rust-cache, actions/cache)" 1 "$(run --uncached "$work/good.yml")"
+check "good.yml without --uncached stays green" 0 "$(run "$work/good.yml")"
+
+sed '/package-manager-cache: false/d' "$work/uncached.yml" >"$work/u-pm.yml"
+check "setup-node without package-manager-cache: false: red" 1 "$(run --uncached "$work/u-pm.yml")"
+check "red names the setup-node step" "::error file=$work/u-pm.yml,line=2::setup-node without package-manager-cache: false or with cache:" "$(cat "$work/out")"
+
+sed 's/package-manager-cache: false/package-manager-cache: false\n          cache: npm/' "$work/uncached.yml" >"$work/u-npm.yml"
+check "setup-node with cache: npm: red" 1 "$(run --uncached "$work/u-npm.yml")"
+
+sed '/          cache: false/d' "$work/uncached.yml" >"$work/u-go.yml"
+check "setup-go without cache: false (default on): red" 1 "$(run --uncached "$work/u-go.yml")"
+check "red names the setup-go step" "::error file=$work/u-go.yml,line=6::setup-go without cache: false" "$(cat "$work/out")"
+
+sed 's/          cache: false/          cache: true/' "$work/uncached.yml" >"$work/u-gotrue.yml"
+check "setup-go with cache: true: red" 1 "$(run --uncached "$work/u-gotrue.yml")"
+
+sed 's/python-version: "3.14"/python-version: "3.14"\n          cache: pip/' "$work/uncached.yml" >"$work/u-py.yml"
+check "setup-python with cache: pip: red" 1 "$(run --uncached "$work/u-py.yml")"
+
+printf '    steps:\n      - uses: actions/cache/restore@v6\n        with:\n          path: x\n          key: k\n' >"$work/u-restore.yml"
+check "actions/cache/restore in an uncached workflow: red" 1 "$(run --uncached "$work/u-restore.yml")"
+check "red names the cache step" "::error file=$work/u-restore.yml,line=2::cache step in a workflow that runs without caches" "$(cat "$work/out")"
+
+check "--uncached without a file: usage" 2 "$(run --uncached)"
+check "unknown option: usage" 2 "$(run --cached "$work/good.yml")"
+
 check "one bad file among good ones: red" 1 "$(run "$work/good.yml" "$work/nobin.yml")"
 check "no argument: usage" 2 "$(run)"
 check "unreadable file: usage" 2 "$(run "$work/missing.yml")"
 
-check "real ci.yml and release.yml: green" 0 \
-    "$(run "$root/.github/workflows/ci.yml" "$root/.github/workflows/release.yml")"
+check "real ci.yml and release.yml (uncached): green" 0 \
+    "$(run "$root/.github/workflows/ci.yml" --uncached "$root/.github/workflows/release.yml")"
 [ "$(grep -c . "$work/out")" = 1 ] || cat "$work/out" >&2
 
 echo "cache_settings_test: $passed passed, $failed failed"
