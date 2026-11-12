@@ -68,8 +68,10 @@ Komponente: agent · Dateien: apps/agent/internal/monitor/processes.go, apps/age
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestTopProcesses|TestResources
 Doku: → T12
 
-### T7 — Monitoring: Systemzustand und Ressourcen reichen die Details durch (R-1227)  [ ]
+### T7 — Monitoring: Systemzustand und Ressourcen reichen die Details durch (R-1227)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/system.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_system_state_checker.py, apps/monitoring/tests/test_agent_resources_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @a7368ab95 2026-11-12T12:51:27+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T7.verdict.json)
 Änderung: `SystemStateChecker` übernimmt `security_packages`, `reboot_packages`, `oom_processes`, `_resources_details` übernimmt `top_processes` gekappt (`capped_objects`, `cap_agent_text`) in `details`; Status, Meldung und Metriken bitgleich (Test vergleicht mit und ohne die neuen Felder). Kaputte Formen fallen weg.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_system_state_checker.py tests/test_agent_resources_checker.py
 Doku: → T12
@@ -137,3 +139,5 @@ Task-Review: am Ende
 - 2026-11-12 T5: `vdev_errors` nur vdevs mit einem Zähler > 0, nach Name sortiert, höchstens 32 je Pool; Namen über `labelText` (Steuerzeichen oder über 255 Zeichen ⇒ leer)
 - 2026-11-12 T5: `fragmentation_percent` nur aus `NN%` mit 0–100 (`zpool_get_prop`); `-` (unbekannt, `ZFS_FRAG_INVALID`) oder anderes lässt das Feld weg; Allowlist-Eintrag von `zpool list` und Parser zusammen geändert
 - 2026-11-12 T5: Fixture aus echtem OpenZFS 2.4.2 (FreeBSD 15.1, Wegwerf-VM im Pool `adminhelper-ci`, dateibasierter Mirror mit Log-vdev, eine Seite überschrieben, dann Scrub; danach zerstört); pausierter und abgebrochener Scrub aus derselben Probe
+- 2026-11-12 T7: neue Felder nur in `details`, nie in der Meldung (Mail, Webhook); jedes Feld nur, wenn der Agent ein brauchbares schickte — die Details eines älteren Agenten bleiben bitgleich, ein Block ohne brauchbaren Zähler bleibt „nicht bewertet“ ohne Namen
+- 2026-11-12 T7: dieselben Grenzen wie auf dem Agenten (100 Paketnamen, 10 OOM-Prozesse, 5 Top-Prozesse je Liste), Namen über `cap_agent_text`; von Prozessen nur `pid` (ganze Zahl ab 1), `name` und `cpu_pct`/`rss` (Zahl ab 0) — jedes weitere Feld eines Eintrags fällt weg (Feld-Freigabe), ein kaputter Eintrag ebenso, ohne die Liste aufzufüllen

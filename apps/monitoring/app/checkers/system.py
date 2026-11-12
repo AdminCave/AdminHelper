@@ -12,7 +12,7 @@ report. The agent sends each field only when it could determine it.
 
 from __future__ import annotations
 
-from app.checkers.agent import agent_number, join_capped
+from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
 
 # The NTP client needs a while after boot until the kernel reports the clock as
 # synchronized; rating it earlier would turn every reboot into a short alert
@@ -35,6 +35,47 @@ def _count(value: object) -> int | None:
 def _on(config: dict, key: str) -> bool:
     """Only a real False switches a point off; anything else keeps the default."""
     return config.get(key, True) is not False
+
+
+# The agent names at most 100 packages per list and 10 OOM-killed processes (updates.go
+# maxPackageNames, system_linux.go maxOOMProcesses); the same caps here, so a broken or
+# hijacked agent cannot grow the stored details beyond them.
+_MAX_PACKAGE_NAMES = 100
+_MAX_OOM_PROCESSES = 10
+
+
+def _names(value: object) -> list[str] | None:
+    """A name list of the block (security_packages, reboot_packages): the non-empty strings
+    among the first _MAX_PACKAGE_NAMES, each cut by cap_agent_text; None for anything but a
+    list, or a list without one."""
+    if not isinstance(value, list):
+        return None
+    names = [name for entry in value[:_MAX_PACKAGE_NAMES] if (name := cap_agent_text(entry))]
+    return names or None
+
+
+def _oom_processes(value: object) -> list[dict] | None:
+    """oom_processes of the block: of the first _MAX_OOM_PROCESSES objects those with a pid
+    from 1 and a name, the name cut by cap_agent_text; None without one."""
+    processes = []
+    for entry in capped_objects(value)[:_MAX_OOM_PROCESSES]:
+        pid = _count(entry.get("pid"))
+        name = cap_agent_text(entry.get("name"))
+        if pid is not None and pid > 0 and name:
+            processes.append({"pid": pid, "name": name})
+    return processes or None
+
+
+def _named(block: dict) -> dict:
+    """The names behind the counts, for the details only: the message (and with it mail and
+    webhook) never carries them. A field only when the agent sent a usable one, so the details
+    of an older agent stay as they were."""
+    named = {
+        "security_packages": _names(block.get("security_packages")),
+        "reboot_packages": _names(block.get("reboot_packages")),
+        "oom_processes": _oom_processes(block.get("oom_processes")),
+    }
+    return {key: value for key, value in named.items() if value is not None}
 
 
 class SystemStateChecker:
@@ -106,6 +147,7 @@ class SystemStateChecker:
             "security_updates": updates,
             "oom_kills": ooms,
             "problems": problems,
+            **_named(block),
         }
         if problems:
             return "warning", join_capped(messages, "; "), {"_details": details}
