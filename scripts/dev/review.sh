@@ -407,6 +407,11 @@ def addr(m):
             core = re.sub(r":\d+$", "", core)   # 10.0.0.1:22
         try:
             ip = ipaddress.ip_address(core.split("%")[0])
+            # `::c` in `pty::tests::closing_` parses as IPv6. An address never
+            # touches a word character, so a path like that stays (R-1325).
+            s, a, e = m.string, m.start() + start, m.end()
+            if ip.version == 6 and ((a > 0 and re.match(r"\w", s[a - 1])) or re.match(r"\w", s[e:e + 1])):
+                return text
             return text if ip.is_loopback else text[:start] + "<addr>"
         except ValueError:
             pass

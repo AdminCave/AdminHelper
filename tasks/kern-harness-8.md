@@ -5,8 +5,10 @@ Heavy: none — nur Harness-Skripte und ihre hermetischen Tests; kein Stack-, Ga
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1325: IPv6-Filter lässt a::b-Pfade stehen  [ ]
+### T1 — R-1325: IPv6-Filter lässt a::b-Pfade stehen  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b92ef2be4 2026-11-12T14:28:13+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer branch kern-terminal-6 2026-11-11 (`pty::tests::closing_` → `pty::tests<addr>losing_`)
 Änderung: `addr()` (`review.sh:401`) lässt eine geparste IPv6-Adresse stehen, wenn direkt davor oder dahinter ein
 Wortzeichen steht; die Fixture in `review_scripts_test.sh:910` bekommt `pty::tests::closing_` und `std::fs::read`,

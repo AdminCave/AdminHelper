@@ -908,7 +908,7 @@ Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-
 Review: approve (opus)
 ### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
 Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**, pve.home.arpa, nas.fritz.box, net 192.168.1.x and 10.0.0.*, VM-ID 3013, Template 3904 und 3905, net 172.16.x.x.
-Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902
+Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902 in pty::tests::closing_ and std::fs::read
 ### T7 — die siebte Aufgabe
 ### Ergebnis des Laufs
 Evidenz: run.sh[quick] scripts: 99 passed, 0 failed, 0 skipped
@@ -933,6 +933,8 @@ grep -q '^### Übersprungen' <<<"$OUT" && grep -q 'T4 — die vierte Aufgabe.*sc
   || bad "leak: $OUT"
 grep -qF '.claude/settings.local.json on 127.0.0.1' <<<"$OUT" \
   && ok "a file name with .local and the loopback address stay" || bad "over-scrub: $OUT"
+grep -qF 'in pty::tests::closing_ and std::fs::read' <<<"$OUT" \
+  && ok "a path like a::b is no IPv6 address (R-1325)" || bad "over-scrub a::b: $OUT"
 t6="$(sed -n '/T6 — /,/^- /p' <<<"$OUT")"
 grep -q '9 passed' <<<"$t6" && ! grep -q '99 passed' <<<"$OUT" && ! grep -q '9 passed' <<<"$(sed -n '/T5 — /,/T6 — /p' <<<"$OUT" | sed '$d')" \
   && ok "every ### heading ends a task: a note after the box is read, a section's lines belong to none" || bad "sections: $OUT"
