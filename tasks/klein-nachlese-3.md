@@ -28,10 +28,12 @@ Beweis: reviewer arch-monitoring-ui-2 2026-11-12 (T10) · feature/arch-monitorin
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecDocker.test.ts
 Doku: keine (Beschriftung, Test)
 
-### T3 — R-1390, R-1380: Agent-Arrays zählen Nicht-Objekte mit, Kommentar und Testliteral  [ ]
+### T3 — R-1390, R-1380: Agent-Arrays zählen Nicht-Objekte mit, Kommentar und Testliteral  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_plugin_checkers.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c4f662c85 2026-11-12T16:36:09+01:00
+Review: approve (.ah-out/review/klein-nachlese-3/T3.verdict.json)
 Beweis: reviewer arch-monitoring-ui-2 2026-11-12 (T8) plugins.py:80/248; agent.py:474 (Branch-Prüfung); arch-monitoring-module-2 test_check_engine.py:853-855 (T16)
-Änderung: `capped_objects` schneidet vor dem Filter auf Objekte (Nicht-Objekte belegen Platz in der Grenze wie bei den Ports); Test in der passenden Plugin-Testdatei (die Datei vorher greppen, `test_plugins.py` ersetzen, falls die Tests anders heißen). Kommentar `agent.py:474` sagt nur noch, was jetzt gilt (gleiche Grenze `_MAX_TOP_PROCESSES`, nicht „der Agent benennt höchstens fünf“). In `test_check_engine.py` stehen U+FFFD und die Escapes als Literalzeichen bzw. `�` konsistent mit dem Rest der Datei.
+Änderung: `capped_objects(value, limit)` schneidet vor dem Filter auf Objekte; die Teilgrenzen für Backup-Jobs und vdev-Fehler (`plugins.py:80/248`) rufen es mit `limit` auf, statt nach dem Filter zu schneiden, damit Nicht-Objekte dort Platz belegen wie die Ports (Test in `test_plugin_checkers.py`, rot vor dem Fix). Kommentar `agent.py:474` greift R-1389 nicht mehr vor. In `test_check_engine.py` stehen U+FFFD als `\ufffd`-Escape statt als Literalzeichen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_plugin_checkers.py
 Doku: keine (interne Grenze, Kommentar, Test)
 
