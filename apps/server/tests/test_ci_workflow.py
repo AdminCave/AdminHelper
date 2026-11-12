@@ -2,14 +2,17 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Which events run which jobs of ci.yml (R-1339, R-1342).
+"""Which events run which jobs of ci.yml (R-1339, R-1340, R-1342).
 
 The from-outside stack runs on pull requests as on main: no job of ci.yml skips itself by the
 event that started the run. A merge queue starts the workflow with merge_group: its run, like a
 push to main, is never cancelled or pushed out, and the public repo guard reads the commits the
-group brings on top of main.
+group brings on top of main. Which suites a pull request runs, the job changes decides from its
+paths (test_ci_changes.py); here the expressions that read its outputs.
 """
 
+import json
+import re
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -45,17 +48,36 @@ def test_a_merge_queue_starts_the_workflow():
     assert _triggers()["merge_group"] == {"types": ["checks_requested"]}
 
 
-def _evaluate(value: str, **github: str):
-    """Evaluates an expression of the concurrency block: ==, &&, || and format().
+def _namespace(value):
+    if isinstance(value, dict):
+        return SimpleNamespace(**{k.replace("-", "_"): _namespace(v) for k, v in value.items()})
+    return value
 
-    && and || return one of their operands, as Python's and and or do.
+
+def _evaluate(value: str, cancelled: bool = False, **context):
+    """Evaluates an expression of ci.yml: ==, !=, &&, ||, !cancelled(), contains, fromJSON, format.
+
+    && and || return one of their operands, as Python's and and or do. A hyphen inside a name
+    (needs.changes.outputs.server-legs) becomes an underscore, outside the quoted strings.
     """
     assert value.startswith("${{ ") and value.endswith(" }}"), value
     expression = value[4:-3]
-    assert "!" not in expression.replace("!=", ""), expression
-    python = expression.replace("&&", " and ").replace("||", " or ")
-    names = {"github": SimpleNamespace(**github), "format": lambda text, *args: text.format(*args)}
-    return eval(python, {"__builtins__": {}}, names)
+    # Python's not binds looser than a comparison, the expressions' ! tighter: only in front of
+    # cancelled(), followed by &&, do both read the same.
+    assert "!" not in expression.replace("!=", "").replace("!cancelled() &&", ""), expression
+    parts = re.split(r"('[^']*')", expression)
+    for i in range(0, len(parts), 2):
+        part = parts[i].replace("&&", " and ").replace("||", " or ")
+        part = part.replace("!cancelled()", "not cancelled()")
+        parts[i] = re.sub(r"(?<=\w)-(?=[A-Za-z_])", "_", part)
+    names = {name: _namespace(item) for name, item in context.items()}
+    names |= {
+        "cancelled": lambda: cancelled,
+        "contains": lambda search, item: item in search,
+        "fromJSON": json.loads,
+        "format": lambda text, *args: text.format(*args),
+    }
+    return eval("".join(parts), {"__builtins__": {}}, names)
 
 
 _SHA = "c0ffee" * 6 + "c0ff"
@@ -75,8 +97,49 @@ def test_only_a_pull_request_cancels_and_a_merge_group_has_a_group_of_its_own(
 ):
     concurrency = _workflow()["concurrency"]
     github = {"event_name": event, "ref": ref, "sha": _SHA}
-    assert _evaluate(concurrency["group"], **github) == group
-    assert _evaluate(concurrency["cancel-in-progress"], **github) is cancels
+    assert _evaluate(concurrency["group"], github=github) == group
+    assert _evaluate(concurrency["cancel-in-progress"], github=github) is cancels
+
+
+def _needs(**outputs: str) -> dict:
+    return {"changes": {"outputs": {name.replace("_", "-"): v for name, v in outputs.items()}}}
+
+
+@pytest.mark.parametrize(
+    ("legs", "run"),
+    [
+        ('["3.14"]', ["3.14"]),
+        ('["3.14","3.15"]', ["3.14", "3.15"]),
+        # The job changes failed and left its outputs empty: both legs, as before R-1340.
+        ("", ["3.14", "3.15"]),
+    ],
+)
+def test_the_server_matrix_runs_the_legs_the_changes_name(legs, run):
+    matrix = _workflow()["jobs"]["server"]["strategy"]["matrix"]["python-version"]
+    assert _evaluate(matrix, needs=_needs(server_legs=legs)) == run
+
+
+@pytest.mark.parametrize(
+    ("server", "legs", "want"),
+    [
+        ("true", '["3.14"]', {"3.14": True, "3.15": False}),
+        ("true", '["3.14","3.15"]', {"3.14": True, "3.15": True}),
+        ("false", '["3.14"]', {"3.14": False, "3.15": False}),
+        ("", "", {"3.14": True, "3.15": True}),
+    ],
+)
+def test_server_result_checks_a_leg_only_when_the_server_job_ran_it(server, legs, want):
+    result = _workflow()["jobs"]["server-result"]
+    needs = _needs(server=server, server_legs=legs)
+    for leg in result["strategy"]["matrix"]["python-version"]:
+        context = {"needs": needs, "matrix": {"python-version": leg}}
+        assert _evaluate(result["env"]["WANT"], **context) is want[leg], leg
+
+
+@pytest.mark.parametrize(("lock", "want"), [("true", True), ("false", False), ("", True)])
+def test_the_image_lock_gate_checks_its_shards_unless_the_changes_turned_them_off(lock, want):
+    gate = _workflow()["jobs"]["python-lock-server-result"]
+    assert _evaluate(gate["env"]["WANT"], needs=_needs(lock_server=lock)) is want
 
 
 def _git(repo: Path, *args: str) -> str:

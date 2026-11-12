@@ -33,17 +33,54 @@ env:
   FRP_SHA256_WINDOWS_AMD64: "5197c1b69564089cdc229fc1260a0e25db1e722b1b7db45fe1542c3c43edf9ae"
 
 jobs:
+  # Which suites a pull request needs, from the paths it changes (R-1340). A job the outputs
+  # turn off is skipped by its if:, and a skipped job reports success, as a required check
+  # too; a workflow skipped by paths would leave its required checks pending. Any other
+  # event, and a path outside the narrow areas of ci_changes.py, runs everything. If this
+  # job fails, its outputs are empty: every gated job runs (!= 'false') and the server
+  # matrix falls back to both legs.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      server: ${{ steps.changes.outputs.server }}
+      server-legs: ${{ steps.changes.outputs.server-legs }}
+      monitoring: ${{ steps.changes.outputs.monitoring }}
+      ca-issuer: ${{ steps.changes.outputs.ca-issuer }}
+      schemathesis: ${{ steps.changes.outputs.schemathesis }}
+      lock-server: ${{ steps.changes.outputs.lock-server }}
+      lock-monitoring: ${{ steps.changes.outputs.lock-monitoring }}
+      lock-ca-issuer: ${{ steps.changes.outputs.lock-ca-issuer }}
+      agent-windows: ${{ steps.changes.outputs.agent-windows }}
+      rust-windows: ${{ steps.changes.outputs.rust-windows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The base of the pull request has to exist locally.
+          fetch-depth: 0
+      - name: Map the changed paths to the suites
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          SHA: ${{ github.sha }}
+        run: python3 .github/scripts/ci_changes.py >> "$GITHUB_OUTPUT"
+
   # Each leg runs in shards, a part of the suite each (tests/conftest.py --shard, R-0950);
-  # PYTEST_SHARD names the count, which matches the shard list (test_ci_shards.py).
+  # PYTEST_SHARD names the count, which matches the shard list (test_ci_shards.py). On a pull
+  # request only the 3.14 leg runs (server-legs); server-result still reports both.
   server:
     name: Server (pytest, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/2)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.server != 'false' }}
     runs-on: ubuntu-26.04
     # The 3.14 leg pulls the base images and runs the image tests on top of the suite.
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.14", "3.15"]
+        python-version: ${{ fromJSON(needs.changes.outputs.server-legs || '["3.14","3.15"]') }}
         shard: [1, 2]
     services:
       postgres:
@@ -113,8 +150,8 @@ jobs:
         # -m "not schemathesis": the fuzz suite has its own budget and its own
         # run.sh step; collected here it would run a second time inside this job.
         # -rs names each skip in the log; the next step reads the skips from the JUnit XML.
-        # Each shard reports the coverage of its part only.
-        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json" --cov=app --cov-report=term --junitxml="$RUNNER_TEMP/pytest-server.xml"
+        # Each shard reports the coverage of its part only. --durations names the slowest tests.
+        run: pytest -q -rs -m "not schemathesis" --shard "$PYTEST_SHARD" --shard-manifest "$RUNNER_TEMP/shard-manifest.json" --cov=app --cov-report=term --durations=25 --junitxml="$RUNNER_TEMP/pytest-server.xml"
       # A test whose precondition is missing skips, and pytest stays green. This leg has them
       # all (Postgres, Redis, the base images), so a skip here is a test that no longer runs.
       # An xfail counts too: pytest writes it as <skipped type="pytest.xfail"> in the JUnit XML.
@@ -145,13 +182,23 @@ jobs:
           path: ${{ runner.temp }}/shard-manifest.json
           if-no-files-found: error
           retention-days: 1
+      # The run time of each test of the leg that runs them all: the source of
+      # tests/shard_weights.toml (R-1341).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && matrix.python-version == '3.14' }}
+        with:
+          name: junit-server-py${{ matrix.python-version }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/pytest-server.xml
+          if-no-files-found: warn
+          retention-days: 14
 
   # The required checks of the ruleset name a leg, not a shard: one job a leg, green only when
   # every shard is. needs on a matrix job has one result for all its legs, so a red shard of
-  # either Python turns both red.
+  # either Python turns both red. The matrix stays fixed, so both checks report in every run
+  # under their names; a leg the changes did not ask for (WANT false) ends green at once.
   server-result:
     name: Server (pytest, py${{ matrix.python-version }})
-    needs: server
+    needs: [changes, server]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -160,15 +207,23 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.14", "3.15"]
+    env:
+      WANT: ${{ needs.changes.outputs.server != 'false' && contains(fromJSON(needs.changes.outputs.server-legs || '["3.14","3.15"]'), matrix.python-version) }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.WANT != 'false'
         with:
           pattern: shard-manifest-server-py${{ matrix.python-version }}-*
           path: ${{ runner.temp }}/shard-manifests
+      # Only a literal false skips the checks: an empty or unset WANT checks as before.
       - name: Every shard passed
         env:
           RESULT: ${{ needs.server.result }}
         run: |
+          if [ "$WANT" = false ]; then
+            echo "::notice::the changed paths did not ask for this leg; it did not run"
+            exit 0
+          fi
           echo "server shards: $RESULT"
           test "$RESULT" = success
       # Each shard collects the whole suite and keeps its part. Had one of them collected
@@ -179,6 +234,9 @@ jobs:
           SHARDS: "2"
           MANIFESTS: ${{ runner.temp }}/shard-manifests
         run: |
+          if [ "$WANT" = false ]; then
+            exit 0
+          fi
           python3 - "$MANIFESTS" "$SHARDS" <<'PY'
           import json
           import sys
@@ -218,6 +276,8 @@ jobs:
 
   monitoring:
     name: Monitoring (pytest)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.monitoring != 'false' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
@@ -259,6 +319,8 @@ jobs:
 
   ca-issuer:
     name: CA-Issuer (pytest)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.ca-issuer != 'false' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
@@ -309,6 +371,8 @@ jobs:
   # test_lock_pins.py holds python-version in lockstep with each Dockerfile's FROM.
   python-lock-server:
     name: Server (pytest, image lock, shard ${{ matrix.shard }}/2)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.lock-server != 'false' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 25
     strategy:
@@ -370,22 +434,31 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The name python-lock-server had before its shards, one job green only when both are.
+  # The name python-lock-server had before its shards, one job green only when both are; green
+  # at once when the changes did not ask for the image lock (WANT false).
   python-lock-server-result:
     name: Server (pytest, image lock)
-    needs: python-lock-server
+    needs: [changes, python-lock-server]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    env:
+      WANT: ${{ needs.changes.outputs.lock-server != 'false' }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.WANT != 'false'
         with:
           pattern: shard-manifest-lock-*
           path: ${{ runner.temp }}/shard-manifests
+      # Only a literal false skips the checks: an empty or unset WANT checks as before.
       - name: Every shard passed
         env:
           RESULT: ${{ needs.python-lock-server.result }}
         run: |
+          if [ "$WANT" = false ]; then
+            echo "::notice::the changed paths did not ask for the image lock; it did not run"
+            exit 0
+          fi
           echo "image lock shards: $RESULT"
           test "$RESULT" = success
       # Each shard collects the whole suite and keeps its part. Had one of them collected
@@ -396,6 +469,9 @@ jobs:
           SHARDS: "2"
           MANIFESTS: ${{ runner.temp }}/shard-manifests
         run: |
+          if [ "$WANT" = false ]; then
+            exit 0
+          fi
           python3 - "$MANIFESTS" "$SHARDS" <<'PY'
           import json
           import sys
@@ -416,6 +492,8 @@ jobs:
 
   python-lock-monitoring:
     name: Monitoring (pytest, image lock)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.lock-monitoring != 'false' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     services:
@@ -455,6 +533,8 @@ jobs:
 
   python-lock-ca-issuer:
     name: CA-Issuer (pytest, image lock)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.lock-ca-issuer != 'false' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     # As in ca-issuer: Postgres only for the pg_engine tests, through AH_TEST_DB.
@@ -495,6 +575,8 @@ jobs:
 
   schemathesis:
     name: Schema fuzzing (server + monitoring + ca-issuer)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.schemathesis != 'false' }}
     runs-on: ubuntu-26.04
     # Its own job, not a step inside the three pytest ones: own budget, own
     # verdict, and a failure here says "a route answers something its schema does
@@ -594,6 +676,8 @@ jobs:
 
   agent-windows:
     name: Go Agent (test, Windows)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.agent-windows != 'false' }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -801,6 +885,8 @@ jobs:
   # full MSI build stays in release.yml.
   rust-windows:
     name: Desktop-Backend (cargo test, Windows)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust-windows != 'false' }}
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
