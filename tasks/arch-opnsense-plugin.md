@@ -148,8 +148,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/ DE+EN, DEVELOPMENT.md, changelog.d/arch-opnsense-plugin.md
 Task-Review: am Ende
 
-### T10 — Monitoring: Plan-Test einer neuen Box ohne die Marker des ausgelieferten Katalogs (R-1248)  [ ]
+### T10 — Monitoring: Plan-Test einer neuen Box ohne die Marker des ausgelieferten Katalogs (R-1248)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_agent_plan.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8c8802e78 2026-11-12T06:34:18+01:00
+Review: approve (.ah-out/review/arch-opnsense-plugin/T10.verdict.json)
 Änderung: Seit T5 trägt der ausgelieferte Katalog den ersten Marker (`opnsense.core`). `test_plan_of_a_new_server_is_empty_and_scans_at_once` erwartete aus dem echten Katalog `"markers": []` und ist seitdem rot; das `Verify:` von T5 fuhr nur `tests/test_catalog_opnsense.py`. Der Test nimmt einen leeren Katalog über `monkeypatch` wie `test_markers_come_from_the_whole_catalog_sorted`; die Gleichheit des ganzen Plans bleibt, die Marker aus dem Katalog prüft weiter der Nachbartest.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_plan.py
 Doku: keine (nur ein Test)
