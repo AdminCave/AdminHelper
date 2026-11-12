@@ -497,7 +497,7 @@ def _grade_load_shed(grader: _Grader, report: dict) -> None:
         minutes,
         _LOAD_SHED_WARN_MINUTES,
         math.inf,
-        f"Load shedding for {minutes} min",
+        f"Load shedding since {since:%Y-%m-%d %H:%M} UTC ({minutes} min)",
         " min",
         hysteresis=False,
     )

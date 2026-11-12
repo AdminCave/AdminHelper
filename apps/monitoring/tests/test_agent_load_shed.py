@@ -200,14 +200,16 @@ def test_agent_resources_warns_after_30_minutes_of_shedding(client_db, ago, stat
     client, factory = client_db
     _add_check(factory, "chk-res", "agent_resources", {"cpu_warn": 80, "cpu_crit": 95})
 
-    _post(client, _shed("docker", gate=_gate(ago)))
+    gate = _gate(ago)
+    _post(client, _shed("docker", gate=gate))
 
     rated, message = _state(factory, "chk-res")
     problems = _details(factory, "chk-res").get("problems", {})
     assert rated == status
     if status == "warning":
         minutes = int(ago.total_seconds() // 60)
-        assert message == f"Load shedding for {minutes} min (>=30 min)"
+        begin = f"{gate['since'][:10]} {gate['since'][11:16]}"
+        assert message == f"Load shedding since {begin} UTC ({minutes} min) (>=30 min)"
         assert problems == {"load_shed": "warning"}
     else:
         assert message == "CPU 10.0%"

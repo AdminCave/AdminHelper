@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module-3 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-module-3 · Review: am Ende
+Status: bereit · Branch: feature/arch-monitoring-module-3 · Review: am Ende
 Spec: docs/features/arch-monitoring-module-3.md (Roadmap R-1268)
 Heavy: linux-full — `apps/agent` (Last-Tor im Lauf des Agenten); der Sammellauf fährt agent-monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,8 +39,10 @@ Doku: docs/developer/agent.html DE+EN · docs/developer/monitoring.html DE+EN ·
 Task-Review: am Ende
 Abhängt von: T1, T2
 
-### T4 — Warnung nach Spec, Zustandsschema in der Doku (R-1268, Abschlussprüfung)  [ ]
+### T4 — Warnung nach Spec, Zustandsschema in der Doku (R-1268, Abschlussprüfung)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_load_shed.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @62bea97c1 2026-11-12T17:22:46+01:00
+Review: am Ende (Branch-Review)
 Änderung: Die 30-min-Warnung von `agent_resources` lautet wie in der Spec „Load shedding since <Zeit> UTC (<n> min)“ (Fund `wichtig` der Abschlussprüfung); Test und Doku DE+EN ziehen nach. Dazu die zwei Nits der Prüfung in `agent.html`: `cpu` im Report-Zustand trägt `iowait`, `load_shed` fehlt nur, solange das Tor ruht.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py tests/test_agent_resources_checker.py
 Doku: docs/developer/monitoring.html DE+EN · docs/admin/monitoring.html DE+EN · docs/developer/agent.html DE+EN
@@ -58,3 +60,4 @@ Abhängt von: T2, T3
 - 2026-11-12 T2: die Schonung mit Hinweis läuft wie eine Auswertung in einem SAVEPOINT mit eigenem Fehlerfang (R-0635); der Commit am Ende gilt auch, wenn nur Hinweise geschrieben wurden
 - 2026-11-12 T2: `test_agent_load_shed.py` schaltet die geteilte sqlite-Verbindung in den PEP-249-Modus (`autocommit = False`) — im Legacy-Modus committet das `RELEASE` des SAVEPOINTs selbst, ein fehlender Commit bliebe unsichtbar (Gegenprobe: ohne das Fixture blieb diese Mutation grün)
 - 2026-11-12 T2: `Verify:` um `test_check_engine_context.py` (Hinweis-Regel) und `test_agent_resources_checker.py` (Bewertung) erweitert
+- 2026-11-12 T4: die Warnung trägt den Wortlaut der Spec als Label; `_grade` hängt wie an jede Problem-Meldung die Grenze an („… UTC (42 min) (>=30 min)“) — eine Ausnahme nur für diese Meldung wäre eine zweite Regel im Grader; die Zeit ist das `since` des Agenten, minutengenau
