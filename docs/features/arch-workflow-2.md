@@ -105,6 +105,15 @@ Kein Datenmodell, keine API, keine Migration, kein Vertrag zwischen Server, Web,
 - **Rollback:** den PR revertieren. Teil `rest` fährt `server-pytest` dann wieder, und die Option in `run.sh` stört
   nicht.
 
+## Mitgenommen: R-1348
+
+Kevins Triage vom 2026-11-12 legt R-1348 in diesen Zug (Harness-Pfad auf Kevins Wort). Der Dauerauftrag im
+`/roadmap`-Skill (`.claude/skills/roadmap/SKILL.md`, Abschnitt „Dauerauftrag“) nennt unter den Bedingungen für einen
+gedeckten Fund SEC, `security`-Funde und Risikopfade, aber keinen Fund, dessen Sicherheitswirkung unklar ist.
+`/feature-build` §5 behandelt bei `fund` genau diesen Fall (etwa ein 500 mit Stacktrace) wie einen Sicherheitsfund.
+Die Bedingung bekommt diesen Fall dazu; ein solcher Fund bleibt damit `neu` für Kevins Triage. Ein Satz, kein
+Verhalten außerhalb des Skills.
+
 ## Doku-Impact
 
 - `DEVELOPMENT.md`: die `run.sh`-Flags und der Wochenlauf-Punkt `all`.

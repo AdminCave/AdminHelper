@@ -1,6 +1,6 @@
 # Harness: Sammellauf ohne Server-pytest auf der Box — Task-Ledger
-Status: erledigt · Branch: feature/arch-workflow-2 · Review: pro Task
-Spec: docs/features/arch-workflow-2.md (Roadmap R-1338)
+Status: aktiv · Branch: feature/arch-workflow-2 · Review: pro Task
+Spec: docs/features/arch-workflow-2.md (Roadmap R-1338, R-1348)
 Heavy: linux-full — ändert, was der Sammellauf auf der Box fährt; Gesamtbeweis ist der erste nächtliche Lauf nach dem Merge, vorher gezielt `--step schemathesis` und `--step sse_push` auf einer frisch geleasten Lane-Box (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
@@ -50,6 +50,15 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md
 Task-Review: am Ende
 Abhängt von: T1
+
+### T6 — R-1348: Dauerauftrag lässt einen Fund mit unklarer Sicherheitswirkung `neu`  [ ]
+Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md
+Änderung: Die Bedingung „kein SEC, kein Fund des `security`-Agenten, keine Datei aus `scripts/dev/review-risk.txt`“ im
+Abschnitt „Dauerauftrag“ bekommt den Fall eines Funds mit unklarer Sicherheitswirkung (etwa ein 500 mit Stacktrace),
+wie bei `fund` in `/feature-build` §5; ein solcher Fund ist nicht gedeckt und bleibt `neu`.
+Beweis: security arch-workflow-1 T8 2026-11-11 (nit) · Dedup-Key: ref:harness:roadmap:dauerauftrag-unclear-security
+Verify: bash scripts/dev/verify.sh scripts --strict -- harness_consistency_test
+Doku: .claude/skills/roadmap/SKILL.md (die Änderung ist selbst Harness-Doku)
 
 ## Entscheidungen
 - 2026-11-12: Vergleich frisch wiederholt (Spec, Problem): CI py3.14 3415 passed, 0 skipped; Box 3415 Tests, 54 skipped — die Bedingung der Zeile ist erfüllt.
