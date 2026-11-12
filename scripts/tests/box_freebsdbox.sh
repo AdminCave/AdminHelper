@@ -225,13 +225,16 @@ phase_pkg() {
       pgrep -f '^/usr/local/libexec/adminhelper/frpc -c ' >/dev/null \
         && ok "frpc runs after the rotation's SIGHUP" || bad "no frpc process after the rotation"
       # daemon -H reopens its -o file on SIGHUP: the supervisor (its -P pid) must hold the new
-      # log's inode, not the rotated one's. fstat's sixth column is INUM.
+      # log's inode, not the rotated one's. fstat's fifth and sixth columns are MOUNT and INUM;
+      # an inode number alone could belong to a file on another file system.
       pid="$(cat /var/run/adminhelper_frpc.pid 2>/dev/null)"
       inum="$(stat -f %i "$log")"
-      held="$(fstat -p "${pid:-0}" 2>/dev/null | awk -v i="$inum" 'NR > 1 && $6 == i' | wc -l | tr -d ' ')"
+      mnt="$(df -P "$log" | awk 'NR == 2 { print $NF }')"
+      held="$(fstat -p "${pid:-0}" 2>/dev/null \
+        | awk -v i="$inum" -v m="$mnt" 'NR > 1 && $5 == m && $6 == i' | wc -l | tr -d ' ')"
       [ -n "$pid" ] && [ "$held" -ge 1 ] \
-        && ok "daemon(8) pid $pid reopened $log (inode $inum)" \
-        || bad "daemon(8) pid ${pid:-?} does not hold $log (inode $inum) after the rotation"
+        && ok "daemon(8) pid $pid reopened $log (inode $inum on $mnt)" \
+        || bad "daemon(8) pid ${pid:-?} does not hold $log (inode $inum on $mnt) after the rotation"
     else
       bad "newsyslog -F did not rotate $log"; sed 's/^/      /' "$WORK/newsyslog.log"
     fi

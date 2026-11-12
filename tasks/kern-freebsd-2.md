@@ -18,8 +18,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (internes Verhalten unverändert)
 
-### T2 — R-1331: Rotationsprüfung der FreeBSD-Box vergleicht MOUNT und INUM  [ ]
+### T2 — R-1331: Rotationsprüfung der FreeBSD-Box vergleicht MOUNT und INUM  [x]
 Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e779822d7 2026-11-12T14:02:23+01:00
+Review: am Ende (Branch-Review)
 Änderung: `box_freebsdbox.sh:231` zählt nur fstat-Zeilen, deren MOUNT (Spalte 5) der Mountpunkt der Logdatei (`df -P`) und deren INUM (Spalte 6) ihre Inode ist; Harness-Pfad auf Kevins Wort (Notiz R-1331). Beweis ist der FreeBSD-Box-Lauf aus `Heavy:`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
