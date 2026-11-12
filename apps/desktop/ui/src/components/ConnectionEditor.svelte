@@ -64,6 +64,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Servers exist only behind a server session, and only an admin may list them (GET /api/servers)
   // or save a connection; anyone else would get a 403 on every opening.
   const assignServer = $derived($settings?.mode === 'server' && $session?.isAdmin === true);
+  // A server connection shows the server's name field; until its server is in the list, the free
+  // field would hold the display name and a rename would stack onto it (R-1358).
+  const nameLocked = $derived(assignServer && !!form.serverId && !editServer);
   const tabs = $derived(
     form.kind === 'web'
       ? []
@@ -275,6 +278,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 name="name"
                 bind:value={form.name}
                 placeholder={$t('editor.field.name.placeholder')}
+                disabled={nameLocked}
                 required
               />
             </label>
