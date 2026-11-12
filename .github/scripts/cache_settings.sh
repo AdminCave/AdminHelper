@@ -18,9 +18,12 @@
 # docker/build-push-action needs `no-cache: true` and no `cache-from`/`cache-to`.
 # A workflow given with --tag-uncached (docker.yml, R-1349) caches on main but not on a tag: the
 # rules of --uncached hold there, except that every docker/build-push-action step sets exactly
-# `no-cache: ${{ startsWith(github.ref, 'refs/tags/') }}` and a `cache-from`/`cache-to` starts
-# with `${{ !startsWith(github.ref, 'refs/tags/') && `.
-# A `with:` written as a flow mapping (`with: { … }`) is a violation everywhere: it is not read.
+# `no-cache: ${{ startsWith(github.ref, 'refs/tags/') }}` and a `cache-from`/`cache-to` is
+# `${{ !startsWith(github.ref, 'refs/tags/') && <value without ||> || '' }}`.
+# In both, docker/bake-action and a `docker build`, `docker buildx build` or `docker buildx bake`
+# in a run: step are violations: their cache settings are not read.
+# A `with:` written as a flow mapping (`with: { … }`, or `{` on the line below) is a violation
+# everywhere: it is not read.
 # A violation is printed as a GitHub error annotation with file and line; exit 1 then.
 set -euo pipefail
 
@@ -54,6 +57,7 @@ for i in "${!files[@]}"; do
     # A step runs from its `- ` line to the next non-blank line indented no deeper than that
     # dash. Comment lines never count as settings.
     out=$(awk -v file="$f" -v mode="${modes[$i]}" '
+        BEGIN { dockerbuild = "(^|[^[:alnum:]_./-])docker[ ]+(buildx[ ]+)?(build|bake)([ ;|&)]|$)" }
         function indent(s) { match(s, /^ */); return RLENGTH }
         function keyof(s) { if (!match(s, /^[ ]*[A-Za-z0-9_-]+:/)) return ""; s = substr(s, 1, RLENGTH - 1); sub(/^[ ]*/, "", s); return s }
         function check() {
@@ -83,6 +87,10 @@ for i in "${!files[@]}"; do
                     printf "::error file=%s,line=%d::build-push-action not switched off on tags (no-cache/cache-from/cache-to)\n", file, start
                 if (mode == 1 && bpa && (bcache || !nocache))
                     printf "::error file=%s,line=%d::build-push-action with cache-from/cache-to or without no-cache: true\n", file, start
+                if (bake)
+                    printf "::error file=%s,line=%d::docker/bake-action is not checked, build with build-push-action\n", file, start
+                if (runbuild)
+                    printf "::error file=%s,line=%d::docker build/bake in a run: step is not checked, build with build-push-action\n", file, start
             }
             if (pw && !hashed)
                 printf "::error file=%s,line=%d::ms-playwright cache whose key does not use hashFiles(\n", file, start
@@ -104,7 +112,7 @@ for i in "${!files[@]}"; do
                 rust = acache = nobin = bindir = binpath = pw = hashed = restore = 0
                 snode = sgo = spyjava = hascache = cachefalse = pmfalse = 0
                 suv = uvoff = sruby = bundler = bpa = bcache = nocache = flow = 0
-                notag = unguarded = 0
+                notag = unguarded = bake = runbuild = 0
                 blk = ""; wkey = ""; withind = 0
                 sub(/^[ ]*-[ ]+/, "", line)
             }
@@ -129,8 +137,14 @@ for i in "${!files[@]}"; do
                     if (u ~ /^astral-sh\/setup-uv@/) suv = 1
                     if (u ~ /^ruby\/setup-ruby@/) sruby = 1
                     if (u ~ /^docker\/build-push-action@/) bpa = 1
+                    if (u ~ /^docker\/bake-action(\/[^@]*)?@/) bake = 1
                 }
+                if (k == "run" && line ~ dockerbuild) runbuild = 1
+            } else if (ind > keyind && blk == "run") {
+                if (line ~ dockerbuild) runbuild = 1
             } else if (ind > keyind && blk == "with") {
+                # A flow mapping may also start on the line below `with:`.
+                if (!withind && line ~ /^[ ]*[{]/) flow = 1
                 if (!withind) withind = ind
                 if (ind == withind && line !~ /^[ ]*- /) {
                     wkey = keyof(line)
@@ -144,7 +158,8 @@ for i in "${!files[@]}"; do
                     if (wkey == "bundler-cache" && line !~ /^[ ]*bundler-cache:[ ]*["\047]?false["\047]?[ ]*$/) bundler = 1
                     if (wkey == "cache-from" || wkey == "cache-to") {
                         bcache = 1
-                        if (line !~ /^[ ]*cache-(from|to):[ ]*\$\{\{ !startsWith\(github\.ref, \047refs\/tags\/\047\) && /) unguarded = 1
+                        # A further || in the middle would give the tag a value of its own.
+                        if (line !~ /^[ ]*cache-(from|to):[ ]*\$\{\{ !startsWith\(github\.ref, \047refs\/tags\/\047\) && [^|]* \|\| \047\047 \}\}[ ]*$/) unguarded = 1
                     }
                     if (line ~ /^[ ]*no-cache:[ ]*\$\{\{ startsWith\(github\.ref, \047refs\/tags\/\047\) \}\}[ ]*$/) notag = 1
                     if (line ~ /^[ ]*no-cache:[ ]*["\047]?true["\047]?[ ]*$/) nocache = 1
