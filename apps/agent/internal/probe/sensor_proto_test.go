@@ -753,7 +753,7 @@ func TestRecognizeTellsWhatListens(t *testing.T) {
 		{"http without a status", answersHEAD("HTTP/1.1 OK\r\n\r\n"), "false http: status 0 false", head},
 		{"redis", answersHEAD("-NOAUTH Authentication required.\r\n"), "true redis false", head},
 		{"another answer", answersHEAD("unknown command\r\n"), "true unknown false", head},
-		{"a server that closes", func(*fakeConn) {}, "false closed false", "[]"},
+		{"a server that closes", func(*fakeConn) {}, "true unknown false", "[]"},
 		{"a silent server", func(c *fakeConn) { c.drain() }, "true unknown false", "[]"},
 		{
 			"smtps",
@@ -773,6 +773,30 @@ func TestRecognizeTellsWhatListens(t *testing.T) {
 				}
 			},
 			"true tls true", "[]",
+		},
+		{
+			// frps on its bind port: TLS only, and silent to anything but its own protocol.
+			"a server of TLS that closes",
+			func(c *fakeConn) { c.upgrade(pki.chain) },
+			"true tls true", "[]",
+		},
+		{
+			// frps on its vhost port: it closes a connection that sends no TLS in time (before the
+			// banner wait ends), and a TLS one without the name of a vhost.
+			"a server of TLS that wants SNI",
+			func(c *fakeConn) {
+				_ = c.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+				_ = tls.Server(c.conn, &tls.Config{
+					Certificates: []tls.Certificate{pki.chain},
+					GetConfigForClient: func(h *tls.ClientHelloInfo) (*tls.Config, error) {
+						if h.ServerName != "vhost.example.org" {
+							return nil, errors.New("no such vhost")
+						}
+						return nil, nil
+					},
+				}).Handshake()
+			},
+			"true unknown false", "[]",
 		},
 		{"https", nil, "true https true", ""},
 	} {
@@ -805,6 +829,20 @@ func TestRecognizeTellsWhatListens(t *testing.T) {
 			}
 		})
 	}
+	t.Run("a closed port", func(t *testing.T) {
+		t.Parallel()
+		ln, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := ln.Addr().(*net.TCPAddr).Port
+		_ = ln.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if res, err := recognize(ctx, direct(port)); err == nil {
+			t.Errorf("recognize on a closed port = %s, want an error", says(res.values()))
+		}
+	})
 	t.Run("the end of the probe", func(t *testing.T) {
 		t.Parallel()
 		srv := listen(t, func(c *fakeConn) { c.drain() })

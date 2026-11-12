@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Protokoll-Erkennung) und apps/monitoring (Kata
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1375: Schließen nach gelungenem Connect ist ok  [ ]
+### T1 — R-1375: Schließen nach gelungenem Connect ist ok  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_proto_test.go, apps/agent/internal/probe/discover.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @487620f55 2026-11-12T12:24:22+01:00
+Review: am Ende (Branch-Review)
 Änderung: `recognizeOn` wertet eine Gegenstelle, die nach dem Connect ohne erkennbares Protokoll schließt, als
 `unknown` mit `ok: true` (in TLS `tls`) statt `closed`; schließt sie schon vor `HEAD`, versucht `recognize` noch TLS.
 Connect-Fehler (refused, Timeout) bleiben ein Fehlschlag. Tests: Listener, der nach dem TLS-Handshake schließt
