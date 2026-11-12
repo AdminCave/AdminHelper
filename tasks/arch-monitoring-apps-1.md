@@ -98,8 +98,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_jit
 Doku: → T14
 Abhängt von: T2
 
-### T8 — R-1242: Module Mattermost und Rocket.Chat  [ ]
+### T8 — R-1242: Module Mattermost und Rocket.Chat  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/mattermost.py, apps/monitoring/app/catalog/modules/rocketchat.py, apps/monitoring/tests/test_catalog_mattermost.py, apps/monitoring/tests/test_catalog_rocketchat.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @16c828890 2026-11-12T15:19:35+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T8.verdict.json)
 Änderung: Mattermost `/api/v4/system/ping` ohne `get_server_status` (der tiefe Ping schreibt eine Testdatei);
 Rocket.Chat `/livez` bzw. der belegte Health-Pfad der Version; Docker und Unit.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_mattermost.py tests/test_catalog_rocketchat.py tests/test_catalog_apps.py tests/test_catalog.py
@@ -256,3 +258,19 @@ Doku: → T14
   `matrix-synapse.service` mit Unit-Check und `GET /health` auf 8008 per HTTP (generierte Konfig: `::1`,
   `127.0.0.1`). `/health` antwortet immer 200, prüft die Datenbank nicht. Worker (mehrere Container des Images in
   einem Projekt) binden keinen Container-Check; Föderation zentral, nicht im Agent.
+- 2026-11-12 (T8): Mattermost wie Synapse: die Images `mattermost/mattermost-enterprise-edition` und
+  `-team-edition` haben einen eigenen HEALTHCHECK (heute `mmctl system status --local`, in v9 `curl
+  /api/v4/system/ping`), daher nur der Container-Check; Paket und Tarball-Install `mattermost.service` mit Unit-Check
+  und `GET /api/v4/system/ping` auf 8065 (200 oder 500 bei überschrittenem `GoroutineHealthThreshold`, Standard aus).
+  Nie `get_server_status=true` (schreibt und löscht eine Zeile in der Datenbank, testet den Dateispeicher).
+  `mattermost/mattermost-preview` bleibt draußen (Testinstanz mit eingebauter Datenbank).
+- 2026-11-12 (T8): Rocket.Chat fragt `/livez` (seit 7.11.0) am Container und an der Unit, Port 3000; kein Image
+  (`registry.rocket.chat/rocketchat/rocket.chat`, `rocketchat/rocket.chat`, offizielles `rocket.chat`) hat einen
+  HEALTHCHECK. Units: Snap `snap.rocketchat-server.rocketchat-server.service` und `rocketchat.service` (manuelle
+  Installation, `rocketchatctl`). Bewertet werden die drei Felder `data.checks.{mongo,memory,eventLoop}.status`,
+  nicht der Statuscode: jedes `degraded` macht 503, aber nur Mongo ist ein Ausfall (critical); Heap über 85 % und
+  Event-Loop-Lag p99 über 70 ms sind Last (warning). Bis 8.0 misst der Heap-Test gegen den belegten Heap
+  (`heapUsed/heapTotal`) und schlägt auf gesunden Servern zwischen zwei GCs an, ab 8.1.0 gegen das Limit
+  (f12402e2d8, in 8.1.0 enthalten, in 8.0.0 nicht). Vor 7.11.0 gibt es `/livez` nicht; dort ist die Antwort kein
+  JSON-Objekt und die Probe schlägt fehl statt grün zu melden. `/health` (in allen Versionen, ab 7.11 immer 200)
+  prüft weniger, daher `/livez`.
