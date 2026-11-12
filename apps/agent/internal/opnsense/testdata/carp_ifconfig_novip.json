@@ -1,0 +1,4 @@
+{
+    "vtnet0": {"flags": ["up", "broadcast", "running"], "mtu": "1500"},
+    "lo0": {"flags": ["up", "loopback", "running"], "mtu": "16384"}
+}

@@ -16,6 +16,7 @@ import re
 import subprocess
 import time
 import urllib.parse
+from xml.etree import ElementTree
 
 import pytest
 import vm
@@ -562,8 +563,9 @@ def test_the_newest_build_of_a_template_wins():
 
 
 # ── doctor ───────────────────────────────────────────────────────────────────
-# The templates our own verbs build: T12's bake of linux-server and the import
-# of FreeBSD's image (R-1247 T8). Neither is in the recording.
+# The templates our own verbs build: T12's bake of linux-server, the import of
+# FreeBSD's image (R-1247 T8) and the OPNsense bake on top of it (R-1248 T7).
+# None of them is in the recording.
 BUILT_TEMPLATES = [
     {
         "vmid": 3900,
@@ -575,6 +577,11 @@ BUILT_TEMPLATES = [
         "name": "ah-tpl-base-freebsd-20261111",
         "tags": "ah-tpl-base-freebsd;built-20261111",
     },
+    {
+        "vmid": 3902,
+        "name": "ah-tpl-base-opnsense-20261112",
+        "tags": "ah-tpl-base-opnsense;built-20261112",
+    },
 ]
 
 
@@ -585,7 +592,7 @@ def green_doctor(http, resources=None, node=None):
     http.add("GET", "/storage/raid5/status", "storage_status")
     reply = resources if resources is not None else tagged_resources(BUILT_TEMPLATES)
     http.add("GET", "/cluster/resources", body=reply["body"], status=reply["status"])
-    for vmid in (3900, 3901, 9400, 9401, 9402):
+    for vmid in (3900, 3901, 3902, 9400, 9401, 9402):
         http.add("GET", "/qemu/%d/config" % vmid, "template_config")
     http.add("GET", "/nodes/<node>/status", node or "node_status")
     return http
@@ -641,7 +648,7 @@ def test_doctor_names_the_profiles_without_a_template(cfg, api, http, capsys):
     green_doctor(http, resources=tagged_resources())  # nothing baked or imported yet
     assert doctor(cfg, api, "--roles", "probe") == 74
     out = capsys.readouterr().out
-    assert "FAIL templates: no template tagged for base-freebsd, linux-server" in out
+    assert "FAIL templates: no template tagged for base-freebsd, base-opnsense, linux-server" in out
     assert "linux-full 20260910 (9402)" in out
     assert "base-ubuntu undated (9400)" in out  # the base images carry no build date
 
@@ -1758,6 +1765,19 @@ def test_run_executes_in_the_synced_checkout(cfg, api, reachable, shell):
     assert not shell.of("rsync")  # --sync was not asked for
 
 
+def test_run_wraps_the_command_in_the_shell_of_the_boxs_profile(cfg, api, http, shell, monkeypatch):
+    # OPNsense has no bash (profiles.json: base-opnsense "shell": "sh"); every
+    # other box keeps the bash of the test above.
+    monkeypatch.setenv("AH_LANE", "main")
+    tags = POOL_NOW[3000][0].replace("tpl-linux-full", "tpl-base-opnsense")
+    http.add("GET", "/qemu/3000/status/current", body=current_of(3000, tags=tags)["body"])
+    http.add("GET", "/cluster/resources", body=tagged_resources(tags={3000: tags})["body"])
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    assert verb("run", cfg, api, "3000", "--", "true") == 0
+    assert shell.of("ssh")[0]["argv"][-1] == "sh -lc 'cd ~/adminhelper && true'"
+
+
 def test_run_accepts_the_command_as_one_string(cfg, api, reachable, shell):
     # Both spellings have to mean the same thing: the guest's shell parses it.
     verb("run", cfg, api, "3000", "--", "bash scripts/tests/run.sh lint")
@@ -2669,13 +2689,20 @@ def test_ctrl_c_does_not_start_a_sweep(cfg, api, http, monkeypatch):
 
 
 # ── bake ─────────────────────────────────────────────────────────────────────
-def bakeable(http, template_vmid=9400, tag_put=None, lag=0, never_visible=False, final=None):
-    """Every call a successful `bake` makes, in the order it makes them."""
+def bakeable(
+    http, template_vmid=9400, tag_put=None, lag=0, never_visible=False, final=None, extra=()
+):
+    """Every call a successful `bake` makes, in the order it makes them.
+
+    `extra` are templates the recording does not have, in every listing: the
+    source of a bake that does not start from a base image.
+    """
     # The first listing picks the source and the free template VMID; every
     # later one has to know about the VM the bake just created.
-    http.add("GET", "/cluster/resources", body=tagged_resources()["body"], times=1)
+    http.add("GET", "/cluster/resources", body=tagged_resources(list(extra))["body"], times=1)
     baking = tagged_resources(
-        extra_templates=[
+        extra_templates=list(extra)
+        + [
             {
                 "vmid": 3900,
                 "name": "ah-tpl-linux-full-%s" % time.strftime("%Y%m%d"),
@@ -2713,11 +2740,12 @@ def bakeable(http, template_vmid=9400, tag_put=None, lag=0, never_visible=False,
         http.add(
             "GET",
             "/cluster/resources",
-            body=tagged_resources()["body"],
+            body=tagged_resources(list(extra))["body"],
             times=None if never_visible else lag,
         )
     done = tagged_resources(
-        extra_templates=[
+        extra_templates=list(extra)
+        + [
             {
                 "vmid": 3900,
                 "name": "ah-tpl-linux-full-%s" % time.strftime("%Y%m%d"),
@@ -2859,6 +2887,129 @@ def test_a_base_image_is_not_something_to_bake(keyed, api, http):
     assert "is a base image" in str(caught.value)
     assert "linux-full" in str(caught.value) and "linux-server" in str(caught.value)
     assert http.calls == []
+
+
+# ── bake: OPNsense (R-1248 T7) ───────────────────────────────────────────────
+def opnsense_bakeable(http):
+    """A base-opnsense bake: base-freebsd's guest user until the reboot, ours after it."""
+    data = fixture("clone_config")["body"]["data"]
+    # wait_for and the Target read the guest user before the reboot, wait_for
+    # again after it — by then ciuser has been switched.
+    http.add("GET", "/qemu/3900/config", body={"data": dict(data, ciuser="freebsd")}, times=2)
+    http.add("GET", "/qemu/3900/config", body={"data": dict(data, ciuser="adminhelper")})
+    day = time.strftime("%Y%m%d")
+    source = BUILT_TEMPLATES[1]  # base-freebsd, 3901
+    done = tagged_resources(
+        extra_templates=[
+            source,
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-base-opnsense-%s" % day,
+                "template": 1,
+                "status": "stopped",
+                "tags": "ah-tpl-base-opnsense;built-%s" % day,
+            },
+        ]
+    )
+    return bakeable(http, template_vmid=3901, extra=[source], final={"body": done["body"]})
+
+
+def test_an_opnsense_bake_starts_from_base_freebsd_with_its_user(
+    keyed, api, http, clock, shell, capsys
+):
+    opnsense_bakeable(http)
+    assert verb("bake", keyed, api, "--profile", "base-opnsense") == 0
+    assert [c for c in http.calls if "/clone" in c.path][0].path.endswith("/qemu/3901/clone")
+    lease = next(c for c in http.calls if c.method == "PUT").body
+    # config.xml brings `adminhelper`; nuageinit creating one of its own on the
+    # first boot would be a second account of that name before the firewall's.
+    assert "ciuser" not in lease
+    assert lease["ciupgrade"] == "0"  # the bootstrap deletes every package of the image
+    day = time.strftime("%Y%m%d")
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        "3900 ah-tpl-base-opnsense-%s ah-tpl-base-opnsense;built-%s" % (day, day)
+    )
+
+
+def test_an_opnsense_bake_reboots_into_our_user_before_it_checks_and_cleans(
+    keyed, api, http, clock, shell
+):
+    opnsense_bakeable(http)
+    assert verb("bake", keyed, api, "--profile", "base-opnsense") == 0
+    ssh = shell.of("ssh")
+    # probe, first boot, bootstrap; after the reboot probe, check, clean
+    assert [r["argv"][-2].split("@")[0] for r in ssh] == ["freebsd"] * 3 + ["adminhelper"] * 3
+    commands = [r["argv"][-1] for r in ssh]
+    assert commands[1] == "while [ -e /firstboot ]; do sleep 5; done"
+    assert commands[2].startswith("cd ~/adminhelper && sudo -n env AH_OPNSENSE_KEY=")
+    assert commands[2].endswith(" sh scripts/vm/opnsense/bootstrap.sh 26.7")
+    assert "opnsense-version -a" in commands[4]
+    assert "pw userdel -n freebsd -r" in commands[5]  # base-freebsd's user and its checkout
+    # and its sudo rule: no nuageinit on the firewall rewrites it for a lease
+    assert "/usr/local/etc/sudoers.d/90-nuageinit-users" in commands[5]
+    assert not any("bash" in c for c in commands)  # the firewall has none
+    assert [r["timeout"] for r in ssh[1:3]] == [vm.CLOUD_INIT_LIMIT, vm.BOOTSTRAP_LIMIT]
+    assert [r["timeout"] for r in ssh[4:]] == [120, vm.CLEAN_LIMIT]
+    runs = [r["argv"][0] for r in shell.runs]
+    assert runs.index("rsync") == 2  # after the first boot, before the bootstrap
+
+    def at(method, suffix):
+        return [
+            i for i, c in enumerate(http.calls) if c.method == method and c.path.endswith(suffix)
+        ]
+
+    starts, stops = at("POST", "/status/start"), at("POST", "/status/shutdown")
+    switch = next(
+        i
+        for i, c in enumerate(http.calls)
+        if c.method == "PUT" and (c.body or {}).get("ciuser") == "adminhelper"
+    )
+    # Our user only once the first boot is over and the bootstrap has run, and
+    # before the boot that reads it — every lease's guest_user comes from here.
+    assert starts[0] < stops[0] < switch < starts[1] < stops[1]
+    assert http.calls[stops[0]].body == {"forceStop": "1", "timeout": "240"}
+
+
+@pytest.mark.parametrize("failing", [1, 2, 4, 5])  # first boot, bootstrap, check, clean
+def test_a_failed_opnsense_step_takes_the_half_baked_vm_with_it(
+    keyed, api, http, clock, shell, failing
+):
+    opnsense_bakeable(http)
+    bake_cleanup(http)
+    shell.ssh_codes = [0] * failing + [1]
+    with pytest.raises(vm.Infra) as caught:
+        verb("bake", keyed, api, "--profile", "base-opnsense")
+    assert "VM 3900 was removed again" in str(caught.value)
+    assert [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_the_opnsense_bootstrap_runs_a_pinned_script():
+    # It runs as root in every bake: a commit and its hash, never a branch.
+    with open(os.path.join(vm.ROOT, "scripts/vm/opnsense/bootstrap.sh")) as fh:
+        script = fh.read()
+    assert re.search(r"^BOOTSTRAP_COMMIT=[0-9a-f]{40}$", script, re.M)
+    assert re.search(r"^BOOTSTRAP_SHA256=[0-9a-f]{64}$", script, re.M)
+    assert "/opnsense/update/${BOOTSTRAP_COMMIT}/" in script
+    assert '[ "$(sha256 -q "$work/opnsense-bootstrap.sh")" = "$BOOTSTRAP_SHA256" ]' in script
+    # vm.py finds the box's address through the guest agent
+    assert "pkg install -y os-qemu-guest-agent" in script
+
+
+def test_the_opnsense_config_carries_placeholders_and_one_interface():
+    with open(os.path.join(vm.ROOT, "scripts/vm/opnsense/config.xml.in")) as fh:
+        root = ElementTree.fromstring(fh.read())
+    users = {u.findtext("name"): u for u in root.iter("user")}
+    # No hash and no key in the tree: bootstrap.sh fills in random passwords
+    # and the pool's key on the box.
+    assert users["root"].findtext("password") == "@ROOT_HASH@"
+    assert users["adminhelper"].findtext("password") == "@USER_HASH@"
+    assert users["adminhelper"].findtext("authorizedkeys") == "@AUTHORIZED_KEYS@"
+    assert root.findtext("system/sudo_allow_wheel") == "2"  # wheel without a password
+    # A configured interface the VM does not have stops the boot at the
+    # console's interface assignment; the template has one NIC.
+    assert [i.tag for i in root.find("interfaces")] == ["wan"]
+    assert root.findtext("interfaces/wan/if") == "vtnet0"
+    assert root.find("trigger_initial_wizard") is None
 
 
 def test_an_unknown_profile_is_refused_before_anything_is_cloned(keyed, api, http):

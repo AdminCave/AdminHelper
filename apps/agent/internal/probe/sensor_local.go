@@ -97,7 +97,8 @@ func validLocalPath(path string) bool {
 		filepath.IsLocal(path[1:])
 }
 
-// unitSensor reads the state of a systemd unit (Linux) or a Windows service (measureUnit).
+// unitSensor reads the state of a systemd unit (Linux), an rc.d service (FreeBSD) or a Windows service
+// (measureUnit).
 func unitSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
 	t, err := targetOf(p, kindUnit)
 	if err != nil {

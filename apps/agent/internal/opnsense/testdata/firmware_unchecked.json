@@ -1,0 +1,12 @@
+{
+    "product_id": "opnsense",
+    "product_name": "OPNsense",
+    "product_series": "26.7",
+    "product_version": "26.7.1",
+    "product_latest": "",
+    "product_mirror": "https://MIRROR-MARKER.example.invalid/${ABI}/latest",
+    "product_repos": "OPNsense",
+    "product_log": 0,
+    "product_time": "",
+    "product_check": null
+}

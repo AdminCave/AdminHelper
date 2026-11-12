@@ -11,9 +11,9 @@ import (
 	"fmt"
 )
 
-// unitOwner is not supported: an rc.d service has no cgroup to tie its processes to.
-func unitOwner(context.Context, string) (func(pid int32) bool, error) {
-	return nil, fmt.Errorf("%w: a unit target on FreeBSD", ErrUnsupported)
+// unitOwner returns whether a process is one of the rc.d service name (rcOwner).
+func unitOwner(ctx context.Context, name string) (func(pid int32) bool, error) {
+	return rcOwner(ctx, name)
 }
 
 // containerEndpoint: the agent resolves no container networks on FreeBSD.

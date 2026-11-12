@@ -13,7 +13,7 @@ from datetime import timedelta
 import pytest
 
 from app import module_plan
-from app.catalog.loader import get_catalog, load_catalog
+from app.catalog.loader import load_catalog
 from app.core.auth import require_agent
 from app.core.time import utcnow_naive
 from app.models import MonitorAgentKey, MonitorCheck, MonitorDiscovery
@@ -104,12 +104,16 @@ def test_plan_carries_no_rules_and_defaults_for_what_the_config_leaves_out(clien
     ]
 
 
-def test_plan_of_a_new_server_is_empty_and_scans_at_once(client_db):
+def test_plan_of_a_new_server_is_empty_and_scans_at_once(client_db, monkeypatch):
     client, _ = client_db
+    # Without markers: the shipped modules bring their own, and which they are is
+    # test_markers_come_from_the_whole_catalog_sorted's business, not this one's.
+    catalog = load_catalog([])
+    monkeypatch.setattr(module_plan, "get_catalog", lambda: catalog)
 
     assert _plan(client) == {
         "plan_version": 1,
-        "catalog_version": get_catalog().version,
+        "catalog_version": catalog.version,
         "scan": True,
         "discovery": {"markers": []},
         "probes": [],
