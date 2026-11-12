@@ -338,3 +338,62 @@ func replaceFile(t *testing.T, path string, data []byte, mtime time.Time) {
 		t.Fatal(err)
 	}
 }
+
+func TestDecideLogin(t *testing.T) {
+	p := parsedFixture(t)
+	cases := []struct {
+		name  string
+		login Login
+		want  string
+	}{
+		{"a host with its key", Login{User: serverA, Metas: map[string]string{KeyMeta: keyA, "owner": "ops"}}, ""},
+		{"another host with its key", Login{User: serverB, Metas: map[string]string{KeyMeta: keyB}}, ""},
+		{"a host with another host's key", Login{User: serverA, Metas: map[string]string{KeyMeta: keyB}}, "wrong key"},
+		{"a host without a key", Login{User: serverA}, "no key"},
+		{"an empty key", Login{User: serverA, Metas: map[string]string{KeyMeta: ""}}, "no key"},
+		{"a visitor's user, no host", Login{User: "ops-admin"}, ""},
+		{"no user", Login{Metas: map[string]string{KeyMeta: keyA}}, "no user"},
+	}
+	for _, c := range cases {
+		if got := p.DecideLogin(&c.login); got != c.want {
+			t.Errorf("%s: DecideLogin = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestBoundRunID(t *testing.T) {
+	fresh, err := BoundRunID(serverA, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(fresh, runIDPrefix(serverA)) || len(fresh) != 49 || len(fresh) > 64 {
+		t.Fatalf("BoundRunID(A, \"\") = %q, want 49 bytes under A's prefix", fresh)
+	}
+	if again, _ := BoundRunID(serverA, ""); again == fresh {
+		t.Errorf("two fresh run IDs are the same: %q", fresh)
+	}
+	if kept, _ := BoundRunID(serverA, fresh); kept != fresh {
+		t.Errorf("BoundRunID(A, own) = %q, want %q kept", kept, fresh)
+	}
+	ofB, _ := BoundRunID(serverB, "")
+	upper := runIDPrefix(serverA) + strings.ToUpper(fresh[len(runIDPrefix(serverA)):])
+	for name, runID := range map[string]string{
+		"another user's run ID":   ofB,
+		"frps' own form":          "0123456789abcdef",
+		"the prefix alone":        runIDPrefix(serverA),
+		"a longer rest":           fresh + "0",
+		"uppercase hex":           upper,
+		"the user's name as text": serverA + "-0123456789abcdef0123456789abcdef",
+	} {
+		got, err := BoundRunID(serverA, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == runID || !strings.HasPrefix(got, runIDPrefix(serverA)) || len(got) != 49 {
+			t.Errorf("%s: BoundRunID(A, %q) = %q, want a fresh one under A's prefix", name, runID, got)
+		}
+	}
+	if runIDPrefix(serverA) == runIDPrefix(serverB) {
+		t.Error("two users share a run ID prefix")
+	}
+}

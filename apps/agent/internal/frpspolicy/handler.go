@@ -16,14 +16,17 @@ import (
 	"time"
 )
 
-// MaxBody bounds a request body; a NewProxy content is a few hundred bytes.
+// MaxBody bounds a request body; a NewProxy or Login content is a few hundred bytes.
 const MaxBody = 64 << 10
 
 // HealthPath answers GET with 200 while the plugin serves.
 const HealthPath = "/healthz"
 
-// rejectReason is all frpc learns about a refused proxy.
-const rejectReason = "proxy not allowed by the server's tunnel policy"
+// rejectReason and loginRejectReason are all frpc learns about a refused proxy or login.
+const (
+	rejectReason      = "proxy not allowed by the server's tunnel policy"
+	loginRejectReason = "login not allowed by the server's tunnel policy"
+)
 
 // Timeouts of the plugin's HTTP server. frps calls the plugin without a timeout of its
 // own and waits for it in the read loop of the client's connection (frp v0.72.0), so the
@@ -52,9 +55,9 @@ type response struct {
 	Content      map[string]any `json:"content,omitempty"`
 }
 
-// NewHandler serves frps' plugin requests for NewProxy at path and GET HealthPath.
-// A refusal leaves the content unchanged; an admitted proxy comes back whole without the
-// host's key (WithoutKey).
+// NewHandler serves frps' plugin requests for NewProxy and Login at path and GET HealthPath.
+// A refusal leaves the content unchanged; an admitted proxy or login comes back whole without
+// the host's key (WithoutKey), a login with its run ID bound to its user (BoundRunID).
 func NewHandler(src *Source, path string, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(HealthPath, func(w http.ResponseWriter, r *http.Request) {
@@ -71,8 +74,9 @@ func NewHandler(src *Source, path string, log *slog.Logger) http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if op := r.URL.Query().Get("op"); op != "NewProxy" {
-			http.Error(w, "only the op NewProxy", http.StatusBadRequest)
+		op := r.URL.Query().Get("op")
+		if op != "NewProxy" && op != "Login" {
+			http.Error(w, "only the ops NewProxy and Login", http.StatusBadRequest)
 			return
 		}
 		var req request
@@ -82,42 +86,69 @@ func NewHandler(src *Source, path string, log *slog.Logger) http.Handler {
 				http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
 				return
 			}
-			http.Error(w, "no NewProxy request", http.StatusBadRequest)
+			http.Error(w, "no plugin request", http.StatusBadRequest)
 			return
 		}
-		if req.Op != "NewProxy" {
-			http.Error(w, "only the op NewProxy", http.StatusBadRequest)
+		if req.Op != op {
+			http.Error(w, "the op of the body differs from the query", http.StatusBadRequest)
 			return
 		}
 		// The content twice: the fields the decision reads, and all of it with its numbers
-		// exact for the answer, since frps decodes the answer into a fresh NewProxy.
-		np := &NewProxy{}
+		// exact for the answer, since frps decodes the answer into a fresh content.
 		var content map[string]any
 		dec := json.NewDecoder(bytes.NewReader(req.Content))
 		dec.UseNumber()
-		if json.Unmarshal(req.Content, np) != nil || dec.Decode(&content) != nil || content == nil {
-			http.Error(w, "no NewProxy request", http.StatusBadRequest)
+		if dec.Decode(&content) != nil || content == nil {
+			http.Error(w, "no plugin request", http.StatusBadRequest)
+			return
+		}
+		var np NewProxy
+		var login Login
+		fields := any(&np)
+		if op == "Login" {
+			fields = &login
+		}
+		if json.Unmarshal(req.Content, fields) != nil {
+			http.Error(w, "no plugin request", http.StatusBadRequest)
 			return
 		}
 		reason := "no policy"
 		policy, err := src.Current()
 		if err != nil {
-			log.Error("policy unavailable, refusing every proxy", "err", err)
+			log.Error("policy unavailable, refusing everything", "err", err)
+		} else if op == "Login" {
+			reason = policy.DecideLogin(&login)
 		} else {
-			reason = policy.Decide(np)
+			reason = policy.Decide(&np)
+		}
+		refused := response{Reject: true, RejectReason: rejectReason, Unchange: true}
+		if op == "Login" {
+			refused.RejectReason = loginRejectReason
+		}
+		resp := refused
+		if reason == "" {
+			resp = response{Content: WithoutKey(content)}
+		}
+		if op == "Login" && !resp.Reject {
+			runID, err := BoundRunID(login.User, login.RunID)
+			if err != nil {
+				log.Error("no run ID, refusing the login", "err", err)
+				resp = refused
+			} else {
+				resp.Content["run_id"] = runID
+			}
 		}
 		// Only the user and the proxy name: the request also carries the host's key, the
-		// stcp secret and a group key.
-		if reason == "" {
+		// stcp secret, a group key and the run ID of the client's control.
+		switch {
+		case op == "Login" && !resp.Reject:
+			log.Info("login admitted", "user", login.User)
+		case op == "Login":
+			log.Warn("login refused", "user", login.User, "reason", reason)
+		case !resp.Reject:
 			log.Info("proxy admitted", "user", np.User.User, "proxy", np.ProxyName)
-		} else {
+		default:
 			log.Warn("proxy refused", "user", np.User.User, "proxy", np.ProxyName, "reason", reason)
-		}
-		resp := response{Reject: reason != "", Unchange: true}
-		if resp.Reject {
-			resp.RejectReason = rejectReason
-		} else {
-			resp.Unchange, resp.Content = false, WithoutKey(content)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

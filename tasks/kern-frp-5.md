@@ -30,8 +30,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py t
 Doku: → T7
 Abhängt von: T2
 
-### T4 — R-1304: Agent nimmt den Login-Schlüssel an, Plugin kann Login prüfen  [ ]
+### T4 — R-1304: Agent nimmt den Login-Schlüssel an, Plugin kann Login prüfen  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/servertoml.go, apps/agent/internal/frpc/servertoml_test.go, apps/agent/internal/frpspolicy/policy.go, apps/agent/internal/frpspolicy/handler.go, apps/agent/internal/frpspolicy/policy_test.go, apps/agent/internal/frpspolicy/handler_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @25b025626 2026-11-12T09:53:51+01:00
+Review: approve (.ah-out/review/kern-frp-5/T4.verdict.json)
 Änderung: `serverRootKeys` nimmt `metadatas.ahProxyKey` an (nur dieser Schlüssel, Wert wie die übrigen). Das Plugin beantwortet die Op `Login`: ein User der Policy nur mit passendem Schlüssel in den Login-Metadaten, Bindung der Control-Verbindung an den User (Einzelheiten privat); frps registriert die Op in diesem Release nicht (Supervisor unverändert), der Server schreibt den Schlüssel noch nicht (Kevin 2026-11-12: zwei Releases).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/ ./internal/frpspolicy/
 Doku: → T7
@@ -64,3 +66,4 @@ Task-Review: am Ende
 - 2026-11-12 Benutzerliste als Menge verglichen: frpc gibt `allowUsers` in der Reihenfolge der Datei weiter, der Generator sortiert; die Menge hält den Vergleich unabhängig davon.
 - 2026-11-12 T1: `passive_deletes="all"` statt `True`: die Route lädt die Tunnel (selectin) mit, und bei `True` leert das ORM `frp_config_id` geladener Kinder trotzdem; erst `"all"` überlässt das Löschen der Kaskade der DB.
 - 2026-11-12 T3 in den Commit von T2: das Plugin liest ab T2 nur Version 2, der Server schrieb bis T3 Version 1; getrennt wäre der Stand dazwischen rot (Prüfer T2). Der Commit trägt beide Verify-Läufe, der Server-Lauf steht im Body.
+- 2026-11-12 T4: Logins von Usern außerhalb der Policy (Desktop-Visitor melden sich als AdminHelper-User an) lässt das Plugin ohne Schlüssel zu, gebunden an eine run_id unter ihrem eigenen Präfix; nur Hosts der Policy brauchen ihren Schlüssel, ein leerer User wird abgelehnt (Prüfer T4).

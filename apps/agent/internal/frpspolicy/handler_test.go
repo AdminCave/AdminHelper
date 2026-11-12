@@ -201,7 +201,8 @@ func TestHandlerRefusesOtherRequests(t *testing.T) {
 		want                       int
 	}{
 		{"GET to the plugin", http.MethodGet, pluginPath + "?op=NewProxy", "", http.StatusMethodNotAllowed},
-		{"another op in the query", http.MethodPost, pluginPath + "?op=Login", string(fixtureRequest(t)), http.StatusBadRequest},
+		{"another op in the query", http.MethodPost, pluginPath + "?op=Ping", string(fixtureRequest(t)), http.StatusBadRequest},
+		{"Login in the query, NewProxy in the body", http.MethodPost, pluginPath + "?op=Login", string(fixtureRequest(t)), http.StatusBadRequest},
 		{"no op in the query", http.MethodPost, pluginPath, string(fixtureRequest(t)), http.StatusBadRequest},
 		{"another op in the body", http.MethodPost, pluginPath + "?op=NewProxy", login, http.StatusBadRequest},
 		{"no JSON", http.MethodPost, pluginPath + "?op=NewProxy", "op=NewProxy", http.StatusBadRequest},
@@ -421,5 +422,124 @@ func TestServeReturnsTheListenersError(t *testing.T) {
 	h, _ := newTestHandler(t, nil)
 	if err := Serve(context.Background(), ln, h, DefaultTimeouts); err == nil {
 		t.Error("Serve on a closed listener = nil, want an error")
+	}
+}
+
+// loginRequest is frps' Login request (frp v0.72.0 pkg/plugin/server LoginContent) of user
+// with key in its metadatas and the run ID runID.
+func loginRequest(t *testing.T, user, key, runID string) []byte {
+	t.Helper()
+	content := map[string]any{
+		"version": "0.72.0", "hostname": "host-01", "os": "linux", "arch": "amd64",
+		"user": user, "privilege_key": "privilege-key-placeholder", "timestamp": json.Number("1762934400"),
+		"run_id": runID, "metas": map[string]any{KeyMeta: key, "owner": "ops"}, "pool_count": json.Number("1"),
+		"client_spec": map[string]any{}, "client_address": "192.0.2.10:51000",
+	}
+	data, err := json.Marshal(map[string]any{"version": "0.1.0", "op": "Login", "content": content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// loginAnswer posts a login and returns the answer and its content.
+func loginAnswer(t *testing.T, h http.Handler, body []byte) (map[string]any, map[string]any) {
+	t.Helper()
+	rec := do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=Login", body)
+	got := answer(t, rec)
+	content, _ := got["content"].(map[string]any)
+	if strings.Contains(rec.Body.String(), keyA) || strings.Contains(rec.Body.String(), keyB) {
+		t.Errorf("answer holds a host's key: %s", rec.Body)
+	}
+	return got, content
+}
+
+func TestHandlerAdmitsALoginBoundToItsUser(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	body := loginRequest(t, serverA, keyA, "")
+	got, content := loginAnswer(t, h, body)
+	if len(got) != 3 || got["reject"] != false || got["unchange"] != false {
+		t.Fatalf("answer = %v, want reject false, unchange false and the content", got)
+	}
+	runID, _ := content["run_id"].(string)
+	if !strings.HasPrefix(runID, runIDPrefix(serverA)) || len(runID) != 49 {
+		t.Fatalf("run_id = %q, want one under A's prefix", runID)
+	}
+	var want struct {
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(body, &want); err != nil {
+		t.Fatal(err)
+	}
+	delete(want.Content["metas"].(map[string]any), KeyMeta)
+	want.Content["run_id"] = runID
+	if !reflect.DeepEqual(content, want.Content) {
+		t.Errorf("content = %v, want the request's content without the key and with the run ID: %v", content, want.Content)
+	}
+
+	// frpc sends the run ID back on its next login: it stays. A run ID of another user or one
+	// frps made itself is replaced, so a login never names another host's control.
+	if _, again := loginAnswer(t, h, loginRequest(t, serverA, keyA, runID)); again["run_id"] != runID {
+		t.Errorf("own run ID: run_id = %v, want %q", again["run_id"], runID)
+	}
+	_, ofB := loginAnswer(t, h, loginRequest(t, serverB, keyB, ""))
+	for _, foreign := range []string{ofB["run_id"].(string), "0123456789abcdef"} {
+		_, c := loginAnswer(t, h, loginRequest(t, serverA, keyA, foreign))
+		if c["run_id"] == foreign || !strings.HasPrefix(c["run_id"].(string), runIDPrefix(serverA)) {
+			t.Errorf("run ID %q: run_id = %v, want a fresh one under A's prefix", foreign, c["run_id"])
+		}
+	}
+}
+
+// The desktop's STCP visitor logs in as an AdminHelper user, no host: admitted without a key,
+// with a run ID under its own prefix, so it cannot replace a host's control either.
+func TestHandlerAdmitsAVisitorLoginBoundToItsUser(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	_, ofA := loginAnswer(t, h, loginRequest(t, serverA, keyA, ""))
+	got, content := loginAnswer(t, h, loginRequest(t, "ops-admin", "", ofA["run_id"].(string)))
+	if got["reject"] != false {
+		t.Fatalf("answer = %v, want reject false", got)
+	}
+	runID, _ := content["run_id"].(string)
+	if !strings.HasPrefix(runID, runIDPrefix("ops-admin")) || runID == ofA["run_id"] {
+		t.Errorf("run_id = %q, want a fresh one under the visitor's prefix", runID)
+	}
+}
+
+func TestHandlerRefusesALoginWithoutTheHostsKey(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	for name, body := range map[string][]byte{
+		"another host's key": loginRequest(t, serverA, keyB, ""),
+		"no key":             loginRequest(t, serverA, "", ""),
+		"no user":            loginRequest(t, "", keyA, ""),
+	} {
+		got, _ := loginAnswer(t, h, body)
+		if len(got) != 3 || got["reject"] != true || got["reject_reason"] != loginRejectReason {
+			t.Errorf("%s: answer = %v, want reject true with the general reason", name, got)
+		}
+	}
+	h, _ = newTestHandler(t, nil)
+	if got, _ := loginAnswer(t, h, loginRequest(t, serverA, keyA, "")); got["reject"] != true {
+		t.Errorf("without a policy: answer = %v, want reject true", got)
+	}
+}
+
+func TestHandlerLogsTheLoginWithoutSecrets(t *testing.T) {
+	h, log := newTestHandler(t, fixturePolicy(t))
+	_, content := loginAnswer(t, h, loginRequest(t, serverA, keyA, ""))
+	loginAnswer(t, h, loginRequest(t, serverA, keyB, ""))
+	text := log.String()
+	for _, want := range []string{
+		`level=INFO msg="login admitted" user=` + serverA,
+		`level=WARN msg="login refused" user=` + serverA + ` reason="wrong key"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("log lacks %q:\n%s", want, text)
+		}
+	}
+	for _, secret := range []string{keyA, keyB, "privilege-key-placeholder", content["run_id"].(string)} {
+		if strings.Contains(text, secret) {
+			t.Errorf("log holds %q:\n%s", secret, text)
+		}
 	}
 }
