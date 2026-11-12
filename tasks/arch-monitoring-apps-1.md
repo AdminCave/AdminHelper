@@ -75,8 +75,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_vau
 Doku: → T14
 Abhängt von: T2
 
-### T6 — R-1242: Module Moodle und BigBlueButton (ohne Spezial-Collector)  [ ]
+### T6 — R-1242: Module Moodle und BigBlueButton (ohne Spezial-Collector)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/moodle.py, apps/monitoring/app/catalog/modules/bigbluebutton.py, apps/monitoring/tests/test_catalog_moodle.py, apps/monitoring/tests/test_catalog_bigbluebutton.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f301f150e 2026-11-12T14:44:49+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T6.verdict.json)
 Änderung: Moodle: Erkennung über Marker/Pakete bzw. Container, was ohne vHost und ohne exec geht (Container,
 Dateialter von moodledata, falls belegt); nie `/admin/cron.php`. BigBlueButton: Pakete/Units, `bbb-web`
 `/bigbluebutton/api` direkt an der Unit (Status 200), Zertifikat. `checks.php`, `getMeetings`, `*.fail`,
@@ -222,3 +224,16 @@ Doku: → T14
   eine eigene Instanz (die Meldung nennt den Dienst), `active_state` ungleich `active` kritisch. Kein
   Zertifikats-Check (nginx auf 443, 5001 oder eigenem Port: R-1387 `neu`), Backup-Alter nach R-1233 (Ordner frei
   wählbar, auch Fernziel).
+- 2026-11-12 (T6): Moodle nur aus Images, die Moodle vollständig fahren: `erseco/alpine-moodle` (Docker Hub,
+  ghcr.io; erbt den HEALTHCHECK `/fpm-ping` seines Basis-Images) und Bitnamis `bitnami/moodle` bzw.
+  `bitnamilegacy/moodle` (ohne HEALTHCHECK); nur der Container-Check. `moodlehq/moodle-php-apache` ist eine
+  Entwicklungs-Basis ohne Moodle und zählt nicht. Ein Moodle auf dem Host bleibt unerkannt (Verzeichnis und
+  dataroot stehen nur in `config.php`, kein Paket, kein fester Pfad); kein Dateialter in moodledata (die letzte
+  Cron-Ausführung steht in der Datenbank, nicht belegt als Datei); keine Login-Seite (Moodle leitet einen fremden
+  Host auf wwwroot um, `initialise_fullme()`). `checks.php` → T15.
+- 2026-11-12 (T6): BigBlueButton mit `bbb-web.service` als einziger Instanz (Unit-Check) und `GET
+  /bigbluebutton/api` auf bbb-webs eigenem Port 8090 per HTTP (`bbb-web.env` 3.0.40 und 4.0.2: 127.0.0.1:8090;
+  `ApiController.index` antwortet SUCCESS ohne Checksumme); geprüft wird nur `status_code`. Die übrigen Units
+  (graphql, webrtc-sfu, livekit, coturn …) bleiben bei Service Health aus linux-base: eine Unit-Instanz je Dienst
+  bände den API-Check an jede. Kein Zertifikat (nginx-vHost, Hostname unbekannt → R-1231); `getMeetings`,
+  `*.fail`, `bbb-conf --check` → T15.
