@@ -1,5 +1,5 @@
 # Monitoring: Probe-Ziele, Socket-Pfade, Docker-Erkennung, Meldetext, Testvorlage — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-22 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-22 · Review: pro Task
 Spec: docs/features/kern-monitoring-22.md (Roadmap R-1319, R-1320, R-1324, R-1321, R-1300, R-1365)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring (Meldetext); dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (Socket-Dial unter FreeBSD, T4)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -87,8 +87,10 @@ und `## Entscheidungen`. Tests in `test_vm.py`. Wirkt ab dem nächsten Bake.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Harness, Kommentar im Skript)
 
-### T9 — R-1321: Desktop-Text zu not_allowed passt zu jedem Grund  [ ]
+### T9 — R-1321: Desktop-Text zu not_allowed passt zu jedem Grund  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/monitoringText.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f087d92a7 2026-11-12T12:43:46+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T9.verdict.json)
 Beweis: apps/desktop/ui/src/lib/i18n/dictionaries.ts:760 und :2208 (`Target is no address of this host, the agent does not query it`), Abschlussprüfung 2026-11-12 · Dedup-Key: BUG:desktop-ui:i18n/dictionaries.ts:monitoring.probe.notAllowed
 Änderung: `monitoring.probe.notAllowed` DE „Der Agent hat das Ziel abgewiesen“, EN „The agent refused the target“
 (wie der Monitoring-Dienst seit T6); Test legt fest, dass der Text keine Adresse behauptet.
