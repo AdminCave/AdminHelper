@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-3 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-3.md (Roadmap R-1226)
 Heavy: linux-full — `apps/agent` (neue systemctl-/journalctl-Aufrufe), der Berichtspfad des Monitoring-Dienstes und eine neue Desktop-Journey; der Sammellauf fährt agent-monitoring, den Stack und die Desktop-Live-Specs. Der Windows-Teil (T2) läuft über die PR-CI-Jobs `agent-windows` und `rust-windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -142,8 +142,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui-3/T13.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py
 Doku: docs/admin/monitoring.html, docs/developer/monitoring.html DE+EN
 
-### T14 — CI: der Scope von rust-windows nimmt die Allowlist des Agenten auf (R-1226)  [ ]
+### T14 — CI: der Scope von rust-windows nimmt die Allowlist des Agenten auf (R-1226)  [x]
 Komponente: server · Dateien: .github/scripts/ci_changes.py, apps/server/tests/test_ci_changes.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @508f7ff84 2026-11-12T21:42:05+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T14.verdict.json)
 Änderung: PR #506 CI (Server-pytest, beide Shards 2/2): `test_what_the_rust_sources_include_is_in_the_scope_of_rust_windows` ist rot, weil der T9-Test `the_journal_unit_class_is_the_agents` in `ssh.rs` per `include_str!` `apps/agent/internal/allowlist/allowlist.go` liest, der Scope `rust-windows` in `ci_changes.py` die Datei aber nicht trägt; ein PR, der nur die Allowlist ändert, ließe den Windows-Rust-Lauf aus. Die Datei kommt in den Scope (wie `credentials/store.go`), der Test bekommt den Fall und `_ALWAYS_ON["rust"]` die Datei.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_changes.py
 Doku: keine (die CI-Doku nennt die einzelnen gelesenen Dateien nicht)
