@@ -27,6 +27,10 @@ var memoryEventsPath = "/sys/fs/cgroup/memory.events"
 // rebootRequiredPath is a variable so tests can point the Debian reboot flag at a fixture.
 var rebootRequiredPath = "/var/run/reboot-required"
 
+// rebootRequiredPkgsPath is a variable so tests can point the packages behind the Debian reboot flag at
+// a fixture.
+var rebootRequiredPkgsPath = "/var/run/reboot-required.pkgs"
+
 // systemCLI indirects the lookups and calls of the system state tools (needs-restarting,
 // timedatectl) so tests can drive every path without them (same reason as dockerCLI). run runs one
 // call under pluginTimeout and ctx. apt-get and dnf are looked up here as well, so the package family
@@ -52,16 +56,17 @@ func collectSystemState(ctx context.Context, st reportState) (map[string]any, re
 		st.OOMKill = &count
 		st.OOMKillSource = source
 	}
-	if required, ok := rebootRequired(ctx); ok {
+	if required, packages, ok := rebootRequired(ctx); ok {
 		block["reboot_required"] = required
+		if len(packages) > 0 {
+			block["reboot_packages"] = packages
+		}
 	}
 	if synced, ok := timeSynchronized(ctx); ok {
 		block["time_synchronized"] = synced
 	}
 	st.Updates = securityUpdates(ctx, st.Updates)
-	if st.Updates != nil && st.Updates.Security != nil {
-		block["security_updates"] = *st.Updates.Security
-	}
+	putSecurityUpdates(block, st.Updates)
 	return block, st
 }
 
@@ -112,37 +117,68 @@ func oomKillsSince(saved, count uint64) uint64 {
 	return count - saved
 }
 
-// rebootRequired says whether the host waits for a reboot; ok is false when that is unknown. The
-// Debian family (apt-get on the path) flags it with /var/run/reboot-required, the RPM family answers
-// through needs-restarting -r (exit 1: reboot needed). A host with neither has no tool to ask, which
-// is no failure and stays out of the log (like docker not installed).
-func rebootRequired(ctx context.Context) (required, ok bool) {
+// rebootRequired says whether the host waits for a reboot and, if so, names the packages behind it
+// (packageNames) as far as the tool does; ok is false when that is unknown. The Debian family
+// (apt-get on the path) flags it with /var/run/reboot-required, the RPM family answers through
+// needs-restarting -r (exit 1: reboot needed). A host with neither has no tool to ask, which is no
+// failure and stays out of the log (like docker not installed).
+func rebootRequired(ctx context.Context) (required bool, packages []string, ok bool) {
 	if _, err := systemCLI.lookPath("apt-get"); err == nil {
 		_, err := os.Stat(rebootRequiredPath)
 		if err == nil {
-			return true, true
+			return true, debianRebootPackages(), true
 		}
 		if errors.Is(err, fs.ErrNotExist) {
-			return false, true
+			return false, nil, true
 		}
 		// A flag it cannot check is unknown, not "no reboot needed".
 		logger.Warnf("system state: %v, reboot_required left out", err)
-		return false, false
+		return false, nil, false
 	}
 	if _, err := systemCLI.lookPath("needs-restarting"); err != nil {
-		return false, false
+		return false, nil, false
 	}
-	_, err := systemCLI.run(ctx, "needs-restarting", "-r")
+	out, err := systemCLI.run(ctx, "needs-restarting", "-r")
 	if err == nil {
-		return false, true
+		return false, nil, true
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return true, true
+		return true, parseNeedsRestarting(out), true
 	}
 	logger.Warnf("system state: needs-restarting -r failed: %s, reboot_required left out",
 		commandFailure("needs-restarting", pluginTimeout, err))
-	return false, false
+	return false, nil, false
+}
+
+// debianRebootPackages reads the packages that set the Debian reboot flag, one per line: each
+// package's maintainer script appends its name through update-notifier's notify-reboot-required, so
+// a name can stand there twice. Without the file (the flag set by other means) there are no names,
+// which is no failure.
+func debianRebootPackages() []string {
+	data, err := os.ReadFile(rebootRequiredPkgsPath)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			logger.Warnf("system state: %v, reboot_packages left out", err)
+		}
+		return nil
+	}
+	return packageNames(strings.Fields(string(data)))
+}
+
+// parseNeedsRestarting names the packages in the output of needs-restarting -r: one "  * <name>" line
+// each (dnf-plugins-core, plugins/needs_restarting.py), the lines around them translated. Output of
+// another form names none.
+func parseNeedsRestarting(out []byte) []string {
+	var names []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if name, ok := strings.CutPrefix(line, "  * "); ok {
+			if name = strings.TrimSpace(name); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return packageNames(names)
 }
 
 // timeSynchronized says whether the kernel reports the clock as synchronized, the NTPSynchronized

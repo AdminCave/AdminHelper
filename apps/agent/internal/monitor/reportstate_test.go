@@ -216,6 +216,35 @@ func TestReportStateProxmoxBackups(t *testing.T) {
 	}
 }
 
+func TestReportStateUpdatesPackages(t *testing.T) {
+	// The counted package names survive the state file, so a count within the hour reports them
+	// again; a count without names keeps the file form without them.
+	path := filepath.Join(t.TempDir(), ".report-state.json")
+	cases := []struct {
+		name  string
+		check updatesCheck
+		file  string
+	}{
+		{"with names", updatesCheck{CheckedUnix: 1760000000, Security: new(2), Packages: []string{"curl", "openssl"}},
+			`{"updates":{"checked_unix":1760000000,"security":2,"packages":["curl","openssl"]}}`},
+		{"without names", updatesCheck{CheckedUnix: 1760000000, Security: new(0)},
+			`{"updates":{"checked_unix":1760000000,"security":0}}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if err := saveReportState(path, reportState{Updates: &c.check}); err != nil {
+				t.Fatalf("saveReportState: %v", err)
+			}
+			if got := loadReportState(path).Updates; got == nil || !reflect.DeepEqual(*got, c.check) {
+				t.Errorf("roundtrip: got %+v, want %+v", got, c.check)
+			}
+			if data, err := os.ReadFile(path); err != nil || string(data) != c.file {
+				t.Errorf("file = %s (%v), want %s", data, err, c.file)
+			}
+		})
+	}
+}
+
 func TestBuildReportCarriesProxmoxBackups(t *testing.T) {
 	// The report hands the collector the saved index and the time of the report, and saves what it
 	// returns: nil as well, when Proxmox is gone.

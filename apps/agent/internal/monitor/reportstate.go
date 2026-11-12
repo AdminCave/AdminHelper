@@ -62,10 +62,12 @@ func (st reportState) oomKillSource() string {
 }
 
 // updatesCheck is one count of pending security updates, taken at CheckedUnix. Security is nil when the
-// count failed: a failed count is the hour's attempt as well.
+// count failed: a failed count is the hour's attempt as well. Packages names the counted packages
+// (packageNames); a state saved by an older agent has none until the next count.
 type updatesCheck struct {
-	CheckedUnix int64 `json:"checked_unix"`
-	Security    *int  `json:"security"`
+	CheckedUnix int64    `json:"checked_unix"`
+	Security    *int     `json:"security"`
+	Packages    []string `json:"packages,omitempty"`
 }
 
 // backupIndexCheck is one backup index of Node, read at CheckedUnix from the content of Storages

@@ -23,57 +23,62 @@ func securityUpdates(ctx context.Context, saved *updatesCheck) *updatesCheck {
 		return saved
 	}
 	var count int
+	var names []string
 	var ok bool
 	if _, err := systemCLI.lookPath("apt-get"); err == nil {
-		count, ok = aptSecurityUpdates(ctx)
+		count, names, ok = aptSecurityUpdates(ctx)
 	} else if _, err := systemCLI.lookPath("dnf"); err == nil {
-		count, ok = dnfSecurityUpdates(ctx)
+		count, names, ok = dnfSecurityUpdates(ctx)
 	} else {
 		return nil
 	}
 	check := &updatesCheck{CheckedUnix: now.Unix()}
 	if ok {
 		check.Security = &count
+		check.Packages = packageNames(names)
 	}
 	return check
 }
 
-// aptSecurityUpdates counts the security updates a simulated dist-upgrade would install. -s needs no
-// lock (apt-get(8)); LC_ALL=C runs it untranslated, the form countAptSecurity reads.
-func aptSecurityUpdates(ctx context.Context) (int, bool) {
+// aptSecurityUpdates counts and names the security updates a simulated dist-upgrade would install. -s
+// needs no lock (apt-get(8)); LC_ALL=C runs it untranslated, the form countAptSecurity reads.
+func aptSecurityUpdates(ctx context.Context) (int, []string, bool) {
 	out, err := updatesCalls.run(ctx, updatesTimeout, []string{"LC_ALL=C"}, "apt-get", "-s", "dist-upgrade")
 	if err != nil {
 		logger.Warnf("system state: apt-get -s dist-upgrade failed: %s, %s",
 			commandFailure("apt-get", updatesTimeout, err), updatesLeftOut)
-		return 0, false
+		return 0, nil, false
 	}
-	return countAptSecurity(out), true
+	count, names := countAptSecurity(out)
+	return count, names, true
 }
 
-// dnfSecurityUpdates counts the packages with a security advisory in dnf's cache; -C keeps dnf to the
-// cache, off the network. It keeps the agent's locale: countDNFSecurity reads no translated word, and
-// a translation that splits a column makes the output unreadable, not the count wrong.
-func dnfSecurityUpdates(ctx context.Context) (int, bool) {
+// dnfSecurityUpdates counts and names the packages with a security advisory in dnf's cache; -C keeps
+// dnf to the cache, off the network. It keeps the agent's locale: countDNFSecurity reads no translated
+// word, and a translation that splits a column makes the output unreadable, not the count wrong.
+func dnfSecurityUpdates(ctx context.Context) (int, []string, bool) {
 	out, err := updatesCalls.run(ctx, updatesTimeout, nil, "dnf", "-C", "-q", "updateinfo", "list", "--security")
 	if err != nil {
 		logger.Warnf("system state: dnf updateinfo list --security failed: %s, %s",
 			commandFailure("dnf", updatesTimeout, err), updatesLeftOut)
-		return 0, false
+		return 0, nil, false
 	}
-	count, ok := countDNFSecurity(out)
+	count, names, ok := countDNFSecurity(out)
 	if !ok {
 		logger.Warnf("system state: unexpected output of dnf updateinfo list --security, %s", updatesLeftOut)
 	}
-	return count, ok
+	return count, names, ok
 }
 
 // countAptSecurity counts the Inst lines of apt-get -s whose origin names security, without regard to
 // case: "Inst <pkg> [<old>] (<new> <origin>[, <origin>…] [<arch>])", the origin as Debian
 // "Debian-Security:12/stable-security" or Ubuntu "Ubuntu:24.04/noble-security". apt-get(8) does not
 // document this form, so only the parenthesis after the new version is read: a package or version
-// that merely carries the word does not count. Conf and Remv lines are no updates of their own.
-func countAptSecurity(out []byte) int {
-	count := 0
+// that merely carries the word does not count. Conf and Remv lines are no updates of their own. The
+// names are the package names of the counted lines, as apt prints them (with ":<arch>" for a
+// foreign one).
+func countAptSecurity(out []byte) (int, []string) {
+	var names []string
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.HasPrefix(line, "Inst ") {
 			continue
@@ -85,34 +90,38 @@ func countAptSecurity(out []byte) int {
 		paren, _, _ = strings.Cut(paren, ")")
 		_, origins, _ := strings.Cut(paren, " ")
 		if strings.Contains(strings.ToLower(origins), "security") {
-			count++
+			names = append(names, strings.Fields(line)[1])
 		}
 	}
-	return count
+	return len(names), names
 }
 
 // countDNFSecurity counts the packages in dnf updateinfo list --security, one advisory and package per
 // line: "<advisory> <severity>/Sec. <name>-[<epoch>:]<version>-<release>.<arch>". A package that
 // several advisories fix, also in several newer versions, counts once, as its one Inst line does in
 // apt. The output is not documented (dnf5 prints other columns): a line of another form makes the
-// whole output unreadable rather than the count too small.
-func countDNFSecurity(out []byte) (int, bool) {
-	names := map[string]bool{}
+// whole output unreadable rather than the count too small. The names are the counted packages'.
+func countDNFSecurity(out []byte) (int, []string, bool) {
+	seen := map[string]bool{}
+	var names []string
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
 		}
 		if len(fields) != 3 {
-			return 0, false
+			return 0, nil, false
 		}
 		name, ok := rpmPackageName(fields[2])
 		if !ok {
-			return 0, false
+			return 0, nil, false
 		}
-		names[name] = true
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
 	}
-	return len(names), true
+	return len(names), names, true
 }
 
 // rpmPackageName cuts version, release and arch off a package's NEVRA: the name ends at the last but

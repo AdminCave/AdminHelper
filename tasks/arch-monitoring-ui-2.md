@@ -21,10 +21,12 @@ Agent-Task prüft das mit einem Test. Jedes externe Format liest die Task vor de
 annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later <datei>`). UI nur aus Tokens und Komponenten unter
 `apps/desktop/ui/src/components/ui/`, Texte DE+EN in `dictionaries.ts`.
 
-### T1 — Agent: Namen der Sicherheitsupdates und Reboot-Pakete (R-1227)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/updates_linux.go, apps/agent/internal/monitor/updates_linux_test.go, apps/agent/internal/monitor/pkgaudit.go, apps/agent/internal/monitor/pkgaudit_test.go, apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go
+### T1 — Agent: Namen der Sicherheitsupdates und Reboot-Pakete (R-1227)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/updates_linux.go, apps/agent/internal/monitor/updates_linux_test.go, apps/agent/internal/monitor/pkgaudit.go, apps/agent/internal/monitor/pkgaudit_test.go, apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/updates.go, apps/agent/internal/monitor/system_freebsd_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @59c1bc98b 2026-11-12T11:40:23+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T1.verdict.json)
 Änderung: `countAptSecurity`, `countDNFSecurity` und `pkgSecurityUpdates` liefern neben der Zahl die sortierten Paketnamen (höchstens 100, Name gekappt); `updatesCheck` speichert sie, damit die stündliche Zählung sie bis zum nächsten Lauf weitergibt (alter Zustand ohne Namen bleibt lesbar). Reboot-Pakete: Debian aus `/var/run/reboot-required.pkgs` (Pfad als Variable neben `rebootRequiredPath`), RPM aus den `  * <paket>`-Zeilen von `needs-restarting -r` (Format in `dnf-plugins-core` nachlesen). Der Systemzustands-Block trägt `security_packages` und `reboot_packages`; Zahl und `reboot_required` unverändert. Tests: Fixtures je Werkzeug, Kappung, alter Zustand, fehlende/leere `.pkgs`-Datei, unbekanntes Format ohne Namen.
-Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSystemStateUpdates|TestSystemStateReboot|TestCountPkgAudit|TestPkgSecurityUpdates|TestFreebsdSystemState|TestReportState
+Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSystemStateUpdates|TestSystemStateReboot|TestCountPkgAudit|TestPkgSecurityUpdates|TestFreebsdSystemState|TestReportState|TestSystemStateBlock
 Doku: → T12
 
 ### T2 — Agent: Prozess hinter dem OOM-Kill (R-1227)  [ ]
@@ -97,3 +99,10 @@ Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monito
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
+
+## Entscheidungen
+
+- 2026-11-12 T1: Paketnamen höchstens 100 je Feld, je Name höchstens 128 Byte (UTF-8-sicher gekappt), sortiert und dedupliziert über `packageNames` — begrenzt Report und Zustandsdatei bei vielen Updates, Reihenfolge stabil für Vergleiche im Desktop
+- 2026-11-12 T1: `putSecurityUpdates` setzt Zahl und Namen für Linux und FreeBSD an einer Stelle — beide Systemzustands-Blöcke trugen die Zahl doppelt
+- 2026-11-12 T1: Namen aus apt `Inst`-Zeilen (Feld 2, `:arch` nur bei Fremdarchitektur, apt `pkgcache.cc`), dnf `updateinfo list` (Spalte 3 ohne Version), `pkg audit -q` (bis zum letzten `-`), `/var/run/reboot-required.pkgs` (update-notifier, Namen können doppelt stehen), `needs-restarting -r` (`  * <name>`, dnf-plugins-core) — die Zahl bleibt wie bisher, die Namen sind die der gezählten Zeilen
+- 2026-11-12 T1: unlesbare `reboot-required.pkgs` (nicht „fehlt“) loggt eine Warnung und lässt nur `reboot_packages` weg — `reboot_required` steht über die Flag-Datei fest

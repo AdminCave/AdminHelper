@@ -91,20 +91,40 @@ func stubSystemCLI(t *testing.T, replies map[string]dockerReply) *[][]string {
 	return &calls
 }
 
-// stubRebootFlag points rebootRequiredPath into a fresh directory and creates the flag there when
-// present is set.
+// stubRebootFlag points rebootRequiredPath and rebootRequiredPkgsPath into a fresh directory and
+// creates the flag there when present is set; the packages file stays for stubRebootPkgs.
 func stubRebootFlag(t *testing.T, present bool) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "reboot-required")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "reboot-required")
 	if present {
 		if err := os.WriteFile(path, []byte("*** System restart required ***\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	old := rebootRequiredPath
-	rebootRequiredPath = path
-	t.Cleanup(func() { rebootRequiredPath = old })
+	old, oldPkgs := rebootRequiredPath, rebootRequiredPkgsPath
+	rebootRequiredPath, rebootRequiredPkgsPath = path, filepath.Join(dir, "reboot-required.pkgs")
+	t.Cleanup(func() { rebootRequiredPath, rebootRequiredPkgsPath = old, oldPkgs })
 }
+
+// stubRebootPkgs writes content as the packages file next to the flag stubRebootFlag set up.
+func stubRebootPkgs(t *testing.T, content string) {
+	t.Helper()
+	if err := os.WriteFile(rebootRequiredPkgsPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// needsRestartingReboot is needs-restarting -r on a host waiting for a reboot, as dnf-plugins-core
+// prints it (plugins/needs_restarting.py, reboothint): the packages sorted, one "  * <name>" line each.
+const needsRestartingReboot = `Core libraries or services have been updated since boot-up:
+  * dbus-broker
+  * kernel
+  * systemd
+
+Reboot is required to fully utilize these updates.
+More information: https://access.redhat.com/solutions/27943
+`
 
 // systemStateHelperEnv tells TestHelperSystemStateProcess, run as a child process, which status to
 // exit with.
@@ -457,19 +477,58 @@ func TestSystemStateOOMStateWithoutSource(t *testing.T) {
 
 func TestSystemStateRebootDebian(t *testing.T) {
 	// The Debian family answers through the flag file alone, also with needs-restarting on the path.
-	for _, present := range []bool{true, false} {
-		t.Run(fmt.Sprintf("flag present %v", present), func(t *testing.T) {
+	// The packages file names the packages behind the flag, each line one, a package once; without
+	// the file, or with an empty one, the reboot names none, which is no failure.
+	cases := []struct {
+		name     string
+		present  bool
+		pkgs     *string
+		required bool
+		packages []string
+	}{
+		{"flag present", true, new("linux-image-6.12.57+deb13-amd64\nlibc6\nlinux-image-6.12.57+deb13-amd64\n"),
+			true, []string{"libc6", "linux-image-6.12.57+deb13-amd64"}},
+		{"flag present, no packages file", true, nil, true, nil},
+		{"flag present, empty packages file", true, new(""), true, nil},
+		{"flag present, blank lines", true, new("\n  dbus\n\n"), true, []string{"dbus"}},
+		{"flag absent", false, nil, false, nil},
+		{"flag absent, packages file left over", false, new("libc6\n"), false, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
 			calls := stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "needs-restarting": {}})
-			stubRebootFlag(t, present)
+			stubRebootFlag(t, c.present)
+			if c.pkgs != nil {
+				stubRebootPkgs(t, *c.pkgs)
+			}
 			logs := captureWarnings(t)
-			if required, ok := rebootRequired(context.Background()); required != present || !ok {
-				t.Errorf("rebootRequired() = %v, %v; want %v, true", required, ok, present)
+			required, packages, ok := rebootRequired(context.Background())
+			if required != c.required || !reflect.DeepEqual(packages, c.packages) || !ok {
+				t.Errorf("rebootRequired() = %v, %q, %v; want %v, %q, true", required, packages, ok, c.required, c.packages)
 			}
 			if len(*calls) != 0 {
 				t.Errorf("calls = %v, want none", *calls)
 			}
 			assertSystemStateLog(t, logs.String(), "")
 		})
+	}
+}
+
+func TestSystemStateRebootPkgsUnreadable(t *testing.T) {
+	// A packages file it cannot read costs the names, not the answer: the reboot is still required,
+	// and the log names why the names are missing.
+	stubSystemCLI(t, map[string]dockerReply{"apt-get": {}})
+	stubRebootFlag(t, true)
+	if err := os.Mkdir(rebootRequiredPkgsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logs := captureWarnings(t)
+	required, packages, ok := rebootRequired(context.Background())
+	if !required || packages != nil || !ok {
+		t.Errorf("rebootRequired() = %v, %q, %v; want true, no names, true", required, packages, ok)
+	}
+	if !strings.Contains(logs.String(), "is a directory, reboot_packages left out") {
+		t.Errorf("log = %q, want it to name the read error", logs.String())
 	}
 }
 
@@ -484,7 +543,7 @@ func TestSystemStateRebootFlagUnreadable(t *testing.T) {
 	rebootRequiredPath = filepath.Join(file, "reboot-required")
 	t.Cleanup(func() { rebootRequiredPath = old })
 	logs := captureWarnings(t)
-	if required, ok := rebootRequired(context.Background()); ok {
+	if required, _, ok := rebootRequired(context.Background()); ok {
 		t.Errorf("rebootRequired() = %v, true; want no answer", required)
 	}
 	if !strings.Contains(logs.String(), "not a directory, reboot_required left out") {
@@ -494,30 +553,39 @@ func TestSystemStateRebootFlagUnreadable(t *testing.T) {
 
 func TestSystemStateRebootRPM(t *testing.T) {
 	// needs-restarting -r: exit 0 is no reboot, exit 1 a reboot, everything else no answer with the
-	// reason in the log, short and without stderr.
+	// reason in the log, short and without stderr. A reboot names the packages of the "  * " lines;
+	// output of another form names none, and only a reboot names any.
 	cases := []struct {
 		name     string
-		err      error
+		reply    dockerReply
 		required bool
+		packages []string
 		ok       bool
 		log      string
 	}{
-		{"exit 0", nil, false, true, ""},
-		{"exit 1", exitStatus(t, 1), true, true, ""},
-		{"exit 2", exitStatus(t, 2), false, false,
+		{"exit 0", dockerReply{}, false, nil, true, ""},
+		{"exit 0 with lines", dockerReply{out: "  * kernel\n"}, false, nil, true, ""},
+		{"exit 1", dockerReply{err: exitStatus(t, 1)}, true, nil, true, ""},
+		{"exit 1 with packages", dockerReply{out: needsRestartingReboot, err: exitStatus(t, 1)}, true,
+			[]string{"dbus-broker", "kernel", "systemd"}, true, ""},
+		{"exit 1, other form", dockerReply{out: "Reboot is required.\n- kernel\n*kernel\n", err: exitStatus(t, 1)}, true,
+			nil, true, ""},
+		{"exit 2", dockerReply{out: needsRestartingReboot, err: exitStatus(t, 2)}, false, nil, false,
 			"needs-restarting -r failed: exit status 2, reboot_required left out"},
-		{"times out", context.DeadlineExceeded, false, false,
+		{"times out", dockerReply{err: context.DeadlineExceeded}, false, nil, false,
 			"needs-restarting -r failed: timed out after 15s, reboot_required left out"},
-		{"does not start", &exec.Error{Name: "/usr/bin/needs-restarting", Err: exec.ErrNotFound}, false, false,
+		{"does not start", dockerReply{err: &exec.Error{Name: "/usr/bin/needs-restarting", Err: exec.ErrNotFound}}, false, nil, false,
 			"needs-restarting -r failed: needs-restarting did not start, reboot_required left out"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			calls := stubSystemCLI(t, map[string]dockerReply{"needs-restarting": {err: c.err}})
+			calls := stubSystemCLI(t, map[string]dockerReply{"needs-restarting": c.reply})
 			stubRebootFlag(t, true) // without apt-get the flag file does not count
+			stubRebootPkgs(t, "libc6\n")
 			logs := captureWarnings(t)
-			if required, ok := rebootRequired(context.Background()); required != c.required || ok != c.ok {
-				t.Errorf("rebootRequired() = %v, %v; want %v, %v", required, ok, c.required, c.ok)
+			required, packages, ok := rebootRequired(context.Background())
+			if required != c.required || !reflect.DeepEqual(packages, c.packages) || ok != c.ok {
+				t.Errorf("rebootRequired() = %v, %q, %v; want %v, %q, %v", required, packages, ok, c.required, c.packages, c.ok)
 			}
 			if want := [][]string{{"needs-restarting", "-r"}}; !reflect.DeepEqual(*calls, want) {
 				t.Errorf("calls = %v, want %v", *calls, want)
@@ -533,7 +601,7 @@ func TestSystemStateRebootNoTool(t *testing.T) {
 	calls := stubSystemCLI(t, nil)
 	stubRebootFlag(t, true)
 	logs := captureWarnings(t)
-	if required, ok := rebootRequired(context.Background()); ok {
+	if required, _, ok := rebootRequired(context.Background()); ok {
 		t.Errorf("rebootRequired() = %v, true; want no answer", required)
 	}
 	if len(*calls) != 0 {
@@ -586,23 +654,26 @@ func TestSystemStateTimeSync(t *testing.T) {
 }
 
 func TestSystemStateBlock(t *testing.T) {
-	// The answers land in the block next to oom_kills, as JSON booleans and numbers on the wire, and
-	// the security update count goes into the state for the hour; with no answer at all the block is
-	// empty and stays out of the report.
+	// The answers land in the block next to oom_kills, as JSON booleans, numbers and lists of names on
+	// the wire, and the security update count goes into the state for the hour with its names; with no
+	// answer at all the block is empty and stays out of the report.
 	t.Run("all measured", func(t *testing.T) {
 		stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "timedatectl": {out: timedatectlShow}})
 		stubRebootFlag(t, true)
+		stubRebootPkgs(t, "linux-image-6.12.57+deb13-amd64\n")
 		stubVMStat(t, vmstatWithOOMKill(5))
 		stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		saved := uint64(3)
 		block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
 		want := map[string]any{"oom_kills": 2.0, "reboot_required": true, "time_synchronized": true,
-			"security_updates": 2.0}
+			"security_updates": 2.0, "security_packages": []any{"libc-bin", "libc6"},
+			"reboot_packages": []any{"linux-image-6.12.57+deb13-amd64"}}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) {
 			t.Errorf("block = %v, want %v", got, want)
 		}
-		if next.Updates == nil || next.Updates.Security == nil || *next.Updates.Security != 2 {
-			t.Errorf("state updates = %+v, want the count 2", next.Updates)
+		if next.Updates == nil || next.Updates.Security == nil || *next.Updates.Security != 2 ||
+			!reflect.DeepEqual(next.Updates.Packages, []string{"libc-bin", "libc6"}) {
+			t.Errorf("state updates = %+v, want the count 2 with its names", next.Updates)
 		}
 	})
 	t.Run("security updates from the saved count", func(t *testing.T) {
@@ -611,14 +682,34 @@ func TestSystemStateBlock(t *testing.T) {
 		stubVMStat(t, "pgmajfault 1042\n")
 		calls := stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		five := 5
-		saved := &updatesCheck{CheckedUnix: updatesNow.Add(-10 * time.Minute).Unix(), Security: &five}
+		saved := &updatesCheck{CheckedUnix: updatesNow.Add(-10 * time.Minute).Unix(), Security: &five,
+			Packages: []string{"libssl3", "openssl"}}
 		block, next := collectSystemState(context.Background(), reportState{Updates: saved})
-		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0}
+		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0,
+			"security_packages": []any{"libssl3", "openssl"}}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) || len(*calls) != 0 {
 			t.Errorf("block = %v after %d call(s), want %v without one", got, len(*calls), want)
 		}
 		if next.Updates != saved {
 			t.Errorf("state updates = %+v, want the saved count handed on", next.Updates)
+		}
+	})
+	t.Run("saved count of an older agent", func(t *testing.T) {
+		// A state an older agent saved has the count without names: the count is reported, the
+		// names stay out until the next count.
+		stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "timedatectl": {out: timedatectlShow}})
+		stubRebootFlag(t, false)
+		stubVMStat(t, "pgmajfault 1042\n")
+		calls := stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
+		path := filepath.Join(t.TempDir(), ".report-state.json")
+		old := fmt.Sprintf(`{"updates":{"checked_unix":%d,"security":5}}`, updatesNow.Add(-10*time.Minute).Unix())
+		if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		block, _ := collectSystemState(context.Background(), loadReportState(path))
+		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0}
+		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) || len(*calls) != 0 {
+			t.Errorf("block = %v after %d call(s), want %v without one", got, len(*calls), want)
 		}
 	})
 	t.Run("nothing measured", func(t *testing.T) {
