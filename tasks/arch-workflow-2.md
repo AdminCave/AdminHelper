@@ -1,5 +1,5 @@
 # Harness: Sammellauf ohne Server-pytest auf der Box — Task-Ledger
-Status: aktiv · Branch: feature/arch-workflow-2 · Review: pro Task
+Status: bereit · Branch: feature/arch-workflow-2 · Review: pro Task
 Spec: docs/features/arch-workflow-2.md (Roadmap R-1338, R-1348)
 Heavy: linux-full — ändert, was der Sammellauf auf der Box fährt; Gesamtbeweis ist der erste nächtliche Lauf nach dem Merge, vorher gezielt `--step schemathesis` und `--step sse_push` auf einer frisch geleasten Lane-Box (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,8 +51,10 @@ Doku: DEVELOPMENT.md
 Task-Review: am Ende
 Abhängt von: T1
 
-### T6 — R-1348: Dauerauftrag lässt einen Fund mit unklarer Sicherheitswirkung `neu`  [ ]
+### T6 — R-1348: Dauerauftrag lässt einen Fund mit unklarer Sicherheitswirkung `neu`  [x]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5dfb0704d 2026-11-12T10:13:44+01:00
+Review: approve (.ah-out/review/arch-workflow-2/T6.verdict.json)
 Änderung: Die Bedingung „kein SEC, kein Fund des `security`-Agenten, keine Datei aus `scripts/dev/review-risk.txt`“ im
 Abschnitt „Dauerauftrag“ bekommt den Fall eines Funds mit unklarer Sicherheitswirkung (etwa ein 500 mit Stacktrace),
 wie bei `fund` in `/feature-build` §5; ein solcher Fund ist nicht gedeckt und bleibt `neu`.
