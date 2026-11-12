@@ -19,8 +19,10 @@ Beweis: reviewer arch-monitoring-module-2 2026-11-12 · feature/arch-monitoring-
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitorCheckModal.test.ts
 Doku: keine (interner Zustand)
 
-### T2 — R-1390: Docker-Laufzeit und ZFS-Fehlertext stimmen grammatisch, Gruppenreihenfolge hat einen Test  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte, apps/desktop/ui/src/components/monitoring/section/SecDocker.test.ts
+### T2 — R-1390: Docker-Laufzeit und ZFS-Fehlertext stimmen grammatisch, Gruppenreihenfolge hat einen Test  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte, apps/desktop/ui/src/components/monitoring/section/SecDocker.test.ts, apps/desktop/ui/src/components/monitoring/section/SecZfs.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @432ed930d 2026-11-12T16:33:36+01:00
+Review: approve (.ah-out/review/klein-nachlese-3/T2.verdict.json)
 Beweis: reviewer arch-monitoring-ui-2 2026-11-12 (T10) · feature/arch-monitoring-ui-2@72e71d8ca dictionaries.ts:1195, :2711, SecDocker.svelte:119 · Dedup-Key: ref:monitoring-ui:arch-monitoring-ui-2:nachlese
 Änderung: `monitoring.docker.upFor` DE wird zu einer Form, die mit „5 Tage“ stimmt (etwa „Laufzeit {span}“); `monitoring.zfs.scrubErrors` EN stimmt für 1 (Pluralmechanismus des Wörterbuchs, sonst Formulierung ohne Plural). `SecDocker` behält die Sortierung nach Schwere; ein Test legt fest, dass eine kritische Gruppe ohne Projekt vor gesunden Projekten steht, und die Tests der beiden Texte prüfen „1“ und „5 Tage“.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecDocker.test.ts

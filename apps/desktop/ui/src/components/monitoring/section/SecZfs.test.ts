@@ -161,6 +161,7 @@ describe('SecZfs pool details', () => {
         { name: 'sdb', read: 1, write: 2, checksum: 0 },
       ],
     }),
+    pool('single', { scrub: { state: 'FINISHED', errors: 1, end: NOW - 2 * 3600 } }),
     pool('fast', { scrub: { state: 'SCANNING', errors: 0 } }),
     pool('cold', { scrub: { state: 'RESILVERING', errors: 0, end: NOW + DAY } }),
     pool('plain', {}),
@@ -212,6 +213,11 @@ describe('SecZfs pool details', () => {
     ]);
   });
 
+  it('names a single scrub error without a plural', async () => {
+    const el = await shown();
+    expect(chips(el, 'single')).toEqual(['Scrub abgeschlossen · vor 2 h · 1 Fehler|warn']);
+  });
+
   it('shows a running scrub without age and an unknown state by its name', async () => {
     const el = await shown();
     expect(chips(el, 'fast')).toEqual(['Scrub läuft|muted']);
@@ -234,8 +240,9 @@ describe('SecZfs pool details', () => {
       'Scrub finished · 3 days ago|ok',
       'Fragmentation 12 %|muted',
     ]);
+    expect(chips(el, 'single')).toEqual(['Scrub finished · 2 h ago · errors: 1|warn']);
     expect(chips(el, 'backup')).toEqual([
-      'Scrub finished · 2 h ago · 2 errors|warn',
+      'Scrub finished · 2 h ago · errors: 2|warn',
       'sda: 0 read · 0 write · 3 checksum|warn',
       'sdb: 1 read · 2 write · 0 checksum|warn',
     ]);
