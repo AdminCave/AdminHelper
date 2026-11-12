@@ -26,8 +26,10 @@ Kernel-Namen auf 15 Zeichen gekürzt, vor dem Bau an den Quellen prüfen). Tests
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T3 — R-1370: Gegenstelle nach dem Verbindungsaufbau prüfen (Linux)  [ ]
+### T3 — R-1370: Gegenstelle nach dem Verbindungsaufbau prüfen (Linux)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/peer_other.go, apps/agent/internal/probe/peer_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3570e556e 2026-11-12T18:31:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-24/T3.verdict.json)
 Änderung: `Guard.DialContext` prüft nach dem connect und vor dem ersten Byte per `sock_diag`-Exakt-Lookup, dass die
 angenommene Verbindung zu ip:port gehört (keine Listener-Antwort, exakte Socket-ID); sonst Verbindung hart schließen,
 `ErrNotAllowed`. Ausnahmen wie T1 (`extra`, Docker-Veröffentlichung). Neue Dateien mit SPDX-Header; Seam
@@ -85,3 +87,12 @@ Task-Review: am Ende
   gesperrte Prozesse auf einer Wildcard sperren beide Familien. Ein Fehlgriff wird auf einem höchstens 1 s alten
   Snapshot bestätigt (Funde des Task-Prüfers, Nit des security-Prüfers).
 - 2026-11-12 (T5): Das Verify nimmt `tests/test_central_fetch.py` mit, weil `HttpAnswer.location` neu ist.
+- 2026-11-12 (T6): Die gelernten NAT64-Präfixe prüft `is_global_address`, nicht `effective_address`: nur so
+  verschärfen sie die Regel, statt eine Adresse über ihr eingebettetes IPv4 global zu machen. Ein gescheiterter
+  Lookup behält die zuletzt gelernten Präfixe (Fund des security-Prüfers).
+- 2026-11-12 (T3): Die Prüfung nach dem connect heißt `checkTaker` (`checkPeer` prüft Unix-Sockets); der Seam
+  heißt `peerSocket`. Scheitert `sock_diag`, wird abgewiesen; ohne `sock_diag` (nicht Linux) entfällt die Prüfung.
+  Eine Weiterleitung ins eigene Netz zeigt sich als Listener-Antwort; das belegt der echte Linux-Test ohne eigenen
+  Netz-Namespace. Eine erkannte Umleitung merkt sich der Guard je (ip, port) eine Stunde (`redirectTTL`) und weist
+  den Port dann vor dem connect ab, damit der Dienst dahinter keine Verbindungen je Probe-Intervall zählt; ein
+  `sock_diag`-Fehler wird nicht gemerkt, er kann vorübergehend sein.

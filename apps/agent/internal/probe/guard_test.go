@@ -34,12 +34,23 @@ type fakeHost struct {
 	// live lets the real listeners and processes of the test answer behind the fakes, for tests
 	// that serve on loopback themselves.
 	live bool
+	// peer answers which socket took a connection; nil says the one bound to its server end.
+	peer      func(server, client netip.AddrPort) (peerState, error)
+	peerCalls int
 }
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
 	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
+	oldPeer := peerSocket
+	peerSocket = func(server, client netip.AddrPort) (peerState, error) {
+		h.peerCalls++
+		if h.peer == nil {
+			return peerConnected, nil
+		}
+		return h.peer(server, client)
+	}
 	interfaceAddrs = func() ([]net.Addr, error) { return h.addrs, h.addrsErr }
 	publishedPorts = func(context.Context) ([]publication, error) {
 		h.pubsCalls++
@@ -80,10 +91,14 @@ func stubHost(t *testing.T, h *fakeHost) {
 		publications.Lock()
 		publications.list, publications.at = nil, time.Time{}
 		publications.Unlock()
+		redirected.Lock()
+		redirected.at = nil
+		redirected.Unlock()
 	}
 	resetSnapshot()
 	t.Cleanup(func() {
 		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
+		peerSocket = oldPeer
 		resetSnapshot()
 	})
 }
@@ -879,5 +894,189 @@ func TestGuardTellsNoListenerOnAFreshSnapshot(t *testing.T) {
 	}
 	if h.listCalls != 2 {
 		t.Errorf("listeners read %d times, want no new snapshot within %s", h.listCalls, listenerFresh)
+	}
+}
+
+// takenBy serves on loopback, lets peer tell which socket took each connection and returns the
+// address and the connections the server accepted.
+func takenBy(t *testing.T, h *fakeHost) (string, chan net.Conn) {
+	t.Helper()
+	h.live = true
+	stubHost(t, h)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	accepted := make(chan net.Conn, 4)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- c
+		}
+	}()
+	return ln.Addr().String(), accepted
+}
+
+// TestGuardDropsAConnectionAnotherSocketTook: a NAT redirect hands the connection to a socket the
+// guard never checked; the kernel then lists no socket with the connection's ends, or only the
+// listener (R-1370).
+func TestGuardDropsAConnectionAnotherSocketTook(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		state peerState
+		err   error
+		want  string
+	}{
+		{"only the listener", peerListener, nil, "taken by another socket"},
+		{"no socket", peerNone, nil, "taken by another socket"},
+		{"sock_diag fails", peerNone, errors.New("sock_diag: permission denied"), "cannot be told"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return c.state, c.err }}
+			address, accepted := takenBy(t, h)
+			conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
+			if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("dial = %v, %v; want it refused: %s", conn, err, c.want)
+			}
+			wantCalls := peerTries
+			if c.err != nil {
+				wantCalls = 1
+			}
+			if h.peerCalls != wantCalls {
+				t.Errorf("asked %d times, want %d", h.peerCalls, wantCalls)
+			}
+			srv := <-accepted
+			defer srv.Close()
+			_ = srv.SetReadDeadline(time.Now().Add(30 * time.Second))
+			// A reset reads as an error that is neither the orderly end (io.EOF) nor the deadline;
+			// its errno differs between Unix and Windows.
+			_, err = srv.Read(make([]byte, 1))
+			var ne net.Error
+			if err == nil || errors.Is(err, io.EOF) || (errors.As(err, &ne) && ne.Timeout()) {
+				t.Errorf("the server read %v, want the connection reset", err)
+			}
+		})
+	}
+}
+
+// TestGuardRemembersARedirectedPort: after a redirect took a connection to a port, the guard
+// refuses the port before it connects, so the service behind the redirect sees no further
+// connection, until redirectTTL has passed.
+func TestGuardRemembersARedirectedPort(t *testing.T) {
+	h := &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerListener, nil }}
+	address, accepted := takenBy(t, h)
+	g := NewGuard()
+	if _, err := g.DialContext(context.Background(), "tcp", address); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("first dial = %v, want it refused", err)
+	}
+	(<-accepted).Close()
+
+	calls := h.peerCalls
+	for i := 0; i < 2; i++ {
+		_, err := NewGuard().DialContext(context.Background(), "tcp", address)
+		if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "taken by another socket") {
+			t.Fatalf("dial %d after the redirect = %v, want it refused", i+2, err)
+		}
+	}
+	if h.peerCalls != calls {
+		t.Errorf("asked the kernel %d more times, want the port refused before the connect", h.peerCalls-calls)
+	}
+	select {
+	case c := <-accepted:
+		c.Close()
+		t.Fatal("the guard connected again to a port a redirect took")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	h.peer = nil
+	redirected.Lock()
+	for k := range redirected.at {
+		redirected.at[k] = redirected.at[k].Add(-redirectTTL)
+	}
+	redirected.Unlock()
+	conn, err := g.DialContext(context.Background(), "tcp", address)
+	if err != nil {
+		t.Fatalf("dial after redirectTTL: %v, want it connected", err)
+	}
+	_ = conn.Close()
+}
+
+// TestGuardWaitsForTheKernelToListTheTaker: the socket that took a connection may show a moment
+// after the connect returns.
+func TestGuardWaitsForTheKernelToListTheTaker(t *testing.T) {
+	h := &fakeHost{}
+	h.peer = func(server, client netip.AddrPort) (peerState, error) {
+		if h.peerCalls < peerTries {
+			return peerNone, nil
+		}
+		return peerConnected, nil
+	}
+	address, _ := takenBy(t, h)
+	conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	_ = conn.Close()
+}
+
+// TestGuardAsksAboutTheConnectionsOwnEnds: the guard asks for the socket bound to the address it
+// dialed, with the connection's local end as the remote one.
+func TestGuardAsksAboutTheConnectionsOwnEnds(t *testing.T) {
+	h := &fakeHost{}
+	var gotServer, gotClient netip.AddrPort
+	h.peer = func(server, client netip.AddrPort) (peerState, error) {
+		gotServer, gotClient = server, client
+		return peerConnected, nil
+	}
+	address, _ := takenBy(t, h)
+	conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	if gotServer.String() != address || gotClient != conn.LocalAddr().(*net.TCPAddr).AddrPort() {
+		t.Errorf("asked about %s from %s, want %s from %s", gotServer, gotClient, address, conn.LocalAddr())
+	}
+}
+
+// TestGuardLeavesTheTakerOfContainersAndUnsupportedHostsAlone: a container's sockets and docker's
+// published ports live in another network namespace, and a host without sock_diag cannot tell.
+func TestGuardLeavesTheTakerOfContainersAndUnsupportedHostsAlone(t *testing.T) {
+	refuse := func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerNone, nil }
+
+	h := &fakeHost{peer: refuse}
+	address, _ := takenBy(t, h)
+	if conn, err := NewGuard(netip.MustParseAddr("127.0.0.1")).DialContext(context.Background(), "tcp", address); err != nil {
+		t.Errorf("a container's address: %v, want it connected", err)
+	} else {
+		_ = conn.Close()
+	}
+	if h.peerCalls != 0 {
+		t.Errorf("asked %d times about a container's address, want never", h.peerCalls)
+	}
+
+	h = &fakeHost{peer: refuse}
+	address, _ = takenBy(t, h)
+	port := netip.MustParseAddrPort(address).Port()
+	h.pubs = []publication{pub("", port, 8080)}
+	if conn, err := NewGuard().DialContext(context.Background(), "tcp", address); err != nil {
+		t.Errorf("a port docker publishes: %v, want it connected", err)
+	} else {
+		_ = conn.Close()
+	}
+	if h.peerCalls != 0 {
+		t.Errorf("asked %d times about a published port, want never", h.peerCalls)
+	}
+
+	h = &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerNone, errPeerUnsupported }}
+	address, _ = takenBy(t, h)
+	if conn, err := NewGuard().DialContext(context.Background(), "tcp", address); err != nil {
+		t.Errorf("a host without sock_diag: %v, want it connected", err)
+	} else {
+		_ = conn.Close()
 	}
 }

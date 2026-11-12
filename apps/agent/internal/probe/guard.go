@@ -222,6 +222,7 @@ var (
 	listeners      = listenTCP
 	processName    = nameOf
 	processArgs    = argsOf
+	peerSocket     = osPeerSocket
 	publishedPorts = dockerPublications
 	dockerServes   = dockerSocketServes
 	dockerdRunning = dockerdRuns
@@ -254,7 +255,112 @@ func NewGuard(extra ...netip.Addr) *Guard {
 // DialContext connects to address on network as net.Dialer does, if the guard allows the address
 // it connects to; else the error wraps ErrNotAllowed.
 func (g *Guard) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	return g.dialer.DialContext(ctx, network, address)
+	conn, err := g.dialer.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	tc, ok := conn.(*net.TCPConn)
+	if !ok {
+		return conn, nil
+	}
+	server := tc.RemoteAddr().(*net.TCPAddr).AddrPort()
+	client := tc.LocalAddr().(*net.TCPAddr).AddrPort()
+	if err := g.checkTaker(ctx, server, client); err != nil {
+		// Reset rather than close: the service behind a redirect sees no orderly end of a session.
+		_ = tc.SetLinger(0)
+		_ = tc.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// peerState is what took a connection, as the host tells it.
+type peerState int
+
+const (
+	peerNone      peerState = iota // no socket of this host has the connection's ends
+	peerListener                   // only the listener on the port answers, no socket of the connection
+	peerConnected                  // the socket that took the connection has its exact ends
+)
+
+// errPeerUnsupported: the host cannot tell which socket took a connection.
+var errPeerUnsupported = errors.New("the socket that took a connection cannot be told on this system")
+
+// peerTries and peerWait bound the wait for the kernel to list the socket that took the connection.
+const (
+	peerTries = 3
+	peerWait  = 10 * time.Millisecond
+)
+
+// redirectTTL is how long the guard refuses a port, before it connects, after a redirect took a
+// connection to it: the reset comes after the connect, and a service behind the redirect may count
+// each such connection against the agent's address (max_connect_errors, fail2ban).
+const redirectTTL = time.Hour
+
+// redirected holds the ports a redirect took a connection to, with the time it was told; shared by
+// every guard of the process.
+var redirected struct {
+	sync.Mutex
+	at map[netip.AddrPort]time.Time
+}
+
+// rememberRedirect records that a redirect took a connection to server.
+func rememberRedirect(server netip.AddrPort) {
+	redirected.Lock()
+	defer redirected.Unlock()
+	now := time.Now()
+	for k, at := range redirected.at {
+		if now.Sub(at) >= redirectTTL {
+			delete(redirected.at, k)
+		}
+	}
+	if redirected.at == nil {
+		redirected.at = map[netip.AddrPort]time.Time{}
+	}
+	redirected.at[server] = now
+}
+
+// checkRedirected returns an error if a redirect took a connection to ip:port within redirectTTL.
+func checkRedirected(ip netip.Addr, port uint16) error {
+	redirected.Lock()
+	defer redirected.Unlock()
+	if at, ok := redirected.at[netip.AddrPortFrom(ip, port)]; ok && time.Since(at) < redirectTTL {
+		return fmt.Errorf("%w: the connection to port %d was taken by another socket than the one listening there", ErrNotAllowed, port)
+	}
+	return nil
+}
+
+// checkTaker returns an error unless the connection from client to server was taken by a socket
+// bound to server itself: a NAT redirect hands it to another port or host, which the guard never
+// checked before the connect. A container's address and a port docker publishes are left out, their
+// sockets live in another network namespace.
+func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) error {
+	ip := server.Addr().Unmap()
+	if g.contained(ip) {
+		return nil
+	}
+	if published, err := checkPublished(ctx, ip, server.Port(), listenerTTL); err != nil || published {
+		return err
+	}
+	for try := 1; ; try++ {
+		state, err := peerSocket(server, client)
+		switch {
+		case errors.Is(err, errPeerUnsupported):
+			return nil
+		case err != nil:
+			return fmt.Errorf("%w: the socket that took the connection to port %d cannot be told: %v", ErrNotAllowed, server.Port(), err)
+		case state == peerConnected:
+			return nil
+		case try == peerTries:
+			rememberRedirect(netip.AddrPortFrom(ip, server.Port()))
+			return checkRedirected(ip, server.Port())
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", ErrNotAllowed, ctx.Err())
+		case <-time.After(peerWait):
+		}
+	}
 }
 
 // control runs for each address the dialer connects to, before it connects.
@@ -276,6 +382,9 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 		return fmt.Errorf("%w: port %d is one the agent never probes", ErrNotAllowed, port)
 	}
 	if network == "tcp4" || network == "tcp6" {
+		if err := checkRedirected(ip, port); err != nil {
+			return err
+		}
 		return checkListener(ctx, ip, port, g.contained(ip))
 	}
 	return nil
@@ -390,9 +499,8 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 	return nil
 }
 
-// checkForwarder returns an error if the process pid, named name, that serves at (a port or a socket)
-// is one of
-// forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
+// checkForwarder returns an error if the process pid, named name, that serves at (a port or a
+// socket) is one of forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
 // exe by the kernel; its argv[0] tells which it is, and an argv that cannot be read is refused.
 func checkForwarder(ctx context.Context, pid int32, name, at string) error {
 	if processKey(name) == "exe" {
