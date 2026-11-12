@@ -96,6 +96,63 @@ check "red names the playwright step" "::error file=$work/pwversion.yml,line=13:
 sed '16a\          restore-keys: playwright-' "$work/good.yml" >"$work/pwrestore.yml"
 check "playwright cache with restore-keys: red" 1 "$(run "$work/pwrestore.yml")"
 
+# R-1309: a quoted uses: is the same action, and owner/repo match case-insensitively.
+for q in "'" '"'; do
+    printf '    steps:\n      - uses: %sSwatinem/Rust-Cache@v2%s\n        with:\n          workspaces: x\n' \
+        "$q" "$q" >"$work/quoted.yml"
+    check "quoted ($q) rust-cache without cache-bin: red" 1 "$(run "$work/quoted.yml")"
+done
+
+# cache-bin counts only in the with: block of the step, not under env:.
+cat >"$work/binenv.yml" <<'YML'
+    steps:
+      - uses: Swatinem/rust-cache@v2
+        env:
+          cache-bin: false
+        with:
+          workspaces: x
+YML
+check "cache-bin under env: red" 1 "$(run "$work/binenv.yml")"
+
+cat >"$work/bindir.yml" <<'YML'
+    steps:
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-directories: |
+            target/extra
+            ~/.cargo/bin
+YML
+check "rust-cache cache-directories on .cargo/bin: red" 1 "$(run "$work/bindir.yml")"
+check "red names the cache-directories step" "::error file=$work/bindir.yml,line=2::rust-cache cache-directories names .cargo/bin" "$(cat "$work/out")"
+
+cat >"$work/cachebin.yml" <<'YML'
+    steps:
+      - uses: "actions/cache/restore@v6"
+        with:
+          key: tools
+          path:
+            - ~/.cargo/registry
+            - ~/.cargo/bin
+      - run: true
+YML
+check "actions/cache path list on .cargo/bin: red" 1 "$(run "$work/cachebin.yml")"
+check "red names the actions/cache step" "::error file=$work/cachebin.yml,line=2::actions/cache path names .cargo/bin" "$(cat "$work/out")"
+
+sed 's|~/.cargo/bin|~/.cargo/git|' "$work/cachebin.yml" >"$work/cachegit.yml"
+check "actions/cache path list without .cargo/bin: green" 0 "$(run "$work/cachegit.yml")"
+
+# .cargo/bin outside path/cache-directories (a run: line) is no cache setting.
+cat >"$work/binrun.yml" <<'YML'
+    steps:
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: k
+      - run: ls ~/.cargo/bin
+YML
+check ".cargo/bin in a run step: green" 0 "$(run "$work/binrun.yml")"
+
 check "one bad file among good ones: red" 1 "$(run "$work/good.yml" "$work/nobin.yml")"
 check "no argument: usage" 2 "$(run)"
 check "unreadable file: usage" 2 "$(run "$work/missing.yml")"
