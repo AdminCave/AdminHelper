@@ -1,5 +1,5 @@
 # Monitoring: frps-Ports ohne Fehlalarm — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-23 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-23 · Review: am Ende
 Spec: docs/features/kern-monitoring-23.md (Roadmap R-1375)
 Heavy: linux-full — apps/agent (Protokoll-Erkennung) und apps/monitoring (Katalog-Modul); geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
