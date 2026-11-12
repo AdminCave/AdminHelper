@@ -94,8 +94,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          # A tag build restores and stores no build cache (R-1349, like release.yml): the
+          # image it signs is built from the tagged tree alone. main keeps the cache.
+          # cache_settings.sh --tag-uncached holds this form.
+          no-cache: ${{ startsWith(github.ref, 'refs/tags/') }}
+          cache-from: ${{ !startsWith(github.ref, 'refs/tags/') && format('type=gha,scope={0}', matrix.image) || '' }}
+          cache-to: ${{ !startsWith(github.ref, 'refs/tags/') && format('type=gha,mode=max,scope={0}', matrix.image) || '' }}
           # In-toto SLSA provenance + SBOM attestations attached to the image.
           provenance: mode=max
           sbom: true

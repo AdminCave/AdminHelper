@@ -1194,7 +1194,7 @@ def test_an_input_that_turns_unreadable_is_rejected_and_logged_once(box):
     lines = len(box._log().splitlines())
 
     box.config.chmod(0)
-    box.wait_state("degraded")
+    box.wait_state("degraded", 3 * WAIT)
     box.wait_polls(3)
 
     status = box.read()
@@ -1209,7 +1209,7 @@ def test_an_input_that_turns_unreadable_is_rejected_and_logged_once(box):
 
     # Readable again, the input frps runs from: nothing to restart.
     box.config.chmod(0o600)
-    status = box.wait_state("running")
+    status = box.wait_state("running", 3 * WAIT)
     assert (status.reason, len(status.events)) == ("none", 2)
     assert box.runs() == 1
 
