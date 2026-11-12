@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module-3 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-module-3 · Review: am Ende
+Status: bereit · Branch: feature/arch-monitoring-module-3 · Review: am Ende
 Spec: docs/features/arch-monitoring-module-3.md (Roadmap R-1268)
 Heavy: linux-full — `apps/agent` (Last-Tor im Lauf des Agenten); der Sammellauf fährt agent-monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku DE+EN und CHANGELOG (R-1268)  [ ]
+### T3 — Doku DE+EN und CHANGELOG (R-1268)  [x]
 Komponente: monitoring · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-module-3.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @292d6f132 2026-11-12T17:12:10+01:00
+Review: am Ende (Branch-Review)
 Änderung: Last-Tor, Zustand und `self.load_shed` im Agenten-Kapitel; Push-Payload, `reason`, Schonung ohne 45-min-Grenze und Metrik in der Entwickler-Doku des Monitorings; in der Admin-Doku, was bei Last aussetzt und wie es sich zeigt; CHANGELOG-Fragment ohne Umlaute.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: docs/developer/agent.html DE+EN · docs/developer/monitoring.html DE+EN · docs/admin/monitoring.html DE+EN · changelog.d/arch-monitoring-module-3.md
