@@ -134,8 +134,10 @@ Dedup-Key: bug:monitoring:check_configs.py:CENTRAL_SENSORS.tls
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_config.py
 Doku: → T14
 
-### T16 — Check-Ergebnisse vor dem Speichern auf speicherbare Zeichen bringen (R-1366)  [ ]
+### T16 — Check-Ergebnisse vor dem Speichern auf speicherbare Zeichen bringen (R-1366)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @40e0d96c8 2026-11-12T11:36:17+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T16.verdict.json)
 Änderung: `apply_result` bringt `message` und die Texte in `details` auf Zeichen, die Postgres speichert, bevor `_write_state` schreibt; das gilt damit für beide Ergebniswege (Scheduler `execute_check` und Agent-Push `routers/agent.py`) und jeden Checker. Je Weg ein Test gegen die Test-DB.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_agent_report.py
 Doku: → T14
@@ -232,3 +234,6 @@ Task-Review: am Ende
 - 2026-11-12 T9: der DQS-Key ist ein Label des Fragenamens: `list_query` fängt jede Ausnahme selbst, `_Run.listed` jede weitere; Meldung, Details und Metrik tragen nur Listen-Titel — Test über alle Pfade (auch eine Ausnahme mit dem Namen) mit `caplog`. Laufzeit höchstens 45 s, danach sind die übrigen Listen nicht beurteilt. NXDOMAIN der Domain ist `reached=True` wie in `mail_dns`.
 - 2026-11-12 T9: sieben Dateien: `checkers/central.py` (Registry-Fühler), `routers/checks.py` (Metrik `monitor_listed_count_value`) und die Tests von Config und Dispatcher per `set-files`, `Verify:` um diese Tests erweitert.
 - 2026-11-12 T15: die Ablehnung nennt den passenden Fühler (25/587 → `smtp`, 143 → `imap`); für 110 (POP3, STLS) gibt es keinen, die Meldung sagt das — der Fühler `imap` spricht kein POP3. Andere STARTTLS-Ports (21, 119, 4190) nennt R-1367 nicht, sie bleiben offen (kein postscreen davor). Die Ports 465, 993 und 995 mit direktem TLS bleiben für `tls` erlaubt (Test).
+- 2026-11-12 T16: zentral in `apply_result`, damit für beide Ergebniswege und jeden Checker: NUL und einzelne Surrogate (U+D800–U+DFFF) in `message` und in jedem String von `details`, Schlüssel eingeschlossen, werden U+FFFD; alle anderen Zeichen bleiben. Der Agent-Bericht lehnt beides schon an seiner Grenze ab (`core/bounds.py`, 422), der Push-Test lässt den Text daher den Checker selbst erzeugen. `core/bounds.py` bleibt die Kopie der Server-Datei, die Regex steht in `check_engine.py`.
+- 2026-11-12 T16: `details` auch, weil `json.dumps` ein Surrogat als Escape schreibt, das die Datenbank nimmt, eine spätere JSON-Antwort aber nicht in UTF-8 kodieren kann; NUL in den Details stört escaped nicht und wird der Einheitlichkeit halber mit ersetzt. Rekursiv statt mit explizitem Stack wie `find_unstorable`: die Tiefe der Details bestimmt der Checker im eigenen Code, kein Absender. Annahme: die Datenbank kodiert UTF8 (Standard des Postgres-Images).
+- 2026-11-12 T16: kein Postgres-gebundener Test (liefe lokal als SKIP); stattdessen eine einmalige Gegenprobe gegen einen Wegwerf-Container `postgres:18-alpine` (Ergebnis im Commit-Body). Die sqlite-Tests fallen ohne die Änderung rot, ebenso jeder Mutant (Regex ohne NUL oder ohne untere Surrogate, `message`, `details`, Schlüssel oder Listen nicht ersetzt).

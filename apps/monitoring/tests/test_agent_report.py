@@ -1469,3 +1469,31 @@ def test_a_report_at_the_size_limit_is_taken(client_db, monkeypatch):
 
     assert r.status_code == 200, r.text
     assert _liveness_rows(factory) == 1
+
+
+def test_a_checker_text_the_database_cannot_store_is_replaced(client_db, monkeypatch):
+    # R-1366, push path: the report itself may carry no NUL and no lone surrogate (refused at
+    # the boundary), but the state write takes whatever a checker makes of it. A checker text
+    # with both reaches message and details with U+FFFD in their place, and the check is
+    # stored like any other instead of costing its result.
+    import app.routers.agent as agent_router
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-x", "system_state")
+
+    class _Text:
+        def evaluate(self, config, report, prev_details=None):
+            details = {"why\x00": ["a\ud800b", {"x": "\U0001f600\udfff"}]}
+            return "critical", "down\x00 at\ud800\U0001f600", {"_details": details}
+
+    monkeypatch.setattr(agent_router, "get_checker", lambda _ct: _Text())
+
+    r = client.post("/agent/srv-1/report", json={"system_state": {"oom_kills": 0}})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-x").one()
+    assert state.status == "critical"
+    assert state.message == "down\ufffd at\ufffd\U0001f600"
+    assert json.loads(state.details) == {"why\ufffd": ["a\ufffdb", {"x": "\U0001f600\ufffd"}]}
