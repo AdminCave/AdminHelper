@@ -1,5 +1,5 @@
 # Monitoring: Probe-Ziele, Socket-Pfade, Docker-Erkennung, Meldetext, Testvorlage — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-22 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-22 · Review: pro Task
 Spec: docs/features/kern-monitoring-22.md (Roadmap R-1319, R-1320, R-1324, R-1321, R-1300, R-1365)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring (Meldetext); dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (Socket-Dial unter FreeBSD, T4)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -96,6 +96,13 @@ Beweis: apps/desktop/ui/src/lib/i18n/dictionaries.ts:760 und :2208 (`Target is n
 (wie der Monitoring-Dienst seit T6); Test legt fest, dass der Text keine Adresse behauptet.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitoringText.test.ts
 Doku: keine (T7 beschreibt den Meldetext schon ohne Adresse)
+
+### T10 — R-1320: Peer-Name des Sockets mit Schrägstrich-Pfaden prüfen  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go
+Beweis: PR #489, Job „Go Agent (test, Windows)“ 2026-11-12: `TestCheckPeerNameRefusesWhatItCannotPlace` rot, `"/tmp/p.sock" = target not allowed: … bound no absolute path` (apps/agent/internal/probe/guard.go:193 `filepath.IsAbs`) · Dedup-Key: BUG:agent:probe/guard.go:checkPeerName-filepath
+Änderung: `checkPeerName` prüft den Namen aus getpeername, einen Unix-Socket-Pfad mit `/`, mit `path.IsAbs`/`path.Clean` statt `filepath` (unter Windows ist `/run/…` für `filepath` nicht absolut); Parameter `path` heißt `sock`. Der bestehende Test zeigt den Fund auf Windows.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (kein Verhalten auf Linux/FreeBSD ändert sich)
 
 ## Entscheidungen
 - T5: Der AST-Test meldet jeden Wert vom Typ exec.Cmd (Literal, new, Nullwert, Feld), nur ein Zeiger darauf gilt nicht als Start; dazu die Windows-Starts (CreateProcess, CreateProcessAsUser, ShellExecute). Ein roher syscall.Syscall mit SYS_EXECVE bleibt eine genannte Grenze.
