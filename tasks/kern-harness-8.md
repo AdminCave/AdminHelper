@@ -1,5 +1,5 @@
 # Adressfilter im PR-Text, .github-Skripttests im scripts-Block, Commit-Betreff geprüft — Task-Ledger
-Status: aktiv · Branch: feature/kern-harness-8 · Review: am Ende
+Status: bereit · Branch: feature/kern-harness-8 · Review: am Ende
 Spec: docs/features/kern-harness-8.md (Roadmap R-1325, R-1352, R-1359)
 Heavy: none — nur Harness-Skripte und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -50,8 +50,10 @@ Tests für beide Richtungen. `harness_consistency_test` verlangt dieselbe `SUBJE
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md
 
-### T5 — Abschlussprüfung Runde 2: IPv6 an `_` oder Text, in Klammern hinter Wort  [ ]
+### T5 — Abschlussprüfung Runde 2: IPv6 an `_` oder Text, in Klammern hinter Wort  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fe941326f 2026-11-12T16:22:32+01:00
+Review: am Ende (Branch-Review)
 Beweis: security branch Runde 2 2026-11-12 @bc9f15516 (`_fd00::1_`, `host_fd00::1`, `fd00::1er-Netz` bleiben im PR-Text stehen, main maskiert sie); reviewer Nit `host[fd00::1]:22`
 Änderung: `addr()` lässt eine IPv6-Adresse nur stehen, wenn direkt davor ein Buchstabe oder eine Ziffer steht (nicht
 `_`, nicht die rechte Seite) und der Treffer nicht mit `[` beginnt; die Fixture bekommt die vier Fälle. Dritte Runde

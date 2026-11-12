@@ -407,12 +407,13 @@ def addr(m):
             core = re.sub(r":\d+$", "", core)   # 10.0.0.1:22
         try:
             ip = ipaddress.ip_address(core.split("%")[0])
-            # `::c` in `pty::tests::closing_` parses as IPv6. An address never
-            # touches a word character (R-1325): such a candidate is either a
-            # path, or a word glued to the address (`IPv6:2001:db8::5` starts
-            # at `6:`), which the retry behind the colon below takes off.
-            s, a, e = m.string, m.start() + start, m.end()
-            if not (ip.version == 6 and ((a > 0 and re.match(r"\w", s[a - 1])) or re.match(r"\w", s[e:e + 1]))):
+            # `::c` in `pty::tests::closing_` parses as IPv6 (R-1325). A letter or
+            # digit right in front marks a path like that, or a word glued to the
+            # address (`IPv6:2001:db8::5` starts at `6:`), which the retry behind
+            # the colon below takes off. `_` and the right side do not count:
+            # `_fd00::1_` is Markdown, `fd00::1er` running text.
+            s, a = m.string, m.start() + start
+            if not (ip.version == 6 and not cand.startswith("[") and a > 0 and re.match(r"[^\W_]", s[a - 1])):
                 return text if ip.is_loopback else text[:start] + "<addr>"
         except ValueError:
             pass

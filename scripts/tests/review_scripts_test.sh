@@ -924,7 +924,7 @@ Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-
 Review: approve (opus)
 ### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
 Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**, pve.home.arpa, nas.fritz.box, net 192.168.1.x and 10.0.0.*, VM-ID 3013, Template 3904 und 3905, net 172.16.x.x.
-Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902 in pty::tests::closing_ and std::fs::read, IPv6:2001:db8::5, eth0:fd12:3456::7, Source:fd00::1, node:fd00::2
+Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902 in pty::tests::closing_ and std::fs::read, IPv6:2001:db8::5, eth0:fd12:3456::7, Source:fd00::1, node:fd00::2, _fd00::3_, host_fd00::4, fd00::5er-Netz, host[fd00::6]:22
 ### T7 — die siebte Aufgabe
 ### Ergebnis des Laufs
 Evidenz: run.sh[quick] scripts: 99 passed, 0 failed, 0 skipped
