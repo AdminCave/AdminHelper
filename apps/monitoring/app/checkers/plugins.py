@@ -77,7 +77,7 @@ def _backup_details(vm: dict) -> dict:
     if isinstance(jobs, list):
         details["backupJobs"] = [
             {key: text for key in _BACKUP_JOB_KEYS if (text := cap_agent_text(job.get(key)))}
-            for job in capped_objects(jobs)[:_MAX_BACKUP_JOBS]
+            for job in capped_objects(jobs, _MAX_BACKUP_JOBS)
         ]
     error = cap_agent_text(vm.get("backup_error"))
     if error:
@@ -245,7 +245,7 @@ def _zfs_details(pool: dict) -> dict:
             if end is not None:
                 details["scrub"]["end"] = end
     vdevs = []
-    for vdev in capped_objects(pool.get("vdev_errors"))[:_MAX_VDEV_ERRORS]:
+    for vdev in capped_objects(pool.get("vdev_errors"), _MAX_VDEV_ERRORS):
         counts = {key: _counter(vdev.get(key)) for key in _VDEV_COUNTERS}
         if None not in counts.values():
             vdevs.append({"name": cap_agent_text(vdev.get("name")) or "?", **counts})
