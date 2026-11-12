@@ -31,12 +31,12 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Agent Deployment</h1>
-          <p class="lead">The Go agent runs on every monitored server. It handles two jobs: metric collector runs and FRP client auto-provisioning. It ships as DEB, RPM (Linux) or a single <code>.exe</code> (Windows).</p>
+          <p class="lead">The Go agent runs on every monitored server. It handles two jobs: metric collector runs and FRP client auto-provisioning. It ships as DEB, RPM (Linux), as a pkg package (FreeBSD) or as a single <code>.exe</code> (Windows).</p>
 
           <h2>What does the agent do?</h2>
           <ul>
-            <li><strong>Monitoring</strong>: runs every 5 minutes (systemd timer with jitter), collects CPU, RAM, disk, SMART, Docker container status and ZFS pools, and sends the metrics tunnel-free to the AdminHelper server (port 443) at <code>POST /api/monitoring/agent/{server_id}/report</code>, with the server's monitor key in the <code>X-API-Key</code> header; the server forwards them internally to the monitoring service. No separate monitoring port needs to be reachable.</li>
-            <li><strong>FRP client</strong>: when provisioned with a provision token, it fetches its client certificate in the mTLS enrollment, which frpc uses as well, and starts <code>frpc.service</code> only when the host has an active FRP tunnel.</li>
+            <li><strong>Monitoring</strong>: runs every 5 minutes (Linux: systemd timer with jitter, FreeBSD: cron), collects CPU, RAM, disk, SMART, Docker container status and ZFS pools, and sends the metrics tunnel-free to the AdminHelper server (port 443) at <code>POST /api/monitoring/agent/{server_id}/report</code>, with the server's monitor key in the <code>X-API-Key</code> header; the server forwards them internally to the monitoring service. No separate monitoring port needs to be reachable.</li>
+            <li><strong>FRP client</strong>: when provisioned with a provision token, it fetches its client certificate in the mTLS enrollment, which frpc uses as well, and starts frpc (Linux: <code>frpc.service</code>, FreeBSD: the rc.d service <code>adminhelper_frpc</code>) only when the host has an active FRP tunnel.</li>
             <li><strong>Updates</strong>: see the <a href="#upgrade">Upgrade</a> section. <em>Upgrade note:</em> when moving to the internal-only monitoring (server proxy instead of the host port <code>8480</code>), existing agents must be <strong>re-provisioned</strong> once so their stored <code>MONITOR_URL</code> switches to <code>/api/monitoring</code>.</li>
           </ul>
 
@@ -65,7 +65,7 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>sudo dnf install ./adminhelper-agent-*.x86_64.rpm</code></pre>
 
           <h2>From the AdminHelper package repo (<code>apt upgrade</code> / <code>dnf upgrade</code>)</h2>
-          <p>The AdminHelper server itself hosts a <strong>GPG-signed</strong> apt/rpm repo on the gateway's repo plane (port <code>REPO_PORT</code>, default <code>8445</code>, certless). Agent hosts then pull new versions through the normal package manager instead of a manual download &mdash; meant mainly for <strong>ongoing updates</strong> across many servers. <em>Prerequisite:</em> the server runs with a configured repo signing key (see <a href="../developer/cicd.html">CI/CD &amp; Release</a>); otherwise the <code>/apt</code> and <code>/rpm</code> paths just return <code>404</code>.</p>
+          <p>The AdminHelper server itself hosts a <strong>GPG-signed</strong> apt/rpm repo on the gateway's repo plane (port <code>REPO_PORT</code>, default <code>8445</code>, certless). Agent hosts then pull new versions through the normal package manager instead of a manual download &mdash; meant mainly for <strong>ongoing updates</strong> across many servers. <em>Prerequisite:</em> the server runs with a configured repo signing key (see <a href="../developer/cicd.html">CI/CD &amp; Release</a>); otherwise the <code>/apt</code>, <code>/rpm</code> and <code>/freebsd</code> paths just return <code>404</code>.</p>
           <p><strong>The trust root is the GPG fingerprint</strong>, not the transport: package authenticity rests on the signature (like any distro mirror). Check the fingerprint of the fetched key against the published value (<code>912E1EC637F49C978EAD47DF926B404297E9DC1C</code>) before you continue.</p>
 
           <h3>Debian/Ubuntu (apt)</h3>
@@ -153,9 +153,56 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           <div class="code-header"><span>powershell</span></div>
 <pre><code># PowerShell as Administrator, in the download folder
 .\adminhelper-agent-windows-x86_64.exe service install</code></pre>
-          <p>The command copies the binary to <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registers the service <code>AdminHelper-Agent</code> (auto-start, LocalSystem account, restarted 60&nbsp;s after a failure) and starts it. It also registers the source of the same name for the Windows event log (Application), so that the agent's entries there have a description (see Logs); <code>service uninstall</code> removes the service and the source again. If the source cannot be registered or removed, the command prints a warning; the service is not affected. Then provision the host as in the next section. The agent sets up no frpc service on Windows.</p>
+          <p>The command copies the binary to <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registers the service <code>AdminHelper-Agent</code> (auto-start, LocalSystem account, restarted 60&nbsp;s after a failure) and starts it. It also registers the source of the same name for the Windows event log (Application), so that the agent's entries there have a description (see Logs); <code>service uninstall</code> removes the service and the source again. If the source cannot be registered or removed, the command prints a warning; the service is not affected. Then provision the host as in <a href="#provisioning">Provisioning</a>. The agent sets up no frpc service on Windows.</p>
 
-          <h2>Provisioning</h2>
+          <h2 id="freebsd">FreeBSD</h2>
+          <p>For FreeBSD&nbsp;14 and 15 on amd64 the AdminHelper server hosts a signed pkg repo per ABI on its repo plane (port <code>8445</code>, see above): <code>https://&lt;server&gt;:8445/freebsd/${ABI}</code>; pkg fills in <code>${ABI}</code> itself, for example <code>FreeBSD:15:amd64</code>. The <code>adminhelper-agent</code> package brings the agent (<code>/usr/local/bin/adminhelper-agent</code>), frpc (<code>/usr/local/libexec/adminhelper/frpc</code>) and the rc.d script <code>adminhelper_frpc</code>. There is no <a href="#quick-rollout">quick rollout</a> for FreeBSD; you set it up by hand as root.</p>
+          <p><strong>The trust root is the repo's public RSA key</strong>, not the transport: pkg accepts only a catalogue whose signature matches this key. Check the SHA-256 of the key file against the value published under <a href="../developer/cicd.html">CI/CD &amp; Release</a> before you go on. If a catalogue's signature does not match, <code>pkg update</code> reports &ldquo;Invalid signature, removing repository&rdquo; and still exits with 0; pkg then installs nothing from that repo.</p>
+          <div class="code-header"><span>sh</span></div>
+<pre><code>SERVER=srm.example.com                 # your AdminHelper server
+VERSION=0.47.0                         # match the server's release
+PUBSHA=&lt;sha256-from-cicd&gt;             # published value (CI/CD &amp; Release)
+
+# 1) Fetch the public repo key, check it (ENFORCED), install it only then
+TMP=$(mktemp -d)
+fetch -o "$TMP/adminhelper-pkg.pub" \
+  "https://raw.githubusercontent.com/AdminCave/AdminHelper/v${VERSION}/apps/agent/freebsd/adminhelper-pkg.pub"
+[ "$(sha256 -q "$TMP/adminhelper-pkg.pub")" = "$PUBSHA" ] \
+  || { echo "ERROR: key does not match the published value — aborting!"; rm -rf "$TMP"; exit 1; }
+install -d -m 0755 /usr/local/etc/pkg/keys /usr/local/etc/pkg/repos
+install -m 0644 "$TMP/adminhelper-pkg.pub" /usr/local/etc/pkg/keys/adminhelper-pkg.pub
+rm -rf "$TMP"
+
+# 2) TLS against the internal server cert. Option A (hardened, host already
+#    enrolled -> the internal CA is at /usr/local/etc/adminhelper/identity/ca.crt):
+TLSENV='SSL_CA_CERT_FILE: "/usr/local/etc/adminhelper/identity/ca.crt"'
+#    Option B (only for the very first bootstrap of a host not yet enrolled,
+#    switch to A afterwards) — the signature still carries authenticity:
+# TLSENV='SSL_NO_VERIFY_PEER: "1"'
+
+# 3) Repo file; ENV applies to this repo only, pkg fills in ${ABI} itself
+cat &gt; /usr/local/etc/pkg/repos/adminhelper.conf &lt;&lt;EOF
+adminhelper: {
+  url: "https://${SERVER}:8445/freebsd/\${ABI}",
+  signature_type: "pubkey",
+  pubkey: "/usr/local/etc/pkg/keys/adminhelper-pkg.pub",
+  enabled: yes,
+  ENV: { ${TLSENV} }
+}
+EOF
+
+pkg update -r adminhelper
+pkg install -r adminhelper adminhelper-agent   # later updates: pkg upgrade</code></pre>
+          <p>Then provision the host as in <a href="#provisioning">Provisioning</a>, as root and without <code>sudo</code>. What differs from Linux on FreeBSD:</p>
+          <ul>
+            <li><strong>Paths:</strong> configuration and identity live under <code>/usr/local/etc/adminhelper/</code> (<code>monitor.conf</code>, <code>identity/</code>), the FRP files under <code>/usr/local/etc/adminhelper/frp/</code> (<code>frpc.toml</code>, <code>adminhelper.conf</code>, <code>admin.conf</code>). The log is <code>/var/log/adminhelper/agent.log</code>, as on Linux.</li>
+            <li><strong>Schedule:</strong> instead of <code>adminhelper-agent.timer</code>, the agent writes <code>/usr/local/etc/cron.d/adminhelper</code> on <code>provision</code>, <code>monitor init</code> and <code>service install</code>: <code>adminhelper-agent run --once</code> as root every 5&nbsp;minutes, without jitter. cron reads the file without a restart; <code>service uninstall</code> deletes it.</li>
+            <li><strong>frpc:</strong> the rc.d service <code>adminhelper_frpc</code> carries the tunnel instead of <code>frpc.service</code>. It runs under daemon(8), which restarts frpc five seconds after it exits. If the host has tunnels, the agent enables the service (<code>service adminhelper_frpc enable</code>) and starts it; without tunnels it stops and disables it. Everything else under <em>Tunnels after provisioning</em> applies, with <code>/usr/local/etc/adminhelper/frp/admin.conf</code> instead of <code>/etc/frp/admin.conf</code>. There is no local emergency stop like <code>systemctl mask</code>: to keep frpc off for good, delete or disable the host's tunnels on the server.</li>
+            <li><strong>Upgrade and removal:</strong> <code>pkg upgrade</code> keeps configuration, cron entry and tunnel, and restarts frpc only if <code>adminhelper_frpc</code> is enabled. A fresh install starts nothing and writes no cron entry; provisioning does that. <code>pkg delete adminhelper-agent</code> stops frpc and deletes <code>adminhelper_frpc_enable</code> and the cron entry; <code>/usr/local/etc/adminhelper/</code> with configuration and identity stays.</li>
+            <li><strong>Monitoring:</strong> what the agent reports on FreeBSD and what it does not is under <a href="./monitoring.html#system-state">Monitoring → System state</a>.</li>
+          </ul>
+
+          <h2 id="provisioning">Provisioning</h2>
           <p>In the desktop client, in the server workspace of the installation the agent is to report to: <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
 
           <div class="code-header"><span>bash</span></div>
@@ -176,10 +223,10 @@ sudo adminhelper-agent provision \
 # Paste the token after the call and press Enter (stdin, not an argument);
 # after "Provision token:" nothing you type is shown</code></pre>
 
-          <p>After provisioning the agent enables the <code>adminhelper-agent.timer</code> systemd unit (Linux). To provision, it calls <code>/api/servers/{id}/provision/activate</code> and receives, depending on the configuration, the server API key, the monitor key, <code>frpc.toml</code> and an enrollment token. If the host has an active FRP tunnel, the agent (Linux) writes <code>frpc.toml</code> and starts <code>frpc.service</code> for good (<code>systemctl enable --now</code>); a running frpc is restarted. Without an active tunnel the agent stops and disables <code>frpc.service</code> and removes <code>frpc.toml</code>, also one from an earlier provisioning. The token becomes invalid once redeemed.</p>
+          <p>After provisioning the agent enables the <code>adminhelper-agent.timer</code> systemd unit (Linux). To provision, it calls <code>/api/servers/{id}/provision/activate</code> and receives, depending on the configuration, the server API key, the monitor key, <code>frpc.toml</code> and an enrollment token. If the host has an active FRP tunnel, the agent (Linux) writes <code>frpc.toml</code> and starts <code>frpc.service</code> for good (<code>systemctl enable --now</code>); a running frpc is restarted. Without an active tunnel the agent stops and disables <code>frpc.service</code> and removes <code>frpc.toml</code>, also one from an earlier provisioning. The token becomes invalid once redeemed. On FreeBSD the cron entry and the rc.d service take the place of the timer and <code>frpc.service</code> (<a href="#freebsd">FreeBSD</a>).</p>
           <p><strong>mTLS enrollment (automatic):</strong> during provisioning the agent also fetches its own client certificate from the <code>ca-issuer</code> &mdash; an ECDSA key generated on-device (never leaves the host), CSR sent to the gateway's enroll plane on port <code>8444</code>. Cert + key are stored under <code>/etc/adminhelper/identity/</code> (key <code>0600</code>) and the internal root CA is pinned. The agent then presents this cert, valid for this server only, on all server pushes and auto-renews it at ~50&nbsp;% of its lifetime, after a rotation of the intermediates or the root already on its next run (<a href="./operations.html#trust-generation">Operations</a>). <em>Best-effort:</em> if enrollment fails (e.g. port 8444 unreachable) the agent keeps working with the API key for now.</p>
           <p><strong>Provisioning again:</strong> when you provision a server again (a new token from the <em>Provisioning</em> tab, then <code>adminhelper-agent provision …</code> once more), the new agent replaces the previous one. The server deletes the API key of the previous provisioning; only the key the agent gets now counts. Global and manually created keys and the keys of other servers stay. If the agent already ran on this host, its new certificate replaces the previous one. When the host is provisioned for another server, the agent first drops the identity of the previous one, which the new server would not accept; if the enrollment fails after that, it keeps working with the API key for now.</p>
-          <p><strong>Tunnels after provisioning (Linux):</strong> on every run (<code>adminhelper-agent.timer</code>, about every 5&nbsp;minutes) the agent syncs the host's tunnels with the server. A tunnel you create after the provisioning takes effect on the next run, without provisioning again: the agent writes <code>frpc.toml</code> and enables <code>frpc.service</code> for good (<code>systemctl enable --now</code>, so frpc also runs after a reboot). A running frpc takes over the new config: when only tunnels change, it loads them by a reload, and open sessions over unchanged tunnels stay up; when the frps address, token or TLS change, the agent restarts frpc, as it does on every provisioning. For the reload frpc opens an admin API on <code>127.0.0.1</code> only, with a random password from <code>/etc/frp/admin.conf</code> (<code>0600</code>, readable by root only). If frpc does not run despite a tunnel, for instance because another process holds its admin port after a reboot, the next run moves the admin API to a new port with a new password and starts frpc. The same goes for an frpc you stop or disable locally (<code>systemctl stop</code> or <code>disable --now</code>): as long as the host has tunnels, the next run starts and enables it again, within about 5.5&nbsp;minutes. Without a tunnel no frpc runs: when the last tunnel is gone (deleted, or all of the host's tunnels disabled) or the server has no FRP config for the host, the agent stops and disables <code>frpc.service</code> and deletes <code>frpc.toml</code>, since it holds the frps token. To keep frpc off on a host for good, delete or disable its tunnels on the server; locally, <code>systemctl mask frpc</code> remains as an emergency stop, and every agent run then logs an frpc error. The agent puts <code>loginFailExit = false</code> in front of the server's <code>frpc.toml</code>: if frps is unreachable at start, frpc does not exit but keeps trying. <em>Older hosts:</em> if an older agent provisioned the host without a tunnel, the host lacks the server API key for the sync, and later tunnels never arrive. Provision it once more; until then the agent log points this out on every run. <em>Refused configuration:</em> if the server's configuration departs from the form the server generates, the agent does not take it and stops frpc until the server sends one that fits; line and key are in the agent log.</p>
+          <p><strong>Tunnels after provisioning (Linux; for FreeBSD see <a href="#freebsd">FreeBSD</a>):</strong> on every run (<code>adminhelper-agent.timer</code>, about every 5&nbsp;minutes) the agent syncs the host's tunnels with the server. A tunnel you create after the provisioning takes effect on the next run, without provisioning again: the agent writes <code>frpc.toml</code> and enables <code>frpc.service</code> for good (<code>systemctl enable --now</code>, so frpc also runs after a reboot). A running frpc takes over the new config: when only tunnels change, it loads them by a reload, and open sessions over unchanged tunnels stay up; when the frps address, token or TLS change, the agent restarts frpc, as it does on every provisioning. For the reload frpc opens an admin API on <code>127.0.0.1</code> only, with a random password from <code>/etc/frp/admin.conf</code> (<code>0600</code>, readable by root only). If frpc does not run despite a tunnel, for instance because another process holds its admin port after a reboot, the next run moves the admin API to a new port with a new password and starts frpc. The same goes for an frpc you stop or disable locally (<code>systemctl stop</code> or <code>disable --now</code>): as long as the host has tunnels, the next run starts and enables it again, within about 5.5&nbsp;minutes. Without a tunnel no frpc runs: when the last tunnel is gone (deleted, or all of the host's tunnels disabled) or the server has no FRP config for the host, the agent stops and disables <code>frpc.service</code> and deletes <code>frpc.toml</code>, since it holds the frps token. To keep frpc off on a host for good, delete or disable its tunnels on the server; locally, <code>systemctl mask frpc</code> remains as an emergency stop, and every agent run then logs an frpc error. The agent puts <code>loginFailExit = false</code> in front of the server's <code>frpc.toml</code>: if frps is unreachable at start, frpc does not exit but keeps trying. <em>Older hosts:</em> if an older agent provisioned the host without a tunnel, the host lacks the server API key for the sync, and later tunnels never arrive. Provision it once more; until then the agent log points this out on every run. <em>Refused configuration:</em> if the server's configuration departs from the form the server generates, the agent does not take it and stops frpc until the server sends one that fits; line and key are in the agent log.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
@@ -202,8 +249,8 @@ sudo adminhelper-agent provision \
               <tr><td><code>monitor credential set &lt;ref&gt;</code></td><td>Store a credential for probes, on this host only (from stdin, prompted without echo on a terminal; see <a href="./monitoring.html#credentials">Credentials for probes</a>)</td><td>—</td></tr>
               <tr><td><code>monitor credential delete &lt;ref&gt;</code></td><td>Delete a stored credential</td><td>—</td></tr>
               <tr><td><code>monitor credential list</code></td><td>Names of the stored credentials, never their values</td><td>—</td></tr>
-              <tr><td><code>service install</code></td><td>Register and start the OS service</td><td>—</td></tr>
-              <tr><td><code>service uninstall</code></td><td>Deregister the OS service</td><td>—</td></tr>
+              <tr><td><code>service install</code></td><td>Register and start the OS service (FreeBSD: copy the binary to <code>/usr/local/bin</code>, write the cron entry)</td><td>—</td></tr>
+              <tr><td><code>service uninstall</code></td><td>Deregister the OS service (FreeBSD: delete the cron entry)</td><td>—</td></tr>
               <tr><td><code>diagnostics</code></td><td>Write a redacted diagnostics report for a bug report (see below)</td><td>—</td></tr>
             </tbody>
           </table>
@@ -215,20 +262,24 @@ sudo adminhelper-agent provision \
 <pre><code>systemctl status adminhelper-agent.timer   # Linux – next activation
 systemctl status frpc.service              # only with an active FRP tunnel
 journalctl -u adminhelper-agent.service --since "1 hour ago"
-sudo adminhelper-agent run --once          # one run by hand: sync + push</code></pre>
+sudo adminhelper-agent run --once          # one run by hand: sync + push
+
+cat /usr/local/etc/cron.d/adminhelper      # FreeBSD – the schedule
+service adminhelper_frpc status            # FreeBSD – only with an active FRP tunnel</code></pre>
 
           <h3>Logs</h3>
           <p>The agent <strong>also</strong> writes its logs to a rotating file — independent of the service manager, handy for a bug report:</p>
           <ul>
-            <li>Linux: <code>/var/log/adminhelper/agent.log</code></li>
+            <li>Linux and FreeBSD: <code>/var/log/adminhelper/agent.log</code></li>
             <li>Windows: <code>%ProgramData%\AdminHelper\logs\agent.log</code></li>
           </ul>
           <p>Same format as stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (component: <code>agent</code>, <code>frpc</code> or <code>monitor</code>). Rotates at 10&nbsp;MB, 5 compressed archives. Verbosity is set via <code>LOG_LEVEL</code> (env) or <code>--log-level debug|info|warn|error</code>.</p>
+          <p>On FreeBSD frpc does not write to this file but, through daemon(8), to <code>/var/log/adminhelper/frpc.log</code> (<code>0600</code>, readable by root only). newsyslog rotates it at 1000&nbsp;KB and keeps 7 bzip2-compressed archives; the package installs the entry for that as <code>/usr/local/etc/newsyslog.conf.d/adminhelper.conf</code>.</p>
           <p>On Windows the agent secures the log directory before it opens the file. If that fails, it logs to stdout only and writes no <code>agent.log</code> until its next start; the FRP sync changes nothing as long as the data directory cannot be secured. When it runs as a service, the reason is in the Event Viewer under <em>Windows Logs → Application</em>: a warning from the source <code>AdminHelper-Agent</code> (event ID 1) with the directory, the error and these consequences. The entry has a description if <code>service install</code> registered the source; for a service set up by an earlier version it has none, and the text is in the event data. A run by hand, for example without administrator rights, writes no entry.</p>
           <p>For a bug report, <code>adminhelper-agent diagnostics</code> writes a <strong>redacted</strong> report (version, OS, config without secrets, log excerpt) to <code>/tmp/</code> — review it and attach it to a GitHub issue.</p>
 
           <h3 id="resources">Resource limits</h3>
-          <p>The agent must not be noticeable on the host it monitors. On Linux, <code>adminhelper-agent.service</code> therefore runs with <code>Nice=19</code>, <code>IOSchedulingClass=idle</code>, <code>CPUQuota=50%</code> (at most half a core) and <code>MemoryMax=256M</code>. The limits also cover the tools it starts (<code>pvesh</code>, <code>docker</code>, <code>smartctl</code> …). If a tool goes over the memory limit, the kernel ends only that process, not the whole unit (<code>OOMPolicy=continue</code>): the run reports the failed call and still sends the report. Whether the <code>idle</code> IO class has an effect depends on the disk's IO scheduler (<code>bfq</code> yes, <code>mq-deadline</code> and <code>none</code> no); this has not been checked per scheduler. On Windows the service sets its process priority to &ldquo;Low&rdquo; (<code>IDLE_PRIORITY_CLASS</code>) when it starts.</p>
+          <p>The agent must not be noticeable on the host it monitors. On Linux, <code>adminhelper-agent.service</code> therefore runs with <code>Nice=19</code>, <code>IOSchedulingClass=idle</code>, <code>CPUQuota=50%</code> (at most half a core) and <code>MemoryMax=256M</code>. The limits also cover the tools it starts (<code>pvesh</code>, <code>docker</code>, <code>smartctl</code> …). If a tool goes over the memory limit, the kernel ends only that process, not the whole unit (<code>OOMPolicy=continue</code>): the run reports the failed call and still sends the report. Whether the <code>idle</code> IO class has an effect depends on the disk's IO scheduler (<code>bfq</code> yes, <code>mq-deadline</code> and <code>none</code> no); this has not been checked per scheduler. On Windows the service sets its process priority to &ldquo;Low&rdquo; (<code>IDLE_PRIORITY_CLASS</code>) when it starts. On FreeBSD cron starts the run with <code>nice -n 19</code>, which also covers the tools it starts, and stops it after 270&nbsp;seconds; there is no memory or CPU limit there.</p>
           <p>If a limit is too tight on a large host (very many containers or VMs), it shows as a missing report or as an <code>oom-kill</code> of a tool in the journal. An override raises it; a package update does not overwrite it:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>sudo systemctl edit adminhelper-agent.service
@@ -238,7 +289,7 @@ MemoryMax=512M
 CPUQuota=100%</code></pre>
 
           <h2 id="upgrade">Upgrade</h2>
-          <p>With the package repo set up, <code>apt upgrade</code> or <code>dnf upgrade</code> on every server is enough. During provisioning the agent writes <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> and <code>/etc/frp/frpc.toml</code>; the package does not ship these files, so an upgrade keeps them. On every install and upgrade the package enables <code>adminhelper-agent.timer</code> again, and <code>frpc.service</code> only if <code>/etc/frp/frpc.toml</code> exists.</p>
+          <p>With the package repo set up, <code>apt upgrade</code> or <code>dnf upgrade</code> on every server is enough (FreeBSD: <code>pkg upgrade</code>, see <a href="#freebsd">FreeBSD</a>). During provisioning the agent writes <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> and <code>/etc/frp/frpc.toml</code>; the package does not ship these files, so an upgrade keeps them. On every install and upgrade the package enables <code>adminhelper-agent.timer</code> again, and <code>frpc.service</code> only if <code>/etc/frp/frpc.toml</code> exists.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

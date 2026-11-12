@@ -46,6 +46,11 @@
 #      two in scripts/vm/bootstrap_linux.sh. run.sh's scripts block needs the real
 #      binary (openapi_breaking_test exits 75 without it), so CI and the boxes
 #      must measure with the same release. Offline, like 2.
+#   2c every `cargo install … tauri-cli … --version X.Y.Z` in ci.yml names the
+#      default of TAURI_CLI_VERSION in scripts/vm/bootstrap_linux.sh: a box run
+#      builds the desktop with the tauri-cli of CI and the release
+#      (.github/scripts/tauri_cli_pins.sh holds ci.yml and release.yml
+#      together). Offline, like 2.
 #   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
@@ -242,6 +247,29 @@ done < <(sed -n 's/^[[:space:]]*OASDIFF_SHA256_LINUX_AMD64:[[:space:]]*"\{0,1\}\
   echo "::error::no OASDIFF_SHA256_LINUX_AMD64 in .github/workflows/ci.yml — an unpinned oasdiff tarball is the drift this check exists to prevent"
   exit 1; }
 echo "oasdiff: ci.yml=$oas_ci bootstrap=$OAS_BOOT sha256=${OAS_SHA_BOOT:0:12}"
+
+# ── 2c: one tauri-cli in CI and on the boxes ─────────────────────────────────
+# Install lines as tauri_cli_pins.sh reads them: continuations joined, comments
+# dropped; a line without a plain --version reads as "none", which is drift too.
+TAURI_BOOT="$(sed -n 's/^TAURI_CLI_VERSION="\${AH_TAURI_CLI_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
+plain_version "$TAURI_BOOT" || {
+  echo "::error::no plain TAURI_CLI_VERSION=\"\${AH_TAURI_CLI_VERSION:-X.Y.Z}\" default in scripts/vm/bootstrap_linux.sh (found '$TAURI_BOOT')"
+  exit 1; }
+tauri_ci=""
+while IFS= read -r v; do
+  [ "$v" = "$TAURI_BOOT" ] || {
+    echo "::error::tauri-cli pin drift: .github/workflows/ci.yml installs tauri-cli $v, scripts/vm/bootstrap_linux.sh defaults to $TAURI_BOOT — ci.yml, release.yml and bootstrap_linux.sh move together"
+    exit 1; }
+  tauri_ci="$v"
+done < <(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$WF/ci.yml" |
+  grep -vE '^[[:space:]]*#' |
+  grep -E 'cargo[[:space:]]+install[[:space:]]' |
+  grep -E '(^|[[:space:]"])tauri-cli([[:space:]"@]|$)' |
+  sed -E 's/.*--version[[:space:]]+"?([0-9]+\.[0-9]+\.[0-9]+)"?([[:space:]].*)?$/\1/;t;s/.*/none/')
+[ -n "$tauri_ci" ] || {
+  echo "::error::no pinned 'cargo install tauri-cli --version X.Y.Z' in .github/workflows/ci.yml — the boxes' tauri-cli cannot be held to CI's"
+  exit 1; }
+echo "tauri-cli: ci.yml=$tauri_ci bootstrap=$TAURI_BOOT"
 
 # ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"

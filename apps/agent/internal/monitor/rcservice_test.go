@@ -144,11 +144,13 @@ type rcCall struct {
 }
 
 // fakeService answers each service(8) call from answers, keyed by its arguments joined by blanks;
-// an unknown call fails the test. It returns the calls made, in order.
+// an unknown call and one off the command allowlist (checkAllowed) fail the test. It returns the calls
+// made, in order.
 func fakeService(t *testing.T, answers map[string]rcCall) (rcRun, *[]string) {
 	t.Helper()
 	var calls []string
 	return func(_ context.Context, args ...string) ([]byte, error) {
+		checkAllowed(t, "/usr/sbin/service", args)
 		key := strings.Join(args, " ")
 		calls = append(calls, key)
 		a, ok := answers[key]

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFreebsdVersionsNative(t *testing.T) {
@@ -84,8 +85,15 @@ func TestPkgAuditNative(t *testing.T) {
 	// pkg-audit(8) documents no exit status; the count relies on exit 1 with a line for a vulnerable
 	// name, exit 0 without one, and exit 1 without a line for a missing vuln.xml. The names are checked
 	// against a vuln.xml of the test's own (-f), so neither the box's packages nor the network matter.
+	// The agent never passes -f and the command allowlist refuses it, so these calls go around the
+	// list; the end of the test runs the agent's own call through it.
 	if _, err := exec.LookPath(pkgPath); err != nil {
 		t.Fatalf("pkg is not installed (%v): the box needs it", err)
+	}
+	run := freebsdCalls.run
+	t.Cleanup(func() { freebsdCalls.run = run })
+	freebsdCalls.run = func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+		return execTimed(ctx, timeout, nil, name, args...)
 	}
 	dir := t.TempDir()
 	vulnXML := filepath.Join(dir, "vuln.xml")
@@ -115,5 +123,16 @@ func TestPkgAuditNative(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "pkg audit -q failed: exit status 1") {
 		t.Errorf("log = %q, want the failure named", logs.String())
+	}
+
+	// The agent's call, through the allowlist, against the box's own vuln.xml: pkg runs. That gives a
+	// count, or a failure of pkg itself (exit 1 while periodic has fetched no vuln.xml yet), never a
+	// refusal of the call.
+	freebsdCalls.run = run
+	logs.Reset()
+	count, ok := pkgAudit(context.Background(), "pkg audit -q", "FreeBSD-15.0_1")
+	if strings.Contains(logs.String(), "not on the command allowlist") ||
+		!(ok || strings.Contains(logs.String(), "pkg audit -q failed: exit status")) {
+		t.Errorf("pkgAudit through the allowlist = %d, %v, log %q; want pkg run", count, ok, logs.String())
 	}
 }

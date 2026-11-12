@@ -72,10 +72,12 @@ WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT
 
 STAGE="$WORK/stage"
-install -d "$STAGE/usr/local/bin" "$STAGE/usr/local/libexec/adminhelper" "$STAGE/usr/local/etc/rc.d"
+install -d "$STAGE/usr/local/bin" "$STAGE/usr/local/libexec/adminhelper" "$STAGE/usr/local/etc/rc.d" \
+    "$STAGE/usr/local/etc/newsyslog.conf.d"
 install -m 0755 "$AGENT_BINARY" "$STAGE/usr/local/bin/adminhelper-agent"
 install -m 0755 "$FRPC_BINARY" "$STAGE/usr/local/libexec/adminhelper/frpc"
 install -m 0755 apps/agent/freebsd/adminhelper_frpc "$STAGE/usr/local/etc/rc.d/adminhelper_frpc"
+install -m 0644 apps/agent/freebsd/newsyslog.conf "$STAGE/usr/local/etc/newsyslog.conf.d/adminhelper.conf"
 
 # Paths relative to the prefix. Without @owner and @group the archive would carry the build user.
 cat > "$WORK/plist" <<'EOF'
@@ -84,6 +86,7 @@ cat > "$WORK/plist" <<'EOF'
 bin/adminhelper-agent
 libexec/adminhelper/frpc
 etc/rc.d/adminhelper_frpc
+etc/newsyslog.conf.d/adminhelper.conf
 EOF
 
 # The plugin's tree with the modes of the checkout, as plugins.mk copies it with tar.

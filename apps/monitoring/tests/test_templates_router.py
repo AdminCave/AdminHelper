@@ -353,6 +353,61 @@ def test_reset_without_the_definition_is_409_and_changes_nothing(client):
     assert (got["interval"], got["overriddenFields"]) == ("15m", ["interval"])
 
 
+_PROBE_DEF = {
+    "def_id": "def-probe",
+    "name": "Web {{server_name}}",
+    "check_type": "probe",
+    "config": {
+        "sensor": "http",
+        "target": {
+            "kind": "container",
+            "name": "{{server_name}}",
+            "port_hint": 8000,
+            "scheme": "http",
+        },
+        "params": {"path": "/", "method": "GET"},
+        "interval_s": 300,
+        "timeout_s": 10,
+        "fields": ["status_code"],
+        "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+        "credential": None,
+        "test_object": False,
+    },
+    "interval": "5m",
+    "severity": "critical",
+}
+
+
+def test_a_template_refuses_a_probe_def(client):
+    c, _factory = client
+
+    r = c.post("/templates", json={"name": "T", "check_definitions": [_PROBE_DEF]})
+    assert r.status_code == 422, r.text
+    assert "only from a module of the catalog" in r.text
+    assert all(t["name"] != "T" for t in c.get("/templates").json())
+
+    tid = _template(c, _PING_DEF)
+    r = c.put(f"/templates/{tid}", json={"check_definitions": [_PING_DEF, _PROBE_DEF]})
+    assert r.status_code == 422, r.text
+
+
+def test_reset_with_server_values_that_break_the_probe_is_409_and_changes_nothing(client):
+    # A probe def from before R-1252 stays in the database; the router takes none any more.
+    c, factory = client
+    tid = _template(c, _PING_DEF)
+    _set_check_definitions(factory, tid, [_PROBE_DEF])
+    _assign(c, tid)
+    cid = _checks(c)["def-probe"]["id"]
+    before = c.get(f"/checks/{cid}").json()
+    assert before["config"]["target"]["name"] == "srv-1"
+    with factory() as db:
+        db.query(MonitorTemplateAssignment).one().server_name = "w" * 256
+        db.commit()
+
+    assert c.post(f"/checks/{cid}/reset").status_code == 409
+    assert c.get(f"/checks/{cid}").json() == before
+
+
 def test_reset_without_the_assignment_is_409(client):
     c, factory = client
     tid = _template(c, _PING_DEF)

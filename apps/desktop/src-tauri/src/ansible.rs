@@ -40,6 +40,12 @@ pub fn check_targets(targets: &[AnsibleTarget]) -> Result<(), AppError> {
             if tag.contains(['[', ']']) {
                 return Err(AppError::Validation("Ungueltiger Gruppenname".to_string()));
             }
+            // The group name ends up in the inventory, which Ansible renders as Jinja here.
+            if tag.contains(['{', '}']) {
+                return Err(AppError::Validation(
+                    "A group name of an Ansible target must not contain { or }".to_string(),
+                ));
+            }
         }
         if let Some(connection) = target.connection.as_ref() {
             crate::validation::validate_connection_input(connection)?;
@@ -234,6 +240,15 @@ const INVENTORY_FILE: &str = "inventory.json";
 /// `dir/inventory.json` and returns the path: every host under `all` by its hostname, with the
 /// variables of [`host_vars`], and a group per tag.
 pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<String, AppError> {
+    generate_inventory_with(dir, servers, &ssh_config_jump)
+}
+
+/// [`generate_inventory`] with `lookup` in place of `ssh -G` ([`jump_chain`]).
+fn generate_inventory_with(
+    dir: &Path,
+    servers: &[AnsibleTarget],
+    lookup: &JumpLookup,
+) -> Result<String, AppError> {
     check_targets(servers)?;
     let ask_pass = asks_password(servers);
     let mut hosts = Map::new();
@@ -241,7 +256,20 @@ pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<Strin
         std::collections::BTreeMap::new();
     for server in servers {
         let alias = server.hostname.trim();
-        let vars = Value::Object(host_vars(server.connection.as_ref(), ask_pass));
+        let jump = if ask_pass {
+            jump_chain(server, lookup).map_err(|reason| {
+                AppError::Validation(format!(
+                    "Cannot work out the jump hosts of {alias}: {reason}"
+                ))
+            })?
+        } else {
+            None
+        };
+        let vars = Value::Object(host_vars(
+            server.connection.as_ref(),
+            ask_pass,
+            jump.as_deref(),
+        ));
         if hosts.get(alias).is_some_and(|known| *known != vars) {
             return Err(AppError::Validation(format!(
                 "two servers named {alias} are reached in different ways"
@@ -272,18 +300,49 @@ pub fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<Strin
 /// The variables that send Ansible where `connection` goes, as Verbinden opens it: address,
 /// port other than 22, user and key if set, and the other switches of the connection quoted for
 /// the `shlex` split Ansible applies to `ansible_ssh_common_args`. None without a connection,
-/// unless the run has `--ask-pass` (`ask_pass`, [`asks_password`]).
-fn host_vars(connection: Option<&Connection>, ask_pass: bool) -> Map<String, Value> {
+/// unless the run has `--ask-pass` (`ask_pass`, [`asks_password`]). `jump` is the chain of
+/// [`jump_chain`] in such a run.
+fn host_vars(
+    connection: Option<&Connection>,
+    ask_pass: bool,
+    jump: Option<&str>,
+) -> Map<String, Value> {
     let mut vars = Map::new();
     // With `--ask-pass` Ansible hands the one password to every host and sets no switch against
     // it, so a host that does not log in with a password must not be offered it.
     let password_off = ask_pass && !connection.is_some_and(logs_in_with_password);
-    let Some(connection) = connection else {
-        if password_off {
-            vars.insert("ansible_ssh_common_args".into(), password_off_args().into());
-        }
-        return vars;
+    let mut switches = match connection {
+        Some(connection) => connection_vars(connection, &mut vars),
+        None => Vec::new(),
     };
+    if let Some(hops) = jump {
+        // ssh builds a ProxyJump leg without the -o switches given here, so in a run that hands
+        // out a password every leg gets its own ProxyCommand that refuses one.
+        let hops: Vec<&str> = hops.split(',').collect();
+        let command = format!("ProxyCommand={}", proxy_command(&hops));
+        match switches
+            .iter_mut()
+            .find(|switch| switch.starts_with("ProxyJump="))
+        {
+            Some(switch) => *switch = command,
+            None => {
+                switches.insert(0, command);
+                switches.insert(0, "-o".to_string());
+            }
+        }
+    }
+    let mut quoted: Vec<String> = switches.iter().map(|switch| shell_escape(switch)).collect();
+    if password_off {
+        quoted.push(password_off_args());
+    }
+    if !quoted.is_empty() {
+        vars.insert("ansible_ssh_common_args".into(), quoted.join(" ").into());
+    }
+    vars
+}
+
+/// Address, port, user and key of `connection` into `vars`; returns its other ssh switches.
+fn connection_vars(connection: &Connection, vars: &mut Map<String, Value>) -> Vec<String> {
     let host = connection.host.as_deref().unwrap_or_default().trim();
     // ssh takes an IPv6 address bare; the brackets only keep it apart from a port elsewhere.
     let host = host
@@ -308,15 +367,185 @@ fn host_vars(connection: Option<&Connection>, ask_pass: bool) -> Map<String, Val
     if let Some(key) = set(&connection.key_path) {
         vars.insert("ansible_ssh_private_key_file".into(), key);
     }
-    let switches = crate::connection::ssh::option_switches(connection);
-    let mut quoted: Vec<String> = switches.iter().map(|switch| shell_escape(switch)).collect();
-    if password_off {
-        quoted.push(password_off_args());
+    crate::connection::ssh::option_switches(connection)
+}
+
+/// What `ssh -G` with these arguments says: the `proxyjump` of the host, None without one.
+type JumpLookup = dyn Fn(&[String]) -> Result<Option<String>, String>;
+
+/// The longest jump chain a connection may name (`JUMP_RE`).
+const MAX_JUMP_HOPS: usize = 8;
+
+/// The jump hosts ssh would go over to `target` in a run with `--ask-pass`, first hop first, or
+/// None for a direct connection. The connection's own jump host wins, else the ssh config's
+/// (`lookup`); ssh reads its config for the first leg of a chain only (every later leg gets the
+/// one before as its ProxyCommand), so a ProxyJump of the first hop goes in front, until none is
+/// left. Fails when `lookup` does, past [`MAX_JUMP_HOPS`] hops, or when `JUMP_RE` rejects the
+/// chain.
+fn jump_chain(target: &AnsibleTarget, lookup: &JumpLookup) -> Result<Option<String>, String> {
+    let own = target
+        .connection
+        .as_ref()
+        .and_then(|connection| connection.options.as_ref())
+        .and_then(|options| options.ssh.as_ref())
+        .and_then(|ssh| ssh.jump_host.as_deref());
+    let mut hops: Vec<String> = match own {
+        // `none` (any case, as ssh compares it) means no jump host, the config's included.
+        Some(own) if own.eq_ignore_ascii_case("none") => return Ok(None),
+        Some(own) => own.split(',').map(str::to_string).collect(),
+        None => match lookup(&target_args(target))? {
+            Some(found) => found.split(',').map(normalize_hop).collect(),
+            None => return Ok(None),
+        },
+    };
+    while let Some(earlier) = lookup(&hop_args(&hops[0]))? {
+        let mut chain: Vec<String> = earlier.split(',').map(normalize_hop).collect();
+        chain.append(&mut hops);
+        hops = chain;
+        if hops.len() > MAX_JUMP_HOPS {
+            return Err(format!("more than {MAX_JUMP_HOPS} jump hosts"));
+        }
     }
-    if !quoted.is_empty() {
-        vars.insert("ansible_ssh_common_args".into(), quoted.join(" ").into());
+    let chain = hops.join(",");
+    let checked = crate::models::SshOptions {
+        jump_host: Some(chain.clone()),
+        ..Default::default()
+    };
+    crate::validation::validate_ssh_options(&checked)
+        .map_err(|_| format!("the jump hosts {chain} are not supported"))?;
+    Ok(Some(chain))
+}
+
+/// The `ssh -G` arguments for `target` as Ansible reaches it ([`host_vars`]).
+fn target_args(target: &AnsibleTarget) -> Vec<String> {
+    let Some(connection) = target.connection.as_ref() else {
+        return vec![target.hostname.trim().to_string()];
+    };
+    let mut args = Vec::new();
+    if let Some(user) = connection
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|user| !user.is_empty())
+    {
+        args.extend(["-l".to_string(), user.to_string()]);
     }
-    vars
+    if let Some(port) = connection.port.filter(|port| *port != 22) {
+        args.extend(["-p".to_string(), port.to_string()]);
+    }
+    let host = connection.host.as_deref().unwrap_or_default().trim();
+    let host = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(host);
+    args.push(host.to_string());
+    args
+}
+
+/// The `ssh -G` arguments for a hop of a ProxyJump list.
+fn hop_args(hop: &str) -> Vec<String> {
+    let (user, host, port) = split_hop(hop);
+    let mut args = Vec::new();
+    if let Some(user) = user {
+        args.extend(["-l".to_string(), user.to_string()]);
+    }
+    if let Some(port) = port {
+        args.extend(["-p".to_string(), port.to_string()]);
+    }
+    args.push(host.to_string());
+    args
+}
+
+/// A hop as `ssh -G` prints it, in the form `JUMP_RE` takes: ssh puts a name or IPv4 address
+/// before a port in brackets, which only an IPv6 address keeps.
+fn normalize_hop(hop: &str) -> String {
+    let (user, rest) = match hop.split_once('@') {
+        Some((user, rest)) => (Some(user), rest),
+        None => (None, hop),
+    };
+    let rest = match rest
+        .strip_prefix('[')
+        .and_then(|inner| inner.split_once(']'))
+    {
+        Some((host, after)) if !host.contains(':') => format!("{host}{after}"),
+        _ => rest.to_string(),
+    };
+    match user {
+        Some(user) => format!("{user}@{rest}"),
+        None => rest,
+    }
+}
+
+/// [`JumpLookup`] with the real `ssh -G`, which reads the user's and the system's ssh config.
+fn ssh_config_jump(args: &[String]) -> Result<Option<String>, String> {
+    let mut command = std::process::Command::new("ssh");
+    command
+        .arg("-G")
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW: no console flashes up for the lookup.
+        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+    }
+    let out = command
+        .output()
+        .map_err(|err| format!("ssh -G did not start: {err}"))?;
+    if !out.status.success() {
+        return Err(format!("ssh -G failed ({})", out.status));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("proxyjump "))
+        .map(|hops| hops.trim().to_string()))
+}
+
+/// The ProxyCommand that reaches `%h:%p` over `hops` (a ProxyJump list checked by `JUMP_RE`,
+/// first hop first), as ssh builds it for ProxyJump, but refusing a password on every leg. A leg
+/// before the last becomes the ProxyCommand of the next one; its `%` is doubled, so the ssh that
+/// runs it expands the tokens, not the ssh around it.
+fn proxy_command(hops: &[&str]) -> String {
+    let Some((last, earlier)) = hops.split_last() else {
+        return String::new();
+    };
+    let (user, host, port) = split_hop(last);
+    let mut command = format!("ssh {}", password_off_args());
+    if !earlier.is_empty() {
+        let inner = proxy_command(earlier).replace('%', "%%");
+        command.push_str(" -o ");
+        command.push_str(&shell_escape(&format!("ProxyCommand={inner}")));
+    }
+    if let Some(user) = user {
+        command.push_str(" -l ");
+        command.push_str(&shell_escape(user));
+    }
+    if let Some(port) = port {
+        command.push_str(" -p ");
+        command.push_str(&shell_escape(port));
+    }
+    command.push_str(" -W '[%h]:%p' ");
+    command.push_str(&shell_escape(host));
+    command
+}
+
+/// User, host (an IPv6 address without its brackets) and port of a ProxyJump hop.
+fn split_hop(hop: &str) -> (Option<&str>, &str, Option<&str>) {
+    let (user, rest) = match hop.split_once('@') {
+        Some((user, rest)) => (Some(user), rest),
+        None => (None, hop),
+    };
+    let (host, port) = match rest.strip_prefix('[') {
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((host, after)) => (host, after.strip_prefix(':')),
+            None => (rest, None),
+        },
+        None => match rest.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (rest, None),
+        },
+    };
+    (user, host, port)
 }
 
 /// The ssh switches that refuse a password and keyboard-interactive login.
@@ -568,13 +797,14 @@ fn linux_run_script(inventory_path: &str, playbook_path: &str, switches: RunSwit
 mod tests {
     use super::{
         asks_password, check_targets, confined_run_dir, create_run_dir, create_temp_file,
-        fetch_playbook, generate_inventory, launch_ansible_in_pty, launch_ansible_with,
-        playbook_args, pty_spawn, run, run_in, write_playbook_temp, AnsibleTarget, Playbook,
-        RunSwitches,
+        fetch_playbook, generate_inventory_with, jump_chain, launch_ansible_in_pty,
+        launch_ansible_with, playbook_args, proxy_command, pty_spawn, run, run_in, ssh_config_jump,
+        write_playbook_temp, AnsibleTarget, JumpLookup, Playbook, RunSwitches,
     };
     use crate::error::AppError;
     use crate::models::{Connection, ConnectionKind};
     use crate::session::SessionState;
+    use crate::terminal::shell_escape;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1420,6 +1650,19 @@ mod tests {
         }];
         assert!(generate_inventory(&dir.0, &bad_group).is_err());
 
+        // A group name lands in the inventory, which Ansible renders as a Jinja template here.
+        for name in ["{{ evil }}", "a{b", "a}b"] {
+            let templated_group = vec![AnsibleTarget {
+                hostname: "host".to_string(),
+                groups: vec![name.to_string()],
+                connection: None,
+            }];
+            assert!(
+                generate_inventory(&dir.0, &templated_group).is_err(),
+                "{name}"
+            );
+        }
+
         // A clean target still passes.
         let ok = vec![AnsibleTarget {
             hostname: "web01.example.com".to_string(),
@@ -1461,6 +1704,11 @@ mod tests {
     }
 
     /// An SSH connection to `host` at `port` with the options `ssh` (JSON as the UI sends it).
+    /// The inventory as if no ssh config named a jump host, so no test depends on the box's.
+    fn generate_inventory(dir: &Path, servers: &[AnsibleTarget]) -> Result<String, AppError> {
+        generate_inventory_with(dir, servers, &|_: &[String]| Ok(None))
+    }
+
     fn ssh_connection(host: &str, port: Option<u16>, ssh: serde_json::Value) -> Connection {
         serde_json::from_value(serde_json::json!({
             "id": "c1", "name": "web01 ssh", "kind": "ssh", "host": host, "port": port,
@@ -1653,6 +1901,394 @@ mod tests {
             ],
             "without --ask-pass the inventory stays as it was"
         );
+    }
+
+    /// The words a POSIX shell makes of `command`, as ssh runs a ProxyCommand (`sh -c "exec …"`)
+    /// and as Ansible's `shlex` splits `ansible_ssh_common_args`.
+    #[cfg(unix)]
+    fn shell_words(command: &str) -> Vec<String> {
+        let out = std::process::Command::new("sh")
+            .args(["-c", &format!("printf '%s\\0' {command}")])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "sh rejected {command}");
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .split_terminator('\0')
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proxy_command_refuses_a_password_on_every_leg_of_a_chain() {
+        let off = [
+            "-o",
+            "PasswordAuthentication=no",
+            "-o",
+            "KbdInteractiveAuthentication=no",
+        ];
+        // Each leg as ssh's own ProxyJump builds it: the last hop is reached over the ones
+        // before it, whose command comes with every % doubled.
+        let mut command = proxy_command(&["ops@bastion:2222", "h2", "[2001:db8::1]:2200"]);
+        let mut legs = Vec::new();
+        loop {
+            let words = shell_words(&command);
+            assert_eq!(words[0], "ssh");
+            assert_eq!(words[1..5], off, "leg {command}");
+            let inner = match &words[5..] {
+                [o, proxy, ..] if o == "-o" => proxy.strip_prefix("ProxyCommand="),
+                _ => None,
+            };
+            let rest = if inner.is_some() { 7 } else { 5 };
+            legs.push(words[rest..].join(" "));
+            match inner {
+                Some(inner) => {
+                    assert!(!inner.replace("%%", "").contains('%'), "{inner}");
+                    command = inner.replace("%%", "%");
+                }
+                None => break,
+            }
+        }
+        assert_eq!(
+            legs,
+            [
+                "-p 2200 -W [%h]:%p 2001:db8::1",
+                "-W [%h]:%p h2",
+                "-l ops -p 2222 -W [%h]:%p bastion",
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn with_ask_pass_the_jump_host_becomes_a_proxy_command_ssh_takes() {
+        let targets = vec![
+            reached(
+                "pw",
+                &[],
+                ssh_connection(
+                    "192.0.2.5",
+                    None,
+                    serde_json::json!({ "authMethod": "password" }),
+                ),
+            ),
+            reached(
+                "jumped",
+                &[],
+                ssh_connection(
+                    "192.0.2.6",
+                    Some(2201),
+                    serde_json::json!({ "jumpHost": "jump@192.0.2.10,198.51.100.4:2222" }),
+                ),
+            ),
+        ];
+        let common_args = |targets: &[AnsibleTarget]| {
+            let dir = run_dir();
+            let path = generate_inventory(&dir.0, targets).unwrap();
+            let inventory: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            inventory["all"]["hosts"]["jumped"]["ansible_ssh_common_args"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        // What the real ssh makes of the switches: its ProxyCommand, and no ProxyJump left.
+        let resolved = |args: &str| {
+            let out = std::process::Command::new("sh")
+                .args([
+                    "-c",
+                    &format!("exec ssh -G -F /dev/null {args} -p 2201 192.0.2.6"),
+                ])
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "ssh -G rejected {args}");
+            String::from_utf8(out.stdout)
+                .unwrap()
+                .lines()
+                .filter(|line| line.starts_with("proxycommand ") || line.starts_with("proxyjump "))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+
+        let with_password = common_args(&targets);
+        assert!(!with_password.contains("ProxyJump"), "{with_password}");
+        assert_eq!(
+            resolved(&with_password),
+            [format!(
+                "proxycommand {}",
+                proxy_command(&["jump@192.0.2.10", "198.51.100.4:2222"])
+            )]
+        );
+
+        let without_password = common_args(&targets[1..]);
+        assert_eq!(
+            resolved(&without_password),
+            // ssh -G writes a hop with a port in brackets.
+            ["proxyjump jump@192.0.2.10,[198.51.100.4]:2222"],
+            "without --ask-pass the jump host stays a ProxyJump"
+        );
+    }
+
+    #[test]
+    fn with_ask_pass_a_jump_host_of_none_stays_none() {
+        for none in ["none", "NONE"] {
+            let targets = vec![
+                reached(
+                    "pw",
+                    &[],
+                    ssh_connection(
+                        "192.0.2.5",
+                        None,
+                        serde_json::json!({ "authMethod": "password" }),
+                    ),
+                ),
+                reached(
+                    "direct",
+                    &[],
+                    ssh_connection("192.0.2.6", None, serde_json::json!({ "jumpHost": none })),
+                ),
+            ];
+            let dir = run_dir();
+            let path = generate_inventory(&dir.0, &targets).unwrap();
+            let inventory: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            let args = inventory["all"]["hosts"]["direct"]["ansible_ssh_common_args"]
+                .as_str()
+                .unwrap();
+            assert!(args.contains(&format!("'ProxyJump={none}'")), "{args}");
+            assert!(!args.contains("ProxyCommand"), "{args}");
+        }
+    }
+
+    /// A lookup that answers from `config` (`ssh -G` arguments joined by blanks → its proxyjump)
+    /// and fails the test on any other question.
+    fn config_lookup(config: &'static [(&'static str, Option<&'static str>)]) -> Box<JumpLookup> {
+        Box::new(move |args: &[String]| {
+            let asked = args.join(" ");
+            let (_, jump) = config
+                .iter()
+                .find(|(known, _)| *known == asked)
+                .unwrap_or_else(|| panic!("unexpected ssh -G {asked}"));
+            Ok(jump.map(str::to_string))
+        })
+    }
+
+    fn password_target() -> AnsibleTarget {
+        reached(
+            "pw",
+            &[],
+            ssh_connection(
+                "192.0.2.5",
+                None,
+                serde_json::json!({ "authMethod": "password" }),
+            ),
+        )
+    }
+
+    fn common_args_with(targets: &[AnsibleTarget], lookup: &JumpLookup, host: &str) -> String {
+        let dir = run_dir();
+        let path = generate_inventory_with(&dir.0, targets, lookup).unwrap();
+        let inventory: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        inventory["all"]["hosts"][host]["ansible_ssh_common_args"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    #[test]
+    fn with_ask_pass_a_jump_host_from_the_ssh_config_becomes_a_proxy_command() {
+        let lookup = config_lookup(&[
+            ("-l ops 192.0.2.5", None),
+            (
+                "-l ops -p 2201 192.0.2.6",
+                Some("jump@192.0.2.10,[198.51.100.4]:2222"),
+            ),
+            ("-l jump 192.0.2.10", None),
+        ]);
+        let targets = vec![
+            password_target(),
+            reached(
+                "configured",
+                &[],
+                ssh_connection("192.0.2.6", Some(2201), serde_json::json!({})),
+            ),
+        ];
+        let args = common_args_with(&targets, &lookup, "configured");
+        assert!(
+            args.starts_with(&format!(
+                "'-o' {}",
+                shell_escape(&format!(
+                    "ProxyCommand={}",
+                    proxy_command(&["jump@192.0.2.10", "198.51.100.4:2222"])
+                ))
+            )),
+            "{args}"
+        );
+        assert!(!args.contains("ProxyJump"), "{args}");
+    }
+
+    #[test]
+    fn with_ask_pass_a_jump_host_of_the_first_hop_goes_in_front() {
+        // The connection's own jump host and the ssh config's: either way the config's ProxyJump
+        // of the first hop leads, until a hop has none.
+        let lookup = config_lookup(&[
+            ("-l ops 192.0.2.5", None),
+            ("-l ops 192.0.2.6", Some("bastion")),
+            ("bastion", Some("ops@hop0:2200")),
+            ("-l ops -p 2200 hop0", None),
+        ]);
+        let from_config = reached(
+            "configured",
+            &[],
+            ssh_connection("192.0.2.6", None, serde_json::json!({})),
+        );
+        let own = reached(
+            "own",
+            &[],
+            ssh_connection(
+                "192.0.2.7",
+                None,
+                serde_json::json!({ "jumpHost": "bastion" }),
+            ),
+        );
+        let expected = format!(
+            "'-o' {}",
+            shell_escape(&format!(
+                "ProxyCommand={}",
+                proxy_command(&["ops@hop0:2200", "bastion"])
+            ))
+        );
+        for (target, host) in [(from_config, "configured"), (own, "own")] {
+            let args = common_args_with(&[password_target(), target], &lookup, host);
+            assert!(args.starts_with(&expected), "{host}: {args}");
+        }
+    }
+
+    #[test]
+    fn without_a_jump_host_or_with_none_nothing_changes() {
+        let lookup = config_lookup(&[("-l ops 192.0.2.5", None), ("-l ops 192.0.2.6", None)]);
+        let direct = reached(
+            "direct",
+            &[],
+            ssh_connection("192.0.2.6", None, serde_json::json!({})),
+        );
+        // `none` asks ssh nothing: on the command line it turns the config's jump host off too.
+        let none = reached(
+            "none",
+            &[],
+            ssh_connection("192.0.2.7", None, serde_json::json!({ "jumpHost": "None" })),
+        );
+        let targets = [password_target(), direct, none];
+        let direct_args = common_args_with(&targets, &lookup, "direct");
+        assert!(!direct_args.contains("Proxy"), "{direct_args}");
+        let none_args = common_args_with(&targets, &lookup, "none");
+        assert!(none_args.contains("'ProxyJump=None'"), "{none_args}");
+        assert!(!none_args.contains("ProxyCommand"), "{none_args}");
+
+        // Without --ask-pass ssh -G is not asked at all.
+        let jumped = reached(
+            "jumped",
+            &[],
+            ssh_connection(
+                "192.0.2.8",
+                None,
+                serde_json::json!({ "jumpHost": "bastion" }),
+            ),
+        );
+        let args = common_args_with(&[jumped], &config_lookup(&[]), "jumped");
+        assert!(args.contains("'ProxyJump=bastion'"), "{args}");
+    }
+
+    #[test]
+    fn a_jump_chain_ssh_cannot_be_trusted_with_stops_the_run() {
+        let target = |host: &str| {
+            reached(
+                "configured",
+                &[],
+                ssh_connection(host, None, serde_json::json!({})),
+            )
+        };
+        let failing: Box<JumpLookup> = Box::new(|args: &[String]| {
+            if args.join(" ") == "-l ops 192.0.2.5" {
+                Ok(None)
+            } else {
+                Err("ssh -G failed (exit status: 255)".to_string())
+            }
+        });
+        let looping = config_lookup(&[
+            ("-l ops 192.0.2.5", None),
+            ("-l ops 192.0.2.6", Some("a")),
+            ("a", Some("b")),
+            ("b", Some("a")),
+        ]);
+        let early_v6 = config_lookup(&[
+            ("-l ops 192.0.2.5", None),
+            ("-l ops 192.0.2.6", Some("[2001:db8::1]:22,bastion")),
+            ("-p 22 2001:db8::1", None),
+        ]);
+        let odd = config_lookup(&[
+            ("-l ops 192.0.2.5", None),
+            ("-l ops 192.0.2.6", Some("evil;id")),
+            ("evil;id", None),
+        ]);
+        for (lookup, why) in [
+            (&failing, "ssh -G failed"),
+            (&looping, "more than 8 jump hosts"),
+            (&early_v6, "are not supported"),
+            (&odd, "are not supported"),
+        ] {
+            let dir = run_dir();
+            let err = generate_inventory_with(
+                &dir.0,
+                &[password_target(), target("192.0.2.6")],
+                lookup.as_ref(),
+            )
+            .unwrap_err();
+            let AppError::Validation(message) = err else {
+                panic!("{why}: not a validation error")
+            };
+            assert!(
+                message.starts_with("Cannot work out the jump hosts of configured: ")
+                    && message.contains(why),
+                "{message}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_real_ssh_g_hands_over_the_jump_hosts_of_its_config() {
+        let dir = run_dir();
+        let config = dir.0.join("ssh_config");
+        fs::write(
+            &config,
+            "Host 192.0.2.6\n  ProxyJump bastion,jump@198.51.100.4:2222\n\
+             Host bastion\n  ProxyJump ops@hop0:2200\n",
+        )
+        .unwrap();
+        let config = config.to_string_lossy().to_string();
+        let lookup = move |args: &[String]| {
+            let mut with_config = vec!["-F".to_string(), config.clone()];
+            with_config.extend_from_slice(args);
+            ssh_config_jump(&with_config)
+        };
+        let target = reached(
+            "configured",
+            &[],
+            ssh_connection("192.0.2.6", None, serde_json::json!({})),
+        );
+        assert_eq!(
+            jump_chain(&target, &lookup).unwrap().as_deref(),
+            Some("ops@hop0:2200,bastion,jump@198.51.100.4:2222")
+        );
+        let direct = reached(
+            "direct",
+            &[],
+            ssh_connection("192.0.2.9", None, serde_json::json!({})),
+        );
+        assert_eq!(jump_chain(&direct, &lookup).unwrap(), None);
     }
 
     #[test]

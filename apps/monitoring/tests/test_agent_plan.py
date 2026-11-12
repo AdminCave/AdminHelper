@@ -30,7 +30,15 @@ _PROBE = {
 }
 
 
-def _add_check(factory, check_id, config, server_id="srv-1", check_type="probe", enabled=True):
+def _add_check(
+    factory,
+    check_id,
+    config,
+    server_id="srv-1",
+    check_type="probe",
+    enabled=True,
+    module_id="paperless",
+):
     with factory() as db:
         db.add(
             MonitorCheck(
@@ -40,6 +48,7 @@ def _add_check(factory, check_id, config, server_id="srv-1", check_type="probe",
                 check_type=check_type,
                 config=config if isinstance(config, str) else json.dumps(config),
                 enabled=enabled,
+                module_id=module_id,
             )
         )
         db.commit()
@@ -237,3 +246,13 @@ def test_plan_checks_the_agent_key_like_the_report(client_db):
     assert client.get("/agent/srv-1/plan", headers={"X-API-Key": "wrong"}).status_code == 401
     assert client.get("/agent/srv-2/plan", headers={"X-API-Key": "raw"}).status_code == 403
     assert client.get("/agent/srv-1/plan", headers={"X-API-Key": "raw"}).status_code == 200
+
+
+def test_plan_leaves_out_a_probe_check_no_module_brought(client_db):
+    # R-1252: a probe check comes only from a module of the catalog; one without (an older
+    # row, a template's) never reaches the agent.
+    client, factory = client_db
+    _add_check(factory, "chk-module", _PROBE)
+    _add_check(factory, "chk-loose", _PROBE, module_id=None)
+
+    assert [p["id"] for p in _plan(client)["probes"]] == ["chk-module"]

@@ -1878,3 +1878,75 @@ def test_only_a_repository_path_is_fail_closed(
     out = capsys.readouterr()
     assert out.out.startswith("R-0022 BUG Nur am Branch")
     assert out.err == ""
+
+
+# ── a merged ledger is never handed to a new train (R-1291) ──────────────────
+
+
+def merged_ledger(repo: pathlib.Path, path: str = "tasks/alt.md") -> None:
+    """Commit a ledger on main and point origin/main at it, as after a merge."""
+    (repo / path).parent.mkdir(exist_ok=True)
+    (repo / path).write_text("### T1 — x  [x]\n", encoding="utf-8")
+    git(repo, "add", path)
+    git(repo, "commit", "-qm", "merged train")
+    git(repo, "update-ref", "refs/remotes/origin/main", "main")
+
+
+def test_status_refuses_a_ledger_that_is_on_origin_main(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """R-1216 got tasks/kern-ca-7.md, merged before; its plan overwrote the
+    spec, the ledger and an unreleased changelog fragment of the old train."""
+    merged_ledger(branch_repo(tmp_path, monkeypatch))
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0005", "geplant", "--ledger", "tasks/alt.md") == 2
+    assert "tasks/alt.md" in capsys.readouterr().err
+    assert placed(p, "R-0005")[1].cells[roadmap.LEDGER] == "—"
+
+
+def test_add_refuses_a_ledger_that_is_on_origin_main(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    merged_ledger(branch_repo(tmp_path, monkeypatch))
+    p = aged(write(tmp_path, CLEAN))
+    rows = len(roadmap.Roadmap(p.read_text(encoding="utf-8")).rows())
+    assert (
+        add(p, "--class", "BUG", "--title", "x", "--source", "s", "--ledger", "tasks/alt.md") == 2
+    )
+    assert len(roadmap.Roadmap(p.read_text(encoding="utf-8")).rows()) == rows
+
+
+def test_status_keeps_a_merged_ledger_its_row_already_names(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row of the merged train itself may still pass its ledger along."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0005", "geplant", "--ledger", "tasks/alt.md") == 0
+    merged_ledger(repo)
+    aged(p)
+    assert status(p, "R-0005", "freigegeben", "--ledger", "tasks/alt.md") == 0
+    assert placed(p, "R-0005")[1].cells[roadmap.LEDGER] == "tasks/alt.md"
+
+
+def test_status_takes_a_ledger_that_is_only_on_a_branch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A train still on its branch takes more rows; only main is history."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    git(repo, "update-ref", "refs/remotes/origin/main", "main")
+    plan_on(repo, "feature/zug", "scripts", "tasks/zug.md")
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0005", "geplant", "--ledger", "tasks/zug.md") == 0
+    assert placed(p, "R-0005")[1].cells[roadmap.LEDGER] == "tasks/zug.md"
+
+
+def test_status_takes_any_ledger_without_origin_main(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No remote, no history to protect: a clone without origin is no refusal."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    merged_ledger(repo)
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0005", "geplant", "--ledger", "tasks/alt.md") == 0

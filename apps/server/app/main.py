@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import asyncio
+import contextlib
 import fcntl
 import json
 import logging
@@ -36,11 +38,13 @@ from app.core.errors import install_coded_errors
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
+from app.core.query_params import reject_repeated_scalar_query
 from app.modules.ansible.router import router as ansible_router
 from app.modules.api_keys.router import router as api_keys_router
 from app.modules.audit.router import router as audit_router
 from app.modules.connections.router import router as connections_router
 from app.modules.enrollment.router import router as enrollment_router
+from app.modules.frp import policy as frp_policy
 from app.modules.frp.config_generator import generate_frps_toml
 from app.modules.frp.extra_config import STRING_FIELDS, rejected_keys, value_allowed
 from app.modules.frp.models import FrpServerConfig
@@ -393,6 +397,7 @@ def _run_startup_tasks():
         _ensure_admin(db)
         _check_frps_server_configs(db)
         _ensure_frps_config(db)
+        frp_policy.sync_policy(db)
     finally:
         db.close()
 
@@ -405,6 +410,9 @@ async def lifespan(app: FastAPI):
     from app.modules.notifications import stream_hub
 
     _run_startup_tasks()
+    # Every worker keeps the policy of frps' plugin in step with the DB; the hooks of the
+    # routers write it at once, this catches what they miss and a file changed on disk.
+    policy_task = asyncio.create_task(frp_policy.keep_policy_current())
     monitoring_proxy_mod.open_client()
     # Looked up before the first request: it would otherwise find no address of a proxy name
     # yet, and wait for one of the gateway.
@@ -428,12 +436,21 @@ async def lifespan(app: FastAPI):
         )
     fire_event("server.startup", {})
     yield
+    policy_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await policy_task
     await stream_hub.stop()
     # Close the process-wide proxy client's connection pool (5.30).
     await monitoring_proxy_mod._client.aclose()
 
 
-app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
+app = FastAPI(
+    title="AdminHelper Server",
+    docs_url="/api/docs",
+    redoc_url=None,
+    lifespan=lifespan,
+    dependencies=[Depends(reject_repeated_scalar_query)],
+)
 install_exact_int_bounds(app)
 install_coded_errors(app)
 

@@ -31,9 +31,11 @@ gleichen Wire-Format wie unter Linux:
   Paket installiert.
 
 **Nicht-Ziele (YAGNI):**
-- `net.Connections` (gopsutil ruft dafür `lsof`): der Agent nutzt Verbindungen mit PID nirgends. Der Roadmap-Punkt
-  „Verbindungen ohne lsof“ betrifft nur die eine Stelle, die einen Port prüft (`frpcOwnsAdminPort`); sie liest
-  unter FreeBSD `sockstat`.
+- `lsof` als Abhängigkeit und ein allgemeiner FreeBSD-Ersatz für gopsutils `net.Connections` (das dort `lsof` ruft).
+  Der Agent ordnet Ports an zwei Stellen ihren Prozessen zu, und beide lesen unter FreeBSD `sockstat` aus dem
+  Basissystem: `frpcOwnsAdminPort` und die lauschenden TCP-Sockets in `internal/probe`, aus denen der Wächter der
+  Sensoren, die Zielauflösung und die Dienst-Erkennung schöpfen (T13; die erste Fassung dieser Spec übersah sie, der
+  erste Box-Lauf fand sie).
 - Ein Install-Einzeiler wie `scripts/agent-install.sh` und ein FreeBSD-Weg im Desktop-Dialog „Agent installieren“:
   die Doku nennt die Handgriffe (Repo-Datei, Schlüssel, CA, `pkg install`, `provision`). Ein Einzeiler wäre eine
   eigene Zeile.
@@ -195,3 +197,8 @@ Keine Migration, kein neues Wire-Feld:
 4. **Updates über die Sicherheitszahl hinaus:** `pkg upgrade -n -U` und `freebsd-update updatesready` bräuchten
    neue Wire-Felder in Monitoring und Desktop.
    - *Empfehlung:* jetzt weglassen und mit R-1225/R-1227 („Updates und Neustarts“) für alle Plattformen einführen.
+
+**Antworten (Kevin 2026-11-11):** 1 wie empfohlen, das Token-Recht setzt Kevin und `vm.py` importiert selbst (T8).
+2 wie empfohlen; den Schlüssel erzeugt Kevin auf seinem eigenen Rechner. 3 die Alternative: Den Agent-Code merged
+die Session nach grünem Box-Lauf (T9), CI und Release (T10) ziehen in die eigene Zeile R-1303 (Zug `ci-10`, Merge
+durch Kevin), beide vor 0.47.0. 4 bleibt bei der Empfehlung.

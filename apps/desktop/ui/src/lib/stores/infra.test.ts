@@ -116,6 +116,15 @@ describe('saveServer monitoring-template opt-in (T15)', () => {
     expect(h.reportError).toHaveBeenCalledTimes(1);
   });
 
+  it('a taken name (409) is reported as such, not as the raw answer (R-1210)', async () => {
+    h.create.mockRejectedValueOnce(
+      new IpcError('name is already used by another server', 'ERR_HTTP', 409),
+    );
+    const ok = await saveServer(input('web01', ''), null, null);
+    expect(ok).toBe(false);
+    expect(h.reportError).toHaveBeenCalledWith('infra.error.nameTaken');
+  });
+
   it('no template id means no assign call', async () => {
     h.create.mockResolvedValueOnce({ id: 'new-1', name: 'a', hostname: 'h' });
     await saveServer(input('a', 'h'), null, null);

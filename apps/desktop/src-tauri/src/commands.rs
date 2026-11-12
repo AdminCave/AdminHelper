@@ -717,6 +717,24 @@ fn ssh_spawn(
     })
 }
 
+/// What the embedded terminal starts to store the monitoring credential `credential_ref` on the
+/// host of `connection` (R-1225): `ssh_spawn` with the argv of the fixed remote action. The
+/// secret goes from the keyboard to the host only: no broadcast of the snippet panel reaches
+/// the session, where it would land in the prompt, and no SFTP channel comes with it.
+fn ssh_credential_spawn(
+    connection: &Connection,
+    credential_ref: &str,
+    ssh: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Result<pty::Spawn, AppError> {
+    let spawn = ssh_spawn(connection, ssh, home)?;
+    Ok(pty::Spawn {
+        args: connection::ssh::build_credential_args(connection, credential_ref)?,
+        broadcast: false,
+        ..spawn
+    })
+}
+
 /// `spawn` holding its connection for the SFTP channel of the session (R-1072): the socket in
 /// `dir`, which goes with the end of the session.
 fn with_control_master(mut spawn: pty::Spawn, dir: PathBuf) -> pty::Spawn {
@@ -796,6 +814,47 @@ pub async fn terminal_open_ssh(
                     let _ = std::fs::remove_dir_all(dir);
                 }
             })
+    })
+    .await
+}
+
+/// Opens the embedded terminal on the host of `connection`, resolved as for `terminal_open_ssh`,
+/// with one fixed action: the agent stores the monitoring credential `credential_ref`, which the
+/// admin types there (R-1225). The UI hands over the ref only, never a command; the session
+/// ends with the action. Main only, as the capability of a detached window lacks it.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn terminal_open_ssh_credential(
+    window: tauri::Window,
+    state: State<'_, frpc::FrpcState>,
+    session: State<'_, SessionState>,
+    connection: Connection,
+    credential_ref: String,
+    cols: u16,
+    rows: u16,
+    output: Channel<InvokeResponseBody>,
+) -> Result<u64, AppError> {
+    if window.label() != pty::MAIN {
+        return Err(AppError::Validation(
+            "only the main window stores a credential".into(),
+        ));
+    }
+    let app = window.app_handle().clone();
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
+        None => Vec::new(),
+    };
+    let spawn = ssh_credential_spawn(
+        &connection,
+        &credential_ref,
+        crate::terminal::which("ssh"),
+        app.path().home_dir().ok(),
+    )?;
+    let owner = window.label().to_string();
+    blocking(move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
+        app.state::<PtyRegistry>()
+            .open(spawn, cols, rows, &owner, channel_sink(output))
     })
     .await
 }
@@ -1480,7 +1539,8 @@ mod tests {
         detached_label, enroll_with_token_in, list_workspaces_in, may_open_terminal, may_reach,
         open_launcher_with, open_workspace_in, reject_foreign_port, reject_foreign_targets,
         reset_device_identity_in, reset_server_cert_pin_in, run_with_deadline, save_workspace_in,
-        sign_in_target, ssh_spawn, sync_source, with_control_master, with_sftp,
+        sign_in_target, ssh_credential_spawn, ssh_spawn, sync_source, with_control_master,
+        with_sftp,
     };
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
@@ -2917,6 +2977,81 @@ mod tests {
         ));
     }
 
+    /// The credential terminal (R-1225) runs the fixed action of its ref only, and nothing but
+    /// the keyboard reaches the prompt: no broadcast, no SFTP channel.
+    #[test]
+    fn the_credential_terminal_runs_the_fixed_action_without_broadcast_or_sftp() {
+        let ssh = std::env::temp_dir().join("ssh");
+        let home = std::env::temp_dir().join("home");
+        let mut connection = loopback(2222);
+        connection.username = Some("admin".to_string());
+        let spawn = ssh_credential_spawn(
+            &connection,
+            "mysql/root",
+            Some(ssh.clone()),
+            Some(home.clone()),
+        )
+        .expect("an SSH connection opens");
+        assert_eq!(spawn.program, ssh);
+        assert_eq!(
+            spawn.args,
+            [
+                "-p",
+                "2222",
+                "-t",
+                "--",
+                "admin@127.0.0.1",
+                "sudo",
+                "adminhelper-agent",
+                "monitor",
+                "credential",
+                "set",
+                "mysql/root",
+            ]
+        );
+        assert_eq!(
+            spawn.env,
+            [("TERM".to_string(), "xterm-256color".to_string())]
+        );
+        assert_eq!(spawn.cwd, Some(home));
+        assert!(!spawn.broadcast, "a broadcast would land in the prompt");
+        assert_eq!(spawn.sftp, None);
+        assert_eq!(spawn.control_path, None);
+        assert_eq!(spawn.cleanup, None);
+    }
+
+    #[test]
+    fn the_credential_terminal_checks_the_connection_and_the_ref_first() {
+        let ssh = Some(std::env::temp_dir().join("ssh"));
+        for kind in [ConnectionKind::Rdp, ConnectionKind::Web] {
+            let mut connection = loopback(3389);
+            connection.kind = kind;
+            assert_refused(
+                ssh_credential_spawn(&connection, "db", ssh.clone(), None).map(|_| ()),
+                "SSH connections only",
+                "not ssh",
+            );
+        }
+        let mut connection = loopback(22);
+        connection.host = Some("-oProxyCommand=x".to_string());
+        assert!(matches!(
+            ssh_credential_spawn(&connection, "db", ssh.clone(), None),
+            Err(AppError::Validation(_))
+        ));
+        for bad in ["db;id", "$(id)", "-db", "db root", ""] {
+            assert_refused(
+                ssh_credential_spawn(&loopback(22), bad, ssh.clone(), None).map(|_| ()),
+                "invalid credential ref",
+                bad,
+            );
+        }
+        let refused = ssh_credential_spawn(&loopback(22), "db", None, None).map(|_| ());
+        assert!(
+            matches!(&refused, Err(AppError::Connection(msg)) if msg == "ssh was not found in PATH"),
+            "{refused:?}"
+        );
+    }
+
     /// A synchronous command runs on the main thread: the window stands still while the
     /// keyring or the settings lock keeps it waiting. These wait on either, so each is async
     /// and does its work through `blocking`.
@@ -2936,6 +3071,7 @@ mod tests {
             "save_password",
             "delete_password",
             "terminal_open_ssh",
+            "terminal_open_ssh_credential",
             "terminal_write",
             "terminal_broadcast",
             "sftp_upload",
@@ -2980,6 +3116,7 @@ mod tests {
             );
         }
         for name in [
+            "terminal_open_ssh_credential",
             "terminal_detach",
             "terminal_broadcast",
             "terminal_set_broadcast",

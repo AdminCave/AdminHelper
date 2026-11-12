@@ -8,16 +8,17 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
-from app.modules.connections.models import Connection
+from app.modules.connections.models import Connection, own_text, shown_name
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.policy import sync_policy
 from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
@@ -66,10 +67,29 @@ def list_tunnels(
         query = query.filter(FrpTunnel.server_id == server_id)
     if frp_config_id:
         query = query.filter(FrpTunnel.frp_config_id == frp_config_id)
-    listed = [t.to_dict(mask_secrets=True) for t in query.order_by(FrpTunnel.name).all()]
+    # In the order of the display names (R-1210), which derive from the server's name.
+    tunnels = query.options(selectinload(FrpTunnel.target_server)).all()
+    listed = sorted(
+        (t.to_dict(mask_secrets=True) for t in tunnels), key=lambda t: (t["name"].lower(), t["id"])
+    )
     if current_user.is_admin:
         return listed
     return [{key: t[key] for key in _MAPPING_FIELDS} for t in listed]
+
+
+def _stored_name(
+    label: str | None, name: str | None, server: Server, protocol: str, tunnel_type: str
+) -> str:
+    """The name column of a tunnel from what a client sent (R-1210): the label, else the name
+    of a client from before; only an own text, not a repeat of the server, of the display
+    name or of the old proxy-name pattern "{server}-{protocol}"."""
+    return own_text(
+        label if label is not None else name,
+        server,
+        shown_name(server.name, "", protocol, True),
+        f"{server.name}-{protocol}",
+        f"{server.name}-{tunnel_type}",
+    )
 
 
 def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:
@@ -151,10 +171,6 @@ def create_tunnel(
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
     _reject_unknown_connection(db, data.connection_id)
 
-    existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits")
-
     # secret_key and visitor_port belong to stcp; any other type stores neither.
     is_stcp = data.tunnel_type == "stcp"
     secret = data.secret_key if is_stcp else None
@@ -180,7 +196,7 @@ def create_tunnel(
         id=str(uuid.uuid4()),
         server_id=data.server_id,
         frp_config_id=data.frp_config_id,
-        name=data.name,
+        name=_stored_name(data.label, data.name, server, data.protocol, data.tunnel_type),
         tunnel_type=data.tunnel_type,
         protocol=data.protocol,
         local_ip=data.local_ip,
@@ -200,22 +216,24 @@ def create_tunnel(
             _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
     except IntegrityError:
-        # Lost a race against a concurrent create on the same proxy name or
-        # STCP visitor_port (the read-then-check above has a TOCTOU window; the
-        # DB constraints are the only race-free guard). Map to the same 409.
+        # Lost a race against a concurrent create on the same STCP visitor_port (the
+        # read-then-check above has a TOCTOU window; the DB constraint is the only
+        # race-free guard). Map to the same 409.
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail="Proxy-Name oder Visitor-Port ist bereits belegt"
-        )
+        raise HTTPException(status_code=409, detail="Visitor-Port ist bereits belegt")
     db.refresh(tunnel)
-    fire_event("frp.tunnel.created", {"id": tunnel.id, "name": tunnel.name, "serverId": server.id})
+    sync_policy(db)
+    fire_event(
+        "frp.tunnel.created",
+        {"id": tunnel.id, "name": tunnel.display_name(), "serverId": server.id},
+    )
     audit.record(
         db,
         "frp.tunnel.created",
         actor=actor_from_request(request),
         object_type="frp_tunnel",
         object_id=tunnel.id,
-        object_label=tunnel.name,
+        object_label=tunnel.display_name(),
     )
     return tunnel.to_dict(mask_secrets=True)
 
@@ -250,12 +268,14 @@ def update_tunnel(
     if "secret_key" in sent and not data.secret_key:
         sent = sent - {"secret_key"}
 
-    if "name" in sent and data.name != tunnel.name:
-        existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
-        if existing:
-            raise HTTPException(
-                status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits"
-            )
+    # A client from before R-1210 sends back the display name it was shown: unchanged.
+    sent_back = data.label is None and (data.name or "").strip().lower() == (
+        tunnel.display_name().strip().lower()
+    )
+    if (data.label is not None or data.name is not None) and not sent_back:
+        protocol = data.protocol if "protocol" in sent else tunnel.protocol
+        ends_type = data.tunnel_type if "tunnel_type" in sent else tunnel.tunnel_type
+        tunnel.name = _stored_name(data.label, data.name, tunnel.target_server, protocol, ends_type)
 
     was_stcp = tunnel.tunnel_type == "stcp"
     ends_stcp = (data.tunnel_type if "tunnel_type" in sent else tunnel.tunnel_type) == "stcp"
@@ -267,7 +287,6 @@ def update_tunnel(
             )
 
     for field in [
-        "name",
         "tunnel_type",
         "protocol",
         "local_ip",
@@ -319,18 +338,17 @@ def update_tunnel(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail="Proxy-Name oder Visitor-Port ist bereits belegt"
-        )
+        raise HTTPException(status_code=409, detail="Visitor-Port ist bereits belegt")
     db.refresh(tunnel)
-    fire_event("frp.tunnel.updated", {"id": tunnel.id, "name": tunnel.name})
+    sync_policy(db)
+    fire_event("frp.tunnel.updated", {"id": tunnel.id, "name": tunnel.display_name()})
     audit.record(
         db,
         "frp.tunnel.updated",
         actor=actor_from_request(request),
         object_type="frp_tunnel",
         object_id=tunnel.id,
-        object_label=tunnel.name,
+        object_label=tunnel.display_name(),
     )
     return tunnel.to_dict(mask_secrets=True)
 
@@ -345,9 +363,10 @@ def delete_tunnel(
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
-    tunnel_name = tunnel.name
+    tunnel_name = tunnel.display_name()
     db.delete(tunnel)
     db.commit()
+    sync_policy(db)
     # Fire only after the commit succeeds — a rolled-back delete must not leave
     # hooks/notifications having observed a deletion that never happened (2.48).
     fire_event("frp.tunnel.deleted", {"id": tunnel_id, "name": tunnel_name})

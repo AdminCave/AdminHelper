@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"adminhelper-agent/internal/allowlist"
 )
 
 // The fixtures under testdata are rebuilt from the OPNsense core sources (configd actions,
@@ -96,6 +98,17 @@ func TestViewsIsTheAllowlist(t *testing.T) {
 	want := []string{"carp", "firmware", "gateways", "services", "states"}
 	if got := Views(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Views() = %v, want %v", got, want)
+	}
+}
+
+// The agent starts the calls through allowlist.Run, which refuses one off its list at runtime only.
+func TestEveryCallOfTheViewsIsOnTheCommandAllowlist(t *testing.T) {
+	for name, v := range views {
+		for _, call := range v.calls {
+			if !allowlist.Allowed(Configctl, call) {
+				t.Errorf("view %s: configctl %q is not on the command allowlist", name, call)
+			}
+		}
 	}
 }
 

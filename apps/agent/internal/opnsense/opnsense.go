@@ -27,7 +27,7 @@ const Configctl = "/usr/local/sbin/configctl"
 // its result; `firmware product` embeds its content but not its age.
 const pkgUpgradeFile = "/tmp/pkg_upgrade.json"
 
-// Runner runs a command under a timeout; execx.Run has this shape.
+// Runner runs a command under a timeout; allowlist.Run has this shape.
 type Runner func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error)
 
 // Reader reads views through Run. ModTime and Now are nil in production (os.Stat, time.Now).

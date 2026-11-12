@@ -20,26 +20,33 @@ import (
 	"time"
 )
 
-// TestOnlyAllowlistStartsCommands parses every non-test file of the package, whatever its build tag,
-// and fails on a start of a command outside allowlist.go: exec.Command, exec.CommandContext,
-// os.StartProcess, execx.Run, execx.RunEnv, or a call of execTimed, which skips the allowlist check.
+// TestOnlyAllowlistStartsCommands parses every non-test file of the packages that start tools, this
+// one, probe and discovery, whatever its build tag, and fails on a start of a command outside the
+// allowlist: exec.Command, exec.CommandContext, os.StartProcess, execx.Run, execx.RunEnv, or a call of
+// execTimed, which skips the allowlist check. Only this package's allowlist.go may: execTimed is there.
+// The least number of files per package is its counter-check: a glob that found few would pass.
 func TestOnlyAllowlistStartsCommands(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no Go files found: %v", err)
-	}
-	checked := 0
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") || file == "allowlist.go" {
-			continue
+	for _, pkg := range []struct {
+		dir   string
+		least int
+	}{{".", 10}, {"../probe", 15}, {"../discovery", 3}} {
+		files, err := filepath.Glob(filepath.Join(pkg.dir, "*.go"))
+		if err != nil || len(files) == 0 {
+			t.Fatalf("no Go files found in %s: %v", pkg.dir, err)
 		}
-		checked++
-		for _, call := range commandStarts(t, file) {
-			t.Errorf("%s starts a command outside allowlist.go: %s", file, call)
+		checked := 0
+		for _, file := range files {
+			if strings.HasSuffix(file, "_test.go") || file == "allowlist.go" {
+				continue
+			}
+			checked++
+			for _, call := range commandStarts(t, file) {
+				t.Errorf("%s starts a command outside the allowlist: %s", file, call)
+			}
 		}
-	}
-	if checked < 10 {
-		t.Fatalf("checked %d files, want the whole package", checked)
+		if checked < pkg.least {
+			t.Fatalf("checked %d files in %s, want the whole package", checked, pkg.dir)
+		}
 	}
 }
 
@@ -102,46 +109,29 @@ func TestCommandStartsSeesAStart(t *testing.T) {
 	}
 }
 
-// TestAllowlistTakesEveryCollectorCall runs every call the collectors make today through the list,
-// with the variable parts in the forms they come in.
+// TestAllowlistTakesEveryCollectorCall runs the calls through the list that no collector stub shows
+// (the stubs check every call they record, checkAllowed): smartctl by an absolute path of this
+// platform, the Windows calls, and forms of the variable parts the stubs' replies do not carry.
 func TestAllowlistTakesEveryCollectorCall(t *testing.T) {
 	// smartctl runs by the absolute path exec.LookPath found: an absolute path of this platform.
 	smartctl := filepath.Join(t.TempDir(), "smartctl")
 	calls := [][]string{
 		{smartctl, "--scan", "--json=c"},
 		{smartctl, "--all", "--json=c", "-d", "nvme", "/dev/nvme0"},
-		{"docker", "info"},
-		{"docker", "ps", "-a", "--format", "{{json .}}"},
-		{"docker", "inspect", "--type", "container", "0123456789ab"},
-		{"docker", "inspect", "--type", "container", "0123456789ab", strings.Repeat("f", 64)},
-		{"pvesh", "get", "/nodes/pve1/status", "--output-format", "json"},
-		{"pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"},
-		{"pvesh", "get", "/cluster/resources", "--type", "storage", "--output-format", "json"},
 		{"pvesh", "get", "/nodes/pve-01/storage/local/content", "--content", "backup", "--output-format", "json"},
 		{"pvesh", "get", "/nodes/pve1/storage/pbs_back.up-2/content", "--content", "backup", "--output-format", "json"},
-		{"zpool", "list", "-H", "-o", "name,size,alloc,free,cap,health"},
-		{"zpool", "status", "-x"},
-		{"smartctl", "--scan", "--json=c"},
-		{"smartctl", "--all", "--json=c", "/dev/sda"},
-		{"smartctl", "--all", "--json=c", "-d", "nvme", "/dev/nvme0"},
-		{"smartctl", "--all", "--json=c", "-d", "megaraid,0", "/dev/bus/0"},
 		{"smartctl", "--all", "--json=c", "-d", "sat,12", "/dev/bsg/sssraid0"},
 		{"smartctl", "--all", "--json=c", "-d", "sat+megaraid,1", "/dev/disk/by-id/ata-X_1.0"},
-		{"smartctl", "--scan", "--json=c"},
-		{"systemctl", "list-units", "--type=service", "--all", "--no-legend", "--plain", "--no-pager"},
-		{"systemctl", "list-unit-files", "--type=service", "--no-legend", "--no-pager"},
-		{"systemctl", "list-units", "--state=failed", "--no-legend", "--plain"},
-		{"systemctl", "show", "-p", "Id,Names", "--", "nginx.service", "getty@tty1.service"},
-		{"systemctl", "show", "-p", "Id,Names,ActiveState,MainPID", "--", "nginx"},
 		{"systemctl", "show", "-p", "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic",
 			"--", `systemd-fsck@dev-disk-by\x2duuid-1a2b.service`, "user-runtime-dir@1000.service"},
 		{"sc", "query", "state=", "all"},
 		{"sc", "query", "MSSQL$SQLEXPRESS"},
 		{"sc", "queryex", "wuauserv"},
-		{"needs-restarting", "-r"},
-		{"timedatectl", "show"},
-		{"apt-get", "-s", "dist-upgrade"},
-		{"dnf", "-C", "-q", "updateinfo", "list", "--security"},
+		{"/usr/sbin/service", "local_unbound", "status"},
+		{"/usr/sbin/service", "php_fpm.sh", "status"},
+		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1"},
+		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1", "FreeBSD-kernel-15.1"},
+		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-14.3_12", "FreeBSD-kernel-14.3_11"},
 	}
 	for _, call := range calls {
 		if !commandAllowed(call[0], call[1:]) {
@@ -216,6 +206,25 @@ func TestAllowlistRefusesTheTraps(t *testing.T) {
 		{"timedatectl", "set-time", "2026-01-01"},
 		{"dnf", "-q", "updateinfo", "list", "--security"},
 		{"sh", "-c", "true"},
+		{"pkg", "audit", "-F"},
+		{"pkg", "audit", "-q", "-F"},
+		{"pkg", "audit", "-Fq"},
+		{"pkg", "audit", "-q", "-r", "/"},
+		{"pkg", "audit", "-q", "nginx"},
+		{"pkg", "audit", "-q", "FreeBSD-15.1-RELEASE"},
+		{"pkg", "audit", "-q", "FreeBSD-15.1", "-F"},
+		{"pkg", "install", "-y", "nginx"},
+		{"pkg", "upgrade", "-n"},
+		{"service", "cron", "restart"},
+		{"service", "cron", "onestart"},
+		{"service", "../x", "status"},
+		{"service", "-R"},
+		{"service", "-e", "-v"},
+		{"service", "-v", "status"},
+		{"service", "cron"},
+		{"freebsd-version"},
+		{"freebsd-version", "-k"},
+		{"freebsd-version", "-kru", "-j", "web"},
 	}
 	for _, call := range calls {
 		if commandAllowed(call[0], call[1:]) {
@@ -241,5 +250,14 @@ func TestRunTimedRefusesCallsOffTheList(t *testing.T) {
 	}
 	if _, err := runTimedEnv(context.Background(), time.Minute, []string{"LC_ALL=C"}, "apt-get", "check"); !errors.Is(err, errCommandNotAllowed) {
 		t.Errorf("runTimedEnv(apt-get check) = %v, want errCommandNotAllowed", err)
+	}
+}
+
+// checkAllowed is what the collector stubs call on every call they record (R-1256): a call the
+// allowlist would refuse fails the test of its collector, which the table above alone would miss.
+func checkAllowed(t *testing.T, name string, args []string) {
+	t.Helper()
+	if !commandAllowed(name, args) {
+		t.Errorf("call off the command allowlist: %s %q", name, args)
 	}
 }

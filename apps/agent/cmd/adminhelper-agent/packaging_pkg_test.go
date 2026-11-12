@@ -469,7 +469,8 @@ func checkPkgCreate(t *testing.T, dir, abi string) {
 			t.Errorf("%s: %s is not freebsd/%s", abi, name, src)
 		}
 	}
-	plist := "@owner root\n@group wheel\nbin/adminhelper-agent\nlibexec/adminhelper/frpc\netc/rc.d/adminhelper_frpc\n"
+	plist := "@owner root\n@group wheel\nbin/adminhelper-agent\nlibexec/adminhelper/frpc\netc/rc.d/adminhelper_frpc\n" +
+		"etc/newsyslog.conf.d/adminhelper.conf\n"
 	if got := readRepoFile(t, filepath.Join(dir, "plist")); got != plist {
 		t.Errorf("%s: plist\n%s\nwant\n%s", abi, got, plist)
 	}
@@ -477,6 +478,8 @@ func checkPkgCreate(t *testing.T, dir, abi string) {
 		"usr/local/bin/adminhelper-agent":     "-rwxr-xr-x agent binary\n",
 		"usr/local/libexec/adminhelper/frpc":  "-rwxr-xr-x frpc binary\n",
 		"usr/local/etc/rc.d/adminhelper_frpc": "-rwxr-xr-x " + readRepoFile(t, "../../freebsd/adminhelper_frpc"),
+		// /etc/newsyslog.conf reads /usr/local/etc/newsyslog.conf.d/[!.]*.conf.
+		"usr/local/etc/newsyslog.conf.d/adminhelper.conf": "-rw-r--r-- " + readRepoFile(t, "../../freebsd/newsyslog.conf"),
 	}
 	if got := tree(t, filepath.Join(dir, "stage")); !maps.Equal(got, want) {
 		t.Errorf("%s: stage tree\n%v\nwant\n%v", abi, slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))

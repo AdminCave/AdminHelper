@@ -21,7 +21,7 @@ type rcRun func(ctx context.Context, args ...string) ([]byte, error)
 // reRCScriptName matches a name `service <name>` may be given. service(8) runs "$dir/<name>" for
 // /etc/rc.d and each local_startup directory, so a "/" would leave the directory, "." or ".." would
 // name the directory itself, and a leading "-" would be one of its options.
-var reRCScriptName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*$`)
+var reRCScriptName = regexp.MustCompile("^(?:" + argClasses["rcscript"] + ")$")
 
 // The two answers of rc.subr's status for a script that sets command or procname (rc.subr,
 // releng/14.3 and 15.0): "${name} is running as pid $rc_pid." with every pid found, and

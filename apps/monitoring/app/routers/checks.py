@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 from typing import Annotated
@@ -15,12 +16,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.check_configs import validate_check_config
+from app.alerter import muted_reasons
+from app.check_configs import ProbeConfig, validate_check_config
 from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
+from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import escape_label_value, victoria
 from app.history import (
     build_series,
@@ -33,7 +36,7 @@ from app.history import (
     server_thresholds,
 )
 from app.models import MonitorCheck, MonitorState
-from app.scheduler import add_check, remove_check
+from app.scheduler import add_check, interval_timedelta, remove_check
 from app.schemas import (
     VALID_INTERVALS,
     VALID_SEVERITIES,
@@ -41,11 +44,18 @@ from app.schemas import (
     CheckMetricsOut,
     CheckUpdate,
     MonitorCheckOut,
+    MonitorCheckStatusOut,
     ServerCompareOut,
+    ServerCostsOut,
     ServerHistoryOut,
     StatusSummaryOut,
 )
-from app.template_sync import mark_overrides, resolve_template_check, tombstone_check
+from app.template_sync import (
+    holds_after_substitution,
+    mark_overrides,
+    resolve_template_check,
+    tombstone_check,
+)
 
 # Moved to core/victoria.py (shared with the forecast checker); alias kept so
 # the existing call sites and tests stay untouched.
@@ -67,6 +77,16 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
     return [c.to_dict(state=states.get(c.id)) for c in checks]
 
 
+def _serialize_status(db: Session, checks: list[MonitorCheck]) -> list[dict]:
+    """The check listing of the status routes: with state and why its notifications
+    are muted, so the desktop can show a suppressed problem as suppressed (R-1225)."""
+    reasons = muted_reasons(db, checks, utcnow_naive())
+    rows = _serialize_with_states(db, checks)
+    for row in rows:
+        row["mutedReason"] = reasons[row["id"]]
+    return rows
+
+
 def _schedule(check: MonitorCheck) -> None:
     """Brings the running scheduler in line with a committed check."""
     if check.enabled:
@@ -86,6 +106,46 @@ def _same_config(a, b) -> bool:
     if isinstance(a, list) and isinstance(b, list):
         return len(a) == len(b) and all(_same_config(x, y) for x, y in zip(a, b))
     return a == b
+
+
+# The parts of a probe config that say what the agent measures and where. Only a module
+# of the catalog sets them; the API leaves rules, interval and timeout to the admin.
+_PROBE_MEASURE = ("sensor", "target", "params", "fields", "credential", "test_object")
+
+
+def _probe_measure(config) -> dict | None:
+    """The measuring parts of a probe config, missing ones at their default; None for a
+    config of another form."""
+    if not isinstance(config, dict):
+        return None
+    out = {}
+    for key in _PROBE_MEASURE:
+        field = ProbeConfig.model_fields[key]
+        out[key] = config.get(key, None if field.is_required() else field.get_default())
+    return out
+
+
+def _probe_change_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]) -> str | None:
+    """Why the update would make, unmake or re-aim a probe check, or None. A probe check
+    comes only from a module of the catalog (R-1252)."""
+    if "check_type" in sent and (data.check_type == "probe") != (check.check_type == "probe"):
+        return "A check becomes or stops being a probe only through a module of the catalog"
+    if check.check_type != "probe":
+        return None
+    if "server_id" in sent and data.server_id != check.server_id:
+        return "A probe check stays on the server of its module"
+    if "config" in sent:
+        try:
+            stored = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            stored = None
+        new, old = _probe_measure(data.config), _probe_measure(stored)
+        if new is None or old is None or not _same_config(new, old):
+            return (
+                "Only rules, interval_s and timeout_s of a probe config can be changed; "
+                "its module sets the rest"
+            )
+    return None
 
 
 router = APIRouter()
@@ -251,6 +311,8 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         raise HTTPException(400, "Invalid interval")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Invalid severity")
+    if refused := _probe_change_refused(check, data, sent):
+        raise HTTPException(422, refused)
 
     # Validate the effective (type, config) pair whenever either changes — a
     # type switch that keeps the old config must fail here, not surface as a
@@ -370,6 +432,11 @@ def reset_check(check_id: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status.HTTP_409_CONFLICT, "The check's template no longer defines it for this server"
         )
+    if not holds_after_substitution(template_values, check.server_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The template's values for this server do not form a valid check",
+        )
 
     for field, value in template_values.items():
         setattr(check, field, json.dumps(value) if field == "config" else value)
@@ -429,7 +496,7 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
 
 @router.get(
     "/status",
-    response_model=list[MonitorCheckOut],
+    response_model=list[MonitorCheckStatusOut],
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
@@ -442,12 +509,12 @@ def get_all_status(
     """Returns all check states for the dashboard."""
     query = db.query(MonitorCheck).order_by(MonitorCheck.name, MonitorCheck.id)
     checks = paginate(query, response, limit, offset).all()
-    return _serialize_with_states(db, checks)
+    return _serialize_status(db, checks)
 
 
 @router.get(
     "/status/server/{server_id}",
-    response_model=list[MonitorCheckOut],
+    response_model=list[MonitorCheckStatusOut],
     response_model_exclude_unset=True,
     dependencies=[Depends(require_internal)],
 )
@@ -459,15 +526,16 @@ def get_server_status(server_id: str, db: Session = Depends(get_db)):
         .order_by(MonitorCheck.name)
         .all()
     )
-    return _serialize_with_states(db, checks)
+    return _serialize_status(db, checks)
 
 
 @router.get(
     "/status/summary", response_model=StatusSummaryOut, dependencies=[Depends(require_internal)]
 )
 def get_status_summary(db: Session = Depends(get_db)):
-    """Summary: count per status. Dict response (aggregate, not a list) —
-    deliberately unpaginated."""
+    """Summary: count per status, the newest result of an enabled check and the
+    shortest interval of the enabled checks (null without one). Dict response
+    (aggregate, not a list) — deliberately unpaginated."""
     # Aggregate in SQL: a GROUP BY count avoids materializing every MonitorState row (incl. the
     # message/details JSON blobs) just to tally per status — thousands of rows with large text
     # columns per dashboard poll at scale (5.21).
@@ -484,6 +552,22 @@ def get_status_summary(db: Session = Depends(get_db)):
         if status_ in summary:
             summary[status_] = count
         summary["total"] += count
+    enabled = MonitorCheck.enabled == True  # noqa: E712
+    last_result = (
+        db.query(func.max(MonitorState.last_check))
+        .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
+        .filter(enabled)
+        .scalar()
+    )
+    # interval is a string ("5m", "1h"): its SQL min() would be the lexical one, so the
+    # few distinct values come back and the shortest is picked here.
+    intervals = [
+        interval_timedelta(interval)
+        for (interval,) in db.query(MonitorCheck.interval).filter(enabled).distinct().all()
+    ]
+    seconds = [int(t.total_seconds()) for t in intervals if t is not None]
+    summary["lastResultAt"] = iso_utc(last_result)
+    summary["minIntervalS"] = min(seconds) if seconds else None
     return summary
 
 
@@ -631,6 +715,87 @@ def get_server_history(
         "thresholds": thresholds,
         "events": events,
         "maintenance": maintenance,
+    }
+
+
+# The agent's self-measurement per collector (R-1223, routers/agent.py _collector_lines).
+_COST_FIELDS = {
+    "monitor_agent_collector_duration_ms_value": "durationMs",
+    "monitor_agent_collector_cpu_ms_value": "cpuMs",
+    "monitor_agent_collector_factor_value": "factor",
+    "monitor_agent_collector_throttled_value": "throttled",
+}
+
+
+_COST_MEAN = "monitor_agent_collector_(duration_ms|cpu_ms)_value"
+_COST_LAST = "monitor_agent_collector_(factor|throttled)_value"
+
+
+def _cost_queries(server_id: str) -> dict[str, str]:
+    """Mean duration and CPU time of a run, the time-limit hits (a count per run, so
+    summed) and the newest factor and throttle flag, each over the last hour."""
+    labels = f'server_id="{_escape_label(server_id)}"'
+    return {
+        "mean": f'avg_over_time({{__name__=~"{_COST_MEAN}",{labels}}}[1h]) keep_metric_names',
+        "timeouts": f"sum_over_time(monitor_agent_collector_timeouts_value{{{labels}}}[1h])",
+        "last": f'last_over_time({{__name__=~"{_COST_LAST}",{labels}}}[1h]) keep_metric_names',
+    }
+
+
+def _last_points(result: list) -> list[tuple[dict, float]]:
+    """(labels, value) of the newest finite point of each series."""
+    points = []
+    for series in result:
+        values = series.get("values") or []
+        try:
+            value = float(values[-1][1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            points.append((series.get("metric") or {}, value))
+    return points
+
+
+@router.get(
+    "/status/server/{server_id}/costs",
+    response_model=ServerCostsOut,
+    dependencies=[Depends(require_internal)],
+)
+def get_server_costs(server_id: str):
+    """What monitoring costs one server, per agent collector over the last hour: mean
+    duration and CPU time of a run, the time-limit hits, the current factor and whether
+    the agent throttles the collector."""
+    end = int(time.time())
+    collectors: dict[str, dict] = {}
+    for kind, query in _cost_queries(server_id).items():
+        # The newest point of a short range stands for the hour before it.
+        result = _series_or_502(
+            victoria.query_range(query=query, start=str(end - 300), end=str(end), step="60s")
+        )
+        for labels, value in _last_points(result):
+            name = labels.get("collector")
+            if not name:
+                continue
+            entry = collectors.setdefault(
+                name,
+                {
+                    "collector": name,
+                    "durationMs": None,
+                    "cpuMs": None,
+                    "timeouts": None,
+                    "factor": None,
+                    "throttled": None,
+                },
+            )
+            field = "timeouts" if kind == "timeouts" else _COST_FIELDS.get(labels.get("__name__"))
+            if field == "throttled":
+                entry[field] = value != 0
+            elif field:
+                entry[field] = value
+    return {
+        "serverId": server_id,
+        "window": "1h",
+        "collectors": [collectors[name] for name in sorted(collectors)],
     }
 
 

@@ -105,13 +105,10 @@ describe('formToInput', () => {
 });
 
 describe('validateTunnelForm', () => {
-  it('requires a config, a name and a positive port', () => {
+  it('requires a config and a positive port; the own text is optional (R-1210)', () => {
     expect(validateTunnelForm(emptyTunnelForm('s')).ok).toBe(false); // no config
-    expect(validateTunnelForm({ ...emptyTunnelForm('s', 'c') }).ok).toBe(false); // no name
-    expect(validateTunnelForm({ ...emptyTunnelForm('s', 'c'), name: 'n' }).ok).toBe(false); // no port
-    expect(validateTunnelForm({ ...emptyTunnelForm('s', 'c'), name: 'n', localPort: 22 }).ok).toBe(
-      true,
-    );
+    expect(validateTunnelForm({ ...emptyTunnelForm('s', 'c') }).ok).toBe(false); // no port
+    expect(validateTunnelForm({ ...emptyTunnelForm('s', 'c'), localPort: 22 }).ok).toBe(true);
   });
 
   const valid = { ...emptyTunnelForm('s', 'c'), name: 'n', localPort: 22 };
@@ -130,6 +127,39 @@ describe('validateTunnelForm', () => {
   it('does not check the visitor port of an https tunnel', () => {
     expect(validateTunnelForm({ ...valid, tunnelType: 'https', visitorPort: 0 })).toEqual({
       ok: true,
+    });
+  });
+});
+
+describe('own text of a tunnel (R-1210)', () => {
+  it('edits the label, the name of a tunnel from an older server', () => {
+    const base = {
+      id: 't1',
+      serverId: 's',
+      frpConfigId: 'c',
+      tunnelType: 'stcp' as const,
+      protocol: 'ssh' as const,
+      localIp: null,
+      localPort: 22,
+      secretKey: null,
+      visitorPort: null,
+      enabled: true,
+    };
+    expect(tunnelToForm({ ...base, name: 'web01 · backup (FRP)', label: 'backup' }).name).toBe(
+      'backup',
+    );
+    expect(tunnelToForm({ ...base, name: 'k01-ssh' }).name).toBe('k01-ssh');
+  });
+
+  it('sends the own text as label, and as name or "{server}-{protocol}" without one', () => {
+    const form = { ...emptyTunnelForm('s', 'c'), localPort: 22 };
+    expect(formToInput({ ...form, name: ' backup ' }, 'web01')).toMatchObject({
+      name: 'backup',
+      label: 'backup',
+    });
+    expect(formToInput({ ...form, protocol: 'rdp' }, 'web01')).toMatchObject({
+      name: 'web01-rdp',
+      label: '',
     });
   });
 });

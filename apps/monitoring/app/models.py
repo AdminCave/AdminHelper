@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 from sqlalchemy import (
     Boolean,
@@ -19,7 +20,9 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
 )
+from sqlalchemy.orm import validates
 
+from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
 
@@ -158,6 +161,7 @@ class MonitorCheck(Base):
             else [],
             "moduleId": self.module_id,
             "moduleInstance": self.module_instance,
+            "moduleCheckKey": self.module_check_key,
             "silent": bool(self.silent),
             "createdAt": iso_utc(self.created_at),
             "updatedAt": iso_utc(self.updated_at),
@@ -524,6 +528,9 @@ class MonitorTemplateSuggestionDismissal(Base):
     dismissed_at = Column(DateTime, server_default=utc_now_sql())
 
 
+_CREDENTIAL_REF = re.compile(CREDENTIAL_REF_PATTERN)
+
+
 class MonitorDiscovery(Base):
     """What a server's agent last found on its host (services, containers, units,
     listening ports, markers) and when it looks again. One row per server.
@@ -543,6 +550,21 @@ class MonitorDiscovery(Base):
     inventory = Column(Text, nullable=False, default="{}", server_default="{}")  # JSON
     credentials = Column(Text, nullable=False, default="{}", server_default="{}")  # JSON
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
+
+    @validates("credentials")
+    def _check_credentials(self, _key: str, value: str) -> str:
+        # The column is free text to the database; a value of another form would reach the
+        # findings API, which reads it as {ref: true}.
+        refs = json.loads(value)
+        if not isinstance(refs, dict) or not all(
+            present is True
+            and isinstance(ref, str)
+            and len(ref) <= CREDENTIAL_REF_MAX
+            and _CREDENTIAL_REF.fullmatch(ref)
+            for ref, present in refs.items()
+        ):
+            raise ValueError("credentials holds {<credential ref>: true} only")
+        return value
 
 
 class MonitorFinding(Base):

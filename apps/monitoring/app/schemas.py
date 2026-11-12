@@ -52,6 +52,9 @@ class CheckCreate(RequestModel):
     # Unknown check_type passes — the router rejects it against VALID_CHECK_TYPES.
     @model_validator(mode="after")
     def _config_valid(self):
+        if self.check_type == "probe":
+            # R-1252: a probe check comes only from a module of the catalog.
+            raise ValueError("A probe check comes only from a module of the catalog")
         validate_check_config(self.check_type, self.config)
         return self
 
@@ -129,6 +132,9 @@ class TemplateCheckDef(RequestModel):
     def _check_type_valid(cls, v: str) -> str:
         if v not in VALID_CHECK_TYPES:
             raise ValueError(f"Invalid check_type: {v}")
+        if v == "probe":
+            # R-1252: a probe check comes only from a module of the catalog.
+            raise ValueError("A probe check comes only from a module of the catalog")
         return v
 
     @field_validator("interval")
@@ -325,11 +331,17 @@ class MonitorCheckOut(BaseModel):
     overriddenFields: list[str]
     moduleId: str | None
     moduleInstance: str | None
+    moduleCheckKey: str | None
     silent: bool
     createdAt: str | None
     updatedAt: str | None
     # Only with a state row; the routes drop it unset (response_model_exclude_unset).
     state: MonitorStateOut | None = None
+
+
+class MonitorCheckStatusOut(MonitorCheckOut):
+    # alerter.muted_reasons: "silent check" | "maintenance window" | "host down" | None.
+    mutedReason: str | None
 
 
 class StatusSummaryOut(BaseModel):
@@ -339,6 +351,23 @@ class StatusSummaryOut(BaseModel):
     critical: int
     unknown: int
     pending: int
+    lastResultAt: str | None
+    minIntervalS: int | None
+
+
+class CollectorCostOut(BaseModel):
+    collector: str
+    durationMs: float | None
+    cpuMs: float | None
+    timeouts: float | None
+    factor: float | None
+    throttled: bool | None
+
+
+class ServerCostsOut(BaseModel):
+    serverId: str
+    window: str
+    collectors: list[CollectorCostOut]
 
 
 class CheckMetricsOut(BaseModel):

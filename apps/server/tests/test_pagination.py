@@ -156,7 +156,9 @@ class TestConnectionsPagination:
         headers = _login(test_client, "viewer", "viewerpass")
         r = test_client.get("/api/connections?limit=2&offset=1", headers=headers)
         assert r.status_code == 200, r.text
-        assert [c["name"] for c in r.json()] == ["own-1", "own-2"]
+        # The own text, after the name of the server (R-1210).
+        assert [c["label"] for c in r.json()] == ["own-1", "own-2"]
+        assert [c["name"] for c in r.json()] == ["own · own-1", "own · own-2"]
         assert r.headers["X-Total-Count"] == "3"
 
 

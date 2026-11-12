@@ -15,16 +15,21 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
 
-	"adminhelper-agent/internal/execx"
+	"adminhelper-agent/internal/allowlist"
 )
 
 // The local sensors read this host's own state: a unit, a process, a listening socket, a container,
@@ -51,7 +56,7 @@ const (
 // The seams of the local sensors to the host; tests stand in their own.
 var (
 	now           = time.Now
-	runTool       = execx.Run
+	runTool       = allowlist.Run
 	findProcesses = processesNamed
 	statPath      = os.Stat
 )
@@ -230,6 +235,135 @@ func inspectContainer(ctx context.Context, name string) (containerInfo, error) {
 		return containerInfo{}, fmt.Errorf("docker inspect %s: an answer of another form", name)
 	}
 	return list[0], nil
+}
+
+// publication is a TCP port of this host that docker forwards to a port of a running container.
+type publication struct {
+	// hostIP is the address docker forwards; invalid or unspecified for every address.
+	hostIP   netip.Addr
+	hostPort uint16
+	to       uint16
+}
+
+// dockerSocket is where the docker daemon takes the CLI's calls by default.
+var dockerSocket = "/var/run/docker.sock"
+
+// dockerPublications returns the published TCP ports of the running containers. A host without a
+// docker daemon serving its socket has none; with one, every answer of docker must be read, even
+// without the CLI on the agent's PATH. Only docker on Linux forwards a port without a process
+// listening on it; Docker Desktop always listens with its own.
+func dockerPublications(ctx context.Context) ([]publication, error) {
+	if runtime.GOOS != "linux" {
+		return nil, nil
+	}
+	ids, err := dockerContainers(ctx)
+	if err != nil {
+		if !dockerServes(ctx) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	out, err := runTool(ctx, toolTimeout, "docker", append([]string{"inspect", "--type", "container"}, ids...)...)
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		return nil, fmt.Errorf("docker inspect: %w", err)
+	}
+	var list []containerInfo
+	if jerr := json.Unmarshal(out, &list); jerr != nil {
+		if err != nil {
+			return nil, fmt.Errorf("docker inspect: %w", err)
+		}
+		return nil, errors.New("docker inspect: an answer of another form")
+	}
+	if err != nil {
+		// docker prints what it found and fails for the rest, a removed container as much as a
+		// daemon gone: every container missing from the answer must be gone from docker ps, too.
+		if err := goneSince(ctx, ids, list); err != nil {
+			return nil, err
+		}
+	}
+	var pubs []publication
+	for _, c := range list {
+		if !c.State.Running {
+			continue
+		}
+		for key, binds := range c.NetworkSettings.Ports {
+			num, proto, _ := strings.Cut(key, "/")
+			if proto != "tcp" {
+				continue
+			}
+			to, err := strconv.ParseUint(num, 10, 16)
+			if err != nil {
+				return nil, fmt.Errorf("docker inspect: container port %q of another form", key)
+			}
+			for _, b := range binds {
+				hostPort, err := strconv.ParseUint(b.HostPort, 10, 16)
+				if err != nil {
+					return nil, fmt.Errorf("docker inspect: host port %q of another form", b.HostPort)
+				}
+				var hostIP netip.Addr
+				if b.HostIP != "" {
+					if hostIP, err = netip.ParseAddr(b.HostIP); err != nil {
+						return nil, fmt.Errorf("docker inspect: host address %q of another form", b.HostIP)
+					}
+					hostIP = hostIP.Unmap().WithZone("")
+				}
+				pubs = append(pubs, publication{hostIP: hostIP, hostPort: uint16(hostPort), to: uint16(to)})
+			}
+		}
+	}
+	return pubs, nil
+}
+
+// dockerContainers returns the IDs of every container docker knows.
+func dockerContainers(ctx context.Context) ([]string, error) {
+	out, err := runTool(ctx, toolTimeout, "docker", "ps", "--all", "--quiet", "--no-trunc")
+	if err != nil {
+		return nil, fmt.Errorf("docker ps: %w", err)
+	}
+	return strings.Fields(string(out)), nil
+}
+
+// goneSince returns an error unless every container of ids that list lacks is gone from docker.
+func goneSince(ctx context.Context, ids []string, list []containerInfo) error {
+	got := make(map[string]bool, len(list))
+	for _, c := range list {
+		got[c.ID] = true
+	}
+	var missing []string
+	for _, id := range ids {
+		if !got[id] {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	now, err := dockerContainers(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range missing {
+		if slices.Contains(now, id) {
+			return fmt.Errorf("docker inspect: container %s left out of the answer", id)
+		}
+	}
+	return nil
+}
+
+// dockerSocketServes says whether a docker daemon may serve this host: false only when its socket
+// does not exist or nobody accepts on it.
+func dockerSocketServes(ctx context.Context) bool {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", dockerSocket)
+	if err == nil {
+		_ = conn.Close()
+		return true
+	}
+	return !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // certfileSensor reads the first certificate of a PEM file: when it expires, who issued it, whom it

@@ -127,6 +127,7 @@ func stubDocker(t *testing.T, replies map[string]dockerReply) *[][]string {
 	dockerCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	dockerCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
+		checkAllowed(t, "docker", args)
 		reply, ok := replies[args[0]]
 		if !ok {
 			t.Errorf("unexpected docker call %v", args)
@@ -504,6 +505,7 @@ func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
 	zpoolCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
 	zpoolCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
+		checkAllowed(t, "zpool", args)
 		reply, ok := replies[args[0]]
 		if !ok {
 			t.Errorf("unexpected zpool call %v", args)
@@ -646,6 +648,7 @@ func stubPvesh(t *testing.T, replies map[string]dockerReply) *[][]string {
 	pveshCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	pveshCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
+		checkAllowed(t, "pvesh", args)
 		var reply dockerReply
 		ok := len(args) > 1 && args[0] == "get"
 		if ok {

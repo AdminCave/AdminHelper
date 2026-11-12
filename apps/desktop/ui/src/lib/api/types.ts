@@ -6,7 +6,10 @@ export type ConnectionKind = 'ssh' | 'rdp' | 'web';
 
 export interface Connection {
   id: string;
+  /** The display name the server derives (R-1210); without a server the name itself. */
   name: string;
+  /** The stored own text of the display name; without a server the name itself. */
+  label?: string;
   kind: ConnectionKind;
   host?: string | null;
   url?: string | null;
@@ -63,7 +66,10 @@ export interface ConnectionOptions {
 export interface Server {
   id: string;
   name: string;
+  /** Where the server is reached: its own hostname, else its name (R-1210). */
   hostname: string;
+  /** True when an own hostname is stored, false when the address follows the name. */
+  customHostname?: boolean;
   osType?: string | null;
   tags?: string[];
   notes?: string | null;
@@ -146,7 +152,10 @@ export interface FrpTunnel {
   id: string;
   serverId: string;
   frpConfigId: string;
+  /** The display name the server derives (R-1210): "{server} · {label|SSH|RDP|Web} (FRP)". */
   name: string;
+  /** The stored own text of the display name, '' for none. */
+  label?: string;
   tunnelType: FrpTunnelType;
   protocol: FrpProtocol;
   localIp: string | null;
@@ -164,6 +173,8 @@ export interface FrpTunnelInput {
   server_id: string;
   frp_config_id: string;
   name: string;
+  /** The own text of the display name (R-1210); a server from before ignores it. */
+  label?: string;
   tunnel_type: FrpTunnelType;
   protocol: FrpProtocol;
   local_ip: string;
@@ -186,6 +197,8 @@ export interface FrpStatusProxy {
   todayTrafficOut: number;
   lastStartTime?: string;
   lastCloseTime?: string;
+  /** The tunnel the proxy belongs to; its `name` is the display name the server derives (R-1210). */
+  tunnel?: { id: string; name: string } | null;
 }
 
 export interface FrpStatus {
@@ -472,6 +485,8 @@ export type MonitorCheckDetails =
   | MonitorSmartDetails
   | MonitorForecastDetails
   | MonitorSystemStateDetails
+  | MonitorHttpDetails
+  | MonitorProbeDetails
   | Record<string, unknown>;
 
 export interface MonitorCheckState {
@@ -505,9 +520,163 @@ export interface MonitorCheck {
   overriddenFields?: string[];
   moduleId?: string | null;
   moduleInstance?: string | null;
+  /** The catalog check this module check came from (`MonitorCatalogCheck.key`). */
+  moduleCheckKey?: string | null;
   silent?: boolean;
+  /** Status answers only: why this check does not alert right now. */
+  mutedReason?: MonitorMutedReason | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export type MonitorMutedReason = 'silent check' | 'maintenance window' | 'host down';
+
+/** HTTP check over https with cert verification on: the first https hop's certificate. */
+export interface MonitorCertDetails {
+  /** Unix seconds, like `not_after` of the agent's `tls` and `certfile` sensors. */
+  not_before: number;
+  not_after: number;
+  issuer: string | null;
+  subject_cn: string | null;
+}
+
+export interface MonitorHttpDetails {
+  cert?: MonitorCertDetails;
+}
+
+/** How the agent ran a probe, or why it did not (checkers/probe.py). */
+export type MonitorProbeStatus =
+  | 'ok'
+  | 'error'
+  | 'denied'
+  | 'no_credential'
+  | 'not_allowed'
+  | 'unsupported'
+  | 'ambiguous_target'
+  | 'invalid';
+
+export type MonitorProbeValue = number | string | boolean | null;
+
+export interface MonitorProbeDetails {
+  ts: number | null;
+  /** A `MonitorProbeStatus`, any other text the agent sent, or null when it sent none. */
+  status: string | null;
+  error: string | null;
+  measured_ts: number | null;
+  values: Record<string, MonitorProbeValue>;
+  baseline: Record<string, MonitorProbeValue> | null;
+  problems: string[];
+}
+
+/** `GET /status/summary`; the two time fields feed the "no result" warning. */
+export interface MonitoringStatusSummary {
+  total: number;
+  ok: number;
+  warning: number;
+  critical: number;
+  unknown: number;
+  pending: number;
+  lastResultAt: string | null;
+  minIntervalS: number | null;
+}
+
+/** One agent collector over the last hour; null where its series has no point. */
+export interface MonitorCollectorCost {
+  collector: string;
+  durationMs: number | null;
+  cpuMs: number | null;
+  timeouts: number | null;
+  factor: number | null;
+  throttled: boolean | null;
+}
+
+export interface MonitorServerCosts {
+  serverId: string;
+  window: string;
+  collectors: MonitorCollectorCost[];
+}
+
+export interface MonitorCatalogCredential {
+  slot: string;
+  use: string;
+}
+
+export interface MonitorCatalogCheck {
+  key: string;
+  name: string;
+  sensor: string;
+  /** Seconds. */
+  interval: number;
+  fields: string[];
+  testObject: boolean;
+  credential: MonitorCatalogCredential | null;
+}
+
+/** One figure on a module's card: `field` of the instance's check `checkKey`. */
+export interface MonitorCatalogCardEntry {
+  checkKey: string;
+  field: string;
+  label: string;
+}
+
+export interface MonitorCatalogModule {
+  id: string;
+  name: string;
+  version: number;
+  description: string;
+  instance: string;
+  checks: MonitorCatalogCheck[];
+  card: MonitorCatalogCardEntry[];
+}
+
+export interface MonitorCatalog {
+  version: string;
+  modules: MonitorCatalogModule[];
+}
+
+export interface MonitorDiscovery {
+  serverId: string;
+  scannedAt: string | null;
+  nextScanAt: string | null;
+  scanRequestedAt: string | null;
+  inventory: Record<string, unknown>;
+  /** `<module>/<instance>/<slot>` the agent holds a secret for; never the values. */
+  credentials: string[];
+}
+
+export type MonitorFindingKind = 'new' | 'changed' | 'gone';
+export type MonitorFindingStatus = 'open' | 'adopted' | 'dismissed';
+
+export interface MonitorFinding {
+  id: string;
+  serverId: string;
+  moduleId: string;
+  /** null once the catalog no longer has the module. */
+  moduleName: string | null;
+  instanceKey: string;
+  kind: MonitorFindingKind;
+  status: MonitorFindingStatus;
+  summary: Record<string, unknown>;
+  catalogVersion: string;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  decidedAt: string | null;
+  /** Ids of the instance's checks that do not alert yet. */
+  silentChecks: string[];
+  /** Ids of the instance's checks whose catalog check is gone. */
+  droppedChecks: string[];
+}
+
+export interface MonitorAdoptResult {
+  finding: MonitorFinding;
+  enabledChecks: string[];
+  disabledChecks: string[];
+  skippedChecks: { key: string; reason: string }[];
+}
+
+export interface MonitorAdoptAllResult {
+  adopted: MonitorAdoptResult[];
+  failed: { findingId: string; reason: string }[];
 }
 
 export interface MonitorCheckInput {

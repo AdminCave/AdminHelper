@@ -73,11 +73,13 @@ services:
     build:
       context: apps/ca-issuer
 
-  # The supervisor of this checkout, not a published tag.
+  # The supervisor and the plugin of this checkout, not a published tag. From the repository
+  # root: the plugin is in the Go module of the agent (apps/frps/Dockerfile.dockerignore).
   frps:
     image: adminhelper-test/frps:latest
     build:
-      context: apps/frps
+      context: .
+      dockerfile: apps/frps/Dockerfile
 
   # Built locally too, so the monitoring-pipeline tests (agent push -> check
   # evaluation) run THIS checkout's monitoring service, not a published tag.
@@ -85,6 +87,13 @@ services:
     image: adminhelper-test/monitoring:latest
     build:
       context: apps/monitoring
+
+# Docker publishes no port of a container that sits on internal networks only: the loopback
+# port of redis above needs its network to be a plain bridge here. Still no other service
+# is on it.
+networks:
+  redis:
+    internal: false
 
 volumes:
   test-data:

@@ -80,6 +80,7 @@ func stubSystemCLI(t *testing.T, replies map[string]dockerReply) *[][]string {
 	}
 	systemCLI.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{name}, args...))
+		checkAllowed(t, name, args)
 		reply, ok := replies[name]
 		if !ok {
 			t.Errorf("unexpected call %s %v", name, args)

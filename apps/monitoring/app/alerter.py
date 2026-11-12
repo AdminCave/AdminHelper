@@ -420,6 +420,57 @@ def _host_is_down(db: Session, check: MonitorCheck) -> bool:
     return row is not None
 
 
+def muted_reasons(
+    db: Session, checks: Sequence[MonitorCheck], now: datetime
+) -> dict[str, str | None]:
+    """muted_reason for every check of a status page, by check id: the windows and the
+    critical host-down signals of the page's servers load once per call, not once per
+    check (R-1225). Same order and rank as muted_reason and _host_is_down; a test holds
+    the two in step over every reason."""
+    if not checks:
+        return {}
+    windows = (
+        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
+    )
+    server_ids = {c.server_id for c in checks if c.server_id}
+    # server_id -> which signals stand critical there: "agent_ping", "host_ping".
+    down: dict[str, set[str]] = {}
+    if server_ids:
+        host_ping = and_(
+            MonitorCheck.check_type == "ping", MonitorCheck.template_def_id == HOST_PING_DEF_ID
+        )
+        rows = (
+            db.query(MonitorCheck.server_id, MonitorCheck.check_type)
+            .join(MonitorState, MonitorState.check_id == MonitorCheck.id)
+            .filter(
+                MonitorCheck.server_id.in_(server_ids),
+                or_(MonitorCheck.check_type == "agent_ping", host_ping),
+                MonitorCheck.enabled == True,  # noqa: E712
+                MonitorState.status == "critical",
+            )
+            .distinct()
+            .all()
+        )
+        for server_id, check_type in rows:
+            down.setdefault(server_id, set()).add(
+                "agent_ping" if check_type == "agent_ping" else "host_ping"
+            )
+
+    def reason(check: MonitorCheck) -> str | None:
+        if check.silent:
+            return "silent check"
+        if windows and is_in_maintenance(windows, check.server_id, now):
+            return "maintenance window"
+        signals = down.get(check.server_id, set()) if check.server_id else set()
+        if check.check_type == "ping" and check.template_def_id == HOST_PING_DEF_ID:
+            signals = set()
+        elif check.check_type == "agent_ping":
+            signals = signals & {"host_ping"}
+        return "host down" if signals else None
+
+    return {c.id: reason(c) for c in checks}
+
+
 def _severity_level(severity: str) -> int:
     """Level of a check's severity. A value outside VALID_SEVERITIES (the routers
     reject it) caps nothing rather than silence an alert."""

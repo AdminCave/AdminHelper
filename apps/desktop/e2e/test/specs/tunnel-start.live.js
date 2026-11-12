@@ -18,11 +18,11 @@ import { login, gotoInfrastructure, openServerTab, jsClick } from '../lib/live.j
 const SERVER_URL = process.env.AH_SERVER_URL;
 const ENROLL_TOKEN = process.env.AH_ENROLL_TOKEN;
 
-// The tunnel desktop_e2e_tunnel.sh seeds, and the one this spec adds next to it.
-// The server names each visitor "<tunnel>-visitor" (generate_visitor_toml).
-const SEEDED_TUNNEL = 'e2e-ssh';
+// The tunnel this spec adds next to the one desktop_e2e_tunnel.sh seeds. The server names each
+// visitor "<tunnel-id>-visitor" (generate_visitor_toml, R-1210) and lists the tunnel under the
+// display name it derives from the seeded server e2e-server.
 const ADDED_TUNNEL = 'e2e-ssh-added';
-const ADDED_VISITOR = `${ADDED_TUNNEL}-visitor`;
+const ADDED_SHOWN = `e2e-server · ${ADDED_TUNNEL} (FRP)`;
 
 // tunnel_status through the bridge: whether frpc runs, since when, which visitors it applied.
 // A rejection fails the spec with its message. It comes back as { rejected }: webdriver takes
@@ -35,6 +35,18 @@ async function tunnelStatus() {
       .catch((e) => ({ rejected: String((e && e.message) || e) }));
   });
   if (out.rejected !== undefined) throw new Error(`tunnel_status failed: ${out.rejected}`);
+  return out.value;
+}
+
+// fetch_tunnels through the bridge: the server's tunnel list, rejected the same way.
+async function fetchTunnels() {
+  const out = await browser.execute(async () => {
+    return window.__TAURI__.core
+      .invoke('fetch_tunnels')
+      .then((value) => ({ value }))
+      .catch((e) => ({ rejected: String((e && e.message) || e) }));
+  });
+  if (out.rejected !== undefined) throw new Error(`fetch_tunnels failed: ${out.rejected}`);
   return out.value;
 }
 
@@ -119,8 +131,8 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     const before = await tunnelStatus();
     expect(before.running).toBe(true);
     expect(before.connectedSince).toBeTruthy();
-    expect(before.visitors).toContain(`${SEEDED_TUNNEL}-visitor`);
-    expect(before.visitors).not.toContain(ADDED_VISITOR);
+    expect(before.visitors).toHaveLength(1); // the seeded tunnel's
+    expect(before.visitors[0]).toMatch(/-visitor$/);
 
     await gotoInfrastructure();
     await openServerTab('tunnels');
@@ -138,18 +150,25 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     await jsClick(await $('.editor-panel .btn.primary'));
 
     // The dialog reconciles right after the save (refreshNow), not at the next 60 s tick.
+    // The visitor of the new tunnel is named after its ID, which the tunnel list gives once the
+    // save went through: asked on every poll, not right after the click.
     let after = null;
+    let addedVisitor = null;
     await browser.waitUntil(
       async () => {
+        const id = (await fetchTunnels()).find((t) => t.name === ADDED_SHOWN)?.id;
+        if (!id) return false;
+        addedVisitor = `${id}-visitor`;
         after = await tunnelStatus();
-        return Array.isArray(after.visitors) && after.visitors.includes(ADDED_VISITOR);
+        return Array.isArray(after.visitors) && after.visitors.includes(addedVisitor);
       },
       {
         timeout: 20000,
         interval: 500,
-        timeoutMsg: `the running frpc never took over the visitor "${ADDED_VISITOR}" within 20 s`,
+        timeoutMsg: `the running frpc never took over the visitor of "${ADDED_TUNNEL}" within 20 s`,
       },
     );
+    expect(before.visitors).not.toContain(addedVisitor);
     expect(after.running).toBe(true);
     // A restart would have set a new start time.
     expect(after.connectedSince).toBe(before.connectedSince);

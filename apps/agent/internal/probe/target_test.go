@@ -207,52 +207,6 @@ func TestParseProcNetTCPReadsTheListeningSockets(t *testing.T) {
 	}
 }
 
-func TestParseSockstatReadsTheListeningSockets(t *testing.T) {
-	// sockstat -46lnq -P tcp of FreeBSD 14.3: a COMMAND with a blank, an owner sockstat cannot tell,
-	// IPv6 without brackets, a v4-mapped address, a socket of a TCP offload engine and one bound
-	// without a port.
-	out := `0        nginx      1234  6  tcp4   *:443                 *:*
-0        nginx      1234  7  tcp6   *:443                 *:*
-80       my daemon  2001  9  tcp4   127.0.0.1:9000        *:*
-?        ?          ?     ?  tcp46  *:8080                *:*
-59       unbound    77    5  tcp6   ::1:53                *:*
-0        lighttpd   88    4  toe4   192.0.2.10:8443       *:*
-0        haproxy    99    3  tcp6   ::ffff:192.0.2.10:81  *:*
-0        sshd       100   3  tcp4   *:*                   *:*
-
-`
-	want := []listener{
-		lst("0.0.0.0", 443, 1234), lst("::", 443, 1234), lst("127.0.0.1", 9000, 2001), lst("::", 8080, 0),
-		lst("::1", 53, 77), lst("192.0.2.10", 8443, 88), lst("192.0.2.10", 81, 99),
-	}
-	got, err := parseSockstat([]byte(out))
-	if err != nil || !slices.Equal(got, want) {
-		t.Fatalf("parseSockstat = %v, %v, want %v", got, err, want)
-	}
-	if got, err := parseSockstat(nil); err != nil || len(got) != 0 {
-		t.Errorf("parseSockstat(nil) = %v, %v, want none", got, err)
-	}
-}
-
-func TestParseSockstatFailsOnALineOfAnotherForm(t *testing.T) {
-	good := "0 nginx 1234 6 tcp4 *:443 *:*\n"
-	for _, line := range []string{
-		"0 nginx 1234 6 tcp4 *:443",             // a column short
-		"0 nginx x 6 tcp4 *:443 *:*",            // a pid that is none
-		"0 nginx 0 6 tcp4 *:443 *:*",            // pid 0
-		"0 nginx 1234 6 udp4 *:53 *:*",          // another protocol
-		"0 nginx 1234 6 tcp5 *:443 *:*",         // another family
-		"0 nginx 1234 6 tcp4 443 *:*",           // no port
-		"0 nginx 1234 6 tcp4 *:0 *:*",           // port 0
-		"0 nginx 1234 6 tcp4 *:65536 *:*",       // a port past 16 bits
-		"0 nginx 1234 6 tcp4 300.1.2.3:443 *:*", // an address that is none
-	} {
-		if got, err := parseSockstat([]byte(good + line + "\n")); err == nil || !strings.Contains(err.Error(), "line 2 ") {
-			t.Errorf("parseSockstat(%q) = %v, %v, want line 2 refused", line, got, err)
-		}
-	}
-}
-
 func TestCgroupHasReadsEveryHierarchy(t *testing.T) {
 	v1 := []byte("12:pids:/system.slice/docker-abc.scope\n1:name=systemd:/system.slice/docker-abc.scope\n")
 	v2 := []byte("0::/system.slice/nginx.service\n")

@@ -55,6 +55,12 @@ export interface TerminalSession {
    * name. It is not reconnected and not kept for the next run.
    */
   ansible?: { check: boolean };
+  /**
+   * Runs only the agent's prompt for the monitoring credential `ref` on the host
+   * (arch-monitoring-ui): no shell, no snippets, no files. Reconnected the same way, and not kept
+   * for the next run.
+   */
+  credential?: { ref: string };
   /** An embedded RDP session (R-1098) instead of a program of a terminal. */
   rdp?: RdpView;
 }
@@ -244,7 +250,8 @@ function newRuntime(key: string): Runtime {
 
 /**
  * Calls `onEnd` once, as soon as the tab `key` shows its program ended or is gone. A reconnect
- * after that calls nothing more.
+ * after that calls nothing more. An RDP tab that asks about the certificate has not ended: the
+ * user decides, and trusting it starts the session anew.
  */
 function watchEnd(key: string, onEnd: () => void): void {
   let ended = false;
@@ -252,7 +259,9 @@ function watchEnd(key: string, onEnd: () => void): void {
   stop = state.subscribe((s) => {
     if (ended) return;
     const session = s.sessions.find((x) => x.key === key);
-    if (session && session.status !== 'disconnected') return;
+    if (session && (session.status !== 'disconnected' || session.rdp?.phase === 'certificate')) {
+      return;
+    }
     ended = true;
     stop?.();
     onEnd();
@@ -263,12 +272,14 @@ function watchEnd(key: string, onEnd: () => void): void {
 /**
  * Opens `resolved`, the target of `connection`, in a new tab in front. False when the program did
  * not start: the tab then shows the session disconnected, the status bar why. `onEnd` hears once
- * when the program of the tab ends or the tab is closed (R-1159).
+ * when the program of the tab ends or the tab is closed (R-1159). With `credentialRef` the tab
+ * runs the agent's prompt for that monitoring credential instead of a shell.
  */
 export function openTerminal(
   connection: Connection,
   resolved: Connection,
   onEnd?: () => void,
+  credentialRef?: string,
 ): Promise<boolean> {
   opened += 1;
   const key = `terminal-${opened}`;
@@ -281,13 +292,19 @@ export function openTerminal(
     exitCode: null,
     connectedAt: null,
     backendId: null,
+    ...(credentialRef === undefined ? {} : { credential: { ref: credentialRef } }),
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
   if (onEnd) watchEnd(key, onEnd);
-  return start(key, runtime, begin(runtime), sshLaunch(resolved));
+  return start(key, runtime, begin(runtime), sshLaunch(session, resolved));
 }
 
-function sshLaunch(resolved: Connection): Launch {
+function sshLaunch(session: TerminalSession, resolved: Connection): Launch {
+  const ref = session.credential?.ref;
+  if (ref !== undefined) {
+    return (cols, rows, onMessage) =>
+      bridge.terminalOpenSshCredential(resolved, ref, cols, rows, onMessage);
+  }
   return (cols, rows, onMessage) => bridge.terminalOpenSsh(resolved, cols, rows, onMessage);
 }
 
@@ -348,7 +365,7 @@ export async function reconnectTerminal(key: string): Promise<boolean> {
   }
   if (runtimes.get(key) !== runtime || runtime.attempt !== attempt) return false;
   update(key, { resolved });
-  return start(key, runtime, attempt, sshLaunch(resolved));
+  return start(key, runtime, attempt, sshLaunch(session, resolved));
 }
 
 // What an RDP tab holds besides what it shows. `attempt` counts the starts: the events and the
@@ -525,7 +542,11 @@ async function startRdp(key: string, run: RdpRun, first = false): Promise<RdpOpe
  * Opens `connection`, an RDP connection as listed, as an embedded session in a new tab in front,
  * with `password` when the user typed one, else the stored one. Rust resolves and checks it.
  */
-export function openRdp(connection: Connection, password?: string): Promise<RdpOpen> {
+export function openRdp(
+  connection: Connection,
+  password?: string,
+  onEnd?: () => void,
+): Promise<RdpOpen> {
   opened += 1;
   const key = `terminal-${opened}`;
   const run: RdpRun = { attempt: 0, sessionId: null, unlisten: null, password };
@@ -552,13 +573,29 @@ export function openRdp(connection: Connection, password?: string): Promise<RdpO
     },
   };
   state.update((s) => ({ sessions: [...s.sessions, session], active: key }));
+  if (onEnd) watchEnd(key, onEnd);
   return startRdp(key, run, true);
 }
 
-/** Starts the RDP session of tab `key` anew; one still running ends first. */
-export function reconnectRdp(key: string): Promise<boolean> {
+/** A login asked anew for a tab: the connection with the user as typed, and the password typed
+ * for it; without one Rust takes the stored one. */
+export interface RdpLogin {
+  connection: Connection;
+  password: string | undefined;
+}
+
+/**
+ * Starts the RDP session of tab `key` anew; one still running ends first. With `login` this and
+ * every later start of the tab use it instead of what the tab started with.
+ */
+export function reconnectRdp(key: string, login?: RdpLogin): Promise<boolean> {
   const run = rdpRuns.get(key);
-  return run ? startRdp(key, run).then((open) => open === 'started') : Promise.resolve(false);
+  if (!run) return Promise.resolve(false);
+  if (login) {
+    run.password = login.password;
+    update(key, { connection: login.connection, resolved: login.connection });
+  }
+  return startRdp(key, run).then((open) => open === 'started');
 }
 
 /** Ends the RDP session of tab `key`; the tab stays and shows it disconnected. */
@@ -1082,18 +1119,20 @@ export function snippetInput(command: string): Uint8Array {
 
 /**
  * Runs `command` in the session of `key`; with the broadcast on in every running SSH session of
- * the workspace instead, whichever window shows it (Rust holds them all).
+ * the workspace instead, whichever window shows it (Rust holds them all). Returns how many
+ * sessions the broadcast reached; null without the broadcast or when it failed.
  */
-export async function runSnippet(key: string, command: string): Promise<void> {
+export async function runSnippet(key: string, command: string): Promise<number | null> {
   const data = snippetInput(command);
   if (!get(snippetBroadcast)) {
     writeTerminal(key, data);
-    return;
+    return null;
   }
   try {
-    await bridge.terminalBroadcast(data);
+    return await bridge.terminalBroadcast(data);
   } catch (err) {
     reportError(errMsg(err));
+    return null;
   }
 }
 
@@ -1125,12 +1164,13 @@ export interface SessionKeeping {
 
 let stopKeeping: (() => void) | null = null;
 
-/** The ids of the connections with an SSH tab, in tab order, each once. */
+/** The ids of the connections with an SSH shell tab, in tab order, each once. */
 export function openSessionIds(sessions: TerminalSession[]): string[] {
   const ids: string[] = [];
   for (const s of sessions) {
     if (
       !s.ansible &&
+      !s.credential &&
       s.connection.kind === 'ssh' &&
       s.connection.id &&
       !ids.includes(s.connection.id)

@@ -27,7 +27,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"adminhelper-agent/internal/execx"
+	"adminhelper-agent/internal/allowlist"
 	"adminhelper-agent/internal/logging"
 	"adminhelper-agent/internal/probe"
 )
@@ -74,7 +74,7 @@ var (
 	// markerHost says whether the markers of this host can be checked: the catalog writes Unix paths,
 	// on FreeBSD those of OPNsense (/usr/local/opnsense/…) among them.
 	markerHost    = linuxHost || runtime.GOOS == "freebsd"
-	runTool       = execx.Run
+	runTool       = allowlist.Run
 	statPath      = os.Stat
 	listSockets   = probe.Listeners
 	processName   = probe.ProcessName
@@ -131,6 +131,15 @@ type Container struct {
 	Ports          []ContainerPort `json:"ports"`
 	Mounts         []string        `json:"mounts"`
 	pid            int32
+	// binds are the host addresses and ports its TCP ports are published on, the docker-proxy of
+	// each listening there.
+	binds []netip.AddrPort
+}
+
+// portBinding is a host address and port a container port is published on; "" is every address.
+type portBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string
 }
 
 // ContainerPort is a port of a container and the host port it is published on (nil: none).
@@ -243,7 +252,7 @@ type inspected struct {
 		Health *struct{ Status string }
 	}
 	NetworkSettings struct {
-		Ports map[string][]struct{ HostPort string }
+		Ports map[string][]portBinding
 	}
 	Mounts []struct{ Destination string }
 }
@@ -312,12 +321,38 @@ func toContainer(c inspected) Container {
 		Ports:          containerPorts(c.NetworkSettings.Ports),
 		Mounts:         mounts[:min(len(mounts), maxMounts)],
 		pid:            c.State.Pid,
+		binds:          tcpBinds(c.NetworkSettings.Ports),
 	}
+}
+
+// tcpBinds are the host addresses and ports the TCP ports of the port map m are published on; a
+// binding without an address is one on 0.0.0.0 and one on ::, where docker-proxy listens for it.
+func tcpBinds(m map[string][]portBinding) []netip.AddrPort {
+	var binds []netip.AddrPort
+	for spec, bindings := range m {
+		if _, proto, _ := strings.Cut(spec, "/"); proto != "tcp" {
+			continue
+		}
+		for _, b := range bindings {
+			port, err := strconv.ParseUint(b.HostPort, 10, 16)
+			if err != nil || port == 0 {
+				continue
+			}
+			if b.HostIP == "" {
+				binds = append(binds, netip.AddrPortFrom(netip.IPv4Unspecified(), uint16(port)),
+					netip.AddrPortFrom(netip.IPv6Unspecified(), uint16(port)))
+			} else if addr, err := netip.ParseAddr(b.HostIP); err == nil {
+				binds = append(binds, netip.AddrPortFrom(addr.Unmap(), uint16(port)))
+			}
+		}
+	}
+	slices.SortFunc(binds, netip.AddrPort.Compare)
+	return slices.Compact(binds)
 }
 
 // containerPorts reads a container's port map, keyed <port>/<protocol>: a port per host port it is
 // published on (the same host port on IPv4 and IPv6 once), else unpublished.
-func containerPorts(m map[string][]struct{ HostPort string }) []ContainerPort {
+func containerPorts(m map[string][]portBinding) []ContainerPort {
 	type key struct {
 		private, public uint16
 		proto           string
@@ -368,21 +403,19 @@ func containerPorts(m map[string][]struct{ HostPort string }) []ContainerPort {
 
 // collectSockets lists the listening TCP sockets of this host with their process and the container
 // that runs it: one on the host's network by its cgroup, the cgroup of the container's first process
-// or one below it, a published port by the docker-proxy that listens for it. A process name the
+// or one below it, a published port by the docker-proxy that listens on its host address and port. A process name the
 // contract cannot carry is "".
 func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool) {
 	list, err := listSockets(ctx)
 	if err != nil {
 		return []Socket{}, false
 	}
-	published := map[uint16]string{}
+	published := map[netip.AddrPort]string{}
 	var running []string
 	groups := map[string]probe.Cgroups{}
 	for _, c := range containers {
-		for _, p := range c.Ports {
-			if p.Public != nil && p.Proto == "tcp" {
-				published[*p.Public] = c.Name
-			}
+		for _, b := range c.binds {
+			published[b] = c.Name
 		}
 		if c.State == "running" && c.pid > 0 {
 			running = append(running, c.Name)
@@ -405,7 +438,7 @@ func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool
 		}
 		switch {
 		case name == "docker-proxy":
-			s.Container = published[l.Port]
+			s.Container = published[netip.AddrPortFrom(l.Addr.Unmap(), l.Port)]
 		case l.PID > 0 && len(running) > 0:
 			in, ok := inside[l.PID]
 			if !ok {
@@ -488,8 +521,10 @@ func validMarkers(markers []probe.Marker) []probe.Marker {
 
 // cleanPath says whether p is an absolute path in its shortest form, without NUL. The catalog writes
 // Linux paths: path.Clean keeps their slashes on every OS, filepath.Clean turns them into "\" on Windows.
+// "\" and ":" are refused on every OS: on Windows they would turn a catalog path into a drive or a
+// network path the SYSTEM agent stats.
 func cleanPath(p string) bool {
-	return len(p) <= maxPathLen && strings.HasPrefix(p, "/") && path.Clean(p) == p && !strings.ContainsRune(p, 0)
+	return len(p) <= maxPathLen && strings.HasPrefix(p, "/") && path.Clean(p) == p && !strings.ContainsAny(p, "\x00\\:")
 }
 
 // presentPaths returns which of paths exist and whether it got to check all of them. A stat that

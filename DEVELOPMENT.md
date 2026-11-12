@@ -704,7 +704,10 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   ihre Zeile `abgeschlossen` in der Datei steht.
   `--ledger` schreibt die Spalte `Ledger` wie `add --ledger`, auch ohne Statuswechsel — so
   bekommt eine aeltere Zeile ihr Ledger nachgetragen; `next` und die Parallel-Pruefung am
-  Gate lesen es dort, nicht aus der Notiz. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
+  Gate lesen es dort, nicht aus der Notiz. Einen Pfad, der auf `origin/main` liegt (das Ledger
+  eines gemergten Zugs) und nicht schon in der Spalte der Zeile steht, lehnen `status` und `add`
+  mit Exit 2 ab: der Plan eines neuen Zugs ueberschriebe dessen Spec, Ledger und
+  `changelog.d`-Fragment (R-1291); ohne `origin/main` prueft das Skript nichts. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
   die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
   ist Exit 2.
 - `approve` ist `geplant` -> `freigegeben`, die Freigabe, die die Session nach dem Plan-Commit von `/feature-plan`
@@ -929,6 +932,11 @@ services:
     build:
       context: ./apps/gateway
     image: adminhelper-gateway:dev
+  frps:
+    build:
+      context: .            # das frps-Image baut sein Plugin frps-policy aus apps/agent
+      dockerfile: apps/frps/Dockerfile
+    image: adminhelper-frps:dev
 ```
 
 Mit so einer Override-Datei startet `docker compose up --build -d` den
@@ -970,11 +978,18 @@ make build-linux
 # Windows-Binary bauen (Cross-Compile):
 make build-windows
 
+# FreeBSD-Binary bauen (Cross-Compile, amd64):
+make build-freebsd
+
 # DEB-Paket erstellen:
 make deb
 
 # RPM-Paket erstellen:
 make rpm
+
+# FreeBSD-Paket samt signiertem Repo (braucht pkg im PATH und
+# frpc-freebsd aus dem frp-Release freebsd_amd64 im Repo-Root):
+make pkg
 
 # Alles bauen:
 make all
@@ -986,6 +1001,22 @@ Der Agent laesst sich auch direkt starten:
 go run ./cmd/adminhelper-agent version
 go run ./cmd/adminhelper-agent run --once
 ```
+
+`make all` baut nur Linux und Windows. Den FreeBSD-Teil prueft lokal `go vet` mit
+`GOOS=freebsd` (`crossbuild_test.go`); auf echtem FreeBSD laeuft er im Box-Test:
+
+```bash
+bash scripts/tests/freebsd_box.sh [--keep]
+```
+
+Er baut auf der Dev-Box die Test-Binaries, den Agenten und einen Monitoring-Ersatz, holt frpc
+(gepinnte sha256), least eine Box aus der Vorlage `ah-tpl-base-freebsd` und faehrt dort
+`scripts/tests/box_freebsdbox.sh` in drei Phasen: die Tests als Box-Benutzer, die wenigen mit
+root, dann Paket, signiertes Repo, cron-Eintrag, rc.d-Tunnel und einen Agent-Lauf als root.
+Ohne Vorlage oder ohne Go endet er mit Exit 75 (nicht verifiziert). Ein roter Lauf laesst die
+Box stehen (bis zu ihrer TTL) und nennt den `destroy`-Aufruf; `--keep` laesst sie auch nach
+einem gruenen Lauf stehen. Die Vorlage legt `vm.py import --profile base-freebsd` an
+(Abschnitt „VMs mit vm.py“).
 
 ### Monitoring (lokal ohne Docker)
 
@@ -1153,6 +1184,7 @@ Gruppe und Andere nicht schreiben — sonst bricht `vm.py` mit Exit 2 und dem pa
 | `AH_PVE_CA` | Pfad zur Root-CA des Hypervisors (PEM). |
 | `AH_PVE_STORAGE` · `AH_PVE_BRIDGE` · `AH_PVE_POOL` | Storage, Bridge und Pool der Klone. |
 | `AH_PVE_VMID_RANGE` | `3000-3999`. Klone liegen im **unteren**, Templates im **oberen** Hundert. |
+| `AH_PVE_IMPORT_STORAGE` | Datei-Storage mit Inhalt `import`, nur fuer `vm.py import`. Das Token braucht dort `Datastore.AllocateTemplate` (Upload) und `Datastore.Audit` (`import-from`); eine Gewaehrung nur auf diesem Storage (`propagate 0`) genuegt. `doctor` prueft beides nur, wenn der Schluessel gesetzt ist. |
 | `AH_VM_SSH_KEY` | Privater Schluessel; der `.pub` daneben wird per cloud-init in den Klon injiziert. |
 | `AH_VM_MAX` | Deckel fuer gleichzeitige Leases **je Lane** (Default 8 — der Capstone haelt sieben). |
 | `AH_VM_LINKED` | `1` (Default) = Linked Clone in ~2 s statt ~11 min Vollklon. |
@@ -1234,6 +1266,7 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). Nur dieser Klon bootet mit Paket-Upgrade (`ciupgrade=1`); `bake` wartet vor dem `sync` auf `cloud-init status --wait` (Exit 0 oder 2 = fertig) und bringt so den Paketstand der Leases auf den neuesten Stand. |
+| `import --profile base-freebsd` | Laedt das Cloud-Image des Profils (Pruefsumme in `scripts/vm/profiles.json`, Cache `~/.cache/adminhelper/vm-images`; eine abweichende Kopie bricht ab, bevor etwas den Hypervisor erreicht) auf `AH_PVE_IMPORT_STORAGE` und legt daraus die Vorlage `ah-tpl-<profil>-<yyyymmdd>` an. Der Import-Boot liest einen eigenen config-2-Seed (braucht `genisoimage`, `mkisofs` oder `xorrisofs`), installiert `sudo`, `bash`, `rsync` und den qemu-guest-agent und sperrt die Passwoerter; die Klone holen Schluessel und Hostname aus PVEs config-2-Laufwerk. Bisher nur FreeBSDs nuageinit-Images. Die Uploads tragen feste Namen: ein zweiter Import ueberschreibt den ersten. |
 
 SSH merkt sich **keine** Host-Keys (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`):
 diese VMs leben Minuten, jedes Bake loescht `/etc/ssh/ssh_host_*`, und der Pool vergibt dieselbe
@@ -1388,10 +1421,27 @@ Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Tes
 ### Wochenlauf (heavy.sh)
 
 Der schwere Tier laeuft nicht mehr „wenn man daran denkt", sondern als ein Lauf mit
-Report und Historie. Kevin startet ihn von Hand in `tmux` oder mit `/test weekly`; die Ebene
-`all` startet die Claude-Session ausserdem selbst als faelligen Sammellauf ueber `main`
-(`/feature-build` §5, seit 2026-10-15). Die Session startet denselben tmux-Lauf, ueberwacht
-ihn bis zum Report und meldet das Ergebnis samt VM-Liste (Regeln im `/test`-Skill):
+Report und Historie. Als Sammellauf ueber `main` startet ihn seit 2026-11-11 jede Nacht
+`scripts/tests/nightly.sh` per Cron (01:30: `all`, samstags `weekly` mit Capstone, in tmux
+`ah-nightly`); die Session startet ihn nicht mehr nach Merges, sondern liest den Report
+(`/feature-build` §5). Von Hand startet ihn Kevin in `tmux` oder mit `/test weekly`; die Session
+ueberwacht einen solchen Lauf bis zum Report und meldet das Ergebnis samt VM-Liste (Regeln im
+`/test`-Skill):
+
+```bash
+bash scripts/tests/nightly.sh install     # eine markierte Crontab-Zeile, idempotent
+bash scripts/tests/nightly.sh status      # die Zeile und die letzten Laeufe aus .ah-out/nightly.log
+bash scripts/tests/nightly.sh run --dry-run   # nur die Vorpruefung, startet nichts
+# vor install einmal wie unter Cron: env -i HOME="$HOME" PATH=/usr/bin:/bin bash scripts/tests/nightly.sh run --dry-run
+bash scripts/tests/nightly.sh uninstall   # entfernt genau diese Zeile
+```
+
+`run` ueberspringt die Nacht (Grund in `.ah-out/nightly.log`), wenn der Haupt-Checkout nicht
+sauber auf `main` steht (ausgenommen der ungetrackte REG-Entwurf `tasks/reg-*.md` von `heavy.sh`),
+eine tmux-Sitzung `ah-*` laeuft, `main` nicht auf `origin/main`
+vorspult oder `vm.py list` nicht sauber ist; die VM-Liste landet nur in
+`.ah-out/nightly-vmlist.out`. Solange `ah-nightly` laeuft, aendert keine Session den
+Haupt-Checkout.
 
 ```bash
 tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
@@ -1464,7 +1514,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
   Layer Pflicht (Box-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
-  `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
+  `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg|fund` (`skip` nur ohne `--strict`).
 - **Klassifikation.** `infra` gilt fuer die **ganze Ebene** (bei `all` fuer den ganzen Teil),
   nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `vm.py: capacity` oder
@@ -1495,6 +1545,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   rot ⇒ `extern`.
   Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die
   stabile Signatur, die eine Regressions-Behauptung braucht — keine Zweit-VM).
+  Ein roter Schritt `schemathesis` ⇒ sofort `fund`: keine Wiederholung, keine Zweit-VM, keine
+  Gegenprobe (ein Fuzz-Fund kehrt nicht auf Abruf wieder); der Lauf ist rot, aus dem Beispiel im
+  Log wird eine BUG-Zeile (`/feature-build` §5).
   `--no-second-vm` ueberspringt die Zweit-VM, `--base <sha>` setzt den Vergleichs-Commit.
   Vor der ersten Zweit-VM und vor dem Capstone (`weekly`) gibt `heavy.sh` die GUI-Box seines
   Laufs frei (`reap.sh --role gui`, einmal je Lauf, die Notizen nennen es), weil neben ihr und

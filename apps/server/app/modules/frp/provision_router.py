@@ -55,7 +55,7 @@ def _load_sync_inputs(db: Session, server_id: str, auth):
     if inputs is None:
         return None
     config, tunnels, allow_users = inputs
-    return config, tunnels, server.name, allow_users
+    return config, tunnels, server.id, allow_users
 
 
 @router.get("/provision/{server_id}/config", dependencies=[Depends(require_cert_server)])
@@ -68,8 +68,8 @@ def get_provision_config(
     inputs = _load_sync_inputs(db, server_id, auth)
     if inputs is None:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
-    config, tunnels, server_name, allow_users = inputs
-    toml_content = generate_frpc_toml(config, tunnels, server_name, allow_users)
+    config, tunnels, frpc_user, allow_users = inputs
+    toml_content = generate_frpc_toml(config, tunnels, frpc_user, allow_users)
     return PlainTextResponse(toml_content, media_type="application/toml")
 
 
@@ -92,6 +92,6 @@ def get_provision_config_hash(
         # hash is the one of the generator's text without a tunnel and without the
         # frps credentials, so every agent that applies it keeps no tunnel up.
         return {"hash": None}
-    config, tunnels, server_name, allow_users = inputs
-    config_hash = provisioner.get_config_hash(config, tunnels, server_name, allow_users=allow_users)
+    config, tunnels, frpc_user, allow_users = inputs
+    config_hash = provisioner.get_config_hash(config, tunnels, frpc_user, allow_users=allow_users)
     return {"hash": config_hash}

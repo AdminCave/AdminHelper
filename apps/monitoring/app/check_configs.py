@@ -31,6 +31,7 @@ from pydantic import (
 )
 
 from app.catalog.model import INTERVALS, Check, Rule
+from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 
 
 class _StrictConfig(BaseModel):
@@ -182,13 +183,6 @@ class ProbeTarget(_StrictConfig):
     name: str = Field("", max_length=255, pattern=r"^[^\x00-\x1f\x7f]*$")
     port_hint: int | None = Field(None, ge=1, le=65535, strict=True)
     scheme: str | None = None
-
-
-# <module id>/<instance key>/<slot>: the key of a secret in the host's credential file,
-# never the secret. No segment starts with a dot, so none reads as a way up. The agent's
-# credentials block reports these keys too (discovery.clean_credentials).
-CREDENTIAL_REF_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*$"
-CREDENTIAL_REF_MAX = 255
 
 
 class ProbeCredential(_StrictConfig):

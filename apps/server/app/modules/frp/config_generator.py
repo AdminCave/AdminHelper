@@ -10,6 +10,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from app.modules.frp.proxy_key import PROXY_KEY_META, proxy_key
 from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
@@ -107,9 +108,9 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     kept = []
     for tunnel in tunnels:
         if tunnel.tunnel_type == "stcp" and not tunnel.secret_key:
-            if _first_warning(tunnel.name, ("no secret",)):
+            if _first_warning(tunnel.id, ("no secret",)):
                 logger.warning(
-                    "FRP tunnel %r is stcp without a secret, left out of the config", tunnel.name
+                    "FRP tunnel %r is stcp without a secret, left out of the config", tunnel.id
                 )
             continue
         kept.append(tunnel)
@@ -139,7 +140,8 @@ def _api_takes(extra: dict) -> bool:
 
 
 # The sync and the hash poll run the filters for every host, every few seconds; a row that
-# stays refused would warn each time. One warning per (name, reason): a refused extra_config
+# stays refused would warn each time. One warning per (tunnel ID or repr of a user name,
+# reason): a refused extra_config
 # key may be any text (a key with a space is refused for that), so it can read like another
 # filter's phrase ("no secret", "allowUsers"). without_refused_extra_config therefore leads
 # its reason with "extra_config", and no other filter does. Forgotten when the set grows past
@@ -172,11 +174,11 @@ def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     for tunnel in tunnels:
         extra = _stored_extra_config(tunnel)
         if extra is None:
-            if _first_warning(tunnel.name, None):
+            if _first_warning(tunnel.id, None):
                 logger.warning(
                     "FRP tunnel %r has an extra_config that is no JSON object, "
                     "left out of the config",
-                    tunnel.name,
+                    tunnel.id,
                 )
             continue
         refused = sorted(key for key, value in extra.items() if not _api_takes({key: value}))
@@ -184,10 +186,10 @@ def without_refused_extra_config(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
             # Each key passes alone, the keys together clash.
             refused = sorted(extra)
         if refused:
-            if _first_warning(tunnel.name, ("extra_config", *refused)):
+            if _first_warning(tunnel.id, ("extra_config", *refused)):
                 logger.warning(
                     "FRP tunnel %r has %s in extra_config, left out of the config: %s",
-                    tunnel.name,
+                    tunnel.id,
                     "plugin keys"
                     if all(is_plugin_key(key) for key in refused)
                     else "entries the API refuses",
@@ -208,11 +210,11 @@ def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     kept = []
     for tunnel in tunnels:
         if tunnel.tunnel_type == "stcp" and not _is_port(tunnel.visitor_port):
-            if _first_warning(tunnel.name, ("visitor port",)):
+            if _first_warning(tunnel.id, ("visitor port",)):
                 logger.warning(
                     "FRP tunnel %r: visitor_port %r is outside %d-%d, "
                     "left out of the visitor config",
-                    tunnel.name,
+                    tunnel.id,
                     tunnel.visitor_port,
                     PORT_MIN,
                     PORT_MAX,
@@ -223,12 +225,13 @@ def without_unbindable_visitor(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
 
 
 # The tunnel fields the generator writes as quoted TOML strings and the API checks with
-# _reject_toml_breakers (TunnelCreate/TunnelUpdate).
-_CHECKED_TUNNEL_FIELDS = ("name", "local_ip", "custom_domains", "secret_key")
+# _reject_toml_breakers (TunnelCreate/TunnelUpdate). The name is none of them: frpc and the
+# visitor know a tunnel by its ID.
+_CHECKED_TUNNEL_FIELDS = ("local_ip", "custom_domains", "secret_key")
 
 
 def without_refused_fields(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
-    """Leave out tunnels with a stored name, local_ip, custom_domains or secret_key that
+    """Leave out tunnels with a stored local_ip, custom_domains or secret_key that
     has characters the API refuses (_reject_toml_breakers; its other checks, such as the
     minimum length of a secret, stay out of this).
 
@@ -244,11 +247,11 @@ def without_refused_fields(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
             except ValueError:
                 refused.append(field)
         if refused:
-            if _first_warning(tunnel.name, ("refused fields", *refused)):
+            if _first_warning(tunnel.id, ("refused fields", *refused)):
                 logger.warning(
                     "FRP tunnel %r: stored %s has characters the API refuses, "
                     "left out of the config",
-                    tunnel.name,
+                    tunnel.id,
                     ", ".join(refused),
                 )
             continue
@@ -266,10 +269,10 @@ def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     kept = []
     for tunnel in tunnels:
         if not _is_port(tunnel.local_port):
-            if _first_warning(tunnel.name, ("local port",)):
+            if _first_warning(tunnel.id, ("local port",)):
                 logger.warning(
                     "FRP tunnel %r: local_port %r is outside %d-%d, left out of the frpc config",
-                    tunnel.name,
+                    tunnel.id,
                     tunnel.local_port,
                     PORT_MIN,
                     PORT_MAX,
@@ -280,33 +283,15 @@ def without_unreachable_local(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
 
 
 def name_refused(name: str | None) -> bool:
-    """True for a server or user name whose characters the API refuses today
+    """True for a user or server name whose characters the API refuses today
     (_reject_toml_breakers). The schemas hold new names to it; rows from before stay as
-    they are, and the generators write these names verbatim as TOML strings (frpc user,
-    allowUsers, visitor user and serverUser)."""
+    they are. The generators write user names verbatim as TOML strings (allowUsers,
+    visitor user), the bulk ZIP uses server names as folder names."""
     try:
         _reject_toml_breakers(name)
     except ValueError:
         return True
     return False
-
-
-def without_refused_server_name(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
-    """Leave out tunnels whose target server's name the API refuses: the visitor writes
-    it as serverUser. Only the visitor uses this; the frpc side checks its user itself."""
-    kept = []
-    for tunnel in tunnels:
-        server_name = tunnel.target_server.name if tunnel.target_server else ""
-        if name_refused(server_name):
-            if _first_warning(tunnel.name, ("server name",)):
-                logger.warning(
-                    "FRP tunnel %r: the name of its server has characters the API refuses, "
-                    "left out of the visitor config",
-                    tunnel.name,
-                )
-            continue
-        kept.append(tunnel)
-    return kept
 
 
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
@@ -317,7 +302,7 @@ def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     tunnel, the text carries no frps token; config-hash, config download and provisioning
     bundle all come from that text, so they can't drift.
 
-    Sorted by name (unique): the callers query without ORDER BY, and Postgres
+    Sorted by ID: the callers query without ORDER BY, and Postgres
     returns rows in physical order, which an UPDATE of a column outside the config
     (connection_id) changes. Unsorted, the hash would change with the same config."""
     return sorted(
@@ -326,7 +311,7 @@ def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
                 without_refused_fields(without_secretless_stcp([t for t in tunnels if t.enabled]))
             )
         ),
-        key=lambda t: t.name,
+        key=lambda t: t.id,
     )
 
 
@@ -448,43 +433,40 @@ def generate_frpc_toml(
     Args:
         config: The central frps configuration.
         tunnels: All tunnels belonging to this host.
-        frpc_user: The frpc user identifier (e.g. "k01-lnx1").
+        frpc_user: The frpc user: the ID of the host's server. frps registers each proxy as
+            "{user}.{name}", the proxy name is the tunnel's ID, so a renamed server or
+            tunnel changes nothing here (R-1210). Every proxy carries the key of this ID
+            (proxy_key.py), which frps' policy plugin checks.
     """
-    # A refused user can be written neither as `user` nor as the prefix frps gives the
-    # proxies; the host gets the text without a tunnel, as for one without an active tunnel.
-    user_refused = name_refused(frpc_user)
-    if user_refused and _first_warning(repr(frpc_user), ("frpc user",)):
-        logger.warning(
-            "FRP server %r: its name has characters the API refuses, "
-            "its frpc config carries no tunnel",
-            frpc_user,
-        )
     allowed = [u for u in allow_users or [] if not name_refused(u)]
     for refused_user in sorted(set(allow_users or []) - set(allowed)):
         if _first_warning(repr(refused_user), ("allowUsers",)):
             logger.warning(
                 "User %r has characters the API refuses, left out of allowUsers", refused_user
             )
-    active = [] if user_refused else active_tunnels(tunnels)
+    active = active_tunnels(tunnels)
     lines = [
         f'serverAddr = "{config.server_addr}"',
         f"serverPort = {_bind_port(config)}",
+        f'user = "{frpc_user}"',
+        "",
+        'auth.method = "token"',
     ]
-    if not user_refused:
-        lines.append(f'user = "{frpc_user}"')
-    lines.extend(["", 'auth.method = "token"'])
     if active:
         lines.append(f'auth.token = "{config.auth_token}"')
 
     lines.extend(_tls_agent_block())
 
+    # frps admits a proxy only with the key of the host it names as user (proxy_key.py).
+    host_key = proxy_key(frpc_user)
     for tunnel in active:
         lines.append("")
         lines.append("[[proxies]]")
-        lines.append(f'name = "{tunnel.name}"')
+        lines.append(f'name = "{tunnel.id}"')
         lines.append(f'type = "{tunnel.tunnel_type}"')
         lines.append(f'localIP = "{tunnel.local_ip}"')
         lines.append(f"localPort = {tunnel.local_port}")
+        lines.append(f'metadatas.{PROXY_KEY_META} = "{host_key}"')
 
         if tunnel.tunnel_type == "stcp":
             lines.append(f'secretKey = "{tunnel.secret_key}"')
@@ -539,30 +521,22 @@ def generate_visitor_toml(
 
     lines.extend(_tls_client_block())
 
-    stcp_tunnels = without_refused_server_name(
-        without_unbindable_visitor(
-            without_refused_fields(
-                without_secretless_stcp(
-                    [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
-                )
-            )
+    stcp_tunnels = without_unbindable_visitor(
+        without_refused_fields(
+            without_secretless_stcp([t for t in tunnels if t.tunnel_type == "stcp" and t.enabled])
         )
     )
     stcp_tunnels.sort(key=lambda t: t.visitor_port)
 
     for tunnel in stcp_tunnels:
-        # FRP registers proxies as "{agent_user}.{proxy_name}".
-        # The visitor must set serverUser to the agent user so that
-        # FRP finds the proxy as "{serverUser}.{serverName}".
-        agent_user = tunnel.target_server.name if tunnel.target_server else ""
-
+        # frps registers each proxy as "{user}.{name}" of the agent's frpc: the server's ID and
+        # the tunnel's ID (generate_frpc_toml). The visitor finds it as "{serverUser}.{serverName}".
         lines.append("")
         lines.append("[[visitors]]")
-        lines.append(f'name = "{tunnel.name}-visitor"')
+        lines.append(f'name = "{tunnel.id}-visitor"')
         lines.append('type = "stcp"')
-        lines.append(f'serverName = "{tunnel.name}"')
-        if agent_user:
-            lines.append(f'serverUser = "{agent_user}"')
+        lines.append(f'serverName = "{tunnel.id}"')
+        lines.append(f'serverUser = "{tunnel.server_id}"')
         lines.append(f'secretKey = "{tunnel.secret_key}"')
         lines.append('bindAddr = "127.0.0.1"')
         lines.append(f"bindPort = {tunnel.visitor_port}")

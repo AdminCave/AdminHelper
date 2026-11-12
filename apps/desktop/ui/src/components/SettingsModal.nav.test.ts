@@ -35,6 +35,7 @@ const h = vi.hoisted(() => ({
       copyOnSelect: true,
       rightClickPaste: true,
       confirmClose: true,
+      confirmMultilinePaste: false,
     },
   } satisfies Settings,
   saveSettings: vi.fn(async (_settings: Settings) => undefined),

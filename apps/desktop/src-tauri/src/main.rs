@@ -48,8 +48,9 @@ use commands::{
     sftp_mkdir, sftp_upload, sftp_upload_dropped, start_notification_stream, start_session,
     start_tunnel, stop_notification_stream, stop_tunnel, sync_connections, terminal_attach,
     terminal_broadcast, terminal_broadcast_state, terminal_close, terminal_close_all,
-    terminal_detach, terminal_dock, terminal_open_ansible, terminal_open_ssh, terminal_resize,
-    terminal_set_broadcast, terminal_write, tunnel_status, workspace_context, write_export_csv,
+    terminal_detach, terminal_dock, terminal_open_ansible, terminal_open_ssh,
+    terminal_open_ssh_credential, terminal_resize, terminal_set_broadcast, terminal_write,
+    tunnel_status, workspace_context, write_export_csv,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -291,6 +292,7 @@ fn main() {
             open_workspace,
             open_launcher,
             terminal_open_ssh,
+            terminal_open_ssh_credential,
             terminal_write,
             terminal_broadcast,
             terminal_set_broadcast,
@@ -321,8 +323,9 @@ fn main() {
         .expect("error while building tauri application")
         .run(move |app, event| {
             if let tauri::RunEvent::Exit = event {
-                // No ssh of the embedded terminal outlives the app.
-                app.state::<pty::PtyRegistry>().close_all();
+                // No ssh of the embedded terminal outlives the app, and no run directory of a tab.
+                app.state::<pty::PtyRegistry>()
+                    .shutdown(std::time::Duration::from_secs(2));
                 let _ = frpc::stop_frpc(&frpc_state_exit);
                 notifications::stop(&stream_state_exit);
                 // A `TERMSRV/…` entry whose time has not come goes now, not with the logon

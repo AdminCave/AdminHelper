@@ -97,7 +97,7 @@ def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     if not server:
         return None
 
-    frpc_toml = generate_frpc_toml(config, tunnels, server.name, allow_users)
+    frpc_toml = generate_frpc_toml(config, tunnels, server.id, allow_users)
 
     # A7: no server-minted frp client cert anymore. The agent presents the
     # tunnel-scoped cert it enrolled at the ca-issuer (A4); the generated

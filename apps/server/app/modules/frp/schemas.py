@@ -72,6 +72,7 @@ _GENERATOR_PROXY_KEYS = (
     "secretKey",
     "allowUsers",
     "customDomains",
+    "metadatas.ahProxyKey",
 )
 
 
@@ -315,7 +316,10 @@ class FrpServerConfigUpdate(RequestModel):
 class FrpTunnelCreate(RequestModel):
     server_id: str
     frp_config_id: str
-    name: str  # proxy name, e.g. "k01-lnx1-ssh"
+    # The display name derives from the server's name (R-1210): `label` is the own text in it,
+    # `name` what a client from before sends; both optional. Not the proxy name (the ID).
+    name: Optional[str] = None
+    label: Optional[str] = Field(None, max_length=255)
     tunnel_type: Literal["stcp", "https"]
     protocol: str  # "ssh", "rdp", "web"
     local_ip: str = "127.0.0.1"
@@ -331,15 +335,17 @@ class FrpTunnelCreate(RequestModel):
     auto_connection_username: Optional[str] = None  # username for the auto-created connection
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
-    _v_str = field_validator("name", "custom_domains", "local_ip", "auto_connection_username")(
-        _reject_toml_breakers
-    )
+    _v_str = field_validator(
+        "name", "label", "custom_domains", "local_ip", "auto_connection_username"
+    )(_reject_toml_breakers)
     _v_secret = field_validator("secret_key")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
 
 class FrpTunnelUpdate(RequestModel):
     name: Optional[str] = None
+    # The own text of the display name; '' takes it away.
+    label: Optional[str] = Field(None, max_length=255)
     tunnel_type: Optional[Literal["stcp", "https"]] = None
     protocol: Optional[str] = None
     local_ip: Optional[str] = None
@@ -355,9 +361,9 @@ class FrpTunnelUpdate(RequestModel):
     auto_connection_username: Optional[str] = None
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
-    _v_str = field_validator("name", "custom_domains", "local_ip", "auto_connection_username")(
-        _reject_toml_breakers
-    )
+    _v_str = field_validator(
+        "name", "label", "custom_domains", "local_ip", "auto_connection_username"
+    )(_reject_toml_breakers)
     _v_secret = field_validator("secret_key")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
 
@@ -390,7 +396,10 @@ class FrpTunnelOut(BaseModel):
     id: str
     serverId: str
     frpConfigId: str
+    # The display name (R-1210): "{server} · {label|SSH|RDP|Web} (FRP)".
     name: str
+    # The stored own text of the display name, '' for none.
+    label: str
     tunnelType: str
     protocol: str
     localIp: Optional[str]

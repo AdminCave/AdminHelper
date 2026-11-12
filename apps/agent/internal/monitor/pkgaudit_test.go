@@ -32,7 +32,8 @@ type freebsdCall struct {
 }
 
 // stubFreeBSDCalls sets the clock of the hourly count to pkgAuditNow, finds pkg if hasPkg, and answers
-// each call by its command line from replies; a call without a reply fails the test. It returns the
+// each call by its command line from replies; a call without a reply and one off the command allowlist
+// (checkAllowed) fail the test. It returns the
 // recorded calls. The Linux count (updatesCalls.run) must not run.
 func stubFreeBSDCalls(t *testing.T, hasPkg bool, replies map[string]dockerReply) *[]freebsdCall {
 	t.Helper()
@@ -51,6 +52,7 @@ func stubFreeBSDCalls(t *testing.T, hasPkg bool, replies map[string]dockerReply)
 	}
 	var calls []freebsdCall
 	freebsdCalls.run = func(_ context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+		checkAllowed(t, name, args)
 		argv := strings.Join(append([]string{name}, args...), " ")
 		calls = append(calls, freebsdCall{timeout, argv})
 		reply, ok := replies[argv]

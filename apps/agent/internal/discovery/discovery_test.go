@@ -5,9 +5,11 @@
 package discovery
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/netip"
 	"os"
@@ -20,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"adminhelper-agent/internal/allowlist"
 	"adminhelper-agent/internal/probe"
 )
 
@@ -85,6 +88,9 @@ func stubHost(t *testing.T) *fakeHost {
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		h.mu.Lock()
 		h.calls = append(h.calls, append([]string{name}, args...))
+		if !allowlist.Allowed(name, args) {
+			t.Errorf("call %q is not on the command allowlist", append([]string{name}, args...))
+		}
 		tool, ok := h.tools[name]
 		h.mu.Unlock()
 		if !ok {
@@ -257,7 +263,8 @@ func TestRunDiscoversTheHost(t *testing.T) {
 		{ID: idWeb, Name: "web", Image: "nginx:1.27", ComposeProject: "site", ComposeService: "web",
 			State: "running", Health: "healthy",
 			Ports:  []ContainerPort{{53, port16(5353), "udp"}, {80, port16(8080), "tcp"}, {443, nil, "tcp"}},
-			Mounts: []string{"/etc/nginx", "/var/www"}, pid: 4100},
+			Mounts: []string{"/etc/nginx", "/var/www"}, pid: 4100,
+			binds: []netip.AddrPort{netip.MustParseAddrPort("0.0.0.0:8080"), netip.MustParseAddrPort("[::]:8080")}},
 	}
 	if !reflect.DeepEqual(inv.Containers, wantContainers) {
 		t.Errorf("containers =\n%+v\nwant\n%+v", inv.Containers, wantContainers)
@@ -662,6 +669,8 @@ func TestOnlyValidMarkersAreChecked(t *testing.T) {
 		{ID: "unclean", Paths: []string{"/etc/../x"}},
 		{ID: "trailing", Paths: []string{"/etc/x/"}},
 		{ID: "nul", Paths: []string{"/etc/x\x00"}},
+		{ID: "backslash", Paths: []string{`/etc\x`}},
+		{ID: "colon", Paths: []string{"/etc/c:x"}},
 		{ID: "long", Paths: []string{long}},
 		{ID: "paths", Paths: many(func(i int) string { return "/p" + strconv.Itoa(i) })},
 		{ID: "option", Packages: []string{"-x"}},
@@ -703,7 +712,7 @@ func TestTheListsAreCutAtTheContractsCaps(t *testing.T) {
 			if args[0] == "ps" {
 				var ids []string
 				for i := range maxContainers + 1 {
-					ids = append(ids, strconv.Itoa(i))
+					ids = append(ids, fmt.Sprintf("%064x", i))
 				}
 				return []byte(strings.Join(ids, "\n")), nil
 			}
@@ -733,7 +742,7 @@ func TestTheListsAreCutAtTheContractsCaps(t *testing.T) {
 	})
 	t.Run("container ports and mounts", func(t *testing.T) {
 		var c inspected
-		c.NetworkSettings.Ports = map[string][]struct{ HostPort string }{}
+		c.NetworkSettings.Ports = map[string][]portBinding{}
 		for i := range maxContainerPorts + 1 {
 			c.NetworkSettings.Ports[strconv.Itoa(1000+i)+"/tcp"] = nil
 		}
@@ -748,7 +757,7 @@ func TestTheListsAreCutAtTheContractsCaps(t *testing.T) {
 }
 
 func TestContainerPortsSkipWhatIsNoPort(t *testing.T) {
-	got := containerPorts(map[string][]struct{ HostPort string }{
+	got := containerPorts(map[string][]portBinding{
 		"x/tcp":     nil,
 		"0/tcp":     nil,
 		"70000/tcp": nil,
@@ -758,6 +767,53 @@ func TestContainerPortsSkipWhatIsNoPort(t *testing.T) {
 	want := []ContainerPort{{5000, nil, "tcp"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ports = %+v, want %+v", got, want)
+	}
+}
+
+// TestDockerProxyIsMatchedByAddressAndPort: two containers publish the same host port on different
+// host addresses; each docker-proxy belongs to the container whose binding it listens on, a binding
+// without a host address counts for 0.0.0.0 and ::, and one no binding names to none.
+func TestDockerProxyIsMatchedByAddressAndPort(t *testing.T) {
+	h := stubHost(t)
+	var raw []inspected
+	if err := json.Unmarshal([]byte(`[
+ {"Id": "`+idWeb+`", "Name": "/a", "State": {"Status": "running"},
+  "NetworkSettings": {"Ports": {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8080"}]}}},
+ {"Id": "`+idHost+`", "Name": "/b", "State": {"Status": "running"},
+  "NetworkSettings": {"Ports": {"80/tcp": [{"HostIp": "192.0.2.10", "HostPort": "8080"}],
+   "53/udp": [{"HostIp": "", "HostPort": "9053"}]}}},
+ {"Id": "`+idOld+`", "Name": "/c", "State": {"Status": "running"},
+  "NetworkSettings": {"Ports": {"443/tcp": [{"HostIp": "", "HostPort": "8443"}]}}}
+]`), &raw); err != nil {
+		t.Fatal(err)
+	}
+	var containers []Container
+	for _, c := range raw {
+		containers = append(containers, toContainer(c))
+	}
+	h.listeners = []probe.Listener{
+		listener("127.0.0.1", 8080, 100), listener("192.0.2.10", 8080, 101),
+		listener("0.0.0.0", 8443, 102), listener("::", 8443, 103),
+		listener("::ffff:127.0.0.1", 8080, 104), listener("0.0.0.0", 8080, 105), listener("0.0.0.0", 9053, 106),
+	}
+	h.processes = map[int32]string{100: "docker-proxy", 101: "docker-proxy", 102: "docker-proxy",
+		103: "docker-proxy", 104: "docker-proxy", 105: "docker-proxy", 106: "docker-proxy"}
+
+	got, ok := collectSockets(context.Background(), containers)
+
+	want := []Socket{
+		{"tcp", "127.0.0.1", 8080, "docker-proxy", "a"},
+		{"tcp", "192.0.2.10", 8080, "docker-proxy", "b"},
+		{"tcp", "0.0.0.0", 8443, "docker-proxy", "c"},
+		{"tcp6", "::", 8443, "docker-proxy", "c"},
+		{"tcp6", "::ffff:127.0.0.1", 8080, "docker-proxy", "a"},
+		{"tcp", "0.0.0.0", 8080, "docker-proxy", ""},
+		{"tcp", "0.0.0.0", 9053, "docker-proxy", ""},
+	}
+	slices.SortFunc(got, func(a, b Socket) int { return cmp.Or(cmp.Compare(a.Port, b.Port), strings.Compare(a.Addr, b.Addr)) })
+	slices.SortFunc(want, func(a, b Socket) int { return cmp.Or(cmp.Compare(a.Port, b.Port), strings.Compare(a.Addr, b.Addr)) })
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Errorf("sockets (ok %v) =\n%+v\nwant\n%+v", ok, got, want)
 	}
 }
 

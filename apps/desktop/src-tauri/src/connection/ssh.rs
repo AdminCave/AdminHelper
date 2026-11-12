@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use crate::error::AppError;
 use crate::models::{Connection, SshAuthMethod, SshForwardKind, SshOptions};
@@ -54,6 +57,43 @@ pub(crate) fn build_sftp_args(
     args.extend(["-s", "--"].map(String::from));
     args.push(target);
     args.push("sftp".to_string());
+    Ok(args)
+}
+
+/// The remote action of [`build_credential_args`] before its ref (R-1225): the agent reads the
+/// credential from the pseudo terminal, without echo, and keeps it in its root-only file.
+const CREDENTIAL_SET: [&str; 5] = ["sudo", "adminhelper-agent", "monitor", "credential", "set"];
+
+/// The refs the agent takes (`credentials.ValidRef` in apps/agent): its pattern and length.
+const CREDENTIAL_REF_PATTERN: &str =
+    r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*$";
+const CREDENTIAL_REF_MAX: usize = 255;
+
+static CREDENTIAL_REF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(CREDENTIAL_REF_PATTERN).expect("credential ref pattern"));
+
+/// The argv of the `ssh` that stores the monitoring credential `credential_ref` on the host of
+/// `connection` (R-1225): the switches of the connection without its forwards and agent
+/// forwarding (the action needs neither, and a terminal of the same connection may hold the
+/// forwards), a pseudo terminal for the password of sudo and the prompt of the agent, then the
+/// fixed remote action. ssh joins the words after the target into one line for the login shell
+/// of the host, so the ref passes only as the agent's pattern allows it: no blank, no shell
+/// character, no leading `-`.
+pub(crate) fn build_credential_args(
+    connection: &Connection,
+    credential_ref: &str,
+) -> Result<Vec<String>, AppError> {
+    if credential_ref.len() > CREDENTIAL_REF_MAX || !CREDENTIAL_REF_RE.is_match(credential_ref) {
+        return Err(AppError::Validation(format!(
+            "invalid credential ref: segments of letters, digits and _ . : @ - separated by /, \
+             each starting with a letter or digit, at most {CREDENTIAL_REF_MAX} characters"
+        )));
+    }
+    let (mut args, target) = base_args(connection, false)?;
+    args.extend(["-t", "--"].map(String::from));
+    args.push(target);
+    args.extend(CREDENTIAL_SET.map(String::from));
+    args.push(credential_ref.to_string());
     Ok(args)
 }
 
@@ -137,10 +177,10 @@ pub(crate) fn control_socket_of(args: &[String]) -> Option<PathBuf> {
 /// The switches of `connection` and its target; forwards and agent forwarding only for the
 /// `terminal`.
 fn base_args(connection: &Connection, terminal: bool) -> Result<(Vec<String>, String), AppError> {
-    // Host, user and key_path are validated at the boundary — open_connection and
-    // terminal_open_ssh run validate_connection_input before this, and they are the only
-    // callers. Only the empty-host guard stays: the boundary allows an empty host, we don't
-    // (2.80).
+    // Host, user and key_path are validated at the boundary — open_connection,
+    // terminal_open_ssh and terminal_open_ssh_credential run validate_connection_input before
+    // this, and they are the only callers. Only the empty-host guard stays: the boundary allows
+    // an empty host, we don't (2.80).
     let host = required(&connection.host, "Host")?;
     let port = connection.port.unwrap_or(22);
     let mut args: Vec<String> = Vec::new();
@@ -477,6 +517,127 @@ mod tests {
             terminal.contains(&"-L".to_string())
                 && terminal.contains(&"ForwardAgent=yes".to_string())
         );
+    }
+
+    #[test]
+    fn credential_args_run_the_fixed_action_on_a_pseudo_terminal_without_forwards() {
+        let c = with_ssh_options(serde_json::json!({
+            "jumpHost": "ops@bastion:2222",
+            "forwards": [{"type": "L", "listen": "8080", "target": "intranet:80"}],
+            "agentForwarding": true,
+            "compression": false,
+            "authMethod": "key"
+        }));
+        assert_eq!(
+            build_credential_args(&c, "mysql/root").unwrap(),
+            [
+                "-J",
+                "ops@bastion:2222",
+                "-o",
+                "Compression=no",
+                "-o",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "IdentitiesOnly=yes",
+                "-t",
+                "--",
+                "u@h",
+                "sudo",
+                "adminhelper-agent",
+                "monitor",
+                "credential",
+                "set",
+                "mysql/root",
+            ]
+        );
+        let plain = conn(Some("h"), Some(2222), Some("u"), Some("/k/id"));
+        assert_eq!(
+            build_credential_args(&plain, "db").unwrap(),
+            [
+                "-p",
+                "2222",
+                "-i",
+                "/k/id",
+                "-t",
+                "--",
+                "u@h",
+                "sudo",
+                "adminhelper-agent",
+                "monitor",
+                "credential",
+                "set",
+                "db",
+            ]
+        );
+    }
+
+    /// ssh hands the words after the target to the login shell of the host as one line: a ref
+    /// the agent would not take could be read there as more than the ref.
+    #[test]
+    fn credential_args_take_the_refs_of_the_agent_only() {
+        let c = conn(Some("h"), None, Some("u"), None);
+        let longest = "a".repeat(255);
+        for good in [
+            "db",
+            "0",
+            "mysql/root",
+            "a/b/c",
+            "A1_b.c:d@e-f",
+            "unifi/admin@site:1",
+            longest.as_str(),
+        ] {
+            let args = build_credential_args(&c, good).unwrap();
+            assert_eq!(args.last().map(String::as_str), Some(good), "{good}");
+        }
+        let too_long = "a".repeat(256);
+        for bad in [
+            "",
+            " ",
+            "db root",
+            "db;id",
+            "db&&id",
+            "db|id",
+            "$(id)",
+            "db$(id)",
+            "db`id`",
+            "db'x",
+            "db\"x",
+            "db>x",
+            "db*",
+            "db\\x",
+            "-db",
+            "-oProxyCommand=x",
+            "db\n",
+            "db\nid",
+            "db\t",
+            "/db",
+            "db/",
+            "db//x",
+            "db/-x",
+            "_db",
+            "dä",
+            too_long.as_str(),
+        ] {
+            assert!(
+                matches!(build_credential_args(&c, bad), Err(AppError::Validation(_))),
+                "{bad:?}"
+            );
+        }
+    }
+
+    /// The same pattern and length as the agent, which checks the ref again before it prompts.
+    #[test]
+    fn the_credential_ref_pattern_is_the_agents() {
+        let store = include_str!("../../../../agent/internal/credentials/store.go");
+        assert!(
+            store.contains(&format!("regexp.MustCompile(`{CREDENTIAL_REF_PATTERN}`)")),
+            "the agent's ref pattern changed"
+        );
+        let max = store.lines().find_map(|line| {
+            let (name, value) = line.split_once('=')?;
+            (name.trim() == "maxRefBytes").then(|| value.trim().to_string())
+        });
+        assert_eq!(max, Some(CREDENTIAL_REF_MAX.to_string()));
     }
 
     #[test]

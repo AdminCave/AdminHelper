@@ -133,6 +133,45 @@ def test_required_sensor_params_are_enforced():
     assert "query" in error
 
 
+def _log_check(**params):
+    raw = _check(sensor="log", target=None, params=params, fields=["count"], rules=[])
+    raw.pop("credential")
+    return raw
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"unit": "nginx.service", "match": "SYSLOG_IDENTIFIER=sshd"},
+        {"unit": "getty@tty1.service", "match": "CONTAINER_NAME=paperless-web-1"},
+        {"unit": r"systemd-fsck@dev-disk-by\x2duuid-1.service"},
+        {"unit": "a" * 255, "match": "_COMM=" + "b" * 100},
+    ],
+)
+def test_log_params_the_agent_takes_are_valid(params):
+    assert _load(_module(checks=[_log_check(**params)], card=[])).errors == ()
+
+
+@pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        # The agent takes one unit name, no glob, and answers anything else with invalid.
+        ({"unit": "nginx*"}, "unit"),
+        ({"unit": "ngi nx.service"}, "unit"),
+        ({"unit": "ä.service"}, "unit"),
+        ({"unit": "nginx.service\n"}, "unit"),
+        ({"match": "nginx"}, "match"),
+        ({"match": "MESSAGE=x"}, "match"),
+        ({"match": "_COMM="}, "match"),
+        ({"match": "_COMM=a b"}, "match"),
+        ({"match": "_COMM=" + "b" * 101}, "match"),
+    ],
+)
+def test_log_params_the_agent_refuses_are_rejected(params, field):
+    assert field in _only_error(_load(_module(checks=[_log_check(**params)], card=[])))
+
+
 def test_sql_query_is_a_fixed_name_not_sql_text():
     sql = _check(
         sensor="sql",
@@ -297,6 +336,51 @@ def test_credential_uses(use):
 @pytest.mark.parametrize("use", ["none", "header:", "header:X Key", "cookie"])
 def test_credential_use_outside_the_list_is_rejected(use):
     assert _load(_module(checks=[_check(credential={"use": use})])).modules == {}
+
+
+def _sock(key, path, slot="default"):
+    return {
+        "key": key,
+        "name": key,
+        "sensor": "unixsocket",
+        "params": {"path": path, "protocol": "redis"},
+        "interval": 300,
+        "fields": ["connected"],
+        "credential": {"slot": slot, "use": "redis_auth"},
+    }
+
+
+def test_checks_of_one_credential_slot_may_ask_the_same_target():
+    # Another path of the same HTTP target is the same target for the agent's binding.
+    other_path = _check(key="health", params={"path": "/health"}, rules=[])
+    assert _load(_module(checks=[_check(), other_path])).errors == ()
+    socks = [_sock("a", "/run/redis/redis.sock"), _sock("b", "/run/redis/redis.sock")]
+    assert _load(_module(checks=socks, card=[])).errors == ()
+    apart = [_sock("a", "/run/redis/a.sock"), _sock("b", "/run/redis/b.sock", slot="other")]
+    assert _load(_module(checks=apart, card=[])).errors == ()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"target": {"kind": "container", "service": "api", "port_hint": 8000}},
+        {"target": {"kind": "container", "service": "web", "port_hint": 8001}},
+        {"target": {"kind": "container", "service": "web", "port_hint": 8000, "scheme": "https"}},
+        {"credential": {"use": "basic"}},
+        {"sensor": "proto", "params": {"protocol": "redis"}, "fields": ["ok"]},
+    ],
+    ids=["service", "port", "scheme", "use", "sensor"],
+)
+def test_checks_of_one_credential_slot_on_different_targets_are_rejected(changes):
+    second = _check(key="other", rules=[], **changes)
+    error = _only_error(_load(_module(checks=[_check(), second])))
+    assert "share credential slot 'default'" in error
+
+
+def test_unix_socket_checks_of_one_slot_on_different_paths_are_rejected():
+    socks = [_sock("a", "/run/redis/a.sock"), _sock("b", "/run/redis/b.sock")]
+    error = _only_error(_load(_module(checks=socks, card=[])))
+    assert "share credential slot 'default'" in error
 
 
 def test_unknown_keys_are_rejected_at_every_level():

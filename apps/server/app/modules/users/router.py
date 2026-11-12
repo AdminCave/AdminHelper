@@ -266,4 +266,4 @@ def revoke_device(
 
 @router.get("/me/servers", response_model=list[MyServerOut])
 def my_servers(current_user=Depends(get_current_user)):
-    return [{"id": s.id, "name": s.name, "hostname": s.hostname} for s in current_user.servers]
+    return [{"id": s.id, "name": s.name, "hostname": s.address} for s in current_user.servers]

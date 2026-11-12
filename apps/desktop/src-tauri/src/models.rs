@@ -101,6 +101,7 @@ pub struct TerminalPrefs {
     pub copy_on_select: bool,
     pub right_click_paste: bool,
     pub confirm_close: bool,
+    pub confirm_multiline_paste: bool,
 }
 
 impl Default for TerminalPrefs {
@@ -113,6 +114,7 @@ impl Default for TerminalPrefs {
             copy_on_select: true,
             right_click_paste: true,
             confirm_close: true,
+            confirm_multiline_paste: false,
         }
     }
 }
