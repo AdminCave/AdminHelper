@@ -1,5 +1,5 @@
 # Harness: Sammellauf ohne Server-pytest auf der Box — Task-Ledger
-Status: aktiv · Branch: feature/arch-workflow-2 · Review: pro Task
+Status: bereit · Branch: feature/arch-workflow-2 · Review: pro Task
 Spec: docs/features/arch-workflow-2.md (Roadmap R-1338)
 Heavy: linux-full — ändert, was der Sammellauf auf der Box fährt; Gesamtbeweis ist der erste nächtliche Lauf nach dem Merge, vorher gezielt `--step schemathesis` und `--step sse_push` auf einer frisch geleasten Lane-Box (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,8 +41,10 @@ Doku: DEVELOPMENT.md, docs/developer/cicd.html DE+EN
 Task-Review: am Ende
 Abhängt von: T2, T3
 
-### T5 — Doku: Schemathesis-Pins gelten auch bei `--step schemathesis` (Fund der Abschlussprüfung)  [ ]
+### T5 — Doku: Schemathesis-Pins gelten auch bei `--step schemathesis` (Fund der Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c99b5f4e3 2026-11-12T10:00:56+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `DEVELOPMENT.md` („Versionen gepinnt“) sagt noch, ein Lauf nur mit `--step schemathesis` nehme das venv, wie es ist; seit T1 installiert der Schritt die `requirements-dev.txt` seines Dienstes selbst, die Pins gelten also auch dort.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md
