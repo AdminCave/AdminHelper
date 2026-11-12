@@ -659,7 +659,8 @@ def test_startup_checks_the_configs_before_it_writes_frps_toml(monkeypatch):
     monkeypatch.setattr(m, "_ensure_admin", lambda db: calls.append("admin"))
     monkeypatch.setattr(m, "_check_frps_server_configs", lambda db: calls.append("check"))
     monkeypatch.setattr(m, "_ensure_frps_config", lambda db: calls.append("write"))
+    monkeypatch.setattr(m.frp_policy, "sync_policy", lambda db: calls.append("policy"))
 
     m._run_startup_tasks()
 
-    assert calls == ["admin", "check", "write"]
+    assert calls == ["admin", "check", "write", "policy"]

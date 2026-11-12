@@ -1,0 +1,347 @@
+// SPDX-FileCopyrightText: 2026 Kevin Stenzel
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package frpspolicy
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+const pluginPath = "/handler"
+
+// newTestHandler serves the plugin with the fixture policy, or without a policy file if
+// policy is nil, and logs into the returned buffer.
+func newTestHandler(t *testing.T, policy []byte) (http.Handler, *bytes.Buffer) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "frps-policy.json")
+	if policy != nil {
+		writeFile(t, path, policy)
+	}
+	var log bytes.Buffer
+	return NewHandler(NewSource(path), pluginPath, slog.New(slog.NewTextHandler(&log, nil))), &log
+}
+
+func do(h http.Handler, method, target string, body []byte) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(method, target, bytes.NewReader(body)))
+	return rec
+}
+
+// newProxyRequest is the fixture request with change applied to the fields of its
+// content the decision reads; the others, such as the stcp secret, stay.
+func newProxyRequest(t *testing.T, change func(*NewProxy)) []byte {
+	t.Helper()
+	var req struct {
+		Version string         `json:"version"`
+		Op      string         `json:"op"`
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(fixtureRequest(t), &req); err != nil {
+		t.Fatal(err)
+	}
+	np := fixtureNewProxy(t)
+	change(np)
+	var changed map[string]any
+	if data, err := json.Marshal(np); err != nil {
+		t.Fatal(err)
+	} else if err := json.Unmarshal(data, &changed); err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range changed {
+		req.Content[k] = v
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// answer decodes a plugin answer and holds it to frps' fields.
+func answer(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("answer = %d %q, want 200 with JSON: %s", rec.Code, rec.Header().Get("Content-Type"), rec.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["unchange"] != true {
+		t.Errorf("answer %v changes the content", got)
+	}
+	return got
+}
+
+func TestHandlerAdmitsTheOwnProxy(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", fixtureRequest(t)))
+	if len(got) != 2 || got["reject"] != false {
+		t.Errorf("answer = %v, want reject false and unchange true alone", got)
+	}
+}
+
+func TestHandlerRefusesAForeignProxy(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	body := newProxyRequest(t, func(np *NewProxy) { np.ProxyName = serverA + ".t-db" })
+	got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", body))
+	if len(got) != 3 || got["reject"] != true || got["reject_reason"] != rejectReason {
+		t.Errorf("answer = %v, want reject true with the general reason", got)
+	}
+}
+
+func TestHandlerRefusesEveryProxyWithoutAPolicy(t *testing.T) {
+	h, log := newTestHandler(t, nil)
+	got := answer(t, do(h, http.MethodPost, pluginPath+"?op=NewProxy", fixtureRequest(t)))
+	if got["reject"] != true || got["reject_reason"] != rejectReason {
+		t.Errorf("answer = %v, want reject true", got)
+	}
+	if !strings.Contains(log.String(), "level=ERROR msg=\"policy unavailable") {
+		t.Errorf("log = %q, want an error about the policy", log)
+	}
+}
+
+func TestHandlerRefusesOtherRequests(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	login := strings.Replace(string(fixtureRequest(t)), `"op": "NewProxy"`, `"op": "Login"`, 1)
+	tooLarge := `{"op": "NewProxy", "content": {"proxy_name": "` + strings.Repeat("a", MaxBody) + `"}}`
+	cases := []struct {
+		name, method, target, body string
+		want                       int
+	}{
+		{"GET to the plugin", http.MethodGet, pluginPath + "?op=NewProxy", "", http.StatusMethodNotAllowed},
+		{"another op in the query", http.MethodPost, pluginPath + "?op=Login", string(fixtureRequest(t)), http.StatusBadRequest},
+		{"no op in the query", http.MethodPost, pluginPath, string(fixtureRequest(t)), http.StatusBadRequest},
+		{"another op in the body", http.MethodPost, pluginPath + "?op=NewProxy", login, http.StatusBadRequest},
+		{"no JSON", http.MethodPost, pluginPath + "?op=NewProxy", "op=NewProxy", http.StatusBadRequest},
+		{"an empty body", http.MethodPost, pluginPath + "?op=NewProxy", "", http.StatusBadRequest},
+		{"a body too large", http.MethodPost, pluginPath + "?op=NewProxy", tooLarge, http.StatusRequestEntityTooLarge},
+		{"POST to the health path", http.MethodPost, HealthPath, "", http.StatusMethodNotAllowed},
+		{"another path", http.MethodPost, "/handler/x?op=NewProxy", string(fixtureRequest(t)), http.StatusNotFound},
+	}
+	for _, c := range cases {
+		rec := do(h, c.method, c.target, []byte(c.body))
+		if rec.Code != c.want {
+			t.Errorf("%s: status %d, want %d", c.name, rec.Code, c.want)
+		}
+		if strings.Contains(rec.Body.String(), `"reject"`) {
+			t.Errorf("%s: answered as the plugin: %s", c.name, rec.Body)
+		}
+	}
+	if allow := do(h, http.MethodGet, pluginPath, nil).Header().Get("Allow"); allow != http.MethodPost {
+		t.Errorf("GET to the plugin: Allow %q, want POST", allow)
+	}
+}
+
+func TestHandlerServesTheHealthPath(t *testing.T) {
+	h, _ := newTestHandler(t, nil)
+	rec := do(h, http.MethodGet, HealthPath, nil)
+	if rec.Code != http.StatusOK || rec.Body.String() != "ok\n" {
+		t.Errorf("GET %s = %d %q, want 200 ok", HealthPath, rec.Code, rec.Body)
+	}
+}
+
+func TestHandlerLogsTheDecisionWithoutSecrets(t *testing.T) {
+	h, log := newTestHandler(t, fixturePolicy(t))
+	lb := func(np *NewProxy) {
+		np.ProxyName, np.ProxyType = serverA+".t-lb", "https"
+		np.CustomDomains, np.SubDomain = []string{"lb.example"}, "lb"
+		np.Group, np.GroupKey = "web", groupKey
+	}
+	wrongKey := func(np *NewProxy) {
+		lb(np)
+		np.Metas[KeyMeta] = keyB
+	}
+	for _, body := range [][]byte{newProxyRequest(t, lb), newProxyRequest(t, wrongKey)} {
+		do(h, http.MethodPost, pluginPath+"?op=NewProxy", body)
+	}
+	text := log.String()
+	for _, want := range []string{
+		`level=INFO msg="proxy admitted" user=` + serverA + ` proxy=` + serverA + `.t-lb`,
+		`level=WARN msg="proxy refused" user=` + serverA + ` proxy=` + serverA + `.t-lb reason="wrong key"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("log lacks %q:\n%s", want, text)
+		}
+	}
+	for _, secret := range []string{keyA, keyB, groupKey, "tunnel-secret-placeholder", "ops-admin"} {
+		if strings.Contains(text, secret) {
+			t.Errorf("log holds %q:\n%s", secret, text)
+		}
+	}
+}
+
+func TestCheckListen(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:7480", "127.0.0.2:7480", "[::1]:7480"} {
+		if err := CheckListen(addr); err != nil {
+			t.Errorf("CheckListen(%q) = %v, want nil", addr, err)
+		}
+	}
+	for _, addr := range []string{
+		"0.0.0.0:7480", "[::]:7480", ":7480", "localhost:7480", "192.0.2.1:7480", "127.0.0.1", "",
+	} {
+		if err := CheckListen(addr); err == nil {
+			t.Errorf("CheckListen(%q) = nil, want an error", addr)
+		}
+	}
+}
+
+// serve runs Serve with the fixture policy and short timeouts on a loopback port until
+// the test ends, and returns its address.
+func serve(t *testing.T, timeouts Timeouts) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, ln, h, timeouts) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("Serve = %v", err)
+		}
+	})
+	return ln.Addr().String()
+}
+
+// closedWithin sends data on a new connection and fails unless the server closes the
+// connection within limit.
+func closedWithin(t *testing.T, addr, data string, limit time.Duration) {
+	t.Helper()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, data); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(limit)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(io.Discard, conn); err != nil {
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			t.Errorf("the server kept the connection open past %s", limit)
+		}
+	}
+}
+
+func TestServeClosesSlowClients(t *testing.T) {
+	// Each case shortens only the timeout it proves; the others stay past limit, so
+	// http.Server's fallbacks between them cannot stand in.
+	short, long, limit := 100*time.Millisecond, 10*time.Second, 3*time.Second
+	only := func(set func(*Timeouts)) Timeouts {
+		to := Timeouts{ReadHeader: long, Read: long, Write: long, Idle: long}
+		set(&to)
+		return to
+	}
+
+	t.Run("headers never end", func(t *testing.T) {
+		addr := serve(t, only(func(to *Timeouts) { to.ReadHeader = short }))
+		closedWithin(t, addr, "POST "+pluginPath+"?op=NewProxy HTTP/1.1\r\nHost: frps\r\n", limit)
+	})
+	t.Run("the body stalls", func(t *testing.T) {
+		addr := serve(t, only(func(to *Timeouts) { to.Read = short }))
+		closedWithin(t, addr, "POST "+pluginPath+"?op=NewProxy HTTP/1.1\r\nHost: frps\r\n"+
+			"Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"op\": ", limit)
+	})
+	t.Run("an idle connection", func(t *testing.T) {
+		addr := serve(t, only(func(to *Timeouts) { to.Idle = short }))
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		if _, err := io.WriteString(conn, "GET "+HealthPath+" HTTP/1.1\r\nHost: frps\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(limit)); err != nil {
+			t.Fatal(err)
+		}
+		r := bufio.NewReader(conn)
+		resp, err := http.ReadResponse(r, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d", HealthPath, resp.StatusCode)
+		}
+		if _, err := io.Copy(io.Discard, r); err != nil {
+			t.Errorf("the server kept the idle connection open: %v", err)
+		}
+	})
+}
+
+func TestServeAnswersOverTCP(t *testing.T) {
+	addr := serve(t, DefaultTimeouts)
+	client := &http.Client{Timeout: 10 * time.Second}
+	defer client.CloseIdleConnections()
+	resp, err := client.Post("http://"+addr+pluginPath+"?version=0.1.0&op=NewProxy", "application/json",
+		bytes.NewReader(fixtureRequest(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got response
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK || got.Reject || !got.Unchange {
+		t.Errorf("answer = %d %+v, want 200 admitting the proxy", resp.StatusCode, got)
+	}
+}
+
+func TestServeStopsWithTheContext(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, _ := newTestHandler(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, ln, h, DefaultTimeouts) }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Serve = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not stop with the context")
+	}
+	if conn, err := net.Dial("tcp", ln.Addr().String()); err == nil {
+		conn.Close()
+		t.Error("the listener still accepts after the stop")
+	}
+}
+
+func TestServeReturnsTheListenersError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.Close()
+	h, _ := newTestHandler(t, nil)
+	if err := Serve(context.Background(), ln, h, DefaultTimeouts); err == nil {
+		t.Error("Serve on a closed listener = nil, want an error")
+	}
+}

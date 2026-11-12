@@ -86,15 +86,21 @@ jobs:
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
         # hashed requirements.txt lock the image ships is python-lock-server's.
         run: pip install -r requirements-dev.txt
-      # The tests that build or start an image skip without its base image at hand: those
-      # of frps, of the gateway and of the Python images, whose last stage builds on the
-      # base of apps/ca-issuer. They do not depend on the Python version, so one leg runs them.
+      # The tests that build or start an image skip without its base images at hand: those
+      # of frps (the frps image and the Go image its plugin builds on), of the gateway and of
+      # the Python images, whose last stage builds on the base of apps/ca-issuer. They do not
+      # depend on the Python version, so one leg runs them. The image of each FROM, without
+      # the name of its stage; and the frpc image the live test of frps' plugin pins.
       - name: Pull the base images of the image tests
         if: matrix.python-version == '3.14'
         run: |
           for dockerfile in apps/frps/Dockerfile apps/gateway/Dockerfile apps/ca-issuer/Dockerfile; do
-            docker pull "$(sed -n 's/^FROM //p' "$dockerfile")"
+            for base in $(sed -n 's/^FROM \([^ ]*\).*/\1/p' "$dockerfile"); do
+              docker pull "$base"
+            done
           done
+          frpc=$(sed -n 's/^FRPC_IMAGE = "\(.*\)"$/\1/p' apps/server/tests/test_frps_policy_live.py)
+          docker pull "$frpc"
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.
@@ -691,14 +697,13 @@ jobs:
       # download gets three attempts of three minutes (retry.sh), so a stall costs an attempt.
       # install-deps runs apt-get install, so dpkg, which a kill must never hit: it runs
       # without retry.sh, and apt itself retries a stalled fetch (the drop-in below).
-      - name: Playwright version
-        id: playwright
-        working-directory: apps/web
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      # The key is the lockfile's hash, with no restore-keys: only an exact entry comes back.
+      # rust-cache runs with cache-bin: false everywhere, so tauri-cli is built from its pin in
+      # every run. .github/scripts/cache_settings.sh holds both (job ops-scripts).
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/package-lock.json') }}-chromium
       - name: Install Playwright browsers
         working-directory: apps/web
         timeout-minutes: 12
@@ -773,6 +778,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - name: cargo fmt
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --check
@@ -797,6 +803,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         shell: bash
         run: |
@@ -850,6 +857,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
@@ -923,6 +931,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
+          cache-bin: false
       - name: Install Tauri CLI
         # The suite's gate, not a build. Keep this pin in lockstep with tauri-build-smoke and
         # release.yml.
@@ -953,7 +962,8 @@ jobs:
             context: apps/gateway
             dockerfile: apps/gateway/Dockerfile
           - image: frps
-            context: apps/frps
+            # The repository root: the image builds its plugin from the Go module of the agent.
+            context: .
             dockerfile: apps/frps/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1177,6 +1187,8 @@ jobs:
         run: bash .github/scripts/apt_archives_verify_test.sh
       - name: tauri_cli_pins.sh test
         run: bash .github/scripts/tauri_cli_pins_test.sh
+      - name: cache_settings.sh test
+        run: bash .github/scripts/cache_settings_test.sh
       # Does the documentation still describe this tree? Every <code>apps/…</code>
       # in docs/**/*.html has to name a file that exists (--paths), and a <code>
       # that is one ALL_CAPS name has to be carried by the repository outside the

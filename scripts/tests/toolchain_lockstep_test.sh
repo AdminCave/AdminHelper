@@ -60,7 +60,9 @@ fixture() {
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
   printf '  openapi-compat:\n    steps:\n      - &install-oasdiff\n        name: Install oasdiff\n        env:\n          OASDIFF_VERSION: "%s"\n          OASDIFF_SHA256_LINUX_AMD64: "%s"\n        run: echo plchold\n  ops-scripts:\n    steps:\n      - *install-oasdiff\n' \
     "$OAS_V" "$OAS_SHA" >> "$d/.github/workflows/ci.yml"
-  printf '#!/usr/bin/env bash\nGO_VERSION="${AH_GO_VERSION:-%s}"\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\nOASDIFF_VERSION="${AH_OASDIFF_VERSION:-%s}"\nOASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-%s}"\n' \
+  printf '  desktop:\n    steps:\n      # Keep in lockstep: cargo install tauri-cli --version "1.0.0" (a comment)\n      - name: Install tauri-cli\n        run: cargo install tauri-cli --locked --version "2.12.4"\n' \
+    >> "$d/.github/workflows/ci.yml"
+  printf '#!/usr/bin/env bash\nGO_VERSION="${AH_GO_VERSION:-%s}"\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.12.4}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\nOASDIFF_VERSION="${AH_OASDIFF_VERSION:-%s}"\nOASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-%s}"\n' \
     "$go_boot" "$ruff_boot" "$OAS_V" "$OAS_SHA" > "$d/scripts/vm/bootstrap_linux.sh"
   printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
   printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
@@ -328,6 +330,28 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without an OASDIFF_VERSION def
 OSHORT="$WORK/oasshort"; fixture "$OSHORT" 1.25 1.25 1.25 v1.7.0
 sed -i 's/AH_OASDIFF_SHA256:-5b2050787cfe[0-9a-f]*/AH_OASDIFF_SHA256:-5b2050787cfe/' "$OSHORT/scripts/vm/bootstrap_linux.sh"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap hash that is no SHA-256 -> exit 1" 1 "no plain OASDIFF_SHA256_LINUX_AMD64" -- --root "$OSHORT"
+
+# ── 5e: the tauri-cli the boxes build the desktop with ───────────────────────
+# tauri_cli_pins.sh holds ci.yml and release.yml together; this holds the
+# boxes' default to ci.yml, so a box run builds with the release's tauri-cli.
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing tauri-cli pins are named in the output" 0 "tauri-cli: ci.yml=2.12.4 bootstrap=2.12.4" -- --root "$GOOD"
+TBOOT="$WORK/tauriboot"; fixture "$TBOOT" 1.25 1.25 1.25 v1.7.0
+sed -i 's/AH_TAURI_CLI_VERSION:-2.12.4/AH_TAURI_CLI_VERSION:-2.11.2/' "$TBOOT/scripts/vm/bootstrap_linux.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap tauri-cli behind ci.yml -> exit 1" 1 "tauri-cli pin drift: .github/workflows/ci.yml installs tauri-cli 2.12.4, scripts/vm/bootstrap_linux.sh defaults to 2.11.2" -- --root "$TBOOT"
+FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "tauri-cli pin drift" -- --root "$TBOOT"
+# Every install line counts, also one continued over two lines.
+TTWO="$WORK/tauritwo"; fixture "$TTWO" 1.25 1.25 1.25 v1.7.0
+printf '  other:\n    steps:\n      - run: |\n          cargo install --locked tauri-cli \\\n            --version "2.12.5"\n' >> "$TTWO/.github/workflows/ci.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a second ci.yml install on 2.12.5 -> exit 1" 1 "tauri-cli pin drift: .github/workflows/ci.yml installs tauri-cli 2.12.5" -- --root "$TTWO"
+TNOCI="$WORK/taurinoci"; fixture "$TNOCI" 1.25 1.25 1.25 v1.7.0
+sed -i '/run: cargo install tauri-cli/d' "$TNOCI/.github/workflows/ci.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml without a tauri-cli install -> exit 1" 1 "no pinned 'cargo install tauri-cli --version X.Y.Z' in .github/workflows/ci.yml" -- --root "$TNOCI"
+TNOVER="$WORK/taurinover"; fixture "$TNOVER" 1.25 1.25 1.25 v1.7.0
+sed -i 's/run: cargo install tauri-cli --locked --version "2.12.4"/run: cargo install tauri-cli --locked/' "$TNOVER/.github/workflows/ci.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml installs an unpinned tauri-cli -> exit 1" 1 "tauri-cli pin drift: .github/workflows/ci.yml installs tauri-cli none" -- --root "$TNOVER"
+TNOBOOT="$WORK/taurinoboot"; fixture "$TNOBOOT" 1.25 1.25 1.25 v1.7.0
+sed -i '/^TAURI_CLI_VERSION=/d' "$TNOBOOT/scripts/vm/bootstrap_linux.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without a TAURI_CLI_VERSION default -> exit 1" 1 "no plain TAURI_CLI_VERSION" -- --root "$TNOBOOT"
 
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"
