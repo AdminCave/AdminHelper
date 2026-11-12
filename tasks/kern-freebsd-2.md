@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Nacharbeit: Log-Hinweis, Swap-Fehlertext, Rotationsprüfung — Task-Ledger
-Status: aktiv · Branch: feature/kern-freebsd-2 · Review: am Ende
+Status: bereit · Branch: feature/kern-freebsd-2 · Review: am Ende
 Spec: docs/features/kern-freebsd-2.md (Roadmap R-1327, R-1330, R-1331)
 Heavy: none — Agent nur Konstante und Test, Rest Doku und Box-Skript; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (prüft T2)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,8 +44,10 @@ Beweis: FreeBSD-Box-Lauf 2026-11-12 auf 0bfd23d81: `TestFreeBSDNoSwapMatchesGops
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (Test)
 
-### T5 — R-1331: FreeBSD-Box lässt den gopsutil-Quelltest aus  [ ]
+### T5 — R-1331: FreeBSD-Box lässt den gopsutil-Quelltest aus  [x]
 Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a4140238a 2026-11-12T14:44:13+01:00
+Review: am Ende (Branch-Review)
 Änderung: `skip_for internal/monitor` (`box_freebsdbox.sh:50`) lässt neben `ROOT_TESTS` auch `TestFreeBSDNoSwapMatchesGopsutil` aus: er braucht go und den Modul-Cache, die die Box nicht hat; die PR-CI und die Dev-Box fahren ihn. Beweis ist ein neuer FreeBSD-Box-Lauf.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)

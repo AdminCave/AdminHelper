@@ -43,11 +43,13 @@ ROOT_TESTS="TestCollectServiceHealthOnFreeBSD TestCollectWatchedServicesOnFreeBS
 ROOT_RE="^($(echo "$ROOT_TESTS" | tr ' ' '|'))\$"
 
 # skip_for <package dir> — the tests the box user leaves out there: the cross-build guard calls go,
-# which the box lacks (freebsd_box.sh runs it on the dev box), and ROOT_TESTS.
+# which the box lacks (freebsd_box.sh runs it on the dev box); the gopsutil source check calls go
+# list and reads the module cache, both missing on the box (it has no build tag, every go test run
+# elsewhere covers it); and ROOT_TESTS.
 skip_for() {
   case "$1" in
     cmd/adminhelper-agent) echo '^TestAgentPackagesBuildForFreeBSD$' ;;
-    internal/monitor) echo "$ROOT_RE" ;;
+    internal/monitor) echo "^($(echo "$ROOT_TESTS TestFreeBSDNoSwapMatchesGopsutil" | tr ' ' '|'))\$" ;;
   esac
 }
 
