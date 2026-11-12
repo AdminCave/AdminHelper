@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-3 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-3 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-3 · Review: pro Task
 Spec: docs/features/klein-nachlese-3.md (Roadmap R-1380, R-1390, R-1377)
 Heavy: none — Doku, UI-Texte, Sortierung und ein Filter im Monitoring-Dienst, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 Task-Review: am Ende
 
-### T6 — R-1380: README-Typenliste vollständig, Fragment-Anführungszeichen (Fund der Abschlussprüfung)  [ ]
+### T6 — R-1380: README-Typenliste vollständig, Fragment-Anführungszeichen (Fund der Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: README.md, changelog.d/arch-monitoring-ui-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f4f397e4f 2026-11-12T17:01:24+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: Abschlussprüfung klein-nachlese-3: README.md:335 nennt sechs der sieben zentralen Fühler (`mail_dns` fehlt, `apps/monitoring/app/check_configs.py:345`); `changelog.d/arch-monitoring-ui-2.md:6` und `:8` tragen noch gerade schließende Anführungszeichen nach „Pakete" und „Backups".
 Änderung: Die README-Liste nennt auch den Fühler mail DNS; die zwei verbliebenen Anführungszeichen im Fragment werden typografisch.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

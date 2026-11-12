@@ -3,9 +3,9 @@
 - **Desktop: Details hinter den Monitoring-Checks:** die ausgeklappte Zeile eines Checks nennt, was hinter seinen
   Zahlen steht. Systemzustand: die Pakete mit offenen Sicherheits-Updates, die Pakete, die einen Neustart verlangen,
   und nach einem OOM-Kill die beendeten Prozesse mit Name und PID; der Reiter „Updates & Neustarts“ bekommt die
-  Spalte „Pakete". Docker: Container nach Compose-Projekt gruppiert, mit veroeffentlichten Ports und Laufzeit.
+  Spalte „Pakete“. Docker: Container nach Compose-Projekt gruppiert, mit veroeffentlichten Ports und Laufzeit.
   Proxmox: je VM/CT Ablage, Groesse und Verifizierung des neuesten Backups, die Backup-Jobs und der letzte
-  vzdump-Fehler, dazu Spalten im Reiter „Backups". ZFS: Fragmentierung, letzter Scrub und die vdevs mit Fehlern.
+  vzdump-Fehler, dazu Spalten im Reiter „Backups“. ZFS: Fragmentierung, letzter Scrub und die vdevs mit Fehlern.
   Nur Namen und Zahlen, nie eine Befehlsausgabe oder Befehlszeile, und nur im Desktop: Status, Meldung und Metriken
   der Checks bleiben unveraendert, Mail und Webhooks nennen keine Details.
 - **Agent: Namen fuer die Details:** der Agent schickt die Paketnamen aus seiner Zaehlung (`apt-get -s`, `dnf -C`,
