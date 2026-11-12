@@ -512,19 +512,3 @@ def test_the_config_detail_loads_the_servers_of_its_tunnels_in_one_query(
     assert len(r.json()["tunnels"]) == 4
     on_servers = [s for s in statements if "FROM servers" in s]
     assert len(on_servers) == 1, on_servers
-
-
-@pytest.mark.parametrize("method", ["post", "put"])
-def test_a_tunnel_name_is_capped_at_255_characters_like_the_label(
-    test_client, db_session, admin_user, method
-):
-    _seed(db_session)
-    h = _login(test_client, "admin", "adminpass")
-
-    def send(name: str):
-        if method == "post":
-            return test_client.post("/api/frp/tunnels", json=_body(name=name), headers=h)
-        return test_client.put("/api/frp/tunnels/t-a", json={"name": name}, headers=h)
-
-    assert send("n" * 256).status_code == 422
-    assert send("n" * 255).status_code in (200, 201)

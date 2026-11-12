@@ -318,7 +318,7 @@ class FrpTunnelCreate(RequestModel):
     frp_config_id: str
     # The display name derives from the server's name (R-1210): `label` is the own text in it,
     # `name` what a client from before sends; both optional. Not the proxy name (the ID).
-    name: Optional[str] = Field(None, max_length=255)
+    name: Optional[str] = None
     label: Optional[str] = Field(None, max_length=255)
     tunnel_type: Literal["stcp", "https"]
     protocol: str  # "ssh", "rdp", "web"
@@ -343,7 +343,7 @@ class FrpTunnelCreate(RequestModel):
 
 
 class FrpTunnelUpdate(RequestModel):
-    name: Optional[str] = Field(None, max_length=255)
+    name: Optional[str] = None
     # The own text of the display name; '' takes it away.
     label: Optional[str] = Field(None, max_length=255)
     tunnel_type: Optional[Literal["stcp", "https"]] = None

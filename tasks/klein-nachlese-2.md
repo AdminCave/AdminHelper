@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-2 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-2 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-2 · Review: pro Task
 Spec: docs/features/klein-nachlese-2.md (Roadmap R-1250)
 Heavy: none — Server-Laden, Schema-Limit, Skript-Test und ein Kommentar, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Beweis: reviewer arch-namen 2026-11-09 · feature/arch-namen@04f6a2e15 scripts/t
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 
-### T3 — R-1250: Tunnel-`name`-Limit aus T1 zurücknehmen (Vertragsänderung, openapi-compat rot)  [ ]
+### T3 — R-1250: Tunnel-`name`-Limit aus T1 zurücknehmen (Vertragsänderung, openapi-compat rot)  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_tunnels.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d870265c1 2026-11-12T09:04:46+01:00
+Review: approve (.ah-out/review/klein-nachlese-2/T3.verdict.json)
 Beweis: Abschlussprüfung branch 2026-11-12: `openapi-breaking.sh server --base main` rc=1, `request-property-max-length-set` auf POST/PUT `name`; die Ausnahme wäre ein Harness-Pfad (`oasdiff-err-ignore.txt`), API-Vertrag ist Kevins Entscheidung (CLAUDE.md §2)
 Änderung: `max_length=255` an `FrpTunnelCreate.name`/`FrpTunnelUpdate.name` und der dazugehörige Test fallen weg, der Snapshot geht auf den Stand von `main` zurück; das Limit wird eigene Roadmap-Zeile für Kevin. Das Vorladen und der Kommentar aus T1 bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_openapi_snapshot.py tests/test_frp_status.py
