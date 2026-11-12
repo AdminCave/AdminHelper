@@ -1,0 +1,46 @@
+[
+    {
+        "description": "Configuration Daemon",
+        "pidfile": "/var/run/configd.pid",
+        "mwexec": {
+            "restart": [
+                "/usr/local/etc/rc.d/configd restart"
+            ]
+        },
+        "name": "configd",
+        "status": "configd is running as pid 312."
+    },
+    {
+        "description": "DHCPv4 Server",
+        "php": {
+            "restart": [
+                "dhcpd_dhcp4_configure"
+            ]
+        },
+        "pidfile": "/var/dhcpd/var/run/dhcpd.pid",
+        "name": "dhcpd",
+        "status": "dhcpd is not running."
+    },
+    {
+        "description": "OpenVPN server: road warriors",
+        "pidfile": "/var/run/ovpns1.pid",
+        "id": "1",
+        "name": "openvpn",
+        "status": "openvpn[1] is not running."
+    },
+    {
+        "description": "Packet Filter",
+        "nocheck": true,
+        "locked": 1,
+        "name": "pf",
+        "status": "pf is running."
+    },
+    {
+        "description": "Unbound DNS",
+        "pidfile": "/var/run/unbound.pid",
+        "nocheck": false,
+        "id": 0,
+        "name": "unbound",
+        "status": "unbound[0] is running as pid 4711."
+    }
+]
