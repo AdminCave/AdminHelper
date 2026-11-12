@@ -1,5 +1,5 @@
 # kern-monitoring-24 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-24 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-24 · Review: pro Task
 Spec: docs/features/kern-monitoring-24.md (Roadmap R-1374, R-1370, R-1376, R-1381, R-1382)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring; Windows-Teil prüft der PR-CI-Job agent-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,8 +71,10 @@ Erkennung lassen nur das Well-Known-Prefix. Tests: jede Präfixlänge, u-Oktett,
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_net.py
 Doku: → T7
 
-### T7 — Doku und Changelog  [ ]
+### T7 — Doku und Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-24.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f33bbdb0b 2026-11-12T18:53:08+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: „Nur dieser Host“ DE+EN: Listener-Pflicht samt Meldung, Prüfung der Gegenstelle (Linux), Windows-Dienst,
 weitere Weiterleiter, Unix-Sockets; zentrale Checks: RDAP-Weiterleitungen, NAT64-Präfix. Neutral, ohne Angriffspfad.
 Changelog-Fragment.
