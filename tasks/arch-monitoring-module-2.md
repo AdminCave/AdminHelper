@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module-2 — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-module-2 · Review: pro Task
+Status: erledigt · Branch: feature/arch-monitoring-module-2 · Review: pro Task
 Spec: docs/features/arch-monitoring-module-2.md (Roadmap R-1224, R-1268)
 Heavy: linux-full — `apps/agent` (Last-Tor, R-1268), `docker-compose.yml` (Umgebung des Monitoring-Dienstes) und ein neuer Check-Typ im Monitoring-Dienst; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
