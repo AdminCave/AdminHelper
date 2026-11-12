@@ -39,6 +39,8 @@ func TestServerConfigAcceptsTheGeneratorForm(t *testing.T) {
 		"withToken":      withToken("rotated-token"),
 		"without a tunnel": []byte("serverAddr = \"203.0.113.10\"\nserverPort = 7000\n\n" +
 			"auth.method = \"token\"\nauth.token = \"frps-token\"\n" + generatorTLS),
+		"login key": []byte("serverAddr = \"203.0.113.10\"\nuser = \"host-01\"\n" +
+			"metadatas.ahProxyKey = \"host-key-placeholder\"\n" + generatorTLS),
 		"TLS keys in the root": []byte("serverAddr = \"203.0.113.10\"\n" + rootTLS + "\n[[proxies]]\nname = \"ssh\"\n"),
 		"floats": []byte("serverAddr = \"203.0.113.10\"\n" + generatorTLS + "\n[[proxies]]\nname = \"ssh\"\n" +
 			"a = 1.5\nb = 1e+20\nc = inf\nd = -inf\ne = nan\nf = 1e-05\ng = -0.5\nh = 1.5e+20\n" +
@@ -151,6 +153,7 @@ func TestServerConfigRefusesOtherForms(t *testing.T) {
 		"log.to":                  {common + "log.to = \"/tmp/frpc.log\"\n" + proxy, "line 3: log.to is no key"},
 		"auth.tokenSource.type":   {common + "auth.tokenSource.type = \"file\"\n" + proxy, "line 3: auth.tokenSource.type is no key"},
 		"store.path":              {common + "store.path = \"/tmp/store.json\"\n" + proxy, "line 3: store.path is no key"},
+		"other metadatas":         {common + "metadatas.other = \"x\"\n" + proxy, "line 3: metadatas.other is no key"},
 		"webServer.port":          {common + "webServer.port = 7400\n" + proxy, "line 3: webServer.port is no key"},
 		"loginFailExit":           {common + "loginFailExit = true\n" + proxy, "line 3: loginFailExit is no key"},
 		"LOGINFAILEXIT":           {common + "LOGINFAILEXIT = true\n" + proxy, "line 3: LOGINFAILEXIT is no key"},

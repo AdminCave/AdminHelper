@@ -569,13 +569,15 @@ stop_plugin() {
 
 # check_plugin [port] — sees to it that the plugin serves at <port>, by default where it was
 # started: one that does not answer there is KILLed and started anew, as is one at another
-# port. Nothing before the first start of frps.
+# port. Nothing before the first start of frps. A restart for no answer is a warning with the
+# count since the supervisor started: until the plugin answers again frps refuses new proxies.
 check_plugin() {
     wanted_port=${1:-$PLUGIN_PORT}
     [ -n "$wanted_port" ] || return 0
     if [ -n "$PLUGIN_PID" ] && [ "$wanted_port" = "$PLUGIN_PORT" ]; then
         plugin_answers && return 0
-        log "frps-policy did not answer, restarting it"
+        PLUGIN_RESTARTS=$((PLUGIN_RESTARTS + 1))
+        log "warning: frps-policy did not answer, restarting it (restart $PLUGIN_RESTARTS since the supervisor started)"
     fi
     stop_plugin
     start_plugin "$wanted_port"
@@ -1087,6 +1089,7 @@ FRPS_PID=""
 STARTED_AT=0
 PLUGIN_PID=""
 PLUGIN_PORT=""
+PLUGIN_RESTARTS=0
 FETCH_PIDS=""
 CHANGING_SINCE=""
 UNSTABLE=0

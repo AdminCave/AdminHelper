@@ -7,7 +7,13 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io/fs"
 	"maps"
 	"os"
@@ -15,7 +21,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -25,6 +33,7 @@ import (
 // old package's pre-deinstall, replaces the files, then runs the new package's post-install. These
 // tests run the FreeBSD scripts that way with Linux's /bin/sh against a service(8) stub, and
 // build-pkg.sh against a pkg stub; the real pkg create, repo and install run on the FreeBSD box.
+// The plugin's scripts are tested in apps/agent/opnsense.
 
 const (
 	servicePath  = "/usr/sbin/service"
@@ -288,6 +297,19 @@ type pkgBuild struct {
 	env                []string
 }
 
+// repoKey is the signing key of the builds, made once; openssl derives its public part.
+var repoKey = sync.OnceValues(func() (*rsa.PrivateKey, error) { return rsa.GenerateKey(rand.Reader, 2048) })
+
+// pemKey is key in the PKCS#8 PEM form openssl genrsa writes.
+func pemKey(t *testing.T, key any) string {
+	t.Helper()
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+}
+
 // newPkgBuild prepares a run of build-pkg.sh with stub binaries, a stub pkg and a stale package of
 // an earlier build in the output directory.
 func newPkgBuild(t *testing.T) *pkgBuild {
@@ -298,7 +320,11 @@ func newPkgBuild(t *testing.T) *pkgBuild {
 	writeFile(t, filepath.Join(bin, "pkg"), pkgStub, 0o755)
 	writeFile(t, filepath.Join(b.dir, "agent"), "agent binary\n", 0o600)
 	writeFile(t, filepath.Join(b.dir, "frpc"), "frpc binary\n", 0o600)
-	writeFile(t, filepath.Join(b.dir, "key.pem"), "key\n", 0o600)
+	key, err := repoKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(b.dir, "key.pem"), pemKey(t, key), 0o600)
 	writeFile(t, filepath.Join(b.out, "freebsd/FreeBSD:14:amd64/All/stale.pkg"), "", 0o644)
 	for _, d := range []string{b.log, b.tmp} {
 		if err := os.Mkdir(d, 0o755); err != nil {
@@ -377,7 +403,9 @@ func TestBuildPkgPacksBothABIsAndSignsTheirRepos(t *testing.T) {
 		}
 		var want []string
 		for _, abi := range abis {
-			want = append(want, "create -o "+filepath.Join(b.out, "freebsd", abi, "All"))
+			// The agent's package, then the plugin's; pkg repo takes both.
+			create := "create -o " + filepath.Join(b.out, "freebsd", abi, "All")
+			want = append(want, create, create)
 			if signed {
 				want = append(want, "repo "+filepath.Join(b.out, "freebsd", abi)+" rsa:"+filepath.Join(b.dir, "key.pem"))
 			}
@@ -394,11 +422,13 @@ func TestBuildPkgPacksBothABIsAndSignsTheirRepos(t *testing.T) {
 			t.Fatalf("signed=%v: pkg calls\n%q\nwant\n%q", signed, got, want)
 		}
 		for i, abi := range abis {
-			n := 1 + i
+			n := 1 + 2*i
 			if signed {
-				n = 1 + 2*i
+				n = 1 + 3*i
 			}
-			checkPkgCreate(t, filepath.Join(b.log, "create-"+string(rune('0'+n))), abi)
+			agent := filepath.Join(b.log, "create-"+strconv.Itoa(n))
+			checkPkgCreate(t, agent, abi)
+			checkPluginCreate(t, filepath.Join(b.log, "create-"+strconv.Itoa(n+1)), agent, abi, signed)
 		}
 		if exists(t, filepath.Join(b.out, "freebsd/FreeBSD:14:amd64/All/stale.pkg")) {
 			t.Errorf("signed=%v: a package of an earlier build is still in the repository", signed)
@@ -456,22 +486,172 @@ func checkPkgCreate(t *testing.T, dir, abi string) {
 	}
 }
 
+// pluginSrc is the plugin's tree, which build-pkg.sh packs below /usr/local.
+const pluginSrc = "../../opnsense/src"
+
+// opnsenseSeries is the OPNsense series that runs on each ABI.
+var opnsenseSeries = map[string]string{"FreeBSD:14:amd64": "26.1", "FreeBSD:15:amd64": "26.7"}
+
+// checkPluginCreate checks what the pkg create of os-adminhelper got: a manifest that depends on
+// the agent's package of agentDir, the version file of OPNsense's plugins.mk as file and as
+// annotations, the scripts of apps/agent/opnsense, and a plist and stage tree with every file of
+// the plugin's tree in its mode, and with a key the key's public part.
+func checkPluginCreate(t *testing.T, dir, agentDir, abi string, signed bool) {
+	t.Helper()
+	version := map[string]string{
+		"product_abi": opnsenseSeries[abi], "product_arch": "amd64", "product_conflicts": "",
+		"product_email": "packages@admincave.com", "product_hash": "", "product_id": "os-adminhelper",
+		"product_name": "adminhelper", "product_tier": "4", "product_version": "0.47.0",
+		"product_website": "https://admincave.com",
+	}
+	var manifest, agent map[string]any
+	for path, v := range map[string]*map[string]any{dir: &manifest, agentDir: &agent} {
+		if err := json.Unmarshal([]byte(readRepoFile(t, filepath.Join(path, "meta/+MANIFEST"))), v); err != nil {
+			t.Fatalf("%s: +MANIFEST is no JSON: %v", abi, err)
+		}
+	}
+	for key, want := range map[string]string{"name": "os-adminhelper", "version": "0.47.0", "abi": abi,
+		"prefix": "/usr/local", "origin": "opnsense/os-adminhelper"} {
+		if manifest[key] != want {
+			t.Errorf("%s: plugin manifest %s = %v, want %q", abi, key, manifest[key], want)
+		}
+	}
+	for _, key := range []string{"comment", "desc", "maintainer", "www"} {
+		if s, _ := manifest[key].(string); s == "" {
+			t.Errorf("%s: plugin manifest lacks %s", abi, key)
+		}
+	}
+	deps := map[string]any{agent["name"].(string): map[string]any{"origin": agent["origin"], "version": agent["version"]}}
+	if got, _ := json.Marshal(manifest["deps"]); string(got) != mustJSON(t, deps) {
+		t.Errorf("%s: plugin deps %s, want %s", abi, got, mustJSON(t, deps))
+	}
+	// OPNsense reads the tier of a remote plugin from the annotations (firmware/query.sh).
+	if got, _ := json.Marshal(manifest["annotations"]); string(got) != mustJSON(t, version) {
+		t.Errorf("%s: plugin annotations %s, want %s", abi, got, mustJSON(t, version))
+	}
+
+	scripts := map[string]string{"+POST_INSTALL": "post-install", "+POST_DEINSTALL": "post-deinstall"}
+	if meta := tree(t, filepath.Join(dir, "meta")); len(meta) != 1+len(scripts) {
+		t.Errorf("%s: plugin metadata holds %v, want +MANIFEST and %d scripts", abi, slices.Sorted(maps.Keys(meta)), len(scripts))
+	}
+	for name, src := range scripts {
+		if got := readRepoFile(t, filepath.Join(dir, "meta", name)); got != readRepoFile(t, filepath.Join("../../opnsense", src)) {
+			t.Errorf("%s: plugin %s is not opnsense/%s", abi, name, src)
+		}
+	}
+
+	var files []string
+	want := map[string]string{}
+	err := filepath.WalkDir(pluginSrc, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(pluginSrc, path)
+		mode := "-rw-r--r-- "
+		if info.Mode()&0o100 != 0 {
+			mode = "-rwxr-xr-x "
+		}
+		files = append(files, rel)
+		want["usr/local/"+rel] = mode + readRepoFile(t, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(files)
+	files = append(files, "opnsense/version/adminhelper")
+	stage := tree(t, filepath.Join(dir, "stage"))
+	var file map[string]string
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(stage["usr/local/opnsense/version/adminhelper"], "-rw-r--r-- ")), &file); err != nil {
+		t.Errorf("%s: version file %q: %v", abi, stage["usr/local/opnsense/version/adminhelper"], err)
+	} else if !maps.Equal(file, version) {
+		t.Errorf("%s: version file %v, want %v", abi, file, version)
+	}
+	want["usr/local/opnsense/version/adminhelper"] = stage["usr/local/opnsense/version/adminhelper"]
+	if signed {
+		const pub = "etc/pkg/keys/AdminHelper.pub"
+		files = append(files, pub)
+		checkPublicKey(t, abi, stage["usr/local/"+pub])
+		want["usr/local/"+pub] = stage["usr/local/"+pub]
+		// The repository script names that file to pkg.
+		repo := stage["usr/local/opnsense/scripts/firmware/repos/AdminHelper.sh"]
+		if !strings.Contains(repo, "\npubkey=/usr/local/"+pub+"\n") {
+			t.Errorf("%s: the repository script does not name /usr/local/%s", abi, pub)
+		}
+	}
+	plist := "@owner root\n@group wheel\n" + strings.Join(files, "\n") + "\n"
+	if got := readRepoFile(t, filepath.Join(dir, "plist")); got != plist {
+		t.Errorf("%s: plugin plist\n%s\nwant\n%s", abi, got, plist)
+	}
+	if !maps.Equal(stage, want) {
+		t.Errorf("%s: plugin stage tree\n%v\nwant\n%v", abi, slices.Sorted(maps.Keys(stage)), slices.Sorted(maps.Keys(want)))
+	}
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// checkPublicKey checks that entry, a mode and the content of a file, is the public part of the
+// builds' signing key in the PEM form pkg reads, readable by all.
+func checkPublicKey(t *testing.T, abi, entry string) {
+	t.Helper()
+	data, ok := strings.CutPrefix(entry, "-rw-r--r-- ")
+	block, rest := pem.Decode([]byte(data))
+	if !ok || block == nil || block.Type != "PUBLIC KEY" || len(rest) != 0 {
+		t.Errorf("%s: the public key is no PUBLIC KEY readable by all: %q", abi, entry)
+		return
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	key, _ := repoKey()
+	if rsaPub, ok := pub.(*rsa.PublicKey); err != nil || !ok || !rsaPub.Equal(&key.PublicKey) {
+		t.Errorf("%s: the public key is not the signing key's: %v", abi, err)
+	}
+}
+
 // Each refusal comes before the build touches the output directory, so a failed build keeps the
 // repository of the last one.
 func TestBuildPkgRefusesBadInput(t *testing.T) {
-	var cases [][]string
+	type refusal struct {
+		env []string
+		msg string // what the build has to say, if the case checks it
+	}
+	var cases []refusal
 	for _, version := range []string{"v0.47.0", "0.47.0-beta.1", "0.47.0_1", "0.47,1", "0.47.0 ", "0.47.ä", ""} {
 		// Under de_DE.UTF-8 bash's [A-Za-z] also matches letters like ä.
-		cases = append(cases, []string{"VERSION=" + version, "LC_ALL=de_DE.UTF-8"})
+		cases = append(cases, refusal{env: []string{"VERSION=" + version, "LC_ALL=de_DE.UTF-8"}})
 	}
 	for _, input := range []string{"PKG_REPO_KEY", "AGENT_BINARY", "FRPC_BINARY"} {
-		cases = append(cases, []string{"VERSION=0.47.0", input + "=" + filepath.Join(t.TempDir(), "missing")})
+		cases = append(cases, refusal{env: []string{"VERSION=0.47.0", input + "=" + filepath.Join(t.TempDir(), "missing")}})
 	}
-	for _, env := range cases {
+	// pkg repo signs with an RSA key alone; the plugin would ship no public key for another.
+	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"key\n", pemKey(t, ec)} {
+		path := filepath.Join(t.TempDir(), "key.pem")
+		writeFile(t, path, key, 0o600)
+		cases = append(cases, refusal{[]string{"VERSION=0.47.0", "PKG_REPO_KEY=" + path}, "is no RSA private key"})
+	}
+	for _, c := range cases {
+		env := c.env
 		b := newPkgBuild(t)
 		out, err := b.run(env...)
 		if err == nil {
 			t.Errorf("%q: build-pkg.sh succeeded\n%s", env, out)
+		}
+		if !strings.Contains(string(out), c.msg) {
+			t.Errorf("%q: output lacks %q:\n%s", env, c.msg, out)
 		}
 		if calls := b.calls(t); calls != nil {
 			t.Errorf("%q: pkg called: %q", env, calls)

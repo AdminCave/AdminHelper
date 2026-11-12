@@ -10,6 +10,7 @@ tunnel by its ID (R-1210)."""
 import tomllib
 
 import pytest
+from sqlalchemy import event
 
 from app.modules.connections.models import Connection
 from app.modules.frp import tunnel_router
@@ -470,3 +471,159 @@ def test_a_stored_port_in_the_range_stays_for_the_auto_connection(
     assert r.json()["visitorPort"] == 6000
     conn = _auto_connection(db_session, "t-a")
     assert (conn.host, conn.port) == ("127.0.0.1", 6000)
+
+
+# A custom domain on tunnels of several servers needs one non-empty loadBalancer.group they all
+# share; otherwise frps hands it to whichever proxy registers first (R-1311).
+
+
+def _second_server(db) -> None:
+    db.add(Server(id="srv-b", name="serverB", hostname="b.example.test"))
+    db.add(
+        FrpTunnel(
+            id="t-b",
+            server_id="srv-b",
+            frp_config_id="cfg-1",
+            name="b-web",
+            tunnel_type="https",
+            protocol="web",
+            local_port=443,
+            custom_domains="shop.example.test",
+            enabled=True,
+        )
+    )
+    db.commit()
+
+
+def test_a_domain_of_another_server_is_409_and_nothing_is_stored(
+    test_client, db_session, admin_user
+):
+    _seed(db_session)
+    _second_server(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    body = _body(
+        name="web", local_port=443, **{**_HTTPS, "custom_domains": "x.test, Shop.Example.Test"}
+    )
+    r = test_client.post("/api/frp/tunnels", json=body, headers=h)
+    assert r.status_code == 409, r.text
+    assert "shop.example.test" in r.json()["detail"]
+    db_session.expire_all()
+    assert db_session.query(FrpTunnel).count() == 2
+
+
+def test_a_domain_of_another_server_is_409_on_update(test_client, db_session, admin_user):
+    _seed(db_session)
+    _second_server(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put(
+        "/api/frp/tunnels/t-a", json={**_HTTPS, "custom_domains": "shop.example.test"}, headers=h
+    )
+    assert r.status_code == 409, r.text
+    row = _stored(db_session, "t-a")
+    assert (row.tunnel_type, row.custom_domains) == ("stcp", None)
+
+
+def test_a_shared_group_or_the_same_server_may_carry_a_domain(test_client, db_session, admin_user):
+    _seed(db_session)
+    _second_server(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    same_server = _body(
+        server_id="srv-b",
+        name="web2",
+        local_port=443,
+        **{**_HTTPS, "custom_domains": "shop.example.test"},
+    )
+    r = test_client.post("/api/frp/tunnels", json=same_server, headers=h)
+    assert r.status_code == 201, r.text
+    # Once the other server's tunnels are in a group, the same group admits the domain.
+    group = {"loadBalancer.group": "shop", "loadBalancer.groupKey": "group-key-placeholder"}
+    for tunnel_id in ("t-b", r.json()["id"]):
+        r = test_client.put(
+            f"/api/frp/tunnels/{tunnel_id}", json={"extra_config": group}, headers=h
+        )
+        assert r.status_code == 200, r.text
+    body = _body(
+        name="web",
+        local_port=443,
+        extra_config=group,
+        **{**_HTTPS, "custom_domains": "shop.example.test"},
+    )
+    r = test_client.post("/api/frp/tunnels", json=body, headers=h)
+    assert r.status_code == 201, r.text
+
+
+def test_a_wildcard_or_subdomain_over_a_name_of_another_server_is_409(
+    test_client, db_session, admin_user
+):
+    _seed(db_session)
+    _second_server(db_session)
+    db_session.get(FrpServerConfig, "cfg-1").subdomain_host = "example.test"
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    wildcard = _body(name="web", local_port=443, **{**_HTTPS, "custom_domains": "*.example.test"})
+    r = test_client.post("/api/frp/tunnels", json=wildcard, headers=h)
+    assert r.status_code == 409, r.text
+    assert "of another server" in r.json()["detail"]
+    subdomain = _body(name="web", local_port=443, extra_config={"subdomain": "shop"}, **{**_HTTPS})
+    subdomain.pop("custom_domains")
+    r = test_client.post("/api/frp/tunnels", json=subdomain, headers=h)
+    assert r.status_code == 409, r.text
+    assert "shop.example.test" in r.json()["detail"]
+    db_session.expire_all()
+    assert db_session.query(FrpTunnel).count() == 2
+
+
+def test_a_disabled_tunnel_carries_no_domain(test_client, db_session, admin_user):
+    _seed(db_session)
+    _second_server(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    assert (
+        test_client.put("/api/frp/tunnels/t-b", json={"enabled": False}, headers=h).status_code
+        == 200
+    )
+    body = _body(name="web", local_port=443, **{**_HTTPS, "custom_domains": "shop.example.test"})
+    r = test_client.post("/api/frp/tunnels", json=body, headers=h)
+    assert r.status_code == 201, r.text
+    r = test_client.put("/api/frp/tunnels/t-b", json={"enabled": True}, headers=h)
+    assert r.status_code == 409, r.text
+
+
+def test_the_config_detail_loads_the_servers_of_its_tunnels_in_one_query(
+    test_client, db_session, admin_user
+):
+    # display_name() reads target_server; without a preload that is one query per tunnel.
+    _seed(db_session)
+    for i in range(3):
+        db_session.add(Server(id=f"srv-{i}", name=f"s{i}", hostname=f"s{i}.example.test"))
+        db_session.add(
+            FrpTunnel(
+                id=f"t-{i}",
+                server_id=f"srv-{i}",
+                frp_config_id="cfg-1",
+                name=f"own-{i}",
+                tunnel_type="https",
+                protocol="web",
+                local_port=80 + i,
+                enabled=True,
+            )
+        )
+    db_session.commit()
+    db_session.expire_all()
+    h = _login(test_client, "admin", "adminpass")
+
+    statements = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    connection = db_session.connection()
+    event.listen(connection, "before_cursor_execute", _record)
+    try:
+        r = test_client.get("/api/frp/server-config/cfg-1", headers=h)
+    finally:
+        event.remove(connection, "before_cursor_execute", _record)
+
+    assert r.status_code == 200, r.text
+    assert len(r.json()["tunnels"]) == 4
+    on_servers = [s for s in statements if "FROM servers" in s]
+    assert len(on_servers) == 1, on_servers

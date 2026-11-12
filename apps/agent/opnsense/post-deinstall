@@ -1,0 +1,16 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The +POST_DEINSTALL of os-adminhelper. pkg runs it on a removal only: on an upgrade it runs the
+# old package's +PRE_DEINSTALL alone (libpkg/pkg_add.c). The plugins configure themselves without
+# this one, as plugins.mk generates it, and the repository file its script wrote goes with it:
+# without the plugin nothing keeps it to the server, and OPNsense would list a repository no
+# installed plugin stands for. The agent and its files stay; adminhelper-agent has its own scripts.
+
+if [ "${PKG_ROOTDIR:-/}" = / ] && [ -z "${PKG_CHROOTED:-}" ]; then
+	if [ -f /usr/local/etc/rc.configure_plugins ]; then echo "Reloading plugin configuration"; /usr/local/etc/rc.configure_plugins POST_DEINSTALL; fi
+fi
+rm -f "${PKG_ROOTDIR%/}/usr/local/etc/pkg/repos/AdminHelper.conf"
+exit 0

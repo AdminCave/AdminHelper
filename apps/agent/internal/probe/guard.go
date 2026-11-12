@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,17 +78,18 @@ func neverProbed(name string) bool {
 // controlSockets are where the services that control this host, its guests and its sessions keep
 // their unix sockets: a probe never connects to a socket at or below one of them, whichever process
 // serves it (neverProbedSocket). A path that ends in a slash is a directory, one that ends in a hyphen
-// starts the names of such directories (ssh-agent makes /tmp/ssh-XXXXXX).
+// starts the names of such directories (ssh-agent makes /tmp/ssh-XXXXXX). OPNsense's configd runs the
+// actions it reads there as root; it is a python process, which no name of hostDaemons catches.
 var controlSockets = []string{
 	"/run/docker.sock", "/run/docker/", "/run/containerd/", "/run/podman/", "/run/crio/", "/run/cri-dockerd.sock",
 	"/run/k3s/", "/run/buildkit/", "/run/lxc/", "/run/libvirt/", "/run/qemu-server/", "/run/lxd/", "/run/incus/", "/run/snapd.socket",
 	"/run/snapd-snap.socket", "/run/dbus/", "/run/systemd/", "/run/udev/", "/run/user/", "/run/xen/", "/run/xenstored/",
 	"/var/lib/docker/", "/var/lib/containerd/", "/var/lib/kubelet/", "/var/lib/libvirt/", "/var/lib/lxd/", "/var/lib/incus/", "/var/snap/lxd/",
-	"/tmp/.X11-unix/", "/tmp/ssh-",
+	"/tmp/.X11-unix/", "/tmp/ssh-", "/run/configd.socket",
 }
 
 // neverProbedSocket says whether path (clean and absolute) is at or below one of controlSockets;
-// /var/run is the /run of older systems.
+// /var/run is the /run of older systems and of FreeBSD.
 func neverProbedSocket(path string) bool {
 	if rest, ok := strings.CutPrefix(path, "/var/run/"); ok {
 		path = "/run/" + rest
@@ -98,6 +101,28 @@ func neverProbedSocket(path string) bool {
 		}
 	}
 	return false
+}
+
+// socketToDial returns the path to connect to for the unix socket path: path with its links resolved.
+// A path at or below one of controlSockets, as given or resolved, is ErrNotAllowed; one that does not
+// exist is errNoListener. Dialing the resolved path means a final link swapped after the check leads
+// nowhere new; a directory on the path swapped for a link still could, so the peer check of dialUnix
+// stays behind it.
+func socketToDial(path string) (string, error) {
+	if neverProbedSocket(path) {
+		return "", fmt.Errorf("%w: %s is a socket of a service the agent never probes", ErrNotAllowed, path)
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", errNoListener
+	}
+	if err != nil {
+		return "", fmt.Errorf("%w: the links of %s cannot be resolved: %v", ErrNotAllowed, path, err)
+	}
+	if neverProbedSocket(real) {
+		return "", fmt.Errorf("%w: %s leads to %s, a socket of a service the agent never probes", ErrNotAllowed, path, real)
+	}
+	return real, nil
 }
 
 // listenerTTL is how long one snapshot of the listening sockets serves the guard.

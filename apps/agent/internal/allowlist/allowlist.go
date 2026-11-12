@@ -189,12 +189,23 @@ var commands = map[string][][]string{
 	"apt-get":          {{"-s", "dist-upgrade"}},
 	"dnf":              {{"-C", "-q", "updateinfo", "list", "--security"}},
 	// FreeBSD: the rc.d services, the versions of kernel and userland, and pkg audit against the local
-	// vuln.xml only (never -F, which fetches it).
-	"service":         {{"-e"}, {"<rcscript>", "status"}},
+	// vuln.xml only (never -F, which fetches it). onestatus is the probe's unit sensor: it answers
+	// whether or not rc.conf enables the service.
+	"service":         {{"-e"}, {"<rcscript>", "status"}, {"<rcscript>", "onestatus"}},
 	"freebsd-version": {{"-kru"}, {"-u"}},
 	"pkg":             {{"audit", "-q"}, {"audit", "-q", "<basepkg>..."}},
 	// FreeBSD: the listening TCP sockets for the sensors' guard and discovery (probe, sockstatArgs).
 	"sockstat": {{"-46", "-l", "-n", "-q", "-w", "-P", "tcp"}},
+	// OPNsense: the configd read actions of the opnsense sensor, one per call of its views
+	// (internal/opnsense, views).
+	"configctl": {
+		{"service", "list"},
+		{"interface", "gateways", "status"},
+		{"firmware", "product"},
+		{"filter", "diag", "state_size"},
+		{"interface", "show", "carp"},
+		{"interface", "list", "ifconfig"},
+	},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated

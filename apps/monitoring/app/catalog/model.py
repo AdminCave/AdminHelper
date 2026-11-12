@@ -181,7 +181,7 @@ class Check(_Model):
                     f"only {sorted(kinds)}"
                 )
         for f in self.fields:
-            if not field_allowed(self.sensor, f):
+            if not field_allowed(self.sensor, f, self.params):
                 raise ValueError(f"sensor {self.sensor!r} returns no field {f!r}")
         for rule in self.rules:
             if rule.field not in self.fields:

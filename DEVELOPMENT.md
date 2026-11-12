@@ -116,18 +116,19 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   von Schemathesis). Sie schickt für denselben Baum dieselben Fälle, ein roter Lauf
   liegt also am Diff und ist lokal nachstellbar. Eine Zahl **> 0** fährt alle Phasen
   mit so vielen erzeugten Beispielen je Operation: **100** im Wochenlauf (`heavy.sh`
-  setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter). Die Phase `generate`
+  setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter) und jede Nacht im
+  Workflow `nightly.yml` (`docs/developer/cicd.html`). Die Phase `generate`
   ist nicht wiederholbar (siehe Hypothesis unten); ihre Funde kommen deshalb aus dem
-  Wochenlauf und gehen als Zeile in die Roadmap.
+  Wochenlauf und aus `nightly.yml` und gehen als Zeile in die Roadmap.
 - **Integer-Lint** statt Glück: `apps/<dienst>/tests/test_openapi_integer_bounds.py`
   verlangt für jeden Integer-Eingang des veröffentlichten Schemas ein `maximum`.
   Das ist die Fehlerklasse, die die Phase `generate` bisher zufällig fand (`2**63`
   in einer `OFFSET`- oder INTEGER-Spalte).
 - **Versionen gepinnt:** `hypothesis` und `schemathesis` stehen in den drei
   `requirements-dev.txt` exakt (`==`); ein neues Release ändert die Fälle erst mit
-  einem Commit. Das gilt im CI-Job und in jedem `run.sh`-Lauf, dessen pytest-Schritte
-  die `requirements-dev.txt` installieren; ein Lauf nur mit `--step schemathesis` nimmt
-  das venv, wie es ist. Prüfwerkzeug: `bash scripts/tests/schemathesis_determinism.sh
+  einem Commit. Das gilt im CI-Job und in jedem `run.sh`-Lauf, auch einem nur mit
+  `--step schemathesis`: der Schritt installiert vor jeder Suite die `requirements-dev.txt`
+  ihres Dienstes selbst. Prüfwerkzeug: `bash scripts/tests/schemathesis_determinism.sh
   [--only <dienst…>]` fährt den Gate-Schritt je Dienst zweimal und vergleicht die
   Fälle je Test als `curl`-Protokoll (`<dienst>: N cases, M differing lines`, Exit 0
   nur bei 0 Abweichungen). Für den Server nur fahren, wenn keine andere Server-Suite
@@ -1018,6 +1019,22 @@ Box stehen (bis zu ihrer TTL) und nennt den `destroy`-Aufruf; `--keep` laesst si
 einem gruenen Lauf stehen. Die Vorlage legt `vm.py import --profile base-freebsd` an
 (Abschnitt „VMs mit vm.py“).
 
+Das OPNsense-Plugin `os-adminhelper` prueft der Box-Test auf einer echten OPNsense:
+
+```bash
+bash scripts/tests/opnsense_box.sh [--keep]
+```
+
+Er baut, was `freebsd_box.sh` baut (frp-Pin und Monitoring-Ersatz liest er von dort, statt sie
+zu kopieren), dazu einen Monitoring-Plan aus dem Katalogmodul `opnsense`, least eine Box aus der
+Vorlage `ah-tpl-base-opnsense` und faehrt dort die Agent-Tests als Box-Benutzer und als root
+(`box_freebsdbox.sh`; OPNsense ist darunter FreeBSD), dann `scripts/tests/box_opnsensebox.sh` als
+root: Agent und Plugin aus einem lokal signierten Repo mit Wegwerf-Schluessel, die fuenf
+Ansichten gegen das echte `configctl`, einen Agent-Lauf mit diesem Plan, den Schalter der
+Einstellungsseite und `pkg delete`. Exit 75, roter Lauf und `--keep` wie bei `freebsd_box.sh`.
+Die Vorlage backt `vm.py bake --profile base-opnsense` (Abschnitt „VMs mit vm.py“); auf der Box
+gibt es kein bash, `vm.py run` nimmt dort `sh` (Profil-Eigenschaft `shell`).
+
 ### Monitoring (lokal ohne Docker)
 
 ```bash
@@ -1144,8 +1161,8 @@ Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`
 `xvfb`, `tauri-driver`, `tauri-cli` und `gnome-keyring`/`dbus`
 (siehe `apps/desktop/e2e/README.md`).
 
-In CI laeuft (nur auf `main`-Push/manuell, kein PR-Gate) der From-outside-Test
-(`integration-stack`). Einen CI-Job fuer den Desktop-Smoke-E2E gibt es **nicht**:
+In CI laeuft der From-outside-Test (`integration-stack`) auf jedem Pull Request,
+in der Merge Queue, auf `main` und manuell. Einen CI-Job fuer den Desktop-Smoke-E2E gibt es **nicht**:
 die headless-WebKit-Kette driftet mit dem Runner-Image und faerbte `main` rot
 ohne echten Defekt. Der Smoke wie auch die **Desktop-Live-E2E**
 (`desktop_e2e_live.sh` + `desktop_e2e_tunnel.sh`) laufen auf einer VM bzw. lokal
@@ -1266,6 +1283,7 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). Nur dieser Klon bootet mit Paket-Upgrade (`ciupgrade=1`); `bake` wartet vor dem `sync` auf `cloud-init status --wait` (Exit 0 oder 2 = fertig) und bringt so den Paketstand der Leases auf den neuesten Stand. |
+| `bake --profile base-opnsense [--from <tag>]` | Macht einen Klon der Vorlage `ah-tpl-base-freebsd` (oder `--from`) zur Vorlage `ah-tpl-base-opnsense`: `scripts/vm/opnsense/bootstrap.sh` fuehrt den per Commit und sha256 gepinnten Bootstrap von opnsense/update auf OPNsense 26.7 aus und schreibt eine `config.xml` mit dem Benutzer `adminhelper` (nur Schluessel, der oeffentliche Teil von `AH_VM_SSH_KEY`; wheel-sudo ohne Passwort; Root- und Web-Passwort zufaellig und unbekannt) und einem Interface `wan` auf `vtnet0` per DHCP. Danach prueft `bake` die Version und raeumt auf. Ohne Paket-Upgrade; den Benutzer der Leases legt OPNsense aus `config.xml` an, nicht cloud-init, deshalb wird nach einem neuen Pool-Schluessel neu gebacken. |
 | `import --profile base-freebsd` | Laedt das Cloud-Image des Profils (Pruefsumme in `scripts/vm/profiles.json`, Cache `~/.cache/adminhelper/vm-images`; eine abweichende Kopie bricht ab, bevor etwas den Hypervisor erreicht) auf `AH_PVE_IMPORT_STORAGE` und legt daraus die Vorlage `ah-tpl-<profil>-<yyyymmdd>` an. Der Import-Boot liest einen eigenen config-2-Seed (braucht `genisoimage`, `mkisofs` oder `xorrisofs`), installiert `sudo`, `bash`, `rsync` und den qemu-guest-agent und sperrt die Passwoerter; die Klone holen Schluessel und Hostname aus PVEs config-2-Laufwerk. Bisher nur FreeBSDs nuageinit-Images. Die Uploads tragen feste Namen: ein zweiter Import ueberschreibt den ersten. |
 
 SSH merkt sich **keine** Host-Keys (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`):
@@ -1357,10 +1375,12 @@ Suites auf einer ephemeren Proxmox-VM (das Token in `~/.config/adminhelper/pve.e
 Konfiguration im gitignoreten `.claude/settings.local.json`; siehe „VMs mit vm.py“).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
-[--only <keys…>] [--step <name>] [--part gui|rest]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
-`--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
-Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten samt Smoke-Test,
-`--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil).
+[--only <keys…>] [--step <name>] [--part gui|rest] [--exclude <ids…>]` (schwere Layer
+verlangen `AH_ALLOW_REAL=1`; `--only server web` begrenzt lint/unit auf die genannten
+Komponenten — gefilterte Steps melden SKIP; `--part gui` faehrt nur die Desktop-GUI-Suiten
+samt Smoke-Test, `--part rest` alle anderen Schritte, ohne SKIP fuer den anderen Teil;
+`--exclude server-pytest` laesst die genannten Step-Ids aus: sie laufen nicht, melden kein
+SKIP und fehlen im Artefakt, die Summary nennt sie, eine unbekannte Id ist Exit 2).
 `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
@@ -1454,7 +1474,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 - `all` = `run.sh all --strict` auf **zwei Boxen gleichzeitig**: Teil `rest`
   (`--part rest`) auf der warmen Box des Slots `desktop`, Teil `gui` (`--part gui`, die
   Desktop-GUI-E2E samt Smoke-Test) auf einer zweiten Box derselben Lane (`warm.sh gui`,
-  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. `PASS` nur mit zwei
+  `iter.sh --slot gui`), die geleast wird, waehrend `rest` schon laeuft. Teil `rest` laesst
+  `server-pytest` aus (`--exclude server-pytest`): die CI faehrt die Server-Suite auf jedem
+  `main`-Commit, die Notizen des Reports sagen es. `PASS` nur mit zwei
   gruenen Teilen: ein Teil, der nicht lief oder keinen Beleg brachte (weder Summary-Zeile noch
   Artefakt, oder ein Artefakt des anderen Teils), macht den Lauf UNVERIFIED, sonst macht ihn ein
   roter Teil FAIL; der Grund nennt den Teil (`… (gui)`) und einen roten anderen Teil
