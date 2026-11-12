@@ -8,10 +8,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { MonitorCheck, Server } from '$lib/api/types';
   import { probeDetails } from '$lib/models/checkDetails';
   import { groupChecksByServer } from '$lib/models/monitoring';
+  import { centralSensorOf } from '$lib/models/monitorCheck';
   import { expiryLevel, type ExpiryLevel } from '$lib/models/monitoringText';
 
   /** Display only (concept §5): relative to the lifetime when known, else the check's status. */
   export type CertLevel = ExpiryLevel | 'unknown';
+
+  /** Who saw the date: the agent on the host (a file, its own connection), the
+   * monitoring service from outside (a central check) or an HTTP check. */
+  export type CertSource = 'agent' | 'central' | 'http';
 
   export interface CertRow {
     key: string;
@@ -27,6 +32,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     /** The sensor's answer, said when the row has no date. */
     probeStatus: string | null;
     checkStatus: string;
+    source: CertSource;
   }
 
   const LEVEL_OF_STATUS = new Map<string, CertLevel>([
@@ -57,6 +63,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function text(v: unknown): string | null {
     return typeof v === 'string' && v.trim() ? v.trim() : null;
+  }
+
+  /** Unix seconds of an RFC 3339 time, as the central checks store their dates. */
+  function isoSeconds(v: unknown): number | null {
+    const ms = typeof v === 'string' ? Date.parse(v) : NaN;
+    return Number.isFinite(ms) ? ms / 1000 : null;
   }
 
   /**
@@ -97,6 +109,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       level: expiryLevel(notAfter, seconds(cert.not_before), now) ?? 'unknown',
       probeStatus: null,
       checkStatus: status,
+      source: 'http',
     };
   }
 
@@ -131,14 +144,62 @@ SPDX-License-Identifier: GPL-3.0-or-later
       level: expired ? 'expired' : statusLevel(status),
       probeStatus: details?.status ?? null,
       checkStatus: status,
+      source: 'agent',
+    };
+  }
+
+  function centralTarget(config: MonitorCheck['config']): string | null {
+    const host = text(config?.host);
+    const port = config?.port;
+    return host && typeof port === 'number' && port !== 443 ? `${host}:${port}` : host;
+  }
+
+  function centralRow(
+    check: MonitorCheck,
+    now: number,
+  ): Omit<CertRow, 'serverKey' | 'serverName'> | null {
+    const sensor = centralSensorOf(check.config);
+    if (sensor !== 'tls' && sensor !== 'rdap') return null;
+    const raw = check.state?.details;
+    const details = isObject(raw) ? raw : {};
+    const status = check.state?.status ?? 'unknown';
+    const row = { key: check.id, check: check.name, probeStatus: null, checkStatus: status };
+    if (sensor === 'tls') {
+      // The certificate the service was handed; without one (no handshake) the row stays
+      // with the check's status, so a broken endpoint is seen.
+      const notAfter = isoSeconds(details.not_after);
+      const level =
+        notAfter === null ? null : expiryLevel(notAfter, isoSeconds(details.not_before), now);
+      return {
+        ...row,
+        target: centralTarget(check.config),
+        issuer: issuerName(text(details.issuer)),
+        notAfter,
+        level: level ?? statusLevel(status),
+        source: 'central',
+      };
+    }
+    // The domain's registration: its thresholds are days (warn_days, crit_days), which
+    // the check's status already applied; only "expired" is certain here.
+    const rdap = isObject(details.rdap) ? details.rdap : {};
+    const notAfter = isoSeconds(rdap.expires);
+    const expired = notAfter !== null && expiryLevel(notAfter, null, now) === 'expired';
+    return {
+      ...row,
+      target: text(rdap.domain) ?? text(check.config?.host),
+      issuer: null,
+      notAfter,
+      level: expired ? 'expired' : statusLevel(status),
+      source: 'central',
     };
   }
 
   /**
    * One row per enabled check with an expiry date: the certificate of an HTTPS check
-   * (`details.cert`) and every probe check whose fields carry `not_after` (sensors `tls`,
-   * `certfile`). A sensor row stays while its sensor fails, so a broken check is seen.
-   * `now` in Unix seconds.
+   * (`details.cert`), every probe check whose fields carry `not_after` (sensors `tls`,
+   * `certfile`) and the central checks `tls` (the certificate served) and `rdap` (the
+   * domain's registration). A sensor row stays while its sensor fails, so a broken check
+   * is seen. `now` in Unix seconds.
    */
   export function certRows(checks: MonitorCheck[], servers: Server[], now: number): CertRow[] {
     const rows: CertRow[] = [];
@@ -151,7 +212,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
             ? httpRow(check, now)
             : check.checkType === 'probe'
               ? probeRow(check, now)
-              : null;
+              : check.checkType === 'central'
+                ? centralRow(check, now)
+                : null;
         if (row) rows.push({ ...row, ...server });
       }
     }
@@ -201,6 +264,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return probeStatusText($t, row.probeStatus) ?? statusText(row.checkStatus);
   }
 
+  // Literal keys: the i18n test finds a key only as it stands in the source.
+  const SOURCE_KEY: Record<CertSource, string> = {
+    agent: 'monitoring.certs.source.agent',
+    central: 'monitoring.certs.source.central',
+    http: 'monitoring.certs.source.http',
+  };
+
   function targetText(row: CertRow): string {
     return row.target ? `${row.check} · ${row.target}` : row.check;
   }
@@ -227,6 +297,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       text: levelText,
       sort: (r) => levelRank(r.level),
       cell: levelCell,
+    },
+    {
+      key: 'source',
+      label: $t('monitoring.certs.col.source'),
+      text: (r) => $t(SOURCE_KEY[r.source]),
     },
   ]);
 </script>

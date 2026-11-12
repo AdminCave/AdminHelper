@@ -9,8 +9,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { MonitorCheckConfig } from '$lib/api/types';
-import { setLanguage } from '$lib/i18n';
+import type { MonitorCheck, MonitorCheckConfig } from '$lib/api/types';
+import { setLanguage, tNow } from '$lib/i18n';
 import CheckConfigFields from './CheckConfigFields.svelte';
 
 setLanguage('de');
@@ -404,6 +404,157 @@ describe('CheckConfigFields system_state (R-0423)', () => {
       }
     } finally {
       setLanguage('de');
+    }
+  });
+});
+
+// R-1224 T11: a central check — the monitoring service probes a public endpoint
+// itself. Sensor, host and port sit at the top of config, the sensor's own
+// settings in config.params, the agent partner in config.pair_check_id.
+describe('CheckConfigFields central (R-1224)', () => {
+  function selectFor(container: HTMLElement, label: string): HTMLSelectElement {
+    const fields = Array.from(container.querySelectorAll('label.field'));
+    const match = fields.find((f) => f.textContent?.includes(label));
+    if (!match) throw new Error(`no field labelled ${label}`);
+    return match.querySelector('select') as HTMLSelectElement;
+  }
+
+  function labels(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('label.field .field-label')).map(
+      (l) => l.textContent?.trim() ?? '',
+    );
+  }
+
+  function probe(id: string, name: string, config: MonitorCheckConfig): MonitorCheck {
+    return {
+      id,
+      name,
+      serverId: 'srv-1',
+      checkType: 'probe',
+      interval: '5m',
+      severity: 'warning',
+      enabled: true,
+      config,
+    };
+  }
+
+  async function renderCentral(
+    config: MonitorCheckConfig,
+    extra: { serverChecks?: MonitorCheck[]; onSensorChange?: (s: string) => void } = {},
+  ) {
+    const r = render(CheckConfigFields, { props: { checkType: 'central', config, ...extra } });
+    await tick();
+    return r;
+  }
+
+  it('shows the port each sensor takes', async () => {
+    const tls = await renderCentral({ sensor: 'tls', host: 'web.example', port: 443 });
+    expect(inputFor(tls.container, 'Port').value).toBe('443');
+    expect(tls.container.textContent).toContain(tNow('monitoring.checkCfg.tlsPortHint'));
+    expect(tls.container.textContent).toContain(tNow('monitoring.checkCfg.hostPublic'));
+    cleanup();
+
+    const smtp = await renderCentral({ sensor: 'smtp', host: 'mail.example' });
+    const port = selectFor(smtp.container, 'Port');
+    expect(Array.from(port.options).map((o) => o.value)).toEqual(['25', '465', '587']);
+    expect(port.value).toBe('25');
+    cleanup();
+
+    const dns = await renderCentral({ sensor: 'dns', host: 'example.org' });
+    expect(labels(dns.container)).not.toContain('Port');
+    expect(dns.container.textContent).toContain(tNow('monitoring.checkCfg.hostNameOnly'));
+  });
+
+  it('keeps the host on a sensor change and tells the parent', async () => {
+    const config = {
+      sensor: 'tls',
+      host: 'mail.example',
+      port: 8443,
+      pair_check_id: 'p1',
+    } as MonitorCheckConfig;
+    let told = '';
+    const { container } = await renderCentral(config, { onSensorChange: (s) => (told = s) });
+    const sensor = selectFor(container, 'Fühler');
+    sensor.value = 'smtp';
+    await fireEvent.change(sensor);
+    expect(config).toEqual({ sensor: 'smtp', host: 'mail.example', port: 25 });
+    expect(told).toBe('smtp');
+  });
+
+  it('writes the expected addresses into params and drops them when emptied', async () => {
+    const config = { sensor: 'dns', host: 'example.org' } as MonitorCheckConfig;
+    const { container } = await renderCentral(config);
+    const input = inputFor(container, 'Erwartete Adressen');
+    await fireEvent.input(input, { target: { value: ' 192.0.2.1, ,2001:db8::1 ' } });
+    expect(config.params).toEqual({ expected: ['192.0.2.1', '2001:db8::1'] });
+    await fireEvent.input(input, { target: { value: ' ' } });
+    expect('params' in config).toBe(false);
+  });
+
+  it('writes the rdap days as numbers and drops an emptied one', async () => {
+    const config = { sensor: 'rdap', host: 'example.org' } as MonitorCheckConfig;
+    const { container } = await renderCentral(config);
+    await fireEvent.input(inputFor(container, 'Warnung ab'), { target: { value: '20' } });
+    await fireEvent.input(inputFor(container, 'Kritisch ab'), { target: { value: '5' } });
+    expect(config.params).toEqual({ warn_days: 20, crit_days: 5 });
+    await fireEvent.input(inputFor(container, 'Warnung ab'), { target: { value: '' } });
+    expect(config.params).toEqual({ crit_days: 5 });
+  });
+
+  it('stores the chosen lists in the table order, none chosen leaves the default', async () => {
+    const config = { sensor: 'dnsbl', host: 'example.org' } as MonitorCheckConfig;
+    const { container } = await renderCentral(config);
+    const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(Array.from(boxes).map((b) => b.parentElement?.textContent?.trim())).toEqual([
+      'PSBL',
+      'SpamCop',
+      'UCEPROTECT Level 1',
+      'Spamhaus ZEN (DQS)',
+    ]);
+    expect(container.textContent).toContain(tNow('monitoring.checkCfg.dnsblListsHint'));
+    await fireEvent.click(boxes[3]);
+    await fireEvent.click(boxes[0]);
+    expect(config.params).toEqual({ lists: ['psbl', 'spamhaus_zen'] });
+    await fireEvent.click(boxes[3]);
+    expect(config.params).toEqual({ lists: ['psbl'] });
+    await fireEvent.click(boxes[0]);
+    expect('params' in config).toBe(false);
+  });
+
+  it('offers the agent partners and keeps a stored one it does not know', async () => {
+    const config = {
+      sensor: 'tls',
+      host: 'web.example',
+      port: 443,
+      pair_check_id: 'gone',
+    } as MonitorCheckConfig;
+    const serverChecks = [
+      probe('p-tls', 'web tls', { sensor: 'tls' }),
+      probe('p-file', 'cert file', { sensor: 'certfile', fields: ['not_after'] }),
+      probe('p-load', 'load', { sensor: 'load' }),
+    ];
+    const { container } = await renderCentral(config, { serverChecks });
+    const partner = selectFor(container, 'Agent-Partner');
+    expect(Array.from(partner.options).map((o) => o.value)).toEqual([
+      '',
+      'gone',
+      'p-tls',
+      'p-file',
+    ]);
+    expect(partner.value).toBe('gone');
+    partner.value = 'p-tls';
+    await fireEvent.change(partner);
+    expect(config.pair_check_id).toBe('p-tls');
+    partner.value = '';
+    await fireEvent.change(partner);
+    expect('pair_check_id' in config).toBe(false);
+  });
+
+  it('offers no partner where the sensor takes none', async () => {
+    for (const sensor of ['rdap', 'mail_dns', 'dnsbl']) {
+      const { container } = await renderCentral({ sensor, host: 'example.org' });
+      expect(labels(container)).not.toContain('Agent-Partner');
+      cleanup();
     }
   });
 });

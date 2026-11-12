@@ -4,14 +4,22 @@
 
 import { describe, it, expect } from 'vitest';
 import type { MonitorCheck } from '$lib/api/types';
+import { tNow } from '$lib/i18n';
 import {
   emptyCheckForm,
+  centralConfigFor,
+  centralSensorOf,
   checkToForm,
   failsAfterTypeChange,
   formToInput,
+  intervalsFor,
+  learnsBaseline,
+  partnersFor,
   validateCheckForm,
+  CENTRAL_SENSOR_NAMES,
   CHECK_TYPES,
   INTERVALS,
+  SERVER_CHECK_TYPES,
   SEVERITIES,
 } from './monitorCheck';
 
@@ -182,5 +190,133 @@ describe('failsAfterTypeChange', () => {
   it('keeps the value between other types, a 1 included', () => {
     expect(failsAfterTypeChange('ping', 'tcp', 5)).toBe(5);
     expect(failsAfterTypeChange('ping', 'tcp', 1)).toBe(1);
+  });
+});
+
+// R-1224 T11: a central check — the monitoring service probes a public endpoint itself.
+describe('central checks', () => {
+  function probe(id: string, config: Record<string, unknown>): MonitorCheck {
+    return {
+      id,
+      name: id,
+      serverId: 'srv-1',
+      checkType: 'probe',
+      interval: '5m',
+      severity: 'warning',
+      enabled: true,
+      config,
+    };
+  }
+
+  function central(
+    config: Record<string, unknown>,
+    checkType: MonitorCheck['checkType'] = 'central',
+  ) {
+    return { ...probe('c1', config), checkType };
+  }
+
+  it('offers central in the check form, never in a template', () => {
+    expect(SERVER_CHECK_TYPES).toEqual([...CHECK_TYPES, 'central']);
+    expect(CHECK_TYPES).not.toContain('central');
+    expect(CENTRAL_SENSOR_NAMES).toEqual([
+      'tls',
+      'dns',
+      'rdap',
+      'smtp',
+      'imap',
+      'mail_dns',
+      'dnsbl',
+    ]);
+  });
+
+  it('knows a sensor only by its own name', () => {
+    expect(centralSensorOf({ sensor: 'dns' })).toBe('dns');
+    expect(centralSensorOf({ sensor: 'toString' })).toBeNull();
+    expect(centralSensorOf({ sensor: 'http' })).toBeNull();
+    expect(centralSensorOf({})).toBeNull();
+    expect(centralSensorOf(undefined)).toBeNull();
+  });
+
+  it('offers the intervals from the shortest one of the sensor', () => {
+    expect(intervalsFor('central', { sensor: 'tls' })).toEqual([
+      '15m',
+      '30m',
+      '1h',
+      '6h',
+      '12h',
+      '24h',
+    ]);
+    expect(intervalsFor('central', { sensor: 'dns' })).toEqual(INTERVALS.slice(1));
+    expect(intervalsFor('central', { sensor: 'rdap' })).toEqual(['24h']);
+    expect(intervalsFor('central', { sensor: 'mail_dns' })).toEqual(['1h', '6h', '12h', '24h']);
+    // An unknown sensor and the other types keep every interval.
+    expect(intervalsFor('central', {})).toEqual(INTERVALS);
+    expect(intervalsFor('ping', { sensor: 'rdap' })).toEqual(INTERVALS);
+  });
+
+  it('keeps the host on a sensor change and gives the port to the new sensor', () => {
+    const from = {
+      sensor: 'tls',
+      host: 'mail.example',
+      port: 8443,
+      params: { x: 1 },
+      pair_check_id: 'p1',
+    };
+    expect(centralConfigFor('smtp', from)).toEqual({
+      sensor: 'smtp',
+      host: 'mail.example',
+      port: 25,
+    });
+    expect(centralConfigFor('imap', from)).toEqual({
+      sensor: 'imap',
+      host: 'mail.example',
+      port: 993,
+    });
+    expect(centralConfigFor('dns', from)).toEqual({ sensor: 'dns', host: 'mail.example' });
+    expect(centralConfigFor('tls', {})).toEqual({ sensor: 'tls', host: '', port: 443 });
+  });
+
+  it('pairs a sensor with the agent probes of the same service', () => {
+    const checks = [
+      probe('p-tls', { sensor: 'tls' }),
+      probe('p-http', { sensor: 'http' }),
+      probe('p-file', { sensor: 'certfile', fields: ['not_after', 'issuer'] }),
+      probe('p-file-bare', { sensor: 'certfile', fields: ['issuer'] }),
+      probe('p-load', { sensor: 'load' }),
+      { ...probe('ping', {}), checkType: 'ping' as const },
+    ];
+    const ids = (sensor: Parameters<typeof partnersFor>[0]) =>
+      partnersFor(sensor, checks).map((c) => c.id);
+    // A certfile probe only for tls, and only when it stores not_after.
+    expect(ids('tls')).toEqual(['p-tls', 'p-http', 'p-file']);
+    expect(ids('smtp')).toEqual(['p-tls', 'p-http']);
+    expect(ids('dns')).toEqual(['p-tls', 'p-http']);
+    for (const sensor of ['rdap', 'mail_dns', 'dnsbl'] as const) expect(ids(sensor)).toEqual([]);
+  });
+
+  it('learns a baseline only as a dns check without expected addresses', () => {
+    expect(learnsBaseline(central({ sensor: 'dns', host: 'example.org' }))).toBe(true);
+    expect(learnsBaseline(central({ sensor: 'dns', params: { expected: ['192.0.2.1'] } }))).toBe(
+      false,
+    );
+    expect(learnsBaseline(central({ sensor: 'tls' }))).toBe(false);
+    expect(learnsBaseline(central({ sensor: 'dns' }, 'probe'))).toBe(false);
+    expect(learnsBaseline(null)).toBe(false);
+  });
+
+  it('requires a host and sends it trimmed', () => {
+    const form = { ...emptyCheckForm('srv-1'), name: 'web', checkType: 'central' as const };
+    const noHost = validateCheckForm({ ...form, config: { sensor: 'tls', host: '  ' } });
+    expect(noHost.ok).toBe(false);
+    expect(noHost.message).toBe(tNow('monitoring.checkEdit.hostRequired'));
+    expect(validateCheckForm({ ...form, config: { sensor: 'tls' } }).ok).toBe(false);
+    const ok = { ...form, config: { sensor: 'tls', host: ' web.example ', port: 443 } };
+    expect(validateCheckForm(ok).ok).toBe(true);
+    expect(formToInput(ok).config).toEqual({ sensor: 'tls', host: 'web.example', port: 443 });
+    // The form keeps what was typed; only the payload is trimmed.
+    expect(ok.config.host).toBe(' web.example ');
+    // Other types send their host as entered.
+    const ping = { ...emptyCheckForm('srv-1'), name: 'p', config: { host: ' a ' } };
+    expect(formToInput(ping).config.host).toBe(' a ');
   });
 });
