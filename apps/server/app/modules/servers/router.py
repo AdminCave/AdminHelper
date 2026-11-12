@@ -23,6 +23,7 @@ from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
+from app.modules.frp.policy import sync_policy
 from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import (
@@ -254,6 +255,7 @@ def delete_server(
     revoke_identity(db, server.id, SCOPE_AGENT)
     db.delete(server)
     db.commit()
+    sync_policy(db)
     # Fire only after the commit succeeds — a rolled-back delete must not tell all
     # admins "server removed" for a server that still exists (2.48).
     fire_event("server.deleted", {"id": server_id, "name": server_name})

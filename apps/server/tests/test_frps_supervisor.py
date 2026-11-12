@@ -28,12 +28,14 @@ nor in the group of frps) with the credentials kept off every command line, into
 directory (proxy-<type>.json, 0644), each answer as it came; a failed request or an answer over
 1 MiB leaves no file of its type, and without frps or a webServer.port none is left.
 
-The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
-off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
-HTTP server stands in for the dashboard. Some tests run the frps image built from apps/frps,
-with the capabilities and security options compose gives it, the real frps under its own user
-and the requests to its dashboard under another, each from a program its user can only execute
-and so not dumpable; they skip when Docker or the pinned base image is not at hand."""
+The script runs under sh with a stub frps and a stub frps-policy (its plugin, at a port of the
+test's own) on PATH, without root and so with su-exec switched off (FRPS_USER, FRPS_FETCH_USER
+and FRPS_POLICY_USER empty; some tests put a stub su-exec in its place); a local HTTP server
+stands in for the dashboard. The tests of the plugin are in test_frps_supervisor_policy.py. Some tests run the frps image built from
+apps/frps/Dockerfile, with the capabilities and security options compose gives it, the real frps
+under its own user and the requests to its dashboard under another, each from a program its user
+can only execute and so not dumpable; they skip when Docker or a pinned base image is not at
+hand."""
 
 import base64
 import contextlib
@@ -45,8 +47,10 @@ import pwd
 import re
 import shutil
 import signal
+import socket
 import stat
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -67,7 +71,8 @@ from app.modules.frp.supervisor_status import SupervisorStatus, read_supervisor_
 
 FRPS_DIR = Path(__file__).resolve().parents[2] / "frps"
 SCRIPT = FRPS_DIR / "frps-supervisor.sh"
-COMPOSE = FRPS_DIR.parents[1] / "docker-compose.yml"
+REPO_ROOT = FRPS_DIR.parents[1]
+COMPOSE = REPO_ROOT / "docker-compose.yml"
 TOKEN = "test-token-0123456789abcdef"
 NEW_TOKEN = "next-token-fedcba9876543210"
 PEMS = ("frps.crt", "frps.key", "ca.crt")
@@ -101,6 +106,63 @@ fi
 echo $$ >> "$STUB_DIR/pids"
 exec sleep 600
 """
+
+POLICY_STUB = """#!{python}
+# Stands in for frps-policy: serves at the address of -listen, 200 on /healthz and 404 on any
+# other path, then records its arguments and its pid. A request is held while the pid is in
+# $STUB_DIR/policy-hangs.
+import os
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+STUB = os.environ["STUB_DIR"]
+
+
+def hangs():
+    try:
+        with open(os.path.join(STUB, "policy-hangs")) as listed:
+            return str(os.getpid()) in listed.read().split()
+    except FileNotFoundError:
+        return False
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        while hangs():
+            time.sleep(0.05)
+        self.send_response(200 if self.path == "/healthz" else 404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+host, port = sys.argv[sys.argv.index("-listen") + 1].rsplit(":", 1)
+server = ThreadingHTTPServer((host, int(port)), Handler)
+with open(os.path.join(STUB, "policy-calls"), "a") as calls:
+    calls.write(" ".join(sys.argv[1:]) + "\\n")
+with open(os.path.join(STUB, "policy-pids"), "a") as pids:
+    pids.write(f"{{os.getpid()}}\\n")
+server.serve_forever()
+"""
+
+
+def _free_port() -> int:
+    """A port on 127.0.0.1 nothing listens at, as the kernel hands it out."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _plugin_block(port: int) -> str:
+    """The block the supervisor appends to its copy of frps.toml: frps asks the plugin at
+    127.0.0.1:<port> about every new proxy."""
+    return (
+        f'\n[[httpPlugins]]\nname = "frps-policy"\naddr = "127.0.0.1:{port}"\n'
+        'path = "/handler"\nops = ["NewProxy"]\n'
+    )
 
 
 def _key() -> ec.EllipticCurvePrivateKey:
@@ -165,7 +227,8 @@ def _toml(pki: Path, **fields) -> str:
 
 
 class Box:
-    """Input, working and state directory of one supervisor, plus the stub frps it finds."""
+    """Input, working and state directory of one supervisor, plus the stub frps and the stub
+    frps-policy it finds."""
 
     def __init__(self, root: Path, pems: dict[str, bytes]):
         self.root = root
@@ -186,6 +249,10 @@ class Box:
             directory.mkdir()
         (bin_dir / "frps").write_text(STUB)
         (bin_dir / "frps").chmod(0o755)
+        (bin_dir / "frps-policy").write_text(POLICY_STUB.format(python=sys.executable))
+        (bin_dir / "frps-policy").chmod(0o755)
+        # Not the fixed default: tests run side by side.
+        self.policy_port = _free_port()
         self.env = {
             "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
             "FRPS_CONFIG": str(self.config),
@@ -196,10 +263,12 @@ class Box:
             # One poll an hour, so a test of the start sees the start alone; the tests of
             # the loop poll every second (see _polling).
             "FRPS_POLL_SECONDS": "3600",
-            # su-exec off: without root, frps and the requests to its dashboard run as the
-            # test's user.
+            # su-exec off: without root, frps, its plugin and the requests to its dashboard
+            # and to the plugin run as the test's user.
             "FRPS_USER": "",
             "FRPS_FETCH_USER": "",
+            "FRPS_POLICY_USER": "",
+            "FRPS_POLICY_PORT": str(self.policy_port),
             # Where the supervisor looks for processes of the user of frps: never the real
             # /proc, whose processes of the test's user it would KILL.
             "FRPS_PROC_ROOT": str(self.proc),
@@ -303,6 +372,21 @@ class Box:
         pids = self.stub / "pids"
         return [int(pid) for pid in pids.read_text().split()] if pids.exists() else []
 
+    def copy_of(self, toml: str) -> str:
+        """The copy the supervisor makes of toml: its TLS paths pointed at current/, the block
+        of the plugin appended."""
+        return toml.replace(f'"{self.pki}/', f'"{self.current}/') + _plugin_block(self.policy_port)
+
+    def policy_calls(self) -> list[str]:
+        """The arguments of each start of the plugin that came to serve."""
+        calls = self.stub / "policy-calls"
+        return calls.read_text().splitlines() if calls.exists() else []
+
+    def policy_pids(self) -> list[int]:
+        """The plugins that came to serve, oldest first."""
+        pids = self.stub / "policy-pids"
+        return [int(pid) for pid in pids.read_text().split()] if pids.exists() else []
+
     def health(self) -> int:
         return self.once("health").returncode
 
@@ -363,7 +447,7 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
         f"verify -c {box.active}/next/frps.toml",
         f"-c {box.current}/frps.toml",
     ]
-    expected = box.config.read_text().replace(f'"{box.pki}/', f'"{box.current}/')
+    expected = box.copy_of(box.config.read_text())
     assert (box.current / "frps.toml").read_text() == expected
     assert (box.stub / "verified.toml").read_text() == expected
     for name in PEMS:
@@ -559,7 +643,7 @@ def test_an_input_file_over_1_mib_is_unreadable(box, name, size):
         # Copied whole.
         expected = (box.config if name == "frps.toml" else box.pki / name).read_bytes()
         if name == "frps.toml":
-            expected = expected.replace(f'"{box.pki}/'.encode(), f'"{box.current}/'.encode())
+            expected = box.copy_of(expected.decode()).encode()
         assert (box.current / name).read_bytes() == expected
     else:
         assert (status.state, status.reason, status.events) == ("waiting", "input_unreadable", ())
@@ -749,7 +833,7 @@ def test_the_full_output_of_the_generator_is_accepted(box):
     box.run(frps=True)
 
     assert (box.read().state, box.read().reason) == ("running", "none")
-    expected = toml.replace(f'"{box.pki}/', f'"{box.current}/')
+    expected = box.copy_of(toml)
     assert (box.stub / "verified.toml").read_text(encoding="utf-8") == expected
 
 
@@ -1040,7 +1124,7 @@ def test_a_valid_change_restarts_frps_once_from_the_new_copy(box, case):
     assert not _alive(old) and _alive(new)
     doc = box.doc()
     assert HEX64.fullmatch(doc["appliedHash"]) and doc["appliedHash"] != first["appliedHash"]
-    expected = box.config.read_text().replace(f'"{box.pki}/', f'"{box.current}/')
+    expected = box.copy_of(box.config.read_text())
     assert (box.current / "frps.toml").read_text() == expected
     for name in PEMS:
         assert (box.current / name).read_bytes() == (box.pki / name).read_bytes()
@@ -1279,7 +1363,7 @@ def test_frps_that_exits_starts_again_from_the_input_never_from_a_changed_copy(b
     assert _events(status) == [STARTED, (2, *COPY_CHANGED), (3, "started", "none", False)]
     box.wait_until(lambda: len(box.pids()) == 2, "frps up again")
     assert box.calls() == _verify_then_run(box) * 2
-    expected = box.config.read_text().replace(f'"{box.pki}/', f'"{box.current}/')
+    expected = box.copy_of(box.config.read_text())
     assert (box.current / "frps.toml").read_text() == expected
     for name in PEMS:
         assert (box.current / name).read_bytes() == box.pems[name]
@@ -1533,6 +1617,13 @@ def test_a_dashboard_that_never_answers_is_named_in_the_failure_of_the_wait(box,
     assert "lists present: []" in message
 
 
+def _without_plugin_checks(box: Box, record: str) -> list[str]:
+    """The lines of a record of curl calls but those of the checks of the plugin, each asking
+    its /healthz without credentials (test_frps_supervisor_policy.py)."""
+    health = f" --output /dev/null http://127.0.0.1:{box.policy_port}/healthz"
+    return [line for line in record.splitlines() if not line.endswith(health)]
+
+
 # Stands in for curl: records the arguments of each call, one line a call, then becomes the
 # real curl, stdin and all. curl blanks the value of -u in its argv once it runs; the record is
 # taken before that.
@@ -1553,7 +1644,7 @@ def test_no_process_carries_the_password_of_the_dashboard_on_its_command_line(bo
 
     # Neither as it is nor as an Authorization header would carry it.
     credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
-    calls = (box.stub / "curl").read_text(encoding="utf-8").splitlines()
+    calls = _without_plugin_checks(box, (box.stub / "curl").read_text(encoding="utf-8"))
     assert len(calls) >= len(PROXY_TYPES)
     assert all(f"127.0.0.1:{dashboard.port}/api/proxy/" in call for call in calls), calls
     assert [c for c in calls if DASHBOARD_PASSWORD in c or credentials in c] == []
@@ -1742,7 +1833,11 @@ def test_every_request_to_the_dashboard_runs_as_its_user_through_su_exec(box, da
     credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
     assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
     # Each request through su-exec as the user, none around it, and no call with the password.
-    calls = (box.stub / "su-exec").read_text(encoding="utf-8").splitlines()
+    record = (box.stub / "su-exec").read_text(encoding="utf-8")
+    calls = _without_plugin_checks(box, record)
+    # The checks of the plugin, too, are made as the user.
+    checks = [line for line in record.splitlines() if line not in calls]
+    assert checks and all(c.startswith(f"{user} curl -q --silent ") for c in checks), checks
     url = f" http://127.0.0.1:{dashboard.port}/api/proxy/"
     assert calls and all(c.startswith(f"{user} curl -q --config - ") for c in calls), calls
     assert all(url in c for c in calls), calls
@@ -2038,14 +2133,21 @@ def test_the_supervisor_asks_the_dashboard_as_a_user_of_its_own_the_image_create
     assert uid not in (0, _frps_user()[1])
 
 
+def _bases() -> list[str]:
+    """The image of each FROM in the Dockerfile, without the name of its stage."""
+    bases = re.findall(r"^FROM (\S+)", (FRPS_DIR / "Dockerfile").read_text(), re.M)
+    assert bases, "no FROM in the frps Dockerfile"
+    return bases
+
+
 def _image() -> tuple[str, str, list[str]]:
-    """Base image, the script's place in the image and the entrypoint, as in the Dockerfile."""
+    """Base image of the last stage, the script's place in the image and the entrypoint, as in
+    the Dockerfile."""
     dockerfile = (FRPS_DIR / "Dockerfile").read_text()
-    base = re.search(r"^FROM (\S+)$", dockerfile, re.M)
-    target = re.search(r"^COPY frps-supervisor\.sh (\S+)$", dockerfile, re.M)
+    target = re.search(r"^COPY apps/frps/frps-supervisor\.sh (\S+)$", dockerfile, re.M)
     entrypoint = re.search(r"^ENTRYPOINT (\[.*\])$", dockerfile, re.M)
-    assert base and target and entrypoint, dockerfile
-    return base[1], target[1], json.loads(entrypoint[1])
+    assert target and entrypoint, dockerfile
+    return _bases()[-1], target[1], json.loads(entrypoint[1])
 
 
 def _compose_frps() -> dict:
@@ -2065,17 +2167,20 @@ def _security_args(frps: dict) -> list[str]:
 
 
 def _built_frps_image():
-    """Builds the image from apps/frps, yields (docker, tag) and removes the image again; skips
-    when Docker or the pinned base image is not at hand."""
-    base, _, _ = _image()
+    """Builds the image of apps/frps/Dockerfile from the repository root, as compose and the
+    workflows do, yields (docker, tag) and removes the image again; skips when Docker or one of
+    the pinned base images is not at hand."""
     docker = shutil.which("docker")
     if docker is None:
         pytest.skip("docker is not available")
-    if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
-        pytest.skip(f"no docker daemon or {base} not present locally")
+    for base in _bases():
+        if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
+            pytest.skip(f"no docker daemon or {base} not present locally")
     tag = f"adminhelper-test/frps-supervisor:{uuid.uuid4().hex[:12]}"
     build = subprocess.run(
-        [docker, "build", "-q", "-t", tag, str(FRPS_DIR)], capture_output=True, text=True
+        [docker, "build", "-q", "-t", tag, "-f", str(FRPS_DIR / "Dockerfile"), str(REPO_ROOT)],
+        capture_output=True,
+        text=True,
     )
     assert build.returncode == 0, build.stderr
     try:
