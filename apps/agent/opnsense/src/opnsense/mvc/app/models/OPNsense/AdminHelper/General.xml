@@ -1,0 +1,16 @@
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<model>
+    <mount>//OPNsense/AdminHelper</mount>
+    <description>AdminHelper agent</description>
+    <version>1.0.0</version>
+    <items>
+        <!-- On by default: installing the plugin leaves a registered agent running as it was. -->
+        <enabled type="BooleanField">
+            <Default>1</Default>
+            <Required>Y</Required>
+        </enabled>
+    </items>
+</model>

@@ -1,0 +1,22 @@
+{
+    "vtnet0": {
+        "flags": ["up", "broadcast", "running"],
+        "mtu": "1500",
+        "ipv4": [{"ipaddr": "192.0.2.2", "subnetbits": 24, "vhid": "1"}],
+        "carp": {
+            "1": {"status": "MASTER", "vhid": "1", "advbase": "1", "advskew": "0", "peer": "224.0.0.18", "peer6": "ff02::12"},
+            "3": {"status": "BACKUP", "vhid": "3", "advbase": "1", "advskew": "100", "peer": "224.0.0.18", "peer6": "ff02::12"}
+        }
+    },
+    "vtnet1": {
+        "flags": ["up", "broadcast", "running"],
+        "mtu": "1500",
+        "carp": {
+            "2": {"status": "MASTER", "vhid": "2", "advbase": "1", "advskew": "0", "peer": null, "peer6": null}
+        }
+    },
+    "lo0": {
+        "flags": ["up", "loopback", "running"],
+        "mtu": "16384"
+    }
+}

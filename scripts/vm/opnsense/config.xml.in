@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+
+/conf/config.xml of the base-opnsense test template, rendered by bootstrap.sh
+(the @…@ fields). Starts from core's config.xml.sample: no setup wizard, one
+interface (WAN, DHCP, on the pool's bridge; the anti-lockout rule opens 22, 80
+and 443 there), no LAN and none of its services. `adminhelper` logs in with the
+pool key only; sudo_allow_wheel 2 is wheel without a password.
+-->
+<opnsense>
+  <theme>opnsense</theme>
+  <system>
+    <optimization>normal</optimization>
+    <hostname>ah-opnsense</hostname>
+    <domain>internal</domain>
+    <dnsallowoverride>1</dnsallowoverride>
+    <dnsallowoverride_exclude/>
+    <group>
+      <name>admins</name>
+      <description>System Administrators</description>
+      <scope>system</scope>
+      <gid>1999</gid>
+      <member>0,2000</member>
+      <priv>page-all</priv>
+    </group>
+    <user>
+      <name>root</name>
+      <descr>System Administrator</descr>
+      <scope>system</scope>
+      <groupname>admins</groupname>
+      <password>@ROOT_HASH@</password>
+      <uid>0</uid>
+    </user>
+    <user>
+      <name>adminhelper</name>
+      <descr>AdminHelper test lab</descr>
+      <scope>user</scope>
+      <groupname>admins</groupname>
+      <password>@USER_HASH@</password>
+      <uid>2000</uid>
+      <shell>/bin/sh</shell>
+      <authorizedkeys>@AUTHORIZED_KEYS@</authorizedkeys>
+    </user>
+    <timezone>Etc/UTC</timezone>
+    <timeservers>0.opnsense.pool.ntp.org 1.opnsense.pool.ntp.org 2.opnsense.pool.ntp.org 3.opnsense.pool.ntp.org</timeservers>
+    <webgui>
+      <protocol>https</protocol>
+    </webgui>
+    <disablenatreflection>yes</disablenatreflection>
+    <usevirtualterminal>1</usevirtualterminal>
+    <disableconsolemenu/>
+    <ipv6allow>1</ipv6allow>
+    <bogons>
+      <interval>monthly</interval>
+    </bogons>
+    <pf_share_forward>1</pf_share_forward>
+    <lb_use_sticky>1</lb_use_sticky>
+    <ssh>
+      <group>admins</group>
+      <enabled>enabled</enabled>
+    </ssh>
+    <sudo_allow_wheel>2</sudo_allow_wheel>
+  </system>
+  <interfaces>
+    <wan>
+      <enable>1</enable>
+      <if>vtnet0</if>
+      <descr/>
+      <spoofmac/>
+      <ipaddr>dhcp</ipaddr>
+      <dhcphostname/>
+    </wan>
+  </interfaces>
+  <nat>
+    <outbound>
+      <mode>automatic</mode>
+    </outbound>
+  </nat>
+  <filter>
+  </filter>
+</opnsense>

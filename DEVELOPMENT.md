@@ -1019,6 +1019,22 @@ Box stehen (bis zu ihrer TTL) und nennt den `destroy`-Aufruf; `--keep` laesst si
 einem gruenen Lauf stehen. Die Vorlage legt `vm.py import --profile base-freebsd` an
 (Abschnitt „VMs mit vm.py“).
 
+Das OPNsense-Plugin `os-adminhelper` prueft der Box-Test auf einer echten OPNsense:
+
+```bash
+bash scripts/tests/opnsense_box.sh [--keep]
+```
+
+Er baut, was `freebsd_box.sh` baut (frp-Pin und Monitoring-Ersatz liest er von dort, statt sie
+zu kopieren), dazu einen Monitoring-Plan aus dem Katalogmodul `opnsense`, least eine Box aus der
+Vorlage `ah-tpl-base-opnsense` und faehrt dort die Agent-Tests als Box-Benutzer und als root
+(`box_freebsdbox.sh`; OPNsense ist darunter FreeBSD), dann `scripts/tests/box_opnsensebox.sh` als
+root: Agent und Plugin aus einem lokal signierten Repo mit Wegwerf-Schluessel, die fuenf
+Ansichten gegen das echte `configctl`, einen Agent-Lauf mit diesem Plan, den Schalter der
+Einstellungsseite und `pkg delete`. Exit 75, roter Lauf und `--keep` wie bei `freebsd_box.sh`.
+Die Vorlage backt `vm.py bake --profile base-opnsense` (Abschnitt „VMs mit vm.py“); auf der Box
+gibt es kein bash, `vm.py run` nimmt dort `sh` (Profil-Eigenschaft `shell`).
+
 ### Monitoring (lokal ohne Docker)
 
 ```bash
@@ -1267,6 +1283,7 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). Nur dieser Klon bootet mit Paket-Upgrade (`ciupgrade=1`); `bake` wartet vor dem `sync` auf `cloud-init status --wait` (Exit 0 oder 2 = fertig) und bringt so den Paketstand der Leases auf den neuesten Stand. |
+| `bake --profile base-opnsense [--from <tag>]` | Macht einen Klon der Vorlage `ah-tpl-base-freebsd` (oder `--from`) zur Vorlage `ah-tpl-base-opnsense`: `scripts/vm/opnsense/bootstrap.sh` fuehrt den per Commit und sha256 gepinnten Bootstrap von opnsense/update auf OPNsense 26.7 aus und schreibt eine `config.xml` mit dem Benutzer `adminhelper` (nur Schluessel, der oeffentliche Teil von `AH_VM_SSH_KEY`; wheel-sudo ohne Passwort; Root- und Web-Passwort zufaellig und unbekannt) und einem Interface `wan` auf `vtnet0` per DHCP. Danach prueft `bake` die Version und raeumt auf. Ohne Paket-Upgrade; den Benutzer der Leases legt OPNsense aus `config.xml` an, nicht cloud-init, deshalb wird nach einem neuen Pool-Schluessel neu gebacken. |
 | `import --profile base-freebsd` | Laedt das Cloud-Image des Profils (Pruefsumme in `scripts/vm/profiles.json`, Cache `~/.cache/adminhelper/vm-images`; eine abweichende Kopie bricht ab, bevor etwas den Hypervisor erreicht) auf `AH_PVE_IMPORT_STORAGE` und legt daraus die Vorlage `ah-tpl-<profil>-<yyyymmdd>` an. Der Import-Boot liest einen eigenen config-2-Seed (braucht `genisoimage`, `mkisofs` oder `xorrisofs`), installiert `sudo`, `bash`, `rsync` und den qemu-guest-agent und sperrt die Passwoerter; die Klone holen Schluessel und Hostname aus PVEs config-2-Laufwerk. Bisher nur FreeBSDs nuageinit-Images. Die Uploads tragen feste Namen: ein zweiter Import ueberschreibt den ersten. |
 
 SSH merkt sich **keine** Host-Keys (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`):

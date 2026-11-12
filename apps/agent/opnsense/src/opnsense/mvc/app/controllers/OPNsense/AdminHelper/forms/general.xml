@@ -1,0 +1,12 @@
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<form>
+    <field>
+        <id>general.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Runs the AdminHelper agent on this firewall: its schedule and, while the server keeps a tunnel here, the tunnel client. Off stops both until it is turned on again; the registration and the agent's files stay. Register the agent in a shell with adminhelper-agent provision --token-stdin.</help>
+    </field>
+</form>
