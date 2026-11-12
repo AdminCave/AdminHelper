@@ -21,8 +21,8 @@ import (
 
 // stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
 // report assembly, not the host (6.18): the 1s CPU sample, the docker/pvesh/zpool/smartctl
-// subprocess calls, the system state and the host facts lookups. Without this the "unit" test sleeps
-// >=1s and its result/duration depend on the host.
+// subprocess calls, the system state, the host facts lookups and the load gate's reading. Without
+// this the "unit" test sleeps >=1s and its result/duration depend on the host.
 func stubReportHost(t *testing.T) {
 	t.Helper()
 	oldInterval := cpuSampleInterval
@@ -47,7 +47,11 @@ func stubReportHost(t *testing.T) {
 		t.Error("a discovery ran, want none")
 		return discovery.Inventory{}
 	}
+	// The host's own load must not shed the collectors a test looks at.
+	oldReadLoad := readLoad
+	readLoad = func(map[string]any, *cpuSample, *cpuSample) loadReading { return loadReading{} }
 	t.Cleanup(func() {
+		readLoad = oldReadLoad
 		runDiscovery = oldDiscovery
 		cpuSampleInterval = oldInterval
 		pluginCollectors = oldPlugins
