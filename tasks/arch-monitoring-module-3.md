@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module-3 — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-module-3 · Review: am Ende
+Status: aktiv · Branch: feature/arch-monitoring-module-3 · Review: am Ende
 Spec: docs/features/arch-monitoring-module-3.md (Roadmap R-1268)
 Heavy: linux-full — `apps/agent` (Last-Tor im Lauf des Agenten); der Sammellauf fährt agent-monitoring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,6 +38,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_sna
 Doku: docs/developer/agent.html DE+EN · docs/developer/monitoring.html DE+EN · docs/admin/monitoring.html DE+EN · changelog.d/arch-monitoring-module-3.md
 Task-Review: am Ende
 Abhängt von: T1, T2
+
+### T4 — Warnung nach Spec, Zustandsschema in der Doku (R-1268, Abschlussprüfung)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_load_shed.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Änderung: Die 30-min-Warnung von `agent_resources` lautet wie in der Spec „Load shedding since <Zeit> UTC (<n> min)“ (Fund `wichtig` der Abschlussprüfung); Test und Doku DE+EN ziehen nach. Dazu die zwei Nits der Prüfung in `agent.html`: `cpu` im Report-Zustand trägt `iowait`, `load_shed` fehlt nur, solange das Tor ruht.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py tests/test_agent_resources_checker.py
+Doku: docs/developer/monitoring.html DE+EN · docs/admin/monitoring.html DE+EN · docs/developer/agent.html DE+EN
+Abhängt von: T2, T3
 
 ## Entscheidungen
 - 2026-11-12 T1: `cpuSample.Iowait` ist ein Wert, kein Zeiger; 0 heißt „nicht gelesen“ (kein Linux, alter Zustand) — die bestehenden Vergleiche ganzer `cpuSample` in den Tests bleiben gültig, ein Host ohne jede I/O-Wartezeit verliert nur ein Kriterium, das er nicht erfüllen kann
