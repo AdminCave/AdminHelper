@@ -39,13 +39,15 @@ keine generischen Namen (`nginx`, `apache2`, `httpd`, `php-fpm`, `postgres`, `re
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog_apps.py tests/test_catalog.py tests/test_check_configs.py
 Doku: → T14
 
-### T3 — R-1241: Module Nextcloud, Paperless-ngx, Immich  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/nextcloud.py, apps/monitoring/app/catalog/modules/paperless.py, apps/monitoring/app/catalog/modules/immich.py, apps/monitoring/tests/test_catalog_nextcloud.py, apps/monitoring/tests/test_catalog_paperless.py, apps/monitoring/tests/test_catalog_immich.py
+### T3 — R-1241: Module Nextcloud, Paperless-ngx, Immich  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/nextcloud.py, apps/monitoring/app/catalog/modules/paperless.py, apps/monitoring/app/catalog/modules/immich.py, apps/monitoring/tests/test_catalog_nextcloud.py, apps/monitoring/tests/test_catalog_paperless.py, apps/monitoring/tests/test_catalog_immich.py, apps/monitoring/app/discovery.py, apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_catalog_apps.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @703327a3c 2026-11-12T13:42:57+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T3.verdict.json)
 Änderung: Nextcloud: Docker (Image `nextcloud`, AIO) und Snap; `status.php` mit `host: localhost`, Regeln auf
 `maintenance` und `needsDbUpgrade`; nativ hinter Webserver nur, was ohne vHost geht; `serverinfo` mit Header
 `NC-Token` nur, wenn als festes Feld belegt. Paperless-ngx: Container, `/api/status/` (15 min, Zugang Nutzer mit
 `paperless.view_system_monitoring`). Immich: Compose-Projekt, Container je Dienst, `/api/server/ping`.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_nextcloud.py tests/test_catalog_paperless.py tests/test_catalog_immich.py tests/test_catalog_apps.py tests/test_catalog.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_nextcloud.py tests/test_catalog_paperless.py tests/test_catalog_immich.py tests/test_catalog_apps.py tests/test_catalog.py tests/test_discovery_match.py tests/test_module_sync.py
 Doku: → T14
 Abhängt von: T2
 
@@ -166,3 +168,20 @@ Doku: → T14
 - 2026-11-12 (T2): `validate_params` lässt ungesetzte (None-)Parameter aus dem JSON (älterer Agent lehnt einen
   unbekannten Parameter ab, Katalog-Version bestehender Module bleibt); ein ausdrückliches `host: null` lehnt das Modell
   ab, weil eine Probe-Prüfung ihre Params ungefiltert an den Agenten gibt (dazu `test_check_configs.py` in T2).
+- 2026-11-12 (T3): `probe_config` bindet einen Check mit Container-Ziel und `port_hint` nicht, wenn der letzte Scan den
+  Container mit TCP-Ports sah und der Hinweis nicht darunter ist (sonst fragt der Agent den einzigen Port, beim
+  fpm-Image von Nextcloud den FastCGI-Port 9000); ohne gesehene Ports entscheidet der Agent.
+- 2026-11-12 (T3): `image_matches`: ein Präfix ohne `/` ist ein offizielles Docker-Hub-Image und trifft nur sich selbst
+  (`nextcloud` nicht `nextcloud/aio-*`); Präfixe mit `/` bleiben Namensräume.
+- 2026-11-12 (T3): Kein AIO-Modul (Backup stoppt die Container, Port/TLS des Apache-Containers undokumentiert, andere
+  Images): R-1383 `neu`. `status.php` nur über den Compose-Dienst `app` (README, Beispiel-Compose; `cron` gleichen
+  Images ohne Webserver); `docker run` oder andere Dienstnamen: R-1384 `neu`. Snap: nur die Unit
+  `snap.nextcloud.apache.service` (HTTP leitet mit HTTPS um). Nativ hinter dem Host-Webserver: R-1378. `serverinfo`
+  entfällt (teure Antwort aus Datenbank und Dateisystem).
+- 2026-11-12 (T3): Paperless-Port 8000 und Immich-Port 2283 sind Hinweise aus den Dockerfiles; ein anderer Port
+  (PAPERLESS_PORT) bleibt dem Agenten (pickPort). Paperless-Zugang als Header `Authorization: Token <token>`.
+- 2026-11-12 (T3): 11 Dateien statt etwa acht: Sperre und Image-Abgleich gehören zum Nextcloud-Modul (ohne sie bände es
+  am fpm-Image falsch bzw. erkennte AIO-Container) und werden mit dessen Tests geprüft.
+- 2026-11-12 (T3, Prüfer-Nits): Nextcloud bekommt die Container-Checks der Spec auf die Dienste `app` und `cron`
+  (`status.php` sieht einen toten Cron-Container nicht; ohne Dienst `cron` bleibt der Check ungebunden). Paperless
+  erkennt auch das Docker-Hub-Image `paperlessngx/paperless-ngx` (Docker-Hub-Seite des Projekts, über 10 Mio. Pulls).
