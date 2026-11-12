@@ -971,6 +971,19 @@ class TestProbeConfig:
             with pytest.raises(ValueError, match=next(iter(params))):
                 validate_check_config("probe", config)
 
+    @pytest.mark.parametrize(
+        ("host", "valid"), [("localhost", True), (None, False), ("example.org", False)]
+    )
+    def test_the_api_takes_only_a_host_the_agent_takes(self, host, valid):
+        # The params of a probe check reach the agent as given: a null host would be
+        # stored here and answered with "invalid" there.
+        config = _probe(params={"path": "/status.php", "host": host})
+        if valid:
+            validate_check_config("probe", config)
+        else:
+            with pytest.raises(ValueError, match="host"):
+                validate_check_config("probe", config)
+
     def test_the_router_key_cannot_come_from_the_api(self):
         # The push path sets _check_id from the row; a stored one would only be overwritten,
         # but the boundary does not take it at all.

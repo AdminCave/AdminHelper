@@ -198,7 +198,7 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	if err := knownParams(p, "path", "method"); err != nil {
+	if err := knownParams(p, "path", "method", "host"); err != nil {
 		return nil, err
 	}
 	path, err := requestPath(p, "path", "/", 512, false)
@@ -208,6 +208,14 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	method, err := choiceParam(p, "method", http.MethodGet, http.MethodGet, http.MethodHead)
 	if err != nil {
 		return nil, err
+	}
+	// Some apps answer only to the names they trust and always trust localhost (Nextcloud's trusted
+	// domains); the param names no other host, so it lets no probe pose as a site of the host.
+	host := ""
+	if _, ok := p.Params["host"]; ok {
+		if host, err = choiceParam(p, "host", "", "localhost"); err != nil {
+			return nil, err
+		}
 	}
 	scheme := t.Scheme
 	switch scheme {
@@ -233,15 +241,19 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	// The certificate of a service on this host is the tls sensor's business; http measures the answer,
 	// and a self-signed certificate must not hide it.
 	client := NewGuard(ep.extra...).HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
-	return fetch(ctx, client, method, u.String(), use, secret, p.Fields)
+	return fetch(ctx, client, method, u.String(), host, use, secret, p.Fields)
 }
 
 // fetch sends one request to target with client: the status code, the time to the headers and, if a
-// field asks for data (GET only), the JSON object of the body as data. 401 and 403 are ErrDenied.
-func fetch(ctx context.Context, client *http.Client, method, target, use, secret string, fields []string) (map[string]any, error) {
+// field asks for data (GET only), the JSON object of the body as data. 401 and 403 are ErrDenied. A
+// host that is not empty is the Host header of the request instead of target's.
+func fetch(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if host != "" {
+		req.Host = host
 	}
 	if err := authorize(req, use, secret); err != nil {
 		return nil, err
