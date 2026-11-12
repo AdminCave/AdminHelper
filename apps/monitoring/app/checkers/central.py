@@ -8,6 +8,10 @@ Per run: one of the parallel slots, the rule public/internal for the host, then
 the sensor against the global addresses the rule handed on. A target that was
 public once (`public_since` in the details) stays watched: a later failure to
 reach it is critical, never a quiet move to "checked by the agent".
+
+A sensor that asks a registry about the host instead of the host itself (rdap)
+skips the rule: the host need not have an address, a mail-only domain has none,
+and the agent could not ask the registry in its place either.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from app.central import dns as dns_sensor
-from app.central import resolve, tls
+from app.central import rdap, resolve, tls
 from app.central.limits import LIMITS, SKIPPED_BUSY_MESSAGE, RunSkipped
 from app.central.resolve import Classification, Reach
 from app.central.tls import SensorResult
@@ -42,9 +46,16 @@ def _dns(
 
 
 _PROBES: dict[str, Probe] = {"tls": _tls, "dns": _dns}
+# host, params, the previous details for this host.
+RegistryProbe = Callable[[str, dict, dict], SensorResult]
+_REGISTRY_PROBES: dict[str, RegistryProbe] = {"rdap": rdap.probe}
 # The states a sensor carries from run to run. A run that does not reach the target
 # hands them on unchanged, so that the next one does not start over.
-_KEPT: dict[str, tuple[str, ...]] = {"tls": ("ari", "caa"), "dns": ("baseline", "zone")}
+_KEPT: dict[str, tuple[str, ...]] = {
+    "tls": ("ari", "caa"),
+    "dns": ("baseline", "zone"),
+    "rdap": ("rdap",),
+}
 
 
 class CentralChecker:
@@ -56,7 +67,8 @@ class CentralChecker:
     def run_with_context(self, config: dict, context: CheckContext) -> tuple[str, str, dict | None]:
         sensor, host = config.get("sensor"), config.get("host")
         probe = _PROBES.get(sensor) if isinstance(sensor, str) else None
-        if probe is None or not isinstance(host, str) or not host:
+        registry = _REGISTRY_PROBES.get(sensor) if isinstance(sensor, str) else None
+        if (probe is None and registry is None) or not isinstance(host, str) or not host:
             return "unknown", f"Unknown sensor or no host: {sensor!r}", None
         port = config.get("port") or CENTRAL_SENSORS[sensor].default_port
         params = config.get("params")
@@ -65,6 +77,8 @@ class CentralChecker:
         # A changed host starts over: the old one's history says nothing about it.
         if prev.get("host") != host:
             prev = {}
+        if registry is not None:
+            return _ask_registry(registry, sensor, host, params, prev)
         public_since = prev.get("public_since")
 
         silence = None
@@ -107,6 +121,20 @@ class CentralChecker:
             return "unknown", message, _with(details, None, result.metrics)
         since = public_since or iso_utc(datetime.now(timezone.utc))
         return result.status, result.message, _with(details, since, result.metrics)
+
+
+def _ask_registry(
+    probe: RegistryProbe, sensor: str, host: str, params: dict, prev: dict
+) -> tuple[str, str, dict]:
+    with LIMITS.slot() as acquired:
+        if not acquired:
+            raise RunSkipped(SKIPPED_BUSY_MESSAGE)
+        result = probe(host, params, prev)
+    details: dict = {"host": host}
+    if not result.reached:
+        details.update({k: prev[k] for k in _KEPT.get(sensor, ()) if k in prev})
+    details.update(result.details)
+    return result.status, result.message, _with(details, None, result.metrics)
 
 
 def _with(details: dict, public_since: str | None, metrics: dict | None = None) -> dict:

@@ -40,6 +40,10 @@ def _config(**over):
         _config(sensor="dns"),
         _config(sensor="dns", params={"expected": ["192.0.2.10", "2001:db8::10"]}),
         _config(sensor="dns", params={"expected": None}),
+        _config(sensor="rdap"),
+        _config(sensor="rdap", host="example.test"),
+        _config(sensor="rdap", params={"warn_days": 60, "crit_days": 14}),
+        _config(sensor="rdap", params={"warn_days": 1, "crit_days": 0}),
     ],
 )
 def test_valid_configs_pass(config):
@@ -84,6 +88,15 @@ def test_valid_configs_pass(config):
         (_config(sensor="dns", params={"expected": [10]}), "params.expected"),
         (_config(sensor="dns", params={"other": 1}), "params"),
         (_config(params={"expected": ["192.0.2.10"]}), "params"),  # tls takes none
+        (_config(sensor="rdap", port=443), "the sensor rdap takes no port"),
+        (_config(sensor="rdap", host="192.0.2.10"), "the sensor rdap needs a host name"),
+        (_config(sensor="rdap", params={"warn_days": 7, "crit_days": 7}), "below warn_days"),
+        (_config(sensor="rdap", params={"warn_days": 0}), "params.warn_days"),
+        (_config(sensor="rdap", params={"warn_days": 366}), "params.warn_days"),
+        (_config(sensor="rdap", params={"crit_days": -1}), "params.crit_days"),
+        (_config(sensor="rdap", params={"warn_days": "30"}), "params.warn_days"),
+        (_config(sensor="rdap", params={"warn_days": True}), "params.warn_days"),
+        (_config(sensor="rdap", params={"days": 30}), "params"),
     ],
 )
 def test_invalid_configs_are_refused(config, fragment):
@@ -175,6 +188,22 @@ def test_the_dns_sensor_has_its_own_floor_and_default(client_db, interval, code)
     assert default.status_code == 201, default.text
     with factory() as db:
         assert db.get(MonitorCheck, default.json()["id"]).interval == "15m"
+
+
+@pytest.mark.parametrize(("interval", "code"), [("12h", 400), ("24h", 201)])
+def test_the_rdap_sensor_runs_at_most_daily(client_db, interval, code):
+    client, factory = client_db
+    config = _config(sensor="rdap")
+
+    r = client.post("/checks", json=_payload(config=config, interval=interval))
+    default = client.post("/checks", json=_payload(config=config))
+
+    assert r.status_code == code, r.text
+    if code == 400:
+        assert r.json()["detail"] == "Interval too short for sensor rdap: at least 24h"
+    assert default.status_code == 201, default.text
+    with factory() as db:
+        assert db.get(MonitorCheck, default.json()["id"]).interval == "24h"
 
 
 def test_create_refuses_a_forbidden_port_at_the_schema(client_db):

@@ -61,10 +61,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns
 Doku: → T14
 Abhängt von: T3
 
-### T6 — Fühler `rdap` (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/rdap.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_rdap.py
+### T6 — Fühler `rdap` (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/rdap.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_rdap.py, apps/monitoring/app/central/fetch.py, apps/monitoring/tests/test_central_fetch.py, apps/monitoring/app/checkers/central.py, apps/monitoring/tests/test_central_checker.py, apps/monitoring/tests/test_central_config.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5406480b9 2026-11-12T09:22:27+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T6.verdict.json)
 Änderung: IANA-Bootstrap `dns.json` (gecacht, täglich), registrierbare Domain aus `host`; `.de` über `rdap.denic.de` nur Status; sonst Ablauf aus `events` (Warnung < `warn_days` 30, kritisch < `crit_days` 7) und Status (`clientHold`/`serverHold` → kritisch, `redemptionPeriod`/`pendingDelete` → kritisch). Abruf gepinnt auf globale Adressen; 429 → `unknown`.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_rdap.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_rdap.py tests/test_central_fetch.py tests/test_central_checker.py tests/test_central_config.py tests/test_openapi_snapshot.py
 Doku: → T14
 Abhängt von: T3
 
@@ -178,3 +180,9 @@ Task-Review: am Ende
 - 2026-11-12 T5: `dns` verweigert Port und IP-Literal als Host (422) — der Fühler fragt nach einem Namen und verbindet sich mit keinem Dienst-Port.
 - 2026-11-12 T5: `rebaseline` mitten in einem laufenden Lauf: der Lauf kann die alte Basislinie zurückschreiben, ein zweiter Aufruf entfernt sie (hingenommen, Kommentar in der Route) — eine Sperre gegen den Scheduler wäre für einen seltenen Klick zu viel.
 - 2026-11-12 T5: zehn Dateien statt höchstens acht, `Verify:` um `test_central_checker.py` und `test_central_config.py` erweitert — der Checker reicht Regel und Parameter an den Fühler durch, die Fühler-Tabelle bekommt `dns`.
+- 2026-11-12 T6: Registry-Fühler (`rdap`) überspringen die Regel öffentlich/intern — der Host braucht keine Adresse (Mail-only-Domain), und der Agent könnte die Registry nicht an seiner Stelle fragen; Slot ja, Mindestabstand über das Intervall-Minimum 24h.
+- 2026-11-12 T6: registrierte Domain ohne Public Suffix List und ohne DNS (eine Domain auf Hold ist aus dem DNS): von Host und Eltern die drei nächsten zur TLD, längster zuerst, bis die Registry 200 sagt; einmal, danach nur die gespeicherte Domain. 404 auf die gespeicherte → kritisch „no longer registered“; beim ersten Lauf nichts gefunden → unknown.
+- 2026-11-12 T6: Antwortet die Registry mit `ldhName` einer Eltern-Domain des gefragten Namens, gilt diese (eine Registry darf für die umfassende Domain antworten); ein fremder Name oder eine TLD → unknown.
+- 2026-11-12 T6: IANA-Bootstrap im Prozess gecacht, 24 h; nach einem Fehlschlag 15 min kein neuer Abruf, bis dahin dient die alte Kopie weiter. Eine in IANA gelistete TLD schlägt die eigene Tabelle (`.de` → `rdap.denic.de`, DENIC-Doku 2026-11-12). Bootstrap-Grenze 512 KiB (`fetch.get(max_body=…)`), Datei hatte 71 kB.
+- 2026-11-12 T6: ohne Ablaufdatum (`.de`, oder die Registry nennt keins) meldet der Fühler nur den Status, `ok`, ohne Metrik — kein eigener `.de`-Zweig. Hold/Redemption/pendingDelete sind kritisch unabhängig vom Datum.
+- 2026-11-12 T6: Ablauf ist das Datum der Registry; Registrare mit Auto-Renew verlängern oft erst kurz davor — der Hinweis und DENICs Pilotbetrieb samt Nutzungsvermerk („technical or administrative necessities of Internet operation“) gehen in die Doku (T14).

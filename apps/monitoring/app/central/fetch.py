@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""HTTPS requests of central checks to third parties: ACME CAs, later RDAP (R-1224).
+"""HTTPS requests of central checks to third parties: ACME CAs, RDAP (R-1224).
 
 Pinned like the probes: the rule public/internal resolves the name over the public
 resolvers, and the connection goes to one of the global addresses it handed on.
@@ -113,7 +113,7 @@ def _shutdown(sock: socket.socket) -> None:
         pass  # closed already, or never connected
 
 
-def get(url: str, *, accept: str = "application/json") -> HttpAnswer:
+def get(url: str, *, accept: str = "application/json", max_body: int = MAX_BODY) -> HttpAnswer:
     """GETs `url` (https only) from a global address of its host; raises FetchError."""
     try:
         parsed = httpx.URL(url)
@@ -161,7 +161,7 @@ def get(url: str, *, accept: str = "application/json") -> HttpAnswer:
                     },
                 )
                 try:
-                    return _read(client, request, watchdog)
+                    return _read(client, request, watchdog, max_body)
                 except httpx.HTTPError as exc:
                     if watchdog.expired:
                         raise _deadline(address) from None
@@ -182,7 +182,9 @@ def get(url: str, *, accept: str = "application/json") -> HttpAnswer:
     raise last
 
 
-def _read(client: httpx.Client, request: httpx.Request, watchdog: _Watchdog) -> HttpAnswer:
+def _read(
+    client: httpx.Client, request: httpx.Request, watchdog: _Watchdog, max_body: int
+) -> HttpAnswer:
     response = client.send(request, stream=True)
     try:
         if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
@@ -190,8 +192,8 @@ def _read(client: httpx.Client, request: httpx.Request, watchdog: _Watchdog) -> 
         body = bytearray()
         for chunk in response.iter_raw():
             body += chunk
-            if len(body) > MAX_BODY:
-                raise FetchError(f"response larger than {MAX_BODY} bytes")
+            if len(body) > max_body:
+                raise FetchError(f"response larger than {max_body} bytes")
     finally:
         watchdog.stop()
         response.close()

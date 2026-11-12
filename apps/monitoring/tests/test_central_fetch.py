@@ -184,6 +184,21 @@ def test_the_body_is_bounded(rule, transport):
         fetch.get(f"https://{HOST}/b")
 
 
+def test_a_caller_sets_its_own_body_bound(rule, transport):
+    bound = 2 * fetch.MAX_BODY
+    transport["outcomes"] = [
+        httpx.Response(200, content=b"x" * bound),
+        httpx.Response(200, content=b"x" * (bound + 1)),
+        httpx.Response(200, content=b"x" * 11),
+    ]
+
+    assert len(fetch.get(f"https://{HOST}/a", max_body=bound).body) == bound
+    with pytest.raises(FetchError, match=f"larger than {bound} bytes"):
+        fetch.get(f"https://{HOST}/b", max_body=bound)
+    with pytest.raises(FetchError, match="larger than 10 bytes"):
+        fetch.get(f"https://{HOST}/c", max_body=10)
+
+
 @pytest.mark.parametrize("coding", ["gzip", "deflate, identity", ""])
 def test_a_body_in_a_content_coding_is_refused(rule, transport, coding):
     # The limit counts the bytes received; unpacked they could be a thousand times more.

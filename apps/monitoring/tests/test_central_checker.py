@@ -48,6 +48,16 @@ class _Probe:
         return self.result
 
 
+class _RegistryProbe:
+    def __init__(self, result):
+        self.calls: list[tuple] = []
+        self.result = result
+
+    def __call__(self, host, params, prev):
+        self.calls.append((host, params, prev))
+        return self.result
+
+
 class _Slots:
     def __init__(self, free=True):
         self.free = free
@@ -74,13 +84,30 @@ def world(monkeypatch):
 
     probe = _Probe()
     dns_probe = _Probe(SensorResult("ok", "resolves to 192.0.2.10", True, {}, {"host": HOST}))
+    registry_probe = _RegistryProbe(
+        SensorResult(
+            "ok",
+            "example.test expires on 2027-05-31 (in 200 days)",
+            True,
+            {"days_left": 200.0},
+            {"rdap": {"domain": "example.test", "registered": True}},
+        )
+    )
     slots = _Slots()
     monkeypatch.setattr(resolve, "classify", classify)
     monkeypatch.setitem(central._PROBES, "tls", probe)
     monkeypatch.setitem(central._PROBES, "dns", dns_probe)
+    monkeypatch.setitem(central._REGISTRY_PROBES, "rdap", registry_probe)
     monkeypatch.setattr(central.dns_sensor, "diagnose_silence", diagnose_silence)
     monkeypatch.setattr(central, "LIMITS", slots)
-    state.update(probe=probe, dns_probe=dns_probe, slots=slots, silence=None, diagnosed=[])
+    state.update(
+        probe=probe,
+        dns_probe=dns_probe,
+        registry_probe=registry_probe,
+        slots=slots,
+        silence=None,
+        diagnosed=[],
+    )
     return state
 
 
@@ -378,3 +405,47 @@ def test_the_tls_sensor_asks_for_no_diagnosis(world):
 
     assert status == "unknown"
     assert world["diagnosed"] == []
+
+
+# --- sensors that ask a registry ---
+
+
+def test_a_registry_sensor_skips_the_rule_and_asks_in_a_slot(world):
+    config = {"sensor": "rdap", "host": HOST, "params": {"warn_days": 10}}
+    prev = {"host": HOST, "rdap": {"domain": "example.test"}}
+
+    status, message, metrics = _run(config, prev)
+
+    assert (status, message) == ("ok", "example.test expires on 2027-05-31 (in 200 days)")
+    assert world["registry_probe"].calls == [(HOST, {"warn_days": 10}, prev)]
+    assert world["classified"] == [] and world["probe"].calls == []
+    assert world["slots"].taken == 1
+    assert metrics == {
+        "days_left": 200.0,
+        "_details": {"host": HOST, "rdap": {"domain": "example.test", "registered": True}},
+    }
+
+
+def test_a_registry_sensor_gets_no_history_of_another_host(world):
+    _run({"sensor": "rdap", "host": HOST}, {"host": "other.test", "rdap": {"domain": "other.test"}})
+
+    assert world["registry_probe"].calls == [(HOST, {}, {})]
+
+
+def test_a_registry_that_gave_no_answer_keeps_the_state(world):
+    world["registry_probe"].result = SensorResult("unknown", "RDAP rdap.nic.test: HTTP 500", False)
+    prev = {"host": HOST, "rdap": {"domain": "example.test"}, "public_since": SINCE}
+
+    status, _, metrics = _run({"sensor": "rdap", "host": HOST}, prev)
+
+    assert status == "unknown"
+    assert metrics == {"_details": {"host": HOST, "rdap": {"domain": "example.test"}}}
+
+
+def test_a_registry_sensor_without_a_free_slot_asks_nothing(world):
+    world["slots"].free = False
+
+    with pytest.raises(RunSkipped, match=SKIPPED_BUSY_MESSAGE):
+        _run({"sensor": "rdap", "host": HOST})
+
+    assert world["registry_probe"].calls == []

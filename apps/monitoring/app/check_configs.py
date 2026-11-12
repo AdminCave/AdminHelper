@@ -281,6 +281,19 @@ class DnsParams(_StrictConfig):
         return v
 
 
+class RdapParams(_StrictConfig):
+    """Days before the registry's expiry date from which the sensor warns or is critical."""
+
+    warn_days: int = Field(30, ge=1, le=365, strict=True)
+    crit_days: int = Field(7, ge=0, le=364, strict=True)
+
+    @model_validator(mode="after")
+    def _crit_before_warn(self):
+        if self.crit_days >= self.warn_days:
+            raise ValueError("crit_days must be below warn_days")
+        return self
+
+
 @dataclass(frozen=True)
 class CentralSensor:
     """One sensor of a central check (R-1224): its shortest and its default interval,
@@ -297,6 +310,7 @@ class CentralSensor:
 CENTRAL_SENSORS: dict[str, CentralSensor] = {
     "tls": CentralSensor("15m", "1h", 443, TlsParams),
     "dns": CentralSensor("5m", "15m", None, DnsParams, needs_name=True),
+    "rdap": CentralSensor("24h", "24h", None, RdapParams, needs_name=True),
 }
 # The agent sensors whose view of the same service explains a central result (T10).
 CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
