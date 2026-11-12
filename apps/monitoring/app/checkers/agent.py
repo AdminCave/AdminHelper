@@ -130,13 +130,14 @@ def agent_number(value: object) -> int | float | None:
 _MAX_REPORT_ENTRIES = 500
 
 
-def capped_objects(value: object) -> list[dict]:
+def capped_objects(value: object, limit: int = _MAX_REPORT_ENTRIES) -> list[dict]:
     """The entries of a report list that a checker rates: the objects among the first
-    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
-    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
+    `limit` (at most _MAX_REPORT_ENTRIES), [] for anything but a list. Capping first bounds
+    the work on a flooded list and lets an entry that is no object take its place in a
+    smaller limit; any other entry is skipped instead of failing the evaluation (R-0486)."""
     if not isinstance(value, list):
         return []
-    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+    return [entry for entry in value[: min(limit, _MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
 
 
 def entry_text(entry: dict, key: str, default: str) -> str:
@@ -514,7 +515,7 @@ def _resources_message(problems: list[str], cpu, mem) -> str:
     return ", ".join(parts) if parts else "OK"
 
 
-# The agent names at most five processes per list; the same cap here.
+# At most five processes per list are shown.
 _MAX_TOP_PROCESSES = 5
 
 

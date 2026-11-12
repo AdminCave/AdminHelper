@@ -237,6 +237,36 @@ describe('MonitorCheckModal central (R-1224)', () => {
     expect(mocks.fetchStatus).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores a late answer from an earlier opening', async () => {
+    let answerFirst: (all: MonitorCheck[]) => void = () => {};
+    mocks.fetchStatus
+      .mockReturnValueOnce(new Promise<MonitorCheck[]>((resolve) => (answerFirst = resolve)))
+      .mockResolvedValueOnce([
+        {
+          ...stored({ sensor: 'tls' }),
+          id: 'new',
+          name: 'new',
+          checkType: 'probe',
+          serverId: 'srv-2',
+        },
+      ]);
+    const first = stored({ sensor: 'tls' });
+    const second = { ...first, id: 'c2', serverId: 'srv-2' };
+    const props = { onClose: vi.fn(), onSaved: vi.fn(), serverId: 'srv-1' };
+    const { container, rerender } = render(MonitorCheckModal, {
+      props: { ...props, open: true, target: first },
+    });
+    await tick();
+    await rerender({ ...props, open: false, target: first });
+    await rerender({ ...props, open: true, target: second });
+    await waitFor(() => expect(options(field(container, 'Agent-Partner'))).toEqual(['', 'new']));
+
+    answerFirst([{ ...stored({ sensor: 'tls' }), id: 'old', name: 'old', checkType: 'probe' }]);
+    await tick();
+    await tick();
+    expect(options(field(container, 'Agent-Partner'))).toEqual(['', 'new']);
+  });
+
   it('learns the baseline again after the confirmation', async () => {
     const onSaved = vi.fn();
     const { getByText } = await mountStored(

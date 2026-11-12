@@ -1373,6 +1373,9 @@ def test_the_limits_count_unusable_entries_too():
     assert "ports" not in _new_row("docker", ports=[42] * 64 + ["0.0.0.0:80->80/tcp"])
     jobs = [{"id": 42}] * 64 + [{"id": "backup-1"}]
     assert _new_row("proxmox", backup_jobs=jobs)["backupJobs"] == [{}] * 64
+    # Entries that are no object take a place too, as the unusable ports do.
+    assert _new_row("proxmox", backup_jobs=[42] * 64 + [{"id": "backup-1"}])["backupJobs"] == []
+    assert "vdevErrors" not in _new_row("zfs", vdev_errors=[42] * 32 + [_VDEV])
     vdevs = [{**_VDEV, "read": -1}] * 32 + [_VDEV]
     assert "vdevErrors" not in _new_row("zfs", vdev_errors=vdevs)
 
