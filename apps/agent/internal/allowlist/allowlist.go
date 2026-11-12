@@ -34,6 +34,10 @@ var classes = map[string]string{
 	"node": `[A-Za-z0-9][A-Za-z0-9-]*`,
 	// A Proxmox storage ID (pve-storage: a letter, then letters, digits, '-', '_', '.').
 	"storage": `[A-Za-z][A-Za-z0-9._-]*`,
+	// The UPID of a vzdump task as PVE writes it (pve-common PVE/UPID.pm encode: node, pid, pstart up to
+	// nine digits, start time in upper-case hex, type, the VMID or nothing, the user): no other task
+	// type, no '/' (it stands in a path) and no whitespace.
+	"upid": `UPID:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:[0-9A-F]{8}:[0-9A-F]{8,9}:[0-9A-F]{8}:vzdump:[0-9]*:[\x21-\x2E\x30-\x39\x3B-\x7E]+:`,
 	// A device path from smartctl --scan, below /dev; no segment begins with '.', so no "..".
 	"device": `/dev(/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
 	// A smartctl device type from the scan (sat, nvme, megaraid,N, sat,12 …).
@@ -158,6 +162,11 @@ var commands = map[string][][]string{
 		{"get", "/cluster/resources", "--type", "vm", "--output-format", "json"},
 		{"get", "/cluster/resources", "--type", "storage", "--output-format", "json"},
 		{"get", "/nodes/<node>/storage/<storage>/content", "--content", "backup", "--output-format", "json"},
+		// The backup details (buildBackupIndex): the vzdump jobs, the last failed vzdump task of the
+		// node, and its log.
+		{"get", "/cluster/backup", "--output-format", "json"},
+		{"get", "/nodes/<node>/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1", "--output-format", "json"},
+		{"get", "/nodes/<node>/tasks/<upid>/log", "--limit", "10000", "--output-format", "json"},
 	},
 	"zpool": {
 		{"list", "-H", "-o", "name,size,alloc,free,cap,health"},

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"reflect"
@@ -837,16 +838,44 @@ func pveshNodeStatus(t *testing.T) string {
 	return pveshNode(t) + "/status"
 }
 
-// The keys stubPvesh answers `pvesh get /cluster/resources --type vm|storage` by.
+// The keys stubPvesh answers `pvesh get /cluster/resources --type vm|storage` by, and the API path of
+// the backup jobs.
 const (
 	pveshVMs      = "/cluster/resources?type=vm"
 	pveshStorages = "/cluster/resources?type=storage"
+	pveshJobs     = "/cluster/backup"
 )
 
 // pveshBackupContent is the API path collectProxmox asks for the backups on one storage.
 func pveshBackupContent(t *testing.T, storage string) string {
 	t.Helper()
 	return pveshNode(t) + "/storage/" + storage + "/content"
+}
+
+// pveshTasks is the API path collectProxmox asks for the last failed vzdump task of the local node.
+func pveshTasks(t *testing.T) string {
+	t.Helper()
+	return pveshNode(t) + "/tasks"
+}
+
+// pveshTaskLog is the API path of the log of the task upid on the local node.
+func pveshTaskLog(t *testing.T, upid string) string {
+	t.Helper()
+	return pveshNode(t) + "/tasks/" + upid + "/log"
+}
+
+// noBackupDetails are the replies of the backup details' calls without jobs and without a failed task.
+func noBackupDetails(t *testing.T) map[string]dockerReply {
+	t.Helper()
+	return map[string]dockerReply{pveshJobs: {out: "[]"}, pveshTasks(t): {out: "[]"}}
+}
+
+// withReplies is replies with more added.
+func withReplies(replies map[string]dockerReply, more map[string]dockerReply) map[string]dockerReply {
+	out := make(map[string]dockerReply, len(replies)+len(more))
+	maps.Copy(out, replies)
+	maps.Copy(out, more)
+	return out
 }
 
 // captureWarnings routes the package logger into a buffer for the duration of the test.
@@ -950,11 +979,11 @@ func TestCollectProxmoxVMCallFails(t *testing.T) {
 		"null":     {dockerReply{out: "null"}, "parse_failed", "pvesh get /cluster/resources output unreadable"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			stubPvesh(t, map[string]dockerReply{
+			stubPvesh(t, withReplies(noBackupDetails(t), map[string]dockerReply{
 				pveshNodeStatus(t): {out: pveshNodeStatusFixture},
 				pveshStorages:      {out: "[]"},
 				pveshVMs:           tc.reply,
-			})
+			}))
 			logs := captureWarnings(t)
 			assertProxmoxUnavailable(t, proxmoxBlock(t), logs, tc.code, tc.text)
 		})
@@ -964,11 +993,11 @@ func TestCollectProxmoxVMCallFails(t *testing.T) {
 func TestCollectProxmoxNoVMs(t *testing.T) {
 	// The counter-check: an empty list is a node without VMs, and the block goes out available with
 	// the node and an empty list, never null.
-	stubPvesh(t, map[string]dockerReply{
+	stubPvesh(t, withReplies(noBackupDetails(t), map[string]dockerReply{
 		pveshNodeStatus(t): {out: pveshNodeStatusFixture},
 		pveshStorages:      {out: "[]"},
 		pveshVMs:           {out: "[]"},
-	})
+	}))
 	got := dockerWire(t, proxmoxBlock(t))
 	want := wantDockerWire(t, `{"available": true, "error": null, "vms": [],
 		"node": {"name": "`+strings.TrimPrefix(pveshNode(t), "/nodes/")+`", "cpu": 5, "memory_percent": 25}}`)
@@ -1078,7 +1107,7 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 	// their status does not count and their content is not read. The storage list never comes from
 	// /nodes/<node>/storage, which activates every storage it lists.
 	node := pveshNode(t)
-	calls := stubPvesh(t, map[string]dockerReply{
+	calls := stubPvesh(t, withReplies(noBackupDetails(t), map[string]dockerReply{
 		pveshNodeStatus(t): {out: pveshNodeStatusFixture},
 		pveshStorages: {out: "[" + pveshStorage(t, "nas", "available") + "," + pveshStorage(t, "local", "available") + "," +
 			pveshStorageOn(t, "other-node", "nas", "backup", "unknown") + "," +
@@ -1090,13 +1119,14 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 			pveshBackup("nas", 100, 1759900000) + "]"},
 		pveshBackupContent(t, "pbs"): {out: "[]"},
 		pveshVMs:                     {out: pveshVMsFixture},
-	})
+	}))
 	now := time.Unix(1760090000, 0)
 	block, check := collectProxmox(context.Background(), nil, now)
 	wire := dockerWire(t, block)
 	want := wantDockerWire(t, `{"vms": [
-		{"vmid": 100, "name": "web", "status": "running", "type": "qemu", "last_backup_ts": 1760086400},
-		{"vmid": 101, "name": "dns", "status": "running", "type": "lxc", "last_backup_ts": null}
+		{"vmid": 100, "name": "web", "status": "running", "type": "qemu", "last_backup_ts": 1760086400,
+		 "backup_storage": "nas", "backup_size": 1048576, "backup_jobs": []},
+		{"vmid": 101, "name": "dns", "status": "running", "type": "lxc", "last_backup_ts": null, "backup_jobs": []}
 	]}`)
 	if !reflect.DeepEqual(wire["vms"], want["vms"]) {
 		t.Errorf("vms =\n%v\nwant\n%v", wire["vms"], want["vms"])
@@ -1112,13 +1142,16 @@ func TestCollectProxmoxBackupIndex(t *testing.T) {
 		{"get", node + "/status", "--output-format", "json"},
 		{"get", "/cluster/resources", "--type", "storage", "--output-format", "json"},
 		content("local"), content("nas"), content("pbs"),
+		{"get", "/cluster/backup", "--output-format", "json"},
+		{"get", node + "/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1", "--output-format", "json"},
 		{"get", "/cluster/resources", "--type", "vm", "--output-format", "json"},
 	}
 	if !reflect.DeepEqual(*calls, wantCalls) {
 		t.Errorf("calls =\n%v\nwant\n%v", *calls, wantCalls)
 	}
 	wantCheck := &backupIndexCheck{CheckedUnix: now.Unix(), Node: strings.TrimPrefix(node, "/nodes/"),
-		Storages: []string{"local", "nas", "pbs"}, Index: map[int]int64{100: 1760086400}}
+		Storages: []string{"local", "nas", "pbs"}, Index: map[int]int64{100: 1760086400},
+		Newest: map[int]backupDetail{100: {Storage: "nas", Size: 1048576}}, Jobs: []backupJob{}}
 	if !reflect.DeepEqual(check, wantCheck) {
 		t.Errorf("check = %+v, want %+v", check, wantCheck)
 	}
@@ -1164,13 +1197,13 @@ func TestCollectProxmoxBackupIndexCache(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			calls := stubPvesh(t, map[string]dockerReply{
+			calls := stubPvesh(t, withReplies(noBackupDetails(t), map[string]dockerReply{
 				pveshNodeStatus(t):             {out: pveshNodeStatusFixture},
 				pveshStorages:                  {out: "[" + pveshStorage(t, "nas", "available") + "," + pveshStorage(t, "local", "available") + "]"},
 				pveshBackupContent(t, "local"): {out: "[" + pveshBackup("local", 100, 1760000000) + "]"},
 				pveshBackupContent(t, "nas"):   {out: "[]"},
 				pveshVMs:                       {out: pveshVMsFixture},
-			})
+			}))
 			block, check := collectProxmox(context.Background(), tc.saved, now)
 			contentCalls := 0
 			for _, c := range *calls {
@@ -1183,7 +1216,8 @@ func TestCollectProxmoxBackupIndexCache(t *testing.T) {
 				if contentCalls != 2 {
 					t.Errorf("content calls = %d, want 2 (one per storage): %v", contentCalls, *calls)
 				}
-				want := &backupIndexCheck{CheckedUnix: now.Unix(), Node: node, Storages: storages, Index: readIndex}
+				want := &backupIndexCheck{CheckedUnix: now.Unix(), Node: node, Storages: storages, Index: readIndex,
+					Newest: map[int]backupDetail{100: {Storage: "local", Size: 1048576}}, Jobs: []backupJob{}}
 				if !reflect.DeepEqual(check, want) {
 					t.Errorf("check = %+v, want the index just read %+v", check, want)
 				}
@@ -1245,4 +1279,451 @@ func TestCollectProxmoxOutageKeepsSavedIndex(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Five guests as `pvesh get /cluster/resources --type vm` lists them, on two nodes, one in a pool.
+const pveshGuestsFixture = `[
+{"id":"qemu/100","type":"qemu","vmid":100,"name":"web","status":"running","node":"pve","pool":"prod"},
+{"id":"lxc/101","type":"lxc","vmid":101,"name":"dns","status":"running","node":"pve2"},
+{"id":"qemu/102","type":"qemu","vmid":102,"name":"db","status":"stopped","node":"pve"},
+{"id":"qemu/103","type":"qemu","vmid":103,"name":"ci","status":"stopped","node":"pve"},
+{"id":"qemu/104","type":"qemu","vmid":104,"name":"mail","status":"running","node":"pve"}]`
+
+// The UPID and start of the last failed vzdump task the detail tests list.
+const (
+	backupTaskUPID  = "UPID:pve:0000ABCD:0123ABCD:68E89650:vzdump::root@pam:"
+	backupTaskStart = 1760073296
+)
+
+// pveshFailedTask is the reply of the task list with one failed vzdump task.
+func pveshFailedTask(upid string, start int64) string {
+	return fmt.Sprintf(`[{"upid":%q,"node":"pve","pid":43981,"pstart":19088333,"starttime":%d,"type":"vzdump",`+
+		`"id":"","user":"root@pam","status":"job errors","endtime":%d}]`, upid, start, start+600)
+}
+
+// pveshLog is a task log as `pvesh get /nodes/<node>/tasks/<upid>/log` prints it.
+func pveshLog(t *testing.T, lines ...string) string {
+	t.Helper()
+	type line struct {
+		N int    `json:"n"`
+		T string `json:"t"`
+	}
+	out := make([]line, len(lines))
+	for i, l := range lines {
+		out[i] = line{i + 1, l}
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// collectBackupDetails runs collectProxmox at backupDetailsNow over the storages local and pbs with the
+// content given, the guests of pveshGuestsFixture and the replies more (the details' calls). It returns
+// the guests as they go on the wire by vmid, the check and the calls.
+func collectBackupDetails(t *testing.T, local, pbs string, more map[string]dockerReply, saved *backupIndexCheck) (
+	map[int]map[string]any, *backupIndexCheck, *[][]string) {
+	t.Helper()
+	calls := stubPvesh(t, withReplies(map[string]dockerReply{
+		pveshNodeStatus(t):             {out: pveshNodeStatusFixture},
+		pveshStorages:                  {out: "[" + pveshStorage(t, "local", "available") + "," + pveshStorage(t, "pbs", "available") + "]"},
+		pveshBackupContent(t, "local"): {out: local},
+		pveshBackupContent(t, "pbs"):   {out: pbs},
+		pveshVMs:                       {out: pveshGuestsFixture},
+	}, more))
+	block, check := collectProxmox(context.Background(), saved, backupDetailsNow)
+	wire := dockerWire(t, block)
+	if wire["available"] != true {
+		t.Fatalf("block = %v, want it available", wire)
+	}
+	vms := map[int]map[string]any{}
+	for _, vm := range wire["vms"].([]any) {
+		m := vm.(map[string]any)
+		vms[int(m["vmid"].(float64))] = m
+	}
+	if len(vms) != 5 {
+		t.Fatalf("vms = %v, want all five guests", vms)
+	}
+	return vms, check, calls
+}
+
+var backupDetailsNow = time.Unix(1760090000, 0)
+
+// backupFields are the fields of a guest on the wire that begin with prefix.
+func backupFields(vm map[string]any, prefix string) map[string]any {
+	out := map[string]any{}
+	for key, value := range vm {
+		if strings.HasPrefix(key, prefix) {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func TestCollectProxmoxBackupDetails(t *testing.T) {
+	// Storage, size and verification state of each guest's newest backup, across the storages. PBS lists
+	// a size it does not know as 1: no size then, as for a missing one and one past what a float64
+	// holds exactly. A verification state that is no short lowercase word is left out.
+	local := "[" + pveshBackup("local", 100, 1760000000) + "," +
+		`{"volid":"local:backup/vzdump-qemu-102-x.vma.zst","vmid":102,"ctime":1760000000},` +
+		`{"volid":"local:backup/vzdump-qemu-103-x.vma.zst","vmid":103,"ctime":1760000000,"size":9007199254740992}]`
+	pbs := `[{"volid":"pbs:backup/vm/100/2025-10-10T09:46:40Z","vmid":100,"ctime":1760086400,"size":2147483648,` +
+		`"verification":{"state":"ok","upid":"UPID:pbs:00001234:00005678:00000001:68E89650:verify:store:root@pam:"}},` +
+		`{"volid":"pbs:backup/ct/101/2025-10-09T08:53:20Z","vmid":101,"ctime":1760000000,"size":1,"verification":{"state":"failed"}},` +
+		`{"volid":"pbs:backup/vm/104/2025-10-09T08:53:20Z","vmid":104,"ctime":1760000000,"size":4096,` +
+		`"verification":{"state":"OK; see /var/log/proxmox-backup"}}]`
+	vms, check, _ := collectBackupDetails(t, local, pbs, noBackupDetails(t), nil)
+	want := map[int]map[string]any{
+		100: {"backup_storage": "pbs", "backup_size": float64(2147483648), "backup_verify": "ok"},
+		101: {"backup_storage": "pbs", "backup_verify": "failed"},
+		102: {"backup_storage": "local"},
+		103: {"backup_storage": "local"},
+		104: {"backup_storage": "pbs", "backup_size": float64(4096)},
+	}
+	for vmid, w := range want {
+		got := backupFields(vms[vmid], "backup_")
+		delete(got, "backup_jobs")
+		if !reflect.DeepEqual(got, w) {
+			t.Errorf("vm %d details = %v, want %v", vmid, got, w)
+		}
+	}
+	if check.Newest[100] != (backupDetail{Storage: "pbs", Size: 2147483648, Verify: "ok"}) || len(check.Newest) != 5 {
+		t.Errorf("check.Newest = %+v, want the newest backup of each guest", check.Newest)
+	}
+}
+
+// pveshJobsFixture are backup jobs as `pvesh get /cluster/backup` lists them, with the booleans as
+// numbers, strings and JSON booleans, as the API hands them on.
+const pveshJobsFixture = `[
+{"id":"backup-a","type":"vzdump","enabled":1,"schedule":"daily","storage":"local","vmid":"100,101"},
+{"id":"backup-b","type":"vzdump","schedule":"sun 01:00","storage":"pbs","all":1,"exclude":"101 102;103,104"},
+{"id":"backup-c","type":"vzdump","enabled":"1","schedule":"hourly","storage":"pbs","pool":"prod","vmid":"102"},
+{"id":"backup-d","type":"vzdump","enabled":true,"schedule":"weekly","storage":"local","all":"yes","node":"pve2"},
+{"id":"backup-e","type":"vzdump","enabled":0,"schedule":"daily","storage":"local","all":1},
+{"id":"backup-f","type":"vzdump","enabled":"off","schedule":"daily","storage":"local","vmid":"102"},
+{"id":"backup-g","type":"vzdump","enabled":"True","schedule":"02:30","storage":"pbs","vmid":102,
+ "mailto":"admin@example.com","comment":"db nightly","notes-template":"{{guestname}}","mailnotification":"always"},
+{"id":"bad\nid","type":"vzdump","schedule":"daily","storage":"local","vmid":"104"},
+{"id":"backup-i","type":"vzdump","schedule":"daily","storage":"local"},
+{"id":"backup-j","type":"vzdump","schedule":"daily","storage":"local","pool":"Prod"},
+{"id":"backup-k","type":"vzdump","schedule":"daily","storage":"local","all":0,"node":"pve"}
+]`
+
+func TestCollectProxmoxBackupJobs(t *testing.T) {
+	// Each guest names the enabled jobs that back it up, by vzdump's rule: a pool selects its members
+	// (exactly), else a VMID list its guests, else all but the excluded; a job bound to a node only the
+	// guests on it. A disabled job and one that selects nothing name no guest; a guest without a job
+	// gets an empty list. An id that is no label is left out; mail addresses, comments and note
+	// templates are never kept.
+	vms, check, _ := collectBackupDetails(t, "[]", "[]", withReplies(noBackupDetails(t),
+		map[string]dockerReply{pveshJobs: {out: pveshJobsFixture}}), nil)
+	job := func(id, schedule, storage string) map[string]any {
+		out := map[string]any{"schedule": schedule, "storage": storage}
+		if id != "" {
+			out["id"] = id
+		}
+		return out
+	}
+	want := map[int][]map[string]any{
+		100: {job("backup-a", "daily", "local"), job("backup-b", "sun 01:00", "pbs"), job("backup-c", "hourly", "pbs")},
+		101: {job("backup-a", "daily", "local"), job("backup-d", "weekly", "local")},
+		102: {job("backup-g", "02:30", "pbs")},
+		103: {},
+		104: {job("", "daily", "local")},
+	}
+	for vmid, w := range want {
+		wantWire := dockerWire(t, map[string]any{"backup_jobs": w})["backup_jobs"]
+		if got := vms[vmid]["backup_jobs"]; !reflect.DeepEqual(got, wantWire) {
+			t.Errorf("vm %d backup_jobs = %v, want %v", vmid, got, wantWire)
+		}
+	}
+	if len(check.Jobs) != 9 {
+		t.Errorf("check.Jobs = %+v, want the nine enabled jobs", check.Jobs)
+	}
+	raw, err := json.Marshal(check.Jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"admin@example.com", "db nightly", "guestname", "mailnotification", "always"} {
+		if strings.Contains(string(raw), field) {
+			t.Errorf("saved jobs %s keep %q", raw, field)
+		}
+	}
+}
+
+func TestCollectProxmoxBackupJobsCapped(t *testing.T) {
+	// At most maxBackupJobs jobs are kept, in the order of the list; disabled jobs do not count.
+	items := []string{`{"id":"off-1","enabled":0,"all":1}`, `{"id":"off-2","enabled":"0","all":1}`}
+	for i := range maxBackupJobs + 6 {
+		items = append(items, fmt.Sprintf(`{"id":"job-%d","schedule":"daily","storage":"local","all":1}`, i))
+	}
+	vms, check, _ := collectBackupDetails(t, "[]", "[]", withReplies(noBackupDetails(t),
+		map[string]dockerReply{pveshJobs: {out: "[" + strings.Join(items, ",") + "]"}}), nil)
+	var ids []string
+	for _, job := range check.Jobs {
+		ids = append(ids, job.ID)
+	}
+	if len(ids) != maxBackupJobs || ids[0] != "job-0" || ids[maxBackupJobs-1] != fmt.Sprintf("job-%d", maxBackupJobs-1) {
+		t.Errorf("check.Jobs = %v, want job-0 … job-%d", ids, maxBackupJobs-1)
+	}
+	if jobs, _ := vms[100]["backup_jobs"].([]any); len(jobs) != maxBackupJobs {
+		t.Errorf("vm 100 names %d jobs, want %d", len(jobs), maxBackupJobs)
+	}
+}
+
+func TestCollectProxmoxReadsPVEBooleansAndVMIDLists(t *testing.T) {
+	// The booleans and VMID lists of the PVE API in the forms pvesh prints them (PVE::JSONSchema
+	// parse_boolean, PVE::Tools split_list).
+	for _, tc := range []struct {
+		v         any
+		def, want bool
+	}{
+		{true, false, true}, {false, true, false}, {float64(1), false, true}, {float64(0), true, false},
+		{"1", false, true}, {"ON", false, true}, {"yes", false, true}, {"True", false, true},
+		{"0", true, false}, {"off", true, false}, {"No", true, false}, {"FALSE", true, false},
+		{"maybe", true, true}, {"maybe", false, false}, {nil, true, true}, {nil, false, false},
+		{[]any{}, true, true},
+	} {
+		if got := pveBool(tc.v, tc.def); got != tc.want {
+			t.Errorf("pveBool(%#v, %v) = %v, want %v", tc.v, tc.def, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		v    any
+		want []int
+	}{
+		{"100,101", []int{100, 101}},
+		{"100 101;102,\t103", []int{100, 101, 102, 103}},
+		{"100\x00101", []int{100, 101}},
+		{"100\x00101 102", []int{100}},
+		{float64(102), []int{102}},
+		{"0,100,-1,1e3,abc,101x,", []int{100}},
+		{"", nil},
+		{nil, nil},
+		{true, nil},
+	} {
+		if got := vmidList(tc.v); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("vmidList(%#v) = %v, want %v", tc.v, got, tc.want)
+		}
+	}
+}
+
+func TestCollectProxmoxBackupErrors(t *testing.T) {
+	// The errors vzdump logged per guest in the node's last failed vzdump task, capped and without
+	// control characters. A guest whose newest backup is newer than that task's start shows none: its
+	// error is over. Other lines, and lines that only look alike, name no guest.
+	local := "[" + pveshBackup("local", 100, 1760000000) + "," + pveshBackup("local", 101, backupTaskStart+600) + "]"
+	long := "disk\afull " + strings.Repeat("ü", 300)
+	vms, check, calls := collectBackupDetails(t, local, "[]", map[string]dockerReply{
+		pveshJobs:     {out: "[]"},
+		pveshTasks(t): {out: pveshFailedTask(backupTaskUPID, backupTaskStart)},
+		pveshTaskLog(t, backupTaskUPID): {out: pveshLog(t,
+			"INFO: starting new backup job: vzdump 100 101 102 103 --storage local --mode snapshot",
+			"INFO: Starting Backup of VM 100 (qemu)",
+			"ERROR: Backup of VM 100 failed - unable to create temporary directory '/var/tmp/vzdumptmp1' at /usr/share/perl5/PVE/VZDump.pm line 1000.",
+			"ERROR: Backup of VM 101 failed - old error",
+			"INFO: Finished Backup of VM 101 (00:00:10)",
+			"ERROR: Backup of VM 102 failed - "+long,
+			" ERROR: Backup of VM 103 failed - indented",
+			"ERROR: Backup of VM abc failed - no vmid",
+			"ERROR: Backup of VM 0 failed - vmid 0",
+			"ERROR: Backup job failed with errors",
+		)},
+	}, nil)
+	capped := "disk full " + strings.Repeat("ü", maxBackupErrorRunes-len("disk full "))
+	wantErrors := map[int]backupError{
+		100: {backupTaskStart, "unable to create temporary directory '/var/tmp/vzdumptmp1' at /usr/share/perl5/PVE/VZDump.pm line 1000."},
+		101: {backupTaskStart, "old error"},
+		102: {backupTaskStart, capped},
+	}
+	if check.ErrorTask != backupTaskUPID || !reflect.DeepEqual(check.Errors, wantErrors) {
+		t.Errorf("check = %q %+v, want %q %+v", check.ErrorTask, check.Errors, backupTaskUPID, wantErrors)
+	}
+	want := map[int]map[string]any{
+		100: {"backup_error": wantErrors[100].Text, "backup_error_ts": float64(backupTaskStart)},
+		101: {},
+		102: {"backup_error": capped, "backup_error_ts": float64(backupTaskStart)},
+		103: {},
+		104: {},
+	}
+	for vmid, w := range want {
+		if got := backupFields(vms[vmid], "backup_error"); !reflect.DeepEqual(got, w) {
+			t.Errorf("vm %d = %v, want %v", vmid, got, w)
+		}
+	}
+	wantLog := []string{"get", pveshTaskLog(t, backupTaskUPID), "--limit", "10000", "--output-format", "json"}
+	if last := (*calls)[len(*calls)-2]; !reflect.DeepEqual(last, wantLog) {
+		t.Errorf("log call = %q, want %q", last, wantLog)
+	}
+}
+
+func TestCollectProxmoxBackupErrorsTask(t *testing.T) {
+	// The log of the task the saved index names is not read again: its errors are the saved ones. The
+	// log of another task is read; a task whose UPID is no vzdump task of PVE's form, or that has no
+	// start, stays unread; no failed task leaves no errors.
+	node := strings.TrimPrefix(pveshNode(t), "/nodes/")
+	old := backupDetailsNow.Add(-proxmoxBackupsEvery).Unix()
+	savedErrors := map[int]backupError{100: {backupTaskStart, "saved error"}}
+	saved := func(task string) *backupIndexCheck {
+		return &backupIndexCheck{CheckedUnix: old, Node: node, Storages: []string{"local", "pbs"},
+			Index: map[int]int64{}, ErrorTask: task, Errors: savedErrors}
+	}
+	logged := map[int]backupError{100: {backupTaskStart, "read error"}}
+	logReply := dockerReply{out: pveshLog(t, "ERROR: Backup of VM 100 failed - read error")}
+	cases := []struct {
+		name       string
+		saved      *backupIndexCheck
+		tasks      string
+		logUPID    string
+		wantTask   string
+		wantErrors map[int]backupError
+		warn       bool
+	}{
+		{"same task saved", saved(backupTaskUPID), pveshFailedTask(backupTaskUPID, backupTaskStart), "",
+			backupTaskUPID, savedErrors, false},
+		{"other task saved", saved("UPID:pve:0000ABCD:0123ABCD:68E80000:vzdump::root@pam:"),
+			pveshFailedTask(backupTaskUPID, backupTaskStart), backupTaskUPID, backupTaskUPID, logged, false},
+		{"no task saved", saved(""), pveshFailedTask(backupTaskUPID, backupTaskStart), backupTaskUPID,
+			backupTaskUPID, logged, false},
+		{"token user", nil, pveshFailedTask("UPID:pve:0000ABCD:0123ABCD:68E89650:vzdump:100:root@pam!backup:", backupTaskStart),
+			"UPID:pve:0000ABCD:0123ABCD:68E89650:vzdump:100:root@pam!backup:",
+			"UPID:pve:0000ABCD:0123ABCD:68E89650:vzdump:100:root@pam!backup:", logged, false},
+		{"other task type", nil, pveshFailedTask("UPID:pve:0000ABCD:0123ABCD:68E89650:qmstart:100:root@pam:", backupTaskStart),
+			"", "", nil, true},
+		{"path in the user", nil, pveshFailedTask("UPID:pve:0000ABCD:0123ABCD:68E89650:vzdump::root@pam/../x:", backupTaskStart),
+			"", "", nil, true},
+		{"no start", nil, pveshFailedTask(backupTaskUPID, 0), "", "", nil, true},
+		{"no upid", nil, `[{"starttime":1760073296,"type":"vzdump","status":"job errors"}]`, "", "", nil, true},
+		{"no failed task", saved(backupTaskUPID), "[]", "", "", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			more := map[string]dockerReply{pveshJobs: {out: "[]"}, pveshTasks(t): {out: tc.tasks}}
+			if tc.logUPID != "" {
+				more[pveshTaskLog(t, tc.logUPID)] = logReply
+			}
+			logs := captureWarnings(t)
+			_, check, calls := collectBackupDetails(t, "[]", "[]", more, tc.saved)
+			if check.ErrorTask != tc.wantTask || !reflect.DeepEqual(check.Errors, tc.wantErrors) {
+				t.Errorf("check = %q %+v, want %q %+v", check.ErrorTask, check.Errors, tc.wantTask, tc.wantErrors)
+			}
+			logCalls := 0
+			for _, c := range *calls {
+				if strings.HasSuffix(c[1], "/log") {
+					logCalls++
+				}
+			}
+			wantCalls := 0
+			if tc.logUPID != "" {
+				wantCalls = 1
+			}
+			if logCalls != wantCalls {
+				t.Errorf("log calls = %d, want %d: %v", logCalls, wantCalls, *calls)
+			}
+			line := "last failed backup task of " + node + " unreadable, backup errors left out"
+			if strings.Contains(logs.String(), line) != tc.warn {
+				t.Errorf("log = %q, want the warning %q: %v", logs.String(), line, tc.warn)
+			}
+		})
+	}
+}
+
+func TestCollectProxmoxBackupDetailCallFails(t *testing.T) {
+	// A detail that cannot be read leaves only its part out, logged (diagnose); the block stays
+	// available with the index and the other details.
+	node := pveshNode(t)
+	fails := runHelperDocker(t, "fail", time.Minute)
+	logPath := pveshTaskLog(t, backupTaskUPID)
+	local := "[" + pveshBackup("local", 100, 1760000000) + "]"
+	ok := map[string]dockerReply{
+		pveshJobs:     {out: `[{"id":"backup-a","schedule":"daily","storage":"local","all":1}]`},
+		pveshTasks(t): {out: pveshFailedTask(backupTaskUPID, backupTaskStart)},
+		logPath:       {out: pveshLog(t, "ERROR: Backup of VM 100 failed - no space left on device")},
+	}
+	cases := []struct {
+		name       string
+		replies    map[string]dockerReply
+		jobs, errs bool
+		warning    string
+	}{
+		{"jobs fail", map[string]dockerReply{pveshJobs: {err: fails}}, false, true,
+			"pvesh get /cluster/backup failed: exit status 3, backup jobs left out (cli_failed)"},
+		{"jobs time out", map[string]dockerReply{pveshJobs: {err: context.DeadlineExceeded}}, false, true,
+			"pvesh get /cluster/backup timed out after 15s, backup jobs left out (timeout)"},
+		{"jobs null", map[string]dockerReply{pveshJobs: {out: "null"}}, false, true,
+			"pvesh get /cluster/backup output unreadable, backup jobs left out (parse_failed)"},
+		{"tasks fail", map[string]dockerReply{pveshTasks(t): {err: fails}}, true, false,
+			"pvesh get " + node + "/tasks failed: exit status 3, backup errors left out (cli_failed)"},
+		{"tasks not json", map[string]dockerReply{pveshTasks(t): {out: "not json"}}, true, false,
+			"pvesh get " + node + "/tasks output unreadable, backup errors left out (parse_failed)"},
+		{"log fails", map[string]dockerReply{logPath: {err: fails}}, true, false,
+			"pvesh get " + logPath + " failed: exit status 3, backup errors left out (cli_failed)"},
+		{"log times out", map[string]dockerReply{logPath: {err: context.DeadlineExceeded}}, true, false,
+			"pvesh get " + logPath + " timed out after 15s, backup errors left out (timeout)"},
+		{"log null", map[string]dockerReply{logPath: {out: "null"}}, true, false,
+			"pvesh get " + logPath + " output unreadable, backup errors left out (parse_failed)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureWarnings(t)
+			vms, check, _ := collectBackupDetails(t, local, "[]", withReplies(ok, tc.replies), nil)
+			vm := vms[100]
+			if vm["last_backup_ts"] != float64(1760000000) || vm["backup_storage"] != "local" {
+				t.Errorf("vm 100 = %v, want its backup and its storage", vm)
+			}
+			if _, has := vm["backup_jobs"]; has != tc.jobs || (check.Jobs != nil) != tc.jobs {
+				t.Errorf("vm 100 backup_jobs = %v, check.Jobs = %+v, want them: %v", vm["backup_jobs"], check.Jobs, tc.jobs)
+			}
+			if _, has := vm["backup_error"]; has != tc.errs || (check.ErrorTask != "") != tc.errs {
+				t.Errorf("vm 100 backup_error = %v, check.ErrorTask = %q, want them: %v", vm["backup_error"], check.ErrorTask, tc.errs)
+			}
+			if !strings.Contains(logs.String(), tc.warning) {
+				t.Errorf("log = %q, want it to name %q", logs.String(), tc.warning)
+			}
+		})
+	}
+}
+
+func TestCollectProxmoxBackupDetailsOfASavedIndex(t *testing.T) {
+	// A fresh saved index is the index with its details, without a call for them; one an older agent
+	// saved has no details, and its guests go out without them until the next read.
+	node := strings.TrimPrefix(pveshNode(t), "/nodes/")
+	fresh := func(details bool) *backupIndexCheck {
+		c := &backupIndexCheck{CheckedUnix: backupDetailsNow.Unix() - 60, Node: node, Storages: []string{"local", "pbs"},
+			Index: map[int]int64{100: 1760000000}}
+		if details {
+			c.Newest = map[int]backupDetail{100: {Storage: "pbs", Size: 4096, Verify: "ok"}}
+			c.Jobs = []backupJob{{ID: "backup-a", Schedule: "daily", Storage: "pbs", VMIDs: []int{100}}}
+			c.ErrorTask = backupTaskUPID
+			c.Errors = map[int]backupError{102: {backupTaskStart, "no space left on device"}}
+		}
+		return c
+	}
+	t.Run("older agent", func(t *testing.T) {
+		vms, _, calls := collectBackupDetails(t, "[]", "[]", nil, fresh(false))
+		for vmid, vm := range vms {
+			if got := backupFields(vm, "backup_"); len(got) != 0 {
+				t.Errorf("vm %d details = %v, want none", vmid, got)
+			}
+		}
+		if len(*calls) != 3 {
+			t.Errorf("calls = %v, want status, storages and guests only", *calls)
+		}
+	})
+	t.Run("with details", func(t *testing.T) {
+		vms, _, calls := collectBackupDetails(t, "[]", "[]", nil, fresh(true))
+		want := wantDockerWire(t, `{"backup_storage": "pbs", "backup_size": 4096, "backup_verify": "ok",
+			"backup_jobs": [{"id": "backup-a", "schedule": "daily", "storage": "pbs"}]}`)
+		if got := backupFields(vms[100], "backup_"); !reflect.DeepEqual(got, want) {
+			t.Errorf("vm 100 details = %v, want %v", got, want)
+		}
+		wantError := map[string]any{"backup_error": "no space left on device", "backup_error_ts": float64(backupTaskStart)}
+		if got := backupFields(vms[102], "backup_error"); !reflect.DeepEqual(got, wantError) {
+			t.Errorf("vm 102 = %v, want %v", got, wantError)
+		}
+		if len(*calls) != 3 {
+			t.Errorf("calls = %v, want status, storages and guests only", *calls)
+		}
+	})
 }

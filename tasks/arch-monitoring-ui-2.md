@@ -46,8 +46,10 @@ Review: approve (.ah-out/review/arch-monitoring-ui-2/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestCollectDocker|TestParseDockerPS
 Doku: → T12
 
-### T4 — Agent: Proxmox-Backup mit Storage, Größe, Job, Fehler, PBS-Verify (R-1227)  [ ]
+### T4 — Agent: Proxmox-Backup mit Storage, Größe, Job, Fehler, PBS-Verify (R-1227)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @596d6eabc 2026-11-12T12:25:58+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-2/T4.verdict.json)
 Änderung: PVE-API-Viewer vorher lesen. `buildBackupIndex` nimmt aus den Content-Einträgen, die es schon liest, je Gast Storage, `size` und `verification.state` des neuesten Backups; neue Allowlist-Aufrufe `pvesh get /cluster/backup` (Job je Gast: ID, Zeitplan, Ziel-Storage) und `pvesh get /nodes/<node>/tasks` mit `--typefilter vzdump --errors 1 --limit <n>`, für den jüngsten fehlgeschlagenen Lauf sein Log (`/nodes/<node>/tasks/<upid>/log`, neue Klasse `upid`) und daraus nur `ERROR: Backup of VM <id> failed - <text>` je Gast (Text gekappt). Alles im 30-min-Cache von `backupIndexCheck` (alter Zustand bleibt lesbar). Ein gescheiterter Zusatzaufruf lässt nur sein Feld weg. Tests: Fixtures aus der dokumentierten Form, Cache, fehlende Rechte, Allowlist positiv und Fallen (UPID mit fremdem Typ, Pfad außerhalb `tasks`).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestCollectProxmox|TestReportStateProxmoxBackups|TestBuildReportCarriesProxmoxBackups|TestAllowlist
 Doku: → T12
@@ -119,3 +121,11 @@ Task-Review: am Ende
 - 2026-11-12 T3: `ports` als `host_ip:host_port->port/proto` wie die Ports-Spalte von `docker ps` (IPv6 in Klammern über `net.JoinHostPort`, Bindung ohne Adresse ohne Host-Teil), sortiert, dedupliziert, höchstens 64 (wie `maxContainerPorts` der Discovery); Adresse über `netip.ParseAddr`, Ports als Zahl 1–65535 normalisiert, Protokoll nur tcp/udp/sctp — der Daemon-Ausgabe wird nicht ungeprüft vertraut
 - 2026-11-12 T3: `started_at` als Unix-Sekunden wie `last_backup_ts`, auch für gestoppte Container (letzter Start); die Nullzeit eines nie gestarteten Containers lässt das Feld weg — der Desktop rechnet die Laufzeit nur für laufende
 - 2026-11-12 T3: Fixture aus echtem Docker 29.9 (API 1.56, drei Wegwerf-Container auf der Dev-Box, Ports nur auf Loopback, danach entfernt)
+- 2026-11-12 T4: Jobs, letzter Fehler und Größe/Verifikation werden nur zusammen mit dem Backup-Index gelesen (alle 30 min, `proxmoxBackupsEvery`), nie einzeln; ein Teil, der sich nicht lesen lässt, fehlt nur selbst — der Index und Status/Meldung/Metriken des Checks bleiben unverändert; ein frischer Index eines älteren Agenten trägt bis zum nächsten Lesen keine Details
+- 2026-11-12 T4: Größe nur bei 1 < size < 2^53 — PBSPlugin.pm setzt `size => $item->{size} // 1` für unbekannte Größe; Verifikationszustand nur, wenn er `^[a-z][a-z0-9_-]{0,31}$` trifft
+- 2026-11-12 T4: Jobs aus `/cluster/backup`, deaktivierte (`enabled` nach `parse_boolean`) verworfen, höchstens 64; ID, Zeitplan und Speicher über `labelText` (Steuerzeichen oder über 255 Zeichen ⇒ weggelassen); Mail-Adressen, Kommentare und Notiz-Vorlagen der Jobs werden nie gelesen (Feld-Freigabe)
+- 2026-11-12 T4: Abdeckung wie `VZDump.pm get_included_guests`: `pool` (nur direkte Mitglieder, `get_resource_pool_guest_members`) vor `vmid`-Liste vor `all` minus `exclude`, gefiltert auf den Knoten des Jobs — ein Pool-Job deckt keinen Gast über seine vmid-Liste
+- 2026-11-12 T4: letzter Fehler aus der jüngsten vzdump-Task mit `--statusfilter error` (nicht `--errors 1`, das auch Warnungen zählt), deren Log mit `--limit 10000` (ein Gast schreibt etwa 20–50 Zeilen); nur Zeilen `ERROR: Backup of VM <id> failed - <text>`, Text mit Steuerzeichen als Leerzeichen und auf 200 Zeichen gekappt
+- 2026-11-12 T4: der Log-Aufruf wird vorher gegen die Allowlist geprüft (`commandAllowed`), die UPID-Klasse nimmt nur `vzdump`-UPIDs ohne `/` und `:` im Benutzer — die UPID kommt aus der Ausgabe von pvesh, nicht aus eigenem Code
+- 2026-11-12 T4: dieselbe UPID wie im gespeicherten Zustand ⇒ Log nicht erneut lesen; ein Fehler gilt nur, solange seine Task nicht vor dem neuesten Backup des Gasts startete (ein späteres erfolgreiches Backup löscht ihn)
+- 2026-11-12 T4: nicht auf echter PVE verifiziert — Formate aus pve-manager/pve-common/pve-storage-Quellen und dem API-Viewer; Befund 1/2 bleibt nach §10 Entscheidung 7 Kevins Wort

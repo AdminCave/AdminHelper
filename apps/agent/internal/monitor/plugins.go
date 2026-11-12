@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -163,13 +164,19 @@ func putDockerDetails(entry map[string]any, in dockerInspect) {
 // character, else "" — the discovery's rule: a cut name would group the container under another
 // project.
 func composeLabel(labels map[string]string, key string) string {
-	s := labels[key]
-	control := func(r rune) bool { return r < 0x20 || r == 0x7f }
-	if utf8.RuneCountInString(s) > maxComposeLabel || strings.ContainsFunc(s, control) {
+	return labelText(labels[key])
+}
+
+// labelText is s if it fits maxComposeLabel characters without a control character, else "".
+func labelText(s string) string {
+	if utf8.RuneCountInString(s) > maxComposeLabel || strings.ContainsFunc(s, isControl) {
 		return ""
 	}
 	return s
 }
+
+// isControl reports a C0 control character or DEL.
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 
 // publishedPorts are the host bindings of the port map m (keyed <port>/<protocol>) as
 // host_ip:host_port->port/protocol, the host part as the docker CLI writes it ([::]:8080 for IPv6, no
@@ -388,13 +395,17 @@ func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time)
 		if ts, ok := backupIndex[vmid]; ok {
 			lastBackup = ts
 		}
-		vmList = append(vmList, map[string]any{
+		entry := map[string]any{
 			"vmid":           vmid,
 			"name":           vm["name"],
 			"status":         vm["status"],
 			"type":           vm["type"],
 			"last_backup_ts": lastBackup,
-		})
+		}
+		guestNode, _ := vm["node"].(string)
+		pool, _ := vm["pool"].(string)
+		check.putBackupDetails(entry, vmid, guestNode, pool)
+		vmList = append(vmList, entry)
 	}
 	return map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}, check
 }
@@ -419,6 +430,23 @@ func proxmoxUnavailable(code, text string) map[string]any {
 // lists a PBS datastore over the network), so it runs at most this often, not in every report.
 const proxmoxBackupsEvery = 30 * time.Minute
 
+const (
+	// maxBackupJobs caps the backup jobs kept from /cluster/backup, and so the jobs one guest names.
+	maxBackupJobs = 64
+	// maxBackupErrorRunes caps the text of a guest's vzdump error (Feld-Freigabe, Konzept §3.13).
+	maxBackupErrorRunes = 200
+	// backupLogLines caps the lines read from the log of a failed vzdump task: some 20 to 50 per guest.
+	backupLogLines = 10000
+)
+
+// reBackupError is the line vzdump writes to its task log for a guest whose backup failed
+// (pve-guest-common VZDump/Plugin.pm debugmsg: "ERROR: " and the message, without a timestamp;
+// pve-manager PVE/VZDump.pm: "Backup of VM <vmid> failed - <first line of the error>").
+var reBackupError = regexp.MustCompile(`^ERROR: Backup of VM ([0-9]+) failed - (.*)$`)
+
+// reVerifyState is a verification state as PBS reports it (ok, failed): a short lowercase word.
+var reVerifyState = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
 // buildBackupIndex returns the lookup map vmid -> newest backup ctime over the local node's backup
 // storages, and the check to save. nodeName is the resolved local node (not the literal "localhost",
 // on which pvesh's implicit mapping is undocumented and could silently break).
@@ -428,7 +456,9 @@ const proxmoxBackupsEvery = 30 * time.Minute
 // instead of O(VMs × Storages), and only when saved is not fresh (backupIndexCheck.fresh); else the
 // saved index is the index. An incomplete index returns nil with the outage code and its text for
 // proxmoxUnavailable, a complete one code "": a call could not be read (pveshGet), or a backup
-// storage is not available (backup_index_incomplete).
+// storage is not available (backup_index_incomplete). The details are read with the index, never on
+// their own: the newest backup per guest from the same content, the backup jobs and the errors of the
+// last failed vzdump task; a detail that cannot be read only leaves its part out.
 func buildBackupIndex(ctx context.Context, nodeName string, saved *backupIndexCheck, now time.Time) (
 	index map[int]int64, check *backupIndexCheck, code, text string) {
 	var resources []map[string]any
@@ -456,6 +486,7 @@ func buildBackupIndex(ctx context.Context, nodeName string, saved *backupIndexCh
 	}
 
 	index = make(map[int]int64)
+	newest := make(map[int]backupDetail)
 	for _, sid := range storages {
 		// Fetch all backups of this storage at once (without the --vmid filter)
 		var items []map[string]any
@@ -471,10 +502,230 @@ func buildBackupIndex(ctx context.Context, nodeName string, saved *backupIndexCh
 			ct := int64(getFloat(item, "ctime", 0))
 			if ct > index[vmid] {
 				index[vmid] = ct
+				newest[vmid] = backupDetailOf(sid, item)
 			}
 		}
 	}
-	return index, &backupIndexCheck{CheckedUnix: now.Unix(), Node: nodeName, Storages: storages, Index: index}, "", ""
+	check = &backupIndexCheck{CheckedUnix: now.Unix(), Node: nodeName, Storages: storages, Index: index, Newest: newest}
+	check.Jobs = readBackupJobs(ctx)
+	check.ErrorTask, check.Errors = readBackupErrors(ctx, nodeName, saved)
+	return index, check, "", ""
+}
+
+// backupDetailOf is the detail of the backup item, a content entry of storage: its size, unless PBS
+// lists it as 1 for a size it does not know (pve-storage PBSPlugin.pm), and its verification state.
+func backupDetailOf(storage string, item map[string]any) backupDetail {
+	d := backupDetail{Storage: storage}
+	if size := getFloat(item, "size", 0); size > 1 && size < 1<<53 {
+		d.Size = int64(size)
+	}
+	if verification, ok := item["verification"].(map[string]any); ok {
+		if state, _ := verification["state"].(string); reVerifyState.MatchString(state) {
+			d.Verify = state
+		}
+	}
+	return d
+}
+
+// readBackupJobs returns the enabled vzdump jobs of the cluster (`pvesh get /cluster/backup`, jobs of
+// vzdump.cron and jobs.cfg; pve-manager PVE/API2/Backup.pm), at most maxBackupJobs, in its order; nil
+// when they could not be read, which leaves the jobs out of the report. A disabled job runs never
+// (enabled defaults to 1).
+func readBackupJobs(ctx context.Context) []backupJob {
+	var items []map[string]any
+	if code, text := pveshGet(ctx, &items, "/cluster/backup"); code != "" {
+		logger.Warnf("%s, backup jobs left out (%s)", text, code)
+		return nil
+	}
+	jobs := []backupJob{}
+	for _, item := range items {
+		if !pveBool(item["enabled"], true) {
+			continue
+		}
+		if len(jobs) == maxBackupJobs {
+			break
+		}
+		pool, _ := item["pool"].(string)
+		node, _ := item["node"].(string)
+		jobs = append(jobs, backupJob{
+			ID:       labelText(pveString(item["id"])),
+			Schedule: labelText(pveString(item["schedule"])),
+			Storage:  labelText(pveString(item["storage"])),
+			Pool:     pool,
+			VMIDs:    vmidList(item["vmid"]),
+			All:      pveBool(item["all"], false),
+			Exclude:  vmidList(item["exclude"]),
+			Node:     node,
+		})
+	}
+	return jobs
+}
+
+// readBackupErrors returns the UPID of the last failed vzdump task on node and the errors its log
+// names per guest; "" and nil when there is none or it could not be read. Failed means an error
+// status (--statusfilter error, PVE::UPID status_is_error), not one with warnings only. The log of the
+// task saved names is not read again: its errors are saved's.
+func readBackupErrors(ctx context.Context, node string, saved *backupIndexCheck) (string, map[int]backupError) {
+	var tasks []map[string]any
+	path := "/nodes/" + node + "/tasks"
+	if code, text := pveshGet(ctx, &tasks, path, "--typefilter", "vzdump", "--statusfilter", "error",
+		"--limit", "1"); code != "" {
+		logger.Warnf("%s, backup errors left out (%s)", text, code)
+		return "", nil
+	}
+	if len(tasks) == 0 {
+		return "", nil
+	}
+	upid, _ := tasks[0]["upid"].(string)
+	start := int64(getFloat(tasks[0], "starttime", 0))
+	if saved != nil && saved.ErrorTask != "" && saved.ErrorTask == upid {
+		return upid, saved.Errors
+	}
+	logPath := path + "/" + upid + "/log"
+	limit := strconv.Itoa(backupLogLines)
+	// The UPID comes from pvesh: one that is no vzdump task of this form stays unread rather than
+	// becoming a refused call.
+	if start <= 0 || !commandAllowed("pvesh", []string{"get", logPath, "--limit", limit, "--output-format", "json"}) {
+		logger.Warnf("last failed backup task of %s unreadable, backup errors left out", node)
+		return "", nil
+	}
+	var lines []struct {
+		T string `json:"t"`
+	}
+	if code, text := pveshGet(ctx, &lines, logPath, "--limit", limit); code != "" {
+		logger.Warnf("%s, backup errors left out (%s)", text, code)
+		return "", nil
+	}
+	errs := map[int]backupError{}
+	for _, line := range lines {
+		m := reBackupError.FindStringSubmatch(line.T)
+		if m == nil {
+			continue
+		}
+		if vmid, err := strconv.Atoi(m[1]); err == nil && vmid > 0 {
+			errs[vmid] = backupError{Unix: start, Text: capBackupError(m[2])}
+		}
+	}
+	return upid, errs
+}
+
+// capBackupError is text with each control character as a space, cut to maxBackupErrorRunes.
+func capBackupError(text string) string {
+	runes := []rune(strings.Map(func(r rune) rune {
+		if isControl(r) {
+			return ' '
+		}
+		return r
+	}, text))
+	if len(runes) > maxBackupErrorRunes {
+		runes = runes[:maxBackupErrorRunes]
+	}
+	return string(runes)
+}
+
+// pveString is v if it is a string, else "".
+func pveString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+// pveBool reads a boolean of the PVE API, which pvesh prints as a number, a string or a JSON boolean
+// depending on where the value comes from; a string as PVE::JSONSchema parse_boolean reads it. A
+// missing or unreadable value is def.
+func pveBool(v any, def bool) bool {
+	switch b := v.(type) {
+	case bool:
+		return b
+	case float64:
+		return b != 0
+	case string:
+		switch strings.ToLower(b) {
+		case "1", "on", "yes", "true":
+			return true
+		case "0", "off", "no", "false":
+			return false
+		}
+	}
+	return def
+}
+
+// vmidList reads a pve-vmid-list (a string of VMIDs, split as PVE::Tools split_list does: on NUL if it
+// has one, else on ',', ';' and whitespace) or a single number; tokens that are no VMID are skipped,
+// as is 0 (vzdump check_vmids).
+func vmidList(v any) []int {
+	var tokens []string
+	switch s := v.(type) {
+	case float64:
+		tokens = []string{strconv.FormatFloat(s, 'f', -1, 64)}
+	case string:
+		if strings.Contains(s, "\x00") {
+			tokens = strings.Split(s, "\x00")
+		} else {
+			tokens = strings.Fields(strings.NewReplacer(",", " ", ";", " ").Replace(s))
+		}
+	}
+	var ids []int
+	for _, tok := range tokens {
+		if tok == "" || strings.Trim(tok, "0123456789") != "" {
+			continue
+		}
+		if id, err := strconv.Atoi(tok); err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// covers reports whether job backs up the guest vmid on node in pool, by the rule of vzdump
+// (pve-manager PVE/VZDump.pm get_included_guests): a pool selects its members, else a VMID list its
+// guests, else all guests but the excluded; a job bound to a node only the guests on it.
+func (job backupJob) covers(vmid int, node, pool string) bool {
+	var in bool
+	switch {
+	case job.Pool != "":
+		in = pool == job.Pool
+	case len(job.VMIDs) > 0:
+		in = slices.Contains(job.VMIDs, vmid)
+	case job.All:
+		in = !slices.Contains(job.Exclude, vmid)
+	}
+	return in && (job.Node == "" || job.Node == node)
+}
+
+// putBackupDetails sets the backup details of the guest vmid on node in pool in entry, each only when
+// known: storage, size and verification state of its newest backup; the jobs that cover it (an empty
+// list when the jobs were read and none does); the error of the last failed vzdump task, unless the
+// guest has a backup newer than that task's start.
+func (check *backupIndexCheck) putBackupDetails(entry map[string]any, vmid int, node, pool string) {
+	if d, ok := check.Newest[vmid]; ok {
+		entry["backup_storage"] = d.Storage
+		if d.Size > 0 {
+			entry["backup_size"] = d.Size
+		}
+		if d.Verify != "" {
+			entry["backup_verify"] = d.Verify
+		}
+	}
+	if check.Jobs != nil {
+		jobs := []map[string]any{}
+		for _, job := range check.Jobs {
+			if !job.covers(vmid, node, pool) {
+				continue
+			}
+			wire := map[string]any{}
+			for key, value := range map[string]string{"id": job.ID, "schedule": job.Schedule, "storage": job.Storage} {
+				if value != "" {
+					wire[key] = value
+				}
+			}
+			jobs = append(jobs, wire)
+		}
+		entry["backup_jobs"] = jobs
+	}
+	if e, ok := check.Errors[vmid]; ok && e.Unix >= check.Index[vmid] {
+		entry["backup_error"] = e.Text
+		entry["backup_error_ts"] = e.Unix
+	}
 }
 
 // fresh reports whether check is the index to use for the backup storages of node now: read less than

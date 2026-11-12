@@ -155,6 +155,54 @@ func TestAllowlistOOMJournal(t *testing.T) {
 	}
 }
 
+// TestAllowlistProxmoxBackupDetails: the backup details read the vzdump jobs, the node's last failed
+// vzdump task and that task's log, by a UPID in the form PVE writes it. The traps bend them into
+// another task type or path, a UPID that leaves its path segment, another limit or filter, a single
+// job, or the task list of every type.
+func TestAllowlistProxmoxBackupDetails(t *testing.T) {
+	tasks := func(node string) []string {
+		return []string{"get", "/nodes/" + node + "/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1", "--output-format", "json"}
+	}
+	taskLog := func(upid string) []string {
+		return []string{"get", "/nodes/pve/tasks/" + upid + "/log", "--limit", "10000", "--output-format", "json"}
+	}
+	for _, args := range [][]string{
+		{"get", "/cluster/backup", "--output-format", "json"},
+		tasks("pve"),
+		tasks("node-2"),
+		taskLog("UPID:pve:0000ABCD:0123ABCD5:67890ABC:vzdump:100:root@pam:"),
+		taskLog("UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump::root@pam:"),
+		taskLog("UPID:node-2:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam!backup-tok:"),
+	} {
+		if !Allowed("pvesh", args) {
+			t.Errorf("refused: pvesh %q", args)
+		}
+	}
+	for _, args := range [][]string{
+		taskLog("UPID:pve:0000ABCD:0123ABCD:67890ABC:qmstart:100:root@pam:"),
+		taskLog("UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam/../../x:"),
+		taskLog("UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:abc:root@pam:"),
+		taskLog("UPID:pve:0000abcd:0123ABCD:67890ABC:vzdump:100:root@pam:"),
+		taskLog("UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam"),
+		taskLog("UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root pam:"),
+		taskLog("UPID:-pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam:"),
+		{"get", "/nodes/pve/tasks/UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam:/status", "--output-format", "json"},
+		{"get", "/nodes/pve/tasks/UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam:/log", "--limit", "50000", "--output-format", "json"},
+		{"get", "/nodes/pve/tasks/UPID:pve:0000ABCD:0123ABCD:67890ABC:vzdump:100:root@pam:/log", "--output-format", "json"},
+		{"get", "/nodes/pve/tasks", "--limit", "1", "--output-format", "json"},
+		{"get", "/nodes/pve/tasks", "--typefilter", "vzdump", "--errors", "1", "--limit", "1", "--output-format", "json"},
+		{"get", "/nodes/pve/tasks", "--typefilter", "qmstart", "--statusfilter", "error", "--limit", "1", "--output-format", "json"},
+		{"get", "/nodes/pve/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1000", "--output-format", "json"},
+		{"get", "/cluster/backup/backup-1a2b", "--output-format", "json"},
+		{"get", "/cluster/backup", "--output-format", "text"},
+		{"set", "/cluster/backup", "--output-format", "json"},
+	} {
+		if Allowed("pvesh", args) {
+			t.Errorf("allowed: pvesh %q", args)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {
