@@ -34,7 +34,7 @@ Review: approve (.ah-out/review/arch-monitoring-ui-3/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T12
 
-### T3 — Agent: Fehlerzeilen je Ausfall mit Schwärzung, Schalter aus dem Plan (R-1226, Stufe 2)  [?] (Welche Zeilen sendet Stufe 2: letzte 10 des gescheiterten Laufs jeder Prioritaet (Empfehlung) oder nur err?)
+### T3 — Agent: Fehlerzeilen je Ausfall mit Schwärzung, Schalter aus dem Plan (R-1226, Stufe 2)  [~] (verschoben in arch-monitoring-ui-4: wartet auf Kevins Antwort (welche Zeilen sendet Stufe 2), abgetrennt als R-1413)
 Komponente: agent · Dateien: apps/agent/internal/monitor/servicelogs.go, apps/agent/internal/monitor/servicelogs_test.go, apps/agent/internal/monitor/servicelogs_linux.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/servicelogs_other.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/probe/probe.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
 Änderung: `probe.Plan` bekommt `ServiceLogs bool` (`service_logs`; fehlt es, keine Zeilen). Unter Linux liest der Agent je fehlgeschlagener Unit einmal je Ausfall (Schlüssel Unit + `since`, im Report-State) höchstens 10 Zeilen per festem `journalctl`-Aufruf (Auswahl nach Kevins Antwort, Frage 1). Jede Zeile wird geschwärzt (Regeln aus §3.9) und auf 300 Zeichen gekürzt, dann in `systemd.failed_logs` gelegt. Die Schwärzung ist rein (ohne Build-Tag) und besteht dieselben Testvektoren wie T5. Mehr als acht Dateien: Plan-Feld, Report-State und Allowlist sind nur gemeinsam grün.
 Verify: bash scripts/dev/verify.sh agent --strict
