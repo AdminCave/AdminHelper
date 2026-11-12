@@ -1,5 +1,5 @@
 # Harness: Sammellauf ohne Server-pytest auf der Box — Task-Ledger
-Status: geplant · Branch: feature/arch-workflow-2 · Review: pro Task
+Status: aktiv · Branch: feature/arch-workflow-2 · Review: pro Task
 Spec: docs/features/arch-workflow-2.md (Roadmap R-1338)
 Heavy: linux-full — ändert, was der Sammellauf auf der Box fährt; Gesamtbeweis ist der erste nächtliche Lauf nach dem Merge, vorher gezielt `--step schemathesis` und `--step sse_push` auf einer frisch geleasten Lane-Box (Spec, Risiken)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
