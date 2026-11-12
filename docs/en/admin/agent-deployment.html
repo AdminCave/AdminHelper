@@ -202,6 +202,67 @@ pkg install -r adminhelper adminhelper-agent   # later updates: pkg upgrade</cod
             <li><strong>Monitoring:</strong> what the agent reports on FreeBSD and what it does not is under <a href="./monitoring.html#system-state">Monitoring → System state</a>.</li>
           </ul>
 
+          <h2 id="opnsense">OPNsense</h2>
+          <p>On an OPNsense firewall (26.1 on FreeBSD&nbsp;14, 26.7 on FreeBSD&nbsp;15, amd64) the same agent runs as on <a href="#freebsd">FreeBSD</a>, tied in by the plugin <code>os-adminhelper</code> from the same signed pkg repo of the server. The plugin pulls in <code>adminhelper-agent</code> as a dependency, adds the page <em>Services → AdminHelper</em>, runs the tunnel client as an OPNsense service and keeps the repo file pointed at the server the agent is registered with. The agent reads the firewall's state through OPNsense's read-only configd actions, without an API key (see <a href="./monitoring.html#opnsense">Monitoring → OPNsense</a>).</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title">Third-party repo, not supported by OPNsense</div>
+              <p>OPNsense does not support additional repositories under <code>/usr/local/etc/pkg/repos/</code> (<a href="https://docs.opnsense.org/manual/software_included.html" rel="noopener">OPNsense manual, Software included</a>). The AdminHelper repo is such a third-party repo: questions about the plugin go to AdminHelper, not to OPNsense. It carries only <code>adminhelper-agent</code> and <code>os-adminhelper</code>, and its priority 5 is below the 11 of the OPNsense repo: if both carry a package of the same name, pkg takes OPNsense's.</p>
+            </div>
+          </div>
+          <p><strong>Install</strong> as root in an <code>sh</code> (console or SSH; if your shell is another one, start <code>sh</code> first). You check the key as under <a href="#freebsd">FreeBSD</a>; the repo file is named <code>AdminHelper.conf</code>, because the plugin later writes it under this name itself. Before registration there is no internal CA yet, so TLS stays unverified and the signature carries the authenticity.</p>
+          <div class="code-header"><span>sh</span></div>
+<pre><code>SERVER=srm.example.com                 # your AdminHelper server
+VERSION=0.47.0                         # match the server's release
+PUBSHA=&lt;sha256-from-cicd&gt;             # published value (CI/CD &amp; Release)
+
+# 1) Fetch the public repo key, check it STRICTLY, install it only then
+TMP=$(mktemp -d)
+fetch -o "$TMP/adminhelper-pkg.pub" \
+  "https://raw.githubusercontent.com/AdminCave/AdminHelper/v${VERSION}/apps/agent/freebsd/adminhelper-pkg.pub"
+[ "$(sha256 -q "$TMP/adminhelper-pkg.pub")" = "$PUBSHA" ] \
+  || { echo "ERROR: key does not match the published value — aborting!"; rm -rf "$TMP"; exit 1; }
+install -d -m 0755 /usr/local/etc/pkg/keys /usr/local/etc/pkg/repos
+install -m 0644 "$TMP/adminhelper-pkg.pub" /usr/local/etc/pkg/keys/adminhelper-pkg.pub
+rm -rf "$TMP"
+
+# 2) Repo file under the name the plugin later writes itself
+cat &gt; /usr/local/etc/pkg/repos/AdminHelper.conf &lt;&lt;EOF
+AdminHelper: {
+  url: "https://${SERVER}:8445/freebsd/\${ABI}",
+  signature_type: "pubkey",
+  pubkey: "/usr/local/etc/pkg/keys/adminhelper-pkg.pub",
+  env: { SSL_NO_VERIFY_PEER: "1", SSL_NO_VERIFY_HOSTNAME: "1" },
+  priority: 5,
+  enabled: yes
+}
+EOF
+
+pkg update -r AdminHelper
+pkg install -r AdminHelper os-adminhelper     # pulls in adminhelper-agent</code></pre>
+          <p><strong>Register</strong> as under <a href="#provisioning">Provisioning</a>, as root without <code>sudo</code>: <code>adminhelper-agent provision --url … --token-stdin --server-id …</code>. You enter the token in the shell only; the settings page asks for none, and none is stored in <code>config.xml</code> (and so in configuration backups). Paths, schedule and tunnel are those of <a href="#freebsd">FreeBSD</a>.</p>
+          <p><strong>Repo file after registration:</strong> the plugin writes <code>/usr/local/etc/pkg/repos/AdminHelper.conf</code> itself: at boot, on every reload of the firmware settings (at once with <code>configctl firmware reload</code>) and on every install or upgrade of the plugin. It takes the host of the agent's server URL (<code>ADMINHELPER_URL</code> in <code>/usr/local/etc/adminhelper/frp/adminhelper.conf</code>, else <code>MONITOR_URL</code> in <code>monitor.conf</code>; <code>https</code> only), port <code>8445</code>, the shipped key <code>/usr/local/etc/pkg/keys/AdminHelper.pub</code>, priority 5 and, once the agent is enrolled, the internal CA (<code>identity/ca.crt</code>) to verify TLS; until then TLS stays unverified as above. It overwrites your own changes to the file. As long as the agent has no such URL, it leaves a hand-written file alone.</p>
+          <p><strong>Updates:</strong> <code>pkg upgrade -r AdminHelper</code> fetches new versions of agent and plugin from this repo only. Whether OPNsense's firmware page offers them among its updates has not been checked.</p>
+
+          <h3 id="opnsense-settings">Settings page and service</h3>
+          <p><em>Services → AdminHelper</em> (<code>/ui/adminhelper/general/index</code>, privilege <em>Services: AdminHelper</em>) has a switch <strong>Enabled</strong> (on by default) and a status table:</p>
+          <table>
+            <thead><tr><th>Row</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Registered</td><td>The agent has a configuration from the server (<code>frp/adminhelper.conf</code> or <code>monitor.conf</code>).</td></tr>
+              <tr><td>Server</td><td>Scheme, host and port of the server URL, without a path.</td></tr>
+              <tr><td>Agent version</td><td>Version of the installed <code>adminhelper-agent</code>.</td></tr>
+              <tr><td>Scheduled</td><td>The cron entry <code>/usr/local/etc/cron.d/adminhelper</code> exists; the agent runs every 5&nbsp;minutes.</td></tr>
+              <tr><td>Tunnel client</td><td><code>none</code> without a tunnel, else <code>running</code> or <code>stopped</code>.</td></tr>
+              <tr><td>Last monitoring run</td><td>When the last monitoring run saved its state, after a push as after a failed one.</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Save</strong> writes the setting, renews the template and applies the switch. <strong>On:</strong> if the agent is registered, the agent writes its cron entry (<code>service install</code>); if it has a tunnel, frpc starts. <strong>Off:</strong> the cron entry goes (<code>service uninstall</code>), then frpc stops. The registration and the agent's files stay either way.</p>
+          <p>OPNsense runs the tunnel client as the service <em>AdminHelper tunnel client</em> (<code>adminhelper_frpc</code>), only while the switch is on and the agent has a tunnel (<code>frpc.toml</code>). Start, stop and restart go through OPNsense's service list or <code>configctl adminhelper start|stop|restart|status</code>. A stop lasts only until the agent's next run, which starts an existing tunnel again; the switch keeps frpc off for good. The rcvar lives in <code>/etc/rc.conf.d/adminhelper_frpc</code>, which a template of the plugin writes: <code>YES</code> only with the switch on and a tunnel. OPNsense writes its templates at boot before the rc.d scripts, so a switch turned off also holds after a reboot.</p>
+          <p><strong>Limits:</strong> a run of the agent already in progress when you turn the switch off can set frpc and its rcvar once more; that lasts until the next save or reboot. Registering with the switch off still writes the cron entry; the next save removes it again.</p>
+          <p><strong>Removal:</strong> <code>pkg delete os-adminhelper</code> removes the plugin, page, service entry, configd actions and the repo file <code>AdminHelper.conf</code>. The agent stays with its configuration, cron entry and running tunnel; the rcvar file stays as the template last wrote it. <code>pkg delete adminhelper-agent</code> then removes it entirely, as under <a href="#freebsd">FreeBSD</a>.</p>
+
           <h2 id="provisioning">Provisioning</h2>
           <p>In the desktop client, in the server workspace of the installation the agent is to report to: <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
 
@@ -289,7 +350,7 @@ MemoryMax=512M
 CPUQuota=100%</code></pre>
 
           <h2 id="upgrade">Upgrade</h2>
-          <p>With the package repo set up, <code>apt upgrade</code> or <code>dnf upgrade</code> on every server is enough (FreeBSD: <code>pkg upgrade</code>, see <a href="#freebsd">FreeBSD</a>). During provisioning the agent writes <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> and <code>/etc/frp/frpc.toml</code>; the package does not ship these files, so an upgrade keeps them. On every install and upgrade the package enables <code>adminhelper-agent.timer</code> again, and <code>frpc.service</code> only if <code>/etc/frp/frpc.toml</code> exists.</p>
+          <p>With the package repo set up, <code>apt upgrade</code> or <code>dnf upgrade</code> on every server is enough (FreeBSD: <code>pkg upgrade</code>, see <a href="#freebsd">FreeBSD</a>; OPNsense see <a href="#opnsense">OPNsense</a>). During provisioning the agent writes <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> and <code>/etc/frp/frpc.toml</code>; the package does not ship these files, so an upgrade keeps them. On every install and upgrade the package enables <code>adminhelper-agent.timer</code> again, and <code>frpc.service</code> only if <code>/etc/frp/frpc.toml</code> exists.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

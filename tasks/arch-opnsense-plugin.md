@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-opnsense-plugin — Task-Ledger
-Status: aktiv · Branch: feature/arch-opnsense-plugin · Review: pro Task
+Status: bereit · Branch: feature/arch-opnsense-plugin · Review: pro Task
 Spec: docs/features/arch-opnsense-plugin.md (Roadmap R-1248)
 Heavy: linux-full — Agent (neuer Fühler, Paketierung) und Monitoring (Katalogmodul); dazu vor dem Merge der OPNsense-Box-Lauf `bash scripts/tests/opnsense_box.sh` (T8) auf der Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -139,8 +139,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- box_scripts_guard_test
 Doku: → T9
 Abhängt von: T2–T7
 
-### T9 — Doku DE+EN und CHANGELOG (R-1248)  [ ]
-Komponente: scripts · Dateien: docs/agent-distribution.html, docs/en/agent-distribution.html, docs/monitoring.html, docs/en/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, DEVELOPMENT.md, changelog.d/arch-opnsense-plugin.md
+### T9 — Doku DE+EN und CHANGELOG (R-1248)  [x]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, DEVELOPMENT.md, changelog.d/arch-opnsense-plugin.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @25e02f1c7 2026-11-12T09:11:09+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - Agent-Verteilung, Abschnitt OPNsense: Installation, Hinweis „Fremd-Repo nicht unterstützt“, Registrierung, Einstellungsseite, Deinstallation.
 - Monitoring: Modul `opnsense` mit Ansichten, Feldern, Regeln, Intervallen und Kosten; kein API-Key.
