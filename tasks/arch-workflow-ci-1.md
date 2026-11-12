@@ -5,8 +5,10 @@ Heavy: none — nur Workflows und Test-Infrastruktur; kein Produktcode, kein Sta
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1339: Stack-Job auch auf PRs, Sammeljobs mit !cancelled()  [ ]
+### T1 — R-1339: Stack-Job auch auf PRs, Sammeljobs mit !cancelled()  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_shards.py, apps/server/tests/test_ci_workflow.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @85b545864 2026-11-12T06:32:30+01:00
+Review: approve (.ah-out/review/arch-workflow-ci-1/T1.verdict.json)
 Änderung: `integration-stack` verliert `if: github.event_name != 'pull_request'`, der Kommentar davor nennt den neuen Stand. `server-result` und `python-lock-server-result` laufen mit `if: ${{ !cancelled() }}` statt `always()`; `test_ci_shards.py` prüft das (heute `== "always()"`). Neu `test_ci_workflow.py` (SPDX): der Stack-Job hat kein Ereignis-`if`. Die Session fährt `bash .github/scripts/cache_settings_test.sh` zusätzlich direkt (liest `ci.yml`, R-1352).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_shards.py tests/test_ci_workflow.py tests/test_release_images.py
 Doku: → T6

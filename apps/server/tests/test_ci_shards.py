@@ -58,8 +58,9 @@ def test_the_result_jobs_carry_the_names_of_the_legs():
     assert jobs["python-lock-server-result"]["name"] == "Server (pytest, image lock)"
     for shards, gate in _SHARDED.items():
         assert jobs[gate]["needs"] == shards
-        # Without always() a red shard skips the gate, and a skipped required check passes.
-        assert jobs[gate]["if"] == "always()"
+        # Without the if a red shard skips the gate, and a skipped required check passes. Not
+        # always(): a run a newer push cancels would turn its gates red instead of cancelled.
+        assert jobs[gate]["if"] == "${{ !cancelled() }}"
         step = _step(jobs[gate], "Every shard passed")
         assert step["env"]["RESULT"] == f"${{{{ needs.{shards}.result }}}}"
     # A red leg must not cancel the other one (R-1020).

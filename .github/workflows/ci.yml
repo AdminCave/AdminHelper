@@ -146,7 +146,7 @@ jobs:
   server-result:
     name: Server (pytest, py${{ matrix.python-version }})
     needs: server
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     strategy:
@@ -368,7 +368,7 @@ jobs:
   python-lock-server-result:
     name: Server (pytest, image lock)
     needs: python-lock-server
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -1232,13 +1232,11 @@ jobs:
   # nginx gateway — exercising the full enrollment + mTLS + JWT round-trip end to
   # end. The script builds the images it needs from this checkout.
   #
-  # Deliberately NOT a per-PR gate yet: it builds the server image (incl. the web
-  # frontend) and boots a five-container stack — minutes, not seconds. Runs on
-  # main pushes + manual dispatch; promote to `pull_request` once we've lived a
-  # release round with it.
+  # Runs on pull requests too (R-1339): it builds the server image (incl. the web
+  # frontend) and boots a five-container stack, minutes in parallel to the longer
+  # jobs, so a pull request no longer needs a manual dispatch before its merge.
   integration-stack:
     name: From-outside stack (mTLS gateway)
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
