@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +72,8 @@ func newProxyRequest(t *testing.T, change func(*NewProxy)) []byte {
 	return data
 }
 
-// answer decodes a plugin answer and holds it to frps' fields.
+// answer decodes a plugin answer and holds it to frps' fields; a refusal must leave the
+// content unchanged.
 func answer(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {
@@ -81,26 +83,101 @@ func answer(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["unchange"] != true {
-		t.Errorf("answer %v changes the content", got)
+	if got["reject"] == true && (got["unchange"] != true || got["content"] != nil) {
+		t.Errorf("refusal %v changes the content", got)
 	}
 	return got
 }
 
-func TestHandlerAdmitsTheOwnProxy(t *testing.T) {
+// fixtureContent is the content of the fixture request, generically decoded.
+func fixtureContent(t *testing.T) map[string]any {
+	t.Helper()
+	var req struct {
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(fixtureRequest(t), &req); err != nil {
+		t.Fatal(err)
+	}
+	return req.Content
+}
+
+func TestHandlerAdmitsTheOwnProxyWithoutItsKey(t *testing.T) {
 	h, _ := newTestHandler(t, fixturePolicy(t))
-	got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", fixtureRequest(t)))
-	if len(got) != 2 || got["reject"] != false {
-		t.Errorf("answer = %v, want reject false and unchange true alone", got)
+	rec := do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", fixtureRequest(t))
+	got := answer(t, rec)
+	if len(got) != 3 || got["reject"] != false || got["unchange"] != false {
+		t.Fatalf("answer = %v, want reject false, unchange false and the content", got)
+	}
+	want := fixtureContent(t)
+	delete(want["metas"].(map[string]any), KeyMeta)
+	if !reflect.DeepEqual(got["content"], want) {
+		t.Errorf("content = %v, want the request's content without the key: %v", got["content"], want)
+	}
+	if strings.Contains(rec.Body.String(), keyA) {
+		t.Errorf("answer holds the host's key: %s", rec.Body)
+	}
+}
+
+func TestHandlerKeepsEveryOtherFieldAsSent(t *testing.T) {
+	h, _ := newTestHandler(t, fixturePolicy(t))
+	// Fields the decision does not read, a number beyond float64 and a second metas entry:
+	// frps takes the answer's content in place of its own.
+	body := strings.Replace(string(fixtureRequest(t)), `"proxy_type": "stcp",`,
+		`"proxy_type": "stcp", "use_encryption": true, "bandwidth_limit": "1MB", "annotations": {"a": "b"},
+		"x_count": 9007199254740993, "x_list": [1.5, null, "s"],`, 1)
+	body = strings.Replace(body, `"ahProxyKey": "`+keyA+`"`, `"ahProxyKey": "`+keyA+`", "owner": "ops"`, 1)
+	rec := do(h, http.MethodPost, pluginPath+"?op=NewProxy", []byte(body))
+	got := answer(t, rec)
+	if got["reject"] != false {
+		t.Fatalf("answer = %v, want the proxy admitted", got)
+	}
+	if !strings.Contains(rec.Body.String(), `"x_count":9007199254740993`) {
+		t.Errorf("answer lost the exact number: %s", rec.Body)
+	}
+	var want, content struct {
+		Content map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(body), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &content); err != nil {
+		t.Fatal(err)
+	}
+	delete(want.Content["metas"].(map[string]any), KeyMeta)
+	if !reflect.DeepEqual(content.Content, want.Content) {
+		t.Errorf("content = %v, want %v", content.Content, want.Content)
+	}
+	if m := content.Content["metas"].(map[string]any); len(m) != 1 || m["owner"] != "ops" {
+		t.Errorf("metas = %v, want the other entry alone", m)
+	}
+}
+
+func TestWithoutKeyLeavesItsInputAlone(t *testing.T) {
+	content := map[string]any{"metas": map[string]any{KeyMeta: keyA}, "proxy_name": "p"}
+	out := WithoutKey(content)
+	if _, ok := out["metas"].(map[string]any)[KeyMeta]; ok {
+		t.Errorf("WithoutKey = %v, still holds the key", out)
+	}
+	if content["metas"].(map[string]any)[KeyMeta] != keyA {
+		t.Errorf("WithoutKey changed its input: %v", content)
+	}
+	if out := WithoutKey(map[string]any{"proxy_name": "p"}); len(out) != 1 || out["proxy_name"] != "p" {
+		t.Errorf("WithoutKey without metas = %v", out)
 	}
 }
 
 func TestHandlerRefusesAForeignProxy(t *testing.T) {
 	h, _ := newTestHandler(t, fixturePolicy(t))
-	body := newProxyRequest(t, func(np *NewProxy) { np.ProxyName = serverA + ".t-db" })
-	got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", body))
-	if len(got) != 3 || got["reject"] != true || got["reject_reason"] != rejectReason {
-		t.Errorf("answer = %v, want reject true with the general reason", got)
+	for name, change := range map[string]func(*NewProxy){
+		"another host's tunnel": func(np *NewProxy) { np.ProxyName = serverA + ".t-db" },
+		"another allowed user":  func(np *NewProxy) { np.AllowUsers = []string{"*"} },
+		"a wrong secret key":    func(np *NewProxy) { np.Sk = "guess" },
+	} {
+		body := newProxyRequest(t, change)
+		got := answer(t, do(h, http.MethodPost, pluginPath+"?version=0.1.0&op=NewProxy", body))
+		if len(got) != 3 || got["reject"] != true || got["reject_reason"] != rejectReason {
+			t.Errorf("%s: answer = %v, want reject true with the general reason", name, got)
+		}
 	}
 }
 
@@ -161,6 +238,7 @@ func TestHandlerLogsTheDecisionWithoutSecrets(t *testing.T) {
 		np.ProxyName, np.ProxyType = serverA+".t-lb", "https"
 		np.CustomDomains, np.SubDomain = []string{"lb.example"}, "lb"
 		np.Group, np.GroupKey = "web", groupKey
+		np.Sk, np.AllowUsers = "", nil
 	}
 	wrongKey := func(np *NewProxy) {
 		lb(np)
@@ -305,7 +383,7 @@ func TestServeAnswersOverTCP(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusOK || got.Reject || !got.Unchange {
+	if resp.StatusCode != http.StatusOK || got.Reject || got.Unchange || got.Content == nil {
 		t.Errorf("answer = %d %+v, want 200 admitting the proxy", resp.StatusCode, got)
 	}
 }

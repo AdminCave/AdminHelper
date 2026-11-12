@@ -17,6 +17,7 @@ from app.core.request_context import actor_from_request
 from app.core.time import iso_utc, utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import DeviceLine, devices_of, revoke_identity, revoke_line
+from app.modules.frp.policy import sync_policy
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
@@ -86,6 +87,8 @@ def create_user(
             status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
         )
     db.refresh(user)
+    # A user's access is part of every STCP proxy's allowUsers, which frps' plugin checks.
+    sync_policy(db)
     fire_event(
         "user.created", {"id": user.id, "username": user.username, "is_admin": user.is_admin}
     )
@@ -155,6 +158,7 @@ def update_user(
         user.servers = servers
     db.commit()
     db.refresh(user)
+    sync_policy(db)
     if user.is_admin and not was_admin:
         fire_event("user.promoted", {"id": user.id, "username": user.username})
     # detail names the changed fields and carries no value but the new admin flag.
@@ -199,6 +203,7 @@ def delete_user(
     revoke_identity(db, user.username, SCOPE_ACCESS)
     db.delete(user)
     db.commit()
+    sync_policy(db)
     audit.record(
         db,
         "user.deleted",

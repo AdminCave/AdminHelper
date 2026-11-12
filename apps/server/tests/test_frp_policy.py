@@ -67,7 +67,7 @@ def _tunnel(tunnel_id: str, server_id: str, tunnel_type: str = "stcp", **over) -
         "tunnel_type": tunnel_type,
         "protocol": "ssh" if tunnel_type == "stcp" else "web",
         "local_port": 22 if tunnel_type == "stcp" else 443,
-        "secret_key": "stcp-secret-placeholder" if tunnel_type == "stcp" else None,
+        "secret_key": "tunnel-secret-placeholder" if tunnel_type == "stcp" else None,
         "enabled": True,
     }
     fields.update(over)
@@ -162,7 +162,7 @@ def test_server_id_with_a_dot_is_left_out(db_session, caplog):
 
 
 def test_without_frp_config_the_policy_admits_nothing(db_session):
-    assert policy.build_policy(db_session) == {"servers": {}, "version": 1}
+    assert policy.build_policy(db_session) == {"servers": {}, "version": 2}
 
 
 def test_policy_file_is_0644_without_any_key(db_session, _policy_dir):
@@ -173,7 +173,7 @@ def test_policy_file_is_0644_without_any_key(db_session, _policy_dir):
     assert text == FIXTURE.read_text()
     assert stat.S_IMODE(os.lstat(_policy_dir).st_mode) == 0o644
     assert proxy_key(SERVER_A) not in text and proxy_key(SERVER_B) not in text
-    assert "stcp-secret-placeholder" not in text and "frps-token-placeholder" not in text
+    assert "tunnel-secret-placeholder" not in text and "frps-token-placeholder" not in text
 
 
 def test_same_policy_is_not_written_again(_policy_dir):
@@ -237,15 +237,53 @@ def test_config_routes_write_the_policy(test_client, db_session, admin_user, _po
 
     r = test_client.put("/api/frp/server-config/cfg-1", json={"name": "Renamed"}, headers=h)
     assert r.status_code == 200, r.text
-    assert _policy_dir.read_text() == FIXTURE.read_text()
+    # The admin of the login has access to every server, so it stands in allowUsers.
+    expected = FIXTURE.read_text().replace('"ops-admin"', '"admin"')
+    assert _policy_dir.read_text() == expected
 
     # Without the route, so the file still holds the tunnels: only the delete's own write
-    # empties it. (A config with tunnels cannot be deleted through the API today, R-1310.)
+    # empties it.
     db_session.query(FrpTunnel).delete()
     db_session.commit()
     r = test_client.delete("/api/frp/server-config/cfg-1", headers=h)
     assert r.status_code == 204, r.text
-    assert _policy(_policy_dir) == {"servers": {}, "version": 1}
+    assert _policy(_policy_dir) == {"servers": {}, "version": 2}
+
+
+def _allow_users(path: Path, server_id: str, tunnel_id: str) -> list[str]:
+    return _policy(path)["servers"][server_id]["proxies"][tunnel_id]["allowUsers"]
+
+
+def test_user_routes_write_the_policy(test_client, db_session, admin_user, _policy_dir):
+    # allowUsers holds the admins and the users assigned to the server (get_allow_users).
+    _seed(db_session)
+    h = _login(test_client)
+    body = {"username": "viewer", "password": "viewerpass1", "server_ids": [SERVER_B]}
+
+    created = test_client.post("/api/users", json=body, headers=h)
+    assert created.status_code == 201, created.text
+    user_id = created.json()["id"]
+    assert _allow_users(_policy_dir, SERVER_A, "t-ssh") == ["admin"]
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin", "viewer"]
+
+    moved = test_client.put(f"/api/users/{user_id}", json={"server_ids": [SERVER_A]}, headers=h)
+    assert moved.status_code == 200, moved.text
+    assert _allow_users(_policy_dir, SERVER_A, "t-ssh") == ["admin", "viewer"]
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin"]
+
+    promoted = test_client.put(
+        f"/api/users/{user_id}", json={"is_admin": True, "server_ids": []}, headers=h
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin", "viewer"]
+
+    deleted = test_client.delete(f"/api/users/{user_id}", headers=h)
+    assert deleted.status_code == 204, deleted.text
+    assert _allow_users(_policy_dir, SERVER_A, "t-ssh") == ["admin"]
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin"]
+    # An https proxy has no allowed users and no secret key.
+    web = _policy(_policy_dir)["servers"][SERVER_A]["proxies"]["t-web"]
+    assert (web["allowUsers"], web["skHash"]) == ([], "")
 
 
 def test_server_delete_writes_the_policy(

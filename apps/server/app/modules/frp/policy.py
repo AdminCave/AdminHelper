@@ -4,12 +4,14 @@
 
 """The policy file of frps' plugin (apps/agent/internal/frpspolicy): for each host the
 SHA-256 of its key (proxy_key.py) and the proxies its frpc.toml carries, with the fields
-frps hands the plugin for a new proxy. The plugin admits only those.
+frps hands the plugin for a new proxy (allowUsers as written, secretKey as its SHA-256).
+The plugin admits only those.
 
 The proxies come from the text generate_frpc_toml writes for the host, read back as TOML:
-the same tunnels (active_tunnels), the same fields, so the policy cannot drift from what
-the agent runs. The server writes the file after each change of tunnels, the FRP config or
-servers, at startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
+the same tunnels (active_tunnels), the same fields and the same allow users
+(get_allow_users), so the policy cannot drift from what the agent runs. The server writes
+the file after each change of tunnels, the FRP config, servers or users' access, at
+startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
 registers, so a write changes nothing for proxies already up."""
 
 import asyncio
@@ -22,7 +24,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.core import database
-from app.modules.frp._helpers import get_frp_config
+from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import _first_warning, generate_frpc_toml
 from app.modules.frp.docker_manager import write_frps_policy
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -31,7 +33,7 @@ from app.modules.frp.proxy_key import proxy_key_hash
 logger = logging.getLogger(__name__)
 
 # The format the plugin reads (frpspolicy.Version).
-POLICY_VERSION = 1
+POLICY_VERSION = 2
 # The types the plugin takes (frpspolicy.Parse); an entry of another type would make it
 # refuse the whole file, and so every host.
 _TYPES = ("stcp", "https")
@@ -53,6 +55,11 @@ def _flat(table: dict, prefix: str = "") -> dict:
     return fields
 
 
+def _hash(secret: str) -> str:
+    """The SHA-256 the plugin compares a secret with, or "" for no secret."""
+    return hashlib.sha256(secret.encode()).hexdigest() if secret else ""
+
+
 def _proxy(fields: dict) -> dict | None:
     """The policy entry of a proxy table, or None if the plugin could not read it: frpc
     reads these fields as strings and refuses its whole config otherwise."""
@@ -61,6 +68,8 @@ def _proxy(fields: dict) -> dict | None:
     subdomain = fields.get("subdomain", "")
     group = fields.get("loadbalancer.group", "")
     group_key = fields.get("loadbalancer.groupkey", "")
+    allow_users = fields.get("allowusers", [])
+    secret_key = fields.get("secretkey", "")
     if (
         tunnel_type not in _TYPES
         or not isinstance(custom_domains, list)
@@ -68,6 +77,9 @@ def _proxy(fields: dict) -> dict | None:
         or not isinstance(subdomain, str)
         or not isinstance(group, str)
         or not isinstance(group_key, str)
+        or not isinstance(allow_users, list)
+        or not all(isinstance(user, str) for user in allow_users)
+        or not isinstance(secret_key, str)
     ):
         return None
     return {
@@ -75,14 +87,20 @@ def _proxy(fields: dict) -> dict | None:
         "customDomains": custom_domains,
         "subdomain": subdomain,
         "group": group,
-        "groupKeyHash": hashlib.sha256(group_key.encode()).hexdigest() if group_key else "",
+        "groupKeyHash": _hash(group_key),
+        "allowUsers": allow_users,
+        "skHash": _hash(secret_key),
     }
 
 
-def _proxies(config: FrpServerConfig, server_id: str, tunnels: list[FrpTunnel]) -> dict:
-    """The proxies of the host's frpc.toml by tunnel ID; allowUsers plays no part."""
+def _proxies(
+    db: Session, config: FrpServerConfig, server_id: str, tunnels: list[FrpTunnel]
+) -> dict:
+    """The proxies of the host's frpc.toml by tunnel ID."""
     try:
-        doc = tomllib.loads(generate_frpc_toml(config, tunnels, server_id))
+        doc = tomllib.loads(
+            generate_frpc_toml(config, tunnels, server_id, get_allow_users(db, server_id))
+        )
     except tomllib.TOMLDecodeError:
         if _first_warning(repr(server_id), ("policy", "toml")):
             logger.warning("frpc.toml of server %r is no TOML, left out of the policy", server_id)
@@ -125,7 +143,7 @@ def build_policy(db: Session) -> dict:
                     server_id,
                 )
             continue
-        proxies = _proxies(config, server_id, tunnels)
+        proxies = _proxies(db, config, server_id, tunnels)
         if proxies:
             servers[server_id] = {"keyHash": proxy_key_hash(server_id), "proxies": proxies}
     return {"servers": servers, "version": POLICY_VERSION}

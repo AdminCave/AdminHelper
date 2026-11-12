@@ -15,13 +15,15 @@ Dedup-Key: bug:server:apps/server/app/modules/frp/models.py:FrpServerConfig.tunn
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py
 Doku: keine (Fehlerbehebung ohne dokumentiertes Verhalten; CHANGELOG in T7)
 
-### T2 — R-1305, R-1306: Plugin prüft allowUsers und secretKey, frps behält den Host-Schlüssel nicht  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpspolicy/policy.go, apps/agent/internal/frpspolicy/handler.go, apps/agent/internal/frpspolicy/policy_test.go, apps/agent/internal/frpspolicy/handler_test.go, apps/agent/internal/frpspolicy/testdata/policy.json, apps/agent/internal/frpspolicy/testdata/newproxy.json
+### T2 — R-1305, R-1306: Plugin prüft allowUsers und secretKey, frps behält den Host-Schlüssel nicht  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpspolicy/policy.go, apps/agent/internal/frpspolicy/handler.go, apps/agent/internal/frpspolicy/policy_test.go, apps/agent/internal/frpspolicy/handler_test.go, apps/agent/internal/frpspolicy/testdata/policy.json, apps/agent/internal/frpspolicy/testdata/newproxy.json, apps/server/app/modules/frp/policy.py, apps/server/app/modules/users/router.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frps_policy_live.py
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @4be51a3c6 2026-11-12T09:35:31+01:00
+Review: approve (.ah-out/review/kern-frp-5/T2.verdict.json)
 Änderung: Policy-Format Version 2: je Proxy `allowUsers` (Liste) und `skHash` (SHA-256 hex oder leer); `Decide` verlangt `allow_users` als dieselbe Menge und `sk` passend zum Hash (konstantzeitig). Eine zugelassene Anmeldung beantwortet der Handler mit `unchange=false` und dem ganzen Inhalt, generisch dekodiert (Zahlen exakt), ohne `metas.ahProxyKey`. Tests: falsche/zusätzliche Benutzer, falsches `sk`, Version 1 abgelehnt, Inhalt nach dem Entfernen bis auf den Schlüssel gleich.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpspolicy/
 Doku: → T7
 
-### T3 — R-1305: Server schreibt Policy v2 mit Benutzerliste und Schlüssel-Hash  [ ]
+### T3 — R-1305: Server schreibt Policy v2 mit Benutzerliste und Schlüssel-Hash  [~] (zusammengelegt mit T2: Plugin liest nur Policy v2, ein Commit ohne den Server-Teil wäre rot (Prüfer T2))
 Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/users/router.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frps_policy_live.py
 Änderung: `build_policy` schreibt Version 2 und liest die Proxys aus `generate_frpc_toml` mit `get_allow_users` (dieselbe Liste wie der Agent bekommt), dazu `allowUsers` und `skHash` je Proxy. Änderungen am Server-Zugriff von Benutzern (Zuordnung, Admin-Flag, Umbenennen, Löschen) rufen `sync_policy`. Der Live-Test belegt über den echten frps: Proxy mit fremder Benutzerliste oder falschem `secretKey` abgelehnt, zugelassener Proxy im Dashboard ohne Schlüssel.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py tests/test_frps_policy_live.py
@@ -58,3 +60,5 @@ Task-Review: am Ende
 ## Entscheidungen
 - 2026-11-12 Policy-Format Version 2 ohne Lesen von Version 1: Plugin und Server kommen im selben Release, das Fenster ist fail-closed wie ohne Datei.
 - 2026-11-12 Benutzerliste als Menge verglichen: frpc gibt `allowUsers` in der Reihenfolge der Datei weiter, der Generator sortiert; die Menge hält den Vergleich unabhängig davon.
+- 2026-11-12 T1: `passive_deletes="all"` statt `True`: die Route lädt die Tunnel (selectin) mit, und bei `True` leert das ORM `frp_config_id` geladener Kinder trotzdem; erst `"all"` überlässt das Löschen der Kaskade der DB.
+- 2026-11-12 T3 in den Commit von T2: das Plugin liest ab T2 nur Version 2, der Server schrieb bis T3 Version 1; getrennt wäre der Stand dazwischen rot (Prüfer T2). Der Commit trägt beide Verify-Läufe, der Server-Lauf steht im Body.

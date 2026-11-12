@@ -5,6 +5,7 @@
 package frpspolicy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,18 +41,20 @@ var DefaultTimeouts = Timeouts{
 }
 
 type request struct {
-	Op      string   `json:"op"`
-	Content NewProxy `json:"content"`
+	Op      string          `json:"op"`
+	Content json.RawMessage `json:"content"`
 }
 
 type response struct {
-	Reject       bool   `json:"reject"`
-	RejectReason string `json:"reject_reason,omitempty"`
-	Unchange     bool   `json:"unchange"`
+	Reject       bool           `json:"reject"`
+	RejectReason string         `json:"reject_reason,omitempty"`
+	Unchange     bool           `json:"unchange"`
+	Content      map[string]any `json:"content,omitempty"`
 }
 
 // NewHandler serves frps' plugin requests for NewProxy at path and GET HealthPath.
-// It never changes a request's content: every answer carries unchange.
+// A refusal leaves the content unchanged; an admitted proxy comes back whole without the
+// host's key (WithoutKey).
 func NewHandler(src *Source, path string, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(HealthPath, func(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +89,16 @@ func NewHandler(src *Source, path string, log *slog.Logger) http.Handler {
 			http.Error(w, "only the op NewProxy", http.StatusBadRequest)
 			return
 		}
-		np := &req.Content
+		// The content twice: the fields the decision reads, and all of it with its numbers
+		// exact for the answer, since frps decodes the answer into a fresh NewProxy.
+		np := &NewProxy{}
+		var content map[string]any
+		dec := json.NewDecoder(bytes.NewReader(req.Content))
+		dec.UseNumber()
+		if json.Unmarshal(req.Content, np) != nil || dec.Decode(&content) != nil || content == nil {
+			http.Error(w, "no NewProxy request", http.StatusBadRequest)
+			return
+		}
 		reason := "no policy"
 		policy, err := src.Current()
 		if err != nil {
@@ -104,6 +116,8 @@ func NewHandler(src *Source, path string, log *slog.Logger) http.Handler {
 		resp := response{Reject: reason != "", Unchange: true}
 		if resp.Reject {
 			resp.RejectReason = rejectReason
+		} else {
+			resp.Unchange, resp.Content = false, WithoutKey(content)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

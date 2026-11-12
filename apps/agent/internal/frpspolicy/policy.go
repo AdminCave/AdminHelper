@@ -6,7 +6,8 @@
 // the policy file the AdminHelper server writes (apps/server/app/modules/frp/policy.py)
 // holds it for the host that registers it, with the fields the server's frpc.toml
 // generator writes for that tunnel. Everything else is refused, and so is every proxy
-// while the policy file is missing or broken.
+// while the policy file is missing or broken. An admitted proxy goes on without the host's
+// key, so frps does not keep it.
 package frpspolicy
 
 import (
@@ -25,7 +26,7 @@ import (
 )
 
 // Version is the policy format this plugin reads.
-const Version = 1
+const Version = 2
 
 // KeyMeta is the proxy metadatas field that carries the host's key (proxy_key.py).
 const KeyMeta = "ahProxyKey"
@@ -42,6 +43,10 @@ type Proxy struct {
 	Group         string   `json:"group"`
 	// SHA-256 of loadBalancer.groupKey as hex, "" without one.
 	GroupKeyHash string `json:"groupKeyHash"`
+	// allowUsers of an stcp tunnel, compared as a set; empty for https.
+	AllowUsers []string `json:"allowUsers"`
+	// SHA-256 of secretKey as hex, "" without one.
+	SkHash string `json:"skHash"`
 }
 
 // Server is one host: the SHA-256 of its key as hex and its tunnels by ID.
@@ -70,9 +75,11 @@ type NewProxy struct {
 	RemotePort    int               `json:"remote_port"`
 	CustomDomains []string          `json:"custom_domains"`
 	SubDomain     string            `json:"subdomain"`
+	Sk            string            `json:"sk"`
+	AllowUsers    []string          `json:"allow_users"`
 }
 
-// Parse reads a policy and holds it to the format: version 1, no unknown field, hashes
+// Parse reads a policy and holds it to the format: version 2, no unknown field, hashes
 // as 64 lowercase hex digits, the tunnel types the server writes.
 func Parse(data []byte) (*Policy, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -106,6 +113,9 @@ func Parse(data []byte) (*Policy, error) {
 			}
 			if proxy.GroupKeyHash != "" && !isHash(proxy.GroupKeyHash) {
 				return nil, fmt.Errorf("policy: proxy %q: groupKeyHash is no SHA-256 in hex", name)
+			}
+			if proxy.SkHash != "" && !isHash(proxy.SkHash) {
+				return nil, fmt.Errorf("policy: proxy %q: skHash is no SHA-256 in hex", name)
 			}
 		}
 	}
@@ -171,10 +181,52 @@ func (p *Policy) Decide(np *NewProxy) string {
 		return "other group key"
 	case want.GroupKeyHash != "" && !hashEqual(np.GroupKey, want.GroupKeyHash):
 		return "other group key"
+	case !sameSet(np.AllowUsers, want.AllowUsers):
+		return "other allowed users"
+	case want.SkHash == "" && np.Sk != "":
+		return "other secret key"
+	case want.SkHash != "" && !hashEqual(np.Sk, want.SkHash):
+		return "other secret key"
 	case np.RemotePort != 0:
 		return "remote port"
 	}
 	return ""
+}
+
+// sameSet reports whether a and b hold the same strings, regardless of order and repeats.
+func sameSet(a, b []string) bool {
+	in := func(s string, list []string) bool { return slices.Contains(list, s) }
+	for _, s := range a {
+		if !in(s, b) {
+			return false
+		}
+	}
+	for _, s := range b {
+		if !in(s, a) {
+			return false
+		}
+	}
+	return true
+}
+
+// WithoutKey returns content, frps' NewProxy content decoded with UseNumber, without the
+// host's key in its metas: frps takes the answer's content in place of its own, keeps it
+// for the proxy and shows the metas on its dashboard. Everything else stays as sent.
+func WithoutKey(content map[string]any) map[string]any {
+	out := make(map[string]any, len(content))
+	for k, v := range content {
+		out[k] = v
+	}
+	if metas, ok := content["metas"].(map[string]any); ok {
+		kept := make(map[string]any, len(metas))
+		for k, v := range metas {
+			if k != KeyMeta {
+				kept[k] = v
+			}
+		}
+		out["metas"] = kept
+	}
+	return out
 }
 
 // Source reads the policy file and reads it again only when it changed: another file at
