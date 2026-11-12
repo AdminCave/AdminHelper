@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.auth import get_current_admin
 from app.core.database import get_db
@@ -18,7 +18,7 @@ from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.frp.config_generator import frps_bind_port
 from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
-from app.modules.frp.models import FrpServerConfig
+from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.policy import sync_policy
 from app.modules.frp.schemas import (
     FrpServerConfigCreate,
@@ -101,7 +101,12 @@ def create_server_config(
 def get_server_config(
     config_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
 ):
-    config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
+    config = (
+        db.query(FrpServerConfig)
+        .options(selectinload(FrpServerConfig.tunnels).selectinload(FrpTunnel.target_server))
+        .filter(FrpServerConfig.id == config_id)
+        .first()
+    )
     if not config:
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
     return config.to_dict(include_tunnels=True, mask_secrets=True)

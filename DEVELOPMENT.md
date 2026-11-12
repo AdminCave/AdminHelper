@@ -116,9 +116,10 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   von Schemathesis). Sie schickt für denselben Baum dieselben Fälle, ein roter Lauf
   liegt also am Diff und ist lokal nachstellbar. Eine Zahl **> 0** fährt alle Phasen
   mit so vielen erzeugten Beispielen je Operation: **100** im Wochenlauf (`heavy.sh`
-  setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter). Die Phase `generate`
+  setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter) und jede Nacht im
+  Workflow `nightly.yml` (`docs/developer/cicd.html`). Die Phase `generate`
   ist nicht wiederholbar (siehe Hypothesis unten); ihre Funde kommen deshalb aus dem
-  Wochenlauf und gehen als Zeile in die Roadmap.
+  Wochenlauf und aus `nightly.yml` und gehen als Zeile in die Roadmap.
 - **Integer-Lint** statt Glück: `apps/<dienst>/tests/test_openapi_integer_bounds.py`
   verlangt für jeden Integer-Eingang des veröffentlichten Schemas ein `maximum`.
   Das ist die Fehlerklasse, die die Phase `generate` bisher zufällig fand (`2**63`
@@ -1144,8 +1145,8 @@ Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`
 `xvfb`, `tauri-driver`, `tauri-cli` und `gnome-keyring`/`dbus`
 (siehe `apps/desktop/e2e/README.md`).
 
-In CI laeuft (nur auf `main`-Push/manuell, kein PR-Gate) der From-outside-Test
-(`integration-stack`). Einen CI-Job fuer den Desktop-Smoke-E2E gibt es **nicht**:
+In CI laeuft der From-outside-Test (`integration-stack`) auf jedem Pull Request,
+in der Merge Queue, auf `main` und manuell. Einen CI-Job fuer den Desktop-Smoke-E2E gibt es **nicht**:
 die headless-WebKit-Kette driftet mit dem Runner-Image und faerbte `main` rot
 ohne echten Defekt. Der Smoke wie auch die **Desktop-Live-E2E**
 (`desktop_e2e_live.sh` + `desktop_e2e_tunnel.sh`) laufen auf einer VM bzw. lokal

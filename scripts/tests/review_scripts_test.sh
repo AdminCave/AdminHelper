@@ -413,11 +413,13 @@ grep -qx ' *guard "$base_sh"' <<<"$JOB" && grep -qF 'git worktree add --quiet --
   && ok "it reads with the base's review.sh (a worktree, \$SHA in the span) and fails closed without one" \
   || bad "no base-logic step: $JOB"
 # A push run reads before..sha and nothing else does: it is never cancelled, and a
-# group per commit keeps a later push from pushing it out while pending (R-0174).
+# group per commit keeps a later push from pushing it out while pending (R-0174). A
+# merge queue run gets a group per commit too: a pending run pushed out of its group
+# would hold its pull request in the queue (R-1342).
 CONC="$(awk '/^concurrency:$/ { f = 1; next } f && /^  / { print; next } f { exit }' "$CI")"
-[ "$CONC" = "  group: \${{ github.event_name == 'push' && format('ci-push-{0}', github.sha) || format('ci-{0}', github.ref) }}
+[ "$CONC" = "  group: \${{ (github.event_name == 'push' || github.event_name == 'merge_group') && format('ci-{0}-{1}', github.event_name, github.sha) || format('ci-{0}', github.ref) }}
   cancel-in-progress: \${{ github.event_name == 'pull_request' }}" ] \
-  && ok "a push to main runs in a group of its own and is never cancelled; pull requests still are" \
+  && ok "a push to main and a merge queue run each run in a group of their own and are never cancelled; pull requests still are" \
   || bad "workflow concurrency: $CONC"
 # The job's script itself, run here as GitHub runs it (bash -e): a pull request with
 # a finding is red, a push without a usable 'before' is red, not a scan of nothing.
