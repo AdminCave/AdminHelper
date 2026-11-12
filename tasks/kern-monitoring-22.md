@@ -50,8 +50,10 @@ nimmt jede Form als Gegenprobe auf.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (reiner Test)
 
-### T6 — R-1321: Meldetext zu not_allowed passt zu jedem Grund  [ ]
+### T6 — R-1321: Meldetext zu not_allowed passt zu jedem Grund  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_probe_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9a29a4136 2026-11-12T10:57:14+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T6.verdict.json)
 Beweis: apps/monitoring/app/checkers/probe.py:44 (`"not_allowed": ("unknown", "Target is no address of this host; the agent refused it")`), kern-monitoring-19 T3 2026-11-11 · Dedup-Key: BUG:monitoring:app/checkers/probe.py:_NOT_RUN
 Änderung: Der Text wird „The agent refused the target“; den Grund trägt weiter das `error` des Agents. Test zuerst
 rot: eine Ablehnung wegen Sperrliste nennt keine fremde Adresse.
