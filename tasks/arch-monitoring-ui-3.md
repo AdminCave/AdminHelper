@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-3 — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-3.md (Roadmap R-1226)
 Heavy: linux-full — `apps/agent` (neue systemctl-/journalctl-Aufrufe), der Berichtspfad des Monitoring-Dienstes und eine neue Desktop-Journey; der Sammellauf fährt agent-monitoring, den Stack und die Desktop-Live-Specs. Der Windows-Teil (T2) läuft über die PR-CI-Jobs `agent-windows` und `rust-windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -133,6 +133,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: docs/admin/monitoring.html, docs/developer/monitoring.html, docs/developer/api-reference.html, docs/developer/agent.html DE+EN · changelog.d/arch-monitoring-ui-3.md
 Task-Review: am Ende
+
+### T13 — Monitoring: Grund im Text des Listen-Modus (R-1226)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_service_process_checker.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Änderung: Abschlussprüfung (reviewer branch): Spec Nicht-Ziele verspricht den Grund auch „im Text des Listen-Modus“, `_evaluate_list` nennt ihn nicht. Ein Dienst, der im Modus `list` nicht läuft, trägt in der Meldung und in `_details.watched[].reason` seinen Grund: `failed_details` (Linux), sonst `result`/`exit` aus dem Inventar (ohne `result` `success`), bei gedrosseltem Push aus `prev_details`. Dazu der Doku-Nit „alle Units“ → Service-Units.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py
+Doku: docs/admin/monitoring.html, docs/developer/monitoring.html DE+EN
 
 ## Entscheidungen
 - 2026-11-12 T1: `inventoryHash` nimmt das `since` eines inaktiven Dienstes nicht auf (Spec: „die übrigen Felder gehen in den Hash ein“) — ein Timer-Oneshot verschiebt sein `since` bei jedem Lauf, sonst ginge das volle Inventar alle fünf Minuten mit statt stündlich; der Neustart eines laufenden Dienstes bleibt über `since` und `restarts` erkannt.
