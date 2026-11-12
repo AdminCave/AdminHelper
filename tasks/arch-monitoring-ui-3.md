@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-3 — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
+Status: erledigt · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-3.md (Roadmap R-1226)
 Heavy: linux-full — `apps/agent` (neue systemctl-/journalctl-Aufrufe), der Berichtspfad des Monitoring-Dienstes und eine neue Desktop-Journey; der Sammellauf fährt agent-monitoring, den Stack und die Desktop-Live-Specs. Der Windows-Teil (T2) läuft über die PR-CI-Jobs `agent-windows` und `rust-windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -168,3 +168,4 @@ Doku: docs/admin/monitoring.html, docs/developer/monitoring.html DE+EN
 - 2026-11-12 T10: „Mehr Log“ steht nur an Units mit der Endung `.service`: der Linux-Agent listet `--type=service`, Windows- und FreeBSD-Namen tragen keine Endung (Stufe 3 liest das systemd-Journal). Ohne SSH-Verbindung des Servers oder ohne systemd-Unit steht statt des Knopfs ein Hinweis; bei mehreren SSH-Verbindungen wählt ein Auswahlfeld, vorbelegt mit der ersten.
 - 2026-11-12 T10: Der Reiter heißt „Verbindung · Unit“ über eine umbenannte Kopie der Verbindung (`id` bleibt, Rust nutzt den Namen nicht); so zeigen Reiter, Fenstertitel, abgelöstes Fenster und Schließen-Rückfrage die Unit ohne eigenen Zweig. Der Journal-Reiter verhält sich wie der Zugangsdaten-Reiter: keine Shell, keine Snippets, keine Dateien, erneutes Verbinden auf demselben Weg, nicht in `openSessionIds`.
 - 2026-11-12 T10: Die Dienste-Liste schließt bei „Mehr Log“: ein verdecktes offenes Modal hielte seinen `keydown`-Listener am Dokument und nähme dem Terminal Tab und Escape. Der IPC-Inventartest der UI (rot seit T9, dessen Verify nur `desktop-rs` fuhr) wird hier mit Aufrufer und Doku-Zeile grün.
+- 2026-11-12 T13: Der Grund im Modus `list` kommt auch unter Linux aus `result`/`exit` des Inventars, nicht aus `failed_details` (anders als die `Änderung:`-Zeile von T13): der Agent füllt beide aus demselben `systemctl show`-Aufruf, und `result`/`exit` gehen in den Inventar-Hash ein, ein geänderter Grund kommt also immer mit einem vollen Push; dazwischen trägt `prev_details` ihn weiter.
