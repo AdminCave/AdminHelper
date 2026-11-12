@@ -11,11 +11,11 @@
 //! screen: screen 0 shows the desktop, or its first monitor once the webview asked for two
 //! (`{"t":"layout",…}`), screen 1 the second monitor. One client streams per screen: a new login
 //! takes over from the one before on its screen and gets its whole picture first, and a client
-//! that goes away leaves the session running, for 60 s while no screen has a client. Pictures go out one at a time, the next
-//! after the client's `{"t":"ack"}`; whatever changes in between is merged into one enclosing
-//! rectangle, so no backlog builds up behind a slow webview. Once a second, while there is a
-//! picture, a text message `{"t":"stats",…}` tells how many pictures went out and what the
-//! server measured.
+//! that goes away leaves the session running, for 60 s while no screen has a client. Pictures go
+//! out one at a time, the next after the client's `{"t":"ack"}`; whatever changes in between is
+//! merged into one enclosing rectangle, so no backlog builds up behind a slow webview. Once a
+//! second, while there is a picture, a text message `{"t":"stats",…}` tells how many pictures went
+//! out and what the server measured.
 
 use std::io;
 use std::net::Ipv4Addr;
