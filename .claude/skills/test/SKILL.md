@@ -100,9 +100,10 @@ The same line is on the `AH-STATUS` block's fourth line at session start.
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = `run.sh all --strict` on two boxes at once: part `rest` (`--part rest`) on the warm
-  box of slot `desktop`, part `gui` (`--part gui`, the desktop GUI E2E) on a second box of the
-  lane (`warm.sh gui`, `iter.sh --slot gui`). PASS only with both parts green; a part that
+- `all` = `run.sh all --strict` on two boxes at once: part `rest` (`--part rest --exclude
+  server-pytest`: the CI runs the server suite on every `main` commit, the report notes it) on
+  the warm box of slot `desktop`, part `gui` (`--part gui`, the desktop GUI E2E) on a second box
+  of the lane (`warm.sh gui`, `iter.sh --slot gui`). PASS only with both parts green; a part that
   did not run or brought no evidence makes it UNVERIFIED (the reason names the part, and a
   red other part as `FAIL in part …`). One layer row `all|-|…|<wall>|<box-rest>+<box-gui>|rest
   <s> s, gui <s> s`; each part has `all-<part>.log` and its pull directory `<part>/`.
@@ -192,7 +193,7 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
 `vm.py run <vmid> --sync -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/vm/bootstrap_linux.sh'` →
 `vm.py run <vmid> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `vm.py destroy <vmid>`.
 The full verb list, the exit codes and the rules are in the `/vm` skill.
-`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>] [--part gui|rest]`
+`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>] [--part gui|rest] [--exclude <ids…>]`
 (the `all` layer includes `upgrade_path_test.sh` — last published release → this checkout —
 and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Box rule:**
 with `AH_REQUIRED` unset, `run.sh` makes every step of a heavy layer required — a self-SKIP

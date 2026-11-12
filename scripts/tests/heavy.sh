@@ -9,8 +9,9 @@
 #                                 [--notify]
 #
 #     all       scripts/vm/warm.sh desktop, then two parts at once on two boxes:
-#                 rest  scripts/vm/iter.sh all --strict --part rest
-#                 gui   scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
+#                 rest  scripts/vm/iter.sh all --strict --part rest --exclude server-pytest
+#                       (the CI runs the server suite on every main commit)
+#                 gui  scripts/vm/warm.sh gui -> iter.sh --slot gui all --strict --part gui
 #               no GUI box after a retry: part gui after part rest, on the desktop box
 #               PASS only with both parts green
 #     capstone  scripts/tests/multibox.sh --capstone --strict
@@ -367,8 +368,15 @@ warm_lease() {  # warm_lease <slot> <log> -> the exit code of the last warm.sh c
 # of this shell, and that must never be read as a result. The seconds include the
 # lease — a cold GUI box is part of what its part costs.
 part_job() {  # part_job <part> <slot>
-  local part="$1" slot="$2" rc=0 t0=$SECONDS slot_flag=()
+  local part="$1" slot="$2" rc=0 t0=$SECONDS slot_flag=() exclude=()
   NOTE_FILE="$OUT/$part.notes"
+  # The CI runs the server suite on every main commit, every test of it, where the
+  # box skipped some for want of a service: a second, thinner nightly run of the
+  # same tests learns nothing the CI has not (R-1338). The other suites stay.
+  if [ "$part" = rest ]; then
+    exclude=(--exclude server-pytest)
+    note "part rest leaves out server-pytest: the CI runs the same suite on every main commit (R-1338)"
+  fi
   if [ "$slot" != desktop ]; then
     warm_lease "$slot" "$OUT/warm-$slot.log" || rc=$?
     if [ "$rc" != 0 ]; then
@@ -378,7 +386,7 @@ part_job() {  # part_job <part> <slot>
     slot_flag=(--slot "$slot")
   fi
   AH_OUT_DIR="$OUT/$part" bash "$WRAPPERS/iter.sh" ${slot_flag[@]+"${slot_flag[@]}"} \
-    all --strict --part "$part" >"$OUT/all-$part.log" 2>&1 </dev/null || rc=$?
+    all --strict --part "$part" ${exclude[@]+"${exclude[@]}"} >"$OUT/all-$part.log" 2>&1 </dev/null || rc=$?
   echo "$rc $((SECONDS - t0)) run" > "$OUT/$part.rc"
 }
 

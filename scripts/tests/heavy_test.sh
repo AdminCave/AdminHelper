@@ -1663,10 +1663,16 @@ tsv="$(cat "$AH_OUT_DIR"/weekly/*/steps-all.tsv 2>/dev/null)"
 grep -qxF "$(printf 'web vitest\tpass\t19\trest')" <<<"$tsv" && grep -qxF "$(printf 'desktop_e2e_misc\tpass\t300\tgui')" <<<"$tsv" \
   && [ "$(grep -c . <<<"$tsv")" = 4 ] \
   && ok "steps-all.tsv: the rows of both parts, the part in the fourth column" || bad "steps-all.tsv: $tsv"
-grep -q 'ARGS=all --strict --part rest$' "$SHIM_STATE/iter.args" \
+grep -q 'ARGS=all --strict --part rest --exclude server-pytest$' "$SHIM_STATE/iter.args" \
   && grep -q 'ARGS=--slot gui all --strict --part gui$' "$SHIM_STATE/iter-gui.args" \
   && ok "rest runs on the desktop slot, gui on the gui slot, each with its --part" \
   || bad "iter args: $(cat "$SHIM_STATE"/iter*.args)"
+# R-1338: the CI runs the server suite on every main commit, so part rest leaves
+# it out (part gui never had it) — and the report says so, not a silent gap.
+grep -qxF -- '- part rest leaves out server-pytest: the CI runs the same suite on every main commit (R-1338)' <<<"$rep" \
+  && [ "$(grep -c 'leaves out server-pytest' <<<"$rep")" = 1 ] \
+  && ok "the report notes once that part rest leaves server-pytest out, and why" \
+  || bad "notes: $(sed -n '/^## Notizen/,/^## audit/p' <<<"$rep")"
 grep -q 'AH_OUT_DIR=.*/weekly/[^/]*/rest ARGS=' "$SHIM_STATE/iter.args" \
   && grep -q 'AH_OUT_DIR=.*/weekly/[^/]*/gui ARGS=' "$SHIM_STATE/iter-gui.args" \
   && ok "each part pulls into its own directory of the run" || bad "pull dirs: $(cat "$SHIM_STATE"/iter*.args)"
@@ -1762,6 +1768,10 @@ grep -qF -- '- warm lease (gui) failed — retrying once' <<<"$rep" \
 grep -q 'AH_NO_SYNC=unset .*/weekly/[^/]*/gui ARGS=all --strict --part gui$' "$SHIM_STATE/iter-gui.args" 2>/dev/null \
   && [ "$(grep -c . "$SHIM_STATE/iter-gui.args")" = 1 ] && ! grep -qF -- '--slot' "$SHIM_STATE/order.log" \
   && ok "part gui runs once, on the desktop slot (no --slot), with --part gui, into gui/" \
+  || bad "iter args: $(cat "$SHIM_STATE"/iter*.args 2>/dev/null)"
+grep -q '/weekly/[^/]*/rest ARGS=all --strict --part rest --exclude server-pytest$' "$SHIM_STATE/iter.args" \
+  && [ "$(grep -c . "$SHIM_STATE/iter.args")" = 1 ] \
+  && ok "on one box too: part rest leaves server-pytest out, part gui (above) runs without --exclude" \
   || bad "iter args: $(cat "$SHIM_STATE"/iter*.args 2>/dev/null)"
 a1=$(cat "$SHIM_STATE/span-desktop.end" 2>/dev/null); b0=$(cat "$SHIM_STATE/span-gui.start" 2>/dev/null)
 [ -n "$a1" ] && [ -n "$b0" ] && awk -v a1="$a1" -v b0="$b0" 'BEGIN { exit !(b0 + 0 >= a1 + 0) }' \
