@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-module-2 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-module-2 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-module-2 · Review: pro Task
 Spec: docs/features/arch-monitoring-module-2.md (Roadmap R-1224, R-1268)
 Heavy: linux-full — `apps/agent` (Last-Tor, R-1268), `docker-compose.yml` (Umgebung des Monitoring-Dienstes) und ein neuer Check-Typ im Monitoring-Dienst; der Sammellauf fährt agent-monitoring und den Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -146,8 +146,10 @@ Review: approve (.ah-out/review/arch-monitoring-module-2/T16.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_agent_report.py
 Doku: → T14
 
-### T14 — Doku DE+EN und CHANGELOG (R-1224, R-1268)  [ ]
-Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, DEVELOPMENT.md, changelog.d/arch-monitoring-module-2.md
+### T14 — Doku DE+EN und CHANGELOG (R-1224, R-1268)  [x]
+Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, DEVELOPMENT.md, changelog.d/arch-monitoring-module-2.md, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4659ffbc7 2026-11-12T13:06:07+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Zentrale Checks (Fühler, Takte, Regel öffentlich/intern, Weg-Diagnose, Sperrlisten und DQS-Key, Umgebungsvariablen), Engine-Kontext und Schonung der Ziele, Last-Tor und `self.load_shed`, Route `rebaseline`, neue Abhängigkeiten; Fragment `changelog.d/arch-monitoring-module-2.md` (umlautfrei). Zehn Dateien: vier Seiten je DE+EN, DEVELOPMENT.md und das Fragment.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: diese Task
@@ -253,3 +255,4 @@ Task-Review: am Ende
 - 2026-11-12 T11: der Knopf „Basislinie neu lernen“ erscheint nur bei einem zentralen `dns`-Check ohne `params.expected` (nur dann lernt `dns.py` eine Basislinie) und fragt vorher nach: neu gelernt, während eine Antwort falsch ist, wird die falsche Antwort zur Basislinie.
 - 2026-11-12 T11: die Zertifikate-Ansicht bekommt „Quelle“ als letzte Spalte (HTTP-Check, Zentral, Agent); der bestehende Zeilen-Test erwartet deshalb eine sechste Zelle. Zentrale `tls`-Zeilen werden wie die übrigen nach der Restlaufzeit relativ zur Laufzeit eingestuft, ohne Datum nach dem Status; `rdap` nach dem Status, abgelaufen nach dem Datum.
 - 2026-11-12 T11 (Prüfer): Hinweistexte korrigiert — eine interne Adresse lehnt der Dienst nicht ab, der Lauf meldet unknown; `tls` nimmt keinen STARTTLS-Port (25, 587, 110, 143). Offen als Nit: eine `fetchStatus`-Antwort aus einem früheren Öffnen kann die Partner-Liste setzen (kosmetisch, der Router weist einen fremden Partner mit 400 ab); eine zentrale `tls`-Zeile mit gültiger Laufzeit, aber rotem Check (Kette, Hostname) zeigt in der Zertifikate-Ansicht die Laufzeit-Stufe → Doku T14.
+- 2026-11-12 T14: Dateien ohne `docs/developer/agent.html` DE+EN (Last-Tor und `self.load_shed` sind R-1268, T12/T13 warten auf Kevin und ziehen in den nächsten Zug samt ihrer Doku), dafür `docs/admin/installation.html` DE+EN (Tabelle der Umgebungsvariablen: `MONITOR_PUBLIC_RESOLVERS`, `MONITOR_SPAMHAUS_DQS_KEY`).
