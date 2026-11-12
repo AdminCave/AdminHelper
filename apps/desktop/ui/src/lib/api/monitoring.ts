@@ -176,6 +176,15 @@ export const monitoringApi = {
       `/api/monitoring/checks/${encodeURIComponent(checkId)}/reset`,
     );
   },
+  // Forgets the learned answer of a central dns check (R-1224): its next complete
+  // answer becomes the new baseline. The server answers with the check.
+  rebaseline(session: AuthSession, checkId: string): Promise<MonitorCheck> {
+    return apiRequest<MonitorCheck>(
+      session,
+      'POST',
+      `/api/monitoring/checks/${encodeURIComponent(checkId)}/rebaseline`,
+    );
+  },
 
   // ── Alerts ───────────────────────────────────────────────────────────────
   createAlert(session: AuthSession, data: AlertRuleInput): Promise<AlertRule> {

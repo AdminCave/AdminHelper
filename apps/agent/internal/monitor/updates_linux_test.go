@@ -108,67 +108,111 @@ RHSA-2025:7589 Important/Sec. kernel-5.14.0-503.40.1.el9_5.x86_64
 `
 
 func TestSystemStateUpdatesCountApt(t *testing.T) {
+	// The names are those of the counted Inst lines, apt's own name with ":<arch>" for a foreign
+	// architecture (pkgSimulate::Describe prints FullName(true)).
 	cases := []struct {
-		name string
-		out  string
-		want int
+		name  string
+		out   string
+		want  int
+		names []string
 	}{
-		{"Debian", aptDebianFixture, 4},
-		{"Ubuntu, two origins in one line", aptUbuntuFixture, 2},
+		{"Debian", aptDebianFixture, 4, []string{"linux-image-6.1.0-41-amd64", "linux-image-amd64", "libssl3", "openssl"}},
+		{"Ubuntu, two origins in one line", aptUbuntuFixture, 2, []string{"libc6", "libc-bin"}},
 		{"only a capitalised label names it",
-			"Inst libfoo1 [1.0-1] (1.0-1+deb10u1 Debian-Security:10/oldoldstable [amd64])\n", 1},
-		{"no parenthesis", "Inst libfoo1 [1.0-1]\n", 0},
-		{"nothing to upgrade", "Calculating upgrade...\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n", 0},
-		{"empty", "", 0},
+			"Inst libfoo1 [1.0-1] (1.0-1+deb10u1 Debian-Security:10/oldoldstable [amd64])\n", 1, []string{"libfoo1"}},
+		{"a foreign architecture",
+			"Inst libc6:i386 [2.36-9+deb12u10] (2.36-9+deb12u13 Debian-Security:12/stable-security [i386])\n", 1,
+			[]string{"libc6:i386"}},
+		{"no parenthesis", "Inst libfoo1 [1.0-1]\n", 0, nil},
+		{"nothing to upgrade", "Calculating upgrade...\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n", 0, nil},
+		{"empty", "", 0, nil},
 	}
 	for _, c := range cases {
-		if got := countAptSecurity([]byte(c.out)); got != c.want {
-			t.Errorf("%s: countAptSecurity = %d, want %d", c.name, got, c.want)
+		if got, names := countAptSecurity([]byte(c.out)); got != c.want || !reflect.DeepEqual(names, c.names) {
+			t.Errorf("%s: countAptSecurity = %d, %q; want %d, %q", c.name, got, names, c.want, c.names)
 		}
 	}
 }
 
 func TestSystemStateUpdatesCountDNF(t *testing.T) {
 	cases := []struct {
-		name string
-		out  string
-		want int
-		ok   bool
+		name  string
+		out   string
+		want  int
+		names []string
+		ok    bool
 	}{
-		{"one package in two advisories counts once", dnfFixture, 3, true},
-		{"no advisory", "", 0, true},
-		{"only blank lines", "\n\n", 0, true},
+		{"one package in two advisories counts once", dnfFixture, 3, []string{"openssl", "openssl-libs", "kernel"}, true},
+		{"no advisory", "", 0, nil, true},
+		{"only blank lines", "\n\n", 0, nil, true},
 		// The columns of dnf5 advisory list, which this parser does not know.
 		{"other columns", "Name           Type     Severity  Package                              Issued\n" +
-			"FEDORA-2025-1a security Important openssl-libs-1:3.2.4-3.fc42.x86_64 2025-10-01 12:00:00\n", 0, false},
-		{"a message among the advisories", dnfFixture + "Error: Cache-only enabled but no cache for 'baseos'\n", 0, false},
-		{"no NEVRA", "RHSA-2025:4051 Important/Sec. openssl\n", 0, false},
-		{"only a version", "RHSA-2025:4051 Important/Sec. openssl-3.2.2\n", 0, false},
+			"FEDORA-2025-1a security Important openssl-libs-1:3.2.4-3.fc42.x86_64 2025-10-01 12:00:00\n", 0, nil, false},
+		{"a message among the advisories", dnfFixture + "Error: Cache-only enabled but no cache for 'baseos'\n", 0, nil, false},
+		{"no NEVRA", "RHSA-2025:4051 Important/Sec. openssl\n", 0, nil, false},
+		{"only a version", "RHSA-2025:4051 Important/Sec. openssl-3.2.2\n", 0, nil, false},
 	}
 	for _, c := range cases {
-		got, ok := countDNFSecurity([]byte(c.out))
-		if got != c.want || ok != c.ok {
-			t.Errorf("%s: countDNFSecurity = %d, %v; want %d, %v", c.name, got, ok, c.want, c.ok)
+		got, names, ok := countDNFSecurity([]byte(c.out))
+		if got != c.want || !reflect.DeepEqual(names, c.names) || ok != c.ok {
+			t.Errorf("%s: countDNFSecurity = %d, %q, %v; want %d, %q, %v", c.name, got, names, ok, c.want, c.names, c.ok)
 		}
+	}
+}
+
+func TestSystemStateUpdatesPackageNames(t *testing.T) {
+	// A report carries each name once, sorted, at most maxPackageNames of them, each cut to
+	// maxPackageNameBytes without splitting a rune; no names stay nil, so the field stays out.
+	long := strings.Repeat("a", maxPackageNameBytes-1) + "ä-tail"
+	many := make([]string, maxPackageNames+5)
+	for i := range many {
+		many[i] = fmt.Sprintf("pkg%03d", len(many)-1-i)
+	}
+	cases := []struct {
+		name  string
+		in    []string
+		names []string
+	}{
+		{"none", nil, nil},
+		{"empty", []string{}, nil},
+		{"sorted, each once", []string{"openssl", "libssl3", "openssl"}, []string{"libssl3", "openssl"}},
+		{"cut before a split rune", []string{long}, []string{strings.Repeat("a", maxPackageNameBytes-1)}},
+		{"same after the cut", []string{long, strings.Repeat("a", maxPackageNameBytes-1) + "äb"},
+			[]string{strings.Repeat("a", maxPackageNameBytes-1)}},
+	}
+	for _, c := range cases {
+		if got := packageNames(c.in); !reflect.DeepEqual(got, c.names) {
+			t.Errorf("%s: packageNames(%q) = %q, want %q", c.name, c.in, got, c.names)
+		}
+	}
+	got := packageNames(many)
+	if len(got) != maxPackageNames || got[0] != "pkg000" || got[maxPackageNames-1] != fmt.Sprintf("pkg%03d", maxPackageNames-1) {
+		t.Errorf("packageNames of %d names = %d names from %q to %q, want the first %d sorted",
+			len(many), len(got), got[0], got[len(got)-1], maxPackageNames)
 	}
 }
 
 func TestSystemStateUpdatesTools(t *testing.T) {
 	// apt-get runs under updatesTimeout with LC_ALL=C and without the network (-s), also with dnf on
-	// the path; dnf runs from its cache (-C). The count is saved with the time it was taken.
+	// the path; dnf runs from its cache (-C). The count is saved with the time it was taken and the
+	// names, sorted.
 	cases := []struct {
 		name  string
 		tools map[string]dockerReply
 		reply string
 		want  updatesCall
 		count int
+		names []string
 	}{
 		{"apt-get", map[string]dockerReply{"apt-get": {}}, aptUbuntuFixture,
-			updatesCall{30 * time.Second, []string{"LC_ALL=C"}, []string{"apt-get", "-s", "dist-upgrade"}}, 2},
+			updatesCall{30 * time.Second, []string{"LC_ALL=C"}, []string{"apt-get", "-s", "dist-upgrade"}}, 2,
+			[]string{"libc-bin", "libc6"}},
 		{"apt-get and dnf", map[string]dockerReply{"apt-get": {}, "dnf": {}}, aptUbuntuFixture,
-			updatesCall{30 * time.Second, []string{"LC_ALL=C"}, []string{"apt-get", "-s", "dist-upgrade"}}, 2},
+			updatesCall{30 * time.Second, []string{"LC_ALL=C"}, []string{"apt-get", "-s", "dist-upgrade"}}, 2,
+			[]string{"libc-bin", "libc6"}},
 		{"dnf", map[string]dockerReply{"dnf": {}}, dnfFixture,
-			updatesCall{30 * time.Second, nil, []string{"dnf", "-C", "-q", "updateinfo", "list", "--security"}}, 3},
+			updatesCall{30 * time.Second, nil, []string{"dnf", "-C", "-q", "updateinfo", "list", "--security"}}, 3,
+			[]string{"kernel", "openssl", "openssl-libs"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -177,8 +221,9 @@ func TestSystemStateUpdatesTools(t *testing.T) {
 			logs := captureWarnings(t)
 			check := securityUpdates(context.Background(), nil)
 			if check == nil || check.Security == nil || *check.Security != c.count ||
-				check.CheckedUnix != updatesNow.Unix() {
-				t.Errorf("securityUpdates(context.Background(), nil) = %+v, want %d counted at %d", check, c.count, updatesNow.Unix())
+				check.CheckedUnix != updatesNow.Unix() || !reflect.DeepEqual(check.Packages, c.names) {
+				t.Errorf("securityUpdates(context.Background(), nil) = %+v, want %d counted at %d, names %q",
+					check, c.count, updatesNow.Unix(), c.names)
 			}
 			if want := []updatesCall{c.want}; !reflect.DeepEqual(*calls, want) {
 				t.Errorf("calls = %+v, want %+v", *calls, want)
@@ -270,7 +315,11 @@ func TestSystemStateUpdatesFailure(t *testing.T) {
 			if _, ok := block["security_updates"]; ok {
 				t.Errorf("block = %v, want no security_updates", block)
 			}
-			if next.Updates == nil || next.Updates.Security != nil || next.Updates.CheckedUnix != updatesNow.Unix() {
+			if _, ok := block["security_packages"]; ok {
+				t.Errorf("block = %v, want no security_packages", block)
+			}
+			if next.Updates == nil || next.Updates.Security != nil || next.Updates.Packages != nil ||
+				next.Updates.CheckedUnix != updatesNow.Unix() {
 				t.Errorf("state updates = %+v, want the attempt at %d without a number", next.Updates, updatesNow.Unix())
 			}
 			assertSystemStateLog(t, logs.String(), c.log)

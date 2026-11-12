@@ -6,8 +6,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitorCheck } from '$lib/api/types';
-  import { zfsDetails } from '$lib/models/checkDetails';
+  import { zfsDetails, type ZfsScrub } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
+  import { epochAgeText } from '$lib/models/monitoringText';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
   import { t } from '$lib/i18n';
@@ -30,6 +31,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ['critical', 'pill-crit'],
     ['warning', 'pill-warn'],
   ]);
+
+  const SCRUB_KEY = new Map<string, string>([
+    ['FINISHED', 'monitoring.zfs.scrub.finished'],
+    ['SCANNING', 'monitoring.zfs.scrub.scanning'],
+    ['PAUSED', 'monitoring.zfs.scrub.paused'],
+    ['CANCELED', 'monitoring.zfs.scrub.canceled'],
+  ]);
+
+  // "Scrub abgeschlossen · vor 3 Tagen · 2 Fehler"; a state this UI does not know by its name.
+  function scrubText(s: ZfsScrub): string {
+    const key = SCRUB_KEY.get(s.state);
+    const parts = [key ? $t(key) : $t('monitoring.zfs.scrub.other', { state: s.state })];
+    const age = s.end === undefined ? null : epochAgeText($t, s.end);
+    if (age !== null) parts.push(age);
+    if (s.errors > 0) parts.push($t('monitoring.zfs.scrubErrors', { count: s.errors }));
+    return parts.join(' · ');
+  }
+  // Display only: the pool's health rates the check, a scrub with errors is a hint.
+  function scrubChip(s: ZfsScrub): string {
+    if (s.errors > 0) return 'chip-warn';
+    return s.state === 'FINISHED' ? 'chip-ok' : 'chip-muted';
+  }
 
   function poolsOf(check: MonitorCheck) {
     return zfsDetails(check.state?.details)?.pools ?? [];
@@ -115,6 +138,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 <span class="mon-hero-bar-pct">{p.capacityPercent}%</span>
                 <span class="mon-chip chip-{h}">{p.health}</span>
               </div>
+              {#if p.scrub || p.fragmentationPercent !== undefined || (p.vdevErrors ?? []).length > 0}
+                <div class="mon-expand-names under-bar" data-pool={p.name}>
+                  {#if p.scrub}
+                    <span class="mon-chip {scrubChip(p.scrub)}">{scrubText(p.scrub)}</span>
+                  {/if}
+                  {#if p.fragmentationPercent !== undefined}
+                    <span class="mon-chip chip-muted"
+                      >{$t('monitoring.zfs.fragmentation', {
+                        percent: p.fragmentationPercent,
+                      })}</span
+                    >
+                  {/if}
+                  {#each p.vdevErrors ?? [] as v, idx (idx)}
+                    <span class="mon-chip chip-warn"
+                      >{$t('monitoring.zfs.vdevError', {
+                        name: v.name,
+                        read: v.read,
+                        write: v.write,
+                        checksum: v.checksum,
+                      })}</span
+                    >
+                  {/each}
+                </div>
+              {/if}
             {/each}
           </div>
         {/snippet}

@@ -232,3 +232,133 @@ describe('SecBackups with details of another shape', () => {
     expect(await expand(el)).toEqual(['vm-100 (100)', 'vm-101 (101)']);
   });
 });
+
+// arch-monitoring-ui-2 T10 (R-1227): below each guest where its newest backup lies, the
+// jobs that cover it, the PBS verification and the last failed run, each only as far as
+// the agent knew it.
+describe('SecBackups backup details', () => {
+  const NOW = Date.parse('2026-11-12T12:00:00Z') / 1000;
+  const GIB = 1024 ** 3;
+  const ERROR = 'ERROR: Backup of VM 101 failed - no space left on device';
+
+  function guest(vmid: number, status: 'ok' | 'outdated' | 'missing', more: object) {
+    return { ...vm(vmid, status, 3), ...more };
+  }
+
+  const guests = [
+    guest(100, 'ok', {
+      backupStorage: 'pbs',
+      backupSize: 12 * GIB,
+      backupVerify: 'ok',
+      backupJobs: [{ id: 'backup-nightly', schedule: '02:00', storage: 'pbs' }],
+    }),
+    guest(101, 'missing', {
+      backupJobs: [],
+      backupVerify: 'failed',
+      backupError: ERROR,
+      backupErrorTs: NOW - 5 * 3600,
+    }),
+    guest(102, 'outdated', {
+      backupSize: 1536,
+      backupVerify: 'none',
+      backupJobs: [{ schedule: 'sat 03:00' }, { id: 'weekly', storage: 'nas' }],
+      backupError: 'ERROR: Backup of VM 102 failed - timeout',
+      backupErrorTs: 1e20,
+    }),
+    guest(103, 'ok', {}),
+    guest(104, 'outdated', {
+      backupError: 'ERROR: Backup of VM 104 failed - lock',
+      backupErrorTs: NOW + 3600,
+    }),
+    guest(105, 'ok', {
+      backupStorage: 7,
+      backupSize: '12',
+      backupJobs: 'nightly',
+      backupVerify: false,
+      backupError: 3,
+    }),
+  ];
+
+  function line(el: HTMLElement, vmid: number): HTMLElement | null {
+    return el.querySelector<HTMLElement>(`[data-vm="${vmid}"]`);
+  }
+
+  function lineText(el: HTMLElement, vmid: number): string | null {
+    const l = line(el, vmid);
+    return l ? (l.textContent?.replace(/\s+/g, ' ').trim() ?? '') : null;
+  }
+
+  function chips(el: HTMLElement, vmid: number): string[] {
+    return Array.from(line(el, vmid)?.querySelectorAll<HTMLElement>('.mon-chip') ?? []).map(
+      (c) => `${c.textContent?.trim()}|${/chip-(\w+)/.exec(c.className)?.[1]}`,
+    );
+  }
+
+  async function shown() {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    const c = check({ status: 'critical', details: { vms: guests } });
+    const { container: el } = render(SecBackups, { props: { checks: [c] } });
+    await expand(el);
+    return el;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('names storage and size, the jobs and the verification of a guest', async () => {
+    const el = await shown();
+    expect(lineText(el, 100)).toBe(
+      'Ablage pbs · 12 GiB Jobs backup-nightly (02:00) → pbs verifiziert',
+    );
+    expect(chips(el, 100)).toEqual(['verifiziert|ok']);
+  });
+
+  it('says that no job covers a guest and names its last failed run with its age', async () => {
+    const el = await shown();
+    expect(lineText(el, 101)).toBe(
+      `Jobs kein Job Verifizierung fehlgeschlagen Letzter Fehler (vor 5 h): ${ERROR}`,
+    );
+    expect(chips(el, 101)).toEqual(['kein Job|muted', 'Verifizierung fehlgeschlagen|crit']);
+    expect(line(el, 101)?.querySelector('.mon-expand-error')?.textContent).toBe(
+      `Letzter Fehler (vor 5 h): ${ERROR}`,
+    );
+  });
+
+  it('shows a job without id, an unknown verification and an error no date can hold', async () => {
+    const el = await shown();
+    expect(lineText(el, 102)).toBe(
+      'Ablage 1,5 KiB Jobs ? (sat 03:00) weekly → nas Verifizierung: none ' +
+        'Letzter Fehler: ERROR: Backup of VM 102 failed - timeout',
+    );
+    expect(chips(el, 102)).toEqual(['Verifizierung: none|muted']);
+  });
+
+  it('counts a failed run ahead of this clock as now', async () => {
+    const el = await shown();
+    expect(lineText(el, 104)).toBe(
+      'Letzter Fehler (gerade eben): ERROR: Backup of VM 104 failed - lock',
+    );
+  });
+
+  it('adds no line for a guest without details or with fields of the wrong type', async () => {
+    const el = await shown();
+    expect(line(el, 103)).toBeNull();
+    expect(line(el, 105)).toBeNull();
+    // The rows themselves stay as they were.
+    expect(el.querySelectorAll('.mon-expand-row')).toHaveLength(guests.length);
+  });
+
+  it('renders the details in English', async () => {
+    setLanguage('en');
+    const el = await shown();
+    expect(lineText(el, 100)).toBe(
+      'Storage pbs · 12 GiB Jobs backup-nightly (02:00) → pbs verified',
+    );
+    expect(lineText(el, 101)).toBe(
+      `Jobs no job verification failed Last error (5 h ago): ${ERROR}`,
+    );
+    expect(lineText(el, 102)).toContain('verification: none Last error: ERROR');
+  });
+});

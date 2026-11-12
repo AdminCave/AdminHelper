@@ -14,6 +14,11 @@
 # stays in its container for it: the spec lets it report again, and its first
 # report made the port finding the spec adopts (the gateway's published port, a
 # docker-proxy listener on the host network the agent shares).
+#
+# Its second part (arch-monitoring-ui-2 T11) needs a second server, created
+# after the first spec so that spec sees one server only: a fixture agent is
+# provisioned for it and never runs (a run would scan and report the test box),
+# and the spec pushes a fixed report with that agent's key.
 
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -55,7 +60,8 @@ SID=$(e2e_api "$TOKEN" server e2e-server e2e.local)
 # connects to no port whose owner it cannot read (pid namespace, ptrace of
 # processes outside the container), so without them the scan finds no port.
 AGENT_CTR="$E2E_PROJECT-agent"
-trap 'docker rm -f "$AGENT_CTR" >/dev/null 2>&1; e2e_teardown' EXIT
+FIX_CTR="$E2E_PROJECT-fixture"
+trap 'docker rm -f "$AGENT_CTR" "$FIX_CTR" >/dev/null 2>&1; e2e_teardown' EXIT
 docker run -d --rm --name "$AGENT_CTR" --network host --pid host \
     --cap-add SYS_PTRACE --security-opt apparmor=unconfined -v "$AGENT_BIN:/agent:ro" \
     debian:bookworm-slim sleep 7200 >/dev/null \
@@ -87,8 +93,22 @@ dbus-run-session -- bash -c '
         --spec test/specs/monitoring-check.live.js
 ' && ok "monitoring-check GUI spec passed" || bad "monitoring-check GUI spec failed"
 
+# The fixture server: provisioning writes the agent's monitor.conf and makes one
+# test push of the container's own (empty) data, before the spec creates checks.
+FIX_SID=$(e2e_api "$TOKEN" server e2e-fixture fixture.local)
+[ -n "$FIX_SID" ] && ok "fixture server" || { bad "fixture server"; exit 1; }
+docker run -d --rm --name "$FIX_CTR" --network host -v "$AGENT_BIN:/agent:ro" \
+    debian:bookworm-slim sleep 7200 >/dev/null \
+    || { bad "fixture agent container did not start"; exit 1; }
+PTOK2=$(e2e_api "$TOKEN" provision-token "$FIX_SID")
+docker exec "$FIX_CTR" /agent provision --url "https://localhost:$E2E_HTTPS_PORT" \
+    --token "$PTOK2" --server-id "$FIX_SID" --insecure > "$E2E_WORK/fixture-agent.log" 2>&1
+grep -q "Test-Push erfolgreich" "$E2E_WORK/fixture-agent.log" \
+    && ok "fixture agent provisioned" \
+    || { bad "fixture agent provisioning failed"; sed 's/^/    /' "$E2E_WORK/fixture-agent.log"; }
+
 echo "[mon] running the monitoring-server-page spec under xvfb..."
-export AH_E2E_FINDING="$FINDING" AH_E2E_AGENT="$AGENT_CTR"
+export AH_E2E_FINDING="$FINDING" AH_E2E_AGENT="$AGENT_CTR" AH_E2E_FIXTURE_AGENT="$FIX_CTR"
 dbus-run-session -- bash -c '
     e2e_keyring_start || exit 1
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \

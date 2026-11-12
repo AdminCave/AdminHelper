@@ -16,6 +16,7 @@ import type {
   MonitorProbeValue,
 } from '$lib/api/types';
 import { currentLocale, type TranslateFn } from '$lib/i18n';
+import type { BackupGuestDetails, BackupJob } from '$lib/models/checkDetails';
 import { computeSummary } from '$lib/models/monitoring';
 import { timeAgo } from '$lib/utils/timeAgo';
 
@@ -135,6 +136,16 @@ export function ageText(t: TranslateFn, iso: string | null | undefined): string 
   return timeAgo(zoned, t);
 }
 
+/**
+ * ageText for epoch seconds; null for a value no date can hold. A time ahead of this
+ * clock (the agent's clock runs ahead) counts as now.
+ */
+export function epochAgeText(t: TranslateFn, seconds: number): string | null {
+  const ms = new Date(seconds * 1000).getTime();
+  if (Number.isNaN(ms)) return null;
+  return ageText(t, new Date(Math.min(ms, Date.now())).toISOString());
+}
+
 function daysText(t: TranslateFn, days: number): string {
   return days === 1 ? t('monitoring.unit.oneDay') : t('monitoring.unit.days', { count: days });
 }
@@ -162,6 +173,40 @@ export function bytesText(bytes: number): string {
     unit++;
   }
   return `${number(value, unit === 0 ? 0 : 1)} ${BYTE_UNITS[unit]}`;
+}
+
+/** "pbs · 12 GiB": where the newest backup of a guest lies and its size, each as far as known. */
+export function backupStorageText(d: BackupGuestDetails): string | null {
+  const parts = [d.backupStorage, d.backupSize === undefined ? undefined : bytesText(d.backupSize)];
+  const known = parts.filter((p): p is string => p !== undefined);
+  return known.length === 0 ? null : known.join(' · ');
+}
+
+/** "backup-nightly (02:00) → pbs"; a job the agent named without an id as "?". */
+export function backupJobText(job: BackupJob): string {
+  const schedule = job.schedule ? ` (${job.schedule})` : '';
+  const storage = job.storage ? ` → ${job.storage}` : '';
+  return `${job.id ?? '?'}${schedule}${storage}`;
+}
+
+const VERIFY_KEY = new Map<string, string>([
+  ['ok', 'monitoring.proxmox.verify.ok'],
+  ['failed', 'monitoring.proxmox.verify.failed'],
+]);
+
+/** The PBS verification of the newest backup; a state this UI does not know by its name. */
+export function backupVerifyText(t: TranslateFn, state: string): string {
+  const key = VERIFY_KEY.get(state);
+  return key ? t(key) : t('monitoring.proxmox.verify.other', { state });
+}
+
+/** The last failed vzdump run with its age; the agent sends one only without a newer backup. */
+export function backupErrorText(t: TranslateFn, d: BackupGuestDetails): string | null {
+  if (d.backupError === undefined) return null;
+  const when = d.backupErrorTs === undefined ? null : epochAgeText(t, d.backupErrorTs);
+  return when === null
+    ? t('monitoring.proxmox.lastErrorUndated', { text: d.backupError })
+    : t('monitoring.proxmox.lastError', { when, text: d.backupError });
 }
 
 /**

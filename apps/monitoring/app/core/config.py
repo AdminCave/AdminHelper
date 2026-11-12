@@ -2,8 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import ipaddress
 import logging
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -101,3 +103,48 @@ if ALERT_LOG_RETENTION_DAYS < 1:
         "ALERT_LOG_RETENTION_DAYS %d is < 1 — falling back to 90", ALERT_LOG_RETENTION_DAYS
     )
     ALERT_LOG_RETENTION_DAYS = 90
+
+# Resolvers the central checks ask directly, never the system resolver (R-1224): the
+# rule public/internal needs the answer the internet gets. Comma-separated IPs; an
+# entry that is no IP is dropped with a warning, and with none left the default
+# applies, so a typo cannot switch every central check to "resolvers unreachable".
+_DEFAULT_PUBLIC_RESOLVERS = ("9.9.9.9", "1.1.1.1")
+
+
+def _public_resolvers(raw: str) -> tuple[str, ...]:
+    resolvers: list[str] = []
+    for entry in (e.strip() for e in raw.split(",")):
+        if not entry:
+            continue
+        try:
+            resolver = str(ipaddress.ip_address(entry))
+        except ValueError:
+            logger.warning("Ignoring MONITOR_PUBLIC_RESOLVERS entry %r: not an IP address", entry)
+            continue
+        if resolver not in resolvers:
+            resolvers.append(resolver)
+    if not resolvers:
+        if raw.strip():
+            logger.warning(
+                "MONITOR_PUBLIC_RESOLVERS has no usable entry — using %s",
+                ",".join(_DEFAULT_PUBLIC_RESOLVERS),
+            )
+        return _DEFAULT_PUBLIC_RESOLVERS
+    return tuple(resolvers)
+
+
+PUBLIC_RESOLVERS = _public_resolvers(os.environ.get("MONITOR_PUBLIC_RESOLVERS", ""))
+
+
+# Spamhaus Data Query Service key for the DNSBL probe; empty keeps Spamhaus off
+# (Spamhaus refuses queries over public resolvers). It becomes a label of the query
+# name, so anything but one DNS label turns it off. Never logged.
+def _spamhaus_dqs_key(raw: str) -> str:
+    key = raw.strip()
+    if key and not re.fullmatch(r"[A-Za-z0-9]{1,63}", key):
+        logger.warning("MONITOR_SPAMHAUS_DQS_KEY is not a single DNS label — Spamhaus stays off")
+        return ""
+    return key
+
+
+SPAMHAUS_DQS_KEY = _spamhaus_dqs_key(os.environ.get("MONITOR_SPAMHAUS_DQS_KEY", ""))

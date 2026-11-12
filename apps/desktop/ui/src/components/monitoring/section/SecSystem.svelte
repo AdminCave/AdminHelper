@@ -6,9 +6,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitorCheck, MonitorSystemStateDetails } from '$lib/api/types';
+  import { systemStateNames } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
+  import Tag from '../../ui/Tag.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -34,6 +36,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     security_updates: 'monitoring.system.point.security_updates',
     oom: 'monitoring.system.point.oom',
   };
+  const NAMES_KEY = new Map<Key, string>([
+    ['reboot', 'monitoring.system.names.reboot'],
+    ['security_updates', 'monitoring.system.names.security_updates'],
+    ['oom', 'monitoring.system.names.oom'],
+  ]);
   // The colour comes from the status the line's dot shows: a first, still
   // damped problem leaves it ok, and then the pill stays grey.
   const PROBLEM_PILL = new Map<string, string>([
@@ -47,6 +54,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // null: the agent could not determine the point.
     value: string | null;
     level: Level;
+    // The names behind the value (packages, killed processes); empty when the agent
+    // sent none.
+    names: string[];
   }
   interface Pill {
     key: string;
@@ -98,16 +108,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // The checker's rating decides the colour. A bad value it does not name
     // (point switched off, clock in the first 15 minutes of uptime) is no
     // problem, but no green either.
-    const point = (key: Key, value: string | null, good: boolean): Point => ({
+    const point = (key: Key, value: string | null, good: boolean, names: string[] = []): Point => ({
       key,
       value,
       level: problems.includes(key) ? 'warn' : value !== null && good ? 'ok' : 'none',
+      names,
     });
+    const n = systemStateNames(d);
     const points = [
-      point('reboot', reboot === null ? null : yesNo(reboot), reboot === false),
+      point('reboot', reboot === null ? null : yesNo(reboot), reboot === false, n?.reboot_packages),
       point('time_sync', synced === null ? null : yesNo(synced), synced === true),
-      point('security_updates', updates === null ? null : String(updates), updates === 0),
-      point('oom', ooms === null ? null : String(ooms), ooms === 0),
+      point(
+        'security_updates',
+        updates === null ? null : String(updates),
+        updates === 0,
+        n?.security_packages,
+      ),
+      point(
+        'oom',
+        ooms === null ? null : String(ooms),
+        ooms === 0,
+        n?.oom_processes?.map((p) => `${p.name} (PID ${p.pid})`),
+      ),
     ];
     return {
       reported: true,
@@ -155,6 +177,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {#if i.evaluated}
             <div class="mon-expand-list">
               {#each i.points as p (p.key)}
+                {@const namesKey = NAMES_KEY.get(p.key)}
                 <div class="mon-expand-row level-{p.level}">
                   <span class="mon-dot {DOT[p.level]}"></span>
                   <span class="mon-expand-name">{$t(POINT_KEY[p.key])}</span>
@@ -162,6 +185,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
                     >{p.value ?? $t('monitoring.system.notDetermined')}</span
                   >
                 </div>
+                {#if namesKey && p.names.length > 0}
+                  <div class="mon-expand-names" data-point={p.key}>
+                    <span class="mon-expand-names-label">{$t(namesKey)}</span>
+                    <!-- Keyed by position: a list can name a package twice. -->
+                    {#each p.names as name, idx (idx)}
+                      <Tag tone="neutral" size="sm">{name}</Tag>
+                    {/each}
+                  </div>
+                {/if}
               {/each}
             </div>
           {/if}

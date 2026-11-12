@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script module lang="ts">
   import type { MonitorCheck, Server } from '$lib/api/types';
+  import { systemStateNames } from '$lib/models/checkDetails';
   import { groupChecksByServer } from '$lib/models/monitoring';
 
   /**
@@ -22,6 +23,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     /** null: not determined. */
     reboot: boolean | null;
     securityUpdates: number | null;
+    /** The packages with security updates, as far as the agent names them. */
+    packages: string[];
     /** The checker's problems among reboot and security_updates, in its order. */
     problems: ('reboot' | 'security_updates')[];
     state: UpdateState;
@@ -59,6 +62,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       key: check.id,
       reboot,
       securityUpdates: updates,
+      packages: systemStateNames(d)?.security_packages ?? [],
       problems,
       state,
       checkStatus: status,
@@ -130,6 +134,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return $t(row.reboot ? 'monitoring.system.yes' : 'monitoring.system.no');
   }
 
+  // The cell names this many packages, its title all of them.
+  const SHOWN_PACKAGES = 5;
+
+  function packagesText(row: UpdateRow): string {
+    return row.packages.length === 0 ? '—' : row.packages.join(', ');
+  }
+
+  // Only once a server names its packages: an agent before the names keeps the table as it was.
+  const packageColumn: CrossColumn<UpdateRow>[] = $derived(
+    rows.some((r) => r.packages.length > 0)
+      ? [
+          {
+            key: 'packages',
+            label: $t('monitoring.updates.col.packages'),
+            text: packagesText,
+            sort: (r) => (r.packages.length === 0 ? null : packagesText(r)),
+            cell: packagesCell,
+          },
+        ]
+      : [],
+  );
+
   const columns: CrossColumn<UpdateRow>[] = $derived([
     {
       key: 'server',
@@ -151,6 +177,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       sort: (r) => r.securityUpdates,
       numeric: true,
     },
+    ...packageColumn,
     {
       key: 'state',
       label: $t('monitoring.updates.col.state'),
@@ -165,6 +192,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <ServerLink name={row.serverName} serverKey={row.serverKey} {onOpen} />
 {/snippet}
 
+{#snippet packagesCell(row: UpdateRow)}
+  {#if row.packages.length === 0}
+    —
+  {:else}
+    <span title={packagesText(row)}>
+      <span class="packages">{row.packages.slice(0, SHOWN_PACKAGES).join(', ')}</span>
+      {#if row.packages.length > SHOWN_PACKAGES}
+        <span class="packages-more"
+          >{$t('monitoring.updates.morePackages', {
+            count: row.packages.length - SHOWN_PACKAGES,
+          })}</span
+        >
+      {/if}
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet stateCell(row: UpdateRow)}
   <span data-state={row.state}><Pill tone={tone(row)}>{stateText(row)}</Pill></span>
 {/snippet}
@@ -177,3 +221,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   emptyText={$t('monitoring.updates.empty')}
   sortKey="state"
 />
+
+<style>
+  .packages {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .packages-more {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+</style>

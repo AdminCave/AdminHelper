@@ -1019,7 +1019,9 @@ func recognizeOn(s *session) (string, protoResult, bool, error) {
 	case errors.Is(err, errLineTooLong) || l != "":
 		return "banner", protoResult{ok: true, detail: "banner"}, false, nil
 	case !timeout(err):
-		return "closed", protoResult{detail: "closed"}, false, nil
+		// A server that takes the connection and closes it without a word is up (frps closes what
+		// is not its protocol, or a TLS connection without its SNI); TLS may tell more.
+		return "unknown", protoResult{ok: true, detail: "unknown"}, true, nil
 	}
 	// Silence: the client speaks first. HEAD goes without Host: Redis drops a connection that sends
 	// Host: or POST as an attack, and it is to answer with an error.
