@@ -41,8 +41,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T12
 Abhängt von: T1
 
-### T4 — Monitoring: Tabellen für Dienste-Inventar und Fehlerzeilen (Migration, R-1226)  [ ]
+### T4 — Monitoring: Tabellen für Dienste-Inventar und Fehlerzeilen (Migration, R-1226)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/alembic/versions/c1e3a5b7d9f0_service_inventory.py, apps/monitoring/app/server_cleanup.py, apps/monitoring/tests/test_service_tables.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/tests/test_models_timestamps.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @48844bfb3 2026-11-12T15:55:27+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T4.verdict.json)
 Änderung: `monitor_service_inventory` (`server_id` PK, `reported_at`, `services`, `log_lines` mit `server_default` true) und `monitor_service_logs` (PK `server_id`+`unit`, `since`, `collected_at`, `lines`), additive Revision nach `b8d0f2a4c6e8` mit Downgrade. `cleanup_server` löscht beide. Tests: Upgrade/Downgrade, Default des Schalters, Cleanup, naive UTC-Zeitstempel.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_tables.py tests/test_migrations_smoke.py tests/test_models_timestamps.py
 Doku: → T12
@@ -124,3 +126,4 @@ Task-Review: am Ende
 - 2026-11-12 T2: Kein `exit` für `WIN32_EXIT_CODE` 0 und 1077 (`ERROR_SERVICE_NEVER_STARTED`, jeder nie gestartete Dienst seit dem Boot — sonst trügen die meisten manuellen Dienste einen Exit und `wevtutil` liefe bei jedem Bericht); 1066 wird `service=<SERVICE_EXIT_CODE>`, nur dann gilt dieser Code (`SERVICE_STATUS`, Microsoft Learn).
 - 2026-11-12 T2: `param1` von 7031/7034 wird mit Anzeige- und Dienstname verglichen (beide sind im SCM eindeutig) — welcher Name drinsteht, dokumentiert Microsoft nicht; `scmevents_windows_test.go` prüft im CI-Job `agent-windows` an 7036 desselben Anbieters, dass `param1` den Anzeigenamen trägt.
 - 2026-11-12 T2: `result=crashed` und `since` nur für gestoppte Dienste mit `exit`; ein nach dem Absturz neu gestarteter Dienst bleibt unverändert. `/c:50`: ein Dienst, der im Kreis abstürzt, kann die Ereignisse der anderen verdrängen, die dann nur ihr `exit` behalten. Kein Cache: der Aufruf läuft nur, solange ein gestoppter Dienst einen Exit trägt.
+- 2026-11-12 T4: `reported_at` darf leer sein: der Schalter je Server kann vor dem ersten Bericht gesetzt werden (Zeile ohne Inventar). Keine `to_dict` an den neuen Modellen — die Route serialisiert wie `findings.py` mit `iso_utc`, `test_models_timestamps.py` bleibt daher unverändert; die Gleichheit von Kette und Modellen prüft `test_migration_chain_matches_models` ohne Änderung an `test_migrations_smoke.py`. Die Migrationstests laufen lokal nur mit Postgres in `DATABASE_URL` (Verify überspringt sie wie bei R-1223); gegen die Worktree-Test-DB: 32 passed, die PR-CI fährt sie mit Postgres.

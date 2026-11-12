@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    true,
 )
 from sqlalchemy.orm import validates
 
@@ -589,3 +590,30 @@ class MonitorFinding(Base):
     first_seen = Column(DateTime, nullable=False, server_default=utc_now_sql())
     last_seen = Column(DateTime, nullable=False, server_default=utc_now_sql())
     decided_at = Column(DateTime, nullable=True)
+
+
+class MonitorServiceInventory(Base):
+    """The full service inventory a server's agent last reported (systemd units,
+    Windows services) and whether its agent sends the error lines of failed
+    services. One row per server; the switch can exist before the first report."""
+
+    __tablename__ = "monitor_service_inventory"
+
+    server_id = Column(String, primary_key=True)
+    reported_at = Column(DateTime, nullable=True)
+    services = Column(Text, nullable=False, default="[]", server_default="[]")  # JSON list
+    log_lines = Column(Boolean, nullable=False, default=True, server_default=true())
+
+
+class MonitorServiceLog(Base):
+    """The redacted error lines of one failed service, kept while the unit stays
+    failed. Shown in the desktop only: never in a check's text, details, history
+    or an alert."""
+
+    __tablename__ = "monitor_service_logs"
+
+    server_id = Column(String, primary_key=True)
+    unit = Column(String, primary_key=True)
+    since = Column(DateTime, nullable=True)
+    collected_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+    lines = Column(Text, nullable=False, default="[]", server_default="[]")  # JSON list
