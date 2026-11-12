@@ -37,6 +37,9 @@ class FrpServerConfig(Base):
         backref="frp_config",
         lazy="selectin",
         foreign_keys="FrpTunnel.frp_config_id",
+        # The FK cascades in the DB. "all": the tunnels are loaded (selectin), and with
+        # True the ORM would still null their frp_config_id (NOT NULL) before the DELETE.
+        passive_deletes="all",
     )
 
     def to_dict(self, include_tunnels: bool = False, mask_secrets: bool = False) -> dict[str, Any]:

@@ -5,8 +5,10 @@ Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den ec
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1310: FRP-Konfiguration mit Tunneln löschen ohne 500  [ ]
+### T1 — R-1310: FRP-Konfiguration mit Tunneln löschen ohne 500  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/tests/test_frp_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e9abd2294 2026-11-12T09:21:24+01:00
+Review: approve (.ah-out/review/kern-frp-5/T1.verdict.json)
 Beweis: feature/arch-frps-identity@759a99926 (+T3-Test): DELETE /api/frp/server-config/cfg-1 mit 4 Tunneln -> 500 IntegrityError; models.py:35 unverändert gegen origin/main
 Dedup-Key: bug:server:apps/server/app/modules/frp/models.py:FrpServerConfig.tunnels
 Änderung: Erst der rote Test (Konfiguration mit Tunneln löschen → 204, Tunnel weg), dann `passive_deletes=True` an `FrpServerConfig.tunnels`, damit die Kaskade der DB löscht statt das ORM `frp_config_id` zu leeren.
