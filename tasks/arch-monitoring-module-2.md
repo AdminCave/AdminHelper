@@ -17,8 +17,10 @@ T8 (MTA-STS-Abruf) und T9 (Sperrlisten, DQS-Key) stehen nicht auf der Liste, öf
 --license GPL-3.0-or-later <datei>`). Mehr als acht Dateien in T1 und T3: Lock-Datei, Lizenzliste und Compose
 gehören zur Abhängigkeit bzw. zum Typ und sind nur gemeinsam grün.
 
-### T1 — Monitoring: Grundlage `app/central/` (globale Adresse, öffentliche Resolver, Schonung) und Abhängigkeiten (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/requirements.in, apps/monitoring/requirements.txt, THIRD_PARTY_LICENSES.md, apps/monitoring/app/central/__init__.py, apps/monitoring/app/central/net.py, apps/monitoring/app/central/resolve.py, apps/monitoring/app/central/limits.py, apps/monitoring/app/core/config.py, docker-compose.yml, .env.example, apps/monitoring/tests/test_central_net.py, apps/monitoring/tests/test_central_resolve.py
+### T1 — Monitoring: Grundlage `app/central/` (globale Adresse, öffentliche Resolver, Schonung) und Abhängigkeiten (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/requirements.in, apps/monitoring/requirements.txt, THIRD_PARTY_LICENSES.md, apps/monitoring/app/central/__init__.py, apps/monitoring/app/central/net.py, apps/monitoring/app/central/resolve.py, apps/monitoring/app/central/limits.py, apps/monitoring/app/core/config.py, docker-compose.yml, .env.example, apps/monitoring/tests/test_central_net.py, apps/monitoring/tests/test_central_resolve.py, docs/features/arch-monitoring-module-2.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b0ac0754d 2026-11-12T06:25:14+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T1.verdict.json)
 Änderung: dnspython und cryptography (Version wie im Server) in `requirements.in`, Lock mit `pip-compile --generate-hashes` neu, Lizenzen in `THIRD_PARTY_LICENSES.md`. `net.py`: `is_global` plus gegen die IANA-Tabellen gepinnte Ergänzung, eingebettetes IPv4 (mapped, NAT64). `resolve.py`: Abfrage zweier öffentlicher Resolver (`MONITOR_PUBLIC_RESOLVERS`, Vorgabe 9.9.9.9 und 1.1.1.1) und die Regel öffentlich/intern mit den drei Ergebnissen der Spec. `limits.py`: Semaphore (4) und Mindestabstand je Adresse bzw. Adresse+Port. `MONITOR_SPAMHAUS_DQS_KEY` in `config.py`, beide Variablen in Compose und `.env.example`. Tests mit gefälschtem Resolver (kein Netz): global/nicht global je IANA-Zeile, ein Resolver stumm, beide stumm, keine globale Adresse, Abstand.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_net.py tests/test_central_resolve.py
 Doku: → T14
@@ -114,3 +116,15 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- 2026-11-12 T1: Meldungen im Code englisch („not public – checked by the agent“, „public resolvers unreachable“, „skipped: minimum spacing“), die Spec zitiert sie deutsch — Code-Strings sind englisch (Konvention), die UI übersetzt nicht Freitext.
+- 2026-11-12 T1: Mindestabstand je Adresse 2 s mit Reservierung: ein Lauf wartet höchstens 10 s, sonst übersprungen; Slot-Wartezeit ebenfalls 10 s — ein wartender Lauf hält einen Thread des gemeinsamen Scheduler-Pools (30).
+- 2026-11-12 T1: smtp/imap-Abstand 15 min je Adresse+Port mit 30 s Spielraum; ein übersprungener Lauf zählt nicht als Verbindung, ein zweiter Check auf dieselbe Adresse+Port wird übersprungen — sonst wird ein Intervall von genau 15 min jeden zweiten Lauf übersprungen bzw. zwei Checks öffnen zwei Verbindungen.
+- 2026-11-12 T1: Ein stummer Resolver (Timeout, SERVFAIL, REFUSED, Netzfehler) hat kein Veto, entschieden wird auf den antwortenden; antwortet einer mit NXDOMAIN oder ohne Adresse, ist das Ziel nicht öffentlich — ein ausgefallener Resolver ist nicht Schuld des Ziels, Split-Horizon muss aber intern bleiben.
+- 2026-11-12 T1: IANA-Tabellen gepinnt (Stand 2026-11-12), gepinnte Zeilen entscheiden vor `ipaddress.is_global`; Python 3.13.5 und 3.14 weichen ab bei 192.88.99.0/24, 192.88.99.2/32, 100:0:0:1::/64, 5f00::/16 (dort „global“) und 2001:1::3 (dort „nicht global“); der Test verbietet `is_global` für jede gelistete Zeile — gleiche Antwort auf jedem Python.
+- 2026-11-12 T1: IPv4-mapped, NAT64 (64:ff9b::/96) und 6to4 entscheidet das eingebettete IPv4; Teredo, fec0::/10 und Multicast nie global — die Verbindung erreicht den IPv4-Host; Teredo/6to4 sind laut IANA „N/A“.
+- 2026-11-12 T1: Spamhaus-DQS-Key muss ein DNS-Label aus [A-Za-z0-9] sein, sonst aus mit Warnung ohne den Key — er wird Teil des Abfragenamens.
+- 2026-11-12 T1: Limits-Tests in `test_central_net.py` statt eigener Datei — das `Verify:` der Task bleibt wie geplant.
+- 2026-11-12 T1→T3: zentrale Jobs brauchen `jitter` am `IntervalTrigger` (`app/scheduler.py` per `set-files` in T3) — ohne feuern alle nach dem Start gleichzeitig und verhungern an den 4 Slots.
+- 2026-11-12 T1: IPv6 außerhalb 2000::/3 ist nach den gepinnten Zeilen nie global — IANA vergibt Global Unicast nur daraus, `ipaddress` hält IPv4-compatible ::/96 und 4000::/3 für global (Prüfer T1).
+- 2026-11-12 T1→T9: der Abfragename trägt den DQS-Key, dnspython-Ausnahmen zitieren ihn: weder Abfragename noch `str(exc)` gehen in `details`, `message`, Log oder API, nur Zone und Ergebnis.
+- 2026-11-12 T1→T14: Spec-Regel 1 und 2 folgen den Entscheidungen oben (stummer Resolver ohne Veto, 2000::/3, 6to4) — in T1 nachgezogen.

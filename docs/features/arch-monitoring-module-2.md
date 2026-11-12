@@ -119,10 +119,10 @@ nächste Lauf lernt neu. Antwort wie `GET /checks/{id}`. Admin-Auth wie die übr
 Cloudflare `1.1.1.1`, beide validierend), `MONITOR_SPAMHAUS_DQS_KEY` (leer = Spamhaus aus).
 
 **Regel öffentlich/intern** (Konzept §3.7), je Lauf:
-1. Beide öffentlichen Resolver beantworten den Namen (direkt vom Monitoring-Dienst gefragt, nicht über den
-   System-Resolver).
-2. Mindestens eine Adresse ist global (`ipaddress.is_global` plus eine kleine, gegen die IANA-Tabellen gepinnte
-   Ergänzung; eingebettetes IPv4 in IPv4-mapped und NAT64 wird geprüft).
+1. Jeder antwortende öffentliche Resolver kennt den Namen mit Adresse (direkt vom Monitoring-Dienst gefragt,
+   nicht über den System-Resolver); ein stummer Resolver (Timeout, SERVFAIL, REFUSED) hat kein Veto.
+2. Mindestens eine Adresse ist global (gegen die IANA-Tabellen gepinnte Zeilen vor `ipaddress.is_global`, IPv6
+   nur aus 2000::/3; eingebettetes IPv4 in IPv4-mapped, NAT64 und 6to4 entscheidet).
 3. Der Dienst erreicht eine globale Adresse; verbunden wird nur mit globalen Adressen, gepinnt (kein zweites
    Auflösen).
 

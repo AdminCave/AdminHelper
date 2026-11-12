@@ -39,18 +39,19 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | python-multipart | 0.0.33 | Apache-2.0 | x |  |  |
 | opentelemetry-api | 1.45.2 | Apache-2.0 | x | x | x |
 | tzdata | 2026.6 | Apache-2.0 | x |  |  |
-| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | x |  | x |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | x | x | x |
 | uvloop | 0.23.0 | Apache-2.0 OR MIT | x | x | x |
 | click | 8.5.0 | BSD-3-Clause | x | x | x |
 | httpcore | 1.0.9 | BSD-3-Clause | x | x |  |
 | httpx | 0.28.1 | BSD-3-Clause | x | x |  |
 | idna | 3.20 | BSD-3-Clause | x | x | x |
 | MarkupSafe | 3.0.4 | BSD-3-Clause | x | x |  |
-| pycparser | 3.12 | BSD-3-Clause | x |  | x |
+| pycparser | 3.12 | BSD-3-Clause | x | x | x |
 | python-dotenv | 1.2.4 | BSD-3-Clause | x | x | x |
 | starlette | 1.10.0 | BSD-3-Clause | x | x | x |
 | uvicorn | 0.54.0 | BSD-3-Clause | x | x | x |
 | websockets | 17.4 | BSD-3-Clause | x | x | x |
+| dnspython | 2.9.2 | ISC |  | x |  |
 | psycopg | 3.3.7 | LGPL-3.0-only | x | x | x |
 | psycopg-binary | 3.3.7 | LGPL-3.0-only | x | x | x |
 | alembic | 1.20.1 | MIT | x | x |  |
@@ -58,7 +59,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | annotated-types | 0.8.0 | MIT | x | x | x |
 | anyio | 4.16.0 | MIT | x | x | x |
 | APScheduler | 3.11.3 | MIT | x | x |  |
-| cffi | 2.1.1 | MIT | x |  | x |
+| cffi | 2.1.1 | MIT | x | x | x |
 | fastapi | 0.162.0 | MIT | x | x | x |
 | h11 | 0.16.0 | MIT | x | x | x |
 | httptools | 0.9.0 | MIT | x | x | x |
