@@ -1,5 +1,5 @@
 # frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-5 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-5 · Review: pro Task
 Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310, R-1368)
 Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den echten frps; Kevin 2026-11-12: vor dem Merge. Server-API und Agent-Modul fährt dazu der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -74,6 +74,20 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py 
 Doku: die genannten Dateien (Absatz Domain-Konflikt DE+EN, CHANGELOG-Zeile)
 Abhängt von: T5
 
+### T9 — R-1368: nur HTTPS-Proxys tragen Hostnamen, Platzhalter-Test dreiteilig  [ ]
+Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/tests/test_frp_policy.py
+Änderung: Nits aus Review und Security T8: frps baut Hostnamen nur für HTTP(S)-Proxys, `_conflicts` zählt daher nur Proxys vom Typ `https` (eine `subdomain` per `extra_config` an einem STCP-Tunnel nimmt keinen HTTPS-Proxy mehr aus der Policy); Docstring von `_covers` genauer; Test „Platzhalter über gruppiertem Namen derselben Gruppe“ mit dreiteiligem Namen, wie frps ihn tatsächlich routet.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_policy.py tests/test_frp_tunnels.py
+Doku: keine (Verhalten wie dokumentiert: die Doku spricht von HTTPS-Tunneln)
+Abhängt von: T8
+
+### T10 — API-Referenz: 409 bei Hostnamen-Konflikt, DELETE der FRP-Konfiguration  [ ]
+Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Änderung: Fund der Abschlussprüfung: `POST`/`PUT /api/frp/tunnels` nennen die 409, wenn ein Hostname des Tunnels auch einem Tunnel eines anderen Servers zugeordnet ist (ohne gemeinsame Gruppe bei genau gleichem Namen); `DELETE /api/frp/server-config/{id}` löscht die Tunnel der Konfiguration mit.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die genannten Dateien
+Task-Review: am Ende
+
 ## Entscheidungen
 - 2026-11-12 Policy-Format Version 2 ohne Lesen von Version 1: Plugin und Server kommen im selben Release, das Fenster ist fail-closed wie ohne Datei.
 - 2026-11-12 Benutzerliste als Menge verglichen: frpc gibt `allowUsers` in der Reihenfolge der Datei weiter, der Generator sortiert; die Menge hält den Vergleich unabhängig davon.
@@ -81,3 +95,4 @@ Abhängt von: T5
 - 2026-11-12 T3 in den Commit von T2: das Plugin liest ab T2 nur Version 2, der Server schrieb bis T3 Version 1; getrennt wäre der Stand dazwischen rot (Prüfer T2). Der Commit trägt beide Verify-Läufe, der Server-Lauf steht im Body.
 - 2026-11-12 T4: Logins von Usern außerhalb der Policy (Desktop-Visitor melden sich als AdminHelper-User an) lässt das Plugin ohne Schlüssel zu, gebunden an eine run_id unter ihrem eigenen Präfix; nur Hosts der Policy brauchen ihren Schlüssel, ein leerer User wird abgelehnt (Prüfer T4).
 - 2026-11-12 R-1368 (Kevin-Triage: Zusatz-Task im laufenden Zug) als T8 nach dem Abschluss von T7; R-1316 in den Folgezug kern-frp-6 (Gate-Fragen Migration/UI, Rollout mit dem Scharfschalten von R-1304).
+- 2026-11-12 T9/T10 aus Abschlussprüfung (API-Referenz, wichtig) und den Nits von Prüfer und Security zu T8; Kopf zurück auf aktiv.
