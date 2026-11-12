@@ -234,6 +234,45 @@ check "build-push-action with no-cache and cache-to: red" 1 "$(run --uncached "$
 sed '/no-cache: true/d' "$work/u-more.yml" >"$work/u-bpa.yml"
 check "build-push-action without no-cache: red" 1 "$(run --uncached "$work/u-bpa.yml")"
 
+# R-1349: --tag-uncached keeps the build cache on main and switches it off on tags.
+cat >"$work/t-good.yml" <<'YML'
+    steps:
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          no-cache: ${{ startsWith(github.ref, 'refs/tags/') }}
+          cache-from: ${{ !startsWith(github.ref, 'refs/tags/') && format('type=gha,scope={0}', matrix.image) || '' }}
+          cache-to: ${{ !startsWith(github.ref, 'refs/tags/') && format('type=gha,mode=max,scope={0}', matrix.image) || '' }}
+YML
+check "tag-guarded build cache: green" 0 "$(run --tag-uncached "$work/t-good.yml")"
+check "tag-guarded build cache under --uncached: red" 1 "$(run --uncached "$work/t-good.yml")"
+
+sed '/no-cache:/d' "$work/t-good.yml" >"$work/t-nonc.yml"
+check "tag-uncached without no-cache: red" 1 "$(run --tag-uncached "$work/t-nonc.yml")"
+check "red names the tag build step" "::error file=$work/t-nonc.yml,line=2::build-push-action not switched off on tags (no-cache/cache-from/cache-to)" "$(cat "$work/out")"
+
+sed 's/no-cache: .*/no-cache: true/' "$work/t-good.yml" >"$work/t-nctrue.yml"
+check "tag-uncached with no-cache: true but guarded cache: red" 1 "$(run --tag-uncached "$work/t-nctrue.yml")"
+
+sed 's/cache-from: .*/cache-from: type=gha,scope=server/' "$work/t-good.yml" >"$work/t-from.yml"
+check "tag-uncached with unguarded cache-from: red" 1 "$(run --tag-uncached "$work/t-from.yml")"
+
+sed 's/cache-to: .*/cache-to: type=gha,mode=max/' "$work/t-good.yml" >"$work/t-to.yml"
+check "tag-uncached with unguarded cache-to: red" 1 "$(run --tag-uncached "$work/t-to.yml")"
+
+sed 's/startsWith(github.ref, .refs\/tags\/.) }}/startsWith(github.ref, '"'"'refs\/heads\/'"'"') }}/' "$work/t-good.yml" >"$work/t-heads.yml"
+check "tag-uncached with no-cache on heads: red" 1 "$(run --tag-uncached "$work/t-heads.yml")"
+
+sed 's/no-cache:/# no-cache:/' "$work/t-good.yml" >"$work/t-com.yml"
+check "tag-uncached with no-cache commented out: red" 1 "$(run --tag-uncached "$work/t-com.yml")"
+
+cat "$work/t-good.yml" - >"$work/t-rust.yml" <<'YML'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+YML
+check "tag-uncached with another cache step: red" 1 "$(run --tag-uncached "$work/t-rust.yml")"
+
 # A with: written as a flow mapping is not read: red in every mode.
 printf '    steps:\n      - uses: actions/cache@v6\n        with: { path: ~/.cargo/bin, key: k }\n' >"$work/flow.yml"
 check "with: as a flow mapping: red" 1 "$(run "$work/flow.yml")"
@@ -257,14 +296,16 @@ printf '    steps:\n      - uses: actions/checkout@v7\n      - uses: Swatinem/ru
 check "steps after each other stay apart: green" 0 "$(run "$work/afterlist.yml")"
 
 check "--uncached without a file: usage" 2 "$(run --uncached)"
+check "--tag-uncached without a file: usage" 2 "$(run --tag-uncached)"
 check "unknown option: usage" 2 "$(run --cached "$work/good.yml")"
 
 check "one bad file among good ones: red" 1 "$(run "$work/good.yml" "$work/nobin.yml")"
 check "no argument: usage" 2 "$(run)"
 check "unreadable file: usage" 2 "$(run "$work/missing.yml")"
 
-check "real ci.yml and release.yml (uncached): green" 0 \
-    "$(run "$root/.github/workflows/ci.yml" --uncached "$root/.github/workflows/release.yml")"
+check "real ci.yml, release.yml (uncached), docker.yml (tag-uncached): green" 0 \
+    "$(run "$root/.github/workflows/ci.yml" --uncached "$root/.github/workflows/release.yml" \
+        --tag-uncached "$root/.github/workflows/docker.yml")"
 [ "$(grep -c . "$work/out")" = 1 ] || cat "$work/out" >&2
 
 echo "cache_settings_test: $passed passed, $failed failed"

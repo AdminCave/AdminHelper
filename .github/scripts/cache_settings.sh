@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# cache_settings.sh [--uncached <workflow>]… <workflow>… — the cache settings ci-9 relies on, per step:
+# cache_settings.sh [--uncached <workflow>]… [--tag-uncached <workflow>]… <workflow>… — the cache settings ci-9 relies on, per step:
 #   - every Swatinem/rust-cache step sets `cache-bin: false` in its `with:` block, so no tool
 #     binary (and no .crates.toml that makes `cargo install` skip the build) comes back from a
 #     cache;
@@ -16,17 +16,26 @@
 # or setup-java may not set `cache:`, setup-dotnet no `cache:` other than false, setup-uv needs
 # `enable-cache: false`, setup-ruby no `bundler-cache:` other than false, and
 # docker/build-push-action needs `no-cache: true` and no `cache-from`/`cache-to`.
+# A workflow given with --tag-uncached (docker.yml, R-1349) caches on main but not on a tag: the
+# rules of --uncached hold there, except that every docker/build-push-action step sets exactly
+# `no-cache: ${{ startsWith(github.ref, 'refs/tags/') }}` and a `cache-from`/`cache-to` starts
+# with `${{ !startsWith(github.ref, 'refs/tags/') && `.
 # A `with:` written as a flow mapping (`with: { … }`) is a violation everywhere: it is not read.
 # A violation is printed as a GitHub error annotation with file and line; exit 1 then.
 set -euo pipefail
 
-usage() { echo "usage: cache_settings.sh [--uncached <workflow>]… <workflow>…" >&2; exit 2; }
+usage() { echo "usage: cache_settings.sh [--uncached <workflow>]… [--tag-uncached <workflow>]… <workflow>…" >&2; exit 2; }
 files=() modes=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
     --uncached)
         [ "$#" -ge 2 ] || usage
         files+=("$2") modes+=(1)
+        shift 2
+        ;;
+    --tag-uncached)
+        [ "$#" -ge 2 ] || usage
+        files+=("$2") modes+=(2)
         shift 2
         ;;
     -*) usage ;;
@@ -44,7 +53,7 @@ for i in "${!files[@]}"; do
     [ -r "$f" ] || { echo "cache_settings.sh: cannot read $f" >&2; exit 2; }
     # A step runs from its `- ` line to the next non-blank line indented no deeper than that
     # dash. Comment lines never count as settings.
-    out=$(awk -v file="$f" -v uncached="${modes[$i]}" '
+    out=$(awk -v file="$f" -v mode="${modes[$i]}" '
         function indent(s) { match(s, /^ */); return RLENGTH }
         function keyof(s) { if (!match(s, /^[ ]*[A-Za-z0-9_-]+:/)) return ""; s = substr(s, 1, RLENGTH - 1); sub(/^[ ]*/, "", s); return s }
         function check() {
@@ -57,7 +66,7 @@ for i in "${!files[@]}"; do
                 printf "::error file=%s,line=%d::actions/cache path names .cargo/bin\n", file, start
             if (flow)
                 printf "::error file=%s,line=%d::with: as a flow mapping is not checked, write it as a block\n", file, start
-            if (uncached) {
+            if (mode) {
                 if (rust || acache)
                     printf "::error file=%s,line=%d::cache step in a workflow that runs without caches\n", file, start
                 if (snode && (hascache || !pmfalse))
@@ -70,7 +79,9 @@ for i in "${!files[@]}"; do
                     printf "::error file=%s,line=%d::setup-uv without enable-cache: false\n", file, start
                 if (sruby && bundler)
                     printf "::error file=%s,line=%d::setup-ruby with bundler-cache in a workflow that runs without caches\n", file, start
-                if (bpa && (bcache || !nocache))
+                if (mode == 2 && bpa && (!notag || unguarded))
+                    printf "::error file=%s,line=%d::build-push-action not switched off on tags (no-cache/cache-from/cache-to)\n", file, start
+                if (mode == 1 && bpa && (bcache || !nocache))
                     printf "::error file=%s,line=%d::build-push-action with cache-from/cache-to or without no-cache: true\n", file, start
             }
             if (pw && !hashed)
@@ -93,6 +104,7 @@ for i in "${!files[@]}"; do
                 rust = acache = nobin = bindir = binpath = pw = hashed = restore = 0
                 snode = sgo = spyjava = hascache = cachefalse = pmfalse = 0
                 suv = uvoff = sruby = bundler = bpa = bcache = nocache = flow = 0
+                notag = unguarded = 0
                 blk = ""; wkey = ""; withind = 0
                 sub(/^[ ]*-[ ]+/, "", line)
             }
@@ -130,7 +142,11 @@ for i in "${!files[@]}"; do
                     if (line ~ /^[ ]*package-manager-cache:[ ]*["\047]?false["\047]?[ ]*$/) pmfalse = 1
                     if (line ~ /^[ ]*enable-cache:[ ]*["\047]?false["\047]?[ ]*$/) uvoff = 1
                     if (wkey == "bundler-cache" && line !~ /^[ ]*bundler-cache:[ ]*["\047]?false["\047]?[ ]*$/) bundler = 1
-                    if (wkey == "cache-from" || wkey == "cache-to") bcache = 1
+                    if (wkey == "cache-from" || wkey == "cache-to") {
+                        bcache = 1
+                        if (line !~ /^[ ]*cache-(from|to):[ ]*\$\{\{ !startsWith\(github\.ref, \047refs\/tags\/\047\) && /) unguarded = 1
+                    }
+                    if (line ~ /^[ ]*no-cache:[ ]*\$\{\{ startsWith\(github\.ref, \047refs\/tags\/\047\) \}\}[ ]*$/) notag = 1
                     if (line ~ /^[ ]*no-cache:[ ]*["\047]?true["\047]?[ ]*$/) nocache = 1
                 }
                 if (line ~ /\.cargo\/bin/) {
