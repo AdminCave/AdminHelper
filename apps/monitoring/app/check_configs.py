@@ -294,23 +294,32 @@ class RdapParams(_StrictConfig):
         return self
 
 
+class MailParams(_StrictConfig):
+    """The mail sensors take no params; the port picks the protocol."""
+
+
 @dataclass(frozen=True)
 class CentralSensor:
     """One sensor of a central check (R-1224): its shortest and its default interval,
     the port a config without one uses (None: the sensor takes no port), the model of
-    its params, and whether the host must be a name."""
+    its params, whether the host must be a name, and the only ports it takes (None: any)."""
 
     min_interval: str
     default_interval: str
     default_port: int | None
     params: type[_StrictConfig]
     needs_name: bool = False
+    ports: tuple[int, ...] | None = None
 
 
 CENTRAL_SENSORS: dict[str, CentralSensor] = {
     "tls": CentralSensor("15m", "1h", 443, TlsParams),
     "dns": CentralSensor("5m", "15m", None, DnsParams, needs_name=True),
     "rdap": CentralSensor("24h", "24h", None, RdapParams, needs_name=True),
+    # A mail server is contacted at most every 15 minutes per address and port
+    # (postscreen, fail2ban): a shorter interval would only be skipped.
+    "smtp": CentralSensor("15m", "15m", 25, MailParams, ports=(25, 465, 587)),
+    "imap": CentralSensor("15m", "15m", 993, MailParams, ports=(143, 993, 995)),
 }
 # The agent sensors whose view of the same service explains a central result (T10).
 CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
@@ -377,6 +386,9 @@ class CentralConfig(_StrictConfig):
         sensor = CENTRAL_SENSORS[self.sensor]
         if sensor.default_port is None and self.port is not None:
             raise ValueError(f"the sensor {self.sensor} takes no port")
+        if sensor.ports is not None and self.port is not None and self.port not in sensor.ports:
+            allowed = ", ".join(map(str, sensor.ports[:-1])) + f" or {sensor.ports[-1]}"
+            raise ValueError(f"the sensor {self.sensor} takes port {allowed}")
         if sensor.needs_name and _is_ip(self.host):
             raise ValueError(f"the sensor {self.sensor} needs a host name, not an IP address")
         return self

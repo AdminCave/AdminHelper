@@ -122,7 +122,7 @@ def _run(config=None, prev=None):
 @pytest.mark.parametrize(
     "config",
     [
-        {"sensor": "smtp", "host": HOST},  # not (yet) a sensor
+        {"sensor": "ftp", "host": HOST},  # not a sensor
         {"sensor": ["tls"], "host": HOST},
         {"host": HOST},
         {"sensor": "tls"},
@@ -353,6 +353,34 @@ def test_the_dns_sensor_gets_the_rule_and_the_params_and_has_no_port(world):
     assert world["dns_probe"].calls == [(HOST, ADDRESSES, None)]
     assert world["dns_probe"].params == [{"expected": ["192.0.2.10"]}]
     assert "port" not in metrics["_details"]
+    assert world["probe"].calls == []
+
+
+@pytest.mark.parametrize(
+    ("config", "port"),
+    [
+        ({"sensor": "smtp", "host": HOST}, 25),
+        ({"sensor": "smtp", "host": HOST, "port": 587}, 587),
+        ({"sensor": "imap", "host": HOST}, 993),
+        ({"sensor": "imap", "host": HOST, "port": 995}, 995),
+    ],
+)
+def test_the_mail_sensors_talk_to_the_rule_s_addresses_on_their_port(
+    world, monkeypatch, config, port
+):
+    calls = []
+
+    def probe(host, addresses, port):
+        calls.append((host, addresses, port))
+        return SensorResult("ok", "SMTP port 25: certificate valid until …", True, {}, {})
+
+    monkeypatch.setattr(central.mail, "probe", probe)
+
+    status, message, metrics = _run(config)
+
+    assert (status, message) == ("ok", "SMTP port 25: certificate valid until …")
+    assert calls == [(HOST, ADDRESSES, port)]
+    assert metrics["_details"]["port"] == port
     assert world["probe"].calls == []
 
 

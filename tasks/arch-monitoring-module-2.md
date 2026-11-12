@@ -70,10 +70,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_rda
 Doku: → T14
 Abhängt von: T3
 
-### T7 — Fühler `smtp` und `imap` (postscreen-konform) (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/mail.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_mail.py
+### T7 — Fühler `smtp` und `imap` (postscreen-konform) (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/mail.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_mail.py, apps/monitoring/app/central/tls.py, apps/monitoring/app/checkers/central.py, apps/monitoring/tests/test_central_config.py, apps/monitoring/tests/test_central_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4ef8e0bca 2026-11-12T09:49:06+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T7.verdict.json)
 Änderung: SMTP: Banner bis zur letzten `220 `-Zeile abwarten, nichts vorher senden, `EHLO`, `STARTTLS` (465: TLS sofort), `EHLO`, `QUIT`; nie `MAIL`, `RCPT`, `VRFY`, `AUTH`. IMAP (143 STARTTLS, 993) und POP3S (995) analog mit Greeting, `CAPABILITY`, `LOGOUT`/`QUIT`. Zertifikat über `tls.py` gegen den Namen des Ziels; Mindestabstand 15 min je Adresse und Port. Test mit Fake-Servern auf Loopback, die jedes verbotene Kommando als Fehler werten, ein vorzeitig gesendetes Byte erkennen und ein mehrzeiliges Banner senden.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_mail.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_mail.py tests/test_central_tls.py tests/test_central_checker.py tests/test_central_config.py tests/test_openapi_snapshot.py
 Doku: → T14
 Abhängt von: T3
 
@@ -186,3 +188,12 @@ Task-Review: am Ende
 - 2026-11-12 T6: IANA-Bootstrap im Prozess gecacht, 24 h; nach einem Fehlschlag 15 min kein neuer Abruf, bis dahin dient die alte Kopie weiter. Eine in IANA gelistete TLD schlägt die eigene Tabelle (`.de` → `rdap.denic.de`, DENIC-Doku 2026-11-12). Bootstrap-Grenze 512 KiB (`fetch.get(max_body=…)`), Datei hatte 71 kB.
 - 2026-11-12 T6: ohne Ablaufdatum (`.de`, oder die Registry nennt keins) meldet der Fühler nur den Status, `ok`, ohne Metrik — kein eigener `.de`-Zweig. Hold/Redemption/pendingDelete sind kritisch unabhängig vom Datum.
 - 2026-11-12 T6: Ablauf ist das Datum der Registry; Registrare mit Auto-Renew verlängern oft erst kurz davor — der Hinweis und DENICs Pilotbetrieb samt Nutzungsvermerk („technical or administrative necessities of Internet operation“) gehen in die Doku (T14).
+- 2026-11-12 T7: EHLO nennt immer das Adress-Literal des eigenen Endes (RFC 5321 §4.1.4), nie einen Hostnamen — der Dienst hat keinen öffentlichen Namen, den er belegen könnte; hinter Docker/NAT ist das die interne Adresse (T14 nennt es).
+- 2026-11-12 T7: fehlendes oder abgelehntes STARTTLS ist auf 25 und 587 kritisch (RFC 8314 empfiehlt TLS für Submission, ein MX ohne STARTTLS liefert Mail im Klartext aus); der Fühler fällt nie auf Klartext zurück.
+- 2026-11-12 T7: Klartext, der nach dem STARTTLS-Go-ahead im Puffer liegt, wird verworfen (RFC 3207 §4.2), nicht nach TLS übernommen.
+- 2026-11-12 T7: POP3S (995) gehört zum Fühler `imap` — beide prüfen den Postfachzugang; POP3 im Klartext (110) prüft er nicht.
+- 2026-11-12 T7: kein ARI/CAA für Mail-Ports — die bleiben beim Fühler `tls` des Web-Namens; der Mail-Fühler prüft Kette, Name und Laufzeit über `tls.judge`.
+- 2026-11-12 T7: höchstens eine Verbindung je Adresse und Port in 15 min über alle Checks (`mail_turn`); zwei Checks auf dieselbe Adresse und denselben Port: der zweite wird wiederholt übersprungen (T14 dokumentiert es). Dass 15 min unter den üblichen fail2ban-Zählfenstern bleiben, ist nicht verifiziert.
+- 2026-11-12 T7: eine Zeitüberschreitung, die die Gesamtfrist (60 s) abschneidet, meldet die Frist, nicht „keine Antwort in N s“.
+- 2026-11-12 T7: lehnt ein Server unter implizitem TLS (465, 993, 995) ab, trägt die Meldung zusätzlich das Zertifikatsurteil — das Zertifikat ist dann schon gesehen.
+- 2026-11-12 T7 (Prüfrunde security): das IMAP-Statuswort läuft wie aller Servertext durch `_show`. Prüfer-Nit `tls` auf Mail-Ports: Roadmap-Zeile R-1367.

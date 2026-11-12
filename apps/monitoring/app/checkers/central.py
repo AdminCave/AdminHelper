@@ -20,7 +20,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from app.central import dns as dns_sensor
-from app.central import rdap, resolve, tls
+from app.central import mail, rdap, resolve, tls
 from app.central.limits import LIMITS, SKIPPED_BUSY_MESSAGE, RunSkipped
 from app.central.resolve import Classification, Reach
 from app.central.tls import SensorResult
@@ -45,7 +45,14 @@ def _dns(
     return dns_sensor.probe(host, rule, params, prev)
 
 
-_PROBES: dict[str, Probe] = {"tls": _tls, "dns": _dns}
+def _mail(
+    host: str, rule: Classification, port: int | None, params: dict, prev: dict
+) -> SensorResult:
+    assert port is not None  # both mail sensors have a default port
+    return mail.probe(host, rule.addresses, port)
+
+
+_PROBES: dict[str, Probe] = {"tls": _tls, "dns": _dns, "smtp": _mail, "imap": _mail}
 # host, params, the previous details for this host.
 RegistryProbe = Callable[[str, dict, dict], SensorResult]
 _REGISTRY_PROBES: dict[str, RegistryProbe] = {"rdap": rdap.probe}

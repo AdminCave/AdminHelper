@@ -112,6 +112,16 @@ def probe(
     )
 
 
+def wrap(sock: socket.socket, host: str) -> ssl.SSLSocket:
+    """The TLS handshake over `sock` for `host`; it verifies nothing, judge() does that."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    sock.settimeout(HANDSHAKE_TIMEOUT_S)
+    # No SNI for an IP literal (RFC 6066 forbids it).
+    return context.wrap_socket(sock, server_hostname=None if _literal(host) else host)
+
+
 def _check(
     sock: socket.socket,
     host: str,
@@ -123,21 +133,21 @@ def _check(
     """The verdict and, when the certificate is trusted and not expired, its leaf."""
     details: dict = {"host": host, "address": address, "port": port}
     try:
-        literal = ipaddress.ip_address(host)
-    except ValueError:
-        literal = None
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    sock.settimeout(HANDSHAKE_TIMEOUT_S)
-    try:
-        # No SNI for an IP literal (RFC 6066 forbids it).
-        with context.wrap_socket(sock, server_hostname=None if literal else host) as tls:
+        with wrap(sock, host) as tls:
             details["tls_version"] = tls.version()
             chain = tls.get_unverified_chain() or []
     except OSError as exc:  # ssl.SSLError and timeouts included
         message = f"TLS handshake failed: {_reason(exc)}"
         return SensorResult("critical", message, True, {}, details), None
+    return judge(chain, host, details, store, now)
+
+
+def judge(
+    chain: list[bytes], host: str, details: dict, store: Store, now: datetime
+) -> tuple[SensorResult, x509.Certificate | None]:
+    """The verdict on the chain a server presented for `host`; the result's details are
+    `details` plus the certificate's. The leaf when it is trusted and not expired."""
+    details = dict(details)
     if not chain:
         return SensorResult("critical", "the server sent no certificate", True, {}, details), None
     try:
@@ -159,6 +169,7 @@ def _check(
         message = f"certificate expired on {iso_utc(not_after)}"
         return SensorResult("critical", message, True, metrics, details), None
 
+    literal = _literal(host)
     subject = x509.IPAddress(literal) if literal else x509.DNSName(host)
     verifier = PolicyBuilder().store(store).time(now).build_server_verifier(subject)
     try:
@@ -228,6 +239,13 @@ def _describe(leaf: x509.Certificate, der: bytes, chain_len: int) -> dict:
         "san": [n[:MAX_TEXT] for n in names[:MAX_SANS]],
         "chain_len": chain_len,
     }
+
+
+def _literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        return None
 
 
 def _reason(exc: BaseException) -> str:

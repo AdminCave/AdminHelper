@@ -44,6 +44,13 @@ def _config(**over):
         _config(sensor="rdap", host="example.test"),
         _config(sensor="rdap", params={"warn_days": 60, "crit_days": 14}),
         _config(sensor="rdap", params={"warn_days": 1, "crit_days": 0}),
+        _config(sensor="smtp"),
+        _config(sensor="smtp", port=465),
+        _config(sensor="smtp", port=587),
+        _config(sensor="smtp", host="192.0.2.10"),
+        _config(sensor="imap"),
+        _config(sensor="imap", port=143),
+        _config(sensor="imap", port=995),
     ],
 )
 def test_valid_configs_pass(config):
@@ -60,7 +67,7 @@ def test_valid_configs_pass(config):
         (_config(port="443"), "port"),  # strict: no string coercion
         (_config(port=True), "port"),
         (_config(port=443.0), "port"),
-        (_config(sensor="smtp"), "unknown sensor"),
+        (_config(sensor="ftp"), "unknown sensor"),
         (_config(sensor=["tls"]), "sensor"),
         (_config(host=""), "host"),
         (_config(host="www.example.test."), "host"),  # trailing dot
@@ -97,6 +104,13 @@ def test_valid_configs_pass(config):
         (_config(sensor="rdap", params={"warn_days": "30"}), "params.warn_days"),
         (_config(sensor="rdap", params={"warn_days": True}), "params.warn_days"),
         (_config(sensor="rdap", params={"days": 30}), "params"),
+        (_config(sensor="smtp", port=443), "the sensor smtp takes port 25, 465 or 587"),
+        (_config(sensor="smtp", port=2525), "the sensor smtp takes port 25, 465 or 587"),
+        (_config(sensor="imap", port=110), "the sensor imap takes port 143, 993 or 995"),
+        (_config(sensor="imap", port=25), "the sensor imap takes port 143, 993 or 995"),
+        (_config(sensor="smtp", port=22), "ports 22 and 3306"),
+        (_config(sensor="smtp", params={"ehlo": "mx.example.test"}), "params"),
+        (_config(sensor="imap", params={"x": 1}), "params"),
     ],
 )
 def test_invalid_configs_are_refused(config, fragment):
@@ -185,6 +199,23 @@ def test_the_dns_sensor_has_its_own_floor_and_default(client_db, interval, code)
     assert r.status_code == code, r.text
     if code == 400:
         assert r.json()["detail"] == "Interval too short for sensor dns: at least 5m"
+    assert default.status_code == 201, default.text
+    with factory() as db:
+        assert db.get(MonitorCheck, default.json()["id"]).interval == "15m"
+
+
+@pytest.mark.parametrize("sensor", ["smtp", "imap"])
+@pytest.mark.parametrize(("interval", "code"), [("5m", 400), ("15m", 201)])
+def test_the_mail_sensors_run_at_most_every_15_minutes(client_db, sensor, interval, code):
+    client, factory = client_db
+    config = _config(sensor=sensor)
+
+    r = client.post("/checks", json=_payload(config=config, interval=interval))
+    default = client.post("/checks", json=_payload(config=config))
+
+    assert r.status_code == code, r.text
+    if code == 400:
+        assert r.json()["detail"] == f"Interval too short for sensor {sensor}: at least 15m"
     assert default.status_code == 201, default.text
     with factory() as db:
         assert db.get(MonitorCheck, default.json()["id"]).interval == "15m"
