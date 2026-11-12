@@ -141,8 +141,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_wor
 Doku: → T14
 Abhängt von: T2
 
-### T12 — R-1243: Module Gitea/Forgejo, BookStack, Wiki.js  [ ]
+### T12 — R-1243: Module Gitea/Forgejo, BookStack, Wiki.js  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/gitea.py, apps/monitoring/app/catalog/modules/bookstack.py, apps/monitoring/app/catalog/modules/wikijs.py, apps/monitoring/tests/test_catalog_gitea.py, apps/monitoring/tests/test_catalog_bookstack.py, apps/monitoring/tests/test_catalog_wikijs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8f5b0ef21 2026-11-12T16:51:28+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T12.verdict.json)
 Änderung: Gitea und Forgejo in einem Modul (gleicher Pfad `/api/healthz`, Images und Units beider); BookStack
 `/status` als Test-Objekt (legt eine Session an, 15 min); Wiki.js `/healthz`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_gitea.py tests/test_catalog_bookstack.py tests/test_catalog_wikijs.py tests/test_catalog_apps.py tests/test_catalog.py
@@ -327,3 +329,20 @@ Doku: → T14
   `psycopg2.Error`), 15 hat die Route ohne Parameter und loggt ihn je Prüfung auf `info` (`http.py:544`), vor 15 fehlt
   die Route (404, kritisch). Unit `odoo.service` aus dem Debian-Paket 15–19 (`Type=simple`); `odoo18.service`,
   `bitnami/odoo` und `/websocket/health` nicht abgedeckt.
+- 2026-11-12 (T12): Gitea und Forgejo `/api/healthz` (vor der Session-Middleware, ab Installation DB-Ping und Cache:
+  200, sonst 424; vor der Installation 200) an Image und Units `gitea.service`/`forgejo.service`; beide Units auf einem
+  Host binden keinen Unit-Check (mehrdeutig). Runner-Images und -Units nicht. `PROTOCOL = https` antwortet 400
+  (kritisch, Check abschalten), im Docstring.
+- 2026-11-12 (T12): BookStack `/status` als Test-Objekt alle 15 min (`StatusController::show`: `migrations` zählen,
+  `Cache::add`/`pull`, `Session::put`; ohne Cookie je Aufruf eine Session). Zwei Checks je Image-Port (linuxserver.io
+  80, solidnerd 8080), der Port, den der Container nicht hat, bindet nicht (`_lacks_port`); im Host-Netz binden beide:
+  bei linuxserver.io (80, 443) bleibt `status_8080` `ambiguous_target` → unbekannt; solidnerd lauscht nur auf 8080,
+  das nimmt der Agent für jeden Hinweis (`pickPort`), dann fragen beide Checks `/status` (zweimal je 15 min). Nur
+  `status_code`: ein `data.`-Feld ließe `fetch` bei Nicht-JSON scheitern (`sensor_http.go`).
+- 2026-11-12 (T12): Wiki.js fragt `/favicon.ico` statt `/healthz` (Abweichung von der Task-Zeile): Wiki.js 3 (Tag `3`
+  desselben Images, seit 3.1.0 released) hat kein `/healthz`, die App-Shell antwortet dort 404 (`helpers/appShell.ts`),
+  seine Proben heißen `/_live`/`/_ready` (`@gquittet/graceful-server`); der Katalog vergleicht Images ohne Tag
+  (`discovery.image_matches`). `/favicon.ico` liefern 2 (`serve-favicon`, vor Session und SSL-Umleitung) und 3
+  (`fastify-favicon`, kein Seitenpfad: `RESERVED_ROOT_FILES`, keine Umleitung) aus `assets/` ohne Session und
+  Datenbank: nur ein Lebenszeichen. Tag-Auswahl je Check: R-1397. Images `requarks/wiki`,
+  `ghcr.io/requarks/wiki` und linuxserver.io (`Requarks/wiki-v2`, 3000).
