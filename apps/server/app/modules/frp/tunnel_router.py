@@ -18,7 +18,7 @@ from app.modules.audit import service as audit
 from app.modules.connections.models import Connection, own_text, shown_name
 from app.modules.frp._helpers import create_auto_connection, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.policy import sync_policy
+from app.modules.frp.policy import domain_conflicts, sync_policy
 from app.modules.frp.schemas import (
     PORT_MAX,
     PORT_MIN,
@@ -143,6 +143,27 @@ def _reject_unknown_connection(db: Session, connection_id: str | None) -> None:
         )
 
 
+def _reject_domain_conflict(db: Session, tunnel: FrpTunnel) -> None:
+    """409 when a custom domain of the tunnel (flushed, not committed) is carried by a tunnel
+    of another server without one non-empty loadBalancer.group they share: frps would hand
+    the domain to whichever proxy registers first, so the policy leaves such domains out."""
+    own = {d.strip().lower() for d in (tunnel.custom_domains or "").split(",") if d.strip()}
+    if not own:
+        return
+    clash = sorted(
+        domain
+        for domain, server_ids in domain_conflicts(db).items()
+        if domain in own and tunnel.server_id in server_ids
+    )
+    if clash:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Custom domain {clash[0]} is used by a tunnel of another server; "
+            "keep it on one server or give all of them the same loadBalancer.group",
+        )
+
+
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
@@ -212,6 +233,7 @@ def create_tunnel(
     db.add(tunnel)
     try:
         db.flush()
+        _reject_domain_conflict(db, tunnel)
         if data.auto_create_connection:
             _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()
@@ -333,6 +355,9 @@ def update_tunnel(
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
     try:
+        if sent & {"custom_domains", "enabled", "tunnel_type", "extra_config"}:
+            db.flush()
+            _reject_domain_conflict(db, tunnel)
         if data.auto_create_connection and not tunnel.connection_id:
             _attach_auto_connection(db, tunnel, data.auto_connection_username)
         db.commit()

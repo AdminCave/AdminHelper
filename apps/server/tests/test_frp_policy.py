@@ -161,6 +161,55 @@ def test_server_id_with_a_dot_is_left_out(db_session, caplog):
     assert "'srv.dot'" in caplog.text
 
 
+def test_a_domain_of_several_servers_without_one_group_is_left_out(db_session, caplog):
+    # frps hands a custom domain without a group to whichever proxy registers first.
+    _seed(db_session)
+    db_session.add_all(
+        [
+            _tunnel("t-clash", SERVER_B, "https", custom_domains=" WWW.web.example"),
+            _tunnel(
+                "t-lb-b",
+                SERVER_B,
+                "https",
+                custom_domains="lb.example",
+                extra_config=json.dumps({"loadBalancer.group": "web"}),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="app.modules.frp"):
+        servers = policy.build_policy(db_session)["servers"]
+        policy.build_policy(db_session)
+
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-lb", "t-ssh"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db", "t-lb-b"]
+    assert caplog.text.count("'www.web.example'") == 1
+    assert "lb.example" not in caplog.text
+    assert policy.domain_conflicts(db_session) == {"www.web.example": {SERVER_A, SERVER_B}}
+
+
+def test_a_domain_with_one_group_on_only_some_servers_is_left_out(db_session):
+    _seed(db_session)
+    db_session.add(_tunnel("t-lb-b", SERVER_B, "https", custom_domains="lb.example"))
+    db_session.commit()
+
+    servers = policy.build_policy(db_session)["servers"]
+
+    assert "t-lb" not in servers[SERVER_A]["proxies"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
+
+
+def test_a_server_left_without_proxies_leaves_the_policy(db_session):
+    _seed(db_session)
+    db_session.add(Server(id="srv-c", name="server-c"))
+    db_session.flush()
+    db_session.add(_tunnel("t-c", "srv-c", "https", custom_domains="web.example"))
+    db_session.commit()
+
+    assert sorted(policy.build_policy(db_session)["servers"]) == [SERVER_A, SERVER_B]
+
+
 def test_without_frp_config_the_policy_admits_nothing(db_session):
     assert policy.build_policy(db_session) == {"servers": {}, "version": 2}
 

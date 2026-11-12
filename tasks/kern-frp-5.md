@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/frpc/ ./internal
 Doku: → T7
 Abhängt von: T2
 
-### T5 — R-1311: Domain mehrerer Server ohne gemeinsame Gruppe: API 409, Policy lässt weg  [ ]
+### T5 — R-1311: Domain mehrerer Server ohne gemeinsame Gruppe: API 409, Policy lässt weg  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/app/modules/frp/policy.py, apps/server/tests/test_frp_tunnels.py, apps/server/tests/test_frp_policy.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @891e4d8d2 2026-11-12T09:57:05+01:00
+Review: approve (.ah-out/review/kern-frp-5/T5.verdict.json)
 Änderung: `create_tunnel`/`update_tunnel` antworten 409, wenn eine Domain des Tunnels (getrimmt, Kleinschreibung) schon ein Tunnel eines anderen Servers derselben FRP-Konfiguration trägt und nicht beide dieselbe nicht leere `loadBalancer.group` haben. `build_policy` lässt einen Proxy mit solcher Domain bei allen beteiligten Servern weg und warnt einmal je Domain.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_frp_policy.py tests/test_openapi_snapshot.py
 Doku: → T7

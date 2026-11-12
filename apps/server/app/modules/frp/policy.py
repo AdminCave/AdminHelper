@@ -12,7 +12,11 @@ the same tunnels (active_tunnels), the same fields and the same allow users
 (get_allow_users), so the policy cannot drift from what the agent runs. The server writes
 the file after each change of tunnels, the FRP config, servers or users' access, at
 startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
-registers, so a write changes nothing for proxies already up."""
+registers, so a write changes nothing for proxies already up.
+
+A custom domain that proxies of several servers carry without one non-empty group they all
+share is left out for all of them (domain_conflicts): frps hands such a domain to whichever
+proxy registers first. The tunnel API refuses to store a new one."""
 
 import asyncio
 import hashlib
@@ -123,13 +127,14 @@ def _proxies(
     return proxies
 
 
-def build_policy(db: Session) -> dict:
-    """The policy for the DB's state: the hosts with at least one proxy, by server ID.
-    Without an FRP config no host has one (frpc_sync_inputs)."""
+def _servers(db: Session) -> dict:
+    """The hosts with at least one proxy the plugin can read, by server ID, before the
+    domain conflicts are taken out. Without an FRP config no host has one
+    (frpc_sync_inputs)."""
     servers: dict = {}
     config = get_frp_config(db)
     if config is None:
-        return {"servers": servers, "version": POLICY_VERSION}
+        return servers
     by_server: dict[str, list[FrpTunnel]] = defaultdict(list)
     for tunnel in db.query(FrpTunnel).filter(FrpTunnel.frp_config_id == config.id):
         by_server[tunnel.server_id].append(tunnel)
@@ -146,6 +151,54 @@ def build_policy(db: Session) -> dict:
         proxies = _proxies(db, config, server_id, tunnels)
         if proxies:
             servers[server_id] = {"keyHash": proxy_key_hash(server_id), "proxies": proxies}
+    return servers
+
+
+def _conflicts(servers: dict) -> dict[str, set[str]]:
+    """The custom domains (trimmed, lower case: hostnames match without regard to case)
+    that proxies of more than one server carry without one non-empty group all of them
+    share, with those servers."""
+    carriers: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for server_id, entry in servers.items():
+        for proxy in entry["proxies"].values():
+            for domain in proxy["customDomains"]:
+                carriers[domain.strip().lower()].add((server_id, proxy["group"]))
+    conflicts = {}
+    for domain, pairs in carriers.items():
+        server_ids = {server_id for server_id, _ in pairs}
+        groups = {group for _, group in pairs}
+        if len(server_ids) > 1 and (len(groups) > 1 or "" in groups):
+            conflicts[domain] = server_ids
+    return conflicts
+
+
+def domain_conflicts(db: Session) -> dict[str, set[str]]:
+    """The custom domains the policy leaves out, with the servers that carry them."""
+    return _conflicts(_servers(db))
+
+
+def build_policy(db: Session) -> dict:
+    """The policy for the DB's state: the hosts with at least one proxy, by server ID,
+    without the proxies that carry a conflicting domain (domain_conflicts)."""
+    servers = _servers(db)
+    conflicts = _conflicts(servers)
+    for domain in sorted(conflicts):
+        if _first_warning(repr(domain), ("policy", "domain")):
+            logger.warning(
+                "custom domain %r is used by tunnels of several servers without one shared "
+                "loadBalancer.group, their proxies are left out of the policy",
+                domain,
+            )
+    for server_id in sorted({s for server_ids in conflicts.values() for s in server_ids}):
+        proxies = servers[server_id]["proxies"]
+        for name in [
+            name
+            for name, proxy in proxies.items()
+            if any(d.strip().lower() in conflicts for d in proxy["customDomains"])
+        ]:
+            del proxies[name]
+        if not proxies:
+            del servers[server_id]
     return {"servers": servers, "version": POLICY_VERSION}
 
 
