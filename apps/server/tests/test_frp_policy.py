@@ -186,7 +186,9 @@ def test_a_domain_of_several_servers_without_one_group_is_left_out(db_session, c
     assert sorted(servers[SERVER_B]["proxies"]) == ["t-db", "t-lb-b"]
     assert caplog.text.count("'www.web.example'") == 1
     assert "lb.example" not in caplog.text
-    assert policy.domain_conflicts(db_session) == {"www.web.example": {SERVER_A, SERVER_B}}
+    assert policy.domain_conflicts(db_session) == {
+        "www.web.example": {(SERVER_A, "t-web"), (SERVER_B, "t-clash")}
+    }
 
 
 def test_a_domain_with_one_group_on_only_some_servers_is_left_out(db_session):
@@ -208,6 +210,79 @@ def test_a_server_left_without_proxies_leaves_the_policy(db_session):
     db_session.commit()
 
     assert sorted(policy.build_policy(db_session)["servers"]) == [SERVER_A, SERVER_B]
+
+
+def test_a_subdomain_counts_as_the_name_frps_builds_from_it(db_session, caplog):
+    # frps routes subdomain + "." + subDomainHost to the proxy (BaseProxy.buildDomains); the
+    # seed's t-lb carries subdomain "lb" in group "web".
+    _seed(db_session)
+    db_session.add_all(
+        [
+            _tunnel("t-sub", SERVER_B, "https", extra_config=json.dumps({"subdomain": "LB"})),
+            _tunnel("t-name", SERVER_B, "https", custom_domains="db.apps.example"),
+            _tunnel("t-sub-a", SERVER_A, "https", extra_config=json.dumps({"subdomain": "db"})),
+        ]
+    )
+    db_session.commit()
+    # Without a subdomain host frps builds no name from a subdomain.
+    assert policy.domain_conflicts(db_session) == {}
+
+    db_session.get(FrpServerConfig, "cfg-1").subdomain_host = " Apps.Example "
+    db_session.commit()
+    with caplog.at_level(logging.WARNING, logger="app.modules.frp"):
+        servers = policy.build_policy(db_session)["servers"]
+
+    assert policy.domain_conflicts(db_session) == {
+        "lb.apps.example": {(SERVER_A, "t-lb"), (SERVER_B, "t-sub")},
+        "db.apps.example": {(SERVER_A, "t-sub-a"), (SERVER_B, "t-name")},
+    }
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-ssh", "t-web"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
+    assert "'lb.apps.example'" in caplog.text and "'db.apps.example'" in caplog.text
+
+
+def test_a_wildcard_conflicts_with_every_name_below_it_even_in_one_group(db_session):
+    # frps routes a name to "*.example" when no exact proxy for it is up (getByRoute).
+    _seed(db_session)
+    db_session.add(
+        _tunnel(
+            "t-wild",
+            SERVER_B,
+            "https",
+            custom_domains="*.example",
+            extra_config=json.dumps({"loadBalancer.group": "web"}),
+        )
+    )
+    db_session.commit()
+
+    conflicts = policy.domain_conflicts(db_session)
+    servers = policy.build_policy(db_session)["servers"]
+
+    assert set(conflicts) == {"*.example", "lb.example", "web.example", "www.web.example"}
+    assert conflicts["*.example"] == {(SERVER_A, "t-lb"), (SERVER_A, "t-web"), (SERVER_B, "t-wild")}
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-ssh"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
+
+
+def test_a_catch_all_conflicts_with_every_name_of_another_server(db_session):
+    _seed(db_session)
+    db_session.add(_tunnel("t-all", SERVER_B, "https", custom_domains="*"))
+    db_session.commit()
+
+    assert policy.domain_conflicts(db_session)["*"] == {
+        (SERVER_A, "t-lb"),
+        (SERVER_A, "t-web"),
+        (SERVER_B, "t-all"),
+    }
+
+
+def test_a_wildcard_does_not_cover_its_own_base_name(db_session):
+    _seed(db_session)
+    db_session.add(_tunnel("t-wild", SERVER_B, "https", custom_domains="*.web.example"))
+    db_session.commit()
+
+    # web.example stays; www.web.example is below the wildcard.
+    assert set(policy.domain_conflicts(db_session)) == {"*.web.example", "www.web.example"}
 
 
 def test_without_frp_config_the_policy_admits_nothing(db_session):

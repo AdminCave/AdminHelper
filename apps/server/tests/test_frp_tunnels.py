@@ -552,6 +552,27 @@ def test_a_shared_group_or_the_same_server_may_carry_a_domain(test_client, db_se
     assert r.status_code == 201, r.text
 
 
+def test_a_wildcard_or_subdomain_over_a_name_of_another_server_is_409(
+    test_client, db_session, admin_user
+):
+    _seed(db_session)
+    _second_server(db_session)
+    db_session.get(FrpServerConfig, "cfg-1").subdomain_host = "example.test"
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    wildcard = _body(name="web", local_port=443, **{**_HTTPS, "custom_domains": "*.example.test"})
+    r = test_client.post("/api/frp/tunnels", json=wildcard, headers=h)
+    assert r.status_code == 409, r.text
+    assert "of another server" in r.json()["detail"]
+    subdomain = _body(name="web", local_port=443, extra_config={"subdomain": "shop"}, **{**_HTTPS})
+    subdomain.pop("custom_domains")
+    r = test_client.post("/api/frp/tunnels", json=subdomain, headers=h)
+    assert r.status_code == 409, r.text
+    assert "shop.example.test" in r.json()["detail"]
+    db_session.expire_all()
+    assert db_session.query(FrpTunnel).count() == 2
+
+
 def test_a_disabled_tunnel_carries_no_domain(test_client, db_session, admin_user):
     _seed(db_session)
     _second_server(db_session)

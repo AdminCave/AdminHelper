@@ -5,10 +5,10 @@
   (Policy-Format Version 2; Plugin und Server kommen im selben Image-Stand), und frps speichert den Host-Schluessel
   einer Anmeldung nicht mehr. Aendert sich, wer einen Server sieht, kommt ein neu angemeldeter STCP-Proxy erst nach dem
   naechsten Agent-Lauf wieder.
-- **Eine Domain auf mehreren Servern braucht eine gemeinsame Gruppe:** die Tunnel-API lehnt einen HTTPS-Tunnel mit
-  `409` ab, dessen Domain schon ein Tunnel eines anderen Servers traegt, wenn nicht alle dieselbe nicht leere
-  `loadBalancer.group` haben; bestehende solche Tunnel laesst der Server fuer frps weg und warnt im Log (FRP-Tunnel in
-  der Doku).
+- **Ein Hostname auf mehreren Servern braucht eine gemeinsame Gruppe:** die Tunnel-API lehnt einen HTTPS-Tunnel mit
+  `409` ab, dessen Hostname (Domain, `subdomain` oder Platzhalter wie `*.example.net`) auch einem Tunnel eines anderen
+  Servers zugeordnet waere, wenn nicht alle denselben Namen in derselben nicht leeren `loadBalancer.group` tragen;
+  bestehende solche Tunnel laesst der Server fuer frps weg und warnt im Log (FRP-Tunnel in der Doku).
 - **Neustart des frps-Plugins als Warnung:** startet der frps-Supervisor das Plugin neu, weil es nicht antwortet,
   schreibt er eine Warnung mit der Zahl der Neustarts (Betrieb in der Doku).
 - **Agent:** nimmt einen weiteren Schluessel in der `frpc.toml` an, den eine spaetere Version des Servers schreibt;

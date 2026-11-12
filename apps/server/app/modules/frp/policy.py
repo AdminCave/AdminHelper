@@ -14,9 +14,11 @@ the file after each change of tunnels, the FRP config, servers or users' access,
 startup, and every SYNC_INTERVAL seconds; frps checks a proxy only when it
 registers, so a write changes nothing for proxies already up.
 
-A custom domain that proxies of several servers carry without one non-empty group they all
-share is left out for all of them (domain_conflicts): frps hands such a domain to whichever
-proxy registers first. The tunnel API refuses to store a new one."""
+A hostname that frps routes to proxies of several servers is left out for all of them
+(domain_conflicts): frps hands it to whichever proxy registers first, and a wildcard takes
+the traffic of a name below it while that name's proxy is down. Only the same exact name in
+one non-empty group all of them share is no conflict. The tunnel API refuses to store a new
+one."""
 
 import asyncio
 import hashlib
@@ -127,14 +129,14 @@ def _proxies(
     return proxies
 
 
-def _servers(db: Session) -> dict:
+def _servers(db: Session) -> tuple[dict, str]:
     """The hosts with at least one proxy the plugin can read, by server ID, before the
-    domain conflicts are taken out. Without an FRP config no host has one
-    (frpc_sync_inputs)."""
+    domain conflicts are taken out, and the FRP config's subdomain host. Without an FRP
+    config no host has one (frpc_sync_inputs)."""
     servers: dict = {}
     config = get_frp_config(db)
     if config is None:
-        return servers
+        return servers, ""
     by_server: dict[str, list[FrpTunnel]] = defaultdict(list)
     for tunnel in db.query(FrpTunnel).filter(FrpTunnel.frp_config_id == config.id):
         by_server[tunnel.server_id].append(tunnel)
@@ -151,54 +153,78 @@ def _servers(db: Session) -> dict:
         proxies = _proxies(db, config, server_id, tunnels)
         if proxies:
             servers[server_id] = {"keyHash": proxy_key_hash(server_id), "proxies": proxies}
-    return servers
+    return servers, (config.subdomain_host or "").strip().lower()
 
 
-def _conflicts(servers: dict) -> dict[str, set[str]]:
-    """The custom domains (trimmed, lower case: hostnames match without regard to case)
-    that proxies of more than one server carry without one non-empty group all of them
-    share, with those servers."""
-    carriers: dict[str, set[tuple[str, str]]] = defaultdict(set)
-    for server_id, entry in servers.items():
-        for proxy in entry["proxies"].values():
-            for domain in proxy["customDomains"]:
-                carriers[domain.strip().lower()].add((server_id, proxy["group"]))
-    conflicts = {}
-    for domain, pairs in carriers.items():
-        server_ids = {server_id for server_id, _ in pairs}
-        groups = {group for _, group in pairs}
-        if len(server_ids) > 1 and (len(groups) > 1 or "" in groups):
-            conflicts[domain] = server_ids
-    return conflicts
+def _hostnames(proxy: dict, subdomain_host: str) -> set[str]:
+    """The names frps routes to the proxy (frp v0.72 BaseProxy.buildDomains), trimmed and
+    in lower case: frps matches hostnames without regard to case."""
+    names = {d.strip().lower() for d in proxy["customDomains"] if d.strip()}
+    subdomain = proxy["subdomain"].strip().lower()
+    if subdomain and subdomain_host:
+        names.add(f"{subdomain}.{subdomain_host}")
+    return names
 
 
-def domain_conflicts(db: Session) -> dict[str, set[str]]:
-    """The custom domains the policy leaves out, with the servers that carry them."""
-    return _conflicts(_servers(db))
+def _covers(pattern: str, name: str) -> bool:
+    """Whether frps may route name to a proxy of pattern (vhost Routers.getByRoute): the same
+    name, "*" for all, "*.example.net" for every name below example.net. Stricter than frps
+    for two-label names, which it keeps out of the wildcard walk."""
+    return (
+        pattern == name
+        or pattern == "*"
+        or (pattern.startswith("*.") and name.endswith(pattern[1:]))
+    )
+
+
+def _conflicts(servers: dict, subdomain_host: str) -> dict[str, set[tuple[str, str]]]:
+    """The hostnames frps would route to proxies of more than one server, with those
+    proxies as (server ID, proxy name). Only the same exact name in one non-empty group
+    is no conflict: frps balances a group, and a wildcard is a router of its own."""
+    carriers = [
+        (name, server_id, proxy_name, proxy["group"])
+        for server_id, entry in servers.items()
+        for proxy_name, proxy in entry["proxies"].items()
+        for name in _hostnames(proxy, subdomain_host)
+    ]
+    conflicts: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for i, (name, server_id, proxy_name, group) in enumerate(carriers):
+        for other, other_server, other_proxy, other_group in carriers[i + 1 :]:
+            if server_id == other_server:
+                continue
+            if not (_covers(name, other) or _covers(other, name)):
+                continue
+            if name == other and group and group == other_group:
+                continue
+            for conflict in (name, other):
+                conflicts[conflict] |= {(server_id, proxy_name), (other_server, other_proxy)}
+    return dict(conflicts)
+
+
+def domain_conflicts(db: Session) -> dict[str, set[tuple[str, str]]]:
+    """The hostnames the policy leaves out, with the proxies (server ID, proxy name) that
+    carry them."""
+    return _conflicts(*_servers(db))
 
 
 def build_policy(db: Session) -> dict:
     """The policy for the DB's state: the hosts with at least one proxy, by server ID,
     without the proxies that carry a conflicting domain (domain_conflicts)."""
-    servers = _servers(db)
-    conflicts = _conflicts(servers)
-    for domain in sorted(conflicts):
-        if _first_warning(repr(domain), ("policy", "domain")):
+    servers, subdomain_host = _servers(db)
+    conflicts = _conflicts(servers, subdomain_host)
+    for name in sorted(conflicts):
+        if _first_warning(repr(name), ("policy", "domain")):
             logger.warning(
-                "custom domain %r is used by tunnels of several servers without one shared "
-                "loadBalancer.group, their proxies are left out of the policy",
-                domain,
+                "hostname %r is routed to tunnels of several servers (custom domain, subdomain "
+                "or wildcard) without one shared loadBalancer.group, their proxies are left out "
+                "of the policy",
+                name,
             )
-    for server_id in sorted({s for server_ids in conflicts.values() for s in server_ids}):
+    for server_id, proxy_name in sorted(set().union(*conflicts.values())):
         proxies = servers[server_id]["proxies"]
-        for name in [
-            name
-            for name, proxy in proxies.items()
-            if any(d.strip().lower() in conflicts for d in proxy["customDomains"])
-        ]:
-            del proxies[name]
+        proxies.pop(proxy_name, None)
         if not proxies:
-            del servers[server_id]
+            servers.pop(server_id, None)
     return {"servers": servers, "version": POLICY_VERSION}
 
 

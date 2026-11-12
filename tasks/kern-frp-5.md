@@ -1,5 +1,5 @@
 # frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-5 · Review: pro Task
 Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310, R-1368)
 Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den echten frps; Kevin 2026-11-12: vor dem Merge. Server-API und Agent-Modul fährt dazu der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -65,8 +65,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 
-### T8 — R-1368: Domain-Prüfung erfasst alle Hostnamen eines HTTPS-Tunnels  [ ]
+### T8 — R-1368: Domain-Prüfung erfasst alle Hostnamen eines HTTPS-Tunnels  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frp_tunnels.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-5.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fcf30f552 2026-11-12T10:16:38+01:00
+Review: approve (.ah-out/review/kern-frp-5/T8.verdict.json)
 Änderung: Die Konfliktprüfung aus T5 nimmt je Proxy alle Hostnamen, die frps ihm zuordnet (`customDomains` und `subdomain` + `subDomainHost` der FRP-Konfiguration, frp v0.72 `buildDomains`), und behandelt Platzhalter wie frps (`*.example.net` deckt jeden Namen darunter, `*` alle, vhost `getByRoute`). Zwei Server kollidieren, wenn ein Name des einen einen des anderen deckt; eine gemeinsame nicht leere Gruppe hilft nur bei genau gleichem Namen. API 409 und Policy wie T5; Tests für subdomain, subdomain gegen customDomain, Platzhalter gegen Namen und `*`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_frp_policy.py tests/test_openapi_snapshot.py
 Doku: die genannten Dateien (Absatz Domain-Konflikt DE+EN, CHANGELOG-Zeile)
