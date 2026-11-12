@@ -44,6 +44,9 @@ BOOTSTRAP_MAX_BODY = 512 * 1024
 EXTRA_SERVERS = {"de": "https://rdap.denic.de/"}
 ACCEPT = "application/rdap+json"
 MAX_TRIES = 3
+# RFC 7480 §5.2: a server may redirect a query to another one.
+REDIRECTS = frozenset({301, 302, 303, 307, 308})
+MAX_REDIRECTS = 3
 MAX_STATUS = 16
 MAX_STATUS_TEXT = 64
 MAX_TEXT = 200
@@ -96,7 +99,7 @@ def probe(
             return SensorResult("unknown", f"no RDAP service for .{tld}", False)
         server = httpx.URL(base).host
         try:
-            answer = fetch.get(f"{base}domain/{name}", accept=ACCEPT)
+            answer = _get(f"{base}domain/{name}")
         except fetch.FetchError as exc:
             return SensorResult("unknown", f"RDAP {server}: {exc}"[:MAX_TEXT], False)
         if answer.status == 404:
@@ -115,6 +118,27 @@ def probe(
     tried = " or its parent domains" if len(candidates) > 1 else ""
     message = f"no registration found for {host}{tried}"[:MAX_TEXT]
     return SensorResult("unknown", message, False)
+
+
+def _get(url: str) -> fetch.HttpAnswer:
+    """The answer for `url` past at most MAX_REDIRECTS redirects, each to https only; every
+    target goes through fetch.get again, so its address passes the same rule."""
+    for hop in range(MAX_REDIRECTS + 1):
+        answer = fetch.get(url, accept=ACCEPT)
+        if answer.status not in REDIRECTS:
+            return answer
+        if hop == MAX_REDIRECTS:
+            raise fetch.FetchError(f"more than {MAX_REDIRECTS} redirects")
+        if not answer.location:
+            raise fetch.FetchError(f"HTTP {answer.status} without a Location")
+        try:
+            target = httpx.URL(url).join(answer.location)
+        except httpx.InvalidURL as exc:
+            raise fetch.FetchError(f"redirect to an invalid URL: {exc}") from None
+        if target.scheme != "https":
+            raise fetch.FetchError("redirect to a URL that is not https")
+        url = str(target)
+    raise AssertionError("unreachable")
 
 
 def _verdict(

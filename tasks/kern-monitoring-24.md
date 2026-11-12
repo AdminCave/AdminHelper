@@ -44,13 +44,15 @@ Ablehnung durch den echten Guard; Seam-Test plattformunabhängig.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T5 — R-1381: Delegationsprüfung je Adresse einmal, RDAP folgt Weiterleitungen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/dns.py, apps/monitoring/app/central/rdap.py, apps/monitoring/tests/test_central_dns.py, apps/monitoring/tests/test_central_rdap.py
+### T5 — R-1381: Delegationsprüfung je Adresse einmal, RDAP folgt Weiterleitungen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/dns.py, apps/monitoring/app/central/rdap.py, apps/monitoring/tests/test_central_dns.py, apps/monitoring/tests/test_central_rdap.py, apps/monitoring/app/central/fetch.py, apps/monitoring/tests/test_central_fetch.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fa81b76ad 2026-11-12T17:58:39+01:00
+Review: approve (.ah-out/review/kern-monitoring-24/T5.verdict.json)
 Änderung: Ein Lauf der Delegationsprüfung fragt jede Adresse höchstens einmal und nutzt die Antwort für alle
 Nameserver, die sie teilen. RDAP folgt 301/302/303/307/308 auf eine https-URL, höchstens 3-mal, jedes Ziel wieder
 über `fetch.get` (Adressregel je Ziel). Tests: viele Nameserver auf einer Adresse ohne „name server spacing“;
 Weiterleitung gefolgt; http-Ziel, private Zieladresse und Schleife enden `unknown`.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns.py tests/test_central_rdap.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns.py tests/test_central_rdap.py tests/test_central_fetch.py
 Doku: → T7
 
 ### T6 — R-1382: NAT64-Präfix der Umgebung erkennen (RFC 7050)  [ ]
@@ -75,3 +77,7 @@ Task-Review: am Ende
   klein-nachlese-3); die Doku-Task kommt zuletzt und nimmt vorher `origin/main` auf.
 - 2026-11-12 (Kevin): Proxys auf Anwendungsebene vor gesperrten Diensten sind hingenommenes Restrisiko; T2 nimmt
   reine L4-Weiterleiter auf, die Doku nennt die Grenze neutral.
+- 2026-11-12 (T1): Ein Listener oder eine Docker-Veröffentlichung auf `0.0.0.0` trägt nur IPv4-Ziele, `::` beide;
+  gesperrte Prozesse auf einer Wildcard sperren beide Familien. Ein Fehlgriff wird auf einem höchstens 1 s alten
+  Snapshot bestätigt (Funde des Task-Prüfers, Nit des security-Prüfers).
+- 2026-11-12 (T5): Das Verify nimmt `tests/test_central_fetch.py` mit, weil `HttpAnswer.location` neu ist.
