@@ -108,8 +108,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_mat
 Doku: → T14
 Abhängt von: T2
 
-### T9 — R-1242: Module OnlyOffice und Collabora  [ ]
+### T9 — R-1242: Module OnlyOffice und Collabora  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/app/catalog/modules/collabora.py, apps/monitoring/tests/test_catalog_onlyoffice.py, apps/monitoring/tests/test_catalog_collabora.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c66e78620 2026-11-12T15:42:38+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T9.verdict.json)
 Änderung: OnlyOffice `/healthcheck` als Test-Objekt (15 min, nur GET; nie `/internal/cluster/inactive`), Docker und
 Paket `onlyoffice-documentserver`; Collabora `GET /` → Status 200 (Antwort `OK` ist kein JSON), Docker und Unit
 `coolwsd`, Schema nach Vorgabe des Images.
@@ -274,3 +276,17 @@ Doku: → T14
   (f12402e2d8, in 8.1.0 enthalten, in 8.0.0 nicht). Vor 7.11.0 gibt es `/livez` nicht; dort ist die Antwort kein
   JSON-Objekt und die Probe schlägt fehl statt grün zu melden. `/health` (in allen Versionen, ab 7.11 immer 200)
   prüft weniger, daher `/livez`.
+- 2026-11-12 (T9): OnlyOffice abweichend vom Plan ohne `/healthcheck` am Container: die Images
+  (`onlyoffice/documentserver`, `-de`, `-ee`) exponieren nur nginx 80/443, und `module_sync._lacks_port` bindet
+  keinen Container-Check auf dem Docservice-Port 8000 (nicht in der Port-Map) → R-1393 `neu`. Über nginx geht es
+  nicht: mit Zertifikat leitet 80 von außen auf HTTPS um (`ds-ssl.conf.tmpl`), ohne lauscht 443 nicht. Ab 10.0.0.1
+  fragt der HEALTHCHECK des Images `/healthcheck` alle 30 s und vergleicht mit `true`; die Container-Gesundheit
+  trägt es, 9.x hat keinen (nur der Zustand). Paket: `ds-docservice.service` (gleich in -de/-ee) mit Unit-Check und
+  `GET /healthcheck` auf 8000 per HTTP (`server.host ''`, `port 8000` in `default.json`), Test-Objekt, 900 s. Die
+  Antwort ist immer 200 mit `true`/`false` (kein JSON) → bewertet wird nur der Status → R-1392 `neu`.
+- 2026-11-12 (T9): Collabora mit dem proto-Fühler `auto` statt `GET /` mit festem Schema: `ssl.enable` steht im
+  Paket und im Image (`collabora/code`) auf an, hinter einem Proxy oft aus. `HEAD /` antwortet 200 `OK`
+  (`isGetOrHead("/")`, `handleRootRequest`). Neben `ok eq false` ist `detail in [unknown, tls]` kritisch: ein
+  coolwsd, der annimmt und weder im Klartext noch in TLS HTTP antwortet, wäre sonst grün (`recognizeOn` meldet dann
+  `ok` mit `unknown`). Ab 26.04 hat das Image einen HEALTHCHECK (`coolwsd --probe` → `/livez`), 25.04 keinen.
+  `nextcloud/aio-collabora` und `nextcloud/aio-onlyoffice` bleiben draußen (eigene Images).
