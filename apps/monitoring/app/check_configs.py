@@ -351,6 +351,10 @@ CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})
 # SSH and MySQL are never probed from outside: a cyclic connection there reads as an
 # attack to the target's fail2ban or fills its error log (concept §3.7).
 CENTRAL_FORBIDDEN_PORTS = frozenset({22, 3306})
+# On these ports the server greets in plain text and the client asks for TLS with
+# STARTTLS: the sensor tls would send its ClientHello before the greeting, a pregreet
+# to postscreen (R-1367). The value names the sensor that speaks the protocol.
+_STARTTLS_PORTS: dict[int, str | None] = {25: "smtp", 587: "smtp", 143: "imap", 110: None}
 
 _HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 
@@ -414,6 +418,10 @@ class CentralConfig(_StrictConfig):
         if sensor.ports is not None and self.port is not None and self.port not in sensor.ports:
             allowed = ", ".join(map(str, sensor.ports[:-1])) + f" or {sensor.ports[-1]}"
             raise ValueError(f"the sensor {self.sensor} takes port {allowed}")
+        if self.sensor == "tls" and self.port in _STARTTLS_PORTS:
+            other = _STARTTLS_PORTS[self.port]
+            hint = f"use the sensor {other}" if other else "the sensor tls cannot check it"
+            raise ValueError(f"port {self.port} starts in plain text with STARTTLS; {hint}")
         if sensor.needs_name and _is_ip(self.host):
             raise ValueError(f"the sensor {self.sensor} needs a host name, not an IP address")
         return self

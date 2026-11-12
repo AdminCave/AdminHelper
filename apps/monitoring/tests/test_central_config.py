@@ -136,6 +136,26 @@ def test_invalid_configs_are_refused(config, fragment):
         validate_check_config("central", config)
 
 
+@pytest.mark.parametrize(
+    ("port", "fragment"),
+    [
+        (25, "port 25 starts in plain text .*; use the sensor smtp"),
+        (587, "port 587 starts in plain text .*; use the sensor smtp"),
+        (143, "port 143 starts in plain text .*; use the sensor imap"),
+        (110, "port 110 starts in plain text .*; the sensor tls cannot check it"),
+    ],
+)
+def test_the_tls_sensor_refuses_the_starttls_mail_ports(port, fragment):
+    # A ClientHello before the server's greeting is a pregreet to postscreen (R-1367).
+    with pytest.raises(ValueError, match=fragment):
+        validate_check_config("central", _config(port=port))
+
+
+@pytest.mark.parametrize("port", [465, 993, 995])
+def test_the_tls_sensor_takes_the_implicit_tls_mail_ports(port):
+    validate_check_config("central", _config(port=port))
+
+
 def test_a_zone_index_is_refused_even_where_the_ip_parser_takes_it():
     with pytest.raises(ValidationError, match="zone index"):
         CentralConfig.model_validate(_config(host="fe80::1%25"))

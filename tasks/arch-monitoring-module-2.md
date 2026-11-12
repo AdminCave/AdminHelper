@@ -124,8 +124,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_
 Doku: → T14
 Abhängt von: T12
 
-### T15 — Fühler `tls`: Klartext-Mail-Ports ablehnen (R-1367)  [ ]
+### T15 — Fühler `tls`: Klartext-Mail-Ports ablehnen (R-1367)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_config.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3440e72c5 2026-11-12T11:22:02+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T15.verdict.json)
 Änderung: `CentralConfig` mit Fühler `tls` lehnt die Ports 25, 587, 143 und 110 ab und verweist auf `smtp`/`imap`: dort spricht der Server zuerst und erwartet STARTTLS, ein ClientHello vor dem Greeting ist für postscreen ein Pregreet. Erst der rote Test (heute wird Port 25 angenommen), dann die Regel in `_fits_sensor`.
 Beweis: feature/arch-monitoring-module-2@HEAD · `CentralConfig.model_validate({"sensor": "tls", "host": "mx.example.test", "port": 25})` → wird angenommen
 Dedup-Key: bug:monitoring:check_configs.py:CENTRAL_SENSORS.tls
@@ -229,3 +231,4 @@ Task-Review: am Ende
 - 2026-11-12 T9: Status: eine Listung ist `warning` (Zustellung leidet, der Dienst läuft), Metrik `listed_count` = Zahl der Paare (Adresse, Liste); eine nicht beurteilte Liste oder ein MX-Host ohne Antwort macht einen Lauf ohne Listung `unknown`, eine Listung geht immer vor. TXT-Grund nur der freien Listen, über `_show` begrenzt.
 - 2026-11-12 T9: der DQS-Key ist ein Label des Fragenamens: `list_query` fängt jede Ausnahme selbst, `_Run.listed` jede weitere; Meldung, Details und Metrik tragen nur Listen-Titel — Test über alle Pfade (auch eine Ausnahme mit dem Namen) mit `caplog`. Laufzeit höchstens 45 s, danach sind die übrigen Listen nicht beurteilt. NXDOMAIN der Domain ist `reached=True` wie in `mail_dns`.
 - 2026-11-12 T9: sieben Dateien: `checkers/central.py` (Registry-Fühler), `routers/checks.py` (Metrik `monitor_listed_count_value`) und die Tests von Config und Dispatcher per `set-files`, `Verify:` um diese Tests erweitert.
+- 2026-11-12 T15: die Ablehnung nennt den passenden Fühler (25/587 → `smtp`, 143 → `imap`); für 110 (POP3, STLS) gibt es keinen, die Meldung sagt das — der Fühler `imap` spricht kein POP3. Andere STARTTLS-Ports (21, 119, 4190) nennt R-1367 nicht, sie bleiben offen (kein postscreen davor). Die Ports 465, 993 und 995 mit direktem TLS bleiben für `tls` erlaubt (Test).
