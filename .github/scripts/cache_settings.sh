@@ -57,7 +57,7 @@ for i in "${!files[@]}"; do
     # A step runs from its `- ` line to the next non-blank line indented no deeper than that
     # dash. Comment lines never count as settings.
     out=$(awk -v file="$f" -v mode="${modes[$i]}" '
-        BEGIN { dockerbuild = "(^|[^[:alnum:]_./-])docker[ ]+(buildx[ ]+)?(build|bake)([ ;|&)]|$)" }
+        BEGIN { dockerbuild = "(^|[^[:alnum:]_.-])docker[[:space:]]+((buildx|compose|image|builder)[[:space:]]+)?(build|bake)([[:space:];|&)]|$)" }
         function indent(s) { match(s, /^ */); return RLENGTH }
         function keyof(s) { if (!match(s, /^[ ]*[A-Za-z0-9_-]+:/)) return ""; s = substr(s, 1, RLENGTH - 1); sub(/^[ ]*/, "", s); return s }
         function check() {
