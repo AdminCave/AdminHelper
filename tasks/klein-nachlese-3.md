@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-3 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-3 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-3 · Review: pro Task
 Spec: docs/features/klein-nachlese-3.md (Roadmap R-1380, R-1390, R-1377)
 Heavy: none — Doku, UI-Texte, Sortierung und ein Filter im Monitoring-Dienst, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -46,8 +46,10 @@ Beweis: reviewer arch-monitoring-ui-2 Bau T11 · feature/arch-monitoring-ui-2@72
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Testhilfe)
 
-### T5 — R-1380, R-1377, R-1390: Doku nachziehen (README, Monitoring-Seiten, Changelog-Fragment)  [ ]
+### T5 — R-1380, R-1377, R-1390: Doku nachziehen (README, Monitoring-Seiten, Changelog-Fragment)  [x]
 Komponente: scripts · Dateien: README.md, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-ui-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c34f12729 2026-11-12T16:47:08+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: README.md:335 und :494, monitoring.html Admin :384/:404 und :343, Entwickler :367/:368 (frisch greppen); Semantik: docs/admin/monitoring.html:384 „prüft er nicht“ widerspricht dem Agent-Verhalten (security kern-monitoring-22)
 Änderung: README nennt `central` in der Typenliste, `MONITOR_PUBLIC_RESOLVERS` und `MONITOR_SPAMHAUS_DQS_KEY` in der Env-Tabelle (Werte aus `apps/monitoring/app/core/config.py`) und `central` in der `checkers/`-Zeile des Baums. Die vier Monitoring-Seiten: `days_left`/`lifetime_pct` auch bei smtp und imap (nach `checkers/central*` belegen), und ein relativ oder abstrakt gebundener Unix-Socket wird abgewiesen statt „nicht geprüft“, DE+EN. Im Fragment `arch-monitoring-ui-2.md` fällt das gerade Anführungszeichen weg.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

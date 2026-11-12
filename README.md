@@ -332,7 +332,7 @@ The **monitoring service** runs as a separate container alongside the server and
 
 ### Features
 
-- **Check types**: Ping, TCP, HTTP, agent-based resource checks, disk-full forecast
+- **Check types**: Ping, TCP, HTTP, agent-based resource checks, disk-full forecast, central checks (TLS, DNS, RDAP, DNSBL, SMTP, IMAP)
 - **Agent plugins**: CPU, RAM, Swap, Load, Disk (incl. inodes), Systemd Health, system state (pending reboot, clock sync, security updates, OOM kills; Linux), Docker, ZFS, Proxmox (auto-detected)
 - **Templates**: define monitoring configurations as templates and assign them to servers — six built-in standard templates (Linux/Windows/Proxmox/Docker/ZFS/Host Ping) are seeded at startup; assignment via template modal, server dialog (opt-in), server tab, tag binding or the overview's bulk CTA
 - **Alerting**: webhook and email notifications with a configurable cooldown, plus damping — `unknown` never notifies, per-metric hysteresis, host-down suppression, and maintenance windows per server or global (one-off/weekly, IANA time zone)
@@ -348,6 +348,8 @@ The **monitoring service** runs as a separate container alongside the server and
 | `VM_RETENTION` | `90d` | VictoriaMetrics metric retention (`-retentionPeriod`). Independent of the alert-log knob — the two do not sync. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | empty / `587` / empty / empty / `adminhelper@localhost` | Relay for the e-mail alert channel; the same variables the server uses for notification e-mails. Empty `SMTP_HOST` = e-mail channel off. |
 | `SMTP_CA_FILE` | empty | Path inside the container to a PEM file with the relay's CA, in addition to the system CAs (not set by the default compose file; see the operations guide, "Relay with its own CA"). |
+| `MONITOR_PUBLIC_RESOLVERS` | `9.9.9.9,1.1.1.1` | Public resolvers (IP addresses, comma-separated) the central DNS checks compare against; an entry that is no IP address is ignored. |
+| `MONITOR_SPAMHAUS_DQS_KEY` | empty | Optional key for Spamhaus Data Query Service (one DNS label); empty keeps Spamhaus off in the central DNSBL check. |
 
 ### Installing the agent
 
@@ -491,7 +493,7 @@ cargo tauri build
 │  │  ├─ app/
 │  │  │  ├─ main.py
 │  │  │  ├─ models.py            # Checks, States, Templates, AlertRules, AgentKeys
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ checkers/            # agent, smart, central, http, ping, tcp, plugins, forecast
 │  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler for pull checks
