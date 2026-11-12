@@ -130,8 +130,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_key
 Doku: → T14
 Abhängt von: T2
 
-### T11 — R-1243: Module WordPress und Odoo  [ ]
+### T11 — R-1243: Module WordPress und Odoo  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/wordpress.py, apps/monitoring/app/catalog/modules/odoo.py, apps/monitoring/tests/test_catalog_wordpress.py, apps/monitoring/tests/test_catalog_odoo.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4ae52bf66 2026-11-12T16:23:05+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T11.verdict.json)
 Änderung: WordPress: Docker (`wordpress`), `/wp-json/` (Weiterleitung auf `siteurl` belegen; nie `wp-cron.php`, nie
 `core check-update`, nie `cron test`), nativ ohne HTTP; Version und Cron → T15. Odoo: Docker und Paket, `/web/health`
 (8069; `db_server_status` nur ab der belegten Version).
@@ -312,3 +314,16 @@ Doku: → T14
   `service.c` `service_good_except_bus_name`, `service_enter_exited_or_stop`) steht im Betrieb auf `running` und
   nach dem Tod von slapd auf `active (exited)`; eine native Unit kommt dort nicht hin.
   contextCSN und cn=Monitor bleiben bei T15.
+- 2026-11-12 (T11): WordPress fragt abweichend vom Plan `/?rest_route=/` statt `/wp-json/` (gleicher Handler, gleiche
+  Kosten): `rest_api_init` registriert die öffentliche Query-Var `rest_route`, `rest_api_loaded` beendet die Anfrage in
+  `parse_request` (`default-filters.php`), vor `redirect_canonical` auf `template_redirect`. Ohne Pretty-Permalinks ist
+  `rewrite_rules()` leer (`class-wp-rewrite.php`), `/wp-json/` läuft in die Seite, und `redirect_canonical` leitet auf
+  den Port aus `home_url` um (`canonical.php`), dem der Agent nicht folgt (`sameTarget` → `not_allowed` → unbekannt).
+  Nur Docker (`wordpress`, Port 80 des apache-Images aus `php:8.3-apache`); fpm (9000) bleibt ohne HTTP-Check, ein
+  `wordpress:cli`-Container im selben Projekt macht das Ziel mehrdeutig (`_target_name`), beides im Docstring. 500
+  (`dead_db`) und 503 (`wp_maintenance`) sind kritisch, 401/403 eines Plugins die Zugangsbremse.
+- 2026-11-12 (T11): Odoo fragt `/web/health?db_server_status=1` an Image und Paket in jeder Version, weil ein Modul die
+  Version nicht kennt: ab 16 öffnet der Parameter einen Cursor des Pools auf die Datenbank `postgres` (500 bei
+  `psycopg2.Error`), 15 hat die Route ohne Parameter und loggt ihn je Prüfung auf `info` (`http.py:544`), vor 15 fehlt
+  die Route (404, kritisch). Unit `odoo.service` aus dem Debian-Paket 15–19 (`Type=simple`); `odoo18.service`,
+  `bitnami/odoo` und `/websocket/health` nicht abgedeckt.
