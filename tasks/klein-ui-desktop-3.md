@@ -29,3 +29,11 @@ Semantik: keine Stelle in docs/ — Kevin 2026-11-12: „Namensfeld sperren, bis
 Änderung: Hat die Verbindung eine `serverId`, ist `assignServer` wahr und steht der Server nicht in `$infraServers`, ist das freie Namensfeld `disabled`; mit geladener Liste erscheint das Feld des Servers, mit „kein Server“ wird es frei. Test mit verzögerter Liste: gesperrt, dann Feld des Servers.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
 Doku: keine (Changelog-Fragment changelog.d/klein-ui-desktop-3.md)
+
+### T3 — Abschlussprüfung: Frist im Test, umlautfreies Changelog-Fragment  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts, changelog.d/klein-ui-desktop-3.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @398c23a35 2026-11-12T12:51:45+01:00
+Review: am Ende (Branch-Review)
+Änderung: `vi.waitFor` im R-1358-Test bekommt `{ timeout: 30_000 }` (testing.md, Fristen); das Fragment wird umlautfrei (docs.md).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/ConnectionEditor.tabs.test.ts
+Doku: keine (Changelog-Fragment)

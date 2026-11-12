@@ -198,7 +198,9 @@ describe('ConnectionEditor assign server', () => {
     expect(c.querySelector('[data-testid="shown-as"]')).toBeNull();
 
     answer([{ id: 's1', name: 'web01' }]);
-    await vi.waitFor(() => expect(c.querySelector('[data-testid="shown-as"]')).not.toBeNull());
+    await vi.waitFor(() => expect(c.querySelector('[data-testid="shown-as"]')).not.toBeNull(), {
+      timeout: 30_000,
+    });
     expect(c.querySelector<HTMLInputElement>('input[name="name"]')!.disabled).toBe(false);
   });
 
