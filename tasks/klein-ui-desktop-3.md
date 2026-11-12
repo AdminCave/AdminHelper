@@ -10,8 +10,10 @@ Heavy: none — reine UI-Logik mit Vitest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1333: Monitoring-Navigation und -Seite nur für Admins  [ ]
+### T1 — R-1333: Monitoring-Navigation und -Seite nur für Admins  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/AppShell.workspace.test.ts, apps/desktop/ui/src/pages/Monitoring.svelte, apps/desktop/ui/src/pages/Monitoring.test.ts, changelog.d/klein-ui-desktop-3.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6132e2363 2026-11-12T12:31:04+01:00
+Review: am Ende (Branch-Review)
 Beweis: Kevin 2026-11-11 (Folge von R-1289) · apps/server/app/modules/monitoring_proxy/router.py get_current_admin · Dedup-Key: REF:desktop-ui:AppShell.svelte:monitoring-nav-admin
 Semantik: apps/server/app/modules/monitoring_proxy/router.py „Proxy for all monitoring requests (admins only).“
 Änderung: `NavItem` bekommt `adminOnly`; der Monitoring-Eintrag setzt es, `visibleNav` filtert nach `$session?.isAdmin === true`, die Route fällt für Nicht-Admins auf das Dashboard. `Monitoring.svelte` prüft die Rolle für den Funde-Tab nicht mehr. Tests: Nicht-Admin sieht keinen Eintrag, `/monitoring` zeigt das Dashboard; Admin sieht die Seite; Funde-Tab ohne eigene Prüfung.
