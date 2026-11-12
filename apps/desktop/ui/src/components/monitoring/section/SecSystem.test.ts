@@ -301,3 +301,96 @@ describe('SecSystem in English', () => {
     expect(texts(pills(el))).toEqual(['Not evaluated', 'All OK', 'Security updates: 4']);
   });
 });
+
+// arch-monitoring-ui-2 T9 (R-1227): the names behind the counts, below their point's row
+// when expanded; never in a pill, and without them the section stays as it was.
+describe('SecSystem with the names behind the counts', () => {
+  const NAMED = {
+    ...ALL_BAD,
+    security_packages: ['openssl', 'libssl3', 'curl'],
+    reboot_packages: ['linux-image-amd64'],
+    oom_processes: [
+      { pid: 4711, name: 'java' },
+      { pid: 812, name: 'php-fpm' },
+    ],
+  };
+
+  function names(el: HTMLElement): [string, string, string[]][] {
+    return Array.from(el.querySelectorAll<HTMLElement>('.mon-expand-names')).map((n) => [
+      n.dataset.point ?? '',
+      n.querySelector('.mon-expand-names-label')?.textContent?.trim() ?? '',
+      texts(Array.from(n.querySelectorAll<HTMLElement>('.ui-tag'))),
+    ]);
+  }
+
+  it('lists the packages and killed processes below their point and leaves the rest as it was', async () => {
+    const warn = check({ status: 'warning', details: NAMED });
+    const { container: el } = render(SecSystem, { props: { checks: [warn] } });
+    expect(texts(pills(el))).toEqual([
+      'Neustart nötig',
+      'Uhr nicht synchronisiert',
+      'Sicherheits-Updates: 3',
+      'OOM-Kills: 2',
+    ]);
+    expect(names(el)).toEqual([]);
+
+    expect((await expand(el)).map((r) => [row(r).name, row(r).note])).toEqual([
+      ['Neustart nötig', 'ja'],
+      ['Uhr synchronisiert', 'nein'],
+      ['Offene Sicherheits-Updates', '3'],
+      ['OOM-Kills seit dem letzten Report', '2'],
+    ]);
+    expect(names(el)).toEqual([
+      ['reboot', 'Verlangt von', ['linux-image-amd64']],
+      ['security_updates', 'Pakete', ['openssl', 'libssl3', 'curl']],
+      ['oom', 'Beendet', ['java (PID 4711)', 'php-fpm (PID 812)']],
+    ]);
+    // Each list right below the row of its point.
+    const order = Array.from(
+      el.querySelectorAll<HTMLElement>('.mon-expand-row, .mon-expand-names'),
+    ).map((n) => (n.classList.contains('mon-expand-names') ? n.dataset.point : row(n).name));
+    expect(order).toEqual([
+      'Neustart nötig',
+      'reboot',
+      'Uhr synchronisiert',
+      'Offene Sicherheits-Updates',
+      'security_updates',
+      'OOM-Kills seit dem letzten Report',
+      'oom',
+    ]);
+  });
+
+  it('shows no list for the details of an agent before the names', async () => {
+    const old = check({ status: 'warning', details: ALL_BAD });
+    const { container: el } = render(SecSystem, { props: { checks: [old] } });
+    expect(await expand(el)).toHaveLength(4);
+    expect(names(el)).toEqual([]);
+  });
+
+  it('shows a list only with a usable name and keeps a name the agent sent twice', async () => {
+    const odd = check({
+      status: 'warning',
+      details: {
+        ...ALL_BAD,
+        security_packages: ['openssl', 7, 'openssl'],
+        reboot_packages: [],
+        oom_processes: [{ pid: 'x', name: 'java' }, { name: 'php' }],
+      },
+    });
+    const { container: el } = render(SecSystem, { props: { checks: [odd] } });
+    await expand(el);
+    expect(names(el)).toEqual([['security_updates', 'Pakete', ['openssl', 'openssl']]]);
+  });
+
+  it('names the lists in English', async () => {
+    setLanguage('en');
+    const warn = check({ status: 'warning', details: NAMED });
+    const { container: el } = render(SecSystem, { props: { checks: [warn] } });
+    await expand(el);
+    expect(names(el).map(([point, label]) => [point, label])).toEqual([
+      ['reboot', 'Required by'],
+      ['security_updates', 'Packages'],
+      ['oom', 'Killed'],
+    ]);
+  });
+});

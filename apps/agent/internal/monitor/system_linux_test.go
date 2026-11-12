@@ -91,20 +91,40 @@ func stubSystemCLI(t *testing.T, replies map[string]dockerReply) *[][]string {
 	return &calls
 }
 
-// stubRebootFlag points rebootRequiredPath into a fresh directory and creates the flag there when
-// present is set.
+// stubRebootFlag points rebootRequiredPath and rebootRequiredPkgsPath into a fresh directory and
+// creates the flag there when present is set; the packages file stays for stubRebootPkgs.
 func stubRebootFlag(t *testing.T, present bool) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "reboot-required")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "reboot-required")
 	if present {
 		if err := os.WriteFile(path, []byte("*** System restart required ***\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	old := rebootRequiredPath
-	rebootRequiredPath = path
-	t.Cleanup(func() { rebootRequiredPath = old })
+	old, oldPkgs := rebootRequiredPath, rebootRequiredPkgsPath
+	rebootRequiredPath, rebootRequiredPkgsPath = path, filepath.Join(dir, "reboot-required.pkgs")
+	t.Cleanup(func() { rebootRequiredPath, rebootRequiredPkgsPath = old, oldPkgs })
 }
+
+// stubRebootPkgs writes content as the packages file next to the flag stubRebootFlag set up.
+func stubRebootPkgs(t *testing.T, content string) {
+	t.Helper()
+	if err := os.WriteFile(rebootRequiredPkgsPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// needsRestartingReboot is needs-restarting -r on a host waiting for a reboot, as dnf-plugins-core
+// prints it (plugins/needs_restarting.py, reboothint): the packages sorted, one "  * <name>" line each.
+const needsRestartingReboot = `Core libraries or services have been updated since boot-up:
+  * dbus-broker
+  * kernel
+  * systemd
+
+Reboot is required to fully utilize these updates.
+More information: https://access.redhat.com/solutions/27943
+`
 
 // systemStateHelperEnv tells TestHelperSystemStateProcess, run as a child process, which status to
 // exit with.
@@ -455,21 +475,219 @@ func TestSystemStateOOMStateWithoutSource(t *testing.T) {
 	}
 }
 
+// oomJournal is what `journalctl --dmesg --output=cat --priority=3` prints after a global and a cgroup
+// OOM kill: the kill lines as mm/oom_kill.c logs them (pr_err), the third of a process whose name holds
+// ") total-vm:", between other kernel errors, one of them quoting a kill line. The oom_reaper line is
+// pr_info, which the priority leaves out; it stands here to show it is dropped, like the kill line
+// without the numbers after the name.
+const oomJournal = `EXT4-fs error (device sda1): ext4_find_entry:1683: inode #2: comm ls: reading directory lblock 0
+test_oom: replay "Out of memory: Killed process 1 (init) total-vm:0kB"
+Out of memory: Killed process 2412 (stress-ng-vm) total-vm:4194304kB, anon-rss:3981234kB, file-rss:4kB, shmem-rss:0kB, UID:0 pgtables:7820kB oom_score_adj:1000
+oom_reaper: reaped process 2412 (stress-ng-vm), now anon-rss:0kB, file-rss:0kB, shmem-rss:0kB
+Memory cgroup out of memory: Killed process 3077 (Web Content) total-vm:2875648kB, anon-rss:524288kB, file-rss:0kB, shmem-rss:1024kB, UID:1000 pgtables:2412kB oom_score_adj:0
+Out of memory: Killed process 4101 (a) total-vm:b) total-vm:1024kB, anon-rss:512kB, file-rss:0kB, shmem-rss:0kB, UID:1000 pgtables:12kB oom_score_adj:0
+Killed process 99 (no numbers)
+`
+
+// oomKillLine is the kernel's kill line for the process pid named name.
+func oomKillLine(pid int, name string) string {
+	return fmt.Sprintf("Out of memory: Killed process %d (%s) total-vm:1024kB, anon-rss:512kB, file-rss:0kB, "+
+		"shmem-rss:0kB, UID:0 pgtables:12kB oom_score_adj:0\n", pid, name)
+}
+
+func TestSystemStateOOMProcesses(t *testing.T) {
+	// After a kill the agent asks the journal for the kernel's kill lines since the last report, the
+	// CPU sample saved with the counter 300.5 s ago, rounded up, and names the killed processes next to
+	// the count; every other line is dropped.
+	calls := stubSystemCLI(t, map[string]dockerReply{"journalctl": {out: oomJournal}})
+	systemCLI.now = func() time.Time { return time.Unix(1_700_000_300, 500_000_000) }
+	stubVMStat(t, vmstatWithOOMKill(8))
+	saved := uint64(5)
+	block, next := collectSystemState(context.Background(),
+		reportState{CPU: &cpuSample{Unix: 1_700_000_000}, OOMKill: &saved})
+	want := map[string]any{"oom_kills": 3.0, "oom_processes": []any{
+		map[string]any{"pid": 2412.0, "name": "stress-ng-vm"},
+		map[string]any{"pid": 3077.0, "name": "Web Content"},
+		map[string]any{"pid": 4101.0, "name": "a) total-vm:b"},
+	}}
+	if got := dockerWire(t, block); !reflect.DeepEqual(got, want) {
+		t.Errorf("block = %v, want %v", got, want)
+	}
+	wantCalls := [][]string{{"journalctl", "--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-301s"}}
+	if !reflect.DeepEqual(*calls, wantCalls) {
+		t.Errorf("calls = %q, want %q", *calls, wantCalls)
+	}
+	assertOOMState(t, next, 8, oomSourceVMStat)
+}
+
+func TestSystemStateOOMProcessesCapped(t *testing.T) {
+	// Of more kills than the field carries, the newest ten stay, in the order logged; a name longer
+	// than any comm is cut like a package name.
+	var out strings.Builder
+	for pid := 100; pid < 111; pid++ {
+		out.WriteString(oomKillLine(pid, fmt.Sprintf("worker-%d", pid)))
+	}
+	out.WriteString(oomKillLine(111, strings.Repeat("x", 200)))
+	got := parseOOMProcesses([]byte(out.String()))
+	if len(got) != maxOOMProcesses || got[0].PID != 102 || got[0].Name != "worker-102" || got[8].PID != 110 {
+		t.Errorf("processes = %+v, want the newest %d from 102 on", got, maxOOMProcesses)
+	}
+	if last := got[len(got)-1]; last.PID != 111 || last.Name != strings.Repeat("x", maxPackageNameBytes) {
+		t.Errorf("last = %+v, want 111 with its name cut to %d bytes", last, maxPackageNameBytes)
+	}
+	if got := parseOOMProcesses([]byte("EXT4-fs error (device sda1): lblock 0\n")); len(got) != 0 {
+		t.Errorf("processes = %+v, want none without a kill line", got)
+	}
+}
+
+func TestSystemStateOOMProcessesNoCall(t *testing.T) {
+	// The journal is asked only after a kill the counter of the kernel counted: not without a new kill,
+	// not on the first run, and not in a container, whose kernel log is the host's.
+	cases := []struct {
+		name  string
+		stub  func(t *testing.T)
+		state reportState
+	}{
+		{"no new kill", func(t *testing.T) { stubVMStat(t, vmstatWithOOMKill(7)) },
+			reportState{OOMKill: new(uint64(7))}},
+		{"first run", func(t *testing.T) { stubVMStat(t, vmstatWithOOMKill(7)) }, reportState{}},
+		{"container", func(t *testing.T) {
+			stubVMStat(t, vmstatWithOOMKill(90))
+			stubVirtualization(t, "docker", "guest")
+			stubMemoryEvents(t, memoryEventsWithOOMKill(3))
+		}, reportState{OOMKill: new(uint64(1)), OOMKillSource: oomSourceCgroup}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			calls := stubSystemCLI(t, map[string]dockerReply{"journalctl": {out: oomJournal}})
+			c.stub(t)
+			block, _ := collectSystemState(context.Background(), c.state)
+			if _, ok := block["oom_processes"]; ok || len(*calls) != 0 {
+				t.Errorf("block = %v after %q, want no oom_processes and no call", block, *calls)
+			}
+		})
+	}
+}
+
+func TestSystemStateOOMProcessesUnavailable(t *testing.T) {
+	// Without journalctl, or when its call fails, the kills are counted without names, the counter goes
+	// on, and the log says why without the tool's stderr. A journal without a kill line names none.
+	cases := []struct {
+		name  string
+		reply func(t *testing.T) map[string]dockerReply
+		log   string
+	}{
+		{"no journalctl", func(*testing.T) map[string]dockerReply { return nil },
+			"system state: journalctl not found, oom_processes left out"},
+		{"exits with an error", func(t *testing.T) map[string]dockerReply {
+			return map[string]dockerReply{"journalctl": {err: exitStatus(t, 1)}}
+		}, "system state: journalctl --dmesg failed: exit status 1, oom_processes left out"},
+		{"times out", func(*testing.T) map[string]dockerReply {
+			return map[string]dockerReply{"journalctl": {err: context.DeadlineExceeded}}
+		}, "system state: journalctl --dmesg failed: timed out after 15s, oom_processes left out"},
+		{"no kill line", func(*testing.T) map[string]dockerReply {
+			return map[string]dockerReply{"journalctl": {out: "EXT4-fs error (device sda1): lblock 0\n"}}
+		}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubSystemCLI(t, c.reply(t))
+			stubVMStat(t, vmstatWithOOMKill(7))
+			logs := captureWarnings(t)
+			saved := uint64(5)
+			block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
+			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
+				t.Errorf("block = %v, want %v", block, want)
+			}
+			assertOOMState(t, next, 7, oomSourceVMStat)
+			if c.log == "" {
+				if strings.Contains(logs.String(), "oom_processes") {
+					t.Errorf("log = %q, want no warning about oom_processes", logs.String())
+				}
+				return
+			}
+			assertSystemStateLog(t, logs.String(), c.log)
+		})
+	}
+}
+
+func TestSystemStateOOMWindow(t *testing.T) {
+	// The window reaches back to the CPU sample saved with the counter, rounded up to whole seconds,
+	// and is an hour at most, also without a sample or with one from the future.
+	now := time.Unix(1_700_003_600, 500_000_000)
+	cases := []struct {
+		name string
+		prev *cpuSample
+		want int64
+	}{
+		{"one report ago", &cpuSample{Unix: 1_700_003_300}, 301},
+		{"same second", &cpuSample{Unix: 1_700_003_600}, 1},
+		{"just under the cap", &cpuSample{Unix: 1_700_000_001}, 3600},
+		{"past the cap", &cpuSample{Unix: 1_700_000_000}, maxOOMWindow},
+		{"no sample", nil, maxOOMWindow},
+		{"sample from the future", &cpuSample{Unix: 1_700_003_601}, maxOOMWindow},
+	}
+	for _, c := range cases {
+		if got := oomWindow(c.prev, now); got != c.want {
+			t.Errorf("%s: oomWindow = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestSystemStateRebootDebian(t *testing.T) {
 	// The Debian family answers through the flag file alone, also with needs-restarting on the path.
-	for _, present := range []bool{true, false} {
-		t.Run(fmt.Sprintf("flag present %v", present), func(t *testing.T) {
+	// The packages file names the packages behind the flag, each line one, a package once; without
+	// the file, or with an empty one, the reboot names none, which is no failure.
+	cases := []struct {
+		name     string
+		present  bool
+		pkgs     *string
+		required bool
+		packages []string
+	}{
+		{"flag present", true, new("linux-image-6.12.57+deb13-amd64\nlibc6\nlinux-image-6.12.57+deb13-amd64\n"),
+			true, []string{"libc6", "linux-image-6.12.57+deb13-amd64"}},
+		{"flag present, no packages file", true, nil, true, nil},
+		{"flag present, empty packages file", true, new(""), true, nil},
+		{"flag present, blank lines", true, new("\n  dbus\n\n"), true, []string{"dbus"}},
+		{"flag absent", false, nil, false, nil},
+		{"flag absent, packages file left over", false, new("libc6\n"), false, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
 			calls := stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "needs-restarting": {}})
-			stubRebootFlag(t, present)
+			stubRebootFlag(t, c.present)
+			if c.pkgs != nil {
+				stubRebootPkgs(t, *c.pkgs)
+			}
 			logs := captureWarnings(t)
-			if required, ok := rebootRequired(context.Background()); required != present || !ok {
-				t.Errorf("rebootRequired() = %v, %v; want %v, true", required, ok, present)
+			required, packages, ok := rebootRequired(context.Background())
+			if required != c.required || !reflect.DeepEqual(packages, c.packages) || !ok {
+				t.Errorf("rebootRequired() = %v, %q, %v; want %v, %q, true", required, packages, ok, c.required, c.packages)
 			}
 			if len(*calls) != 0 {
 				t.Errorf("calls = %v, want none", *calls)
 			}
 			assertSystemStateLog(t, logs.String(), "")
 		})
+	}
+}
+
+func TestSystemStateRebootPkgsUnreadable(t *testing.T) {
+	// A packages file it cannot read costs the names, not the answer: the reboot is still required,
+	// and the log names why the names are missing.
+	stubSystemCLI(t, map[string]dockerReply{"apt-get": {}})
+	stubRebootFlag(t, true)
+	if err := os.Mkdir(rebootRequiredPkgsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logs := captureWarnings(t)
+	required, packages, ok := rebootRequired(context.Background())
+	if !required || packages != nil || !ok {
+		t.Errorf("rebootRequired() = %v, %q, %v; want true, no names, true", required, packages, ok)
+	}
+	if !strings.Contains(logs.String(), "is a directory, reboot_packages left out") {
+		t.Errorf("log = %q, want it to name the read error", logs.String())
 	}
 }
 
@@ -484,7 +702,7 @@ func TestSystemStateRebootFlagUnreadable(t *testing.T) {
 	rebootRequiredPath = filepath.Join(file, "reboot-required")
 	t.Cleanup(func() { rebootRequiredPath = old })
 	logs := captureWarnings(t)
-	if required, ok := rebootRequired(context.Background()); ok {
+	if required, _, ok := rebootRequired(context.Background()); ok {
 		t.Errorf("rebootRequired() = %v, true; want no answer", required)
 	}
 	if !strings.Contains(logs.String(), "not a directory, reboot_required left out") {
@@ -494,30 +712,39 @@ func TestSystemStateRebootFlagUnreadable(t *testing.T) {
 
 func TestSystemStateRebootRPM(t *testing.T) {
 	// needs-restarting -r: exit 0 is no reboot, exit 1 a reboot, everything else no answer with the
-	// reason in the log, short and without stderr.
+	// reason in the log, short and without stderr. A reboot names the packages of the "  * " lines;
+	// output of another form names none, and only a reboot names any.
 	cases := []struct {
 		name     string
-		err      error
+		reply    dockerReply
 		required bool
+		packages []string
 		ok       bool
 		log      string
 	}{
-		{"exit 0", nil, false, true, ""},
-		{"exit 1", exitStatus(t, 1), true, true, ""},
-		{"exit 2", exitStatus(t, 2), false, false,
+		{"exit 0", dockerReply{}, false, nil, true, ""},
+		{"exit 0 with lines", dockerReply{out: "  * kernel\n"}, false, nil, true, ""},
+		{"exit 1", dockerReply{err: exitStatus(t, 1)}, true, nil, true, ""},
+		{"exit 1 with packages", dockerReply{out: needsRestartingReboot, err: exitStatus(t, 1)}, true,
+			[]string{"dbus-broker", "kernel", "systemd"}, true, ""},
+		{"exit 1, other form", dockerReply{out: "Reboot is required.\n- kernel\n*kernel\n", err: exitStatus(t, 1)}, true,
+			nil, true, ""},
+		{"exit 2", dockerReply{out: needsRestartingReboot, err: exitStatus(t, 2)}, false, nil, false,
 			"needs-restarting -r failed: exit status 2, reboot_required left out"},
-		{"times out", context.DeadlineExceeded, false, false,
+		{"times out", dockerReply{err: context.DeadlineExceeded}, false, nil, false,
 			"needs-restarting -r failed: timed out after 15s, reboot_required left out"},
-		{"does not start", &exec.Error{Name: "/usr/bin/needs-restarting", Err: exec.ErrNotFound}, false, false,
+		{"does not start", dockerReply{err: &exec.Error{Name: "/usr/bin/needs-restarting", Err: exec.ErrNotFound}}, false, nil, false,
 			"needs-restarting -r failed: needs-restarting did not start, reboot_required left out"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			calls := stubSystemCLI(t, map[string]dockerReply{"needs-restarting": {err: c.err}})
+			calls := stubSystemCLI(t, map[string]dockerReply{"needs-restarting": c.reply})
 			stubRebootFlag(t, true) // without apt-get the flag file does not count
+			stubRebootPkgs(t, "libc6\n")
 			logs := captureWarnings(t)
-			if required, ok := rebootRequired(context.Background()); required != c.required || ok != c.ok {
-				t.Errorf("rebootRequired() = %v, %v; want %v, %v", required, ok, c.required, c.ok)
+			required, packages, ok := rebootRequired(context.Background())
+			if required != c.required || !reflect.DeepEqual(packages, c.packages) || ok != c.ok {
+				t.Errorf("rebootRequired() = %v, %q, %v; want %v, %q, %v", required, packages, ok, c.required, c.packages, c.ok)
 			}
 			if want := [][]string{{"needs-restarting", "-r"}}; !reflect.DeepEqual(*calls, want) {
 				t.Errorf("calls = %v, want %v", *calls, want)
@@ -533,7 +760,7 @@ func TestSystemStateRebootNoTool(t *testing.T) {
 	calls := stubSystemCLI(t, nil)
 	stubRebootFlag(t, true)
 	logs := captureWarnings(t)
-	if required, ok := rebootRequired(context.Background()); ok {
+	if required, _, ok := rebootRequired(context.Background()); ok {
 		t.Errorf("rebootRequired() = %v, true; want no answer", required)
 	}
 	if len(*calls) != 0 {
@@ -586,23 +813,26 @@ func TestSystemStateTimeSync(t *testing.T) {
 }
 
 func TestSystemStateBlock(t *testing.T) {
-	// The answers land in the block next to oom_kills, as JSON booleans and numbers on the wire, and
-	// the security update count goes into the state for the hour; with no answer at all the block is
-	// empty and stays out of the report.
+	// The answers land in the block next to oom_kills, as JSON booleans, numbers and lists of names on
+	// the wire, and the security update count goes into the state for the hour with its names; with no
+	// answer at all the block is empty and stays out of the report.
 	t.Run("all measured", func(t *testing.T) {
 		stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "timedatectl": {out: timedatectlShow}})
 		stubRebootFlag(t, true)
+		stubRebootPkgs(t, "linux-image-6.12.57+deb13-amd64\n")
 		stubVMStat(t, vmstatWithOOMKill(5))
 		stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		saved := uint64(3)
 		block, next := collectSystemState(context.Background(), reportState{OOMKill: &saved})
 		want := map[string]any{"oom_kills": 2.0, "reboot_required": true, "time_synchronized": true,
-			"security_updates": 2.0}
+			"security_updates": 2.0, "security_packages": []any{"libc-bin", "libc6"},
+			"reboot_packages": []any{"linux-image-6.12.57+deb13-amd64"}}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) {
 			t.Errorf("block = %v, want %v", got, want)
 		}
-		if next.Updates == nil || next.Updates.Security == nil || *next.Updates.Security != 2 {
-			t.Errorf("state updates = %+v, want the count 2", next.Updates)
+		if next.Updates == nil || next.Updates.Security == nil || *next.Updates.Security != 2 ||
+			!reflect.DeepEqual(next.Updates.Packages, []string{"libc-bin", "libc6"}) {
+			t.Errorf("state updates = %+v, want the count 2 with its names", next.Updates)
 		}
 	})
 	t.Run("security updates from the saved count", func(t *testing.T) {
@@ -611,14 +841,34 @@ func TestSystemStateBlock(t *testing.T) {
 		stubVMStat(t, "pgmajfault 1042\n")
 		calls := stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		five := 5
-		saved := &updatesCheck{CheckedUnix: updatesNow.Add(-10 * time.Minute).Unix(), Security: &five}
+		saved := &updatesCheck{CheckedUnix: updatesNow.Add(-10 * time.Minute).Unix(), Security: &five,
+			Packages: []string{"libssl3", "openssl"}}
 		block, next := collectSystemState(context.Background(), reportState{Updates: saved})
-		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0}
+		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0,
+			"security_packages": []any{"libssl3", "openssl"}}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) || len(*calls) != 0 {
 			t.Errorf("block = %v after %d call(s), want %v without one", got, len(*calls), want)
 		}
 		if next.Updates != saved {
 			t.Errorf("state updates = %+v, want the saved count handed on", next.Updates)
+		}
+	})
+	t.Run("saved count of an older agent", func(t *testing.T) {
+		// A state an older agent saved has the count without names: the count is reported, the
+		// names stay out until the next count.
+		stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "timedatectl": {out: timedatectlShow}})
+		stubRebootFlag(t, false)
+		stubVMStat(t, "pgmajfault 1042\n")
+		calls := stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
+		path := filepath.Join(t.TempDir(), ".report-state.json")
+		old := fmt.Sprintf(`{"updates":{"checked_unix":%d,"security":5}}`, updatesNow.Add(-10*time.Minute).Unix())
+		if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		block, _ := collectSystemState(context.Background(), loadReportState(path))
+		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0}
+		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) || len(*calls) != 0 {
+			t.Errorf("block = %v after %d call(s), want %v without one", got, len(*calls), want)
 		}
 	})
 	t.Run("nothing measured", func(t *testing.T) {

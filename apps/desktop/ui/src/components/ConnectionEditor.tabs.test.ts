@@ -184,6 +184,43 @@ describe('ConnectionEditor assign server', () => {
     expect((h.upsert.mock.calls[0] as unknown as [Connection])[0].serverId).toBe('s2');
   });
 
+  it('locks the name field until the server list is loaded (R-1358)', async () => {
+    serverMode();
+    let answer: (list: ServerRow[]) => void = () => {};
+    h.list.mockReturnValueOnce(new Promise<ServerRow[]>((resolve) => (answer = resolve)));
+    const c = await open({
+      ...emptyConnection('ssh'),
+      name: 'web01',
+      host: 'web01.lan',
+      serverId: 's1',
+    });
+    expect(c.querySelector<HTMLInputElement>('input[name="name"]')!.disabled).toBe(true);
+    expect(c.querySelector('[data-testid="shown-as"]')).toBeNull();
+
+    answer([{ id: 's1', name: 'web01' }]);
+    await vi.waitFor(() => expect(c.querySelector('[data-testid="shown-as"]')).not.toBeNull(), {
+      timeout: 30_000,
+    });
+    expect(c.querySelector<HTMLInputElement>('input[name="name"]')!.disabled).toBe(false);
+  });
+
+  it('frees the locked name field when the server is cleared', async () => {
+    serverMode();
+    await seedServers([{ id: 's1', name: 'mail-01' }]);
+    const c = await open({
+      ...emptyConnection('ssh'),
+      name: 'web01',
+      host: 'web01.lan',
+      serverId: 'gone',
+    });
+    expect(c.querySelector<HTMLInputElement>('input[name="name"]')!.disabled).toBe(true);
+
+    const select = c.querySelector<HTMLSelectElement>('select[name="serverId"]')!;
+    select.value = '';
+    await fireEvent.change(select);
+    expect(c.querySelector<HTMLInputElement>('input[name="name"]')!.disabled).toBe(false);
+  });
+
   it('keeps an unknown server and clears it with No server', async () => {
     serverMode();
     await seedServers([{ id: 's1', name: 'mail-01' }]);

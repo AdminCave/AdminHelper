@@ -62,20 +62,58 @@ func (st reportState) oomKillSource() string {
 }
 
 // updatesCheck is one count of pending security updates, taken at CheckedUnix. Security is nil when the
-// count failed: a failed count is the hour's attempt as well.
+// count failed: a failed count is the hour's attempt as well. Packages names the counted packages
+// (packageNames); a state saved by an older agent has none until the next count.
 type updatesCheck struct {
-	CheckedUnix int64 `json:"checked_unix"`
-	Security    *int  `json:"security"`
+	CheckedUnix int64    `json:"checked_unix"`
+	Security    *int     `json:"security"`
+	Packages    []string `json:"packages,omitempty"`
 }
 
 // backupIndexCheck is one backup index of Node, read at CheckedUnix from the content of Storages
 // (sorted): vmid -> newest backup ctime. Index has no omitempty: an empty index (no backups yet) must
-// come back as one, not as nil, which counts as never read.
+// come back as one, not as nil, which counts as never read. The details are read with it
+// (buildBackupIndex): Newest per guest, the enabled backup Jobs (no omitempty either: [] is read and
+// none, nil not read), and the Errors of the last failed vzdump task ErrorTask (its UPID; "" when its
+// log was not read). A state saved by an older agent has no details until the next read.
 type backupIndexCheck struct {
-	CheckedUnix int64         `json:"checked_unix"`
-	Node        string        `json:"node"`
-	Storages    []string      `json:"storages"`
-	Index       map[int]int64 `json:"index"`
+	CheckedUnix int64                `json:"checked_unix"`
+	Node        string               `json:"node"`
+	Storages    []string             `json:"storages"`
+	Index       map[int]int64        `json:"index"`
+	Newest      map[int]backupDetail `json:"newest,omitempty"`
+	Jobs        []backupJob          `json:"jobs"`
+	ErrorTask   string               `json:"error_task,omitempty"`
+	Errors      map[int]backupError  `json:"errors,omitempty"`
+}
+
+// backupDetail is the newest backup of one guest: the storage it is on, its size in bytes (0 when the
+// storage does not know it) and the state of its last verification ("" without one; PBS only).
+type backupDetail struct {
+	Storage string `json:"storage"`
+	Size    int64  `json:"size,omitempty"`
+	Verify  string `json:"verify,omitempty"`
+}
+
+// backupJob is one enabled vzdump job of /cluster/backup: what the desktop shows (ID, Schedule, Storage)
+// and what selects its guests (backupJob.covers). Mail addresses, comments and note templates of the
+// job are never kept (Feld-Freigabe, Konzept §3.13).
+type backupJob struct {
+	ID       string `json:"id,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	Storage  string `json:"storage,omitempty"`
+	Pool     string `json:"pool,omitempty"`
+	VMIDs    []int  `json:"vmids,omitempty"`
+	All      bool   `json:"all,omitempty"`
+	Exclude  []int  `json:"exclude,omitempty"`
+	Node     string `json:"node,omitempty"`
+}
+
+// backupError is the error vzdump logged for one guest in a failed backup task: Text after "failed - ",
+// capped (capBackupError), and Unix, the task's start.
+type backupError struct {
+	Unix int64  `json:"unix"`
+	Text string `json:"text"`
 }
 
 // cpuSample is the CPU time counted up to Unix, summed as cpuBusyTimes does.

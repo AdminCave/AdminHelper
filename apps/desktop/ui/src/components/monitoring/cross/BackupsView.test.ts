@@ -201,3 +201,220 @@ describe('BackupsView', () => {
     expect(onOpen).toHaveBeenCalledWith('srv-b');
   });
 });
+
+// arch-monitoring-ui-2 T10 (R-1227): storage, job, verification and last error per VM, each
+// as a column only once some VM has it.
+describe('BackupsView backup details', () => {
+  const NOW = Date.parse('2026-11-12T12:00:00Z') / 1000;
+  const GIB = 1024 ** 3;
+  const ERROR = 'ERROR: Backup of VM 102 failed - no space left on device';
+
+  const detailed = [
+    vm(101, 'ok', {
+      backupStorage: 'pbs',
+      backupSize: 12 * GIB,
+      backupJobs: [
+        { id: 'backup-nightly', schedule: '02:00', storage: 'pbs' },
+        { id: 'weekly', storage: 'nas' },
+      ],
+      backupVerify: 'ok',
+    }),
+    vm(102, 'missing', {
+      backupJobs: [],
+      backupVerify: 'failed',
+      backupError: ERROR,
+      backupErrorTs: NOW - 5 * 3600,
+    }),
+    vm(103, 'outdated', { ageHours: 30 }),
+    vm(104, 'outdated', {
+      ageHours: 40,
+      backupError: 'ERROR: Backup of VM 104 failed - lock',
+      backupErrorTs: NOW - 2 * 24 * 3600,
+    }),
+    vm(105, 'outdated', { ageHours: 50, backupError: 'ERROR: Backup of VM 105 failed - timeout' }),
+  ];
+
+  function headers(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('thead th')].map(
+      (th) => th.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    );
+  }
+
+  function view(vms: object[]) {
+    return render(BackupsView, {
+      checks: [
+        backups('a', 'critical', { vms }),
+        backups('b', 'critical', { available: false, error: 'cli_failed' }, { serverId: 'srv-b' }),
+      ],
+      servers: SERVERS,
+      onOpen: () => {},
+    });
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('carries the details of each VM in its row, none for a check without VMs', () => {
+    const list = backupRows(
+      [
+        backups('a', 'critical', {
+          vms: [
+            ...detailed.slice(0, 2),
+            vm(106, 'ok', { backupStorage: 7, backupJobs: 'nightly', backupErrorTs: 'x' }),
+          ],
+        }),
+        backups('b', 'critical', { available: false, error: 'cli_failed' }),
+      ],
+      SERVERS,
+    );
+    expect(list.map((r) => [r.key, r.backup])).toEqual([
+      [
+        'a:101',
+        {
+          backupStorage: 'pbs',
+          backupSize: 12 * GIB,
+          backupJobs: [
+            { id: 'backup-nightly', schedule: '02:00', storage: 'pbs' },
+            { id: 'weekly', storage: 'nas' },
+          ],
+          backupVerify: 'ok',
+        },
+      ],
+      [
+        'a:102',
+        {
+          backupJobs: [],
+          backupVerify: 'failed',
+          backupError: ERROR,
+          backupErrorTs: NOW - 5 * 3600,
+        },
+      ],
+      ['a:106', {}],
+      ['b', {}],
+    ]);
+  });
+
+  it('keeps the table as it was while no VM has details', () => {
+    const { container } = view([vm(101, 'ok'), vm(102, 'outdated', { ageHours: 30 })]);
+    expect(headers(container)).toEqual(['Server', 'Was', 'Letztes Backup', 'Status']);
+  });
+
+  it('adds only the columns some VM has', () => {
+    const { container } = view([vm(101, 'ok', { backupJobs: [] }), vm(102, 'ok')]);
+    expect(headers(container)).toEqual(['Server', 'Was', 'Letztes Backup', 'Job', 'Status']);
+    expect(rows(container).map((r) => r[3])).toEqual(['—', 'kein Job', '—']);
+  });
+
+  it('names storage, jobs, verification and last error per VM', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    const { container } = view(detailed);
+    expect(headers(container)).toEqual([
+      'Server',
+      'Was',
+      'Letztes Backup',
+      'Ablage',
+      'Job',
+      'Verifizierung',
+      'Letzter Fehler',
+      'Status',
+    ]);
+    expect(rows(container)).toEqual([
+      [
+        'pve-a',
+        'QEMU 102 (vm-102)',
+        'keins gefunden',
+        '—',
+        'kein Job',
+        'Verifizierung fehlgeschlagen',
+        `Letzter Fehler (vor 5 h): ${ERROR}`,
+        'Kein Backup',
+      ],
+      ['pve-a', 'QEMU 103 (vm-103)', 'vor 30 h', '—', '—', '—', '—', 'Veraltet'],
+      [
+        'pve-a',
+        'QEMU 104 (vm-104)',
+        'vor 40 h',
+        '—',
+        '—',
+        '—',
+        'Letzter Fehler (vor 2 Tagen): ERROR: Backup of VM 104 failed - lock',
+        'Veraltet',
+      ],
+      [
+        'pve-a',
+        'QEMU 105 (vm-105)',
+        'vor 2 Tagen',
+        '—',
+        '—',
+        '—',
+        'Letzter Fehler: ERROR: Backup of VM 105 failed - timeout',
+        'Veraltet',
+      ],
+      ['pve-b', 'Backups b', '—', '—', '—', '—', '—', 'Proxmox-Abfrage fehlgeschlagen'],
+      [
+        'pve-a',
+        'QEMU 101 (vm-101)',
+        'in den letzten 26 h',
+        'pbs · 12 GiB',
+        'backup-nightly (02:00) → pbs, weekly → nas',
+        'verifiziert',
+        '—',
+        'Aktuell',
+      ],
+    ]);
+    const tones = [...container.querySelectorAll('tbody tr')].map(
+      (tr) =>
+        tr
+          .querySelectorAll('td')[5]
+          .querySelector('.pill')
+          ?.className.match(/pill-(\w+)/)?.[1],
+    );
+    expect(tones).toEqual(['crit', undefined, undefined, undefined, undefined, 'ok']);
+    // The cell cuts a long error; its title keeps all of it.
+    expect(container.querySelector('.error')?.getAttribute('title')).toBe(
+      `Letzter Fehler (vor 5 h): ${ERROR}`,
+    );
+  });
+
+  it('sorts the newest error first, an undated one after the dated ones', async () => {
+    const { container, getByRole } = view(detailed);
+    await fireEvent.click(getByRole('button', { name: 'Letzter Fehler' }));
+    expect(rows(container).map((r) => r[1])).toEqual([
+      'QEMU 102 (vm-102)',
+      'QEMU 104 (vm-104)',
+      'QEMU 105 (vm-105)',
+      'QEMU 101 (vm-101)',
+      'QEMU 103 (vm-103)',
+      'Backups b',
+    ]);
+  });
+
+  it('names the columns and the details in English', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    setLanguage('en');
+    try {
+      const { container } = view(detailed.slice(0, 2));
+      expect(headers(container)).toEqual([
+        'Server',
+        'What',
+        'Last backup',
+        'Storage',
+        'Job',
+        'Verification',
+        'Last error',
+        'Status',
+      ]);
+      expect(rows(container)[0].slice(3, 7)).toEqual([
+        '—',
+        'no job',
+        'verification failed',
+        `Last error (5 h ago): ${ERROR}`,
+      ]);
+    } finally {
+      setLanguage('de');
+    }
+  });
+});

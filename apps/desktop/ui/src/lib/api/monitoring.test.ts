@@ -189,6 +189,13 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     undefined,
   ],
   [
+    'rebaseline',
+    () => monitoringApi.rebaseline(session, 'c/1'),
+    'POST',
+    '/api/monitoring/checks/c%2F1/rebaseline',
+    undefined,
+  ],
+  [
     'createAlert',
     () => monitoringApi.createAlert(session, alertInput),
     'POST',

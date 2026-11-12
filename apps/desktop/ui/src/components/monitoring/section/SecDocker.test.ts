@@ -58,6 +58,9 @@ interface Rated {
   reason: string | null;
   exit_code: number | null;
   restart_count: number | null;
+  compose_project?: unknown;
+  ports?: unknown;
+  started_at?: unknown;
 }
 
 function rated(
@@ -447,5 +450,139 @@ describe('SecDocker details of the wrong form', () => {
     const { container: el } = render(SecDocker, { props: { checks: [wrong] } });
     expect(texts(pills(el))).toEqual(['Alle 1 Container laufen']);
     expect((await expand(el)).map(row)).toEqual([{ name: 'web', note: 'running' }]);
+  });
+});
+
+// arch-monitoring-ui-2 T10 (R-1227): the containers grouped by compose project, the
+// worst first and the containers without a project last; uptime of a running one and
+// its published ports below it.
+describe('SecDocker compose projects', () => {
+  const NOW = Date.parse('2026-11-12T12:00:00Z') / 1000;
+  const HOUR = 3600;
+
+  const shop = [
+    rated('web', 'running', 'ok', null, {
+      compose_project: 'shop',
+      ports: ['0.0.0.0:443->443/tcp', '[::]:443->443/tcp'],
+      started_at: NOW - 3 * HOUR,
+    }),
+    rated('db', 'running', 'ok', null, { compose_project: 'shop', started_at: NOW - 90 }),
+  ];
+  const mailcow = [
+    rated('postfix', 'exited', 'critical', 'exit:1', {
+      compose_project: 'mailcow',
+      exit_code: 1,
+      ports: ['0.0.0.0:25->25/tcp'],
+      started_at: NOW - 5 * 24 * HOUR,
+    }),
+    rated('dovecot', 'running', 'ok', null, { compose_project: 'mailcow' }),
+  ];
+  const lonely = rated('lonely', 'running', 'ok', null, { started_at: NOW - 30 });
+
+  function groups(el: HTMLElement): HTMLDetailsElement[] {
+    return Array.from(el.querySelectorAll<HTMLDetailsElement>('details.mon-expand-group'));
+  }
+
+  function head(g: HTMLElement): { name: string; note: string } {
+    const summary = g.querySelector<HTMLElement>('summary');
+    expect(summary).not.toBeNull();
+    return row(summary as HTMLElement);
+  }
+
+  function subLine(el: HTMLElement, name: string): string | null {
+    const line = el.querySelector<HTMLElement>(`[data-container="id:${name}-id"]`);
+    return line ? (line.textContent?.replace(/\s+/g, ' ').trim() ?? '') : null;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('groups by project, the worst first, a project with a problem open', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    const c = check({ status: 'critical', details: details([lonely, ...shop, ...mailcow]) });
+    const { container: el } = render(SecDocker, { props: { checks: [c] } });
+    const rows = await expand(el);
+
+    const list = groups(el);
+    expect(list.map((g) => g.dataset.project)).toEqual(['mailcow', 'shop', '']);
+    expect(list.map(head)).toEqual([
+      { name: 'mailcow', note: '1 von 2 laufen' },
+      { name: 'shop', note: '2 von 2 laufen' },
+      { name: 'ohne Projekt', note: '1 von 1 laufen' },
+    ]);
+    expect(list.map((g) => g.open)).toEqual([true, false, false]);
+    expect(list.map((g) => /level-(\w+)/.exec(g.querySelector('summary')!.className)?.[1])).toEqual(
+      ['crit', 'ok', 'ok'],
+    );
+    // Every container once, inside its project, in the order within it as before.
+    expect(rows.map((r) => row(r).name)).toEqual(['postfix', 'dovecot', 'web', 'db', 'lonely']);
+    expect(
+      list.map((g) =>
+        Array.from(g.querySelectorAll('.mon-expand-row')).map((r) => row(r as HTMLElement).name),
+      ),
+    ).toEqual([['postfix', 'dovecot'], ['web', 'db'], ['lonely']]);
+  });
+
+  it('names uptime and ports of a running container, only the ports of a stopped one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    const c = check({ status: 'critical', details: details([lonely, ...shop, ...mailcow]) });
+    const { container: el } = render(SecDocker, { props: { checks: [c] } });
+    await expand(el);
+
+    expect(subLine(el, 'web')).toBe('läuft seit 3 h Ports 0.0.0.0:443->443/tcp [::]:443->443/tcp');
+    expect(subLine(el, 'db')).toBe('läuft seit 1 min');
+    expect(subLine(el, 'lonely')).toBe('läuft seit 30 s');
+    // Exited: its start time says nothing about now.
+    expect(subLine(el, 'postfix')).toBe('Ports 0.0.0.0:25->25/tcp');
+    // Neither start time nor ports: no line.
+    expect(subLine(el, 'dovecot')).toBeNull();
+  });
+
+  it('keeps the flat list while no container names a project', async () => {
+    const plain = [
+      rated('web', 'running', 'ok', null, { started_at: NOW }),
+      rated('db', 'running', 'ok'),
+    ];
+    const { container: el } = render(SecDocker, {
+      props: { checks: [check({ status: 'ok', details: details(plain) })] },
+    });
+    const rows = await expand(el);
+    expect(groups(el)).toEqual([]);
+    expect(rows.map((r) => row(r).name)).toEqual(['web', 'db']);
+  });
+
+  it('drops a project, ports or start time of the wrong type and keeps the container', async () => {
+    const odd = [
+      rated('web', 'running', 'ok', null, {
+        compose_project: 7,
+        ports: '443/tcp',
+        started_at: 'x',
+      }),
+      rated('db', 'running', 'ok', null, { compose_project: 'shop' }),
+    ];
+    const { container: el } = render(SecDocker, {
+      props: { checks: [check({ status: 'ok', details: details(odd) })] },
+    });
+    const rows = await expand(el);
+    expect(groups(el).map((g) => g.dataset.project)).toEqual(['shop', '']);
+    expect(rows.map((r) => row(r).name)).toEqual(['db', 'web']);
+    expect(subLine(el, 'web')).toBeNull();
+  });
+
+  it('renders the group head, uptime and ports in English', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW * 1000);
+    setLanguage('en');
+    const c = check({ status: 'ok', details: details([lonely, ...shop]) });
+    const { container: el } = render(SecDocker, { props: { checks: [c] } });
+    await expand(el);
+    expect(groups(el).map(head)).toEqual([
+      { name: 'shop', note: '2 of 2 running' },
+      { name: 'no project', note: '1 of 1 running' },
+    ]);
+    expect(subLine(el, 'web')).toBe('up 3 h Ports 0.0.0.0:443->443/tcp [::]:443->443/tcp');
   });
 });

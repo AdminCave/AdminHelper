@@ -66,6 +66,14 @@ describe('probeStatusText', () => {
     }
   });
 
+  it('says the agent refused a target without claiming why', () => {
+    // The agent refuses for several reasons (blocklist, forwarder, socket checks); its own
+    // error names the one that applied, so the label must not assert a foreign address.
+    expect(probeStatusText(get(t), 'not_allowed')).toBe('Der Agent hat das Ziel abgewiesen');
+    setLanguage('en');
+    expect(probeStatusText(get(t), 'not_allowed')).toBe('The agent refused the target');
+  });
+
   it('quotes the code of a newer agent and is null before the first answer', () => {
     const tr = get(t);
     expect(probeStatusText(tr, 'rate_limited')).toBe('Fühler meldet „rate_limited“');
