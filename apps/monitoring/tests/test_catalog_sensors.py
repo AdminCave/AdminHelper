@@ -2,8 +2,9 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The opnsense sensor in the catalog contract: a view from the agent's allowlist, no
-target, and only the fields that view returns (R-1248)."""
+"""Sensors in the catalog contract. The opnsense sensor: a view from the agent's allowlist,
+no target, and only the fields that view returns (R-1248). The http sensor's host: localhost
+or left out, and left out it is not sent (arch-monitoring-apps-1)."""
 
 import pytest
 
@@ -70,3 +71,47 @@ def test_a_target_is_rejected():
 
 def test_the_sensor_fields_are_exactly_the_union_of_the_views():
     assert SENSOR_FIELDS["opnsense"] == frozenset().union(*OPNSENSE_VIEW_FIELDS.values())
+
+
+def _http_module(params):
+    raw = {
+        "id": "app",
+        "name": "App",
+        "version": 1,
+        "detect": {"container_images": ["example/app"]},
+        "instance": "container",
+        "checks": [
+            {
+                "key": "web",
+                "name": "Web",
+                "sensor": "http",
+                "target": {"kind": "container"},
+                "params": params,
+                "interval": 900,
+                "fields": ["status_code"],
+            }
+        ],
+    }
+    return load_catalog([("app", raw)])
+
+
+def test_an_http_check_asks_as_localhost_when_told():
+    catalog = _http_module({"path": "/status.php", "host": "localhost"})
+    assert catalog.errors == ()
+    assert catalog.modules["app"].checks[0].params == {
+        "path": "/status.php",
+        "method": "GET",
+        "host": "localhost",
+    }
+
+
+def test_an_http_check_without_host_sends_no_host():
+    # An agent older than the param refuses every probe that carries it.
+    catalog = _http_module({})
+    assert catalog.errors == ()
+    assert catalog.modules["app"].checks[0].params == {"path": "/", "method": "GET"}
+
+
+@pytest.mark.parametrize("host", ["example.org", "", "localhost:80", "LOCALHOST", 1, None])
+def test_an_http_check_names_no_other_host(host):
+    assert "host" in _only_error(_http_module({"host": host}))

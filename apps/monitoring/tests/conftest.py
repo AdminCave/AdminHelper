@@ -36,6 +36,15 @@ hypothesis.settings.register_profile("gate", derandomize=True)
 hypothesis.settings.load_profile("gate")
 
 
+@pytest.fixture(autouse=True)
+def _no_dns64(monkeypatch):
+    """No test asks the real resolver for the NAT64 prefixes: the environment has none."""
+    from app.central import net
+
+    monkeypatch.setattr(net, "lookup_ipv4only", lambda: ())
+    monkeypatch.setattr(net, "_nat64_cache", None)
+
+
 @pytest.fixture()
 def client_db(monkeypatch):
     """Shared TestClient against the real app on sqlite: agent auth bypassed, VictoriaMetrics writes and

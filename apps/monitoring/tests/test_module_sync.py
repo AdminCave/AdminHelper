@@ -321,6 +321,30 @@ def test_no_inventory_no_container():
     )
 
 
+def _tcp(*ports, proto="tcp"):
+    return [{"private": p, "public": None, "proto": proto} for p in ports]
+
+
+@pytest.mark.parametrize(
+    ("ports", "reason"),
+    [
+        pytest.param(_tcp(9000), "container paperless-web-1 has no port 8000", id="other-port"),
+        pytest.param(_tcp(8000, proto="udp") + _tcp(9000),
+                     "container paperless-web-1 has no port 8000", id="hint-only-as-udp"),
+        pytest.param(_tcp(8000, 9000), None, id="hint-among-ports"),
+        pytest.param([], None, id="no-ports-seen"),
+        pytest.param(_tcp(8000, proto="udp"), None, id="no-tcp-port-seen"),
+    ],
+)  # fmt: skip
+def test_a_container_without_the_hinted_port_binds_no_check(ports, reason):
+    web = {**CONTAINERS[0], "ports": ports}
+
+    config, why = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, [web, *CONTAINERS[1:]])
+
+    assert why == reason
+    assert (config is None) == (reason is not None)
+
+
 def test_a_port_takes_the_found_port():
     config, _ = _bind("port", "tcp-8443", "answers", {"port": 8443, "protocol": "https"})
 

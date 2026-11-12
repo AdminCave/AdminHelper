@@ -16,6 +16,7 @@ two of these looks the stored state gives the verdict, against the current time.
 from __future__ import annotations
 
 import ipaddress
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -54,6 +55,46 @@ _SERVFAIL = "servfail"
 
 class _NoLook(Exception):
     """The hourly look could not be made; the stored state stays."""
+
+
+class _Asked:
+    """The answers of one look by address: name servers that share an address ask it once
+    (R-1381), so their number does not run the look into the spacing of that address."""
+
+    def __init__(self, limits: Limits) -> None:
+        self._limits = limits
+        self._lock = threading.Lock()
+        self._locks: dict[str, threading.Lock] = {}
+        self._soa: dict[str, dns.message.Message] = {}
+        self._tries: dict[str, int] = {}
+        self._sigs: dict[str, dict] = {}
+
+    def _address(self, address: str) -> threading.Lock:
+        with self._lock:
+            return self._locks.setdefault(address, threading.Lock())
+
+    def soa(self, address: str, zone: dns.name.Name) -> dns.message.Message | None:
+        """The SOA reply of `address`; None without a reply after two questions in this look."""
+        with self._address(address):
+            if address in self._soa:
+                return self._soa[address]
+            if self._tries.get(address, 0) >= 2:
+                return None
+            if not self._limits.address_turn(address):
+                raise _NoLook("name server spacing")
+            self._tries[address] = self._tries.get(address, 0) + 1
+            response = exchange(address, zone, "SOA", recursion=False)
+            if response is not None:
+                self._soa[address] = response
+            return response
+
+    def signature(
+        self, address: str, zone: dns.name.Name, name: dns.name.Name, rdtype: str
+    ) -> dict:
+        with self._address(address):
+            if address not in self._sigs:
+                self._sigs[address] = _signature(address, zone, name, rdtype)
+            return self._sigs[address]
 
 
 def exchange(
@@ -201,12 +242,13 @@ def _look(
         zone = find_zone(name, resolvers)
         servers = _name_servers(zone, resolvers)
         signed = _signed(zone, resolvers)
+        asked = _Asked(limits)
         with ThreadPoolExecutor(
             max_workers=SERVER_WORKERS, thread_name_prefix="central-dns-ns"
         ) as pool:
             entries = list(
                 pool.map(
-                    lambda ns: _ask_server(ns, zone, name, rdtype, signed, limits, resolvers),
+                    lambda ns: _ask_server(ns, zone, name, rdtype, signed, asked, resolvers),
                     servers[:MAX_NAME_SERVERS],
                 )
             )
@@ -284,7 +326,7 @@ def _ask_server(
     name: dns.name.Name,
     rdtype: str,
     signed: bool,
-    limits: Limits,
+    asked: _Asked,
     resolvers: tuple[str, ...],
 ) -> dict:
     """One name server: does it answer for the zone with authority, and how long do its signatures hold?"""
@@ -299,9 +341,7 @@ def _ask_server(
     # Two questions at most: the second address, or the first once more, so that one
     # lost datagram does not make a name server look dead.
     for address in (addresses * 2)[:2]:
-        if not limits.address_turn(address):
-            raise _NoLook("name server spacing")
-        response = exchange(address, zone, "SOA", recursion=False)
+        response = asked.soa(address, zone)
         if response is None:
             continue
         entry["address"] = address
@@ -313,7 +353,7 @@ def _ask_server(
         entry["state"] = "ok"
         entry["serial"] = soa[0][0].serial
         if signed:
-            entry.update(_signature(address, zone, name, rdtype))
+            entry.update(asked.signature(address, zone, name, rdtype))
         return entry
     entry["state"] = "silent"
     return entry

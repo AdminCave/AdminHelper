@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 SENSORS = (
     "unit",
@@ -139,6 +139,17 @@ class NoParams(_Params):
 class HttpParams(_Params):
     path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
     method: Literal["GET", "HEAD"] = "GET"
+    # Host header localhost for apps that answer only to the names they trust (Nextcloud);
+    # unset, the agent sends IP:port. No other name: a check must not pose as a site.
+    host: Literal["localhost"] | None = None
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def _host_set_or_absent(cls, v: object) -> object:
+        # A probe check sends its params as given, and the agent answers invalid to a null.
+        if v is None:
+            raise ValueError("host is localhost or left out")
+        return v
 
 
 class TlsParams(_Params):
@@ -227,4 +238,6 @@ def field_allowed(sensor: str, field: str, params: dict) -> bool:
 
 def validate_params(sensor: str, params: dict) -> dict:
     """The params of `sensor`, checked and with defaults filled in."""
-    return PARAM_MODELS[sensor].model_validate(params).model_dump()
+    # An unset param (None) is not sent: an agent that predates it refuses the whole probe,
+    # and the catalog version of a module that does not use it stays the same.
+    return PARAM_MODELS[sensor].model_validate(params).model_dump(exclude_none=True)
