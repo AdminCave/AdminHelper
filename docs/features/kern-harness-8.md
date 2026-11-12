@@ -5,7 +5,7 @@ commit sachen“). Alle drei ändern Harness-Pfade auf Kevins Wort (CLAUDE.md §
 
 ## Problem / Motivation
 
-- **R-1325:** `review.sh pr-body|final` maskiert Adressen mit `ADDR` (`scripts/dev/review.sh:400`) und prüft jeden
+- **R-1325:** `review.sh pr-body|final` maskiert Adressen mit `ADDR` (`scripts/dev/review.sh:398`) und prüft jeden
   Treffer mit `ipaddress.ip_address`. In einem Rust-Pfad wie `pty::tests::closing_` trifft `ADDR` die Folge `::c`,
   die eine gültige IPv6-Adresse ist; der PR-Text liest dann `pty::tests<addr>losing_`.
 - **R-1352:** `verify.sh scripts` fährt den Block `scripts (hermetic)` aus `scripts/tests/run.sh` (Liste
