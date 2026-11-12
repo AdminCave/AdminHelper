@@ -85,6 +85,6 @@ die Bake-Anleitung der Vorlage ändert.
 
 ## Offene Fragen
 
-1. Wie meldet der Agent eine Probe auf einen Port ohne Listener (T1)? Empfehlung: wie heute ein abgelehnter
+1. (ausgelagert in R-1374 mit T1, die Listener-Pflicht ist nicht Teil dieses Zugs) Wie meldet der Agent eine Probe auf einen Port ohne Listener (T1)? Empfehlung: wie heute ein abgelehnter
    Verbindungsaufbau (Ergebnis `error`, „no process listens on port N“), nicht `not_allowed`: ein abgestürzter
    Dienst bleibt „down“. Ein Port, den nur eine Weiterleitung trägt, erscheint dann ebenfalls als „down“.
