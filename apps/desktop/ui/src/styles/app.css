@@ -1873,6 +1873,54 @@ body {
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
+/* The last failed backup run: on its own line, wrapped anywhere (one long word). */
+.mon-expand-error {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+/* Below a pool's bar, in line with the bar (label column plus gap). */
+.mon-expand-names.under-bar {
+  padding: 0 0 var(--sp-1) calc(70px + var(--sp-2));
+}
+/* A compose project: its containers fold under one head. */
+.mon-expand-group-head {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.mon-expand-group-head::-webkit-details-marker {
+  display: none;
+}
+.mon-expand-group-head:hover {
+  background: var(--hover);
+}
+.mon-expand-group-head > .mon-dot {
+  width: 8px;
+  height: 8px;
+}
+.mon-expand-group-chevron {
+  display: inline-flex;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+.mon-expand-group[open] > .mon-expand-group-head .mon-expand-group-chevron {
+  transform: rotate(180deg);
+}
+.mon-expand-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--sp-4);
+}
 
 /* Expand-Chart */
 .mon-expand-chart {

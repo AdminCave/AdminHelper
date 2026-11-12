@@ -171,12 +171,22 @@ export const serviceDetails = details(
 
 type Container = NonNullable<MonitorContainerDetails['containers']>[number];
 
+// started_at: epoch seconds of the last start, also for a container that stopped since.
+export type DockerContainer = Container & {
+  compose_project?: string;
+  ports?: string[];
+  started_at?: number;
+};
+export type ContainerDetails = Omit<MonitorContainerDetails, 'containers'> & {
+  containers?: DockerContainer[];
+};
+
 export const containerDetails = details(
-  shape<MonitorContainerDetails>({
+  shape<ContainerDetails>({
     available: bool,
     error: nullable(str),
     containers: listOf(
-      shape<Container>(
+      shape<DockerContainer>(
         {
           id: nullable(str),
           name: str,
@@ -186,6 +196,9 @@ export const containerDetails = details(
           reason: nullable(str),
           exit_code: nullable(num),
           restart_count: nullable(num),
+          compose_project: str,
+          ports: listOf(str),
+          started_at: num,
         },
         ['name', 'state', 'category'],
       ),
@@ -193,18 +206,79 @@ export const containerDetails = details(
   }),
 );
 
+// The backup details of one guest of a proxmox_backup check, each only when the agent knew
+// it. backupJobs [] says that no job covers the guest; backupErrorTs is the epoch second the
+// failed vzdump run started.
+export interface BackupJob {
+  id?: string;
+  schedule?: string;
+  storage?: string;
+}
+export interface BackupGuestDetails {
+  backupStorage?: string;
+  backupSize?: number;
+  backupVerify?: string;
+  backupJobs?: BackupJob[];
+  backupError?: string;
+  backupErrorTs?: number;
+}
+
+export const backupGuestDetails = details(
+  shape<BackupGuestDetails>({
+    backupStorage: str,
+    backupSize: num,
+    backupVerify: str,
+    backupJobs: listOf(shape<BackupJob>({ id: str, schedule: str, storage: str })),
+    backupError: str,
+    backupErrorTs: num,
+  }),
+);
+
 type Pool = NonNullable<MonitorZfsDetails['pools']>[number];
 
+// state as zpool status -j names it (SCANNING, FINISHED, ...); end in epoch seconds.
+export interface ZfsScrub {
+  state: string;
+  errors: number;
+  end?: number;
+}
+// Only the vdevs with errors.
+export interface VdevErrors {
+  name: string;
+  read: number;
+  write: number;
+  checksum: number;
+}
+export type ZfsPool = Pool & {
+  fragmentationPercent?: number;
+  scrub?: ZfsScrub;
+  vdevErrors?: VdevErrors[];
+};
+export type ZfsDetails = Omit<MonitorZfsDetails, 'pools'> & { pools?: ZfsPool[] };
+
 export const zfsDetails = details(
-  shape<MonitorZfsDetails>({
+  shape<ZfsDetails>({
     available: bool,
     error: nullable(str),
     pools: listOf(
-      shape<Pool>({ name: str, health: str, capacityPercent: num }, [
-        'name',
-        'health',
-        'capacityPercent',
-      ]),
+      shape<ZfsPool>(
+        {
+          name: str,
+          health: str,
+          capacityPercent: num,
+          fragmentationPercent: num,
+          scrub: shape<ZfsScrub>({ state: str, errors: num, end: num }, ['state', 'errors']),
+          vdevErrors: listOf(
+            shape<VdevErrors>({ name: str, read: num, write: num, checksum: num }, [
+              'name',
+              'read',
+              'write',
+              'checksum',
+            ]),
+          ),
+        },
+        ['name', 'health', 'capacityPercent'],
+      ),
     ),
   }),
 );

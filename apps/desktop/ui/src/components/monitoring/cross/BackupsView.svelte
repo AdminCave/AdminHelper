@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script module lang="ts">
   import type { MonitorCheck, Server } from '$lib/api/types';
+  import { backupGuestDetails, type BackupGuestDetails } from '$lib/models/checkDetails';
   import { groupChecksByServer } from '$lib/models/monitoring';
 
   /** ok/outdated/missing per VM; a check without VM rows says why in one row. */
@@ -25,6 +26,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     /** Text key of the outage when the agent could not read Proxmox. */
     errorKey: string | null;
     checkStatus: string;
+    /** Storage, size, jobs, verification and last error of a VM, as far as the agent knew them. */
+    backup: BackupGuestDetails;
   }
 
   // The checker's default (checkers/plugins.py) when the check sets none.
@@ -54,7 +57,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return typeof v === 'object' && v !== null && !Array.isArray(v);
   }
 
-  type VmRow = Pick<BackupRow, 'what' | 'state' | 'ageHours'> & { vmid: number };
+  type VmRow = Pick<BackupRow, 'what' | 'state' | 'ageHours' | 'backup'> & { vmid: number };
 
   function vmRow(v: Record<string, unknown>): VmRow | null {
     const vmid = v.vmid;
@@ -69,6 +72,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       what: `${type.toUpperCase()} ${vmid} (${name})`,
       state,
       ageHours: state === 'outdated' ? age : null,
+      backup: backupGuestDetails(v) ?? {},
     };
   }
 
@@ -104,6 +108,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             state: 'unavailable',
             ageHours: null,
             errorKey: ERROR_KEY.get(code) ?? 'monitoring.proxmox.error.unknown',
+            backup: {},
           });
           continue;
         }
@@ -125,6 +130,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             state: 'empty',
             ageHours: null,
             errorKey: null,
+            backup: {},
           });
         }
       }
@@ -135,6 +141,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { t } from '$lib/i18n';
+  import {
+    backupErrorText,
+    backupJobText,
+    backupStorageText,
+    backupVerifyText,
+  } from '$lib/models/monitoringText';
   import Pill from '../../ui/Pill.svelte';
   import CrossTable, { type CrossColumn } from './CrossTable.svelte';
   import ServerLink from './ServerLink.svelte';
@@ -195,6 +207,69 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return null;
   }
 
+  function jobText(row: BackupRow): string {
+    const jobs = row.backup.backupJobs;
+    if (jobs === undefined) return '—';
+    if (jobs.length === 0) return $t('monitoring.proxmox.noJob');
+    return jobs.map(backupJobText).join(', ');
+  }
+
+  function verifyTone(row: BackupRow): 'ok' | 'crit' | 'muted' {
+    const v = row.backup.backupVerify;
+    return v === 'ok' ? 'ok' : v === 'failed' ? 'crit' : 'muted';
+  }
+
+  // Each only once a VM has it: an agent before these details keeps the table as it was.
+  const detailColumns: CrossColumn<BackupRow>[] = $derived([
+    ...(rows.some((r) => backupStorageText(r.backup) !== null)
+      ? [
+          {
+            key: 'storage',
+            label: $t('monitoring.backups.col.storage'),
+            text: (r: BackupRow) => backupStorageText(r.backup) ?? '—',
+            sort: (r: BackupRow) => r.backup.backupSize ?? null,
+          },
+        ]
+      : []),
+    ...(rows.some((r) => r.backup.backupJobs !== undefined)
+      ? [
+          {
+            key: 'job',
+            label: $t('monitoring.backups.col.job'),
+            text: jobText,
+            sort: (r: BackupRow) => (r.backup.backupJobs === undefined ? null : jobText(r)),
+          },
+        ]
+      : []),
+    ...(rows.some((r) => r.backup.backupVerify !== undefined)
+      ? [
+          {
+            key: 'verify',
+            label: $t('monitoring.backups.col.verify'),
+            text: (r: BackupRow) =>
+              r.backup.backupVerify === undefined
+                ? '—'
+                : backupVerifyText($t, r.backup.backupVerify),
+            sort: (r: BackupRow) => r.backup.backupVerify ?? null,
+            cell: verifyCell,
+          },
+        ]
+      : []),
+    ...(rows.some((r) => r.backup.backupError !== undefined)
+      ? [
+          {
+            key: 'error',
+            label: $t('monitoring.backups.col.error'),
+            text: (r: BackupRow) => backupErrorText($t, r.backup) ?? '—',
+            // The newest error first; one without a time after the dated ones.
+            sort: (r: BackupRow) =>
+              r.backup.backupError === undefined ? null : -(r.backup.backupErrorTs ?? 0),
+            cell: errorCell,
+          },
+        ]
+      : []),
+  ]);
+
   const columns: CrossColumn<BackupRow>[] = $derived([
     {
       key: 'server',
@@ -209,6 +284,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       text: lastText,
       sort: lastSort,
     },
+    ...detailColumns,
     {
       key: 'state',
       label: $t('monitoring.backups.col.state'),
@@ -223,6 +299,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <ServerLink name={row.serverName} serverKey={row.serverKey} {onOpen} />
 {/snippet}
 
+{#snippet verifyCell(row: BackupRow)}
+  {#if row.backup.backupVerify === undefined}
+    —
+  {:else}
+    <Pill tone={verifyTone(row)}>{backupVerifyText($t, row.backup.backupVerify)}</Pill>
+  {/if}
+{/snippet}
+
+{#snippet errorCell(row: BackupRow)}
+  {@const text = backupErrorText($t, row.backup)}
+  {#if text === null}
+    —
+  {:else}
+    <span class="error" title={text}>{text}</span>
+  {/if}
+{/snippet}
+
 {#snippet stateCell(row: BackupRow)}
   <span data-state={row.state}><Pill tone={tone(row)}>{stateText(row)}</Pill></span>
 {/snippet}
@@ -235,3 +328,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   emptyText={$t('monitoring.backups.empty')}
   sortKey="state"
 />
+
+<style>
+  .error {
+    display: inline-block;
+    max-width: 32ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+</style>
