@@ -51,8 +51,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_nex
 Doku: → T14
 Abhängt von: T2
 
-### T4 — R-1241: Module Zammad und GitLab  [ ]
+### T4 — R-1241: Module Zammad und GitLab  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/zammad.py, apps/monitoring/app/catalog/modules/gitlab.py, apps/monitoring/tests/test_catalog_zammad.py, apps/monitoring/tests/test_catalog_gitlab.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fe49ddffc 2026-11-12T14:02:25+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T4.verdict.json)
 Änderung: Zammad: Docker (Compose) und Paket `zammad` (Units), `health_check` am Railsserver, Zugang nur in einer
 Form, die der Agent übergeben kann (Header/Bearer; ein Query-Token nicht). GitLab: Docker (`gitlab/gitlab-ce`,
 `-ee`) und Paket (Unit `gitlab-runsvdir`), `/-/readiness?all=1` und `/-/liveness`, Alter des Backup-Verzeichnisses
@@ -185,3 +187,15 @@ Doku: → T14
 - 2026-11-12 (T3, Prüfer-Nits): Nextcloud bekommt die Container-Checks der Spec auf die Dienste `app` und `cron`
   (`status.php` sieht einen toten Cron-Container nicht; ohne Dienst `cron` bleibt der Check ungebunden). Paperless
   erkennt auch das Docker-Hub-Image `paperlessngx/paperless-ngx` (Docker-Hub-Seite des Projekts, über 10 Mio. Pulls).
+- 2026-11-12 (T4): GitLab im Image ohne HTTP-Check (Abweichung von Spec-Zeile „Docker: Bridge-Adresse eintragen“):
+  Port 80 des Containers leitet bei https-`external_url` auf HTTPS um, dem der Agent nicht folgt (`sameTarget`), und
+  die Bridge-Adresse steht nicht in der Standard-Allowlist; der HEALTHCHECK des Images (`gitlab-healthcheck`, 60 s)
+  trägt die Gesundheit in den Container-Check. Paket: Readiness und Liveness an Puma `127.0.0.1:8080` über die Unit,
+  nur `status_code` (die 404-Seite der Allowlist ist kein JSON); 5xx kritisch, sonst ungleich 200 Warnung.
+- 2026-11-12 (T4): GitLab-Backup-Alter wandert nach R-1233 (App-Backups): `file_age` hat kein Ziel und bände auch an
+  Docker-Instanzen (dauerhaft `unknown`), das Konzept will „neueste Datei < 26 h“ statt Verzeichnis-mtime.
+- 2026-11-12 (T4): Zammad-Zugang als Header `Authorization: Token token=<token>` (API-Doku; `Bearer` nur OAuth2),
+  Nutzer mit `admin.monitoring`, API-Token-Zugang an; Container- und Paket-Check in eigenen Slots (`default`, `web`),
+  weil ein Slot einem Ziel gehört. `healthy: false` Warnung (von KI-Provider bis Scheduler, die Meldung sagt was),
+  keine Antwort bzw. 5xx kritisch. Paket nur über `zammad-web-1.service` (pkgr; `zammad`/`zammad-web` halten nur einen
+  Platzhalter). `amount_check` und die tägliche Status-Abfrage des Konzepts nicht in diesem Zug (Spec-Umfang).
