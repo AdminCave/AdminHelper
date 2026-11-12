@@ -1,5 +1,5 @@
 # kern-monitoring-24 — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-24 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-24 · Review: pro Task
 Spec: docs/features/kern-monitoring-24.md (Roadmap R-1374, R-1370, R-1376, R-1381, R-1382)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring; Windows-Teil prüft der PR-CI-Job agent-windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
