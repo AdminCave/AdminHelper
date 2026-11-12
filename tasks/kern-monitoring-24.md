@@ -57,8 +57,10 @@ Weiterleitung gefolgt; http-Ziel, private Zieladresse und Schleife enden `unknow
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns.py tests/test_central_rdap.py tests/test_central_fetch.py
 Doku: → T7
 
-### T6 — R-1382: NAT64-Präfix der Umgebung erkennen (RFC 7050)  [ ]
+### T6 — R-1382: NAT64-Präfix der Umgebung erkennen (RFC 7050)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/central/net.py, apps/monitoring/tests/test_central_net.py, apps/monitoring/tests/conftest.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b368287af 2026-11-12T18:11:37+01:00
+Review: approve (.ah-out/review/kern-monitoring-24/T6.verdict.json)
 Änderung: `effective_address` packt eingebettetes IPv4 auch aus den Präfixen aus, die der System-Resolver für
 `ipv4only.arpa` (AAAA, 192.0.0.170/171) liefert, in allen Längen nach RFC 6052 §2.2; Ergebnis gecacht, Fehler der
 Erkennung lassen nur das Well-Known-Prefix. Tests: jede Präfixlänge, u-Oktett, kein DNS64, mehrere Präfixe.

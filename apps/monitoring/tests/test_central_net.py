@@ -11,11 +11,12 @@ at one of the two ends.
 
 import ipaddress
 
+import dns.exception
 import pytest
 
-from app.central import limits
+from app.central import limits, net
 from app.central.limits import Limits
-from app.central.net import effective_address, is_global_address
+from app.central.net import effective_address, is_global_address, nat64_prefixes_from
 
 # (block, globally reachable). Deprecated and "N/A" rows count as not global: a
 # central check has no business with a relay or a tunnel prefix.
@@ -151,6 +152,147 @@ def test_ordinary_public_address_is_global(address):
 )
 def test_effective_address(address, effective):
     assert effective_address(ipaddress.ip_address(address)) == ipaddress.ip_address(effective)
+
+
+# ---- NAT64 prefix of the environment (RFC 7050, RFC 6052 §2.2) --------------
+
+# 192.0.0.170 embedded after a prefix of each length; for lengths below 96 the u
+# octet (bits 64 to 71) is zero and splits the IPv4 address (the layout of the
+# RFC 6052 §2.4 examples).
+SYNTHESISED = [
+    (32, "2001:db8:c000:aa::", "2001:db8::/32"),
+    (40, "2001:db8:1c0:0:aa::", "2001:db8:100::/40"),
+    (48, "2001:db8:122:c000:0:aa00::", "2001:db8:122::/48"),
+    (56, "2001:db8:122:3c0:0:aa::", "2001:db8:122:300::/56"),
+    (64, "2001:db8:122:344:c0:0:aa00:0", "2001:db8:122:344::/64"),
+    (96, "2001:db8:122:344::c000:aa", "2001:db8:122:344::/96"),
+]
+
+
+@pytest.mark.parametrize(
+    ("length", "answer", "prefix"), SYNTHESISED, ids=[str(n) for n, _, _ in SYNTHESISED]
+)
+def test_prefix_is_found_at_each_length(length, answer, prefix):
+    assert nat64_prefixes_from((answer,)) == (ipaddress.IPv6Network(prefix),)
+
+
+def test_a_set_u_octet_is_no_position():
+    # 192.0.0.170 at the /64 position, but with bits 64 to 71 set: no RFC 6052 address.
+    assert nat64_prefixes_from(("2001:db8:122:344:ffc0:0:aa00:0",)) == ()
+
+
+def test_the_other_well_known_address_decides_when_one_sits_twice():
+    # 192.0.0.170 at /32 and again at /96: ambiguous, so 192.0.0.171 decides, which the
+    # second answer carries at /96 only (and 192.0.0.170 there at /32 is not taken).
+    answer = "2001:db8:c000:aa::c000:aa"
+    assert nat64_prefixes_from((answer,)) == ()
+    assert nat64_prefixes_from((answer, "2001:db8:c000:aa::c000:ab")) == (
+        ipaddress.IPv6Network("2001:db8:c000:aa::/96"),
+    )
+
+
+def test_only_the_second_well_known_address_is_enough():
+    assert nat64_prefixes_from(("2001:db8:122:344::c000:ab",)) == (
+        ipaddress.IPv6Network("2001:db8:122:344::/96"),
+    )
+
+
+def test_several_prefixes_and_noise():
+    answers = (
+        "64:ff9b::c000:aa",
+        "64:ff9b::c000:ab",
+        "2001:db8:122:344::c000:aa",
+        "2001:db8:122:344::c000:ab",
+        "2001:db8::1",  # no well-known address anywhere
+        "not an address",
+    )
+    assert nat64_prefixes_from(answers) == (
+        ipaddress.IPv6Network("64:ff9b::/96"),
+        ipaddress.IPv6Network("2001:db8:122:344::/96"),
+    )
+
+
+def _environment(monkeypatch, answers):
+    calls = []
+
+    def lookup():
+        calls.append(1)
+        if isinstance(answers, Exception):
+            raise answers
+        return answers
+
+    monkeypatch.setattr(net, "lookup_ipv4only", lookup)
+    monkeypatch.setattr(net, "_nat64_cache", None)
+    return calls
+
+
+# A global unicast prefix of an operator, outside every pinned row.
+NSP = "2a00:1450:4001:800::"
+
+
+def test_an_operator_prefix_makes_the_embedded_ipv4_decide(monkeypatch):
+    _environment(monkeypatch, (NSP + "c000:aa",))
+    assert is_global_address(ipaddress.ip_address(NSP + "c01f:c401")) is True  # 192.31.196.1
+    assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is False  # 10.0.0.1
+    assert is_global_address(ipaddress.ip_address(NSP + "c000:201")) is False  # 192.0.2.1
+
+
+def test_without_dns64_the_same_address_is_plain_ipv6(monkeypatch):
+    _environment(monkeypatch, ())
+    assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is True
+
+
+def test_a_learned_prefix_never_widens_the_rule(monkeypatch):
+    # A forged answer naming a unique-local prefix does not make a ULA address global.
+    _environment(monkeypatch, ("fd00::c000:aa",))
+    assert is_global_address(ipaddress.ip_address("fd00::c01f:c401")) is False
+
+
+def test_a_failed_lookup_leaves_the_well_known_prefix_and_is_asked_again(monkeypatch):
+    calls = _environment(monkeypatch, dns.exception.Timeout())
+    clock = [1000.0]
+    monkeypatch.setattr(net.time, "monotonic", lambda: clock[0])
+    assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is True
+    assert is_global_address(ipaddress.ip_address("64:ff9b::a00:1")) is False
+    assert len(calls) == 1
+    clock[0] += net.NAT64_RETRY_S
+    is_global_address(ipaddress.ip_address(NSP + "a00:1"))
+    assert len(calls) == 2
+
+
+def test_the_learned_prefixes_are_kept(monkeypatch):
+    calls = _environment(monkeypatch, (NSP + "c000:aa",))
+    clock = [1000.0]
+    monkeypatch.setattr(net.time, "monotonic", lambda: clock[0])
+    for _ in range(3):
+        assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is False
+    assert len(calls) == 1
+    clock[0] += net.NAT64_TTL_S - 1
+    is_global_address(ipaddress.ip_address(NSP + "a00:1"))
+    assert len(calls) == 1
+    clock[0] += 1
+    is_global_address(ipaddress.ip_address(NSP + "a00:1"))
+    assert len(calls) == 2
+
+
+def test_a_failed_refresh_keeps_the_learned_prefixes(monkeypatch):
+    answers = [(NSP + "c000:aa",)]
+
+    def lookup():
+        if isinstance(answers[0], Exception):
+            raise answers[0]
+        return answers[0]
+
+    monkeypatch.setattr(net, "lookup_ipv4only", lookup)
+    monkeypatch.setattr(net, "_nat64_cache", None)
+    clock = [1000.0]
+    monkeypatch.setattr(net.time, "monotonic", lambda: clock[0])
+    assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is False
+    answers[0] = dns.exception.Timeout()
+    clock[0] += net.NAT64_TTL_S
+    assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is False
+    clock[0] += net.NAT64_RETRY_S
+    assert is_global_address(ipaddress.ip_address(NSP + "a00:1")) is False
 
 
 # ---- restraint toward the targets -------------------------------------------
