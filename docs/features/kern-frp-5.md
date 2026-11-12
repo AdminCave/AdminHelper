@@ -1,6 +1,6 @@
 # kern-frp-5 — frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server
 
-Roadmap: R-1304, R-1305, R-1306, R-1311, R-1318, R-1310 · Stand 2026-11-12, frp v0.72.0
+Roadmap: R-1304, R-1305, R-1306, R-1311, R-1318, R-1310, R-1368 · Stand 2026-11-12, frp v0.72.0
 
 ## Problem / Motivation
 
@@ -15,6 +15,8 @@ Policy-Datei des Servers. Dieser Zug erweitert die Prüfungen:
   Release schaltet sie scharf.
 - **R-1311:** Domain-Prüfung über Server: eine `customDomain` auf mehreren Servern ohne gemeinsame Gruppe.
   Kevin 2026-11-12: die Tunnel-API lehnt den Konflikt ab (409), Altbestand lässt die Policy weg und warnt.
+- **R-1368:** Die Domain-Prüfung aus R-1311 erfasst jeden Hostnamen, den frps einem HTTPS-Proxy zuordnet
+  (`customDomains`, `subdomain.subDomainHost`, Platzhalter). Kevin 2026-11-12: als Zusatz-Task in diesem Zug.
 - **R-1318:** Ein Neustart des Plugins durch den Supervisor steht nur als Info-Zeile im Log. Kevin 2026-11-12:
   Warnung mit Zähler, Betriebsdoku.
 - **R-1310 (BUG):** `DELETE /api/frp/server-config/{id}` mit Tunneln endet in 500: die Beziehung

@@ -1,6 +1,6 @@
 # frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-5 · Review: pro Task
-Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310)
+Status: aktiv · Branch: feature/kern-frp-5 · Review: pro Task
+Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310, R-1368)
 Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den echten frps; Kevin 2026-11-12: vor dem Merge. Server-API und Agent-Modul fährt dazu der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
@@ -65,9 +65,17 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 
+### T8 — R-1368: Domain-Prüfung erfasst alle Hostnamen eines HTTPS-Tunnels  [ ]
+Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_policy.py, apps/server/tests/test_frp_tunnels.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-5.md
+Änderung: Die Konfliktprüfung aus T5 nimmt je Proxy alle Hostnamen, die frps ihm zuordnet (`customDomains` und `subdomain` + `subDomainHost` der FRP-Konfiguration, frp v0.72 `buildDomains`), und behandelt Platzhalter wie frps (`*.example.net` deckt jeden Namen darunter, `*` alle, vhost `getByRoute`). Zwei Server kollidieren, wenn ein Name des einen einen des anderen deckt; eine gemeinsame nicht leere Gruppe hilft nur bei genau gleichem Namen. API 409 und Policy wie T5; Tests für subdomain, subdomain gegen customDomain, Platzhalter gegen Namen und `*`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_frp_policy.py tests/test_openapi_snapshot.py
+Doku: die genannten Dateien (Absatz Domain-Konflikt DE+EN, CHANGELOG-Zeile)
+Abhängt von: T5
+
 ## Entscheidungen
 - 2026-11-12 Policy-Format Version 2 ohne Lesen von Version 1: Plugin und Server kommen im selben Release, das Fenster ist fail-closed wie ohne Datei.
 - 2026-11-12 Benutzerliste als Menge verglichen: frpc gibt `allowUsers` in der Reihenfolge der Datei weiter, der Generator sortiert; die Menge hält den Vergleich unabhängig davon.
 - 2026-11-12 T1: `passive_deletes="all"` statt `True`: die Route lädt die Tunnel (selectin) mit, und bei `True` leert das ORM `frp_config_id` geladener Kinder trotzdem; erst `"all"` überlässt das Löschen der Kaskade der DB.
 - 2026-11-12 T3 in den Commit von T2: das Plugin liest ab T2 nur Version 2, der Server schrieb bis T3 Version 1; getrennt wäre der Stand dazwischen rot (Prüfer T2). Der Commit trägt beide Verify-Läufe, der Server-Lauf steht im Body.
 - 2026-11-12 T4: Logins von Usern außerhalb der Policy (Desktop-Visitor melden sich als AdminHelper-User an) lässt das Plugin ohne Schlüssel zu, gebunden an eine run_id unter ihrem eigenen Präfix; nur Hosts der Policy brauchen ihren Schlüssel, ein leerer User wird abgelehnt (Prüfer T4).
+- 2026-11-12 R-1368 (Kevin-Triage: Zusatz-Task im laufenden Zug) als T8 nach dem Abschluss von T7; R-1316 in den Folgezug kern-frp-6 (Gate-Fragen Migration/UI, Rollout mit dem Scharfschalten von R-1304).
