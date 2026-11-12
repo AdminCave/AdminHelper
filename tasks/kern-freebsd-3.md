@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Proben-Wächter: Prüfung nach dem Verbindungsaufbau auch unter FreeBSD — Task-Ledger
-Status: bereit · Branch: feature/kern-freebsd-3 · Review: pro Task
+Status: erledigt · Branch: feature/kern-freebsd-3 · Review: pro Task
 Spec: docs/features/kern-freebsd-3.md (Roadmap R-1402)
 Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge die root-Tests von internal/probe auf der FreeBSD-Pool-Box (T1, von Hand oder über T2)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
