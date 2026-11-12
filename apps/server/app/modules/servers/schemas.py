@@ -31,9 +31,10 @@ def _validate_server_name(v: Optional[str]) -> Optional[str]:
 
 # Windows device names (Microsoft Learn, "Naming Files, Paths, and Namespaces"): reserved
 # in every directory, case-insensitive, with any extension too ("NUL.txt" is NUL), and
-# Windows counts the superscripts 1-3 as digits of COM#/LPT#.
+# Windows counts the superscripts 1-3 as digits of COM#/LPT#. CONIN$ and CONOUT$ are not
+# on that page; Python's ntpath.isreserved lists them, so they are refused too (R-1176).
 _WINDOWS_DEVICE_NAMES = frozenset(
-    ["con", "prn", "aux", "nul"]
+    ["con", "prn", "aux", "nul", "conin$", "conout$"]
     + [f"{dev}{d}" for dev in ("com", "lpt") for d in "123456789\u00b9\u00b2\u00b3"]
 )
 
@@ -46,7 +47,7 @@ def reject_windows_unsafe_server_name(v: str) -> None:
         raise ValueError("must not contain ':'")
     if v.split(".", 1)[0].rstrip(" ").lower() in _WINDOWS_DEVICE_NAMES:
         raise ValueError(
-            "must not be a reserved Windows device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9)"
+            "must not be a reserved Windows device name (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM1-9, LPT1-9)"
         )
 
 
