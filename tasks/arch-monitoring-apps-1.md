@@ -63,8 +63,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_zam
 Doku: → T14
 Abhängt von: T2
 
-### T5 — R-1241: Module Vaultwarden, Bitwarden, Frigate, 3CX  [ ]
+### T5 — R-1241: Module Vaultwarden, Bitwarden, Frigate, 3CX  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/vaultwarden.py, apps/monitoring/app/catalog/modules/bitwarden.py, apps/monitoring/app/catalog/modules/frigate.py, apps/monitoring/app/catalog/modules/threecx.py, apps/monitoring/tests/test_catalog_vaultwarden.py, apps/monitoring/tests/test_catalog_bitwarden.py, apps/monitoring/tests/test_catalog_frigate.py, apps/monitoring/tests/test_catalog_threecx.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6a82fb96a 2026-11-12T14:30:16+01:00
+Review: approve (.ah-out/review/arch-monitoring-apps-1/T5.verdict.json)
 Änderung: Vaultwarden `/alive` (nie `/admin`); Bitwarden `/api/alive` (nicht `/alive`); Frigate Container,
 `/api/version` und `/api/stats` auf Port 5000 (nie der Login auf 8971), nur feste Felder; 3CX Units (Namen aus der
 3CX-Doku, sonst „nicht verifiziert“ und ohne Unit-Check), Zertifikat, Backup-Alter. Acht Dateien: vier kleine Module
@@ -199,3 +201,24 @@ Doku: → T14
   weil ein Slot einem Ziel gehört. `healthy: false` Warnung (von KI-Provider bis Scheduler, die Meldung sagt was),
   keine Antwort bzw. 5xx kritisch. Paket nur über `zammad-web-1.service` (pkgr; `zammad`/`zammad-web` halten nur einen
   Platzhalter). `amount_check` und die tägliche Status-Abfrage des Konzepts nicht in diesem Zug (Spec-Umfang).
+- 2026-11-12 (T5): Vaultwarden im Image ohne HTTP-Check: der HEALTHCHECK des Images (`/healthcheck.sh`, 60 s) fragt
+  `/alive` mit ROCKET_PORT, dem Pfad aus DOMAIN und ROCKET_TLS richtig, der Container-Check trägt das (`unhealthy`
+  kritisch). Systemd-Dienst: Unit-Check und `/alive` auf Rockets Standardport 8000 über die Unit; ein DOMAIN mit Pfad
+  macht `/alive` dort zu 404 (kritisch, im Test belegt). `/admin` nie.
+- 2026-11-12 (T5): Bitwarden ohne HTTP-Check (Abweichung vom Plan „`/api/alive`“): der HEALTHCHECK des api-Images fragt
+  `http://localhost:5000/alive` alle 30 s, die Route hinter `/api/alive`; ein HTTP-Check am api-Container wäre
+  erreichbar (lokal auf Docker 29.9.2 geprüft: der Host erreicht einen Container im `internal: true`-Netz), brächte
+  aber nichts darüber hinaus; nginx leitet 8080 auf 8443 um, dem ein einzelner `port_hint` nicht folgt (R-1387 `neu`).
+  Container-Checks je Dienst auf nginx, api, identity, mssql; Lite (kein HEALTHCHECK) nur den Zustand, in der
+  Standardinstallation ungebunden.
+- 2026-11-12 (T5): Frigate ohne `/api/version` (der HEALTHCHECK fragt den Dienst alle 15 s); `/api/stats` auf dem
+  internen Port 5000 über den Container, nie der Login auf 8971 (Ratenbremse, Hinweis). Zwei Checks auf denselben
+  gecachten Pfad: `stats` (Statuscode ungleich 200 kritisch; Version, Laufzeit, Detektor-FPS und freier Platz der
+  Aufnahmen ohne Regel, Frigate löscht alte Aufnahmen selbst) und `cameras` (Gesamt-`camera_fps` unter 0,1 Warnung;
+  vor 0.17 fehlt das Feld, dann `unknown`). Keine Werte je Kamera (freie Namen, keine festen Felder);
+  `listen.internal` auf 127.0.0.1 lässt die Stats-Checks `unknown` (Docstring).
+- 2026-11-12 (T5): 3CX-Unit-Namen aus dem Paket 3cxpbx 20.0.10 des offiziellen apt-Repos (`3cxpbx.conf`,
+  `3CXStartServices`, nur gelesen, nie ausgeführt) plus `3CXFirewall.service` (oneshot, bleibt `active`); jede Unit
+  eine eigene Instanz (die Meldung nennt den Dienst), `active_state` ungleich `active` kritisch. Kein
+  Zertifikats-Check (nginx auf 443, 5001 oder eigenem Port: R-1387 `neu`), Backup-Alter nach R-1233 (Ordner frei
+  wählbar, auch Fernziel).
