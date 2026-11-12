@@ -595,9 +595,15 @@ for m in "a free subject" "Task: kern-x T1 (R-1)" "feat:no space" "feature: x" "
   [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "no Conventional Commit" <<<"$OUT" && ! grep -qF -- "$m" <<<"$OUT" \
     && ok "armed: subject '$m' is refused, not echoed" || bad "subject '$m': rc=$rc out=$OUT"
 done
+# With -m git keeps a # line, so it is the subject; only an editor's # lines are comments.
 hc --allow-empty -m "# a comment"$'\n\n'"fix(hooks)!: y"
-[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a typed subject with scope and ! below a comment is committed" \
-  || bad "conventional subject: rc=$rc out=$OUT"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "no Conventional Commit" <<<"$OUT" \
+  && ok "armed: a # line given with -m is the subject and refused" || bad "-m comment: rc=$rc out=$OUT"
+printf '#!/bin/sh\nprintf "# c\\n\\nfix(hooks)!: y\\n" > "$1"\n' > "$WORK/ed-comment.sh"; chmod +x "$WORK/ed-comment.sh"
+GIT_EDITOR="$WORK/ed-comment.sh" hc --allow-empty
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "fix(hooks)!: y" ] \
+  && ok "armed: a typed subject with scope and ! below an editor comment is committed" \
+  || bad "editor subject: rc=$rc out=$OUT"
 # commit-msg (R-0197): a token in the message stops the commit itself, not only the
 # push. The merge commits further down pass this hook with git's own message.
 H0=$(heads)
@@ -918,7 +924,7 @@ Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-
 Review: approve (opus)
 ### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
 Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**, pve.home.arpa, nas.fritz.box, net 192.168.1.x and 10.0.0.*, VM-ID 3013, Template 3904 und 3905, net 172.16.x.x.
-Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902 in pty::tests::closing_ and std::fs::read
+Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902 in pty::tests::closing_ and std::fs::read, IPv6:2001:db8::5, eth0:fd12:3456::7, Source:fd00::1, node:fd00::2
 ### T7 — die siebte Aufgabe
 ### Ergebnis des Laufs
 Evidenz: run.sh[quick] scripts: 99 passed, 0 failed, 0 skipped
@@ -938,7 +944,7 @@ grep -q '^### Offene Fragen' <<<"$OUT" && grep -q 'T3 — die dritte Aufgabe.*so
   && ok "a [?] task stands in its own section, with the question" || bad "[?]: $OUT"
 grep -q '^### Übersprungen' <<<"$OUT" && grep -q 'T4 — die vierte Aufgabe.*schon erledigt' <<<"$OUT" \
   && ok "a [~] task stands in its own section, with the reason" || bad "[~]: $OUT"
-! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902|home\.arpa|fritz\.box|10\.0\.0|3013|3904|3905|172\.16' <<<"$OUT" \
+! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902|home\.arpa|fritz\.box|10\.0\.0|3013|3904|3905|172\.16|fd00:' <<<"$OUT" \
   && ok "no address (v4, v6 compressed or bracketed, behind a word:), host name (also at a sentence end) or VMID" \
   || bad "leak: $OUT"
 grep -qF '.claude/settings.local.json on 127.0.0.1' <<<"$OUT" \

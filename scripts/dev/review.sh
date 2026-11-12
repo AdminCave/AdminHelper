@@ -408,11 +408,12 @@ def addr(m):
         try:
             ip = ipaddress.ip_address(core.split("%")[0])
             # `::c` in `pty::tests::closing_` parses as IPv6. An address never
-            # touches a word character, so a path like that stays (R-1325).
+            # touches a word character (R-1325): such a candidate is either a
+            # path, or a word glued to the address (`IPv6:2001:db8::5` starts
+            # at `6:`), which the retry behind the colon below takes off.
             s, a, e = m.string, m.start() + start, m.end()
-            if ip.version == 6 and ((a > 0 and re.match(r"\w", s[a - 1])) or re.match(r"\w", s[e:e + 1])):
-                return text
-            return text if ip.is_loopback else text[:start] + "<addr>"
+            if not (ip.version == 6 and ((a > 0 and re.match(r"\w", s[a - 1])) or re.match(r"\w", s[e:e + 1]))):
+                return text if ip.is_loopback else text[:start] + "<addr>"
         except ValueError:
             pass
         # A word and a colon in front (`IP:10.0.0.1`, `dns:2001:db8::1`) are no

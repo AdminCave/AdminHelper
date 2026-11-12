@@ -87,8 +87,9 @@ LEDGER="$(realpath -m -s --relative-to="$ROOT" -- "$L_ABS")"
 # The same subject check as the commit-msg hook (R-1359), here before the Verify,
 # so a free-text subject costs no suite run.
 SUBJECT_RE='^((feat|fix|chore|refactor|docs|test|perf|tune|build|ci|style|revert)(\([^)]+\))?!?: [^[:space:]]|Merge |Revert "|(fixup|squash|amend)! )'
-if [ -n "$MSGFILE" ]; then SUBJECT="$(awk '!/^[[:space:]]*(#|$)/ { print; exit }' "$MSGFILE")"
-else SUBJECT="$(awk '!/^[[:space:]]*(#|$)/ { print; exit }' <<<"$MSG")"; fi
+# git commits -m/-F without an editor and keeps # lines: only empty lines go.
+if [ -n "$MSGFILE" ]; then SUBJECT="$(awk '!/^[[:space:]]*$/ { print; exit }' "$MSGFILE")"
+else SUBJECT="$(awk '!/^[[:space:]]*$/ { print; exit }' <<<"$MSG")"; fi
 # Not echoed: a subject may carry what review.sh sec would refuse.
 [[ $SUBJECT =~ $SUBJECT_RE ]] || die "the subject is no Conventional Commit (<type>[(scope)][!]: <text>)"
 case "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" in

@@ -189,5 +189,11 @@ for f in "$ROOT"/.github/scripts/*_test.sh; do
   grep -qF -- "$e" <<<"$LIST" && ok "$e is in AH_SCRIPT_TESTS_DEFAULT" || bad "$e is missing from AH_SCRIPT_TESTS_DEFAULT"
 done
 
+# commit-msg and task-close.sh check the same subject (R-1359).
+RE_HOOK="$(grep -m1 "^SUBJECT_RE=" "$ROOT/scripts/dev/hooks/commit-msg")"
+RE_TC="$(grep -m1 "^SUBJECT_RE=" "$ROOT/scripts/dev/task-close.sh")"
+[ -n "$RE_HOOK" ] && [ "$RE_HOOK" = "$RE_TC" ] && ok "commit-msg and task-close.sh share SUBJECT_RE" \
+  || bad "SUBJECT_RE differs between commit-msg and task-close.sh"
+
 echo "harness_consistency_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

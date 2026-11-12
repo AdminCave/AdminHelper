@@ -153,9 +153,16 @@ for m in "a free subject" "Task: kern-x T1 (R-1)"; do
   [ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && ! grep -qF -- "$m" <<<"$OUT" && [ "$(heads)" = 1 ] \
     && ok "subject '$m' -> 2 before the Verify, not echoed" || bad "subject '$m': rc=$rc $OUT"
 done
-printf '# a comment\n\nTask: kern-x T1\n' > "$WORK/msg"; FIXTURE_VRC=1 c fix T1 --stage --message-file "$WORK/msg"
-[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && ok "a message file's subject below a comment is checked -> 2" \
+printf '\n\nTask: kern-x T1\n' > "$WORK/msg"; FIXTURE_VRC=1 c fix T1 --stage --message-file "$WORK/msg"
+[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && ok "a message file's subject below empty lines is checked -> 2" \
   || bad "subject file: rc=$rc $OUT"
+# git commits -m/-F without an editor and keeps a # line: it is the subject.
+printf '# c\n\nfeat: x\n' > "$WORK/msg"; FIXTURE_VRC=1 c fix T1 --stage --message-file "$WORK/msg"
+[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "a # line on top of a message file is the subject -> 2" || bad "comment file: rc=$rc $OUT"
+FIXTURE_VRC=1 c fix T1 --stage -m "# c"$'\n\n'"feat: x"
+[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "a # line on top of -m is the subject -> 2" || bad "comment -m: rc=$rc $OUT"
 reset_repo
 git -C "$FIX" checkout -q -b main; edit scripts/dev/tool.sh
 c fix T1 --stage -m "test: x"; [ $rc -eq 2 ] && grep -q 'default branch' <<<"$OUT" && ok "on main -> 2" || bad "main: rc=$rc $OUT"
