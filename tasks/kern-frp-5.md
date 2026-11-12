@@ -1,5 +1,5 @@
 # frps-Plugin prüft mehr Felder, FRP-Konfiguration löschen, Domains über Server — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-5 · Review: pro Task
 Spec: docs/features/kern-frp-5.md (Roadmap R-1304, R-1305, R-1306, R-1311, R-1318, R-1310)
 Heavy: scenario --tunnel — Plugin, Agent-frpc und Desktop-Visitor über den echten frps; Kevin 2026-11-12: vor dem Merge. Server-API und Agent-Modul fährt dazu der Sammellauf linux-full
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Review: approve (.ah-out/review/kern-frp-5/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor_policy.py
 Doku: → T7
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
+### T7 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-5.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @120719e23 2026-11-12T09:59:37+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Tunnel-Doku: Domain nur bei einem Server oder mit gemeinsamer Gruppe (409), Policy prüft Benutzerliste und Schlüssel; Betrieb: Plugin-Neustart als Warnung; Entwickler: Policy-Format v2; neutraler CHANGELOG-Eintrag (Fixed: FRP-Konfiguration löschen; Changed: frps prüft weitere Felder, Agent-Update vor dem nächsten Release).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
