@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Nacharbeit: Log-Hinweis, Swap-Fehlertext, Rotationsprüfung — Task-Ledger
-Status: aktiv · Branch: feature/kern-freebsd-2 · Review: am Ende
+Status: bereit · Branch: feature/kern-freebsd-2 · Review: am Ende
 Spec: docs/features/kern-freebsd-2.md (Roadmap R-1327, R-1330, R-1331)
 Heavy: none — Agent nur Konstante und Test, Rest Doku und Box-Skript; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (prüft T2)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,8 +26,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
 
-### T3 — R-1327: Hinweis auf frpc-Altzeilen im syslog, Changelog  [ ]
+### T3 — R-1327: Hinweis auf frpc-Altzeilen im syslog, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-freebsd-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @db1bb083e 2026-11-12T14:12:38+01:00
+Review: am Ende (Branch-Review)
 Änderung: Abschnitt Logs (FreeBSD-Absatz, `agent-deployment.html:340`, EN entsprechend): frühere Builds schrieben frpc-Ausgaben ins syslog (`/var/log/messages`, `/var/log/daemon.log`); diese Zeilen und ihre Archive bleiben bis zur Rotation durch newsyslog, das Paket ändert fremde Systemlogs nicht. Fragment `### Changed`, neutral.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/agent-deployment.html · docs/en/admin/agent-deployment.html · changelog.d/kern-freebsd-2.md
