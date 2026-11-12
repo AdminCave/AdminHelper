@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-3 — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-3.md (Roadmap R-1226)
 Heavy: linux-full — `apps/agent` (neue systemctl-/journalctl-Aufrufe), der Berichtspfad des Monitoring-Dienstes und eine neue Desktop-Journey; der Sammellauf fährt agent-monitoring, den Stack und die Desktop-Live-Specs. Der Windows-Teil (T2) läuft über die PR-CI-Jobs `agent-windows` und `rust-windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
