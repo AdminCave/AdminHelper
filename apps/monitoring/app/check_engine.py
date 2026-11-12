@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.alerter import process_alert, resolve_notification
 from app.check_types import PUSH_ONLY_TYPES
-from app.checkers import get_checker
+from app.checkers import CheckContext, PartnerState, get_checker
 from app.core import database
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
@@ -313,6 +313,51 @@ def _write_state(
     return state
 
 
+def _json_object(text: str | None) -> dict | None:
+    """A stored JSON text as a mapping; None for none, broken JSON or a non-object."""
+    try:
+        value = json.loads(text) if text else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _load_context(db: Session, check: MonitorCheck, config: dict) -> CheckContext:
+    """The previous details of `check` and the state of its partner (`pair_check_id`).
+
+    Only an enabled probe check of the same server counts as partner: the pair
+    explains a central result by the agent's view of the same service, and a check
+    of another server, or a disabled one with a stale state, explains nothing.
+    """
+    row = db.query(MonitorState.details).filter(MonitorState.check_id == check.id).first()
+    prev_details = _json_object(row[0]) if row else None
+
+    partner = None
+    pair_id = config.get("pair_check_id")
+    if isinstance(pair_id, str) and pair_id and check.server_id is not None:
+        pair = (
+            db.query(MonitorCheck)
+            .filter(
+                MonitorCheck.id == pair_id,
+                MonitorCheck.check_type == "probe",
+                MonitorCheck.enabled == True,  # noqa: E712
+                MonitorCheck.server_id == check.server_id,
+            )
+            .first()
+        )
+        if pair is not None:
+            pair_state = db.query(MonitorState).filter(MonitorState.check_id == pair.id).first()
+            sensor = (_json_object(pair.config) or {}).get("sensor")
+            partner = PartnerState(
+                check_id=pair.id,
+                sensor=sensor if isinstance(sensor, str) else None,
+                status=pair_state.status if pair_state else "pending",
+                details=_json_object(pair_state.details) if pair_state else None,
+                last_check=pair_state.last_check if pair_state else None,
+            )
+    return CheckContext(prev_details=prev_details, partner=partner)
+
+
 def execute_check(check_id: str) -> None:
     """Called by the scheduler for each check interval."""
     db = database.SessionLocal()
@@ -338,11 +383,15 @@ def execute_check(check_id: str) -> None:
         config = resolve_config_server_id(config, check_type, server_id)
 
         checker = None
+        context = None
         if config is not None:
             try:
                 checker = get_checker(check_type)
             except ValueError as exc:
                 logger.warning("Check %s: %s", name, exc)
+            # Read in this transaction, before the rollback below ends it.
+            if getattr(checker, "wants_context", False) is True:
+                context = _load_context(db, check, config)
 
         # End the read transaction before the run: the checker takes up to its configured
         # timeout (at most 300 s) and the metric write follows. Held over both, the 30
@@ -362,7 +411,10 @@ def execute_check(check_id: str) -> None:
             result_status, message, metrics = "unknown", "Unknown check type", None
         else:
             try:
-                result_status, message, metrics = checker.run(config)
+                if context is not None:
+                    result_status, message, metrics = checker.run_with_context(config, context)
+                else:
+                    result_status, message, metrics = checker.run(config)
             except Exception as exc:
                 result_status = "unknown"
                 message = f"Unexpected error: {exc}"

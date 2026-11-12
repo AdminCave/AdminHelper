@@ -25,8 +25,10 @@ Review: approve (.ah-out/review/arch-monitoring-module-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_net.py tests/test_central_resolve.py
 Doku: → T14
 
-### T2 — Monitoring: Engine reicht Vorzustand und Partner an erklärende Checker (R-1224)  [ ]
+### T2 — Monitoring: Engine reicht Vorzustand und Partner an erklärende Checker (R-1224)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/app/checkers/__init__.py, apps/monitoring/tests/test_check_engine_context.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4b74aebb1 2026-11-12T06:32:56+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T2.verdict.json)
 Änderung: `execute_check` liest vor dem `db.rollback()` den bisherigen `details`-Text und, bei `pair_check_id`, Status und `details` des Partner-Checks und übergibt beides an Checker mit `wants_context = True` (neue Methode `run_with_context`); alle anderen Checker unverändert. Test: Kontext kommt an, Partner fehlt oder gehört zu anderem Server → ohne Partner, andere Checker bekommen nichts, bestehende Engine-Tests grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_context.py tests/test_check_engine.py tests/test_check_engine_concurrency.py
 Doku: → T14
@@ -128,3 +130,8 @@ Task-Review: am Ende
 - 2026-11-12 T1: IPv6 außerhalb 2000::/3 ist nach den gepinnten Zeilen nie global — IANA vergibt Global Unicast nur daraus, `ipaddress` hält IPv4-compatible ::/96 und 4000::/3 für global (Prüfer T1).
 - 2026-11-12 T1→T9: der Abfragename trägt den DQS-Key, dnspython-Ausnahmen zitieren ihn: weder Abfragename noch `str(exc)` gehen in `details`, `message`, Log oder API, nur Zone und Ergebnis.
 - 2026-11-12 T1→T14: Spec-Regel 1 und 2 folgen den Entscheidungen oben (stummer Resolver ohne Veto, 2000::/3, 6to4) — in T1 nachgezogen.
+- 2026-11-12 T2: Partner zählt nur als aktivierter `probe`-Check mit demselben, gesetzten `server_id`; ohne State-Zeile Status `pending`; zwei Checks ohne Server sind kein Paar — ein deaktivierter Partner trägt einen veralteten Zustand, ein fremder Server erklärt nichts.
+- 2026-11-12 T2: `PartnerState` trägt `sensor` (aus der Partner-Config) und `last_check` — T10 braucht den Fühler für die certfile-Regel und das Alter für die Frische; ein zweites Lesen in T10 entfällt.
+- 2026-11-12 T2: Kontext nur bei `wants_context is True` (kein truthy-Wert), gelesen in der Lese-Transaktion vor dem `db.rollback()` — der R-0615-Test für `run_with_context` zeigt 0 belegte Verbindungen während des Laufs.
+- 2026-11-12 T2: Gespeichertes JSON, das kein Objekt ist, wird None (wie `_prev_details` im Agent-Router, als lokaler Helfer `_json_object`) — die Engine importiert keine Router.
+- 2026-11-12 T2: Das `Verify:` meldet 5 test-skips (`test_check_engine_concurrency` ohne Postgres in `DATABASE_URL`, Vorbedingung lokal nicht erfüllt); zusätzlich lokal mit `DATABASE_URL` auf die Test-DB des Worktrees samt `test_execute_check.py`: 43 passed — die PR-CI fährt den Lock-Test mit Postgres.
