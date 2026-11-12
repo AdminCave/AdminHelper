@@ -19,14 +19,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from app.central import diagnose, dnsbl, mail, maildns, rdap, resolve, tls
 from app.central import dns as dns_sensor
-from app.central import dnsbl, mail, maildns, rdap, resolve, tls
 from app.central.limits import LIMITS, SKIPPED_BUSY_MESSAGE, RunSkipped
 from app.central.resolve import Classification, Reach
 from app.central.tls import SensorResult
 from app.check_configs import CENTRAL_SENSORS
 from app.checkers.context import CheckContext
-from app.core.time import iso_utc
+from app.core.time import iso_utc, utcnow_naive
 
 # host, the rule for it, port (None for a sensor without one), params, the previous
 # details for this host.
@@ -76,11 +76,28 @@ class CentralChecker:
         return self.run_with_context(config, CheckContext())
 
     def run_with_context(self, config: dict, context: CheckContext) -> tuple[str, str, dict | None]:
+        status, message, result, reached = self._run(config, context)
+        sensor = config.get("sensor")
+        # A registry sensor asks third parties about the name, not the service: the
+        # agent's view of the service explains none of its findings.
+        if result is None or not isinstance(sensor, str) or sensor not in _PROBES:
+            return status, message, result
+        details = result["_details"]
+        found = diagnose.explain(
+            sensor, status, details, context.partner, utcnow_naive(), reached=reached
+        )
+        if found is None:
+            return status, message, result
+        details["diagnosis"] = found.details
+        return found.status, f"{message}; {found.text}", result
+
+    def _run(self, config: dict, context: CheckContext) -> tuple[str, str, dict | None, bool]:
+        """Status, message and result of the run, and whether the host itself answered."""
         sensor, host = config.get("sensor"), config.get("host")
         probe = _PROBES.get(sensor) if isinstance(sensor, str) else None
         registry = _REGISTRY_PROBES.get(sensor) if isinstance(sensor, str) else None
         if (probe is None and registry is None) or not isinstance(host, str) or not host:
-            return "unknown", f"Unknown sensor or no host: {sensor!r}", None
+            return "unknown", f"Unknown sensor or no host: {sensor!r}", None, False
         port = config.get("port") or CENTRAL_SENSORS[sensor].default_port
         params = config.get("params")
         params = params if isinstance(params, dict) else {}
@@ -89,7 +106,7 @@ class CentralChecker:
         if prev.get("host") != host:
             prev = {}
         if registry is not None:
-            return _ask_registry(registry, sensor, host, params, prev)
+            return (*_ask_registry(registry, sensor, host, params, prev), False)
         public_since = prev.get("public_since")
 
         silence = None
@@ -112,26 +129,29 @@ class CentralChecker:
         if rule.reach is Reach.RESOLVERS_UNREACHABLE:
             if silence:
                 if public_since:
-                    return "critical", silence, _with(details, public_since)
-                return "unknown", f"{resolve.NOT_PUBLIC_MESSAGE} ({silence})", _with(details, None)
+                    return "critical", silence, _with(details, public_since), False
+                message = f"{resolve.NOT_PUBLIC_MESSAGE} ({silence})"
+                return "unknown", message, _with(details, None), False
             # Our own way out is down, not the target: no verdict, the history stays.
-            return "unknown", rule.message, _with(details, public_since)
+            return "unknown", rule.message, _with(details, public_since), False
         if rule.reach is Reach.NOT_PUBLIC:
             why = _join(rule.notes)
             if public_since:
-                return "critical", f"{host} is no longer public{why}", _with(details, public_since)
-            return "unknown", f"{rule.message}{why}", _with(details, None)
+                message = f"{host} is no longer public{why}"
+                return "critical", message, _with(details, public_since), False
+            return "unknown", f"{rule.message}{why}", _with(details, None), False
 
         assert result is not None  # Reach.PUBLIC
         details.update(result.details)
         details["addresses"] = list(rule.addresses)
         if not result.reached:
             if public_since:
-                return "critical", result.message, _with(details, public_since, result.metrics)
+                found = _with(details, public_since, result.metrics)
+                return "critical", result.message, found, False
             message = f"{resolve.NOT_PUBLIC_MESSAGE} ({result.message})"
-            return "unknown", message, _with(details, None, result.metrics)
+            return "unknown", message, _with(details, None, result.metrics), False
         since = public_since or iso_utc(datetime.now(timezone.utc))
-        return result.status, result.message, _with(details, since, result.metrics)
+        return result.status, result.message, _with(details, since, result.metrics), True
 
 
 def _ask_registry(

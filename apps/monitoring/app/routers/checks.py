@@ -165,14 +165,26 @@ def _central_refused(db: Session, check_type, config, interval, server_id) -> st
     if pair is None:
         return "pair_check_id must name a probe check of the same server"
     try:
-        pair_sensor = json.loads(pair.config).get("sensor") if pair.config else None
-    except (json.JSONDecodeError, TypeError, AttributeError):
-        pair_sensor = None
+        pair_config = json.loads(pair.config) if pair.config else None
+    except (json.JSONDecodeError, TypeError):
+        pair_config = None
+    pair_config = pair_config if isinstance(pair_config, dict) else {}
+    pair_sensor = pair_config.get("sensor")
     # A stored list or dict as sensor would make the set lookup raise.
     if not isinstance(pair_sensor, str) or pair_sensor not in CENTRAL_PAIR_SENSORS:
         return "pair_check_id must name a probe check with sensor " + ", ".join(
             sorted(CENTRAL_PAIR_SENSORS)
         )
+    if pair_sensor != "certfile":
+        return None
+    # The file's date only means something next to the certificate the sensor tls
+    # fetches, and the probe keeps it only as a field it stores; without either the
+    # partner would never tell anything.
+    if name != "tls":
+        return "pair_check_id may name a certfile probe only for the sensor tls"
+    fields = pair_config.get("fields")
+    if not isinstance(fields, list) or "not_after" not in fields:
+        return "pair_check_id must name a certfile probe that stores the field not_after"
     return None
 
 

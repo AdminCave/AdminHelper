@@ -315,10 +315,17 @@ def test_create_refuses_a_forbidden_port_at_the_schema(client_db):
     assert r.status_code == 422
 
 
-@pytest.mark.parametrize("sensor", ["tls", "certfile", "http"])
-def test_create_accepts_a_probe_partner_of_the_same_server(client_db, sensor):
+@pytest.mark.parametrize(
+    "partner",
+    [
+        {"module": "web", "sensor": "tls"},
+        {"module": "web", "sensor": "http"},
+        {"module": "web", "sensor": "certfile", "fields": ["days_left", "not_after"]},
+    ],
+)
+def test_create_accepts_a_probe_partner_of_the_same_server(client_db, partner):
     client, factory = client_db
-    _add(factory, "p1", config={"module": "web", "sensor": sensor})
+    _add(factory, "p1", config=partner)
 
     r = client.post("/checks", json=_payload(config=_config(pair_check_id="p1")))
 
@@ -368,6 +375,37 @@ def test_create_refuses_a_probe_partner_with_another_sensor(client_db, stored):
 
     assert r.status_code == 400
     assert r.json()["detail"].startswith("pair_check_id must name a probe check with sensor")
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {"sensor": "certfile"},
+        {"sensor": "certfile", "fields": ["days_left", "issuer"]},
+        {"sensor": "certfile", "fields": "not_after"},
+    ],
+)
+def test_create_refuses_a_certfile_partner_that_does_not_store_its_date(client_db, stored):
+    client, factory = client_db
+    _add(factory, "p1", config=stored)
+
+    r = client.post("/checks", json=_payload(config=_config(pair_check_id="p1")))
+
+    assert r.status_code == 400
+    assert r.json()["detail"] == (
+        "pair_check_id must name a certfile probe that stores the field not_after"
+    )
+
+
+@pytest.mark.parametrize("sensor", ["dns", "smtp", "imap"])
+def test_create_refuses_a_certfile_partner_for_another_sensor(client_db, sensor):
+    client, factory = client_db
+    _add(factory, "p1", config={"sensor": "certfile", "fields": ["not_after"]})
+
+    r = client.post("/checks", json=_payload(config=_config(sensor=sensor, pair_check_id="p1")))
+
+    assert r.status_code == 400
+    assert r.json()["detail"] == "pair_check_id may name a certfile probe only for the sensor tls"
 
 
 def test_update_re_checks_the_interval_floor(client_db):
