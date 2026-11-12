@@ -532,7 +532,8 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 `task-close.sh` laeuft ausserhalb der Modell-Session, ist wiederholbar und geht in dieser Reihenfolge vor:
 
 1. **Eingabe:** das Ledger liegt unter `tasks/*.md` (nicht README oder Vorlage, kein Symlink), die Task
-   existiert, der Branch ist nicht `main`/`master` (sonst Exit 2).
+   existiert, der Branch ist nicht `main`/`master`, der Betreff ist ein Conventional Commit (sonst
+   Exit 2).
 2. **Handarbeit:** eine Task mit `Komponente: —` ist Exit 74; sie wird von Hand geschlossen.
 3. **Staging:** `--stage` stagt genau die Pfade aus `Dateien:` (nie `git add -A`; Verzeichnisse werden
    abgelehnt, Loeschungen mitgenommen). Eine halb gestagte Datei bricht ab (Exit 2, mit Hinweis auf
@@ -606,7 +607,11 @@ Uebergabe), die Ablaeufe in den Skills unter `.claude/skills/`; hier steht, welc
 - **Commit einer Task** nur ueber `task-close.sh` (Abschnitt „Task schliessen“).
 - **Token-Hooks:** `git config core.hooksPath scripts/dev/hooks`, einmal im Haupt-Checkout; Worktrees
   erben es. `pre-commit`, `prepare-commit-msg`, `pre-merge-commit` und `pre-applypatch` fahren
-  `review.sh sec --staged`, `commit-msg` prueft die Nachricht, `pre-push` jeden Commit, den ein Push
+  `review.sh sec --staged`, `commit-msg` prueft die Nachricht und verlangt einen
+  Conventional-Commit-Betreff (`<typ>[(scope)][!]: <text>`; `Merge …`, `Revert "…"`,
+  `fixup!`/`squash!`/`amend!` gehen durch; eine `#`-Zeile ist nur im Editor ein Kommentar, mit `-m`
+  oder `-F` ist sie der Betreff; `task-close.sh` prueft ihn schon vor dem Verify), `pre-push` jeden
+  Commit, den ein Push
   nach draussen bringt. Gemeldet werden Pfad oder Datei:Zeile, nie der Inhalt. Was an den Hooks
   vorbeigeht, faengt der CI-Job „Public repo guard (review.sh sec)“. Der PreToolUse-Hook
   `scripts/dev/hooks/harness-guard.sh` verweigert `git commit --no-verify`, Loeschen per Glob in

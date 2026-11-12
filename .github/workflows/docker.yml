@@ -106,10 +106,13 @@ jobs:
 
       # Keyless signature over the pushed digest (covers every tag pointing at
       # it). cosign 3 stores it as a Sigstore bundle in an OCI 1.1 referrer, so
-      # checking it takes cosign 3 (or 2.6+ with --new-bundle-format):
-      #   cosign verify ghcr.io/admincave/adminhelper/<image> \
-      #     --certificate-identity-regexp 'https://github.com/AdminCave/AdminHelper/.*' \
+      # checking it takes cosign 3 (or 2.6+ with --new-bundle-format). A release
+      # image is checked against exactly the identity of its tag run:
+      #   cosign verify ghcr.io/admincave/adminhelper/<image>:X.Y.Z \
+      #     --certificate-identity https://github.com/AdminCave/AdminHelper/.github/workflows/docker.yml@refs/tags/vX.Y.Z \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      # cosign matches --certificate-identity-regexp as a substring, so a regex
+      # needs ^…$ or it accepts any workflow of the repo.
       # The fresh signature is verified right away against the identity of this
       # run: a signature that did not land fails this run, not the job latest
       # at the next stable release.

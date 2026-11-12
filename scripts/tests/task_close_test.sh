@@ -142,44 +142,62 @@ verdict() {
 
 echo "── input ──"
 c; [ $rc -eq 2 ] && ok "no arguments -> 2" || bad "bare: rc=$rc"
-c tasks/README.md T1 -m x; [ $rc -eq 2 ] && grep -q 'not a ledger' <<<"$OUT" && ok "the README is no ledger -> 2" || bad "README: rc=$rc $OUT"
-c CHANGELOG.md T1 -m x; [ $rc -eq 2 ] && ok "a file outside tasks/ -> 2" || bad "outside: rc=$rc $OUT"
-c fix T9 -m x; [ $rc -eq 2 ] && grep -q 'no task T9' <<<"$OUT" && ok "an unknown task -> 2" || bad "T9: rc=$rc $OUT"
+c tasks/README.md T1 -m "test: x"; [ $rc -eq 2 ] && grep -q 'not a ledger' <<<"$OUT" && ok "the README is no ledger -> 2" || bad "README: rc=$rc $OUT"
+c CHANGELOG.md T1 -m "test: x"; [ $rc -eq 2 ] && ok "a file outside tasks/ -> 2" || bad "outside: rc=$rc $OUT"
+c fix T9 -m "test: x"; [ $rc -eq 2 ] && grep -q 'no task T9' <<<"$OUT" && ok "an unknown task -> 2" || bad "T9: rc=$rc $OUT"
 c fix T1; [ $rc -eq 2 ] && grep -q 'needs a message' <<<"$OUT" && ok "no message -> 2" || bad "message: rc=$rc $OUT"
+# R-1359: the subject is checked before the Verify; FIXTURE_VRC=1 would make a run suite 3.
+edit scripts/dev/tool.sh; verdict fix T1 approve
+for m in "a free subject" "Task: kern-x T1 (R-1)"; do
+  FIXTURE_VRC=1 c fix T1 --stage -m "$m"
+  [ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && ! grep -qF -- "$m" <<<"$OUT" && [ "$(heads)" = 1 ] \
+    && ok "subject '$m' -> 2 before the Verify, not echoed" || bad "subject '$m': rc=$rc $OUT"
+done
+printf '\n\nTask: kern-x T1\n' > "$WORK/msg"; FIXTURE_VRC=1 c fix T1 --stage --message-file "$WORK/msg"
+[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && ok "a message file's subject below empty lines is checked -> 2" \
+  || bad "subject file: rc=$rc $OUT"
+# git commits -m/-F without an editor and keeps a # line: it is the subject.
+printf '# c\n\nfeat: x\n' > "$WORK/msg"; FIXTURE_VRC=1 c fix T1 --stage --message-file "$WORK/msg"
+[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "a # line on top of a message file is the subject -> 2" || bad "comment file: rc=$rc $OUT"
+FIXTURE_VRC=1 c fix T1 --stage -m "# c"$'\n\n'"feat: x"
+[ $rc -eq 2 ] && grep -q 'no Conventional Commit' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "a # line on top of -m is the subject -> 2" || bad "comment -m: rc=$rc $OUT"
+reset_repo
 git -C "$FIX" checkout -q -b main; edit scripts/dev/tool.sh
-c fix T1 --stage -m x; [ $rc -eq 2 ] && grep -q 'default branch' <<<"$OUT" && ok "on main -> 2" || bad "main: rc=$rc $OUT"
+c fix T1 --stage -m "test: x"; [ $rc -eq 2 ] && grep -q 'default branch' <<<"$OUT" && ok "on main -> 2" || bad "main: rc=$rc $OUT"
 reset_repo; git -C "$FIX" branch -q -D main
-c fix T4 -m x; [ $rc -eq 74 ] && grep -q 'manual task' <<<"$OUT" && ok "a task without a component -> 74" || bad "T4: rc=$rc $OUT"
+c fix T4 -m "test: x"; [ $rc -eq 74 ] && grep -q 'manual task' <<<"$OUT" && ok "a task without a component -> 74" || bad "T4: rc=$rc $OUT"
 
 echo "── staging ──"
-reset_repo; c fix T1 -m x
+reset_repo; c fix T1 -m "test: x"
 [ $rc -eq 2 ] && grep -q 'nothing staged' <<<"$OUT" && ok "nothing staged -> 2" || bad "nothing: rc=$rc $OUT"
-edit scripts/dev/other.sh; git -C "$FIX" add scripts/dev/other.sh; edit scripts/dev/tool.sh; c fix T1 -m x
+edit scripts/dev/other.sh; git -C "$FIX" add scripts/dev/other.sh; edit scripts/dev/tool.sh; c fix T1 -m "test: x"
 [ $rc -eq 2 ] && grep -q 'not (fully) staged: scripts/dev/tool.sh' <<<"$OUT" && ok "a declared file left unstaged -> 2" || bad "unstaged: rc=$rc $OUT"
-git -C "$FIX" add scripts/dev/tool.sh; edit scripts/dev/tool.sh; c fix T1 -m x
+git -C "$FIX" add scripts/dev/tool.sh; edit scripts/dev/tool.sh; c fix T1 -m "test: x"
 [ $rc -eq 2 ] && grep -q 'half staged' <<<"$OUT" && ok "a half staged file -> 2" || bad "half: rc=$rc $OUT"
 
 echo "── test files ──"
-reset_repo; rm "$FIX/scripts/tests/keep_test.sh"; verdict fix T5 approve; c fix T5 --stage -m x
+reset_repo; rm "$FIX/scripts/tests/keep_test.sh"; verdict fix T5 approve; c fix T5 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q 'keep_test.sh is a test file' <<<"$OUT" && [ "$(heads)" = 1 ] && ok "a test file deleted without a declaration -> 3" || bad "T5: rc=$rc $OUT"
 # A move to a name no runner collects is a deletion as well.
 reset_repo; git -C "$FIX" mv scripts/tests/keep_test.sh scripts/tests/keep.txt; verdict fix T5 approve
-c fix T5 -m x; [ $rc -eq 3 ] && grep -q 'keep_test.sh is a test file' <<<"$OUT" && ok "a test file renamed away -> 3" || bad "rename: rc=$rc $OUT"
-reset_repo; rm "$FIX/apps/desktop/e2e/test/specs/login.live.js"; verdict fix T8 approve; c fix T8 --stage -m x
+c fix T5 -m "test: x"; [ $rc -eq 3 ] && grep -q 'keep_test.sh is a test file' <<<"$OUT" && ok "a test file renamed away -> 3" || bad "rename: rc=$rc $OUT"
+reset_repo; rm "$FIX/apps/desktop/e2e/test/specs/login.live.js"; verdict fix T8 approve; c fix T8 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q 'login.live.js is a test file' <<<"$OUT" && ok "a desktop spec under test/ deleted -> 3" || bad "spec: rc=$rc $OUT"
 reset_repo; rm "$FIX/scripts/tests/keep_test.sh"
-printf 'Test-Löschung: scripts/tests/keep_test.sh::* — selbst erteilt\n' >> "$FIX/tasks/fix.md"; c fix T5 --stage -m x
+printf 'Test-Löschung: scripts/tests/keep_test.sh::* — selbst erteilt\n' >> "$FIX/tasks/fix.md"; c fix T5 --stage -m "test: x"
 [ $rc -eq 4 ] && grep -q 'differ from the committed ones' <<<"$OUT" && ok "a declaration that is not committed -> 4" || bad "uncommitted decl: rc=$rc $OUT"
 reset_repo; rm "$FIX/scripts/tests/old_test.sh"; verdict fix T3 approve; c fix T3 --stage -m "chore: drop old"
 [ $rc -eq 0 ] && ! git -C "$FIX" cat-file -e HEAD:scripts/tests/old_test.sh 2>/dev/null && ok "a declared deletion commits" || bad "T3: rc=$rc $OUT"
 
 echo "── sec and verify ──"
 reset_repo; printf 'tok=ghp_%s\n' "$(printf 'A1b2C3d4%.0s' 1 2 3 4 5)" >> "$FIX/scripts/dev/tool.sh"; verdict fix T1 approve
-c fix T1 --stage -m x; [ $rc -eq 4 ] && grep -q 'a token pattern' <<<"$OUT" && [ "$(heads)" = 1 ] && ok "a token in the diff -> 4" || bad "token: rc=$rc $OUT"
+c fix T1 --stage -m "test: x"; [ $rc -eq 4 ] && grep -q 'a token pattern' <<<"$OUT" && [ "$(heads)" = 1 ] && ok "a token in the diff -> 4" || bad "token: rc=$rc $OUT"
 reset_repo; edit scripts/dev/tool.sh; verdict fix T1 approve
-FIXTURE_VRC=1 c fix T1 --stage -m x; [ $rc -eq 3 ] && grep -q 'verify-red' <<<"$OUT" && [ "$(heads)" = 1 ] && ok "a red suite -> 3, no commit" || bad "red: rc=$rc $OUT"
-FIXTURE_VRC=74 c fix T1 --stage -m x; [ $rc -eq 74 ] && ok "a suite that cannot run -> 74" || bad "74: rc=$rc $OUT"
-FIXTURE_TOUCH=scripts/dev/new.txt c fix T1 --stage -m x
+FIXTURE_VRC=1 c fix T1 --stage -m "test: x"; [ $rc -eq 3 ] && grep -q 'verify-red' <<<"$OUT" && [ "$(heads)" = 1 ] && ok "a red suite -> 3, no commit" || bad "red: rc=$rc $OUT"
+FIXTURE_VRC=74 c fix T1 --stage -m "test: x"; [ $rc -eq 74 ] && ok "a suite that cannot run -> 74" || bad "74: rc=$rc $OUT"
+FIXTURE_TOUCH=scripts/dev/new.txt c fix T1 --stage -m "test: x"
 [ $rc -eq 2 ] && grep -q 'tree changed while the suite ran' <<<"$OUT" && ok "the tree changed under the suite -> 2" || bad "tree: rc=$rc $OUT"
 # The check needs the hash the suite measures over this checkout. Client values
 # left in the environment (iter.sh passes them to a box) would be stamped
@@ -188,39 +206,39 @@ FIXTURE_TOUCH=scripts/dev/new.txt c fix T1 --stage -m x
 reset_repo; edit scripts/dev/tool.sh; verdict fix T1 approve
 before=$(cd "$FIX" && bash scripts/dev/tree-hash.sh)
 AH_TREE_HASH="$before" AH_HEAD=1111111111111111111111111111111111111111 FIXTURE_TOUCH=scripts/dev/new.txt \
-  c fix T1 --stage -m x
+  c fix T1 --stage -m "test: x"
 [ $rc -eq 2 ] && grep -q 'tree changed while the suite ran' <<<"$OUT" && [ "$(heads)" = 1 ] \
   && ok "AH_TREE_HASH/AH_HEAD in the environment stay out of the suite — the changed tree still -> 2" \
   || bad "client values from the environment: rc=$rc heads=$(heads) $OUT"
-reset_repo; edit scripts/dev/tool.sh; c fix T6 --stage -m x
+reset_repo; edit scripts/dev/tool.sh; c fix T6 --stage -m "test: x"
 [ $rc -eq 2 ] && grep -q "does not name the task's component 'web'" <<<"$OUT" && ok "a Verify: line for another component -> 2" || bad "T6: rc=$rc $OUT"
 verdict fix T2 approve; c fix T2 --stage -m "fix: narrow"
 [ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "server --strict -- tests/test_thing.py" ] \
   && ok "the Verify: line runs as it stands, with its test" || bad "T2: rc=$rc $(cat "$FIX/.ah-out/verify-called.txt") $OUT"
 
 echo "── the verdict ──"
-reset_repo; edit scripts/dev/tool.sh; c fix T1 --stage -m x
+reset_repo; edit scripts/dev/tool.sh; c fix T1 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q 'no verdict at .ah-out/review/fix/T1.verdict.json' <<<"$OUT" && ok "no verdict -> 3" || bad "none: rc=$rc $OUT"
-verdict fix T1 approve 'now - 60 seconds'; c fix T1 --stage -m x
+verdict fix T1 approve 'now - 60 seconds'; c fix T1 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q 'older than scripts/dev/tool.sh' <<<"$OUT" && ok "a verdict older than a staged file -> 3" || bad "old: rc=$rc $OUT"
-verdict fix T1 request_changes; c fix T1 --stage -m x
+verdict fix T1 request_changes; c fix T1 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q "is 'request_changes', not approve" <<<"$OUT" && [ "$(heads)" = 1 ] && ok "request_changes -> 3" || bad "rc: rc=$rc $OUT"
 reset_repo; edit scripts/dev/tool.sh; c late T1 --stage -m "feat: late"
 [ $rc -eq 0 ] && grep -q '^Review: am Ende' "$FIX/tasks/late.md" && ok "Review: am Ende commits without a verdict file" || bad "late: rc=$rc $OUT"
 reset_repo; edit docs/guide.html; edit README.md; edit docs/admin/note.md; c fix T11 --stage -m "docs: guide"
 [ $rc -eq 0 ] && grep -qF 'Review: am Ende (nur Doku, Branch-Review)' "$FIX/tasks/fix.md" \
   && ok "Task-Review: am Ende commits a docs-only task without a verdict file" || bad "T11: rc=$rc $OUT"
-reset_repo; edit docs/guide.html; edit scripts/dev/tool.sh; c fix T12 --stage -m x
+reset_repo; edit docs/guide.html; edit scripts/dev/tool.sh; c fix T12 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q 'and scripts/dev/tool.sh is not' <<<"$OUT" && grep -q 'no verdict at' <<<"$OUT" \
   && [ "$(heads)" = 1 ] && ok "Task-Review: am Ende on a task that stages code still needs a verdict -> 3" || bad "T12: rc=$rc $OUT"
 verdict fix T12 approve; c fix T12 --stage -m "fix: with code"
 [ $rc -eq 0 ] && ok "the same task commits with the reviewer's approve" || bad "T12 verdict: rc=$rc $OUT"
-reset_repo; edit .claude/rules/x.md; c fix T13 --stage -m x
+reset_repo; edit .claude/rules/x.md; c fix T13 --stage -m "test: x"
 [ $rc -eq 3 ] && grep -q 'and .claude/rules/x.md is not' <<<"$OUT" && grep -q 'no verdict at' <<<"$OUT" \
   && ok "Task-Review: am Ende on a harness text -> 3" || bad "T13: rc=$rc $OUT"
 # Each of these alone, staged by hand: the mark must not carry any of them.
 t14() {  # t14 <label> <expected path in the message> — after the caller staged one change
-  c fix T14 -m x
+  c fix T14 -m "test: x"
   [ $rc -eq 3 ] && grep -q "and $2 is not" <<<"$OUT" && grep -q 'no verdict at' <<<"$OUT" && [ "$(heads)" = 1 ] \
     && ok "Task-Review: am Ende on $1 still needs a verdict -> 3" || bad "T14 $1: rc=$rc $OUT"
 }
@@ -232,7 +250,7 @@ reset_repo; ln -s ../scripts/dev/tool.sh "$FIX/docs/link.md"; git -C "$FIX" add 
 
 echo "── the commit ──"
 reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T1 approve
-FIXTURE_STAGE=scripts/dev/other.sh c fix T1 --stage -m x
+FIXTURE_STAGE=scripts/dev/other.sh c fix T1 --stage -m "test: x"
 [ $rc -eq 2 ] && grep -q 'index changed under the run' <<<"$OUT" && ! grep -q '\[x\]' "$FIX/tasks/fix.md" \
   && ok "the index changed during the run -> 2, no box ticked" || bad "index: rc=$rc $OUT"
 git -C "$FIX" reset -q -- scripts/dev/other.sh; verdict fix T1 approve; c fix T1 --stage -m "feat: one"
@@ -246,7 +264,7 @@ grep -q '^### T1 — eine Aufgabe  \[x\]' "$FIX/tasks/fix.md" \
 git -C "$FIX" diff --quiet -- scripts/dev/other.sh && bad "an unrelated edit went missing" || ok "an unrelated edit stays in the worktree"
 reset_repo; edit scripts/dev/tool.sh; c late T1 --stage -m "feat: last"
 grep -q '^Status: bereit' "$FIX/tasks/late.md" && ok "the last open task moves aktiv to bereit" || bad "bereit: $(head -2 "$FIX/tasks/late.md")"
-reset_repo; sed -i 's/::\* — alt/::* — neu/' "$FIX/tasks/other.md"; verdict fix T7 approve; c fix T7 --stage -m x
+reset_repo; sed -i 's/::\* — alt/::* — neu/' "$FIX/tasks/other.md"; verdict fix T7 approve; c fix T7 --stage -m "test: x"
 [ $rc -eq 4 ] && [ "$(heads)" = 1 ] && grep -q 'taken back' <<<"$OUT" && ok "a commit that changes a Test-Löschung: line is taken back -> 4" || bad "T7: rc=$rc $OUT"
 
 echo "── repeatable ──"
