@@ -1335,6 +1335,13 @@ class Target:
         ip = self.ip
         return "%s@%s" % (self.user, ip)
 
+    @property
+    def shell(self) -> str:
+        """The login shell `run` wraps a command in: bash, unless the profile the
+        box was cloned from (its `tpl-` tag) names another — OPNsense has no bash."""
+        meta = load_profiles()["profiles"].get(tag_value(self.tags, "tpl-"), {})
+        return meta.get("shell", "bash")
+
 
 def remote_dir(cfg: Config) -> str:
     """The checkout's path on the guest. Expanded by the guest's own shell, so
@@ -1419,7 +1426,10 @@ def verb_run(cfg: Config, api: Api, args) -> int:
     # ~/.cargo/env, and `ssh host cmd` reads neither. Without it run.sh
     # dep-gates itself into `go=no cargo=no`, skips those suites and still
     # exits 0 — a green run that checked less. `ssh` stays the raw handle.
-    remote = "bash -lc %s" % shlex.quote("cd %s && %s" % (remote_dir(cfg), " ".join(command)))
+    remote = "%s -lc %s" % (
+        target.shell,
+        shlex.quote("cd %s && %s" % (remote_dir(cfg), " ".join(command))),
+    )
     started = time.monotonic()
     code = run_ssh(cfg, target.user, target.ip, [remote], timeout=args.timeout)
     if code == 255:
@@ -1940,6 +1950,157 @@ def await_template(cfg: Config, api: Api, template_tag: str, newid: int, profile
         time.sleep(2)
 
 
+def bake_linux(cfg: Config, api: Api, newid: int, meta: dict) -> None:
+    """cloud-init, sync, bootstrap_linux.sh, warm-up, clean — as the bake's own user."""
+    wait_for(cfg, api, newid, WAIT_TIMEOUT)
+    target = Target(cfg, api, str(newid))
+    # Before the sync: the upgrade restarts sshd, and the rsync and every
+    # step below open a new connection. Exit 2 is "degraded" — finished,
+    # with a recoverable error — and counts as done.
+    print("--- cloud-init")
+    code = run_ssh(
+        cfg, target.user, target.ip, ["cloud-init status --wait"], timeout=CLOUD_INIT_LIMIT
+    )
+    if code not in (0, 2):
+        raise Infra(
+            "cloud-init did not finish on %d (cloud-init status --wait exited %d)" % (newid, code)
+        )
+    _sync(cfg, target, delete=True)
+    steps = [
+        (
+            "bootstrap",
+            "AH_BOOTSTRAP_PROFILE=%s bash scripts/vm/bootstrap_linux.sh" % meta["bootstrap"],
+            BOOTSTRAP_LIMIT,
+            True,
+        ),
+        # Not a test run: this is what fills ~/.cargo, ~/go and node_modules,
+        # so the first lease off this template does not spend 20 minutes
+        # building what the template could have carried. Tolerant, the way
+        # the old bake was — one flaky unit test must not throw away the
+        # half hour of bootstrap above it — and its exit code is printed, so
+        # a warm-up that warmed nothing is visible rather than silent.
+        (
+            "warm the caches",
+            "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit",
+            WARMUP_LIMIT,
+            False,
+        ),
+        ("clean", CLEAN_SCRIPT, CLEAN_LIMIT, True),
+    ]
+    for label, command, limit, gate in steps:
+        print("--- %s" % label)
+        # A login shell, for the reason verb_run spells out: without it the
+        # warm-up finds neither go nor cargo, warms nothing and exits 0.
+        code = run_ssh(
+            cfg,
+            target.user,
+            target.ip,
+            ["bash -lc %s" % shlex.quote("cd %s && %s" % (remote_dir(cfg), command))],
+            timeout=limit,
+        )
+        if code != 0:
+            if gate:
+                raise Infra("%s failed on %d (exit %d)" % (label, newid, code))
+            print("    %s exited %d — kept going, the template is just colder" % (label, code))
+
+
+# ── bake: OPNsense ───────────────────────────────────────────────────────────
+OPNSENSE_RELEASE = "26.7"
+# The first boot of the new base renders every template, makes the host keys and
+# may apply a staged base/kernel set with a second reboot.
+OPNSENSE_BOOT_LIMIT = 900
+# Both run as BAKE_USER through the firewall's /bin/sh (there is no bash), with
+# a PATH of their own: what a non-login ssh command gets is sshd's choice.
+OPNSENSE_PATH = "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin; export PATH\n"
+OPNSENSE_CHECK = OPNSENSE_PATH + (
+    """
+fail() { echo "check: $*" >&2; exit 1; }
+[ "$(opnsense-version -a)" = %(release)s ] || fail "not OPNsense %(release)s: $(opnsense-version)"
+for p in os-qemu-guest-agent rsync sudo; do pkg info -e "$p" || fail "package $p is missing"; done
+sudo -n true || fail "no passwordless sudo"
+sudo -n sshd -T | grep -qx 'passwordauthentication no' || fail "sshd takes passwords"
+sudo -n sshd -T | grep -qx 'permitrootlogin no' || fail "sshd takes root"
+sudo -n pfctl -s info | grep -q '^Status: Enabled' || fail "pf is not enabled"
+df -h /
+"""
+    % {"release": OPNSENSE_RELEASE}
+)
+# What a clone must not inherit. base-freebsd's user (%(user)s, filled in at the
+# call) outlives the firewall's account sync, which only prunes uids from 2000
+# up, and with it its home with the synced checkout and its key, and the
+# NOPASSWD rule nuageinit wrote for it (the firewall runs no nuageinit that
+# would rewrite it). /etc/rc makes a new hostid, the ssh plugin new host keys
+# under /conf/sshd.
+OPNSENSE_CLEAN = OPNSENSE_PATH + (
+    "if id %(user)s >/dev/null 2>&1; then sudo -n pw userdel -n %(user)s -r; fi && "
+    "sudo -n pkg clean -ay && "
+    "sudo -n rm -rf /var/cache/nuageinit /tmp/opnsense-bootstrap && "
+    "sudo -n rm -f /conf/sshd/ssh_host_* /etc/hostid /var/db/dhclient.leases.* "
+    "/var/log/nuageinit.log /usr/local/etc/sudoers.d/90-nuageinit-users /firstboot"
+)
+
+
+def bake_opnsense(cfg: Config, api: Api, newid: int, key: str) -> None:
+    """base-freebsd → OPNsense: bootstrap as its user, reboot, check and clean as ours.
+
+    The firewall keeps its users in /conf/config.xml, which bootstrap.sh writes
+    with `adminhelper` and the pool key in it; cloud-init has no say there. So
+    the template's ciuser — what every lease's `guest_user` reads — is switched
+    to that user between the two boots.
+    """
+    node = cfg["AH_PVE_NODE"]
+    ip = wait_for(cfg, api, newid, WAIT_TIMEOUT)
+    target = Target(cfg, api, str(newid))
+    print("--- first boot")
+    # /etc/rc removes /firstboot once nuageinit and every first-boot script ran.
+    code = run_ssh(
+        cfg,
+        target.user,
+        ip,
+        ["while [ -e /firstboot ]; do sleep 5; done"],
+        timeout=CLOUD_INIT_LIMIT,
+    )
+    if code != 0:
+        raise Infra("first boot did not finish on %d (exit %d)" % (newid, code))
+    _sync(cfg, target, delete=True)
+    print("--- bootstrap OPNsense %s" % OPNSENSE_RELEASE)
+    command = "cd %s && sudo -n env AH_OPNSENSE_KEY=%s sh scripts/vm/opnsense/bootstrap.sh %s" % (
+        remote_dir(cfg),
+        shlex.quote(key),
+        OPNSENSE_RELEASE,
+    )
+    code = run_ssh(cfg, target.user, ip, [command], timeout=BOOTSTRAP_LIMIT)
+    if code != 0:
+        raise Infra("bootstrap failed on %d (exit %d)" % (newid, code))
+
+    print("--- reboot into OPNsense")
+    api.task(
+        "POST",
+        "/nodes/%s/qemu/%d/status/shutdown" % (node, newid),
+        # Whether the base image's guest agent still answers after `pkg
+        # delete -fa` or not: bootstrap.sh ended in `sync`, so a forced stop
+        # after the grace period loses nothing.
+        body={"forceStop": 1, "timeout": 240},
+        limit=SHUTDOWN_LIMIT,
+    )
+    api.request(
+        "PUT",
+        "/nodes/%s/qemu/%d/config" % (node, newid),
+        body={"ciuser": BAKE_USER},
+        lock_retry=True,
+    )
+    api.task("POST", "/nodes/%s/qemu/%d/status/start" % (node, newid))
+    ip = wait_for(cfg, api, newid, OPNSENSE_BOOT_LIMIT)
+    for label, script, limit in (
+        ("check", OPNSENSE_CHECK, 120),
+        ("clean", OPNSENSE_CLEAN % {"user": target.user}, CLEAN_LIMIT),
+    ):
+        print("--- %s" % label)
+        code = run_ssh(cfg, BAKE_USER, ip, [script], timeout=limit)
+        if code != 0:
+            raise Infra("%s failed on %d (exit %d)" % (label, newid, code))
+
+
 def verb_bake(cfg: Config, api: Api, args) -> int:
     profiles = load_profiles()
     meta = profiles["profiles"].get(args.profile)
@@ -1974,6 +2135,7 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
     # template where it stands, and one that fails is cleaned up from there.
     newid = free_template_vmid(cfg, vms)
     name = "ah-tpl-%s-%s" % (args.profile, day)
+    opnsense = meta["bootstrap"] == "opnsense"
     create_vm(
         cfg,
         api,
@@ -1992,66 +2154,21 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         # D20: templates we build carry our own guest user. Only here — every
         # other path reads ciuser off the VM (never from a config value), which
         # is what made the change a template swap and not a config sweep.
-        ciuser=BAKE_USER,
+        # OPNsense starts from base-freebsd's own user: the firewall's config
+        # creates `adminhelper` itself, and bake_opnsense switches ciuser over.
+        ciuser=None if opnsense else BAKE_USER,
         # The template is where the packages get current; every lease off it
-        # boots without an upgrade of its own.
-        upgrade=True,
+        # boots without an upgrade of its own. OPNsense deletes every package
+        # of the base image anyway.
+        upgrade=not opnsense,
     )
     print("baking %s from %d in VM %d" % (args.profile, source["vmid"], newid))
 
     try:
-        wait_for(cfg, api, newid, WAIT_TIMEOUT)
-        target = Target(cfg, api, str(newid))
-        # Before the sync: the upgrade restarts sshd, and the rsync and every
-        # step below open a new connection. Exit 2 is "degraded" — finished,
-        # with a recoverable error — and counts as done.
-        print("--- cloud-init")
-        code = run_ssh(
-            cfg, target.user, target.ip, ["cloud-init status --wait"], timeout=CLOUD_INIT_LIMIT
-        )
-        if code not in (0, 2):
-            raise Infra(
-                "cloud-init did not finish on %d (cloud-init status --wait exited %d)"
-                % (newid, code)
-            )
-        _sync(cfg, target, delete=True)
-        steps = [
-            (
-                "bootstrap",
-                "AH_BOOTSTRAP_PROFILE=%s bash scripts/vm/bootstrap_linux.sh" % meta["bootstrap"],
-                BOOTSTRAP_LIMIT,
-                True,
-            ),
-            # Not a test run: this is what fills ~/.cargo, ~/go and node_modules,
-            # so the first lease off this template does not spend 20 minutes
-            # building what the template could have carried. Tolerant, the way
-            # the old bake was — one flaky unit test must not throw away the
-            # half hour of bootstrap above it — and its exit code is printed, so
-            # a warm-up that warmed nothing is visible rather than silent.
-            (
-                "warm the caches",
-                "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit",
-                WARMUP_LIMIT,
-                False,
-            ),
-            ("clean", CLEAN_SCRIPT, CLEAN_LIMIT, True),
-        ]
-        for label, command, limit, gate in steps:
-            print("--- %s" % label)
-            # A login shell, for the reason verb_run spells out: without it the
-            # warm-up finds neither go nor cargo, warms nothing and exits 0.
-            code = run_ssh(
-                cfg,
-                target.user,
-                target.ip,
-                ["bash -lc %s" % shlex.quote("cd %s && %s" % (remote_dir(cfg), command))],
-                timeout=limit,
-            )
-            if code != 0:
-                if gate:
-                    raise Infra("%s failed on %d (exit %d)" % (label, newid, code))
-                print("    %s exited %d — kept going, the template is just colder" % (label, code))
-
+        if opnsense:
+            bake_opnsense(cfg, api, newid, key)
+        else:
+            bake_linux(cfg, api, newid, meta)
         api.task(
             "POST",
             "/nodes/%s/qemu/%d/status/shutdown" % (node, newid),
