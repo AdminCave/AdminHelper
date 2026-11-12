@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ const (
 	keyA     = "30f3d257dacd265b868a68e3c508e6a6a7b759f6152d56c09541da0feba5b77a"
 	keyB     = "f1d5c31b0b14daa3a4f1eae112617d1c97c8b0853ad17a6ceee70081d36c636f"
 	groupKey = "group-key-placeholder"
+	sk       = "tunnel-secret-placeholder"
 )
 
 func fixturePolicy(t *testing.T) []byte {
@@ -48,7 +50,9 @@ func fixtureRequest(t *testing.T) []byte {
 
 func fixtureNewProxy(t *testing.T) *NewProxy {
 	t.Helper()
-	var req request
+	var req struct {
+		Content NewProxy `json:"content"`
+	}
 	if err := json.Unmarshal(fixtureRequest(t), &req); err != nil {
 		t.Fatal(err)
 	}
@@ -83,12 +87,18 @@ func TestTheFixturesBelongTogether(t *testing.T) {
 	if got := p.Servers[serverA].Proxies["t-lb"].GroupKeyHash; got != sha256Hex(groupKey) {
 		t.Errorf("groupKeyHash of t-lb = %s, want the SHA-256 of groupKey", got)
 	}
+	if got := p.Servers[serverA].Proxies["t-ssh"].SkHash; got != sha256Hex(sk) {
+		t.Errorf("skHash of t-ssh = %s, want the SHA-256 of sk", got)
+	}
 	np := fixtureNewProxy(t)
-	if np.User.User != serverA || np.ProxyName != serverA+".t-ssh" || np.Metas[KeyMeta] != keyA {
+	if np.User.User != serverA || np.ProxyName != serverA+".t-ssh" || np.Metas[KeyMeta] != keyA ||
+		np.Sk != sk || !slices.Equal(np.AllowUsers, []string{"ops-admin"}) {
 		t.Errorf("fixture request = %+v; want the proxy t-ssh of A with keyA", np)
 	}
-	if strings.Contains(string(fixturePolicy(t)), keyA) {
-		t.Error("the policy holds a key in clear")
+	for _, secret := range []string{keyA, groupKey, sk} {
+		if strings.Contains(string(fixturePolicy(t)), secret) {
+			t.Errorf("the policy holds %q in clear", secret)
+		}
 	}
 }
 
@@ -99,30 +109,33 @@ func TestParseRefuses(t *testing.T) {
 		"no JSON":             "version = 1",
 		"an array":            "[]",
 		"data after the JSON": fixture + "{}",
-		"version 2":           strings.Replace(fixture, `"version": 1`, `"version": 2`, 1),
+		"version 1":           strings.Replace(fixture, `"version": 2`, `"version": 1`, 1),
+		"version 3":           strings.Replace(fixture, `"version": 2`, `"version": 3`, 1),
 		"no version":          `{"servers": {}}`,
-		"no servers":          `{"version": 1}`,
-		"servers null":        `{"version": 1, "servers": null}`,
-		"an unknown field":    strings.Replace(fixture, `"version": 1`, `"version": 1, "mode": "open"`, 1),
+		"no servers":          `{"version": 2}`,
+		"servers null":        `{"version": 2, "servers": null}`,
+		"an unknown field":    strings.Replace(fixture, `"version": 2`, `"version": 2, "mode": "open"`, 1),
 		"an unknown proxy field": strings.Replace(fixture, `"type": "stcp"`,
 			`"type": "stcp", "remotePort": 6000`, 1),
-		"a server without an ID":      `{"version": 1, "servers": {"": {"keyHash": "` + hashA + `", "proxies": {}}}}`,
+		"a server without an ID":      `{"version": 2, "servers": {"": {"keyHash": "` + hashA + `", "proxies": {}}}}`,
 		"a short keyHash":             strings.Replace(fixture, hashA, hashA[:63], 1),
 		"an uppercase keyHash":        strings.Replace(fixture, hashA, strings.ToUpper(hashA), 1),
 		"a keyHash with no hex digit": strings.Replace(fixture, hashA, "z"+hashA[1:], 1),
-		"no keyHash":                  `{"version": 1, "servers": {"` + serverA + `": {"proxies": {}}}}`,
-		"a proxy without an ID": `{"version": 1, "servers": {"` + serverA + `": {"keyHash": "` + hashA +
+		"no keyHash":                  `{"version": 2, "servers": {"` + serverA + `": {"proxies": {}}}}`,
+		"a proxy without an ID": `{"version": 2, "servers": {"` + serverA + `": {"keyHash": "` + hashA +
 			`", "proxies": {"": {"type": "stcp"}}}}}`,
 		"type tcp":              strings.Replace(fixture, `"type": "stcp"`, `"type": "tcp"`, 1),
 		"no type":               strings.Replace(fixture, `"type": "stcp"`, `"type": ""`, 1),
 		"a broken groupKeyHash": strings.Replace(fixture, sha256Hex(groupKey), "group-key", 1),
+		"a broken skHash":       strings.Replace(fixture, sha256Hex(sk), "secret", 1),
+		"an uppercase skHash":   strings.Replace(fixture, sha256Hex(sk), strings.ToUpper(sha256Hex(sk)), 1),
 	}
 	for name, text := range cases {
 		if p, err := Parse([]byte(text)); err == nil {
 			t.Errorf("%s: Parse = %+v, want an error", name, p)
 		}
 	}
-	if _, err := Parse([]byte(`{"version": 1, "servers": {}}`)); err != nil {
+	if _, err := Parse([]byte(`{"version": 2, "servers": {}}`)); err != nil {
 		t.Errorf("a policy without a server: Parse = %v, want nil", err)
 	}
 }
@@ -132,11 +145,13 @@ func TestDecide(t *testing.T) {
 	web := func(np *NewProxy) {
 		np.ProxyName, np.ProxyType = serverA+".t-web", "https"
 		np.CustomDomains = []string{"web.example", "www.web.example"}
+		np.Sk, np.AllowUsers = "", nil
 	}
 	lb := func(np *NewProxy) {
 		np.ProxyName, np.ProxyType = serverA+".t-lb", "https"
 		np.CustomDomains, np.SubDomain = []string{"lb.example"}, "lb"
 		np.Group, np.GroupKey = "web", groupKey
+		np.Sk, np.AllowUsers = "", nil
 	}
 	hostB := func(np *NewProxy) {
 		np.User.User, np.ProxyName, np.Metas = serverB, serverB+".t-db", map[string]string{KeyMeta: keyB}
@@ -197,6 +212,17 @@ func TestDecide(t *testing.T) {
 		{"no group key", then(lb, func(np *NewProxy) { np.GroupKey = "" }), "other group key"},
 		{"a wrong group key", then(lb, func(np *NewProxy) { np.GroupKey = "group-key" }), "other group key"},
 		{"the hash of the group key", then(lb, func(np *NewProxy) { np.GroupKey = sha256Hex(groupKey) }), "other group key"},
+		{"the allowed users repeated", func(np *NewProxy) { np.AllowUsers = []string{"ops-admin", "ops-admin"} }, ""},
+		{"no allowed users", func(np *NewProxy) { np.AllowUsers = nil }, "other allowed users"},
+		{"every user allowed", func(np *NewProxy) { np.AllowUsers = []string{"*"} }, "other allowed users"},
+		{"another allowed user", func(np *NewProxy) { np.AllowUsers = []string{"intruder"} }, "other allowed users"},
+		{"one allowed user more", func(np *NewProxy) { np.AllowUsers = append(np.AllowUsers, serverB) }, "other allowed users"},
+		{"an allowed user in another case", func(np *NewProxy) { np.AllowUsers = []string{"Ops-admin"} }, "other allowed users"},
+		{"allowed users for an https tunnel", then(web, func(np *NewProxy) { np.AllowUsers = []string{"ops-admin"} }), "other allowed users"},
+		{"no secret key", func(np *NewProxy) { np.Sk = "" }, "other secret key"},
+		{"a wrong secret key", func(np *NewProxy) { np.Sk = sk + "x" }, "other secret key"},
+		{"the hash of the secret key", func(np *NewProxy) { np.Sk = sha256Hex(sk) }, "other secret key"},
+		{"a secret key for an https tunnel", then(web, func(np *NewProxy) { np.Sk = sk }), "other secret key"},
 	}
 	for _, c := range cases {
 		np := fixtureNewProxy(t)
@@ -269,7 +295,7 @@ func TestSourceReadsAChangedFile(t *testing.T) {
 	}
 
 	// Written in place with another size.
-	onlyB := `{"version": 1, "servers": {"` + serverB + `": {"keyHash": "` + sha256Hex(keyB) + `", "proxies": {}}}}`
+	onlyB := `{"version": 2, "servers": {"` + serverB + `": {"keyHash": "` + sha256Hex(keyB) + `", "proxies": {}}}}`
 	writeFile(t, path, []byte(onlyB))
 	p, err := src.Current()
 	if err != nil || len(p.Servers) != 1 {
@@ -310,5 +336,64 @@ func replaceFile(t *testing.T, path string, data []byte, mtime time.Time) {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDecideLogin(t *testing.T) {
+	p := parsedFixture(t)
+	cases := []struct {
+		name  string
+		login Login
+		want  string
+	}{
+		{"a host with its key", Login{User: serverA, Metas: map[string]string{KeyMeta: keyA, "owner": "ops"}}, ""},
+		{"another host with its key", Login{User: serverB, Metas: map[string]string{KeyMeta: keyB}}, ""},
+		{"a host with another host's key", Login{User: serverA, Metas: map[string]string{KeyMeta: keyB}}, "wrong key"},
+		{"a host without a key", Login{User: serverA}, "no key"},
+		{"an empty key", Login{User: serverA, Metas: map[string]string{KeyMeta: ""}}, "no key"},
+		{"a visitor's user, no host", Login{User: "ops-admin"}, ""},
+		{"no user", Login{Metas: map[string]string{KeyMeta: keyA}}, "no user"},
+	}
+	for _, c := range cases {
+		if got := p.DecideLogin(&c.login); got != c.want {
+			t.Errorf("%s: DecideLogin = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestBoundRunID(t *testing.T) {
+	fresh, err := BoundRunID(serverA, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(fresh, runIDPrefix(serverA)) || len(fresh) != 49 || len(fresh) > 64 {
+		t.Fatalf("BoundRunID(A, \"\") = %q, want 49 bytes under A's prefix", fresh)
+	}
+	if again, _ := BoundRunID(serverA, ""); again == fresh {
+		t.Errorf("two fresh run IDs are the same: %q", fresh)
+	}
+	if kept, _ := BoundRunID(serverA, fresh); kept != fresh {
+		t.Errorf("BoundRunID(A, own) = %q, want %q kept", kept, fresh)
+	}
+	ofB, _ := BoundRunID(serverB, "")
+	upper := runIDPrefix(serverA) + strings.ToUpper(fresh[len(runIDPrefix(serverA)):])
+	for name, runID := range map[string]string{
+		"another user's run ID":   ofB,
+		"frps' own form":          "0123456789abcdef",
+		"the prefix alone":        runIDPrefix(serverA),
+		"a longer rest":           fresh + "0",
+		"uppercase hex":           upper,
+		"the user's name as text": serverA + "-0123456789abcdef0123456789abcdef",
+	} {
+		got, err := BoundRunID(serverA, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == runID || !strings.HasPrefix(got, runIDPrefix(serverA)) || len(got) != 49 {
+			t.Errorf("%s: BoundRunID(A, %q) = %q, want a fresh one under A's prefix", name, runID, got)
+		}
+	}
+	if runIDPrefix(serverA) == runIDPrefix(serverB) {
+		t.Error("two users share a run ID prefix")
 	}
 }

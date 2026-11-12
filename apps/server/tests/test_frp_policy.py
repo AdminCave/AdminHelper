@@ -67,7 +67,7 @@ def _tunnel(tunnel_id: str, server_id: str, tunnel_type: str = "stcp", **over) -
         "tunnel_type": tunnel_type,
         "protocol": "ssh" if tunnel_type == "stcp" else "web",
         "local_port": 22 if tunnel_type == "stcp" else 443,
-        "secret_key": "stcp-secret-placeholder" if tunnel_type == "stcp" else None,
+        "secret_key": "tunnel-secret-placeholder" if tunnel_type == "stcp" else None,
         "enabled": True,
     }
     fields.update(over)
@@ -161,8 +161,168 @@ def test_server_id_with_a_dot_is_left_out(db_session, caplog):
     assert "'srv.dot'" in caplog.text
 
 
+def test_a_domain_of_several_servers_without_one_group_is_left_out(db_session, caplog):
+    # frps hands a custom domain without a group to whichever proxy registers first.
+    _seed(db_session)
+    db_session.add_all(
+        [
+            _tunnel("t-clash", SERVER_B, "https", custom_domains=" WWW.web.example"),
+            _tunnel(
+                "t-lb-b",
+                SERVER_B,
+                "https",
+                custom_domains="lb.example",
+                extra_config=json.dumps({"loadBalancer.group": "web"}),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="app.modules.frp"):
+        servers = policy.build_policy(db_session)["servers"]
+        policy.build_policy(db_session)
+
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-lb", "t-ssh"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db", "t-lb-b"]
+    assert caplog.text.count("'www.web.example'") == 1
+    assert "lb.example" not in caplog.text
+    assert policy.domain_conflicts(db_session) == {
+        "www.web.example": {(SERVER_A, "t-web"), (SERVER_B, "t-clash")}
+    }
+
+
+def test_a_domain_with_one_group_on_only_some_servers_is_left_out(db_session):
+    _seed(db_session)
+    db_session.add(_tunnel("t-lb-b", SERVER_B, "https", custom_domains="lb.example"))
+    db_session.commit()
+
+    servers = policy.build_policy(db_session)["servers"]
+
+    assert "t-lb" not in servers[SERVER_A]["proxies"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
+
+
+def test_a_server_left_without_proxies_leaves_the_policy(db_session):
+    _seed(db_session)
+    db_session.add(Server(id="srv-c", name="server-c"))
+    db_session.flush()
+    db_session.add(_tunnel("t-c", "srv-c", "https", custom_domains="web.example"))
+    db_session.commit()
+
+    assert sorted(policy.build_policy(db_session)["servers"]) == [SERVER_A, SERVER_B]
+
+
+def test_a_subdomain_counts_as_the_name_frps_builds_from_it(db_session, caplog):
+    # frps routes subdomain + "." + subDomainHost to the proxy (BaseProxy.buildDomains); the
+    # seed's t-lb carries subdomain "lb" in group "web".
+    _seed(db_session)
+    db_session.add_all(
+        [
+            _tunnel("t-sub", SERVER_B, "https", extra_config=json.dumps({"subdomain": "LB"})),
+            _tunnel("t-name", SERVER_B, "https", custom_domains="db.apps.example"),
+            _tunnel("t-sub-a", SERVER_A, "https", extra_config=json.dumps({"subdomain": "db"})),
+        ]
+    )
+    db_session.commit()
+    # Without a subdomain host frps builds no name from a subdomain.
+    assert policy.domain_conflicts(db_session) == {}
+
+    db_session.get(FrpServerConfig, "cfg-1").subdomain_host = " Apps.Example "
+    db_session.commit()
+    with caplog.at_level(logging.WARNING, logger="app.modules.frp"):
+        servers = policy.build_policy(db_session)["servers"]
+
+    assert policy.domain_conflicts(db_session) == {
+        "lb.apps.example": {(SERVER_A, "t-lb"), (SERVER_B, "t-sub")},
+        "db.apps.example": {(SERVER_A, "t-sub-a"), (SERVER_B, "t-name")},
+    }
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-ssh", "t-web"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
+    assert "'lb.apps.example'" in caplog.text and "'db.apps.example'" in caplog.text
+
+
+def test_a_wildcard_conflicts_with_every_name_below_it_even_in_one_group(db_session):
+    # frps routes a name to "*.example" when no exact proxy for it is up (getByRoute).
+    _seed(db_session)
+    db_session.add(
+        _tunnel(
+            "t-wild",
+            SERVER_B,
+            "https",
+            custom_domains="*.example",
+            extra_config=json.dumps({"loadBalancer.group": "web"}),
+        )
+    )
+    db_session.commit()
+
+    conflicts = policy.domain_conflicts(db_session)
+    servers = policy.build_policy(db_session)["servers"]
+
+    assert set(conflicts) == {"*.example", "lb.example", "web.example", "www.web.example"}
+    assert conflicts["*.example"] == {(SERVER_A, "t-lb"), (SERVER_A, "t-web"), (SERVER_B, "t-wild")}
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-ssh"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
+
+
+def test_a_catch_all_conflicts_with_every_name_of_another_server(db_session):
+    _seed(db_session)
+    db_session.add(_tunnel("t-all", SERVER_B, "https", custom_domains="*"))
+    db_session.commit()
+
+    assert policy.domain_conflicts(db_session)["*"] == {
+        (SERVER_A, "t-lb"),
+        (SERVER_A, "t-web"),
+        (SERVER_B, "t-all"),
+    }
+
+
+def test_a_wildcard_does_not_cover_its_own_base_name(db_session):
+    _seed(db_session)
+    db_session.add(_tunnel("t-wild", SERVER_B, "https", custom_domains="*.web.example"))
+    db_session.commit()
+
+    # web.example stays; www.web.example is below the wildcard.
+    assert set(policy.domain_conflicts(db_session)) == {"*.web.example", "www.web.example"}
+
+
+def test_a_wildcard_conflicts_with_a_name_below_it_in_the_same_group(db_session):
+    # A three-label name is one frps does route to "*.web.example" (getByRoute).
+    _seed(db_session)
+    group = json.dumps({"loadBalancer.group": "shop"})
+    db_session.add_all(
+        [
+            _tunnel(
+                "t-www", SERVER_A, "https", custom_domains="www.web.example", extra_config=group
+            ),
+            _tunnel(
+                "t-wild", SERVER_B, "https", custom_domains="*.web.example", extra_config=group
+            ),
+        ]
+    )
+    db_session.commit()
+
+    assert policy.domain_conflicts(db_session)["*.web.example"] == {
+        (SERVER_A, "t-www"),
+        (SERVER_A, "t-web"),
+        (SERVER_B, "t-wild"),
+    }
+
+
+def test_a_subdomain_on_an_stcp_tunnel_is_no_hostname(db_session):
+    # frps builds hostnames for HTTP(S) proxies only (BaseProxy.buildDomains in https.go).
+    _seed(db_session)
+    db_session.get(FrpServerConfig, "cfg-1").subdomain_host = "example"
+    db_session.add(_tunnel("t-stcp", SERVER_B, extra_config=json.dumps({"subdomain": "lb"})))
+    db_session.commit()
+
+    assert policy.domain_conflicts(db_session) == {}
+    servers = policy.build_policy(db_session)["servers"]
+    assert sorted(servers[SERVER_A]["proxies"]) == ["t-lb", "t-ssh", "t-web"]
+    assert sorted(servers[SERVER_B]["proxies"]) == ["t-db", "t-stcp"]
+
+
 def test_without_frp_config_the_policy_admits_nothing(db_session):
-    assert policy.build_policy(db_session) == {"servers": {}, "version": 1}
+    assert policy.build_policy(db_session) == {"servers": {}, "version": 2}
 
 
 def test_policy_file_is_0644_without_any_key(db_session, _policy_dir):
@@ -173,7 +333,7 @@ def test_policy_file_is_0644_without_any_key(db_session, _policy_dir):
     assert text == FIXTURE.read_text()
     assert stat.S_IMODE(os.lstat(_policy_dir).st_mode) == 0o644
     assert proxy_key(SERVER_A) not in text and proxy_key(SERVER_B) not in text
-    assert "stcp-secret-placeholder" not in text and "frps-token-placeholder" not in text
+    assert "tunnel-secret-placeholder" not in text and "frps-token-placeholder" not in text
 
 
 def test_same_policy_is_not_written_again(_policy_dir):
@@ -237,15 +397,53 @@ def test_config_routes_write_the_policy(test_client, db_session, admin_user, _po
 
     r = test_client.put("/api/frp/server-config/cfg-1", json={"name": "Renamed"}, headers=h)
     assert r.status_code == 200, r.text
-    assert _policy_dir.read_text() == FIXTURE.read_text()
+    # The admin of the login has access to every server, so it stands in allowUsers.
+    expected = FIXTURE.read_text().replace('"ops-admin"', '"admin"')
+    assert _policy_dir.read_text() == expected
 
     # Without the route, so the file still holds the tunnels: only the delete's own write
-    # empties it. (A config with tunnels cannot be deleted through the API today, R-1310.)
+    # empties it.
     db_session.query(FrpTunnel).delete()
     db_session.commit()
     r = test_client.delete("/api/frp/server-config/cfg-1", headers=h)
     assert r.status_code == 204, r.text
-    assert _policy(_policy_dir) == {"servers": {}, "version": 1}
+    assert _policy(_policy_dir) == {"servers": {}, "version": 2}
+
+
+def _allow_users(path: Path, server_id: str, tunnel_id: str) -> list[str]:
+    return _policy(path)["servers"][server_id]["proxies"][tunnel_id]["allowUsers"]
+
+
+def test_user_routes_write_the_policy(test_client, db_session, admin_user, _policy_dir):
+    # allowUsers holds the admins and the users assigned to the server (get_allow_users).
+    _seed(db_session)
+    h = _login(test_client)
+    body = {"username": "viewer", "password": "viewerpass1", "server_ids": [SERVER_B]}
+
+    created = test_client.post("/api/users", json=body, headers=h)
+    assert created.status_code == 201, created.text
+    user_id = created.json()["id"]
+    assert _allow_users(_policy_dir, SERVER_A, "t-ssh") == ["admin"]
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin", "viewer"]
+
+    moved = test_client.put(f"/api/users/{user_id}", json={"server_ids": [SERVER_A]}, headers=h)
+    assert moved.status_code == 200, moved.text
+    assert _allow_users(_policy_dir, SERVER_A, "t-ssh") == ["admin", "viewer"]
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin"]
+
+    promoted = test_client.put(
+        f"/api/users/{user_id}", json={"is_admin": True, "server_ids": []}, headers=h
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin", "viewer"]
+
+    deleted = test_client.delete(f"/api/users/{user_id}", headers=h)
+    assert deleted.status_code == 204, deleted.text
+    assert _allow_users(_policy_dir, SERVER_A, "t-ssh") == ["admin"]
+    assert _allow_users(_policy_dir, SERVER_B, "t-db") == ["admin"]
+    # An https proxy has no allowed users and no secret key.
+    web = _policy(_policy_dir)["servers"][SERVER_A]["proxies"]["t-web"]
+    assert (web["allowUsers"], web["skHash"]) == ([], "")
 
 
 def test_server_delete_writes_the_policy(
