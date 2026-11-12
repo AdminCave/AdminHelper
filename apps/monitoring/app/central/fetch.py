@@ -42,6 +42,8 @@ class HttpAnswer:
     retry_after: str | None
     body: bytes
     content_type: str = ""
+    # The Location of a redirect, which get never follows; a caller that does asks get anew.
+    location: str = ""
 
 
 class FetchError(Exception):
@@ -207,6 +209,7 @@ def _read(
         response.headers.get("retry-after"),
         bytes(body),
         response.headers.get("content-type", ""),
+        response.headers.get("location", ""),
     )
 
 

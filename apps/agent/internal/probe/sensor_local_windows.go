@@ -24,6 +24,9 @@ import (
 // unitPattern is the name of a Windows service, the unit of this platform.
 var unitPattern = regexp.MustCompile(`^[A-Za-z0-9._$@-]{1,255}$`)
 
+// errNoService: the service a name asks for does not exist on this host.
+var errNoService = errors.New("does not exist on this host")
+
 // queryService reads the status of the Windows service name; tests stand in their own.
 var queryService = func(name string) (svc.Status, error) {
 	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
@@ -37,7 +40,7 @@ var queryService = func(name string) (svc.Status, error) {
 	}
 	h, err := windows.OpenService(m, n, windows.SERVICE_QUERY_STATUS)
 	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
-		return svc.Status{}, fmt.Errorf("service %s does not exist on this host", name)
+		return svc.Status{}, fmt.Errorf("service %s %w", name, errNoService)
 	}
 	if err != nil {
 		return svc.Status{}, fmt.Errorf("service %s cannot be opened: %v", name, err)

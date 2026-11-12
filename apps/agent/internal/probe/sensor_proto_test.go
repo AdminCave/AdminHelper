@@ -40,10 +40,10 @@ type fakeConn struct {
 	r    *bufio.Reader
 }
 
-// fakeServer serves on 127.0.0.1 and lets the guard's seams see an empty host.
+// fakeServer serves on 127.0.0.1 and lets the guard's seams see the test's own listeners alone.
 func fakeServer(t *testing.T, serve func(*fakeConn)) *fake {
 	t.Helper()
-	stubHost(t, &fakeHost{})
+	stubHost(t, &fakeHost{live: true})
 	return listen(t, serve)
 }
 
