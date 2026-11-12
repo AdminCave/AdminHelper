@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Nacharbeit: Log-Hinweis, Swap-Fehlertext, Rotationsprüfung — Task-Ledger
-Status: bereit · Branch: feature/kern-freebsd-2 · Review: am Ende
+Status: aktiv · Branch: feature/kern-freebsd-2 · Review: am Ende
 Spec: docs/features/kern-freebsd-2.md (Roadmap R-1327, R-1330, R-1331)
 Heavy: none — Agent nur Konstante und Test, Rest Doku und Box-Skript; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (prüft T2)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,5 +34,18 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/agent-deployment.html · docs/en/admin/agent-deployment.html · changelog.d/kern-freebsd-2.md
 Task-Review: am Ende
+
+### T4 — R-1330: gopsutil-Quelltest ruft go über PATH  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/collector_test.go
+Beweis: FreeBSD-Box-Lauf 2026-11-12 auf 0bfd23d81: `TestFreeBSDNoSwapMatchesGopsutil` rot mit `fork/exec <GOROOT des Build-Hosts>/bin/go: no such file or directory`; Branch-Review-Nit (`runtime.GOROOT()` deprecated).
+Änderung: `TestFreeBSDNoSwapMatchesGopsutil` (`collector_test.go:342`) ruft `exec.Command("go", …)` wie `crossbuild_test.go:17` (go test legt sein go vorn auf PATH), Import `runtime` entfällt.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
+Doku: keine (Test)
+
+### T5 — R-1331: FreeBSD-Box lässt den gopsutil-Quelltest aus  [ ]
+Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh
+Änderung: `skip_for internal/monitor` (`box_freebsdbox.sh:50`) lässt neben `ROOT_TESTS` auch `TestFreeBSDNoSwapMatchesGopsutil` aus: er braucht go und den Modul-Cache, die die Box nicht hat; die PR-CI und die Dev-Box fahren ihn. Beweis ist ein neuer FreeBSD-Box-Lauf.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Testskript)
 
 ## Entscheidungen
