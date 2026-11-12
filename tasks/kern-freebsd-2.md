@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Nacharbeit: Log-Hinweis, Swap-Fehlertext, Rotationsprüfung — Task-Ledger
-Status: bereit · Branch: feature/kern-freebsd-2 · Review: am Ende
+Status: erledigt · Branch: feature/kern-freebsd-2 · Review: am Ende
 Spec: docs/features/kern-freebsd-2.md (Roadmap R-1327, R-1330, R-1331)
 Heavy: none — Agent nur Konstante und Test, Rest Doku und Box-Skript; dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (prüft T2)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
