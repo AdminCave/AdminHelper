@@ -175,7 +175,7 @@ Doku: docs/admin/monitoring.html · docs/en/admin/monitoring.html · docs/develo
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13
 
-### T15 — R-1242: Spezial-Collector für Moodle checks.php und Verwandte  [?] (Spezial-Collector (Moodle checks.php als Webserver-Benutzer, BBB getMeetings/*.fail/bbb-conf --check, OpenLDAP contextCSN, WordPress Version/Cron) in diesem Zug oder als eigene Arch-Zeile danach? Empfehlung: eigene Zeile, weil exec als Anwendungs-Benutzer eine andere Risikoklasse ist und den Zug über 15 Tasks höbe)
+### T15 — R-1242: Spezial-Collector für Moodle checks.php und Verwandte  [~] (ausgelagert in R-1404: Spezial-Collector (exec als Anwendungs-Benutzer) ist eine andere Risikoklasse, Frage an Kevin dort)
 Komponente: agent · Dateien: (nach der Entscheidung)
 Änderung: nach Kevins Antwort: entweder `[~] ausgelagert in R-nnnn` oder eigener Plan-Nachtrag mit Agent-Collector,
 Allowlist und Sicherheitsprüfung.
