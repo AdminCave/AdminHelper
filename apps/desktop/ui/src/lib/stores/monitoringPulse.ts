@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The desktop's dead man's switch for monitoring (concept decision 9c, no outside ping):
-// while a session exists it asks the server's summary once a minute, on every page,
+// while an admin session exists it asks the server's summary once a minute, on every page,
 // and says how long monitoring has produced no result once that exceeds the limit.
 
 import { readable, type Readable } from 'svelte/store';
@@ -47,7 +47,7 @@ const FRESH: PulseSeen = { summary: null, noResultSince: null, failingSince: nul
 
 /**
  * Minutes monitoring has been without a result, or null. The asking runs while anyone
- * subscribes (the status footer, for the whole app) and a session exists; signing out
+ * subscribes (the status footer, for the whole app) and an admin session exists; signing out
  * stops it and forgets what it saw.
  */
 export const monitoringSilentMinutes: Readable<number | null> = readable<number | null>(
@@ -93,11 +93,13 @@ export const monitoringSilentMinutes: Readable<number | null> = readable<number 
       set(null);
     }
 
-    // The session store also fires on settings changes: only signing in or out counts.
+    // The session store also fires on settings changes: only signing in or out counts. The
+    // monitoring proxy answers non-admins 403, so only an admin session asks at all.
     let active = false;
     const unsubscribe = session.subscribe((auth) => {
-      if (!!auth === active) return;
-      active = !!auth;
+      const admin = auth?.isAdmin === true;
+      if (admin === active) return;
+      active = admin;
       stop();
       if (!active) return;
       const g = gen;

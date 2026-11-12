@@ -107,7 +107,7 @@ describe('monitoringSilentMinutes', () => {
   });
 
   async function signIn(): Promise<void> {
-    session.set({ serverUrl: 'https://hub.example' });
+    session.set({ serverUrl: 'https://hub.example', isAdmin: true });
     await vi.advanceTimersByTimeAsync(0);
   }
 
@@ -122,6 +122,20 @@ describe('monitoringSilentMinutes', () => {
     await vi.advanceTimersByTimeAsync(3 * PULSE_INTERVAL_MS);
     expect(h.fetch).toHaveBeenCalledTimes(4);
     expect(latest).toBeNull();
+  });
+
+  it('never asks for a non-admin session, and follows a change of role', async () => {
+    h.fetch.mockImplementation(() => Promise.resolve(summary()));
+    session.set({ serverUrl: 'https://hub.example', isAdmin: false });
+    await vi.advanceTimersByTimeAsync(3 * PULSE_INTERVAL_MS);
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(latest).toBeNull();
+    session.set({ serverUrl: 'https://hub.example', isAdmin: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    session.set({ serverUrl: 'https://hub.example', isAdmin: false });
+    await vi.advanceTimersByTimeAsync(3 * PULSE_INTERVAL_MS);
+    expect(h.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('warns once the newest result is older than the limit', async () => {
