@@ -9,9 +9,10 @@ frpc.toml of the server's generators.
 
 A host's own stcp and https proxy, as the generator writes them, come up. Refused are a proxy
 without a key or with a wrong one, the tunnel of another host under the own user, the user of
-another host with the own key, a domain the tunnel does not have, a tcp proxy with a remotePort
-and a group the tunnel does not have; without the policy file no proxy comes up. Each refusal
-is the plugin's, for its reason.
+another host with the own key, a domain the tunnel does not have, a tcp proxy with a remotePort,
+a group the tunnel does not have, other allowed users and another secret key; without the policy
+file no proxy comes up. Each refusal is the plugin's, for its reason. frps' dashboard shows an
+admitted proxy without the host's key.
 
 frpc runs in the network namespace of the frps container, which has no other network, and
 reaches frps on 127.0.0.1. The tests skip when Docker, a pinned base image of frps or the frpc
@@ -66,6 +67,9 @@ CONFIG = {
     "bind_port": 7000,
     "auth_token": TOKEN,
     "vhost_https_port": 8443,
+    "dashboard_port": 7500,
+    "dashboard_user": "dashboard-user",
+    "dashboard_password": "dashboard-password-placeholder",
 }
 # The reason the plugin gives for a proxy it admits: none.
 ADMITTED = ""
@@ -302,6 +306,18 @@ def _group(toml):
     return _edit(toml, DOMAINS, DOMAINS + 'loadBalancer.group = "web"\n')
 
 
+def _other_allowed_users(toml):
+    return _edit(toml, ALLOW, 'allowUsers = ["ops-admin", "someone-else"]\n')
+
+
+def _all_users(toml):
+    return _edit(toml, ALLOW, 'allowUsers = ["*"]\n')
+
+
+def _other_secret_key(toml):
+    return _edit(toml, SECRET, 'secretKey = "another-secret-placeholder"\n')
+
+
 REFUSED = {
     "no key": (_no_key, {"t-ssh": "no key", "t-web": "no key"}),
     "wrong key": (_wrong_key, {"t-ssh": "wrong key", "t-web": "wrong key"}),
@@ -316,6 +332,12 @@ REFUSED = {
     ),
     "tcp with remotePort": (_tcp_with_remote_port, {"t-ssh": "other type", "t-web": ADMITTED}),
     "group": (_group, {"t-ssh": ADMITTED, "t-web": "other group"}),
+    "other allowed users": (
+        _other_allowed_users,
+        {"t-ssh": "other allowed users", "t-web": ADMITTED},
+    ),
+    "all users": (_all_users, {"t-ssh": "other allowed users", "t-web": ADMITTED}),
+    "other secret key": (_other_secret_key, {"t-ssh": "other secret key", "t-web": ADMITTED}),
 }
 
 
@@ -329,3 +351,24 @@ def test_without_the_policy_file_no_proxy_comes_up(docker, frps, tmp_path, pki, 
     (frps.frp / docker_manager.POLICY_FILE).unlink()
     decisions = _register(docker, frps, tmp_path, pki, frpc_toml)
     assert decisions == {"t-ssh": "no policy", "t-web": "no policy"}
+
+
+def test_the_dashboard_shows_an_admitted_proxy_without_the_host_key(
+    docker, frps, tmp_path, pki, frpc_toml
+):
+    # The plugin hands frps the proxy back without the key (R-1306); frps keeps what it gets.
+    with _frpc(docker, frps, tmp_path, pki, frpc_toml) as frpc:
+        deadline = time.monotonic() + WAIT * 3
+        while not all(_STARTED.format(name) in frpc.logs() for name in ("t-ssh", "t-web")):
+            assert time.monotonic() < deadline, frpc.logs()
+            time.sleep(0.2)
+        credentials = f"{CONFIG['dashboard_user']}:{CONFIG['dashboard_password']}"
+        answers = {}
+        for proxy_type in ("stcp", "https"):
+            url = f"http://127.0.0.1:{CONFIG['dashboard_port']}/api/proxy/{proxy_type}"
+            result = frps.exec("curl", "-q", "--silent", "--fail", "-u", credentials, url)
+            assert result.returncode == 0, result.stderr
+            answers[proxy_type] = result.stdout
+    assert f"{SERVER_A}.t-ssh" in answers["stcp"] and f"{SERVER_A}.t-web" in answers["https"]
+    for answer in answers.values():
+        assert proxy_key(SERVER_A) not in answer and PROXY_KEY_META not in answer
