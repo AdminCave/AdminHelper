@@ -103,7 +103,8 @@ gedeckter Fund `neu` für Kevins Triage. Die Nit-Regel am Ende gilt sofort. Gede
 - Klasse BUG oder REF, mit Beweis (`datei:zeile`, Befehl oder Lauf);
 - Bereich der Klein-Session nach dem Zug-Schlüssel aus 2a (Doku-Drift, Kommentare, Test-Lücken, kleine REF ohne
   Verhaltensänderung, kleine UI-Fehler);
-- kein SEC, kein Fund des `security`-Agenten, keine Datei aus `scripts/dev/review-risk.txt`;
+- kein SEC, kein Fund des `security`-Agenten, keine Datei aus `scripts/dev/review-risk.txt`, keine unklare
+  Sicherheitswirkung (etwa ein 500 mit Stacktrace; wie bei `fund` in `/feature-build` §5);
 - kein Harness-Pfad: `CLAUDE.md`, `.claude/`, `scripts/`, `tasks/README.md`, `.github/workflows/`;
 - keine Verhaltens-, API- oder Migrationsänderung, keine Frage aus Kevins Bereich (CLAUDE.md §2).
 

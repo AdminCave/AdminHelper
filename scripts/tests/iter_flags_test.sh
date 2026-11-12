@@ -115,6 +115,23 @@ dry all --strict --part ''
 dry all --strict --part
 [ $rc -eq 2 ] && grep -q -- "--part needs gui or rest" <<<"$OUT" \
   && ok "--part without a value is rejected before a box is warmed" || bad "bare --part: rc=$rc out=$OUT"
+# heavy.sh leaves server-pytest out of part rest (R-1338): --exclude has to reach
+# run.sh with every id, and one without an id must not warm a box to fail there.
+dry all --strict --part rest --exclude server-pytest
+[ $rc -eq 0 ] && grep -q 'run.sh all --strict --part rest --exclude server-pytest$' <<<"$OUT" \
+  && ok "--exclude reaches the box with its id" || bad "--exclude lost: rc=$rc out=$OUT"
+dry unit --exclude server-pytest schemathesis --strict
+[ $rc -eq 0 ] && grep -q 'run.sh unit --exclude server-pytest schemathesis --strict$' <<<"$OUT" \
+  && ok "--exclude keeps its list of ids" || bad "exclude list: rc=$rc out=$OUT"
+dry all --strict --exclude
+[ $rc -eq 2 ] && grep -q -- "--exclude needs at least one step id" <<<"$OUT" \
+  && ok "--exclude without an id is rejected before a box is warmed" || bad "bare --exclude: rc=$rc out=$OUT"
+dry all --exclude --strict
+[ $rc -eq 2 ] && grep -q -- "--exclude needs at least one step id" <<<"$OUT" \
+  && ok "--exclude followed by a flag is rejected too" || bad "--exclude --strict: rc=$rc out=$OUT"
+dry quick --bogus
+[ $rc -eq 2 ] && grep -qF -- ', --exclude)' <<<"$OUT" \
+  && ok "the refusal of an unknown flag names --exclude" || bad "unknown flag message: rc=$rc out=$OUT"
 # The vm.py stub answers any call with exit 99 and a line of its own, so these
 # would show a lease that a wrong slot must never start.
 dry --slot nope lint
