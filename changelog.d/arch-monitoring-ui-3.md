@@ -9,8 +9,9 @@
   24 h. Der Report traegt die neuen Felder im Inventar und `systemd.failed_details`; aeltere Monitoring-Dienste
   ignorieren sie.
 - **Monitoring: Grund eines Ausfalls in der Meldung:** ein fehlgeschlagener Dienst nennt in Meldung, Mail und
-  Webhook seinen Grund, etwa `Failed: nginx.service (exit-code, status=1)`; der Text bleibt waehrend desselben
-  Ausfalls gleich.
+  Webhook seinen Grund, etwa `Failed: nginx.service (exit-code, status=1)`; im Modus `list` steht er hinter jedem
+  Dienst, der nicht laeuft, unter Windows der Fehlercode aus `sc query` (`Spooler (win32=1067)`). Der Text bleibt
+  waehrend desselben Ausfalls gleich.
 - **Monitoring: Fehlerzeilen fehlgeschlagener Dienste:** der Dienst speichert bis zu 10 Fehlerzeilen je
   fehlgeschlagenem Dienst, vor dem Speichern geschwaerzt (Passwoerter in URLs, `password=`/`token=`/`secret=`/`key=`,
   `Authorization`, lange Hex- und Base64-Folgen), nur solange der Dienst fehlschlaegt und nur fuer Admins im

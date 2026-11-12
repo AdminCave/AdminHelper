@@ -888,17 +888,20 @@ class ServiceProcessChecker:
         return "ok", "All services OK", metrics
 
     @staticmethod
-    def _inventory_state(entry: dict, inventory: dict, error) -> str | None:
+    def _resolve_alias(entry: dict, inventory: dict) -> dict | None:
+        """The all_services entry that holds a name's facts: its own, or for an alias its
+        target's. list-units knows a unit by its own name only, so an alias has the state of
+        its target, and without alias_of (the agent could not resolve it) none at all."""
+        if entry.get("enabled_state") != "alias":
+            return entry
+        target = entry.get("alias_of")
+        if not isinstance(target, str):
+            return None
+        return inventory.get(ServiceProcessChecker._unit_name(target))
+
+    @staticmethod
+    def _inventory_state(entry: dict, error) -> str | None:
         """running or down from an all_services entry, None if the entry says nothing."""
-        if entry.get("enabled_state") == "alias":
-            # list-units knows a unit by its own name only: an alias has the state of its
-            # target, and without alias_of (the agent could not resolve it) none at all.
-            target = entry.get("alias_of")
-            if not isinstance(target, str):
-                return None
-            entry = inventory.get(ServiceProcessChecker._unit_name(target))
-            if entry is None:
-                return None
         active = entry.get("active_state")
         if active == "active":
             return "running"
@@ -907,6 +910,19 @@ class ServiceProcessChecker:
         if active == "unknown" and error:
             return None
         return "down"
+
+    @staticmethod
+    def _inventory_reason(entry: dict) -> str | None:
+        """The reason a down service names in list mode, from its inventory facts: result and
+        exit, each on one line and cut, as _reasons does. None for result success, a service
+        stopped on purpose. Windows sends result only after a crash event (crashed) and exit
+        only for a stop with an error code; both are in the inventory hash, so a throttled push
+        carries the last reason over."""
+        result = cap_agent_text(entry.get("result"))
+        if result == "success":
+            return None
+        parts = [result, cap_agent_text(entry.get("exit"))]
+        return ", ".join(p for p in parts if p) or None
 
     def _evaluate_list(
         self, config: dict, report: dict, prev_details: dict | None
@@ -922,6 +938,10 @@ class ServiceProcessChecker:
         gaps are not filled from prev_details. A name no source knows is nodata (a typo, no
         such unit, added since the last full inventory) and not down (Kevin 2026-10-16); only
         without data for any name is the check unknown.
+
+        A down name carries the reason of the same source (_inventory_reason, on a throttled
+        push the stored one) in its watched entry and behind its name in the message, so the
+        Windows exit code reaches the message too, without a new alarm (spec, Nicht-Ziele).
         """
         expected = config.get("services", [])
         if not expected:
@@ -934,6 +954,7 @@ class ServiceProcessChecker:
 
         # Lowest precedence first, so each later source overwrites what it knows.
         states: dict[str, str] = {}
+        reasons: dict[str, str] = {}
         if "all_services" in systemd:
             inventory = {
                 self._unit_name(s["unit"]): s
@@ -941,9 +962,13 @@ class ServiceProcessChecker:
                 if isinstance(s, dict) and isinstance(s.get("unit"), str)
             }
             for unit, entry in inventory.items():
-                state = self._inventory_state(entry, inventory, error)
+                target = self._resolve_alias(entry, inventory)
+                state = self._inventory_state(target, error) if target is not None else None
                 if state:
                     states[unit] = state
+                    reason = self._inventory_reason(target) if state == "down" else None
+                    if reason:
+                        reasons[unit] = reason
         else:
             for w in self._capped((prev_details or {}).get("watched")):
                 # Old details (running alone, no state) were written while a missing watch
@@ -954,6 +979,9 @@ class ServiceProcessChecker:
                     and w.get("state") in ("running", "down")
                 ):
                     states[self._unit_name(w["name"])] = w["state"]
+                    reason = cap_agent_text(w.get("reason"))
+                    if reason:
+                        reasons[self._unit_name(w["name"])] = reason
         for s in self._capped(report.get("services")):
             if isinstance(s, dict) and isinstance(s.get("name"), str):
                 states[self._unit_name(s["name"])] = "running" if s.get("running") else "down"
@@ -962,8 +990,16 @@ class ServiceProcessChecker:
         for name in expected:
             state = states.get(self._unit_name(name), "nodata")
             # running beside state: desktops before state read running alone (Kevin 2026-10-16).
-            watched.append({"name": name, "state": state, "running": state == "running"})
-        down = [w["name"] for w in watched if w["state"] == "down"]
+            entry = {"name": name, "state": state, "running": state == "running"}
+            reason = reasons.get(self._unit_name(name))
+            if state == "down" and reason:
+                entry["reason"] = reason
+            watched.append(entry)
+        down = [
+            f"{w['name']} ({w['reason']})" if "reason" in w else w["name"]
+            for w in watched
+            if w["state"] == "down"
+        ]
         up = [w["name"] for w in watched if w["state"] == "running"]
         nodata = [w["name"] for w in watched if w["state"] == "nodata"]
 
