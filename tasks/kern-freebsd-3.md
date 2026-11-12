@@ -22,7 +22,7 @@ Umleitung im Paketfilter, die der Wächter abweist.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T3
 
-### T2 — Box-Lauf: root-Tests von internal/probe in Phase roottests  [?] (Harness-Pfad scripts/tests/box_freebsdbox.sh: root-Tests von internal/probe aufnehmen? Empfehlung ja)
+### T2 — Box-Lauf: root-Tests von internal/probe in Phase roottests  [~] (verschoben in eigene Zeile (Harness-Pfad wartet auf Kevins Wort); root-Tests von Hand auf der Box gefahren, .ah-out/fb3b.log)
 Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh
 Änderung: `ROOT_TESTS`/`roottests` nehmen die root-Tests aus T1 auf (mit `AH_FREEBSD_PF=1`), der Box-Benutzer lässt
 sie aus; Harness-Pfad nur auf Kevins Wort.
