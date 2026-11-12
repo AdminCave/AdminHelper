@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 Abhängt von: T1
 
-### T4 — R-1370: Weiterleitung über den Windows-Dienst iphlpsvc abweisen  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_windows.go, apps/agent/internal/probe/guard_other.go, apps/agent/internal/probe/guard_windows_test.go, apps/agent/internal/probe/guard_test.go
+### T4 — R-1370: Weiterleitung über den Windows-Dienst iphlpsvc abweisen  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_windows.go, apps/agent/internal/probe/guard_other.go, apps/agent/internal/probe/guard_windows_test.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local_windows.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1ef015051 2026-11-12T18:39:30+01:00
+Review: approve (.ah-out/review/kern-monitoring-24/T4.verdict.json)
 Änderung: Unter Windows lehnt `checkListener` einen Port ab, dessen Listener-PID die PID des Dienstes `iphlpsvc`
 ist (Dienst-PID über den Service Control Manager, gecacht mit `listenerTTL`). Neue Dateien mit SPDX-Header. Der
 Windows-Test legt im CI-Job agent-windows (Admin) eine Portweiterleitung mit netsh an, belegt sie und prüft die
@@ -96,3 +98,7 @@ Task-Review: am Ende
   Netz-Namespace. Eine erkannte Umleitung merkt sich der Guard je (ip, port) eine Stunde (`redirectTTL`) und weist
   den Port dann vor dem connect ab, damit der Dienst dahinter keine Verbindungen je Probe-Intervall zählt; ein
   `sock_diag`-Fehler wird nicht gemerkt, er kann vorübergehend sein.
+- 2026-11-12 (T4): Der Seam heißt `serviceForwarder`; `queryService` meldet einen fehlenden Dienst als `errNoService`
+  (kein Prozess), jeder andere Fehler des Dienst-Managers weist ab. Die Windows-Tests (Seam, TTL, echte
+  netsh-portproxy) laufen nur im CI-Job agent-windows; lokal belegt sind Cross-vet und der plattformunabhängige
+  Seam-Test.

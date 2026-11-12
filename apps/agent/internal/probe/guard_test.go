@@ -37,13 +37,22 @@ type fakeHost struct {
 	// peer answers which socket took a connection; nil says the one bound to its server end.
 	peer      func(server, client netip.AddrPort) (peerState, error)
 	peerCalls int
+	// services names the forwarding service of a process; servicesErr fails reading it.
+	services    map[int32]string
+	servicesErr error
 }
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
 	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
-	oldPeer := peerSocket
+	oldPeer, oldService := peerSocket, serviceForwarder
+	serviceForwarder = func(_ context.Context, pid int32) (string, error) {
+		if h.live && h.services == nil && h.servicesErr == nil {
+			return oldService(context.Background(), pid)
+		}
+		return h.services[pid], h.servicesErr
+	}
 	peerSocket = func(server, client netip.AddrPort) (peerState, error) {
 		h.peerCalls++
 		if h.peer == nil {
@@ -98,7 +107,7 @@ func stubHost(t *testing.T, h *fakeHost) {
 	resetSnapshot()
 	t.Cleanup(func() {
 		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
-		peerSocket = oldPeer
+		peerSocket, serviceForwarder = oldPeer, oldService
 		resetSnapshot()
 	})
 }
@@ -1078,5 +1087,29 @@ func TestGuardLeavesTheTakerOfContainersAndUnsupportedHostsAlone(t *testing.T) {
 		t.Errorf("a host without sock_diag: %v, want it connected", err)
 	} else {
 		_ = conn.Close()
+	}
+}
+
+// TestGuardNeverProbesAPortAForwardingServiceListensOn: Windows forwards ports with netsh portproxy
+// through the process of the service iphlpsvc, a svchost no name tells apart (R-1370).
+func TestGuardNeverProbesAPortAForwardingServiceListensOn(t *testing.T) {
+	h := &fakeHost{
+		list:     []listener{lst("127.0.0.1", 8080, 90), lst("127.0.0.1", 8081, 91)},
+		names:    map[int32]string{90: "svchost.exe", 91: "svchost.exe"},
+		services: map[int32]string{90: "iphlpsvc"},
+	}
+	stubHost(t, h)
+	g := NewGuard()
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); !errors.Is(err, ErrNotAllowed) ||
+		!strings.Contains(err.Error(), "port 8080 belongs to the service iphlpsvc, which forwards") {
+		t.Errorf("a portproxy port: %v, want it refused", err)
+	}
+	if err := allowed(g, "tcp4", "127.0.0.1:8081"); err != nil {
+		t.Errorf("another svchost: %v, want it allowed", err)
+	}
+
+	h.servicesErr = errors.New("access is denied")
+	if err := allowed(g, "tcp4", "127.0.0.1:8081"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("an unreadable service manager: %v, want it refused", err)
 	}
 }

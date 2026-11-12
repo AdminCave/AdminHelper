@@ -223,9 +223,12 @@ var (
 	processName    = nameOf
 	processArgs    = argsOf
 	peerSocket     = osPeerSocket
-	publishedPorts = dockerPublications
-	dockerServes   = dockerSocketServes
-	dockerdRunning = dockerdRuns
+	// serviceForwarder names the service of the process pid if that service forwards the ports it
+	// listens on (Windows portproxy), else "".
+	serviceForwarder = osServiceForwarder
+	publishedPorts   = dockerPublications
+	dockerServes     = dockerSocketServes
+	dockerdRunning   = dockerdRuns
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -474,6 +477,11 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		}
 		if err := checkForwarder(ctx, l.pid, name, fmt.Sprintf("port %d", port)); err != nil {
 			return err
+		}
+		if service, err := serviceForwarder(ctx, l.pid); err != nil {
+			return fmt.Errorf("%w: the service of the process listening on port %d cannot be read: %v", ErrNotAllowed, port, err)
+		} else if service != "" {
+			return fmt.Errorf("%w: port %d belongs to the service %s, which forwards to an end the agent cannot check", ErrNotAllowed, port, service)
 		}
 		switch processKey(name) {
 		case "systemd":
