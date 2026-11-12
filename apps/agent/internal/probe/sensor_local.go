@@ -355,7 +355,8 @@ func goneSince(ctx context.Context, ids []string, list []containerInfo) error {
 }
 
 // dockerSocketServes says whether a docker daemon may serve this host: false only when its socket
-// does not exist or nobody accepts on it.
+// does not exist or nobody accepts on it, and no dockerd runs (a daemon on another socket, rootless
+// or by its own -H, publishes ports as much).
 func dockerSocketServes(ctx context.Context) bool {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", dockerSocket)
@@ -363,7 +364,25 @@ func dockerSocketServes(ctx context.Context) bool {
 		_ = conn.Close()
 		return true
 	}
-	return !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ECONNREFUSED)
+	if !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	return dockerdRunning(ctx)
+}
+
+// dockerdRuns says whether a process dockerd runs on this host; a process list that cannot be read
+// counts as one running.
+func dockerdRuns(ctx context.Context) bool {
+	all, err := process.ProcessesWithContext(ctx)
+	if err != nil {
+		return true
+	}
+	for _, p := range all {
+		if n, err := p.NameWithContext(ctx); err == nil && processKey(n) == "dockerd" {
+			return true
+		}
+	}
+	return false
 }
 
 // certfileSensor reads the first certificate of a PEM file: when it expires, who issued it, whom it

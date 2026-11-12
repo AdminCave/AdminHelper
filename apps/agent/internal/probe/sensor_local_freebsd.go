@@ -80,10 +80,18 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 	return conn, nil
 }
 
-// checkPeer refuses the socket path unless the process serving it may be probed: not a process the
-// guard refuses on TCP and not inetd, which holds the sockets of the services it starts on their
-// behalf (LOCAL_PEERCRED names the process that called listen).
+// checkPeer refuses the socket path unless the socket it reached lies outside controlSockets
+// (checkPeerName) and the process serving it may be probed: not a process the guard refuses on TCP
+// and not inetd, which holds the sockets of the services it starts on their behalf (LOCAL_PEERCRED
+// names the process that called listen).
 func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
+	bound, err := peerName(conn)
+	if err != nil {
+		return fmt.Errorf("%w: the socket %s reached cannot be read: %v", ErrNotAllowed, path, err)
+	}
+	if err := checkPeerName(bound, path); err != nil {
+		return err
+	}
 	pid, err := peerPID(conn)
 	if err != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read: %v", ErrNotAllowed, path, err)
@@ -125,4 +133,26 @@ func peerPID(conn *net.UnixConn) (int32, error) {
 		return 0, fmt.Errorf("xucred names pid %d", pid)
 	}
 	return pid, nil
+}
+
+// peerName returns the address the server of conn bound, from getpeername: conn.RemoteAddr falls
+// back to the dialed address when the call names nothing.
+func peerName(conn *net.UnixConn) (string, error) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return "", err
+	}
+	var peer unix.Sockaddr
+	var peerErr error
+	if err := raw.Control(func(fd uintptr) { peer, peerErr = unix.Getpeername(int(fd)) }); err != nil {
+		peerErr = err
+	}
+	if peerErr != nil {
+		return "", peerErr
+	}
+	sa, ok := peer.(*unix.SockaddrUnix)
+	if !ok {
+		return "", fmt.Errorf("the peer is no unix socket (%T)", peer)
+	}
+	return sa.Name, nil
 }

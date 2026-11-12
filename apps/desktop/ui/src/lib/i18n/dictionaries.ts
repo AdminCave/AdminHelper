@@ -756,8 +756,7 @@ export const translations: Translations = {
     'monitoring.probe.error': 'Fühler meldet einen Fehler',
     'monitoring.probe.denied': 'Zugriff verweigert, der Agent wartet auf neue Zugangsdaten',
     'monitoring.probe.noCredential': 'Zugangsdaten fehlen',
-    'monitoring.probe.notAllowed':
-      'Ziel ist keine Adresse dieses Hosts, der Agent fragt es nicht ab',
+    'monitoring.probe.notAllowed': 'Der Agent hat das Ziel abgewiesen',
     'monitoring.probe.unsupported': 'Fühler auf diesem Host nicht unterstützt',
     'monitoring.probe.ambiguousTarget': 'Ziel nicht eindeutig: mehrere Ports, keiner passt',
     'monitoring.probe.invalid': 'Der Agent hat die Fühler-Einstellungen abgelehnt',
@@ -2232,7 +2231,7 @@ export const translations: Translations = {
     'monitoring.probe.error': 'Sensor reports an error',
     'monitoring.probe.denied': 'Access denied, the agent waits for new credentials',
     'monitoring.probe.noCredential': 'Credentials missing',
-    'monitoring.probe.notAllowed': 'Target is no address of this host, the agent does not query it',
+    'monitoring.probe.notAllowed': 'The agent refused the target',
     'monitoring.probe.unsupported': 'Sensor not supported on this host',
     'monitoring.probe.ambiguousTarget': 'Target is ambiguous: several ports, none matches',
     'monitoring.probe.invalid': 'The agent rejected the sensor settings',

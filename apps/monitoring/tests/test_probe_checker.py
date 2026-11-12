@@ -106,7 +106,7 @@ def test_ok_without_values_says_so():
             "Access denied (401/403); the agent waits until the credential changes",
         ),
         ("no_credential", "warning", "No credential stored on the host for this check"),
-        ("not_allowed", "unknown", "Target is no address of this host; the agent refused it"),
+        ("not_allowed", "unknown", "The agent refused the target"),
         ("unsupported", "unknown", "Sensor not supported on this host"),
         (
             "ambiguous_target",
@@ -126,6 +126,15 @@ def test_a_probe_the_agent_did_not_run_says_why(status, level, text):
 
     result["error"] = "port 8000\nforged line"
     assert _rate(result)[1] == f"{text}: port 8000 forged line"
+
+
+def test_a_refusal_for_another_reason_names_no_foreign_address():
+    # not_allowed covers every refusal of the guard (deny list, bound credential, foreign
+    # address); the text must not claim one reason, the agent's error carries it.
+    result = {"ts": T0, "status": "not_allowed", "error": "port 22 is never probed"}
+    msg = _rate(result)[1]
+    assert msg == "The agent refused the target: port 22 is never probed"
+    assert "no address" not in msg
 
 
 def test_not_run_keeps_the_values_of_the_last_measured_run():
