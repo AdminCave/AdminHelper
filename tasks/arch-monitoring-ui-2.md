@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-2 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-ui-2 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-ui-2 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-2.md (Roadmap R-1227)
 Heavy: linux-full — `apps/agent` (neue Allowlist-Aufrufe, Bericht) und Desktop-Ansichten; dazu vor dem Merge die Live-Spec aus T11 auf der warmen Desktop-VM (Screenshots für Kevin, Spec „Screenshots“)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -111,8 +111,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: → T12
 Abhängt von: T9, T10
 
-### T12 — Doku: Details der Checks DE+EN, Allowlist, CHANGELOG (R-1227)  [ ]
+### T12 — Doku: Details der Checks DE+EN, Allowlist, CHANGELOG (R-1227)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-monitoring-ui-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @77fd92050 2026-11-12T15:08:25+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Admin: welche Details je Check erscheinen, wann (Top-5 nur bei hoher Last, OOM nur nach einem Kill, ZFS-Details ab OpenZFS 2.3), Satz zur Feld-Freigabe (nur Namen, nie Ausgaben oder Kommandozeilen; nur im Desktop). Entwickler: die neuen `details`-Felder je Check-Typ, die neuen Allowlist-Aufrufe. CHANGELOG-Fragment nach `changelog.d/README.md`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
