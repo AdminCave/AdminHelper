@@ -122,6 +122,20 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_
 Doku: → T14
 Abhängt von: T12
 
+### T15 — Fühler `tls`: Klartext-Mail-Ports ablehnen (R-1367)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_config.py
+Änderung: `CentralConfig` mit Fühler `tls` lehnt die Ports 25, 587, 143 und 110 ab und verweist auf `smtp`/`imap`: dort spricht der Server zuerst und erwartet STARTTLS, ein ClientHello vor dem Greeting ist für postscreen ein Pregreet. Erst der rote Test (heute wird Port 25 angenommen), dann die Regel in `_fits_sensor`.
+Beweis: feature/arch-monitoring-module-2@HEAD · `CentralConfig.model_validate({"sensor": "tls", "host": "mx.example.test", "port": 25})` → wird angenommen
+Dedup-Key: bug:monitoring:check_configs.py:CENTRAL_SENSORS.tls
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_config.py
+Doku: → T14
+
+### T16 — Check-Ergebnisse vor dem Speichern auf speicherbare Zeichen bringen (R-1366)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py
+Änderung: `apply_result` bringt `message` und die Texte in `details` auf Zeichen, die Postgres speichert, bevor `_write_state` schreibt; das gilt damit für beide Ergebniswege (Scheduler `execute_check` und Agent-Push `routers/agent.py`) und jeden Checker. Je Weg ein Test gegen die Test-DB.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_agent_report.py
+Doku: → T14
+
 ### T14 — Doku DE+EN und CHANGELOG (R-1224, R-1268)  [ ]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, DEVELOPMENT.md, changelog.d/arch-monitoring-module-2.md
 Änderung: Zentrale Checks (Fühler, Takte, Regel öffentlich/intern, Weg-Diagnose, Sperrlisten und DQS-Key, Umgebungsvariablen), Engine-Kontext und Schonung der Ziele, Last-Tor und `self.load_shed`, Route `rebaseline`, neue Abhängigkeiten; Fragment `changelog.d/arch-monitoring-module-2.md` (umlautfrei). Zehn Dateien: vier Seiten je DE+EN, DEVELOPMENT.md und das Fragment.
