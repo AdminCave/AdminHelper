@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_changes.py t
 Doku: → T6
 Abhängt von: T2
 
-### T4 — R-1341: Server-Shards nach Laufzeit  [ ]
-Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/shard_weights.toml, apps/server/tests/test_shard.py
+### T4 — R-1341: Server-Shards nach Laufzeit  [x]
+Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/shard_weights.toml, apps/server/tests/test_shard.py, apps/server/tests/shard_weights.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fc70df0bd 2026-11-12T08:05:35+01:00
+Review: approve (.ah-out/review/arch-workflow-ci-1/T4.verdict.json)
 Änderung: `shard_of_each_file` gewichtet je Datei mit Sekunden je Test × gesammelte Tests aus `shard_weights.toml` (neu, SPDX als Kommentar, Kopf nennt den Befehl zum Neuerzeugen); unbekannte Dateien bekommen den Mittelwert je Test, ohne Tabelle gilt die Testanzahl wie heute. Die Tabelle stammt aus der JUnit-XML des 3.14-Beins eines CI-Laufs dieses Branches (Artefakt aus T3; lokal gemessen nur als Fallback, im Commit-Body genannt). `test_shard.py`: gewichtete Verteilung, Fallback, Reihenfolge-Unabhängigkeit, Manifest unverändert.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_shard.py tests/test_ci_shards.py
 Doku: → T6

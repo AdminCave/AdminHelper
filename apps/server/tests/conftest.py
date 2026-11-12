@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import sys
+import tomllib
 from collections import Counter
 from concurrent.futures import Future
 from datetime import timedelta
@@ -520,17 +521,44 @@ def parse_shard(value):
     return index, count
 
 
-def shard_of_each_file(tests_per_file, count):
-    """0-based shard of each test file: largest files first, each to the least loaded shard.
+# Seconds and tests of each test file in one CI run, written by tests/shard_weights.py (R-1341).
+_SHARD_WEIGHTS = Path(__file__).with_name("shard_weights.toml")
+
+
+def load_shard_weights(path=_SHARD_WEIGHTS):
+    """(seconds, tests) of each file the table names; empty without a table."""
+    if not path.exists():
+        return {}
+    files = tomllib.loads(path.read_text())["files"]
+    return {name: (entry["seconds"], entry["tests"]) for name, entry in files.items()}
+
+
+def shard_weights(tests_per_file, table):
+    """Expected seconds of each file: its collected tests times its seconds per test in the table.
+
+    A file the table does not know gets the mean seconds per test of the table. Without a table,
+    or with one that measured no time, each test weighs 1.
+    """
+    seconds = sum(s for s, _ in table.values())
+    tests = sum(n for _, n in table.values())
+    if not seconds or not tests:
+        return dict(tests_per_file)
+    mean = seconds / tests
+    per_test = {name: s / n for name, (s, n) in table.items() if n}
+    return {path: n * per_test.get(path, mean) for path, n in tests_per_file.items()}
+
+
+def shard_of_each_file(weight_of_file, count):
+    """0-based shard of each test file: heaviest files first, each to the least loaded shard.
 
     Whole files, so module fixtures and the container tests of one file stay in one job.
     """
     load = [0] * count
     shard = {}
-    for path in sorted(tests_per_file, key=lambda p: (-tests_per_file[p], p)):
+    for path in sorted(weight_of_file, key=lambda p: (-weight_of_file[p], p)):
         target = load.index(min(load))
         shard[path] = target
-        load[target] += tests_per_file[path]
+        load[target] += weight_of_file[path]
     return shard
 
 
@@ -553,7 +581,7 @@ def pytest_collection_modifyitems(config, items):
             )
         )
     files = [item.nodeid.split("::", 1)[0] for item in items]
-    shard = shard_of_each_file(Counter(files), count)
+    shard = shard_of_each_file(shard_weights(Counter(files), load_shard_weights()), count)
     keep = [item for item, f in zip(items, files, strict=True) if shard[f] == index - 1]
     drop = [item for item, f in zip(items, files, strict=True) if shard[f] != index - 1]
     if drop:

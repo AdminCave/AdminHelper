@@ -6,13 +6,21 @@
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 
-from tests.conftest import parse_shard, shard_of_each_file
+from tests.conftest import (
+    load_shard_weights,
+    parse_shard,
+    shard_of_each_file,
+    shard_weights,
+)
+from tests.shard_weights import measure, render
 
 SERVER = Path(__file__).resolve().parents[1]
 FILES = ["tests/test_core_time.py", "tests/test_bounds.py", "tests/test_ip_filter.py"]
@@ -92,6 +100,91 @@ def test_the_split_does_not_depend_on_the_order_of_the_files():
     counts = {"a.py": 5, "b.py": 5, "c.py": 5}
     reordered = dict(reversed(list(counts.items())))
     assert shard_of_each_file(counts, 2) == shard_of_each_file(reordered, 2)
+
+
+def test_a_file_weighs_its_tests_times_its_seconds_per_test():
+    table = {"tests/test_a.py": (10.0, 5), "tests/test_b.py": (2.0, 5)}
+    weights = shard_weights({"tests/test_a.py": 2, "tests/test_b.py": 5}, table)
+    assert weights == pytest.approx({"tests/test_a.py": 4.0, "tests/test_b.py": 2.0})
+
+
+def test_a_file_the_table_does_not_know_gets_the_mean_seconds_per_test():
+    table = {"tests/test_a.py": (10.0, 5), "tests/test_b.py": (2.0, 5)}
+    assert shard_weights({"tests/test_new.py": 3}, table) == pytest.approx(
+        {"tests/test_new.py": 3 * 12.0 / 10}
+    )
+
+
+def test_one_slow_file_gets_a_shard_of_its_own():
+    # By count the slow file would join two fast ones on one shard.
+    table = {"slow.py": (60.0, 2), **{f"fast{i}.py": (5.0, 10) for i in range(4)}}
+    counts = {name: tests for name, (_, tests) in table.items()}
+    by_count = shard_of_each_file(counts, 2)
+    assert sum(by_count[name] == by_count["slow.py"] for name in counts) == 3
+    shard = shard_of_each_file(shard_weights(counts, table), 2)
+    assert [name for name in counts if shard[name] == shard["slow.py"]] == ["slow.py"]
+
+
+def test_without_a_table_each_test_weighs_one(tmp_path):
+    counts = {"a.py": 3, "b.py": 1}
+    assert load_shard_weights(tmp_path / "missing.toml") == {}
+    assert shard_weights(counts, {}) == counts
+    assert shard_weights(counts, {"a.py": (0.0, 3)}) == counts
+
+
+def test_the_weighted_split_does_not_depend_on_the_order_of_the_files():
+    # b.py and c.py weigh the same, 2.0: the tie breaks by name, not by order.
+    table = {"a.py": (4.0, 2), "b.py": (2.0, 4), "c.py": (2.0, 1)}
+    counts = {"a.py": 2, "b.py": 4, "c.py": 1, "d.py": 3}
+    reordered = dict(reversed(list(counts.items())))
+    assert shard_of_each_file(shard_weights(counts, table), 2) == shard_of_each_file(
+        shard_weights(reordered, dict(reversed(list(table.items())))), 2
+    )
+
+
+def test_the_table_in_the_tree_names_test_files_with_their_time():
+    table = load_shard_weights()
+    assert table
+    for name, (seconds, tests) in table.items():
+        assert re.fullmatch(r"tests/test_\w+\.py", name), name
+        assert seconds >= 0 and tests > 0, name
+    header = (SERVER / "tests" / "shard_weights.toml").read_text()
+    assert "python -m tests.shard_weights" in header
+
+
+def _junit(path, *cases):
+    path.write_text(
+        "<testsuites><testsuite>"
+        + "".join(f'<testcase classname="{c}" name="t" time="{t}"/>' for c, t in cases)
+        + "</testsuite></testsuites>"
+    )
+    return str(path)
+
+
+def test_the_generator_sums_the_shards_of_a_run_per_file(tmp_path):
+    first = _junit(tmp_path / "1.xml", ("tests.test_a", 1.5), ("tests.test_a.TestX", 0.25))
+    second = _junit(tmp_path / "2.xml", ("tests.test_b", 2.0))
+    files = measure([first, second])
+    assert files == {"tests/test_a.py": (1.75, 2), "tests/test_b.py": (2.0, 1)}
+    table = tmp_path / "shard_weights.toml"
+    table.write_text(render("run 1", files))
+    assert load_shard_weights(table) == files
+    assert "# Source: run 1" in table.read_text()
+
+
+def test_the_generator_runs_as_a_module(tmp_path):
+    xml = _junit(tmp_path / "1.xml", ("tests.test_a", 0.5))
+    result = subprocess.run(
+        [sys.executable, "-m", "tests.shard_weights", "run 1", xml],
+        cwd=SERVER,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert tomllib.loads(result.stdout)["files"] == {
+        "tests/test_a.py": {"seconds": 0.5, "tests": 1}
+    }
 
 
 def test_more_shards_than_files_leaves_some_empty():
