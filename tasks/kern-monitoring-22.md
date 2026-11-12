@@ -24,8 +24,10 @@ Prozessnamen und `argv[0]` (`processArgs`, reexec). Tests über die Seams je Nam
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T3 — R-1324: Docker-Erkennung schließt geschlossen, sobald ein Docker-Daemon läuft  [ ]
+### T3 — R-1324: Docker-Erkennung schließt geschlossen, sobald ein Docker-Daemon läuft  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/sensor_local_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e58051cf3 2026-11-12T11:06:50+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T3.verdict.json)
 Änderung: `dockerSocketServes` meldet auch dann „Docker da“, wenn ein Prozess `dockerd` läuft (gopsutil, über eine
 Seam); scheitert dann `docker ps`, lehnt `checkPublished` wie heute ab. Tests: Socket fehlt, dockerd läuft →
 geschlossen; weder Socket noch dockerd → offen.

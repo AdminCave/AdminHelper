@@ -169,6 +169,7 @@ var (
 	processArgs    = argsOf
 	publishedPorts = dockerPublications
 	dockerServes   = dockerSocketServes
+	dockerdRunning = dockerdRuns
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.

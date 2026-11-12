@@ -408,16 +408,25 @@ func TestDockerPublicationsFailsWhenTheServingDaemonCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestDockerSocketServes says no only without a socket or an acceptor on it; short for the socket paths.
+// TestDockerSocketServes says no only without a socket or an acceptor on it and without dockerd;
+// short for the socket paths.
 func TestDockerSocketServes(t *testing.T) {
 	dir := filepath.Dir(socketIn(t))
-	old := dockerSocket
-	t.Cleanup(func() { dockerSocket = old })
+	old, oldRunning := dockerSocket, dockerdRunning
+	t.Cleanup(func() { dockerSocket, dockerdRunning = old, oldRunning })
+	running := false
+	dockerdRunning = func(context.Context) bool { return running }
 
 	dockerSocket = filepath.Join(dir, "m.sock")
 	if dockerSocketServes(context.Background()) {
 		t.Error("a missing socket serves")
 	}
+	// A dockerd on another socket (rootless, -H) publishes ports as much.
+	running = true
+	if !dockerSocketServes(context.Background()) {
+		t.Error("a missing socket with dockerd running does not serve")
+	}
+	running = false
 
 	dockerSocket = filepath.Join(dir, "s.sock")
 	l, err := net.Listen("unix", dockerSocket)
@@ -433,6 +442,11 @@ func TestDockerSocketServes(t *testing.T) {
 	if dockerSocketServes(context.Background()) {
 		t.Error("a socket nobody accepts on serves")
 	}
+	running = true
+	if !dockerSocketServes(context.Background()) {
+		t.Error("a socket nobody accepts on, with dockerd running, does not serve")
+	}
+	running = false
 
 	// A socket the agent may not reach may well have a daemon behind it.
 	locked := filepath.Join(dir, "l")
