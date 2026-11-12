@@ -28,6 +28,7 @@ ADDRESSES = ("192.0.2.10", "2001:db8::10")
 class _Probe:
     def __init__(self, result=None, raises=None):
         self.calls: list[tuple] = []
+        self.prevs: list[dict] = []
         self.result = result or SensorResult(
             "ok",
             "certificate valid until …",
@@ -37,8 +38,9 @@ class _Probe:
         )
         self.raises = raises
 
-    def __call__(self, host, addresses, port):
+    def __call__(self, host, addresses, port, prev):
         self.calls.append((host, addresses, port))
+        self.prevs.append(prev)
         if self.raises:
             raise self.raises
         return self.result
@@ -132,6 +134,20 @@ def test_a_changed_host_starts_its_history_over(world):
     _, _, metrics = _run(prev={"host": "old.example.test", "public_since": SINCE})
 
     assert metrics["_details"]["public_since"] not in (None, SINCE)
+
+
+def test_the_sensor_gets_the_previous_details_of_the_same_host(world):
+    prev = {"host": HOST, "public_since": SINCE, "ari": {"cert_id": "x"}}
+
+    _run(prev=prev)
+
+    assert world["probe"].prevs == [prev]
+
+
+def test_the_sensor_gets_no_history_of_another_host(world):
+    _run(prev={"host": "old.example.test", "ari": {"cert_id": "x"}})
+
+    assert world["probe"].prevs == [{}]
 
 
 def test_the_sensor_status_passes_through(world):

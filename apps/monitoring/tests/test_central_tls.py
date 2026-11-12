@@ -10,6 +10,7 @@ public/internal is replaced, since loopback is never global.
 """
 
 import ipaddress
+import json
 import socket
 import ssl
 import threading
@@ -24,9 +25,11 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from cryptography.x509.verification import Store
 
-from app.central import resolve, tls
+from app.central import ari, caa, fetch, resolve, tls
+from app.central.caa import CaaAnswer, Record
+from app.central.fetch import HttpAnswer
 from app.central.limits import SKIPPED_SPACING_MESSAGE, RunSkipped
-from app.central.resolve import Classification, Reach
+from app.central.resolve import AnswerStatus, Classification, Reach
 from app.checkers.central import CentralChecker
 from app.checkers.context import CheckContext
 
@@ -54,9 +57,12 @@ def _key_usage(*, ca: bool) -> x509.KeyUsage:
     )
 
 
-def _issue(cn, issuer, *, ca, sans=(), not_before, not_after) -> Issued:
+def _issue(cn, issuer, *, ca, sans=(), not_before, not_after, org=None) -> Issued:
     key = ec.generate_private_key(ec.SECP256R1())
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+    subject = x509.Name(
+        ([x509.NameAttribute(NameOID.ORGANIZATION_NAME, org)] if org else [])
+        + [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
+    )
     builder = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -325,6 +331,16 @@ def test_thresholds_are_relative_to_the_lifetime(serve, pki, days_in, status, pr
     assert result.metrics["days_left"] == 100 - days_in
 
 
+def test_the_threshold_compares_the_unrounded_share(serve, pki):
+    # 9.96 % left is below 10 %, though the metric shows 10.0.
+    server = serve(_leaf(pki[1]), [pki[1].cert])
+
+    result = _probe(server, pki, now=T0 + timedelta(days=90.04))
+
+    assert result.status == "critical"
+    assert result.metrics["lifetime_pct"] == 10.0
+
+
 def test_twelve_hours_before_the_end_is_critical_however_short_the_lifetime(serve, pki):
     # A 2-day certificate with 11 h left still has 23 % of its lifetime.
     server = serve(_leaf(pki[1], days=2), [pki[1].cert])
@@ -423,6 +439,161 @@ def test_the_default_store_loads_the_certifi_roots_quietly():
         warnings.simplefilter("error")
         store = tls.default_store()
     assert store is tls.default_store()
+
+
+# --- ARI and CAA, for a CA of the ACME table ---
+
+ARI_URL = "https://acme.example.test/renewal-info"
+
+
+@pytest.fixture(scope="module")
+def le_pki():
+    span = {"not_before": T0 - timedelta(days=365), "not_after": T0 + timedelta(days=3650)}
+    root = _issue("Test Root", None, ca=True, **span)
+    inter = _issue("E7", root, ca=True, org="Let's Encrypt", **span)
+    return root, inter
+
+
+class _Daily:
+    """Stands in for the CA (fetch.get) and the public resolvers (caa.query)."""
+
+    def __init__(self):
+        self.fetched: list[str] = []
+        self.queried: list[str] = []
+        self.window = ("2026-03-01T00:00:00Z", "2026-03-10T00:00:00Z")
+        self.caa: dict[str, CaaAnswer] = {}
+
+    def get(self, url, *, accept="application/json"):
+        self.fetched.append(url)
+        if url == ari.KNOWN_CAS[0].directory:
+            return HttpAnswer(200, None, json.dumps({"renewalInfo": ARI_URL}).encode())
+        start, end = self.window
+        body = {"suggestedWindow": {"start": start, "end": end}}
+        return HttpAnswer(200, None, json.dumps(body).encode())
+
+    def query(self, resolver, name):
+        self.queried.append(name.to_text(omit_final_dot=True))
+        return self.caa.get(name.to_text(omit_final_dot=True), CaaAnswer(AnswerStatus.NODATA))
+
+
+@pytest.fixture
+def daily(monkeypatch):
+    fake = _Daily()
+    monkeypatch.setattr(fetch, "get", fake.get)
+    monkeypatch.setattr(caa, "query", fake.query)
+    monkeypatch.setattr(ari, "_directories", {})
+    monkeypatch.setattr(ari, "_states", {})
+    return fake
+
+
+def _probe_le(server, le_pki, *, now=T0 + timedelta(days=50), prev=None):
+    return tls.probe(
+        HOST,
+        ("127.0.0.1",),
+        server.port,
+        prev,
+        store=Store([le_pki[0].cert]),
+        now=now,
+        limits=_Turns(),
+    )
+
+
+def test_a_certificate_of_a_known_ca_gets_ari_and_caa_in_its_details(serve, le_pki, daily):
+    leaf = _leaf(le_pki[1])
+    server = serve(leaf, [le_pki[1].cert])
+
+    result = _probe_le(server, le_pki)
+
+    assert result.status == "ok", result.message
+    assert result.message.startswith("certificate valid until")
+    cid = ari.cert_id(leaf.cert)
+    assert daily.fetched == [ari.KNOWN_CAS[0].directory, f"{ARI_URL}/{cid}"]
+    assert result.details["ari"]["cert_id"] == cid
+    assert result.details["ari"]["window_end"] == "2026-03-10T00:00:00Z"
+    assert daily.queried == ["www.example.test", "example.test", "test"]
+    assert result.details["caa"]["permitted"] is True
+    assert result.details["caa"]["subject"] == HOST
+
+
+def test_a_passed_renewal_window_makes_an_ok_a_warning(serve, le_pki, daily):
+    daily.window = ("2026-02-01T00:00:00Z", "2026-02-10T00:00:00Z")
+    server = serve(_leaf(le_pki[1]), [le_pki[1].cert])
+
+    result = _probe_le(server, le_pki)
+
+    assert result.status == "warning"
+    assert result.message.startswith("certificate valid until")
+    assert result.message.endswith(
+        "; Let's Encrypt suggests renewal: window 2026-02-01T00:00:00Z to "
+        "2026-02-10T00:00:00Z has passed"
+    )
+
+
+def test_caa_that_does_not_permit_the_ca_makes_an_ok_a_warning(serve, le_pki, daily):
+    daily.caa["example.test"] = CaaAnswer(AnswerStatus.OK, (Record(0, "issue", "pki.goog"),))
+    server = serve(_leaf(le_pki[1]), [le_pki[1].cert])
+
+    result = _probe_le(server, le_pki)
+
+    assert result.status == "warning"
+    assert result.message.endswith(
+        "; CAA of example.test does not permit Let's Encrypt (permitted: pki.goog)"
+    )
+
+
+def test_findings_leave_a_critical_critical(serve, le_pki, daily):
+    daily.window = ("2026-02-01T00:00:00Z", "2026-02-10T00:00:00Z")
+    daily.caa["www.example.test"] = CaaAnswer(AnswerStatus.OK, (Record(0, "issue", ";"),))
+    server = serve(_leaf(le_pki[1]), [le_pki[1].cert])
+
+    result = _probe_le(server, le_pki, now=T0 + timedelta(days=95))
+
+    assert result.status == "critical"
+    parts = result.message.split("; ")
+    assert parts[0].startswith("certificate expires soon: ")
+    assert parts[1].startswith("Let's Encrypt suggests renewal")
+    assert parts[2].startswith("CAA of www.example.test does not permit Let's Encrypt")
+
+
+def test_the_previous_states_hold_until_they_are_due(serve, le_pki, daily):
+    server = serve(_leaf(le_pki[1]), [le_pki[1].cert])
+    first = _probe_le(server, le_pki)
+    ari._states.clear()  # only the check's own details carry the states over
+    fetched, queried = list(daily.fetched), list(daily.queried)
+
+    second = _probe_le(server, le_pki, now=T0 + timedelta(days=50, hours=1), prev=first.details)
+
+    assert (daily.fetched, daily.queried) == (fetched, queried)
+    assert (second.details["ari"], second.details["caa"]) == (
+        first.details["ari"],
+        first.details["caa"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("host", "days_in"),
+    [
+        (HOST, 101),  # expired
+        ("mail.example.test", 50),  # not trusted for the name
+    ],
+)
+def test_without_a_valid_certificate_neither_ca_nor_resolvers_are_asked(
+    serve, le_pki, daily, host, days_in
+):
+    server = serve(_leaf(le_pki[1]), [le_pki[1].cert])
+
+    result = tls.probe(
+        host,
+        ("127.0.0.1",),
+        server.port,
+        store=Store([le_pki[0].cert]),
+        now=T0 + timedelta(days=days_in),
+        limits=_Turns(),
+    )
+
+    assert result.status == "critical"
+    assert "ari" not in result.details and "caa" not in result.details
+    assert daily.fetched == [] and daily.queried == []
 
 
 # --- through the dispatcher ---

@@ -43,10 +43,12 @@ Verify: bash scripts/dev/verify.sh monitoring desktop-ui --strict
 Doku: → T14
 Abhängt von: T2
 
-### T4 — Fühler `tls`: ARI und CAA (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/ari.py, apps/monitoring/app/central/caa.py, apps/monitoring/app/central/tls.py, apps/monitoring/tests/test_central_ari.py, apps/monitoring/tests/test_central_caa.py
+### T4 — Fühler `tls`: ARI und CAA (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/ari.py, apps/monitoring/app/central/caa.py, apps/monitoring/app/central/tls.py, apps/monitoring/tests/test_central_ari.py, apps/monitoring/tests/test_central_caa.py, apps/monitoring/app/central/fetch.py, apps/monitoring/app/checkers/central.py, apps/monitoring/tests/test_central_fetch.py, apps/monitoring/tests/test_central_tls.py, apps/monitoring/tests/test_central_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @095b0a12b 2026-11-12T08:33:10+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T4.verdict.json)
 Änderung: Täglich (Zeitpunkt in `details`): ARI nach RFC 9773 nur für CAs einer eingebauten Tabelle Aussteller → ACME-Directory (Directory-URL vorher in der Doku der CA verifizieren), CertID aus AKI und Seriennummer, `suggestedWindow` begonnen → Warnung, `Retry-After` auf 1 min–1 Tag begrenzt, keine Abfrage nach Ablauf; CAA nach RFC 8659 über die öffentlichen Resolver (Baum aufsteigen, `issuewild` vor `issue`, kritisches unbekanntes Tag), aktueller Aussteller laut Tabelle nicht erlaubt → Warnung, unbekannter Aussteller → keine Aussage. HTTPS-Abruf gepinnt auf globale Adressen.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_ari.py tests/test_central_caa.py tests/test_central_tls.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_ari.py tests/test_central_caa.py tests/test_central_fetch.py tests/test_central_tls.py tests/test_central_checker.py
 Doku: → T14
 Abhängt von: T3
 
@@ -154,3 +156,14 @@ Task-Review: am Ende
 - 2026-11-12 T3: Die Plan-Annahme eines Desktop-Paritätstests war falsch (keiner prüft `MonitorCheckType` gegen die Check-Typen); `central` steht trotzdem in `MonitorCheckType`, die Formularliste `CHECK_TYPES` folgt in T11.
 - 2026-11-12 T3: `test_central_checker.py` per `set-files`; `CheckContext` in eigenem Modul `checkers/context.py` — `app.checkers` importiert jeden Checker, bevor es selbst etwas definiert.
 - 2026-11-12 T3→T4: Prüfer-Nit T3 — die Schwellen 25/10 % vergleichen das gerundete `lifetime_pct` (9,96 % bleibt Warnung); T4 ändert `tls.py` ohnehin und vergleicht dort das ungerundete Verhältnis, mit Test an der Grenze.
+- 2026-11-12 T4: zehn Dateien statt höchstens acht — der gepinnte HTTPS-Abruf (`fetch.py`, eigene Tests) entsteht hier für ARI und wird in T6 (RDAP) wiederverwendet; `checkers/central.py` reicht die vorigen Details an `tls.probe` durch, `test_central_checker.py` prüft das.
+- 2026-11-12 T4: ARI-Tabelle Let's Encrypt, Google Trust Services, ZeroSSL (Directory live gelesen, `renewalInfo` vorhanden); SSL.com bleibt draußen — sein öffentliches Directory ist RSA-only, das ECC-Directory nicht verifiziert.
+- 2026-11-12 T4: ARI warnt erst, wenn das Fenster vorbei ist (Plan: „begonnen → Warnung“) — RFC 9773 §6: ein ganz vergangenes Fenster ist der Ruf zum sofortigen Erneuern; ein laufendes Fenster ist der Normalfall, in dem der Client zu einem Zufallszeitpunkt erneuert, eine Warnung dort wäre bei jedem ACME-Zertifikat Rauschen. Kevin erfährt es im Bericht.
+- 2026-11-12 T4: Retry-After geklemmt auf 1 min–1 Tag befolgt; ohne Retry-After nach Erfolg und bei Langzeitfehlern 6 h, temporäre Fehler 15/30/60 min, dann 6 h (RFC 9773 §4.3.3); ungültige Antwort behält das letzte gültige Fenster.
+- 2026-11-12 T4: ein ARI-GET je CertID und Abrufzeitpunkt (Retry-After der CA, begrenzt auf 1 min–1 Tag, ohne Angabe 6 h) über alle Checks: Prozess-Zustand je CertID (höchstens 1024, älteste raus) neben den Details des Checks; zwei gleichzeitige Läufe desselben Zertifikats können beide einmal fragen (selten, hingenommen).
+- 2026-11-12 T4: CA-Abrufe außerhalb des Mindestabstands je Adresse, aber im Slot des laufenden Checks — sie treffen die CA, nicht das Ziel.
+- 2026-11-12 T4: CAA-Zustand gilt nur für denselben Namen, Wildcard und CA; Aufstieg höchstens 16 Labels; ohne Antwort der Resolver bleibt das letzte Urteil, neuer Versuch nach 1 h; unbekannte CA oder IP-Literal → keine ARI-/CAA-Aussage.
+- 2026-11-12 T4: `fetch.get` verweigert Ports außerhalb 1–65535 selbst — httpx nimmt jede Zahl, die Socket-Schicht wirft dann `OverflowError` statt eines `FetchError`.
+- 2026-11-12 T4: ARI/CAA nur bei gültigem, vertrauenswürdigem, nicht abgelaufenem Zertifikat; ihre Befunde machen aus ok eine Warnung, ein kritischer Status bleibt kritisch, die Befunde hängen an der Meldung.
+- 2026-11-12 T4 (Prüfrunde): `fetch.get` hat eine Gesamtfrist von 20 s — die Zeitlimits von httpx gelten je Operation; ein Watchdog-Timer schließt den Socket per `shutdown` (Basisklasse, der blockierte TLS-Read kehrt zurück), Connect und Handshake bekommen ein auf die Restzeit gekürztes Timeout, nach Ablauf wird keine weitere Adresse versucht. Der Watchdog stoppt, bevor httpx den Socket schließt; schließt httpcore ihn auf einem Fehlerpfad selbst, bleibt ein Wettlauf mit der Wiederverwendung des Deskriptors im Bereich weniger Mikrosekunden (hingenommen).
+- 2026-11-12 T4 (Prüfrunde): `Accept-Encoding: identity`; eine Antwort mit Content-Coding wird abgelehnt — die Body-Grenze zählt empfangene Bytes (`iter_raw`), nicht entpackte.

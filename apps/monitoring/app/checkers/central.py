@@ -23,7 +23,8 @@ from app.check_configs import CENTRAL_SENSORS
 from app.checkers.context import CheckContext
 from app.core.time import iso_utc
 
-Probe = Callable[[str, tuple[str, ...], int], SensorResult]
+# host, the rule's global addresses, port, the previous details for this host.
+Probe = Callable[[str, tuple[str, ...], int, dict], SensorResult]
 
 _PROBES: dict[str, Probe] = {"tls": tls.probe}
 
@@ -42,13 +43,15 @@ class CentralChecker:
         port = config.get("port") or CENTRAL_SENSORS[sensor].default_port
         prev = context.prev_details or {}
         # A changed host starts over: the old one's history says nothing about it.
-        public_since = prev.get("public_since") if prev.get("host") == host else None
+        if prev.get("host") != host:
+            prev = {}
+        public_since = prev.get("public_since")
 
         with LIMITS.slot() as acquired:
             if not acquired:
                 raise RunSkipped(SKIPPED_BUSY_MESSAGE)
             rule = resolve.classify(host)
-            result = probe(host, rule.addresses, port) if rule.reach is Reach.PUBLIC else None
+            result = probe(host, rule.addresses, port, prev) if rule.reach is Reach.PUBLIC else None
 
         details: dict = {"host": host, "port": port}
         if rule.notes:

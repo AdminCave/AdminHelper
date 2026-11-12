@@ -9,7 +9,9 @@ certificate still yields its details. cryptography.x509.verification then checks
 chain and name in one step against the certifi store, with the identity rules of
 RFC 9525 (SAN only, a wildcard only as the whole leftmost label, an IP literal
 against an iPAddress SAN). Thresholds are relative to the certificate's whole
-lifetime, so a 90-day and a 6-day certificate are warned about alike.
+lifetime, so a 90-day and a 6-day certificate are warned about alike. A trusted,
+unexpired certificate also gets the periodic looks of ari and caa: what its CA says
+about renewing it, and whether the domain still lets that CA issue the next one.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import ipaddress
 import socket
 import ssl
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from cryptography import x509
 from cryptography.utils import CryptographyDeprecationWarning
 from cryptography.x509.verification import PolicyBuilder, Store, VerificationError
 
+from app.central import ari, caa
 from app.central.limits import LIMITS, SKIPPED_SPACING_MESSAGE, Limits, RunSkipped
 from app.core.time import iso_utc
 
@@ -74,6 +77,7 @@ def probe(
     host: str,
     addresses: tuple[str, ...],
     port: int,
+    prev: dict | None = None,
     *,
     store: Store | None = None,
     now: datetime | None = None,
@@ -82,9 +86,12 @@ def probe(
     """Connects to the first of `addresses` that answers and checks its certificate for `host`.
 
     `addresses` are the global addresses the rule public/internal handed on; nothing
-    is resolved here. Raises RunSkipped when an address may not be contacted yet.
+    is resolved here. `prev` holds the details of the check's previous run for this
+    host, with the ari and caa states. Raises RunSkipped when an address may not be
+    contacted yet.
     """
     limits = limits or LIMITS
+    now = now or datetime.now(timezone.utc)
     failures: list[str] = []
     for address in addresses[:MAX_ADDRESSES]:
         if not limits.address_turn(address):
@@ -95,7 +102,8 @@ def probe(
             failures.append(f"{address}: {_reason(exc)}")
             continue
         with sock:
-            return _check(sock, host, address, port, store or default_store(), now)
+            result, leaf = _check(sock, host, address, port, store or default_store(), now)
+        return _daily(result, leaf, host, prev or {}, now)
     return SensorResult(
         "critical",
         f"no connection to {host} port {port}: " + "; ".join(failures),
@@ -110,8 +118,9 @@ def _check(
     address: str,
     port: int,
     store: Store,
-    now: datetime | None,
-) -> SensorResult:
+    now: datetime,
+) -> tuple[SensorResult, x509.Certificate | None]:
+    """The verdict and, when the certificate is trusted and not expired, its leaf."""
     details: dict = {"host": host, "address": address, "port": port}
     try:
         literal = ipaddress.ip_address(host)
@@ -127,31 +136,28 @@ def _check(
             details["tls_version"] = tls.version()
             chain = tls.get_unverified_chain() or []
     except OSError as exc:  # ssl.SSLError and timeouts included
-        return SensorResult("critical", f"TLS handshake failed: {_reason(exc)}", True, {}, details)
+        message = f"TLS handshake failed: {_reason(exc)}"
+        return SensorResult("critical", message, True, {}, details), None
     if not chain:
-        return SensorResult("critical", "the server sent no certificate", True, {}, details)
+        return SensorResult("critical", "the server sent no certificate", True, {}, details), None
     try:
         certs = [x509.load_der_x509_certificate(der) for der in chain]
     except ValueError as exc:
-        return SensorResult("critical", f"unreadable certificate: {exc}", True, {}, details)
+        return SensorResult("critical", f"unreadable certificate: {exc}", True, {}, details), None
     leaf = certs[0]
     details.update(_describe(leaf, chain[0], len(certs)))
 
-    now = now or datetime.now(timezone.utc)
     not_before, not_after = leaf.not_valid_before_utc, leaf.not_valid_after_utc
     if now < not_before:
-        return SensorResult(
-            "critical", f"certificate not valid before {iso_utc(not_before)}", True, {}, details
-        )
+        message = f"certificate not valid before {iso_utc(not_before)}"
+        return SensorResult("critical", message, True, {}, details), None
     left, total = not_after - now, not_after - not_before
-    metrics = {
-        "days_left": round(left.total_seconds() / 86400, 2),
-        "lifetime_pct": round(max(0.0, left / total * 100), 1) if total > timedelta(0) else 0.0,
-    }
+    # Compared unrounded: 9.96 % is below the 10 % threshold, though shown as 10.0.
+    pct = max(0.0, left / total * 100) if total > timedelta(0) else 0.0
+    metrics = {"days_left": round(left.total_seconds() / 86400, 2), "lifetime_pct": round(pct, 1)}
     if left <= timedelta(0):
-        return SensorResult(
-            "critical", f"certificate expired on {iso_utc(not_after)}", True, metrics, details
-        )
+        message = f"certificate expired on {iso_utc(not_after)}"
+        return SensorResult("critical", message, True, metrics, details), None
 
     subject = x509.IPAddress(literal) if literal else x509.DNSName(host)
     verifier = PolicyBuilder().store(store).time(now).build_server_verifier(subject)
@@ -159,21 +165,47 @@ def _check(
         verifier.verify(leaf, certs[1:])
     except VerificationError as exc:
         message = f"certificate not trusted for {host}: {str(exc)[:MAX_TEXT]}"
-        return SensorResult("critical", message, True, metrics, details)
+        return SensorResult("critical", message, True, metrics, details), None
 
-    pct = metrics["lifetime_pct"]
     summary = (
-        f"valid until {iso_utc(not_after)} ({metrics['days_left']} days, {pct} % of lifetime left)"
+        f"valid until {iso_utc(not_after)} ({metrics['days_left']} days, "
+        f"{metrics['lifetime_pct']} % of lifetime left)"
     )
     if left < CRIT_LEFT or pct < CRIT_PCT:
-        return SensorResult(
-            "critical", f"certificate expires soon: {summary}", True, metrics, details
-        )
-    if pct < WARN_PCT:
-        return SensorResult(
-            "warning", f"certificate due for renewal: {summary}", True, metrics, details
-        )
-    return SensorResult("ok", f"certificate {summary}", True, metrics, details)
+        status, message = "critical", f"certificate expires soon: {summary}"
+    elif pct < WARN_PCT:
+        status, message = "warning", f"certificate due for renewal: {summary}"
+    else:
+        status, message = "ok", f"certificate {summary}"
+    return SensorResult(status, message, True, metrics, details), leaf
+
+
+def _daily(
+    result: SensorResult, leaf: x509.Certificate | None, host: str, prev: dict, now: datetime
+) -> SensorResult:
+    """Adds the ari and caa states; a finding of either makes an ok a warning."""
+    if leaf is None:
+        return result
+    ari_state, ari_warning = ari.evaluate(leaf, _state(prev, "ari"), now)
+    caa_state, caa_warning = caa.evaluate(leaf, host, ari.known_ca(leaf), _state(prev, "caa"), now)
+    details = dict(result.details)
+    for key, state in (("ari", ari_state), ("caa", caa_state)):
+        if state is not None:
+            details[key] = state
+    findings = [w for w in (ari_warning, caa_warning) if w]
+    if not findings:
+        return replace(result, details=details)
+    return replace(
+        result,
+        status="critical" if result.status == "critical" else "warning",
+        message="; ".join([result.message, *findings]),
+        details=details,
+    )
+
+
+def _state(prev: dict, key: str) -> dict | None:
+    state = prev.get(key)
+    return state if isinstance(state, dict) else None
 
 
 def _describe(leaf: x509.Certificate, der: bytes, chain_len: int) -> dict:
