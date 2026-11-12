@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -502,4 +503,79 @@ func TestUnixSocketSensorNeverConnectsToASocketOfAControlService(t *testing.T) {
 	if got, err := probe(filepath.Join(filepath.Dir(link), "gone.sock")); err != nil || fmt.Sprint(got) != "map[connected:false]" {
 		t.Errorf("a missing socket = %v, %v; want it not connected", got, err)
 	}
+}
+
+// listenCounting serves path and counts the connections it accepts.
+func listenCounting(t *testing.T, path string) *atomic.Int32 {
+	t.Helper()
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	var n atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			n.Add(1)
+			_ = c.Close()
+		}
+	}()
+	return &n
+}
+
+func TestDialUnixFollowsTheSocketNotItsName(t *testing.T) {
+	servedBy(t, "nginx")
+	dir := filepath.Dir(socketIn(t))
+	ctx := context.Background()
+	old := controlSockets
+	t.Cleanup(func() { controlSockets = old })
+	refused := func(p, why string) {
+		t.Helper()
+		c, err := dialUnix(ctx, p)
+		if c != nil {
+			_ = c.Close()
+		}
+		if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), why) {
+			t.Errorf("dialUnix(%s) = %v; want it refused: %s", p, err, why)
+		}
+	}
+
+	// A second name of a single control socket is refused before the dial.
+	ctl := filepath.Join(dir, "ctl.sock")
+	accepted := listenCounting(t, ctl)
+	controlSockets = append(slices.Clone(old), ctl)
+	hard := filepath.Join(dir, "h.sock")
+	if err := os.Link(ctl, hard); err != nil {
+		t.Fatal(err)
+	}
+	refused(hard, "under another name")
+	if n := accepted.Load(); n != 0 {
+		t.Errorf("the control socket took %d connections; want none", n)
+	}
+
+	// A directory of controlSockets renamed after the bind: the name its server bound gives it away.
+	if err := os.Mkdir(filepath.Join(dir, "a"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	listenCounting(t, filepath.Join(dir, "a", "s.sock"))
+	controlSockets = append(slices.Clone(old), filepath.Join(dir, "a")+"/")
+	if err := os.Rename(filepath.Join(dir, "a"), filepath.Join(dir, "b")); err != nil {
+		t.Fatal(err)
+	}
+	refused(filepath.Join(dir, "b", "s.sock"), "a socket of a service the agent never probes")
+	controlSockets = old
+	if c, err := dialUnix(ctx, filepath.Join(dir, "b", "s.sock")); err != nil {
+		t.Errorf("the renamed socket outside controlSockets = %v; want it connected", err)
+	} else {
+		_ = c.Close()
+	}
+
+	// A server that bound a relative path says nothing about where its socket is.
+	t.Chdir(dir)
+	listenCounting(t, "r.sock")
+	refused(filepath.Join(dir, "r.sock"), "bound no absolute path")
 }

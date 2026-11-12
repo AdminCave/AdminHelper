@@ -736,3 +736,17 @@ func TestNeverProbedSocketCoversTheRuntimeDirectoriesOfTheControlServices(t *tes
 		}
 	}
 }
+
+func TestCheckPeerNameRefusesWhatItCannotPlace(t *testing.T) {
+	for _, name := range []string{"", "@abstract", "rel/s.sock", "s.sock", "/run/docker.sock", "/var/run/configd.socket",
+		"/run/x/../docker.sock", "/run/user/1000/bus"} {
+		if err := checkPeerName(name, "/tmp/p.sock"); !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("%q = %v; want ErrNotAllowed", name, err)
+		}
+	}
+	for _, name := range []string{"/run/php/php8.2-fpm.sock", "/tmp/p.sock", "/var/run/redis/redis.sock"} {
+		if err := checkPeerName(name, "/tmp/p.sock"); err != nil {
+			t.Errorf("%q = %v; want it allowed", name, err)
+		}
+	}
+}

@@ -34,13 +34,15 @@ geschlossen; weder Socket noch dockerd → offen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T4 — R-1320, R-1365: Socket-Verbindung an die geprüfte Datei binden  [ ]
+### T4 — R-1320, R-1365: Socket-Verbindung an die geprüfte Datei binden  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local_freebsd_test.go, apps/agent/internal/probe/guard_test.go
-Änderung: `dialUnix` öffnet den Socket-Pfad einmal (Linux: O_PATH, Verbindung über `/proc/self/fd/N`; FreeBSD:
-Verzeichnis-Deskriptor des aufgelösten Pfads und `connectat(2)`), prüft den aufgelösten Pfad dieses Deskriptors
-gegen `controlSockets` und vergleicht Gerät und Inode mit den einzelnen Sockets aus `controlSockets` (auch unter
-`/var/run`). Tests: ein Zwischenverzeichnis, das nach der Prüfung getauscht wird, führt nicht zum neuen Ziel; ein
-zweiter Name derselben Socket-Datei wird abgelehnt (Linux im Test-Verzeichnis, FreeBSD auf der Box).
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ce89560e9 2026-11-12T11:45:40+01:00
+Review: approve (.ah-out/review/kern-monitoring-22/T4.verdict.json)
+Änderung: `socketToDial` vergleicht Gerät und Inode des aufgelösten Pfads mit den einzelnen Sockets aus
+`controlSockets` (auch unter `/var/run`) und lehnt einen zweiten Namen vor dem Verbinden ab; nach dem Verbinden prüft
+`checkPeer` (Linux, FreeBSD) den Namen, den der Server gebunden hat (`getpeername`, `checkPeerName`): relativ,
+abstrakt oder in `controlSockets` → `ErrNotAllowed`. Tests: Hardlink auf eine Kontroll-Socket, nach dem Bind
+umbenanntes Verzeichnis, relativ gebundener Listener (Linux im Test-Verzeichnis, FreeBSD auf der Box).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
@@ -87,3 +89,4 @@ Doku: keine (Harness, Kommentar im Skript)
 - T5: Der AST-Test meldet jeden Wert vom Typ exec.Cmd (Literal, new, Nullwert, Feld), nur ein Zeiger darauf gilt nicht als Start; dazu die Windows-Starts (CreateProcess, CreateProcessAsUser, ShellExecute). Ein roher syscall.Syscall mit SYS_EXECVE bleibt eine genannte Grenze.
 - T3: Läuft ein dockerd, ohne dass der Standard-Socket antwortet (rootless, eigener -H), lehnt der Guard jede TCP-Probe auf eigene Adressen ab (fail-closed); Doku in T7.
 - T8: Das Core-Archiv, das opnsense-bootstrap lädt, lässt sich nicht pinnen (nur Release-Zweig, kein Commit, kein Hash); Restrisiko in der privaten Notiz. Das Web-GUI-Zertifikat entfernt der Clean-Schritt per PHP aus config.xml und den Backups, geprüft in php:8.3-cli; auf OPNsense wirkt es erst beim nächsten Bake.
+- T4: Statt O_PATH/connectat (Advisor: unter Go nicht sauber ohne eigenen Dial) bindet der Guard die Verbindung über zwei Prüfungen an die Datei: Inode-Abgleich vor dem Verbinden, Name des Servers (getpeername, nicht RemoteAddr) danach; kein Schreiben vor der Prüfung. Grenzen: ein Dienst, der seine Socket nach dem Bind umbenennt, und ein relativ oder abstrakt gebundener Server (abgelehnt).

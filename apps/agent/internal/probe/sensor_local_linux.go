@@ -154,18 +154,31 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 	return conn, nil
 }
 
-// checkPeer refuses the socket path unless the process serving it may be probed: not a process the
-// guard refuses on TCP and not systemd, which holds the sockets it activates on behalf of other
-// services (SO_PEERCRED names the process that called listen).
+// checkPeer refuses the socket path unless the socket it reached lies outside controlSockets
+// (checkPeerName) and the process serving it may be probed: not a process the guard refuses on TCP
+// and not systemd, which holds the sockets it activates on behalf of other services (SO_PEERCRED
+// names the process that called listen). conn.RemoteAddr would not do for the name: Go falls back
+// to the dialed address when getpeername names nothing.
 func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	raw, err := conn.SyscallConn()
 	if err != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read", ErrNotAllowed, path)
 	}
 	var cred *unix.Ucred
-	var credErr error
-	if err := raw.Control(func(fd uintptr) { cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED) }); err != nil {
-		credErr = err
+	var credErr, peerErr error
+	var peer unix.Sockaddr
+	if err := raw.Control(func(fd uintptr) {
+		cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		peer, peerErr = unix.Getpeername(int(fd))
+	}); err != nil {
+		credErr, peerErr = err, err
+	}
+	sa, ok := peer.(*unix.SockaddrUnix)
+	if peerErr != nil || !ok {
+		return fmt.Errorf("%w: the socket %s reached cannot be read", ErrNotAllowed, path)
+	}
+	if err := checkPeerName(sa.Name, path); err != nil {
+		return err
 	}
 	if credErr != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read", ErrNotAllowed, path)
