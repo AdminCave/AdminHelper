@@ -98,6 +98,8 @@
 &#9492;&#9472;&#9472; core/                 auth.py / bounds.py / config.py / database.py / logging_config.py /
                           middleware.py / pagination.py / ssrf.py / time.py / victoria.py</code></pre>
 
+          <p>Ein Query-Parameter, den das Schema als Einzelwert beschreibt, ergibt bei mehrfacher Angabe (<code>?offset=1&amp;offset=2</code>) ein <code>422</code> mit <code>loc</code> <code>["query", &lt;name&gt;]</code> und den Werten als Liste in <code>input</code> (R-1131). Das macht die App-weite Abh&auml;ngigkeit <code>reject_repeated_scalar_query</code> in <code>core/query_params.py</code>; ein Parameter, den das Schema nicht kennt, wird weiter ignoriert.</p>
+
           <h2>Push-Checks vs. Pull-Checks</h2>
           <p>Es gibt zwei Klassen von Checks &ndash; entscheidend ist, <em>wer</em> die Daten beschafft:</p>
           <table>
