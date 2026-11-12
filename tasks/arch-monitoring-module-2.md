@@ -88,10 +88,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_mai
 Doku: → T14
 Abhängt von: T3
 
-### T9 — Fühler `dnsbl` (freie Listen, Spamhaus nur mit DQS-Key) (R-1224)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/dnsbl.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_dnsbl.py
+### T9 — Fühler `dnsbl` (freie Listen, Spamhaus nur mit DQS-Key) (R-1224)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/central/dnsbl.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_central_dnsbl.py, apps/monitoring/app/checkers/central.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_central_config.py, apps/monitoring/tests/test_central_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @760eda07c 2026-11-12T11:18:35+01:00
+Review: approve (.ah-out/review/arch-monitoring-module-2/T9.verdict.json)
 Änderung: Vor dem Bau die Nutzungsbedingungen von PSBL, SpamCop, UCEPROTECT und die DQS-Doku von Spamhaus lesen (Ergebnis unter `## Entscheidungen`). MX-Adressen (IPv4) über den System-Resolver gegen die Listen; Spamhaus ZEN nur über `<key>.zen.dq.spamhaus.net` mit `MONITOR_SPAMHAUS_DQS_KEY`; Antworten außerhalb `127.0.0.0/8` und `127.255.255.x` → `unknown`, nie „gelistet“. Der Key erscheint nie in Meldung, Metrik oder Log.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dnsbl.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dnsbl.py tests/test_central_checker.py tests/test_central_config.py
 Doku: → T14
 Abhängt von: T3
 
@@ -221,3 +223,9 @@ Task-Review: am Ende
 - 2026-11-12 T8: MTA-STS: TXT-Filter auf `v=STSv1;` (§3.1); Policy über `fetch.get` (gepinnt, Gesamtfrist, Body-Grenze, keine Redirects) mit `Accept: text/plain`, Medientyp muss `text/plain` sein (§3.2) — dafür `HttpAnswer.content_type`; MX außerhalb der Policy bei `enforce` kritisch, bei `testing` Warnung; Wildcard nur für das linke Label (§4.1).
 - 2026-11-12 T8: Parser ohne verschachtelte Quantoren (lineare Laufzeit, Test mit 200 000 Zeichen); Text aus DNS und HTTP nur über `_show` in Meldung und Details; Records in den Details höchstens 512 Zeichen, Adressen je MX-Host und FCrDNS höchstens 10, PTR-Namen 3, MX-Hosts 10, `mx`-Muster der MTA-STS-Policy 10 (dazu `mx_count`, wenn es mehr sind) — eine DNS-Antwort über TCP kann tausende Records tragen, eine Policy bis 64 KiB tausende Zeilen.
 - 2026-11-12 T8: acht Dateien: `fetch.py` (Content-Type), `checkers/central.py` (Registry-Fühler) und ihre Tests per `set-files`, `Verify:` um diese Tests erweitert.
+- 2026-11-12 T9: Bedingungen gelesen (2026-11-12): UCEPROTECT „free of charge, either private or commercial use“, ab 100 000 Fragen/Tag RSYNC; PSBL „Anybody is free to use PSBL“; SpamCop frei mit Spendenbitte, „AS IS“; Spamhaus nur über DQS mit eigenem Key (Antworten außerhalb 127.0.0.0/8 verwerfen, 127.255.255.0/24 sind Fehler, abgeschaltet → SERVFAIL); die Bedingungen des freien DQS-Keys ließen sich nicht abrufen (nicht verifiziert) — der Key bleibt optional und Sache des Betreibers. Ein Lauf je Tag und Domain stellt höchstens 4 + 10 Fragen je Liste.
+- 2026-11-12 T9: MX-Hosts und ihre Adressen über die öffentlichen Resolver wie `mail_dns`; die Listen über den System-Resolver, wie ein Mailserver sie fragt (Spamhaus lehnt öffentliche Resolver ab). Nur globale IPv4-Adressen (die Listen führen IPv4), höchstens 10 MX-Hosts und 10 Adressen, beides als Hinweis genannt. Ohne MX gilt die Domain selbst (RFC 5321 §5.1), Null-MX und NXDOMAIN fragen keine Liste.
+- 2026-11-12 T9: jede Liste wird je Lauf zuerst an ihren Testeinträgen gemessen (RFC 5782 §5: 127.0.0.2 gelistet, 127.0.0.1 nicht); dazu eine Antwort außerhalb 127.0.0.0/8 oder aus 127.255.255.0/24, keine Antwort oder eine Ausnahme → die Liste wird in diesem Lauf nicht beurteilt, auch ihre übrigen Antworten nicht. Probe am 2026-11-12 über den System-Resolver der Dev-Box: die Testeinträge der drei freien Listen antworten 127.0.0.2 mit TXT, nicht gelistete Namen NODATA statt NXDOMAIN — beides gilt als „nicht gelistet“. Die Testeinträge der DQS-Zone sind nicht verifiziert (kein Key).
+- 2026-11-12 T9: Status: eine Listung ist `warning` (Zustellung leidet, der Dienst läuft), Metrik `listed_count` = Zahl der Paare (Adresse, Liste); eine nicht beurteilte Liste oder ein MX-Host ohne Antwort macht einen Lauf ohne Listung `unknown`, eine Listung geht immer vor. TXT-Grund nur der freien Listen, über `_show` begrenzt.
+- 2026-11-12 T9: der DQS-Key ist ein Label des Fragenamens: `list_query` fängt jede Ausnahme selbst, `_Run.listed` jede weitere; Meldung, Details und Metrik tragen nur Listen-Titel — Test über alle Pfade (auch eine Ausnahme mit dem Namen) mit `caplog`. Laufzeit höchstens 45 s, danach sind die übrigen Listen nicht beurteilt. NXDOMAIN der Domain ist `reached=True` wie in `mail_dns`.
+- 2026-11-12 T9: sieben Dateien: `checkers/central.py` (Registry-Fühler), `routers/checks.py` (Metrik `monitor_listed_count_value`) und die Tests von Config und Dispatcher per `set-files`, `Verify:` um diese Tests erweitert.

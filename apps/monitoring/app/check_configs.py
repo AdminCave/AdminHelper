@@ -302,6 +302,23 @@ class MailDnsParams(_StrictConfig):
     """The sensor mail_dns takes no params; extra=forbid refuses any key."""
 
 
+# The blocklists of the sensor dnsbl (app.central.dnsbl.LISTS).
+DnsblList = Literal["psbl", "spamcop", "uceprotect1", "spamhaus_zen"]
+
+
+class DnsblParams(_StrictConfig):
+    """The lists to ask; None asks the free ones, and Spamhaus ZEN when a DQS key is set."""
+
+    lists: list[DnsblList] | None = Field(None, min_length=1, max_length=4)
+
+    @field_validator("lists")
+    @classmethod
+    def _once_each(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and len(set(v)) != len(v):
+            raise ValueError("each list at most once")
+        return v
+
+
 @dataclass(frozen=True)
 class CentralSensor:
     """One sensor of a central check (R-1224): its shortest and its default interval,
@@ -326,6 +343,8 @@ CENTRAL_SENSORS: dict[str, CentralSensor] = {
     "imap": CentralSensor("15m", "15m", 993, MailParams, ports=(143, 993, 995)),
     # Mail records change seldom; hourly also bounds the MTA-STS policy fetches.
     "mail_dns": CentralSensor("1h", "1h", None, MailDnsParams, needs_name=True),
+    # A listing changes within days; daily keeps the lists' query load negligible.
+    "dnsbl": CentralSensor("24h", "24h", None, DnsblParams, needs_name=True),
 }
 # The agent sensors whose view of the same service explains a central result (T10).
 CENTRAL_PAIR_SENSORS = frozenset({"tls", "certfile", "http"})

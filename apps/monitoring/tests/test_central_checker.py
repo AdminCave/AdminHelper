@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from app.central import maildns, resolve
+from app.central import dnsbl, maildns, resolve
 from app.central.limits import SKIPPED_BUSY_MESSAGE, SKIPPED_SPACING_MESSAGE, RunSkipped
 from app.central.resolve import Classification, Reach
 from app.central.tls import SensorResult
@@ -488,5 +488,18 @@ def test_the_mail_dns_sensor_asks_like_a_registry_sensor(world, monkeypatch):
     _run({"sensor": "mail_dns", "host": "example.test"}, prev)
 
     assert world["registry_probe"].calls == [("example.test", {}, prev)]
+    assert world["classified"] == [] and world["probe"].calls == []
+    assert world["slots"].taken == 1
+
+
+def test_the_dnsbl_sensor_asks_like_a_registry_sensor(world, monkeypatch):
+    assert central._REGISTRY_PROBES["dnsbl"] is dnsbl.probe
+    assert "dnsbl" not in central._PROBES
+    monkeypatch.setitem(central._REGISTRY_PROBES, "dnsbl", world["registry_probe"])
+    params = {"lists": ["psbl"]}
+
+    _run({"sensor": "dnsbl", "host": "example.test", "params": params})
+
+    assert world["registry_probe"].calls == [("example.test", params, {})]
     assert world["classified"] == [] and world["probe"].calls == []
     assert world["slots"].taken == 1

@@ -250,6 +250,7 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
         "monitor_days_left_value",
         "monitor_lifetime_pct_value",
         "monitor_resolvers_agree_value",
+        "monitor_listed_count_value",
     ],
 }
 

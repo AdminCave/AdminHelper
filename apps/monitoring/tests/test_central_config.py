@@ -53,6 +53,12 @@ def _config(**over):
         _config(sensor="imap", port=995),
         _config(sensor="mail_dns"),
         _config(sensor="mail_dns", host="example.test"),
+        _config(sensor="dnsbl", host="example.test"),
+        _config(sensor="dnsbl", params={"lists": None}),
+        _config(sensor="dnsbl", params={"lists": ["psbl"]}),
+        _config(
+            sensor="dnsbl", params={"lists": ["psbl", "spamcop", "uceprotect1", "spamhaus_zen"]}
+        ),
     ],
 )
 def test_valid_configs_pass(config):
@@ -116,6 +122,13 @@ def test_valid_configs_pass(config):
         (_config(sensor="mail_dns", port=25), "the sensor mail_dns takes no port"),
         (_config(sensor="mail_dns", host="192.0.2.10"), "the sensor mail_dns needs a host name"),
         (_config(sensor="mail_dns", params={"x": 1}), "params"),
+        (_config(sensor="dnsbl", port=25), "the sensor dnsbl takes no port"),
+        (_config(sensor="dnsbl", host="192.0.2.10"), "the sensor dnsbl needs a host name"),
+        (_config(sensor="dnsbl", params={"lists": []}), "params.lists"),
+        (_config(sensor="dnsbl", params={"lists": ["spamhaus"]}), "params.lists"),
+        (_config(sensor="dnsbl", params={"lists": "psbl"}), "params.lists"),
+        (_config(sensor="dnsbl", params={"lists": ["psbl", "psbl"]}), "each list at most once"),
+        (_config(sensor="dnsbl", params={"zones": ["psbl"]}), "params"),
     ],
 )
 def test_invalid_configs_are_refused(config, fragment):
@@ -256,6 +269,22 @@ def test_the_mail_dns_sensor_runs_at_most_hourly(client_db, interval, code):
     assert default.status_code == 201, default.text
     with factory() as db:
         assert db.get(MonitorCheck, default.json()["id"]).interval == "1h"
+
+
+@pytest.mark.parametrize(("interval", "code"), [("12h", 400), ("24h", 201)])
+def test_the_dnsbl_sensor_runs_at_most_daily(client_db, interval, code):
+    client, factory = client_db
+    config = _config(sensor="dnsbl", host="example.test")
+
+    r = client.post("/checks", json=_payload(config=config, interval=interval))
+    default = client.post("/checks", json=_payload(config=config))
+
+    assert r.status_code == code, r.text
+    if code == 400:
+        assert r.json()["detail"] == "Interval too short for sensor dnsbl: at least 24h"
+    assert default.status_code == 201, default.text
+    with factory() as db:
+        assert db.get(MonitorCheck, default.json()["id"]).interval == "24h"
 
 
 def test_create_refuses_a_forbidden_port_at_the_schema(client_db):
