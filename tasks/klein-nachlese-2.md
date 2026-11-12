@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-2 — Task-Ledger
-Status: geplant · Branch: feature/klein-nachlese-2 · Review: pro Task
+Status: aktiv · Branch: feature/klein-nachlese-2 · Review: pro Task
 Spec: docs/features/klein-nachlese-2.md (Roadmap R-1250)
 Heavy: none — Server-Laden, Schema-Limit, Skript-Test und ein Kommentar, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
