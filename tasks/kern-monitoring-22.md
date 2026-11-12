@@ -5,7 +5,7 @@ Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring (Meldetext); 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1319: Probe auf eine eigene Host-Adresse nur zu einem Port mit Listener  [?] (Meldung eines Ports ohne Listener: Fehler „no process listens on port N“ (Empfehlung) oder not_allowed?)
+### T1 — R-1319: Probe auf eine eigene Host-Adresse nur zu einem Port mit Listener  [~] (ausgelagert in R-1374 (neu): Kevin-Frage zur Meldung offen, Zug wartet nicht)
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
 Änderung: `checkListener` lehnt ip:port ab, ohne zu verbinden, wenn kein Listener des Snapshots ip:port trägt und
 `checkPublished` den Port nicht als Docker-Veröffentlichung kennt; Container-Adressen (`extra`) ausgenommen. Tests
