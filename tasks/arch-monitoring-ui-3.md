@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-ui-3 — Task-Ledger
-Status: erledigt · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-ui-3 · Review: pro Task
 Spec: docs/features/arch-monitoring-ui-3.md (Roadmap R-1226)
 Heavy: linux-full — `apps/agent` (neue systemctl-/journalctl-Aufrufe), der Berichtspfad des Monitoring-Dienstes und eine neue Desktop-Journey; der Sammellauf fährt agent-monitoring, den Stack und die Desktop-Live-Specs. Der Windows-Teil (T2) läuft über die PR-CI-Jobs `agent-windows` und `rust-windows`
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -141,6 +141,12 @@ Review: approve (.ah-out/review/arch-monitoring-ui-3/T13.verdict.json)
 Änderung: Abschlussprüfung (reviewer branch): Spec Nicht-Ziele verspricht den Grund auch „im Text des Listen-Modus“, `_evaluate_list` nennt ihn nicht. Ein Dienst, der im Modus `list` nicht läuft, trägt in der Meldung und in `_details.watched[].reason` seinen Grund: `failed_details` (Linux), sonst `result`/`exit` aus dem Inventar (ohne `result` `success`), bei gedrosseltem Push aus `prev_details`. Dazu der Doku-Nit „alle Units“ → Service-Units.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py
 Doku: docs/admin/monitoring.html, docs/developer/monitoring.html DE+EN
+
+### T14 — CI: der Scope von rust-windows nimmt die Allowlist des Agenten auf (R-1226)  [ ]
+Komponente: server · Dateien: .github/scripts/ci_changes.py, apps/server/tests/test_ci_changes.py
+Änderung: PR #506 CI (Server-pytest, beide Shards 2/2): `test_what_the_rust_sources_include_is_in_the_scope_of_rust_windows` ist rot, weil der T9-Test `the_journal_unit_class_is_the_agents` in `ssh.rs` per `include_str!` `apps/agent/internal/allowlist/allowlist.go` liest, der Scope `rust-windows` in `ci_changes.py` die Datei aber nicht trägt; ein PR, der nur die Allowlist ändert, ließe den Windows-Rust-Lauf aus. Die Datei kommt in den Scope (wie `credentials/store.go`), der Test bekommt den Fall und `_ALWAYS_ON["rust"]` die Datei.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_changes.py
+Doku: keine (die CI-Doku nennt die einzelnen gelesenen Dateien nicht)
 
 ## Entscheidungen
 - 2026-11-12 T1: `inventoryHash` nimmt das `since` eines inaktiven Dienstes nicht auf (Spec: „die übrigen Felder gehen in den Hash ein“) — ein Timer-Oneshot verschiebt sein `since` bei jedem Lauf, sonst ginge das volle Inventar alle fünf Minuten mit statt stündlich; der Neustart eines laufenden Dienstes bleibt über `since` und `restarts` erkannt.
