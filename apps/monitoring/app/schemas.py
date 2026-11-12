@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
@@ -628,6 +628,8 @@ class AgentPlanOut(BaseModel):
     scan: bool
     discovery: PlanDiscoveryOut
     probes: list[PlanProbeOut]
+    # R-1226: whether the agent sends the error lines of failed services.
+    service_logs: bool
 
 
 # Catalog, discovery and findings (R-1223): admin API, camel case like the rest of it.
@@ -675,6 +677,29 @@ class DiscoveryOut(BaseModel):
     inventory: dict[str, Any]
     # References <module>/<instance>/<slot> the agent holds a secret for, never values.
     credentials: list[str]
+
+
+# The service list of one server (R-1226): admin API, camel case. services holds the
+# entries as the agent sent them, like DiscoveryOut.inventory.
+class ServiceLogOut(BaseModel):
+    since: str | None
+    collectedAt: str | None
+    lines: list[str]
+
+
+class ServiceInventoryOut(BaseModel):
+    serverId: str
+    reportedAt: str | None
+    logLines: bool
+    services: list[dict[str, str]]
+    # The redacted error lines of failed services by unit; none while logLines is off.
+    logs: dict[str, ServiceLogOut]
+
+
+class ServiceOptionsIn(RequestModel):
+    model_config = ConfigDict(extra="forbid")
+
+    log_lines: StrictBool
 
 
 class FindingOut(BaseModel):

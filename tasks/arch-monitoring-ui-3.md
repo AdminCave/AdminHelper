@@ -63,8 +63,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_inv
 Doku: → T12
 Abhängt von: T4
 
-### T6 — Monitoring: Admin-Route für die Dienste-Liste, Schalter je Server, Plan-Feld (R-1226)  [ ]
+### T6 — Monitoring: Admin-Route für die Dienste-Liste, Schalter je Server, Plan-Feld (R-1226)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/schemas.py, apps/monitoring/app/module_plan.py, apps/monitoring/tests/test_service_inventory_api.py, apps/monitoring/tests/test_agent_plan.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @de78ab7cf 2026-11-12T16:36:36+01:00
+Review: approve (.ah-out/review/arch-monitoring-ui-3/T6.verdict.json)
 Änderung: `GET /status/server/{server_id}/services` (Inventar, Stand, Schalter, Zeilen je Unit) und `PUT /status/server/{server_id}/services/options` (`{log_lines}` strict; aus löscht die gespeicherten Zeilen), beide `require_internal` wie die Nachbarrouten. `build_plan` liefert `service_logs`. OpenAPI-Snapshot neu. Tests: leerer Server, Inventar mit Zeilen, Schalter an/aus samt Löschung, Plan-Feld, 404, strikte Validierung.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_inventory_api.py tests/test_agent_plan.py tests/test_openapi_snapshot.py
 Doku: → T12
@@ -133,3 +135,5 @@ Task-Review: am Ende
 - 2026-11-12 T5: Eine Zeile über `MAX_AGENT_TEXT` wird vor den Regeln gekürzt (begrenzt ihre Arbeit), das dabei angeschnittene Token fällt weg — ein halber Schlüssel ist kürzer als 32 Zeichen und keine Regel fände ihn mehr; der Schnitt auf 300 Zeichen läuft nach den Regeln. Base64 ab 32 Zeichen nur mit Ziffer, Groß- und Kleinbuchstabe, sonst fielen Pfade und Wörter mit.
 - 2026-11-12 T5: `_MAX_REPORT_ENTRIES` heißt jetzt `MAX_REPORT_ENTRIES`: `service_inventory.py` kappt das Inventar mit derselben Grenze, und `test_module_boundaries.py` verbietet den Import privater Namen über Modulgrenzen.
 - 2026-11-12 T5: Die Schlüssel- und die Authorization-Regel beginnen am Schlüsselwort (der Name davor bleibt ohnehin im Text), der Name danach ist auf 64 Zeichen begrenzt, das URL-Schema auf 32, damit Pythons backtrackendes `re` je Zeile linear bleibt. Dazu speichert ein Bericht die Zeilen von höchstens `MAX_LOG_UNITS` = 20 Units (die ersten mit Zeilen in `failed`); T3 sendet höchstens so viele.
+- 2026-11-12 T6: Die Antwort folgt der Admin-API in camelCase (`serverId`, `reportedAt`, `logLines`, `services`, `logs.<unit>.{since, collectedAt, lines}`), der Rumpf von PUT in snake_case (`{log_lines}`) wie jedes Request-Schema des Dienstes; `services` trägt die Einträge, wie der Agent sie sandte (wie `DiscoveryOut.inventory`). PUT antwortet mit demselben Rumpf wie GET.
+- 2026-11-12 T6: „Server bekannt“ heißt: Agent-Key, ein Agent-Bericht (`monitor_agent_liveness`, auch für Agenten mit Zertifikat ohne Key) oder eine Inventar-Zeile. Sonst 404 für GET und PUT, damit ein PUT für einen vertippten oder gelöschten Server keine Zeile hinterlässt, die kein `cleanup_server` mehr entfernt. GET zeigt bei ausgeschaltetem Schalter keine Zeilen, auch keine, die ein schon laufender Bericht noch gespeichert hat.

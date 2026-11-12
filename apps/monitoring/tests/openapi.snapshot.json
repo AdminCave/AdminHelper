@@ -151,6 +151,10 @@
           "scan": {
             "title": "Scan",
             "type": "boolean"
+          },
+          "service_logs": {
+            "title": "Service Logs",
+            "type": "boolean"
           }
         },
         "required": [
@@ -158,7 +162,8 @@
           "catalog_version",
           "scan",
           "discovery",
-          "probes"
+          "probes",
+          "service_logs"
         ],
         "title": "AgentPlanOut",
         "type": "object"
@@ -2573,6 +2578,109 @@
           "maintenance"
         ],
         "title": "ServerHistoryOut",
+        "type": "object"
+      },
+      "ServiceInventoryOut": {
+        "properties": {
+          "logLines": {
+            "title": "Loglines",
+            "type": "boolean"
+          },
+          "logs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ServiceLogOut"
+            },
+            "title": "Logs",
+            "type": "object"
+          },
+          "reportedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportedat"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Services",
+            "type": "array"
+          }
+        },
+        "required": [
+          "serverId",
+          "reportedAt",
+          "logLines",
+          "services",
+          "logs"
+        ],
+        "title": "ServiceInventoryOut",
+        "type": "object"
+      },
+      "ServiceLogOut": {
+        "properties": {
+          "collectedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectedat"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "since",
+          "collectedAt",
+          "lines"
+        ],
+        "title": "ServiceLogOut",
+        "type": "object"
+      },
+      "ServiceOptionsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "log_lines": {
+            "title": "Log Lines",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "log_lines"
+        ],
+        "title": "ServiceOptionsIn",
         "type": "object"
       },
       "SkippedCheckOut": {
@@ -5012,6 +5120,96 @@
           }
         },
         "summary": "Get Server History"
+      }
+    },
+    "/status/server/{server_id}/services": {
+      "get": {
+        "description": "The services the server's agent last reported, the switch for their error lines\nand the redacted error lines of the failed ones.",
+        "operationId": "get_server_services_status_server__server_id__services_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceInventoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Server Services"
+      }
+    },
+    "/status/server/{server_id}/services/options": {
+      "put": {
+        "description": "Switches the error lines of failed services on or off for the server. Off deletes\nthe stored lines at once; the agent learns it with its next plan.",
+        "operationId": "set_server_service_options_status_server__server_id__services_options_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceOptionsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceInventoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Server Service Options"
       }
     },
     "/status/summary": {
