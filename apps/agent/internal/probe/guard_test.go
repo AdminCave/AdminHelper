@@ -314,12 +314,16 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			lst("127.0.0.1", 8012, 71), lst("127.0.0.1", 8013, 72), lst("127.0.0.1", 8014, 73),
 			lst("127.0.0.1", 8015, 74), lst("127.0.0.1", 8016, 75), lst("127.0.0.1", 8017, 76),
 			lst("127.0.0.1", 8018, 77), lst("127.0.0.1", 8019, 78), lst("127.0.0.1", 8020, 79),
+			lst("127.0.0.1", 8021, 80), lst("127.0.0.1", 8022, 81), lst("127.0.0.1", 8023, 82),
+			lst("127.0.0.1", 8024, 83), lst("127.0.0.1", 8025, 84), lst("127.0.0.1", 8026, 85),
+			lst("127.0.0.1", 8027, 86),
 		},
 		names: map[int32]string{
 			60: "rootlesskit", 61: "rootlessport", 62: "slirp4netns", 63: "pasta.avx2", 64: "passt",
 			65: "kube-proxy", 66: "socat", 67: "exe", 68: "exe", 69: "exe", 70: "nginx",
 			71: "ssh", 72: "kubectl", 73: "gvproxy", 74: "vpnkit", 75: "autossh", 76: "exe", 77: "exe",
-			78: "exe", 79: "sshfs",
+			78: "exe", 79: "sshfs", 80: "systemd-socket-", 81: "sslh", 82: "sslh-ev", 83: "sslh-select",
+			84: "rinetd", 85: "redir", 86: "redis-server",
 		},
 		args: map[int32][]string{
 			67: {"rootlessport"},
@@ -352,6 +356,12 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 		{"127.0.0.1:8016", "belongs to autossh"},
 		{"127.0.0.1:8017", "cannot be told"},
 		{"127.0.0.1:8018", "cannot be told"},
+		{"127.0.0.1:8021", "belongs to systemd-socket-"},
+		{"127.0.0.1:8022", "belongs to sslh"},
+		{"127.0.0.1:8023", "belongs to sslh-ev"},
+		{"127.0.0.1:8024", "belongs to sslh-select"},
+		{"127.0.0.1:8025", "belongs to rinetd"},
+		{"127.0.0.1:8026", "port 8026 belongs to redir, which forwards to an end the agent cannot check"},
 	} {
 		network := "tcp4"
 		if strings.HasPrefix(c.address, "[") {
@@ -361,8 +371,9 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
 		}
 	}
-	// nginx, a reexec whose argv[0] is no forwarder, and sshfs (ssh matches whole, not as a prefix).
-	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020"} {
+	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix) and
+	// redis-server (no redir).
+	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020", "127.0.0.1:8027"} {
 		if err := allowed(g, "tcp4", address); err != nil {
 			t.Errorf("%s: %v, want it allowed", address, err)
 		}

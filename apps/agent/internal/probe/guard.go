@@ -67,11 +67,12 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // forwarders start the names of the processes that forward a port of this host to a port they do
 // not name to the guard: rootless container networks (rootlesskit, Podman's rootlessport, slirp4netns,
 // pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
-// kubectl (port-forward), autossh and socat; forwarderNames are matched whole, since a prefix ssh would
-// also take sshd and ssh-agent. A probe never connects to a port one of them listens on, since the port
-// behind it cannot be checked.
+// kubectl (port-forward), autossh, socat, systemd-socket-proxyd (the kernel cuts the name to
+// systemd-socket-), sslh with sslh-ev and sslh-select, rinetd and redir; forwarderNames are matched
+// whole, since a prefix ssh would also take sshd and ssh-agent. A probe never connects to a port or a
+// socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
-	"kube-proxy", "kubectl", "autossh", "socat"}
+	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir"}
 
 var forwarderNames = []string{"ssh"}
 
@@ -362,7 +363,7 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
-		if err := checkForwarder(ctx, l.pid, name, port); err != nil {
+		if err := checkForwarder(ctx, l.pid, name, fmt.Sprintf("port %d", port)); err != nil {
 			return err
 		}
 		switch processKey(name) {
@@ -389,24 +390,25 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 	return nil
 }
 
-// checkForwarder returns an error if the process pid, named name, that listens on port is one of
+// checkForwarder returns an error if the process pid, named name, that serves at (a port or a socket)
+// is one of
 // forwarders. A program that runs itself anew through /proc/self/exe (Podman's rootlessport) is named
 // exe by the kernel; its argv[0] tells which it is, and an argv that cannot be read is refused.
-func checkForwarder(ctx context.Context, pid int32, name string, port uint16) error {
+func checkForwarder(ctx context.Context, pid int32, name, at string) error {
 	if processKey(name) == "exe" {
 		args, err := processArgs(ctx, pid)
 		if err != nil {
-			return fmt.Errorf("%w: the process %s listening on port %d cannot be told: %v", ErrNotAllowed, name, port, err)
+			return fmt.Errorf("%w: the process %s serving %s cannot be told: %v", ErrNotAllowed, name, at, err)
 		}
 		// An argv[0] that is again /proc/self/exe tells no more than none.
 		if len(args) == 0 || processKey(filepath.Base(args[0])) == "exe" {
-			return fmt.Errorf("%w: the process %s listening on port %d cannot be told", ErrNotAllowed, name, port)
+			return fmt.Errorf("%w: the process %s serving %s cannot be told", ErrNotAllowed, name, at)
 		}
 		name = filepath.Base(args[0])
 	}
 	if forwarder(name) {
 		// name may come from argv[0], which its process sets at will: the text keeps a bounded part.
-		return fmt.Errorf("%w: port %d belongs to %.64s, which forwards to a port the agent cannot check", ErrNotAllowed, port, name)
+		return fmt.Errorf("%w: %s belongs to %.64s, which forwards to an end the agent cannot check", ErrNotAllowed, at, name)
 	}
 	return nil
 }

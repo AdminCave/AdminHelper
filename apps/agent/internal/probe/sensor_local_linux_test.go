@@ -505,6 +505,41 @@ func TestUnixSocketSensorNeverConnectsToASocketOfAControlService(t *testing.T) {
 	}
 }
 
+// TestUnixSocketSensorNeverConnectsToAForwarder: a forwarder serving a socket hands the connection on
+// to an end the guard never checked (R-1376).
+func TestUnixSocketSensorNeverConnectsToAForwarder(t *testing.T) {
+	h := servedBy(t, "socat")
+	path, _ := unixFake(t, func(c *fakeConn) { c.drain() })
+	probe := func() (map[string]any, error) {
+		return unixSocketSensor(context.Background(), unixProbe(map[string]any{"path": path}), "")
+	}
+	pid := int32(os.Getpid())
+	h.args = map[int32][]string{}
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"socat", nil, "belongs to socat, which forwards"},
+		{"sslh-select", nil, "belongs to sslh-select, which forwards"},
+		{"exe", []string{"/usr/libexec/podman/rootlessport"}, "belongs to rootlessport, which forwards"},
+		{"exe", nil, "the process exe serving " + path + " cannot be told"},
+	} {
+		h.names[pid] = c.name
+		delete(h.args, pid)
+		if c.args != nil {
+			h.args[pid] = c.args
+		}
+		if got, err := probe(); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("served by %s %v = %v, %v; want it refused: %s", c.name, c.args, got, err, c.want)
+		}
+	}
+	h.names[pid], h.args[pid] = "exe", []string{"/usr/bin/caddy", "run"}
+	if got, err := probe(); err != nil || got["connected"] != true {
+		t.Errorf("served by a reexec of caddy = %v, %v; want it connected", got, err)
+	}
+}
+
 // listenCounting serves path and counts the connections it accepts.
 func listenCounting(t *testing.T, path string) *atomic.Int32 {
 	t.Helper()

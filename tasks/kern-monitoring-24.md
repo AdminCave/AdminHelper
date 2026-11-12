@@ -16,8 +16,10 @@ Listener auf der unspezifizierten Adresse trägt jede eigene Adresse; `extra` oh
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T2 — R-1376, R-1370: Weiterleiter an Unix-Sockets und weitere Weiterleiter-Programme  [ ]
+### T2 — R-1376, R-1370: Weiterleiter an Unix-Sockets und weitere Weiterleiter-Programme  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local_freebsd_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @38f908dcb 2026-11-12T18:06:26+01:00
+Review: approve (.ah-out/review/kern-monitoring-24/T2.verdict.json)
 Änderung: Beide `checkPeer` prüfen den Gegenprozess zusätzlich mit der Weiterleiter-Regel (samt exe/argv[0] wie
 `checkForwarder`). `forwarders` nimmt weitere reine Weiterleiter auf (systemd-socket-proxyd, sslh, rinetd, redir;
 Kernel-Namen auf 15 Zeichen gekürzt, vor dem Bau an den Quellen prüfen). Tests über die Seams je Plattform.
@@ -56,7 +58,7 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_dns
 Doku: → T7
 
 ### T6 — R-1382: NAT64-Präfix der Umgebung erkennen (RFC 7050)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/central/net.py, apps/monitoring/tests/test_central_net.py
+Komponente: monitoring · Dateien: apps/monitoring/app/central/net.py, apps/monitoring/tests/test_central_net.py, apps/monitoring/tests/conftest.py
 Änderung: `effective_address` packt eingebettetes IPv4 auch aus den Präfixen aus, die der System-Resolver für
 `ipv4only.arpa` (AAAA, 192.0.0.170/171) liefert, in allen Längen nach RFC 6052 §2.2; Ergebnis gecacht, Fehler der
 Erkennung lassen nur das Well-Known-Prefix. Tests: jede Präfixlänge, u-Oktett, kein DNS64, mehrere Präfixe.
