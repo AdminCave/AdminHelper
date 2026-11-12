@@ -13,7 +13,7 @@ in CLAUDE.md §5; hier die Einzelheiten.
 ## Drei Ebenen
 
 1. **Schnell (überall, PR-CI):** Lint + Unit je Komponente (Tabelle in `CLAUDE.md`). Sammelbefehl
-   `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>] [--part gui|rest]`,
+   `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>] [--part gui|rest] [--exclude <ids…>]`,
    Default `quick`; dep-gated, Exit 75 = SKIP, am Ende
    `N passed, M failed, K skipped, J test-skips, R reruns` (Exit ≠ 0 bei Fail). Unter `--strict` ist ein
    übersprungener Pflicht-Schritt ein Fehler, ebenso ein strenger Lauf, in dem gar nichts lief; jeder Lauf

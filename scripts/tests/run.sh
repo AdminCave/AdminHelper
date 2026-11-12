@@ -29,6 +29,9 @@
 #     --part <gui|rest> run one part of the layer (= AH_PART): gui = the desktop
 #                      GUI suites and their smoke test, rest = every other step;
 #                      heavy.sh runs the two parts of `all` on two boxes at once
+#     --exclude <ids…> leave the named steps out (= AH_EXCLUDE; step ids as in
+#                      AH_REQUIRED): not run, not a SKIP, not in the artifact;
+#                      the summary names them, an unknown id is exit 2
 #
 # The heavy layers (integration|e2e|all) refuse to run unless AH_ALLOW_REAL=1,
 # so they never fire by accident on a dev box. The /test skill sets it.
@@ -70,7 +73,12 @@ while [ $# -gt 0 ]; do
     --part)
       shift; [ $# -gt 0 ] || { echo "--part needs gui or rest"; exit 2; }
       AH_PART="$1"; shift ;;
-    --*) echo "unknown flag: $1 (use --strict, --only <keys…>, --step <name>, --part <gui|rest>)"; exit 2 ;;
+    --exclude)
+      shift; _exclude=""
+      while [ $# -gt 0 ]; do case "$1" in --*) break ;; *) _exclude="$_exclude $1"; shift ;; esac; done
+      [ -n "$_exclude" ] || { echo "--exclude needs at least one step id"; exit 2; }
+      AH_EXCLUDE="${_exclude# }" ;;
+    --*) echo "unknown flag: $1 (use --strict, --only <keys…>, --step <name>, --part <gui|rest>, --exclude <ids…>)"; exit 2 ;;
     *)
       [ -z "$LAYER" ] || { echo "unexpected argument: $1 (layer is already '$LAYER')"; exit 2; }
       LAYER="$1"; shift ;;
@@ -81,6 +89,7 @@ AH_STRICT="${AH_STRICT:-0}"
 AH_ONLY="${AH_ONLY:-}"
 AH_STEP="${AH_STEP:-}"
 AH_PART="${AH_PART:-}"
+AH_EXCLUDE="${AH_EXCLUDE:-}"
 # The flag and the env form alike, before a step has run: an unknown part would
 # filter every step away and leave a run that verified nothing.
 case "$AH_PART" in
@@ -184,7 +193,8 @@ TEST_SKIPS=()     # tests pytest itself skipped (-rs), invisible in the summary 
 RERUNS=0          # always 0 in stage 1; the field exists so stage 3 can fill it
 SKIP_VERDICT=""   # set by _skip: "skip" or "strict-failed"
 STEP_NAMES=()
-STEP_PROBE=0   # 1 = --step dry pass: collect names, run nothing
+STEP_IDS=" "   # every step id the dry pass met, for --exclude
+STEP_PROBE=0   # 1 = --step/--exclude dry pass: collect names and ids, run nothing
 STEP_EXACT=0   # 1 = --step equals one step's whole name: match only that one
 hdr()  { printf '\n\033[1m### %s\033[0m\n' "$*"; }
 pass() { echo   "  PASS  $*"; PASS=$((PASS+1)); }
@@ -201,6 +211,7 @@ required() {  # required <id> -> 0 if the id is in the effective required set
 # The wrapper honours --step (a step that CAN only skip on this box is still a
 # valid --step target); run_step calls _skip directly, having filtered already.
 skip() {
+  excluded "$1" && return 0
   want_step "$2" || return 0
   [ "$STEP_PROBE" = "1" ] && return 0
   _skip "$@"
@@ -234,6 +245,17 @@ gui_part_step() {
   return 1
 }
 
+# excluded <id> -> 0 if --exclude names the step: like a step outside --part, it
+# is not this run's. Asked before want_step, so an id is valid whatever --part
+# and --step narrow the run to, and the dry pass meets every id it passes. One
+# loop splits AH_EXCLUDE for this check and the dry pass alike, so an id the
+# dry pass accepted is the id this check finds.
+excluded() {
+  [ "$STEP_PROBE" = 1 ] && STEP_IDS="$STEP_IDS$1 "
+  local x; for x in $AH_EXCLUDE; do [ "$x" = "$1" ] && return 0; done
+  return 1
+}
+
 # want_step <name> -> 0 if this step should run at all. A step outside --part is
 # not this run's: it neither runs nor shows up as a SKIP or in the artifact, and
 # --step only searches the part. With --step it also records the name, so the
@@ -255,6 +277,7 @@ want_step() {
 # silently become a green PASS though nothing ran, and the summary line is the
 # authoritative result ("SKIP heisst nicht verifiziert") (6.9).
 run_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
+  excluded "$id" && return 0
   want_step "$name" || return 0
   [ "$STEP_PROBE" = "1" ] && return 0
   hdr "$name"; local rc=0 t0=$SECONDS result=""
@@ -340,6 +363,7 @@ py_lock() {
 # invisible in "N passed": test_migrations_smoke and test_stream_redis have been
 # skipping for months while the summary read green.
 run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
+  excluded "$id" && return 0
   want_step "$name" || return 0
   [ "$STEP_PROBE" = "1" ] && return 0
   mkdir -p "$AH_OUT_DIR" 2>/dev/null
@@ -533,6 +557,7 @@ write_artifact() {
     printf '  "only": %s,\n'       "$(json_str "$AH_ONLY")"
     printf '  "step": %s,\n'       "$(json_str "$AH_STEP")"
     printf '  "part": %s,\n'       "$(json_str "$AH_PART")"
+    printf '  "exclude": %s,\n'    "$(json_str "$AH_EXCLUDE")"
     printf '  "required": %s,\n'   "$(json_str "$AH_REQUIRED")"
     printf '  "head": %s,\n'       "$(json_str "$(evidence_head)")"
     printf '  "tree_hash": %s,\n'  "$(json_str "$(evidence_tree_hash)")"
@@ -1008,25 +1033,36 @@ run_layer() {
   esac
 }
 
-# --step: a dry pass first, so a typo or an ambiguous substring is rejected
-# BEFORE a suite has run — otherwise "--step test" would quietly run five of them.
-if [ -n "$AH_STEP" ]; then
+# --step and --exclude: a dry pass first, so a typo or an ambiguous substring is
+# rejected BEFORE a suite has run — otherwise "--step test" would quietly run five
+# of them, and a mistyped --exclude would run the very step it meant to leave out.
+if [ -n "$AH_STEP" ] || [ -n "$AH_EXCLUDE" ]; then
   STEP_PROBE=1; run_layer; STEP_PROBE=0
-  case "${#STEP_NAMES[@]}" in
-    0) echo "unknown step: '$AH_STEP' (no step of layer '$LAYER'${AH_PART:+, part '$AH_PART',} matches — note that"
-       echo "  steps behind an unmet precondition, e.g. a missing docker, are not reached)"
-       exit 2 ;;
-    1) ;;
-    *) # A name that is a prefix of another (desktop_e2e_connect, ..._tunnel) is
-       # still addressable: the one step whose whole name it is wins.
-       exact=0; for n in "${STEP_NAMES[@]}"; do [ "$n" = "$AH_STEP" ] && exact=$((exact + 1)); done
-       if [ "$exact" = 1 ]; then
-         STEP_EXACT=1
-       else
-         echo "ambiguous step: '$AH_STEP' matches ${#STEP_NAMES[@]} steps:"
-         printf '  %s\n' "${STEP_NAMES[@]}"; exit 2
-       fi ;;
-  esac
+  for _ex in $AH_EXCLUDE; do
+    case "$STEP_IDS" in *" $_ex "*) ;; *)
+      echo "unknown step id: '$_ex' (--exclude; no step of layer '$LAYER' carries it — note that"
+      echo "  steps behind an unmet precondition, e.g. a missing docker, are not reached)"
+      exit 2 ;;
+    esac
+  done
+  if [ -n "$AH_STEP" ]; then
+    case "${#STEP_NAMES[@]}" in
+      0) echo "unknown step: '$AH_STEP' (no step of layer '$LAYER'${AH_PART:+, part '$AH_PART',} matches — note that"
+         echo "  steps behind an unmet precondition, e.g. a missing docker, are not reached)"
+         [ -n "$AH_EXCLUDE" ] && echo "  (--exclude takes out: $AH_EXCLUDE)"
+         exit 2 ;;
+      1) ;;
+      *) # A name that is a prefix of another (desktop_e2e_connect, ..._tunnel) is
+         # still addressable: the one step whose whole name it is wins.
+         exact=0; for n in "${STEP_NAMES[@]}"; do [ "$n" = "$AH_STEP" ] && exact=$((exact + 1)); done
+         if [ "$exact" = 1 ]; then
+           STEP_EXACT=1
+         else
+           echo "ambiguous step: '$AH_STEP' matches ${#STEP_NAMES[@]} steps:"
+           printf '  %s\n' "${STEP_NAMES[@]}"; exit 2
+         fi ;;
+    esac
+  fi
   PASS=0 FAIL=0 SKIP=0; FAILED_STEPS=(); STRICT_FAILED=()
 fi
 
@@ -1050,11 +1086,13 @@ echo "────────────────────────�
 # nothing, whatever narrowed it (a typo in --only, an over-trimmed AH_REQUIRED,
 # a box without the toolchain, a --part with no step in this layer).
 if [ "$AH_STRICT" = "1" ] && [ "$PASS" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
-  echo "  strict-failed: no step ran (layer=$LAYER, only=${AH_ONLY:-none}, step=${AH_STEP:-none}, part=${AH_PART:-none})"
+  echo "  strict-failed: no step ran (layer=$LAYER, only=${AH_ONLY:-none}, step=${AH_STEP:-none}, part=${AH_PART:-none}, exclude=${AH_EXCLUDE:-none})"
   STRICT_FAILED+=("no step ran"); FAIL=$((FAIL+1)); FAILED_STEPS+=("no step ran")
 fi
 
 echo "  run.sh[$LAYER]: $PASS passed, $FAIL failed, $SKIP skipped, ${#TEST_SKIPS[@]} test-skips, $RERUNS reruns"
+# A run with steps left out must not read like a full one.
+[ -n "$AH_EXCLUDE" ] && echo "  excluded: $AH_EXCLUDE"
 # Under --strict the required set decides what a SKIP costs, so print it: a run
 # narrowed to nothing by an over-trimmed AH_REQUIRED must be visible, not implied.
 [ "$AH_STRICT" = "1" ] && echo "  required (strict): $AH_REQUIRED"

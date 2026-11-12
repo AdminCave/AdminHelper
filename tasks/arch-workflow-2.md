@@ -14,8 +14,10 @@ Beweis: run.sh:737 installiert die Server-Pakete nur im Schritt server-pytest; d
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: keine (internes Verhalten zweier Schritte; die Doku beschreibt nicht, welcher Schritt was ins Venv installiert)
 
-### T2 — R-1338: run.sh `--exclude <ids…>`  [ ]
+### T2 — R-1338: run.sh `--exclude <ids…>`  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, .claude/rules/testing.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e36e45015 2026-11-12T09:09:36+01:00
+Review: approve (.ah-out/review/arch-workflow-2/T2.verdict.json)
 Änderung: Neue Option `--exclude <ids…>` (Env-Form `AH_EXCLUDE`) nach der Spec, Abschnitt „Design `--exclude`“. Ein ausgeschlossener Schritt läuft nicht, erscheint nicht als SKIP und nicht im Artefakt und gilt unter `--strict` nicht als Pflicht-SKIP. Geprüft wird in `run_step`, `run_py_step` und `skip` vor dem Filter für Teil und Schritt. Eine unbekannte Id endet im Probelauf mit Exit 2, bevor ein Schritt läuft, ebenso `--exclude` ohne Id. Die Zusammenfassung druckt `excluded: <ids>`, das Artefakt trägt `exclude`. Tests: ein ausgeschlossener Pflicht-Schritt unter `--strict` (Exit 0, kein SKIP, nicht im Artefakt), unbekannte Id, fehlende Id, Kombination mit `--part` und `--step`, Env-Form, Zusammenfassung und Artefakt-Feld. Die Flag-Liste in `.claude/rules/testing.md` zieht mit.
 Verify: bash scripts/dev/verify.sh scripts --strict -- run_flags_test
 Doku: .claude/rules/testing.md (Flag-Liste); DEVELOPMENT.md und cicd.html DE+EN in T4
@@ -40,3 +42,4 @@ Abhängt von: T2, T3
 - 2026-11-12: `--exclude` in run.sh statt `AH_ONLY` (nähme Schemathesis und ruff für den Server mit) oder gekürztem `AH_REQUIRED` (Schritt liefe weiter); Spec, Trade-offs.
 - 2026-11-12: Die Option setzt heavy.sh (Teil rest), nicht nightly.sh: auch ein manueller `/test all` lässt den Schritt aus; vor einem Release bleiben main-CI und `run.sh quick --strict`.
 - 2026-11-12 (T1): Der Schemathesis-Schritt verliert die Vorprüfung `import schemathesis`. Er installiert das Paket selbst (es steht in allen drei `requirements-dev.txt`), und auf einem frischen Venv hätte die Vorprüfung ihn übersprungen, bevor er installieren kann. Ein fehlgeschlagenes `pip install` ist ein FAIL, auch ohne `--strict`. Der Test „missing package strict-fails“ wird dadurch ersetzt durch „failed install fails, runs no suite“, der strenger ist (FAIL statt Pflicht-SKIP). Der Kommentar in `ci.yml:521-522` („gate finds the package“) veraltet; ci.yml gehört dem Zug `arch-workflow-ci-1`, deshalb eine Roadmap-Zeile.
+- 2026-11-12 (T2): `excluded()` vergleicht jede Id wörtlich nach Wortaufteilung von `AH_EXCLUDE` (Schritt-Ids tragen keine Leerzeichen); dieselbe Aufteilung prüft der Probelauf, also kann keine Id den Probelauf bestehen und im Lauf anders wirken. `--step X --exclude X` ist Exit 2 mit Hinweis, weil sonst ein strenger Lauf mit „no step ran“ endete, ohne den Grund zu nennen. Der alte Test zur Meldung „no step ran“ prüft jetzt `exclude=none` mit (strenger, nicht schwächer).

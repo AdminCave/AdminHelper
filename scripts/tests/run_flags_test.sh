@@ -22,7 +22,7 @@ set -uo pipefail
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
 unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
-      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS AH_PART
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS AH_PART AH_EXCLUDE
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -81,6 +81,12 @@ run_bare lint --only
 
 run_bare lint --step
 [ $rc -eq 2 ] && grep -q "needs a step name" <<<"$OUT" && ok "--step without a name -> exit 2" || bad "--step bare: rc=$rc"
+
+run_bare lint --exclude
+[ $rc -eq 2 ] && grep -q "needs at least one step id" <<<"$OUT" && ok "--exclude without an id -> exit 2" || bad "--exclude bare: rc=$rc"
+run_bare lint --exclude --strict
+[ $rc -eq 2 ] && grep -q "needs at least one step id" <<<"$OUT" \
+  && ok "--exclude followed by a flag -> exit 2" || bad "--exclude --strict: rc=$rc"
 
 run_bare lint --only nixkey
 [ $rc -eq 2 ] && grep -q "unknown AH_ONLY key: 'nixkey'" <<<"$OUT" && ok "unknown --only key -> exit 2" || bad "unknown key: rc=$rc"
@@ -847,6 +853,8 @@ OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_PART=nope "$BARE/bash" "$RUN" lint 
 run_bare lint --bogus
 grep -qF -- "--part <gui|rest>" <<<"$OUT" && ok "the unknown-flag message names --part" \
   || bad "unknown-flag message: $(grep -m1 'unknown flag' <<<"$OUT")"
+grep -qF -- "--exclude <ids…>" <<<"$OUT" && ok "the unknown-flag message names --exclude" \
+  || bad "unknown-flag message: $(grep -m1 'unknown flag' <<<"$OUT")"
 
 # The e2e layer on the bare PATH: no node, no docker, no display, so every step
 # SKIPs, and the artifact still lists exactly the steps of the run's part.
@@ -888,7 +896,7 @@ OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/part-env" AH_ALLOW_REAL=1 AH_PART=gui "$BAR
 
 # A part with no step in the layer verifies nothing; under --strict that stays red.
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" "$BARE/bash" "$RUN" lint --part gui --strict 2>&1); rc=$?
-[ $rc -eq 1 ] && grep -q "strict-failed: no step ran (.*part=gui)" <<<"$OUT" \
+[ $rc -eq 1 ] && grep -q "strict-failed: no step ran (.*part=gui, exclude=none)" <<<"$OUT" \
   && ok "lint --part gui --strict: no step ran is a failure" \
   || bad "lint --part gui --strict: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
 
@@ -941,6 +949,86 @@ others=$(grep -vx 'docker info' "$GUI_STUB_LOG")
 grep -qx 'docker info' "$GUI_STUB_LOG" && [ -z "$others" ] \
   && ok "no suite started (the stubs saw nothing but docker info)" \
   || bad "stub calls: $(tr '\n' '|' < "$GUI_STUB_LOG")"
+
+# ══ --exclude: steps a run leaves out on purpose (R-1338) ═════════════════════
+echo "── --exclude ──"
+# The shape part rest of the nightly run has: a strict run whose required
+# server-pytest would SKIP here (no Postgres URL, no docker), while the
+# schemathesis step beside it passes on the python shim.
+ex_run() {  # ex_run <out dir> <extra run.sh args…>
+  local d="$1"; shift
+  OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$d" AH_PY_LOCK=0 AH_REQUIRED="server-pytest" \
+        DATABASE_URL='' SHIM_SKIP="" "$PYSHIM/bash" "$RUN" unit --strict --only server "$@" 2>&1); rc=$?
+}
+# The counter-check first: without --exclude the same run fails on that SKIP, or
+# the checks below would also hold for a step that never counted.
+ex_run "$WORK/ex-none"; NONE_OUT="$OUT"
+[ $rc -eq 1 ] && grep -qF "strict-failed: server pytest (SKIP)" <<<"$OUT" \
+  && ok "counter-check: the strict run fails on the server pytest SKIP" \
+  || bad "counter-check: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+ex_run "$WORK/ex-server" --exclude server-pytest; EX_OUT="$OUT"
+[ $rc -eq 0 ] && ! grep -q "server pytest" <<<"$EX_OUT" && ! grep -q "strict-failed" <<<"$EX_OUT" \
+  && [ "$(grep -cE '^  PASS  schemathesis' <<<"$EX_OUT")" -eq 1 ] \
+  && ok "an excluded required step: exit 0, no SKIP line, the other step runs once" \
+  || bad "--exclude server-pytest: rc=$rc $(grep -m1 -E 'server pytest|strict-failed|run.sh\[' <<<"$EX_OUT")"
+grep -qx '  excluded: server-pytest' <<<"$EX_OUT" \
+  && ok "the summary names what was excluded" || bad "summary: $(grep -A1 'run.sh\[' <<<"$EX_OUT" | tr '\n' '|')"
+grep -q 'excluded:' <<<"$NONE_OUT" && bad "an excluded: line without --exclude" || ok "no excluded: line without --exclude"
+grep -qx 'server pytest' <<<"$(artifact_steps "$WORK/ex-none/last-unit.json")" \
+  && ! grep -qx 'server pytest' <<<"$(artifact_steps "$WORK/ex-server/last-unit.json")" \
+  && grep -qx 'schemathesis' <<<"$(artifact_steps "$WORK/ex-server/last-unit.json")" \
+  && ok "artifact: the excluded step is not listed, the other one is" \
+  || bad "artifact steps: $(artifact_steps "$WORK/ex-server/last-unit.json" | tr '\n' '|')"
+grep -q '"exclude": "server-pytest"' "$WORK/ex-server/last-unit.json" \
+  && grep -q '"exclude": ""' "$WORK/ex-none/last-unit.json" \
+  && ok "artifact: the exclude field (empty without --exclude)" \
+  || bad "exclude field: $(grep -h '"exclude"' "$WORK"/ex-*/last-unit.json | tr -d '\n')"
+
+# The env form, as the step filters read it.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/ex-env" AH_PY_LOCK=0 AH_REQUIRED="server-pytest" \
+      DATABASE_URL='' SHIM_SKIP="" AH_EXCLUDE="server-pytest" "$PYSHIM/bash" "$RUN" unit --strict --only server 2>&1); rc=$?
+[ $rc -eq 0 ] && ! grep -q "server pytest" <<<"$OUT" && grep -qx '  excluded: server-pytest' <<<"$OUT" \
+  && ok "AH_EXCLUDE is the env form of --exclude" || bad "AH_EXCLUDE: rc=$rc $(grep -m1 -E 'server pytest|run.sh\[' <<<"$OUT")"
+
+# A typo must not quietly run the step it meant to leave out: the dry pass
+# rejects it before a single step, and no artifact claims a run.
+ex_run "$WORK/ex-typo" --exclude server-pytset
+[ $rc -eq 2 ] && grep -q "unknown step id: 'server-pytset'" <<<"$OUT" \
+  && ! grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" && [ ! -e "$WORK/ex-typo/last-unit.json" ] \
+  && ok "an unknown id -> exit 2 before any step" || bad "unknown id: rc=$rc $(grep -m1 -E 'unknown|run.sh\[' <<<"$OUT")"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_EXCLUDE="nixda" "$BARE/bash" "$RUN" lint 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "unknown step id: 'nixda'" <<<"$OUT" \
+  && ok "...in the env form too" || bad "AH_EXCLUDE=nixda: rc=$rc"
+# Known, but not a step of this layer: lint has no server pytest.
+run_bare lint --exclude server-pytest
+[ $rc -eq 2 ] && grep -q "unknown step id: 'server-pytest' (--exclude; no step of layer 'lint'" <<<"$OUT" \
+  && ok "an id of another layer -> exit 2" || bad "lint --exclude server-pytest: rc=$rc $(grep -m1 unknown <<<"$OUT")"
+
+# Several ids in one flag: --exclude eats the following words like --only, and a
+# strict run excluded down to nothing still verified nothing.
+ex_run "$WORK/ex-all" --exclude server-pytest schemathesis
+[ $rc -eq 1 ] && grep -q "strict-failed: no step ran (.*exclude=server-pytest schemathesis)" <<<"$OUT" \
+  && ok "two ids in one flag; excluded down to nothing is a strict failure" \
+  || bad "--exclude two ids: rc=$rc $(grep -m1 -E 'unexpected|strict-failed|run.sh\[' <<<"$OUT")"
+
+# An id is valid whatever --part or --step narrow the run to: part gui leaves
+# the smoke test out, part rest accepts the same id although it has no such step.
+part_run "$WORK/ex-part-gui" --part gui --exclude desktop-e2e-smoke
+[ $rc -eq 0 ] && [ "$(artifact_steps "$WORK/ex-part-gui/last-e2e.json")" = "desktop GUI E2E" ] \
+  && ok "--part gui --exclude desktop-e2e-smoke: only the GUI guard row" \
+  || bad "part gui + exclude: rc=$rc $(artifact_steps "$WORK/ex-part-gui/last-e2e.json" | tr '\n' '|')"
+part_run "$WORK/ex-part-rest" --part rest --exclude desktop-e2e-smoke
+[ $rc -eq 0 ] && [ "$(artifact_steps "$WORK/ex-part-rest/last-e2e.json")" = "web Playwright E2E" ] \
+  && ok "--part rest accepts an id that lies in part gui" \
+  || bad "part rest + exclude: rc=$rc $(grep -m1 -E 'unknown|run.sh\[' <<<"$OUT")"
+run_bare unit --step "go agent" --exclude server-pytest
+[ $rc -eq 0 ] && [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] && grep -q "SKIP  go agent" <<<"$OUT" \
+  && ok "--step with an --exclude of another step runs just the step" \
+  || bad "--step + exclude: rc=$rc $(grep -m1 -E 'unknown|run.sh\[' <<<"$OUT")"
+run_bare unit --step "go agent" --exclude go-agent
+[ $rc -eq 2 ] && grep -q "unknown step: 'go agent'" <<<"$OUT" && grep -q "(--exclude takes out: go-agent)" <<<"$OUT" \
+  && ok "--step on an excluded step -> exit 2, and the message says why" \
+  || bad "--step on excluded: rc=$rc $(grep -m2 -E 'unknown|exclude' <<<"$OUT" | tr '\n' '|')"
 
 # The smoke step's `npm test` builds the app, and that build runs `npm --prefix ui
 # run build`; in part gui no other step installs ui/, so the smoke step must, by
