@@ -1,5 +1,5 @@
 # Monitoring: Probe-Ziele, Socket-Pfade, Docker-Erkennung, Meldetext, Testvorlage — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-22 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-22 · Review: pro Task
 Spec: docs/features/kern-monitoring-22.md (Roadmap R-1319, R-1320, R-1324, R-1321, R-1300, R-1365)
 Heavy: linux-full — apps/agent (Probe-Guard) und apps/monitoring (Meldetext); dazu vor dem Merge der FreeBSD-Box-Lauf `bash scripts/tests/freebsd_box.sh` auf der Pool-VM (Socket-Dial unter FreeBSD, T4)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
