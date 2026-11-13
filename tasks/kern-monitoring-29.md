@@ -99,3 +99,4 @@ Abhängt von: T1, T2, T3, T4, T5, T6
 - R-1383 und R-1388 fahren nicht mit (Quellen nicht belegt), nächster Zug `kern-monitoring-33`.
 - Das 3CX-Zertifikat aus R-1387 wird eine eigene Zeile: es braucht ein Ziel außerhalb der Unit-Instanz (nginx des Hosts).
 - T5: Sieht der Scan nur exponierte Ports und passen mehrere Alternativen, bleibt der Check ungebunden (Abweichung von der Spec „sonst exponiert“): das nginx-Image exponiert 8443 auch ohne TLS, ein Raten alarmierte auf einen Port ohne Lauscher. Gebunden wird dann erst mit `listening` (neuer Agent).
+- R-1397: Wiki.js 3 `/_ready` (Titel der Zeile) fährt nicht mit: die Route ist nicht an den Wiki.js-3-Quellen belegt; Folgezeile in der Roadmap.
