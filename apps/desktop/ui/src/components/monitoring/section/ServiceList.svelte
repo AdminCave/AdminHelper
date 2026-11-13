@@ -359,7 +359,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <p class="svc-muted">{$t('monitoring.services.journal.notLinux')}</p>
       {:else if rows.length > 0 && !sshConnection}
         <p class="svc-muted">{$t('monitoring.services.journal.noSsh')}</p>
-      {:else if sshConnection}
+      {:else if rows.length > 0 && sshConnection}
         {#if sshConnections.length > 1}
           <FormField label={$t('monitoring.services.journal.connection')}>
             <Select
