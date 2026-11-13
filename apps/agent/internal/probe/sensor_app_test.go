@@ -74,3 +74,6 @@ func TestTheAppSensorRunsThroughRunWithOnlyTheAskedFields(t *testing.T) {
 		t.Errorf("values %v, want only failed=1", res.Values)
 	}
 }
+
+// unitView: the view reads a unit alone.
+func unitView(v appView) bool { return len(v.kinds) == 1 && v.kinds[0] == kindUnit }

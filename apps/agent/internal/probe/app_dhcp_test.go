@@ -297,7 +297,7 @@ func TestDnsmasqLeasesFailsWhatItCannotRead(t *testing.T) {
 
 func TestTheDHCPViewsAreViewsOfUnits(t *testing.T) {
 	for _, view := range []string{"kea_pools", "dnsmasq_leases"} {
-		if v, ok := appViews[view]; !ok || v.kind != kindUnit {
+		if v, ok := appViews[view]; !ok || !unitView(v) {
 			t.Errorf("view %s: %v, want a view of a unit", view, v)
 		}
 	}

@@ -316,7 +316,7 @@ func TestTailscaleStatusFailsWhatItCannotRead(t *testing.T) {
 
 func TestTheNetSecurityViewsAreViewsOfUnits(t *testing.T) {
 	for _, view := range []string{"wg_peers", "fail2ban", "crowdsec_bouncers", "tailscale_status"} {
-		if v, ok := appViews[view]; !ok || v.kind != kindUnit {
+		if v, ok := appViews[view]; !ok || !unitView(v) {
 			t.Errorf("view %s: %v, want a view of a unit", view, v)
 		}
 	}
