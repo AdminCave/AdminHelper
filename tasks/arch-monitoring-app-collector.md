@@ -1,5 +1,5 @@
 # Monitoring: Fühler `app` für Anwendungs-Innenleben — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-app-collector · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-app-collector · Review: pro Task
 Spec: docs/features/arch-monitoring-app-collector.md (Roadmap R-1404)
 Heavy: linux-full — apps/agent (neuer Probe-Fühler `app`); die Katalog-Module sind Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
