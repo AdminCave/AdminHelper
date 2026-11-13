@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Probe-Guard: weitere Weiterleiter, klarere Abweisung nach dem connect — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-26 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-26 · Review: pro Task
 Spec: docs/features/kern-monitoring-26.md (Roadmap R-1407, R-1409)
 Heavy: linux-full — Agent (Proben-Wächter, `apps/agent`); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,8 +44,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html DE+EN · changelog.d/kern-monitoring-26.md
 Task-Review: am Ende
 
-### T4 — Doku: Admin-Handbuch „Nur dieser Host“  [ ]
+### T4 — Doku: Admin-Handbuch „Nur dieser Host“  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @850190cdd 2026-11-13T10:09:35+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Absatz „Nur dieser Host“ DE+EN nachziehen (Fund der Abschlussprüfung): die neuen Weiterleiter in der
 Liste, Super-Server wie Socket-Aktivierung, die zwei Abweisungen nach dem Verbindungsaufbau ohne Sperre.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
