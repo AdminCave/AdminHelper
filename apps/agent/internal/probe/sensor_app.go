@@ -21,12 +21,17 @@ type appView struct {
 }
 
 // appViews are the views of the app sensor. Each reads the inside of one application on this host,
-// read only and without starting a program: files, the application's API on its own port, its
-// local socket. The server names a view, never a path, a command or a query.
+// read only: files, the application's API on its own port, its local socket, or a read command of
+// the application with fixed arguments, started through the allowlist (runTool). The server names a
+// view, never a path, a command or a query.
 var appViews = map[string]appView{
 	"bbb_meetings":      {kindUnit, bbbMeetings},
 	"bbb_recordings":    {kindUnit, bbbRecordings},
+	"crowdsec_bouncers": {kindUnit, crowdsecBouncers},
+	"fail2ban":          {kindUnit, fail2ban},
 	"ldap_replication":  {kindUnit, ldapReplication},
+	"tailscale_status":  {kindUnit, tailscaleStatus},
+	"wg_peers":          {kindUnit, wgPeers},
 	"wordpress_version": {kindContainer, wordpressVersion},
 }
 

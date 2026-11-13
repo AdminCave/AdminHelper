@@ -231,6 +231,62 @@ func TestAllowlistZFSDetails(t *testing.T) {
 	}
 }
 
+// TestAllowlistNetSecurityViews: the app sensor's views of WireGuard, fail2ban, CrowdSec and Tailscale
+// read handshake times, keepalive intervals, status counts and the bouncer and node state. The traps
+// print the private key or the banned addresses, change bans or the configuration, or probe the
+// network.
+func TestAllowlistNetSecurityViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"wg", "show", "all", "latest-handshakes"},
+		{"wg", "show", "all", "persistent-keepalive"},
+		{"fail2ban-client", "ping"},
+		{"fail2ban-client", "status"},
+		{"fail2ban-client", "status", "sshd"},
+		{"fail2ban-client", "status", "nginx-http-auth"},
+		{"/usr/bin/fail2ban-client", "status", "postfix_sasl.2"},
+		{"cscli", "bouncers", "list", "-o", "json"},
+		{"tailscale", "status", "--json", "--peers=false"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"wg", "show", "all", "dump"},
+		{"wg", "show", "wg0", "dump"},
+		{"wg", "show", "all", "private-key"},
+		{"wg", "show", "all", "preshared-keys"},
+		{"wg", "show", "all", "endpoints"},
+		{"wg", "show", "wg0", "latest-handshakes"},
+		{"wg", "showconf", "wg0"},
+		{"wg", "set", "wg0", "peer", "x", "remove"},
+		{"wg", "show"},
+		{"fail2ban-client", "unban", "--all"},
+		{"fail2ban-client", "set", "sshd", "unbanip", "192.0.2.1"},
+		{"fail2ban-client", "reload"},
+		{"fail2ban-client", "stop"},
+		{"fail2ban-client", "status", "--all"},
+		{"fail2ban-client", "status", "-d"},
+		{"fail2ban-client", "status", "sshd", "extended"},
+		{"fail2ban-client", "status", "sshd jail"},
+		{"fail2ban-client", "get", "sshd", "banip"},
+		{"cscli", "decisions", "add", "--ip", "192.0.2.1"},
+		{"cscli", "decisions", "list", "-o", "json"},
+		{"cscli", "bouncers", "add", "x"},
+		{"cscli", "bouncers", "delete", "x"},
+		{"cscli", "bouncers", "list"},
+		{"tailscale", "netcheck"},
+		{"tailscale", "status", "--json"},
+		{"tailscale", "status", "--json", "--peers=false", "--web"},
+		{"tailscale", "up"},
+		{"tailscale", "down"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

@@ -10,8 +10,10 @@ Heavy: linux-full — neue Agent-Ansichten und Freigabeliste (`apps/agent`), kei
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1236: Ansichten wg_peers, fail2ban, crowdsec_bouncers, tailscale_status  [ ]
+### T1 — R-1236: Ansichten wg_peers, fail2ban, crowdsec_bouncers, tailscale_status  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_net.go, apps/agent/internal/probe/app_net_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @08bd2bd2b 2026-11-13T12:54:23+01:00
+Review: approve (.ah-out/review/kern-monitoring-10/T1.verdict.json)
 Änderung: vier Ansichten, die feste Lesekommandos über `runTool` (Freigabeliste) starten und nur die Felder der Spec
 melden; neue Freigabe-Zeilen mit festen Argumenten (Fail2ban-Jail als Argumentklasse), Fallen als Negativtest. Formate
 vorher an `wg(8)`, fail2ban, `cscli`, Tailscale belegt (Quelle im Kommentar). Neue Dateien mit SPDX-Header.
@@ -93,3 +95,4 @@ Doku: → T9
 
 ## Entscheidungen
 - Lesekommandos (root) über die Freigabeliste in Ansichten des Fühlers `app`: das Konzept nennt sie mit Zugang root (§6.9), die Freigabeliste ist der Mechanismus aus §3.13; kein exec als Anwendungs-Benutzer, kein `docker exec` (die andere Risikoklasse aus R-1404).
+- T1: `wg_peers` zählt als veraltet nur Peers mit persistent keepalive (nur sie handshaken verlässlich alle zwei Minuten; ein ruhender Road-Warrior ist kein Fehler), ein Keepalive-Peer ohne Handshake zählt zu `stale_crit`; die Unit `wg-quick@<if>` engt auf ihr Interface ein (keine neue Argumentklasse, `wg show all …` gefiltert). `fail2ban`: ein nicht antwortender Server ist ein Wert (`responding` false), kein Fehler; mehr als 32 Jails ist ein Fehler statt unvollständiger Zahlen. `tailscale status --json --peers=false` (Flag aus `cli/status.go`), Peers bleiben ungelesen.
