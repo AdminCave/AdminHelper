@@ -276,12 +276,6 @@ func TestReadSmallFileNeverWaitsForAFIFO(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("certfile waits on a FIFO")
 	}
-
-	f, err := openNoWait(path)
-	if err != nil {
-		t.Fatalf("openNoWait(FIFO) = %v, want it opened without a writer", err)
-	}
-	_ = f.Close()
 }
 
 // stubDockerServes makes the docker daemon of this host one that serves (true) or one that does not.

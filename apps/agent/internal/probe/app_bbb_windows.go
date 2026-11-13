@@ -9,6 +9,7 @@ package probe
 import (
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // dirFlags open a directory to list it; Windows opens no FIFO by a file name.
@@ -33,4 +34,13 @@ func openDir(parent *os.File, name string) (*os.File, error) {
 		return nil, errNotDir
 	}
 	return f, nil
+}
+
+// markerTime returns the mtime of the file name in dir and whether it is a regular file.
+func markerTime(dir *os.File, name string) (time.Time, bool, error) {
+	fi, err := os.Lstat(filepath.Join(dir.Name(), name))
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return fi.ModTime(), fi.Mode().IsRegular(), nil
 }

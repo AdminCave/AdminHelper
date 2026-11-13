@@ -329,15 +329,20 @@ func TestFileAgeSensorReadsAgeAndSizeOnly(t *testing.T) {
 func TestTheFileSensorsEndWithTheirContext(t *testing.T) {
 	entered := make(chan struct{}, 2)
 	release := make(chan struct{})
-	old := statPath
+	old, oldOpen := statPath, openFile
 	statPath = func(string) (fs.FileInfo, error) {
+		entered <- struct{}{}
+		<-release
+		return nil, fs.ErrNotExist
+	}
+	openFile = func(string) (*os.File, error) {
 		entered <- struct{}{}
 		<-release
 		return nil, fs.ErrNotExist
 	}
 	t.Cleanup(func() {
 		close(release)
-		statPath = old
+		statPath, openFile = old, oldOpen
 	})
 	for _, sensor := range []string{"certfile", "file_age"} {
 		p := Probe{Sensor: sensor, Params: map[string]any{"path": "/mnt/gone/x"}}

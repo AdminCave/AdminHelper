@@ -44,8 +44,10 @@ wie einen Listener des Hosts; nicht ermittelbar → abweisen. Neue Dateien mit S
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T6
 
-### T4 — R-1428: Dateien der Fühler über einen Pfad-Deskriptor öffnen  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_windows.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local_freebsd_test.go, apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_unix_test.go
+### T4 — R-1428: Dateien der Fühler über einen Pfad-Deskriptor öffnen  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_windows.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local_freebsd_test.go, apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_unix_test.go, apps/agent/internal/probe/sensor_local_test.go, apps/agent/internal/probe/sensor_local_unix_test.go, apps/agent/internal/probe/app_bbb_unix.go, apps/agent/internal/probe/app_bbb_windows.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @af595889a 2026-11-13T20:25:41+01:00
+Review: approve (.ah-out/review/kern-agent-4/T4.verdict.json)
 Änderung: gemeinsamer Helfer nach dem Muster `openRegular`: als Pfad öffnen, `fstat` regulär und
 `refuseKernelFile` am Pfad-Deskriptor, dann genau diesen zum Lesen öffnen (Linux `/proc/self/fd`, FreeBSD
 `O_EMPTY_PATH` mit Werten aus `sys/sys/fcntl.h`, Windows wie bisher). `readSmallFile` und `readCapped` nutzen ihn;
@@ -97,3 +99,13 @@ Abhängt von: T1, T2, T3, T4
 - 2026-11-13 T3 (Review): ein docker-proxy gilt nur, wenn Docker Adresse und Port veröffentlicht (`checkProxied`);
   fehlt die Veröffentlichung in der Liste, wird sie einmal frisch gelesen, sonst Abweisung. Eine Container-PID im
   Namespace des Agents gilt als veraltet und wird abgewiesen; der Cache räumt Einträge älter als `listenerTTL`.
+- 2026-11-13 T4: `openChecked` je Plattform (Linux `O_PATH` + `reopenChecked` über `/proc/self/fd`, FreeBSD
+  `O_PATH` + `openat(…, "", O_EMPTY_PATH)` mit den Werten aus `sys/sys/fcntl.h`, in 13.2 und main gleich;
+  `vn_open_vnode` kehrt bei `O_PATH` vor `VOP_OPEN` zurück; Windows wie bisher Stat, Öffnen, Prüfen) ersetzt
+  `openNoWait` auf Linux und FreeBSD; `readSmallFile` öffnet über die Naht `openFile`, die der Kontext-Test statt
+  `statPath` hält. 11 Dateien statt acht: die Prüfung am Deskriptor und `markerTime` liegen je Plattform. Der Test
+  der FIFO-Öffnung ohne Schreiber entfällt mit `openNoWait`; an seine Stelle tritt ein Schreiber, der nur aufwacht,
+  wenn der FIFO zum Lesen geöffnet wird.
+- 2026-11-13 T4 (Plattform): `freebsd_box.sh` auf FreeBSD 15: die Tests von `openChecked`, `readSmallFile`,
+  `readCapped` und den Markern als Box-Nutzer und als root je 15 passed, 0 failed, 0 skipped. Der Lauf selbst ist rot
+  (62 passed, 1 failed) durch BBB- und Caddy-Tests, die auf `main` genauso scheitern (R-1442).

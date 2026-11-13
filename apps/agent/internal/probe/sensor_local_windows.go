@@ -98,6 +98,27 @@ func openNoWait(path string) (*os.File, error) {
 	return os.Open(path)
 }
 
+// openChecked opens the regular file path for reading: Windows opens no device and no FIFO by such a
+// path, so it checks before the open and again at the open file (checkRegular).
+func openChecked(path string) (*os.File, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s %w", path, errNoRegularFile)
+	}
+	f, err := openNoWait(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkRegular(f, path); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
 // refuseKernelFile: Windows has no file system of the kernel a path could reach.
 func refuseKernelFile(*os.File, string) error {
 	return nil
