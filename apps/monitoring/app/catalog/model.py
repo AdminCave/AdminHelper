@@ -28,6 +28,7 @@ from pydantic import (
 )
 
 from app.catalog.sensors import (
+    APP_VIEW_TARGETS,
     FIELD_PATTERN,
     SENSOR_TARGETS,
     SENSORS,
@@ -180,6 +181,13 @@ class Check(_Model):
                     f"sensor {self.sensor!r} cannot target {self.target.kind!r}, "
                     f"only {sorted(kinds)}"
                 )
+            if self.sensor == "app":
+                view = self.params["view"]
+                if self.target.kind != APP_VIEW_TARGETS[view]:
+                    raise ValueError(
+                        f"view {view!r} of sensor 'app' targets only "
+                        f"{APP_VIEW_TARGETS[view]!r}, not {self.target.kind!r}"
+                    )
         for f in self.fields:
             if not field_allowed(self.sensor, f, self.params):
                 raise ValueError(f"sensor {self.sensor!r} returns no field {f!r}")

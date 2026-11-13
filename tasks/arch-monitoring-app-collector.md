@@ -75,8 +75,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 Abhängt von: T1
 
-### T5 — Katalog: Vertrag des Fühlers `app`  [ ]
+### T5 — Katalog: Vertrag des Fühlers `app`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/model.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6a9cc54f4 2026-11-13T10:08:46+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T5.verdict.json)
 Änderung: `"app"` in `SENSORS`, `APP_VIEW_FIELDS` und `APP_VIEW_TARGETS` je Ansicht, `SENSOR_FIELDS["app"]`,
 `SENSOR_TARGETS["app"]`, `AppParams(view: Literal[...])` in `PARAM_MODELS`, `field_allowed` je Ansicht;
 `Check._consistent` prüft die Ziel-Art der Ansicht. Tests: jede Ansicht nimmt genau ihre Felder und ihr Ziel, ein
@@ -155,3 +157,7 @@ Abhängt von: T1, T2, T3, T4, T5, T6
   liegen in `app_wordpress_linux_test.go`. Gegenprobe: Mutanten W1–W7, W12, W14–W17, L1–L8 rot.
 - 2026-11-13 (T4): Nicht verifiziert: auf einem echten Docker-Host mit dem offiziellen Image (`/var/www/html` als
   Volume); geprüft gegen `wp-includes/version.php` aus WordPress/WordPress (Master `7.2-beta5-65467`, 6.8 `6.8.12`).
+- 2026-11-13 (T5): `SENSOR_TARGETS["app"]` ist die Vereinigung der Ziel-Arten der Ansichten; `Check._consistent`
+  verengt sie auf die eine Art der Ansicht (`APP_VIEW_TARGETS`), `ProbeConfig` erbt das über `Check.model_validate`.
+  Die Felder je Ansicht stehen im Test wörtlich (Vertrag mit `sensor_app.go`), sonst überlebte ein fehlendes Feld.
+  Gegenprobe: Mutanten S1–S8, M1 rot.
