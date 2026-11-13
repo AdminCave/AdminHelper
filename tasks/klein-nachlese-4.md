@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-4 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-4 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-4 · Review: pro Task
 Spec: docs/features/klein-nachlese-4.md (Roadmap R-1414)
 Heavy: linux-full — Desktop-E2E-Helfer (T4), Lauf im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (nur ein Hinweis bei leerem Inventar entfaellt)
 Abhängt von: T2
 
-### T4 — R-1414: gemeinsame Live-Helfer fuer die Monitoring-E2E-Specs  [ ]
+### T4 — R-1414: gemeinsame Live-Helfer fuer die Monitoring-E2E-Specs  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/monitoring-live.js, apps/desktop/e2e/test/specs/monitoring-services.live.js, apps/desktop/e2e/test/specs/monitoring-server-page.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @45b615efb 2026-11-13T11:25:26+01:00
+Review: approve (.ah-out/review/klein-nachlese-4/T4.verdict.json)
 Beweis: reviewer arch-monitoring-ui-3 T11 2026-11-12 (monitoring-services.live.js:73,93)
 Änderung: `setTheme`, `shot`, `fixtureAgentConf`, `createCheck` und `postReport` ziehen in `test/lib/monitoring-live.js` (SPDX-Header); Praefix, Frist und der optionale `config` sind Parameter, beide Specs behalten ihr Verhalten. Nicht lokal lauffaehig (kein Display): `Heavy: linux-full`, im PR-Text "Heavy: Sammellauf".
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
