@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Netz, Sicherheit, DNS, DHCP, Zeit und Reverse-Proxies — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-10 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-10 · Review: pro Task
 Spec: docs/features/kern-monitoring-10.md (Roadmap R-1236, R-1237, R-1238)
 Heavy: linux-full — neue Agent-Ansichten und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -118,8 +118,10 @@ Review: approve (.ah-out/review/kern-monitoring-10/T11.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Verhalten wie dokumentiert)
 
-### T12 — R-1238: Testerwartung an die Listen-Meldung der App-Ansichten  [ ]
+### T12 — R-1238: Testerwartung an die Listen-Meldung der App-Ansichten  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fe3e66dec 2026-11-13T15:11:42+01:00
+Review: approve (.ah-out/review/kern-monitoring-10/T12.verdict.json)
 Änderung: Seit T7 nennt die Meldung „targets only“ die erlaubten Zielarten als Liste (`['unit']`); der ältere Fall in
 `test_check_configs.py` erwartet noch `'unit'` und ist in der PR-CI rot. Erwartung auf die neue Form, Prüfung bleibt
 gleich streng.
