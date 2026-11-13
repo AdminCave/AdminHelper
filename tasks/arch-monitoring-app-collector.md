@@ -26,8 +26,10 @@ leerer Baum (kein Alter), fehlendes Verzeichnis, Obergrenze überschritten.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 
-### T2 — Agent: Ansicht `bbb_meetings`  [ ]
+### T2 — Agent: Ansicht `bbb_meetings`  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @bd8d806e1 2026-11-13T09:17:20+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T2.verdict.json)
 Änderung: liest `securitySalt` und `supportedChecksumAlgorithms` aus `/etc/bigbluebutton/bbb-web.properties`
 (zuerst) und `/usr/share/bbb-web/WEB-INF/classes/bigbluebutton.properties`, Prüfsumme `hex(sha256("getMeetings" +
 salt))` (sonst der stärkste erlaubte Algorithmus), `GET /bigbluebutton/api/getMeetings?checksum=…` an den über
@@ -110,3 +112,15 @@ Abhängt von: T1, T2, T3, T4, T5, T6
   `bbb-conf --check` nie (Spec, Nicht-Ziele). Kevin bestätigt am Gate (offene Frage 1).
 - 2026-11-13: T2 (Salt) bekommt zusätzlich den Prüfer `security`, obwohl `apps/agent/internal/probe` kein Risikopfad
   ist: die Task verarbeitet ein Geheimnis.
+- 2026-11-13 (T2): `bbb_meetings` fragt nur die Unit `bbb-web.service`: die Prüfsumme von getMeetings ohne Parameter
+  ist je Salt fest und öffnet jedem, der sie hält, Meetingnamen und Passwörter; sie gilt als Geheimnis, kein Fehler
+  zitiert URL oder Antwort (`url.Error` ausgepackt, ein Text mit der Prüfsumme wird ein fester Text).
+- 2026-11-13 (T2): Schlüssel wie `get_bbb_web_config_value` in `bbb-conf`: je Schlüssel der erste nicht leere Wert,
+  erst `/etc/bigbluebutton/bbb-web.properties`, dann die paketierte Datei. Ohne `supportedChecksumAlgorithms` nimmt
+  die Ansicht sha256 (für Versionen vor dem Schlüssel nicht verifiziert); sonst sha256, sha512, sha384, sha1 in dieser
+  Reihenfolge, wie `GetChecksumValidator` die Länge zuordnet.
+- 2026-11-13 (T2): `running`/`recording` zählen Meetings mit `true`; gezählt wird nur ein direktes Kind von
+  `response/meetings/meeting`, gleichnamige Elemente in Metadaten oder `customdata` nicht. Körper bis 1 MiB (Grenze
+  des Guards), ein gelesener Wert bis 64 Byte, sonst Fehler.
+- 2026-11-13 (T2): HTTP über `NewGuard(ep.extra...).HTTPClient(nil)` wie der Fühler `http` statt `dialTarget` (die
+  Task nannte es; derselbe Guard, Weiterleitungen nur zum selben Ziel).
