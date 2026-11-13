@@ -70,6 +70,8 @@ var classes = map[string]string{
 	// A FreeBSD base system name pkg audit checks (freebsdPkgName): FreeBSD- or FreeBSD-kernel- and a
 	// release, "15.1" or with its patch level "15.1_2".
 	"basepkg": `FreeBSD-(?:kernel-)?[0-9]+\.[0-9]+(?:_[0-9]+)?`,
+	// A fail2ban jail as `fail2ban-client status` lists it (a section name of jail.conf).
+	"jail": `[A-Za-z0-9_][A-Za-z0-9_.-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -230,6 +232,19 @@ var commands = map[string][][]string{
 		{"interface", "show", "carp"},
 		{"interface", "list", "ifconfig"},
 	},
+	// The read commands of the app sensor's views (probe, app_net.go). Kept out: `wg show … dump` and
+	// `wg showconf` (they print the private key), fail2ban-client unban|reload|set, cscli decisions
+	// add, tailscale netcheck.
+	"wg":              {{"show", "all", "latest-handshakes"}, {"show", "all", "persistent-keepalive"}},
+	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}},
+	"cscli":           {{"bouncers", "list", "-o", "json"}},
+	"tailscale":       {{"status", "--json", "--peers=false"}},
+	// The read commands of the DNS and time views (probe, app_dns.go). Kept out: `rndc stats` (writes
+	// the statistics file), `unbound-control stats` (resets the counters), chronyc makestep|burst.
+	"rndc":            {{"status"}},
+	"unbound-control": {{"stats_noreset"}},
+	"chronyc":         {{"-c", "tracking"}},
+	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated

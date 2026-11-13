@@ -245,6 +245,22 @@ def _unit_name(name: str) -> str:
     return name if "." in name else name + ".service"
 
 
+def _unit_wanted(name: str, wanted: set[str]) -> bool:
+    # A template unit (wg-quick@.service) takes each of its instances (wg-quick@wg0.service):
+    # list-units names the instances, never the template.
+    if name.endswith("@.service"):
+        return False  # a template itself runs nothing
+    if name in wanted:
+        return True
+    return any(
+        t.endswith("@.service")
+        and len(name) > len(t)
+        and name.startswith(t.removesuffix(".service"))
+        and name.endswith(".service")
+        for t in wanted
+    )
+
+
 def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], set[str]]:
     """(instance key → summary, the containers and processes the module claims)."""
     detect = module.detect
@@ -253,10 +269,16 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         c for c in inv["containers"] if prefixes and image_matches(image_repo(c["image"]), prefixes)
     ]
     wanted_units = {_unit_name(u) for u in detect.units}
-    installed_units = sorted({u["name"] for u in inv["units"] if u["name"] in wanted_units})
+    installed_units = sorted(
+        {u["name"] for u in inv["units"] if _unit_wanted(u["name"], wanted_units)}
+    )
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
     units = sorted(
-        {u["name"] for u in inv["units"] if u["name"] in wanted_units and u["state"] != "inactive"}
+        {
+            u["name"]
+            for u in inv["units"]
+            if _unit_wanted(u["name"], wanted_units) and u["state"] != "inactive"
+        }
     )
     wanted_processes = set(detect.processes)
     processes = sorted({s["process"] for s in inv["sockets"] if s["process"] in wanted_processes})

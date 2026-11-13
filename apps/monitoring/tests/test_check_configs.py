@@ -1003,7 +1003,7 @@ class TestProbeConfig:
                 {"kind": "container", "name": "wp-1"},
                 {"view": "bbb_meetings"},
                 ["meetings"],
-                "view 'bbb_meetings' of sensor 'app' targets only 'unit', not 'container'",
+                "view 'bbb_meetings' of sensor 'app' targets only ['unit'], not 'container'",
             ),
             (
                 {"kind": "unit", "name": "slapd.service"},
