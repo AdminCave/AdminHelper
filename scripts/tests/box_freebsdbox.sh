@@ -10,7 +10,7 @@
 #   box_freebsdbox.sh tests <dir>       as the box user, like `go test` in CI: every agent test
 #                                       binary listed in <dir>/manifest, each in its package dir
 #   sudo box_freebsdbox.sh roottests <dir>
-#                                       as root: the tests the box user leaves out (ROOT_TESTS)
+#                                       as root: the tests the box user leaves out (ROOT_TESTS, PROBE_ROOT_TESTS)
 #   sudo box_freebsdbox.sh pkg <dir>    as root: the package of this checkout from a signed
 #                                       local repo, the cron entry, the rc.d tunnel, one agent
 #                                       run against a stand-in monitoring service, pkg delete
@@ -40,7 +40,13 @@ PKG=adminhelper-agent
 # The tests of internal/monitor that read service(8) status, which reads pidfiles in /var/run only
 # root may read: the box user leaves them out, phase roottests runs them.
 ROOT_TESTS="TestCollectServiceHealthOnFreeBSD TestCollectWatchedServicesOnFreeBSD"
-ROOT_RE="^($(echo "$ROOT_TESTS" | tr ' ' '|'))\$"
+
+# The tests of internal/probe that ask the kernel (net.inet.tcp.getcred, root only) which socket took
+# a connection; they skip themselves for the box user. The pf redirect test changes the host's pf, so
+# it runs only with AH_FREEBSD_PF=1, which freebsd_box.sh sets and opnsense_box.sh does not (there pf
+# is the firewall).
+PROBE_ROOT_TESTS="TestPeerSocketOnFreeBSDFindsTheTaker TestGuardConnectsWhenFreeBSDListsTheTaker"
+[ "${AH_FREEBSD_PF:-}" != 1 ] || PROBE_ROOT_TESTS="$PROBE_ROOT_TESTS TestGuardRefusesAPfRedirectOnFreeBSD"
 
 # skip_for <package dir> — the tests the box user leaves out there: the cross-build guard calls go,
 # which the box lacks (freebsd_box.sh runs it on the dev box); the gopsutil source check calls go
@@ -83,21 +89,28 @@ phase_tests() {
   rm -rf -- "$work"
 }
 
-phase_roottests() {
-  [ "$(id -u)" = 0 ] || { bad "the roottests phase runs as root"; return; }
-  bin="$(awk '$1 == "internal/monitor" { print $2 }' "$BUILD/manifest")"
-  [ -n "$bin" ] || { bad "no internal/monitor test binary in $BUILD/manifest"; return; }
+# root_tests <package dir> <tests> — run the named tests of one package as root.
+root_tests() {
+  rel="$1"; tests="$2"
+  bin="$(awk -v rel="$rel" '$1 == rel { print $2 }' "$BUILD/manifest")"
+  [ -n "$bin" ] || { bad "no $rel test binary in $BUILD/manifest"; return; }
   log="$(mktemp "${TMPDIR:-/tmp}/fbsdbox-root.XXXXXX")" || { bad "mktemp"; return; }
-  if (cd apps/agent/internal/monitor && "$BUILD/tests/$bin" -test.v -test.timeout 10m -test.count 1 \
-        -test.run "$ROOT_RE") >"$log" 2>&1; then
+  if (cd "apps/agent/$rel" && "$BUILD/tests/$bin" -test.v -test.timeout 10m -test.count 1 \
+        -test.run "^($(echo "$tests" | tr ' ' '|'))\$") >"$log" 2>&1; then
     # Each by name: a pattern that matched fewer tests would pass with less.
-    for t in $ROOT_TESTS; do
-      grep -q "^--- PASS: $t " "$log" && ok "internal/monitor as root: $t" || bad "internal/monitor as root: $t did not run"
+    for t in $tests; do
+      grep -q "^--- PASS: $t " "$log" && ok "$rel as root: $t" || bad "$rel as root: $t did not run"
     done
   else
-    bad "internal/monitor as root"; excerpt "$log"
+    bad "$rel as root"; excerpt "$log"
   fi
   rm -f -- "$log"
+}
+
+phase_roottests() {
+  [ "$(id -u)" = 0 ] || { bad "the roottests phase runs as root"; return; }
+  root_tests internal/monitor "$ROOT_TESTS"
+  root_tests internal/probe "$PROBE_ROOT_TESTS"
 }
 
 # A stand-in for the monitoring service, built by freebsd_box.sh (sink.go). It writes its
