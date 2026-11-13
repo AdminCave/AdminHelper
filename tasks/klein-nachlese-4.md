@@ -28,8 +28,10 @@ Beweis: reviewer arch-monitoring-ui-3 T7 2026-11-12 (waitFor 30 s, testTimeout 5
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/ServiceList.test.ts src/components/ConnectionEditor.tabs.test.ts
 Doku: keine (interner Test)
 
-### T3 — R-1414: kein "Mehr Log"-Hinweis bei leerem Inventar  [ ]
+### T3 — R-1414: kein "Mehr Log"-Hinweis bei leerem Inventar  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte, apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @9bdae342d 2026-11-13T11:22:59+01:00
+Review: approve (.ah-out/review/klein-nachlese-4/T3.verdict.json)
 Beweis: reviewer arch-monitoring-ui-3 T10 2026-11-12 (ServiceList.svelte:362)
 Änderung: Der SSH-Zweig (Hinweis und Verbindungswahl) braucht `rows.length > 0`; erst ein roter Test (leeres Inventar mit SSH-Verbindung zeigt weder Hinweis noch Auswahl), dann der Fix.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/ServiceList.test.ts

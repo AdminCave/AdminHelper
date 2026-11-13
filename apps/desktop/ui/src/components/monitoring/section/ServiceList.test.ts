@@ -336,6 +336,27 @@ describe('ServiceList', () => {
     );
   });
 
+  it('offers neither the journal hint nor the connection select while the list is empty', async () => {
+    const ssh = (id: string): Connection =>
+      ({
+        id,
+        name: `${id}-name`,
+        kind: 'ssh',
+        host: `${id}.example`,
+        serverId: 'srv-1',
+      }) as Connection;
+    connectionList.set([ssh('a'), ssh('b')]);
+    h.fetch.mockResolvedValue(inventory({ services: [] }));
+    const { container } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(
+      () =>
+        expect(container.textContent).toContain('Der Agent hat noch keine Dienste-Liste gemeldet.'),
+      WAIT,
+    );
+    expect(container.textContent).not.toContain('nur die letzten 200 Journal-Zeilen');
+    expect(container.textContent).not.toContain('Verbindung für „Mehr Log“');
+  });
+
   it('names a server the monitoring service knows no agent of', async () => {
     h.fetch.mockRejectedValue(new IpcError('Server not found', 'ERR_HTTP', 404));
     const { container } = render(ServiceList, { serverId: 'srv-1' });
