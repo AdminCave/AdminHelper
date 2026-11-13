@@ -27,6 +27,8 @@ const h = vi.hoisted(() => ({
 }));
 // A wait gets a bound of 30 s (testing.md, Fristen); testing-library's default is 1 s.
 const WAIT = { timeout: 30_000 };
+// vitest ends a test after 5 s, which would cut a 30 s wait short and hide its message.
+vi.setConfig({ testTimeout: 60_000 });
 
 vi.mock('$lib/api/monitoring', () => ({
   monitoringApi: { fetchServerServices: h.fetch, setServiceLogLines: h.save },
@@ -332,6 +334,27 @@ describe('ServiceList', () => {
         expect(container.textContent).toContain('Der Agent hat noch keine Dienste-Liste gemeldet.'),
       WAIT,
     );
+  });
+
+  it('offers neither the journal hint nor the connection select while the list is empty', async () => {
+    const ssh = (id: string): Connection =>
+      ({
+        id,
+        name: `${id}-name`,
+        kind: 'ssh',
+        host: `${id}.example`,
+        serverId: 'srv-1',
+      }) as Connection;
+    connectionList.set([ssh('a'), ssh('b')]);
+    h.fetch.mockResolvedValue(inventory({ services: [] }));
+    const { container } = render(ServiceList, { serverId: 'srv-1' });
+    await waitFor(
+      () =>
+        expect(container.textContent).toContain('Der Agent hat noch keine Dienste-Liste gemeldet.'),
+      WAIT,
+    );
+    expect(container.textContent).not.toContain('nur die letzten 200 Journal-Zeilen');
+    expect(container.textContent).not.toContain('Verbindung für „Mehr Log“');
   });
 
   it('names a server the monitoring service knows no agent of', async () => {
