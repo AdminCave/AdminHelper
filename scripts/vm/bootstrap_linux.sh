@@ -143,6 +143,19 @@ log "generate a valid UTF-8 locale (headless boxes default to C — breaks Intl.
 $SUDO locale-gen en_US.UTF-8 >/dev/null
 $SUDO update-locale LANG=en_US.UTF-8 >/dev/null
 
+# The services run on the Python of their Dockerfiles (python:3.14-slim) and CI
+# tests that; Ubuntu 24.04 ships 3.12. A venv built on 3.12 fails code that uses
+# 3.13+ API (SSLSocket.get_unverified_chain: the 2026-11-13 weekly, R-1418).
+# run.sh's ensure_venv builds the venv with python3.14 when it is installed.
+# Every profile: the bake warms each template with `run.sh unit`.
+log "python3.14 from the deadsnakes PPA (the Dockerfiles' Python, for run.sh's venv)"
+if ! python3.14 -c 'import ensurepip' >/dev/null 2>&1; then
+  $SUDO apt-get install -y --no-install-recommends --no-upgrade software-properties-common
+  $SUDO add-apt-repository -y ppa:deadsnakes/ppa
+  wait_apt_lock
+  $SUDO apt-get install -y --no-install-recommends --no-upgrade python3.14 python3.14-venv
+fi
+
 # The pipx fallback stays, the `|| true` behind it does not: run.sh dep-gates
 # both of these, so a failed install does not go red — it SKIPs, and under
 # --strict the box is then reported as unverified for a reason that has nothing

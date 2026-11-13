@@ -689,6 +689,43 @@ got=$(env -u VENV AH_VENV="$WORK/host-venv" HOME="$WORK/home" bash -c "$SSE_EXPR
 [ "$got" = "$WORK/host-venv" ] \
   && ok "sse_push_e2e.sh follows an AH_VENV the host sets" || bad "sse_push_e2e.sh with AH_VENV: '$got'"
 
+# The interpreter of the venv (R-1418): a box's python3 is 3.12, the Dockerfiles'
+# Python 3.14, which bootstrap_linux.sh installs as python3.14. run.sh builds the
+# venv with it, and rebuilds a venv of another version a warm box kept.
+echo "── the venv interpreter ──"
+PY314="$WORK/bin-py314"; mkdir -p "$PY314"
+cp -a "$PYSHIM/." "$PY314/"
+cat > "$PY314/python3.14" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "-c "*) echo "(3, 14)" ;;
+  *"-m venv "*) printf 'py314: %s\n' "$*" >> "$SHIM_VENV_LOG" ;;
+esac
+exit 0
+EOF
+chmod +x "$PY314/python3.14"
+fake_venv() {  # fake_venv <dir> <version tuple>
+  mkdir -p "$1/bin"; : > "$1/bin/activate"
+  printf '#!/bin/sh\necho "%s"\n' "$2" > "$1/bin/python"; chmod +x "$1/bin/python"
+}
+: > "$VLOG"
+PATH="$PY314" AH_VENV="$WORK/v314-new" SHIM_VENV_LOG="$VLOG" AH_OUT_DIR="$WORK/out" \
+  "$PY314/bash" "$RUN" unit --step "monitoring pytest" >/dev/null 2>&1
+grep -qxF -- "py314: -m venv $WORK/v314-new" "$VLOG" \
+  && ok "python3.14 installed -> run.sh builds the venv with it" \
+  || bad "venv with python3.14 present: $(tr '\n' '|' < "$VLOG")"
+fake_venv "$WORK/v312" "(3, 12)"; : > "$VLOG"
+PATH="$PY314" AH_VENV="$WORK/v312" SHIM_VENV_LOG="$VLOG" AH_OUT_DIR="$WORK/out" \
+  "$PY314/bash" "$RUN" unit --step "monitoring pytest" >/dev/null 2>&1
+grep -qxF -- "py314: -m venv --clear $WORK/v312" "$VLOG" \
+  && ok "a venv of another version is rebuilt with --clear" \
+  || bad "stale 3.12 venv: $(tr '\n' '|' < "$VLOG")"
+fake_venv "$WORK/v314" "(3, 14)"; : > "$VLOG"
+PATH="$PY314" AH_VENV="$WORK/v314" SHIM_VENV_LOG="$VLOG" AH_OUT_DIR="$WORK/out" \
+  "$PY314/bash" "$RUN" unit --step "monitoring pytest" >/dev/null 2>&1
+[ ! -s "$VLOG" ] && ok "a venv of the same version is kept" \
+  || bad "matching venv rebuilt: $(tr '\n' '|' < "$VLOG")"
+
 # sse_push_e2e.sh installs the server's packages on every run. Monitoring and
 # ca-issuer bring uvicorn into the shared venv but not PyJWT, bcrypt or redis, and
 # a check for uvicorn alone let the step live off server-pytest (R-1338). A docker
