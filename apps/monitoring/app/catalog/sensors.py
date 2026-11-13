@@ -113,6 +113,12 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "tailscale_status": frozenset({"backend_running", "health_warnings", "key_expiry_days"}),
     "openvpn_status": frozenset({"clients", "updated_age_s"}),
     "keepalived_vips": frozenset({"vips", "held"}),
+    "bind_status": frozenset({"running", "zones", "recursive_clients", "recursive_limit"}),
+    "unbound_stats": frozenset({"queries", "requestlist_exceeded", "servfail_pct"}),
+    "chrony_tracking": frozenset({"synced", "stratum", "offset_abs_ms"}),
+    "ntpsec_status": frozenset({"synced", "stratum", "offset_abs_ms"}),
+    "kea_pools": frozenset({"subnets", "max_pool_used_pct", "alloc_fail"}),
+    "dnsmasq_leases": frozenset({"leases", "range_size", "used_pct"}),
 }
 APP_VIEW_TARGETS: dict[str, str] = {
     "bbb_meetings": "unit",
@@ -125,6 +131,12 @@ APP_VIEW_TARGETS: dict[str, str] = {
     "tailscale_status": "unit",
     "openvpn_status": "unit",
     "keepalived_vips": "unit",
+    "bind_status": "unit",
+    "unbound_stats": "unit",
+    "chrony_tracking": "unit",
+    "ntpsec_status": "unit",
+    "kea_pools": "unit",
+    "dnsmasq_leases": "unit",
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -276,6 +288,12 @@ class AppParams(_Params):
         "tailscale_status",
         "openvpn_status",
         "keepalived_vips",
+        "bind_status",
+        "unbound_stats",
+        "chrony_tracking",
+        "ntpsec_status",
+        "kea_pools",
+        "dnsmasq_leases",
     ]
 
 

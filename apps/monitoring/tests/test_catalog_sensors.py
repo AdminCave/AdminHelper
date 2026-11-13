@@ -207,6 +207,12 @@ def test_the_app_views_are_those_the_agent_returns():
         "tailscale_status": ["backend_running", "health_warnings", "key_expiry_days"],
         "openvpn_status": ["clients", "updated_age_s"],
         "keepalived_vips": ["held", "vips"],
+        "bind_status": ["recursive_clients", "recursive_limit", "running", "zones"],
+        "unbound_stats": ["queries", "requestlist_exceeded", "servfail_pct"],
+        "chrony_tracking": ["offset_abs_ms", "stratum", "synced"],
+        "ntpsec_status": ["offset_abs_ms", "stratum", "synced"],
+        "kea_pools": ["alloc_fail", "max_pool_used_pct", "subnets"],
+        "dnsmasq_leases": ["leases", "range_size", "used_pct"],
     }
     assert APP_VIEW_TARGETS == {
         "bbb_meetings": "unit",
@@ -219,6 +225,12 @@ def test_the_app_views_are_those_the_agent_returns():
         "tailscale_status": "unit",
         "openvpn_status": "unit",
         "keepalived_vips": "unit",
+        "bind_status": "unit",
+        "unbound_stats": "unit",
+        "chrony_tracking": "unit",
+        "ntpsec_status": "unit",
+        "kea_pools": "unit",
+        "dnsmasq_leases": "unit",
     }
 
 
