@@ -43,8 +43,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sen
 Doku: → T10
 Abhängt von: T1, T2
 
-### T4 — R-1229: Ansichten nut_ups und apcupsd  [ ]
+### T4 — R-1229: Ansichten nut_ups und apcupsd  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_ups.go, apps/agent/internal/probe/app_ups_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @003e440cb 2026-11-13T17:42:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-7/T4.verdict.json)
 Änderung: `upsc -l localhost` und `upsc <ups>@localhost` (UPS-Name als Argumentklasse), nur `ups.status`,
 `battery.runtime`, `battery.charge`; `apcaccess -u status`, nur vier Schlüssel. Fallen (`upscmd`, `upsrw`, `upsmon -c`)
 als Negativtest. Neue Dateien mit SPDX-Header.
@@ -111,3 +113,5 @@ Task-Review: am Ende
 - T2 → T3: Katalog-Timeout für `ipmi_sensors` und `raid_ctrl` 30 s (Höchstwert `timeout_s`): je Aufruf 14 s, zwei Aufrufe (Dump + elist, ssacli status + config) passen hinein.
 - T3: `ipmi` alle 15 min statt 10 (der Katalog kennt nur 300/900/3600/86400 s); `lvm_thin` 300 s mit `timeout_s` 30 über den 15 s von lvs, damit „beschäftigt“ als Wert ankommt, nicht als Zeitüberschreitung.
 - T3: Ein Marker trifft mit einem seiner Pfade oder Pakete (Agent `checkMarkers`), ein UND gibt es nicht: `mdadm` erkennt `/proc/mdstat` oder Paket `mdadm`, `lvm-thin` `lvs` oder Paket `lvm2`; ein Host ohne Arrays/Pools meldet 0. `ipmi` erkennt nur die Gerätedatei (nicht `ipmitool`), ohne ipmitool meldet die Ansicht „nicht unterstützt“.
+- T4: `nut_ups` fragt je UPS `upsc <ups>@localhost` einmal (alle Variablen, nur drei gelesen) statt drei Einzelaufrufe; stale = Exit 1 mit „Data stale“ oder „Driver not connected“ (clients/upsclient.c). Fehlen Laufzeit/Ladung bei allen UPS, bleiben `min_runtime_s`/`min_charge_pct` weg statt 0. UPS-Namen außerhalb der Klasse `upsname` (kein `@`, `:`, führendes `-`) sind ein Fehler, kein stilles Auslassen.
+- T4: apcupsd `TIMELEFT` gilt als Dezimalminuten; laut apcstatus.c (SVN trunk) ist die Nachkommastelle der Sekundenrest, Abweichung < 1 min, nicht gegen ein echtes apcupsd geprüft.

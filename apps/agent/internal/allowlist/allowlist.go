@@ -75,6 +75,9 @@ var classes = map[string]string{
 	"basepkg": `FreeBSD-(?:kernel-)?[0-9]+\.[0-9]+(?:_[0-9]+)?`,
 	// A fail2ban jail as `fail2ban-client status` lists it (a section name of jail.conf).
 	"jail": `[A-Za-z0-9_][A-Za-z0-9_.-]*`,
+	// A UPS name as `upsc -l` lists it (probe's upsNamePattern): no '@' or ':', so a call with it names
+	// no other host or port.
+	"upsname": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -248,6 +251,12 @@ var commands = map[string][][]string{
 	"unbound-control": {{"stats_noreset"}},
 	"chronyc":         {{"-c", "tracking"}},
 	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
+	// The UPS views (probe, app_ups.go): the UPS list and the variables of one UPS from the upsd on
+	// localhost, the status report of the apcupsd on localhost. Kept out: upscmd and upsrw (commands
+	// and settings to the UPS), upsmon -c (fsd shuts every client down), upsc against another host,
+	// apcaccess -h/-f.
+	"upsc":      {{"-l", "localhost"}, {"<upsname>@localhost"}},
+	"apcaccess": {{"-u", "status"}},
 	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.

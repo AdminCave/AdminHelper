@@ -407,6 +407,48 @@ func TestAllowlistHostHardwareViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistUPSViews: the UPS views ask the upsd and the apcupsd on localhost for a list and a
+// status. The traps command or reconfigure a UPS, shut the clients down, or ask another host.
+func TestAllowlistUPSViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"upsc", "-l", "localhost"},
+		{"upsc", "eaton5sc@localhost"},
+		{"upsc", "ups_1.rack-a@localhost"},
+		{"/usr/bin/upsc", "-l", "localhost"},
+		{"apcaccess", "-u", "status"},
+		{"/usr/sbin/apcaccess", "-u", "status"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"upscmd", "ups@localhost", "shutdown.return"},
+		{"upscmd", "-l", "ups@localhost"},
+		{"upsrw", "-s", "ups.delay.shutdown=1", "ups@localhost"},
+		{"upsrw", "ups@localhost"},
+		{"upsmon", "-c", "fsd"},
+		{"upsmon", "-c", "stop"},
+		{"upsc", "-l"},
+		{"upsc", "-l", "nas.example"},
+		{"upsc", "ups@nas.example"},
+		{"upsc", "ups@localhost:3494"},
+		{"upsc", "ups@other@localhost"},
+		{"upsc", "-c", "ups@localhost"},
+		{"upsc", "ups@localhost", "ups.status"},
+		{"upsc", "-l", "localhost", "extra"},
+		{"apcaccess"},
+		{"apcaccess", "status"},
+		{"apcaccess", "-h", "nas.example:3551", "-u", "status"},
+		{"apcaccess", "-f", "/tmp/x.conf", "-u", "status"},
+		{"apcaccess", "-u", "status", "nas.example"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

@@ -33,6 +33,7 @@ var (
 // the application with fixed arguments, started through the allowlist (runTool). The server names a
 // view, never a path, a command or a query.
 var appViews = map[string]appView{
+	"apcupsd":           {unitKinds, apcupsd},
 	"bbb_meetings":      {unitKinds, bbbMeetings},
 	"bbb_recordings":    {unitKinds, bbbRecordings},
 	"bind_status":       {unitKinds, bindStatus},
@@ -47,6 +48,7 @@ var appViews = map[string]appView{
 	"ldap_replication":  {unitKinds, ldapReplication},
 	"npm_certs":         {containerKinds, npmCerts},
 	"ntpsec_status":     {unitKinds, ntpsecStatus},
+	"nut_ups":           {unitKinds, nutUPS},
 	"openvpn_status":    {unitKinds, openvpnStatus},
 	"tailscale_status":  {unitKinds, tailscaleStatus},
 	"traefik_certs":     {eitherKinds, traefikCerts},
