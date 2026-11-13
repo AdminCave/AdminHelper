@@ -1,5 +1,5 @@
 # Monitoring: Fühler `app` für Anwendungs-Innenleben — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-app-collector · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-app-collector · Review: pro Task
 Spec: docs/features/arch-monitoring-app-collector.md (Roadmap R-1404)
 Heavy: linux-full — apps/agent (neuer Probe-Fühler `app`); die Katalog-Module sind Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -116,8 +116,10 @@ Doku: docs/admin/monitoring.html · docs/en/admin/monitoring.html · docs/develo
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6
 
-### T8 — Agent: Aufzeichnungs-Status nur als Verzeichnis, Properties nur als reguläre Datei öffnen  [ ]
+### T8 — Agent: Aufzeichnungs-Status nur als Verzeichnis, Properties nur als reguläre Datei öffnen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_test.go, apps/agent/internal/probe/app_bbb_unix.go, apps/agent/internal/probe/app_bbb_windows.go, apps/agent/internal/probe/app_bbb_unix_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @06aedf223 2026-11-13T12:13:06+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T8.verdict.json)
 Änderung: Aus der Abschlussprüfung: `bbb_recordings` öffnet `status` und die vier Schritt-Verzeichnisse je relativ
 zum geöffneten Elternverzeichnis und nur als Verzeichnis, ohne einem Link am letzten Glied zu folgen; `bbb_meetings`
 liest die Properties-Dateien nur als reguläre Datei und wartet dabei nicht. Tests: FIFO, Link auf ein FIFO und Link
@@ -192,3 +194,11 @@ Abhängt von: T1, T2
 - 2026-11-13 (T7): Die Entwickler-Seite Monitoring-Architektur (DE+EN) per `set-files` aufgenommen: `APP_VIEW_FIELDS`
   und `APP_VIEW_TARGETS` standen sonst nirgends neben `OPNSENSE_VIEW_FIELDS`. Die Admin-Doku nennt cn=Monitor als
   Voraussetzung der Replikation (ohne bleibt sie `unknown`, alarmiert also nie) und das Abschalten des Checks.
+- 2026-11-13 (T8): `bbbRecordingDir` selbst darf ein Link sein (Aufnahmen auf einer größeren Platte); `status` und
+  die Schritt-Verzeichnisse öffnet die Ansicht per `openat` relativ zum geöffneten Elternverzeichnis mit
+  `O_DIRECTORY|O_NOFOLLOW`. Ein Link oder eine andere Datei an `status` ist `unsupported` wie bisher eine Datei, an
+  einem Schritt ein Fehler ohne Pfad. Linux gibt für FIFO, Link auf ein FIFO und Link auf ein Verzeichnis `ENOTDIR`
+  zurück, ohne zu warten, auch ohne `O_NONBLOCK` (Probe 2026-11-13); FreeBSD nicht gefahren (`EMLINK` für den Link
+  laut open(2), nicht verifiziert). Windows prüft nach dem Öffnen auf Verzeichnis; BigBlueButton läuft dort nicht.
+- 2026-11-13 (T8): `readCapped` liest nach dem Muster von `readSmallFile` (stat, Öffnen ohne Warten, fstat,
+  kein Dateisystem des Kernels), damit beide Lesewege gleich bleiben; Fehlertexte weiter ohne Pfad.

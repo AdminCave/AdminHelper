@@ -141,10 +141,15 @@ func TestTheRecordingsViewStopsAtTheEntryCap(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got, _, err := countFailMarkers(context.Background(), dir, 3); err != nil || got != 3 {
+	status, err := openDir(nil, filepath.Join(root, "status"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer status.Close()
+	if got, _, err := countFailMarkers(context.Background(), status, "processed", 3); err != nil || got != 3 {
 		t.Fatalf("countFailMarkers = %d, %v; want 3 at the cap", got, err)
 	}
-	n, _, err := countFailMarkers(context.Background(), dir, 2)
+	n, _, err := countFailMarkers(context.Background(), status, "processed", 2)
 	if err == nil || n != 0 || !strings.Contains(err.Error(), "more than 2 entries") {
 		t.Errorf("over the cap: %d, %v; want an error and no count", n, err)
 	}
@@ -152,7 +157,7 @@ func TestTheRecordingsViewStopsAtTheEntryCap(t *testing.T) {
 
 func TestTheRecordingsViewFailsWithoutNamingPathOrContent(t *testing.T) {
 	root := stubRecordingDir(t)
-	// A file where a step's directory belongs opens but cannot be listed, on every platform.
+	// A file where a step's directory belongs is no directory to list, on every platform.
 	if err := os.WriteFile(filepath.Join(root, "status", "processed"), []byte("salt-0123456789abcdef"), 0o644); err != nil {
 		t.Fatal(err)
 	}

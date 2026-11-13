@@ -20,7 +20,6 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -31,6 +30,9 @@ import (
 // bbbRecordingDir is where BigBlueButton keeps its recordings and the status of their processing
 // (recording_dir in bigbluebutton.yml, the packages' default); tests point it elsewhere.
 var bbbRecordingDir = "/var/bigbluebutton/recording"
+
+// errNotDir is the error of openDir for a file that is no directory, or for a link it does not follow.
+var errNotDir = errors.New("no directory")
 
 // maxStatusEntries caps the entries the recordings view reads in one status directory: a .done
 // marker stays there for every recording ever processed.
@@ -49,18 +51,26 @@ var bbbFailSteps = []struct{ dir, field string }{
 // bbbRecordings counts the recordings whose processing failed, by step, and how long ago the newest
 // failure was marked. It reads names and the mtime of the markers, never a file's content.
 func bbbRecordings(ctx context.Context, _ Target) (map[string]any, error) {
-	status := filepath.Join(bbbRecordingDir, "status")
-	if info, err := os.Stat(status); err != nil || !info.IsDir() {
-		if err == nil || errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%w: no BigBlueButton recording status on this host", ErrUnsupported)
-		}
+	// The recording directory may be a link (to a larger disk); below it, in the tree of BigBlueButton's
+	// own user, the view follows no link and opens nothing but a directory.
+	rec, err := openDir(nil, bbbRecordingDir)
+	var status *os.File
+	if err == nil {
+		status, err = openDir(rec, "status")
+		rec.Close()
+	}
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotDir) {
+		return nil, fmt.Errorf("%w: no BigBlueButton recording status on this host", ErrUnsupported)
+	}
+	if err != nil {
 		return nil, errors.New("the BigBlueButton recording status cannot be read")
 	}
+	defer status.Close()
 	values := map[string]any{}
 	failed := 0
 	var newest time.Time
 	for _, step := range bbbFailSteps {
-		n, last, err := countFailMarkers(ctx, filepath.Join(status, step.dir), maxStatusEntries)
+		n, last, err := countFailMarkers(ctx, status, step.dir, maxStatusEntries)
 		if err != nil {
 			return nil, fmt.Errorf("status/%s: %w", step.dir, err)
 		}
@@ -77,11 +87,12 @@ func bbbRecordings(ctx context.Context, _ Target) (map[string]any, error) {
 	return values, nil
 }
 
-// countFailMarkers counts the regular files *.fail in dir and returns the newest mtime among them; a
-// step that never ran has no directory yet and no marker. A directory of more than limit entries is
-// an error, not counted in part, and so is the end of ctx between two batches of entries.
-func countFailMarkers(ctx context.Context, dir string, limit int) (int, time.Time, error) {
-	f, err := os.Open(dir)
+// countFailMarkers counts the regular files *.fail in the directory step below status and returns the
+// newest mtime among them; a step that never ran has no directory yet and no marker. A directory of
+// more than limit entries is an error, not counted in part, and so is the end of ctx between two
+// batches of entries.
+func countFailMarkers(ctx context.Context, status *os.File, step string, limit int) (int, time.Time, error) {
+	f, err := openDir(status, step)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, time.Time{}, nil
 	}
@@ -279,10 +290,21 @@ func bbbProperties(keys ...string) (map[string]string, error) {
 	return found, nil
 }
 
-// readCapped reads the file name, which must not be larger than limit bytes. Its errors name neither
-// the file nor its content but wrap fs.ErrNotExist.
+// readCapped reads the regular file name, which must not be larger than limit bytes, as readSmallFile
+// does: it opens no other kind of file and waits for no writer. Its errors name neither the file nor
+// its content but wrap fs.ErrNotExist.
 func readCapped(name string, limit int64) ([]byte, error) {
-	f, err := os.Open(name)
+	fi, err := os.Stat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fs.ErrNotExist
+	}
+	if err != nil {
+		return nil, errors.New("cannot be read")
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errors.New("is no regular file")
+	}
+	f, err := openNoWait(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fs.ErrNotExist
 	}
@@ -290,6 +312,10 @@ func readCapped(name string, limit int64) ([]byte, error) {
 		return nil, errors.New("cannot be read")
 	}
 	defer f.Close()
+	// The file may have been swapped since the stat.
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || refuseKernelFile(f, name) != nil {
+		return nil, errors.New("is no regular file")
+	}
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, errors.New("cannot be read")
