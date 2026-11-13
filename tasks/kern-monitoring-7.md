@@ -53,8 +53,10 @@ als Negativtest. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T10
 
-### T5 — R-1229: Module nut und apcupsd  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/nut.py, apps/monitoring/app/catalog/modules/apcupsd.py, apps/monitoring/tests/test_catalog_ups.py
+### T5 — R-1229: Module nut und apcupsd  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/nut.py, apps/monitoring/app/catalog/modules/apcupsd.py, apps/monitoring/tests/test_catalog_ups.py, apps/monitoring/app/catalog/modules/nut_monitor.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @bff0ad704 2026-11-13T17:45:30+01:00
+Review: approve (.ah-out/review/kern-monitoring-7/T5.verdict.json)
 Änderung: Module mit Units, Regeln (LB/FSD/OVER/stale → critical, OB/RB → warning, Laufzeit < 600 s → warning;
 `nut-monitor` nicht aktiv → critical) und Karten. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_ups.py tests/test_catalog_sensors.py
@@ -115,3 +117,5 @@ Task-Review: am Ende
 - T3: Ein Marker trifft mit einem seiner Pfade oder Pakete (Agent `checkMarkers`), ein UND gibt es nicht: `mdadm` erkennt `/proc/mdstat` oder Paket `mdadm`, `lvm-thin` `lvs` oder Paket `lvm2`; ein Host ohne Arrays/Pools meldet 0. `ipmi` erkennt nur die Gerätedatei (nicht `ipmitool`), ohne ipmitool meldet die Ansicht „nicht unterstützt“.
 - T4: `nut_ups` fragt je UPS `upsc <ups>@localhost` einmal (alle Variablen, nur drei gelesen) statt drei Einzelaufrufe; stale = Exit 1 mit „Data stale“ oder „Driver not connected“ (clients/upsclient.c). Fehlen Laufzeit/Ladung bei allen UPS, bleiben `min_runtime_s`/`min_charge_pct` weg statt 0. UPS-Namen außerhalb der Klasse `upsname` (kein `@`, `:`, führendes `-`) sind ein Fehler, kein stilles Auslassen.
 - T4: apcupsd `TIMELEFT` gilt als Dezimalminuten; laut apcstatus.c (SVN trunk) ist die Nachkommastelle der Sekundenrest, Abweichung < 1 min, nicht gegen ein echtes apcupsd geprüft.
+- T5: `nut-monitor` ist ein eigenes Modul (Unit `nut-monitor.service`, nur Service-Check), nicht ein zweiter Unit-Check im Modul `nut`: eine Instanz gehört zu genau einer Unit, `Target` trägt keinen zweiten Unit-Namen, und inaktive Units findet die Erkennung nicht (`app/discovery.py`). Ein Host, der nur `upsmon` gegen einen fremden upsd fährt, bekommt so auch die Prüfung.
+- T5: Abweichung vom Plan: keine Regel `min_runtime_s lt 600`. `_rate` (`app/checkers/probe.py`) wertet ein fehlendes Feld als unbewertbar und hält den Check auf `unknown`, wenn keine andere Regel greift; viele Treiber melden keine Laufzeit. Laufzeit und Ladung stehen als Werte und auf der Karte, den Alarm trägt das LB-Flag des Treibers (aus dessen Laufzeit-/Ladungsgrenzen). Kevin am Ende nennen.

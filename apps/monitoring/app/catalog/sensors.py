@@ -118,6 +118,22 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "unbound_stats": frozenset({"queries", "requestlist_exceeded", "servfail_pct"}),
     "chrony_tracking": frozenset({"synced", "stratum", "offset_abs_ms"}),
     "ntpsec_status": frozenset({"synced", "stratum", "offset_abs_ms"}),
+    "nut_ups": frozenset(
+        {
+            "ups",
+            "on_battery",
+            "low_battery",
+            "fsd",
+            "overload",
+            "replace_battery",
+            "stale",
+            "min_runtime_s",
+            "min_charge_pct",
+        }
+    ),
+    "apcupsd": frozenset(
+        {"online", "on_battery", "low_battery", "commlost", "charge_pct", "runtime_s", "transfers"}
+    ),
     "kea_pools": frozenset({"subnets", "max_pool_used_pct", "alloc_fail"}),
     "dnsmasq_leases": frozenset({"leases", "range_size", "used_pct"}),
     "caddy_upstreams": frozenset({"upstreams", "failing"}),
@@ -154,6 +170,8 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "unbound_stats": _UNIT,
     "chrony_tracking": _UNIT,
     "ntpsec_status": _UNIT,
+    "nut_ups": _UNIT,
+    "apcupsd": _UNIT,
     "kea_pools": _UNIT,
     "dnsmasq_leases": _UNIT,
     "caddy_upstreams": _UNIT,
@@ -317,6 +335,8 @@ class AppParams(_Params):
         "unbound_stats",
         "chrony_tracking",
         "ntpsec_status",
+        "nut_ups",
+        "apcupsd",
         "kea_pools",
         "dnsmasq_leases",
         "caddy_upstreams",

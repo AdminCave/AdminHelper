@@ -220,6 +220,26 @@ def test_the_app_views_are_those_the_agent_returns():
         "caddy_certs": ["certs", "expired", "min_days_left"],
         "traefik_certs": ["certs", "expired", "min_days_left"],
         "npm_certs": ["certs", "expired", "min_days_left"],
+        "nut_ups": [
+            "fsd",
+            "low_battery",
+            "min_charge_pct",
+            "min_runtime_s",
+            "on_battery",
+            "overload",
+            "replace_battery",
+            "stale",
+            "ups",
+        ],
+        "apcupsd": [
+            "charge_pct",
+            "commlost",
+            "low_battery",
+            "on_battery",
+            "online",
+            "runtime_s",
+            "transfers",
+        ],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -242,6 +262,8 @@ def test_the_app_views_are_those_the_agent_returns():
         "caddy_certs": ["container", "unit"],
         "traefik_certs": ["container", "unit"],
         "npm_certs": ["container"],
+        "nut_ups": ["unit"],
+        "apcupsd": ["unit"],
     }
 
 
