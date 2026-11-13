@@ -279,6 +279,7 @@ def test_the_app_views_are_those_the_agent_returns():
             "slow_requests",
         ],
         "pm2_apps": ["apps", "apps_errored", "apps_stopped", "restarts"],
+        "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -314,6 +315,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "haproxy_servers": ["unit"],
         "fpm_pools": ["unit"],
         "pm2_apps": ["unit"],
+        "es_nodes": ["container", "unit"],
     }
 
 

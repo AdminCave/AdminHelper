@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 SENSORS = (
     "unit",
@@ -166,6 +166,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "pm2_apps": frozenset({"apps", "apps_errored", "apps_stopped", "restarts"}),
+    "es_nodes": frozenset({"nodes", "nodes_failed", "heap_used_pct_max", "disk_used_pct_max"}),
 }
 
 # The views of the host sensor and the fields each one returns: the allowlist of the agent's
@@ -216,6 +217,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "haproxy_servers": _UNIT,
     "fpm_pools": _UNIT,
     "pm2_apps": _UNIT,
+    "es_nodes": _UNIT_OR_CONTAINER,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -235,9 +237,17 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
             "duration_ms",
             "connections",
             "max_connections",
+            "connections_pct",
             "replication_running",
             "replication_lag_s",
             "size_bytes",
+            "aborted_connects",
+            "connection_errors_max_connections",
+            "galera_primary",
+            "galera_ready",
+            "galera_cluster_size",
+            "xid_age",
+            "long_transactions",
         }
     ),
     "dns": frozenset({"resolved", "duration_ms", "answers"}),
@@ -330,10 +340,25 @@ class UnixSocketParams(_Params):
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
 
 
+# The queries of each engine (the agent's sensor_sql.go); one of the other engine is invalid.
+SQL_QUERIES: dict[str, frozenset[str]] = {
+    "mariadb": frozenset({"ping", "connections", "replication", "size", "errors", "galera"}),
+    "postgres": frozenset({"ping", "connections", "replication", "size", "xid_age", "long_tx"}),
+}
+
+
 class SqlParams(_Params):
     engine: Literal["mariadb", "postgres"]
     # Fixed queries compiled into the agent; the server picks one, never writes SQL.
-    query: Literal["ping", "connections", "replication", "size"]
+    query: Literal[
+        "ping", "connections", "replication", "size", "errors", "galera", "xid_age", "long_tx"
+    ]
+
+    @model_validator(mode="after")
+    def _query_of_the_engine(self) -> SqlParams:
+        if self.query not in SQL_QUERIES[self.engine]:
+            raise ValueError(f"engine {self.engine} has no query {self.query}")
+        return self
 
 
 class DnsParams(_Params):
@@ -392,6 +417,7 @@ class AppParams(_Params):
         "haproxy_servers",
         "fpm_pools",
         "pm2_apps",
+        "es_nodes",
     ]
 
 
