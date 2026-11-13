@@ -96,12 +96,35 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"contexts", "csn_age_s", "monitor", "consumers", "disconnected", "refreshing"}
     ),
     "wordpress_version": frozenset({"version"}),
+    "wg_peers": frozenset(
+        {
+            "interfaces",
+            "peers",
+            "keepalive_peers",
+            "stale_warn",
+            "stale_crit",
+            "max_handshake_age_s",
+        }
+    ),
+    "fail2ban": frozenset(
+        {"responding", "jails", "banned_total", "max_banned", "jails_without_files"}
+    ),
+    "crowdsec_bouncers": frozenset({"bouncers", "stale_bouncers", "max_pull_age_s"}),
+    "tailscale_status": frozenset({"backend_running", "health_warnings", "key_expiry_days"}),
+    "openvpn_status": frozenset({"clients", "updated_age_s"}),
+    "keepalived_vips": frozenset({"vips", "held"}),
 }
 APP_VIEW_TARGETS: dict[str, str] = {
     "bbb_meetings": "unit",
     "bbb_recordings": "unit",
     "ldap_replication": "unit",
     "wordpress_version": "container",
+    "wg_peers": "unit",
+    "fail2ban": "unit",
+    "crowdsec_bouncers": "unit",
+    "tailscale_status": "unit",
+    "openvpn_status": "unit",
+    "keepalived_vips": "unit",
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -242,7 +265,18 @@ class OpnsenseParams(_Params):
 
 
 class AppParams(_Params):
-    view: Literal["bbb_meetings", "bbb_recordings", "ldap_replication", "wordpress_version"]
+    view: Literal[
+        "bbb_meetings",
+        "bbb_recordings",
+        "ldap_replication",
+        "wordpress_version",
+        "wg_peers",
+        "fail2ban",
+        "crowdsec_bouncers",
+        "tailscale_status",
+        "openvpn_status",
+        "keepalived_vips",
+    ]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {

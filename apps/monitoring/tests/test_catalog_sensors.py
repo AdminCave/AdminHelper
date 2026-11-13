@@ -194,12 +194,31 @@ def test_the_app_views_are_those_the_agent_returns():
             "refreshing",
         ],
         "wordpress_version": ["version"],
+        "wg_peers": [
+            "interfaces",
+            "keepalive_peers",
+            "max_handshake_age_s",
+            "peers",
+            "stale_crit",
+            "stale_warn",
+        ],
+        "fail2ban": ["banned_total", "jails", "jails_without_files", "max_banned", "responding"],
+        "crowdsec_bouncers": ["bouncers", "max_pull_age_s", "stale_bouncers"],
+        "tailscale_status": ["backend_running", "health_warnings", "key_expiry_days"],
+        "openvpn_status": ["clients", "updated_age_s"],
+        "keepalived_vips": ["held", "vips"],
     }
     assert APP_VIEW_TARGETS == {
         "bbb_meetings": "unit",
         "bbb_recordings": "unit",
         "ldap_replication": "unit",
         "wordpress_version": "container",
+        "wg_peers": "unit",
+        "fail2ban": "unit",
+        "crowdsec_bouncers": "unit",
+        "tailscale_status": "unit",
+        "openvpn_status": "unit",
+        "keepalived_vips": "unit",
     }
 
 
