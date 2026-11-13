@@ -449,6 +449,38 @@ func TestAllowlistUPSViews(t *testing.T) {
 	}
 }
 
+func TestAllowlistPVEViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"pvesh", "get", "/cluster/status", "--output-format", "json"},
+		{"pvesh", "get", "/cluster/ha/status/current", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/replication", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/tasks", "--typefilter", "vzdump", "--limit", "50", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/apt/update", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/subscription", "--output-format", "json"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"pvesh", "create", "/nodes/pve1/apt/update", "--output-format", "json"},
+		{"pvesh", "set", "/cluster/ha/status/current", "--output-format", "json"},
+		{"pvesh", "delete", "/nodes/pve1/replication", "--output-format", "json"},
+		{"pvesh", "create", "/nodes/pve1/subscription", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/storage", "--output-format", "json"},
+		{"pvesh", "get", "/cluster/replication", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/tasks", "--typefilter", "vzdump", "--limit", "5000", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/tasks", "--typefilter", "qmstart", "--limit", "50", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/../cluster/replication", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/-x/apt/update", "--output-format", "json"},
+		{"pvesh", "get", "/cluster/status"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

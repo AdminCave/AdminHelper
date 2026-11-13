@@ -63,8 +63,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_ups
 Doku: → T10
 Abhängt von: T4
 
-### T6 — R-1230: Ansichten pve_cluster, pve_jobs, pve_updates  [ ]
+### T6 — R-1230: Ansichten pve_cluster, pve_jobs, pve_updates  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_pve.go, apps/agent/internal/probe/app_pve_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e98345d7b 2026-11-13T17:56:34+01:00
+Review: approve (.ah-out/review/kern-monitoring-7/T6.verdict.json)
 Änderung: feste `pvesh get`-Pfade (Spec), höchstens vier Aufrufe je Ansicht, `apt/update` nur GET; nur Zähler,
 Zustände und Alter, keine Gast- oder Knotennamen. Fallen (`pvesh create|set|delete`, `/nodes/<n>/storage`) als
 Negativtest. Neue Dateien mit SPDX-Header.
@@ -119,3 +121,5 @@ Task-Review: am Ende
 - T4: apcupsd `TIMELEFT` gilt als Dezimalminuten; laut apcstatus.c (SVN trunk) ist die Nachkommastelle der Sekundenrest, Abweichung < 1 min, nicht gegen ein echtes apcupsd geprüft.
 - T5: `nut-monitor` ist ein eigenes Modul (Unit `nut-monitor.service`, nur Service-Check), nicht ein zweiter Unit-Check im Modul `nut`: eine Instanz gehört zu genau einer Unit, `Target` trägt keinen zweiten Unit-Namen, und inaktive Units findet die Erkennung nicht (`app/discovery.py`). Ein Host, der nur `upsmon` gegen einen fremden upsd fährt, bekommt so auch die Prüfung.
 - T5: Abweichung vom Plan: keine Regel `min_runtime_s lt 600`. `_rate` (`app/checkers/probe.py`) wertet ein fehlendes Feld als unbewertbar und hält den Check auf `unknown`, wenn keine andere Regel greift; viele Treiber melden keine Laufzeit. Laufzeit und Ladung stehen als Werte und auf der Karte, den Alarm trägt das LB-Flag des Treibers (aus dessen Laufzeit-/Ladungsgrenzen). Kevin am Ende nennen.
+- T6: `pve_cluster` fragt `/nodes/<n>/replication` statt `/cluster/replication`: Letzteres ist nur die Job-Konfiguration ohne Zustand (pve-manager `Cluster.pm` → `ReplicationConfig`); `replication_failed` zählt Jobs mit `fail_count > 0`. `ha_error` zählt Dienste mit `crm_state` `error`, `fence` oder `recovery` (ha-manager-Doku „Service States“). Knotenname = kurzer Hostname wie `monitor.collectProxmox`, weil `localhost` nicht in jedem Handler ersetzt wird (`pvesh.pm`).
+- T6: `jobs_failed` = fehlgeschlagene vzdump-Läufe in Folge seit dem letzten nicht fehlgeschlagenen (Status weder `OK` noch `WARNINGS…`), damit ein späterer guter Lauf die Meldung löst; `last_run_age_s` fehlt ohne Lauf. Die Statuswörter aus pve-common sind nicht live geprüft.

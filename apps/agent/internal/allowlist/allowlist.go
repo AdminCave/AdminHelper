@@ -175,6 +175,16 @@ var commands = map[string][][]string{
 		{"get", "/cluster/backup", "--output-format", "json"},
 		{"get", "/nodes/<node>/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1", "--output-format", "json"},
 		{"get", "/nodes/<node>/tasks/<upid>/log", "--limit", "10000", "--output-format", "json"},
+		// The views pve_cluster, pve_jobs and pve_updates of the app sensor (probe/app_pve.go). Only
+		// GET: apt/update lists the local cache and never refreshes it (that is POST, as are pvesh create,
+		// set and delete, which stay off); /nodes/<node>/storage stays off, as listing it activates each
+		// storage.
+		{"get", "/cluster/status", "--output-format", "json"},
+		{"get", "/cluster/ha/status/current", "--output-format", "json"},
+		{"get", "/nodes/<node>/replication", "--output-format", "json"},
+		{"get", "/nodes/<node>/tasks", "--typefilter", "vzdump", "--limit", "50", "--output-format", "json"},
+		{"get", "/nodes/<node>/apt/update", "--output-format", "json"},
+		{"get", "/nodes/<node>/subscription", "--output-format", "json"},
 	},
 	"zpool": {
 		{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag"},
