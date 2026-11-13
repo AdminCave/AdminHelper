@@ -239,6 +239,12 @@ var commands = map[string][][]string{
 	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}},
 	"cscli":           {{"bouncers", "list", "-o", "json"}},
 	"tailscale":       {{"status", "--json", "--peers=false"}},
+	// The read commands of the DNS and time views (probe, app_dns.go). Kept out: `rndc stats` (writes
+	// the statistics file), `unbound-control stats` (resets the counters), chronyc makestep|burst.
+	"rndc":            {{"status"}},
+	"unbound-control": {{"stats_noreset"}},
+	"chronyc":         {{"-c", "tracking"}},
+	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated

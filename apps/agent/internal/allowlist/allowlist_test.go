@@ -287,6 +287,49 @@ func TestAllowlistNetSecurityViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistDNSAndTimeViews: the app sensor's views of BIND, Unbound, chrony and NTPsec read the
+// status, the counters without resetting them, the tracking report and three system variables. The
+// traps write the statistics file, reset the counters, step or poll the clock, or read other
+// variables.
+func TestAllowlistDNSAndTimeViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"rndc", "status"},
+		{"/usr/sbin/rndc", "status"},
+		{"unbound-control", "stats_noreset"},
+		{"chronyc", "-c", "tracking"},
+		{"ntpq", "-c", "rv 0 leap,stratum,offset"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"rndc", "stats"},
+		{"rndc", "reload"},
+		{"rndc", "flush"},
+		{"rndc", "dumpdb"},
+		{"rndc", "status", "-x"},
+		{"unbound-control", "stats"},
+		{"unbound-control", "reload"},
+		{"unbound-control", "dump_cache"},
+		{"unbound-control", "stats_noreset", "-c", "/tmp/x.conf"},
+		{"chronyc", "makestep"},
+		{"chronyc", "burst", "4/4"},
+		{"chronyc", "-c", "sources"},
+		{"chronyc", "tracking"},
+		{"chronyc", "-c", "tracking", "makestep"},
+		{"ntpq", "-c", "rv"},
+		{"ntpq", "-c", "rv 0"},
+		{"ntpq", "-c", "rv 0 leap,stratum,offset,clock"},
+		{"ntpq", "-c", "peers"},
+		{"ntpq", "-c", "rv 0 leap,stratum,offset", "-c", "mrulist"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

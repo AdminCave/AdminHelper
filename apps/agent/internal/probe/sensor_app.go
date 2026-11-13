@@ -27,12 +27,16 @@ type appView struct {
 var appViews = map[string]appView{
 	"bbb_meetings":      {kindUnit, bbbMeetings},
 	"bbb_recordings":    {kindUnit, bbbRecordings},
+	"bind_status":       {kindUnit, bindStatus},
+	"chrony_tracking":   {kindUnit, chronyTracking},
 	"crowdsec_bouncers": {kindUnit, crowdsecBouncers},
 	"fail2ban":          {kindUnit, fail2ban},
 	"keepalived_vips":   {kindUnit, keepalivedVIPs},
 	"ldap_replication":  {kindUnit, ldapReplication},
+	"ntpsec_status":     {kindUnit, ntpsecStatus},
 	"openvpn_status":    {kindUnit, openvpnStatus},
 	"tailscale_status":  {kindUnit, tailscaleStatus},
+	"unbound_stats":     {kindUnit, unboundStats},
 	"wg_peers":          {kindUnit, wgPeers},
 	"wordpress_version": {kindContainer, wordpressVersion},
 }
