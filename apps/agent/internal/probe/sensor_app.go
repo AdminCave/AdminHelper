@@ -24,9 +24,10 @@ type appView struct {
 // read only and without starting a program: files, the application's API on its own port, its
 // local socket. The server names a view, never a path, a command or a query.
 var appViews = map[string]appView{
-	"bbb_meetings":     {kindUnit, bbbMeetings},
-	"bbb_recordings":   {kindUnit, bbbRecordings},
-	"ldap_replication": {kindUnit, ldapReplication},
+	"bbb_meetings":      {kindUnit, bbbMeetings},
+	"bbb_recordings":    {kindUnit, bbbRecordings},
+	"ldap_replication":  {kindUnit, ldapReplication},
+	"wordpress_version": {kindContainer, wordpressVersion},
 }
 
 // appSensor reads the view the probe names of the application its target belongs to.

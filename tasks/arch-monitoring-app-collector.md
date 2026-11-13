@@ -62,8 +62,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 Abhängt von: T1
 
-### T4 — Agent: Ansicht `wordpress_version`  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_wordpress.go, apps/agent/internal/probe/app_wordpress_test.go
+### T4 — Agent: Ansicht `wordpress_version`  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_wordpress.go, apps/agent/internal/probe/app_wordpress_test.go, apps/agent/internal/probe/app_wordpress_linux_test.go, apps/agent/internal/probe/app_wordpress_linux.go, apps/agent/internal/probe/app_wordpress_other.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @cf1ab1ac3 2026-11-13T10:03:02+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T4.verdict.json)
 Änderung: `inspectContainer` des Ziels, laufend mit PID; `os.OpenRoot("/proc/<pid>/root")` (Seam für die Wurzel),
 `var/www/html/wp-includes/version.php` mit Obergrenze lesen, `$wp_version = '…';` mit engem Muster prüfen, Feld
 `version`. Nicht Linux → `ErrUnsupported`; Container gestoppt → Fehler. Tests: Wurzel-Verzeichnis mit echter
@@ -137,3 +139,19 @@ Abhängt von: T1, T2, T3, T4, T5, T6
   (wie `bbb_recordings`): der Socket-Guard prüft den Prozess hinter dem ldapi-Socket.
 - 2026-11-13 (T3): Nicht verifiziert: `olmSyncReplInstance` und `olmSRSyncPhase` unter OpenLDAP 2.5/2.6 auf einem
   echten Host (Quelle: syncrepl.c), der ldapi-Pfad unter FreeBSD.
+- 2026-11-13 (T4): `version.php` (rund 1 KiB in WordPress 6 und 7) wird mit 16 KiB Obergrenze gelesen; die Datei muss
+  `$wp_version` genau einmal am Zeilenanfang setzen, und der Wert muss dem engen Muster
+  `X.Y[.Z][-(alpha|beta|RC)N[-Build]]` folgen (Build höchstens 8 Ziffern, Zeile endet nach `';`), sonst ein Fehler
+  ohne Inhalt der Datei.
+- 2026-11-13 (T4): Der Weg zur Datei: `inspectContainer`, laufend mit PID, dann `os.OpenRoot("/proc/<pid>/root")`
+  (Seam `containerRoot`, Pfad als Seam `wpVersionFile`). `os.Root` folgt keinem Link aus der Wurzel; Fehler nennen
+  die Datei, nie ein Linkziel (`cause`). Das Fenster zwischen Inspect und Öffnen (PID-Wiederverwendung) wird
+  hingenommen: eine fremde Wurzel ohne `version.php` ist ein Fehler, keine Fehlmeldung über den Container.
+- 2026-11-13 (T4): Die Datei wird zuerst nur als Pfad geöffnet (`O_PATH`, `os.Root` setzt `O_NOFOLLOW`), am Pfad-fd
+  als reguläre Datei außerhalb der Dateisysteme des Kernels geprüft (`refuseKernelFile`) und dann genau sie über
+  `/proc/self/fd/<n>` zum Lesen geöffnet (Seam `reopenChecked`), mit `O_NONBLOCK`, damit ein Lease das Öffnen nicht
+  aufhält. Ein Link an `version.php` selbst wird darum nie gefolgt, auch nicht in der Wurzel; Verzeichnis-Links auf
+  dem Weg nur innerhalb der Wurzel. Nur Linux (`app_wordpress_other.go`: `ErrUnsupported`), die lesenden Tests
+  liegen in `app_wordpress_linux_test.go`. Gegenprobe: Mutanten W1–W7, W12, W14–W17, L1–L8 rot.
+- 2026-11-13 (T4): Nicht verifiziert: auf einem echten Docker-Host mit dem offiziellen Image (`/var/www/html` als
+  Volume); geprüft gegen `wp-includes/version.php` aus WordPress/WordPress (Master `7.2-beta5-65467`, 6.8 `6.8.12`).
