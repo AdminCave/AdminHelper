@@ -77,6 +77,9 @@ class Detect(_Model):
     markers: list[Marker] = Field(default_factory=list, max_length=16)
     # Hints only: a port is never assumed, the agent asks the one really listening.
     port_hints: list[_PORT] = Field(default_factory=list, max_length=16)
+    # False for a module that checks no port of its units (nginx on 443): those ports stay
+    # port findings, which ask whether they answer.
+    claims_unit_ports: StrictBool = True
 
     def is_empty(self) -> bool:
         return not (self.container_images or self.units or self.processes or self.markers)

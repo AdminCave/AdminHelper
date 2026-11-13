@@ -147,6 +147,25 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"datastores", "maintenance", "tasks_failed", "max_used_pct", "min_full_days"}
     ),
     "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
+    "web_config": frozenset({"config_ok"}),
+    "nginx_status": frozenset(
+        {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
+    ),
+    "apache_status": frozenset({"busy_workers", "idle_workers", "slots", "busy_pct"}),
+    "haproxy_servers": frozenset(
+        {"backends", "backends_down", "servers", "servers_down", "servers_maint"}
+    ),
+    "fpm_pools": frozenset(
+        {
+            "pools",
+            "pools_read",
+            "pools_exposed",
+            "listen_queue",
+            "max_children_reached",
+            "slow_requests",
+        }
+    ),
+    "pm2_apps": frozenset({"apps", "apps_errored", "apps_stopped", "restarts"}),
 }
 
 # The views of the host sensor and the fields each one returns: the allowlist of the agent's
@@ -191,6 +210,12 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "pve_updates": _UNIT,
     "pbs_status": _UNIT,
     "ceph_health": _UNIT,
+    "web_config": _UNIT,
+    "nginx_status": _UNIT,
+    "apache_status": _UNIT,
+    "haproxy_servers": _UNIT,
+    "fpm_pools": _UNIT,
+    "pm2_apps": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -361,6 +386,12 @@ class AppParams(_Params):
         "pve_updates",
         "pbs_status",
         "ceph_health",
+        "web_config",
+        "nginx_status",
+        "apache_status",
+        "haproxy_servers",
+        "fpm_pools",
+        "pm2_apps",
     ]
 
 

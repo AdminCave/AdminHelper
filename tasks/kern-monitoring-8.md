@@ -76,12 +76,14 @@ als Negativtest. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 
-### T7 — R-1231: Module nginx, apache, haproxy, php-fpm, pm2, cloudpanel  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/__init__.py, apps/monitoring/app/catalog/modules/nginx.py, apps/monitoring/app/catalog/modules/apache.py, apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/app/catalog/modules/php_fpm.py, apps/monitoring/app/catalog/modules/pm2.py, apps/monitoring/app/catalog/modules/cloudpanel.py, apps/monitoring/tests/test_catalog_web.py
+### T7 — R-1231: Module nginx, apache, haproxy, php-fpm, pm2, cloudpanel  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/nginx.py, apps/monitoring/app/catalog/modules/apache.py, apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/app/catalog/modules/php_fpm.py, apps/monitoring/app/catalog/modules/pm2.py, apps/monitoring/app/catalog/modules/cloudpanel.py, apps/monitoring/tests/test_catalog_web.py, apps/monitoring/app/discovery.py, apps/monitoring/app/catalog/modules/varnish.py, apps/monitoring/app/catalog/modules/proftpd.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_apps.py, apps/monitoring/tests/test_agent_report_v4.py, apps/monitoring/app/catalog/model.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fc369aaad 2026-11-14T00:03:40+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T7.verdict.json)
 Änderung: Ansichtsfelder und Ziele in `sensors.py`; sechs Module mit Erkennung (Unit/Image/Pfad), Takten
 (Konfigtest täglich, Laufzeit 5 min), Regeln nach der Spec und Karten; CloudPanel als Sammelmodul. Neun Dateien:
 Module und ihre Registrierung gehören zusammen. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_web.py tests/test_catalog_sensors.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_web.py tests/test_catalog_sensors.py tests/test_catalog_apps.py tests/test_agent_report_v4.py
 Doku: → T14
 Abhängt von: T3, T4, T5, T6
 
@@ -174,3 +176,5 @@ Task-Review: am Ende
   8.4.27 (Docker) geprüft: Unix-Socket über `dialUnix`, TCP über den Guard, Felder `listen queue`, `max children
   reached`, `slow requests`.
 - T6: `pm2 jlist` startet ohne laufenden Daemon selbst einen und druckt dessen Banner auf stdout (pm2 7.1.2 im Container belegt); `pm2_apps` fragt deshalb erst `~/.pm2/rpc.sock` des Nutzers über `dialUnix` ab und meldet ohne Daemon unsupported. Ein abweichendes `PM2_HOME` der Unit wird nicht gelesen (dann unsupported). Klasse `pmuser` schließt `root` im Muster aus, zusätzlich prüft der Code. Restrisiko: stirbt der Daemon zwischen Probe und Aufruf, startet jlist einen als dieser Nutzer.
+- T7: 14 Dateien statt neun: der Loader findet Module selbst (`modules/__init__.py` bleibt unberührt); dazu Varnish und ProFTPD als eigene kleine Unit-Module (CloudPanel als Summe der Module, Konzept), das Unit-Muster `pm2-*.service` in `discovery._unit_wanted` (nur Namen mit `*`, nur `.service`, fnmatchcase) und zwei Alttests: `test_catalog_apps` nimmt die Module der generischen Dienste selbst (nginx, apache, php_fpm) von der Regel `generic_detect` aus (neuer Test: sie erkennen nur über ihre eigenen Units), `test_agent_report_v4` findet auf dem nginx-Host jetzt auch das Modul nginx. Die Ports ihrer Units beanspruchen die sieben Dienst-Module nicht (`Detect.claims_unit_ports = False` in `catalog/model.py`, 15. Datei; Prüfer-Fund): sie prüfen keinen Port, 80/443 und pm2-Ports bleiben Port-Funde wie bisher, übernommene `tcp-443` werden nicht „gone“; Alt-Module behalten das Beanspruchen (Standard `True`). Das Muster nimmt nur Mitten ohne `.` und `@` (Nutzername).
+- T7: `nginx_status` alle 15 min statt 5, weil jeder Lauf `nginx -T` liest; Konfigtests täglich. pm2-root wird gefunden, seine Apps-Prüfung bleibt unknown (Agent läuft nichts als root). CloudPanel: Marker `/usr/bin/clpctl` oder Paket `cloudpanel` und Panel-Port 8443 aus der CloudPanel-Doku, nicht an einer echten Installation verifiziert; Prüfung nur das Panel-Zertifikat über loopback, `clpctl` wird nie gestartet. HAProxy (OPNsense-Plugin) und PHP-FPM auf FreeBSD sind nicht bindbar: die Agent-Discovery listet auf FreeBSD keine Units (`collectUnits`), ein Marker-Fund trägt keine Unit für die `unit`-Ziele; eigene Roadmap-Zeile.

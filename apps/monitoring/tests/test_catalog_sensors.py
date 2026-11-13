@@ -251,6 +251,34 @@ def test_the_app_views_are_those_the_agent_returns():
             "runtime_s",
             "transfers",
         ],
+        "web_config": ["config_ok"],
+        "nginx_status": [
+            "accepts",
+            "active",
+            "dropped",
+            "handled",
+            "reading",
+            "requests",
+            "waiting",
+            "writing",
+        ],
+        "apache_status": ["busy_pct", "busy_workers", "idle_workers", "slots"],
+        "haproxy_servers": [
+            "backends",
+            "backends_down",
+            "servers",
+            "servers_down",
+            "servers_maint",
+        ],
+        "fpm_pools": [
+            "listen_queue",
+            "max_children_reached",
+            "pools",
+            "pools_exposed",
+            "pools_read",
+            "slow_requests",
+        ],
+        "pm2_apps": ["apps", "apps_errored", "apps_stopped", "restarts"],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -280,6 +308,12 @@ def test_the_app_views_are_those_the_agent_returns():
         "pve_updates": ["unit"],
         "pbs_status": ["unit"],
         "ceph_health": ["unit"],
+        "web_config": ["unit"],
+        "nginx_status": ["unit"],
+        "apache_status": ["unit"],
+        "haproxy_servers": ["unit"],
+        "fpm_pools": ["unit"],
+        "pm2_apps": ["unit"],
     }
 
 
