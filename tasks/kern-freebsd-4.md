@@ -10,8 +10,10 @@ Heavy: none — nur Kommentare und ein Satzzeichen in der Doku, kein Verhalten
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1332: Monitoring-Kommentare nennen FreeBSD  [ ]
+### T1 — R-1332: Monitoring-Kommentare nennen FreeBSD  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @aca35e9a9 2026-11-13T10:37:20+01:00
+Review: am Ende (Branch-Review)
 Änderung: die Kommentare an Swap (`agent.py:346`) und Load je CPU (`agent.py:360`) nennen „Linux, FreeBSD“ statt „Linux“;
 dazu das Komma nach dem frpc-Pfad vor „das rc.d-Skript“ bzw. „the rc.d script“ (`agent.html:266` DE+EN).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py
