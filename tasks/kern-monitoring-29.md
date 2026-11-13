@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Katalog: Ports von Units, lauschende Container-Ports, Ziel-Alternativen, Image-Tags — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-29 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-29 · Review: pro Task
 Spec: docs/features/kern-monitoring-29.md (Roadmap R-1399, R-1384, R-1387, R-1393, R-1397)
 Heavy: linux-full — Inventar des Agents (`apps/agent/internal/discovery`, cgroup und Netz-Namespace der Container auf echten Boxen) und Bindung im Monitoring; kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -84,8 +84,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync
 Doku: → T7
 Abhängt von: T4
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
+### T7 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-29.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2c4e3a664 2026-11-13T21:42:04+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Erkennung (Unit-Ports, lauschende Container-Ports), Modultabelle (Nextcloud, Bitwarden, OnlyOffice,
 Wiki.js), Bindung (`image_fallback`, `alternatives`, `image_tags`, `_lacks_port`), je DE + EN; Fragment mit Added/Fixed.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
