@@ -76,6 +76,7 @@ var appViews = map[string]appView{
 	"chrony_tracking":   {kinds: unitKinds, read: chronyTracking},
 	"crowdsec_bouncers": {kinds: unitKinds, read: crowdsecBouncers},
 	"dnsmasq_leases":    {kinds: unitKinds, read: dnsmasqLeaseView},
+	"es_nodes":          {kinds: eitherKinds, uses: []string{useBasic}, readCred: esNodes},
 	"fail2ban":          {kinds: unitKinds, read: fail2ban},
 	"fpm_pools":         {kinds: unitKinds, read: fpmPools},
 	"haproxy_servers":   {kinds: unitKinds, read: haproxyServers},

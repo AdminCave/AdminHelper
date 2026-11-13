@@ -43,6 +43,16 @@ var mariadbQueries = map[string]string{
 	// One row per replication source; none on a server that is no replica.
 	"replication": "SHOW ALL SLAVES STATUS",
 	"size":        "SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS size_bytes FROM information_schema.TABLES",
+	// Both counted since the server started; the monitoring service takes their growth.
+	"errors": "SELECT (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'ABORTED_CONNECTS') " +
+		"AS aborted_connects, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS " +
+		"WHERE VARIABLE_NAME = 'CONNECTION_ERRORS_MAX_CONNECTIONS') AS connection_errors_max_connections",
+	// The wsrep status variables exist without Galera too (Disconnected, OFF, 0): wsrep_on tells.
+	"galera": "SELECT (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_VARIABLES WHERE VARIABLE_NAME = 'WSREP_ON') " +
+		"AS wsrep_on, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_CLUSTER_STATUS') " +
+		"AS cluster_status, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_READY') " +
+		"AS ready, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_CLUSTER_SIZE') " +
+		"AS cluster_size",
 }
 
 // postgresQueries are the queries of the sql sensor for PostgreSQL; each answers one row.
@@ -58,7 +68,15 @@ var postgresQueries = map[string]string{
 		"CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0 " +
 		"ELSE GREATEST(0, floor(extract(epoch FROM now() - pg_last_xact_replay_timestamp())))::bigint END",
 	"size": "SELECT sum(pg_database_size(oid))::bigint FROM pg_database",
+	// The transactions a database is from wraparound (it stops writing at 2^31 minus a reserve).
+	"xid_age": "SELECT max(age(datfrozenxid))::bigint FROM pg_database",
+	// Transactions of clients open for more than an hour, which hold back VACUUM.
+	"long_tx": "SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend' " +
+		"AND xact_start < now() - interval '1 hour'",
 }
+
+// sqlQueryNames are the names of every query of either engine.
+var sqlQueryNames = []string{"connections", "errors", "galera", "long_tx", "ping", "replication", "size", "xid_age"}
 
 // errNoReplica: the server answered that it replicates from nowhere.
 var errNoReplica = fmt.Errorf("%w: this database server is no replica", ErrUnsupported)
@@ -76,9 +94,12 @@ func sqlSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	query, err := choiceParam(p, "query", "", "ping", "connections", "replication", "size")
+	query, err := choiceParam(p, "query", "", sqlQueryNames...)
 	if err != nil {
 		return nil, err
+	}
+	if engine == "mariadb" && mariadbQueries[query] == "" || engine == "postgres" && postgresQueries[query] == "" {
+		return nil, fmt.Errorf("%w: engine %s has no query %s", ErrInvalid, engine, query)
 	}
 	if !sqlHere {
 		return nil, fmt.Errorf("%w: the sql sensor runs on Linux hosts", ErrUnsupported)
@@ -134,6 +155,16 @@ func askMariaDB(ctx context.Context, query string) (map[string]any, error) {
 		})
 	case "replication":
 		return mariadbReplication(client, rows)
+	case "errors":
+		if len(rows) != 1 {
+			return nil, fmt.Errorf("%s: an answer of another form", client)
+		}
+		return whole(client, map[string]string{
+			"aborted_connects":                  rows[0]["aborted_connects"],
+			"connection_errors_max_connections": rows[0]["connection_errors_max_connections"],
+		})
+	case "galera":
+		return mariadbGalera(client, rows)
 	default:
 		if len(rows) != 1 {
 			return nil, fmt.Errorf("%s: an answer of another form", client)
@@ -166,6 +197,31 @@ func mariadbReplication(client string, rows []map[string]string) (map[string]any
 		values["replication_lag_s"] = lag
 	}
 	return values, nil
+}
+
+// mariadbGalera reads the state of this node of a Galera cluster: whether it belongs to the primary
+// component, whether it takes queries and how many nodes the cluster has. A server without Galera
+// (wsrep_on OFF) is unsupported.
+func mariadbGalera(client string, rows []map[string]string) (map[string]any, error) {
+	if len(rows) != 1 {
+		return nil, fmt.Errorf("%s: an answer of another form", client)
+	}
+	row := rows[0]
+	switch row["wsrep_on"] {
+	case "ON":
+	case "OFF", "NULL":
+		return nil, fmt.Errorf("%w: this database server runs no Galera", ErrUnsupported)
+	default:
+		return nil, fmt.Errorf("%s: an answer of another form", client)
+	}
+	size, err := strconv.ParseInt(row["cluster_size"], 10, 64)
+	if err != nil || row["cluster_status"] == "" || row["ready"] != "ON" && row["ready"] != "OFF" {
+		return nil, fmt.Errorf("%s: an answer of another form", client)
+	}
+	return map[string]any{
+		"galera_primary": row["cluster_status"] == "Primary", "galera_ready": row["ready"] == "ON",
+		"galera_cluster_size": size,
+	}, nil
 }
 
 // column is the first of names row has, "" for none: MariaDB names some columns as MySQL renamed them.
@@ -256,7 +312,8 @@ func askPostgres(ctx context.Context, query string) (map[string]any, error) {
 		if len(cells) != 1 {
 			return nil, errors.New("psql: an answer of another form")
 		}
-		return whole("psql", map[string]string{"size_bytes": cells[0]})
+		name := map[string]string{"size": "size_bytes", "xid_age": "xid_age", "long_tx": "long_transactions"}[query]
+		return whole("psql", map[string]string{name: cells[0]})
 	}
 }
 

@@ -60,8 +60,8 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 			t.Errorf("refused: %q", call)
 		}
 	}
-	if len(journalCalls) != 8 || len(mariadbCalls) != 4 || len(postgresCalls) != 4 {
-		t.Errorf("%d journalctl, %d MariaDB, %d PostgreSQL calls; want 8, 4, 4",
+	if len(journalCalls) != 8 || len(mariadbCalls) != 6 || len(postgresCalls) != 6 {
+		t.Errorf("%d journalctl, %d MariaDB, %d PostgreSQL calls; want 8, 6, 6",
 			len(journalCalls), len(mariadbCalls), len(postgresCalls))
 	}
 }

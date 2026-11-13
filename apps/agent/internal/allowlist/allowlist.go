@@ -123,6 +123,14 @@ var mariadbCalls = func() [][]string {
 			"FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'THREADS_CONNECTED'",
 		"SHOW ALL SLAVES STATUS",
 		"SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS size_bytes FROM information_schema.TABLES",
+		"SELECT (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'ABORTED_CONNECTS') " +
+			"AS aborted_connects, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS " +
+			"WHERE VARIABLE_NAME = 'CONNECTION_ERRORS_MAX_CONNECTIONS') AS connection_errors_max_connections",
+		"SELECT (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_VARIABLES WHERE VARIABLE_NAME = 'WSREP_ON') " +
+			"AS wsrep_on, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_CLUSTER_STATUS') " +
+			"AS cluster_status, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_READY') " +
+			"AS ready, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_CLUSTER_SIZE') " +
+			"AS cluster_size",
 	} {
 		calls = append(calls, []string{"--host=localhost", "--protocol=socket", "--batch", "--column-names",
 			"--connect-timeout=5", "--execute=SET STATEMENT max_statement_time=5 FOR " + query})
@@ -143,6 +151,9 @@ var postgresCalls = func() [][]string {
 			"CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0 " +
 			"ELSE GREATEST(0, floor(extract(epoch FROM now() - pg_last_xact_replay_timestamp())))::bigint END",
 		"SELECT sum(pg_database_size(oid))::bigint FROM pg_database",
+		"SELECT max(age(datfrozenxid))::bigint FROM pg_database",
+		"SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend' " +
+			"AND xact_start < now() - interval '1 hour'",
 	} {
 		calls = append(calls, []string{"-u", "postgres", "--", "psql", "--no-psqlrc", "--no-align",
 			"--tuples-only", "--quiet", "--field-separator=\t", "--set=ON_ERROR_STOP=1",

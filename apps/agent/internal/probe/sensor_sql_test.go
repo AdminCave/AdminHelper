@@ -52,17 +52,25 @@ func withoutDuration(t *testing.T, values map[string]any) map[string]any {
 	return rest
 }
 
-func TestTheSqlSensorHoldsTheSameReadQueriesForEveryEngine(t *testing.T) {
-	names := []string{"connections", "ping", "replication", "size"}
+func TestTheSqlSensorHoldsReadQueriesPerEngine(t *testing.T) {
+	want := map[string][]string{
+		"mariadb":  {"connections", "errors", "galera", "ping", "replication", "size"},
+		"postgres": {"connections", "long_tx", "ping", "replication", "size", "xid_age"},
+	}
+	var all []string
 	for engine, queries := range map[string]map[string]string{"mariadb": mariadbQueries, "postgres": postgresQueries} {
-		if got := slices.Sorted(maps.Keys(queries)); !reflect.DeepEqual(got, names) {
-			t.Errorf("%s queries = %v, want %v", engine, got, names)
+		if got := slices.Sorted(maps.Keys(queries)); !reflect.DeepEqual(got, want[engine]) {
+			t.Errorf("%s queries = %v, want %v", engine, got, want[engine])
 		}
+		all = append(all, want[engine]...)
 		for name, q := range queries {
 			if !strings.HasPrefix(q, "SELECT ") && !strings.HasPrefix(q, "SHOW ") {
 				t.Errorf("%s query %s = %q, want a read", engine, name, q)
 			}
 		}
+	}
+	if got := slices.Compact(slices.Sorted(slices.Values(all))); !reflect.DeepEqual(got, sqlQueryNames) {
+		t.Errorf("sqlQueryNames = %v, want %v", sqlQueryNames, got)
 	}
 }
 
@@ -89,6 +97,12 @@ func TestTheSqlSensorReadsMariaDB(t *testing.T) {
 		{"no lag", "replication",
 			"Slave_IO_Running\tSlave_SQL_Running\tSeconds_Behind_Master\nConnecting\tYes\tNULL\n",
 			map[string]any{"ok": true, "replication_running": false}},
+		{"errors", "errors", "aborted_connects\tconnection_errors_max_connections\n17\t3\n",
+			map[string]any{"ok": true, "aborted_connects": int64(17), "connection_errors_max_connections": int64(3)}},
+		{"a node of the primary component", "galera", "wsrep_on\tcluster_status\tready\tcluster_size\nON\tPrimary\tON\t3\n",
+			map[string]any{"ok": true, "galera_primary": true, "galera_ready": true, "galera_cluster_size": int64(3)}},
+		{"a node cut off", "galera", "wsrep_on\tcluster_status\tready\tcluster_size\nON\tnon-Primary\tOFF\t1\n",
+			map[string]any{"ok": true, "galera_primary": false, "galera_ready": false, "galera_cluster_size": int64(1)}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -125,6 +139,8 @@ func TestTheSqlSensorReadsPostgreSQL(t *testing.T) {
 			map[string]any{"ok": true, "replication_running": true, "replication_lag_s": int64(0)}},
 		{"a replica without a replayed transaction", "replication", "t\tf\t\n",
 			map[string]any{"ok": true, "replication_running": false}},
+		{"xid age", "xid_age", "214748\n", map[string]any{"ok": true, "xid_age": int64(214748)}},
+		{"long transactions", "long_tx", "2\n", map[string]any{"ok": true, "long_transactions": int64(2)}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -154,6 +170,23 @@ func TestTheSqlSensorOnAServerThatIsNoReplicaIsUnsupported(t *testing.T) {
 
 		if !errors.Is(err, ErrUnsupported) || !strings.Contains(err.Error(), "no replica") {
 			t.Errorf("%s: err = %v, want unsupported: no replica", engine, err)
+		}
+	}
+}
+
+func TestTheSqlSensorOnAServerWithoutGaleraIsUnsupported(t *testing.T) {
+	stubSQLHere(t, true)
+	// The answer of MariaDB 11 and 10.5 without Galera: the status variables exist, wsrep_on is OFF.
+	for name, out := range map[string]string{
+		"wsrep off": "wsrep_on\tcluster_status\tready\tcluster_size\nOFF\tDisconnected\tOFF\t0\n",
+		"no wsrep":  "wsrep_on\tcluster_status\tready\tcluster_size\nNULL\tNULL\tNULL\tNULL\n",
+	} {
+		stubTools(t, answer{out: out})
+
+		_, err := sqlSensor(context.Background(), sqlProbe("mariadb", "galera"), "")
+
+		if !errors.Is(err, ErrUnsupported) || !strings.Contains(err.Error(), "no Galera") {
+			t.Errorf("%s: err = %v, want unsupported: no Galera", name, err)
 		}
 	}
 }
@@ -247,6 +280,14 @@ func TestTheSqlSensorRefusesAnswersOfAnotherForm(t *testing.T) {
 		{"psql replication of no boolean", "postgres", "replication", "x\tt\t0\n"},
 		{"psql replication of no lag", "postgres", "replication", "t\tt\tabc\n"},
 		{"psql replication of two cells", "postgres", "replication", "t\tt\n"},
+		{"mariadb errors of no number", "mariadb", "errors", "aborted_connects\tconnection_errors_max_connections\nNULL\t3\n"},
+		{"mariadb errors without a column", "mariadb", "errors", "aborted_connects\n17\n"},
+		{"mariadb galera of another wsrep_on", "mariadb", "galera", "wsrep_on\tcluster_status\tready\tcluster_size\n1\tPrimary\tON\t3\n"},
+		{"mariadb galera of another ready", "mariadb", "galera", "wsrep_on\tcluster_status\tready\tcluster_size\nON\tPrimary\tyes\t3\n"},
+		{"mariadb galera of no size", "mariadb", "galera", "wsrep_on\tcluster_status\tready\tcluster_size\nON\tPrimary\tON\tthree\n"},
+		{"mariadb galera without rows", "mariadb", "galera", ""},
+		{"psql xid age of no number", "postgres", "xid_age", "\n"},
+		{"psql long transactions of two cells", "postgres", "long_tx", "1\t2\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -276,6 +317,8 @@ func TestTheSqlSensorRefusesParamsOfAnotherForm(t *testing.T) {
 		{"an engine of no text", map[string]any{"engine": 1.0, "query": "ping"}, nil},
 		{"no query", map[string]any{"engine": "postgres"}, nil},
 		{"another query", map[string]any{"engine": "postgres", "query": "DROP TABLE t"}, nil},
+		{"a query of PostgreSQL for MariaDB", map[string]any{"engine": "mariadb", "query": "xid_age"}, nil},
+		{"a query of MariaDB for PostgreSQL", map[string]any{"engine": "postgres", "query": "galera"}, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
