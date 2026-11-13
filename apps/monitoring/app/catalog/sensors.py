@@ -140,6 +140,13 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "caddy_certs": frozenset({"certs", "expired", "min_days_left"}),
     "traefik_certs": frozenset({"certs", "expired", "min_days_left"}),
     "npm_certs": frozenset({"certs", "expired", "min_days_left"}),
+    "pve_cluster": frozenset({"quorate", "nodes_offline", "ha_error", "replication_failed"}),
+    "pve_jobs": frozenset({"jobs", "jobs_failed", "last_run_age_s"}),
+    "pve_updates": frozenset({"updates", "subscription_active"}),
+    "pbs_status": frozenset(
+        {"datastores", "maintenance", "tasks_failed", "max_used_pct", "min_full_days"}
+    ),
+    "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
 }
 
 # The views of the host sensor and the fields each one returns: the allowlist of the agent's
@@ -150,6 +157,7 @@ HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "lvm_thin": frozenset({"pools", "max_data_pct", "max_meta_pct", "failed", "busy"}),
     "raid_ctrl": frozenset({"controllers", "ctrl_bad", "vd_not_optimal", "pd_failed", "bbu_bad"}),
     "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
+    "zfs_snapshots": frozenset({"status"}),
 }
 
 _UNIT = frozenset({"unit"})
@@ -178,6 +186,11 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "caddy_certs": _UNIT_OR_CONTAINER,
     "traefik_certs": _UNIT_OR_CONTAINER,
     "npm_certs": _CONTAINER,
+    "pve_cluster": _UNIT,
+    "pve_jobs": _UNIT,
+    "pve_updates": _UNIT,
+    "pbs_status": _UNIT,
+    "ceph_health": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -343,11 +356,16 @@ class AppParams(_Params):
         "caddy_certs",
         "traefik_certs",
         "npm_certs",
+        "pve_cluster",
+        "pve_jobs",
+        "pve_updates",
+        "pbs_status",
+        "ceph_health",
     ]
 
 
 class HostParams(_Params):
-    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors"]
+    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors", "zfs_snapshots"]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {

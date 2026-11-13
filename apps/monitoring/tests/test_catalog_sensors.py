@@ -220,6 +220,17 @@ def test_the_app_views_are_those_the_agent_returns():
         "caddy_certs": ["certs", "expired", "min_days_left"],
         "traefik_certs": ["certs", "expired", "min_days_left"],
         "npm_certs": ["certs", "expired", "min_days_left"],
+        "pve_cluster": ["ha_error", "nodes_offline", "quorate", "replication_failed"],
+        "pve_jobs": ["jobs", "jobs_failed", "last_run_age_s"],
+        "pve_updates": ["subscription_active", "updates"],
+        "pbs_status": [
+            "datastores",
+            "maintenance",
+            "max_used_pct",
+            "min_full_days",
+            "tasks_failed",
+        ],
+        "ceph_health": ["checks", "health", "max_pool_used_pct", "raw_used_pct"],
         "nut_ups": [
             "fsd",
             "low_battery",
@@ -264,6 +275,11 @@ def test_the_app_views_are_those_the_agent_returns():
         "npm_certs": ["container"],
         "nut_ups": ["unit"],
         "apcupsd": ["unit"],
+        "pve_cluster": ["unit"],
+        "pve_jobs": ["unit"],
+        "pve_updates": ["unit"],
+        "pbs_status": ["unit"],
+        "ceph_health": ["unit"],
     }
 
 
@@ -364,7 +380,7 @@ def test_a_host_check_takes_no_target():
 
 
 def test_the_host_views_are_those_the_agent_returns():
-    # Written out, not derived: the names the agent's host_storage.go and host_hw.go return.
+    # Written out, not derived: the names the agent's host_storage.go, host_hw.go and app_pbs.go return.
     assert SENSOR_FIELDS["host"] == frozenset().union(*HOST_VIEW_FIELDS.values())
     assert SENSOR_TARGETS["host"] is None
     assert {v: sorted(f) for v, f in HOST_VIEW_FIELDS.items()} == {
@@ -372,4 +388,5 @@ def test_the_host_views_are_those_the_agent_returns():
         "lvm_thin": ["busy", "failed", "max_data_pct", "max_meta_pct", "pools"],
         "raid_ctrl": ["bbu_bad", "controllers", "ctrl_bad", "pd_failed", "vd_not_optimal"],
         "ipmi_sensors": ["critical", "noncritical", "sensors"],
+        "zfs_snapshots": ["status"],
     }
