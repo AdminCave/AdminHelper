@@ -52,7 +52,7 @@ const CROSS_TABS = ["certs", "backups", "updates", "findings"];
 // The auto-refresh of the monitoring page is 30 s, the pulse of the status bar 60 s.
 const REFRESH_WAIT = 75000;
 
-const shot = makeShot("server-page", 5000);
+const shot = makeShot("server-page", 30000);
 
 // One run of the agent in its container: it fetches its plan, runs the due probes and
 // reports.
