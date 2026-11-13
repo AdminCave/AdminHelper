@@ -166,8 +166,21 @@ export AH_ARGS
 # The path .devenv.sh and runner-setup.sh set. Without HOME (an `env -i` shell)
 # the home comes from passwd, as for AH_PY_LOCK_FILE below.
 AH_VENV="${AH_VENV:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/ah-venv}"
+# python3.14 where it is installed: the Dockerfiles' Python, which a box gets
+# from bootstrap_linux.sh while its system python3 is older (R-1418). A venv of
+# another version is rebuilt: a warm box keeps its venv across runs.
 ensure_venv() {
-  [ -x "$AH_VENV/bin/python" ] || python3 -m venv "$AH_VENV" \
+  local py=python3 want have
+  command -v python3.14 >/dev/null 2>&1 && py=python3.14
+  if [ -x "$AH_VENV/bin/python" ]; then
+    want=$("$py" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null) || want=""
+    have=$("$AH_VENV/bin/python" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null) || have=""
+    if [ -n "$want" ] && [ -n "$have" ] && [ "$have" != "$want" ]; then
+      "$py" -m venv --clear "$AH_VENV" \
+        || { echo "  (venv rebuild failed; python suites may hit PEP 668)" >&2; return 1; }
+    fi
+  fi
+  [ -x "$AH_VENV/bin/python" ] || "$py" -m venv "$AH_VENV" \
     || { echo "  (venv creation failed; python suites may hit PEP 668)" >&2; return 1; }
   # shellcheck disable=SC1091
   . "$AH_VENV/bin/activate"
