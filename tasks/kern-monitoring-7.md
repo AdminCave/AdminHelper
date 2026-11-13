@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Speicher, Hardware, USV und Proxmox-Ausbau — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-7 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-7 · Review: pro Task
 Spec: docs/features/kern-monitoring-7.md (Roadmap R-1228, R-1229, R-1230)
 Heavy: linux-full — neuer Fühler, Agent-Ansichten und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -120,6 +120,14 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
+
+### T12 — Abschlussprüfung: IPMI-Tests unter Windows  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/host_hw_test.go
+Änderung: `stubIpmi` überspringt unter Windows mit Grund: `t.TempDir()` liefert dort `C:\…`, die Klasse `statedir`
+der Freigabeliste nimmt nur absolute POSIX-Pfade, und die Ansicht braucht `/dev/ipmi0`, das es unter Windows nicht
+gibt (Fund der Abschlussprüfung, Job `agent-windows`).
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (nur Test)
 
 ## Entscheidungen
 - Fühler `host` ohne Ziel statt Bindung an eine Unit (Spec, Trade-offs).
