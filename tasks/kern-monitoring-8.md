@@ -99,6 +99,14 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 Abhängt von: T2
 
+### T15 — R-1232: Verbindungen als Anteil (`connections_pct`)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_sql.go, apps/agent/internal/probe/sensor_sql_test.go
+Änderung: Die Abfrage `connections` liefert für MariaDB und PostgreSQL zusätzlich `connections_pct` (ganzzahlig,
+Verbindungen / `max_connections` × 100), denn eine Regel vergleicht ein Feld nur mit einer Zahl; so wie
+`busy_pct` bei `apache_status`. Nachgetragen beim Vorbereiten von T9 (Schwellen 80/95 %).
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: → T14
+
 ### T9 — R-1232: Module mariadb, postgres, redis, elasticsearch  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/__init__.py, apps/monitoring/app/catalog/modules/mariadb.py, apps/monitoring/app/catalog/modules/postgres.py, apps/monitoring/app/catalog/modules/redis.py, apps/monitoring/app/catalog/modules/elasticsearch.py, apps/monitoring/tests/test_catalog_db.py
 Änderung: Erkennung über Unit/Image (MariaDB nie über TCP, `_NEVER_PROCESSES` bleibt); `sql`-Checks mit den neuen
@@ -106,7 +114,7 @@ Abfragen, Redis über `unixsocket`/`proto` mit `INFO`-Feldern, Elasticsearch üb
 `_health_report` stündlich) und `es_nodes`; Regeln und Karten nach der Spec. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_db.py tests/test_catalog_sensors.py
 Doku: → T14
-Abhängt von: T8
+Abhängt von: T8, T15
 
 ### T10 — R-1233: Ansichten urbackup_status, backuppc_status, rsnapshot_status, veeam_sessions  [ ]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_backup.go, apps/agent/internal/probe/app_backup_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
