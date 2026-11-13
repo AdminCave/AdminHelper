@@ -60,7 +60,6 @@ var appViews = map[string]appView{
 	"unbound_stats":     {unitKinds, unboundStats},
 	"wg_peers":          {unitKinds, wgPeers},
 	"wordpress_version": {containerKinds, wordpressVersion},
-	"zfs_snapshots":     {unitKinds, zfsSnapshots},
 }
 
 // appSensor reads the view the probe names of the application its target belongs to.

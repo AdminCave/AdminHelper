@@ -193,13 +193,14 @@ func cephFraction(v float64) bool { return !math.IsNaN(v) && v >= 0 && v <= 1 }
 
 // zfsSnapshots reads whether the snapshots sanoid keeps are fresh, as `sanoid --monitor-snapshots`
 // rates them against the warn and crit ages of sanoid.conf: ok, warning or critical. The line it
-// prints names datasets and stays on the host; only its exit status is read.
+// prints names datasets and stays on the host; only its exit status is read. A view of the host
+// sensor: sanoid runs as a oneshot from its timer, so between runs no active unit carries it.
 //
 // sanoid (sub monitor_snapshots): exit 0 OK, 1 WARN, 2 CRIT. It reads its snapshot cache and, when
 // that is older than five hours, lists the snapshots anew with `zfs get -Hrpt snapshot creation`
 // and rewrites the cache; it takes, prunes and changes no snapshot. Whether it waits on the lock of
 // a running `sanoid --cron` is not checked; the tool timeout bounds the call either way.
-func zfsSnapshots(ctx context.Context, _ Target) (map[string]any, error) {
+func zfsSnapshots(ctx context.Context) (map[string]any, error) {
 	_, err := runTool(ctx, toolTimeout, "sanoid", "--monitor-snapshots")
 	var exitErr *exec.ExitError
 	switch {

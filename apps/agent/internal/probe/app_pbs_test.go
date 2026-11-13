@@ -146,19 +146,23 @@ func TestThePBSAndCephViewsFailWhatTheyCannotRead(t *testing.T) {
 		})
 	}
 	for tool, read := range map[string]func(context.Context, Target) (map[string]any, error){
-		"proxmox-backup-debug": pbsStatus, "ceph": cephHealth, "sanoid": zfsSnapshots,
+		"proxmox-backup-debug": pbsStatus, "ceph": cephHealth,
 	} {
 		stubTools(t, answer{err: notInstalled(tool)})
 		if _, err := read(context.Background(), Target{}); !errors.Is(err, ErrUnsupported) {
 			t.Errorf("%s not installed: error %v, want ErrUnsupported", tool, err)
 		}
 	}
+	stubTools(t, answer{err: notInstalled("sanoid")})
+	if _, err := zfsSnapshots(context.Background()); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("sanoid not installed: error %v, want ErrUnsupported", err)
+	}
 }
 
 func TestZFSSnapshotsReadsTheExitStatusOfSanoid(t *testing.T) {
 	for code, want := range map[int]string{1: "warning", 2: "critical"} {
 		stubTools(t, answer{out: "CRIT: tank/vm-100-disk-0 newest hourly snapshot is 3h old\n", err: toolExit(t, code, "")})
-		got, err := zfsSnapshots(context.Background(), Target{})
+		got, err := zfsSnapshots(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,7 +171,7 @@ func TestZFSSnapshotsReadsTheExitStatusOfSanoid(t *testing.T) {
 		}
 	}
 	calls := stubTools(t, answer{out: "OK: all monitored datasets are fresh\n"})
-	got, err := zfsSnapshots(context.Background(), Target{Kind: kindUnit, Name: "sanoid.timer"})
+	got, err := zfsSnapshots(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,15 +183,27 @@ func TestZFSSnapshotsReadsTheExitStatusOfSanoid(t *testing.T) {
 	}
 	// Any other status is no rating of sanoid's: an error, never a made-up state.
 	stubTools(t, answer{err: toolExit(t, 3, "UNKNOWN\n")})
-	if _, err := zfsSnapshots(context.Background(), Target{}); err == nil {
+	if _, err := zfsSnapshots(context.Background()); err == nil {
 		t.Error("exit 3: no error")
 	}
 }
 
-func TestThePBSCephAndSanoidViewsAreViewsOfUnits(t *testing.T) {
-	for _, view := range []string{"pbs_status", "ceph_health", "zfs_snapshots"} {
+func TestThePBSAndCephViewsAreViewsOfUnits(t *testing.T) {
+	for _, view := range []string{"pbs_status", "ceph_health"} {
 		if v, ok := appViews[view]; !ok || !unitView(v) {
 			t.Errorf("view %s: %v, want a view of a unit", view, v)
 		}
+	}
+}
+
+// sanoid runs from its timer as a oneshot: no unit is active between runs, so its view needs none.
+func TestZFSSnapshotsIsAViewOfTheHost(t *testing.T) {
+	if _, ok := appViews["zfs_snapshots"]; ok {
+		t.Error("zfs_snapshots is a view of the app sensor")
+	}
+	stubTools(t, answer{err: toolExit(t, 2, "")})
+	res := Run(context.Background(), hostProbe("zfs_snapshots", "status"), time.Now(), nil)
+	if res.Status != StatusOK || !reflect.DeepEqual(res.Values, map[string]any{"status": "critical"}) {
+		t.Errorf("status %s (%s), values %v, want ok with status critical", res.Status, res.Error, res.Values)
 	}
 }
