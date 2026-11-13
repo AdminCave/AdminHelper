@@ -30,7 +30,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/frp.test.t
 Doku: → T5
 Abhängt von: T2
 
-### T4 — R-1316: Web-Knopf  [?] (Kevin wählte Web und Desktop; das Web verwaltet bewusst keine Server mehr, apps/web/src/lib/api/servers.ts — nur Desktop? Empfehlung: ja, nur Desktop)
+### T4 — R-1316: Web-Knopf  [~] (Kevin 2026-11-13: nur Desktop, das Web verwaltet keine Server)
 Komponente: web · Dateien: apps/web/src/pages/Frp.svelte, apps/web/src/pages/Frp.test.ts, apps/web/src/lib/api/frp.ts, apps/web/src/lib/i18n/dictionaries.ts
 Änderung: auf der FRP-Seite ein Abschnitt mit Server-Auswahl (`/api/servers/summary`) und Knopf mit Bestätigung, ruft die Route aus T2; nur wenn Kevin den Web-Knopf trotz der Architektur will.
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Frp.test.ts
@@ -46,3 +46,4 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - Kevin 2026-11-13 (Gate): Migration mit Generation 0 = heutiger Schlüssel; Auslöser Provisionierung + Admin-Aktion; API + Knopf (Web und Desktop gewählt, Web als Rückfrage T4).
+- Kevin 2026-11-13: Web-Knopf entfällt (nur Desktop); Heavy scenario --tunnel vor dem Merge: ja.
