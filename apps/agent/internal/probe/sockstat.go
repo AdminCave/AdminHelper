@@ -22,8 +22,10 @@ var sockstatArgs = []string{"-46", "-l", "-n", "-q", "-w", "-P", "tcp"}
 // address in brackets since 15.1 and bare before (so the port is what follows the last colon), and
 // * for the unspecified address of the socket's family. A socket that no process holds shows ? on
 // 14.x and ?? on 15.x for USER, COMMAND, PID and FD (displaysock in sockstat.c, main.c since 15.0);
-// its owner is unknown (pid 0), as gopsutil reports one elsewhere. A line of any other form rejects
-// the whole output: the guard then lets no probe through rather than judge on a partial list.
+// its owner is unknown (pid 0), as gopsutil reports one elsewhere. -l lists every socket without a
+// foreign address, so a socket neither bound nor connected shows *:* (the guard's own dial socket
+// during Control); it listens on nothing and is left out. A line of any other form rejects the whole
+// output: the guard then lets no probe through rather than judge on a partial list.
 func parseSockstat(out []byte) ([]listener, error) {
 	var list []listener
 	for _, line := range strings.Split(string(out), "\n") {
@@ -35,12 +37,16 @@ func parseSockstat(out []byte) ([]listener, error) {
 		if !ok {
 			return nil, fmt.Errorf("sockstat printed a line of unknown form: %q", line)
 		}
+		if l.port == 0 {
+			continue
+		}
 		list = append(list, l)
 	}
 	return list, nil
 }
 
-// sockstatListener reads the fields of one line of parseSockstat.
+// sockstatListener reads the fields of one line of parseSockstat; an unbound socket is a listener
+// without a port.
 func sockstatListener(f []string) (listener, bool) {
 	n := len(f)
 	if n < 6 || !(digits(f[n-4]) || unknown(f[n-4])) {
@@ -67,6 +73,9 @@ func sockstatListener(f []string) (listener, bool) {
 		return listener{}, false
 	}
 	local := f[n-2]
+	if local == "*:*" {
+		return listener{}, true
+	}
 	i := strings.LastIndexByte(local, ':')
 	if i < 1 {
 		return listener{}, false

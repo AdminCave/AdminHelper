@@ -270,7 +270,8 @@ phase() {
 echo "== phase tests (box user) =="
 phase tests 1800 sync sh scripts/tests/box_freebsdbox.sh tests "$BUILD_REL"
 echo "== phase roottests (root) =="
-phase roottests 900 nosync sudo sh scripts/tests/box_freebsdbox.sh roottests "$BUILD_REL"
+# AH_FREEBSD_PF=1: this box is thrown away, so the pf redirect test may change its pf.
+phase roottests 900 nosync sudo env AH_FREEBSD_PF=1 sh scripts/tests/box_freebsdbox.sh roottests "$BUILD_REL"
 echo "== phase pkg (root) =="
 phase pkg 900 nosync sudo sh scripts/tests/box_freebsdbox.sh pkg "$BUILD_REL"
 
