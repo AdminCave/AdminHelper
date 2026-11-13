@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Proben auf eigene Adressen, root-Tests im Box-Lauf — Task-Ledger
-Status: bereit · Branch: feature/kern-freebsd-5 · Review: am Ende
+Status: aktiv · Branch: feature/kern-freebsd-5 · Review: am Ende
 Spec: docs/features/kern-freebsd-5.md (Roadmap R-1411, R-1412)
 Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge `scripts/tests/freebsd_box.sh` auf der FreeBSD-Pool-Box (T1 auf der Plattform, T2 real)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -31,5 +31,12 @@ mit `AH_FREEBSD_PF=1`, das nur `freebsd_box.sh` setzt (nicht `opnsense_box.sh`).
 (2026-11-13).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
+
+### T3 — Doku: ungebundene Socket in sockstat (Fund Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html
+Änderung: Der Absatz zum Wächter nennt die neue Ausnahme aus T1: eine ungebundene Socket (`*:*`) wird übersprungen.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/agent.html DE+EN
+Task-Review: am Ende
 
 ## Entscheidungen
