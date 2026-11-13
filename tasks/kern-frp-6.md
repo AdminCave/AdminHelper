@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Tunnel-Schlüssel je Host erneuern — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-6 · Review: pro Task
 Spec: docs/features/kern-frp-6.md (Roadmap R-1316)
 Heavy: scenario --tunnel — der Schlüssel jedes Proxys und die frps-Policy ändern sich (FRP-Tunnel-Datenpfad); Server-API und Migration fährt dazu der Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -43,8 +43,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Frp.test.ts
 Doku: → T5
 Abhängt von: T2
 
-### T5 — Doku DE+EN und CHANGELOG  [ ]
+### T5 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-frp-6.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @98ee4c27d 2026-11-13T16:43:26+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Schlüssel je Host mit Generation; Erneuern im Desktop und per Route; jede Provisionierung erneuert ihn; von Hand verteilte `frpc.toml` danach neu verteilen. Neutral formuliert (kein Angriffspfad). Fragment `### Security` bzw. `### Added`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
