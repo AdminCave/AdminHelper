@@ -330,6 +330,36 @@ func TestAllowlistDNSAndTimeViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistHostStorageViews: the host sensor's thin pool view asks lvs for three fields as JSON.
+// The traps change an LV or the device mapper, act on an md array, or widen the lvs report.
+func TestAllowlistHostStorageViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"},
+		{"/usr/sbin/lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"lvs"},
+		{"lvs", "--reportformat", "json", "-o", "lv_name,vg_name"},
+		{"lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent", "--config", "x"},
+		{"lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent", "vg0"},
+		{"lvchange", "-an", "vg0/pool"},
+		{"lvextend", "-l", "+100%FREE", "vg0/pool"},
+		{"dmsetup", "status"},
+		{"dmsetup", "suspend", "vg0-pool"},
+		{"mdadm", "--detail", "/dev/md0"},
+		{"mdadm", "--action", "check", "/dev/md0"},
+		{"mdadm", "/dev/md0", "--fail", "/dev/sda1"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

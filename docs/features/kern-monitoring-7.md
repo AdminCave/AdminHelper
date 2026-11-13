@@ -57,7 +57,7 @@ nennt die Quelle im Kommentar; Unbelegtes fährt nicht mit oder steht als „nic
 | Fühler/Ansicht | Quelle (lesend) | Felder (Entwurf) |
 |---|---|---|
 | `host`/`mdadm` | `/sys/block/md*/md/{array_state,degraded,raid_disks,sync_action,mismatch_cnt}`, `md/dev-*/state` | `arrays`, `degraded`, `faulty_devices`, `resyncing`, `mismatch_cnt` |
-| `host`/`lvm_thin` | `lvs --reportformat json --units b -o lv_attr,data_percent,metadata_percent --select segtype=thin-pool` (Timeout 15 s) | `pools`, `max_data_pct`, `max_meta_pct`, `failed` (Attr D/F/M), `busy` |
+| `host`/`lvm_thin` | `lvs --reportformat json -o lv_attr,data_percent,metadata_percent`, Thin-Pools per `lv_attr` im Agent (Timeout 15 s) | `pools`, `max_data_pct`, `max_meta_pct`, `failed` (Attr D/F/M), `busy` |
 | `host`/`raid_ctrl` | `storcli`/`storcli2`/`perccli` `/call show all J nolog`, `ssacli ctrl all show status`; hostweit nacheinander (Mutex) | `controllers`, `vd_not_optimal`, `pd_failed`, `bbu_bad` |
 | `host`/`ipmi_sensors` | `ipmitool -S <cache> sdr elist` (Cache einmal je Agent-Start mit `sdr dump` im Agent-Zustandsverzeichnis), nur wenn `/dev/ipmi0`, `/dev/ipmi/0` oder `/dev/ipmidev/0` existiert | `sensors`, `critical`, `noncritical` |
 | `app`/`nut_ups` | `upsc -l localhost`, `upsc <ups>@localhost` (nur `ups.status`, `battery.runtime`, `battery.charge`) | `ups`, `on_battery`, `low_battery`, `fsd`, `overload`, `replace_battery`, `stale`, `min_runtime_s`, `min_charge_pct` |

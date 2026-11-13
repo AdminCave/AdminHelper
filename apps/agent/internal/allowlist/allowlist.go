@@ -245,6 +245,10 @@ var commands = map[string][][]string{
 	"unbound-control": {{"stats_noreset"}},
 	"chronyc":         {{"-c", "tracking"}},
 	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
+	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
+	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
+	// lvchange, lvextend, dmsetup and any other lvs argument list.
+	"lvs": {{"--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"}},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated

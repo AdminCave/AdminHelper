@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Gebaut wird erst nach dem Merge von kern-monitoring-10 (dieselben Dateien); vor T1 `origin/main` in den Branch mergen.
 
-### T1 — R-1228: Fühler host mit den Ansichten mdadm und lvm_thin  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/host_storage.go, apps/agent/internal/probe/host_storage_test.go, apps/agent/internal/probe/sensor_host_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T1 — R-1228: Fühler host mit den Ansichten mdadm und lvm_thin  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/host_storage.go, apps/agent/internal/probe/host_storage_test.go, apps/agent/internal/probe/sensor_host_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, docs/features/kern-monitoring-7.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b3ef7df82 2026-11-13T17:02:44+01:00
+Review: approve (.ah-out/review/kern-monitoring-7/T1.verdict.json)
 Änderung: Fühler `host` ohne Ziel (Muster `opnsense`: nur `view`); `mdadm` liest sysfs (`md.rst`), `lvm_thin` startet
 `lvs` mit festen Argumenten über die Freigabeliste, Timeout 15 s → `busy`. Nur Zähler und Prozente, keine Namen.
 Fallen (`mdadm --action`, `dmsetup` ohne `--noflush`, `lvchange`) als Negativtest. Neue Dateien mit SPDX-Header.
@@ -95,3 +97,5 @@ Task-Review: am Ende
 - Fühler `host` ohne Ziel statt Bindung an eine Unit (Spec, Trade-offs).
 - Ceph mit dem Admin-Keyring von root, kein eigener Nutzer (der Agent legt nichts an).
 - ZFS-Bewertung im bestehenden Checker, Vorlage unverändert.
+- T1: `lvs` ohne `--select segtype=thin-pool` (segtype ist ein Segment-Feld), Filter auf `lv_attr[0]=='t'` im Agent.
+- T1: `degraded` zählt Arrays (fehlendes Gerät oder `array_state` inactive/broken), `mismatch_cnt` ist die Summe; Zustand `clear` zählt nicht als Array.
