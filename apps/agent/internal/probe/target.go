@@ -297,6 +297,38 @@ func parseCgroups(data []byte) Cgroups {
 	return c
 }
 
+// Unit is the systemd service unit c runs in: the first ".service" below system.slice, the slices
+// between them skipped, in the unified hierarchy or else in systemd's own of cgroup v1; "" for a
+// process of no service unit (a user session, a scope as docker's containers run in).
+func (c Cgroups) Unit() string {
+	path, ok := c["0:"]
+	if !ok {
+		for h, p := range c {
+			if strings.HasSuffix(h, ":name=systemd") {
+				path, ok = p, true
+				break
+			}
+		}
+	}
+	if !ok {
+		return ""
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if parts[0] != "system.slice" {
+		return ""
+	}
+	for _, part := range parts[1:] {
+		if strings.HasSuffix(part, ".slice") {
+			continue
+		}
+		if strings.HasSuffix(part, ".service") {
+			return part
+		}
+		return ""
+	}
+	return ""
+}
+
 // Holds says whether the process that runs in p runs in the cgroups c or below them: the processes
 // of a container run in the cgroups of its first one or below them. Every hierarchy both name must
 // agree, and at least one must, so that a cgroup the container shares with host processes (the

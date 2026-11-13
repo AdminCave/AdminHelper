@@ -10,8 +10,10 @@ Heavy: linux-full — Inventar des Agents (`apps/agent/internal/discovery`, cgro
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1399, R-1393: Unit je Socket und lauschende Ports je Container im Inventar  [ ]
-Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_linux.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/probe/target_linux.go, apps/agent/internal/probe/target_freebsd.go, apps/agent/internal/probe/target_windows.go
+### T1 — R-1399, R-1393: Unit je Socket und lauschende Ports je Container im Inventar  [x]
+Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_linux.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/probe/target_linux.go, apps/agent/internal/probe/target_freebsd.go, apps/agent/internal/probe/target_windows.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/discover_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @90e1aab80 2026-11-13T21:13:19+01:00
+Review: approve (.ah-out/review/kern-monitoring-29/T1.verdict.json)
 Änderung: `Socket` bekommt `unit` (systemd-Unit des Prozesses aus seiner cgroup, `.service` unter `system.slice`,
 sonst ""; je PID gecacht), `Container` bekommt `listening` (TCP-Ports, auf denen im Netz-Namespace eines laufenden
 Containers mit eigenem Netz außerhalb von Loopback etwas lauscht, sortiert, gedeckelt wie `ports`; über eine
