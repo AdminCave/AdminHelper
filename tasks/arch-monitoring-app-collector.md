@@ -87,8 +87,10 @@ Feld einer anderen Ansicht, eine fremde Ziel-Art, fehlendes `view` und ein unbek
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog.py tests/test_check_configs.py
 Doku: → T7
 
-### T6 — Katalog: Module bigbluebutton, openldap, wordpress Version 2  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/bigbluebutton.py, apps/monitoring/app/catalog/modules/openldap.py, apps/monitoring/app/catalog/modules/wordpress.py, apps/monitoring/tests/test_catalog_bigbluebutton.py, apps/monitoring/tests/test_catalog_openldap.py, apps/monitoring/tests/test_catalog_wordpress.py
+### T6 — Katalog: Module bigbluebutton, openldap, wordpress Version 2  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/bigbluebutton.py, apps/monitoring/app/catalog/modules/openldap.py, apps/monitoring/app/catalog/modules/wordpress.py, apps/monitoring/tests/test_catalog_bigbluebutton.py, apps/monitoring/tests/test_catalog_openldap.py, apps/monitoring/tests/test_catalog_wordpress.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @38a842ebc 2026-11-13T10:20:31+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T6.verdict.json)
 Änderung: bigbluebutton: Checks `meetings` (`bbb_meetings`, Unit, Port-Hinweis 8090, 300 s) und `recordings`
 (`bbb_recordings`, 900 s, `failed gt 0` warning) mit Karten-Einträgen; openldap: Check `replication`
 (`ldap_replication`, Unit, 300 s, `disconnected gt 0` warning), Karte nach Trade-off 6 der Spec; wordpress: Check
@@ -97,7 +99,7 @@ nachgezogenem „Not covered“ (`bbb-conf --check` nie). Tests: `probe_config` 
 bzw. Container-Instanzen und überspringt sie, wo die Ziel-Art fehlt (openldap im Container); jede neue Regel feuert
 an ihrer Schwelle und nicht darunter (`ProbeChecker().evaluate`); Karte wie erwartet; `sync_catalog` legt die neuen
 Checks bei einer übernommenen Version-1-Instanz still an.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_bigbluebutton.py tests/test_catalog_openldap.py tests/test_catalog_wordpress.py tests/test_catalog_apps.py tests/test_catalog.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_bigbluebutton.py tests/test_catalog_openldap.py tests/test_catalog_wordpress.py tests/test_catalog_apps.py tests/test_catalog.py tests/test_module_sync.py
 Doku: → T7
 Abhängt von: T5
 
@@ -161,3 +163,16 @@ Abhängt von: T1, T2, T3, T4, T5, T6
   verengt sie auf die eine Art der Ansicht (`APP_VIEW_TARGETS`), `ProbeConfig` erbt das über `Check.model_validate`.
   Die Felder je Ansicht stehen im Test wörtlich (Vertrag mit `sensor_app.go`), sonst überlebte ein fehlendes Feld.
   Gegenprobe: Mutanten S1–S8, M1 rot.
+- 2026-11-13 (T6): Die Karte von openldap zeigt die Replikation statt der Container-Health (Trade-off 6): das Image
+  osixia/openldap 1.5.0 hat keinen eigenen HEALTHCHECK (Dockerfile geprüft), die Health-Kachel bliebe leer. Ohne
+  cn=Monitor meldet der Agent `monitor` false ohne Consumer-Zahlen, die Regel auf `disconnected` greift nicht, der
+  Check bleibt `unknown`; das ist der Debian-Standard (`slapd.init.ldif` lädt nur `back_mdb`, geprüft), die Doku
+  (T7) nennt cn=Monitor als Voraussetzung oder das Abschalten des Checks.
+- 2026-11-13 (T6): Meetings und WordPress-Version werden angezeigt, nicht bewertet (keine Regel): eine Schwelle für
+  Teilnehmer oder eine „richtige“ Version kennt der Katalog nicht. `meetings` trägt `port_hint` 8090, damit die
+  Prüfsumme nur an den Port von bbb-web.service geht; `recordings` liest Dateien und braucht keinen Port.
+- 2026-11-13 (T6): Die Version bindet auch an die fpm-Variante: deren Entrypoint kopiert WordPress ebenso nach
+  `/var/www/html` und prüft `wp-includes/version.php` (docker-library `docker-entrypoint.sh` geprüft).
+- 2026-11-13 (T6): Der Test, dass die neuen App-Checks auf vorher übernommenen Instanzen still starten, steht in
+  `tests/test_module_sync.py` (dort liegen die DB-Fixtures des Abgleichs); per `set-files` aufgenommen, das
+  `Verify:` um die Datei erweitert. Gegenprobe: Mutanten B1–B8, O1–O6, W1–W5, S1–S2 rot.
