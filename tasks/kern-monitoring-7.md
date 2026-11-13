@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Speicher, Hardware, USV und Proxmox-Ausbau — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-7 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-7 · Review: pro Task
 Spec: docs/features/kern-monitoring-7.md (Roadmap R-1228, R-1229, R-1230)
 Heavy: linux-full — neuer Fühler, Agent-Ansichten und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -112,8 +112,10 @@ laufender Scrub/Resilver nicht); vdev-Zähler > 0 → warning. Ohne Änderung de
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: → T10
 
-### T10 — Doku Speicher, Hardware, USV, Proxmox  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-7.md
+### T10 — Doku Speicher, Hardware, USV, Proxmox  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-7.md, docs/features/kern-monitoring-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @000342a3e 2026-11-13T18:35:16+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Modul-Tabellen, Fühler `host`, „Nie aufgerufen“, ZFS-Bewertung, Freigabeliste; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task

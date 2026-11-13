@@ -84,6 +84,23 @@ Module (Erkennung; Instanz):
 | R-1230 | `ceph` | Units `ceph-mon@*`/`ceph-osd@*` | `ceph_health` (5 min): `HEALTH_ERR` → critical, `HEALTH_WARN` → warning, Pools 75/85 % |
 | R-1230 | ZFS | bestehender `zfs_health` | Scrub älter als 35 Tage → warning, 60 Tage → critical; vdev-Zähler > 0 → warning; `zfs_snapshots` als eigenes Modul `sanoid` |
 
+**Umsetzung, Abweichungen vom Entwurf** (Stand T10; maßgeblich sind Katalog, Agent und `docs/admin/monitoring.html`):
+- `pve_cluster` liest die Replikation nur über `/nodes/<n>/replication` (`/cluster/replication` listet nur die
+  Job-Konfiguration ohne Zustand).
+- `pbs_status` liest nur über `proxmox-backup-debug api get`: `/config/datastore` (Wartungsmodus),
+  `/status/datastore-usage` und `/nodes/localhost/tasks` je Jobtyp (`garbage_collection`, `verif`, `sync`, `prune`,
+  `--limit 50`); `proxmox-backup-manager` nicht.
+- `zfs_snapshots` ist eine Ansicht des Fühlers `host` (sanoid läuft als Oneshot aus seinem Timer, keine Unit ist
+  zwischen den Läufen aktiv); gelesen wird nur der Exit-Code.
+- NUT ist zwei Module: `nut` (Unit `nut-server.service`, Ansicht `nut_ups`) und `nut-monitor` (Unit
+  `nut-monitor.service`, nicht aktiv → critical); keine Regel auf Laufzeit oder Ladung (viele Treiber melden sie
+  nicht), den Alarm trägt das LB-Flag des Treibers.
+- `proxmox-ve` erkennt die Unit `pvescheduler.service` (nicht `pvedaemon`); `ceph` nur Monitor-Hosts
+  (`ceph-mon@*.service`), ein OSD-Host wiederholte den clusterweiten Check je OSD.
+- Keine Regel auf `last_run_age_s` (ein hängender Scheduler fällt nicht auf) und `min_full_days` (beide nur
+  angezeigt): eine Regel auf ein fehlendes Feld hielte den Check auf `unknown`.
+- Intervalle: `raid_ctrl` und `ipmi_sensors` 15 min, `zfs_snapshots` stündlich.
+
 **Nicht-Ziele (YAGNI):**
 - Kein Redfish (Konzept §10 Nr. 11: nur IPMI lokal), keine SEL-Auswertung (`sel elist` belastet kipmid; eigene Zeile,
   falls gewünscht), keine LVM-Überbuchung, kein Autoextend-Hinweis, kein mdadm `mismatch_cnt`-Alarm (nur Feld).
