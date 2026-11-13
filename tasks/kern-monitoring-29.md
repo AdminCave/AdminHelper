@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Katalog: Ports von Units, lauschende Container-Ports, Ziel-Alternativen, Image-Tags — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-29 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-29 · Review: pro Task
 Spec: docs/features/kern-monitoring-29.md (Roadmap R-1399, R-1384, R-1387, R-1393, R-1397)
 Heavy: linux-full — Inventar des Agents (`apps/agent/internal/discovery`, cgroup und Netz-Namespace der Container auf echten Boxen) und Bindung im Monitoring; kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
