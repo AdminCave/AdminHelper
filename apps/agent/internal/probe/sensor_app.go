@@ -33,11 +33,13 @@ var (
 // the application with fixed arguments, started through the allowlist (runTool). The server names a
 // view, never a path, a command or a query.
 var appViews = map[string]appView{
+	"apcupsd":           {unitKinds, apcupsd},
 	"bbb_meetings":      {unitKinds, bbbMeetings},
 	"bbb_recordings":    {unitKinds, bbbRecordings},
 	"bind_status":       {unitKinds, bindStatus},
 	"caddy_certs":       {eitherKinds, caddyCerts},
 	"caddy_upstreams":   {unitKinds, caddyUpstreams},
+	"ceph_health":       {unitKinds, cephHealth},
 	"chrony_tracking":   {unitKinds, chronyTracking},
 	"crowdsec_bouncers": {unitKinds, crowdsecBouncers},
 	"dnsmasq_leases":    {unitKinds, dnsmasqLeaseView},
@@ -47,7 +49,12 @@ var appViews = map[string]appView{
 	"ldap_replication":  {unitKinds, ldapReplication},
 	"npm_certs":         {containerKinds, npmCerts},
 	"ntpsec_status":     {unitKinds, ntpsecStatus},
+	"nut_ups":           {unitKinds, nutUPS},
 	"openvpn_status":    {unitKinds, openvpnStatus},
+	"pbs_status":        {unitKinds, pbsStatus},
+	"pve_cluster":       {unitKinds, pveCluster},
+	"pve_jobs":          {unitKinds, pveJobs},
+	"pve_updates":       {unitKinds, pveUpdates},
 	"tailscale_status":  {unitKinds, tailscaleStatus},
 	"traefik_certs":     {eitherKinds, traefikCerts},
 	"unbound_stats":     {unitKinds, unboundStats},

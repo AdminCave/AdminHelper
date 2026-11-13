@@ -330,6 +330,200 @@ func TestAllowlistDNSAndTimeViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistHostStorageViews: the host sensor's thin pool view asks lvs for three fields as JSON.
+// The traps change an LV or the device mapper, act on an md array, or widen the lvs report.
+func TestAllowlistHostStorageViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"},
+		{"/usr/sbin/lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"lvs"},
+		{"lvs", "--reportformat", "json", "-o", "lv_name,vg_name"},
+		{"lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent", "--config", "x"},
+		{"lvs", "--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent", "vg0"},
+		{"lvchange", "-an", "vg0/pool"},
+		{"lvextend", "-l", "+100%FREE", "vg0/pool"},
+		{"dmsetup", "status"},
+		{"dmsetup", "suspend", "vg0-pool"},
+		{"mdadm", "--detail", "/dev/md0"},
+		{"mdadm", "--action", "check", "/dev/md0"},
+		{"mdadm", "/dev/md0", "--fail", "/dev/sda1"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistHostHardwareViews: the host sensor's hardware views ask the controller CLIs for their
+// state without a log file and ipmitool for the sensor list from the SDR cache in the state directory.
+// The traps start a learn cycle, clear an event log, read or clear the SEL, write a cache elsewhere, or
+// read the SDR without the cache.
+func TestAllowlistHostHardwareViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"/opt/MegaRAID/storcli/storcli64", "/call", "show", "all", "J", "nolog"},
+		{"/opt/MegaRAID/perccli/perccli64", "/call", "show", "all", "J", "nolog"},
+		{"/usr/sbin/ssacli", "ctrl", "all", "show", "status"},
+		{"/usr/sbin/ssacli", "ctrl", "all", "show", "config"},
+		{"ipmitool", "-S", "/etc/adminhelper/.ipmi-sdr.cache", "sdr", "elist"},
+		{"ipmitool", "sdr", "dump", "/etc/adminhelper/.ipmi-sdr.cache.new"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"storcli64", "/call", "show", "all", "J"},
+		{"storcli64", "/call", "show", "all"},
+		{"storcli64", "/c0/bbu", "start", "learn", "nolog"},
+		{"storcli64", "/c0", "delete", "events", "nolog"},
+		{"storcli64", "/call", "show", "events", "nolog"},
+		{"storcli64", "/call", "set", "alarm=off", "nolog"},
+		{"perccli64", "/c0/bbu", "start", "learn"},
+		{"storcli2", "/call", "show", "all", "J", "nolog"},
+		{"ssacli", "ctrl", "all", "show", "config", "detail"},
+		{"ssacli", "ctrl", "slot=0", "modify", "dwc=enable"},
+		{"ssacli", "ctrl", "slot=0", "pd", "all", "show", "detail"},
+		{"ipmitool", "sel", "clear"},
+		{"ipmitool", "sel", "elist"},
+		{"ipmitool", "sdr", "elist"},
+		{"ipmitool", "-S", "/etc/adminhelper/.ipmi-sdr.cache", "sel", "elist"},
+		{"ipmitool", "-S", "/etc/adminhelper/../shadow", "sdr", "elist"},
+		{"ipmitool", "sdr", "dump", "/etc/cron.d/x"},
+		{"ipmitool", "sdr", "dump", "/etc/../root/.ipmi-sdr.cache.new"},
+		{"ipmitool", "sdr", "dump", "relative/.ipmi-sdr.cache.new"},
+		{"ipmitool", "chassis", "power", "off"},
+		{"ipmitool", "raw", "0x06", "0x01"},
+		{"ipmitool", "mc", "reset", "cold"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistUPSViews: the UPS views ask the upsd and the apcupsd on localhost for a list and a
+// status. The traps command or reconfigure a UPS, shut the clients down, or ask another host.
+func TestAllowlistUPSViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"upsc", "-l", "localhost"},
+		{"upsc", "eaton5sc@localhost"},
+		{"upsc", "ups_1.rack-a@localhost"},
+		{"/usr/bin/upsc", "-l", "localhost"},
+		{"apcaccess", "-u", "status"},
+		{"/usr/sbin/apcaccess", "-u", "status"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"upscmd", "ups@localhost", "shutdown.return"},
+		{"upscmd", "-l", "ups@localhost"},
+		{"upsrw", "-s", "ups.delay.shutdown=1", "ups@localhost"},
+		{"upsrw", "ups@localhost"},
+		{"upsmon", "-c", "fsd"},
+		{"upsmon", "-c", "stop"},
+		{"upsc", "-l"},
+		{"upsc", "-l", "nas.example"},
+		{"upsc", "ups@nas.example"},
+		{"upsc", "ups@localhost:3494"},
+		{"upsc", "ups@other@localhost"},
+		{"upsc", "-c", "ups@localhost"},
+		{"upsc", "ups@localhost", "ups.status"},
+		{"upsc", "-l", "localhost", "extra"},
+		{"apcaccess"},
+		{"apcaccess", "status"},
+		{"apcaccess", "-h", "nas.example:3551", "-u", "status"},
+		{"apcaccess", "-f", "/tmp/x.conf", "-u", "status"},
+		{"apcaccess", "-u", "status", "nas.example"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+func TestAllowlistPVEViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"pvesh", "get", "/cluster/status", "--output-format", "json"},
+		{"pvesh", "get", "/cluster/ha/status/current", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/replication", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/tasks", "--typefilter", "vzdump", "--limit", "50", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/apt/update", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/subscription", "--output-format", "json"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"pvesh", "create", "/nodes/pve1/apt/update", "--output-format", "json"},
+		{"pvesh", "set", "/cluster/ha/status/current", "--output-format", "json"},
+		{"pvesh", "delete", "/nodes/pve1/replication", "--output-format", "json"},
+		{"pvesh", "create", "/nodes/pve1/subscription", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/storage", "--output-format", "json"},
+		{"pvesh", "get", "/cluster/replication", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/tasks", "--typefilter", "vzdump", "--limit", "5000", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/pve1/tasks", "--typefilter", "qmstart", "--limit", "50", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/../cluster/replication", "--output-format", "json"},
+		{"pvesh", "get", "/nodes/-x/apt/update", "--output-format", "json"},
+		{"pvesh", "get", "/cluster/status"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+func TestAllowlistPBSCephAndSanoidViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"proxmox-backup-debug", "api", "get", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/status/datastore-usage", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "garbage_collection", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "verif", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "sync", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
+		{"ceph", "health", "-f", "json"},
+		{"ceph", "df", "-f", "json"},
+		{"sanoid", "--monitor-snapshots"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"proxmox-backup-debug", "api", "set", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "create", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "delete", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/access/users", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--limit", "100", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "backup", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "100000", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/config/datastore"},
+		{"proxmox-backup-manager", "datastore", "update", "store1", "--maintenance-mode", "offline"},
+		{"proxmox-backup-manager", "datastore", "list", "--output-format", "json"},
+		{"ceph", "osd", "set", "noout"},
+		{"ceph", "config", "set", "global", "mon_allow_pool_delete", "true"},
+		{"ceph", "health", "detail", "-f", "json"},
+		{"ceph", "df", "detail", "-f", "json"},
+		{"ceph", "health"},
+		{"sanoid", "--cron"},
+		{"sanoid", "--take-snapshots"},
+		{"sanoid", "--prune-snapshots"},
+		{"sanoid", "--monitor-snapshots", "--configdir", "/tmp/x"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

@@ -9,8 +9,8 @@ a fixed measurement in the agent, and these models are the whole of what a catal
 entry or a probe check may set for it. The agent checks the same bounds again and
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
-Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense and app the set of
-its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
+Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense, app and host the set
+of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
 stats) also return fields under ``data.`` — a path into that answer, which the agent
 resolves to one scalar.
 """
@@ -38,6 +38,7 @@ SENSORS = (
     "log",
     "opnsense",
     "app",
+    "host",
 )
 
 # The views of the opnsense sensor and the fields each one returns: the allowlist of the
@@ -117,13 +118,48 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "unbound_stats": frozenset({"queries", "requestlist_exceeded", "servfail_pct"}),
     "chrony_tracking": frozenset({"synced", "stratum", "offset_abs_ms"}),
     "ntpsec_status": frozenset({"synced", "stratum", "offset_abs_ms"}),
+    "nut_ups": frozenset(
+        {
+            "ups",
+            "on_battery",
+            "low_battery",
+            "fsd",
+            "overload",
+            "replace_battery",
+            "stale",
+            "min_runtime_s",
+            "min_charge_pct",
+        }
+    ),
+    "apcupsd": frozenset(
+        {"online", "on_battery", "low_battery", "commlost", "charge_pct", "runtime_s", "transfers"}
+    ),
     "kea_pools": frozenset({"subnets", "max_pool_used_pct", "alloc_fail"}),
     "dnsmasq_leases": frozenset({"leases", "range_size", "used_pct"}),
     "caddy_upstreams": frozenset({"upstreams", "failing"}),
     "caddy_certs": frozenset({"certs", "expired", "min_days_left"}),
     "traefik_certs": frozenset({"certs", "expired", "min_days_left"}),
     "npm_certs": frozenset({"certs", "expired", "min_days_left"}),
+    "pve_cluster": frozenset({"quorate", "nodes_offline", "ha_error", "replication_failed"}),
+    "pve_jobs": frozenset({"jobs", "jobs_failed", "last_run_age_s"}),
+    "pve_updates": frozenset({"updates", "subscription_active"}),
+    "pbs_status": frozenset(
+        {"datastores", "maintenance", "tasks_failed", "max_used_pct", "min_full_days"}
+    ),
+    "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
 }
+
+# The views of the host sensor and the fields each one returns: the allowlist of the agent's
+# sensor_host.go, parts of the agent's own host that belong to no unit and no container
+# (R-1228). Counts and percentages only; no array, volume, controller or sensor name.
+HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
+    "mdadm": frozenset({"arrays", "degraded", "faulty_devices", "resyncing", "mismatch_cnt"}),
+    "lvm_thin": frozenset({"pools", "max_data_pct", "max_meta_pct", "failed", "busy"}),
+    "raid_ctrl": frozenset({"controllers", "ctrl_bad", "vd_not_optimal", "pd_failed", "bbu_bad"}),
+    "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
+    "zfs_snapshots": frozenset({"status"}),
+}
+
 _UNIT = frozenset({"unit"})
 _CONTAINER = frozenset({"container"})
 _UNIT_OR_CONTAINER = _UNIT | _CONTAINER
@@ -142,12 +178,19 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "unbound_stats": _UNIT,
     "chrony_tracking": _UNIT,
     "ntpsec_status": _UNIT,
+    "nut_ups": _UNIT,
+    "apcupsd": _UNIT,
     "kea_pools": _UNIT,
     "dnsmasq_leases": _UNIT,
     "caddy_upstreams": _UNIT,
     "caddy_certs": _UNIT_OR_CONTAINER,
     "traefik_certs": _UNIT_OR_CONTAINER,
     "npm_certs": _CONTAINER,
+    "pve_cluster": _UNIT,
+    "pve_jobs": _UNIT,
+    "pve_updates": _UNIT,
+    "pbs_status": _UNIT,
+    "ceph_health": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -176,6 +219,7 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
     "log": frozenset({"count"}),
     "opnsense": frozenset().union(*OPNSENSE_VIEW_FIELDS.values()),
     "app": frozenset().union(*APP_VIEW_FIELDS.values()),
+    "host": frozenset().union(*HOST_VIEW_FIELDS.values()),
 }
 
 # Sensors whose answer is structured; they accept fields "data.<path>".
@@ -200,6 +244,7 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "opnsense": None,
     # Narrowed to the kinds of its view (APP_VIEW_TARGETS, checked on Check).
     "app": frozenset().union(*APP_VIEW_TARGETS.values()),
+    "host": None,
 }
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
@@ -303,13 +348,24 @@ class AppParams(_Params):
         "unbound_stats",
         "chrony_tracking",
         "ntpsec_status",
+        "nut_ups",
+        "apcupsd",
         "kea_pools",
         "dnsmasq_leases",
         "caddy_upstreams",
         "caddy_certs",
         "traefik_certs",
         "npm_certs",
+        "pve_cluster",
+        "pve_jobs",
+        "pve_updates",
+        "pbs_status",
+        "ceph_health",
     ]
+
+
+class HostParams(_Params):
+    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors", "zfs_snapshots"]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {
@@ -328,6 +384,7 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "log": LogParams,
     "opnsense": OpnsenseParams,
     "app": AppParams,
+    "host": HostParams,
 }
 
 
@@ -339,6 +396,8 @@ def field_allowed(sensor: str, field: str, params: dict) -> bool:
         return field in OPNSENSE_VIEW_FIELDS[params["view"]]
     if sensor == "app":
         return field in APP_VIEW_FIELDS[params["view"]]
+    if sensor == "host":
+        return field in HOST_VIEW_FIELDS[params["view"]]
     if field in SENSOR_FIELDS[sensor]:
         return True
     return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")
