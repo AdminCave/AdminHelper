@@ -1,5 +1,5 @@
 # Monitoring: Fühler `app` für Anwendungs-Innenleben — Task-Ledger
-Status: bereit · Branch: feature/arch-monitoring-app-collector · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-app-collector · Review: pro Task
 Spec: docs/features/arch-monitoring-app-collector.md (Roadmap R-1404)
 Heavy: linux-full — apps/agent (neuer Probe-Fühler `app`); die Katalog-Module sind Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -115,6 +115,17 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/monitoring.html · docs/en/admin/monitoring.html · docs/developer/agent.html · docs/en/developer/agent.html · changelog.d/arch-monitoring-app-collector.md
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T4, T5, T6
+
+### T8 — Agent: Aufzeichnungs-Status nur als Verzeichnis, Properties nur als reguläre Datei öffnen  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_test.go, apps/agent/internal/probe/app_bbb_unix.go, apps/agent/internal/probe/app_bbb_windows.go, apps/agent/internal/probe/app_bbb_unix_test.go
+Änderung: Aus der Abschlussprüfung: `bbb_recordings` öffnet `status` und die vier Schritt-Verzeichnisse je relativ
+zum geöffneten Elternverzeichnis und nur als Verzeichnis, ohne einem Link am letzten Glied zu folgen; `bbb_meetings`
+liest die Properties-Dateien nur als reguläre Datei und wartet dabei nicht. Tests: FIFO, Link auf ein FIFO und Link
+auf ein Verzeichnis an `status` bzw. an einem Schritt ergeben sofort `unsupported` bzw. einen Fehler ohne Pfad, ein
+FIFO als Properties-Datei einen Fehler statt Warten.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (auf einem BigBlueButton-Host mit Paket-Layout bleibt das Verhalten gleich)
+Abhängt von: T1, T2
 
 ## Entscheidungen
 - 2026-11-13: ein Fühler `app` mit Ansichten im Paket `probe`, kein exec (Spec, Trade-offs 1–3).
