@@ -27,6 +27,7 @@ from app.discovery import (
     apply_discovery,
     clean_inventory,
     image_repo,
+    image_tag,
     match_inventory,
     next_scan_at,
     scan_due,
@@ -114,7 +115,7 @@ def _block(**parts):
     return block
 
 
-def _container(name, image, project="", service="", ports=()):
+def _container(name, image, project="", service="", ports=(), listening=None):
     return {
         "id": "id-" + name,
         "name": name,
@@ -125,11 +126,19 @@ def _container(name, image, project="", service="", ports=()):
         "health": "",
         "ports": list(ports),
         "mounts": [],
+        "listening": listening,
     }
 
 
-def _socket(port, process="", container="", addr="0.0.0.0", proto="tcp"):
-    return {"proto": proto, "addr": addr, "port": port, "process": process, "container": container}
+def _socket(port, process="", container="", addr="0.0.0.0", proto="tcp", unit=""):
+    return {
+        "proto": proto,
+        "addr": addr,
+        "port": port,
+        "process": process,
+        "container": container,
+        "unit": unit,
+    }
 
 
 def _unit(name, state="active"):
@@ -213,6 +222,30 @@ def test_inventory_keeps_only_the_contract_fields():
     assert inv["markers"] == {"example.config": True}
     assert inv["ports"] == [_recognised(8443)]
     assert (inv["ts"], inv["duration_ms"], inv["partial"]) == (1762700000, 900, False)
+
+
+@pytest.mark.parametrize(
+    ("raw", "kept"),
+    [
+        pytest.param(None, None, id="null"),
+        pytest.param("8000", None, id="no-list"),
+        pytest.param([], [], id="nothing-listens"),
+        pytest.param([8000, 80, 8000, 0, 70000, "443", True], [80, 8000], id="cleaned"),
+        pytest.param(list(range(1, 65)), list(range(1, 65)), id="at-the-bound"),
+        # More than the agent ever sends: a cut list could hide the port, so none is kept.
+        pytest.param(list(range(1, 66)), None, id="beyond-the-bound"),
+    ],
+)
+def test_the_listening_ports_of_a_container_are_kept_or_unknown(raw, kept):
+    container = {**_container("web", "nginx:1"), "listening": raw}
+    inv = clean_inventory(_block(containers=[container]))
+    assert inv["containers"][0]["listening"] == kept
+
+
+def test_an_older_agent_tells_no_listening_ports():
+    container = {k: v for k, v in _container("web", "nginx:1").items() if k != "listening"}
+    inv = clean_inventory(_block(containers=[container]))
+    assert inv["containers"] == [_container("web", "nginx:1")]
 
 
 def test_lists_beyond_the_contract_bounds_are_cut_and_make_the_scan_partial():
@@ -328,6 +361,23 @@ def test_scan_now_forces_the_next_scan_and_the_scan_answers_it(db):
 )
 def test_image_repo_drops_tag_digest_and_the_hub_prefix(image, repo):
     assert image_repo(image) == repo
+
+
+@pytest.mark.parametrize(
+    "image, tag",
+    [
+        ("requarks/wiki:2", "2"),
+        ("ghcr.io/requarks/wiki:2.5.307", "2.5.307"),
+        ("requarks/wiki", "latest"),
+        ("localhost:5000/team/app", "latest"),
+        ("localhost:5000/team/app:1", "1"),
+        ("requarks/wiki:3@sha256:" + "a" * 64, "3"),
+        # By digest alone the tag is unknown.
+        ("requarks/wiki@sha256:" + "a" * 64, ""),
+    ],
+)
+def test_image_tag_is_the_part_after_the_last_colon_of_the_name(image, tag):
+    assert image_tag(image) == tag
 
 
 def test_image_prefix_matches_at_a_path_boundary():
@@ -552,6 +602,46 @@ def test_port_finding_left_out(parts):
 def test_no_port_findings_without_the_port_module():
     inv = clean_inventory(_block(sockets=[_socket(8443, "java")], ports=[_recognised(8443)]))
     assert match_inventory(inv, NO_PORT_MODULE) == {}
+
+
+def test_a_stand_in_claims_the_ports_its_unit_listens_on():
+    # gitea from the package, not the container: its port is the module's, not a port finding.
+    inv = clean_inventory(
+        _block(
+            units=[_unit("gitea.service")],
+            sockets=[_socket(3000, "gitea", unit="gitea.service")],
+            ports=[_recognised(3000, "http")],
+        )
+    )
+    assert match_inventory(inv, CATALOG) == {
+        ("gitea", "gitea"): {"matched_by": ["unit:gitea.service"]}
+    }
+
+
+def test_a_unit_instance_claims_the_ports_of_its_own_unit_only():
+    inv = clean_inventory(
+        _block(
+            units=[_unit("example.service"), _unit("other.service")],
+            sockets=[
+                _socket(8443, "example-bin", unit="example.service"),
+                _socket(9443, "other-bin", unit="other.service"),
+            ],
+            ports=[_recognised(8443), _recognised(9443)],
+        )
+    )
+    seen = match_inventory(inv, CATALOG)
+    assert ("example", "example.service") in seen
+    assert [key for key in seen if key[0] == "port"] == [("port", "tcp-9443")]
+
+
+def test_a_socket_without_a_unit_keeps_its_port_finding():
+    # An older agent tells no unit: the port stays a finding as before.
+    old = {k: v for k, v in _socket(3000, "gitea").items() if k != "unit"}
+    inv = clean_inventory(
+        _block(units=[_unit("gitea.service")], sockets=[old], ports=[_recognised(3000, "http")])
+    )
+    assert inv["sockets"] == [_socket(3000, "gitea")]
+    assert set(match_inventory(inv, CATALOG)) == {("gitea", "gitea"), ("port", "tcp-3000")}
 
 
 # --- the findings inbox -----------------------------------------------------------------

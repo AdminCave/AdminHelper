@@ -4,7 +4,8 @@
 
 """The catalog module bitwarden (R-1241): the standard install's nginx, api, identity and
 mssql containers get their checks, whose health carries each image's own health check;
-Bitwarden Lite gets the check of its one container; nothing is asked over HTTP."""
+nginx's /alive is asked on the port the scan saw listening; Bitwarden Lite gets the check
+of its one container."""
 
 from datetime import UTC, datetime
 
@@ -36,7 +37,7 @@ def _block(containers=()):
     }
 
 
-def _container(name, image, project="", service="", ports=()):
+def _container(name, image, project="", service="", ports=(), listening=None):
     return {
         "id": "id-" + name,
         "name": name,
@@ -47,6 +48,7 @@ def _container(name, image, project="", service="", ports=()):
         "health": "healthy",
         "ports": [{"private": p, "public": None, "proto": "tcp"} for p in ports],
         "mounts": [],
+        "listening": listening,
     }
 
 
@@ -117,11 +119,19 @@ def _status(check_key, values):
     return ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0]
 
 
-def test_the_module_loads_with_container_checks_only():
+def test_the_module_loads_with_container_checks_and_nginx_alive():
     assert CATALOG.errors == ()
-    assert list(CHECKS) == ["nginx", "api", "identity", "mssql", "lite"]
-    assert {c.sensor for c in MODULE.checks} == {"container"}
-    assert [c.target.service for c in MODULE.checks] == ["nginx", "api", "identity", "mssql", ""]
+    assert list(CHECKS) == ["nginx", "api", "identity", "mssql", "lite", "alive"]
+    assert {c.sensor for c in MODULE.checks} == {"container", "http"}
+    assert [c.target.service for c in MODULE.checks] == [
+        "nginx",
+        "api",
+        "identity",
+        "mssql",
+        "",
+        "nginx",
+    ]
+    assert CHECKS["alive"].params["path"] == "/alive"
 
 
 def test_the_standard_install_binds_each_service_and_leaves_the_lite_check_unbound():
@@ -132,6 +142,12 @@ def test_the_standard_install_binds_each_service_and_leaves_the_lite_check_unbou
         "identity": ("bitwarden-identity", None),
         "mssql": ("bitwarden-mssql", None),
         "lite": (None, "several containers for this instance: " + ", ".join(names)),
+        # The image exposes both ports; without the listening ones none is guessed.
+        "alive": (
+            None,
+            "container bitwarden-nginx exposes several of the ports 8443, 8080, "
+            "none seen listening",
+        ),
     }
 
 
@@ -152,6 +168,7 @@ def test_lite_in_its_compose_project_gets_the_check_of_its_one_container():
         "identity": (None, "no container for this instance"),
         "mssql": (None, "no container for this instance"),
         "lite": ("bitwarden-bitwarden-1", None),
+        "alive": (None, "no container for this instance"),
     }
 
 
@@ -184,6 +201,58 @@ def test_vaultwarden_and_foreign_images_are_not_taken_for_bitwarden(image):
 )
 def test_each_container_check_is_critical_when_stopped_or_unhealthy(check_key, values, want):
     assert _status(check_key, values) == want
+
+
+def _alive(nginx):
+    """(port_hint, scheme) of the bound alive check, or (None, why)."""
+    containers = [c for c in STANDARD if c["compose_service"] != "nginx"] + [nginx]
+    block = _block(containers)
+    config, why = probe_config(
+        MODULE, CHECKS["alive"], "docker", _found(block)["docker"], containers
+    )
+    return (config["target"]["port_hint"], config["target"]["scheme"]) if config else (None, why)
+
+
+def _nginx(ports=(8080, 8443), listening=None):
+    image = f"ghcr.io/bitwarden/nginx:{VERSION}"
+    return _container("bitwarden-nginx", image, "docker", "nginx", ports, listening)
+
+
+@pytest.mark.parametrize(
+    ("nginx", "want"),
+    [
+        pytest.param(_nginx(listening=[8080, 8443]), (8443, "https"), id="tls-listening"),
+        pytest.param(_nginx(listening=[8080]), (8080, "http"), id="plain-http-listening"),
+        pytest.param(_nginx(ports=[8080]), (8080, "http"), id="only-8080-exposed"),
+        pytest.param(_nginx(ports=[]), (8443, "https"), id="no-port-seen-takes-the-first"),
+        pytest.param(
+            _nginx(listening=[5000]),
+            (None, "container bitwarden-nginx has none of the ports 8443, 8080"),
+            id="neither-listening",
+        ),
+        pytest.param(
+            _nginx(ports=[80]),
+            (None, "container bitwarden-nginx has none of the ports 8443, 8080"),
+            id="neither-exposed",
+        ),
+    ],
+)
+def test_nginx_alive_takes_the_first_port_the_scan_saw(nginx, want):
+    assert _alive(nginx) == want
+
+
+@pytest.mark.parametrize(("code", "want"), [(200, "ok"), (301, "critical"), (502, "critical")])
+def test_nginx_alive_is_critical_on_any_answer_but_200(code, want):
+    containers = [c for c in STANDARD if c["compose_service"] != "nginx"]
+    containers.append(_nginx(listening=[8080, 8443]))
+    block = _block(containers)
+    config, why = probe_config(
+        MODULE, CHECKS["alive"], "docker", _found(block)["docker"], containers
+    )
+    assert why is None, why
+    result = {"ts": T0, "duration_ms": 40, "status": "ok", "values": {"status_code": code}}
+    report = {"timestamp": STAMP, "probes": {"chk": {**result, "error": ""}}}
+    assert ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0] == want
 
 
 def test_the_card_shows_api_identity_nginx_database_and_lite():

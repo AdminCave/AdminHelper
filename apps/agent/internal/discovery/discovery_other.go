@@ -8,5 +8,8 @@ package discovery
 
 import "adminhelper-agent/internal/probe"
 
-// cgroupsOf: containers are discovered on Linux alone; a seam for the tests.
-var cgroupsOf = func(int32) probe.Cgroups { return nil }
+// Containers and units are discovered on Linux alone; seams for the tests.
+var (
+	cgroupsOf          = func(int32) probe.Cgroups { return nil }
+	containerListening = func(int32) ([]uint16, error) { return nil, nil }
+)

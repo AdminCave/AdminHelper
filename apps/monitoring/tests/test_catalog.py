@@ -301,6 +301,57 @@ def test_target_service_needs_a_compose_project():
     assert "target.service" in _only_error(_load(raw))
 
 
+@pytest.mark.parametrize(
+    ("target", "error"),
+    [
+        (
+            {"kind": "port", "alternatives": [{"port_hint": 80, "scheme": "http"}]},
+            "alternatives need a container target",
+        ),
+        (
+            {
+                "kind": "container",
+                "service": "web",
+                "port_hint": 80,
+                "alternatives": [{"port_hint": 80, "scheme": "http"}],
+            },
+            "alternatives replace port_hint and scheme",
+        ),
+        ({"kind": "container", "service": "web", "alternatives": []}, "at least 1"),
+        (
+            {
+                "kind": "container",
+                "service": "web",
+                "alternatives": [{"port_hint": 80 + i, "scheme": "http"} for i in range(5)],
+            },
+            "at most 4",
+        ),
+        (
+            {"kind": "container", "service": "web", "alternatives": [{"port_hint": 80}]},
+            "scheme",
+        ),
+    ],
+)
+def test_target_alternatives_are_checked(target, error):
+    assert error in _only_error(_load(_module(checks=[_check(target=target)])))
+
+
+def test_target_alternatives_load_in_order():
+    alternatives = [{"port_hint": 8443, "scheme": "https"}, {"port_hint": 8080, "scheme": "http"}]
+    target = {"kind": "container", "service": "web", "alternatives": alternatives}
+    module = _load(_module(checks=[_check(target=target)])).modules["example"]
+    assert [a.model_dump() for a in module.checks[0].target.alternatives] == alternatives
+
+
+def test_image_fallback_needs_a_service():
+    target = {"kind": "container", "image_fallback": True, "port_hint": 8000, "scheme": "http"}
+    assert "image_fallback needs a service" in _only_error(
+        _load(_module(checks=[_check(target=target)]))
+    )
+    strict = {**target, "service": "web", "image_fallback": "yes"}
+    assert _load(_module(checks=[_check(target=strict)])).modules == {}
+
+
 def test_marker_id_carries_the_module_id():
     raw = _module(detect={"markers": [{"id": "other.config", "paths": ["/etc/x"]}]})
     assert "must start with 'example.'" in _only_error(_load(raw))
@@ -410,3 +461,23 @@ def test_version_counts_defaults_like_explicit_values():
     assert _load(_module(checks=[explicit, _VALID["checks"][1]])).version == (
         _load(_module()).version
     )
+
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        ({"target": {"kind": "port", "port_hint": 8000, "scheme": "http"}}, "container target"),
+        ({"image_tags": []}, "at least 1"),
+        ({"image_tags": [str(i) for i in range(9)]}, "at most 8"),
+        ({"image_tags": ["2 || 3"]}, "pattern"),
+        ({"image_tags": ["[23]"]}, "pattern"),
+    ],
+)
+def test_image_tags_are_checked(changes, error):
+    check = _check(**{"image_tags": ["2", "2.*"], **changes})
+    assert error in _only_error(_load(_module(checks=[check])))
+
+
+def test_image_tags_load_in_order():
+    module = _load(_module(checks=[_check(image_tags=["2", "2.*"])])).modules["example"]
+    assert module.checks[0].image_tags == ["2", "2.*"]

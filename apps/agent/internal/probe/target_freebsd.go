@@ -20,3 +20,8 @@ func unitOwner(ctx context.Context, name string) (func(pid int32) bool, error) {
 func containerEndpoint(context.Context, Target) (endpoint, error) {
 	return endpoint{}, fmt.Errorf("%w: a container target on FreeBSD", ErrUnsupported)
 }
+
+// ContainerListening: the agent reads no container networks on FreeBSD.
+func ContainerListening(int32) ([]uint16, error) {
+	return nil, fmt.Errorf("%w: a container network on FreeBSD", ErrUnsupported)
+}

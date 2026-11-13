@@ -12,25 +12,27 @@ packages run ds-docservice.service on 8000 over plain HTTP, whatever nginx in fr
 does (TLS on 443, a redirect on 80); the module asks /healthcheck there. The images
 (onlyoffice/documentserver, -de, -ee) run nginx and the docservice in one container and
 expose only nginx's 80 and 443; asked from outside, port 80 redirects to HTTPS once a
-certificate is set up, so the module asks nothing there. From 10.0 on, the image's own
-HEALTHCHECK compares the answer of /healthcheck with true every 30 s and the container's
-health carries it; the 9.x images have none. The module sends GET only: a PUT or DELETE on
-/internal/cluster/inactive shuts the server down.
+certificate is set up, so the module asks nothing there. Inside the container the
+docservice listens on 8000; the module asks /healthcheck there when the last scan saw 8000
+listening in the container's network (R-1393; an older agent tells no listening ports, and
+a docservice on the container's loopback only cannot be reached, so the check stays
+unbound). From 10.0 on, the image's own HEALTHCHECK compares the answer of /healthcheck
+with true every 30 s and the container's health carries it; the 9.x images have none. The
+module sends GET only: a PUT or DELETE on /internal/cluster/inactive shuts the server down.
 
-Not covered: the docservice inside a 9.x image (only the container's state), the answer of
-/healthcheck in the package (true or false), the converter (ds-converter.service), a data
-container (ONLYOFFICE_DATA_CONTAINER=true), which runs no docservice, the split images of
-the docservice, converter and proxy, and the container of Nextcloud AIO
-(nextcloud/aio-onlyoffice).
+Not covered: the answer of /healthcheck (true or false), the converter
+(ds-converter.service), a data container (ONLYOFFICE_DATA_CONTAINER=true), which runs no
+docservice, the split images of the docservice, converter and proxy, and the container of
+Nextcloud AIO (nextcloud/aio-onlyoffice).
 """
 
 MODULE = {
     "id": "onlyoffice",
     "name": "ONLYOFFICE Docs",
-    "version": 1,
+    "version": 2,
     "description": (
         "ONLYOFFICE Docs from its image or package: the container with its own health check, "
-        "or the docservice unit and its health check every 15 min."
+        "or the docservice unit, and the docservice's health check every 15 min."
     ),
     "detect": {
         "container_images": [
@@ -76,11 +78,23 @@ MODULE = {
             "fields": ["status_code"],
             "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
         },
+        {
+            "key": "container_healthcheck",
+            "name": "Health check",
+            "sensor": "http",
+            "target": {"kind": "container", "port_hint": 8000, "scheme": "http"},
+            "params": {"path": "/healthcheck"},
+            "interval": 900,
+            "test_object": True,
+            "fields": ["status_code"],
+            "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+        },
     ],
     "card": [
         {"check_key": "container", "field": "state", "label": "Container"},
         {"check_key": "container", "field": "health", "label": "Container health"},
         {"check_key": "service", "field": "active_state", "label": "Docservice"},
         {"check_key": "healthcheck", "field": "status_code", "label": "Health check"},
+        {"check_key": "container_healthcheck", "field": "status_code", "label": "Health check"},
     ],
 }
