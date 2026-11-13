@@ -6,7 +6,8 @@
 no target, and only the fields that view returns (R-1248). The http sensor's host: localhost
 or left out, and left out it is not sent (arch-monitoring-apps-1). The app sensor: a view from
 the agent's allowlist, the one kind of target that view is bound to, and only its fields
-(R-1404)."""
+(R-1404). The host sensor: a view from the agent's allowlist, no target, only its fields
+(R-1228)."""
 
 import pytest
 
@@ -14,6 +15,7 @@ from app.catalog import load_catalog
 from app.catalog.sensors import (
     APP_VIEW_FIELDS,
     APP_VIEW_TARGETS,
+    HOST_VIEW_FIELDS,
     OPNSENSE_VIEW_FIELDS,
     SENSOR_FIELDS,
     SENSOR_TARGETS,
@@ -285,3 +287,67 @@ def test_an_http_check_without_host_sends_no_host():
 @pytest.mark.parametrize("host", ["example.org", "", "localhost:80", "LOCALHOST", 1, None])
 def test_an_http_check_names_no_other_host(host):
     assert "host" in _only_error(_http_module({"host": host}))
+
+
+def _host_module(**check):
+    raw_check = {
+        "key": "arrays",
+        "name": "Arrays",
+        "sensor": "host",
+        "params": {"view": "mdadm"},
+        "interval": 300,
+        "fields": ["arrays", "degraded"],
+        "rules": [{"field": "degraded", "op": "gt", "value": 0, "level": "critical"}],
+    }
+    raw_check.update(check)
+    raw = {
+        "id": "md",
+        "name": "md",
+        "version": 1,
+        "detect": {"markers": [{"id": "md.md", "paths": ["/proc/mdstat"]}]},
+        "instance": "unit",
+        "checks": [raw_check],
+    }
+    return load_catalog([("md", raw)])
+
+
+@pytest.mark.parametrize("view", sorted(HOST_VIEW_FIELDS))
+def test_every_host_view_loads_with_all_its_fields(view):
+    fields = sorted(HOST_VIEW_FIELDS[view])
+    catalog = _host_module(params={"view": view}, fields=fields, rules=[])
+    assert catalog.errors == ()
+    check = catalog.modules["md"].checks[0]
+    assert check.params == {"view": view}
+    assert check.target is None
+
+
+@pytest.mark.parametrize("params", [{}, {"view": "zfs"}, {"view": 1}])
+def test_a_host_view_outside_the_allowlist_is_rejected(params):
+    assert "view" in _only_error(_host_module(params=params))
+
+
+def test_another_host_param_is_rejected():
+    error = _only_error(_host_module(params={"view": "lvm_thin", "command": "x"}))
+    assert "command" in error
+
+
+def test_a_field_of_another_host_view_is_rejected():
+    error = _only_error(_host_module(fields=["arrays", "pools"], rules=[]))
+    assert "pools" in error
+
+
+def test_a_host_check_takes_no_target():
+    error = _only_error(_host_module(target={"kind": "loopback"}))
+    assert "takes no target" in error
+
+
+def test_the_host_views_are_those_the_agent_returns():
+    # Written out, not derived: the names the agent's host_storage.go and host_hw.go return.
+    assert SENSOR_FIELDS["host"] == frozenset().union(*HOST_VIEW_FIELDS.values())
+    assert SENSOR_TARGETS["host"] is None
+    assert {v: sorted(f) for v, f in HOST_VIEW_FIELDS.items()} == {
+        "mdadm": ["arrays", "degraded", "faulty_devices", "mismatch_cnt", "resyncing"],
+        "lvm_thin": ["busy", "failed", "max_data_pct", "max_meta_pct", "pools"],
+        "raid_ctrl": ["bbu_bad", "controllers", "ctrl_bad", "pd_failed", "vd_not_optimal"],
+        "ipmi_sensors": ["critical", "noncritical", "sensors"],
+    }

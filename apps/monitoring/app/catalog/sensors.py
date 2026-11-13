@@ -9,8 +9,8 @@ a fixed measurement in the agent, and these models are the whole of what a catal
 entry or a probe check may set for it. The agent checks the same bounds again and
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
-Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense and app the set of
-its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
+Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense, app and host the set
+of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
 stats) also return fields under ``data.`` — a path into that answer, which the agent
 resolves to one scalar.
 """
@@ -38,6 +38,7 @@ SENSORS = (
     "log",
     "opnsense",
     "app",
+    "host",
 )
 
 # The views of the opnsense sensor and the fields each one returns: the allowlist of the
@@ -124,6 +125,17 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "traefik_certs": frozenset({"certs", "expired", "min_days_left"}),
     "npm_certs": frozenset({"certs", "expired", "min_days_left"}),
 }
+
+# The views of the host sensor and the fields each one returns: the allowlist of the agent's
+# sensor_host.go, parts of the agent's own host that belong to no unit and no container
+# (R-1228). Counts and percentages only; no array, volume, controller or sensor name.
+HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
+    "mdadm": frozenset({"arrays", "degraded", "faulty_devices", "resyncing", "mismatch_cnt"}),
+    "lvm_thin": frozenset({"pools", "max_data_pct", "max_meta_pct", "failed", "busy"}),
+    "raid_ctrl": frozenset({"controllers", "ctrl_bad", "vd_not_optimal", "pd_failed", "bbu_bad"}),
+    "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
+}
+
 _UNIT = frozenset({"unit"})
 _CONTAINER = frozenset({"container"})
 _UNIT_OR_CONTAINER = _UNIT | _CONTAINER
@@ -176,6 +188,7 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
     "log": frozenset({"count"}),
     "opnsense": frozenset().union(*OPNSENSE_VIEW_FIELDS.values()),
     "app": frozenset().union(*APP_VIEW_FIELDS.values()),
+    "host": frozenset().union(*HOST_VIEW_FIELDS.values()),
 }
 
 # Sensors whose answer is structured; they accept fields "data.<path>".
@@ -200,6 +213,7 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "opnsense": None,
     # Narrowed to the kinds of its view (APP_VIEW_TARGETS, checked on Check).
     "app": frozenset().union(*APP_VIEW_TARGETS.values()),
+    "host": None,
 }
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
@@ -312,6 +326,10 @@ class AppParams(_Params):
     ]
 
 
+class HostParams(_Params):
+    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors"]
+
+
 PARAM_MODELS: dict[str, type[_Params]] = {
     "unit": NoParams,
     "process": NoParams,
@@ -328,6 +346,7 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "log": LogParams,
     "opnsense": OpnsenseParams,
     "app": AppParams,
+    "host": HostParams,
 }
 
 
@@ -339,6 +358,8 @@ def field_allowed(sensor: str, field: str, params: dict) -> bool:
         return field in OPNSENSE_VIEW_FIELDS[params["view"]]
     if sensor == "app":
         return field in APP_VIEW_FIELDS[params["view"]]
+    if sensor == "host":
+        return field in HOST_VIEW_FIELDS[params["view"]]
     if field in SENSOR_FIELDS[sensor]:
         return True
     return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")

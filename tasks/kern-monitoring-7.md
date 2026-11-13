@@ -33,8 +33,10 @@ events`, `sel clear`, `sel elist`) als Negativtest. Neue Dateien mit SPDX-Header
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T10
 
-### T3 — R-1228: Katalog-Fühler host und Module mdadm, lvm-thin, hwraid, ipmi  [ ]
+### T3 — R-1228: Katalog-Fühler host und Module mdadm, lvm-thin, hwraid, ipmi  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/mdadm.py, apps/monitoring/app/catalog/modules/lvm_thin.py, apps/monitoring/app/catalog/modules/hwraid.py, apps/monitoring/app/catalog/modules/ipmi.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_storage.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @908f51f77 2026-11-13T17:31:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-7/T3.verdict.json)
 Änderung: `host` in `SENSORS` ohne Ziel, `HOST_VIEW_FIELDS`, `HostParams`; vier Module mit Markern, Regeln und Karten
 nach der Spec; Tests für Schema, Felder und Regeln. Neue Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog_storage.py
@@ -107,3 +109,5 @@ Task-Review: am Ende
 - T2: SDR-Cache neu, wenn er fehlt oder älter als 24 h ist, statt „je Agent-Start“: der Agent läuft als Oneshot, je Start wäre jeder Lauf ein Dump. Dump in `.ipmi-sdr.cache.new`, dann rename; die Allowlist lässt `sdr dump` nur auf diesen Namen unter einem absoluten Verzeichnis ohne `..` zu.
 - T2: Gesunde Zustände nach check_lsi_raid (VD `Optl`, PD `Onln`/`UGood`/`GHS`/`DHS`/`JBOD`; `Rbld` zählt als `pd_failed`), BBU-Codes 0/8/4096 nach storcli.py; IPMI `elist`-Zustände aus ipmitool `ipmi_sdr.c` (lnc/unc → noncritical, lcr/ucr/lnr/unr/cr/nr → critical, `ns` zählt nicht). Fehlermeldungen tragen keine stderr-Zeile der CLIs (Seriennummern).
 - T2 → T3: Katalog-Timeout für `ipmi_sensors` und `raid_ctrl` 30 s (Höchstwert `timeout_s`): je Aufruf 14 s, zwei Aufrufe (Dump + elist, ssacli status + config) passen hinein.
+- T3: `ipmi` alle 15 min statt 10 (der Katalog kennt nur 300/900/3600/86400 s); `lvm_thin` 300 s mit `timeout_s` 30 über den 15 s von lvs, damit „beschäftigt“ als Wert ankommt, nicht als Zeitüberschreitung.
+- T3: Ein Marker trifft mit einem seiner Pfade oder Pakete (Agent `checkMarkers`), ein UND gibt es nicht: `mdadm` erkennt `/proc/mdstat` oder Paket `mdadm`, `lvm-thin` `lvs` oder Paket `lvm2`; ein Host ohne Arrays/Pools meldet 0. `ipmi` erkennt nur die Gerätedatei (nicht `ipmitool`), ohne ipmitool meldet die Ansicht „nicht unterstützt“.
