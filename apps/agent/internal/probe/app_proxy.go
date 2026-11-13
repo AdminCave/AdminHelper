@@ -297,9 +297,12 @@ func proxyCerts(ctx context.Context, t Target, proxy string, read func(*os.Root,
 // readDirNames returns the names of the directories in the directory dir below root, at most
 // maxProxyCerts of them.
 func readDirNames(root *os.Root, dir string) ([]string, error) {
-	f, err := root.Open(dir)
+	f, err := root.OpenFile(dir, dirFlags, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fs.ErrNotExist
+	}
+	if errors.Is(notDir(err), errNotDir) {
+		return nil, fmt.Errorf("/%s is no directory", dir)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("/%s cannot be read: %v", dir, cause(err))

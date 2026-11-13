@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // proxySecret stands for the private keys next to the certificates: no value and no error may carry it.
@@ -323,6 +325,54 @@ func TestNpmCertsWithoutItsDirectories(t *testing.T) {
 	put(t, root, "etc/nginx/nginx.conf", []byte("events {}\n"))
 	if _, err := npmCerts(context.Background(), Target{Kind: kindContainer, Name: "web"}); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("no certificate directories = %v, want ErrUnsupported", err)
+	}
+}
+
+// fifo makes rel below root a FIFO no one writes to.
+func fifo(t *testing.T, root, rel string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestTheProxyCertViewsWaitOnNoFIFO: a FIFO where a view lists a directory is an error at once, never a
+// wait for a writer.
+func TestTheProxyCertViewsWaitOnNoFIFO(t *testing.T) {
+	cases := map[string]struct {
+		rel  string
+		view func(context.Context, Target) (map[string]any, error)
+	}{
+		"caddy certificates": {"data/caddy/certificates", caddyCerts},
+		"npm live":           {"etc/letsencrypt/live", npmCerts},
+		"npm custom_ssl":     {"data/custom_ssl", npmCerts},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			root, _ := proxyContainer(t)
+			fifo(t, root, c.rel)
+			done := make(chan error, 1)
+			go func() {
+				_, err := c.view(context.Background(), Target{Kind: kindContainer, Name: "web"})
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), "is no directory") {
+					t.Errorf("a FIFO at /%s = %v, want it refused as no directory", c.rel, err)
+				}
+			case <-time.After(30 * time.Second):
+				// Open the FIFO for writing so the blocked open returns and the test can end.
+				if w, err := os.OpenFile(filepath.Join(root, c.rel), os.O_WRONLY|unix.O_NONBLOCK, 0); err == nil {
+					w.Close()
+				}
+				t.Fatalf("the view waits on the FIFO at /%s", c.rel)
+			}
+		})
 	}
 }
 

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Netz, Sicherheit, DNS, DHCP, Zeit und Reverse-Proxies — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-10 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-10 · Review: pro Task
 Spec: docs/features/kern-monitoring-10.md (Roadmap R-1236, R-1237, R-1238)
 Heavy: linux-full — neue Agent-Ansichten und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -109,8 +109,10 @@ Komponente: monitoring · Dateien: —
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: → T9
 
-### T11 — R-1238: Zertifikatsverzeichnisse robuster lesen  [ ]
+### T11 — R-1238: Zertifikatsverzeichnisse robuster lesen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_proxy.go, apps/agent/internal/probe/app_bbb_windows.go, apps/agent/internal/probe/app_proxy_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @34d3e38eb 2026-11-13T14:57:53+01:00
+Review: approve (.ah-out/review/kern-monitoring-10/T11.verdict.json)
 Änderung: Die Zertifikatsansichten öffnen ihre Verzeichnisse nur als Verzeichnis; alles andere ist sofort ein Fehler
 (aus der Abschlussprüfung, Details privat). Test mit Gegenprobe.
 Verify: bash scripts/dev/verify.sh agent --strict
