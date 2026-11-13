@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression desktop_e2e_monitoring (2026-11-13) — Task-Ledger
-Status: bereit · Branch: feature/reg-2026-11-13-desktop-e2e-monitoring · Review: am Ende
+Status: erledigt · Branch: feature/reg-2026-11-13-desktop-e2e-monitoring · Review: am Ende
 Spec: Roadmap R-1420 · Quelle: Wochenlauf 2026-11-13-0130 (Klasse fail) und `--step` über main@680bb5ceb
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step desktop_e2e_monitoring`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
