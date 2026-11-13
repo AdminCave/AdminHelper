@@ -78,6 +78,9 @@ var classes = map[string]string{
 	// A UPS name as `upsc -l` lists it (probe's upsNamePattern): no '@' or ':', so a call with it names
 	// no other host or port.
 	"upsname": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
+	// The user of a unit pm2-<user> (probe's pm2Unit, useradd's NAME_REGEX), any but root: r, ro and
+	// roo, a name on from root, or one that leaves root earlier.
+	"pmuser": `root[a-z0-9_-]+|r(?:o(?:o[a-su-z0-9_-]|[a-np-z0-9_-])|[a-np-z0-9_-])[a-z0-9_-]*|r|ro|roo|[a-qs-z_][a-z0-9_-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -213,7 +216,8 @@ var commands = map[string][][]string{
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
 	"mariadb":    mariadbCalls,
 	"mysql":      mariadbCalls,
-	"runuser":    postgresCalls,
+	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps.
+	"runuser":    append(slices.Clone(postgresCalls), []string{"-u", "<pmuser>", "--", "pm2", "jlist"}),
 	"dpkg-query": {{"--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "<package>..."}},
 	"rpm":        {{"--query", `--queryformat=%{NAME}\n`, "<package>..."}},
 	"sc": {

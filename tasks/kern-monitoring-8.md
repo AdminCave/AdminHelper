@@ -66,8 +66,10 @@ Zahl der Pools, die auf TCP außerhalb von Loopback ohne `listen.allowed_clients
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 
-### T6 — R-1231: Ansicht pm2_apps  [ ]
+### T6 — R-1231: Ansicht pm2_apps  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_pm2.go, apps/agent/internal/probe/app_pm2_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @29d9652b8 2026-11-13T23:46:19+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T6.verdict.json)
 Änderung: An Unit `pm2-<user>` gebunden; `runuser -u <user> -- pm2 jlist` (Nutzer als eigene Argumentklasse, nie
 root); meldet Apps gesamt, errored, stopped und die Summe der Neustarts. Fallen (`pm2 restart|reload|delete|flush`)
 als Negativtest. Neue Dateien mit SPDX-Header.
@@ -171,3 +173,4 @@ Task-Review: am Ende
   Eine Statusseite, die nicht antwortet, ist ein Fehler der Ansicht, kein stilles Auslassen. Live gegen PHP-FPM
   8.4.27 (Docker) geprüft: Unix-Socket über `dialUnix`, TCP über den Guard, Felder `listen queue`, `max children
   reached`, `slow requests`.
+- T6: `pm2 jlist` startet ohne laufenden Daemon selbst einen und druckt dessen Banner auf stdout (pm2 7.1.2 im Container belegt); `pm2_apps` fragt deshalb erst `~/.pm2/rpc.sock` des Nutzers über `dialUnix` ab und meldet ohne Daemon unsupported. Ein abweichendes `PM2_HOME` der Unit wird nicht gelesen (dann unsupported). Klasse `pmuser` schließt `root` im Muster aus, zusätzlich prüft der Code. Restrisiko: stirbt der Daemon zwischen Probe und Aufruf, startet jlist einen als dieser Nutzer.

@@ -88,6 +88,7 @@ var appViews = map[string]appView{
 	"nut_ups":           {kinds: unitKinds, read: nutUPS},
 	"openvpn_status":    {kinds: unitKinds, read: openvpnStatus},
 	"pbs_status":        {kinds: unitKinds, read: pbsStatus},
+	"pm2_apps":          {kinds: unitKinds, read: pm2Apps},
 	"pve_cluster":       {kinds: unitKinds, read: pveCluster},
 	"pve_jobs":          {kinds: unitKinds, read: pveJobs},
 	"pve_updates":       {kinds: unitKinds, read: pveUpdates},

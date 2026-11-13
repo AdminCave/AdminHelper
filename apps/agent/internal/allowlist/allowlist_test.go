@@ -52,6 +52,9 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 	for _, args := range postgresCalls {
 		calls = append(calls, append([]string{"runuser"}, args...))
 	}
+	for _, user := range []string{"web", "node_1", "_svc", "r", "ro", "roo", "rooter", "rob", "rot", "roox", "deploy-2"} {
+		calls = append(calls, []string{"runuser", "-u", user, "--", "pm2", "jlist"})
+	}
 	for _, call := range calls {
 		if !Allowed(call[0], call[1:]) {
 			t.Errorf("refused: %q", call)
@@ -98,6 +101,19 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 		append([]string{"mysql"}, append(append([]string{}, sql...), "--user=root")...),
 		append([]string{"runuser"}, append(append([]string{}, pg[:len(pg)-1]...), "--command=SELECT * FROM pg_authid")...),
 		append([]string{"runuser", "-u", "root"}, pg[2:]...),
+		{"runuser", "-u", "root", "--", "pm2", "jlist"},
+		{"runuser", "-u", "Root", "--", "pm2", "jlist"},
+		{"runuser", "-u", "-web", "--", "pm2", "jlist"},
+		{"runuser", "-u", "web", "--", "pm2", "restart", "all"},
+		{"runuser", "-u", "web", "--", "pm2", "reload", "all"},
+		{"runuser", "-u", "web", "--", "pm2", "delete", "all"},
+		{"runuser", "-u", "web", "--", "pm2", "flush"},
+		{"runuser", "-u", "web", "--", "pm2", "jlist", "--silent"},
+		{"runuser", "-u", "web", "--", "pm2", "prettylist"},
+		{"runuser", "-u", "web", "pm2", "jlist"},
+		{"runuser", "-u", "web", "--", "psql", "--command=SELECT 1"},
+		{"runuser", "-u", "postgres", "--", "pm2", "jlist", "x"},
+		{"pm2", "jlist"},
 		{"psql", "--command=SELECT 1"},
 		{"sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp", "-j", "web"},
 		{"sockstat", "-46", "-c", "-n", "-q", "-w", "-P", "tcp"},
