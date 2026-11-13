@@ -56,8 +56,10 @@ Link-Tausch werden nie zum Lesen geöffnet.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T6
 
-### T5 — R-1430: Invariante der LDAP-Ansicht im Doc-Kommentar  [ ]
+### T5 — R-1430: Invariante der LDAP-Ansicht im Doc-Kommentar  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_ldap.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @83dec9acf 2026-11-13T20:33:25+01:00
+Review: approve (.ah-out/review/kern-agent-4/T5.verdict.json)
 Änderung: Doc-Kommentar von `ldapReplication` nennt: nur Search, feste Attribute, die `namingContexts` der
 Root-DSE werden Base der `contextCSN`-Suchen (Scope base), sonst fließt nichts aus Antworten in Folgeanfragen.
 Verify: bash scripts/dev/verify.sh agent --strict
