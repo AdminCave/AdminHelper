@@ -614,7 +614,10 @@ def rebaseline_check(check_id: str, db: Session = Depends(get_db)):
     ):
         raise HTTPException(400, "Only a central check with sensor dns has a baseline")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
-    details = json.loads(state.details) if state is not None and state.details else None
+    try:
+        details = json.loads(state.details) if state is not None and state.details else None
+    except (json.JSONDecodeError, TypeError):
+        details = None
     # A run in progress may still write the old baseline back; the next call removes it.
     if isinstance(details, dict) and "baseline" in details:
         del details["baseline"]

@@ -196,6 +196,11 @@ class MonitorState(Base):
     hub_sent_at = Column(DateTime, nullable=True)
 
     def to_dict(self) -> dict:
+        # Unreadable details must not take the whole answer down; the stored text stays.
+        try:
+            details = loads_readable(self.details) if self.details else None
+        except (json.JSONDecodeError, TypeError):
+            details = None
         return {
             "checkId": self.check_id,
             "status": self.status,
@@ -203,7 +208,7 @@ class MonitorState(Base):
             "lastCheck": iso_utc(self.last_check),
             "failCount": self.fail_count,
             "message": self.message,
-            "details": loads_readable(self.details) if self.details else None,
+            "details": details,
             "notifiedStatus": self.notified_status,
         }
 

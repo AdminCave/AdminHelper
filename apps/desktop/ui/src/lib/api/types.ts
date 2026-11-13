@@ -360,7 +360,7 @@ export interface MonitorResourceDetails {
   memory?: number | null;
   memory_used_mb?: number;
   memory_total_mb?: number;
-  // From agent v3 (R-0423) on, Linux only; swap_total_mb 0 is a host without a swap device.
+  // From agent v3 (R-0423) on, Linux and FreeBSD; swap_total_mb 0 is a host without a swap device.
   swap?: number | null;
   swap_total_mb?: number | null;
   swap_used_mb?: number | null;

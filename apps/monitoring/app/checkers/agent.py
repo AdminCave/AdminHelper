@@ -343,7 +343,7 @@ def _grade_usage(grader: _Grader, config: dict, resources: dict) -> tuple:
         mem_warn = config.get("memory_warn", 80)
         grader.grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
 
-    # Swap (agent v3, Linux): a host without a swap device sends swap_total_mb 0.
+    # Swap (agent v3, Linux and FreeBSD): a host without a swap device sends swap_total_mb 0.
     swap = agent_number(resources.get("swap_percent"))
     swap_total = agent_number(resources.get("swap_total_mb"))
     if swap is not None and swap_total is not None and swap_total > 0:
@@ -357,7 +357,7 @@ def _grade_load(
     grader: _Grader, config: dict, resources: dict, load_rated: bool
 ) -> tuple[int | None, float | None]:
     """Load per CPU: (cpu_count, load_per_cpu) as read."""
-    # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
+    # Load per CPU (agent v3, Linux and FreeBSD): older agents send load_5m without cpu_count.
     # No hysteresis: hysteresis_pp is in percentage points, and load_5m is the
     # kernel's own 5-minute average, already smoothed whatever the push interval.
     # Not rated in a container, only shown: load_5m is the host's there (unless
