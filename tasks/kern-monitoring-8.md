@@ -34,8 +34,10 @@ Umgebungsvariable an genau ein freigegebenes Kommando weiter (`allowlist.RunEnv`
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 
-### T3 — R-1231: Ansichten web_config, nginx_status, apache_status  [ ]
+### T3 — R-1231: Ansichten web_config, nginx_status, apache_status  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_web.go, apps/agent/internal/probe/app_web_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d31fdfe36 2026-11-13T23:02:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T3.verdict.json)
 Änderung: `web_config` startet je Unit den Konfigurationstest (`nginx -t`, `apachectl -t`/`apache2ctl -t`, `haproxy
 -c -f <cfg>`) und meldet `ok`, keinen Text. `nginx_status` und `apache_status` lesen `stub_status` bzw. `mod_status
 ?auto` nur von einem Loopback-Ort, den die Konfiguration schon nennt; fehlt er, `unsupported`. Felder: Zähler und
@@ -150,3 +152,4 @@ Task-Review: am Ende
 - Repo-Abfrage in v1 nur für lokale und SFTP-Repos; entfernte Backends `unsupported`.
 - vHost-Domains/Zertifikatsdateien und Windows-Ereignisse in eigene Zeilen (Spec, Nicht-Ziele).
 - T1: `exec_status` nur bei `ExecMainCode=1` (CLD_EXITED; nach einem Signal trägt ExecMainStatus die Signalnummer); `newest_in` nutzt das vorhandene `openDir` (O_DIRECTORY) und hört bei 10000 Einträgen auf.
+- T3: Ein Statusort zählt nur auf Loopback, auf allen Adressen nur mit `server_name`/`ServerName`/`ServerAlias` localhost oder 127.0.0.1 (sonst träfe die Anfrage einen anderen Server); TLS-Listen werden übersprungen. nginx -T löst Includes nicht auf, darum je Datei. Apache: `<IfModule>`/`<IfDefine>` gelten als erfüllt (ein abgeschalteter Ort wird Abfragefehler statt unsupported); `slots` = Länge des Scoreboards, nicht MaxRequestWorkers. haproxy -c scheitert bei fehlender Datei wie bei kaputter: ohne `/etc/haproxy/haproxy.cfg` `unsupported`.

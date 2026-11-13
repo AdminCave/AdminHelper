@@ -279,8 +279,16 @@ var commands = map[string][][]string{
 		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "sync", "--limit", "50", "--output-format", "json"},
 		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
 	},
-	"ceph":   {{"health", "-f", "json"}, {"df", "-f", "json"}},
-	"sanoid": {{"--monitor-snapshots"}},
+	// The web server views (probe, app_web.go): the configuration tests, which read the configuration and
+	// start nothing, the dump of nginx's configuration and Apache's list of its files. Kept out: nginx
+	// -s (signals the master: stop, reload, reopen), nginx -c/-g, apachectl start|stop|restart|graceful
+	// and -k, haproxy without -c (starts a proxy) and with -sf/-st (stops the running one).
+	"nginx":      {{"-t"}, {"-T"}},
+	"apache2ctl": {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
+	"apachectl":  {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
+	"haproxy":    {{"-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"}},
+	"ceph":       {{"health", "-f", "json"}, {"df", "-f", "json"}},
+	"sanoid":     {{"--monitor-snapshots"}},
 	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.

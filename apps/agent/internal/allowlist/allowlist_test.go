@@ -287,6 +287,50 @@ func TestAllowlistNetSecurityViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistWebViews: the web server views run the configuration tests, the dump of nginx's
+// configuration and Apache's list of its files, HAProxy's test only on the file of the packages. The
+// traps signal or start the server, or point it at another configuration.
+func TestAllowlistWebViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"nginx", "-t"},
+		{"/usr/sbin/nginx", "-T"},
+		{"apache2ctl", "-t"},
+		{"apache2ctl", "-t", "-D", "DUMP_INCLUDES"},
+		{"apachectl", "-t"},
+		{"apachectl", "-t", "-D", "DUMP_INCLUDES"},
+		{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"nginx"},
+		{"nginx", "-s", "stop"},
+		{"nginx", "-s", "reload"},
+		{"nginx", "-s", "reopen"},
+		{"nginx", "-t", "-c", "/tmp/x.conf"},
+		{"nginx", "-T", "-g", "daemon off;"},
+		{"nginx", "-t", "-q"},
+		{"apache2ctl", "graceful"},
+		{"apache2ctl", "restart"},
+		{"apache2ctl", "stop"},
+		{"apachectl", "-k", "graceful"},
+		{"apachectl", "-t", "-D", "DUMP_RUN_CFG"},
+		{"apachectl", "-t", "-f", "/tmp/x.conf"},
+		{"apache2ctl", "configtest", "-D", "DUMP_INCLUDES"},
+		{"haproxy", "-f", "/etc/haproxy/haproxy.cfg"},
+		{"haproxy", "-c", "-f", "/etc/haproxy/haproxy.cfg"},
+		{"haproxy", "-c", "-q", "-f", "/tmp/x.cfg"},
+		{"haproxy", "-f", "/etc/haproxy/haproxy.cfg", "-sf", "1234"},
+		{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg", "-st", "1234"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestAllowlistDNSAndTimeViews: the app sensor's views of BIND, Unbound, chrony and NTPsec read the
 // status, the counters without resetting them, the tracking report and three system variables. The
 // traps write the statistics file, reset the counters, step or poll the clock, or read other
