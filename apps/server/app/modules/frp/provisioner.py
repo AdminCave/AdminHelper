@@ -10,8 +10,15 @@ from app.modules.frp.config_generator import generate_frpc_toml
 
 
 def get_config_hash(
-    config, tunnels: list, frpc_user: str, allow_users: list[str] | None = None
+    config,
+    tunnels: list,
+    frpc_user: str,
+    allow_users: list[str] | None = None,
+    *,
+    key_generation: int,
 ) -> str:
     """Computes the SHA256 hash of the generated frpc.toml."""
-    toml_content = generate_frpc_toml(config, tunnels, frpc_user, allow_users=allow_users)
+    toml_content = generate_frpc_toml(
+        config, tunnels, frpc_user, allow_users=allow_users, key_generation=key_generation
+    )
     return hashlib.sha256(toml_content.encode()).hexdigest()

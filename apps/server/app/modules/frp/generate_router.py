@@ -115,7 +115,9 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     if not active_tunnels(tunnels):
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
 
-    toml = generate_frpc_toml(config, tunnels, server.id, allow_users)
+    toml = generate_frpc_toml(
+        config, tunnels, server.id, allow_users, key_generation=server.frp_key_generation
+    )
     return PlainTextResponse(toml, media_type="application/toml")
 
 
@@ -223,7 +225,9 @@ def gen_bulk_zip(
             if not server or name_refused(server.name) or _path_refused(server.name):
                 continue
             allow_users = get_allow_users(db, server_id)
-            frpc = generate_frpc_toml(config, tunnels, server.id, allow_users)
+            frpc = generate_frpc_toml(
+                config, tunnels, server.id, allow_users, key_generation=server.frp_key_generation
+            )
             zf.writestr(f"clients/{server.name}/frpc.toml", frpc)
 
         # Once as well, after the frpc.toml files: a tunnel without a usable visitor port
