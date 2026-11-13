@@ -103,7 +103,7 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T3, T6, T8
 
-### T10 — R-1236: Keepalived-VIP-Besitz über Hosts  [?] (Hosts-übergreifende Regel jetzt bauen oder eigene Zeile? Empfehlung: eigene FEAT-Zeile, dieser Zug liefert vips/held je Host)
+### T10 — R-1236: Keepalived-VIP-Besitz über Hosts  [~] (verschoben in eigene Zeile R-1434 (neu, wartet auf Kevin): VIP-Besitz ueber Hosts; dieser Zug liefert vips/held je Host)
 Komponente: monitoring · Dateien: —
 Änderung: je nach Antwort: eigene Zeile anlegen und `[~]`, oder Server-Regel über mehrere Checks planen.
 Verify: bash scripts/dev/verify.sh monitoring --strict
