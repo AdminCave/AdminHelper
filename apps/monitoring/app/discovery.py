@@ -119,6 +119,8 @@ def _socket(raw: object) -> dict | None:
         "port": port,
         "process": _text(raw.get("process"), 255),
         "container": _text(raw.get("container"), 255),
+        # The systemd unit of the process; an older agent does not tell it.
+        "unit": _text(raw.get("unit"), 255),
     }
 
 
@@ -261,8 +263,8 @@ def _unit_wanted(name: str, wanted: set[str]) -> bool:
     )
 
 
-def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], set[str]]:
-    """(instance key → summary, the containers and processes the module claims)."""
+def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], set[str], set[str]]:
+    """(instance key → summary, the containers, processes and units the module claims)."""
     detect = module.detect
     prefixes = [image_repo(p) for p in detect.container_images]
     containers = [
@@ -285,6 +287,7 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
     markers = sorted(m.id for m in detect.markers if inv["markers"].get(m.id) is True)
 
     found: dict[str, dict] = {}
+    claimed_units: set[str] = set()
     if module.instance == "compose_project":
         for c in containers:
             project = c["compose_project"]
@@ -308,6 +311,7 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
             }
     elif module.instance == "unit":
         found = {name: {"unit": name} for name in units}
+        claimed_units = set(units)
     elif module.instance == "process":
         found = {name: {"process": name} for name in processes}
     if not found and (containers or units or processes or markers):
@@ -322,9 +326,12 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         # Installed, but not in the module's own kind of instance (a package instead of a
         # container): one instance named after the module.
         found = {module.id: {"matched_by": matched_by}}
+        claimed_units = set(installed_units)
     # A name that cannot be part of a reference makes no instance (and no stand-in).
     found = {key: summary for key, summary in found.items() if _INSTANCE_KEY.fullmatch(key)}
-    return found, containers, set(processes)
+    if not found:
+        claimed_units = set()
+    return found, containers, set(processes), claimed_units
 
 
 def _beyond_loopback(addr: str) -> bool:
@@ -390,7 +397,7 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
         if module.instance == "port":
             port_modules.append(module)
             continue
-        found, containers, processes = _instances(module, inv)
+        found, containers, processes, units = _instances(module, inv)
         if not found:
             continue
         seen.update({(module.id, key): summary for key, summary in found.items()})
@@ -398,6 +405,8 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
         claimed_ports.update(p["public"] for c in containers for p in c["ports"] if p["public"])
         claimed_processes.update(processes)
         claimed_ports.update(module.detect.port_hints)
+        # The ports the processes of the module's units listen on (gitea.service on 3000).
+        claimed_ports.update(s["port"] for s in inv["sockets"] if s["unit"] in units)
     for module in port_modules:
         found = _port_instances(inv, claimed_containers, claimed_processes, claimed_ports)
         seen.update({(module.id, key): summary for key, summary in found.items()})

@@ -22,8 +22,10 @@ Scope) und für `listening` über die Naht.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/discovery/ ./internal/probe/
 Doku: → T7
 
-### T2 — R-1399: Unit-Instanzen beanspruchen die Ports ihrer Unit  [ ]
+### T2 — R-1399: Unit-Instanzen beanspruchen die Ports ihrer Unit  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7d47bf0be 2026-11-13T21:17:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-29/T2.verdict.json)
 Beweis: feature/arch-monitoring-apps-1@c60316eeb: match_inventory mit gitea.service + Socket 0.0.0.0:3000 ergibt ('gitea','gitea') und ('port','tcp-3000')
 Dedup-Key: bug:monitoring:app/discovery.py:match_inventory-unit-ports
 Änderung: `_socket` übernimmt `unit` (Text ≤ 255, fehlt → ""). `match_inventory` beansprucht die Ports der Sockets,

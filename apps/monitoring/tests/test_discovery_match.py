@@ -128,8 +128,15 @@ def _container(name, image, project="", service="", ports=()):
     }
 
 
-def _socket(port, process="", container="", addr="0.0.0.0", proto="tcp"):
-    return {"proto": proto, "addr": addr, "port": port, "process": process, "container": container}
+def _socket(port, process="", container="", addr="0.0.0.0", proto="tcp", unit=""):
+    return {
+        "proto": proto,
+        "addr": addr,
+        "port": port,
+        "process": process,
+        "container": container,
+        "unit": unit,
+    }
 
 
 def _unit(name, state="active"):
@@ -552,6 +559,46 @@ def test_port_finding_left_out(parts):
 def test_no_port_findings_without_the_port_module():
     inv = clean_inventory(_block(sockets=[_socket(8443, "java")], ports=[_recognised(8443)]))
     assert match_inventory(inv, NO_PORT_MODULE) == {}
+
+
+def test_a_stand_in_claims_the_ports_its_unit_listens_on():
+    # gitea from the package, not the container: its port is the module's, not a port finding.
+    inv = clean_inventory(
+        _block(
+            units=[_unit("gitea.service")],
+            sockets=[_socket(3000, "gitea", unit="gitea.service")],
+            ports=[_recognised(3000, "http")],
+        )
+    )
+    assert match_inventory(inv, CATALOG) == {
+        ("gitea", "gitea"): {"matched_by": ["unit:gitea.service"]}
+    }
+
+
+def test_a_unit_instance_claims_the_ports_of_its_own_unit_only():
+    inv = clean_inventory(
+        _block(
+            units=[_unit("example.service"), _unit("other.service")],
+            sockets=[
+                _socket(8443, "example-bin", unit="example.service"),
+                _socket(9443, "other-bin", unit="other.service"),
+            ],
+            ports=[_recognised(8443), _recognised(9443)],
+        )
+    )
+    seen = match_inventory(inv, CATALOG)
+    assert ("example", "example.service") in seen
+    assert [key for key in seen if key[0] == "port"] == [("port", "tcp-9443")]
+
+
+def test_a_socket_without_a_unit_keeps_its_port_finding():
+    # An older agent tells no unit: the port stays a finding as before.
+    old = {k: v for k, v in _socket(3000, "gitea").items() if k != "unit"}
+    inv = clean_inventory(
+        _block(units=[_unit("gitea.service")], sockets=[old], ports=[_recognised(3000, "http")])
+    )
+    assert inv["sockets"] == [_socket(3000, "gitea")]
+    assert set(match_inventory(inv, CATALOG)) == {("gitea", "gitea"), ("port", "tcp-3000")}
 
 
 # --- the findings inbox -----------------------------------------------------------------
