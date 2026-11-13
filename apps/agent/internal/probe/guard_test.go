@@ -346,6 +346,12 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			lst("127.0.0.1", 8034, 93), lst("127.0.0.1", 8035, 94), lst("127.0.0.1", 8036, 95),
 			lst("127.0.0.1", 8037, 96), lst("127.0.0.1", 8038, 97), lst("127.0.0.1", 8039, 98),
 			lst("127.0.0.1", 8040, 99), lst("127.0.0.1", 8041, 100), lst("127.0.0.1", 8042, 101),
+			lst("127.0.0.1", 8043, 102), lst("127.0.0.1", 8044, 103), lst("127.0.0.1", 8045, 104),
+			lst("127.0.0.1", 8046, 105), lst("127.0.0.1", 8047, 106), lst("127.0.0.1", 8048, 107),
+			lst("127.0.0.1", 8049, 108), lst("127.0.0.1", 8050, 109), lst("127.0.0.1", 8051, 110),
+			lst("127.0.0.1", 8052, 111), lst("127.0.0.1", 8053, 112), lst("127.0.0.1", 8054, 113),
+			lst("127.0.0.1", 8055, 114), lst("127.0.0.1", 8056, 115), lst("127.0.0.1", 8057, 116),
+			lst("127.0.0.1", 8058, 117),
 		},
 		names: map[int32]string{
 			60: "rootlesskit", 61: "rootlessport", 62: "slirp4netns", 63: "pasta.avx2", 64: "passt",
@@ -356,6 +362,9 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			87: "stunnel4", 88: "6tunnel", 89: "spiped", 90: "chisel", 91: "gost", 92: "ncat", 93: "frpc",
 			94: "PUTTY.EXE", 95: "plink.exe", 96: "kitty_portable.exe", 97: "wslrelay.exe", 98: "wslhost.exe",
 			99: "frps", 100: "exe", 101: "stunnel",
+			102: "cloudflared", 103: "session-manager", 104: "wstunnel", 105: "boundary", 106: "tsh",
+			107: "ghostunnel", 108: "rathole", 109: "nc", 110: "nc.openbsd", 111: "netcat", 112: "cloudflared.exe",
+			113: "tshark", 114: "ncurses5-config", 115: "ncdu", 116: "nchan", 117: "tsdb",
 		},
 		args: map[int32][]string{
 			67: {"rootlessport"},
@@ -410,6 +419,17 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 		{"127.0.0.1:8040", "belongs to frps"},
 		{"127.0.0.1:8041", "belongs to chisel"},
 		{"127.0.0.1:8042", "belongs to stunnel"},
+		{"127.0.0.1:8043", "belongs to cloudflared"},
+		{"127.0.0.1:8044", "belongs to session-manager"},
+		{"127.0.0.1:8045", "belongs to wstunnel"},
+		{"127.0.0.1:8046", "belongs to boundary"},
+		{"127.0.0.1:8047", "belongs to tsh"},
+		{"127.0.0.1:8048", "belongs to ghostunnel"},
+		{"127.0.0.1:8049", "belongs to rathole"},
+		{"127.0.0.1:8050", "belongs to nc,"},
+		{"127.0.0.1:8051", "belongs to nc.openbsd"},
+		{"127.0.0.1:8052", "belongs to netcat"},
+		{"127.0.0.1:8053", "belongs to cloudflared.exe"},
 	} {
 		network := "tcp4"
 		if strings.HasPrefix(c.address, "[") {
@@ -419,9 +439,10 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
 		}
 	}
-	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix)
-	// and redis-server (no redir).
-	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020", "127.0.0.1:8027"} {
+	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix),
+	// redis-server (no redir), and tshark, ncurses5-config, ncdu, nchan and tsdb (tsh and nc match whole).
+	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020", "127.0.0.1:8027",
+		"127.0.0.1:8054", "127.0.0.1:8055", "127.0.0.1:8056", "127.0.0.1:8057", "127.0.0.1:8058"} {
 		if err := allowed(g, "tcp4", address); err != nil {
 			t.Errorf("%s: %v, want it allowed", address, err)
 		}
@@ -464,8 +485,10 @@ func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
 			lst("127.0.0.1", 631, 1), lst("127.0.0.1", 631, 30),
 			lst("0.0.0.0", 16509, 1), lst("0.0.0.0", 16509, 31),
 			lst("0.0.0.0", 2323, 40), lst("0.0.0.0", 7070, 41), lst("0.0.0.0", 3690, 41), lst("0.0.0.0", 3690, 32),
+			lst("0.0.0.0", 7071, 42), lst("0.0.0.0", 7072, 43), lst("::", 7073, 44),
 		},
-		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd", 40: "xinetd", 41: "inetd", 32: "svnserve"},
+		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd", 40: "xinetd", 41: "inetd",
+			32: "svnserve", 42: "tcpserver", 43: "s6-tcpserver4", 44: "s6-tcpserverd"},
 	})
 	g := NewGuard()
 
@@ -474,6 +497,9 @@ func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
 		{"127.0.0.1:5000", "socket activation"},
 		{"127.0.0.1:2323", "xinetd holds port 2323 for socket activation"},
 		{"127.0.0.1:7070", "inetd holds port 7070 for socket activation"},
+		{"127.0.0.1:7071", "tcpserver holds port 7071 for socket activation"},
+		{"127.0.0.1:7072", "s6-tcpserver4 holds port 7072 for socket activation"},
+		{"127.0.0.1:7073", "s6-tcpserverd holds port 7073 for socket activation"},
 		{"127.0.0.1:16509", "libvirtd"},
 	} {
 		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {

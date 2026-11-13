@@ -69,16 +69,41 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
 // kubectl (port-forward), autossh, socat, systemd-socket-proxyd (the kernel cuts the name to
 // systemd-socket-), sslh with sslh-ev and sslh-select, rinetd, redir, stunnel (Debian names it
-// stunnel4), 6tunnel, spiped, chisel, gost, ncat, frpc (a visitor listens here for a remote service)
-// and frps (a tcp proxy hands its port to the far end of a tunnel), and on Windows PuTTY, plink and
-// KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
-// forwarderNames are matched whole, since a prefix ssh would also take sshd and ssh-agent. A probe
-// never connects to a port or a socket one of them serves, since what lies behind it cannot be checked.
+// stunnel4), 6tunnel, spiped, chisel, gost, ncat, the netcat variants (nc.openbsd, nc.traditional,
+// netcat), frpc (a visitor listens here for a remote service) and frps (a tcp proxy hands its port to
+// the far end of a tunnel), cloudflared (access tcp), the AWS session-manager-plugin (the kernel cuts
+// the name to session-manager), wstunnel, boundary (connect), ghostunnel, rathole, and on Windows
+// PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
+// forwarderNames are matched whole, since a prefix would take other programs too: ssh also sshd and
+// ssh-agent, nc also ncurses tools, tsh (Teleport) also tshark. A probe never connects to a port or a
+// socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
 	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir", "stunnel",
-	"6tunnel", "spiped", "chisel", "gost", "ncat", "frpc", "frps", "putty", "plink", "kitty", "wslrelay", "wslhost"}
+	"6tunnel", "spiped", "chisel", "gost", "ncat", "nc.", "netcat", "frpc", "frps", "cloudflared",
+	"session-manager", "wstunnel", "boundary", "ghostunnel", "rathole", "putty", "plink", "kitty", "wslrelay",
+	"wslhost"}
 
-var forwarderNames = []string{"ssh"}
+var forwarderNames = []string{"ssh", "nc", "tsh"}
+
+// activators names the processes that hold a listening socket for a service they start per
+// connection, by processKey: systemd (socket activation), xinetd, inetd and the tcpserver of
+// ucspi-tcp; superServers start the names of s6's s6-tcpserver4, s6-tcpserver6 and s6-tcpserverd.
+var activators = []string{"systemd", "xinetd", "inetd", "tcpserver"}
+
+var superServers = []string{"s6-tcpserver"}
+
+// activator says whether k (processKey) is one of activators or superServers.
+func activator(k string) bool {
+	if slices.Contains(activators, k) {
+		return true
+	}
+	for _, prefix := range superServers {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
 // forwarder says whether name (processKey, or the base of an argv[0]) is one of forwarders.
 func forwarder(name string) bool {
@@ -463,8 +488,8 @@ var errNoProcess = errors.New("no process listens on port")
 
 // checkListener returns an error if a blocked process listens on ip and port, or if that cannot be
 // told: a listener on the unspecified address takes connections to every address of the host. A
-// socket systemd or a super-server (xinetd, inetd) alone holds tells nothing of the service it starts. A port
-// without a listener is errNoProcess, unless docker publishes it or ip is a container's (contained).
+// socket systemd or a super-server (activator) alone holds tells nothing of the service it starts. A
+// port without a listener is errNoProcess, unless docker publishes it or ip is a container's (contained).
 func checkListener(ctx context.Context, ip netip.Addr, port uint16, contained bool) error {
 	err := judgeListener(ctx, ip, port, contained, listenerTTL)
 	if errors.Is(err, errNoProcess) {
@@ -486,7 +511,7 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 	if err != nil {
 		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
 	}
-	activator, served := "", false
+	holder, served := "", false
 	for _, l := range list {
 		if l.port != port || (l.addr != ip && !l.addr.IsUnspecified()) {
 			continue
@@ -506,10 +531,12 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		} else if service != "" {
 			return fmt.Errorf("%w: port %d belongs to the service %s, which forwards to an end the agent cannot check", ErrNotAllowed, port, service)
 		}
-		switch k := processKey(name); k {
-		case "systemd", "xinetd", "inetd":
-			activator = k
+		k := processKey(name)
+		if activator(k) {
+			holder = k
 			continue
+		}
+		switch k {
 		case "docker-proxy":
 			if err := checkProxy(ctx, l.pid, port); err != nil {
 				return err
@@ -517,8 +544,8 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		}
 		served = served || carries(l.addr, ip)
 	}
-	if activator != "" && !served {
-		return fmt.Errorf("%w: %s holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, activator, port)
+	if holder != "" && !served {
+		return fmt.Errorf("%w: %s holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, holder, port)
 	}
 	published, err := checkPublished(ctx, ip, port, maxAge)
 	if err != nil {

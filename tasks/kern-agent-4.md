@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Jede Task: `security` parallel zum `reviewer` (SEC-Zug).
 
-### T1 — R-1426: weitere Weiterleiter und Super-Server im Wächter  [ ]
+### T1 — R-1426: weitere Weiterleiter und Super-Server im Wächter  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b7e2ade25 2026-11-13T19:25:45+01:00
+Review: approve (.ah-out/review/kern-agent-4/T1.verdict.json)
 Änderung: `forwarders`/`forwarderNames` um die Namen aus der Zeile ergänzen (ganze Namen dort, wo ein Präfix fremde
 Programme träfe); Super-Server mit eigenem Listener in `judgeListener` wie die Aktivatoren behandeln. Tabellentests
 je Name, dazu Negativtests für Namen, die nicht treffen dürfen.
@@ -71,3 +73,6 @@ Abhängt von: T1, T2, T3, T4
   Adressen als Ziel bleiben außerhalb (Spec, Nicht-Ziele).
 - 2026-11-13 Plan: R-1428 FreeBSD nur mit aus den FreeBSD-Quellen belegten Konstanten; sonst bleibt FreeBSD beim
   heutigen Weg, Folgezeile.
+- 2026-11-13 T1: `nc` ganz, dazu die Debian-Varianten über `nc.`/`netcat` (dort heißt der Prozess nach dem
+  Alternativen-Ziel); `tsh` ganz (Präfix träfe `tshark`); tcpserver und s6-tcpserver* als Aktivator, nicht als
+  Weiterleiter: hält ein gestarteter Dienst die Socket mit, gilt er wie bei inetd.
