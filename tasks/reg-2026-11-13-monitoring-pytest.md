@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression monitoring pytest (2026-11-13) — Task-Ledger
-Status: bereit · Branch: feature/reg-2026-11-13-monitoring-pytest · Review: am Ende
+Status: erledigt · Branch: feature/reg-2026-11-13-monitoring-pytest · Review: am Ende
 Spec: Roadmap R-1418 · Quelle: Wochenlauf 2026-11-13-0130
 Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step "monitoring pytest"`)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
