@@ -64,12 +64,16 @@ SID=$(e2e_api "$TOKEN" server e2e-server e2e.local)
 # It sees the host's processes as an agent on the host does: the probe guard
 # connects to no port whose owner it cannot read (pid namespace, ptrace of
 # processes outside the container), so without them the scan finds no port.
+# Seeing the host's dockerd, it also needs the docker socket and CLI: a dockerd
+# whose published ports cannot be read closes every port of the host (R-1324).
 AGENT_CTR="$E2E_PROJECT-agent"
 FIX_CTR="$E2E_PROJECT-fixture"
 SSH_CTR="$E2E_PROJECT-ssh"
+DOCKER_CLI=$(command -v docker)
 trap 'docker rm -f "$AGENT_CTR" "$FIX_CTR" "$SSH_CTR" >/dev/null 2>&1; e2e_teardown' EXIT
 docker run -d --rm --name "$AGENT_CTR" --network host --pid host \
     --cap-add SYS_PTRACE --security-opt apparmor=unconfined -v "$AGENT_BIN:/agent:ro" \
+    -v /var/run/docker.sock:/var/run/docker.sock -v "$DOCKER_CLI:/usr/bin/docker:ro" \
     debian:bookworm-slim sleep 7200 >/dev/null \
     || { bad "agent container did not start"; exit 1; }
 PTOK=$(e2e_api "$TOKEN" provision-token "$SID")
