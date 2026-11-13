@@ -70,8 +70,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync
 Doku: → T7
 Abhängt von: T3
 
-### T6 — R-1397: Checks je Image-Tag; Wiki.js 2 /healthz  [ ]
+### T6 — R-1397: Checks je Image-Tag; Wiki.js 2 /healthz  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/discovery.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/wikijs.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_catalog_wikijs.py, apps/monitoring/tests/test_catalog.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e7be329b5 2026-11-13T21:37:42+01:00
+Review: approve (.ah-out/review/kern-monitoring-29/T6.verdict.json)
 Änderung: `Check.image_tags` (1–8 Glob-Muster, nur mit Container-Ziel). `image_tag()` neben `image_repo`; die
 Zusammenfassung einer Container-/Compose-Instanz trägt `tag_checks` (die passenden tag-gebundenen Checks), nur bei
 Modulen mit solchen Checks. `probe_config` bindet einen tag-gebundenen Check nur bei passendem Tag; `_adopt`

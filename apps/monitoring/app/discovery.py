@@ -20,6 +20,7 @@ service restarting during one scan make nothing disappear.
 
 from __future__ import annotations
 
+import fnmatch
 import ipaddress
 import json
 import logging
@@ -246,6 +247,29 @@ def image_repo(image: str) -> str:
     return repo.removeprefix("library/")
 
 
+def image_tag(image: str) -> str:
+    """The tag of an image reference: `latest` without one, "" (unknown) for a reference
+    by digest alone."""
+    ref, _, digest = image.partition("@")
+    if ref.rfind(":") > ref.rfind("/"):
+        return ref[ref.rfind(":") + 1 :]
+    return "" if digest else "latest"
+
+
+def _tag_checks(module: Module, containers: list[dict]) -> list[str]:
+    """The tag-bound checks of the module whose globs match the tag of each container."""
+    return sorted(
+        check.key
+        for check in module.checks
+        if check.image_tags
+        and containers
+        and all(
+            any(fnmatch.fnmatchcase(image_tag(c["image"]), p) for p in check.image_tags)
+            for c in containers
+        )
+    )
+
+
 def image_matches(repo: str, prefixes: list[str]) -> bool:
     # A prefix ends at a path boundary: ghcr.io/immich-app takes ghcr.io/immich-app/x, not
     # ghcr.io/immich-app-fork. A name without a slash is a Docker Hub official image and
@@ -298,6 +322,9 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
 
     found: dict[str, dict] = {}
     claimed_units: set[str] = set()
+    # The tag-bound checks that fit go into the summary, so a version jump changes the
+    # finding; only for modules that have such checks, the others keep their summaries.
+    tagged = any(check.image_tags for check in module.checks)
     if module.instance == "compose_project":
         for c in containers:
             project = c["compose_project"]
@@ -310,8 +337,14 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
                     if o["compose_project"] == project
                 }
                 found[project] = {"services": dict(sorted(services.items()))}
+                if tagged:
+                    found[project]["tag_checks"] = _tag_checks(
+                        module, [o for o in containers if o["compose_project"] == project]
+                    )
             else:
                 found[c["name"]] = {"container": c["name"], "image": image_repo(c["image"])}
+                if tagged:
+                    found[c["name"]]["tag_checks"] = _tag_checks(module, [c])
     elif module.instance == "container":
         for c in containers:
             found[c["name"]] = {
@@ -319,6 +352,8 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
                 "project": c["compose_project"],
                 "service": c["compose_service"],
             }
+            if tagged:
+                found[c["name"]]["tag_checks"] = _tag_checks(module, [c])
     elif module.instance == "unit":
         found = {name: {"unit": name} for name in units}
         claimed_units = set(units)

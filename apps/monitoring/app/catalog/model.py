@@ -46,6 +46,8 @@ _NAME_ITEM = Annotated[str, Field(min_length=1, max_length=255)]
 _ABS_PATH = Annotated[str, Field(pattern=r"^/[^\x00]*$", max_length=1024)]
 _PACKAGE = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9+._-]{0,127}$")]
 _PORT = Annotated[int, Field(ge=1, le=65535, strict=True)]
+# A glob over an image tag (fnmatch: * and ?); Docker allows [A-Za-z0-9_.-] in a tag.
+_TAG_GLOB = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.*?-]{1,128}$")]
 _Scalar = StrictBool | StrictInt | StrictFloat | StrictStr
 
 
@@ -151,6 +153,9 @@ class Check(_Model):
     credential: Credential | None = None
     # Makes the service do real work (a test mail, a test query): at most every 15 min.
     test_object: StrictBool = False
+    # Binds only to a container whose image tag matches one of the globs (Wiki.js 2 has
+    # /healthz, 3 not).
+    image_tags: list[_TAG_GLOB] | None = Field(None, min_length=1, max_length=8)
 
     @field_validator("sensor")
     @classmethod
@@ -192,6 +197,8 @@ class Check(_Model):
                 f"a test object runs at most every {TEST_OBJECT_MIN_INTERVAL} s, "
                 f"interval {self.interval} is shorter"
             )
+        if self.image_tags is not None and (self.target is None or self.target.kind != "container"):
+            raise ValueError("image_tags need a container target")
         kinds = SENSOR_TARGETS[self.sensor]
         if kinds is None and self.target is not None:
             raise ValueError(f"sensor {self.sensor!r} takes no target")

@@ -461,3 +461,23 @@ def test_version_counts_defaults_like_explicit_values():
     assert _load(_module(checks=[explicit, _VALID["checks"][1]])).version == (
         _load(_module()).version
     )
+
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        ({"target": {"kind": "port", "port_hint": 8000, "scheme": "http"}}, "container target"),
+        ({"image_tags": []}, "at least 1"),
+        ({"image_tags": [str(i) for i in range(9)]}, "at most 8"),
+        ({"image_tags": ["2 || 3"]}, "pattern"),
+        ({"image_tags": ["[23]"]}, "pattern"),
+    ],
+)
+def test_image_tags_are_checked(changes, error):
+    check = _check(**{"image_tags": ["2", "2.*"], **changes})
+    assert error in _only_error(_load(_module(checks=[check])))
+
+
+def test_image_tags_load_in_order():
+    module = _load(_module(checks=[_check(image_tags=["2", "2.*"])])).modules["example"]
+    assert module.checks[0].image_tags == ["2", "2.*"]

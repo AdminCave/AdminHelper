@@ -27,6 +27,7 @@ from app.discovery import (
     apply_discovery,
     clean_inventory,
     image_repo,
+    image_tag,
     match_inventory,
     next_scan_at,
     scan_due,
@@ -360,6 +361,23 @@ def test_scan_now_forces_the_next_scan_and_the_scan_answers_it(db):
 )
 def test_image_repo_drops_tag_digest_and_the_hub_prefix(image, repo):
     assert image_repo(image) == repo
+
+
+@pytest.mark.parametrize(
+    "image, tag",
+    [
+        ("requarks/wiki:2", "2"),
+        ("ghcr.io/requarks/wiki:2.5.307", "2.5.307"),
+        ("requarks/wiki", "latest"),
+        ("localhost:5000/team/app", "latest"),
+        ("localhost:5000/team/app:1", "1"),
+        ("requarks/wiki:3@sha256:" + "a" * 64, "3"),
+        # By digest alone the tag is unknown.
+        ("requarks/wiki@sha256:" + "a" * 64, ""),
+    ],
+)
+def test_image_tag_is_the_part_after_the_last_colon_of_the_name(image, tag):
+    assert image_tag(image) == tag
 
 
 def test_image_prefix_matches_at_a_path_boundary():

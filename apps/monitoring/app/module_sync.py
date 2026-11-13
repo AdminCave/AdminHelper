@@ -12,6 +12,7 @@ decides when they alert."""
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import uuid
@@ -24,7 +25,7 @@ from app.catalog.loader import Catalog, get_catalog
 from app.catalog.model import Alternative, Check, Module
 from app.check_configs import ProbeConfig
 from app.core.time import utcnow_naive
-from app.discovery import image_matches, image_repo
+from app.discovery import image_matches, image_repo, image_tag
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
 from app.template_sync import SchedulerAction, apply_scheduler_actions
 
@@ -153,6 +154,18 @@ def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
     return bool(ports) and port not in ports
 
 
+def _tag_mismatch(name: str, check: Check, containers: list[dict]) -> str | None:
+    """Why the container's image tag does not fit the check's tags, None when it does."""
+    tags = ", ".join(check.image_tags or [])
+    for c in containers:
+        if c["name"] == name:
+            tag = image_tag(c["image"])
+            if any(fnmatch.fnmatchcase(tag, p) for p in check.image_tags or []):
+                return None
+            return f"container {name} runs the tag {tag or '(unknown)'}, the check needs {tags}"
+    return f"no tag known for container {name}, the check needs {tags}"
+
+
 def _alternative(
     name: str, alternatives: list[Alternative], containers: list[dict]
 ) -> tuple[Alternative | None, str | None]:
@@ -199,6 +212,10 @@ def probe_config(
             # decides.
             if t.kind == "container" and port_hint and _lacks_port(name, port_hint, containers):
                 return None, f"container {name} has no port {port_hint}"
+            if check.image_tags:
+                why = _tag_mismatch(name, check, containers)
+                if why:
+                    return None, why
             if t.alternatives:
                 picked, why = _alternative(name, t.alternatives, containers)
                 if picked is None:
@@ -276,9 +293,20 @@ def _adopt(
         if module is None:
             raise AdoptError("Module is no longer in the catalog")
         keys = {check.key for check in module.checks}
+        tagged = {check.key for check in module.checks if check.image_tags}
+        summary = _summary(finding)
+        fitting = summary.get("tag_checks")
         for row in checks:
             if row.module_check_key not in keys:
                 continue  # dropped from the catalog: stays as the admin left it
+            if row.module_check_key in tagged and fitting is not None:
+                if row.module_check_key not in fitting:
+                    # The image moved to a tag the check does not fit (Wiki.js 2 -> 3).
+                    if row.enabled:
+                        row.enabled = False
+                        result.disabled.append(row.id)
+                        actions.append(("remove", row.id, None, None))
+                    continue
             # A new instance is watched whole again (adopting "gone" switched its checks
             # off); on a changed one, a check the admin switched off stays off.
             if finding.kind == "new":
@@ -288,7 +316,6 @@ def _adopt(
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
         have = {row.module_check_key for row in checks}
-        summary = _summary(finding)
         containers = _containers(db, finding.server_id)
         for check in module.checks:
             if check.key in have:

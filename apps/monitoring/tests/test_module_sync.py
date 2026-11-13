@@ -779,3 +779,47 @@ def test_the_app_checks_start_silent_on_instances_adopted_before_them(
         assert db.get(MonitorState, row.id).status == "pending"
     want = ("changed", "open") if added else ("new", "adopted")
     assert (finding.kind, finding.status, finding.catalog_version) == (*want, SHIPPED.version)
+
+
+# --- checks bound to an image tag (R-1397) ---------------------------------------------
+
+
+def _wiki(tag):
+    return [_container("docs-wiki-1", "ghcr.io/requarks/wiki:" + tag, "docs", "wiki")]
+
+
+def test_a_move_to_another_major_changes_the_finding_and_switches_its_tag_check_off(db, actions):
+    _scan(db, 0, SHIPPED, _wiki("2"))
+    finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
+    adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+    healthz = _checks(db, finding)["healthz"]
+    assert healthz.enabled is True
+
+    # A patch release of the same major changes nothing.
+    _scan(db, 1, SHIPPED, _wiki("2.5"))
+    assert (finding.kind, finding.status) == ("new", "adopted")
+
+    _scan(db, 2, SHIPPED, _wiki("3"))
+    assert (finding.kind, finding.status) == ("changed", "open")
+    actions.clear()
+
+    result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+
+    checks = _checks(db, finding)
+    assert checks["healthz"].enabled is False
+    assert result.disabled == [healthz.id]
+    assert ("remove", healthz.id, None, None) in actions
+    assert (checks["web"].enabled, checks["container"].enabled) == (True, True)
+    assert all(row.enabled for key, row in checks.items() if key != "healthz")
+
+
+def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):
+    _scan(db, 0, SHIPPED, _wiki("3"))
+    finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
+
+    result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+
+    assert set(_checks(db, finding)) == {"container", "web"}
+    assert result.skipped == [
+        {"key": "healthz", "reason": "container docs-wiki-1 runs the tag 3, the check needs 2, 2.*"}
+    ]
