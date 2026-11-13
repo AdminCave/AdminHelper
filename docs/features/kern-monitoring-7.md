@@ -19,7 +19,7 @@ eine USV im Batteriebetrieb ohne laufendes `upsmon`, ein hängender Backup-Sched
 fehlgeschlagener PBS-Verify oder `HEALTH_ERR` in Ceph bleiben unbemerkt.
 
 - **R-1228 Speicher und Hardware:** mdadm (sysfs), LVM-Thin (Daten/Metadaten %, Zustand, Timeout = „LVM beschäftigt“),
-  Hardware-RAID (storcli/storcli2/perccli nur mit `nolog`, ssacli; hostweit nacheinander), IPMI lokal (`ipmitool` mit
+  Hardware-RAID (storcli/perccli nur mit `nolog`, ssacli; hostweit nacheinander), IPMI lokal (`ipmitool` mit
   SDR-Cache, nur wenn `/dev/ipmi*` existiert, kein Redfish).
 - **R-1229 USV:** NUT (`upsc` ohne Zugang: OB/LB/FSD/OVER, Laufzeit, Ladung, Data stale, läuft `upsmon`?) und
   apcupsd (`apcaccess`).
@@ -58,8 +58,8 @@ nennt die Quelle im Kommentar; Unbelegtes fährt nicht mit oder steht als „nic
 |---|---|---|
 | `host`/`mdadm` | `/sys/block/md*/md/{array_state,degraded,raid_disks,sync_action,mismatch_cnt}`, `md/dev-*/state` | `arrays`, `degraded`, `faulty_devices`, `resyncing`, `mismatch_cnt` |
 | `host`/`lvm_thin` | `lvs --reportformat json -o lv_attr,data_percent,metadata_percent`, Thin-Pools per `lv_attr` im Agent (Timeout 15 s) | `pools`, `max_data_pct`, `max_meta_pct`, `failed` (Attr D/F/M), `busy` |
-| `host`/`raid_ctrl` | `storcli`/`storcli2`/`perccli` `/call show all J nolog`, `ssacli ctrl all show status`; hostweit nacheinander (Mutex) | `controllers`, `vd_not_optimal`, `pd_failed`, `bbu_bad` |
-| `host`/`ipmi_sensors` | `ipmitool -S <cache> sdr elist` (Cache einmal je Agent-Start mit `sdr dump` im Agent-Zustandsverzeichnis), nur wenn `/dev/ipmi0`, `/dev/ipmi/0` oder `/dev/ipmidev/0` existiert | `sensors`, `critical`, `noncritical` |
+| `host`/`raid_ctrl` | `storcli64`/`perccli64` `/call show all J nolog` (perccli nur ohne storcli), `ssacli ctrl all show status` und `… show config`; hostweit nacheinander (ein Slot mit den IPMI-Aufrufen); `storcli2` nicht (Syntax und JSON unbelegt) | `controllers`, `ctrl_bad`, `vd_not_optimal`, `pd_failed`, `bbu_bad` |
+| `host`/`ipmi_sensors` | `ipmitool -S <cache> sdr elist` (Cache `.ipmi-sdr.cache` mit `sdr dump` im Agent-Zustandsverzeichnis, neu wenn er fehlt oder älter als 24 h ist: der Agent läuft als Oneshot), nur wenn `/dev/ipmi0`, `/dev/ipmi/0` oder `/dev/ipmidev/0` existiert | `sensors`, `critical`, `noncritical` |
 | `app`/`nut_ups` | `upsc -l localhost`, `upsc <ups>@localhost` (nur `ups.status`, `battery.runtime`, `battery.charge`) | `ups`, `on_battery`, `low_battery`, `fsd`, `overload`, `replace_battery`, `stale`, `min_runtime_s`, `min_charge_pct` |
 | `app`/`apcupsd` | `apcaccess -u status` (nur `STATUS`, `BCHARGE`, `TIMELEFT`, `NUMXFERS`) | `online`, `on_battery`, `low_battery`, `commlost`, `charge_pct`, `runtime_s`, `transfers` |
 | `app`/`pve_cluster` | `pvesh get /cluster/status`, `/cluster/ha/status/current`, `/cluster/replication`, `/nodes/<n>/replication` | `quorate`, `nodes_offline`, `ha_error`, `replication_failed` |
@@ -75,7 +75,7 @@ Module (Erkennung; Instanz):
 |---|---|---|---|
 | R-1228 | `mdadm` | Marker `/proc/mdstat` mit Paket `mdadm` | `host`/`mdadm`: `degraded gt 0` oder `faulty_devices gt 0` → critical |
 | R-1228 | `lvm-thin` | Paket `lvm2`, Marker `/usr/sbin/lvs` | `host`/`lvm_thin`: Daten 80/90 %, Metadaten 70/80 %, `failed gt 0` → critical, `busy` → warning |
-| R-1228 | `hwraid` | Marker `/opt/MegaRAID/storcli/storcli64`, `/usr/sbin/storcli2`, `/opt/dell/srvadmin/bin/perccli64`, `/usr/sbin/ssacli` (in T2 belegt) | `host`/`raid_ctrl` (15 min): `vd_not_optimal`/`pd_failed gt 0` → critical, `bbu_bad gt 0` → warning |
+| R-1228 | `hwraid` | Marker `/opt/MegaRAID/storcli/storcli64`, `/opt/MegaRAID/perccli/perccli64`, `/usr/sbin/ssacli` (in T2 belegt) | `host`/`raid_ctrl` (15 min): `vd_not_optimal`/`pd_failed gt 0` → critical, `bbu_bad gt 0` → warning |
 | R-1228 | `ipmi` | Marker `/dev/ipmi0` bzw. `/dev/ipmi/0` (+ `ipmitool`) | `host`/`ipmi_sensors` (10 min): `critical gt 0` → critical, `noncritical gt 0` → warning |
 | R-1229 | `nut` | Units `nut-server.service`, `nut-monitor.service` | Unit `nut-monitor` aktiv (sonst critical: bei leerem Akku fährt nichts herunter); `nut_ups`: LB/FSD/OVER → critical, OB/RB → warning, `stale gt 0` → critical, Laufzeit < 600 s → warning |
 | R-1229 | `apcupsd` | Unit `apcupsd.service` | `apcupsd`: COMMLOST/LOWBATT → critical, ONBATT → warning |

@@ -157,8 +157,8 @@ func lvmThin(ctx context.Context) (map[string]any, error) {
 		return nil, toolError("lvs", err)
 	}
 	// The JSON report (lvmreport(7)): {"report": [{"lv": [{"lv_attr": "...", ...}]}]}, every value a
-	// string, a percentage "%.2f" (in the locale's notation) or "" when undefined. Key names not verified against a live lvs
-	// beyond the documentation.
+	// string, a percentage "%.2f" (in the locale's notation) or "" when undefined. Key names not
+	// verified against a live lvs beyond the documentation.
 	var report struct {
 		Report []struct {
 			LV []map[string]string `json:"lv"`

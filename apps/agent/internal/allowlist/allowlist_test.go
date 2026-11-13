@@ -360,6 +360,53 @@ func TestAllowlistHostStorageViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistHostHardwareViews: the host sensor's hardware views ask the controller CLIs for their
+// state without a log file and ipmitool for the sensor list from the SDR cache in the state directory.
+// The traps start a learn cycle, clear an event log, read or clear the SEL, write a cache elsewhere, or
+// read the SDR without the cache.
+func TestAllowlistHostHardwareViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"/opt/MegaRAID/storcli/storcli64", "/call", "show", "all", "J", "nolog"},
+		{"/opt/MegaRAID/perccli/perccli64", "/call", "show", "all", "J", "nolog"},
+		{"/usr/sbin/ssacli", "ctrl", "all", "show", "status"},
+		{"/usr/sbin/ssacli", "ctrl", "all", "show", "config"},
+		{"ipmitool", "-S", "/etc/adminhelper/.ipmi-sdr.cache", "sdr", "elist"},
+		{"ipmitool", "sdr", "dump", "/etc/adminhelper/.ipmi-sdr.cache.new"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"storcli64", "/call", "show", "all", "J"},
+		{"storcli64", "/call", "show", "all"},
+		{"storcli64", "/c0/bbu", "start", "learn", "nolog"},
+		{"storcli64", "/c0", "delete", "events", "nolog"},
+		{"storcli64", "/call", "show", "events", "nolog"},
+		{"storcli64", "/call", "set", "alarm=off", "nolog"},
+		{"perccli64", "/c0/bbu", "start", "learn"},
+		{"storcli2", "/call", "show", "all", "J", "nolog"},
+		{"ssacli", "ctrl", "all", "show", "config", "detail"},
+		{"ssacli", "ctrl", "slot=0", "modify", "dwc=enable"},
+		{"ssacli", "ctrl", "slot=0", "pd", "all", "show", "detail"},
+		{"ipmitool", "sel", "clear"},
+		{"ipmitool", "sel", "elist"},
+		{"ipmitool", "sdr", "elist"},
+		{"ipmitool", "-S", "/etc/adminhelper/.ipmi-sdr.cache", "sel", "elist"},
+		{"ipmitool", "-S", "/etc/adminhelper/../shadow", "sdr", "elist"},
+		{"ipmitool", "sdr", "dump", "/etc/cron.d/x"},
+		{"ipmitool", "sdr", "dump", "/etc/../root/.ipmi-sdr.cache.new"},
+		{"ipmitool", "sdr", "dump", "relative/.ipmi-sdr.cache.new"},
+		{"ipmitool", "chassis", "power", "off"},
+		{"ipmitool", "raw", "0x06", "0x01"},
+		{"ipmitool", "mc", "reset", "cold"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {

@@ -22,8 +22,10 @@ Fallen (`mdadm --action`, `dmsetup` ohne `--noflush`, `lvchange`) als Negativtes
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T10
 
-### T2 — R-1228: Ansichten raid_ctrl und ipmi_sensors  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/host_hw.go, apps/agent/internal/probe/host_hw_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T2 — R-1228: Ansichten raid_ctrl und ipmi_sensors  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/host_hw.go, apps/agent/internal/probe/host_hw_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, docs/features/kern-monitoring-7.md, apps/agent/internal/probe/host_storage.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @7a10f9c3e 2026-11-13T17:24:47+01:00
+Review: approve (.ah-out/review/kern-monitoring-7/T2.verdict.json)
 Änderung: Controller-CLIs nur mit `J nolog` bzw. `ssacli … show status`, hostweit nacheinander (Mutex); IPMI nur bei
 vorhandenem Gerät, SDR-Cache einmal je Agent-Start im Zustandsverzeichnis, dann `-S <cache> sdr elist`. Parser gegen
 Beispielausgaben der Hersteller-Doku (Quelle im Kommentar, an Hardware ungeprüft). Fallen (`start learn`, `delete
@@ -99,3 +101,9 @@ Task-Review: am Ende
 - ZFS-Bewertung im bestehenden Checker, Vorlage unverändert.
 - T1: `lvs` ohne `--select segtype=thin-pool` (segtype ist ein Segment-Feld), Filter auf `lv_attr[0]=='t'` im Agent.
 - T1: `degraded` zählt Arrays (fehlendes Gerät oder `array_state` inactive/broken), `mismatch_cnt` ist die Summe; Zustand `clear` zählt nicht als Array.
+- T2: perccli liegt unter `/opt/MegaRAID/perccli/perccli64` (Dell kbdoc 000217748, rpm und deb), nicht unter `/opt/dell/srvadmin/bin/` wie im Plan; Marker in T3 entsprechend.
+- T2: `storcli2` wird nicht aufgerufen: weder seine Argumente (`nolog`) noch sein JSON ließen sich in Quellen belegen; ein Aufruf ungeprüfter Syntax auf fremder Hardware ist das größere Risiko als die Lücke (9600er-Controller bleiben ohne Ansicht, Folgezeile bei Bedarf).
+- T2: ssacli liest neben `show status` auch `ctrl all show config` (nur lesend): erst dort stehen die Zustände der logischen und physischen Laufwerke für `vd_not_optimal`/`pd_failed`. Neues Feld `ctrl_bad` (Controller-Status nicht Optimal/OK), weil storcli und ssacli ihn liefern und er sonst in keinem Feld landet.
+- T2: SDR-Cache neu, wenn er fehlt oder älter als 24 h ist, statt „je Agent-Start“: der Agent läuft als Oneshot, je Start wäre jeder Lauf ein Dump. Dump in `.ipmi-sdr.cache.new`, dann rename; die Allowlist lässt `sdr dump` nur auf diesen Namen unter einem absoluten Verzeichnis ohne `..` zu.
+- T2: Gesunde Zustände nach check_lsi_raid (VD `Optl`, PD `Onln`/`UGood`/`GHS`/`DHS`/`JBOD`; `Rbld` zählt als `pd_failed`), BBU-Codes 0/8/4096 nach storcli.py; IPMI `elist`-Zustände aus ipmitool `ipmi_sdr.c` (lnc/unc → noncritical, lcr/ucr/lnr/unr/cr/nr → critical, `ns` zählt nicht). Fehlermeldungen tragen keine stderr-Zeile der CLIs (Seriennummern).
+- T2 → T3: Katalog-Timeout für `ipmi_sensors` und `raid_ctrl` 30 s (Höchstwert `timeout_s`): je Aufruf 14 s, zwei Aufrufe (Dump + elist, ssacli status + config) passen hinein.

@@ -15,11 +15,14 @@ func init() {
 }
 
 // hostViews are the views of the host sensor: parts of this host that belong to no unit and no
-// container (software RAID, thin pools). Each reads kernel files or starts a read command with fixed
-// arguments through the allowlist (runTool) and reports counts and percentages, never a name.
+// container (software and hardware RAID, thin pools, IPMI sensors). Each reads kernel files or starts a
+// read command with fixed arguments through the allowlist (runTool) and reports counts and percentages,
+// never a name.
 var hostViews = map[string]func(ctx context.Context) (map[string]any, error){
-	"lvm_thin": lvmThin,
-	"mdadm":    mdArrays,
+	"ipmi_sensors": ipmiSensors,
+	"lvm_thin":     lvmThin,
+	"mdadm":        mdArrays,
+	"raid_ctrl":    raidCtrl,
 }
 
 // hostSensor reads one view of this host: no target, no parameter but the view, like the opnsense

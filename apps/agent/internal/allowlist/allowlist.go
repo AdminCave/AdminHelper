@@ -53,6 +53,9 @@ var classes = map[string]string{
 	"containername": `[A-Za-z0-9][A-Za-z0-9_.-]*`,
 	// A Windows service name, the class collectWatchedServices lets through (reWinServiceName).
 	"winservice": `[A-Za-z0-9._$][A-Za-z0-9._$-]*`,
+	// An absolute directory, meant for the agent's state directory (config.MonitorDir) but not bound to
+	// it; no segment begins with '.', so no "..".
+	"statedir": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
 	// A journal priority, 0 emerg … 7 debug.
 	"priority": `[0-7]`,
 	// A whole number of seconds.
@@ -249,6 +252,20 @@ var commands = map[string][][]string{
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.
 	"lvs": {{"--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"}},
+	// The host sensor's hardware views (probe, host_hw.go): every controller's state as JSON without
+	// storcli's log file, the HPE status and configuration, the sensor list from the SDR cache and the
+	// dump that writes the cache, by a fixed file name into an absolute directory without ".." (the agent
+	// passes its state directory). Kept out: storcli start|stop|set|
+	// delete|… (start learn starts a battery learn cycle, delete events clears the event log), any call
+	// without nolog, ipmitool sel (sel elist loads the BMC, sel clear deletes the log), chassis, raw,
+	// mc, user, lan and any sdr call without the cache.
+	"storcli64": {{"/call", "show", "all", "J", "nolog"}},
+	"perccli64": {{"/call", "show", "all", "J", "nolog"}},
+	"ssacli":    {{"ctrl", "all", "show", "status"}, {"ctrl", "all", "show", "config"}},
+	"ipmitool": {
+		{"-S", "<statedir>/.ipmi-sdr.cache", "sdr", "elist"},
+		{"sdr", "dump", "<statedir>/.ipmi-sdr.cache.new"},
+	},
 }
 
 // call is one argument list of commands, compiled: one pattern per argument, the last one repeated
