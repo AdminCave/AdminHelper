@@ -31,7 +31,7 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 		journal("--priority=3", "--unit=getty@tty1.service", "--after-cursor="+cursor, "--", "_COMM=sshd"),
 		journal("--priority=4", "--since=-60s", "--", "SYSLOG_IDENTIFIER=postfix/smtpd"),
 		journal("--priority=4", "--unit=-.slice", "--since=-60s", "--", "CONTAINER_NAME=web-1"),
-		{"systemctl", "show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "nginx.service"},
+		{"systemctl", "show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "nginx.service"},
 		{"systemctl", "show", "-p", "LoadState,ControlGroup", "--", "-.slice"},
 		{"systemctl", "show", "-p", "LoadState,ControlGroup", "--", `systemd-fsck@dev-disk-by\x2duuid-1a2b.service`},
 		{"docker", "inspect", "--type", "container", "--", "web_1.prod"},

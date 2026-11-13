@@ -207,7 +207,7 @@ var commands = map[string][][]string{
 		{"show", "-p", "Id,Names,ActiveState,MainPID", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent", "--", "<unit>..."},
-		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "<unitarg>"},
+		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
 	},
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),

@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Gebaut wird erst nach den Merges von kern-monitoring-10 und kern-monitoring-7 (dieselben Dateien); vor T1
 `origin/main` in den Branch mergen.
 
-### T1 — R-1233: Fühler unit mit Laufergebnis, file_age mit jüngster Datei  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_test.go
+### T1 — R-1233: Fühler unit mit Laufergebnis, file_age mit jüngster Datei  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @acfea187a 2026-11-13T22:35:05+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T1.verdict.json)
 Änderung: `unit` liefert unter Linux zusätzlich `result`, `exec_status` und `last_run_age_s` (systemd-Properties
 `Result`, `ExecMainStatus`, `ExecMainExitTimestampMonotonic`). `file_age` nimmt statt `path` auch `newest_in`
 (Verzeichnis, nicht rekursiv, nur reguläre Dateien, Obergrenze der Einträge) und meldet Alter und Größe der jüngsten
@@ -145,3 +147,4 @@ Task-Review: am Ende
 - Repo-Passwort als Credential-Nutzung `password`, nur als Umgebungsvariable eines freigegebenen Kommandos.
 - Repo-Abfrage in v1 nur für lokale und SFTP-Repos; entfernte Backends `unsupported`.
 - vHost-Domains/Zertifikatsdateien und Windows-Ereignisse in eigene Zeilen (Spec, Nicht-Ziele).
+- T1: `exec_status` nur bei `ExecMainCode=1` (CLD_EXITED; nach einem Signal trägt ExecMainStatus die Signalnummer); `newest_in` nutzt das vorhandene `openDir` (O_DIRECTORY) und hört bei 10000 Einträgen auf.
