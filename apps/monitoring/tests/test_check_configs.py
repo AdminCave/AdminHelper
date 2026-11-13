@@ -984,6 +984,53 @@ class TestProbeConfig:
             with pytest.raises(ValueError, match="host"):
                 validate_check_config("probe", config)
 
+    @pytest.mark.parametrize(
+        ("target", "params", "fields", "reason"),
+        [
+            (
+                {"kind": "unit", "name": "bbb-web.service"},
+                {"view": "bbb_meetings"},
+                ["meetings"],
+                None,
+            ),
+            (
+                {"kind": "container", "name": "wp-1"},
+                {"view": "wordpress_version"},
+                ["version"],
+                None,
+            ),
+            (
+                {"kind": "container", "name": "wp-1"},
+                {"view": "bbb_meetings"},
+                ["meetings"],
+                "view 'bbb_meetings' of sensor 'app' targets only 'unit', not 'container'",
+            ),
+            (
+                {"kind": "unit", "name": "slapd.service"},
+                {"view": "ldap_replication"},
+                ["consumers", "failed"],
+                "returns no field 'failed'",
+            ),
+            ({"kind": "unit", "name": "slapd.service"}, {}, ["consumers"], "view"),
+            (
+                {"kind": "unit", "name": "slapd.service"},
+                {"view": "ldap_replication", "uri": "ldap://192.0.2.1/"},
+                ["consumers"],
+                "uri",
+            ),
+            (None, {"view": "ldap_replication"}, ["consumers"], "sensor 'app' needs a target"),
+        ],
+    )
+    def test_the_api_takes_only_app_views_the_agent_takes(self, target, params, fields, reason):
+        # Same models as the catalog: a view, its fields and its kind of target, nothing else.
+        config = _probe(sensor="app", target=target, params=params, fields=fields, rules=[])
+        config.pop("credential")
+        if reason is None:
+            validate_check_config("probe", config)
+        else:
+            with pytest.raises(ValueError, match=re.escape(reason)):
+                validate_check_config("probe", config)
+
     def test_the_router_key_cannot_come_from_the_api(self):
         # The push path sets _check_id from the row; a stored one would only be overwritten,
         # but the boundary does not take it at all.
