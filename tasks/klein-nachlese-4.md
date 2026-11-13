@@ -10,8 +10,10 @@ Heavy: linux-full — Desktop-E2E-Helfer (T4), Lauf im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1414: Docstring von server_cleanup.py umbrechen  [ ]
+### T1 — R-1414: Docstring von server_cleanup.py umbrechen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/server_cleanup.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @bfec41a0d 2026-11-13T11:08:19+01:00
+Review: approve (.ah-out/review/klein-nachlese-4/T1.verdict.json)
 Beweis: reviewer arch-monitoring-ui-3 T4 2026-11-12 · Dedup-Key: REF:desktop:ServiceList.svelte:nachlese-arch-monitoring-ui-3
 Änderung: Die Docstring-Zeile mit der Tabellenaufzaehlung bricht wie der Rest bei etwa 84 Zeichen um. Kein Verhalten aendert sich.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_tables.py

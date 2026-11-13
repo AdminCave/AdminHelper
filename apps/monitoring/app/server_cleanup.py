@@ -7,7 +7,8 @@
 The server lives in the server's database, so no row here has a foreign key to it
 and nothing cascades: checks, alert rules, assignments, tombstones, the agent key,
 maintenance windows, liveness, host facts, dismissed suggestions, the discovery and
-its findings, the service inventory and its error lines are deleted by hand. The scheduler follows after the commit, like every template sync.
+its findings, the service inventory and its error lines are deleted by hand. The
+scheduler follows after the commit, like every template sync.
 """
 
 from __future__ import annotations
