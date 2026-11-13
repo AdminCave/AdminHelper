@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Probe-Guard: weitere Weiterleiter, klarere Abweisung nach dem connect — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-26 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-26 · Review: pro Task
 Spec: docs/features/kern-monitoring-26.md (Roadmap R-1407, R-1409)
 Heavy: linux-full — Agent (Proben-Wächter, `apps/agent`); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
