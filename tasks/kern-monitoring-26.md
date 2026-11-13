@@ -10,8 +10,10 @@ Heavy: linux-full — Agent (Proben-Wächter, `apps/agent`); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1407: weitere Weiterleiter und Super-Server  [ ]
+### T1 — R-1407: weitere Weiterleiter und Super-Server  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @19be0d1a6 2026-11-13T09:43:17+01:00
+Review: approve (.ah-out/review/kern-monitoring-26/T1.verdict.json)
 Änderung: `forwarders` um die Programme aus der privaten Notiz (Linux/FreeBSD und Windows) erweitern, als Präfix
 bzw. in `forwarderNames`, wo ein Präfix fremde Programme träfe; `judgeListener` wertet `xinetd` und `inetd` wie
 `systemd` als Aktivator (Listener nur beim Super-Server → abweisen). Tests: `TestGuardNeverProbesAPortAForwarderListensOn`
@@ -39,3 +41,4 @@ Doku: docs/developer/agent.html DE+EN · changelog.d/kern-monitoring-26.md
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: ein nativ laufendes frps zählt als Weiterleiter (security T1, Einzelheiten privat); das frps des AdminHelper-Servers läuft in Docker und ist nicht betroffen. Folgezeilen R-1426, R-1427.

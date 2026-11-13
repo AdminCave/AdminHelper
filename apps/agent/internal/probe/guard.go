@@ -68,11 +68,14 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // not name to the guard: rootless container networks (rootlesskit, Podman's rootlessport, slirp4netns,
 // pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
 // kubectl (port-forward), autossh, socat, systemd-socket-proxyd (the kernel cuts the name to
-// systemd-socket-), sslh with sslh-ev and sslh-select, rinetd and redir; forwarderNames are matched
-// whole, since a prefix ssh would also take sshd and ssh-agent. A probe never connects to a port or a
-// socket one of them serves, since what lies behind it cannot be checked.
+// systemd-socket-), sslh with sslh-ev and sslh-select, rinetd, redir, stunnel (Debian names it
+// stunnel4), 6tunnel, spiped, chisel, gost, ncat, frpc (a visitor listens here for a remote service)
+// and frps (a tcp proxy hands its port to the far end of a tunnel), and on Windows PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
+// forwarderNames are matched whole, since a prefix ssh would also take sshd and ssh-agent. A probe
+// never connects to a port or a socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
-	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir"}
+	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir", "stunnel",
+	"6tunnel", "spiped", "chisel", "gost", "ncat", "frpc", "frps", "putty", "plink", "kitty", "wslrelay", "wslhost"}
 
 var forwarderNames = []string{"ssh"}
 
@@ -440,7 +443,7 @@ var errNoProcess = errors.New("no process listens on port")
 
 // checkListener returns an error if a blocked process listens on ip and port, or if that cannot be
 // told: a listener on the unspecified address takes connections to every address of the host. A
-// socket systemd alone holds, for socket activation, tells nothing of the service it starts. A port
+// socket systemd or a super-server (xinetd, inetd) alone holds tells nothing of the service it starts. A port
 // without a listener is errNoProcess, unless docker publishes it or ip is a container's (contained).
 func checkListener(ctx context.Context, ip netip.Addr, port uint16, contained bool) error {
 	err := judgeListener(ctx, ip, port, contained, listenerTTL)
@@ -463,7 +466,7 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 	if err != nil {
 		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
 	}
-	activator, served := false, false
+	activator, served := "", false
 	for _, l := range list {
 		if l.port != port || (l.addr != ip && !l.addr.IsUnspecified()) {
 			continue
@@ -483,9 +486,9 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		} else if service != "" {
 			return fmt.Errorf("%w: port %d belongs to the service %s, which forwards to an end the agent cannot check", ErrNotAllowed, port, service)
 		}
-		switch processKey(name) {
-		case "systemd":
-			activator = true
+		switch k := processKey(name); k {
+		case "systemd", "xinetd", "inetd":
+			activator = k
 			continue
 		case "docker-proxy":
 			if err := checkProxy(ctx, l.pid, port); err != nil {
@@ -494,8 +497,8 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		}
 		served = served || carries(l.addr, ip)
 	}
-	if activator && !served {
-		return fmt.Errorf("%w: systemd holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, port)
+	if activator != "" && !served {
+		return fmt.Errorf("%w: %s holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, activator, port)
 	}
 	published, err := checkPublished(ctx, ip, port, maxAge)
 	if err != nil {
