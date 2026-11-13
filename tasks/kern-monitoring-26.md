@@ -1,0 +1,41 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Probe-Guard: weitere Weiterleiter, klarere Abweisung nach dem connect — Task-Ledger
+Status: geplant · Branch: feature/kern-monitoring-26 · Review: pro Task
+Spec: docs/features/kern-monitoring-26.md (Roadmap R-1407, R-1409)
+Heavy: linux-full — Agent (Proben-Wächter, `apps/agent`); Sammellauf
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+### T1 — R-1407: weitere Weiterleiter und Super-Server  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Änderung: `forwarders` um die Programme aus der privaten Notiz (Linux/FreeBSD und Windows) erweitern, als Präfix
+bzw. in `forwarderNames`, wo ein Präfix fremde Programme träfe; `judgeListener` wertet `xinetd` und `inetd` wie
+`systemd` als Aktivator (Listener nur beim Super-Server → abweisen). Tests: `TestGuardNeverProbesAPortAForwarderListensOn`
+um die neuen Namen, ein Fall je Super-Server.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: → T3
+
+### T2 — R-1409: Queue voll und beendete Verbindung nicht als Umleitung merken  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/peer_linux_test.go
+Änderung: `judgePeer` meldet für einen Listener mit voller Accept-Queue (`rqueue`/`wqueue` aus `inet_diag_msg`) einen
+eigenen Zustand; `checkTaker` prüft im letzten Versuch zusätzlich die eigene Client-Socket (Lookup mit vertauschten
+Enden). Queue voll oder eigene Socket weg → `ErrNotAllowed` mit eigener Meldung, ohne `rememberRedirect`. Tests:
+`TestJudgePeerWantsTheExactEnds` um den vollen Listener, `guard_test.go` je Fall mit gestubbtem `peerSocket`
+(kein Merker, Meldung), `TestGuardRemembersARedirectedPort` bleibt grün.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: → T3
+Abhängt von: T1
+
+### T3 — Doku: Wächter-Absatz und Changelog  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-26.md
+Änderung: Absatz „Wächter“ DE+EN: Super-Server wie Socket-Aktivierung, die zwei Abweisungsgründe nach dem connect
+ohne Merker; Changelog-Fragment neutral (ohne Angriffspfad).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/agent.html DE+EN · changelog.d/kern-monitoring-26.md
+Task-Review: am Ende
+
+## Entscheidungen
