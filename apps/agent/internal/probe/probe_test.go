@@ -515,6 +515,24 @@ func TestACredentialGoesOnlyToTheTargetItWentToFirst(t *testing.T) {
 	}
 }
 
+func TestACredentialOfTheAppSensorIsBoundToItsView(t *testing.T) {
+	credView(t)
+	appViews["test_cred2"] = appViews["test_cred"]
+	t.Cleanup(func() { delete(appViews, "test_cred2") })
+	view := func(name string) Probe {
+		p := appProbe(name, unitTarget("restic-backup.service"), "ok")
+		p.Credential = &Credential{Ref: "repo", Use: usePassword}
+		return p
+	}
+	acc := access(map[string][2]string{"repo": {"pw", "id1"}})
+	if res := Run(context.Background(), view("test_cred"), start, acc); res.Status != StatusOK {
+		t.Fatalf("first run = %+v, want ok", res)
+	}
+	if res := Run(context.Background(), view("test_cred2"), start, acc); res.Status != StatusNotAllowed {
+		t.Fatalf("another view = %+v, want not_allowed", res)
+	}
+}
+
 func TestACredentialOfAUnixSocketIsBoundToItsPath(t *testing.T) {
 	register(t, "unixsocket", func(context.Context, Probe, string) (map[string]any, error) {
 		return map[string]any{"connected": true}, nil

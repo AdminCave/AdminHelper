@@ -24,8 +24,10 @@ Datei, nie ihren Namen.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 
-### T2 — R-1233: Ansichten mit lokal hinterlegtem Zugang, Nutzung password  [ ]
+### T2 — R-1233: Ansichten mit lokal hinterlegtem Zugang, Nutzung password  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_app_test.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/probe.go, apps/agent/internal/probe/probe_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d93ba5e16 2026-11-13T22:41:55+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T2.verdict.json)
 Änderung: Der Fühler `app` reicht den Zugang einer Probe an Ansichten weiter, die ihn ausdrücklich nehmen (Liste
 erlaubter Nutzungen je Ansicht, sonst wie heute ein Fehler). Neue Nutzung `password`: Sie gibt das Passwort nur als
 Umgebungsvariable an genau ein freigegebenes Kommando weiter (`allowlist.RunEnv`), nie als Argument und nie ins Log.
