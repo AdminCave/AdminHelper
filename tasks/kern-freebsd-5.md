@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Proben auf eigene Adressen, root-Tests im Box-Lauf — Task-Ledger
-Status: aktiv · Branch: feature/kern-freebsd-5 · Review: am Ende
+Status: bereit · Branch: feature/kern-freebsd-5 · Review: am Ende
 Spec: docs/features/kern-freebsd-5.md (Roadmap R-1411, R-1412)
 Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge `scripts/tests/freebsd_box.sh` auf der FreeBSD-Pool-Box (T1 auf der Plattform, T2 real)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ mit `tcp4 *:* *:*` und `tcp46 *:* *:*`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: changelog.d/kern-freebsd-5.md
 
-### T2 — R-1412: root-Tests von internal/probe in Phase roottests  [ ]
+### T2 — R-1412: root-Tests von internal/probe in Phase roottests  [x]
 Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh, scripts/tests/freebsd_box.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5f25dbeba 2026-11-13T06:18:44+01:00
+Review: am Ende (Branch-Review)
 Änderung: `phase_roottests` fährt dazu die root-Tests von `internal/probe` je Name (getcred, Guard), den pf-Test nur
 mit `AH_FREEBSD_PF=1`, das nur `freebsd_box.sh` setzt (nicht `opnsense_box.sh`). Harness-Pfad auf Kevins Wort
 (2026-11-13).
