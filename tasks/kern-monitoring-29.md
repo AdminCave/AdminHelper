@@ -45,8 +45,10 @@ nur in `listening` bindet, Port weder dort noch exponiert nicht, ohne `listening
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_catalog_onlyoffice.py
 Doku: → T7
 
-### T4 — R-1384: Nextcloud ohne Compose oder unter anderem Dienstnamen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/nextcloud.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_nextcloud.py
+### T4 — R-1384: Nextcloud ohne Compose oder unter anderem Dienstnamen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/nextcloud.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_nextcloud.py, apps/monitoring/tests/test_catalog.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @57596fb94 2026-11-13T21:26:55+01:00
+Review: approve (.ah-out/review/kern-monitoring-29/T4.verdict.json)
 Änderung: `Target.image_fallback` (bool, nur mit `service`). `_target_name`: findet sich der Dienst nicht, bindet
 ein solcher Check an den einzigen Projekt-Container mit dem Image des Moduls, dessen Dienst kein anderer Check des
 Moduls nennt, bzw. an den einzelnen Container ohne Compose; mehrdeutig ungebunden mit Grund. `nextcloud` (Version

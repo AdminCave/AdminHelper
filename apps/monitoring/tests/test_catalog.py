@@ -301,6 +301,15 @@ def test_target_service_needs_a_compose_project():
     assert "target.service" in _only_error(_load(raw))
 
 
+def test_image_fallback_needs_a_service():
+    target = {"kind": "container", "image_fallback": True, "port_hint": 8000, "scheme": "http"}
+    assert "image_fallback needs a service" in _only_error(
+        _load(_module(checks=[_check(target=target)]))
+    )
+    strict = {**target, "service": "web", "image_fallback": "yes"}
+    assert _load(_module(checks=[_check(target=strict)])).modules == {}
+
+
 def test_marker_id_carries_the_module_id():
     raw = _module(detect={"markers": [{"id": "other.config", "paths": ["/etc/x"]}]})
     assert "must start with 'example.'" in _only_error(_load(raw))

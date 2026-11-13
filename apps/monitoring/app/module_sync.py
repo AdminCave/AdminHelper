@@ -76,10 +76,18 @@ def _containers(db: Session, server_id: str) -> list[dict]:
 
 
 def _target_name(
-    module: Module, kind: str, service: str, key: str, summary: dict, containers: list[dict]
+    module: Module,
+    kind: str,
+    service: str,
+    key: str,
+    summary: dict,
+    containers: list[dict],
+    image_fallback: bool = False,
 ) -> tuple[str | None, str | None]:
     """(the container, unit or process of the instance a check of this kind asks, None)
-    or (None, why there is none)."""
+    or (None, why there is none). With `image_fallback` a missing service falls back to
+    the instance's one container with the module's image whose service no other check
+    names."""
     none = f"no {kind} for this instance"
     matched_by = summary.get("matched_by")
     if matched_by is not None:
@@ -92,20 +100,33 @@ def _target_name(
     if kind == "container" and module.instance == "compose_project":
         if "container" in summary:
             # A container of the module outside any project: it has no other services.
-            return (None, none) if service else (summary["container"], None)
+            if service and not image_fallback:
+                return None, none
+            return summary["container"], None
         # The name as the last scan saw it; the agent asks this container, and a new
         # name (a rebuilt project) is a changed finding.
         prefixes = [image_repo(p) for p in module.detect.container_images]
-        names = sorted(
-            c["name"]
-            for c in containers
-            if c["compose_project"] == key
-            and (
-                c["compose_service"] == service
-                if service
-                else image_matches(image_repo(c["image"]), prefixes)
+        project = [c for c in containers if c["compose_project"] == key]
+        if service:
+            names = sorted(c["name"] for c in project if c["compose_service"] == service)
+            if not names and image_fallback:
+                # Another check's service is that container's own job (Nextcloud's cron
+                # runs the app image too), never the fallback.
+                named = {
+                    c.target.service
+                    for c in module.checks
+                    if c.target is not None and c.target.service != service
+                }
+                names = sorted(
+                    c["name"]
+                    for c in project
+                    if c["compose_service"] not in named
+                    and image_matches(image_repo(c["image"]), prefixes)
+                )
+        else:
+            names = sorted(
+                c["name"] for c in project if image_matches(image_repo(c["image"]), prefixes)
             )
-        )
         if len(names) > 1:
             # The check's target must be unambiguous; with several replicas none is picked.
             return None, f"several containers for this instance: {', '.join(names)}"
@@ -144,7 +165,9 @@ def probe_config(
             if port_hint is None:
                 return None, "no port for this instance"
         elif t.kind != "loopback":
-            name, why = _target_name(module, t.kind, t.service, key, summary, containers)
+            name, why = _target_name(
+                module, t.kind, t.service, key, summary, containers, t.image_fallback
+            )
             if not name:
                 return None, why
             # The agent asks a container's only port when the hint does not listen (target.go

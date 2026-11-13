@@ -84,8 +84,17 @@ class Target(_Model):
     kind: Literal["loopback", "container", "process", "unit", "port"]
     # Compose service of the instance's project whose container the check asks.
     service: str = Field("", max_length=255)
+    # Without the service: the one container of the instance with the module's image that
+    # no other check's service names (Nextcloud started by `docker run` or as `nextcloud`).
+    image_fallback: StrictBool = False
     port_hint: _PORT | None = None
     scheme: Literal["http", "https", "tcp"] | None = None
+
+    @model_validator(mode="after")
+    def _fallback_of_a_service(self) -> Target:
+        if self.image_fallback and not self.service:
+            raise ValueError("image_fallback needs a service")
+        return self
 
 
 class Rule(_Model):
