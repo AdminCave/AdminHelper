@@ -61,4 +61,9 @@ describe('frpApi', () => {
     await frpApi.status(session);
     expect(proxy).toHaveBeenCalledWith('GET', '/api/frp/status', undefined);
   });
+
+  it('rotateKey → POST /api/servers/:id/frp-key/rotate', async () => {
+    await frpApi.rotateKey(session, 's 1');
+    expect(proxy).toHaveBeenCalledWith('POST', '/api/servers/s%201/frp-key/rotate', undefined);
+  });
 });

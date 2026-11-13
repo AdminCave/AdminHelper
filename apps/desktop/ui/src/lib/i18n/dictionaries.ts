@@ -125,6 +125,10 @@ export const translations: Translations = {
     'infra.tun.created': 'Tunnel angelegt',
     'infra.tun.updated': 'Tunnel gespeichert',
     'infra.tun.deleted': 'Tunnel gelöscht',
+    'infra.tun.rotate': 'Tunnel-Schlüssel erneuern',
+    'infra.tun.rotateConfirm':
+      'Tunnel-Schlüssel von „{name}“ erneuern? Der Host meldet seine Tunnel nach dem nächsten Agent-Lauf mit dem neuen Schlüssel an. Eine von Hand verteilte frpc.toml muss danach neu verteilt werden. Wenn du dem Host selbst nicht mehr vertraust, provisioniere ihn stattdessen neu.',
+    'infra.tun.rotated': 'Tunnel-Schlüssel von „{name}“ erneuert',
     'infra.tun.validation.configRequired': 'Bitte eine FRP-Konfiguration wählen',
     'infra.tun.validation.portRequired': 'Lokaler Port erforderlich',
     'infra.tun.validation.visitorPortRange': 'Visitor-Port muss zwischen 1 und 65535 liegen',
@@ -1669,6 +1673,10 @@ export const translations: Translations = {
     'infra.tun.created': 'Tunnel created',
     'infra.tun.updated': 'Tunnel saved',
     'infra.tun.deleted': 'Tunnel deleted',
+    'infra.tun.rotate': 'Renew tunnel key',
+    'infra.tun.rotateConfirm':
+      'Renew the tunnel key of “{name}”? The host registers its tunnels with the new key after the next agent run. A frpc.toml distributed by hand must be distributed again afterwards. If you no longer trust the host itself, provision it again instead.',
+    'infra.tun.rotated': 'Tunnel key of “{name}” renewed',
     'infra.tun.validation.configRequired': 'Please select an FRP configuration',
     'infra.tun.validation.portRequired': 'Local port is required',
     'infra.tun.validation.visitorPortRange': 'The visitor port must be between 1 and 65535',

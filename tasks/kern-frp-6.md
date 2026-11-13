@@ -27,8 +27,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning.py
 Doku: → T5
 Abhängt von: T1
 
-### T3 — R-1316: Desktop-Knopf „Tunnel-Schlüssel erneuern“  [ ]
+### T3 — R-1316: Desktop-Knopf „Tunnel-Schlüssel erneuern“  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/frp.ts, apps/desktop/ui/src/lib/api/frp.test.ts, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.svelte, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @9e365b6d7 2026-11-13T16:38:09+01:00
+Review: approve (.ah-out/review/kern-frp-6/T3.verdict.json)
 Änderung: `frpApi.rotateKey(session, serverId)` (POST auf die Route aus T2); im Tunnel-Reiter ein Knopf nur für Admins (`session.isAdmin`), Bestätigungsdialog mit dem Hinweis, dass der Host seine Tunnel nach dem nächsten Agent-Lauf neu anmeldet und von Hand verteilte `frpc.toml` neu zu verteilen sind; Erfolg/Fehler über die Statusleiste. Texte DE+EN. Tests: Knopf fehlt für Nicht-Admins, Abbruch ruft nichts, Bestätigen ruft die Route (neue Testdatei mit SPDX-Header).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/frp.test.ts src/components/infra/tabs/TunnelsTab.test.ts
 Doku: → T5
