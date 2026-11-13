@@ -267,6 +267,20 @@ var commands = map[string][][]string{
 	// apcaccess -h/-f.
 	"upsc":      {{"-l", "localhost"}, {"<upsname>@localhost"}},
 	"apcaccess": {{"-u", "status"}},
+	// The views pbs_status, ceph_health and zfs_snapshots (probe, app_pbs.go). proxmox-backup-debug
+	// only with api get (api set, create and delete write through the API); proxmox-backup-manager stays
+	// off. ceph only health and df as JSON (ceph … set, osd out and the like change the cluster);
+	// sanoid only --monitor-snapshots (--cron, --take-snapshots and --prune-snapshots change snapshots).
+	"proxmox-backup-debug": {
+		{"api", "get", "/config/datastore", "--output-format", "json"},
+		{"api", "get", "/status/datastore-usage", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "garbage_collection", "--limit", "50", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "verif", "--limit", "50", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "sync", "--limit", "50", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
+	},
+	"ceph":   {{"health", "-f", "json"}, {"df", "-f", "json"}},
+	"sanoid": {{"--monitor-snapshots"}},
 	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.

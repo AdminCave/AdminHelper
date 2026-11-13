@@ -39,6 +39,7 @@ var appViews = map[string]appView{
 	"bind_status":       {unitKinds, bindStatus},
 	"caddy_certs":       {eitherKinds, caddyCerts},
 	"caddy_upstreams":   {unitKinds, caddyUpstreams},
+	"ceph_health":       {unitKinds, cephHealth},
 	"chrony_tracking":   {unitKinds, chronyTracking},
 	"crowdsec_bouncers": {unitKinds, crowdsecBouncers},
 	"dnsmasq_leases":    {unitKinds, dnsmasqLeaseView},
@@ -50,6 +51,7 @@ var appViews = map[string]appView{
 	"ntpsec_status":     {unitKinds, ntpsecStatus},
 	"nut_ups":           {unitKinds, nutUPS},
 	"openvpn_status":    {unitKinds, openvpnStatus},
+	"pbs_status":        {unitKinds, pbsStatus},
 	"pve_cluster":       {unitKinds, pveCluster},
 	"pve_jobs":          {unitKinds, pveJobs},
 	"pve_updates":       {unitKinds, pveUpdates},
@@ -58,6 +60,7 @@ var appViews = map[string]appView{
 	"unbound_stats":     {unitKinds, unboundStats},
 	"wg_peers":          {unitKinds, wgPeers},
 	"wordpress_version": {containerKinds, wordpressVersion},
+	"zfs_snapshots":     {unitKinds, zfsSnapshots},
 }
 
 // appSensor reads the view the probe names of the application its target belongs to.

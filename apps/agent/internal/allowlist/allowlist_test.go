@@ -481,6 +481,49 @@ func TestAllowlistPVEViews(t *testing.T) {
 	}
 }
 
+func TestAllowlistPBSCephAndSanoidViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"proxmox-backup-debug", "api", "get", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/status/datastore-usage", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "garbage_collection", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "verif", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "sync", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
+		{"ceph", "health", "-f", "json"},
+		{"ceph", "df", "-f", "json"},
+		{"sanoid", "--monitor-snapshots"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"proxmox-backup-debug", "api", "set", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "create", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "delete", "/config/datastore", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/access/users", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--limit", "100", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "backup", "--limit", "50", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "100000", "--output-format", "json"},
+		{"proxmox-backup-debug", "api", "get", "/config/datastore"},
+		{"proxmox-backup-manager", "datastore", "update", "store1", "--maintenance-mode", "offline"},
+		{"proxmox-backup-manager", "datastore", "list", "--output-format", "json"},
+		{"ceph", "osd", "set", "noout"},
+		{"ceph", "config", "set", "global", "mon_allow_pool_delete", "true"},
+		{"ceph", "health", "detail", "-f", "json"},
+		{"ceph", "df", "detail", "-f", "json"},
+		{"ceph", "health"},
+		{"sanoid", "--cron"},
+		{"sanoid", "--take-snapshots"},
+		{"sanoid", "--prune-snapshots"},
+		{"sanoid", "--monitor-snapshots", "--configdir", "/tmp/x"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestNoClassTakesAnOption: no class matches an argument that begins with '-', but unitarg, which takes
 // "-" only for the root units and stands right after "--" or behind a literal option.
 func TestNoClassTakesAnOption(t *testing.T) {
