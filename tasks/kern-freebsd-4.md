@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Kommentare zu Swap und cpu_count, Komma in der Agent-Doku — Task-Ledger
-Status: geplant · Branch: feature/kern-freebsd-4 · Review: am Ende
+Status: aktiv · Branch: feature/kern-freebsd-4 · Review: am Ende
 Spec: docs/features/kern-freebsd-4.md (Roadmap R-1332)
 Heavy: none — nur Kommentare und ein Satzzeichen in der Doku, kein Verhalten
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
