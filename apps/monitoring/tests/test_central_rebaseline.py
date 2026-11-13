@@ -85,6 +85,18 @@ def test_details_without_a_baseline_stay_as_they_are(client_db, details):
     assert _stored(factory, "c1") == before
 
 
+def test_unreadable_details_count_as_no_baseline(client_db):
+    # R-1401: a stored text that is not JSON must neither fail the route nor be rewritten.
+    client, factory = client_db
+    _add(factory, "c1", details="{not json")
+
+    r = client.post("/checks/c1/rebaseline")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["state"]["details"] is None
+    assert _stored(factory, "c1") == "{not json"
+
+
 def test_a_check_that_never_ran_answers_without_state(client_db):
     client, factory = client_db
     _add(factory, "c1")
