@@ -369,9 +369,10 @@ export interface MonitorResourceDetails {
   // false in a container, whose load_5m is the host's: the checker leaves the
   // load unrated. Missing on a host or a VM.
   load_rated?: boolean;
-  // The checker's rating per metric (cpu, memory, swap, load, disk:<mount>,
-  // inode:<mount>, temp:<sensor>); a metric it does not name is ok. Details
-  // written before the per-metric hysteresis carry none.
+  // The checker's rating per metric (cpu, memory, swap, load, load_shed,
+  // disk:<mount>, inode:<mount>, temp:<sensor>); a metric it does not name is ok.
+  // load_shed is only ever 'warning': a host that sheds load is still measured in
+  // its core. Details written before the per-metric hysteresis carry none.
   problems?: Record<string, 'warning' | 'critical'>;
   disks?: MonitorResourceDisk[];
   temperatures?: MonitorResourceTemp[];
