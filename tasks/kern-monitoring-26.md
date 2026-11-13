@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Probe-Guard: weitere Weiterleiter, klarere Abweisung nach dem connect — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-26 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-26 · Review: pro Task
 Spec: docs/features/kern-monitoring-26.md (Roadmap R-1407, R-1409)
 Heavy: linux-full — Agent (Proben-Wächter, `apps/agent`); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -44,5 +44,14 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html DE+EN · changelog.d/kern-monitoring-26.md
 Task-Review: am Ende
 
+### T4 — Doku: Admin-Handbuch „Nur dieser Host“  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Absatz „Nur dieser Host“ DE+EN nachziehen (Fund der Abschlussprüfung): die neuen Weiterleiter in der
+Liste, Super-Server wie Socket-Aktivierung, die zwei Abweisungen nach dem Verbindungsaufbau ohne Sperre.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/monitoring.html DE+EN
+Task-Review: am Ende
+
 ## Entscheidungen
 - T1: ein nativ laufendes frps zählt als Weiterleiter (security T1, Einzelheiten privat); das frps des AdminHelper-Servers läuft in Docker und ist nicht betroffen. Folgezeilen R-1426, R-1427.
+- T2: Restrisiko (keine Merker bei voller Queue und sofort beendeter Verbindung) hingenommen, Kevin 2026-11-13; Einzelheiten privat.
