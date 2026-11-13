@@ -77,6 +77,22 @@ func TestParseSockstatReadsBothForms(t *testing.T) {
 	}
 }
 
+// TestParseSockstatSkipsAnUnboundSocket: -l lists a TCP socket that is neither bound nor
+// connected as *:* (the guard's own dial socket during Control); it listens on nothing.
+func TestParseSockstatSkipsAnUnboundSocket(t *testing.T) {
+	out := sockstat14 + `0        agent      1400  5  tcp4   *:*                                           *:*
+0        agent      1400  6  tcp6   *:*                                           *:*
+??       ??         ??    ??  tcp46  *:*                                           *:*
+`
+	want, err := parseSockstat([]byte(sockstat14))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := parseSockstat([]byte(out)); err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("parseSockstat = %v, %v; want the listeners without the unbound sockets", got, err)
+	}
+}
+
 func TestParseSockstatRejectsALineOfAnotherForm(t *testing.T) {
 	lines := []string{
 		// 15.x without -w cuts a long address short.

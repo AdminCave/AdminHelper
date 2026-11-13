@@ -10,8 +10,10 @@ Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge `scripts/tests
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1411: sockstat-Zeile ohne Port überspringen  [ ]
+### T1 — R-1411: sockstat-Zeile ohne Port überspringen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sockstat.go, apps/agent/internal/probe/sockstat_test.go, changelog.d/kern-freebsd-5.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @04d08ee76 2026-11-13T05:58:15+01:00
+Review: am Ende (Branch-Review)
 Beweis: kern-freebsd-3 Box-Lauf 2026-11-12, main@c702ea485: TestHTTPClient*, TestGuardDropsAConnectionAnotherSocketTook rot: sockstat printed a line of unknown form: tcp4 *:* *:*
 Dedup-Key: bug:agent:sockstat.go:sockstatListener
 Änderung: `parseSockstat` überspringt eine sonst wohlgeformte Zeile, deren lokaler Port `*` ist (ungebundene Socket);
