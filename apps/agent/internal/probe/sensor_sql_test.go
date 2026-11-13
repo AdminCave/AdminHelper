@@ -82,7 +82,7 @@ func TestTheSqlSensorReadsMariaDB(t *testing.T) {
 	}{
 		{"ping", "ping", "ok\n1\n", map[string]any{"ok": true}},
 		{"connections", "connections", "connections\tmax_connections\n12\t151\n",
-			map[string]any{"ok": true, "connections": int64(12), "max_connections": int64(151)}},
+			map[string]any{"ok": true, "connections": int64(12), "max_connections": int64(151), "connections_pct": int64(7)}},
 		{"size", "size", "size_bytes\n123456789\n", map[string]any{"ok": true, "size_bytes": int64(123456789)}},
 		{"a replica", "replication",
 			"Connection_name\tSlave_IO_Running\tSlave_SQL_Running\tSeconds_Behind_Master\n\tYes\tYes\t3\n",
@@ -130,8 +130,8 @@ func TestTheSqlSensorReadsPostgreSQL(t *testing.T) {
 		want             map[string]any
 	}{
 		{"ping", "ping", "1\n", map[string]any{"ok": true}},
-		{"connections", "connections", "7\t100\n",
-			map[string]any{"ok": true, "connections": int64(7), "max_connections": int64(100)}},
+		{"connections", "connections", "91\t120\n",
+			map[string]any{"ok": true, "connections": int64(91), "max_connections": int64(120), "connections_pct": int64(75)}},
 		{"size", "size", "987654\n", map[string]any{"ok": true, "size_bytes": int64(987654)}},
 		{"a replica", "replication", "t\tt\t42\n",
 			map[string]any{"ok": true, "replication_running": true, "replication_lag_s": int64(42)}},
@@ -276,6 +276,8 @@ func TestTheSqlSensorRefusesAnswersOfAnotherForm(t *testing.T) {
 		{"psql ping not 1", "postgres", "ping", "2\n"},
 		{"psql ping of two rows", "postgres", "ping", "1\n1\n"},
 		{"psql connections of one cell", "postgres", "connections", "7\n"},
+		{"psql connections of no limit", "postgres", "connections", "7\t0\n"},
+		{"psql connections below none", "postgres", "connections", "-1\t100\n"},
 		{"psql size without rows", "postgres", "size", ""},
 		{"psql replication of no boolean", "postgres", "replication", "x\tt\t0\n"},
 		{"psql replication of no lag", "postgres", "replication", "t\tt\tabc\n"},

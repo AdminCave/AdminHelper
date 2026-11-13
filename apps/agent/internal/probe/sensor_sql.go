@@ -149,10 +149,7 @@ func askMariaDB(ctx context.Context, query string) (map[string]any, error) {
 		if len(rows) != 1 {
 			return nil, fmt.Errorf("%s: an answer of another form", client)
 		}
-		return whole(client, map[string]string{
-			"connections":     rows[0]["connections"],
-			"max_connections": rows[0]["max_connections"],
-		})
+		return connectionShare(client, rows[0]["connections"], rows[0]["max_connections"])
 	case "replication":
 		return mariadbReplication(client, rows)
 	case "errors":
@@ -291,7 +288,7 @@ func askPostgres(ctx context.Context, query string) (map[string]any, error) {
 		if len(cells) != 2 {
 			return nil, errors.New("psql: an answer of another form")
 		}
-		return whole("psql", map[string]string{"connections": cells[0], "max_connections": cells[1]})
+		return connectionShare("psql", cells[0], cells[1])
 	case "replication":
 		if len(cells) != 3 || cells[0] != "t" && cells[0] != "f" || cells[1] != "t" && cells[1] != "f" {
 			return nil, errors.New("psql: an answer of another form")
@@ -315,6 +312,21 @@ func askPostgres(ctx context.Context, query string) (map[string]any, error) {
 		name := map[string]string{"size": "size_bytes", "xid_age": "xid_age", "long_tx": "long_transactions"}[query]
 		return whole("psql", map[string]string{name: cells[0]})
 	}
+}
+
+// connectionShare reads the connections and max_connections and adds the share of the limit in use,
+// connections_pct, rounded down: a rule compares a field with a number, never with another field.
+func connectionShare(client, connections, limit string) (map[string]any, error) {
+	values, err := whole(client, map[string]string{"connections": connections, "max_connections": limit})
+	if err != nil {
+		return nil, err
+	}
+	used, most := values["connections"].(int64), values["max_connections"].(int64)
+	if used < 0 || most <= 0 {
+		return nil, fmt.Errorf("%s: an answer of another form", client)
+	}
+	values["connections_pct"] = used * 100 / most
+	return values, nil
 }
 
 // whole reads every value of texts as a whole number; one that is none is an answer of another form.

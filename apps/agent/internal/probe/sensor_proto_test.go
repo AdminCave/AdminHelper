@@ -994,3 +994,27 @@ func TestFCGIStatusPageRefusesAnAnswerOutsideTheRequest(t *testing.T) {
 		t.Errorf("Status 200 = %q, %v; want the body", page, err)
 	}
 }
+
+func TestRedisInfoAddsTheShareOfMaxmemory(t *testing.T) {
+	info := func(used, most string) map[string]any {
+		return redisInfo([]byte("# Memory\r\nused_memory:" + used + "\r\nmaxmemory:" + most + "\r\n"))
+	}
+	if got := info("805306368", "1073741824")["maxmemory_used_pct"]; got != json.Number("75") {
+		t.Errorf("768 MiB of 1 GiB = %v, want 75", got)
+	}
+	if got := info("1999", "1000")["maxmemory_used_pct"]; got != json.Number("199") {
+		t.Errorf("above the limit = %v, want 199", got)
+	}
+	for name, d := range map[string]map[string]any{
+		"no limit":      info("1048576", "0"),
+		"no number":     info("much", "1000"),
+		"a fraction":    info("1.5", "1000"),
+		"below none":    info("-1", "1000"),
+		"without INFO":  redisInfo([]byte("# Server\r\nredis_version:7.2.4\r\n")),
+		"only the used": redisInfo([]byte("used_memory:10\r\n")),
+	} {
+		if v, ok := d["maxmemory_used_pct"]; ok {
+			t.Errorf("%s: maxmemory_used_pct = %v, want none", name, v)
+		}
+	}
+}

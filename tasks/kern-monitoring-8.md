@@ -99,11 +99,15 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 Abhängt von: T2
 
-### T15 — R-1232: Verbindungen als Anteil (`connections_pct`)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_sql.go, apps/agent/internal/probe/sensor_sql_test.go
+### T15 — R-1232: Verbindungen als Anteil (`connections_pct`)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_sql.go, apps/agent/internal/probe/sensor_sql_test.go, apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_proto_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @729e5fbf0 2026-11-14T00:29:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T15.verdict.json)
 Änderung: Die Abfrage `connections` liefert für MariaDB und PostgreSQL zusätzlich `connections_pct` (ganzzahlig,
 Verbindungen / `max_connections` × 100), denn eine Regel vergleicht ein Feld nur mit einer Zahl; so wie
-`busy_pct` bei `apache_status`. Nachgetragen beim Vorbereiten von T9 (Schwellen 80/95 %).
+`busy_pct` bei `apache_status`. Ebenso ergänzt Redis-`INFO` `maxmemory_used_pct` (`used_memory` / `maxmemory`,
+nur bei gesetztem `maxmemory`). Nachgetragen beim Vorbereiten von T9 (Schwellen 80/95 %, Speicher gegen
+`maxmemory`).
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 

@@ -773,7 +773,10 @@ func speakRedis(s *session, o protoOpts) (protoResult, error) {
 	return protoResult{data: redisInfo(body[:n])}, nil
 }
 
-// redisInfo reads the lines key:value of INFO; sections (# …) drop, a number stays json.Number.
+// redisInfo reads the lines key:value of INFO; sections (# …) drop, a number stays json.Number. To
+// them it adds maxmemory_used_pct, used_memory as a share of maxmemory rounded down, where maxmemory
+// is set (0 is no limit): a rule compares a field with a number, never with another field. INFO has
+// no key of that name.
 func redisInfo(b []byte) map[string]any {
 	data := map[string]any{}
 	for line := range strings.Lines(string(b)) {
@@ -782,7 +785,21 @@ func redisInfo(b []byte) map[string]any {
 			data[k] = numberOrText(v)
 		}
 	}
+	used, errUsed := redisWhole(data["used_memory"])
+	most, errMost := redisWhole(data["maxmemory"])
+	if errUsed == nil && errMost == nil && used >= 0 && most > 0 {
+		data["maxmemory_used_pct"] = json.Number(strconv.FormatInt(used*100/most, 10))
+	}
 	return data
+}
+
+// redisWhole is v as a whole number if it is a json.Number of one.
+func redisWhole(v any) (int64, error) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, errors.New("no number")
+	}
+	return n.Int64()
 }
 
 // numberOrText is v as json.Number if it is a number, else v.
