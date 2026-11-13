@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Netz, Sicherheit, DNS, DHCP, Zeit und Reverse-Proxies — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-10 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-10 · Review: pro Task
 Spec: docs/features/kern-monitoring-10.md (Roadmap R-1236, R-1237, R-1238)
 Heavy: linux-full — neue Agent-Ansichten und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -92,11 +92,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_pro
 Doku: → T9
 Abhängt von: T7
 
-### T9 — Doku: Module, Ansichten, nie gerufene Kommandos (DE + EN)  [ ]
-Komponente: docs · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-10.md
+### T9 — Doku: Module, Ansichten, nie gerufene Kommandos (DE + EN)  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-10.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @aac5088a2 2026-11-13T14:36:06+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Unterabschnitte je Gruppe unter „Module und Erkennung“ mit Voraussetzungen und Mindestversion, Liste „Nie
 aufgerufen“ ergänzt, Ansichten des Fühlers `app` in der Entwickler-Doku, Changelog-Fragment (umlautfrei).
-Verify: bash scripts/dev/verify.sh scripts --strict
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T3, T6, T8
