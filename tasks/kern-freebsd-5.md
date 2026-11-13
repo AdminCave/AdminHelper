@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FreeBSD-Proben auf eigene Adressen, root-Tests im Box-Lauf — Task-Ledger
-Status: geplant · Branch: feature/kern-freebsd-5 · Review: am Ende
+Status: aktiv · Branch: feature/kern-freebsd-5 · Review: am Ende
 Spec: docs/features/kern-freebsd-5.md (Roadmap R-1411, R-1412)
 Heavy: linux-full — Agent (Proben-Wächter); dazu vor dem Merge `scripts/tests/freebsd_box.sh` auf der FreeBSD-Pool-Box (T1 auf der Plattform, T2 real)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
