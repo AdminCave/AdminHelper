@@ -11,8 +11,10 @@ Socket- und HTTP-Zugriffe über Seams, damit die Tests ohne echten Host laufen. 
 Werte nur die Felder der Spec tragen, und einen Fehlertest, dessen Text weder Pfadinhalte noch Geheimnisse nennt.
 Neue Dateien mit SPDX-Header (`reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later <datei>`).
 
-### T1 — Agent: Fühler `app` und Ansicht `bbb_recordings`  [ ]
+### T1 — Agent: Fühler `app` und Ansicht `bbb_recordings`  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_app_test.go, apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a25336ceb 2026-11-13T08:54:46+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T1.verdict.json)
 Änderung: `sensors["app"]` mit Pflicht-Parameter `view` (`knownParams`, `choiceParam` über die vier Ansichten der
 Spec; noch nicht gebaute Ansichten gibt es erst in ihrer Task), Ziel-Art je Ansicht über `targetOf`. Ansicht
 `bbb_recordings`: zählt `.fail`-Marker in `status/{archived,sanity,processed,published}` unter
