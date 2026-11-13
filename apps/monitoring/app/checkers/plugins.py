@@ -219,6 +219,11 @@ _SCRUB_STATES = frozenset({"SCANNING", "PAUSED", "FINISHED", "CANCELED"})
 _MAX_VDEV_ERRORS = 32
 _VDEV_COUNTERS = ("read", "write", "checksum")
 
+# Days after the end of the last finished scrub (R-1230): OpenZFS and the distributions scrub
+# monthly (zfsutils-linux cron, zfs-scrub-monthly timers), so 35 days is one missed run.
+_SCRUB_WARN_DAYS = 35
+_SCRUB_CRIT_DAYS = 60
+
 
 def _counter(value: object) -> int | None:
     """An error counter from the report: a whole number from 0, else None."""
@@ -255,7 +260,7 @@ def _zfs_details(pool: dict) -> dict:
 
 
 class ZfsHealthChecker:
-    """Checks ZFS pool health and capacity.
+    """Checks ZFS pool health, capacity, the age of the last scrub and vdev errors.
 
     Config example:
     {
@@ -295,6 +300,7 @@ class ZfsHealthChecker:
 
         cap_warn = config.get("capacity_warn", 80)
         cap_crit = config.get("capacity_crit", 90)
+        now = time.time()
 
         status = "ok"
         problems = []
@@ -316,6 +322,30 @@ class ZfsHealthChecker:
                 status = "critical"
             elif cap >= cap_warn:
                 problems.append(f"{shown_name}: {cap}% full (>={cap_warn}%)")
+                if status != "critical":
+                    status = "warning"
+
+            # Rated from the details as the desktop shows them, so a field it leaves out is not
+            # rated either. Only a finished scrub has an age: a running or paused one, a canceled
+            # one and a resilver (the agent sends no scrub for it) are not rated.
+            details = _zfs_details(pool)
+            scrub = details.get("scrub", {})
+            if scrub.get("state") == "FINISHED" and "end" in scrub:
+                days = int((now - scrub["end"]) // 86400)
+                if days >= _SCRUB_CRIT_DAYS:
+                    problems.append(
+                        f"{shown_name}: last scrub {days} days ago (>={_SCRUB_CRIT_DAYS})"
+                    )
+                    status = "critical"
+                elif days >= _SCRUB_WARN_DAYS:
+                    problems.append(
+                        f"{shown_name}: last scrub {days} days ago (>={_SCRUB_WARN_DAYS})"
+                    )
+                    if status != "critical":
+                        status = "warning"
+            faulty = [v for v in details.get("vdevErrors", []) if any(v[k] for k in _VDEV_COUNTERS)]
+            if faulty:
+                problems.append(f"{shown_name}: errors on {len(faulty)} vdev(s)")
                 if status != "critical":
                     status = "warning"
 
