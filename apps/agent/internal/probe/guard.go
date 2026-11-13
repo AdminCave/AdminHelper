@@ -256,8 +256,11 @@ var (
 	// listens on (Windows portproxy), else "".
 	serviceForwarder = osServiceForwarder
 	publishedPorts   = dockerPublications
-	dockerServes     = dockerSocketServes
-	dockerdRunning   = dockerdRuns
+	// containerListeners returns the processes that listen on a TCP port in the network namespace
+	// of a container's main process.
+	containerListeners = namespaceProcesses
+	dockerServes       = dockerSocketServes
+	dockerdRunning     = dockerdRuns
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -603,6 +606,9 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 			if err := checkProxy(ctx, l.pid, port); err != nil {
 				return err
 			}
+			if err := checkProxied(ctx, ip, port, maxAge); err != nil {
+				return err
+			}
 		}
 		served = served || carries(l.addr, ip)
 	}
@@ -651,15 +657,107 @@ func checkPublished(ctx context.Context, ip netip.Addr, port uint16, maxAge time
 		return false, fmt.Errorf("%w: the published ports of the containers cannot be read: %v", ErrNotAllowed, err)
 	}
 	for _, p := range list {
-		if p.hostPort != port || (p.hostIP.IsValid() && !p.hostIP.IsUnspecified() && p.hostIP != ip) {
+		if !p.forwards(ip, port) {
 			continue
 		}
 		if blockedPort(p.to) {
 			return false, fmt.Errorf("%w: port %d forwards to port %d of a container, one the agent never probes", ErrNotAllowed, port, p.to)
 		}
+		if err := checkInside(ctx, p, maxAge); err != nil {
+			return false, err
+		}
 		published = published || !p.hostIP.IsValid() || carries(p.hostIP, ip)
 	}
 	return published, nil
+}
+
+// forwards says whether docker forwards connections to ip and port by p.
+func (p publication) forwards(ip netip.Addr, port uint16) bool {
+	return p.hostPort == port && (!p.hostIP.IsValid() || p.hostIP.IsUnspecified() || p.hostIP == ip)
+}
+
+// checkProxied returns an error unless docker publishes ip and port, on which a docker-proxy listens:
+// only the publication names the container whose process checkPublished judges. A container started
+// since the last list was read is looked for in a fresh one.
+func checkProxied(ctx context.Context, ip netip.Addr, port uint16, maxAge time.Duration) error {
+	for _, age := range []time.Duration{maxAge, listenerFresh} {
+		list, err := publicationsAtMost(ctx, age)
+		if err != nil {
+			return fmt.Errorf("%w: the published ports of the containers cannot be read: %v", ErrNotAllowed, err)
+		}
+		if slices.ContainsFunc(list, func(p publication) bool { return p.forwards(ip, port) }) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: the docker-proxy on port %d serves no port docker publishes there", ErrNotAllowed, port)
+}
+
+// checkInside judges the processes that listen on the container port p forwards to, in the
+// container's network namespace, as checkListener judges those of the host: a forwarder inside a
+// container leads as far as one outside. Processes that cannot be told are refused.
+func checkInside(ctx context.Context, p publication, maxAge time.Duration) error {
+	pids, err := insideAtMost(ctx, p.pid, p.to, maxAge)
+	if err != nil {
+		return fmt.Errorf("%w: the process behind port %d of a container cannot be told: %v", ErrNotAllowed, p.to, err)
+	}
+	at := fmt.Sprintf("port %d of a container", p.to)
+	for _, pid := range pids {
+		name, err := processName(ctx, pid)
+		if err != nil {
+			return fmt.Errorf("%w: the process listening on %s cannot be read: %v", ErrNotAllowed, at, err)
+		}
+		if neverProbed(name) {
+			return fmt.Errorf("%w: %s belongs to %s, which the agent never probes", ErrNotAllowed, at, name)
+		}
+		if err := checkForwarder(ctx, pid, name, at); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// insideKey names a container port by the container's main process.
+type insideKey struct {
+	pid  int32
+	port uint16
+}
+
+// inside holds the processes last found on container ports, shared by every guard of the process:
+// telling them walks the descriptors of every process in the container.
+var inside struct {
+	sync.Mutex
+	found map[insideKey]insideFound
+}
+
+type insideFound struct {
+	at   time.Time
+	pids []int32
+}
+
+// insideAtMost returns the processes listening on port in the network namespace of pid, at most
+// maxAge old.
+func insideAtMost(ctx context.Context, pid int32, port uint16, maxAge time.Duration) ([]int32, error) {
+	inside.Lock()
+	defer inside.Unlock()
+	k := insideKey{pid, port}
+	if f, ok := inside.found[k]; ok && time.Since(f.at) < maxAge {
+		return f.pids, nil
+	}
+	pids, err := containerListeners(ctx, pid, port)
+	if err != nil {
+		return nil, err
+	}
+	if inside.found == nil {
+		inside.found = map[insideKey]insideFound{}
+	}
+	// Containers come and go: what no snapshot may use any more goes.
+	for old, f := range inside.found {
+		if time.Since(f.at) >= listenerTTL {
+			delete(inside.found, old)
+		}
+	}
+	inside.found[k] = insideFound{time.Now(), pids}
+	return pids, nil
 }
 
 // publications is the last list of the published ports, shared by every guard of the process.

@@ -243,6 +243,8 @@ type publication struct {
 	hostIP   netip.Addr
 	hostPort uint16
 	to       uint16
+	// pid is the container's main process: its network namespace holds the socket on port to.
+	pid int32
 }
 
 // dockerSocket is where the docker daemon takes the CLI's calls by default.
@@ -311,7 +313,7 @@ func dockerPublications(ctx context.Context) ([]publication, error) {
 					}
 					hostIP = hostIP.Unmap().WithZone("")
 				}
-				pubs = append(pubs, publication{hostIP: hostIP, hostPort: uint16(hostPort), to: uint16(to)})
+				pubs = append(pubs, publication{hostIP: hostIP, hostPort: uint16(hostPort), to: uint16(to), pid: int32(c.State.Pid)})
 			}
 		}
 	}

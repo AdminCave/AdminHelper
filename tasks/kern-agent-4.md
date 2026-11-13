@@ -33,8 +33,10 @@ zwischen `resolve` und Versand wird abgewiesen, ohne Geheimnis unverändert.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T6
 
-### T3 — R-1427: Prozess hinter einem veröffentlichten Docker-Port prüfen  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/netns_linux.go, apps/agent/internal/probe/netns_other.go, apps/agent/internal/probe/netns_linux_test.go
+### T3 — R-1427: Prozess hinter einem veröffentlichten Docker-Port prüfen  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/netns_linux.go, apps/agent/internal/probe/netns_other.go, apps/agent/internal/probe/netns_linux_test.go, apps/agent/internal/probe/sensor_local_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1991e620b 2026-11-13T19:58:50+01:00
+Review: approve (.ah-out/review/kern-agent-4/T3.verdict.json)
 Änderung: `publication` trägt die PID des Containers (`State.Pid`); neue Naht `containerListeners` (Linux:
 `/proc/<pid>/net/tcp{,6}` im Namespace des Containers, Inode → Prozess über `/proc/*/fd` der Prozesse desselben
 Namespace; sonst nicht unterstützt). `checkPublished` und `checkProxy` beurteilen den Prozess auf dem Container-Port
@@ -86,3 +88,12 @@ Abhängt von: T1, T2, T3, T4
 - 2026-11-13 T2 (Review): auch `proto` mit Passwort (redis AUTH) wählt über den Wächter für Geheimnisse
   (`dialThrough`); `checkOwner` darf zwei Snapshots lesen (Wächter und Besitz), denn beide sind höchstens
   `listenerFresh` alt und ein später hinzugekommener Listener muss die Regel ohnehin erfüllen.
+- 2026-11-13 T3: die Prüfung des Prozesses im Container sitzt in `checkPublished` (`checkInside`), das
+  `judgeListener` für jeden Port fährt, mit docker-proxy wie ohne; `checkProxy` bleibt die Prüfung des
+  Container-Ports aus den Argumenten. Jede lauschende Socket auf dem Container-Port braucht einen gefundenen
+  Prozess, sonst Abweisung; das Ergebnis gilt je Container und Port so lange wie der Snapshot, mit dem geurteilt
+  wird. Kann der Agent die Deskriptoren fremder Prozesse nicht lesen (ohne root), werden veröffentlichte Ports
+  abgewiesen.
+- 2026-11-13 T3 (Review): ein docker-proxy gilt nur, wenn Docker Adresse und Port veröffentlicht (`checkProxied`);
+  fehlt die Veröffentlichung in der Liste, wird sie einmal frisch gelesen, sonst Abweisung. Eine Container-PID im
+  Namespace des Agents gilt als veraltet und wird abgewiesen; der Cache räumt Einträge älter als `listenerTTL`.

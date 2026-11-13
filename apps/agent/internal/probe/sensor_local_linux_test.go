@@ -298,7 +298,7 @@ func stubDockerServes(t *testing.T, serves bool) *int {
 }
 
 const inspectTwo = `[
- {"Id": "` + containerID + `", "State": {"Running": true}, "NetworkSettings": {"Ports": {
+ {"Id": "` + containerID + `", "State": {"Running": true, "Pid": 4711}, "NetworkSettings": {"Ports": {
    "3306/tcp": [{"HostIp": "", "HostPort": "13306"}, {"HostIp": "::", "HostPort": "13306"}],
    "80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8092"}],
    "53/udp": [{"HostIp": "0.0.0.0", "HostPort": "5353"}],
@@ -315,8 +315,8 @@ func TestDockerPublicationsReadsThePublishedTCPPortsOfTheRunningContainers(t *te
 		t.Fatal(err)
 	}
 	want := []publication{
-		{hostPort: 13306, to: 3306}, {hostIP: netip.MustParseAddr("::"), hostPort: 13306, to: 3306},
-		{hostIP: netip.MustParseAddr("127.0.0.1"), hostPort: 8092, to: 80},
+		{hostPort: 13306, to: 3306, pid: 4711}, {hostIP: netip.MustParseAddr("::"), hostPort: 13306, to: 3306, pid: 4711},
+		{hostIP: netip.MustParseAddr("127.0.0.1"), hostPort: 8092, to: 80, pid: 4711},
 	}
 	sortPubs := func(l []publication) {
 		slices.SortFunc(l, func(a, b publication) int {

@@ -40,13 +40,28 @@ type fakeHost struct {
 	// services names the forwarding service of a process; servicesErr fails reading it.
 	services    map[int32]string
 	servicesErr error
+	// inside names the processes on a container port by the container's process; nil answers
+	// containerApp for every one, insideErr fails telling them.
+	inside      map[int32][]int32
+	insideErr   error
+	insideCalls int
 }
+
+// containerApp is the process a fakeHost without inside finds on every container port.
+const containerApp int32 = 7001
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
 	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
-	oldPeer, oldService := peerSocket, serviceForwarder
+	oldPeer, oldService, oldInside := peerSocket, serviceForwarder, containerListeners
+	containerListeners = func(_ context.Context, pid int32, _ uint16) ([]int32, error) {
+		h.insideCalls++
+		if h.inside == nil && h.insideErr == nil {
+			return []int32{containerApp}, nil
+		}
+		return h.inside[pid], h.insideErr
+	}
 	serviceForwarder = func(_ context.Context, pid int32) (string, error) {
 		if h.live && h.services == nil && h.servicesErr == nil {
 			return oldService(context.Background(), pid)
@@ -75,6 +90,9 @@ func stubHost(t *testing.T, h *fakeHost) {
 	}
 	processName = func(ctx context.Context, pid int32) (string, error) {
 		name, ok := h.names[pid]
+		if !ok && pid == containerApp {
+			return "app", nil
+		}
 		if !ok {
 			if h.live {
 				return oldName(ctx, pid)
@@ -103,11 +121,14 @@ func stubHost(t *testing.T, h *fakeHost) {
 		redirected.Lock()
 		redirected.at = nil
 		redirected.Unlock()
+		inside.Lock()
+		inside.found = nil
+		inside.Unlock()
 	}
 	resetSnapshot()
 	t.Cleanup(func() {
 		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
-		peerSocket, serviceForwarder = oldPeer, oldService
+		peerSocket, serviceForwarder, containerListeners = oldPeer, oldService, oldInside
 		resetSnapshot()
 	})
 }
@@ -299,6 +320,7 @@ func TestGuardNeverProbesAContainerPortPublishedFromABlockedOne(t *testing.T) {
 			48: {"docker-proxy", "-container-port"},
 			49: {"nginx", "-container-port", "3306"},
 		},
+		pubs: []publication{pub("", 8080, 80)},
 	})
 	g := NewGuard()
 
@@ -760,6 +782,95 @@ func TestGuardNeverProbesAPortDockerForwardsToABlockedOneWithoutAListener(t *tes
 		if !c.refused && err != nil {
 			t.Errorf("%s: %v, want it allowed", c.address, err)
 		}
+	}
+}
+
+func TestGuardJudgesTheProcessBehindAPublishedPort(t *testing.T) {
+	h := &fakeHost{
+		pubs: []publication{
+			{hostPort: 8080, to: 80, pid: 40}, {hostPort: 8081, to: 80, pid: 41}, {hostPort: 8082, to: 80, pid: 42},
+			{hostPort: 8083, to: 80, pid: 43}, {hostPort: 8084, to: 80, pid: 44},
+		},
+		inside: map[int32][]int32{40: {400}, 41: {410}, 42: {420}, 43: {430, 431}, 44: {440}},
+		names:  map[int32]string{400: "nginx", 410: "socat", 420: "sshd", 430: "nginx", 431: "chisel", 440: "exe"},
+	}
+	stubHost(t, h)
+	g := NewGuard()
+
+	for _, c := range []struct {
+		address, refused string
+	}{
+		{"127.0.0.1:8080", ""},
+		{"127.0.0.1:8081", "socat, which forwards"},
+		{"127.0.0.1:8082", "sshd, which the agent never probes"},
+		{"127.0.0.1:8083", "chisel, which forwards"},
+		{"127.0.0.1:8084", "cannot be told"},
+	} {
+		err := allowed(g, "tcp4", c.address)
+		switch {
+		case c.refused == "" && err != nil:
+			t.Errorf("%s: %v, want it allowed", c.address, err)
+		case c.refused != "" && (!errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.refused) || !strings.Contains(err.Error(), "of a container")):
+			t.Errorf("%s: %v, want it refused with %q", c.address, err, c.refused)
+		}
+	}
+
+	h.inside, h.insideErr = nil, errors.New("no socket listens on port 80")
+	inside.Lock()
+	inside.found = nil
+	inside.Unlock()
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "cannot be told") {
+		t.Errorf("a process that cannot be told: %v, want it refused", err)
+	}
+}
+
+func TestGuardJudgesTheContainerBehindADockerProxy(t *testing.T) {
+	proxy := []string{"docker-proxy", "-host-port", "18080", "-container-port", "80"}
+	h := &fakeHost{
+		list:   []listener{lst("0.0.0.0", 18080, 40)},
+		names:  map[int32]string{40: "docker-proxy", 400: "socat"},
+		args:   map[int32][]string{40: proxy},
+		inside: map[int32][]int32{77: {400}},
+	}
+	stubHost(t, h)
+	g := NewGuard()
+
+	if err := allowed(g, "tcp4", "127.0.0.1:18080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "serves no port docker publishes") {
+		t.Fatalf("a docker-proxy without its publication: %v, want it refused", err)
+	}
+	// The container started after the list was read: a list older than listenerFresh is read afresh.
+	h.pubs = []publication{{hostPort: 18080, to: 80, pid: 77}}
+	publications.Lock()
+	publications.at = publications.at.Add(-listenerFresh)
+	publications.Unlock()
+	calls := h.pubsCalls
+	if err := allowed(g, "tcp4", "127.0.0.1:18080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "socat, which forwards") {
+		t.Fatalf("a forwarder in the container behind a docker-proxy: %v, want it refused", err)
+	}
+	if h.pubsCalls != calls+1 {
+		t.Fatalf("published ports read %d times, want one fresh read", h.pubsCalls-calls)
+	}
+	h.names[400] = "nginx"
+	inside.Lock()
+	inside.found = nil
+	inside.Unlock()
+	if err := allowed(g, "tcp4", "127.0.0.1:18080"); err != nil {
+		t.Fatalf("a server in the container behind a docker-proxy: %v, want it allowed", err)
+	}
+}
+
+func TestGuardTellsTheProcessBehindAPublishedPortOncePerSnapshot(t *testing.T) {
+	h := &fakeHost{pubs: []publication{{hostPort: 8080, to: 80, pid: 40}}}
+	stubHost(t, h)
+	g := NewGuard()
+
+	for range 3 {
+		if err := allowed(g, "tcp4", "127.0.0.1:8080"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if h.insideCalls != 1 {
+		t.Fatalf("the container told %d times, want once within %s", h.insideCalls, listenerTTL)
 	}
 }
 
