@@ -861,21 +861,31 @@ func fcgiLength(b []byte) (int, []byte, bool) {
 
 // speakHAProxy reads show stat from the stats socket: data[proxy][server][field].
 func speakHAProxy(s *session, _ protoOpts) (protoResult, error) {
-	if err := s.send("show stat", []byte("show stat\n")); err != nil {
+	b, err := haproxyAnswer(s, "show stat")
+	if err != nil {
 		return protoResult{}, err
-	}
-	b, err := io.ReadAll(io.LimitReader(s.r, maxProtoBytes+1))
-	switch {
-	case err != nil:
-		return protoResult{}, s.fail(err, "show stat")
-	case len(b) > maxProtoBytes:
-		return protoResult{}, protoFail{"the answer to show stat is too long"}
 	}
 	data, ok := haproxyStat(b)
 	if !ok {
 		return protoResult{}, protoFail{"no answer to show stat"}
 	}
 	return protoResult{data: data}, nil
+}
+
+// haproxyAnswer sends the command cmd to the stats socket and reads the whole answer: the socket
+// answers one command and closes.
+func haproxyAnswer(s *session, cmd string) ([]byte, error) {
+	if err := s.send(cmd, []byte(cmd+"\n")); err != nil {
+		return nil, err
+	}
+	b, err := io.ReadAll(io.LimitReader(s.r, maxProtoBytes+1))
+	switch {
+	case err != nil:
+		return nil, s.fail(err, cmd)
+	case len(b) > maxProtoBytes:
+		return nil, protoFail{"the answer to " + cmd + " is too long"}
+	}
+	return b, nil
 }
 
 // haproxyStat reads the CSV of show stat, its header after "# ": empty values drop, a number stays

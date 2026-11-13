@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 Abhängt von: T2
 
-### T4 — R-1231: Ansicht haproxy_servers (auch OPNsense-Plugin)  [ ]
+### T4 — R-1231: Ansicht haproxy_servers (auch OPNsense-Plugin)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_haproxy.go, apps/agent/internal/probe/app_haproxy_test.go, apps/agent/internal/probe/sensor_proto.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d26380e5e 2026-11-13T23:16:33+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T4.verdict.json)
 Änderung: Stats-Socket aus der Konfiguration (`stats socket`, unter OPNsense `/var/run/haproxy.socket`), `show stat` und
 `show servers state`; gezählt werden Backends down, Server down, Server in Wartung (`srv_admin_state`), ohne Namen.
 Ohne Socket `unsupported`. Läuft unter Linux und FreeBSD. Neue Dateien mit SPDX-Header.
@@ -153,3 +155,9 @@ Task-Review: am Ende
 - vHost-Domains/Zertifikatsdateien und Windows-Ereignisse in eigene Zeilen (Spec, Nicht-Ziele).
 - T1: `exec_status` nur bei `ExecMainCode=1` (CLD_EXITED; nach einem Signal trägt ExecMainStatus die Signalnummer); `newest_in` nutzt das vorhandene `openDir` (O_DIRECTORY) und hört bei 10000 Einträgen auf.
 - T3: Ein Statusort zählt nur auf Loopback, auf allen Adressen nur mit `server_name`/`ServerName`/`ServerAlias` localhost oder 127.0.0.1 (sonst träfe die Anfrage einen anderen Server); TLS-Listen werden übersprungen. nginx -T löst Includes nicht auf, darum je Datei. Apache: `<IfModule>`/`<IfDefine>` gelten als erfüllt (ein abgeschalteter Ort wird Abfragefehler statt unsupported); `slots` = Länge des Scoreboards, nicht MaxRequestWorkers. haproxy -c scheitert bei fehlender Datei wie bei kaputter: ohne `/etc/haproxy/haproxy.cfg` `unsupported`.
+- T4: Backends aus `show stat -1 2 -1` (nur Backend-Zeilen, Status DOWN), Server aus `show servers state`: Wartung =
+  `srv_admin_state & 0x67` (FMAINT, IMAINT, CMAINT, RMAINT, HMAINT; Drain zählt nicht), down = `srv_op_state 0`
+  außerhalb der Wartung (1 startet, 3 stoppt sanft: beide dienen noch); beide Befehle gehen auf jeder Socket-Stufe
+  (an HAProxy 3.4.7 mit `level user` und ohne Stufe geprüft). Socket = erstes absolutes `stats socket`/`unix@` aus
+  `/etc/haproxy/haproxy.cfg`, dann `/usr/local/etc/haproxy.conf` (Ports); unter FreeBSD ohne Eintrag
+  `/var/run/haproxy.socket` (OPNsense-Plugin; welche Datei os-haproxy schreibt, nicht verifiziert).
