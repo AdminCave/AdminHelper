@@ -27,6 +27,7 @@ from app.modules.frp.policy import sync_policy
 from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import (
+    FrpKeyRotateOut,
     InternalServerOut,
     ServerCreate,
     ServerOut,
@@ -230,6 +231,36 @@ def update_server(
     if sent & {"tags", "name", "hostname"}:
         _notify_monitoring_tag_sync("server.updated")
     return server.to_dict()
+
+
+@router.post("/{server_id}/frp-key/rotate", response_model=FrpKeyRotateOut)
+def rotate_frp_key(
+    server_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
+    """Replaces the server's frps proxy key: frps admits its tunnels only with the new key,
+    which the agent fetches with its next frpc.toml."""
+    # The row lock of an activation, which raises the generation as well: neither of two
+    # concurrent raises is lost, and foreign keys to the server still get through.
+    server = db.query(Server).filter(Server.id == server_id).with_for_update(key_share=True).first()
+    if not server:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server nicht gefunden")
+    server.frp_key_generation += 1
+    generation = server.frp_key_generation
+    db.commit()
+    sync_policy(db)
+    audit.record(
+        db,
+        "server.frp_key.rotated",
+        actor=actor_from_request(request),
+        object_type="server",
+        object_id=server_id,
+        object_label=server.name,
+        detail=f"generation={generation}",
+    )
+    return {"generation": generation}
 
 
 @router.delete("/{server_id}", status_code=status.HTTP_204_NO_CONTENT)

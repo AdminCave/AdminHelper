@@ -115,13 +115,13 @@ func countFailMarkers(ctx context.Context, status *os.File, step string, limit i
 			if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".fail") {
 				continue
 			}
-			info, err := e.Info()
-			if err != nil {
-				continue // removed since it was listed
+			mtime, regular, err := markerTime(f, e.Name())
+			if err != nil || !regular {
+				continue // removed or swapped since it was listed
 			}
 			n++
-			if info.ModTime().After(newest) {
-				newest = info.ModTime()
+			if mtime.After(newest) {
+				newest = mtime
 			}
 		}
 		if errors.Is(err, io.EOF) {
@@ -213,7 +213,7 @@ func bbbMeetings(ctx context.Context, t Target) (map[string]any, error) {
 	if err != nil {
 		return nil, errors.New("the request to bbb-web cannot be built")
 	}
-	resp, err := NewGuard(ep.extra...).HTTPClient(nil).Do(req)
+	resp, err := secretGuard(ep).HTTPClient(nil).Do(req)
 	if err != nil {
 		// A url.Error quotes the URL, and with it the checksum.
 		var ue *url.Error
@@ -294,28 +294,17 @@ func bbbProperties(keys ...string) (map[string]string, error) {
 // does: it opens no other kind of file and waits for no writer. Its errors name neither the file nor
 // its content but wrap fs.ErrNotExist.
 func readCapped(name string, limit int64) ([]byte, error) {
-	fi, err := os.Stat(name)
-	if errors.Is(err, fs.ErrNotExist) {
+	f, err := openChecked(name)
+	var opening *fs.PathError
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		return nil, fs.ErrNotExist
-	}
-	if err != nil {
+	case errors.As(err, &opening):
 		return nil, errors.New("cannot be read")
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, errors.New("is no regular file")
-	}
-	f, err := openNoWait(name)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fs.ErrNotExist
-	}
-	if err != nil {
-		return nil, errors.New("cannot be read")
+	case err != nil:
+		return nil, errNoRegularFile
 	}
 	defer f.Close()
-	// The file may have been swapped since the stat.
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || refuseKernelFile(f, name) != nil {
-		return nil, errors.New("is no regular file")
-	}
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, errors.New("cannot be read")

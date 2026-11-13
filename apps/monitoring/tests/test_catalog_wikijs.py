@@ -5,7 +5,8 @@
 """The catalog module wikijs (R-1243): the image requarks/wiki under either tag, 2 or 3, and
 the one of linuxserver.io get the container check and GET /favicon.ico on 3000 in plain HTTP,
 the one path both versions answer; anything but 200 is critical; the database container of
-the project and other images are not taken."""
+the project and other images are not taken. An image tagged 2 or 2.x also gets GET /healthz
+(R-1397), which Wiki.js 3 does not have."""
 
 from datetime import UTC, datetime
 
@@ -87,7 +88,7 @@ def _status(check_key, values, status="ok", error=""):
 
 def test_the_module_loads_with_its_checks():
     assert CATALOG.errors == ()
-    assert list(CHECKS) == ["container", "web"]
+    assert list(CHECKS) == ["container", "web", "healthz"]
     assert MODULE.detect.container_images == [
         "requarks/wiki",
         "ghcr.io/requarks/wiki",
@@ -113,14 +114,32 @@ def test_the_web_check_asks_the_icon_both_versions_serve_on_3000_in_plain_http()
     assert (check.interval, check.test_object) == (300, False)
 
 
+def test_the_health_check_asks_healthz_on_3000_only_for_tag_2():
+    check = CHECKS["healthz"]
+    assert check.sensor == "http"
+    assert check.params == {"path": "/healthz", "method": "GET"}
+    assert (check.target.kind, check.target.port_hint, check.target.scheme) == (
+        "container",
+        3000,
+        "http",
+    )
+    assert check.image_tags == ["2", "2.*"]
+    assert check.fields == ["status_code"]
+    assert (check.interval, check.test_object) == (300, False)
+
+
 def test_wikijs_in_its_project_gets_its_container_and_3000():
     block = _block(COMPOSE)
     assert _found(block) == {
-        "docs": {"services": {"db": "postgres", "wiki": "ghcr.io/requarks/wiki"}}
+        "docs": {
+            "services": {"db": "postgres", "wiki": "ghcr.io/requarks/wiki"},
+            "tag_checks": ["healthz"],
+        }
     }
     assert _bind(block, "docs") == {
         "container": ("docs-wiki-1", None),
         "web": ("docs-wiki-1", None),
+        "healthz": ("docs-wiki-1", None),
     }
     config, why = probe_config(
         MODULE, CHECKS["web"], "docs", _found(block)["docs"], block["containers"]
@@ -135,22 +154,31 @@ def test_wikijs_in_its_project_gets_its_container_and_3000():
 
 
 @pytest.mark.parametrize(
-    ("image", "ports"),
+    ("image", "ports", "tag"),
     [
-        ("requarks/wiki:2", PORTS),
-        ("requarks/wiki:2.5", PORTS),
-        ("requarks/wiki:3", PORTS),
-        ("ghcr.io/requarks/wiki:3.3.1", PORTS),
-        ("docker.io/requarks/wiki:latest", PORTS),
-        ("ghcr.io/requarks/wiki@sha256:" + "c" * 64, PORTS),
-        ("lscr.io/linuxserver/wikijs:latest", ((3000, 3000),)),
-        ("ghcr.io/linuxserver/wikijs:version-2.5.307", ((3000, 3000),)),
-        ("linuxserver/wikijs:2.5.307", ((3000, 3000),)),
+        ("requarks/wiki:2", PORTS, "2"),
+        ("requarks/wiki:2.5", PORTS, "2.5"),
+        ("requarks/wiki:3", PORTS, "3"),
+        ("ghcr.io/requarks/wiki:3.3.1", PORTS, "3.3.1"),
+        ("docker.io/requarks/wiki:latest", PORTS, "latest"),
+        ("ghcr.io/requarks/wiki@sha256:" + "c" * 64, PORTS, ""),
+        ("lscr.io/linuxserver/wikijs:latest", ((3000, 3000),), "latest"),
+        ("ghcr.io/linuxserver/wikijs:version-2.5.307", ((3000, 3000),), "version-2.5.307"),
+        ("linuxserver/wikijs:2.5.307", ((3000, 3000),), "2.5.307"),
     ],
 )
-def test_either_version_and_either_image_get_the_container_and_3000(image, ports):
-    bound = _bind(_block([_container("wiki", image, ports=ports)]), "wiki")
-    assert bound == {"container": ("wiki", None), "web": ("wiki", None)}
+def test_either_version_and_either_image_get_the_container_and_3000(image, ports, tag):
+    block = _block([_container("wiki", image, ports=ports)])
+    bound = _bind(block, "wiki")
+    assert (bound["container"], bound["web"]) == (("wiki", None), ("wiki", None))
+    if tag in ("2", "2.5", "2.5.307"):
+        assert bound["healthz"] == ("wiki", None)
+        assert _found(block)["wiki"]["tag_checks"] == ["healthz"]
+    else:
+        # Wiki.js 3 answers /healthz with 404; an unknown version is not asked either.
+        why = f"container wiki runs the tag {tag or '(unknown)'}, the check needs 2, 2.*"
+        assert bound["healthz"] == (None, why)
+        assert _found(block)["wiki"]["tag_checks"] == []
 
 
 @pytest.mark.parametrize(
@@ -180,6 +208,19 @@ def test_other_images_are_not_taken_for_wikijs(image):
 )
 def test_the_web_check_is_critical_on_anything_but_200(values, status, error, want):
     assert _status("web", values, status, error) == want
+
+
+@pytest.mark.parametrize(
+    ("values", "status", "error", "want"),
+    [
+        ({"status_code": 200}, "ok", "", "ok"),
+        # /healthz answers 500 when the database pool fails.
+        ({"status_code": 500}, "ok", "", "critical"),
+        ({}, "error", "connection refused", "critical"),
+    ],
+)
+def test_the_health_check_is_critical_on_anything_but_200(values, status, error, want):
+    assert _status("healthz", values, status, error) == want
 
 
 @pytest.mark.parametrize(

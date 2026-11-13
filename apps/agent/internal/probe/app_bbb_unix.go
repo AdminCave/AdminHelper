@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -49,4 +50,25 @@ func notDir(err error) error {
 		return errNotDir
 	}
 	return err
+}
+
+// markerTime returns the mtime of the file name in dir and whether it is a regular file. It reads it at
+// dir's descriptor without following a link: a directory put at dir's path since dir was listed is
+// never read.
+func markerTime(dir *os.File, name string) (time.Time, bool, error) {
+	conn, err := dir.SyscallConn()
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	var st unix.Stat_t
+	statErr := error(nil)
+	if err := conn.Control(func(fd uintptr) {
+		statErr = unix.Fstatat(int(fd), name, &st, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return time.Time{}, false, err
+	}
+	if statErr != nil {
+		return time.Time{}, false, statErr
+	}
+	return time.Unix(st.Mtim.Unix()), st.Mode&unix.S_IFMT == unix.S_IFREG, nil
 }

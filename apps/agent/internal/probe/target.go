@@ -39,11 +39,14 @@ var containerPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$`)
 var errNotListening = errors.New("listens on no TCP port")
 
 // endpoint is where a probe's target listens: the address and port a sensor connects to, and the
-// addresses of the container it belongs to, which the guard lets the sensor reach as well.
+// addresses of the container it belongs to, which the guard lets the sensor reach as well. owns
+// builds anew the rule by which resolve found the target among this host's listeners; it is nil for a
+// target resolve does not find there (loopback, a container's own network).
 type endpoint struct {
 	addr  netip.Addr
 	port  uint16
 	extra []netip.Addr
+	owns  func() func(listener) bool
 }
 
 // targetOf returns p's target if its kind is one of kinds and it carries what that kind needs: a port
@@ -107,19 +110,33 @@ func resolve(ctx context.Context, t Target) (endpoint, error) {
 	case kindLoopback:
 		return endpoint{addr: netip.AddrFrom4([4]byte{127, 0, 0, 1}), port: uint16(t.PortHint)}, nil
 	case kindPort:
-		return hostEndpoint(ctx, t, func(l listener) bool { return l.port == uint16(t.PortHint) })
+		return ruledEndpoint(ctx, t, func() func(listener) bool {
+			return func(l listener) bool { return l.port == uint16(t.PortHint) }
+		})
 	case kindProcess:
-		return hostEndpoint(ctx, t, ownedBy(ctx, t.Name))
+		return ruledEndpoint(ctx, t, func() func(listener) bool { return ownedBy(ctx, t.Name) })
 	case kindUnit:
 		owns, err := unitOwner(ctx, t.Name)
 		if err != nil {
 			return endpoint{}, err
 		}
-		return hostEndpoint(ctx, t, func(l listener) bool { return owns(l.pid) })
+		return ruledEndpoint(ctx, t, func() func(listener) bool {
+			return func(l listener) bool { return owns(l.pid) }
+		})
 	case kindContainer:
 		return containerEndpoint(ctx, t)
 	}
 	return endpoint{}, fmt.Errorf("%w: target kind %q", ErrInvalid, t.Kind)
+}
+
+// ruledEndpoint is hostEndpoint with the matcher rule builds; the endpoint keeps rule (endpoint.owns).
+func ruledEndpoint(ctx context.Context, t Target, rule func() func(listener) bool) (endpoint, error) {
+	ep, err := hostEndpoint(ctx, t, rule())
+	if err != nil {
+		return endpoint{}, err
+	}
+	ep.owns = rule
+	return ep, nil
 }
 
 // hostEndpoint resolves t among the listening sockets of this host that match.
@@ -278,6 +295,38 @@ func parseCgroups(data []byte) Cgroups {
 		}
 	}
 	return c
+}
+
+// Unit is the systemd service unit c runs in: the first ".service" below system.slice, the slices
+// between them skipped, in the unified hierarchy or else in systemd's own of cgroup v1; "" for a
+// process of no service unit (a user session, a scope as docker's containers run in).
+func (c Cgroups) Unit() string {
+	path, ok := c["0:"]
+	if !ok {
+		for h, p := range c {
+			if strings.HasSuffix(h, ":name=systemd") {
+				path, ok = p, true
+				break
+			}
+		}
+	}
+	if !ok {
+		return ""
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if parts[0] != "system.slice" {
+		return ""
+	}
+	for _, part := range parts[1:] {
+		if strings.HasSuffix(part, ".slice") {
+			continue
+		}
+		if strings.HasSuffix(part, ".service") {
+			return part
+		}
+		return ""
+	}
+	return ""
 }
 
 // Holds says whether the process that runs in p runs in the cgroups c or below them: the processes

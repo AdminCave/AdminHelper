@@ -64,6 +64,7 @@ type fakeHost struct {
 	cgroups    map[int32]probe.Cgroups
 	cgroupRead map[int32]int
 	protocols  map[uint16]string
+	listening  map[int32][]uint16
 	recognize  func(ctx context.Context, port uint16) (string, error)
 	recognized []uint16
 }
@@ -77,12 +78,13 @@ func stubHost(t *testing.T) *fakeHost {
 		cgroups:    map[int32]probe.Cgroups{},
 		cgroupRead: map[int32]int{},
 		protocols:  map[uint16]string{},
+		listening:  map[int32][]uint16{},
 	}
-	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups :=
-		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf
+	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening :=
+		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening
 	t.Cleanup(func() {
-		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf =
-			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups
+		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening =
+			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening
 	})
 	linuxHost, markerHost = true, true
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
@@ -114,6 +116,13 @@ func stubHost(t *testing.T) *fakeHost {
 		defer h.mu.Unlock()
 		h.cgroupRead[pid]++
 		return h.cgroups[pid]
+	}
+	containerListening = func(pid int32) ([]uint16, error) {
+		ports, ok := h.listening[pid]
+		if !ok {
+			return nil, errors.New("no such process")
+		}
+		return ports, nil
 	}
 	recognizePort = func(ctx context.Context, port uint16) (string, error) {
 		h.mu.Lock()
@@ -220,9 +229,15 @@ func wholeHost(t *testing.T) *fakeHost {
 	hostWorker := probe.Cgroups{"0:": scope(idHost)["0:"] + "/worker"}
 	h.cgroups = map[int32]probe.Cgroups{4100: scope(idWeb), 4200: scope(idHost), 200: scope(idHost),
 		201: hostWorker, 100: scope(idWeb),
+		// Service units: under cgroup v2, below a unit, under v1.
+		1: {"0:": "/system.slice/ssh.service"}, 500: {"0:": "/system.slice/nginx.service"},
+		501: {"0:": "/system.slice/nginx.service/worker"},
+		300: {"12:pids": "/system.slice/mariadb.service", "1:name=systemd": "/system.slice/mariadb.service"},
 		// A cgroup a user may create in the subtree delegated to them, named like the container's.
 		600: {"0:": "/user.slice/user-1000.slice/user@1000.service/docker-" + idHost + ".scope"}}
 	h.protocols = map[uint16]string{80: "http", 8080: "http", 22: "ssh", 2525: "smtp", 9100: "http", 631: "http"}
+	// In web's network namespace; hostnet's is the host's, never asked.
+	h.listening = map[int32][]uint16{4100: {80, 8000}, 4200: {9999}}
 	h.paths["/etc/nginx"] = true
 	dpkgExit1 := exitError(t, 1)
 	// foo is wanted, not installed (in); redis-server removed, its configuration kept (rc).
@@ -263,7 +278,7 @@ func TestRunDiscoversTheHost(t *testing.T) {
 		{ID: idWeb, Name: "web", Image: "nginx:1.27", ComposeProject: "site", ComposeService: "web",
 			State: "running", Health: "healthy",
 			Ports:  []ContainerPort{{53, port16(5353), "udp"}, {80, port16(8080), "tcp"}, {443, nil, "tcp"}},
-			Mounts: []string{"/etc/nginx", "/var/www"}, pid: 4100,
+			Mounts: []string{"/etc/nginx", "/var/www"}, Listening: []uint16{80, 8000}, pid: 4100,
 			binds: []netip.AddrPort{netip.MustParseAddrPort("0.0.0.0:8080"), netip.MustParseAddrPort("[::]:8080")}},
 	}
 	if !reflect.DeepEqual(inv.Containers, wantContainers) {
@@ -274,17 +289,17 @@ func TestRunDiscoversTheHost(t *testing.T) {
 		t.Errorf("docker calls = %q", got)
 	}
 	wantSockets := []Socket{
-		{"tcp", "0.0.0.0", 22, "sshd", ""},
-		{"tcp", "0.0.0.0", 80, "nginx", ""},
-		{"tcp6", "::", 80, "nginx", ""},
-		{"tcp", "127.0.0.1", 631, "cupsd", ""},
-		{"tcp", "0.0.0.0", 2525, "mariadbd", ""},
-		{"tcp", "127.0.0.1", 7000, "lookalike", ""},
-		{"tcp", "0.0.0.0", 8080, "docker-proxy", "web"},
-		{"tcp6", "::", 8080, "docker-proxy", "web"},
-		{"tcp", "192.0.2.10", 9000, "hostapp", "hostnet"},
-		{"tcp", "192.0.2.10", 9001, "hostapp", "hostnet"},
-		{"tcp", "0.0.0.0", 9100, "node_exporter", ""},
+		{"tcp", "0.0.0.0", 22, "sshd", "", "ssh.service"},
+		{"tcp", "0.0.0.0", 80, "nginx", "", "nginx.service"},
+		{"tcp6", "::", 80, "nginx", "", "nginx.service"},
+		{"tcp", "127.0.0.1", 631, "cupsd", "", ""},
+		{"tcp", "0.0.0.0", 2525, "mariadbd", "", "mariadb.service"},
+		{"tcp", "127.0.0.1", 7000, "lookalike", "", ""},
+		{"tcp", "0.0.0.0", 8080, "docker-proxy", "web", ""},
+		{"tcp6", "::", 8080, "docker-proxy", "web", ""},
+		{"tcp", "192.0.2.10", 9000, "hostapp", "hostnet", ""},
+		{"tcp", "192.0.2.10", 9001, "hostapp", "hostnet", ""},
+		{"tcp", "0.0.0.0", 9100, "node_exporter", "", ""},
 	}
 	if !reflect.DeepEqual(inv.Sockets, wantSockets) {
 		t.Errorf("sockets =\n%+v\nwant\n%+v", inv.Sockets, wantSockets)
@@ -360,8 +375,8 @@ func TestTextsTheContractCannotCarryAreLeftEmpty(t *testing.T) {
 	if !reflect.DeepEqual(inv.Containers, wantContainers) {
 		t.Errorf("containers = %+v, want %+v", inv.Containers, wantContainers)
 	}
-	wantSockets := []Socket{{"tcp", "127.0.0.1", 1000, "", ""}, {"tcp", "127.0.0.1", 1001, "", ""},
-		{"tcp", "127.0.0.1", 1002, strings.Repeat("ä", 255), ""}}
+	wantSockets := []Socket{{"tcp", "127.0.0.1", 1000, "", "", ""}, {"tcp", "127.0.0.1", 1001, "", "", ""},
+		{"tcp", "127.0.0.1", 1002, strings.Repeat("ä", 255), "", ""}}
 	if !reflect.DeepEqual(inv.Sockets, wantSockets) {
 		t.Errorf("sockets = %+v, want the names too long or with a control character empty", inv.Sockets)
 	}
@@ -401,8 +416,8 @@ func TestTheInventoryHasTheContractsShape(t *testing.T) {
 	}{
 		{"inventory", keys(t, data), "containers duration_ms markers partial ports sockets ts units"},
 		{"unit", keys(t, inv.Units[0]), "name state sub"},
-		{"socket", keys(t, inv.Sockets[0]), "addr container port process proto"},
-		{"container", keys(t, inv.Containers[2]), "compose_project compose_service health id image mounts name ports state"},
+		{"socket", keys(t, inv.Sockets[0]), "addr container port process proto unit"},
+		{"container", keys(t, inv.Containers[2]), "compose_project compose_service health id image listening mounts name ports state"},
 		{"port", keys(t, inv.Ports[0]), "port proto protocol"},
 	} {
 		if strings.Join(c.got, " ") != c.want {
@@ -802,13 +817,13 @@ func TestDockerProxyIsMatchedByAddressAndPort(t *testing.T) {
 	got, ok := collectSockets(context.Background(), containers)
 
 	want := []Socket{
-		{"tcp", "127.0.0.1", 8080, "docker-proxy", "a"},
-		{"tcp", "192.0.2.10", 8080, "docker-proxy", "b"},
-		{"tcp", "0.0.0.0", 8443, "docker-proxy", "c"},
-		{"tcp6", "::", 8443, "docker-proxy", "c"},
-		{"tcp6", "::ffff:127.0.0.1", 8080, "docker-proxy", "a"},
-		{"tcp", "0.0.0.0", 8080, "docker-proxy", ""},
-		{"tcp", "0.0.0.0", 9053, "docker-proxy", ""},
+		{"tcp", "127.0.0.1", 8080, "docker-proxy", "a", ""},
+		{"tcp", "192.0.2.10", 8080, "docker-proxy", "b", ""},
+		{"tcp", "0.0.0.0", 8443, "docker-proxy", "c", ""},
+		{"tcp6", "::", 8443, "docker-proxy", "c", ""},
+		{"tcp6", "::ffff:127.0.0.1", 8080, "docker-proxy", "a", ""},
+		{"tcp", "0.0.0.0", 8080, "docker-proxy", "", ""},
+		{"tcp", "0.0.0.0", 9053, "docker-proxy", "", ""},
 	}
 	slices.SortFunc(got, func(a, b Socket) int { return cmp.Or(cmp.Compare(a.Port, b.Port), strings.Compare(a.Addr, b.Addr)) })
 	slices.SortFunc(want, func(a, b Socket) int { return cmp.Or(cmp.Compare(a.Port, b.Port), strings.Compare(a.Addr, b.Addr)) })
@@ -857,5 +872,53 @@ func TestThePortsAreCutAtTheContractsCap(t *testing.T) {
 	}
 	if ports[maxPorts-1].Port != uint16(10000+maxPorts-1) {
 		t.Errorf("last port = %d, want the lowest ports kept", ports[maxPorts-1].Port)
+	}
+}
+
+func TestTheListeningPortsAreAskedOnlyOfARunningContainerOnItsOwnNetwork(t *testing.T) {
+	h := stubHost(t)
+	h.listening = map[int32][]uint16{10: {8000}, 11: {1}, 12: {2}, 13: {3}, 15: {}}
+	many := make([]uint16, maxContainerPorts+5)
+	for i := range many {
+		many[i] = uint16(1000 + i)
+	}
+	h.listening[16] = many
+	var raw []inspected
+	if err := json.Unmarshal([]byte(`[
+ {"Name": "/own", "State": {"Status": "running", "Pid": 10}, "HostConfig": {"NetworkMode": "bridge"}},
+ {"Name": "/host", "State": {"Status": "running", "Pid": 11}, "HostConfig": {"NetworkMode": "host"}},
+ {"Name": "/none", "State": {"Status": "running", "Pid": 12}, "HostConfig": {"NetworkMode": "none"}},
+ {"Name": "/joined", "State": {"Status": "running", "Pid": 13}, "HostConfig": {"NetworkMode": "container:own"}},
+ {"Name": "/gone", "State": {"Status": "running", "Pid": 14}, "HostConfig": {"NetworkMode": "bridge"}},
+ {"Name": "/quiet", "State": {"Status": "running", "Pid": 15}, "HostConfig": {"NetworkMode": "bridge"}},
+ {"Name": "/busy", "State": {"Status": "running", "Pid": 16}, "HostConfig": {"NetworkMode": "bridge"}},
+ {"Name": "/stopped", "State": {"Status": "exited", "Pid": 0}, "HostConfig": {"NetworkMode": "bridge"}}
+]`), &raw); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]uint16{"own": {8000}, "host": nil, "none": nil, "joined": nil,
+		// A namespace that cannot be read is not known; one where nothing listens is known empty.
+		"gone": nil, "quiet": {}, "busy": many[:maxContainerPorts], "stopped": nil}
+	for _, c := range raw {
+		name := strings.TrimPrefix(c.Name, "/")
+		got := listeningIn(c)
+		if !reflect.DeepEqual(got, want[name]) || (got == nil) != (want[name] == nil) {
+			t.Errorf("%s: listening = %#v, want %#v", name, got, want[name])
+		}
+	}
+}
+
+func TestAUnitTheContractCannotCarryIsLeftEmpty(t *testing.T) {
+	h := stubHost(t)
+	h.listeners = []probe.Listener{listener("0.0.0.0", 3000, 7), listener("0.0.0.0", 3001, 8)}
+	h.processes = map[int32]string{7: "gitea", 8: "app"}
+	h.cgroups = map[int32]probe.Cgroups{7: {"0:": "/system.slice/gitea.service"},
+		8: {"0:": "/system.slice/" + strings.Repeat("u", 256) + ".service"}}
+
+	got, ok := collectSockets(context.Background(), nil)
+
+	want := []Socket{{"tcp", "0.0.0.0", 3000, "gitea", "", "gitea.service"}, {"tcp", "0.0.0.0", 3001, "app", "", ""}}
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Errorf("sockets = %+v, %v, want %+v: a unit too long is left empty", got, ok, want)
 	}
 }

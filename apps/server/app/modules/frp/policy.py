@@ -35,6 +35,7 @@ from app.modules.frp.config_generator import _first_warning, generate_frpc_toml
 from app.modules.frp.docker_manager import write_frps_policy
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.proxy_key import proxy_key_hash
+from app.modules.servers.models import Server
 
 logger = logging.getLogger(__name__)
 
@@ -100,12 +101,22 @@ def _proxy(fields: dict) -> dict | None:
 
 
 def _proxies(
-    db: Session, config: FrpServerConfig, server_id: str, tunnels: list[FrpTunnel]
+    db: Session,
+    config: FrpServerConfig,
+    server_id: str,
+    key_generation: int,
+    tunnels: list[FrpTunnel],
 ) -> dict:
     """The proxies of the host's frpc.toml by tunnel ID."""
     try:
         doc = tomllib.loads(
-            generate_frpc_toml(config, tunnels, server_id, get_allow_users(db, server_id))
+            generate_frpc_toml(
+                config,
+                tunnels,
+                server_id,
+                get_allow_users(db, server_id),
+                key_generation=key_generation,
+            )
         )
     except tomllib.TOMLDecodeError:
         if _first_warning(repr(server_id), ("policy", "toml")):
@@ -140,6 +151,9 @@ def _servers(db: Session) -> tuple[dict, str]:
     by_server: dict[str, list[FrpTunnel]] = defaultdict(list)
     for tunnel in db.query(FrpTunnel).filter(FrpTunnel.frp_config_id == config.id):
         by_server[tunnel.server_id].append(tunnel)
+    generations = dict(
+        db.query(Server.id, Server.frp_key_generation).filter(Server.id.in_(by_server.keys()))
+    )
     for server_id, tunnels in sorted(by_server.items()):
         # frps names a proxy "<user>.<name>" and the plugin cuts the user off at the first
         # dot after it; a dot in the user would make that split ambiguous.
@@ -150,9 +164,13 @@ def _servers(db: Session) -> tuple[dict, str]:
                     server_id,
                 )
             continue
-        proxies = _proxies(db, config, server_id, tunnels)
+        generation = generations.get(server_id, 0)
+        proxies = _proxies(db, config, server_id, generation, tunnels)
         if proxies:
-            servers[server_id] = {"keyHash": proxy_key_hash(server_id), "proxies": proxies}
+            servers[server_id] = {
+                "keyHash": proxy_key_hash(server_id, generation),
+                "proxies": proxies,
+            }
     return servers, (config.subdomain_host or "").strip().lower()
 
 

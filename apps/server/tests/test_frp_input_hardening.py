@@ -817,7 +817,9 @@ def test_the_clash_rule_knows_every_key_the_generator_writes_into_a_proxy():
                 yield prefix + key
 
     written = set()
-    for proxy in tomllib.loads(generate_frpc_toml(_legacy_row(), tunnels, "srv1"))["proxies"]:
+    for proxy in tomllib.loads(
+        generate_frpc_toml(_legacy_row(), tunnels, "srv1", key_generation=0)
+    )["proxies"]:
         written |= set(key_paths(proxy))
     assert written == set(_GENERATOR_PROXY_KEYS)
 
@@ -899,7 +901,7 @@ def test_generator_falls_back_to_7000_for_a_stored_bind_port_out_of_range(stored
     cfg = _legacy_row(bind_port=stored)
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
         frps = tomllib.loads(generate_frps_toml(cfg))
-        frpc = tomllib.loads(generate_frpc_toml(cfg, [], "srv1"))
+        frpc = tomllib.loads(generate_frpc_toml(cfg, [], "srv1", key_generation=0))
         visitor = tomllib.loads(generate_visitor_toml(cfg, []))
 
     assert frps["bindPort"] == 7000
@@ -964,7 +966,7 @@ def test_generator_stays_quiet_for_valid_and_unset_values(caplog):
     )
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
         frps = tomllib.loads(generate_frps_toml(cfg))
-        frpc = tomllib.loads(generate_frpc_toml(cfg, [], "srv1"))
+        frpc = tomllib.loads(generate_frpc_toml(cfg, [], "srv1", key_generation=0))
 
     assert (frps["bindPort"], frps["vhostHTTPSPort"], frps["maxPortsPerClient"]) == (1, 65535, 16)
     assert "webServer" not in frps
@@ -1022,7 +1024,9 @@ def test_generator_leaves_out_a_stored_tunnel_with_a_plugin_key(key, caplog):
         )
     )
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
-        text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
+        text = generate_frpc_toml(
+            _legacy_row(), [plugin, _stored_tunnel()], "srv1", key_generation=0
+        )
 
     assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["t-n"]
     assert _PLUGIN_SECRET not in text
@@ -1039,7 +1043,7 @@ def test_generator_writes_no_proxy_and_no_token_for_only_a_plugin_tunnel(caplog)
     plugin = _plugin_tunnel({"plugin": "static_file"})
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
         assert active_tunnels([plugin]) == []
-        text = generate_frpc_toml(_legacy_row(), [plugin], "srv1")
+        text = generate_frpc_toml(_legacy_row(), [plugin], "srv1", key_generation=0)
 
     frpc = tomllib.loads(text)
     assert "proxies" not in frpc and frpc["auth"] == {"method": "token"}, frpc
@@ -1050,7 +1054,7 @@ def test_generator_writes_no_proxy_and_no_token_for_only_a_plugin_tunnel(caplog)
 def test_generator_keeps_a_tunnel_with_a_neighbour_of_the_plugin_family(key, caplog):
     tunnel = _stored_tunnel(extra_config=json.dumps({key: True}))
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
-        frpc = tomllib.loads(generate_frpc_toml(_legacy_row(), [tunnel], "srv1"))
+        frpc = tomllib.loads(generate_frpc_toml(_legacy_row(), [tunnel], "srv1", key_generation=0))
 
     assert [p["name"] for p in frpc["proxies"]] == ["t-n"]
     assert _generator_warnings(caplog) == []
@@ -1072,9 +1076,11 @@ def test_generator_keeps_a_tunnel_with_a_neighbour_of_the_plugin_family(key, cap
 def test_generator_leaves_out_a_stored_tunnel_out_of_the_agents_form(extra, caplog):
     refused = _plugin_tunnel(json.dumps(extra))
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
-        text = generate_frpc_toml(_legacy_row(), [refused, _stored_tunnel()], "srv1")
+        text = generate_frpc_toml(
+            _legacy_row(), [refused, _stored_tunnel()], "srv1", key_generation=0
+        )
 
-    assert text == generate_frpc_toml(_legacy_row(), [_stored_tunnel()], "srv1")
+    assert text == generate_frpc_toml(_legacy_row(), [_stored_tunnel()], "srv1", key_generation=0)
     assert [p["name"] for p in tomllib.loads(text)["proxies"]] == ["t-n"]
     warned = _generator_warnings(caplog)
     assert len(warned) == 1, warned
@@ -1114,7 +1120,9 @@ def _assert_one_line_without_values(warned):
 def test_generator_leaves_out_a_stored_tunnel_the_api_would_refuse(extra, key, caplog):
     plugin = _plugin_tunnel(json.dumps({"transport.useCompression": True, **extra}))
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
-        text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
+        text = generate_frpc_toml(
+            _legacy_row(), [plugin, _stored_tunnel()], "srv1", key_generation=0
+        )
 
     _assert_left_out(text)
     warned = _generator_warnings(caplog)
@@ -1126,7 +1134,9 @@ def test_generator_leaves_out_a_stored_tunnel_the_api_would_refuse(extra, key, c
 def test_generator_leaves_out_a_stored_tunnel_whose_extra_config_is_no_object(stored, caplog):
     plugin = _plugin_tunnel(stored)
     with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
-        text = generate_frpc_toml(_legacy_row(), [plugin, _stored_tunnel()], "srv1")
+        text = generate_frpc_toml(
+            _legacy_row(), [plugin, _stored_tunnel()], "srv1", key_generation=0
+        )
 
     _assert_left_out(text)
     warned = _generator_warnings(caplog)

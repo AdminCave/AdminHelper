@@ -337,6 +337,44 @@ func TestTheMeetingsViewCountsOnlyTheNumbersOfEachMeeting(t *testing.T) {
 	}
 }
 
+// TestTheMeetingsViewSendsItsChecksumOnlyToTheUnitItResolved: the guard judges bbb-web's port afresh
+// before the request, by the rule resolve found it with; a listener that is no longer the unit's gets
+// no request (R-1425).
+func TestTheMeetingsViewSendsItsChecksumOnlyToTheUnitItResolved(t *testing.T) {
+	stubBBBProperties(t, map[int]string{0: "securitySalt=" + testSalt + "\n"})
+	for name, c := range map[string]struct {
+		owner int32
+		sent  bool
+	}{"still the unit's": {int32(os.Getpid()), true}, "another process since": {-1, false}} {
+		t.Run(name, func(t *testing.T) {
+			api := serveBBB(t, http.StatusOK, bbbMeetingsAnswer)
+			resolved, err := bbbEndpoint(context.Background(), bbbWeb())
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := bbbEndpoint
+			bbbEndpoint = func(context.Context, Target) (endpoint, error) {
+				ep := resolved
+				ep.owns = func() func(listener) bool { return func(l listener) bool { return l.pid == c.owner } }
+				return ep, nil
+			}
+			t.Cleanup(func() { bbbEndpoint = old })
+
+			_, err = bbbMeetings(context.Background(), bbbWeb())
+			if c.sent {
+				if err != nil || len(api.requests()) != 1 {
+					t.Fatalf("%v after %d requests, want one request", err, len(api.requests()))
+				}
+				return
+			}
+			if !errors.Is(err, ErrNotAllowed) || len(api.requests()) != 0 {
+				t.Fatalf("%v after %d requests, want ErrNotAllowed and none", err, len(api.requests()))
+			}
+			holdsNoSecret(t, "error", err.Error(), bbbSecrets(testSalt))
+		})
+	}
+}
+
 func TestTheMeetingsViewReadsTheSaltAsBBBConfDoes(t *testing.T) {
 	cases := map[string]struct {
 		files map[int]string

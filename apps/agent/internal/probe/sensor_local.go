@@ -59,6 +59,7 @@ var (
 	runTool       = allowlist.Run
 	findProcesses = processesNamed
 	statPath      = os.Stat
+	openFile      = openChecked
 )
 
 // noParams returns an error wrapping ErrInvalid if p has params: its sensor takes none.
@@ -243,6 +244,8 @@ type publication struct {
 	hostIP   netip.Addr
 	hostPort uint16
 	to       uint16
+	// pid is the container's main process: its network namespace holds the socket on port to.
+	pid int32
 }
 
 // dockerSocket is where the docker daemon takes the CLI's calls by default.
@@ -311,7 +314,7 @@ func dockerPublications(ctx context.Context) ([]publication, error) {
 					}
 					hostIP = hostIP.Unmap().WithZone("")
 				}
-				pubs = append(pubs, publication{hostIP: hostIP, hostPort: uint16(hostPort), to: uint16(to)})
+				pubs = append(pubs, publication{hostIP: hostIP, hostPort: uint16(hostPort), to: uint16(to), pid: int32(c.State.Pid)})
 			}
 		}
 	}
@@ -445,28 +448,26 @@ func fileAgeSensor(ctx context.Context, p Probe, _ string) (map[string]any, erro
 	}, nil
 }
 
-// readSmallFile reads the regular file path, at most limit bytes. It opens nothing else: opening a
-// device can act on it, and opening a FIFO waits for a writer.
+// errNoRegularFile is what checkRegular returns for a file that is not regular.
+var errNoRegularFile = errors.New("is no regular file")
+
+// checkRegular returns an error unless f is a regular file outside the file systems of the kernel; its
+// errors call it path.
+func checkRegular(f *os.File, path string) error {
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s %w", path, errNoRegularFile)
+	}
+	return refuseKernelFile(f, path)
+}
+
+// readSmallFile reads the regular file path, at most limit bytes. It opens nothing else (openChecked):
+// opening a device can act on it, and opening a FIFO waits for a writer.
 func readSmallFile(path string, limit int64) ([]byte, error) {
-	fi, err := statPath(path)
-	if err != nil {
-		return nil, err
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is no regular file", path)
-	}
-	f, err := openNoWait(path)
+	f, err := openFile(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	// The file may have been swapped since the stat.
-	if fi, err = f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is no regular file", path)
-	}
-	if err := refuseKernelFile(f, path); err != nil {
-		return nil, err
-	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err

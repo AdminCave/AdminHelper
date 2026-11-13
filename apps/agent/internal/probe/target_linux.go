@@ -70,7 +70,9 @@ func containerEndpoint(ctx context.Context, t Target) (endpoint, error) {
 		if len(own) == 0 {
 			return endpoint{}, fmt.Errorf("the cgroup of container %s cannot be read", t.Name)
 		}
-		return hostEndpoint(ctx, t, func(l listener) bool { return own.Holds(CgroupsOf(l.pid)) })
+		return ruledEndpoint(ctx, t, func() func(listener) bool {
+			return func(l listener) bool { return own.Holds(CgroupsOf(l.pid)) }
+		})
 	case mode == "none" || strings.HasPrefix(mode, "container:"):
 		return endpoint{}, fmt.Errorf("container %s has no network of its own (%s)", t.Name, mode)
 	}
@@ -94,6 +96,23 @@ func containerEndpoint(ctx context.Context, t Target) (endpoint, error) {
 		return endpoint{}, err
 	}
 	return endpoint{addr: dialAddr(mine, port, addrs), port: port, extra: addrs}, nil
+}
+
+// ContainerListening returns the TCP ports something listens on beyond loopback in the network
+// namespace of the process pid, sorted and each once.
+func ContainerListening(pid int32) ([]uint16, error) {
+	list, err := namespaceListeners(int(pid))
+	if err != nil {
+		return nil, err
+	}
+	var ports []uint16
+	for _, l := range list {
+		if !l.addr.IsLoopback() {
+			ports = append(ports, l.port)
+		}
+	}
+	slices.Sort(ports)
+	return slices.Compact(ports), nil
 }
 
 // namespaceListeners returns the listening TCP sockets of the network namespace of the process pid.

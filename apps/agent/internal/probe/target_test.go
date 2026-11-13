@@ -219,6 +219,33 @@ func TestCgroupHasReadsEveryHierarchy(t *testing.T) {
 	}
 }
 
+func TestCgroupsTellTheServiceUnitOfAProcess(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		file string
+		want string
+	}{
+		{"v2", "0::/system.slice/gitea.service\n", "gitea.service"},
+		{"v2 below the unit", "0::/system.slice/odoo.service/worker\n", "odoo.service"},
+		{"v2 nested slice", "0::/system.slice/system-getty.slice/getty@tty1.service\n", "getty@tty1.service"},
+		{"v1", "12:pids:/system.slice/slapd.service\n1:name=systemd:/system.slice/slapd.service\n", "slapd.service"},
+		{"hybrid", "12:pids:/\n1:name=systemd:/system.slice/cron.service\n0::/system.slice/cron.service\n", "cron.service"},
+		{"user slice", "0::/user.slice/user-1000.slice/user@1000.service/app.slice/foo.service\n", ""},
+		{"docker scope", "0::/system.slice/docker-" + strings.Repeat("a", 64) + ".scope\n", ""},
+		{"cgroupfs driver", "12:pids:/docker/abc\n1:name=systemd:/docker/abc\n", ""},
+		{"root", "0::/\n", ""},
+		{"init scope", "0::/init.scope\n", ""},
+		{"no systemd hierarchy", "12:pids:/system.slice/x.service\n", ""},
+	} {
+		if got := parseCgroups([]byte(c.file)).Unit(); got != c.want {
+			t.Errorf("%s: Unit() = %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := Cgroups(nil).Unit(); got != "" {
+		t.Errorf("Unit() of no cgroups = %q, want none", got)
+	}
+}
+
 func TestContainerInfoReadsDockerInspect(t *testing.T) {
 	var list []containerInfo
 	if err := json.Unmarshal([]byte(inspectJSON(t, "running", "healthy", "bridge")), &list); err != nil || len(list) != 1 {

@@ -12,6 +12,7 @@ decides when they alert."""
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import uuid
@@ -21,10 +22,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
-from app.catalog.model import Check, Module
+from app.catalog.model import Alternative, Check, Module
 from app.check_configs import ProbeConfig
 from app.core.time import utcnow_naive
-from app.discovery import image_matches, image_repo
+from app.discovery import image_matches, image_repo, image_tag
 from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
 from app.template_sync import SchedulerAction, apply_scheduler_actions
 
@@ -76,10 +77,18 @@ def _containers(db: Session, server_id: str) -> list[dict]:
 
 
 def _target_name(
-    module: Module, kind: str, service: str, key: str, summary: dict, containers: list[dict]
+    module: Module,
+    kind: str,
+    service: str,
+    key: str,
+    summary: dict,
+    containers: list[dict],
+    image_fallback: bool = False,
 ) -> tuple[str | None, str | None]:
     """(the container, unit or process of the instance a check of this kind asks, None)
-    or (None, why there is none)."""
+    or (None, why there is none). With `image_fallback` a missing service falls back to
+    the instance's one container with the module's image whose service no other check
+    names."""
     none = f"no {kind} for this instance"
     matched_by = summary.get("matched_by")
     if matched_by is not None:
@@ -92,20 +101,33 @@ def _target_name(
     if kind == "container" and module.instance == "compose_project":
         if "container" in summary:
             # A container of the module outside any project: it has no other services.
-            return (None, none) if service else (summary["container"], None)
+            if service and not image_fallback:
+                return None, none
+            return summary["container"], None
         # The name as the last scan saw it; the agent asks this container, and a new
         # name (a rebuilt project) is a changed finding.
         prefixes = [image_repo(p) for p in module.detect.container_images]
-        names = sorted(
-            c["name"]
-            for c in containers
-            if c["compose_project"] == key
-            and (
-                c["compose_service"] == service
-                if service
-                else image_matches(image_repo(c["image"]), prefixes)
+        project = [c for c in containers if c["compose_project"] == key]
+        if service:
+            names = sorted(c["name"] for c in project if c["compose_service"] == service)
+            if not names and image_fallback:
+                # Another check's service is that container's own job (Nextcloud's cron
+                # runs the app image too), never the fallback.
+                named = {
+                    c.target.service
+                    for c in module.checks
+                    if c.target is not None and c.target.service != service
+                }
+                names = sorted(
+                    c["name"]
+                    for c in project
+                    if c["compose_service"] not in named
+                    and image_matches(image_repo(c["image"]), prefixes)
+                )
+        else:
+            names = sorted(
+                c["name"] for c in project if image_matches(image_repo(c["image"]), prefixes)
             )
-        )
         if len(names) > 1:
             # The check's target must be unambiguous; with several replicas none is picked.
             return None, f"several containers for this instance: {', '.join(names)}"
@@ -113,13 +135,54 @@ def _target_name(
     return None, none
 
 
-def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
-    """Whether the last scan saw the container with TCP ports, the hint not among them."""
+def _seen_ports(name: str, containers: list[dict]) -> tuple[set[int], bool]:
+    """(the TCP ports the last scan saw at the container, whether they are the listening
+    ones): those listening in its network if the scan saw them, else the exposed ones (the
+    docservice of the OnlyOffice image listens on 8000, the image exposes 80 and 443)."""
     for c in containers:
         if c["name"] == name:
-            ports = {p["private"] for p in c["ports"] if p["proto"] == "tcp"}
-            return bool(ports) and port not in ports
-    return False
+            listening = c.get("listening")
+            if listening is not None:
+                return set(listening), True
+            return {p["private"] for p in c["ports"] if p["proto"] == "tcp"}, False
+    return set(), False
+
+
+def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
+    """Whether the last scan saw the container with TCP ports, the hint not among them."""
+    ports, _ = _seen_ports(name, containers)
+    return bool(ports) and port not in ports
+
+
+def _tag_mismatch(name: str, check: Check, containers: list[dict]) -> str | None:
+    """Why the container's image tag does not fit the check's tags, None when it does."""
+    tags = ", ".join(check.image_tags or [])
+    for c in containers:
+        if c["name"] == name:
+            tag = image_tag(c["image"])
+            if any(fnmatch.fnmatchcase(tag, p) for p in check.image_tags or []):
+                return None
+            return f"container {name} runs the tag {tag or '(unknown)'}, the check needs {tags}"
+    return f"no tag known for container {name}, the check needs {tags}"
+
+
+def _alternative(
+    name: str, alternatives: list[Alternative], containers: list[dict]
+) -> tuple[Alternative | None, str | None]:
+    """(the first alternative whose port the last scan saw at the container, None) or
+    (None, why none is picked). Without seen ports (stopped, host network) the first."""
+    ports, listening = _seen_ports(name, containers)
+    if not ports:
+        return alternatives[0], None
+    seen = [a for a in alternatives if a.port_hint in ports]
+    hints = ", ".join(str(a.port_hint) for a in alternatives)
+    if not seen:
+        return None, f"container {name} has none of the ports {hints}"
+    if len(seen) > 1 and not listening:
+        # An image exposes its TLS port whether TLS is on or not; only the listening
+        # ports tell, and a guess would alert on a port nothing listens on.
+        return None, f"container {name} exposes several of the ports {hints}, none seen listening"
+    return seen[0], None
 
 
 def probe_config(
@@ -131,14 +194,16 @@ def probe_config(
     if check.target is not None:
         t = check.target
         name = ""
-        port_hint = t.port_hint
+        port_hint, scheme = t.port_hint, t.scheme
         if t.kind == "port":
             if port_hint is None:
                 port_hint = summary.get("port")
             if port_hint is None:
                 return None, "no port for this instance"
         elif t.kind != "loopback":
-            name, why = _target_name(module, t.kind, t.service, key, summary, containers)
+            name, why = _target_name(
+                module, t.kind, t.service, key, summary, containers, t.image_fallback
+            )
             if not name:
                 return None, why
             # The agent asks a container's only port when the hint does not listen (target.go
@@ -147,7 +212,16 @@ def probe_config(
             # decides.
             if t.kind == "container" and port_hint and _lacks_port(name, port_hint, containers):
                 return None, f"container {name} has no port {port_hint}"
-        target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": t.scheme}
+            if check.image_tags:
+                why = _tag_mismatch(name, check, containers)
+                if why:
+                    return None, why
+            if t.alternatives:
+                picked, why = _alternative(name, t.alternatives, containers)
+                if picked is None:
+                    return None, why
+                port_hint, scheme = picked.port_hint, picked.scheme
+        target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": scheme}
     config = {
         "sensor": check.sensor,
         "target": target,
@@ -219,9 +293,20 @@ def _adopt(
         if module is None:
             raise AdoptError("Module is no longer in the catalog")
         keys = {check.key for check in module.checks}
+        tagged = {check.key for check in module.checks if check.image_tags}
+        summary = _summary(finding)
+        fitting = summary.get("tag_checks")
         for row in checks:
             if row.module_check_key not in keys:
                 continue  # dropped from the catalog: stays as the admin left it
+            if row.module_check_key in tagged and fitting is not None:
+                if row.module_check_key not in fitting:
+                    # The image moved to a tag the check does not fit (Wiki.js 2 -> 3).
+                    if row.enabled:
+                        row.enabled = False
+                        result.disabled.append(row.id)
+                        actions.append(("remove", row.id, None, None))
+                    continue
             # A new instance is watched whole again (adopting "gone" switched its checks
             # off); on a changed one, a check the admin switched off stays off.
             if finding.kind == "new":
@@ -231,7 +316,6 @@ def _adopt(
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
         have = {row.module_check_key for row in checks}
-        summary = _summary(finding)
         containers = _containers(db, finding.server_id)
         for check in module.checks:
             if check.key in have:

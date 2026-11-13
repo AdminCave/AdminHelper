@@ -39,4 +39,11 @@ export const frpApi = {
   status(session: AuthSession): Promise<FrpStatus> {
     return apiRequest<FrpStatus>(session, 'GET', '/api/frp/status');
   },
+  rotateKey(session: AuthSession, serverId: string): Promise<{ generation: number }> {
+    return apiRequest<{ generation: number }>(
+      session,
+      'POST',
+      `/api/servers/${encodeURIComponent(serverId)}/frp-key/rotate`,
+    );
+  },
 };

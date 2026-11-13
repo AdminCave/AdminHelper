@@ -20,6 +20,7 @@ service restarting during one scan make nothing disappear.
 
 from __future__ import annotations
 
+import fnmatch
 import ipaddress
 import json
 import logging
@@ -119,6 +120,8 @@ def _socket(raw: object) -> dict | None:
         "port": port,
         "process": _text(raw.get("process"), 255),
         "container": _text(raw.get("container"), 255),
+        # The systemd unit of the process; an older agent does not tell it.
+        "unit": _text(raw.get("unit"), 255),
     }
 
 
@@ -147,7 +150,17 @@ def _container(raw: object) -> dict | None:
         "health": _text(raw.get("health"), 64),
         "ports": ports,
         "mounts": mounts,
+        "listening": _listening(raw.get("listening")),
     }
+
+
+def _listening(raw: object) -> list[int] | None:
+    """The TCP ports something listens on in the container's own network; None when the
+    scan did not see them (an older agent, a stopped container, the host's network) or
+    sent more than the agent ever does, so a cut list never hides a port."""
+    if not isinstance(raw, list) or len(raw) > MAX_CONTAINER_PORTS:
+        return None
+    return sorted({port for port in map(_port, raw) if port is not None})
 
 
 def _recognised_port(raw: object) -> dict | None:
@@ -234,6 +247,29 @@ def image_repo(image: str) -> str:
     return repo.removeprefix("library/")
 
 
+def image_tag(image: str) -> str:
+    """The tag of an image reference: `latest` without one, "" (unknown) for a reference
+    by digest alone."""
+    ref, _, digest = image.partition("@")
+    if ref.rfind(":") > ref.rfind("/"):
+        return ref[ref.rfind(":") + 1 :]
+    return "" if digest else "latest"
+
+
+def _tag_checks(module: Module, containers: list[dict]) -> list[str]:
+    """The tag-bound checks of the module whose globs match the tag of each container."""
+    return sorted(
+        check.key
+        for check in module.checks
+        if check.image_tags
+        and containers
+        and all(
+            any(fnmatch.fnmatchcase(image_tag(c["image"]), p) for p in check.image_tags)
+            for c in containers
+        )
+    )
+
+
 def image_matches(repo: str, prefixes: list[str]) -> bool:
     # A prefix ends at a path boundary: ghcr.io/immich-app takes ghcr.io/immich-app/x, not
     # ghcr.io/immich-app-fork. A name without a slash is a Docker Hub official image and
@@ -245,24 +281,50 @@ def _unit_name(name: str) -> str:
     return name if "." in name else name + ".service"
 
 
-def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], set[str]]:
-    """(instance key → summary, the containers and processes the module claims)."""
+def _unit_wanted(name: str, wanted: set[str]) -> bool:
+    # A template unit (wg-quick@.service) takes each of its instances (wg-quick@wg0.service):
+    # list-units names the instances, never the template.
+    if name.endswith("@.service"):
+        return False  # a template itself runs nothing
+    if name in wanted:
+        return True
+    return any(
+        t.endswith("@.service")
+        and len(name) > len(t)
+        and name.startswith(t.removesuffix(".service"))
+        and name.endswith(".service")
+        for t in wanted
+    )
+
+
+def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], set[str], set[str]]:
+    """(instance key → summary, the containers, processes and units the module claims)."""
     detect = module.detect
     prefixes = [image_repo(p) for p in detect.container_images]
     containers = [
         c for c in inv["containers"] if prefixes and image_matches(image_repo(c["image"]), prefixes)
     ]
     wanted_units = {_unit_name(u) for u in detect.units}
-    installed_units = sorted({u["name"] for u in inv["units"] if u["name"] in wanted_units})
+    installed_units = sorted(
+        {u["name"] for u in inv["units"] if _unit_wanted(u["name"], wanted_units)}
+    )
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
     units = sorted(
-        {u["name"] for u in inv["units"] if u["name"] in wanted_units and u["state"] != "inactive"}
+        {
+            u["name"]
+            for u in inv["units"]
+            if _unit_wanted(u["name"], wanted_units) and u["state"] != "inactive"
+        }
     )
     wanted_processes = set(detect.processes)
     processes = sorted({s["process"] for s in inv["sockets"] if s["process"] in wanted_processes})
     markers = sorted(m.id for m in detect.markers if inv["markers"].get(m.id) is True)
 
     found: dict[str, dict] = {}
+    claimed_units: set[str] = set()
+    # The tag-bound checks that fit go into the summary, so a version jump changes the
+    # finding; only for modules that have such checks, the others keep their summaries.
+    tagged = any(check.image_tags for check in module.checks)
     if module.instance == "compose_project":
         for c in containers:
             project = c["compose_project"]
@@ -275,8 +337,14 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
                     if o["compose_project"] == project
                 }
                 found[project] = {"services": dict(sorted(services.items()))}
+                if tagged:
+                    found[project]["tag_checks"] = _tag_checks(
+                        module, [o for o in containers if o["compose_project"] == project]
+                    )
             else:
                 found[c["name"]] = {"container": c["name"], "image": image_repo(c["image"])}
+                if tagged:
+                    found[c["name"]]["tag_checks"] = _tag_checks(module, [c])
     elif module.instance == "container":
         for c in containers:
             found[c["name"]] = {
@@ -284,8 +352,11 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
                 "project": c["compose_project"],
                 "service": c["compose_service"],
             }
+            if tagged:
+                found[c["name"]]["tag_checks"] = _tag_checks(module, [c])
     elif module.instance == "unit":
         found = {name: {"unit": name} for name in units}
+        claimed_units = set(units)
     elif module.instance == "process":
         found = {name: {"process": name} for name in processes}
     if not found and (containers or units or processes or markers):
@@ -300,9 +371,12 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         # Installed, but not in the module's own kind of instance (a package instead of a
         # container): one instance named after the module.
         found = {module.id: {"matched_by": matched_by}}
+        claimed_units = set(installed_units)
     # A name that cannot be part of a reference makes no instance (and no stand-in).
     found = {key: summary for key, summary in found.items() if _INSTANCE_KEY.fullmatch(key)}
-    return found, containers, set(processes)
+    if not found:
+        claimed_units = set()
+    return found, containers, set(processes), claimed_units
 
 
 def _beyond_loopback(addr: str) -> bool:
@@ -368,7 +442,7 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
         if module.instance == "port":
             port_modules.append(module)
             continue
-        found, containers, processes = _instances(module, inv)
+        found, containers, processes, units = _instances(module, inv)
         if not found:
             continue
         seen.update({(module.id, key): summary for key, summary in found.items()})
@@ -376,6 +450,8 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
         claimed_ports.update(p["public"] for c in containers for p in c["ports"] if p["public"])
         claimed_processes.update(processes)
         claimed_ports.update(module.detect.port_hints)
+        # The ports the processes of the module's units listen on (gitea.service on 3000).
+        claimed_ports.update(s["port"] for s in inv["sockets"] if s["unit"] in units)
     for module in port_modules:
         found = _port_instances(inv, claimed_containers, claimed_processes, claimed_ports)
         seen.update({(module.id, key): summary for key, summary in found.items()})

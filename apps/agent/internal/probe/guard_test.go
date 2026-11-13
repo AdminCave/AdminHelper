@@ -40,13 +40,28 @@ type fakeHost struct {
 	// services names the forwarding service of a process; servicesErr fails reading it.
 	services    map[int32]string
 	servicesErr error
+	// inside names the processes on a container port by the container's process; nil answers
+	// containerApp for every one, insideErr fails telling them.
+	inside      map[int32][]int32
+	insideErr   error
+	insideCalls int
 }
+
+// containerApp is the process a fakeHost without inside finds on every container port.
+const containerApp int32 = 7001
 
 // stubHost puts h in for the guard's seams and starts without a snapshot of the listeners.
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
 	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
-	oldPeer, oldService := peerSocket, serviceForwarder
+	oldPeer, oldService, oldInside := peerSocket, serviceForwarder, containerListeners
+	containerListeners = func(_ context.Context, pid int32, _ uint16) ([]int32, error) {
+		h.insideCalls++
+		if h.inside == nil && h.insideErr == nil {
+			return []int32{containerApp}, nil
+		}
+		return h.inside[pid], h.insideErr
+	}
 	serviceForwarder = func(_ context.Context, pid int32) (string, error) {
 		if h.live && h.services == nil && h.servicesErr == nil {
 			return oldService(context.Background(), pid)
@@ -75,6 +90,9 @@ func stubHost(t *testing.T, h *fakeHost) {
 	}
 	processName = func(ctx context.Context, pid int32) (string, error) {
 		name, ok := h.names[pid]
+		if !ok && pid == containerApp {
+			return "app", nil
+		}
 		if !ok {
 			if h.live {
 				return oldName(ctx, pid)
@@ -103,11 +121,14 @@ func stubHost(t *testing.T, h *fakeHost) {
 		redirected.Lock()
 		redirected.at = nil
 		redirected.Unlock()
+		inside.Lock()
+		inside.found = nil
+		inside.Unlock()
 	}
 	resetSnapshot()
 	t.Cleanup(func() {
 		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
-		peerSocket, serviceForwarder = oldPeer, oldService
+		peerSocket, serviceForwarder, containerListeners = oldPeer, oldService, oldInside
 		resetSnapshot()
 	})
 }
@@ -299,6 +320,7 @@ func TestGuardNeverProbesAContainerPortPublishedFromABlockedOne(t *testing.T) {
 			48: {"docker-proxy", "-container-port"},
 			49: {"nginx", "-container-port", "3306"},
 		},
+		pubs: []publication{pub("", 8080, 80)},
 	})
 	g := NewGuard()
 
@@ -346,6 +368,12 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			lst("127.0.0.1", 8034, 93), lst("127.0.0.1", 8035, 94), lst("127.0.0.1", 8036, 95),
 			lst("127.0.0.1", 8037, 96), lst("127.0.0.1", 8038, 97), lst("127.0.0.1", 8039, 98),
 			lst("127.0.0.1", 8040, 99), lst("127.0.0.1", 8041, 100), lst("127.0.0.1", 8042, 101),
+			lst("127.0.0.1", 8043, 102), lst("127.0.0.1", 8044, 103), lst("127.0.0.1", 8045, 104),
+			lst("127.0.0.1", 8046, 105), lst("127.0.0.1", 8047, 106), lst("127.0.0.1", 8048, 107),
+			lst("127.0.0.1", 8049, 108), lst("127.0.0.1", 8050, 109), lst("127.0.0.1", 8051, 110),
+			lst("127.0.0.1", 8052, 111), lst("127.0.0.1", 8053, 112), lst("127.0.0.1", 8054, 113),
+			lst("127.0.0.1", 8055, 114), lst("127.0.0.1", 8056, 115), lst("127.0.0.1", 8057, 116),
+			lst("127.0.0.1", 8058, 117),
 		},
 		names: map[int32]string{
 			60: "rootlesskit", 61: "rootlessport", 62: "slirp4netns", 63: "pasta.avx2", 64: "passt",
@@ -356,6 +384,9 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			87: "stunnel4", 88: "6tunnel", 89: "spiped", 90: "chisel", 91: "gost", 92: "ncat", 93: "frpc",
 			94: "PUTTY.EXE", 95: "plink.exe", 96: "kitty_portable.exe", 97: "wslrelay.exe", 98: "wslhost.exe",
 			99: "frps", 100: "exe", 101: "stunnel",
+			102: "cloudflared", 103: "session-manager", 104: "wstunnel", 105: "boundary", 106: "tsh",
+			107: "ghostunnel", 108: "rathole", 109: "nc", 110: "nc.openbsd", 111: "netcat", 112: "cloudflared.exe",
+			113: "tshark", 114: "ncurses5-config", 115: "ncdu", 116: "nchan", 117: "tsdb",
 		},
 		args: map[int32][]string{
 			67: {"rootlessport"},
@@ -410,6 +441,17 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 		{"127.0.0.1:8040", "belongs to frps"},
 		{"127.0.0.1:8041", "belongs to chisel"},
 		{"127.0.0.1:8042", "belongs to stunnel"},
+		{"127.0.0.1:8043", "belongs to cloudflared"},
+		{"127.0.0.1:8044", "belongs to session-manager"},
+		{"127.0.0.1:8045", "belongs to wstunnel"},
+		{"127.0.0.1:8046", "belongs to boundary"},
+		{"127.0.0.1:8047", "belongs to tsh"},
+		{"127.0.0.1:8048", "belongs to ghostunnel"},
+		{"127.0.0.1:8049", "belongs to rathole"},
+		{"127.0.0.1:8050", "belongs to nc,"},
+		{"127.0.0.1:8051", "belongs to nc.openbsd"},
+		{"127.0.0.1:8052", "belongs to netcat"},
+		{"127.0.0.1:8053", "belongs to cloudflared.exe"},
 	} {
 		network := "tcp4"
 		if strings.HasPrefix(c.address, "[") {
@@ -419,9 +461,10 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
 		}
 	}
-	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix)
-	// and redis-server (no redir).
-	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020", "127.0.0.1:8027"} {
+	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix),
+	// redis-server (no redir), and tshark, ncurses5-config, ncdu, nchan and tsdb (tsh and nc match whole).
+	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020", "127.0.0.1:8027",
+		"127.0.0.1:8054", "127.0.0.1:8055", "127.0.0.1:8056", "127.0.0.1:8057", "127.0.0.1:8058"} {
 		if err := allowed(g, "tcp4", address); err != nil {
 			t.Errorf("%s: %v, want it allowed", address, err)
 		}
@@ -464,8 +507,10 @@ func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
 			lst("127.0.0.1", 631, 1), lst("127.0.0.1", 631, 30),
 			lst("0.0.0.0", 16509, 1), lst("0.0.0.0", 16509, 31),
 			lst("0.0.0.0", 2323, 40), lst("0.0.0.0", 7070, 41), lst("0.0.0.0", 3690, 41), lst("0.0.0.0", 3690, 32),
+			lst("0.0.0.0", 7071, 42), lst("0.0.0.0", 7072, 43), lst("::", 7073, 44),
 		},
-		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd", 40: "xinetd", 41: "inetd", 32: "svnserve"},
+		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd", 40: "xinetd", 41: "inetd",
+			32: "svnserve", 42: "tcpserver", 43: "s6-tcpserver4", 44: "s6-tcpserverd"},
 	})
 	g := NewGuard()
 
@@ -474,6 +519,9 @@ func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
 		{"127.0.0.1:5000", "socket activation"},
 		{"127.0.0.1:2323", "xinetd holds port 2323 for socket activation"},
 		{"127.0.0.1:7070", "inetd holds port 7070 for socket activation"},
+		{"127.0.0.1:7071", "tcpserver holds port 7071 for socket activation"},
+		{"127.0.0.1:7072", "s6-tcpserver4 holds port 7072 for socket activation"},
+		{"127.0.0.1:7073", "s6-tcpserverd holds port 7073 for socket activation"},
 		{"127.0.0.1:16509", "libvirtd"},
 	} {
 		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
@@ -734,6 +782,95 @@ func TestGuardNeverProbesAPortDockerForwardsToABlockedOneWithoutAListener(t *tes
 		if !c.refused && err != nil {
 			t.Errorf("%s: %v, want it allowed", c.address, err)
 		}
+	}
+}
+
+func TestGuardJudgesTheProcessBehindAPublishedPort(t *testing.T) {
+	h := &fakeHost{
+		pubs: []publication{
+			{hostPort: 8080, to: 80, pid: 40}, {hostPort: 8081, to: 80, pid: 41}, {hostPort: 8082, to: 80, pid: 42},
+			{hostPort: 8083, to: 80, pid: 43}, {hostPort: 8084, to: 80, pid: 44},
+		},
+		inside: map[int32][]int32{40: {400}, 41: {410}, 42: {420}, 43: {430, 431}, 44: {440}},
+		names:  map[int32]string{400: "nginx", 410: "socat", 420: "sshd", 430: "nginx", 431: "chisel", 440: "exe"},
+	}
+	stubHost(t, h)
+	g := NewGuard()
+
+	for _, c := range []struct {
+		address, refused string
+	}{
+		{"127.0.0.1:8080", ""},
+		{"127.0.0.1:8081", "socat, which forwards"},
+		{"127.0.0.1:8082", "sshd, which the agent never probes"},
+		{"127.0.0.1:8083", "chisel, which forwards"},
+		{"127.0.0.1:8084", "cannot be told"},
+	} {
+		err := allowed(g, "tcp4", c.address)
+		switch {
+		case c.refused == "" && err != nil:
+			t.Errorf("%s: %v, want it allowed", c.address, err)
+		case c.refused != "" && (!errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.refused) || !strings.Contains(err.Error(), "of a container")):
+			t.Errorf("%s: %v, want it refused with %q", c.address, err, c.refused)
+		}
+	}
+
+	h.inside, h.insideErr = nil, errors.New("no socket listens on port 80")
+	inside.Lock()
+	inside.found = nil
+	inside.Unlock()
+	if err := allowed(g, "tcp4", "127.0.0.1:8080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "cannot be told") {
+		t.Errorf("a process that cannot be told: %v, want it refused", err)
+	}
+}
+
+func TestGuardJudgesTheContainerBehindADockerProxy(t *testing.T) {
+	proxy := []string{"docker-proxy", "-host-port", "18080", "-container-port", "80"}
+	h := &fakeHost{
+		list:   []listener{lst("0.0.0.0", 18080, 40)},
+		names:  map[int32]string{40: "docker-proxy", 400: "socat"},
+		args:   map[int32][]string{40: proxy},
+		inside: map[int32][]int32{77: {400}},
+	}
+	stubHost(t, h)
+	g := NewGuard()
+
+	if err := allowed(g, "tcp4", "127.0.0.1:18080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "serves no port docker publishes") {
+		t.Fatalf("a docker-proxy without its publication: %v, want it refused", err)
+	}
+	// The container started after the list was read: a list older than listenerFresh is read afresh.
+	h.pubs = []publication{{hostPort: 18080, to: 80, pid: 77}}
+	publications.Lock()
+	publications.at = publications.at.Add(-listenerFresh)
+	publications.Unlock()
+	calls := h.pubsCalls
+	if err := allowed(g, "tcp4", "127.0.0.1:18080"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "socat, which forwards") {
+		t.Fatalf("a forwarder in the container behind a docker-proxy: %v, want it refused", err)
+	}
+	if h.pubsCalls != calls+1 {
+		t.Fatalf("published ports read %d times, want one fresh read", h.pubsCalls-calls)
+	}
+	h.names[400] = "nginx"
+	inside.Lock()
+	inside.found = nil
+	inside.Unlock()
+	if err := allowed(g, "tcp4", "127.0.0.1:18080"); err != nil {
+		t.Fatalf("a server in the container behind a docker-proxy: %v, want it allowed", err)
+	}
+}
+
+func TestGuardTellsTheProcessBehindAPublishedPortOncePerSnapshot(t *testing.T) {
+	h := &fakeHost{pubs: []publication{{hostPort: 8080, to: 80, pid: 40}}}
+	stubHost(t, h)
+	g := NewGuard()
+
+	for range 3 {
+		if err := allowed(g, "tcp4", "127.0.0.1:8080"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if h.insideCalls != 1 {
+		t.Fatalf("the container told %d times, want once within %s", h.insideCalls, listenerTTL)
 	}
 }
 
@@ -1218,5 +1355,81 @@ func TestGuardNeverProbesAPortAForwardingServiceListensOn(t *testing.T) {
 	h.servicesErr = errors.New("access is denied")
 	if err := allowed(g, "tcp4", "127.0.0.1:8081"); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), "cannot be read") {
 		t.Errorf("an unreadable service manager: %v, want it refused", err)
+	}
+}
+
+// TestGuardChecksTheTargetAfreshBeforeASecret: a guard for a connection with a secret judges on a
+// snapshot at most listenerFresh old and lets only a listener of the target's rule take it (R-1425).
+func TestGuardChecksTheTargetAfreshBeforeASecret(t *testing.T) {
+	h := &fakeHost{list: []listener{lst("0.0.0.0", 8090, 50)}, names: map[int32]string{50: "java", 60: "nginx"}}
+	stubHost(t, h)
+	ep := endpoint{addr: netip.MustParseAddr("127.0.0.1"), port: 8090, owns: func() func(listener) bool {
+		return func(l listener) bool { return l.pid == 50 }
+	}}
+	age := func() {
+		snapshot.Lock()
+		snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+		snapshot.Unlock()
+	}
+
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("the target itself: %v, want it allowed", err)
+	}
+
+	// Another process took the port since the snapshot: the plain guard still judges on it, the
+	// guard for a secret reads a new one and refuses.
+	h.list = []listener{lst("0.0.0.0", 8090, 60)}
+	age()
+	calls := h.listCalls
+	if err := allowed(NewGuard(), "tcp4", "127.0.0.1:8090"); err != nil || h.listCalls != calls {
+		t.Fatalf("plain guard: %v after %d reads, want it allowed on the snapshot it has", err, h.listCalls-calls)
+	}
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("another process on the port: %v, want ErrNotAllowed", err)
+	}
+	if h.listCalls == calls {
+		t.Error("the guard for a secret judged without a new snapshot")
+	}
+
+	// A second socket that carries the address, of another process, may take the connection too.
+	h.list = []listener{lst("0.0.0.0", 8090, 50), lst("127.0.0.1", 8090, 60)}
+	age()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("a second listener of another process: %v, want ErrNotAllowed", err)
+	}
+	// One on another address does not.
+	h.list = []listener{lst("0.0.0.0", 8090, 50), lst("192.0.2.10", 8090, 60)}
+	age()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("a listener on another address: %v, want it allowed", err)
+	}
+
+	// The target has gone: no listener left.
+	h.list = nil
+	age()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); err == nil {
+		t.Fatal("no listener: allowed, want an error")
+	}
+
+	// A port docker forwards goes to a container, not to the target.
+	h.list = []listener{lst("0.0.0.0", 8090, 50)}
+	h.pubs = []publication{{hostPort: 8090, to: 8080}}
+	age()
+	publications.Lock()
+	publications.at = publications.at.Add(-2 * listenerFresh)
+	publications.Unlock()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("a published port: %v, want ErrNotAllowed", err)
+	}
+	if err := allowed(NewGuard(), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("plain guard on a published port: %v, want it allowed", err)
+	}
+
+	// Without a rule (a loopback target) the fresh snapshot alone is asked.
+	h.pubs = nil
+	h.list = []listener{lst("0.0.0.0", 8090, 60)}
+	age()
+	if err := allowed(secretGuard(endpoint{addr: ep.addr, port: ep.port}), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("no rule: %v, want it allowed", err)
 	}
 }

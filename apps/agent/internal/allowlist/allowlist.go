@@ -53,6 +53,9 @@ var classes = map[string]string{
 	"containername": `[A-Za-z0-9][A-Za-z0-9_.-]*`,
 	// A Windows service name, the class collectWatchedServices lets through (reWinServiceName).
 	"winservice": `[A-Za-z0-9._$][A-Za-z0-9._$-]*`,
+	// An absolute directory, meant for the agent's state directory (config.MonitorDir) but not bound to
+	// it; no segment begins with '.', so no "..".
+	"statedir": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
 	// A journal priority, 0 emerg … 7 debug.
 	"priority": `[0-7]`,
 	// A whole number of seconds.
@@ -70,6 +73,11 @@ var classes = map[string]string{
 	// A FreeBSD base system name pkg audit checks (freebsdPkgName): FreeBSD- or FreeBSD-kernel- and a
 	// release, "15.1" or with its patch level "15.1_2".
 	"basepkg": `FreeBSD-(?:kernel-)?[0-9]+\.[0-9]+(?:_[0-9]+)?`,
+	// A fail2ban jail as `fail2ban-client status` lists it (a section name of jail.conf).
+	"jail": `[A-Za-z0-9_][A-Za-z0-9_.-]*`,
+	// A UPS name as `upsc -l` lists it (probe's upsNamePattern): no '@' or ':', so a call with it names
+	// no other host or port.
+	"upsname": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -167,6 +175,16 @@ var commands = map[string][][]string{
 		{"get", "/cluster/backup", "--output-format", "json"},
 		{"get", "/nodes/<node>/tasks", "--typefilter", "vzdump", "--statusfilter", "error", "--limit", "1", "--output-format", "json"},
 		{"get", "/nodes/<node>/tasks/<upid>/log", "--limit", "10000", "--output-format", "json"},
+		// The views pve_cluster, pve_jobs and pve_updates of the app sensor (probe/app_pve.go). Only
+		// GET: apt/update lists the local cache and never refreshes it (that is POST, as are pvesh create,
+		// set and delete, which stay off); /nodes/<node>/storage stays off, as listing it activates each
+		// storage.
+		{"get", "/cluster/status", "--output-format", "json"},
+		{"get", "/cluster/ha/status/current", "--output-format", "json"},
+		{"get", "/nodes/<node>/replication", "--output-format", "json"},
+		{"get", "/nodes/<node>/tasks", "--typefilter", "vzdump", "--limit", "50", "--output-format", "json"},
+		{"get", "/nodes/<node>/apt/update", "--output-format", "json"},
+		{"get", "/nodes/<node>/subscription", "--output-format", "json"},
 	},
 	"zpool": {
 		{"list", "-H", "-o", "name,size,alloc,free,cap,health,frag"},
@@ -229,6 +247,57 @@ var commands = map[string][][]string{
 		{"filter", "diag", "state_size"},
 		{"interface", "show", "carp"},
 		{"interface", "list", "ifconfig"},
+	},
+	// The read commands of the app sensor's views (probe, app_net.go). Kept out: `wg show … dump` and
+	// `wg showconf` (they print the private key), fail2ban-client unban|reload|set, cscli decisions
+	// add, tailscale netcheck.
+	"wg":              {{"show", "all", "latest-handshakes"}, {"show", "all", "persistent-keepalive"}},
+	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}},
+	"cscli":           {{"bouncers", "list", "-o", "json"}},
+	"tailscale":       {{"status", "--json", "--peers=false"}},
+	// The read commands of the DNS and time views (probe, app_dns.go). Kept out: `rndc stats` (writes
+	// the statistics file), `unbound-control stats` (resets the counters), chronyc makestep|burst.
+	"rndc":            {{"status"}},
+	"unbound-control": {{"stats_noreset"}},
+	"chronyc":         {{"-c", "tracking"}},
+	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
+	// The UPS views (probe, app_ups.go): the UPS list and the variables of one UPS from the upsd on
+	// localhost, the status report of the apcupsd on localhost. Kept out: upscmd and upsrw (commands
+	// and settings to the UPS), upsmon -c (fsd shuts every client down), upsc against another host,
+	// apcaccess -h/-f.
+	"upsc":      {{"-l", "localhost"}, {"<upsname>@localhost"}},
+	"apcaccess": {{"-u", "status"}},
+	// The views pbs_status, ceph_health and zfs_snapshots (probe, app_pbs.go). proxmox-backup-debug
+	// only with api get (api set, create and delete write through the API); proxmox-backup-manager stays
+	// off. ceph only health and df as JSON (ceph … set, osd out and the like change the cluster);
+	// sanoid only --monitor-snapshots (--cron, --take-snapshots and --prune-snapshots change snapshots).
+	"proxmox-backup-debug": {
+		{"api", "get", "/config/datastore", "--output-format", "json"},
+		{"api", "get", "/status/datastore-usage", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "garbage_collection", "--limit", "50", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "verif", "--limit", "50", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "sync", "--limit", "50", "--output-format", "json"},
+		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
+	},
+	"ceph":   {{"health", "-f", "json"}, {"df", "-f", "json"}},
+	"sanoid": {{"--monitor-snapshots"}},
+	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
+	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
+	// lvchange, lvextend, dmsetup and any other lvs argument list.
+	"lvs": {{"--reportformat", "json", "-o", "lv_attr,data_percent,metadata_percent"}},
+	// The host sensor's hardware views (probe, host_hw.go): every controller's state as JSON without
+	// storcli's log file, the HPE status and configuration, the sensor list from the SDR cache and the
+	// dump that writes the cache, by a fixed file name into an absolute directory without ".." (the agent
+	// passes its state directory). Kept out: storcli start|stop|set|
+	// delete|… (start learn starts a battery learn cycle, delete events clears the event log), any call
+	// without nolog, ipmitool sel (sel elist loads the BMC, sel clear deletes the log), chassis, raw,
+	// mc, user, lan and any sdr call without the cache.
+	"storcli64": {{"/call", "show", "all", "J", "nolog"}},
+	"perccli64": {{"/call", "show", "all", "J", "nolog"}},
+	"ssacli":    {{"ctrl", "all", "show", "status"}, {"ctrl", "all", "show", "config"}},
+	"ipmitool": {
+		{"-S", "<statedir>/.ipmi-sdr.cache", "sdr", "elist"},
+		{"sdr", "dump", "<statedir>/.ipmi-sdr.cache.new"},
 	},
 }
 

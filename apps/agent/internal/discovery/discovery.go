@@ -109,17 +109,20 @@ type Unit struct {
 	Sub   string `json:"sub"`
 }
 
-// Socket is a listening TCP socket: the process it belongs to and the container, if one runs it.
+// Socket is a listening TCP socket: the process it belongs to, the container, if one runs it, else
+// the systemd service unit of its process ("" for none).
 type Socket struct {
 	Proto     string `json:"proto"`
 	Addr      string `json:"addr"`
 	Port      uint16 `json:"port"`
 	Process   string `json:"process"`
 	Container string `json:"container"`
+	Unit      string `json:"unit"`
 }
 
 // Container is a docker container in any state; pid is the process it started with, 0 if it is not
-// running.
+// running. Listening are the TCP ports something listens on beyond loopback in the network of a
+// running container of its own network; nil where they are not known.
 type Container struct {
 	ID             string          `json:"id"`
 	Name           string          `json:"name"`
@@ -130,6 +133,7 @@ type Container struct {
 	Health         string          `json:"health"`
 	Ports          []ContainerPort `json:"ports"`
 	Mounts         []string        `json:"mounts"`
+	Listening      []uint16        `json:"listening"`
 	pid            int32
 	// binds are the host addresses and ports its TCP ports are published on, the docker-proxy of
 	// each listening there.
@@ -251,6 +255,9 @@ type inspected struct {
 		Pid    int32
 		Health *struct{ Status string }
 	}
+	HostConfig struct {
+		NetworkMode string
+	}
 	NetworkSettings struct {
 		Ports map[string][]portBinding
 	}
@@ -287,8 +294,9 @@ func collectContainers(ctx context.Context) ([]Container, bool) {
 	}
 	containers := make([]Container, 0, len(raw))
 	for _, c := range raw {
-		if c := toContainer(c); c.Name != "" {
-			containers = append(containers, c)
+		if cc := toContainer(c); cc.Name != "" {
+			cc.Listening = listeningIn(c)
+			containers = append(containers, cc)
 		}
 	}
 	slices.SortFunc(containers, func(a, b Container) int { return strings.Compare(a.Name, b.Name) })
@@ -323,6 +331,25 @@ func toContainer(c inspected) Container {
 		pid:            c.State.Pid,
 		binds:          tcpBinds(c.NetworkSettings.Ports),
 	}
+}
+
+// listeningIn returns the ports something listens on beyond loopback in the network namespace of
+// the running container c, at most maxContainerPorts; nil for one that does not run, has no network
+// of its own (host, none, another container's) or whose namespace cannot be read.
+func listeningIn(c inspected) []uint16 {
+	mode := c.HostConfig.NetworkMode
+	if c.State.Status != "running" || c.State.Pid <= 0 || mode == "host" || mode == "none" ||
+		strings.HasPrefix(mode, "container:") {
+		return nil
+	}
+	ports, err := containerListening(c.State.Pid)
+	if err != nil {
+		return nil
+	}
+	if ports == nil {
+		ports = []uint16{}
+	}
+	return ports[:min(len(ports), maxContainerPorts)]
 }
 
 // tcpBinds are the host addresses and ports the TCP ports of the port map m are published on; a
@@ -403,8 +430,9 @@ func containerPorts(m map[string][]portBinding) []ContainerPort {
 
 // collectSockets lists the listening TCP sockets of this host with their process and the container
 // that runs it: one on the host's network by its cgroup, the cgroup of the container's first process
-// or one below it, a published port by the docker-proxy that listens on its host address and port. A process name the
-// contract cannot carry is "".
+// or one below it, a published port by the docker-proxy that listens on its host address and port.
+// A socket of no container carries the service unit of its process, by its cgroup. A process name or
+// unit the contract cannot carry is "".
 func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool) {
 	list, err := listSockets(ctx)
 	if err != nil {
@@ -423,7 +451,8 @@ func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool
 		}
 	}
 	names := map[int32]string{}
-	inside := map[int32]string{}
+	type owner struct{ container, unit string }
+	owners := map[int32]owner{}
 	seen := map[Socket]bool{}
 	sockets := []Socket{}
 	for _, l := range list {
@@ -439,16 +468,18 @@ func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool
 		switch {
 		case name == "docker-proxy":
 			s.Container = published[netip.AddrPortFrom(l.Addr.Unmap(), l.Port)]
-		case l.PID > 0 && len(running) > 0:
-			in, ok := inside[l.PID]
+		case l.PID > 0:
+			o, ok := owners[l.PID]
 			if !ok {
 				own := cgroupsOf(l.PID)
 				if i := slices.IndexFunc(running, func(c string) bool { return groups[c].Holds(own) }); i >= 0 {
-					in = running[i]
+					o.container = running[i]
+				} else {
+					o.unit = contractText(own.Unit(), maxNameLen)
 				}
-				inside[l.PID] = in
+				owners[l.PID] = o
 			}
-			s.Container = in
+			s.Container, s.Unit = o.container, o.unit
 		}
 		if !seen[s] {
 			seen[s] = true
@@ -457,7 +488,8 @@ func collectSockets(ctx context.Context, containers []Container) ([]Socket, bool
 	}
 	slices.SortFunc(sockets, func(a, b Socket) int {
 		return cmp.Or(cmp.Compare(a.Port, b.Port), strings.Compare(a.Proto, b.Proto), strings.Compare(a.Addr, b.Addr),
-			strings.Compare(a.Process, b.Process), strings.Compare(a.Container, b.Container))
+			strings.Compare(a.Process, b.Process), strings.Compare(a.Container, b.Container),
+			strings.Compare(a.Unit, b.Unit))
 	})
 	if len(sockets) > maxSockets {
 		return sockets[:maxSockets], false

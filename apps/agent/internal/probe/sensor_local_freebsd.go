@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"unsafe"
@@ -52,9 +53,46 @@ func refuseKernelFile(f *os.File, path string) error {
 	return nil
 }
 
-// openNoWait opens path to read without waiting: a FIFO swapped in since the stat does not block.
-func openNoWait(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK|unix.O_NOCTTY, 0)
+// The flags of open(2) that golang.org/x/sys does not name for FreeBSD, from sys/sys/fcntl.h (the same
+// in 13.2 and 15.1).
+const (
+	oPath      = 0x00400000 // O_PATH: the descriptor is only a path; the kernel opens no device or FIFO
+	oEmptyPath = 0x02000000 // O_EMPTY_PATH: openat opens the file of its descriptor itself
+)
+
+// reopenChecked opens for reading the very file p holds as a path (openat with O_EMPTY_PATH): a file
+// put at its name since p was opened is never opened.
+var reopenChecked = func(p *os.File) (*os.File, error) {
+	conn, err := p.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+	fd, openErr := -1, error(nil)
+	if err := conn.Control(func(pfd uintptr) {
+		fd, openErr = unix.Openat(int(pfd), "", oEmptyPath|unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	}); err != nil {
+		return nil, err
+	}
+	if openErr != nil {
+		return nil, &fs.PathError{Op: "open", Path: p.Name(), Err: openErr}
+	}
+	return os.NewFile(uintptr(fd), p.Name()), nil
+}
+
+// openChecked opens the regular file path for reading and nothing else. It opens path as a path first
+// (O_PATH), checks that file (checkRegular) and reads only it (reopenChecked): a file put at path
+// since is never opened.
+func openChecked(path string) (*os.File, error) {
+	fd, err := unix.Open(path, oPath|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
+	}
+	p := os.NewFile(uintptr(fd), path)
+	defer p.Close()
+	if err := checkRegular(p, path); err != nil {
+		return nil, err
+	}
+	return reopenChecked(p)
 }
 
 // dialUnix connects to the unix socket path. A socket that does not exist or that nobody serves is

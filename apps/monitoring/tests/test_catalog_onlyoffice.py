@@ -3,9 +3,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The catalog module onlyoffice (R-1242): the three images get the container check, whose
-own health check (from 10.0) asks /healthcheck; the package's ds-docservice.service gets the
-unit check and GET /healthcheck on 8000 as a test object every 15 min; the converter, the
-split images and Nextcloud AIO's container are not ONLYOFFICE Docs."""
+own health check (from 10.0) asks /healthcheck, and GET /healthcheck on the docservice's 8000
+once the scan saw it listening in the container (R-1393); the package's ds-docservice.service
+gets the unit check and GET /healthcheck on 8000; both health checks are test objects every
+15 min; the converter, the split images and Nextcloud AIO's container are not ONLYOFFICE
+Docs."""
 
 from datetime import UTC, datetime
 
@@ -38,7 +40,9 @@ def _block(containers=(), units=()):
     }
 
 
-def _container(name, image=IMAGE, project="", service="", ports=((80, "tcp"), (443, "tcp"))):
+def _container(
+    name, image=IMAGE, project="", service="", ports=((80, "tcp"), (443, "tcp")), listening=None
+):
     return {
         "id": "id-" + name,
         "name": name,
@@ -50,6 +54,7 @@ def _container(name, image=IMAGE, project="", service="", ports=((80, "tcp"), (4
         "health": "none",
         "ports": [{"private": p, "public": p, "proto": proto} for p, proto in ports],
         "mounts": [],
+        "listening": listening,
     }
 
 
@@ -104,29 +109,35 @@ def _status(check_key, values, status="ok", error=""):
     return ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0]
 
 
-def test_the_module_loads_with_container_service_and_healthcheck():
+def test_the_module_loads_with_container_service_and_both_healthchecks():
     assert CATALOG.errors == ()
-    assert list(CHECKS) == ["container", "service", "healthcheck"]
+    assert list(CHECKS) == ["container", "service", "healthcheck", "container_healthcheck"]
     assert MODULE.detect.units == [UNIT]
     assert all(c.credential is None for c in MODULE.checks)
 
 
-def test_the_healthcheck_is_a_get_and_a_test_object_every_15_min():
+@pytest.mark.parametrize("key", ["healthcheck", "container_healthcheck"])
+def test_the_healthcheck_is_a_get_and_a_test_object_every_15_min(key):
     # It writes and deletes a small object in the file storage on every call.
-    check = CHECKS["healthcheck"]
+    check = CHECKS[key]
     assert check.params == {"path": "/healthcheck", "method": "GET"}
     assert check.fields == ["status_code"]
     assert (check.interval, check.test_object) == (900, True)
+    assert check.rules == CHECKS["healthcheck"].rules
 
 
-def test_no_check_asks_the_container_on_a_port():
+def test_the_container_is_asked_on_the_docservice_port_only():
     # The image exposes only nginx's 80 and 443; port 80 redirects to HTTPS once a
-    # certificate is set up, and the docservice's 8000 is not in the container's port map.
-    assert [c.key for c in MODULE.checks if c.target.kind == "container"] == ["container"]
-    assert CHECKS["container"].sensor == "container"
+    # certificate is set up, so only the docservice's 8000 inside the container is asked.
+    assert [
+        (c.key, c.target.port_hint, c.target.scheme)
+        for c in MODULE.checks
+        if c.target.kind == "container"
+    ] == [("container", None, None), ("container_healthcheck", 8000, "http")]
 
 
-def test_the_project_gets_its_container_check_only():
+def test_the_project_without_listening_ports_gets_its_container_check_only():
+    # An older agent tells no listening ports; 8000 is not exposed.
     block = _block(COMPOSE)
     assert _found(block) == {
         "onlyoffice": {"services": {"onlyoffice-documentserver": "onlyoffice/documentserver"}}
@@ -135,7 +146,45 @@ def test_the_project_gets_its_container_check_only():
         "container": ("onlyoffice-documentserver", None),
         "service": (None, "no unit for this instance"),
         "healthcheck": (None, "no unit for this instance"),
+        "container_healthcheck": (None, "container onlyoffice-documentserver has no port 8000"),
     }
+
+
+def test_the_docservice_listening_in_the_container_gets_the_healthcheck():
+    container = _container(
+        "onlyoffice-documentserver",
+        project="onlyoffice",
+        service="onlyoffice-documentserver",
+        listening=[80, 443, 8000],
+    )
+    block = _block([container])
+    assert _bind(block, "onlyoffice")["container_healthcheck"] == (
+        "onlyoffice-documentserver",
+        None,
+    )
+    config, _ = probe_config(
+        MODULE,
+        CHECKS["container_healthcheck"],
+        "onlyoffice",
+        _found(block)["onlyoffice"],
+        block["containers"],
+    )
+    assert config["target"] == {
+        "kind": "container",
+        "name": "onlyoffice-documentserver",
+        "port_hint": 8000,
+        "scheme": "http",
+    }
+    assert config["test_object"] is True
+
+
+def test_a_docservice_on_the_container_loopback_only_gets_no_healthcheck():
+    # The scan leaves loopback out: 8000 there cannot be reached from the host.
+    block = _block([_container("office", listening=[80, 443])])
+    assert _bind(block, "office")["container_healthcheck"] == (
+        None,
+        "container office has no port 8000",
+    )
 
 
 @pytest.mark.parametrize(
@@ -149,11 +198,12 @@ def test_the_project_gets_its_container_check_only():
     ],
 )
 def test_each_image_started_without_compose_gets_its_container_check(image):
-    block = _block([_container("office", image)])
+    block = _block([_container("office", image, listening=[80, 443, 8000])])
     assert _bind(block, "office") == {
         "container": ("office", None),
         "service": (None, "no unit for this instance"),
         "healthcheck": (None, "no unit for this instance"),
+        "container_healthcheck": ("office", None),
     }
 
 
@@ -164,6 +214,7 @@ def test_the_package_gets_its_unit_and_the_healthcheck_on_8000():
         "container": (None, "no container for this instance"),
         "service": (UNIT, None),
         "healthcheck": (UNIT, None),
+        "container_healthcheck": (None, "no container for this instance"),
     }
     config, _ = probe_config(
         MODULE, CHECKS["healthcheck"], "onlyoffice", _found(block)["onlyoffice"], []
@@ -228,4 +279,5 @@ def test_the_card_shows_the_container_or_the_docservice_and_its_healthcheck():
         ("container", "health"),
         ("service", "active_state"),
         ("healthcheck", "status_code"),
+        ("container_healthcheck", "status_code"),
     ]

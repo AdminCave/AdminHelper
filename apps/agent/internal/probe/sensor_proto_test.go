@@ -556,6 +556,33 @@ func TestProtoSensorPresentsTheRedisPassword(t *testing.T) {
 	}
 }
 
+func TestProtoSensorSendsTheRedisPasswordOnlyToItsTarget(t *testing.T) {
+	h := &fakeHost{live: true}
+	stubHost(t, h)
+	srv := listen(t, func(c *fakeConn) {
+		for range 3 {
+			c.hear()
+		}
+		c.say("-NOAUTH Authentication required.\r\n")
+		c.hear()
+	})
+	h.pubs = []publication{{hostPort: uint16(srv.port()), to: 6379}}
+	p := Probe{Sensor: "proto", Target: &Target{Kind: kindPort, PortHint: srv.port()}, Params: map[string]any{"protocol": "redis"}}
+	ctx := context.Background()
+
+	if _, err := protoSensor(ctx, p, ""); !errors.Is(err, ErrDenied) {
+		t.Fatalf("no password = %v, want the port asked and NOAUTH", err)
+	}
+	p.Credential = &Credential{Ref: "c1", Use: "redis_auth"}
+	_, err := protoSensor(ctx, p, "s3cret")
+	if !errors.Is(err, ErrNotAllowed) || strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("a password to a published port = %v, want ErrNotAllowed without the secret", err)
+	}
+	if heard := srv.close(); fmt.Sprint(heard) != "[*1 $4 INFO]" {
+		t.Errorf("the server heard %v, want only INFO without AUTH", heard)
+	}
+}
+
 // fcgiGetValuesRequest is the record FCGI_GET_VALUES, written out.
 const fcgiGetValuesRequest = "\x01\x09\x00\x00\x00\x30\x00\x00" +
 	"\x0e\x00FCGI_MAX_CONNS\x0d\x00FCGI_MAX_REQS\x0f\x00FCGI_MPXS_CONNS"

@@ -145,14 +145,64 @@ def test_the_snap_binds_its_unit_and_no_http_check():
     }
 
 
-def test_a_container_outside_compose_is_found_but_gets_no_check():
+def test_a_container_outside_compose_gets_the_app_and_status_checks():
+    """`docker run`: the lone container is the app; its cron job cannot be told apart."""
     block = _block([_container("nextcloud", "nextcloud:latest", ports=[80])])
     assert _bind(block, "nextcloud") == {
-        "app": (None, "no container for this instance"),
+        "app": ("nextcloud", None),
         "cron": (None, "no container for this instance"),
+        "status": ("nextcloud", None),
+        "snap": (None, "no unit for this instance"),
+    }
+
+
+def test_an_app_service_under_another_name_falls_back_to_the_image_but_not_to_cron():
+    block = _block(
+        [
+            _container("cloud-nextcloud-1", "nextcloud:30-apache", "cloud", "nextcloud", [80]),
+            _container("cloud-cron-1", "nextcloud:30-apache", "cloud", "cron", ports=[80]),
+            _container("cloud-db-1", "mariadb:11", "cloud", "db", ports=[3306]),
+        ]
+    )
+    assert _bind(block, "cloud") == {
+        "app": ("cloud-nextcloud-1", None),
+        "cron": ("cloud-cron-1", None),
+        "status": ("cloud-nextcloud-1", None),
+        "snap": (None, "no unit for this instance"),
+    }
+
+
+def test_the_fallback_leaves_the_checks_unbound_when_the_image_runs_twice():
+    block = _block(
+        [
+            _container("cloud-web-1", "nextcloud:30-apache", "cloud", "web", ports=[80]),
+            _container("cloud-worker-1", "nextcloud:30-apache", "cloud", "worker", ports=[80]),
+        ]
+    )
+    reason = "several containers for this instance: cloud-web-1, cloud-worker-1"
+    assert _bind(block, "cloud") == {
+        "app": (None, reason),
+        "cron": (None, "no container for this instance"),
+        "status": (None, reason),
+        "snap": (None, "no unit for this instance"),
+    }
+
+
+def test_a_cron_service_alone_is_no_fallback_for_the_app():
+    block = _block([_container("cloud-cron-1", "nextcloud:30-apache", "cloud", "cron", [80])])
+    assert _bind(block, "cloud") == {
+        "app": (None, "no container for this instance"),
+        "cron": ("cloud-cron-1", None),
         "status": (None, "no container for this instance"),
         "snap": (None, "no unit for this instance"),
     }
+
+
+def test_the_found_app_service_wins_over_the_fallback():
+    """A second container with the image under another service changes nothing."""
+    block = _block([*COMPOSE, _container("cloud-extra-1", "nextcloud:30-apache", "cloud", "x")])
+    assert _bind(block, "cloud")["app"] == ("cloud-app-1", None)
+    assert _bind(block, "cloud")["status"] == ("cloud-app-1", None)
 
 
 @pytest.mark.parametrize(

@@ -177,7 +177,7 @@ def frpc_toml(db_session, frps, monkeypatch) -> str:
     policy.sync_policy(db_session)
     assert (frps.frp / docker_manager.POLICY_FILE).is_file()
     config, tunnels, allow_users = frpc_sync_inputs(db_session, SERVER_A)
-    return generate_frpc_toml(config, tunnels, SERVER_A, allow_users)
+    return generate_frpc_toml(config, tunnels, SERVER_A, allow_users, key_generation=0)
 
 
 class Frpc:
@@ -277,11 +277,11 @@ DOMAINS = 'customDomains = ["web.example"]\n'
 
 
 def _no_key(toml):
-    return _edit(toml, KEY_LINE.format(proxy_key(SERVER_A)), "", count=2)
+    return _edit(toml, KEY_LINE.format(proxy_key(SERVER_A, 0)), "", count=2)
 
 
 def _wrong_key(toml):
-    return _edit(toml, proxy_key(SERVER_A), proxy_key(str(uuid.uuid4())), count=2)
+    return _edit(toml, proxy_key(SERVER_A, 0), proxy_key(str(uuid.uuid4()), 0), count=2)
 
 
 def _tunnel_of_another_host(toml):
@@ -371,4 +371,4 @@ def test_the_dashboard_shows_an_admitted_proxy_without_the_host_key(
             answers[proxy_type] = result.stdout
     assert f"{SERVER_A}.t-ssh" in answers["stcp"] and f"{SERVER_A}.t-web" in answers["https"]
     for answer in answers.values():
-        assert proxy_key(SERVER_A) not in answer and PROXY_KEY_META not in answer
+        assert proxy_key(SERVER_A, 0) not in answer and PROXY_KEY_META not in answer

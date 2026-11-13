@@ -1196,15 +1196,17 @@ _GUEST_SHOWN = {
     "backupError": "job failed with err -5 - Input/output error",
     "backupErrorTs": 999_000,
 }
+# A fresh scrub and a vdev without errors: since R-1230 an old scrub and a vdev error rate the
+# pool (test_zfs_rates_*), which these tests of the details alone must not see.
 _POOL_FIELDS = {
     "fragmentation_percent": 12,
     "scrub": {"state": "FINISHED", "errors": 3, "end": 990_000},
-    "vdev_errors": [{"name": "da0", "read": 0, "write": 0, "checksum": 3}],
+    "vdev_errors": [{"name": "da0", "read": 0, "write": 0, "checksum": 0}],
 }
 _POOL_SHOWN = {
     "fragmentationPercent": 12,
     "scrub": {"state": "FINISHED", "errors": 3, "end": 990_000},
-    "vdevErrors": [{"name": "da0", "read": 0, "write": 0, "checksum": 3}],
+    "vdevErrors": [{"name": "da0", "read": 0, "write": 0, "checksum": 0}],
 }
 _PLAIN = {"docker": _ctr(), "proxmox": _VM, "zfs": _pool()}
 _NEW_FIELDS = {"docker": _CONTAINER_FIELDS, "proxmox": _GUEST_FIELDS, "zfs": _POOL_FIELDS}
@@ -1413,3 +1415,81 @@ def test_long_texts_in_the_detail_lists_are_cut_on_one_line():
     assert _new_row("proxmox", backup_jobs=[job])["backupJobs"] == [shown]
     vdev = _new_row("zfs", vdev_errors=[{**_VDEV, "name": _LONG_TEXT}])["vdevErrors"][0]
     assert vdev["name"] == _LONG_SHOWN
+
+
+# --- R-1230: scrub age and vdev errors rate the pool ---
+_DAY = 86400
+# Late enough for a scrub 400 days before it (_NOW is not).
+_SCRUB_NOW = 1_700_000_000.0
+
+
+def _scrubbed(days_ago, state="FINISHED", **pool):
+    return _pool(**pool) | {
+        "scrub": {"state": state, "errors": 0, "end": int(_SCRUB_NOW - days_ago * _DAY)}
+    }
+
+
+@pytest.mark.parametrize(
+    ("days_ago", "want"),
+    [
+        (0, "ok"),
+        (34.9, "ok"),
+        (35, "warning"),
+        (59.9, "warning"),
+        (60, "critical"),
+        (400, "critical"),
+    ],
+)
+def test_zfs_rates_the_age_of_the_last_finished_scrub(monkeypatch, days_ago, want):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(_scrubbed(days_ago)))
+    assert status == want
+    if want != "ok":
+        assert (
+            msg
+            == f"tank: last scrub {int(days_ago)} days ago (>={35 if want == 'warning' else 60})"
+        )
+
+
+@pytest.mark.parametrize(
+    "scrub",
+    [
+        None,
+        {"state": "SCANNING", "errors": 0},
+        {"state": "PAUSED", "errors": 0},
+        {"state": "CANCELED", "errors": 0, "end": 1},
+        {"state": "FINISHED", "errors": 0},
+        {"state": "FINISHED", "errors": "0", "end": 1},
+    ],
+)
+def test_zfs_does_not_rate_a_pool_without_a_finished_scrub(monkeypatch, scrub):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    pool = _pool() if scrub is None else _pool() | {"scrub": scrub}
+    assert ZfsHealthChecker().evaluate({}, _zfs(pool))[0] == "ok"
+
+
+@pytest.mark.parametrize("counter", ["read", "write", "checksum"])
+def test_zfs_rates_a_vdev_error_as_warning(monkeypatch, counter):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    vdevs = [
+        {"name": "da0", "read": 0, "write": 0, "checksum": 0},
+        {**_VDEV, "read": 0, counter: 2},
+    ]
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(_pool() | {"vdev_errors": vdevs}))
+    assert (status, msg) == ("warning", "tank: errors on 1 vdev(s)")
+
+
+def test_zfs_keeps_the_worst_and_names_each_problem(monkeypatch):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    old = _scrubbed(70, name="old") | {"vdev_errors": [_VDEV]}
+    degraded = _scrubbed(36, name="tank", health="DEGRADED")
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(degraded, old))
+    assert status == "critical"
+    assert msg == (
+        "tank: DEGRADED; tank: last scrub 36 days ago (>=35); "
+        "old: last scrub 70 days ago (>=60); old: errors on 1 vdev(s)"
+    )
+    status, _, _ = ZfsHealthChecker().evaluate(
+        {}, _zfs(_scrubbed(36), _pool(name="b") | {"vdev_errors": [_VDEV]})
+    )
+    assert status == "warning"
