@@ -9,8 +9,8 @@ a fixed measurement in the agent, and these models are the whole of what a catal
 entry or a probe check may set for it. The agent checks the same bounds again and
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
-Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense the set of its
-view). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
+Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense and app the set of
+its view); a view of the app sensor also fixes the kind of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
 stats) also return fields under ``data.`` — a path into that answer, which the agent
 resolves to one scalar.
 """
@@ -37,6 +37,7 @@ SENSORS = (
     "dns",
     "log",
     "opnsense",
+    "app",
 )
 
 # The views of the opnsense sensor and the fields each one returns: the allowlist of the
@@ -73,6 +74,36 @@ OPNSENSE_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "carp": frozenset({"vips", "master", "backup", "init", "demotion", "maintenance"}),
 }
 
+# The views of the app sensor, the fields each one returns and the kind of target it is bound
+# to: the allowlist of the agent's sensor_app.go, each a fixed read of one application on its
+# own host (R-1404). Counts, ages and a version; no name, password or content of the
+# application ever leaves the agent.
+APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
+    "bbb_meetings": frozenset(
+        {"meetings", "running", "participants", "listeners", "voice", "video", "recording"}
+    ),
+    "bbb_recordings": frozenset(
+        {
+            "failed",
+            "archive_failed",
+            "sanity_failed",
+            "process_failed",
+            "publish_failed",
+            "newest_fail_age_s",
+        }
+    ),
+    "ldap_replication": frozenset(
+        {"contexts", "csn_age_s", "monitor", "consumers", "disconnected", "refreshing"}
+    ),
+    "wordpress_version": frozenset({"version"}),
+}
+APP_VIEW_TARGETS: dict[str, str] = {
+    "bbb_meetings": "unit",
+    "bbb_recordings": "unit",
+    "ldap_replication": "unit",
+    "wordpress_version": "container",
+}
+
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
     "unit": frozenset({"active_state", "sub_state", "restarts", "active_since"}),
     "process": frozenset({"count", "rss_bytes", "uptime_s"}),
@@ -98,6 +129,7 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
     "dns": frozenset({"resolved", "duration_ms", "answers"}),
     "log": frozenset({"count"}),
     "opnsense": frozenset().union(*OPNSENSE_VIEW_FIELDS.values()),
+    "app": frozenset().union(*APP_VIEW_FIELDS.values()),
 }
 
 # Sensors whose answer is structured; they accept fields "data.<path>".
@@ -120,6 +152,8 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "dns": None,
     "log": None,
     "opnsense": None,
+    # Narrowed to the one kind of its view (APP_VIEW_TARGETS, checked on Check).
+    "app": frozenset(APP_VIEW_TARGETS.values()),
 }
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
@@ -207,6 +241,10 @@ class OpnsenseParams(_Params):
     view: Literal["services", "gateways", "firmware", "states", "carp"]
 
 
+class AppParams(_Params):
+    view: Literal["bbb_meetings", "bbb_recordings", "ldap_replication", "wordpress_version"]
+
+
 PARAM_MODELS: dict[str, type[_Params]] = {
     "unit": NoParams,
     "process": NoParams,
@@ -222,6 +260,7 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "dns": DnsParams,
     "log": LogParams,
     "opnsense": OpnsenseParams,
+    "app": AppParams,
 }
 
 
@@ -231,6 +270,8 @@ def field_allowed(sensor: str, field: str, params: dict) -> bool:
         return False
     if sensor == "opnsense":
         return field in OPNSENSE_VIEW_FIELDS[params["view"]]
+    if sensor == "app":
+        return field in APP_VIEW_FIELDS[params["view"]]
     if field in SENSOR_FIELDS[sensor]:
         return True
     return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")

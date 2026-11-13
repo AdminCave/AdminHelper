@@ -8,6 +8,7 @@ deleted; at start-up a changed catalog adds its new checks silent to adopted ins
 and reopens the finding, a dropped check stays; an adopted instance back from "gone"
 after a catalog update waits for the admin."""
 
+import copy
 import json
 from datetime import datetime, timedelta
 
@@ -18,7 +19,10 @@ from sqlalchemy.pool import StaticPool
 
 from app import module_sync
 from app.catalog.loader import load_catalog
+from app.catalog.modules.bigbluebutton import MODULE as BBB_MODULE
+from app.catalog.modules.openldap import MODULE as LDAP_MODULE
 from app.catalog.modules.port import MODULE as PORT_MODULE
+from app.catalog.modules.wordpress import MODULE as WP_MODULE
 from app.check_configs import ProbeConfig
 from app.discovery import apply_discovery
 from app.models import Base, MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
@@ -677,3 +681,78 @@ def test_back_from_gone_with_a_silent_check_waits_for_the_admin(db, actions):
     adopt(db, finding.id, catalog=WITH_HEALTH, now=NOW)
 
     assert health.silent is False
+
+
+# --- the app checks of R-1404 on instances adopted before them -------------------------
+
+APP_CHECKS = {
+    "bigbluebutton": {"meetings", "recordings"},
+    "openldap": {"replication"},
+    "wordpress": {"version"},
+}
+SHIPPED = load_catalog()
+
+
+def _before_app_checks(module):
+    """The catalog with the module as its version 1 had it: without the checks of R-1404."""
+    raw = copy.deepcopy(module)
+    added = APP_CHECKS[raw["id"]]
+    raw["version"] = 1
+    raw["checks"] = [c for c in raw["checks"] if c["key"] not in added]
+    raw["card"] = [i for i in raw["card"] if i["check_key"] not in added]
+    return load_catalog([(raw["id"], raw)])
+
+
+@pytest.mark.parametrize(
+    ("module", "key", "summary", "containers", "added"),
+    [
+        (
+            BBB_MODULE,
+            "bbb-web.service",
+            {"unit": "bbb-web.service"},
+            [],
+            {"meetings", "recordings"},
+        ),
+        (LDAP_MODULE, "openldap", {"matched_by": ["unit:slapd.service"]}, [], {"replication"}),
+        (
+            WP_MODULE,
+            "blog",
+            {"services": {"db": "mariadb", "wordpress": "wordpress"}},
+            [
+                _container(
+                    "blog-wordpress-1", "wordpress:6.8.3-php8.3-apache", "blog", "wordpress"
+                ),
+                _container("blog-db-1", "mariadb:11", "blog", "db"),
+            ],
+            {"version"},
+        ),
+        # slapd in its container: the replication asks a unit, which the instance lacks.
+        (
+            LDAP_MODULE,
+            "ldap",
+            {"services": {"openldap": "osixia/openldap"}},
+            [_container("ldap-openldap-1", "osixia/openldap:1.5.0", "ldap", "openldap")],
+            set(),
+        ),
+    ],
+)
+def test_the_app_checks_start_silent_on_instances_adopted_before_them(
+    db, actions, module, key, summary, containers, added
+):
+    before = _before_app_checks(module)
+    assert before.errors == ()
+    _inventory(db, containers)
+    finding = _finding(db, module["id"], key, summary=summary)
+    adopt(db, finding.id, catalog=before, now=NOW)
+    had = set(_checks(db, finding))
+
+    assert sync_catalog(db, catalog=SHIPPED) == (1 if added else 0)
+
+    checks = _checks(db, finding)
+    assert set(checks) - had == added
+    for check_key in added:
+        row = checks[check_key]
+        assert (row.enabled, row.silent, json.loads(row.config)["sensor"]) == (True, True, "app")
+        assert db.get(MonitorState, row.id).status == "pending"
+    want = ("changed", "open") if added else ("new", "adopted")
+    assert (finding.kind, finding.status, finding.catalog_version) == (*want, SHIPPED.version)

@@ -2,11 +2,13 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The catalog module openldap (R-1242): the image osixia/openldap gets the container check
-and an LDAP WhoAmI on 389; the package's slapd.service gets the unit check, the same WhoAmI
-and the certificate behind StartTLS on 389 once an hour; any LDAP answer counts, busy or
-unavailable is critical; the certificate warns below 22 days and is critical below 9; the
-pre-releases on 3890, phpLDAPadmin and other LDAP servers are not bound or not taken."""
+"""The catalog module openldap (R-1242, R-1404): the image osixia/openldap gets the container
+check and an LDAP WhoAmI on 389; the package's slapd.service gets the unit check, the same
+WhoAmI, the certificate behind StartTLS on 389 once an hour and the replication view every
+five minutes; any LDAP answer counts, busy or unavailable is critical; the certificate warns
+below 22 days and is critical below 9; a consumer without a connection warns, a slapd
+without cn=Monitor leaves the replication unknown; the pre-releases on 3890, phpLDAPadmin
+and other LDAP servers are not bound or not taken."""
 
 from datetime import UTC, datetime
 
@@ -103,7 +105,15 @@ def _status(check_key, values, status="ok", error=""):
 
 def test_the_module_loads_with_its_checks():
     assert CATALOG.errors == ()
-    assert list(CHECKS) == ["container", "answers", "service", "service_answers", "certificate"]
+    assert MODULE.version == 2
+    assert list(CHECKS) == [
+        "container",
+        "answers",
+        "service",
+        "service_answers",
+        "certificate",
+        "replication",
+    ]
     assert MODULE.detect.container_images == ["osixia/openldap"]
     assert MODULE.detect.units == [UNIT]
     assert all(c.credential is None for c in MODULE.checks)
@@ -140,6 +150,8 @@ def test_slapd_in_its_project_gets_its_container_and_389():
         "service": (None, "no unit for this instance"),
         "service_answers": (None, "no unit for this instance"),
         "certificate": (None, "no unit for this instance"),
+        # The ldapi socket of the image lives in its container.
+        "replication": (None, "no unit for this instance"),
     }
     assert _target("answers", block, "ldap") == {
         "kind": "container",
@@ -179,6 +191,7 @@ def test_the_package_gets_its_unit_389_and_the_certificate():
         "service": (UNIT, None),
         "service_answers": (UNIT, None),
         "certificate": (UNIT, None),
+        "replication": (UNIT, None),
     }
     for key in ("service_answers", "certificate"):
         assert _target(key, block, "openldap") == {
@@ -272,12 +285,66 @@ def test_the_container_and_unit_rules(check_key, values, want):
     assert _status(check_key, values) == want
 
 
-def test_the_card_shows_the_container_or_the_service_ldap_and_the_certificate():
-    assert [(i.check_key, i.field) for i in MODULE.card] == [
-        ("container", "state"),
-        ("container", "health"),
-        ("answers", "detail"),
-        ("service", "active_state"),
-        ("service_answers", "detail"),
-        ("certificate", "days_left"),
+def test_the_package_gets_the_replication_over_ldapi_every_five_minutes():
+    check = CHECKS["replication"]
+    assert (check.sensor, check.params) == ("app", {"view": "ldap_replication"})
+    assert check.fields == [
+        "contexts",
+        "csn_age_s",
+        "monitor",
+        "consumers",
+        "disconnected",
+        "refreshing",
+    ]
+    assert (check.interval, check.test_object) == (300, False)
+    block = _block(units=[_unit(UNIT)])
+    assert _target("replication", block, "openldap") == {
+        "kind": "unit",
+        "name": UNIT,
+        "port_hint": None,
+        "scheme": None,
+    }
+
+
+def _replication(consumers, disconnected, refreshing=0):
+    return {
+        "contexts": 1,
+        "csn_age_s": 40,
+        "monitor": True,
+        "consumers": consumers,
+        "disconnected": disconnected,
+        "refreshing": refreshing,
+    }
+
+
+@pytest.mark.parametrize(
+    ("values", "status", "error", "want"),
+    [
+        (_replication(2, 0), "ok", "", "ok"),
+        # A provider without consumers of its own, or a slapd that does not replicate.
+        (_replication(0, 0), "ok", "", "ok"),
+        # A consumer in its first full refresh is connected.
+        (_replication(2, 0, 1), "ok", "", "ok"),
+        (_replication(2, 1), "ok", "", "warning"),
+        (_replication(2, 2, 2), "ok", "", "warning"),
+        # No cn=Monitor (the Debian default): no consumer counts, nothing to rate.
+        ({"contexts": 1, "csn_age_s": 40, "monitor": False}, "ok", "", "unknown"),
+        ({}, "error", "ldapi: slapd answers result 49", "critical"),
+        # No ldapi socket on the host, or an agent without the app sensor.
+        ({}, "unsupported", "no ldapi socket of slapd on this host", "unknown"),
+    ],
+)
+def test_a_consumer_without_a_connection_warns(values, status, error, want):
+    assert _status("replication", values, status, error) == want
+
+
+def test_the_card_shows_the_container_or_the_service_ldap_the_certificate_and_replication():
+    # The image has no HEALTHCHECK of its own (1.5.0): the replication takes the health's place.
+    assert [(i.check_key, i.field, i.label) for i in MODULE.card] == [
+        ("container", "state", "Container"),
+        ("answers", "detail", "LDAP"),
+        ("service", "active_state", "Service"),
+        ("service_answers", "detail", "LDAP"),
+        ("certificate", "days_left", "Certificate days left"),
+        ("replication", "disconnected", "Replication"),
     ]
