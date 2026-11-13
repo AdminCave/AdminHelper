@@ -27,6 +27,8 @@ const h = vi.hoisted(() => ({
 }));
 // A wait gets a bound of 30 s (testing.md, Fristen); testing-library's default is 1 s.
 const WAIT = { timeout: 30_000 };
+// vitest ends a test after 5 s, which would cut a 30 s wait short and hide its message.
+vi.setConfig({ testTimeout: 60_000 });
 
 vi.mock('$lib/api/monitoring', () => ({
   monitoringApi: { fetchServerServices: h.fetch, setServiceLogLines: h.save },

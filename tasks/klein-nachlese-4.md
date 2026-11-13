@@ -19,8 +19,10 @@ Beweis: reviewer arch-monitoring-ui-3 T4 2026-11-12 · Dedup-Key: REF:desktop:Se
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_tables.py
 Doku: keine (interner Kommentar)
 
-### T2 — R-1414: waitFor-Fristen gelten (testTimeout je Datei)  [ ]
+### T2 — R-1414: waitFor-Fristen gelten (testTimeout je Datei)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts, apps/desktop/ui/src/components/ConnectionEditor.tabs.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @911d1b013 2026-11-13T11:13:09+01:00
+Review: approve (.ah-out/review/klein-nachlese-4/T2.verdict.json)
 Beweis: reviewer arch-monitoring-ui-3 T7 2026-11-12 (waitFor 30 s, testTimeout 5 s)
 Änderung: Beide Dateien setzen `vi.setConfig({ testTimeout: 60_000 })` am Dateianfang mit einem Kommentar zum Warum; die 30-s-Fristen der Waits bleiben (testing.md, Fristen).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/ServiceList.test.ts src/components/ConnectionEditor.tabs.test.ts
