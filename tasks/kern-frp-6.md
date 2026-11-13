@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Tunnel-Schlüssel je Host erneuern — Task-Ledger
-Status: geplant · Branch: feature/kern-frp-6 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-6 · Review: pro Task
 Spec: docs/features/kern-frp-6.md (Roadmap R-1316)
 Heavy: scenario --tunnel — der Schlüssel jedes Proxys und die frps-Policy ändern sich (FRP-Tunnel-Datenpfad); Server-API und Migration fährt dazu der Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
