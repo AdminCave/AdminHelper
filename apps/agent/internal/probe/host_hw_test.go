@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -232,6 +233,11 @@ func TestHardwareViewsTakeTurns(t *testing.T) {
 // stubIpmi gives the IPMI view a device and a state directory of its own.
 func stubIpmi(t *testing.T) string {
 	t.Helper()
+	// t.TempDir is C:\... on Windows, which the allowlist's statedir class (absolute POSIX paths) rejects;
+	// the view itself needs /dev/ipmi0, which Windows never has.
+	if runtime.GOOS == "windows" {
+		t.Skip("the IPMI view needs /dev/ipmi0 and a POSIX state directory")
+	}
 	dir := t.TempDir()
 	old := ipmiCacheDir
 	ipmiCacheDir = func() string { return dir }
