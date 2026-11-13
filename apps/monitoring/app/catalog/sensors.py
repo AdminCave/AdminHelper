@@ -10,7 +10,7 @@ entry or a probe check may set for it. The agent checks the same bounds again an
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
 Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense and app the set of
-its view); a view of the app sensor also fixes the kind of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
+its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
 stats) also return fields under ``data.`` — a path into that answer, which the agent
 resolves to one scalar.
 """
@@ -74,7 +74,7 @@ OPNSENSE_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "carp": frozenset({"vips", "master", "backup", "init", "demotion", "maintenance"}),
 }
 
-# The views of the app sensor, the fields each one returns and the kind of target it is bound
+# The views of the app sensor, the fields each one returns and the kinds of target it is bound
 # to: the allowlist of the agent's sensor_app.go, each a fixed read of one application on its
 # own host (R-1404). Counts, ages and a version; no name, password or content of the
 # application ever leaves the agent.
@@ -96,12 +96,58 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"contexts", "csn_age_s", "monitor", "consumers", "disconnected", "refreshing"}
     ),
     "wordpress_version": frozenset({"version"}),
+    "wg_peers": frozenset(
+        {
+            "interfaces",
+            "peers",
+            "keepalive_peers",
+            "stale_warn",
+            "stale_crit",
+            "max_handshake_age_s",
+        }
+    ),
+    "fail2ban": frozenset(
+        {"responding", "jails", "banned_total", "max_banned", "jails_without_files"}
+    ),
+    "crowdsec_bouncers": frozenset({"bouncers", "stale_bouncers", "max_pull_age_s"}),
+    "tailscale_status": frozenset({"backend_running", "health_warnings", "key_expiry_days"}),
+    "openvpn_status": frozenset({"clients", "updated_age_s"}),
+    "keepalived_vips": frozenset({"vips", "held"}),
+    "bind_status": frozenset({"running", "zones", "recursive_clients", "recursive_limit"}),
+    "unbound_stats": frozenset({"queries", "requestlist_exceeded", "servfail_pct"}),
+    "chrony_tracking": frozenset({"synced", "stratum", "offset_abs_ms"}),
+    "ntpsec_status": frozenset({"synced", "stratum", "offset_abs_ms"}),
+    "kea_pools": frozenset({"subnets", "max_pool_used_pct", "alloc_fail"}),
+    "dnsmasq_leases": frozenset({"leases", "range_size", "used_pct"}),
+    "caddy_upstreams": frozenset({"upstreams", "failing"}),
+    "caddy_certs": frozenset({"certs", "expired", "min_days_left"}),
+    "traefik_certs": frozenset({"certs", "expired", "min_days_left"}),
+    "npm_certs": frozenset({"certs", "expired", "min_days_left"}),
 }
-APP_VIEW_TARGETS: dict[str, str] = {
-    "bbb_meetings": "unit",
-    "bbb_recordings": "unit",
-    "ldap_replication": "unit",
-    "wordpress_version": "container",
+_UNIT = frozenset({"unit"})
+_CONTAINER = frozenset({"container"})
+_UNIT_OR_CONTAINER = _UNIT | _CONTAINER
+APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
+    "bbb_meetings": _UNIT,
+    "bbb_recordings": _UNIT,
+    "ldap_replication": _UNIT,
+    "wordpress_version": _CONTAINER,
+    "wg_peers": _UNIT,
+    "fail2ban": _UNIT,
+    "crowdsec_bouncers": _UNIT,
+    "tailscale_status": _UNIT,
+    "openvpn_status": _UNIT,
+    "keepalived_vips": _UNIT,
+    "bind_status": _UNIT,
+    "unbound_stats": _UNIT,
+    "chrony_tracking": _UNIT,
+    "ntpsec_status": _UNIT,
+    "kea_pools": _UNIT,
+    "dnsmasq_leases": _UNIT,
+    "caddy_upstreams": _UNIT,
+    "caddy_certs": _UNIT_OR_CONTAINER,
+    "traefik_certs": _UNIT_OR_CONTAINER,
+    "npm_certs": _CONTAINER,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -152,8 +198,8 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "dns": None,
     "log": None,
     "opnsense": None,
-    # Narrowed to the one kind of its view (APP_VIEW_TARGETS, checked on Check).
-    "app": frozenset(APP_VIEW_TARGETS.values()),
+    # Narrowed to the kinds of its view (APP_VIEW_TARGETS, checked on Check).
+    "app": frozenset().union(*APP_VIEW_TARGETS.values()),
 }
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
@@ -242,7 +288,28 @@ class OpnsenseParams(_Params):
 
 
 class AppParams(_Params):
-    view: Literal["bbb_meetings", "bbb_recordings", "ldap_replication", "wordpress_version"]
+    view: Literal[
+        "bbb_meetings",
+        "bbb_recordings",
+        "ldap_replication",
+        "wordpress_version",
+        "wg_peers",
+        "fail2ban",
+        "crowdsec_bouncers",
+        "tailscale_status",
+        "openvpn_status",
+        "keepalived_vips",
+        "bind_status",
+        "unbound_stats",
+        "chrony_tracking",
+        "ntpsec_status",
+        "kea_pools",
+        "dnsmasq_leases",
+        "caddy_upstreams",
+        "caddy_certs",
+        "traefik_certs",
+        "npm_certs",
+    ]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {

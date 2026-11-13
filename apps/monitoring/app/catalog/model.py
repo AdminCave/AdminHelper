@@ -183,10 +183,10 @@ class Check(_Model):
                 )
             if self.sensor == "app":
                 view = self.params["view"]
-                if self.target.kind != APP_VIEW_TARGETS[view]:
+                if self.target.kind not in APP_VIEW_TARGETS[view]:
                     raise ValueError(
                         f"view {view!r} of sensor 'app' targets only "
-                        f"{APP_VIEW_TARGETS[view]!r}, not {self.target.kind!r}"
+                        f"{sorted(APP_VIEW_TARGETS[view])}, not {self.target.kind!r}"
                     )
         for f in self.fields:
             if not field_allowed(self.sensor, f, self.params):
