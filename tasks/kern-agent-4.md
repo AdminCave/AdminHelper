@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Härtung von Probe-Wächter und Dateizugriff der Fühler — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-4 · Review: pro Task
+Status: erledigt · Branch: feature/kern-agent-4 · Review: pro Task
 Spec: docs/features/kern-agent-4.md (Roadmap R-1425, R-1426, R-1427, R-1428, R-1430)
 Heavy: linux-full — Wächter und Fühler des Agents (`apps/agent`), Docker-Ports auf echten Boxen; kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
