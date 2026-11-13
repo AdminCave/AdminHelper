@@ -18,11 +18,9 @@
 // the real agent route with that agent's own key, so every view has data a test box does not
 // have (compose projects, Proxmox guests, ZFS pools, package and process names).
 
-import path from "node:path";
-import https from "node:https";
 import { spawnSync } from "node:child_process";
-import { ahOutDir } from "../../wdio.conf.js";
 import { login, clickItemByName, jsClick, textContentOf } from "../lib/live.js";
+import { makeShot, fixtureAgentConf, createCheck, postReport } from "../lib/monitoring-live.js";
 
 const AGENT = process.env.AH_E2E_AGENT;
 const FINDING = process.env.AH_E2E_FINDING;
@@ -54,7 +52,7 @@ const CROSS_TABS = ["certs", "backups", "updates", "findings"];
 // The auto-refresh of the monitoring page is 30 s, the pulse of the status bar 60 s.
 const REFRESH_WAIT = 75000;
 
-let step = 0;
+const shot = makeShot("server-page", 30000);
 
 // One run of the agent in its container: it fetches its plan, runs the due probes and
 // reports.
@@ -67,43 +65,6 @@ function agentReport() {
   if (run.status !== 0 || !out.includes("Report gesendet")) {
     throw new Error(`the agent did not report (exit ${run.status}):\n${out}`);
   }
-}
-
-async function themeIs(theme) {
-  return (await browser.execute(() => document.documentElement.dataset.theme ?? "dark")) === theme;
-}
-
-async function setTheme(theme) {
-  if (await themeIs(theme)) return;
-  // The only item of the sidebar footer with an aria-label (theme-toggle.live.js).
-  await jsClick(await $(".sidebar-bottom .sidebar-item[aria-label]"));
-  await browser.waitUntil(() => themeIs(theme), {
-    timeout: 5000,
-    timeoutMsg: `the theme did not switch to ${theme}`,
-  });
-}
-
-// An alarm toast sits in the corner of the screenshot and hides what is below it.
-async function dismissToasts() {
-  for (const button of await $$(".toast .dismiss")) await jsClick(button);
-  await browser.waitUntil(async () => (await $$(".toast")).length === 0, {
-    timeout: 30000,
-    timeoutMsg: "the toasts did not close",
-  });
-}
-
-// A screenshot of the step in the dark and the light theme, back in dark afterwards.
-async function shot(name) {
-  step += 1;
-  const base = `server-page-${String(step).padStart(2, "0")}-${name}`;
-  for (const theme of ["dark", "light"]) {
-    await setTheme(theme);
-    // Let the theme's transitions settle before the capture.
-    await browser.pause(400);
-    await dismissToasts();
-    await browser.saveScreenshot(path.join(ahOutDir, "screenshots", `${base}-${theme}.png`));
-  }
-  await setTheme("dark");
 }
 
 // The card with exactly this title, or null; re-read on every call (the page re-renders).
@@ -270,7 +231,7 @@ describe("Monitoring detail views with a fixture report (arch-monitoring-ui-2 T1
         "AH_E2E_FIXTURE_AGENT is not set: run the spec through scripts/tests/desktop_e2e_monitoring.sh",
       );
     }
-    const conf = fixtureAgentConf();
+    const conf = fixtureAgentConf(FIXTURE_AGENT);
     for (const [name, type] of Object.entries(FIXTURE_CHECKS)) {
       await createCheck(conf.SERVER_ID, name, type);
     }
@@ -469,78 +430,6 @@ async function findingItem(instance) {
     if ((await textContentOf(await item.$(".inbox-instance"))) === instance) return item;
   }
   throw new Error(`no finding ${instance} in the inbox`);
-}
-
-// The provisioned fixture agent's monitor.conf (KEY="value" lines). Its output holds the
-// agent's API key: an error names the exit code only.
-function fixtureAgentConf() {
-  const run = spawnSync(
-    "docker",
-    ["exec", FIXTURE_AGENT, "cat", "/etc/adminhelper/monitor.conf"],
-    { encoding: "utf8", timeout: 30000 },
-  );
-  if (run.status !== 0) throw new Error(`cannot read the fixture agent's config (exit ${run.status})`);
-  const conf = {};
-  for (const line of run.stdout.split("\n")) {
-    const m = /^([A-Z_]+)="(.*)"$/.exec(line);
-    if (m) conf[m[1]] = m[2];
-  }
-  for (const key of ["MONITOR_URL", "API_KEY", "SERVER_ID"]) {
-    if (!conf[key]) throw new Error(`the fixture agent's config has no ${key}`);
-  }
-  return conf;
-}
-
-// Creates a check through the app's own API proxy, as the check editor does.
-async function createCheck(serverId, name, checkType) {
-  const body = JSON.stringify({
-    name,
-    server_id: serverId,
-    check_type: checkType,
-    interval: "5m",
-    // The first bad report rates the check, so the views show their problem state.
-    consecutive_fails: 1,
-    config: {},
-  });
-  const result = await browser.execute(
-    async (b) =>
-      window.__TAURI__.core
-        .invoke("api_proxy", { method: "POST", path: "/api/monitoring/checks", body: b })
-        .then((value) => ({ value }))
-        .catch((e) => ({ rejected: String((e && e.message) || e) })),
-    body,
-  );
-  if (result.rejected !== undefined) throw new Error(`creating ${name}: ${result.rejected}`);
-}
-
-// The agent's push, with its key as the agent sends it. The local test stack's gateway has a
-// self-signed certificate, which the app accepts with allowSelfSignedCerts.
-function postReport(url, apiKey, report) {
-  const data = JSON.stringify(report);
-  return new Promise((resolve, reject) => {
-    const req = https.request(
-      url,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(data),
-          "X-API-Key": apiKey,
-        },
-        rejectUnauthorized: false,
-        timeout: 30000,
-      },
-      (res) => {
-        let text = "";
-        res.setEncoding("utf8");
-        res.on("data", (chunk) => (text += chunk));
-        res.on("end", () => resolve({ status: res.statusCode, text }));
-      },
-    );
-    req.on("timeout", () => req.destroy(new Error("the fixture report timed out")));
-    req.on("error", reject);
-    req.end(data);
-  });
 }
 
 // A fixed report in the agent's wire form, invented for the look of the views: a mail and a
