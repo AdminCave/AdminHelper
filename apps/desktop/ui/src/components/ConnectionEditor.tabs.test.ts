@@ -27,6 +27,8 @@ vi.mock('$lib/stores/session', async () => {
   const session = writable(null);
   return { settings: writable(null), session, currentSession: () => get(session) };
 });
+// vitest ends a test after 5 s, which would cut the 30 s waits below short and hide their message.
+vi.setConfig({ testTimeout: 60_000 });
 // The real infra store: only the API call is stubbed, so the test sees every load it triggers.
 vi.mock('$lib/api/servers', () => ({ serversApi: { list: h.list } }));
 
