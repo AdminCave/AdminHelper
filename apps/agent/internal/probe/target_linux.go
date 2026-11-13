@@ -70,7 +70,9 @@ func containerEndpoint(ctx context.Context, t Target) (endpoint, error) {
 		if len(own) == 0 {
 			return endpoint{}, fmt.Errorf("the cgroup of container %s cannot be read", t.Name)
 		}
-		return hostEndpoint(ctx, t, func(l listener) bool { return own.Holds(CgroupsOf(l.pid)) })
+		return ruledEndpoint(ctx, t, func() func(listener) bool {
+			return func(l listener) bool { return own.Holds(CgroupsOf(l.pid)) }
+		})
 	case mode == "none" || strings.HasPrefix(mode, "container:"):
 		return endpoint{}, fmt.Errorf("container %s has no network of its own (%s)", t.Name, mode)
 	}

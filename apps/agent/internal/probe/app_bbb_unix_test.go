@@ -122,3 +122,42 @@ func TestTheMeetingsViewReadsItsConfigurationOnlyFromARegularFile(t *testing.T) 
 	}
 	holdsNoSecret(t, "error", err.Error(), append(bbbSecrets(testSalt), bbbPropertyFiles[0]))
 }
+
+// The markers are read at the directory the view opened: a status directory put at its path since
+// counts nothing.
+func TestTheRecordingsViewReadsTheMarkersOfTheDirectoryItOpened(t *testing.T) {
+	root := t.TempDir()
+	put := func(status string, mtime time.Time) {
+		dir := filepath.Join(status, "processed")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		marker := filepath.Join(dir, "a-1.fail")
+		if err := os.WriteFile(marker, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(marker, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opened := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	path := filepath.Join(root, "status")
+	put(path, opened)
+	status, err := openDir(nil, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer status.Close()
+	if err := os.Rename(path, filepath.Join(root, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	put(path, opened.Add(time.Hour))
+	if err := os.Symlink(filepath.Join(root, "moved", "processed", "a-1.fail"), filepath.Join(root, "moved", "processed", "b-1.fail")); err != nil {
+		t.Fatal(err)
+	}
+
+	n, newest, err := countFailMarkers(context.Background(), status, "processed", 10)
+	if err != nil || n != 1 || !newest.Equal(opened) {
+		t.Errorf("countFailMarkers = %d, %v, %v; want the one marker of the opened directory, %v", n, newest, err, opened)
+	}
+}

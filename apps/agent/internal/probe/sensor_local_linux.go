@@ -126,9 +126,19 @@ func refuseKernelFile(f *os.File, path string) error {
 	return nil
 }
 
-// openNoWait opens path to read without waiting: a FIFO swapped in since the stat does not block.
-func openNoWait(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK|unix.O_NOCTTY, 0)
+// openChecked opens the regular file path for reading and nothing else. It opens path as a path first
+// (O_PATH, which opens neither a device nor a FIFO), checks that file (checkRegular) and reads only it
+// (reopenChecked): a file put at path since is never opened.
+func openChecked(path string) (*os.File, error) {
+	p, err := os.OpenFile(path, unix.O_PATH, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer p.Close()
+	if err := checkRegular(p, path); err != nil {
+		return nil, err
+	}
+	return reopenChecked(p)
 }
 
 // dialUnix connects to the unix socket path. A socket that does not exist or that nobody serves is

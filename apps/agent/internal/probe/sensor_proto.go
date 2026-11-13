@@ -246,7 +246,11 @@ func protoSensor(ctx context.Context, p Probe, secret string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	dial := func(ctx context.Context) (net.Conn, error) { return dialTarget(ctx, ep) }
+	g := NewGuard(ep.extra...)
+	if use != "" {
+		g = secretGuard(ep)
+	}
+	dial := func(ctx context.Context) (net.Conn, error) { return dialThrough(ctx, g, ep) }
 	var res protoResult
 	if protocol == "auto" {
 		res, err = recognize(ctx, dial)

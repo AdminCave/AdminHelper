@@ -155,7 +155,12 @@ func authorize(req *http.Request, use, secret string) error {
 
 // dialTarget connects to ep through the guard; the connection ends with ctx.
 func dialTarget(ctx context.Context, ep endpoint) (net.Conn, error) {
-	conn, err := NewGuard(ep.extra...).DialContext(ctx, "tcp", netip.AddrPortFrom(ep.addr, ep.port).String())
+	return dialThrough(ctx, NewGuard(ep.extra...), ep)
+}
+
+// dialThrough connects to ep through g; the connection ends with ctx.
+func dialThrough(ctx context.Context, g *Guard, ep endpoint) (net.Conn, error) {
+	conn, err := g.DialContext(ctx, "tcp", netip.AddrPortFrom(ep.addr, ep.port).String())
 	if err != nil {
 		return nil, netErr(ctx, err)
 	}
@@ -240,7 +245,11 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	u.Scheme, u.Host = scheme, netip.AddrPortFrom(ep.addr, ep.port).String()
 	// The certificate of a service on this host is the tls sensor's business; http measures the answer,
 	// and a self-signed certificate must not hide it.
-	client := NewGuard(ep.extra...).HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
+	g := NewGuard(ep.extra...)
+	if use != "" {
+		g = secretGuard(ep)
+	}
+	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
 	return fetch(ctx, client, method, u.String(), host, use, secret, p.Fields)
 }
 

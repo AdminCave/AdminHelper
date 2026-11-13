@@ -64,7 +64,10 @@ var ldapConsumerEntry = berTLV(0xa3, berTLV(0x04, []byte("objectClass")), berTLV
 // there are, how many have no connection to their provider and how many are not in the persist
 // phase. It reads the root DSE, the root entry of each naming context and the consumer entries of
 // cn=Monitor, each for the attributes it counts alone; it never asks for olmSRProviderURIList, the
-// addresses of the providers, and quotes no name and no value it read.
+// addresses of the providers, and quotes no name and no value it read. Besides the bind and the
+// unbind it sends searches alone, each with a fixed filter and fixed attributes; the only thing an
+// answer feeds into a later request is the namingContexts of the root DSE, each the base of one
+// contextCSN search with scope base.
 func ldapReplication(ctx context.Context, _ Target) (map[string]any, error) {
 	conn, err := ldapConnect(ctx)
 	if err != nil {
