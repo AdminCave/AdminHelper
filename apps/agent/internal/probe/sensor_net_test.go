@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -186,6 +187,33 @@ func TestHTTPSensorPresentsItsCredential(t *testing.T) {
 	}
 	if len(headers) != 0 {
 		t.Error("a refused credential still sent a request")
+	}
+}
+
+// TestHTTPSensorSendsACredentialOnlyToItsTarget: with a credential the guard asks for the target's
+// own listener on a fresh snapshot; a port docker forwards to a container is refused, without one it
+// is probed as before (R-1425).
+func TestHTTPSensorSendsACredentialOnlyToItsTarget(t *testing.T) {
+	var hits atomic.Int32
+	h := &fakeHost{live: true}
+	stubHost(t, h)
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(srv.Close)
+	port := portOf(t, srv.URL)
+	h.pubs = []publication{{hostPort: uint16(port), to: 8080}}
+	p := Probe{Sensor: "http", Target: &Target{Kind: kindPort, PortHint: port}}
+	ctx := context.Background()
+
+	if got, err := httpSensor(ctx, p, ""); err != nil || got["status_code"] != 200 {
+		t.Fatalf("no credential = %v, %v; want the port probed", got, err)
+	}
+	p.Credential = &Credential{Ref: "c1", Use: "bearer"}
+	_, err := httpSensor(ctx, p, "s3cret")
+	if !errors.Is(err, ErrNotAllowed) || strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("a credential to a published port = %v, want ErrNotAllowed without the secret", err)
+	}
+	if hits.Load() != 1 {
+		t.Errorf("the server saw %d requests, want only the one without a credential", hits.Load())
 	}
 }
 

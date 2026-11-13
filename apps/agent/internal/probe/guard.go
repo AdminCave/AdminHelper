@@ -271,6 +271,10 @@ var snapshot struct {
 type Guard struct {
 	extra  []netip.Addr
 	dialer net.Dialer
+	// secret marks a guard for connections that carry a secret (secretGuard); owns is the rule of
+	// its target, nil for none.
+	secret bool
+	owns   func() func(listener) bool
 }
 
 // NewGuard returns a guard that also lets the sensors connect to extra, the addresses of this host's
@@ -282,6 +286,23 @@ func NewGuard(extra ...netip.Addr) *Guard {
 	}
 	g.dialer = net.Dialer{ControlContext: g.control}
 	return g
+}
+
+// secretGuard returns a guard for a connection that carries a secret to ep: it judges on a snapshot
+// at most listenerFresh old, and only a listener of ep's rule (endpoint.owns) may take the
+// connection, never a port docker forwards.
+func secretGuard(ep endpoint) *Guard {
+	g := NewGuard(ep.extra...)
+	g.secret, g.owns = true, ep.owns
+	return g
+}
+
+// maxAge is how old a snapshot g judges on may be.
+func (g *Guard) maxAge() time.Duration {
+	if g.secret {
+		return listenerFresh
+	}
+	return listenerTTL
 }
 
 // DialContext connects to address on network as net.Dialer does, if the guard allows the address
@@ -372,7 +393,7 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 	if g.contained(ip) {
 		return nil
 	}
-	if published, err := checkPublished(ctx, ip, server.Port(), listenerTTL); err != nil || published {
+	if published, err := checkPublished(ctx, ip, server.Port(), g.maxAge()); err != nil || published {
 		return err
 	}
 	for try := 1; ; try++ {
@@ -436,7 +457,48 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 		if err := checkRedirected(ip, port); err != nil {
 			return err
 		}
+		if g.secret {
+			return checkOwner(ctx, ip, port, g.contained(ip), g.owns)
+		}
 		return checkListener(ctx, ip, port, g.contained(ip))
+	}
+	return nil
+}
+
+// checkOwner is checkListener on a snapshot at most listenerFresh old for a connection that carries a
+// secret: every listener that takes connections to ip and port must be one owns accepts, at least one
+// must listen, and docker must not forward the port. Without owns (a loopback target, a container's
+// address) the fresh snapshot alone is asked.
+func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool, owns func() func(listener) bool) error {
+	if err := judgeListener(ctx, ip, port, contained, listenerFresh); err != nil {
+		return err
+	}
+	if owns == nil || contained {
+		return nil
+	}
+	published, err := checkPublished(ctx, ip, port, listenerFresh)
+	if err != nil {
+		return err
+	}
+	if published {
+		return fmt.Errorf("%w: docker forwards port %d, the target of a secret must listen there itself", ErrNotAllowed, port)
+	}
+	list, err := listenersAtMost(ctx, listenerFresh)
+	if err != nil {
+		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
+	}
+	match, found := owns(), false
+	for _, l := range list {
+		if l.port != port || !carries(l.addr, ip) {
+			continue
+		}
+		if !match(l) {
+			return fmt.Errorf("%w: port %d is held by another process than the target of the secret", ErrNotAllowed, port)
+		}
+		found = true
+	}
+	if !found {
+		return fmt.Errorf("%w: the target of the secret no longer listens on port %d", ErrNotAllowed, port)
 	}
 	return nil
 }

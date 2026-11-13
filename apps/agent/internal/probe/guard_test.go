@@ -1246,3 +1246,79 @@ func TestGuardNeverProbesAPortAForwardingServiceListensOn(t *testing.T) {
 		t.Errorf("an unreadable service manager: %v, want it refused", err)
 	}
 }
+
+// TestGuardChecksTheTargetAfreshBeforeASecret: a guard for a connection with a secret judges on a
+// snapshot at most listenerFresh old and lets only a listener of the target's rule take it (R-1425).
+func TestGuardChecksTheTargetAfreshBeforeASecret(t *testing.T) {
+	h := &fakeHost{list: []listener{lst("0.0.0.0", 8090, 50)}, names: map[int32]string{50: "java", 60: "nginx"}}
+	stubHost(t, h)
+	ep := endpoint{addr: netip.MustParseAddr("127.0.0.1"), port: 8090, owns: func() func(listener) bool {
+		return func(l listener) bool { return l.pid == 50 }
+	}}
+	age := func() {
+		snapshot.Lock()
+		snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+		snapshot.Unlock()
+	}
+
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("the target itself: %v, want it allowed", err)
+	}
+
+	// Another process took the port since the snapshot: the plain guard still judges on it, the
+	// guard for a secret reads a new one and refuses.
+	h.list = []listener{lst("0.0.0.0", 8090, 60)}
+	age()
+	calls := h.listCalls
+	if err := allowed(NewGuard(), "tcp4", "127.0.0.1:8090"); err != nil || h.listCalls != calls {
+		t.Fatalf("plain guard: %v after %d reads, want it allowed on the snapshot it has", err, h.listCalls-calls)
+	}
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("another process on the port: %v, want ErrNotAllowed", err)
+	}
+	if h.listCalls == calls {
+		t.Error("the guard for a secret judged without a new snapshot")
+	}
+
+	// A second socket that carries the address, of another process, may take the connection too.
+	h.list = []listener{lst("0.0.0.0", 8090, 50), lst("127.0.0.1", 8090, 60)}
+	age()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("a second listener of another process: %v, want ErrNotAllowed", err)
+	}
+	// One on another address does not.
+	h.list = []listener{lst("0.0.0.0", 8090, 50), lst("192.0.2.10", 8090, 60)}
+	age()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("a listener on another address: %v, want it allowed", err)
+	}
+
+	// The target has gone: no listener left.
+	h.list = nil
+	age()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); err == nil {
+		t.Fatal("no listener: allowed, want an error")
+	}
+
+	// A port docker forwards goes to a container, not to the target.
+	h.list = []listener{lst("0.0.0.0", 8090, 50)}
+	h.pubs = []publication{{hostPort: 8090, to: 8080}}
+	age()
+	publications.Lock()
+	publications.at = publications.at.Add(-2 * listenerFresh)
+	publications.Unlock()
+	if err := allowed(secretGuard(ep), "tcp4", "127.0.0.1:8090"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("a published port: %v, want ErrNotAllowed", err)
+	}
+	if err := allowed(NewGuard(), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("plain guard on a published port: %v, want it allowed", err)
+	}
+
+	// Without a rule (a loopback target) the fresh snapshot alone is asked.
+	h.pubs = nil
+	h.list = []listener{lst("0.0.0.0", 8090, 60)}
+	age()
+	if err := allowed(secretGuard(endpoint{addr: ep.addr, port: ep.port}), "tcp4", "127.0.0.1:8090"); err != nil {
+		t.Fatalf("no rule: %v, want it allowed", err)
+	}
+}

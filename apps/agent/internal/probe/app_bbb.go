@@ -213,7 +213,7 @@ func bbbMeetings(ctx context.Context, t Target) (map[string]any, error) {
 	if err != nil {
 		return nil, errors.New("the request to bbb-web cannot be built")
 	}
-	resp, err := NewGuard(ep.extra...).HTTPClient(nil).Do(req)
+	resp, err := secretGuard(ep).HTTPClient(nil).Do(req)
 	if err != nil {
 		// A url.Error quotes the URL, and with it the checksum.
 		var ue *url.Error

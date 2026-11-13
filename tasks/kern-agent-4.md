@@ -22,8 +22,10 @@ je Name, dazu Negativtests für Namen, die nicht treffen dürfen.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T6
 
-### T2 — R-1425: frische Zielprüfung vor dem Versand eines Geheimnisses  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_linux.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_test.go
+### T2 — R-1425: frische Zielprüfung vor dem Versand eines Geheimnisses  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_linux.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/app_bbb.go, apps/agent/internal/probe/app_bbb_test.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_proto_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fe5c8a3ad 2026-11-13T19:41:36+01:00
+Review: approve (.ah-out/review/kern-agent-4/T2.verdict.json)
 Änderung: Der Wächter bekommt eine Option für Verbindungen mit Geheimnis: `control` urteilt dann auf einem höchstens
 `listenerFresh` alten Snapshot und verlangt, dass der Listener auf Adresse und Port die Regel erfüllt, mit der
 `resolve` das Ziel gefunden hat. `bbbMeetings` und `fetch` mit Zugangsdaten nutzen sie. Tests: Listenerwechsel
@@ -76,3 +78,11 @@ Abhängt von: T1, T2, T3, T4
 - 2026-11-13 T1: `nc` ganz, dazu die Debian-Varianten über `nc.`/`netcat` (dort heißt der Prozess nach dem
   Alternativen-Ziel); `tsh` ganz (Präfix träfe `tshark`); tcpserver und s6-tcpserver* als Aktivator, nicht als
   Weiterleiter: hält ein gestarteter Dienst die Socket mit, gilt er wie bei inetd.
+- 2026-11-13 T2: die Regel liegt als Fabrik im `endpoint` (`owns`), damit der Wächter sie vor dem Versand neu
+  baut (der Namens-Cache von `ownedBy` gälte sonst weiter); ein von Docker veröffentlichter Port nimmt keine
+  Verbindung mit Geheimnis an; ohne Regel (Loopback, Container-Adresse) zählt nur der frische Snapshot.
+  Korrektur zu T1: `comm` ist der Basename des exec-Pfads, über den Alternativen-Link also `nc`; beide Namen
+  bleiben abgedeckt.
+- 2026-11-13 T2 (Review): auch `proto` mit Passwort (redis AUTH) wählt über den Wächter für Geheimnisse
+  (`dialThrough`); `checkOwner` darf zwei Snapshots lesen (Wächter und Besitz), denn beide sind höchstens
+  `listenerFresh` alt und ein später hinzugekommener Listener muss die Regel ohnehin erfüllen.
