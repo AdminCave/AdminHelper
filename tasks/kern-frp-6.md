@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/kern-frp-6/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_proxy_key.py tests/test_frp_policy.py tests/test_config_generator.py tests/test_frp_provision_sync.py tests/test_frp_key_generation_migration.py
 Doku: → T5
 
-### T2 — R-1316: Auslöser Provisionierung und Admin-Route `POST /api/servers/{id}/frp-key/rotate`  [ ]
+### T2 — R-1316: Auslöser Provisionierung und Admin-Route `POST /api/servers/{id}/frp-key/rotate`  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/router.py, apps/server/app/modules/servers/router.py, apps/server/app/modules/servers/schemas.py, apps/server/tests/test_provisioning.py, apps/server/tests/test_servers_frp_key_rotate.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ee0b2a73b 2026-11-13T16:28:14+01:00
+Review: approve (.ah-out/review/kern-frp-6/T2.verdict.json)
 Änderung: `activate_provision` erhöht die Generation unter der bestehenden Zeilensperre vor dem FRP-Bundle und schreibt nach dem Commit die Policy (`sync_policy`). Neue Admin-Route erhöht die Generation unter `with_for_update`, committet, `sync_policy`, Audit `server.frp_key.rotated`, Antwort `{"generation": n}`, 404 für unbekannte Server, 403 für Nicht-Admins. Tests: Bundle der Aktivierung trägt den neuen Schlüssel, Rotation ändert Config-Hash und Policy-Hash, Audit-Eintrag, Authz; OpenAPI-Snapshot neu (neue Testdatei mit SPDX-Header).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning.py tests/test_servers_frp_key_rotate.py tests/test_openapi_snapshot.py
 Doku: → T5

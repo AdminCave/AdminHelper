@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import datetime
 import hashlib
+import json
 import secrets
 import uuid
 
@@ -28,7 +29,9 @@ from app.core.config import MONITOR_SERVICE_URL
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
+from app.modules.frp import docker_manager
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.proxy_key import proxy_key, proxy_key_hash
 from app.modules.provisioning import helpers as prov_helpers
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
@@ -399,6 +402,52 @@ class TestProvisionActivate:
         on = bundle_text_is_the_sync_text(*activate())
         assert b"[[proxies]]" in on
         assert b'auth.token = "prov-frps-auth-token"' in on
+
+    def test_each_provisioning_hands_out_a_new_proxy_key(
+        self, test_client, db_session, tmp_path, monkeypatch
+    ):
+        # R-1316: a new provisioning raises the server's key generation before the bundle,
+        # so the bundle, the sync and the frps policy all carry the new key, and the key
+        # of the earlier installation stops at frps.
+        monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
+        srv = _make_server(db_session, sid="srv-gen", name="gen-host")
+        db_session.add(
+            FrpServerConfig(
+                id="cfg-gen",
+                name="Default",
+                server_addr="frps.example.test",
+                bind_port=7000,
+                auth_token="gen-frps-auth-token",
+            )
+        )
+        db_session.add(
+            FrpTunnel(
+                id="t-gen",
+                server_id=srv.id,
+                frp_config_id="cfg-gen",
+                name="gen-ssh",
+                tunnel_type="stcp",
+                protocol="ssh",
+                local_port=22,
+                secret_key="gen-stcp-secret",
+                enabled=True,
+            )
+        )
+        db_session.commit()
+
+        for generation in (1, 2):
+            res = test_client.post(
+                f"/api/servers/{srv.id}/provision/activate",
+                headers={"X-Provision-Token": _make_token(db_session, server_id=srv.id)},
+            )
+            assert res.status_code == 200, res.text
+            bundle = base64.b64decode(res.json()["frp"]["config"]).decode()
+            assert proxy_key(srv.id, generation) in bundle
+            assert proxy_key(srv.id, generation - 1) not in bundle
+            policy = json.loads((tmp_path / docker_manager.POLICY_FILE).read_text())
+            assert policy["servers"][srv.id]["keyHash"] == proxy_key_hash(srv.id, generation)
+            db_session.expire_all()
+            assert db_session.get(Server, srv.id).frp_key_generation == generation
 
 
 class TestProvisionActivateConcurrency:

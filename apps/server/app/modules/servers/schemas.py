@@ -107,6 +107,12 @@ class ServerOut(BaseModel):
     frpTunnels: list[FrpTunnelOut]
 
 
+class FrpKeyRotateOut(BaseModel):
+    """The server's frps proxy key generation after POST /api/servers/{id}/frp-key/rotate."""
+
+    generation: int
+
+
 class InternalServerOut(BaseModel):
     """One server as the monitoring service's tag-sync reads it."""
 
