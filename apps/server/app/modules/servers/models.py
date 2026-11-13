@@ -5,7 +5,7 @@
 import json
 from typing import Any
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, Integer, String, text
 from sqlalchemy.orm import backref, relationship
 
 from app.core.database import Base
@@ -23,6 +23,8 @@ class Server(Base):
     tags = Column(String, nullable=True)  # JSON-Array als String
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=utc_now_sql())
+    # Picks the host's frps proxy key (frp/proxy_key.py); raising it replaces that key alone.
+    frp_key_generation = Column(Integer, nullable=False, default=0, server_default=text("0"))
 
     connections = relationship(
         "Connection",

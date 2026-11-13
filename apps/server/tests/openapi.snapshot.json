@@ -1438,6 +1438,20 @@
         "title": "FrpBundleOut",
         "type": "object"
       },
+      "FrpKeyRotateOut": {
+        "description": "The server's frps proxy key generation after POST /api/servers/{id}/frp-key/rotate.",
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation"
+        ],
+        "title": "FrpKeyRotateOut",
+        "type": "object"
+      },
       "FrpServerConfigCreate": {
         "properties": {
           "auth_token": {
@@ -9995,6 +10009,54 @@
           }
         ],
         "summary": "Update Server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/{server_id}/frp-key/rotate": {
+      "post": {
+        "description": "Replaces the server's frps proxy key: frps admits its tunnels only with the new key,\nwhich the agent fetches with its next frpc.toml.",
+        "operationId": "rotate_frp_key_api_servers__server_id__frp_key_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrpKeyRotateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rotate Frp Key",
         "tags": [
           "servers"
         ]
