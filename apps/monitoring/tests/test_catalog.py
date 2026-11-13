@@ -301,6 +301,48 @@ def test_target_service_needs_a_compose_project():
     assert "target.service" in _only_error(_load(raw))
 
 
+@pytest.mark.parametrize(
+    ("target", "error"),
+    [
+        (
+            {"kind": "port", "alternatives": [{"port_hint": 80, "scheme": "http"}]},
+            "alternatives need a container target",
+        ),
+        (
+            {
+                "kind": "container",
+                "service": "web",
+                "port_hint": 80,
+                "alternatives": [{"port_hint": 80, "scheme": "http"}],
+            },
+            "alternatives replace port_hint and scheme",
+        ),
+        ({"kind": "container", "service": "web", "alternatives": []}, "at least 1"),
+        (
+            {
+                "kind": "container",
+                "service": "web",
+                "alternatives": [{"port_hint": 80 + i, "scheme": "http"} for i in range(5)],
+            },
+            "at most 4",
+        ),
+        (
+            {"kind": "container", "service": "web", "alternatives": [{"port_hint": 80}]},
+            "scheme",
+        ),
+    ],
+)
+def test_target_alternatives_are_checked(target, error):
+    assert error in _only_error(_load(_module(checks=[_check(target=target)])))
+
+
+def test_target_alternatives_load_in_order():
+    alternatives = [{"port_hint": 8443, "scheme": "https"}, {"port_hint": 8080, "scheme": "http"}]
+    target = {"kind": "container", "service": "web", "alternatives": alternatives}
+    module = _load(_module(checks=[_check(target=target)])).modules["example"]
+    assert [a.model_dump() for a in module.checks[0].target.alternatives] == alternatives
+
+
 def test_image_fallback_needs_a_service():
     target = {"kind": "container", "image_fallback": True, "port_hint": 8000, "scheme": "http"}
     assert "image_fallback needs a service" in _only_error(

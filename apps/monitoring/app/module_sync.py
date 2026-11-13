@@ -21,7 +21,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
-from app.catalog.model import Check, Module
+from app.catalog.model import Alternative, Check, Module
 from app.check_configs import ProbeConfig
 from app.core.time import utcnow_naive
 from app.discovery import image_matches, image_repo
@@ -134,19 +134,42 @@ def _target_name(
     return None, none
 
 
-def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
-    """Whether the last scan saw the container with TCP ports, the hint not among them:
-    the ports listening in its network if the scan saw them, else the exposed ones (the
+def _seen_ports(name: str, containers: list[dict]) -> tuple[set[int], bool]:
+    """(the TCP ports the last scan saw at the container, whether they are the listening
+    ones): those listening in its network if the scan saw them, else the exposed ones (the
     docservice of the OnlyOffice image listens on 8000, the image exposes 80 and 443)."""
     for c in containers:
         if c["name"] == name:
             listening = c.get("listening")
             if listening is not None:
-                ports = set(listening)
-            else:
-                ports = {p["private"] for p in c["ports"] if p["proto"] == "tcp"}
-            return bool(ports) and port not in ports
-    return False
+                return set(listening), True
+            return {p["private"] for p in c["ports"] if p["proto"] == "tcp"}, False
+    return set(), False
+
+
+def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
+    """Whether the last scan saw the container with TCP ports, the hint not among them."""
+    ports, _ = _seen_ports(name, containers)
+    return bool(ports) and port not in ports
+
+
+def _alternative(
+    name: str, alternatives: list[Alternative], containers: list[dict]
+) -> tuple[Alternative | None, str | None]:
+    """(the first alternative whose port the last scan saw at the container, None) or
+    (None, why none is picked). Without seen ports (stopped, host network) the first."""
+    ports, listening = _seen_ports(name, containers)
+    if not ports:
+        return alternatives[0], None
+    seen = [a for a in alternatives if a.port_hint in ports]
+    hints = ", ".join(str(a.port_hint) for a in alternatives)
+    if not seen:
+        return None, f"container {name} has none of the ports {hints}"
+    if len(seen) > 1 and not listening:
+        # An image exposes its TLS port whether TLS is on or not; only the listening
+        # ports tell, and a guess would alert on a port nothing listens on.
+        return None, f"container {name} exposes several of the ports {hints}, none seen listening"
+    return seen[0], None
 
 
 def probe_config(
@@ -158,7 +181,7 @@ def probe_config(
     if check.target is not None:
         t = check.target
         name = ""
-        port_hint = t.port_hint
+        port_hint, scheme = t.port_hint, t.scheme
         if t.kind == "port":
             if port_hint is None:
                 port_hint = summary.get("port")
@@ -176,7 +199,12 @@ def probe_config(
             # decides.
             if t.kind == "container" and port_hint and _lacks_port(name, port_hint, containers):
                 return None, f"container {name} has no port {port_hint}"
-        target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": t.scheme}
+            if t.alternatives:
+                picked, why = _alternative(name, t.alternatives, containers)
+                if picked is None:
+                    return None, why
+                port_hint, scheme = picked.port_hint, picked.scheme
+        target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": scheme}
     config = {
         "sensor": check.sensor,
         "target": target,

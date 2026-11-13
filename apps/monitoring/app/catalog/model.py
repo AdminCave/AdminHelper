@@ -80,6 +80,11 @@ class Detect(_Model):
         return not (self.container_images or self.units or self.processes or self.markers)
 
 
+class Alternative(_Model):
+    port_hint: _PORT
+    scheme: Literal["http", "https", "tcp"]
+
+
 class Target(_Model):
     kind: Literal["loopback", "container", "process", "unit", "port"]
     # Compose service of the instance's project whose container the check asks.
@@ -89,11 +94,19 @@ class Target(_Model):
     image_fallback: StrictBool = False
     port_hint: _PORT | None = None
     scheme: Literal["http", "https", "tcp"] | None = None
+    # In order: the first whose port the last scan saw at the container (Bitwarden's nginx
+    # listens on 8443 with TLS and redirects 8080 there, on 8080 alone without).
+    alternatives: list[Alternative] | None = Field(None, min_length=1, max_length=4)
 
     @model_validator(mode="after")
-    def _fallback_of_a_service(self) -> Target:
+    def _consistent(self) -> Target:
         if self.image_fallback and not self.service:
             raise ValueError("image_fallback needs a service")
+        if self.alternatives is not None:
+            if self.kind != "container":
+                raise ValueError("alternatives need a container target")
+            if self.port_hint is not None or self.scheme is not None:
+                raise ValueError("alternatives replace port_hint and scheme")
         return self
 
 

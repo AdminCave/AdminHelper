@@ -58,8 +58,10 @@ Moduls nennt, bzw. an den einzelnen Container ohne Compose; mehrdeutig ungebunde
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_catalog_nextcloud.py tests/test_catalog.py
 Doku: → T7
 
-### T5 — R-1387: Ziele mit Port-Alternativen; HTTP-Check am Bitwarden-nginx  [ ]
+### T5 — R-1387: Ziele mit Port-Alternativen; HTTP-Check am Bitwarden-nginx  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/bitwarden.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_bitwarden.py, apps/monitoring/tests/test_catalog.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f3a8e1d3b 2026-11-13T21:30:20+01:00
+Review: approve (.ah-out/review/kern-monitoring-29/T5.verdict.json)
 Änderung: `Target.alternatives` (1–4 Einträge `{port_hint, scheme}`, nicht zusammen mit `port_hint`/`scheme`).
 `probe_config` nimmt die erste Alternative, deren Port der letzte Scan am Container sah (`listening`, sonst
 exponiert), ohne gesehene Ports die erste. `bitwarden` (Version + 1): Check `GET /alive` am Dienst `nginx`
@@ -92,3 +94,4 @@ Abhängt von: T1, T2, T3, T4, T5, T6
 ## Entscheidungen
 - R-1383 und R-1388 fahren nicht mit (Quellen nicht belegt), nächster Zug `kern-monitoring-33`.
 - Das 3CX-Zertifikat aus R-1387 wird eine eigene Zeile: es braucht ein Ziel außerhalb der Unit-Instanz (nginx des Hosts).
+- T5: Sieht der Scan nur exponierte Ports und passen mehrere Alternativen, bleibt der Check ungebunden (Abweichung von der Spec „sonst exponiert“): das nginx-Image exponiert 8443 auch ohne TLS, ein Raten alarmierte auf einen Port ohne Lauscher. Gebunden wird dann erst mit `listening` (neuer Agent).
