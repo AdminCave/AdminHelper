@@ -17,7 +17,7 @@ Ziel: Die Liste der Weiterleiter und Aktivatoren deckt die bekannten Programme a
 der Guard „umgeleitet“ von „Queue voll“ und „Verbindung schon beendet“; nur „umgeleitet“ wird gemerkt. Kosten wie
 heute: kein Prozess-Start, höchstens ein weiterer Netlink- bzw. sysctl-Lookup, nur wenn der erste nichts fand.
 
-Nicht-Ziele: Konfigurationen von Proxys auswerten; frps (R-1375: seine Ports gelten als eigener Dienst); der Cache der
+Nicht-Ziele: Konfigurationen von Proxys auswerten; der Cache der
 `iphlpsvc`-PID (Nit aus kern-monitoring-24 T4, nicht angreifersteuerbar); FreeBSD-Queue-Stand (getcred liefert ihn
 nicht).
 
@@ -60,4 +60,5 @@ Keine. Das Ergebnis einer abgewiesenen Probe bleibt `not_allowed`; nur der Fehle
 Abweisungsgründe nach dem connect. Dazu `changelog.d/kern-monitoring-26.md`.
 
 ## Offene Fragen
-Keine aus Kevins Bereich: beide Zeilen sind angenommen (Kevin 2026-11-13), frps folgt R-1375.
+Keine aus Kevins Bereich: beide Zeilen sind angenommen (Kevin 2026-11-13). Ein nativ laufendes frps zählt als
+Weiterleiter; das frps des AdminHelper-Servers läuft in Docker und ist davon nicht betroffen.
