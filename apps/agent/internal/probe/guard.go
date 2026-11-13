@@ -70,7 +70,8 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // kubectl (port-forward), autossh, socat, systemd-socket-proxyd (the kernel cuts the name to
 // systemd-socket-), sslh with sslh-ev and sslh-select, rinetd, redir, stunnel (Debian names it
 // stunnel4), 6tunnel, spiped, chisel, gost, ncat, frpc (a visitor listens here for a remote service)
-// and frps (a tcp proxy hands its port to the far end of a tunnel), and on Windows PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
+// and frps (a tcp proxy hands its port to the far end of a tunnel), and on Windows PuTTY, plink and
+// KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
 // forwarderNames are matched whole, since a prefix ssh would also take sshd and ssh-agent. A probe
 // never connects to a port or a socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
@@ -284,9 +285,10 @@ func (g *Guard) DialContext(ctx context.Context, network, address string) (net.C
 type peerState int
 
 const (
-	peerNone      peerState = iota // no socket of this host has the connection's ends
-	peerListener                   // only the listener on the port answers, no socket of the connection
-	peerConnected                  // the socket that took the connection has its exact ends
+	peerNone         peerState = iota // no socket of this host has the connection's ends
+	peerListener                      // only the listener on the port answers, no socket of the connection
+	peerConnected                     // the socket that took the connection has its exact ends
+	peerListenerFull                  // only the listener answers, and its accept queue is full
 )
 
 // errPeerUnsupported: the host cannot tell which socket took a connection.
@@ -358,8 +360,7 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		case state == peerConnected:
 			return nil
 		case try == peerTries:
-			rememberRedirect(netip.AddrPortFrom(ip, server.Port()))
-			return checkRedirected(ip, server.Port())
+			return takenElsewhere(ip, server, client, state)
 		}
 		select {
 		case <-ctx.Done():
@@ -367,6 +368,25 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		case <-time.After(peerWait):
 		}
 	}
+}
+
+// takenElsewhere judges a connection no socket of the port took, after the last try. A listener
+// with a full accept queue drops the connection its handshake completed, and a service that resets
+// the connection at once leaves no socket of it either; the guard's own socket then is gone too.
+// Neither is a redirect: the probe is refused, the port is not remembered.
+func takenElsewhere(ip netip.Addr, server, client netip.AddrPort, state peerState) error {
+	if state == peerListenerFull {
+		return fmt.Errorf("%w: the listen queue of port %d is full, the socket that took the connection cannot be told", ErrNotAllowed, server.Port())
+	}
+	own, err := peerSocket(client, server)
+	switch {
+	case err != nil:
+		return fmt.Errorf("%w: the socket that took the connection to port %d cannot be told: %v", ErrNotAllowed, server.Port(), err)
+	case own != peerConnected:
+		return fmt.Errorf("%w: the connection to port %d ended before the agent could tell which socket took it", ErrNotAllowed, server.Port())
+	}
+	rememberRedirect(netip.AddrPortFrom(ip, server.Port()))
+	return checkRedirected(ip, server.Port())
 }
 
 // control runs for each address the dialer connects to, before it connects.

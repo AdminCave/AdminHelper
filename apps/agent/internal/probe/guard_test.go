@@ -975,13 +975,13 @@ func TestGuardDropsAConnectionAnotherSocketTook(t *testing.T) {
 		{"sock_diag fails", peerNone, errors.New("sock_diag: permission denied"), "cannot be told"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			h := &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return c.state, c.err }}
+			h := &fakeHost{peer: redirect(c.state, c.err)}
 			address, accepted := takenBy(t, h)
 			conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
 			if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("dial = %v, %v; want it refused: %s", conn, err, c.want)
 			}
-			wantCalls := peerTries
+			wantCalls := peerTries + 1 // and once about the guard's own socket
 			if c.err != nil {
 				wantCalls = 1
 			}
@@ -1002,11 +1002,88 @@ func TestGuardDropsAConnectionAnotherSocketTook(t *testing.T) {
 	}
 }
 
+// redirect answers state (and err) about the port the guard dialed, the first end it asks about,
+// and finds the guard's own socket: a redirect leaves the connection standing at the agent's end.
+func redirect(state peerState, err error) func(server, client netip.AddrPort) (peerState, error) {
+	var dialed netip.AddrPort
+	return func(server, client netip.AddrPort) (peerState, error) {
+		if !dialed.IsValid() {
+			dialed = server
+		}
+		if server == dialed {
+			return state, err
+		}
+		return peerConnected, nil
+	}
+}
+
+// TestGuardRefusesAFullQueueOrAnEndedConnectionWithoutRememberingIt: a listener whose accept queue is
+// full, and a service that resets the connection at once, leave no socket of the connection either;
+// the probe is refused for what it is, and the port stays open to the next one (R-1409).
+func TestGuardRefusesAFullQueueOrAnEndedConnectionWithoutRememberingIt(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		peer      func(*fakeHost) func(server, client netip.AddrPort) (peerState, error)
+		want      string
+		wantCalls int
+	}{
+		{"the accept queue is full", func(*fakeHost) func(netip.AddrPort, netip.AddrPort) (peerState, error) {
+			return redirect(peerListenerFull, nil)
+		}, "listen queue of port", peerTries},
+		{"the connection ended", func(h *fakeHost) func(netip.AddrPort, netip.AddrPort) (peerState, error) {
+			var dialed, own netip.AddrPort
+			return func(server, client netip.AddrPort) (peerState, error) {
+				if h.peerCalls > peerTries {
+					if server != own || client != dialed {
+						t.Errorf("asked about %s from %s, want the guard's own end %s from %s", server, client, own, dialed)
+					}
+					return peerListener, nil
+				}
+				dialed, own = server, client
+				return peerListener, nil
+			}
+		}, "ended before the agent could tell", peerTries + 1},
+		{"the guard's own socket cannot be told", func(*fakeHost) func(netip.AddrPort, netip.AddrPort) (peerState, error) {
+			var dialed netip.AddrPort
+			return func(server, client netip.AddrPort) (peerState, error) {
+				if !dialed.IsValid() {
+					dialed = server
+				}
+				if server == dialed {
+					return peerNone, nil
+				}
+				return peerNone, errors.New("sock_diag: permission denied")
+			}
+		}, "cannot be told", peerTries + 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := &fakeHost{}
+			h.peer = c.peer(h)
+			address, accepted := takenBy(t, h)
+			_, err := NewGuard().DialContext(context.Background(), "tcp", address)
+			if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) || strings.Contains(err.Error(), "taken by another socket") {
+				t.Fatalf("dial = %v; want it refused: %s", err, c.want)
+			}
+			if h.peerCalls != c.wantCalls {
+				t.Errorf("asked %d times, want %d", h.peerCalls, c.wantCalls)
+			}
+			(<-accepted).Close()
+
+			h.peer = nil
+			conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
+			if err != nil {
+				t.Fatalf("the next dial = %v, want the port not remembered", err)
+			}
+			_ = conn.Close()
+		})
+	}
+}
+
 // TestGuardRemembersARedirectedPort: after a redirect took a connection to a port, the guard
 // refuses the port before it connects, so the service behind the redirect sees no further
 // connection, until redirectTTL has passed.
 func TestGuardRemembersARedirectedPort(t *testing.T) {
-	h := &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerListener, nil }}
+	h := &fakeHost{peer: redirect(peerListener, nil)}
 	address, accepted := takenBy(t, h)
 	g := NewGuard()
 	if _, err := g.DialContext(context.Background(), "tcp", address); !errors.Is(err, ErrNotAllowed) {

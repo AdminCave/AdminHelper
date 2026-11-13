@@ -21,8 +21,10 @@ um die neuen Namen, ein Fall je Super-Server.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T3
 
-### T2 — R-1409: Queue voll und beendete Verbindung nicht als Umleitung merken  [ ]
+### T2 — R-1409: Queue voll und beendete Verbindung nicht als Umleitung merken  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/peer_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c266c0825 2026-11-13T09:55:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-26/T2.verdict.json)
 Änderung: `judgePeer` meldet für einen Listener mit voller Accept-Queue (`rqueue`/`wqueue` aus `inet_diag_msg`) einen
 eigenen Zustand; `checkTaker` prüft im letzten Versuch zusätzlich die eigene Client-Socket (Lookup mit vertauschten
 Enden). Queue voll oder eigene Socket weg → `ErrNotAllowed` mit eigener Meldung, ohne `rememberRedirect`. Tests:

@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"strconv"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -78,6 +79,82 @@ func TestPeerSocketTellsAConnectionNoSocketHas(t *testing.T) {
 	}
 }
 
+// TestPeerSocketTellsAFullAcceptQueue: a listener nobody accepts from, with a backlog of 0, holds one
+// connection and is then full; the kernel drops the next completed handshake (R-1409).
+func TestPeerSocketTellsAFullAcceptQueue(t *testing.T) {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Bind(fd, &unix.SockaddrInet4{Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Listen(fd, 0); err != nil {
+		t.Fatal(err)
+	}
+	sa, err := unix.Getsockname(fd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(sa.(*unix.SockaddrInet4).Port))
+	other := netip.MustParseAddrPort("127.0.0.1:1")
+	if state, err := osPeerSocket(server, other); err != nil || state != peerListener {
+		t.Fatalf("an empty queue = %v, %v; want peerListener", state, err)
+	}
+
+	conn, err := net.Dial("tcp4", server.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var state peerState
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if state, err = osPeerSocket(server, other); err != nil || state == peerListenerFull {
+			break
+		}
+	}
+	if err != nil || state != peerListenerFull {
+		t.Errorf("a full queue = %v, %v; want peerListenerFull", state, err)
+	}
+}
+
+// TestPeerSocketLosesTheOwnSocketOfAResetConnection: a reset ends the client's socket too, so the
+// guard asks about its own end to tell an ended connection from a redirect (R-1409).
+func TestPeerSocketLosesTheOwnSocketOfAResetConnection(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	conn, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	srv, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := conn.RemoteAddr().(*net.TCPAddr).AddrPort()
+	client := conn.LocalAddr().(*net.TCPAddr).AddrPort()
+	if state, err := osPeerSocket(client, server); err != nil || state != peerConnected {
+		t.Fatalf("the own end of a standing connection = %v, %v; want peerConnected", state, err)
+	}
+
+	_ = srv.(*net.TCPConn).SetLinger(0)
+	_ = srv.Close()
+	var state peerState
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if state, err = osPeerSocket(client, server); err != nil || state != peerConnected {
+			break
+		}
+	}
+	if err != nil || state == peerConnected {
+		t.Errorf("the own end of a reset connection = %v, %v; want it gone", state, err)
+	}
+}
+
 // TestJudgePeerWantsTheExactEnds: an answer whose ends differ from the asked ones took another
 // connection.
 func TestJudgePeerWantsTheExactEnds(t *testing.T) {
@@ -94,6 +171,16 @@ func TestJudgePeerWantsTheExactEnds(t *testing.T) {
 	if got := judgePeer(answer, server, client); got != peerListener {
 		t.Errorf("a listener = %v, want peerListener", got)
 	}
+	for _, q := range []struct {
+		rqueue, wqueue uint32
+		want           peerState
+	}{{3, 4096, peerListener}, {4096, 4096, peerListenerFull}, {4097, 4096, peerListenerFull}, {1, 0, peerListenerFull}} {
+		answer.rqueue, answer.wqueue = q.rqueue, q.wqueue
+		if got := judgePeer(answer, server, client); got != q.want {
+			t.Errorf("a listener with %d of %d queued = %v, want %v", q.rqueue, q.wqueue, got, q.want)
+		}
+	}
+	answer.rqueue, answer.wqueue = 0, 0
 	answer = inetDiagMsg{family: unix.AF_INET6, state: 1,
 		id: sockID(netip.MustParseAddrPort("[::ffff:127.0.0.1]:8080"), netip.MustParseAddrPort("[::ffff:127.0.0.1]:40000"))}
 	if got := judgePeer(answer, server, client); got != peerConnected {
