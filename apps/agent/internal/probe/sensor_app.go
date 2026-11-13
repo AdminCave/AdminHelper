@@ -77,6 +77,7 @@ var appViews = map[string]appView{
 	"crowdsec_bouncers": {kinds: unitKinds, read: crowdsecBouncers},
 	"dnsmasq_leases":    {kinds: unitKinds, read: dnsmasqLeaseView},
 	"fail2ban":          {kinds: unitKinds, read: fail2ban},
+	"fpm_pools":         {kinds: unitKinds, read: fpmPools},
 	"haproxy_servers":   {kinds: unitKinds, read: haproxyServers},
 	"kea_pools":         {kinds: unitKinds, read: keaPools},
 	"keepalived_vips":   {kinds: unitKinds, read: keepalivedVIPs},

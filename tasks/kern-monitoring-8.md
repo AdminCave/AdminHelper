@@ -56,8 +56,10 @@ Ohne Socket `unsupported`. Läuft unter Linux und FreeBSD. Neue Dateien mit SPDX
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T14
 
-### T5 — R-1231: Ansicht fpm_pools über die FastCGI-Statusseite  [ ]
+### T5 — R-1231: Ansicht fpm_pools über die FastCGI-Statusseite  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_fpm.go, apps/agent/internal/probe/app_fpm_test.go, apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_proto_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @51d467d3a 2026-11-13T23:35:51+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T5.verdict.json)
 Änderung: Pools aus `pool.d` der Unit; je Pool mit `pm.status_path` eine FastCGI-Anfrage (`FCGI_BEGIN_REQUEST`,
 `FCGI_PARAMS`, `?json`) an den eigenen Socket; Summe von listen queue, max children reached, slow requests; dazu die
 Zahl der Pools, die auf TCP außerhalb von Loopback ohne `listen.allowed_clients` lauschen. Neue Dateien mit SPDX-Header.
@@ -161,3 +163,11 @@ Task-Review: am Ende
   (an HAProxy 3.4.7 mit `level user` und ohne Stufe geprüft). Socket = erstes absolutes `stats socket`/`unix@` aus
   `/etc/haproxy/haproxy.cfg`, dann `/usr/local/etc/haproxy.conf` (Ports); unter FreeBSD ohne Eintrag
   `/var/run/haproxy.socket` (OPNsense-Plugin; welche Datei os-haproxy schreibt, nicht verifiziert).
+- 2026-11-13 T5: `fpm_pools` meldet pools, pools_read, pools_exposed und die Summen listen_queue,
+  max_children_reached, slow_requests (Zähler seit Start; das Δ bildet der Server), nie Namen, Adressen oder Pfade.
+  Pool-Verzeichnis nach Unit: `php<ver>-fpm` → `/etc/php/<ver>/fpm/pool.d`, `php-fpm` → `/etc/php-fpm.d` (Linux),
+  `php_fpm`/`php-fpm` → `/usr/local/etc/php-fpm.d` (FreeBSD, nicht verifiziert); nur `*.conf`, sortiert, spätere
+  Einstellung gewinnt, `$pool` ersetzt. Pools in `php-fpm.conf` selbst und `pm.status_listen` werden nicht gelesen.
+  Eine Statusseite, die nicht antwortet, ist ein Fehler der Ansicht, kein stilles Auslassen. Live gegen PHP-FPM
+  8.4.27 (Docker) geprüft: Unix-Socket über `dialUnix`, TCP über den Guard, Felder `listen queue`, `max children
+  reached`, `slow requests`.
