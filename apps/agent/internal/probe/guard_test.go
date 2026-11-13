@@ -341,6 +341,11 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			lst("127.0.0.1", 8021, 80), lst("127.0.0.1", 8022, 81), lst("127.0.0.1", 8023, 82),
 			lst("127.0.0.1", 8024, 83), lst("127.0.0.1", 8025, 84), lst("127.0.0.1", 8026, 85),
 			lst("127.0.0.1", 8027, 86),
+			lst("127.0.0.1", 8028, 87), lst("127.0.0.1", 8029, 88), lst("127.0.0.1", 8030, 89),
+			lst("127.0.0.1", 8031, 90), lst("127.0.0.1", 8032, 91), lst("127.0.0.1", 8033, 92),
+			lst("127.0.0.1", 8034, 93), lst("127.0.0.1", 8035, 94), lst("127.0.0.1", 8036, 95),
+			lst("127.0.0.1", 8037, 96), lst("127.0.0.1", 8038, 97), lst("127.0.0.1", 8039, 98),
+			lst("127.0.0.1", 8040, 99), lst("127.0.0.1", 8041, 100), lst("127.0.0.1", 8042, 101),
 		},
 		names: map[int32]string{
 			60: "rootlesskit", 61: "rootlessport", 62: "slirp4netns", 63: "pasta.avx2", 64: "passt",
@@ -348,16 +353,20 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			71: "ssh", 72: "kubectl", 73: "gvproxy", 74: "vpnkit", 75: "autossh", 76: "exe", 77: "exe",
 			78: "exe", 79: "sshfs", 80: "systemd-socket-", 81: "sslh", 82: "sslh-ev", 83: "sslh-select",
 			84: "rinetd", 85: "redir", 86: "redis-server",
+			87: "stunnel4", 88: "6tunnel", 89: "spiped", 90: "chisel", 91: "gost", 92: "ncat", 93: "frpc",
+			94: "PUTTY.EXE", 95: "plink.exe", 96: "kitty_portable.exe", 97: "wslrelay.exe", 98: "wslhost.exe",
+			99: "frps", 100: "exe", 101: "stunnel",
 		},
 		args: map[int32][]string{
 			67: {"rootlessport"},
 			68: {"/usr/libexec/podman/rootlessport", "--child"},
 			// 69: the arguments cannot be read.
-			70: {"nginx", "-g", "daemon off;"},
-			76: {},
-			77: {"/proc/self/exe", "--child"},
-			78: {"/usr/bin/caddy", "run"},
-			79: {"sshfs", "host:/srv", "/mnt"},
+			70:  {"nginx", "-g", "daemon off;"},
+			76:  {},
+			77:  {"/proc/self/exe", "--child"},
+			78:  {"/usr/bin/caddy", "run"},
+			79:  {"sshfs", "host:/srv", "/mnt"},
+			100: {"/usr/bin/chisel", "client", "server:8080", "8041:remote:22"},
 		},
 	})
 	g := NewGuard()
@@ -386,6 +395,21 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 		{"127.0.0.1:8024", "belongs to sslh-select"},
 		{"127.0.0.1:8025", "belongs to rinetd"},
 		{"127.0.0.1:8026", "port 8026 belongs to redir, which forwards to an end the agent cannot check"},
+		{"127.0.0.1:8028", "belongs to stunnel4"},
+		{"127.0.0.1:8029", "belongs to 6tunnel"},
+		{"127.0.0.1:8030", "belongs to spiped"},
+		{"127.0.0.1:8031", "belongs to chisel"},
+		{"127.0.0.1:8032", "belongs to gost"},
+		{"127.0.0.1:8033", "belongs to ncat"},
+		{"127.0.0.1:8034", "belongs to frpc"},
+		{"127.0.0.1:8035", "belongs to PUTTY.EXE"},
+		{"127.0.0.1:8036", "belongs to plink.exe"},
+		{"127.0.0.1:8037", "belongs to kitty_portable.exe"},
+		{"127.0.0.1:8038", "belongs to wslrelay.exe"},
+		{"127.0.0.1:8039", "belongs to wslhost.exe"},
+		{"127.0.0.1:8040", "belongs to frps"},
+		{"127.0.0.1:8041", "belongs to chisel"},
+		{"127.0.0.1:8042", "belongs to stunnel"},
 	} {
 		network := "tcp4"
 		if strings.HasPrefix(c.address, "[") {
@@ -395,8 +419,8 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
 		}
 	}
-	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix) and
-	// redis-server (no redir).
+	// nginx, a reexec whose argv[0] is no forwarder, sshfs (ssh matches whole, not as a prefix)
+	// and redis-server (no redir).
 	for _, address := range []string{"127.0.0.1:8011", "127.0.0.1:8019", "127.0.0.1:8020", "127.0.0.1:8027"} {
 		if err := allowed(g, "tcp4", address); err != nil {
 			t.Errorf("%s: %v, want it allowed", address, err)
@@ -431,30 +455,36 @@ func TestGuardFailsClosedWhenItCannotTellTheListener(t *testing.T) {
 	}
 }
 
-// TestGuardFailsClosedOnASocketSystemdHoldsAlone: a socket systemd listens on for socket activation
-// tells nothing of the service behind it until that runs and holds the socket too.
+// TestGuardFailsClosedOnASocketSystemdHoldsAlone: a socket systemd or a super-server listens on for socket
+// activation tells nothing of the service behind it until that runs and holds the socket too.
 func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {
 	stubHost(t, &fakeHost{
 		list: []listener{
 			lst("127.0.0.1", 2222, 1), lst("0.0.0.0", 5000, 900),
 			lst("127.0.0.1", 631, 1), lst("127.0.0.1", 631, 30),
 			lst("0.0.0.0", 16509, 1), lst("0.0.0.0", 16509, 31),
+			lst("0.0.0.0", 2323, 40), lst("0.0.0.0", 7070, 41), lst("0.0.0.0", 3690, 41), lst("0.0.0.0", 3690, 32),
 		},
-		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd"},
+		names: map[int32]string{1: "systemd", 900: "systemd", 30: "cupsd", 31: "libvirtd", 40: "xinetd", 41: "inetd", 32: "svnserve"},
 	})
 	g := NewGuard()
 
 	for _, c := range []struct{ address, want string }{
-		{"127.0.0.1:2222", "socket activation"},
+		{"127.0.0.1:2222", "systemd holds port 2222 for socket activation"},
 		{"127.0.0.1:5000", "socket activation"},
+		{"127.0.0.1:2323", "xinetd holds port 2323 for socket activation"},
+		{"127.0.0.1:7070", "inetd holds port 7070 for socket activation"},
 		{"127.0.0.1:16509", "libvirtd"},
 	} {
 		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want ErrNotAllowed with %q", c.address, err, c.want)
 		}
 	}
-	if err := allowed(g, "tcp4", "127.0.0.1:631"); err != nil {
-		t.Errorf("a socket systemd and the service it started hold: %v, want it allowed", err)
+	// A socket the super-server and the service it started both hold (systemd, an inetd wait service).
+	for _, address := range []string{"127.0.0.1:631", "127.0.0.1:3690"} {
+		if err := allowed(g, "tcp4", address); err != nil {
+			t.Errorf("%s: a socket the activator and the service it started hold: %v, want it allowed", address, err)
+		}
 	}
 }
 
@@ -945,13 +975,13 @@ func TestGuardDropsAConnectionAnotherSocketTook(t *testing.T) {
 		{"sock_diag fails", peerNone, errors.New("sock_diag: permission denied"), "cannot be told"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			h := &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return c.state, c.err }}
+			h := &fakeHost{peer: redirect(c.state, c.err)}
 			address, accepted := takenBy(t, h)
 			conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
 			if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("dial = %v, %v; want it refused: %s", conn, err, c.want)
 			}
-			wantCalls := peerTries
+			wantCalls := peerTries + 1 // and once about the guard's own socket
 			if c.err != nil {
 				wantCalls = 1
 			}
@@ -972,11 +1002,88 @@ func TestGuardDropsAConnectionAnotherSocketTook(t *testing.T) {
 	}
 }
 
+// redirect answers state (and err) about the port the guard dialed, the first end it asks about,
+// and finds the guard's own socket: a redirect leaves the connection standing at the agent's end.
+func redirect(state peerState, err error) func(server, client netip.AddrPort) (peerState, error) {
+	var dialed netip.AddrPort
+	return func(server, client netip.AddrPort) (peerState, error) {
+		if !dialed.IsValid() {
+			dialed = server
+		}
+		if server == dialed {
+			return state, err
+		}
+		return peerConnected, nil
+	}
+}
+
+// TestGuardRefusesAFullQueueOrAnEndedConnectionWithoutRememberingIt: a listener whose accept queue is
+// full, and a service that resets the connection at once, leave no socket of the connection either;
+// the probe is refused for what it is, and the port stays open to the next one (R-1409).
+func TestGuardRefusesAFullQueueOrAnEndedConnectionWithoutRememberingIt(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		peer      func(*fakeHost) func(server, client netip.AddrPort) (peerState, error)
+		want      string
+		wantCalls int
+	}{
+		{"the accept queue is full", func(*fakeHost) func(netip.AddrPort, netip.AddrPort) (peerState, error) {
+			return redirect(peerListenerFull, nil)
+		}, "listen queue of port", peerTries},
+		{"the connection ended", func(h *fakeHost) func(netip.AddrPort, netip.AddrPort) (peerState, error) {
+			var dialed, own netip.AddrPort
+			return func(server, client netip.AddrPort) (peerState, error) {
+				if h.peerCalls > peerTries {
+					if server != own || client != dialed {
+						t.Errorf("asked about %s from %s, want the guard's own end %s from %s", server, client, own, dialed)
+					}
+					return peerListener, nil
+				}
+				dialed, own = server, client
+				return peerListener, nil
+			}
+		}, "ended before the agent could tell", peerTries + 1},
+		{"the guard's own socket cannot be told", func(*fakeHost) func(netip.AddrPort, netip.AddrPort) (peerState, error) {
+			var dialed netip.AddrPort
+			return func(server, client netip.AddrPort) (peerState, error) {
+				if !dialed.IsValid() {
+					dialed = server
+				}
+				if server == dialed {
+					return peerNone, nil
+				}
+				return peerNone, errors.New("sock_diag: permission denied")
+			}
+		}, "cannot be told", peerTries + 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := &fakeHost{}
+			h.peer = c.peer(h)
+			address, accepted := takenBy(t, h)
+			_, err := NewGuard().DialContext(context.Background(), "tcp", address)
+			if !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) || strings.Contains(err.Error(), "taken by another socket") {
+				t.Fatalf("dial = %v; want it refused: %s", err, c.want)
+			}
+			if h.peerCalls != c.wantCalls {
+				t.Errorf("asked %d times, want %d", h.peerCalls, c.wantCalls)
+			}
+			(<-accepted).Close()
+
+			h.peer = nil
+			conn, err := NewGuard().DialContext(context.Background(), "tcp", address)
+			if err != nil {
+				t.Fatalf("the next dial = %v, want the port not remembered", err)
+			}
+			_ = conn.Close()
+		})
+	}
+}
+
 // TestGuardRemembersARedirectedPort: after a redirect took a connection to a port, the guard
 // refuses the port before it connects, so the service behind the redirect sees no further
 // connection, until redirectTTL has passed.
 func TestGuardRemembersARedirectedPort(t *testing.T) {
-	h := &fakeHost{peer: func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerListener, nil }}
+	h := &fakeHost{peer: redirect(peerListener, nil)}
 	address, accepted := takenBy(t, h)
 	g := NewGuard()
 	if _, err := g.DialContext(context.Background(), "tcp", address); !errors.Is(err, ErrNotAllowed) {

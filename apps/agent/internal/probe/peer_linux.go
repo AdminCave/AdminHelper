@@ -107,9 +107,15 @@ func osPeerSocket(server, client netip.AddrPort) (peerState, error) {
 }
 
 // judgePeer says what the socket sock_diag answered is: the listener, the socket that took the
-// connection, or one of neither.
+// connection, or one of neither. For a listener the kernel answers its accept queue in rqueue and the
+// queue's limit in wqueue (tcp_diag_get_info); it drops a completed handshake once rqueue exceeds
+// wqueue (sk_acceptq_is_full), and the queue may have taken one connection off since, so a queue at
+// its limit counts as full.
 func judgePeer(m inetDiagMsg, server, client netip.AddrPort) peerState {
 	if m.state == tcpListen {
+		if m.rqueue > 0 && m.rqueue >= m.wqueue {
+			return peerListenerFull
+		}
 		return peerListener
 	}
 	local, ok1 := endOf(m.family, m.id.src, m.id.sport)
