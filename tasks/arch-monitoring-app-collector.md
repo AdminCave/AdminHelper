@@ -1,5 +1,5 @@
 # Monitoring: Fühler `app` für Anwendungs-Innenleben — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-app-collector · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-app-collector · Review: pro Task
 Spec: docs/features/arch-monitoring-app-collector.md (Roadmap R-1404)
 Heavy: linux-full — apps/agent (neuer Probe-Fühler `app`); die Katalog-Module sind Daten mit Unit-Tests in der PR-CI; geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -103,8 +103,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_big
 Doku: → T7
 Abhängt von: T5
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-monitoring-app-collector.md
+### T7 — Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/arch-monitoring-app-collector.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @cecaddce0 2026-11-13T10:45:31+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Modul-Zeilen BigBlueButton, OpenLDAP, WordPress (neue Checks, Voraussetzungen: Agent-Mindestversion,
 cn=Monitor für die Consumer-Zahlen, Grenzen), Liste „Nie aufgerufen“ um `bbb-conf --check`; Fühler `app` mit seinen
 Ansichten in der Fühler-Liste der Entwickler-Doku; Changelog `### Added` (ohne Umlaute). Vorher `origin/main`
@@ -176,3 +178,6 @@ Abhängt von: T1, T2, T3, T4, T5, T6
 - 2026-11-13 (T6): Der Test, dass die neuen App-Checks auf vorher übernommenen Instanzen still starten, steht in
   `tests/test_module_sync.py` (dort liegen die DB-Fixtures des Abgleichs); per `set-files` aufgenommen, das
   `Verify:` um die Datei erweitert. Gegenprobe: Mutanten B1–B8, O1–O6, W1–W5, S1–S2 rot.
+- 2026-11-13 (T7): Die Entwickler-Seite Monitoring-Architektur (DE+EN) per `set-files` aufgenommen: `APP_VIEW_FIELDS`
+  und `APP_VIEW_TARGETS` standen sonst nirgends neben `OPNSENSE_VIEW_FIELDS`. Die Admin-Doku nennt cn=Monitor als
+  Voraussetzung der Replikation (ohne bleibt sie `unknown`, alarmiert also nie) und das Abschalten des Checks.
