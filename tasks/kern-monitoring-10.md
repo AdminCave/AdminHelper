@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Netz, Sicherheit, DNS, DHCP, Zeit und Reverse-Proxies — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-10 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-10 · Review: pro Task
 Spec: docs/features/kern-monitoring-10.md (Roadmap R-1236, R-1237, R-1238)
 Heavy: linux-full — neue Agent-Ansichten und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
