@@ -20,8 +20,10 @@ vorher an `wg(8)`, fail2ban, `cscli`, Tailscale belegt (Quelle im Kommentar). Ne
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T9
 
-### T2 — R-1236: Ansichten openvpn_status, keepalived_vips  [ ]
+### T2 — R-1236: Ansichten openvpn_status, keepalived_vips  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_vpn.go, apps/agent/internal/probe/app_vpn_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @475a55ed3 2026-11-13T13:04:20+01:00
+Review: approve (.ah-out/review/kern-monitoring-10/T2.verdict.json)
 Änderung: OpenVPN: Statusdatei der Unit-Instanz (Pfad aus dem Instanznamen, keine freien Pfade), `clients` und
 `updated_age_s`; Keepalived: nur `virtual_ipaddress` aus keepalived.conf gegen die lokalen Interface-Adressen, nie
 `auth_pass` oder andere Inhalte. Datei-Zugriffe über Seams, Obergrenzen je Datei. Neue Dateien mit SPDX-Header.
@@ -96,3 +98,4 @@ Doku: → T9
 ## Entscheidungen
 - Lesekommandos (root) über die Freigabeliste in Ansichten des Fühlers `app`: das Konzept nennt sie mit Zugang root (§6.9), die Freigabeliste ist der Mechanismus aus §3.13; kein exec als Anwendungs-Benutzer, kein `docker exec` (die andere Risikoklasse aus R-1404).
 - T1: `wg_peers` zählt als veraltet nur Peers mit persistent keepalive (nur sie handshaken verlässlich alle zwei Minuten; ein ruhender Road-Warrior ist kein Fehler), ein Keepalive-Peer ohne Handshake zählt zu `stale_crit`; die Unit `wg-quick@<if>` engt auf ihr Interface ein (keine neue Argumentklasse, `wg show all …` gefiltert). `fail2ban`: ein nicht antwortender Server ist ein Wert (`responding` false), kein Fehler; mehr als 32 Jails ist ein Fehler statt unvollständiger Zahlen. `tailscale status --json --peers=false` (Flag aus `cli/status.go`), Peers bleiben ungelesen.
+- T2: `openvpn_status` nur für `openvpn-server@<i>` (Statusdatei des Upstream-Units, Instanzname ohne `/`, sonst ErrInvalid; andere Units ErrUnsupported), Version 1 nimmt die mtime (ihr Zeitstempel ist lokale Zeit ohne Zone), eine Datei ohne `END`/`TIME` ist ein Fehler. `keepalived_vips` liest `virtual_ipaddress` und `virtual_ipaddress_excluded` (beide sind VIPs der Instanz), eindeutige Adressen; `include` nur absolut (Glob), höchstens 64 Dateien und Tiefe 8; relative Includes, Bereiche (`a-b`), Zonen und unbekannte Formen sind Fehler, die nichts aus der Datei zitieren; fehlt die Konfiguration am Standardpfad: ErrUnsupported.
