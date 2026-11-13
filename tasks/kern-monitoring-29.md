@@ -34,8 +34,10 @@ zuerst rot: gitea.service + 0.0.0.0:3000 mit `unit` ergibt nur ('gitea','gitea')
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py
 Doku: → T7
 
-### T3 — R-1393: Container-Checks binden an lauschende Ports; OnlyOffice-Docservice  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_onlyoffice.py
+### T3 — R-1393: Container-Checks binden an lauschende Ports; OnlyOffice-Docservice  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_onlyoffice.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @25b1327ff 2026-11-13T21:23:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-29/T3.verdict.json)
 Änderung: `_container` übernimmt `listening` (Ports, gedeckelt). `_lacks_port` nimmt `listening`, wenn der Scan es
 meldet, sonst die exponierten TCP-Ports. `onlyoffice` (Version + 1) bekommt für das Image einen `http`-Check
 `GET /healthcheck` auf 8000 (Testobjekt, 900 s, `status_code ne 200` kritisch); Docstring nachziehen. Tests: Port

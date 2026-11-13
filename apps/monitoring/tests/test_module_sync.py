@@ -349,6 +349,29 @@ def test_a_container_without_the_hinted_port_binds_no_check(ports, reason):
     assert (config is None) == (reason is not None)
 
 
+@pytest.mark.parametrize(
+    ("ports", "listening", "reason"),
+    [
+        # The port listens in the container's network but is not exposed (OnlyOffice's 8000).
+        pytest.param(_tcp(80, 443), [80, 443, 8000], None, id="listening-only"),
+        pytest.param(_tcp(8000), [80, 443],
+                     "container paperless-web-1 has no port 8000", id="exposed-not-listening"),
+        pytest.param(_tcp(80), [80], "container paperless-web-1 has no port 8000", id="neither"),
+        # Nothing listens yet (or the scan saw no port): the agent decides.
+        pytest.param(_tcp(80), [], None, id="nothing-listens"),
+        # An older agent or a container whose network the scan could not read.
+        pytest.param(_tcp(80), None, "container paperless-web-1 has no port 8000", id="unknown"),
+    ],
+)  # fmt: skip
+def test_the_listening_ports_decide_before_the_exposed_ones(ports, listening, reason):
+    web = {**CONTAINERS[0], "ports": ports, "listening": listening}
+
+    config, why = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, [web, *CONTAINERS[1:]])
+
+    assert why == reason
+    assert (config is None) == (reason is not None)
+
+
 def test_a_port_takes_the_found_port():
     config, _ = _bind("port", "tcp-8443", "answers", {"port": 8443, "protocol": "https"})
 

@@ -114,7 +114,7 @@ def _block(**parts):
     return block
 
 
-def _container(name, image, project="", service="", ports=()):
+def _container(name, image, project="", service="", ports=(), listening=None):
     return {
         "id": "id-" + name,
         "name": name,
@@ -125,6 +125,7 @@ def _container(name, image, project="", service="", ports=()):
         "health": "",
         "ports": list(ports),
         "mounts": [],
+        "listening": listening,
     }
 
 
@@ -220,6 +221,30 @@ def test_inventory_keeps_only_the_contract_fields():
     assert inv["markers"] == {"example.config": True}
     assert inv["ports"] == [_recognised(8443)]
     assert (inv["ts"], inv["duration_ms"], inv["partial"]) == (1762700000, 900, False)
+
+
+@pytest.mark.parametrize(
+    ("raw", "kept"),
+    [
+        pytest.param(None, None, id="null"),
+        pytest.param("8000", None, id="no-list"),
+        pytest.param([], [], id="nothing-listens"),
+        pytest.param([8000, 80, 8000, 0, 70000, "443", True], [80, 8000], id="cleaned"),
+        pytest.param(list(range(1, 65)), list(range(1, 65)), id="at-the-bound"),
+        # More than the agent ever sends: a cut list could hide the port, so none is kept.
+        pytest.param(list(range(1, 66)), None, id="beyond-the-bound"),
+    ],
+)
+def test_the_listening_ports_of_a_container_are_kept_or_unknown(raw, kept):
+    container = {**_container("web", "nginx:1"), "listening": raw}
+    inv = clean_inventory(_block(containers=[container]))
+    assert inv["containers"][0]["listening"] == kept
+
+
+def test_an_older_agent_tells_no_listening_ports():
+    container = {k: v for k, v in _container("web", "nginx:1").items() if k != "listening"}
+    inv = clean_inventory(_block(containers=[container]))
+    assert inv["containers"] == [_container("web", "nginx:1")]
 
 
 def test_lists_beyond_the_contract_bounds_are_cut_and_make_the_scan_partial():

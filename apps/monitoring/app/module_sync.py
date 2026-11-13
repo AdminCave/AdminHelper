@@ -114,10 +114,16 @@ def _target_name(
 
 
 def _lacks_port(name: str, port: int, containers: list[dict]) -> bool:
-    """Whether the last scan saw the container with TCP ports, the hint not among them."""
+    """Whether the last scan saw the container with TCP ports, the hint not among them:
+    the ports listening in its network if the scan saw them, else the exposed ones (the
+    docservice of the OnlyOffice image listens on 8000, the image exposes 80 and 443)."""
     for c in containers:
         if c["name"] == name:
-            ports = {p["private"] for p in c["ports"] if p["proto"] == "tcp"}
+            listening = c.get("listening")
+            if listening is not None:
+                ports = set(listening)
+            else:
+                ports = {p["private"] for p in c["ports"] if p["proto"] == "tcp"}
             return bool(ports) and port not in ports
     return False
 

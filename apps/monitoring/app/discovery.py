@@ -149,7 +149,17 @@ def _container(raw: object) -> dict | None:
         "health": _text(raw.get("health"), 64),
         "ports": ports,
         "mounts": mounts,
+        "listening": _listening(raw.get("listening")),
     }
+
+
+def _listening(raw: object) -> list[int] | None:
+    """The TCP ports something listens on in the container's own network; None when the
+    scan did not see them (an older agent, a stopped container, the host's network) or
+    sent more than the agent ever does, so a cut list never hides a port."""
+    if not isinstance(raw, list) or len(raw) > MAX_CONTAINER_PORTS:
+        return None
+    return sorted({port for port in map(_port, raw) if port is not None})
 
 
 def _recognised_port(raw: object) -> dict | None:
