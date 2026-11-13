@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Probe-Guard: weitere Weiterleiter, klarere Abweisung nach dem connect — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-26 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-26 · Review: pro Task
 Spec: docs/features/kern-monitoring-26.md (Roadmap R-1407, R-1409)
 Heavy: linux-full — Agent (Proben-Wächter, `apps/agent`); Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -34,8 +34,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku: Wächter-Absatz und Changelog  [ ]
+### T3 — Doku: Wächter-Absatz und Changelog  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-26.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @890b8041a 2026-11-13T09:57:51+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Absatz „Wächter“ DE+EN: Super-Server wie Socket-Aktivierung, die zwei Abweisungsgründe nach dem connect
 ohne Merker; Changelog-Fragment neutral (ohne Angriffspfad).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
