@@ -44,8 +44,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T7
 Abhängt von: T1
 
-### T3 — Agent: Ansicht `ldap_replication`  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_ldap.go, apps/agent/internal/probe/app_ldap_test.go, apps/agent/internal/probe/sensor_proto.go
+### T3 — Agent: Ansicht `ldap_replication`  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/app_ldap.go, apps/agent/internal/probe/app_ldap_test.go, apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/app_ldap_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ed67f8323 2026-11-13T09:34:19+01:00
+Review: approve (.ah-out/review/arch-monitoring-app-collector/T3.verdict.json)
 Änderung: `dialUnix` auf den ersten vorhandenen ldapi-Socket (`/var/run/slapd/ldapi`, `/var/run/ldapi`), SASL
 EXTERNAL Bind, Search auf das Root-DSE (`namingContexts`), je Kontext (höchstens 16) `contextCSN` mit Scope base,
 dann `cn=Monitor` subtree `(objectClass=olmSyncReplInstance)` mit genau `olmSRConnection` und `olmSRSyncPhase`
@@ -124,3 +126,14 @@ Abhängt von: T1, T2, T3, T4, T5, T6
   des Guards), ein gelesener Wert bis 64 Byte, sonst Fehler.
 - 2026-11-13 (T2): HTTP über `NewGuard(ep.extra...).HTTPClient(nil)` wie der Fühler `http` statt `dialTarget` (die
   Task nannte es; derselbe Guard, Weiterleitungen nur zum selben Ziel).
+- 2026-11-13 (T3): Die Consumer-Suche geht auf `cn=Databases,cn=Monitor` statt auf ganz `cn=Monitor`: back-monitor
+  hängt die `olmSyncReplInstance`-Einträge unter die Datenbanken (enger, weniger Einträge). `noSuchObject`,
+  `insufficientAccessRights` und `referral` ergeben `monitor=false` ohne die Consumer-Felder, jeder andere Code ist
+  ein Fehler; `sizeLimitExceeded` und mehr als 64 Antworten auch.
+- 2026-11-13 (T3): Ein `contextCSN`, das nicht die Form von OpenLDAP 2.4+ hat (`lutil_csnstr`), ist ein Fehler statt
+  still übergangen; kein Fehler zitiert DN oder Wert. `timeLimit` 0: die Frist der Probe beendet die Sitzung.
+- 2026-11-13 (T3): BER-Bausteine (`berTLV`, Bind, Search) in `app_ldap.go`; `sensor_proto.go` bleibt unverändert,
+  seine Leser (`berMessage`, `berNext`, `berInt`, `ldapUnbind`) werden geteilt. Die Ziel-Unit wird nicht benutzt
+  (wie `bbb_recordings`): der Socket-Guard prüft den Prozess hinter dem ldapi-Socket.
+- 2026-11-13 (T3): Nicht verifiziert: `olmSyncReplInstance` und `olmSRSyncPhase` unter OpenLDAP 2.5/2.6 auf einem
+  echten Host (Quelle: syncrepl.c), der ldapi-Pfad unter FreeBSD.
