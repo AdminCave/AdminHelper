@@ -422,6 +422,8 @@ def generate_frpc_toml(
     tunnels: list[FrpTunnel],
     frpc_user: str,
     allow_users: list[str] | None = None,
+    *,
+    key_generation: int,
 ) -> str:
     """Generates a frpc.toml for a target host.
 
@@ -437,6 +439,7 @@ def generate_frpc_toml(
             "{user}.{name}", the proxy name is the tunnel's ID, so a renamed server or
             tunnel changes nothing here (R-1210). Every proxy carries the key of this ID
             (proxy_key.py), which frps' policy plugin checks.
+        key_generation: The server's frp_key_generation, which picks the key of the ID.
     """
     allowed = [u for u in allow_users or [] if not name_refused(u)]
     for refused_user in sorted(set(allow_users or []) - set(allowed)):
@@ -458,7 +461,7 @@ def generate_frpc_toml(
     lines.extend(_tls_agent_block())
 
     # frps admits a proxy only with the key of the host it names as user (proxy_key.py).
-    host_key = proxy_key(frpc_user)
+    host_key = proxy_key(frpc_user, key_generation)
     for tunnel in active:
         lines.append("")
         lines.append("[[proxies]]")

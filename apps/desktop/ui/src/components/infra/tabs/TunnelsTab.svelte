@@ -10,8 +10,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { FrpConfig, FrpTunnel, Server } from '$lib/api/types';
   import { frpApi } from '$lib/api/frp';
   import { session } from '$lib/stores/session';
-  import { reportError } from '$lib/stores/statusBar';
-  import { Pencil, Plus } from '@lucide/svelte';
+  import { reportError, showStatus } from '$lib/stores/statusBar';
+  import { KeyRound, Pencil, Plus } from '@lucide/svelte';
+  import { confirmDialog } from '../../ui/ConfirmDialog.svelte';
   import TunnelModal from '../TunnelModal.svelte';
   import Button from '../../ui/Button.svelte';
   import Panel from '../../ui/Panel.svelte';
@@ -28,6 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let loading = $state(false);
   let modalOpen = $state(false);
   let editing = $state<FrpTunnel | null>(null);
+  let rotating = $state(false);
 
   async function load(): Promise<void> {
     const s = $session;
@@ -55,6 +57,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
     modalOpen = true;
   }
 
+  async function rotateKey(): Promise<void> {
+    const s = $session;
+    if (!s) return;
+    const ok = await confirmDialog($t('infra.tun.rotateConfirm', { name: server.name }), {
+      confirmLabel: $t('infra.tun.rotate'),
+    });
+    if (!ok) return;
+    rotating = true;
+    try {
+      await frpApi.rotateKey(s, server.id);
+      showStatus($t('infra.tun.rotated', { name: server.name }));
+    } catch (err) {
+      reportError(errMsg(err));
+    } finally {
+      rotating = false;
+    }
+  }
+
   onMount(load);
 </script>
 
@@ -67,6 +87,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
       onclick={openNew}
       disabled={configs.length === 0}>{$t('infra.tun.add')}</Button
     >
+    {#if $session?.isAdmin === true}
+      <Button
+        size="sm"
+        variant="ghost"
+        iconLeft={KeyRound}
+        data-action="tun-rotate-key"
+        onclick={rotateKey}
+        disabled={rotating}>{$t('infra.tun.rotate')}</Button
+      >
+    {/if}
   </div>
 {/snippet}
 
@@ -113,6 +143,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <style>
   .tun-toolbar {
     display: flex;
+    gap: 6px;
   }
   .muted {
     margin: 0;

@@ -34,6 +34,7 @@ from app.modules.api_keys.models import ApiKey
 from app.modules.connections.models import Connection
 from app.modules.frp.config_generator import active_tunnels, generate_frpc_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.proxy_key import proxy_key
 from app.modules.servers.models import Server
 
 # The keys the generator writes into a proxy table; none of them may stand
@@ -106,6 +107,30 @@ class TestConfigHash:
         res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
         assert res.status_code == 200, res.text
         assert res.json() == {"hash": None}
+
+    def test_a_new_key_generation_changes_the_served_key_and_hash(self, test_client, db_session):
+        # The config and its hash follow the server's generation (R-1316): after a raise
+        # the agent sees a new hash and fetches the frpc.toml with the new key.
+        srv = _server(db_session)
+        _add_tunnel(db_session, _frp_config(db_session), "ssh")
+        key = _agent_key(db_session, "srv-sync")
+
+        def served():
+            toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
+            sha = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
+            assert toml.status_code == 200 and sha.status_code == 200, (toml.text, sha.text)
+            assert sha.json()["hash"] == hashlib.sha256(toml.text.encode()).hexdigest()
+            return toml.text, sha.json()["hash"]
+
+        old_text, old_hash = served()
+        assert proxy_key("srv-sync", 0) in old_text
+        srv.frp_key_generation = 1
+        db_session.commit()
+
+        new_text, new_hash = served()
+        assert proxy_key("srv-sync", 1) in new_text
+        assert proxy_key("srv-sync", 0) not in new_text
+        assert new_hash != old_hash
 
     def test_without_an_frp_config_the_config_stays_404(self, test_client, db_session):
         _server(db_session)
@@ -360,7 +385,9 @@ def _three_tunnels() -> list[FrpTunnel]:
     ],
 )
 def test_frpc_toml_without_an_active_tunnel_has_no_proxies_line(make_tunnels):
-    text = generate_frpc_toml(_config(), make_tunnels(), "host", allow_users=["admin"])
+    text = generate_frpc_toml(
+        _config(), make_tunnels(), "host", allow_users=["admin"], key_generation=0
+    )
     assert "[[proxies]]" not in text.splitlines()
     assert "proxies" not in tomllib.loads(text)
 
@@ -374,13 +401,17 @@ def test_frpc_toml_without_an_active_tunnel_has_no_proxies_line(make_tunnels):
     ],
 )
 def test_frpc_toml_without_an_active_tunnel_is_the_common_part_without_the_token(make_tunnels):
-    text = generate_frpc_toml(_config(), make_tunnels(), "host", allow_users=["admin"])
+    text = generate_frpc_toml(
+        _config(), make_tunnels(), "host", allow_users=["admin"], key_generation=0
+    )
     assert "0123456789abcdef" not in text
     assert "stcp-secret-0123" not in text
     assert "auth.token" not in text
     # Everything else of the common part stays as with a tunnel, so the text is
     # still a frpc.toml an agent can write.
-    one = generate_frpc_toml(_config(), [_tunnel("one-ssh")], "host", allow_users=["admin"])
+    one = generate_frpc_toml(
+        _config(), [_tunnel("one-ssh")], "host", allow_users=["admin"], key_generation=0
+    )
     expected = tomllib.loads(one)
     assert expected["auth"].pop("token") == "0123456789abcdef"
     del expected["proxies"]
@@ -410,7 +441,7 @@ def test_active_tunnels_are_the_proxies_the_generator_writes(make_tunnels):
     # The generator writes the frps token only when active_tunnels finds a tunnel;
     # it has to pick what the generator writes as proxies.
     tunnels = make_tunnels()
-    text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"])
+    text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"], key_generation=0)
     proxies = tomllib.loads(text).get("proxies", [])
     assert [t.id for t in active_tunnels(tunnels)] == [p["name"] for p in proxies]
 
@@ -418,9 +449,16 @@ def test_active_tunnels_are_the_proxies_the_generator_writes(make_tunnels):
 def test_frpc_toml_is_the_same_in_every_order_of_the_tunnels():
     # The order the database returns the rows in must not reach the text the
     # config hash covers (R-0452).
-    text = generate_frpc_toml(_config(), _three_tunnels(), "host", allow_users=["admin"])
+    text = generate_frpc_toml(
+        _config(), _three_tunnels(), "host", allow_users=["admin"], key_generation=0
+    )
     for order in itertools.permutations(_three_tunnels()):
-        assert generate_frpc_toml(_config(), list(order), "host", allow_users=["admin"]) == text
+        assert (
+            generate_frpc_toml(
+                _config(), list(order), "host", allow_users=["admin"], key_generation=0
+            )
+            == text
+        )
     ids = [p["name"] for p in tomllib.loads(text)["proxies"]]
     assert ids == sorted(ids)
 
@@ -434,7 +472,9 @@ def test_frpc_toml_is_the_same_in_every_order_of_the_tunnels():
     ],
 )
 def test_frpc_toml_leaves_login_fail_exit_and_web_server_to_the_agent(make_tunnels):
-    text = generate_frpc_toml(_config(), make_tunnels(), "host", allow_users=["admin"])
+    text = generate_frpc_toml(
+        _config(), make_tunnels(), "host", allow_users=["admin"], key_generation=0
+    )
     assert "loginFailExit" not in text
     assert "webServer" not in text
     parsed = tomllib.loads(text)
@@ -451,7 +491,7 @@ def test_frpc_toml_leaves_login_fail_exit_and_web_server_to_the_agent(make_tunne
 )
 def test_frpc_toml_keeps_every_common_key_before_the_first_proxy(make_tunnels):
     tunnels = make_tunnels()
-    text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"])
+    text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"], key_generation=0)
     lines = text.splitlines()
     first = lines.index("[[proxies]]")
     head = tomllib.loads("\n".join(lines[:first]))

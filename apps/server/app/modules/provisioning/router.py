@@ -48,6 +48,7 @@ from app.core.time import iso_utc, utcnow_naive
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
+from app.modules.frp.policy import sync_policy
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.provisioning.schemas import (
@@ -189,7 +190,10 @@ def activate_provision(
     # key per server and replaces it here; it does not call back into this database.
     monitor_key = fetch_or_skip_monitor_key(server_id)
 
-    # 3. FRP bundle (only if FRP is configured; the frpc.toml the sync serves)
+    # 3. FRP bundle (only if FRP is configured; the frpc.toml the sync serves). A new
+    # provisioning gets a new proxy key along with the new API key (R-1316): the key the
+    # host held before stops at frps once the policy below is written.
+    server.frp_key_generation += 1
     frp_bundle = build_frp_bundle(server_id, db)
 
     # 4. One-time enrollment token (tunnel scope = agent, ADR 0001 §3.1 / A3).
@@ -202,6 +206,7 @@ def activate_provision(
     # token at once (mint_enrollment_token commits as well), and the server row is free
     # again. The audit entries commit on their own, so they come after it.
     db.commit()
+    sync_policy(db)
     for key_id, key_name in replaced_keys:
         audit.record(
             db,

@@ -142,7 +142,7 @@ class TestGenerateFrpcToml:
     def test_basic_stcp_tunnel(self):
         config = _make_config()
         tunnel = _make_tunnel()
-        toml = generate_frpc_toml(config, [tunnel], "srv1")
+        toml = generate_frpc_toml(config, [tunnel], "srv1", key_generation=0)
         assert 'user = "srv1"' in toml
         assert "[[proxies]]" in toml
         assert 'name = "srv1-ssh"' in toml
@@ -158,7 +158,7 @@ class TestGenerateFrpcToml:
             name="web01.kunde.example \u00b7 SSH",
             server_id="7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d",
         )
-        toml = generate_frpc_toml(_make_config(), [tunnel], tunnel.server_id)
+        toml = generate_frpc_toml(_make_config(), [tunnel], tunnel.server_id, key_generation=0)
         parsed = tomllib.loads(toml)
         assert parsed["user"] == "7a0e4d2c-1b3f-4a5e-8c6d-9e0f1a2b3c4d"
         assert [p["name"] for p in parsed["proxies"]] == ["2f6b1c3e-0d4a-4e8b-9a71-5c2d8e9f0a1b"]
@@ -167,7 +167,7 @@ class TestGenerateFrpcToml:
     def test_disabled_tunnel_excluded(self):
         config = _make_config()
         tunnel = _make_tunnel(enabled=False)
-        toml = generate_frpc_toml(config, [tunnel], "srv1")
+        toml = generate_frpc_toml(config, [tunnel], "srv1", key_generation=0)
         assert "[[proxies]]" not in toml
 
     def test_https_tunnel_custom_domains(self):
@@ -177,14 +177,16 @@ class TestGenerateFrpcToml:
             custom_domains="app.example.com, api.example.com",
             secret_key=None,
         )
-        toml = generate_frpc_toml(config, [tunnel], "web1")
+        toml = generate_frpc_toml(config, [tunnel], "web1", key_generation=0)
         assert 'customDomains = ["app.example.com", "api.example.com"]' in toml
         assert "secretKey" not in toml
 
     def test_allow_users_override(self):
         config = _make_config()
         tunnel = _make_tunnel()
-        toml = generate_frpc_toml(config, [tunnel], "srv1", allow_users=["user-a", "user-b"])
+        toml = generate_frpc_toml(
+            config, [tunnel], "srv1", allow_users=["user-a", "user-b"], key_generation=0
+        )
         assert 'allowUsers = ["user-a", "user-b"]' in toml
 
     def test_allow_users_fallback_is_ops_admin_not_wildcard(self):
@@ -192,14 +194,16 @@ class TestGenerateFrpcToml:
         # safety net get_allow_users relies on. A "*" here would let every visitor reach every tunnel.
         config = _make_config()
         tunnel = _make_tunnel()
-        toml = generate_frpc_toml(config, [tunnel], "srv1")  # no allow_users -> fallback
+        toml = generate_frpc_toml(
+            config, [tunnel], "srv1", key_generation=0
+        )  # no allow_users -> fallback
         assert 'allowUsers = ["ops-admin"]' in toml
         assert 'allowUsers = ["*"]' not in toml
 
     def test_extra_config_applied(self):
         config = _make_config()
         tunnel = _make_tunnel(extra_config='{"bandwidth": "10MB", "useCompression": true}')
-        toml = generate_frpc_toml(config, [tunnel], "srv1")
+        toml = generate_frpc_toml(config, [tunnel], "srv1", key_generation=0)
         assert 'bandwidth = "10MB"' in toml
         assert "useCompression = true" in toml
 
@@ -207,7 +211,7 @@ class TestGenerateFrpcToml:
         # A7: the agent's frpc presents its enrolled tunnel cert (A4), not a
         # server-minted per-user cert under /etc/frp/pki.
         config = _make_config()
-        toml = generate_frpc_toml(config, [], "client1")
+        toml = generate_frpc_toml(config, [], "client1", key_generation=0)
         assert "[transport.tls]" in toml
         assert "enable = true" in toml
         assert 'certFile = "/etc/adminhelper/identity/agent.crt"' in toml
@@ -221,7 +225,7 @@ class TestGenerateFrpcToml:
             _make_tunnel(name="ssh", local_port=22),
             _make_tunnel(name="rdp", local_port=3389, tunnel_type="stcp"),
         ]
-        toml = generate_frpc_toml(config, tunnels, "srv1")
+        toml = generate_frpc_toml(config, tunnels, "srv1", key_generation=0)
         assert toml.count("[[proxies]]") == 2
 
     def test_agent_fixture_is_the_generator_output(self, monkeypatch):
@@ -263,7 +267,11 @@ class TestGenerateFrpcToml:
             ),
         ]
         toml = generate_frpc_toml(
-            config, tunnels, "0f1e2d3c-4b5a-4968-8776-655443322110", ["ops-admin", "ops-backup"]
+            config,
+            tunnels,
+            "0f1e2d3c-4b5a-4968-8776-655443322110",
+            ["ops-admin", "ops-backup"],
+            key_generation=0,
         )
         # Bytes, not read_text: universal newlines would turn \r\n into \n, and the agent
         # refuses a \r.
@@ -342,9 +350,9 @@ class TestLocalPortOutsideRange:
         ]
         ok = _make_tunnel(name="ok", local_port=22)
         with caplog.at_level(logging.WARNING):
-            toml = generate_frpc_toml(_make_config(), [*bad, ok], "srv1")
+            toml = generate_frpc_toml(_make_config(), [*bad, ok], "srv1", key_generation=0)
         assert toml.count("[[proxies]]") == 1
-        assert toml == generate_frpc_toml(_make_config(), [ok], "srv1")
+        assert toml == generate_frpc_toml(_make_config(), [ok], "srv1", key_generation=0)
         warned = [r.getMessage() for r in caplog.records if "local_port" in r.getMessage()]
         for tunnel in bad:
             assert any(
@@ -356,15 +364,15 @@ class TestLocalPortOutsideRange:
             _make_tunnel(name="low", local_port=1),
             _make_tunnel(name="high", local_port=65535),
         ]
-        toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+        toml = generate_frpc_toml(_make_config(), tunnels, "srv1", key_generation=0)
         assert toml.count("[[proxies]]") == 2
         assert "localPort = 1\n" in toml and "localPort = 65535\n" in toml
 
     def test_frpc_with_only_bad_local_ports_is_the_empty_config(self):
         tunnels = [_make_tunnel(name="bad", local_port=70000)]
-        assert generate_frpc_toml(_make_config(), tunnels, "srv1") == generate_frpc_toml(
-            _make_config(), [], "srv1"
-        )
+        assert generate_frpc_toml(
+            _make_config(), tunnels, "srv1", key_generation=0
+        ) == generate_frpc_toml(_make_config(), [], "srv1", key_generation=0)
 
 
 class TestStcpWithoutSecret:
@@ -379,12 +387,12 @@ class TestStcpWithoutSecret:
             _make_tunnel(name="ok", secret_key="tunnel-secret"),
         ]
         with caplog.at_level(logging.WARNING):
-            toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+            toml = generate_frpc_toml(_make_config(), tunnels, "srv1", key_generation=0)
         assert "no-secret" not in toml and "empty-secret" not in toml
         assert "None" not in toml
         assert 'secretKey = ""' not in toml
         assert toml.count("[[proxies]]") == 1
-        assert toml == generate_frpc_toml(_make_config(), [tunnels[2]], "srv1")
+        assert toml == generate_frpc_toml(_make_config(), [tunnels[2]], "srv1", key_generation=0)
         warned = " ".join(r.getMessage() for r in caplog.records)
         assert "no-secret" in warned and "empty-secret" in warned
 
@@ -451,7 +459,7 @@ class TestStcpWithoutVisitorPort:
 
         tunnels = self._tunnels()
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
-            toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+            toml = generate_frpc_toml(_make_config(), tunnels, "srv1", key_generation=0)
         proxies = tomllib.loads(toml)["proxies"]
         assert sorted(p["name"] for p in proxies) == sorted(t.id for t in tunnels)
         assert not caplog.records, [r.getMessage() for r in caplog.records]
@@ -535,9 +543,9 @@ class TestFieldsTheApiRefuses:
         ok = _make_tunnel(name="ok", visitor_port=6001)
         tunnels = [*self._bad(), ok]
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
-            frpc = generate_frpc_toml(_make_config(), tunnels, "srv1")
+            frpc = generate_frpc_toml(_make_config(), tunnels, "srv1", key_generation=0)
             visitor = generate_visitor_toml(_make_config(), tunnels)
-        assert frpc == generate_frpc_toml(_make_config(), [ok], "srv1")
+        assert frpc == generate_frpc_toml(_make_config(), [ok], "srv1", key_generation=0)
         assert visitor == generate_visitor_toml(_make_config(), [ok])
         assert [p["name"] for p in tomllib.loads(frpc)["proxies"]] == ["ok"]
         warned = self._warnings(caplog)
@@ -555,7 +563,9 @@ class TestFieldsTheApiRefuses:
             for i, value in enumerate(self.BAD_VALUES)
         ]
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
-            frpc = tomllib.loads(generate_frpc_toml(_make_config(), tunnels, "srv1"))
+            frpc = tomllib.loads(
+                generate_frpc_toml(_make_config(), tunnels, "srv1", key_generation=0)
+            )
             visitor = tomllib.loads(generate_visitor_toml(_make_config(), tunnels))
         ids = [t.id for t in tunnels]
         assert [p["name"] for p in frpc["proxies"]] == ids
@@ -565,7 +575,7 @@ class TestFieldsTheApiRefuses:
     def test_the_warning_carries_no_value(self, caplog):
         tunnel = _make_tunnel(name="leaky", secret_key="s3cr3t-value-0123456789\n")
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
-            generate_frpc_toml(_make_config(), [tunnel], "srv1")
+            generate_frpc_toml(_make_config(), [tunnel], "srv1", key_generation=0)
         warned = " ".join(self._warnings(caplog))
         assert "'leaky'" in warned and "secret_key" in warned
         assert "s3cr3t" not in warned
@@ -575,6 +585,6 @@ class TestFieldsTheApiRefuses:
             name="web", tunnel_type="https", custom_domains="a.example, b.example"
         )
         with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
-            toml = generate_frpc_toml(_make_config(), [tunnel], "srv1")
+            toml = generate_frpc_toml(_make_config(), [tunnel], "srv1", key_generation=0)
         assert toml.count("[[proxies]]") == 1
         assert not self._warnings(caplog)

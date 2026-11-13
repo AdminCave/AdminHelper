@@ -237,7 +237,9 @@ def test_frpc_stcp_round_trips(
     tunnel = _tunnel(
         id=tunnel_id, name=name, local_ip=local_ip, local_port=local_port, secret_key=secret
     )
-    parsed = tomllib.loads(generate_frpc_toml(cfg, [tunnel], frpc_user, allow_users))
+    parsed = tomllib.loads(
+        generate_frpc_toml(cfg, [tunnel], frpc_user, allow_users, key_generation=0)
+    )
 
     assert parsed["user"] == frpc_user
     assert parsed["auth"]["token"] == secret
@@ -276,7 +278,9 @@ def test_frpc_https_round_trips(tunnel_id, name, domains, secret):
     becomes a TOML array — the split is the generator's, so the round trip has to
     put the same list back."""
     tunnel = _tunnel(id=tunnel_id, name=name, tunnel_type="https", custom_domains=",".join(domains))
-    parsed = tomllib.loads(generate_frpc_toml(_config(auth_token=secret), [tunnel], "u"))
+    parsed = tomllib.loads(
+        generate_frpc_toml(_config(auth_token=secret), [tunnel], "u", key_generation=0)
+    )
 
     proxy = parsed["proxies"][0]
     assert proxy["name"] == tunnel_id
@@ -326,9 +330,11 @@ def test_allow_users_leaves_out_a_name_the_api_refuses():
         UserCreate(username=forged, password="correct horse battery")
 
     tunnel = _tunnel(name="t", secret_key="0123456789abcdef")
-    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], "u", [forged, "bob"]))
+    parsed = tomllib.loads(
+        generate_frpc_toml(_config(), [tunnel], "u", [forged, "bob"], key_generation=0)
+    )
     assert parsed["proxies"][0]["allowUsers"] == ["bob"]
-    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], "u", [forged]))
+    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], "u", [forged], key_generation=0))
     assert parsed["proxies"][0]["allowUsers"] == ["ops-admin"], "fail closed, not open"
 
 
@@ -338,7 +344,7 @@ def test_a_tunnel_name_the_api_refuses_reaches_no_toml():
     name changes nothing."""
     forged = 'forged-name"\nx = "1'
     tunnel = _tunnel(name=forged, secret_key="0123456789abcdef", visitor_port=6000)
-    frpc = generate_frpc_toml(_config(), [tunnel], tunnel.server_id, ["bob"])
+    frpc = generate_frpc_toml(_config(), [tunnel], tunnel.server_id, ["bob"], key_generation=0)
     visitor = generate_visitor_toml(_config(), [tunnel])
     assert tomllib.loads(frpc)["proxies"][0]["name"] == tunnel.id
     assert tomllib.loads(visitor)["visitors"][0]["serverName"] == tunnel.id

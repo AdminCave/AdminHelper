@@ -26,7 +26,7 @@ from app.core import config as app_config
 from app.core import database
 from app.modules.frp import docker_manager, policy
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.proxy_key import proxy_key
+from app.modules.frp.proxy_key import proxy_key, proxy_key_hash
 from app.modules.monitoring_proxy import router as monitoring_proxy
 from app.modules.notifications import stream_hub
 from app.modules.servers import router as servers_router
@@ -202,6 +202,21 @@ def test_a_domain_with_one_group_on_only_some_servers_is_left_out(db_session):
     assert sorted(servers[SERVER_B]["proxies"]) == ["t-db"]
 
 
+def test_the_policy_holds_the_hash_of_each_servers_key_generation(db_session):
+    # Raising one server's generation (R-1316) replaces its hash alone; its proxies stay.
+    _seed(db_session)
+    before = policy.build_policy(db_session)["servers"]
+    assert before[SERVER_A]["keyHash"] == proxy_key_hash(SERVER_A, 0)
+    db_session.get(Server, SERVER_A).frp_key_generation = 3
+    db_session.commit()
+
+    after = policy.build_policy(db_session)["servers"]
+
+    assert after[SERVER_A]["keyHash"] == proxy_key_hash(SERVER_A, 3)
+    assert after[SERVER_A]["proxies"] == before[SERVER_A]["proxies"]
+    assert after[SERVER_B] == before[SERVER_B]
+
+
 def test_a_server_left_without_proxies_leaves_the_policy(db_session):
     _seed(db_session)
     db_session.add(Server(id="srv-c", name="server-c"))
@@ -332,7 +347,7 @@ def test_policy_file_is_0644_without_any_key(db_session, _policy_dir):
     text = _policy_dir.read_text()
     assert text == FIXTURE.read_text()
     assert stat.S_IMODE(os.lstat(_policy_dir).st_mode) == 0o644
-    assert proxy_key(SERVER_A) not in text and proxy_key(SERVER_B) not in text
+    assert proxy_key(SERVER_A, 0) not in text and proxy_key(SERVER_B, 0) not in text
     assert "tunnel-secret-placeholder" not in text and "frps-token-placeholder" not in text
 
 
