@@ -329,6 +329,14 @@ var commands = map[string][][]string{
 	// The print queues of the local CUPS (probe, app_cups.go). Kept out: lpstat -h (another server),
 	// cupsenable, cupsdisable, cancel, lpadmin and every other command that changes a queue.
 	"lpstat": {{"-p"}},
+	// The mail views (probe, app_mail.go): where Postfix keeps its queues, the queue as JSON (showq,
+	// only under 5000 mails), the state of Dovecot's services and its error log of the last hour. Kept
+	// out: postconf -e/-X/-# (they edit main.cf), postqueue -f/-i/-s/-p (flush and delivery), postsuper,
+	// postfix check, doveadm log reopen|test, doveadm stats dump -r (resets the counters) and every
+	// other doveadm command (kick, expunge, sync and the like).
+	"postconf":  {{"-h", "queue_directory"}},
+	"postqueue": {{"-j"}},
+	"doveadm":   {{"-f", "tab", "service", "status"}, {"log", "errors", "-s", "<seconds>"}},
 	// The Windows views (probe, winviews_windows.go): the inbound replication links of this domain
 	// controller alone, and the sites and application pools of IIS (appcmd.exe from
 	// %windir%\system32\inetsrv, by its base name). Kept out: `repadmin /showrepl *` and every other

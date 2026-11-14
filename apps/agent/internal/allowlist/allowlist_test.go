@@ -810,6 +810,44 @@ func TestAllowlistCupsQueues(t *testing.T) {
 	}
 }
 
+func TestAllowlistMailViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"postconf", "-h", "queue_directory"},
+		{"postqueue", "-j"},
+		{"doveadm", "-f", "tab", "service", "status"},
+		{"doveadm", "log", "errors", "-s", "1795000000"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"postconf", "-e", "relayhost=mx.example"},
+		{"postconf", "-h", "smtpd_sasl_password_maps"},
+		{"postconf", "-n"},
+		{"postqueue", "-f"},
+		{"postqueue", "-i", "4bQ7mT0pZ1z9"},
+		{"postqueue", "-s", "example.org"},
+		{"postqueue", "-p"},
+		{"postqueue", "-j", "-c", "/tmp/evil"},
+		{"postsuper", "-d", "ALL"},
+		{"postfix", "check"},
+		{"doveadm", "log", "reopen"},
+		{"doveadm", "log", "test"},
+		{"doveadm", "log", "errors"},
+		{"doveadm", "log", "errors", "-s", "-1"},
+		{"doveadm", "stats", "dump", "-r"},
+		{"doveadm", "service", "stop", "imap"},
+		{"doveadm", "-f", "tab", "service", "stop", "imap"},
+		{"doveadm", "kick", "alice"},
+		{"doveadm", "expunge", "-A", "mailbox", "INBOX", "all"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 func TestAllowlistWindowsViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"repadmin", "/showrepl", "localhost", "/csv"},

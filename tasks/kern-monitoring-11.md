@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Gebaut wird nach den Merges von kern-monitoring-8, -30 und -14 (`sensor_app.go`, `allowlist.go`, `sensors.py`; dns
 mit Ziel und `lifetime_pct` aus -30); vor T1 `origin/main` in den Branch mergen.
 
-### T1 — R-1239: Ansichten Postfix und Dovecot  [ ]
+### T1 — R-1239: Ansichten Postfix und Dovecot  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_mail_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @afb60a64f 2026-11-14T15:20:23+01:00
+Review: approve (.ah-out/review/kern-monitoring-11/T1.verdict.json)
 Änderung: `postfix_queue` (`readdir` der vier Queues ohne Datei zu öffnen; `postqueue -j` nur unter 5000 Mails,
 nur Alter und Zahl) und `dovecot_status` (`doveadm service status`, `doveadm log errors -s`). Neue Dateien mit
 SPDX-Header.
@@ -74,3 +76,8 @@ Abhängt von: T5, T6
 ## Entscheidungen
 - Mailcow und MailPiler lesen den Zugang aus der Konfiguration des Dienstes, wie das Konzept §6.6 es nennt; das
   Passwort verlässt den Host nicht.
+- T1: `postfix_queue` (readdir, billig, 5 min) und `postfix_queue_age` (`postqueue -j` nur unter 5000 Mails,
+  15 min) sind zwei Ansichten, damit der Katalog beide Intervalle der Spec setzen kann; die Queue-Wurzel nennt
+  `postconf -h queue_directory`. `dovecot_status` zählt Fehler und Warnungen der letzten Stunde (`-s` jetzt − 3600)
+  statt „seit dem letzten Lauf“: die Ansicht bleibt zustandslos. `doveadm service status` und die Feldnamen sind
+  für Dovecot 2.4 belegt, für 2.3 nicht verifiziert (der Kopf wird gelesen, fehlende Felder sind ein Fehler).
