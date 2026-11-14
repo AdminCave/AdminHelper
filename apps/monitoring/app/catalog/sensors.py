@@ -148,6 +148,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
     "web_config": frozenset({"config_ok"}),
+    "service_config": frozenset({"config_ok"}),
     "nginx_status": frozenset(
         {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
     ),
@@ -246,6 +247,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "pbs_status": _UNIT,
     "ceph_health": _UNIT,
     "web_config": _UNIT,
+    "service_config": _UNIT,
     "nginx_status": _UNIT,
     "apache_status": _UNIT,
     "haproxy_servers": _UNIT,
@@ -503,6 +505,7 @@ class AppParams(_Params):
         "pbs_status",
         "ceph_health",
         "web_config",
+        "service_config",
         "nginx_status",
         "apache_status",
         "haproxy_servers",

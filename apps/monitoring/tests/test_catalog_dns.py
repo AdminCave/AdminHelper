@@ -324,3 +324,14 @@ def test_pihole_warns_on_old_blocklists(values, want):
     assert config["params"] == {"path": "/etc/pihole/gravity.db"}
     assert config["interval_s"] == 86400
     assert _rate(config, values) == want
+
+
+@pytest.mark.parametrize(
+    ("module_id", "unit"),
+    [("bind", "named.service"), ("unbound", "unbound.service"), ("dnsmasq", "dnsmasq.service")],
+)
+def test_a_configuration_that_does_not_load_warns_daily(module_id, unit):
+    config = _unit_config(module_id, "config", unit, "service_config")
+    assert config["interval_s"] == 86400
+    assert _rate(config, {"config_ok": True}) == "ok"
+    assert _rate(config, {"config_ok": False}) == "warning"

@@ -347,6 +347,53 @@ func TestAllowlistWebViews(t *testing.T) {
 	}
 }
 
+// TestAllowlistServiceConfigTests: the configuration tests of BIND, Unbound, keepalived, Squid,
+// fail2ban and dnsmasq read the configuration at its default place. The traps load the zones, point
+// the test at another file, write a file, signal the running copy or start the daemon.
+func TestAllowlistServiceConfigTests(t *testing.T) {
+	for _, call := range [][]string{
+		{"named-checkconf"},
+		{"/usr/sbin/named-checkconf"},
+		{"unbound-checkconf"},
+		{"keepalived", "--config-test"},
+		{"squid", "-k", "parse"},
+		{"fail2ban-client", "--test"},
+		{"dnsmasq", "--test"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"named-checkconf", "-z"},
+		{"named-checkconf", "/tmp/x.conf"},
+		{"named-checkconf", "-p"},
+		{"unbound-checkconf", "-o", "interface"},
+		{"unbound-checkconf", "/tmp/x.conf"},
+		{"keepalived"},
+		{"keepalived", "--config-test=/tmp/out"},
+		{"keepalived", "-t"},
+		{"keepalived", "--config-test", "-f", "/tmp/x.conf"},
+		{"squid"},
+		{"squid", "-k", "check"},
+		{"squid", "-k", "reconfigure"},
+		{"squid", "-k", "shutdown"},
+		{"squid", "-k", "parse", "-f", "/tmp/x.conf"},
+		{"squid", "-z"},
+		{"fail2ban-client", "reload"},
+		{"fail2ban-client", "stop"},
+		{"fail2ban-client", "--test", "start"},
+		{"fail2ban-client", "-t"},
+		{"dnsmasq"},
+		{"dnsmasq", "--test", "--conf-file=/tmp/x.conf"},
+		{"dnsmasq", "-k"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 // TestAllowlistDNSAndTimeViews: the app sensor's views of BIND, Unbound, chrony and NTPsec read the
 // status, the counters without resetting them, the tracking report and three system variables. The
 // traps write the statistics file, reset the counters, step or poll the clock, or read other

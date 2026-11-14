@@ -98,6 +98,7 @@ var appViews = map[string]appView{
 	"pve_jobs":          {kinds: unitKinds, read: pveJobs},
 	"pve_updates":       {kinds: unitKinds, read: pveUpdates},
 	"restic_latest":     {kinds: unitKinds, uses: []string{usePassword}, readCred: resticLatest},
+	"service_config":    {kinds: unitKinds, read: serviceConfig},
 	"tailscale_status":  {kinds: unitKinds, read: tailscaleStatus},
 	"traefik_certs":     {kinds: eitherKinds, read: traefikCerts},
 	"unbound_stats":     {kinds: unitKinds, read: unboundStats},

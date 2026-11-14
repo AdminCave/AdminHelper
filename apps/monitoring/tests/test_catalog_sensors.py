@@ -253,6 +253,7 @@ def test_the_app_views_are_those_the_agent_returns():
             "transfers",
         ],
         "web_config": ["config_ok"],
+        "service_config": ["config_ok"],
         "nginx_status": [
             "accepts",
             "active",
@@ -339,6 +340,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "pbs_status": ["unit"],
         "ceph_health": ["unit"],
         "web_config": ["unit"],
+        "service_config": ["unit"],
         "nginx_status": ["unit"],
         "apache_status": ["unit"],
         "haproxy_servers": ["unit"],

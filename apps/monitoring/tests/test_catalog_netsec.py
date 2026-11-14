@@ -241,3 +241,14 @@ def test_openvpn_without_a_status_file_is_critical():
     result = {"ts": T0, "duration_ms": 5, "status": "error", "values": {}, "error": "no file"}
     report = {"timestamp": STAMP, "probes": {"chk": result}}
     assert ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0] == "critical"
+
+
+@pytest.mark.parametrize(
+    ("module_id", "unit"), [("keepalived", "keepalived.service"), ("fail2ban", "fail2ban.service")]
+)
+def test_a_configuration_that_does_not_load_warns_daily(module_id, unit):
+    config = _unit_config(module_id, "config", unit)
+    assert config["params"] == {"view": "service_config"}
+    assert config["interval_s"] == 86400
+    assert _rate(config, {"config_ok": True}) == "ok"
+    assert _rate(config, {"config_ok": False}) == "warning"

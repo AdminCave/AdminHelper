@@ -15,6 +15,10 @@ is not verified; a named without one asks the root servers and answers NXDOMAIN 
 REFUSED without recursion (an answer too), or SERVFAIL when it cannot reach them (critical:
 it resolves nothing).
 
+Daily the agent runs `named-checkconf` and reports only whether the configuration loads: one
+that does not would fail the next restart or reload while the running server goes on, a
+warning.
+
 Not covered: a control channel rndc cannot reach with its default key (rndc.key or
 rndc.conf), the zones' contents and their transfers, and `rndc stats` (it writes a file).
 """
@@ -27,7 +31,7 @@ _ANSWER_RULES = [{"field": "rcode", "op": "eq", "value": "servfail", "level": "c
 MODULE = {
     "id": "bind",
     "name": "BIND",
-    "version": 2,
+    "version": 3,
     "description": (
         "BIND 9: the unit, whether named answers rndc, its zones and recursive clients."
     ),
@@ -64,6 +68,17 @@ MODULE = {
             "interval": 300,
             "fields": ["rcode", "answers", "duration_ms"],
             "rules": _ANSWER_RULES,
+        },
+        {
+            "key": "config",
+            "name": "Configuration test",
+            "sensor": "app",
+            "target": {"kind": "unit"},
+            "params": {"view": "service_config"},
+            "interval": 86400,
+            "timeout_s": 20,
+            "fields": ["config_ok"],
+            "rules": [{"field": "config_ok", "op": "eq", "value": False, "level": "warning"}],
         },
     ],
     "card": [
