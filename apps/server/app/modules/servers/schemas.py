@@ -111,6 +111,9 @@ class FrpKeyRotateOut(BaseModel):
     """The server's frps proxy key generation after POST /api/servers/{id}/frp-key/rotate."""
 
     generation: int
+    # False when the frps policy could not be written: frps keeps the old generation until
+    # the periodic sync (SYNC_INTERVAL) writes it; the rotation itself stands (R-1437).
+    policySynced: bool
 
 
 class InternalServerOut(BaseModel):
