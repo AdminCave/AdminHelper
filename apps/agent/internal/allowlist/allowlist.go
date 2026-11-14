@@ -353,6 +353,17 @@ var commands = map[string][][]string{
 	// on), opendkim-testkey -d/-s/-k/-x (another key or configuration).
 	"spamc":            {{"-K"}},
 	"opendkim-testkey": {{"-v"}},
+	// The Samba views (probe, app_samba.go): the replication links of this domain controller as JSON,
+	// the owners of the FSMO roles, the check of smb.conf, the counts of smbstatus without the check of
+	// its processes, winbindd's ping, the NETLOGON ping of its domain controller and the check of the
+	// trust account. Kept out: samba-tool dbcheck (with --fix it writes), drs replicate|kcc|options,
+	// fsmo transfer|seize and every other samba-tool command, smbstatus -B, --profile and -n, wbinfo
+	// -c/--change-secret and every other wbinfo call (lookups of users and groups), and of
+	// linuxmuster.net linbo-torrent (its status chowns the image tree) and sophomorix-check.
+	"samba-tool": {{"drs", "showrepl", "--json"}, {"fsmo", "show"}},
+	"testparm":   {{"-s"}},
+	"smbstatus":  {{"--json", "--fast"}},
+	"wbinfo":     {{"-p"}, {"-P"}, {"-t"}},
 	// The Windows views (probe, winviews_windows.go): the inbound replication links of this domain
 	// controller alone, and the sites and application pools of IIS (appcmd.exe from
 	// %windir%\system32\inetsrv, by its base name). Kept out: `repadmin /showrepl *` and every other

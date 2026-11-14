@@ -34,8 +34,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T7
 Abhängt von: T1
 
-### T3 — R-1240: Ansichten Samba und linuxmuster  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_samba.go, apps/agent/internal/probe/app_samba_test.go, apps/agent/internal/probe/app_lmn.go, apps/agent/internal/probe/app_lmn_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T3 — R-1240: Ansichten Samba und linuxmuster  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_samba.go, apps/agent/internal/probe/app_samba_test.go, apps/agent/internal/probe/app_lmn.go, apps/agent/internal/probe/app_lmn_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/app_lmn_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @800af9c40 2026-11-14T16:11:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-11/T3.verdict.json)
 Änderung: `samba_drs`, `samba_fsmo`, `samba_member`, `lmn_devices`, `lmn_linbo` (Spec, Tabelle). Neue Dateien mit
 SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/
@@ -97,3 +99,17 @@ Abhängt von: T5, T6
   die Summenzeile von `opendkim-testkey -v` (stdout); Schlüssel und Domains (stderr) bleiben auf dem Host, Exit 78
   (keine KeyTable) ist „nicht unterstützt“. Die DNS-Abfrage des Werkzeugs ist eine Resolver-Abfrage, keine LAN-Sonde
   (Konzept §10 Nr. 4); Intervall täglich im Katalog (T5).
+- T3: Samba-Werkzeuge laufen mit `LC_ALL=C TZ=UTC`, damit `last success` von `drs showrepl --json`
+  (`strftime("%a %b %e %X %Y %Z")`, lokale Zeit, `lib/util/time.c`) fest lesbar ist; `NTTIME(0)` heißt nie: eingehend ein
+  fehlschlagender Link (der Pull läuft je Partition nach Plan), ausgehend nicht (Samba benachrichtigt nur nach einer
+  Änderung der Partition, `drepl_notify.c`), dort zählen nur `consecutive failures`; `--summary` taugt nicht als
+  Vorbild (sein Vergleich `== 0` trifft den String nie). Links zu gelöschten DCs fallen heraus. Fehler der Werkzeuge melden nur
+  den Exit-Code, nie stderr (dort stehen DC-Namen, DNs, Freigaben). `samba_trust` (`wbinfo -t`) ist eine eigene View,
+  damit der Katalog sie täglich fahren kann; `samba_member` fragt `wbinfo -P` nur, wenn `-p` antwortet. Ein
+  FSMO-Besitzer mit `\0ADEL:` gilt als gelöscht (MS-ADTS), wie Samba ihn druckt, nicht verifiziert.
+- T3: linuxmuster.net nur für `default-school` (`devices.csv`); `import_pending` vergleicht seine mtime mit der von
+  `/etc/dhcp/devices/default-school.conf`, die nur ein Import dieser Schule neu schreibt (`devices.conf` schreibt
+  jeder Import, es gilt nur, wo die Schul-Datei fehlt). `import_completed`/`import_errors` nur, wenn
+  `import-devices.log` (neuere base7) einen Lauf-Beginn trägt, gelesen aus den letzten 256 KiB. `lmn_linbo` zählt
+  wie `linbo-torrent` Images in `/srv/linbo/images` und eine Ebene tiefer, ohne Punkt-Verzeichnisse (`.incoming`)
+  und höchstens 4096 Einträge je Verzeichnis; `linbo-torrent` selbst bleibt draußen (sein `status` chownt).

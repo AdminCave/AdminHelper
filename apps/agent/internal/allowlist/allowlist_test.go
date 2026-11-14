@@ -875,6 +875,54 @@ func TestAllowlistMailViews(t *testing.T) {
 	}
 }
 
+func TestAllowlistSambaViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"samba-tool", "drs", "showrepl", "--json"},
+		{"samba-tool", "fsmo", "show"},
+		{"testparm", "-s"},
+		{"smbstatus", "--json", "--fast"},
+		{"wbinfo", "-p"},
+		{"wbinfo", "-P"},
+		{"wbinfo", "-t"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"samba-tool", "dbcheck"},
+		{"samba-tool", "dbcheck", "--cross-ncs", "--fix", "--yes"},
+		{"samba-tool", "drs", "showrepl"},
+		{"samba-tool", "drs", "showrepl", "--json", "dc2.example.org"},
+		{"samba-tool", "drs", "replicate", "dc1", "dc2", "DC=example,DC=org"},
+		{"samba-tool", "drs", "kcc"},
+		{"samba-tool", "fsmo", "transfer", "--role=all"},
+		{"samba-tool", "fsmo", "seize", "--role=pdc"},
+		{"samba-tool", "fsmo", "show", "-H", "ldap://dc2.example.org"},
+		{"samba-tool", "user", "list"},
+		{"testparm"},
+		{"testparm", "-s", "/tmp/evil.conf"},
+		{"testparm", "-s", "--section-name=homes"},
+		{"smbstatus"},
+		{"smbstatus", "--json"},
+		{"smbstatus", "-B"},
+		{"smbstatus", "--profile"},
+		{"smbstatus", "-n", "--json", "--fast"},
+		{"wbinfo"},
+		{"wbinfo", "-u"},
+		{"wbinfo", "-c"},
+		{"wbinfo", "--change-secret"},
+		{"wbinfo", "-t", "--domain=OTHER"},
+		{"wbinfo", "-p", "-t"},
+		{"linbo-torrent", "status"},
+		{"sophomorix-check"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 func TestAllowlistWindowsViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"repadmin", "/showrepl", "localhost", "/csv"},
