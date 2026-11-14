@@ -19,8 +19,10 @@ Beweis: reviewer klein-nachlese-3 T3 2026-11-12 · Dedup-Key: REF:monitoring:che
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py tests/test_system_state_checker.py
 Doku: keine (Details-Ansicht, kein dokumentiertes Verhalten)
 
-### T2 — R-1405 (1)(3): jicofo-Regel `sub_state exited`, onlyoffice-Docstring  [ ]
+### T2 — R-1405 (1)(3): jicofo-Regel `sub_state exited`, onlyoffice-Docstring  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/jitsi_jicofo.py, apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_catalog_jitsi.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5120effb1 2026-11-14T21:20:31+01:00
+Review: am Ende (Branch-Review)
 Beweis: arch-monitoring-apps-1 Task-Prüfer 2026-11-12 · Dedup-Key: ref:monitoring:catalog:nachlese-apps-1
 Änderung: Check `service` von jitsi-jicofo bekommt die Regel `sub_state eq exited -> critical`, `version` 2 (Docstring nennt den Grund); der Docstring von `onlyoffice.py` nennt `onlyoffice/documentserver-ie` unter „Not covered“. Test: `active`/`exited` ist critical, `active`/`running` ok (erst rot). Gilt nur für jicofo, nicht für die Videobridge.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_jitsi.py tests/test_catalog_onlyoffice.py tests/test_catalog.py
