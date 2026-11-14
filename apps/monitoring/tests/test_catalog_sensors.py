@@ -310,6 +310,44 @@ def test_the_app_views_are_those_the_agent_returns():
         "borg_latest": ["has_snapshot", "snapshot_age_s"],
         "kopia_latest": ["has_snapshot", "snapshot_age_s"],
         "duplicati_health": ["healthy"],
+        "ad_replication": [
+            "failing_links",
+            "links",
+            "never_links",
+            "oldest_success_age_s",
+            "partners",
+        ],
+        "dhcp_scopes": ["max_used_pct", "scopes", "scopes_over_80", "scopes_over_95"],
+        "iis_state": ["pools", "pools_stopped", "sites", "sites_stopped"],
+        "rds_licenses": ["licenses_issued", "licenses_total", "min_days_left", "used_pct"],
+        "hyperv": [
+            "checkpoints",
+            "heartbeat_lost",
+            "oldest_checkpoint_age_s",
+            "replication_critical",
+            "replication_warning",
+            "vms",
+            "vms_running",
+            "vms_unhealthy",
+        ],
+        "dfsr": [
+            "folders",
+            "folders_error",
+            "folders_not_normal",
+            "offline_too_long_24h",
+            "stopped_events_24h",
+        ],
+        "print": [
+            "jobs",
+            "jobs_error",
+            "oldest_job_age_s",
+            "printers",
+            "printers_error",
+        ],
+        "mssql_events": ["errors_24h"],
+        "wsus": ["content_free_bytes", "content_free_pct", "errors_24h"],
+        "cups_queues": ["queues", "queues_disabled"],
+        "veeam_windows": ["last_result", "last_run_age_s", "runs"],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -354,6 +392,17 @@ def test_the_app_views_are_those_the_agent_returns():
         "borg_latest": ["unit"],
         "kopia_latest": ["unit"],
         "duplicati_health": ["unit"],
+        "ad_replication": ["unit"],
+        "dhcp_scopes": ["unit"],
+        "iis_state": ["unit"],
+        "rds_licenses": ["unit"],
+        "hyperv": ["unit"],
+        "dfsr": ["unit"],
+        "print": ["unit"],
+        "mssql_events": ["unit"],
+        "wsus": ["unit"],
+        "cups_queues": ["unit"],
+        "veeam_windows": ["unit"],
     }
 
 
@@ -640,7 +689,8 @@ def test_a_host_check_takes_no_target():
 
 
 def test_the_host_views_are_those_the_agent_returns():
-    # Written out, not derived: the names the agent's host_storage.go, host_hw.go and app_pbs.go return.
+    # Written out, not derived: the names the agent's host_storage.go, host_hw.go, app_pbs.go and
+    # winviews.go return.
     assert SENSOR_FIELDS["host"] == frozenset().union(*HOST_VIEW_FIELDS.values())
     assert SENSOR_TARGETS["host"] is None
     assert {v: sorted(f) for v, f in HOST_VIEW_FIELDS.items()} == {
@@ -650,4 +700,32 @@ def test_the_host_views_are_those_the_agent_returns():
         "ipmi_sensors": ["critical", "noncritical", "sensors"],
         "zfs_snapshots": ["status"],
         "rsnapshot": ["last_status", "last_success_age_s", "lock_stale", "running"],
+        "win_updates": [
+            "reboot_required",
+            "search_age_s",
+            "updates_open",
+            "updates_security",
+        ],
+        "win_events": ["application", "system", "total"],
+        "win_certs": ["certs", "expired", "min_days_left"],
+        "storage": [
+            "disks",
+            "disks_unhealthy",
+            "newest_shadow_age_s",
+            "quotas",
+            "quotas_over_90",
+            "shadow_copies",
+            "vdisks",
+            "vdisks_unhealthy",
+            "volumes",
+            "volumes_unprotected",
+        ],
+        "defender": [
+            "antivirus_on",
+            "detections_24h",
+            "passive",
+            "realtime_on",
+            "signature_age_d",
+        ],
+        "win_backup": ["failures_24h", "last_failed", "last_success_age_s"],
     }

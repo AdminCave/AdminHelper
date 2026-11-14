@@ -198,6 +198,61 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "borg_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
     "kopia_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
     "duplicati_health": frozenset({"healthy"}),
+    # Windows Server and its roles (R-1245, R-1246, R-1436) and CUPS: counts, ages and states
+    # from fixed WMI and event queries or read commands; no name, no event text.
+    "ad_replication": frozenset(
+        {
+            "failing_links",
+            "links",
+            "never_links",
+            "oldest_success_age_s",
+            "partners",
+        }
+    ),
+    "dhcp_scopes": frozenset({"max_used_pct", "scopes", "scopes_over_80", "scopes_over_95"}),
+    "iis_state": frozenset({"pools", "pools_stopped", "sites", "sites_stopped"}),
+    "rds_licenses": frozenset(
+        {
+            "licenses_issued",
+            "licenses_total",
+            "min_days_left",
+            "used_pct",
+        }
+    ),
+    "hyperv": frozenset(
+        {
+            "checkpoints",
+            "heartbeat_lost",
+            "oldest_checkpoint_age_s",
+            "replication_critical",
+            "replication_warning",
+            "vms",
+            "vms_running",
+            "vms_unhealthy",
+        }
+    ),
+    "dfsr": frozenset(
+        {
+            "folders",
+            "folders_error",
+            "folders_not_normal",
+            "offline_too_long_24h",
+            "stopped_events_24h",
+        }
+    ),
+    "print": frozenset(
+        {
+            "jobs",
+            "jobs_error",
+            "oldest_job_age_s",
+            "printers",
+            "printers_error",
+        }
+    ),
+    "mssql_events": frozenset({"errors_24h"}),
+    "wsus": frozenset({"content_free_bytes", "content_free_pct", "errors_24h"}),
+    "cups_queues": frozenset({"queues", "queues_disabled"}),
+    "veeam_windows": frozenset({"last_result", "last_run_age_s", "runs"}),
 }
 
 # The views that read a repository: the only ones a credential of use password may go to.
@@ -213,6 +268,42 @@ HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
     "zfs_snapshots": frozenset({"status"}),
     "rsnapshot": frozenset({"last_status", "running", "lock_stale", "last_success_age_s"}),
+    # Windows (R-1245, R-1436): the open updates, the day's critical and error events, the
+    # machine certificates, the storage health, Defender and Windows Server Backup.
+    "win_updates": frozenset(
+        {
+            "reboot_required",
+            "search_age_s",
+            "updates_open",
+            "updates_security",
+        }
+    ),
+    "win_events": frozenset({"application", "system", "total"}),
+    "win_certs": frozenset({"certs", "expired", "min_days_left"}),
+    "storage": frozenset(
+        {
+            "disks",
+            "disks_unhealthy",
+            "newest_shadow_age_s",
+            "quotas",
+            "quotas_over_90",
+            "shadow_copies",
+            "vdisks",
+            "vdisks_unhealthy",
+            "volumes",
+            "volumes_unprotected",
+        }
+    ),
+    "defender": frozenset(
+        {
+            "antivirus_on",
+            "detections_24h",
+            "passive",
+            "realtime_on",
+            "signature_age_d",
+        }
+    ),
+    "win_backup": frozenset({"failures_24h", "last_failed", "last_success_age_s"}),
 }
 
 _UNIT = frozenset({"unit"})
@@ -261,6 +352,17 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "borg_latest": _UNIT,
     "kopia_latest": _UNIT,
     "duplicati_health": _UNIT,
+    "ad_replication": _UNIT,
+    "dhcp_scopes": _UNIT,
+    "iis_state": _UNIT,
+    "rds_licenses": _UNIT,
+    "hyperv": _UNIT,
+    "dfsr": _UNIT,
+    "print": _UNIT,
+    "mssql_events": _UNIT,
+    "wsus": _UNIT,
+    "cups_queues": _UNIT,
+    "veeam_windows": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -548,11 +650,35 @@ class AppParams(_Params):
         "borg_latest",
         "kopia_latest",
         "duplicati_health",
+        "ad_replication",
+        "dhcp_scopes",
+        "iis_state",
+        "rds_licenses",
+        "hyperv",
+        "dfsr",
+        "print",
+        "mssql_events",
+        "wsus",
+        "cups_queues",
+        "veeam_windows",
     ]
 
 
 class HostParams(_Params):
-    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors", "zfs_snapshots", "rsnapshot"]
+    view: Literal[
+        "mdadm",
+        "lvm_thin",
+        "raid_ctrl",
+        "ipmi_sensors",
+        "zfs_snapshots",
+        "rsnapshot",
+        "win_updates",
+        "win_events",
+        "win_certs",
+        "storage",
+        "defender",
+        "win_backup",
+    ]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {

@@ -71,8 +71,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T9
 Abhängt von: T2
 
-### T6 — Katalog: Felder und Ziele der Windows-Ansichten  [ ]
+### T6 — Katalog: Felder und Ziele der Windows-Ansichten  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8631aca37 2026-11-14T13:53:23+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T6.verdict.json)
 Änderung: `APP_VIEW_FIELDS`/`APP_VIEW_TARGETS` und `HOST_VIEW_FIELDS` um die Ansichten aus T3–T5, gleich wie im
 Agent.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py
