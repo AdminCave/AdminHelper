@@ -98,3 +98,4 @@ Task-Review: am Ende
 Abhängt von: T7, T8
 
 ## Entscheidungen
+- Kevin 2026-11-14: Offene Fragen 1–3 wie empfohlen: ohne Windows-Vorlage bauen und mergen, Prüfung vor dem Release als eigene Zeile; WSUS ohne „letzte Synchronisation“; `dcdiag` entfällt.
