@@ -74,8 +74,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onl
 Doku: → T8
 Abhängt von: T5
 
-### T7 — R-1394, R-1433: openldap relativ zur Laufzeit, dns-Checks für Resolver  [ ]
+### T7 — R-1394, R-1433: openldap relativ zur Laufzeit, dns-Checks für Resolver  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/openldap.py, apps/monitoring/app/catalog/modules/pihole.py, apps/monitoring/app/catalog/modules/adguard.py, apps/monitoring/app/catalog/modules/unbound.py, apps/monitoring/app/catalog/modules/bind.py, apps/monitoring/tests/test_catalog_openldap.py, apps/monitoring/tests/test_catalog_dns.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0582b5761 2026-11-14T09:54:44+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T7.verdict.json)
 Änderung: openldap: `lifetime_pct lt 25` warning, `lt 10` critical, `hours_left lt 12` critical statt 22/9 Tage.
 pihole, adguard, unbound, bind: dns-Check `localhost` A an Port 53 des Dienstes; critical bei `servfail` oder
 Fehler der Anfrage, sonst ok. Vorher an der Doku der vier Resolver prüfen, wie sie `localhost` beantworten;
@@ -99,3 +101,4 @@ Abhängt von: T6, T7
 - T2 `auto`: Schweigen bis `answerWait` (2 s) zählt als Klartext, nicht nur ein Nicht-TLS-Datensatz: ein Go-HTTP-Server (etwa Mattermost) wartet auf ein `\n` im ClientHello und antwortet nie. Ein Abbruch oder Alert zählt als TLS, ein abgelaufener Probe-Kontext ist ein Fehler.
 - T4 dns mit Ziel: `answers` ist ANCOUNT aus dem Kopf (zählt etwa eine CNAME-Kette mit), der Rest der Antwort wird nicht gelesen; ohne Ziel zählt der Resolver weiter nur die Endergebnisse. Ein IPv6-PTR-Name steht wie bisher als ip6.arpa-Name im Parameter. Der alte Fall "a target" in `TestDNSSensorTakesItsParams` prüft jetzt ein Ziel ohne Port (gewollte Verhaltensänderung).
 - T5: `dns` nimmt ein optionales Ziel (`OPTIONAL_TARGET_SENSORS`); `test_catalog.py::test_target_must_fit_the_sensor` prüfte „takes no target“ am dns-Fühler und nimmt dafür jetzt `file_age` (gewollte Verhaltensänderung, gleichwertiger Ersatz). `auto` nur für den Fühler `http`: die App-Ansichten (`app_db.go`) und `proto`/`tls` kennen den Wert nicht. `body_match` nur mit `expect`, `expect` nur mit `GET`, wie der Agent.
+- T7 Resolver-Doku (2026-11-14): nur Unbound belegt `localhost` (unbound.conf(5): Standardzone `localhost.` redirect, 127.0.0.1); dnsmasq lädt /etc/hosts (dnsmasq(8)), ob FTL und AdGuard Home `localhost` daraus beantworten, ist nicht verifiziert; BIND: keine Stelle im ARM. Deshalb ist nur SERVFAIL oder ein Fehler der Anfrage critical, NXDOMAIN und REFUSED zählen als Antwort; die Docstrings sagen „nicht verifiziert“. Die Karte von Pi-hole und AdGuard zeigt statt „DNS port“ die DNS-Antwort (höchstens sechs Kartenfelder; die Antwort setzt das Lauschen voraus). Versionskonflikt mit feature/kern-monitoring-31 (unbound, bind je 1→2): wer zuerst merged, der andere zieht auf 3.

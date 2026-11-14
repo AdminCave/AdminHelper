@@ -252,11 +252,60 @@ def test_the_container_dns_port_check_asks_port_53(module_id):
     assert _rate(config, {"listening": True, "port": 3000}) == "critical"
 
 
+_UNITS = {
+    "pihole": "pihole-FTL.service",
+    "adguard": "AdGuardHome.service",
+    "unbound": "unbound.service",
+    "bind": "named.service",
+}
+
+
+def _rcode(rcode, answers):
+    return {"rcode": rcode, "answers": answers, "duration_ms": 3}
+
+
+@pytest.mark.parametrize(
+    ("module_id", "check_key", "key", "summary"),
+    [
+        ("pihole", "service_answers", "pihole", {"matched_by": ["unit:pihole-FTL.service"]}),
+        ("adguard", "service_answers", "adguard", {"matched_by": ["unit:AdGuardHome.service"]}),
+        ("unbound", "answers", "unbound.service", {"unit": "unbound.service"}),
+        ("bind", "answers", "named.service", {"unit": "named.service"}),
+    ],
+)
+def test_the_resolver_is_asked_localhost_at_its_own_port_53(module_id, check_key, key, summary):
+    config = _config(module_id, check_key, key, summary)
+    assert config["sensor"] == "dns"
+    assert config["target"]["kind"] == "unit"
+    assert config["target"]["name"] == _UNITS[module_id]
+    assert config["target"]["port_hint"] == 53
+    assert config["params"] == {"name": "localhost", "rrtype": "A"}
+    assert config["interval_s"] == 300
+    assert _rate(config, _rcode("noerror", 1)) == "ok"
+    # What the server holds for localhost is its configuration: an answer is an answer.
+    assert _rate(config, _rcode("nxdomain", 0)) == "ok"
+    assert _rate(config, _rcode("refused", 0)) == "ok"
+    assert _rate(config, _rcode("servfail", 0)) == "critical"
+    assert _rate(config, {}, status="error") == "critical"
+
+
+@pytest.mark.parametrize("module_id", ["pihole", "adguard"])
+def test_the_container_resolver_is_asked_localhost_at_its_port_53(module_id):
+    config = _config(module_id, "answers", "c", {"container": "c", "image": module_id})
+    assert config["sensor"] == "dns"
+    assert config["target"]["kind"] == "container"
+    assert config["target"]["port_hint"] == 53
+    assert config["params"] == {"name": "localhost", "rrtype": "A"}
+    assert _rate(config, _rcode("noerror", 1)) == "ok"
+    assert _rate(config, _rcode("servfail", 0)) == "critical"
+
+
 @pytest.mark.parametrize("module_id", ["pihole", "adguard"])
 def test_pihole_and_adguard_never_ask_their_api(module_id):
     # Pi-hole v6 has few session slots, AdGuard Home locks out failed logins.
     module = CATALOG.modules[module_id]
-    assert {c.sensor for c in module.checks} <= {"container", "unit", "socket", "file_age"}
+    sensors = {"container", "unit", "socket", "dns", "file_age"}
+    assert {c.sensor for c in module.checks} <= sensors
     assert all(c.credential is None for c in module.checks)
 
 
