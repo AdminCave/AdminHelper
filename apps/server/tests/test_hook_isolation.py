@@ -231,7 +231,9 @@ def test_hook_reader_grace_is_one_deadline_for_both_streams(monkeypatch):
         for _ in range(3)
     )
     extra = held - plain
-    assert 0.8 * grace <= extra < 1.6 * grace, f"expected one grace, took {extra:.1f}s longer"
+    # The difference of two minima scatters under host load (0.7 s seen at grace 1.0), so the lower
+    # bound only says "the grace was waited"; the upper bound tells one grace from two.
+    assert 0.5 * grace <= extra < 1.6 * grace, f"expected one grace, took {extra:.1f}s longer"
 
 
 def test_hook_run_at_the_default_timeout_ends_before_the_gateway_gives_up():
