@@ -720,6 +720,8 @@ class FindingOut(BaseModel):
     # check is gone (they stay until the admin removes them).
     silentChecks: list[str]
     droppedChecks: list[str]
+    # Ids of the instance's checks whose catalog definition changed; adopting writes it.
+    updatableChecks: list[str]
 
 
 class SkippedCheckOut(BaseModel):
@@ -732,6 +734,7 @@ class AdoptOut(BaseModel):
     enabledChecks: list[str]
     disabledChecks: list[str]
     skippedChecks: list[SkippedCheckOut]
+    updatedChecks: list[str]
 
 
 class AdoptFailedOut(BaseModel):

@@ -34,8 +34,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync
 Doku: → T9
 Abhängt von: T1
 
-### T3 — R-1264: geänderte Katalog-Definition als Update anbieten  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/findings.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_findings_api.py
+### T3 — R-1264: geänderte Katalog-Definition als Update anbieten  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/findings.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_findings_api.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c4395ea86 2026-11-14T11:37:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T3.verdict.json)
 Änderung: `_create` speichert den Hash der Katalog-Definition (`model_dump(mode="json")`, sortiert, SHA-256).
 `sync_catalog` öffnet einen Fund `changed`, wenn ein aktiver Check einen anderen Hash hat; ohne Hash (Altzeile)
 setzt er den heutigen, ohne Update. Fund `updatableChecks`; `_adopt` schreibt für diese Checks die neue
@@ -97,3 +99,6 @@ Abhängt von: T3, T4, T5, T6, T7
 - `fastcgi status_path` aus R-1264 ist schon gebaut (Agent `sensor_proto.go` `statusPath`, Katalog `ProtoParams`,
   `UnixSocketParams`); keine Task.
 - Kevin 2026-11-14: T8 `credential use none` heißt optionaler Zugang: ohne ihn läuft der Check, mit ihm liest er mehr.
+- T3: Ein Update übernimmt die Katalog-Definition samt Regeln; `interval_s`/`timeout_s` der gespeicherten Konfiguration,
+  Name, Intervall und Schalter des Admins bleiben. Bindet die neue Definition nicht, bleibt die alte (Grund in
+  `skippedChecks`). Zeilen ohne Hash bekommen beim Start den heutigen, für alle Funde, ohne Angebot.

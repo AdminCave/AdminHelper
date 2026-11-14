@@ -21,6 +21,7 @@ from .test_module_sync import (
     NO_PAPERLESS,
     PROJECT_SUMMARY,
     V1,
+    WEB_CHANGED,
     WITH_HEALTH,
     WITHOUT_BROKER,
 )
@@ -194,6 +195,7 @@ def test_findings_inbox(client_db, catalog):
         "decidedAt": None,
         "silentChecks": [],
         "droppedChecks": [],
+        "updatableChecks": [],
     }
     open_srv1 = client.get("/findings", params={"server_id": "srv-1", "status": "open"}).json()
     assert [f["moduleId"] for f in open_srv1] == ["paperless"]
@@ -226,6 +228,7 @@ def test_adopt_and_the_checks_it_made(client_db, catalog):
     assert len(body["enabledChecks"]) == 2
     assert body["disabledChecks"] == []
     assert body["skippedChecks"] == [{"key": "sched", "reason": "no unit for this instance"}]
+    assert body["updatedChecks"] == []
     checks = client.get("/checks", params={"server_id": "srv-1"}).json()
     assert sorted(c["id"] for c in checks) == sorted(body["enabledChecks"])
     for check in checks:
@@ -337,3 +340,27 @@ def test_a_module_check_deleted_over_the_api_stays_deleted(client_db, catalog):
             (t.module_id, t.instance_key, t.check_key) for t in db.query(MonitorModuleTombstone)
         ] == [("paperless", "paperless", "broker")]
         assert db.query(MonitorCheck).count() == 1
+
+
+def test_a_changed_definition_is_offered_and_adopting_writes_it(client_db, catalog):
+    client, factory = client_db
+    _inventory(factory)
+    finding_id = _finding(factory)
+    assert client.post(f"/findings/{finding_id}/adopt").status_code == 200
+    with factory() as db:
+        sync_catalog(db, catalog=WEB_CHANGED)
+        web = db.query(MonitorCheck).filter(MonitorCheck.module_check_key == "web").one().id
+    catalog(WEB_CHANGED)
+
+    (finding,) = client.get("/findings").json()
+
+    assert (finding["kind"], finding["status"]) == ("changed", "open")
+    assert finding["updatableChecks"] == [web]
+
+    body = client.post(f"/findings/{finding_id}/adopt").json()
+
+    assert body["updatedChecks"] == [web]
+    assert body["finding"]["updatableChecks"] == []
+    with factory() as db:
+        config = json.loads(db.get(MonitorCheck, web).config)
+    assert config["params"]["path"] == "/api/v2/"

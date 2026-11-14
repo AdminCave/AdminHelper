@@ -8,11 +8,14 @@ Adopting a finding turns the catalog checks of its module into probe checks boun
 the instance, or switches them on again; adopting a "gone" finding switches them off.
 Nothing here deletes a check. At start-up, adopted instances follow a changed catalog:
 checks the update added start silent and the finding turns "changed", so the admin
-decides when they alert."""
+decides when they alert. A check whose catalog definition changed is offered as an
+update the same way: adopting writes the new definition (R-1264), nothing rolls it out
+by itself."""
 
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import logging
 import uuid
@@ -51,6 +54,31 @@ class AdoptResult:
     enabled: list[str] = field(default_factory=list)  # check ids now alerting
     disabled: list[str] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)  # {"key", "reason"}
+    updated: list[str] = field(default_factory=list)  # check ids given the new definition
+
+
+def definition_hash(check: Check) -> str:
+    """Hash of the catalog check as the catalog defines it. A check row keeps the hash it
+    was bound from, so a changed definition shows apart from the admin's own edits."""
+    canonical = json.dumps(
+        check.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def updatable_checks(checks: list[MonitorCheck], module: Module | None) -> list[MonitorCheck]:
+    """The checks whose catalog definition changed since they were bound. A row without a
+    hash (bound before R-1264) is never offered: nothing shows what it was bound from."""
+    if module is None:
+        return []
+    hashes = {check.key: definition_hash(check) for check in module.checks}
+    return [
+        row
+        for row in checks
+        if row.module_check_hash is not None
+        and row.module_check_key in hashes
+        and row.module_check_hash != hashes[row.module_check_key]
+    ]
 
 
 def instance_checks(db: Session, finding: MonitorFinding) -> list[MonitorCheck]:
@@ -313,11 +341,43 @@ def _create(
         module_id=module.id,
         module_instance=finding.instance_key,
         module_check_key=check.key,
+        module_check_hash=definition_hash(check),
         silent=silent,
     )
     db.add(row)
     db.add(MonitorState(check_id=row.id, status="pending"))
     return row, None
+
+
+def _update(
+    row: MonitorCheck,
+    module: Module,
+    check: Check,
+    key: str,
+    summary: dict,
+    containers: list[dict],
+) -> str | None:
+    """Give the row the catalog's new definition; why not, or None. The admin's interval
+    and timeout stay (the only parts of a probe config besides rules the admin can edit,
+    routers/checks.py), as do the row's name and switches."""
+    config, reason = probe_config(module, check, key, summary, containers)
+    if config is None:
+        return reason
+    try:
+        old = json.loads(row.config)
+    except (TypeError, ValueError):
+        old = {}
+    if isinstance(old, dict):
+        for part in ("interval_s", "timeout_s"):
+            if part in old:
+                config[part] = old[part]
+    try:
+        ProbeConfig.model_validate(config)
+    except ValueError:
+        return "the updated check does not hold"
+    row.config = json.dumps(config)
+    row.module_check_hash = definition_hash(check)
+    return None
 
 
 def _adopt(
@@ -340,6 +400,9 @@ def _adopt(
         tagged = {check.key for check in module.checks if check.image_tags}
         summary = _summary(finding)
         fitting = summary.get("tag_checks")
+        containers = _containers(db, finding.server_id)
+        by_key = {check.key: check for check in module.checks}
+        updatable = {row.id for row in updatable_checks(checks, module)}
         for row in checks:
             if row.module_check_key not in keys:
                 continue  # dropped from the catalog: stays as the admin left it
@@ -351,6 +414,14 @@ def _adopt(
                         result.disabled.append(row.id)
                         actions.append(("remove", row.id, None, None))
                     continue
+            if row.id in updatable:
+                key = row.module_check_key
+                why = _update(row, module, by_key[key], finding.instance_key, summary, containers)
+                if why is None:
+                    result.updated.append(row.id)
+                else:
+                    # The old definition keeps running; the admin sees why.
+                    result.skipped.append({"key": key, "reason": why})
             # A new instance is watched whole again (adopting "gone" switched its checks
             # off); on a changed one, a check the admin switched off stays off.
             if finding.kind == "new":
@@ -360,7 +431,6 @@ def _adopt(
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
         have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
-        containers = _containers(db, finding.server_id)
         for check in module.checks:
             if check.key in have:
                 continue
@@ -436,12 +506,26 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
     """Bring adopted instances up to a changed catalog; returns how many findings it
     reopened. Runs at start-up before load_all_checks, which schedules what it adds.
 
-    A check the catalog added is created silent; a check it dropped stays. Either makes
-    the finding "changed" and open, so the admin sees it and adopting makes the new
-    checks alert. A check the admin deleted is not created again. A module the catalog
-    no longer has is left alone."""
+    A check the catalog added is created silent; a check it dropped stays; an active
+    check whose definition changed keeps running as it is. Each makes the finding
+    "changed" and open, so the admin sees it and adopting makes the new checks alert and
+    writes the new definitions. A check the admin deleted is not created again. A module
+    the catalog no longer has is left alone. A check bound before definitions had a hash
+    gets today's, without an update: nothing shows what it was bound from."""
     catalog = catalog or get_catalog()
     reopened = 0
+    unhashed = (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.module_id.isnot(None), MonitorCheck.module_check_hash.is_(None))
+        .all()
+    )
+    for row in unhashed:
+        module = catalog.modules.get(row.module_id)
+        check = None
+        if module is not None:
+            check = next((c for c in module.checks if c.key == row.module_check_key), None)
+        if check is not None:
+            row.module_check_hash = definition_hash(check)
     findings = (
         db.query(MonitorFinding)
         .filter(
@@ -459,6 +543,7 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
         keys = {check.key for check in module.checks}
         dropped = any(row.enabled and row.module_check_key not in keys for row in checks)
+        changed = any(row.enabled for row in updatable_checks(checks, module))
         summary = _summary(finding)
         containers = _containers(db, finding.server_id)
         created = False
@@ -467,7 +552,7 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
                 continue
             row, _ = _create(db, finding, module, check, summary, containers, silent=True)
             created = created or row is not None
-        if created or dropped:
+        if created or dropped or changed:
             finding.kind, finding.status, finding.decided_at = "changed", "open", None
             reopened += 1
         finding.catalog_version = catalog.version
