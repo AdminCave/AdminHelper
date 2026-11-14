@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-9 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-9 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-9 · Review: am Ende
 Spec: docs/features/klein-nachlese-9.md (Roadmap R-1457, R-1459, R-1471, R-1472, R-1482, R-1486, R-1496, R-1498)
 Heavy: none — nur Monitoring-Katalog (Service) und Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -19,8 +19,10 @@ Beweis: reviewer kern-monitoring-20 T7 2026-11-14 (R-1471, R-1472); reviewer ker
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_mail.py tests/test_catalog_sensors.py
 Doku: → T2
 
-### T2 — R-1457, R-1459, R-1496: Doku DE+EN, Spec kern-monitoring-11, Changelog  [ ]
+### T2 — R-1457, R-1459, R-1496: Doku DE+EN, Spec kern-monitoring-11, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/features/kern-monitoring-11.md, changelog.d/kern-monitoring-30.md, changelog.d/klein-nachlese-9.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c7a2af4a0 2026-11-14T23:27:00+01:00
+Review: am Ende (Branch-Review)
 Task-Review: am Ende
 Beweis: review kern-monitoring-31 / -30 / reviewer kern-monitoring-11 2026-11-14
 Änderung: dnsmasq-Zeile (Konfigurationstest liest `/etc/dnsmasq.d` unter Debian nicht); Befehls-Freigabeliste im Agent-Handbuch nennt die Konfigurationstests; Wortlaut OpenLDAP-Zertifikats-Check bei älterem Agent (`unknown`, nicht `invalid`) in Doku und Fragment; Spec-Tabelle von `kern-monitoring-11` auf die Entscheidungen; Fragment zum Socket-Pfad in Bytes
