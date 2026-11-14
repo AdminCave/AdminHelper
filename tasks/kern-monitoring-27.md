@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: gespeicherte Texte und Dienste-Fehlerzeilen nachziehen — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-27 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-27 · Review: pro Task
 Spec: docs/features/kern-monitoring-27.md (Roadmap R-1372, R-1373, R-1415)
 Heavy: none — Monitoring-Dienst und ein Desktop-Helfer; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -36,8 +36,10 @@ Doku: changelog.d/kern-monitoring-27.md (neutral)
 Test-Löschung: apps/monitoring/tests/test_service_inventory.py::test_a_hostile_report_is_redacted_within_its_budget — ersetzt durch einen Zeitvergleich über zwei Längen (gleichwertig, schärfer)
 Abhängt von: T1
 
-### T3 — Desktop „Mehr Log“: Unit-Prüfung enger  [ ]
+### T3 — Desktop „Mehr Log“: Unit-Prüfung enger  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @bd2e6ecc3 2026-11-14T08:21:12+01:00
+Review: approve (.ah-out/review/kern-monitoring-27/T3.verdict.json)
 Änderung: R-1415. `build_journal_args` (`ssh.rs:116`) lehnt eine Unit mit `\` am Ende ab, Test bei den
 Journal-Tests (`ssh.rs:729`); der Kommentar in `base_args` (`ssh.rs:216`) nennt `terminal_open_ssh_journal` als
 validierenden Aufrufer.
