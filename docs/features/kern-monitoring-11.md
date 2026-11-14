@@ -51,9 +51,10 @@ Check steht dann auf `unknown`.
 
 | Ansicht | Ziel | Leseweg | Felder |
 |---|---|---|---|
-| `postfix_queue` | Unit postfix | `readdir` in `incoming`, `active`, `deferred`, `hold` unter `queue_directory` (5 min); unter 5000 Mails `postqueue -j` (15 min) | Zahl je Queue, Alter der ältesten Mail |
-| `dovecot_status` | Unit dovecot | `doveadm service status`, `doveadm log errors -s` | Dienste am Prozesslimit, Fehlerzeilen seit dem letzten Lauf |
-| `mailcow_watchdog` | Compose-Projekt mailcowdockerized | Redis `WATCHDOG_LOG` auf 127.0.0.1:7654, Passwort `REDISPASS` aus `mailcow.conf` (Konzept: verlässt den Host nicht) | Zahl der Dienste im Fehler je Lauf, Alter des letzten Eintrags |
+| `postfix_queue` | Unit postfix | `readdir` in `incoming`, `active`, `deferred`, `hold` unter `queue_directory` (aus `postconf -h queue_directory`, 5 min) | Zahl je Queue |
+| `postfix_queue_age` | Unit postfix | `postqueue -j`, nur unter 5000 Mails (15 min); eigene Ansicht, damit der Katalog beide Intervalle setzen kann | Alter der ältesten Mail |
+| `dovecot_status` | Unit dovecot | `doveadm service status`, `doveadm log errors -s` (jetzt − 3600, zustandslos statt „seit dem letzten Lauf“) | Dienste am Prozesslimit, Fehler und Warnungen der letzten Stunde |
+| `mailcow_watchdog` | Compose-Projekt mailcowdockerized | Redis `WATCHDOG_LOG` an der Container-Adresse von `redis-mailcow` (Port 6379, nicht dem veröffentlichten 127.0.0.1:7654), Passwort `REDISPASS` aus `mailcow.conf` (Konzept: verlässt den Host nicht) | Zahl der Dienste im Fehler je Lauf, Alter des letzten Eintrags |
 | `mailcow_queue` | Compose-Projekt mailcowdockerized | `readdir` im Postfix-Spool-Volume | wie `postfix_queue` ohne `postqueue` |
 | `piler_status` | Unit piler | Zeitpunkt der letzten archivierten Mail aus der Piler-DB, DB-Zugang aus `piler.conf` (Konzept) | Alter der letzten Mail |
 | `clamav_db` | Unit clamav-daemon | Kopf von `daily.cvd`/`daily.cld` (512 Byte) | Alter der Datenbank |
@@ -61,8 +62,9 @@ Check steht dann auf `unknown`.
 | `opendkim_keys` | Unit opendkim | `opendkim-testkey` (täglich) | Schlüssel ok / fehlerhaft (Zahl) |
 | `samba_drs` | Unit samba-ad-dc | `samba-tool drs showrepl --json` (15 min) | Partner, Fehler, Alter des letzten Erfolgs |
 | `samba_fsmo` | Unit samba-ad-dc | `samba-tool fsmo show` (täglich) | Rollen ohne gültigen Inhaber |
-| `samba_member` | Unit smbd/winbind | `testparm -s` (Exit), `smbstatus --json --fast`, `wbinfo -p`, `-P`, täglich `-t` | Konfiguration ok, Sitzungen, Sperren, winbind und Vertrauensstellung ok |
-| `lmn_devices` | Unit linuxmuster-webui | mtime von `devices.csv` gegen `devices.conf`, Fehler in `import-devices.log` | Import ausstehend, Fehler |
+| `samba_member` | Unit smbd/winbind | `testparm -s` (Exit), `smbstatus --json --fast`, `wbinfo -p`, `-P` (nur wenn `-p` antwortet) | Konfiguration ok, Sitzungen, Sperren, winbind und Domänencontroller erreichbar |
+| `samba_trust` | Unit smbd/winbind | `wbinfo -t` (täglich; eigene Ansicht, damit der Katalog sie täglich fährt) | Vertrauensstellung ok |
+| `lmn_devices` | Unit linuxmuster-webui | nur `default-school`: mtime von `devices.csv` gegen die von `/etc/dhcp/devices/default-school.conf`; `import-devices.log` (letzte 256 KiB) nur, wo es einen Lauf-Beginn trägt | Import ausstehend, abgeschlossen, Fehler |
 | `lmn_linbo` | Unit linuxmuster-webui | `.torrent` gegen Image unter `/srv/linbo` | Images mit veraltetem Torrent |
 
 rspamd (nur `/ping` an 11334), das LDAPS-Zertifikat (tls mit `lifetime_pct`)
