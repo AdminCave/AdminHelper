@@ -9,6 +9,10 @@ its control channel, how many zones it serves and how many recursive clients it 
 its limit; no zone name, no address. A named that does not answer is critical. Debian and
 RHEL name the unit named.service (Debian's bind9.service is an alias of it).
 
+Daily the agent runs `named-checkconf` and reports only whether the configuration loads: one
+that does not would fail the next restart or reload while the running server goes on, a
+warning.
+
 Not covered: a control channel rndc cannot reach with its default key (rndc.key or
 rndc.conf), the zones' contents and their transfers, and `rndc stats` (it writes a file).
 """
@@ -16,7 +20,7 @@ rndc.conf), the zones' contents and their transfers, and `rndc stats` (it writes
 MODULE = {
     "id": "bind",
     "name": "BIND",
-    "version": 1,
+    "version": 2,
     "description": (
         "BIND 9: the unit, whether named answers rndc, its zones and recursive clients."
     ),
@@ -43,6 +47,17 @@ MODULE = {
             "interval": 300,
             "fields": ["running", "zones", "recursive_clients", "recursive_limit"],
             "rules": [{"field": "running", "op": "eq", "value": False, "level": "critical"}],
+        },
+        {
+            "key": "config",
+            "name": "Configuration test",
+            "sensor": "app",
+            "target": {"kind": "unit"},
+            "params": {"view": "service_config"},
+            "interval": 86400,
+            "timeout_s": 20,
+            "fields": ["config_ok"],
+            "rules": [{"field": "config_ok", "op": "eq", "value": False, "level": "warning"}],
         },
     ],
     "card": [

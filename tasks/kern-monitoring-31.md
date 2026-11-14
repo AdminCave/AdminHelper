@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T3
 
-### T2 — Katalog: Check config in sechs Modulen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/bind.py, apps/monitoring/app/catalog/modules/unbound.py, apps/monitoring/app/catalog/modules/dnsmasq.py, apps/monitoring/app/catalog/modules/keepalived.py, apps/monitoring/app/catalog/modules/squid.py, apps/monitoring/app/catalog/modules/fail2ban.py, apps/monitoring/tests/test_catalog_dns.py, apps/monitoring/tests/test_catalog_netsec.py, apps/monitoring/tests/test_catalog_proxies.py
+### T2 — Katalog: Check config in sechs Modulen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/bind.py, apps/monitoring/app/catalog/modules/unbound.py, apps/monitoring/app/catalog/modules/dnsmasq.py, apps/monitoring/app/catalog/modules/keepalived.py, apps/monitoring/app/catalog/modules/squid.py, apps/monitoring/app/catalog/modules/fail2ban.py, apps/monitoring/tests/test_catalog_dns.py, apps/monitoring/tests/test_catalog_netsec.py, apps/monitoring/tests/test_catalog_proxies.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @eeace787a 2026-11-14T08:48:25+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1432. `service_config` in `APP_VIEW_FIELDS` ({config_ok}), `APP_VIEW_TARGETS` (_UNIT) und dem Literal; je Modul ein Check `config` (sensor app, view service_config, interval 86400, timeout_s 20, Regel config_ok eq False → warning) und `version` 2; Tests je Modul. Zehn Dateien: sechs Module mit je einer gleichförmigen Zeile, eine Task, weil ein Commit sie gemeinsam testet.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_dns.py tests/test_catalog_netsec.py tests/test_catalog_proxies.py tests/test_catalog.py tests/test_catalog_sensors.py
 Doku: → T3
