@@ -1139,6 +1139,12 @@ jobs:
           sha_win_rel=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
           test -n "$sha_win_ci" && test "$sha_win_ci" = "$sha_win_rel" || {
             echo "::error::FRP_SHA256_WINDOWS_AMD64 differs between ci.yml and release.yml"; exit 1; }
+          # FreeBSD SHA (release vs the FreeBSD box test): the release packs this frpc into the
+          # FreeBSD agent package; a bump that misses it fails the release's sha256sum -c.
+          sha_bsd_rel=$(grep -m1 'FRP_SHA256_FREEBSD_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
+          sha_bsd_box=$(grep -m1 '^FRP_SHA256_FREEBSD_AMD64=' scripts/tests/freebsd_box.sh | grep -o '[0-9a-f]\{64\}')
+          test -n "$sha_bsd_rel" && test "$sha_bsd_rel" = "$sha_bsd_box" || {
+            echo "::error::FRP_SHA256_FREEBSD_AMD64 differs between release.yml and scripts/tests/freebsd_box.sh"; exit 1; }
           # tauri-cli pins (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
           bash .github/scripts/tauri_cli_pins.sh .github/workflows/ci.yml .github/workflows/release.yml
       - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff, oasdiff)
