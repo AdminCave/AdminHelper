@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Windows Server, Windows-Rollen und Windows-Backup — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-14 · Review: pro Task
 Spec: docs/features/kern-monitoring-14.md (Roadmap R-1245, R-1246, R-1436)
 Heavy: linux-full — Discovery und neue Ansichten im Agent (`apps/agent`); Windows über den CI-Job `agent-windows` (keine Windows-Vorlage im Pool), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -115,8 +115,10 @@ Doku: die genannten Dateien
 Task-Review: am Ende
 Abhängt von: T7, T8
 
-### T10 — Doku: Befunde der Abschlussprüfung  [ ]
+### T10 — Doku: Befunde der Abschlussprüfung  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @449640299 2026-11-14T14:37:27+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Windows-Absatz der Erkennung nennt Sockets nicht mehr als ungelesen (`collectSockets` läuft auf jeder
 Plattform); windows-host: abgelaufene Zertifikate nur angezeigt (`machineCertValues` lässt sie aus `min_days_left`);
 Windows-Gruppe: fehlende WMI-Klasse ist `unknown` „Sensor not supported on this host“, ein älterer Agent lehnt den
