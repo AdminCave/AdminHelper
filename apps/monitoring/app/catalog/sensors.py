@@ -167,6 +167,30 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "pm2_apps": frozenset({"apps", "apps_errored", "apps_stopped", "restarts"}),
     "es_nodes": frozenset({"nodes", "nodes_failed", "heap_used_pct_max", "disk_used_pct_max"}),
+    "backuppc_status": frozenset(
+        {
+            "hosts",
+            "hosts_failed",
+            "hosts_no_ping",
+            "hosts_never_backed_up",
+            "jobs_active",
+            "backup_age_max_s",
+        }
+    ),
+    "urbackup_status": frozenset(
+        {
+            "clients",
+            "clients_file_failed",
+            "clients_image_failed",
+            "clients_unseen_24h",
+            "file_backup_age_max_s",
+            "nospc_fatal",
+            "database_error",
+        }
+    ),
+    "veeam_sessions": frozenset(
+        {"jobs", "jobs_failed", "jobs_warning", "sessions_running", "last_success_age_max_s"}
+    ),
 }
 
 # The views of the host sensor and the fields each one returns: the allowlist of the agent's
@@ -178,6 +202,7 @@ HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "raid_ctrl": frozenset({"controllers", "ctrl_bad", "vd_not_optimal", "pd_failed", "bbu_bad"}),
     "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
     "zfs_snapshots": frozenset({"status"}),
+    "rsnapshot": frozenset({"last_status", "running", "lock_stale", "last_success_age_s"}),
 }
 
 _UNIT = frozenset({"unit"})
@@ -218,10 +243,24 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "fpm_pools": _UNIT,
     "pm2_apps": _UNIT,
     "es_nodes": _UNIT_OR_CONTAINER,
+    "backuppc_status": _UNIT,
+    "urbackup_status": _UNIT,
+    "veeam_sessions": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
-    "unit": frozenset({"active_state", "sub_state", "restarts", "active_since"}),
+    # result, exec_status and last_run_age_s: the last run of a service behind a timer (Linux).
+    "unit": frozenset(
+        {
+            "active_state",
+            "sub_state",
+            "restarts",
+            "active_since",
+            "result",
+            "exec_status",
+            "last_run_age_s",
+        }
+    ),
     "process": frozenset({"count", "rss_bytes", "uptime_s"}),
     "socket": frozenset({"listening", "port"}),
     "container": frozenset({"state", "health", "restarts", "started_at"}),
@@ -418,11 +457,14 @@ class AppParams(_Params):
         "fpm_pools",
         "pm2_apps",
         "es_nodes",
+        "backuppc_status",
+        "urbackup_status",
+        "veeam_sessions",
     ]
 
 
 class HostParams(_Params):
-    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors", "zfs_snapshots"]
+    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors", "zfs_snapshots", "rsnapshot"]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {

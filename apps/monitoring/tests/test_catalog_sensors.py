@@ -280,6 +280,30 @@ def test_the_app_views_are_those_the_agent_returns():
         ],
         "pm2_apps": ["apps", "apps_errored", "apps_stopped", "restarts"],
         "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
+        "backuppc_status": [
+            "backup_age_max_s",
+            "hosts",
+            "hosts_failed",
+            "hosts_never_backed_up",
+            "hosts_no_ping",
+            "jobs_active",
+        ],
+        "urbackup_status": [
+            "clients",
+            "clients_file_failed",
+            "clients_image_failed",
+            "clients_unseen_24h",
+            "database_error",
+            "file_backup_age_max_s",
+            "nospc_fatal",
+        ],
+        "veeam_sessions": [
+            "jobs",
+            "jobs_failed",
+            "jobs_warning",
+            "last_success_age_max_s",
+            "sessions_running",
+        ],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -316,6 +340,9 @@ def test_the_app_views_are_those_the_agent_returns():
         "fpm_pools": ["unit"],
         "pm2_apps": ["unit"],
         "es_nodes": ["container", "unit"],
+        "backuppc_status": ["unit"],
+        "urbackup_status": ["unit"],
+        "veeam_sessions": ["unit"],
     }
 
 
@@ -425,4 +452,5 @@ def test_the_host_views_are_those_the_agent_returns():
         "raid_ctrl": ["bbu_bad", "controllers", "ctrl_bad", "pd_failed", "vd_not_optimal"],
         "ipmi_sensors": ["critical", "noncritical", "sensors"],
         "zfs_snapshots": ["status"],
+        "rsnapshot": ["last_status", "last_success_age_s", "lock_stale", "running"],
     }
