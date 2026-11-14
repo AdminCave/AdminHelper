@@ -810,6 +810,119 @@ func TestAllowlistCupsQueues(t *testing.T) {
 	}
 }
 
+// piler is the query of piler_status over sock as user on db.
+func piler(sock, user, db string) []string {
+	return []string{"--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=" + sock,
+		"--user=" + user, "--database=" + db, "--execute=SELECT MAX(arrived) FROM metadata"}
+}
+
+func TestAllowlistMailViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"postconf", "-h", "queue_directory"},
+		{"postqueue", "-j"},
+		{"doveadm", "-f", "tab", "service", "status"},
+		{"doveadm", "log", "errors", "-s", "1795000000"},
+		{"spamc", "-K"},
+		{"opendkim-testkey", "-v"},
+		append([]string{"mariadb"}, piler("/var/run/mysqld/mysqld.sock", "piler", "piler")...),
+		append([]string{"mysql"}, piler("/run/mysqld/mysqld.sock", "piler_ro", "piler2")...),
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"postconf", "-e", "relayhost=mx.example"},
+		{"postconf", "-h", "smtpd_sasl_password_maps"},
+		{"postconf", "-n"},
+		{"postqueue", "-f"},
+		{"postqueue", "-i", "4bQ7mT0pZ1z9"},
+		{"postqueue", "-s", "example.org"},
+		{"postqueue", "-p"},
+		{"postqueue", "-j", "-c", "/tmp/evil"},
+		{"postsuper", "-d", "ALL"},
+		{"postfix", "check"},
+		{"doveadm", "log", "reopen"},
+		{"doveadm", "log", "test"},
+		{"doveadm", "log", "errors"},
+		{"doveadm", "log", "errors", "-s", "-1"},
+		{"doveadm", "stats", "dump", "-r"},
+		{"doveadm", "service", "stop", "imap"},
+		{"doveadm", "-f", "tab", "service", "stop", "imap"},
+		{"doveadm", "kick", "alice"},
+		{"doveadm", "expunge", "-A", "mailbox", "INBOX", "all"},
+		{"spamc"},
+		{"spamc", "-K", "-d", "mx.example.org"},
+		{"spamc", "-L", "spam"},
+		{"opendkim-testkey"},
+		{"opendkim-testkey", "-v", "-d", "example.org", "-s", "mail"},
+		{"opendkim-testkey", "-v", "-x", "/tmp/evil.conf"},
+		{"opendkim-testkey", "-v", "-k", "/tmp/keytable"},
+		append([]string{"mariadb"}, piler("/var/run/../mysqld.sock", "piler", "piler")...),
+		append([]string{"mariadb"}, piler("run/mysqld.sock", "piler", "piler")...),
+		append([]string{"mariadb"}, piler("/run/mysqld.sock", "piler --host=evil", "piler")...),
+		append([]string{"mariadb"}, piler("/run/mysqld.sock", "piler", "piler;DROP")...),
+		{"mariadb", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=/run/mysqld.sock", "--user=piler",
+			"--database=piler", "--execute=SELECT MAX(arrived) FROM metadata"},
+		{"mariadb", "--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=/run/mysqld.sock",
+			"--user=piler", "--database=piler", "--execute=DELETE FROM metadata"},
+		{"mariadb", "--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--host=db.example.org",
+			"--user=piler", "--database=piler", "--execute=SELECT MAX(arrived) FROM metadata"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+func TestAllowlistSambaViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"samba-tool", "drs", "showrepl", "--json"},
+		{"samba-tool", "fsmo", "show"},
+		{"testparm", "-s"},
+		{"smbstatus", "--json", "--fast"},
+		{"wbinfo", "-p"},
+		{"wbinfo", "-P"},
+		{"wbinfo", "-t"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"samba-tool", "dbcheck"},
+		{"samba-tool", "dbcheck", "--cross-ncs", "--fix", "--yes"},
+		{"samba-tool", "drs", "showrepl"},
+		{"samba-tool", "drs", "showrepl", "--json", "dc2.example.org"},
+		{"samba-tool", "drs", "replicate", "dc1", "dc2", "DC=example,DC=org"},
+		{"samba-tool", "drs", "kcc"},
+		{"samba-tool", "fsmo", "transfer", "--role=all"},
+		{"samba-tool", "fsmo", "seize", "--role=pdc"},
+		{"samba-tool", "fsmo", "show", "-H", "ldap://dc2.example.org"},
+		{"samba-tool", "user", "list"},
+		{"testparm"},
+		{"testparm", "-s", "/tmp/evil.conf"},
+		{"testparm", "-s", "--section-name=homes"},
+		{"smbstatus"},
+		{"smbstatus", "--json"},
+		{"smbstatus", "-B"},
+		{"smbstatus", "--profile"},
+		{"smbstatus", "-n", "--json", "--fast"},
+		{"wbinfo"},
+		{"wbinfo", "-u"},
+		{"wbinfo", "-c"},
+		{"wbinfo", "--change-secret"},
+		{"wbinfo", "-t", "--domain=OTHER"},
+		{"wbinfo", "-p", "-t"},
+		{"linbo-torrent", "status"},
+		{"sophomorix-check"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 func TestAllowlistWindowsViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"repadmin", "/showrepl", "localhost", "/csv"},

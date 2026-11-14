@@ -253,6 +253,29 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "wsus": frozenset({"content_free_bytes", "content_free_pct", "errors_24h"}),
     "cups_queues": frozenset({"queues", "queues_disabled"}),
     "veeam_windows": frozenset({"last_result", "last_run_age_s", "runs"}),
+    # Mail, directory and school services (R-1239, R-1240): queue counts and ages, states of
+    # services, keys and replication links; no address, domain, user, share or name of a DC.
+    "postfix_queue": frozenset({"active", "capped", "deferred", "hold", "incoming", "total"}),
+    "postfix_queue_age": frozenset({"age_read", "oldest_age_s"}),
+    "dovecot_status": frozenset({"errors_1h", "services", "services_at_limit", "warnings_1h"}),
+    "mailcow_queue": frozenset({"active", "capped", "deferred", "hold", "incoming", "total"}),
+    "mailcow_watchdog": frozenset({"last_age_s", "logged", "services", "services_failing"}),
+    "piler_status": frozenset({"archived", "last_age_s"}),
+    "clamav_db": frozenset({"age_s", "version"}),
+    "spamd_ping": frozenset({"reachable"}),
+    "opendkim_keys": frozenset({"keys", "keys_failed"}),
+    "samba_drs": frozenset(
+        {"last_success_age_s", "links", "links_failing", "outbound_failing", "partners"}
+    ),
+    "samba_fsmo": frozenset({"roles", "roles_without_owner"}),
+    "samba_member": frozenset(
+        {"config_ok", "dc_ok", "open_files", "sessions", "tcons", "winbind_ok"}
+    ),
+    "samba_trust": frozenset({"trust_ok"}),
+    "lmn_devices": frozenset(
+        {"import_completed", "import_errors", "import_pending", "last_import_age_s"}
+    ),
+    "lmn_linbo": frozenset({"images", "torrents_stale"}),
 }
 
 # The views that read a repository: the only ones a credential of use password may go to.
@@ -363,6 +386,21 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "wsus": _UNIT,
     "cups_queues": _UNIT,
     "veeam_windows": _UNIT,
+    "postfix_queue": _UNIT,
+    "postfix_queue_age": _UNIT,
+    "dovecot_status": _UNIT,
+    "mailcow_queue": _CONTAINER,
+    "mailcow_watchdog": _CONTAINER,
+    "piler_status": _UNIT,
+    "clamav_db": _UNIT,
+    "spamd_ping": _UNIT,
+    "opendkim_keys": _UNIT,
+    "samba_drs": _UNIT,
+    "samba_fsmo": _UNIT,
+    "samba_member": _UNIT,
+    "samba_trust": _UNIT,
+    "lmn_devices": _UNIT,
+    "lmn_linbo": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -661,6 +699,21 @@ class AppParams(_Params):
         "wsus",
         "cups_queues",
         "veeam_windows",
+        "postfix_queue",
+        "postfix_queue_age",
+        "dovecot_status",
+        "mailcow_queue",
+        "mailcow_watchdog",
+        "piler_status",
+        "clamav_db",
+        "spamd_ping",
+        "opendkim_keys",
+        "samba_drs",
+        "samba_fsmo",
+        "samba_member",
+        "samba_trust",
+        "lmn_devices",
+        "lmn_linbo",
     ]
 
 
