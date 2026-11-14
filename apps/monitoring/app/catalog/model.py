@@ -30,6 +30,7 @@ from pydantic import (
 from app.catalog.sensors import (
     APP_VIEW_TARGETS,
     FIELD_PATTERN,
+    PASSWORD_VIEWS,
     SENSOR_TARGETS,
     SENSORS,
     field_allowed,
@@ -80,6 +81,9 @@ class Detect(_Model):
     # False for a module that checks no port of its units (nginx on 443): those ports stay
     # port findings, which ask whether they answer.
     claims_unit_ports: StrictBool = True
+    # True for a oneshot unit a timer starts (a backup job): between its runs it is inactive
+    # and still in use, so an inactive unit makes an instance too.
+    idle_units: StrictBool = False
 
     def is_empty(self) -> bool:
         return not (self.container_images or self.units or self.processes or self.markers)
@@ -117,7 +121,9 @@ class Target(_Model):
 
 class Rule(_Model):
     field: str
-    op: Literal["eq", "ne", "lt", "le", "gt", "ge", "in", "max_age", "delta_gt"]
+    # delta_gt: rose by more than value since the run before; drop_pct_gt: fell by more than
+    # value percent since the run before (a backup file half the size of the last one).
+    op: Literal["eq", "ne", "lt", "le", "gt", "ge", "in", "max_age", "delta_gt", "drop_pct_gt"]
     value: _Scalar | list[_Scalar]
     level: Literal["warning", "critical"]
 
@@ -132,6 +138,8 @@ class Rule(_Model):
             raise ValueError(f"op '{self.op}' needs a single value")
         elif self.op in ("lt", "le", "gt", "ge", "delta_gt") and not is_number:
             raise ValueError(f"op '{self.op}' needs a number")
+        elif self.op == "drop_pct_gt" and not (is_number and 0 < v < 100):
+            raise ValueError("op 'drop_pct_gt' needs a percentage between 0 and 100")
         elif self.op == "max_age" and not (is_number and v > 0):
             raise ValueError("op 'max_age' needs a positive number of seconds")
         return self
@@ -140,7 +148,7 @@ class Rule(_Model):
 class Credential(_Model):
     # Becomes the reference <module id>/<instance key>/<slot> when an instance is adopted.
     slot: str = Field("default", pattern=_KEY)
-    use: str = Field(pattern=r"^(bearer|basic|redis_auth|header:[A-Za-z0-9-]{1,64})$")
+    use: str = Field(pattern=r"^(bearer|basic|redis_auth|password|header:[A-Za-z0-9-]{1,64})$")
 
 
 class Check(_Model):
@@ -220,6 +228,16 @@ class Check(_Model):
                         f"view {view!r} of sensor 'app' targets only "
                         f"{sorted(APP_VIEW_TARGETS[view])}, not {self.target.kind!r}"
                     )
+        if (
+            self.credential is not None
+            and self.credential.use == "password"
+            and not (self.sensor == "app" and self.params["view"] in PASSWORD_VIEWS)
+        ):
+            # The agent hands a password only to a repository's own command, as its
+            # environment; any other sensor would send it somewhere.
+            raise ValueError(
+                f"credential use 'password' only for the views {sorted(PASSWORD_VIEWS)}"
+            )
         for f in self.fields:
             if not field_allowed(self.sensor, f, self.params):
                 raise ValueError(f"sensor {self.sensor!r} returns no field {f!r}")

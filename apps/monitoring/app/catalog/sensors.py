@@ -191,7 +191,16 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "veeam_sessions": frozenset(
         {"jobs", "jobs_failed", "jobs_warning", "sessions_running", "last_success_age_max_s"}
     ),
+    # The repository named in the unit's environment, asked with the locally stored password
+    # (credential use password): whether it holds a snapshot and the age of the newest.
+    "restic_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
+    "borg_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
+    "kopia_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
+    "duplicati_health": frozenset({"healthy"}),
 }
+
+# The views that read a repository: the only ones a credential of use password may go to.
+PASSWORD_VIEWS = frozenset({"restic_latest", "borg_latest", "kopia_latest"})
 
 # The views of the host sensor and the fields each one returns: the allowlist of the agent's
 # sensor_host.go, parts of the agent's own host that belong to no unit and no container
@@ -246,6 +255,10 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "backuppc_status": _UNIT,
     "urbackup_status": _UNIT,
     "veeam_sessions": _UNIT,
+    "restic_latest": _UNIT,
+    "borg_latest": _UNIT,
+    "kopia_latest": _UNIT,
+    "duplicati_health": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -361,6 +374,19 @@ class PathParams(_Params):
     path: str = Field(pattern=_ABS_PATH, max_length=1024)
 
 
+class FileAgeParams(_Params):
+    # One of the two: the file itself, or a directory whose newest regular file counts (a
+    # backup folder whose files carry a date in their names).
+    path: str | None = Field(None, pattern=_ABS_PATH, max_length=1024)
+    newest_in: str | None = Field(None, pattern=_ABS_PATH, max_length=1024)
+
+    @model_validator(mode="after")
+    def _one_of_them(self) -> FileAgeParams:
+        if (self.path is None) == (self.newest_in is None):
+            raise ValueError("file_age takes exactly one of path and newest_in")
+        return self
+
+
 class ProtoParams(_Params):
     # auto: the agent recognises the protocol as its discovery does (banner, typical
     # probe, TLS) and reports it in `detail`; for a port no module knows.
@@ -460,6 +486,10 @@ class AppParams(_Params):
         "backuppc_status",
         "urbackup_status",
         "veeam_sessions",
+        "restic_latest",
+        "borg_latest",
+        "kopia_latest",
+        "duplicati_health",
     ]
 
 
@@ -475,7 +505,7 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "http": HttpParams,
     "tls": TlsParams,
     "certfile": PathParams,
-    "file_age": PathParams,
+    "file_age": FileAgeParams,
     "proto": ProtoParams,
     "unixsocket": UnixSocketParams,
     "sql": SqlParams,

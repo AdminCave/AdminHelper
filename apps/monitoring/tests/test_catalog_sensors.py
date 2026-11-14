@@ -304,6 +304,10 @@ def test_the_app_views_are_those_the_agent_returns():
             "last_success_age_max_s",
             "sessions_running",
         ],
+        "restic_latest": ["has_snapshot", "snapshot_age_s"],
+        "borg_latest": ["has_snapshot", "snapshot_age_s"],
+        "kopia_latest": ["has_snapshot", "snapshot_age_s"],
+        "duplicati_health": ["healthy"],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -343,6 +347,10 @@ def test_the_app_views_are_those_the_agent_returns():
         "backuppc_status": ["unit"],
         "urbackup_status": ["unit"],
         "veeam_sessions": ["unit"],
+        "restic_latest": ["unit"],
+        "borg_latest": ["unit"],
+        "kopia_latest": ["unit"],
+        "duplicati_health": ["unit"],
     }
 
 

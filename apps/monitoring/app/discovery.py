@@ -320,11 +320,13 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         {u["name"] for u in inv["units"] if _unit_wanted(u["name"], wanted_units)}
     )
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
+    # A oneshot unit behind a timer rests inactive between its runs (detect.idle_units).
     units = sorted(
         {
             u["name"]
             for u in inv["units"]
-            if _unit_wanted(u["name"], wanted_units) and u["state"] != "inactive"
+            if _unit_wanted(u["name"], wanted_units)
+            and (u["state"] != "inactive" or detect.idle_units)
         }
     )
     wanted_processes = set(detect.processes)
