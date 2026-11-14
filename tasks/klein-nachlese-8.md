@@ -29,8 +29,8 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (Tests)
 
 ### T3 — R-1469, R-1470: redis_acl-Form vor dem Dial prüfen, redis_acl/redis_auth über unixsocket testen  [x]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_proto_test.go, apps/agent/internal/probe/sensor_unixsocket_test.go, apps/agent/internal/probe/sensor_net_linux_test.go, apps/agent/internal/probe/sensor_unixsocket.go
-Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a5ea5553b 2026-11-14T20:44:19+01:00
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_proto_test.go, apps/agent/internal/probe/sensor_net_linux_test.go, apps/agent/internal/probe/sensor_unixsocket.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @41a0f7645 2026-11-14T20:51:25+01:00
 Review: am Ende (Branch-Review)
 Beweis: reviewer kern-monitoring-20 T6 2026-11-14
 Änderung: R-1470: die Prüfung `user:password` beim Aufbau der Protokoll-Optionen vor dem Dial, derselbe `ErrInvalid`, ohne Verbindung; Test: Credential ohne `:` bzw. mit leerem User erzeugt keine Verbindung (Server zählt 0 Verbindungen). R-1469: Fall `redis_acl` und `redis_auth` in `TestUnixSocketSensorSpeaksTheProtocolOfItsService`. Kein Credential im Fehlertext.

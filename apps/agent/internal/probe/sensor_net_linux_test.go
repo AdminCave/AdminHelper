@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -205,6 +206,21 @@ func TestUnixSocketSensorSpeaksTheProtocolOfItsService(t *testing.T) {
 		}
 		if heard := fmt.Sprint(srv.close()); heard != c.want {
 			t.Errorf("%s: redis heard %s, want %s", c.use, heard, c.want)
+		}
+	}
+
+	for _, secret := range []string{"s3cret", ":s3cret", ""} {
+		var dialed atomic.Int32
+		path, srv = unixFake(t, func(f *fakeConn) {
+			dialed.Add(1)
+			f.drain()
+		})
+		p := unixProbe(map[string]any{"path": path, "protocol": "redis"})
+		p.Credential = &Credential{Ref: "c1", Use: useRedisACL}
+		_, err = unixSocketSensor(ctx, p, secret)
+		srv.close()
+		if !errors.Is(err, ErrInvalid) || secret != "" && strings.Contains(err.Error(), secret) || dialed.Load() != 0 {
+			t.Errorf("the redis_acl secret %q = %v after %d connections; want ErrInvalid before any", secret, err, dialed.Load())
 		}
 	}
 
