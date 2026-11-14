@@ -269,3 +269,27 @@ def test_the_card_names_fields_of_its_checks():
         assert 1 <= len(module.card) <= 6, module_id
         for item in module.card:
             assert item.field in fields[item.check_key], (module_id, item.check_key, item.field)
+
+
+def _postfix_greeting(result):
+    config, why = probe_config(
+        CATALOG.modules["postfix"],
+        _check("postfix", "smtp"),
+        "postfix.service",
+        {"unit": "postfix.service"},
+        [],
+    )
+    assert why is None, why
+    report = {"timestamp": STAMP, "probes": {"chk": result}}
+    return config, ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0]
+
+
+def test_the_postfix_greeting_asks_the_loopback_on_port_25():
+    config, _ = _postfix_greeting({"ts": T0, "duration_ms": 1, "status": "ok", "values": {}})
+    assert (config["target"]["kind"], config["target"]["port_hint"]) == ("loopback", 25)
+
+
+def test_a_failed_greeting_probe_is_critical():
+    # The agent sends status error and no values when the probe itself fails.
+    result = {"ts": T0, "duration_ms": 1, "status": "error", "values": {}, "error": "refused"}
+    assert _postfix_greeting(result)[1] == "critical"
