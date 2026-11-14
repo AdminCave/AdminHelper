@@ -1,5 +1,5 @@
 # desktop_e2e_monitoring: Fund ohne Instanz — Task-Ledger
-Status: bereit · Branch: feature/kern-desktop-e2e-1 · Review: am Ende
+Status: erledigt · Branch: feature/kern-desktop-e2e-1 · Review: am Ende
 Spec: Roadmap R-1456
 Heavy: linux-full — Desktop-Journey; der Fix des roten Schritts beweist sich vor dem Merge mit `run.sh all --step desktop_e2e_monitoring` auf einer Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
