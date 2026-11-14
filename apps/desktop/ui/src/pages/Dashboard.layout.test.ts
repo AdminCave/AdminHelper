@@ -76,7 +76,7 @@ const mappings = tunnelMod.tunnelMappings as unknown as W<unknown[]>;
 
 const SERVER = {
   settings: { mode: 'server' },
-  session: { serverUrl: 'https://hub.example', username: 'kevin', isAdmin: false },
+  session: { serverUrl: 'https://hub.example', username: 'kevin', isAdmin: true },
 };
 
 function cards(c: HTMLElement): string[] {
@@ -206,6 +206,16 @@ describe('Dashboard layout', () => {
     const tun = container.querySelector<HTMLElement>('[data-panel="tunnel"]')!;
     expect(tun.querySelectorAll('li')).toHaveLength(1);
     expect(tun.textContent).toContain('127.0.0.1:6022 → :22');
+  });
+
+  it('a non-admin in server mode sees neither the monitoring cards and panel nor loads them', async () => {
+    session.set({ ...SERVER, session: { ...SERVER.session, isAdmin: false } });
+    const { container } = render(Dashboard);
+    await tick();
+    expect(cards(container)).toEqual(['connections']);
+    expect(panels(container)).toEqual(['recent', 'tunnel']);
+    expect(h.loadServers).not.toHaveBeenCalled();
+    expect(h.loadMonitoring).not.toHaveBeenCalled();
   });
 
   it('a failed monitoring load shows the error, not a healthy monitoring', async () => {
