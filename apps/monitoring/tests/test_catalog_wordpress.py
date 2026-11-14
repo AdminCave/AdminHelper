@@ -129,7 +129,12 @@ def test_no_check_asks_the_cron_or_the_admin():
 
 def test_wordpress_in_its_project_gets_its_container_and_80():
     block = _block(COMPOSE)
-    assert _found(block) == {"blog": {"services": {"db": "mariadb", "wordpress": "wordpress"}}}
+    assert _found(block) == {
+        "blog": {
+            "services": {"db": "mariadb", "wordpress": "wordpress"},
+            "containers": {"db": "blog-db-1", "wordpress": "blog-wordpress-1"},
+        }
+    }
     assert _bind(block, "blog") == {
         "container": ("blog-wordpress-1", None),
         "rest": ("blog-wordpress-1", None),

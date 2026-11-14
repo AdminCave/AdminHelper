@@ -57,7 +57,7 @@ func unixSocketSensor(ctx context.Context, p Probe, secret string) (map[string]a
 	case "http":
 		uses = []string{useBearer, useBasic, useHeader}
 	case "redis":
-		uses = []string{useRedisAuth}
+		uses = []string{useRedisAuth, useRedisACL}
 	}
 	use, err := credentialUse(p, uses...)
 	if err != nil {

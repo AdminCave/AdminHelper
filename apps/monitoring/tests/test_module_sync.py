@@ -25,8 +25,25 @@ from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.catalog.modules.wordpress import MODULE as WP_MODULE
 from app.check_configs import ProbeConfig
 from app.discovery import apply_discovery
-from app.models import Base, MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
-from app.module_sync import AdoptError, adopt, adopt_all, dismiss, probe_config, sync_catalog
+from app.models import (
+    Base,
+    MonitorCheck,
+    MonitorDiscovery,
+    MonitorFinding,
+    MonitorModuleTombstone,
+    MonitorState,
+)
+from app.module_sync import (
+    AdoptError,
+    adopt,
+    adopt_all,
+    definition_hash,
+    dismiss,
+    probe_config,
+    sync_catalog,
+    tombstone_module_check,
+)
+from app.server_cleanup import cleanup_server
 
 # Far from the real clock: nothing here may depend on today.
 NOW = datetime(2020, 1, 1, 12, 0)
@@ -124,10 +141,34 @@ REWORDED = load_catalog(
     [_paperless(WEB, BROKER, SCHED, description="Reworded."), NGINX, ("port", PORT_MODULE)]
 )
 NO_PAPERLESS = load_catalog([NGINX, ("port", PORT_MODULE)])
+WEB_CHANGED = load_catalog(
+    [
+        _paperless({**WEB, "params": {"path": "/api/v2/"}}, BROKER, SCHED),
+        NGINX,
+        ("port", PORT_MODULE),
+    ]
+)
+# The new definition asks for a service the project does not have: it cannot bind.
+WEB_UNBINDABLE = load_catalog(
+    [
+        _paperless({**WEB, "target": {**WEB["target"], "service": "missing"}}, BROKER, SCHED),
+        NGINX,
+        ("port", PORT_MODULE),
+    ]
+)
 
 
 def test_test_catalogs_are_valid():
-    catalogs = (V1, WITH_HEALTH, WITHOUT_BROKER, UNBINDABLE_ADDED, REWORDED, NO_PAPERLESS)
+    catalogs = (
+        V1,
+        WITH_HEALTH,
+        WITHOUT_BROKER,
+        UNBINDABLE_ADDED,
+        REWORDED,
+        NO_PAPERLESS,
+        WEB_CHANGED,
+        WEB_UNBINDABLE,
+    )
     assert [c.errors for c in catalogs] == [()] * len(catalogs)
     assert len({c.version for c in catalogs}) == len(catalogs)
 
@@ -243,6 +284,20 @@ def test_a_bound_check_carries_the_instance_and_holds():
         "test_object": False,
     }
     ProbeConfig.model_validate(config)
+
+
+def test_a_bound_check_keeps_its_credential_optional():
+    web = {**WEB, "credential": {"slot": "api", "use": "bearer", "optional": True}}
+    catalog = load_catalog([_paperless(web, BROKER, SCHED), NGINX, ("port", PORT_MODULE)])
+    config, reason = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, catalog=catalog)
+
+    assert reason is None
+    assert config["credential"] == {
+        "ref": "paperless/paperless/api",
+        "use": "bearer",
+        "optional": True,
+    }
+    assert ProbeConfig.model_validate(config).credential.optional is True
 
 
 @pytest.mark.parametrize(
@@ -823,3 +878,279 @@ def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):
     assert result.skipped == [
         {"key": "healthz", "reason": "container docs-wiki-1 runs the tag 3, the check needs 2, 2.*"}
     ]
+
+
+# --- module checks the admin deleted (R-1264) ------------------------------------------
+
+
+def _delete(db, row):
+    tombstone_module_check(db, row)
+    db.delete(row)
+    db.commit()
+
+
+def _tombstones(db):
+    return {
+        (t.server_id, t.module_id, t.instance_key, t.check_key)
+        for t in db.query(MonitorModuleTombstone)
+    }
+
+
+def test_a_deleted_module_check_is_not_adopted_again(db, actions):
+    finding = _adopted(db, actions)
+    _delete(db, _checks(db, finding)["broker"])
+    _reopen(db, finding, "changed")
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert set(_checks(db, finding)) == {"web"}
+    assert result.enabled == [_checks(db, finding)["web"].id]
+    assert result.skipped == [{"key": "sched", "reason": "no unit for this instance"}]
+    assert _tombstones(db) == {("srv-1", "paperless", "paperless", "broker")}
+
+
+def test_burying_a_module_check_twice_keeps_one_tombstone(db, actions):
+    finding = _adopted(db, actions)
+    broker = _checks(db, finding)["broker"]
+
+    tombstone_module_check(db, broker)
+    db.commit()
+    tombstone_module_check(db, broker)
+    db.commit()
+
+    assert db.query(MonitorModuleTombstone).count() == 1
+
+
+def test_a_check_of_no_module_leaves_no_tombstone(db):
+    row = MonitorCheck(id="c-1", server_id="srv-1", name="Ping", check_type="ping", config="{}")
+    db.add(row)
+    db.commit()
+
+    _delete(db, row)
+
+    assert db.query(MonitorModuleTombstone).count() == 0
+
+
+def test_the_catalog_sync_does_not_bring_back_a_deleted_check(db, actions):
+    finding = _adopted(db, actions)
+    _delete(db, _checks(db, finding)["web"])
+
+    # The update adds "health"; "web" stays deleted.
+    assert sync_catalog(db, catalog=WITH_HEALTH) == 1
+
+    assert set(_checks(db, finding)) == {"broker", "health"}
+
+
+def test_a_finding_that_lacks_only_a_deleted_check_does_not_reopen(db, actions):
+    finding = _adopted(db, actions)
+    db.add(
+        MonitorModuleTombstone(
+            id="t-1",
+            server_id="srv-1",
+            module_id="paperless",
+            instance_key="paperless",
+            check_key="health",
+        )
+    )
+    db.commit()
+
+    assert sync_catalog(db, catalog=WITH_HEALTH) == 0
+
+    assert set(_checks(db, finding)) == {"web", "broker"}
+    assert (finding.kind, finding.status, finding.catalog_version) == (
+        "new",
+        "adopted",
+        WITH_HEALTH.version,
+    )
+
+
+@pytest.mark.parametrize(
+    ("server_id", "module_id", "instance_key"),
+    [
+        pytest.param("srv-2", "paperless", "paperless", id="other server"),
+        pytest.param("srv-1", "other", "paperless", id="other module"),
+        pytest.param("srv-1", "paperless", "other", id="other instance"),
+    ],
+)
+def test_a_tombstone_binds_only_its_own_instance(db, actions, server_id, module_id, instance_key):
+    _inventory(db)
+    finding = _finding(db)
+    db.add(
+        MonitorModuleTombstone(
+            id="t-1",
+            server_id=server_id,
+            module_id=module_id,
+            instance_key=instance_key,
+            check_key="broker",
+        )
+    )
+    db.commit()
+
+    adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert set(_checks(db, finding)) == {"web", "broker"}
+
+
+def test_deleting_the_server_takes_its_module_tombstones(db, actions, monkeypatch):
+    monkeypatch.setattr("app.server_cleanup.apply_scheduler_actions", lambda _: None)
+    finding = _adopted(db, actions)
+    _delete(db, _checks(db, finding)["broker"])
+    db.add(
+        MonitorModuleTombstone(
+            id="t-other",
+            server_id="srv-2",
+            module_id="paperless",
+            instance_key="paperless",
+            check_key="broker",
+        )
+    )
+    db.commit()
+
+    cleanup_server(db, "srv-1")
+
+    assert _tombstones(db) == {("srv-2", "paperless", "paperless", "broker")}
+
+
+# --- a changed catalog definition is offered, not rolled out (R-1264) ----------------
+
+
+def _catalog_check(catalog, key, module_id="paperless"):
+    return next(c for c in catalog.modules[module_id].checks if c.key == key)
+
+
+def test_the_definition_hash_is_stable_and_tells_definitions_apart():
+    again = load_catalog([_paperless(WEB, BROKER, SCHED), NGINX, ("port", PORT_MODULE)])
+    reordered = load_catalog(
+        [("port", PORT_MODULE), NGINX, _paperless(dict(reversed(list(WEB.items()))), BROKER, SCHED)]
+    )
+    web = definition_hash(_catalog_check(V1, "web"))
+
+    assert definition_hash(_catalog_check(again, "web")) == web
+    assert definition_hash(_catalog_check(reordered, "web")) == web
+    assert definition_hash(_catalog_check(REWORDED, "web")) == web
+    assert definition_hash(_catalog_check(WEB_CHANGED, "web")) != web
+    assert definition_hash(_catalog_check(V1, "broker")) != web
+    assert web.startswith("sha256:") and len(web) == len("sha256:") + 64
+
+
+def test_a_bound_check_keeps_the_hash_of_its_definition(db, actions):
+    finding = _adopted(db, actions)
+
+    rows = _checks(db, finding)
+    assert {key: row.module_check_hash for key, row in rows.items()} == {
+        key: definition_hash(_catalog_check(V1, key)) for key in ("web", "broker")
+    }
+
+
+def _admin_edit(row, **parts):
+    config = json.loads(row.config)
+    config.update(parts)
+    row.config = json.dumps(config)
+    row.name, row.interval = "Paperless web, mine", "15m"
+
+
+def test_a_changed_definition_is_offered_and_adopting_writes_it(db, actions):
+    finding = _adopted(db, actions)
+    web, broker = _checks(db, finding)["web"], _checks(db, finding)["broker"]
+    _admin_edit(web, interval_s=900, timeout_s=20)
+    db.commit()
+    before = web.config
+
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 1
+
+    # Offered: the check keeps running as it was.
+    assert (finding.kind, finding.status) == ("changed", "open")
+    assert web.config == before
+    assert [
+        row.id
+        for row in module_sync.updatable_checks([web, broker], WEB_CHANGED.modules["paperless"])
+    ] == [web.id]
+
+    result = adopt(db, finding.id, catalog=WEB_CHANGED, now=NOW)
+
+    assert result.updated == [web.id]
+    assert result.skipped == [{"key": "sched", "reason": "no unit for this instance"}]
+    config = json.loads(web.config)
+    assert config["params"]["path"] == "/api/v2/"
+    # The admin's interval, timeout, name and switches stay.
+    assert (config["interval_s"], config["timeout_s"]) == (900, 20)
+    assert (web.name, web.interval, web.enabled, web.silent) == (
+        "Paperless web, mine",
+        "15m",
+        True,
+        False,
+    )
+    ProbeConfig.model_validate(config)
+    assert web.module_check_hash == definition_hash(_catalog_check(WEB_CHANGED, "web"))
+    assert ("add", web.id, "15m", "probe") in actions
+    assert module_sync.updatable_checks([web], WEB_CHANGED.modules["paperless"]) == []
+
+    # Nothing is left to offer.
+    finding.catalog_version = "older"
+    db.commit()
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 0
+
+
+def test_an_admin_edit_is_no_catalog_update(db, actions):
+    finding = _adopted(db, actions)
+    web = _checks(db, finding)["web"]
+    _admin_edit(web, rules=[], interval_s=900)
+    db.commit()
+
+    assert sync_catalog(db, catalog=REWORDED) == 0
+    assert module_sync.updatable_checks([web], REWORDED.modules["paperless"]) == []
+    assert (finding.status, finding.kind) == ("adopted", "new")
+
+
+def test_a_changed_definition_of_a_switched_off_check_does_not_reopen(db, actions):
+    finding = _adopted(db, actions)
+    web = _checks(db, finding)["web"]
+    web.enabled = False
+    db.commit()
+
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 0
+    assert (finding.status, finding.catalog_version) == ("adopted", WEB_CHANGED.version)
+
+
+def test_a_check_bound_before_hashes_gets_todays_without_an_offer(db, actions):
+    finding = _adopted(db, actions)
+    for row in _checks(db, finding).values():
+        row.module_check_hash = None
+    db.commit()
+    before = _checks(db, finding)["web"].config
+
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 0
+
+    rows = _checks(db, finding)
+    assert rows["web"].config == before
+    assert {key: row.module_check_hash for key, row in rows.items()} == {
+        key: definition_hash(_catalog_check(WEB_CHANGED, key)) for key in ("web", "broker")
+    }
+    assert finding.status == "adopted"
+
+
+def test_an_unhashed_check_of_an_unchanged_catalog_gets_its_hash_too(db, actions):
+    finding = _adopted(db, actions)
+    finding.catalog_version = V1.version
+    _checks(db, finding)["web"].module_check_hash = None
+    db.commit()
+
+    assert sync_catalog(db, catalog=V1) == 0
+    assert _checks(db, finding)["web"].module_check_hash == definition_hash(
+        _catalog_check(V1, "web")
+    )
+
+
+def test_a_new_definition_that_does_not_bind_keeps_the_old_one(db, actions):
+    finding = _adopted(db, actions)
+    web = _checks(db, finding)["web"]
+    before, old_hash = web.config, web.module_check_hash
+
+    assert sync_catalog(db, catalog=WEB_UNBINDABLE) == 1
+    result = adopt(db, finding.id, catalog=WEB_UNBINDABLE, now=NOW)
+
+    assert result.updated == []
+    (why,) = [skip["reason"] for skip in result.skipped if skip["key"] == "web"]
+    assert why == "no container for this instance"
+    assert (web.config, web.module_check_hash, web.enabled) == (before, old_hash, True)
+    assert web.id in result.enabled

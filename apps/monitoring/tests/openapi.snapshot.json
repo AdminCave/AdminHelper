@@ -68,13 +68,21 @@
             },
             "title": "Skippedchecks",
             "type": "array"
+          },
+          "updatedChecks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updatedchecks",
+            "type": "array"
           }
         },
         "required": [
           "finding",
           "enabledChecks",
           "disabledChecks",
-          "skippedChecks"
+          "skippedChecks",
+          "updatedChecks"
         ],
         "title": "AdoptOut",
         "type": "object"
@@ -1190,6 +1198,13 @@
           },
           "summary": {
             "title": "Summary"
+          },
+          "updatableChecks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updatablechecks",
+            "type": "array"
           }
         },
         "required": [
@@ -1206,7 +1221,8 @@
           "lastSeen",
           "decidedAt",
           "silentChecks",
-          "droppedChecks"
+          "droppedChecks",
+          "updatableChecks"
         ],
         "title": "FindingOut",
         "type": "object"

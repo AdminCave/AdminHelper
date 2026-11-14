@@ -27,6 +27,7 @@ from app.models import (
     MonitorFinding,
     MonitorHostFacts,
     MonitorMaintenance,
+    MonitorModuleTombstone,
     MonitorServiceInventory,
     MonitorServiceLog,
     MonitorTemplateAssignment,
@@ -57,6 +58,7 @@ def cleanup_server(db: Session, server_id: str) -> dict:
         MonitorTemplateAssignment.server_id == server_id,
     ).delete()
     db.query(MonitorCheckTombstone).filter(MonitorCheckTombstone.server_id == server_id).delete()
+    db.query(MonitorModuleTombstone).filter(MonitorModuleTombstone.server_id == server_id).delete()
 
     # Delete agent key
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()

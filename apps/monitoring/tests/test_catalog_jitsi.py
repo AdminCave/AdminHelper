@@ -136,7 +136,17 @@ def test_no_check_asks_anything_but_about_health():
 
 def test_the_project_gets_the_bridge_container_and_its_health_on_8080():
     block = _block(COMPOSE)
-    assert _found(JVB, block) == {"meet": {"services": SERVICES}}
+    assert _found(JVB, block) == {
+        "meet": {
+            "services": SERVICES,
+            "containers": {
+                "jicofo": "meet-jicofo-1",
+                "jvb": "meet-jvb-1",
+                "prosody": "meet-prosody-1",
+                "web": "meet-web-1",
+            },
+        }
+    }
     assert _bind(JVB, block, "meet") == {
         "container": ("meet-jvb-1", None),
         "health": ("meet-jvb-1", None),
@@ -154,7 +164,17 @@ def test_the_project_gets_the_bridge_container_and_its_health_on_8080():
 def test_the_project_gets_jicofos_container_only():
     # Jicofo's REST server stays on the container's loopback without JICOFO_ENABLE_REST.
     block = _block(COMPOSE)
-    assert _found(JICOFO, block) == {"meet": {"services": SERVICES}}
+    assert _found(JICOFO, block) == {
+        "meet": {
+            "services": SERVICES,
+            "containers": {
+                "jicofo": "meet-jicofo-1",
+                "jvb": "meet-jvb-1",
+                "prosody": "meet-prosody-1",
+                "web": "meet-web-1",
+            },
+        }
+    }
     assert _bind(JICOFO, block, "meet") == {
         "container": ("meet-jicofo-1", None),
         "service": (None, "no unit for this instance"),

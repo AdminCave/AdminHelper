@@ -116,7 +116,12 @@ def test_no_check_asks_the_push_route():
 
 def test_uptime_kuma_in_its_project_gets_its_container_and_3001():
     block = _block(COMPOSE)
-    assert _found(block) == {"kuma": {"services": {"uptime-kuma": "louislam/uptime-kuma"}}}
+    assert _found(block) == {
+        "kuma": {
+            "services": {"uptime-kuma": "louislam/uptime-kuma"},
+            "containers": {"uptime-kuma": "kuma-uptime-kuma-1"},
+        }
+    }
     assert _bind(block, "kuma") == {
         "container": ("kuma-uptime-kuma-1", None),
         "entry": ("kuma-uptime-kuma-1", None),

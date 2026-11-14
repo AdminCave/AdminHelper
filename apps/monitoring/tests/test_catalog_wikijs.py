@@ -133,6 +133,7 @@ def test_wikijs_in_its_project_gets_its_container_and_3000():
     assert _found(block) == {
         "docs": {
             "services": {"db": "postgres", "wiki": "ghcr.io/requarks/wiki"},
+            "containers": {"db": "docs-db-1", "wiki": "docs-wiki-1"},
             "tag_checks": ["healthz"],
         }
     }

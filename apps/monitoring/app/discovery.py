@@ -349,7 +349,16 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
                     for o in inv["containers"]
                     if o["compose_project"] == project
                 }
-                found[project] = {"services": dict(sorted(services.items()))}
+                # The container each service runs in, by name: a renamed or recreated
+                # container is no change of the instance (_seen_again leaves it out).
+                names: dict[str, str] = {}
+                for o in sorted(inv["containers"], key=lambda o: o["name"]):
+                    if o["compose_project"] == project:
+                        names.setdefault(o["compose_service"], o["name"])
+                found[project] = {
+                    "services": dict(sorted(services.items())),
+                    "containers": dict(sorted(names.items())),
+                }
                 if tagged:
                     found[project]["tag_checks"] = _tag_checks(
                         module, [o for o in containers if o["compose_project"] == project]
@@ -444,7 +453,8 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
     """(module id, instance key) → summary of every module instance in the inventory.
 
     The summary holds only what makes the instance what it is (names, images, the
-    recognised protocol), never a state; a different summary is a finding "changed".
+    recognised protocol), never a state; a different summary is a finding "changed",
+    except for the container names of a compose project (_UNCOMPARED).
     """
     seen: dict[tuple[str, str], dict] = {}
     claimed_containers: set[str] = set()
@@ -486,8 +496,20 @@ def _summary(row: MonitorFinding) -> object:
         return None
 
 
+# Summary keys that name what an instance runs in, not what it is: they are kept, but
+# no change of them is a finding "changed".
+_UNCOMPARED = ("containers",)
+
+
+def _compared(summary: object) -> object:
+    if not isinstance(summary, dict):
+        return summary
+    return {k: v for k, v in summary.items() if k not in _UNCOMPARED}
+
+
 def _seen_again(row: MonitorFinding, summary: dict, watched: bool, in_step: bool) -> None:
-    same = _summary(row) == summary
+    stored = _summary(row)
+    same = _compared(stored) == _compared(summary)
     before = (row.kind, row.status)
     if row.kind == "gone":
         if row.status != "adopted" and watched and same and in_step:
@@ -508,7 +530,7 @@ def _seen_again(row: MonitorFinding, summary: dict, watched: bool, in_step: bool
         row.status = "open"
     if (row.kind, row.status) != before and row.status == "open":
         row.decided_at = None
-    if not same or (row.kind, row.status) != before:
+    if stored != summary or (row.kind, row.status) != before:
         row.summary = _dump(summary)
 
 

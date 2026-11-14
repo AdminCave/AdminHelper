@@ -49,6 +49,7 @@ def _finding_out(finding: MonitorFinding, checks: list[MonitorCheck], catalog: C
         "decidedAt": iso_utc(finding.decided_at),
         "silentChecks": [c.id for c in checks if c.silent],
         "droppedChecks": [c.id for c in checks if c.module_check_key not in keys],
+        "updatableChecks": [c.id for c in module_sync.updatable_checks(checks, module)],
     }
 
 
@@ -59,6 +60,7 @@ def _adopt_out(db: Session, result: module_sync.AdoptResult, catalog: Catalog) -
         "enabledChecks": result.enabled,
         "disabledChecks": result.disabled,
         "skippedChecks": result.skipped,
+        "updatedChecks": result.updated,
     }
 
 

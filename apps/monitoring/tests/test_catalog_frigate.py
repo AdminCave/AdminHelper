@@ -91,7 +91,10 @@ def test_the_image_gets_all_three_checks_on_the_internal_port(block_key):
     if block_key == "compose":
         block, key = _block(COMPOSE), "nvr"
         assert _found(block) == {
-            "nvr": {"services": {"frigate": "ghcr.io/blakeblackshear/frigate"}}
+            "nvr": {
+                "services": {"frigate": "ghcr.io/blakeblackshear/frigate"},
+                "containers": {"frigate": "frigate"},
+            }
         }
     else:
         block, key = (

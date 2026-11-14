@@ -704,6 +704,12 @@ func TestProtoSensorTakesItsParams(t *testing.T) {
 		{"a status_path without slash", pr(map[string]any{"protocol": "fastcgi", "status_path": "status"})},
 		{"a credential for smtp", withCredential(pr(map[string]any{"protocol": "smtp"}), "basic")},
 		{"a bearer token for redis", withCredential(pr(map[string]any{"protocol": "redis"}), "bearer")},
+		{"tls and starttls", pr(map[string]any{"protocol": "smtp", "tls": true, "starttls": true})},
+		{"tls of postgres", pr(map[string]any{"protocol": "postgres", "tls": true})},
+		{"tls of auto", pr(map[string]any{"protocol": "auto", "tls": true})},
+		{"tls of fastcgi", pr(map[string]any{"protocol": "fastcgi", "tls": true})},
+		{"tls as text", pr(map[string]any{"protocol": "smtp", "tls": "yes"})},
+		{"an ACL user for smtp", withCredential(pr(map[string]any{"protocol": "smtp"}), "redis_acl")},
 		{"another param", pr(map[string]any{"protocol": "smtp", "path": "/"})},
 		{"no target", Probe{Sensor: "proto", Params: map[string]any{"protocol": "smtp"}}},
 	} {
@@ -1015,6 +1021,94 @@ func TestRedisInfoAddsTheShareOfMaxmemory(t *testing.T) {
 	} {
 		if v, ok := d["maxmemory_used_pct"]; ok {
 			t.Errorf("%s: maxmemory_used_pct = %v, want none", name, v)
+		}
+	}
+}
+
+func TestProtoSensorSpeaksInsideTLS(t *testing.T) {
+	pki := newPKI(t)
+	smtps := map[string]any{"protocol": "smtp", "tls": true}
+	redisTLS := map[string]any{"protocol": "redis", "tls": true}
+	runProtoCases(t, []protoCase{
+		{
+			name: "smtps", params: smtps,
+			serve: func(c *fakeConn) {
+				if !c.upgrade(pki.chain) {
+					return
+				}
+				c.say("220 mail.example.org ESMTP\r\n")
+				if c.hear() == "QUIT" {
+					c.say("221 bye\r\n")
+				}
+			},
+			want: "true smtp true", heard: "[QUIT]",
+		},
+		{
+			name: "redis with tls-port", params: redisTLS,
+			serve: func(c *fakeConn) {
+				if c.upgrade(pki.chain) && c.hear() == "*1" && c.hear() == "$4" && c.hear() == "INFO" {
+					c.say(redisInfoAnswer)
+				}
+				c.hear()
+			},
+			want: "true redis true", heard: "[*1 $4 INFO]",
+			data: map[string]any{"redis_version": "7.2.4", "uptime_in_seconds": json.Number("42"), "role": "master"},
+		},
+		{
+			name: "a banner behind TLS", params: map[string]any{"protocol": "banner", "tls": true},
+			serve: func(c *fakeConn) {
+				if c.upgrade(pki.chain) {
+					c.say("* OK ready\r\n")
+					c.drain()
+				}
+			},
+			want: "true * OK ready true", heard: "[]",
+		},
+		{
+			name: "a server without TLS", params: smtps,
+			serve: func(c *fakeConn) {
+				c.say("220 mail.example.org ESMTP\r\n")
+				c.drain()
+			},
+			want: "false smtp: the TLS handshake: tls: first record does not look like a TLS handshake false", heard: "[]",
+		},
+	})
+}
+
+func TestProtoSensorPresentsARedisACLUser(t *testing.T) {
+	probe := func(auth, secret string) (map[string]any, []string, error) {
+		srv := fakeServer(t, func(c *fakeConn) {
+			if c.hear() != "*3" {
+				c.drain()
+				return
+			}
+			for range 6 {
+				c.hear()
+			}
+			c.say(auth)
+			if c.hear() == "*1" && c.hear() == "$4" && c.hear() == "INFO" {
+				c.say(redisInfoAnswer)
+			}
+			c.hear()
+		})
+		p := onLoopback("proto", srv.port(), map[string]any{"protocol": "redis"})
+		p.Credential = &Credential{Ref: "c1", Use: "redis_acl"}
+		got, err := protoSensor(context.Background(), p, secret)
+		return got, srv.close(), err
+	}
+
+	got, heard, err := probe("+OK\r\n", "monitor:s3c:ret")
+	if err != nil || got["ok"] != true || fmt.Sprint(heard) != "[*3 $4 AUTH $7 monitor $7 s3c:ret *1 $4 INFO]" {
+		t.Errorf("AUTH user password = %v, %v; the server heard %v", got, err, heard)
+	}
+	_, heard, err = probe("-WRONGPASS invalid username-password pair or user is disabled.\r\n", "monitor:s3cret")
+	if !errors.Is(err, ErrDenied) || err.Error() != "access denied: AUTH answered WRONGPASS" || len(heard) != 7 {
+		t.Errorf("a wrong password = %v; the server heard %v; want ErrDenied without INFO", err, heard)
+	}
+	for _, secret := range []string{"s3cret", ":s3cret", ""} {
+		_, heard, err = probe("+OK\r\n", secret)
+		if !errors.Is(err, ErrInvalid) || secret != "" && strings.Contains(err.Error(), secret) || len(heard) != 0 {
+			t.Errorf("the secret %q = %v; the server heard %v; want ErrInvalid before any word", secret, err, heard)
 		}
 	}
 }
