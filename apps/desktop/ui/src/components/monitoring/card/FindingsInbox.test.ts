@@ -117,7 +117,7 @@ describe('FindingsInbox', () => {
   });
 
   it('names the container of each compose service, and none for another finding', () => {
-    const { getByText, queryByText } = render(FindingsInbox, {
+    const { getByText, queryAllByText } = render(FindingsInbox, {
       findings: [
         finding({
           id: 'f1',
@@ -134,7 +134,8 @@ describe('FindingsInbox', () => {
       onDismiss: resolved(),
     });
     expect(getByText('Container: broker: paperless-broker-1, web: paperless_web_2')).toBeTruthy();
-    expect(queryByText(/Container: .*not a map/)).toBeNull();
+    // Only the compose finding names containers: a non-map value shows no line at all.
+    expect(queryAllByText(/^Container: /)).toHaveLength(1);
   });
 
   it('hands the finding to adopt and blocks every button until it is done', async () => {
