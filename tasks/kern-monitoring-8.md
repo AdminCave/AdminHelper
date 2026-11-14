@@ -197,6 +197,7 @@ Unit-Umgebung und Apache-Status lesen Unix-Hosts. Die Tests ziehen unverändert 
 `//go:build linux || freebsd` (Muster `app_bbb_unix_test.go`); keine Prüfung entfällt auf Linux/FreeBSD.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (nur Testdateien)
+Test-Löschung: apps/agent/internal/probe/app_pm2_test.go::* — umbenannt in app_pm2_unix_test.go mit Build-Tag, alle vier Tests unverändert
 
 ## Entscheidungen
 - HAProxy, PHP-FPM und Elasticsearch als Ansichten, weil ihre Antworten nach Namen geschlüsselt sind (Spec).
