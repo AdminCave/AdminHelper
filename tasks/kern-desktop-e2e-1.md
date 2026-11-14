@@ -1,12 +1,14 @@
 # desktop_e2e_monitoring: Fund ohne Instanz — Task-Ledger
-Status: aktiv · Branch: feature/kern-desktop-e2e-1 · Review: am Ende
+Status: bereit · Branch: feature/kern-desktop-e2e-1 · Review: am Ende
 Spec: Roadmap R-1456
 Heavy: linux-full — Desktop-Journey; der Fix des roten Schritts beweist sich vor dem Merge mit `run.sh all --step desktop_e2e_monitoring` auf einer Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1456: findingItem überspringt Funde ohne Instanz  [ ]
+### T1 — R-1456: findingItem überspringt Funde ohne Instanz  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-server-page.live.js, tasks/kern-desktop-e2e-1.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @55e97cd4a 2026-11-14T18:38:58+01:00
+Review: am Ende (Branch-Review)
 Änderung: `findingItem` fragt `.inbox-instance` je `.inbox-item` ab und wirft beim ersten Eintrag ohne Instanz. Seit
 dem Katalogmodul `mdadm` (003e440cb, #519) steht auf der Testbox der Fund „Software RAID (md)“ vor den Port-Funden; er
 heißt nach dem Modul, die Inbox zeigt darum keine Instanz (`FindingsInbox.svelte:82`). Die Suche liest die Instanzen
