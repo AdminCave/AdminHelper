@@ -23,8 +23,10 @@ Review: approve (.ah-out/review/kern-monitoring-20/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_migrations_smoke.py
 Doku: → T9
 
-### T2 — R-1264: Grabsteine beim Löschen, Abgleich und Übernehmen  [ ]
+### T2 — R-1264: Grabsteine beim Löschen, Abgleich und Übernehmen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/server_cleanup.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_findings_api.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1005870d3 2026-11-14T11:29:12+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T2.verdict.json)
 Änderung: `delete_check` legt für einen Modul-Check einen Grabstein an (idempotent). `_adopt` und `sync_catalog`
 legen keinen Check an, dessen Schlüssel einen Grabstein hat; ein Fund, dem nur so ein Check fehlt, wird nicht
 `changed`. `server_cleanup` löscht die Grabsteine des Servers.

@@ -25,8 +25,24 @@ from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.catalog.modules.wordpress import MODULE as WP_MODULE
 from app.check_configs import ProbeConfig
 from app.discovery import apply_discovery
-from app.models import Base, MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
-from app.module_sync import AdoptError, adopt, adopt_all, dismiss, probe_config, sync_catalog
+from app.models import (
+    Base,
+    MonitorCheck,
+    MonitorDiscovery,
+    MonitorFinding,
+    MonitorModuleTombstone,
+    MonitorState,
+)
+from app.module_sync import (
+    AdoptError,
+    adopt,
+    adopt_all,
+    dismiss,
+    probe_config,
+    sync_catalog,
+    tombstone_module_check,
+)
+from app.server_cleanup import cleanup_server
 
 # Far from the real clock: nothing here may depend on today.
 NOW = datetime(2020, 1, 1, 12, 0)
@@ -823,3 +839,134 @@ def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):
     assert result.skipped == [
         {"key": "healthz", "reason": "container docs-wiki-1 runs the tag 3, the check needs 2, 2.*"}
     ]
+
+
+# --- module checks the admin deleted (R-1264) ------------------------------------------
+
+
+def _delete(db, row):
+    tombstone_module_check(db, row)
+    db.delete(row)
+    db.commit()
+
+
+def _tombstones(db):
+    return {
+        (t.server_id, t.module_id, t.instance_key, t.check_key)
+        for t in db.query(MonitorModuleTombstone)
+    }
+
+
+def test_a_deleted_module_check_is_not_adopted_again(db, actions):
+    finding = _adopted(db, actions)
+    _delete(db, _checks(db, finding)["broker"])
+    _reopen(db, finding, "changed")
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert set(_checks(db, finding)) == {"web"}
+    assert result.enabled == [_checks(db, finding)["web"].id]
+    assert result.skipped == [{"key": "sched", "reason": "no unit for this instance"}]
+    assert _tombstones(db) == {("srv-1", "paperless", "paperless", "broker")}
+
+
+def test_burying_a_module_check_twice_keeps_one_tombstone(db, actions):
+    finding = _adopted(db, actions)
+    broker = _checks(db, finding)["broker"]
+
+    tombstone_module_check(db, broker)
+    db.commit()
+    tombstone_module_check(db, broker)
+    db.commit()
+
+    assert db.query(MonitorModuleTombstone).count() == 1
+
+
+def test_a_check_of_no_module_leaves_no_tombstone(db):
+    row = MonitorCheck(id="c-1", server_id="srv-1", name="Ping", check_type="ping", config="{}")
+    db.add(row)
+    db.commit()
+
+    _delete(db, row)
+
+    assert db.query(MonitorModuleTombstone).count() == 0
+
+
+def test_the_catalog_sync_does_not_bring_back_a_deleted_check(db, actions):
+    finding = _adopted(db, actions)
+    _delete(db, _checks(db, finding)["web"])
+
+    # The update adds "health"; "web" stays deleted.
+    assert sync_catalog(db, catalog=WITH_HEALTH) == 1
+
+    assert set(_checks(db, finding)) == {"broker", "health"}
+
+
+def test_a_finding_that_lacks_only_a_deleted_check_does_not_reopen(db, actions):
+    finding = _adopted(db, actions)
+    db.add(
+        MonitorModuleTombstone(
+            id="t-1",
+            server_id="srv-1",
+            module_id="paperless",
+            instance_key="paperless",
+            check_key="health",
+        )
+    )
+    db.commit()
+
+    assert sync_catalog(db, catalog=WITH_HEALTH) == 0
+
+    assert set(_checks(db, finding)) == {"web", "broker"}
+    assert (finding.kind, finding.status, finding.catalog_version) == (
+        "new",
+        "adopted",
+        WITH_HEALTH.version,
+    )
+
+
+@pytest.mark.parametrize(
+    ("server_id", "module_id", "instance_key"),
+    [
+        pytest.param("srv-2", "paperless", "paperless", id="other server"),
+        pytest.param("srv-1", "other", "paperless", id="other module"),
+        pytest.param("srv-1", "paperless", "other", id="other instance"),
+    ],
+)
+def test_a_tombstone_binds_only_its_own_instance(db, actions, server_id, module_id, instance_key):
+    _inventory(db)
+    finding = _finding(db)
+    db.add(
+        MonitorModuleTombstone(
+            id="t-1",
+            server_id=server_id,
+            module_id=module_id,
+            instance_key=instance_key,
+            check_key="broker",
+        )
+    )
+    db.commit()
+
+    adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert set(_checks(db, finding)) == {"web", "broker"}
+
+
+def test_deleting_the_server_takes_its_module_tombstones(db, actions, monkeypatch):
+    monkeypatch.setattr("app.server_cleanup.apply_scheduler_actions", lambda _: None)
+    finding = _adopted(db, actions)
+    _delete(db, _checks(db, finding)["broker"])
+    db.add(
+        MonitorModuleTombstone(
+            id="t-other",
+            server_id="srv-2",
+            module_id="paperless",
+            instance_key="paperless",
+            check_key="broker",
+        )
+    )
+    db.commit()
+
+    cleanup_server(db, "srv-1")
+
+    assert _tombstones(db) == {("srv-2", "paperless", "paperless", "broker")}

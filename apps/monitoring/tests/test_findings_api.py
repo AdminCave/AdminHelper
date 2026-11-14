@@ -12,7 +12,7 @@ import pytest
 
 from app import module_sync
 from app.catalog.loader import get_catalog
-from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding
+from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorModuleTombstone
 from app.module_sync import sync_catalog
 from app.routers import findings as findings_router
 
@@ -313,3 +313,27 @@ def test_silent_and_dropped_checks_of_a_finding(client_db, catalog):
     (finding,) = client.get("/findings").json()
     assert finding["moduleName"] is None
     assert sorted(finding["droppedChecks"]) == sorted(ids.values())
+
+
+def test_a_module_check_deleted_over_the_api_stays_deleted(client_db, catalog):
+    client, factory = client_db
+    _inventory(factory)
+    finding_id = _finding(factory)
+    body = client.post(f"/findings/{finding_id}/adopt").json()
+    with factory() as db:
+        broker = db.query(MonitorCheck).filter(MonitorCheck.module_check_key == "broker").one().id
+
+    assert client.delete(f"/checks/{broker}").status_code == 204
+    with factory() as db:
+        db.query(MonitorFinding).filter(MonitorFinding.id == finding_id).update(
+            {"kind": "changed", "status": "open"}
+        )
+        db.commit()
+    again = client.post(f"/findings/{finding_id}/adopt").json()
+
+    assert again["enabledChecks"] == [c for c in body["enabledChecks"] if c != broker]
+    with factory() as db:
+        assert [
+            (t.module_id, t.instance_key, t.check_key) for t in db.query(MonitorModuleTombstone)
+        ] == [("paperless", "paperless", "broker")]
+        assert db.query(MonitorCheck).count() == 1

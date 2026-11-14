@@ -26,7 +26,13 @@ from app.catalog.model import Alternative, Check, Module
 from app.check_configs import ProbeConfig
 from app.core.time import utcnow_naive
 from app.discovery import image_matches, image_repo, image_tag
-from app.models import MonitorCheck, MonitorDiscovery, MonitorFinding, MonitorState
+from app.models import (
+    MonitorCheck,
+    MonitorDiscovery,
+    MonitorFinding,
+    MonitorModuleTombstone,
+    MonitorState,
+)
 from app.template_sync import SchedulerAction, apply_scheduler_actions
 
 logger = logging.getLogger(__name__)
@@ -59,6 +65,44 @@ def instance_checks(db: Session, finding: MonitorFinding) -> list[MonitorCheck]:
         .order_by(MonitorCheck.created_at, MonitorCheck.id)
         .all()
     )
+
+
+def tombstoned_keys(db: Session, finding: MonitorFinding) -> set[str]:
+    """Check keys of this instance the admin deleted: neither adopt nor the catalog
+    sync creates them again."""
+    rows = db.query(MonitorModuleTombstone.check_key).filter(
+        MonitorModuleTombstone.server_id == finding.server_id,
+        MonitorModuleTombstone.module_id == finding.module_id,
+        MonitorModuleTombstone.instance_key == finding.instance_key,
+    )
+    return {key for (key,) in rows}
+
+
+def tombstone_module_check(db: Session, check: MonitorCheck) -> None:
+    """Record a module check the admin is deleting. The key comes from the stored row
+    only, so a request cannot bury a check it does not delete."""
+    if not (check.module_id and check.module_instance and check.module_check_key):
+        return
+    known = (
+        db.query(MonitorModuleTombstone)
+        .filter(
+            MonitorModuleTombstone.server_id == check.server_id,
+            MonitorModuleTombstone.module_id == check.module_id,
+            MonitorModuleTombstone.instance_key == check.module_instance,
+            MonitorModuleTombstone.check_key == check.module_check_key,
+        )
+        .first()
+    )
+    if known is None:
+        db.add(
+            MonitorModuleTombstone(
+                id=str(uuid.uuid4()),
+                server_id=check.server_id,
+                module_id=check.module_id,
+                instance_key=check.module_instance,
+                check_key=check.module_check_key,
+            )
+        )
 
 
 def _summary(finding: MonitorFinding) -> dict:
@@ -315,7 +359,7 @@ def _adopt(
             if row.enabled:
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
-        have = {row.module_check_key for row in checks}
+        have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
         containers = _containers(db, finding.server_id)
         for check in module.checks:
             if check.key in have:
@@ -394,7 +438,8 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
 
     A check the catalog added is created silent; a check it dropped stays. Either makes
     the finding "changed" and open, so the admin sees it and adopting makes the new
-    checks alert. A module the catalog no longer has is left alone."""
+    checks alert. A check the admin deleted is not created again. A module the catalog
+    no longer has is left alone."""
     catalog = catalog or get_catalog()
     reopened = 0
     findings = (
@@ -411,7 +456,7 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         if module is None:
             continue
         checks = instance_checks(db, finding)
-        have = {row.module_check_key for row in checks}
+        have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
         keys = {check.key for check in module.checks}
         dropped = any(row.enabled and row.module_check_key not in keys for row in checks)
         summary = _summary(finding)
