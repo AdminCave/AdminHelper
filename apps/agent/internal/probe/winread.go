@@ -23,8 +23,9 @@ var (
 	wmiIdentRe     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
 	// A where clause compares properties with numbers or quoted words, nothing more.
 	wmiWhereRe = regexp.MustCompile(`^[A-Za-z0-9_ =<>']{0,200}$`)
-	// Channel and provider names: letters, digits, blank, dash, dot, slash, underscore.
-	eventNameRe = regexp.MustCompile(`^[A-Za-z0-9 ._/-]{1,128}$`)
+	// Channel and provider names: letters, digits, blank, dash, dot, slash, underscore, and the
+	// dollar of a named SQL Server instance (MSSQL$<instance>).
+	eventNameRe = regexp.MustCompile(`^[A-Za-z0-9 ._/$-]{1,128}$`)
 )
 
 // wmiQuery is one fixed WMI read. The properties are the field names of the struct the

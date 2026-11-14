@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T9
 Abhängt von: T2
 
-### T4 — R-1246: Ansichten Hyper-V, DFS-R, Speicher, Druck, Defender, SQL Server, WSUS  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/winviews.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_other.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/app_cups.go, apps/agent/internal/probe/app_cups_test.go, apps/agent/internal/allowlist/allowlist.go
+### T4 — R-1246: Ansichten Hyper-V, DFS-R, Speicher, Druck, Defender, SQL Server, WSUS  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/winviews.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_other.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/app_cups.go, apps/agent/internal/probe/app_cups_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/probe/winread.go, apps/agent/internal/probe/winread_test.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @94ce9721b 2026-11-14T12:35:24+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T4.verdict.json)
 Änderung: Ansichten `hyperv`, `dfsr`, `storage` (ohne `KeyProtector`), `print`, `defender`, `mssql_events`, `wsus`
 (Spec, Offene Frage 2: ohne letzte Synchronisation) und `cups_queues` (Linux, `lpstat -p` mit `LC_ALL=C`).
 Parser mit Fixtures. Neue Dateien mit SPDX-Header.

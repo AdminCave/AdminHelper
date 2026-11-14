@@ -26,3 +26,10 @@ func winCerts(context.Context) (map[string]any, error)              { return nil
 func winEvents(context.Context, time.Duration) (map[string]any, error) {
 	return nil, errNoWindows()
 }
+func hypervState(context.Context, Target) (map[string]any, error) { return nil, errNoWindows() }
+func dfsrState(context.Context, Target) (map[string]any, error)   { return nil, errNoWindows() }
+func printState(context.Context, Target) (map[string]any, error)  { return nil, errNoWindows() }
+func mssqlEvents(context.Context, Target) (map[string]any, error) { return nil, errNoWindows() }
+func wsusState(context.Context, Target) (map[string]any, error)   { return nil, errNoWindows() }
+func storageHealth(context.Context) (map[string]any, error)       { return nil, errNoWindows() }
+func defenderStatus(context.Context) (map[string]any, error)      { return nil, errNoWindows() }

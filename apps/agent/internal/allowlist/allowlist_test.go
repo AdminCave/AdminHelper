@@ -791,6 +791,25 @@ func TestAllowlistBackupViews(t *testing.T) {
 	}
 }
 
+func TestAllowlistCupsQueues(t *testing.T) {
+	if !Allowed("lpstat", []string{"-p"}) {
+		t.Error("refused: lpstat -p")
+	}
+	for _, call := range [][]string{
+		{"lpstat", "-p", "office"},
+		{"lpstat", "-h", "print.example", "-p"},
+		{"lpstat", "-t"},
+		{"lpstat"},
+		{"cupsdisable", "office"},
+		{"cancel", "-a"},
+		{"lpadmin", "-x", "office"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
 func TestAllowlistWindowsViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"repadmin", "/showrepl", "localhost", "/csv"},

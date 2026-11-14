@@ -80,6 +80,8 @@ func TestAnEventQueryFiltersOnSystemValuesOnly(t *testing.T) {
 		{"source and ids", eventQuery{channel: "Microsoft-Windows-Backup", provider: "Microsoft-Windows-Backup", ids: []uint16{4, 5}},
 			"*[System[Provider[@Name='Microsoft-Windows-Backup'] and (EventID=4 or EventID=5)]]"},
 		{"channel with a blank", eventQuery{channel: "Veeam Agent", ids: []uint16{190}}, "*[System[(EventID=190)]]"},
+		{"named SQL Server instance", eventQuery{channel: "Application", provider: "MSSQL$SQLEXPRESS", levels: []uint8{2}},
+			"*[System[Provider[@Name='MSSQL$SQLEXPRESS'] and (Level=2)]]"},
 	}
 	for _, c := range cases {
 		got, err := c.q.xpath()

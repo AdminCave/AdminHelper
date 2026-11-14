@@ -9,8 +9,10 @@ import (
 	"encoding/csv"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -265,6 +267,330 @@ func machineCertValues(notAfter []time.Time, now time.Time) map[string]any {
 	values := map[string]any{"certs": len(notAfter), "expired": expired}
 	if daysLeft >= 0 {
 		values["min_days_left"] = daysLeft
+	}
+	return values
+}
+
+// appEventsWindow is how far back the app views count events: they take no interval, so a
+// day, the field names say so (_24h).
+const appEventsWindow = 24 * time.Hour
+
+// hypervVM is one row of Msvm_ComputerSystem (root\virtualization\v2). A VM's Name is its
+// GUID, the host's own row carries the computer name: the GUID tells them apart without the
+// Caption, whose text may be localized. The Name stays on this host.
+type hypervVM struct {
+	Name              string
+	EnabledState      uint16 // 2 Enabled (running), 3 Disabled, 32768 Paused, 32769 Suspended
+	HealthState       uint16 // 5 OK, 20 Major Failure, 25 Critical Failure
+	ReplicationHealth uint16 // 0 not applicable, 1 Ok, 2 Warning, 3 Critical
+}
+
+// hypervHeartbeat is one row of Msvm_HeartbeatComponent: OperationalStatus[0] 2 OK,
+// 3 Degraded, 7 Non-Recoverable Error, 12 No Contact (not installed or not yet reached),
+// 13 Lost Communication, 15 Paused.
+type hypervHeartbeat struct {
+	OperationalStatus []uint16
+}
+
+// hypervSetting is one row of Msvm_VirtualSystemSettingData: a VM's settings, or a
+// checkpoint with VirtualSystemType Microsoft:Hyper-V:Snapshot:Realized.
+type hypervSetting struct {
+	VirtualSystemType string
+	CreationTime      time.Time
+}
+
+const hypervCheckpoint = "Microsoft:Hyper-V:Snapshot:Realized"
+
+var hypervGUIDRe = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
+
+// hypervValues counts the VMs, those running, those whose health is a failure, the
+// heartbeats lost (No Contact is no loss: a VM without integration services never had one),
+// the replicas in warning and critical, and the checkpoints with the age of the oldest.
+func hypervValues(vms []hypervVM, beats []hypervHeartbeat, settings []hypervSetting, now time.Time) map[string]any {
+	guests, running, unhealthy, replWarn, replCrit := 0, 0, 0, 0, 0
+	for _, vm := range vms {
+		if !hypervGUIDRe.MatchString(vm.Name) {
+			continue
+		}
+		guests++
+		if vm.EnabledState == 2 {
+			running++
+		}
+		if vm.HealthState == 20 || vm.HealthState == 25 {
+			unhealthy++
+		}
+		switch vm.ReplicationHealth {
+		case 2:
+			replWarn++
+		case 3:
+			replCrit++
+		}
+	}
+	lost := 0
+	for _, b := range beats {
+		if len(b.OperationalStatus) > 0 && (b.OperationalStatus[0] == 7 || b.OperationalStatus[0] == 13) {
+			lost++
+		}
+	}
+	checkpoints := 0
+	var oldest time.Time
+	for _, s := range settings {
+		if s.VirtualSystemType != hypervCheckpoint {
+			continue
+		}
+		checkpoints++
+		if !s.CreationTime.IsZero() && (oldest.IsZero() || s.CreationTime.Before(oldest)) {
+			oldest = s.CreationTime
+		}
+	}
+	values := map[string]any{
+		"vms":                  guests,
+		"vms_running":          running,
+		"vms_unhealthy":        unhealthy,
+		"heartbeat_lost":       lost,
+		"replication_warning":  replWarn,
+		"replication_critical": replCrit,
+		"checkpoints":          checkpoints,
+	}
+	if !oldest.IsZero() {
+		values["oldest_checkpoint_age_s"] = max(0, int64(now.Sub(oldest)/time.Second))
+	}
+	return values
+}
+
+// dfsrFolder is one row of DfsrReplicatedFolderInfo (root\MicrosoftDfs): State 0
+// Uninitialized, 1 Initialized, 2 Initial Sync, 3 Auto Recovery, 4 Normal, 5 In Error.
+type dfsrFolder struct {
+	State uint32
+}
+
+// dfsrValues counts the replicated folders, those in error and those not (yet) in normal
+// operation, with the day's events 2213 (replication stopped after an unclean shutdown,
+// waits for a manual resume) and 4012 (the member was offline longer than allowed).
+func dfsrValues(folders []dfsrFolder, stopped, stale int) map[string]any {
+	inError, notNormal := 0, 0
+	for _, f := range folders {
+		if f.State == 5 {
+			inError++
+		}
+		if f.State != 4 {
+			notNormal++
+		}
+	}
+	return map[string]any{
+		"folders":              len(folders),
+		"folders_error":        inError,
+		"folders_not_normal":   notNormal,
+		"stopped_events_24h":   stopped,
+		"offline_too_long_24h": stale,
+	}
+}
+
+// storageDisk is one row of MSFT_PhysicalDisk or MSFT_VirtualDisk
+// (root\Microsoft\Windows\Storage). Not verified: HealthStatus 0 Healthy, 1 Warning,
+// 2 Unhealthy, 5 Unknown.
+type storageDisk struct {
+	HealthStatus uint16
+}
+
+// fsrmQuota is one row of MSFT_FSRMQuota (root\Microsoft\Windows\FSRM): limit and use, in
+// the same unit.
+type fsrmQuota struct {
+	Size  uint64
+	Usage uint64
+}
+
+// shadowCopy is one row of Win32_ShadowCopy; InstallDate is when it was taken (not verified).
+type shadowCopy struct {
+	InstallDate time.Time
+}
+
+// encVolume is one row of Win32_EncryptableVolume (root\CIMV2\Security\
+// MicrosoftVolumeEncryption): ProtectionStatus 0 off, 1 on, 2 unknown; VolumeType 0 the
+// system volume, 1 a fixed data volume, 2 a removable one. Never a key protector.
+type encVolume struct {
+	ProtectionStatus uint32
+	VolumeType       uint32
+}
+
+// storageState is what the storage view could read; a part whose role or feature the host
+// lacks (Storage Spaces, FSRM, BitLocker) is left out, not counted as zero.
+type storageState struct {
+	physical, virtual               []storageDisk
+	quotas                          []fsrmQuota
+	shadows                         []shadowCopy
+	volumes                         []encVolume
+	hasDisks, hasQuotas, hasVolumes bool
+}
+
+func storageValues(s storageState, now time.Time) map[string]any {
+	unhealthy := func(disks []storageDisk) int {
+		n := 0
+		for _, d := range disks {
+			if d.HealthStatus == 1 || d.HealthStatus == 2 {
+				n++
+			}
+		}
+		return n
+	}
+	values := map[string]any{"shadow_copies": len(s.shadows)}
+	var newest time.Time
+	for _, c := range s.shadows {
+		if c.InstallDate.After(newest) {
+			newest = c.InstallDate
+		}
+	}
+	if !newest.IsZero() {
+		values["newest_shadow_age_s"] = max(0, int64(now.Sub(newest)/time.Second))
+	}
+	if s.hasDisks {
+		values["disks"], values["disks_unhealthy"] = len(s.physical), unhealthy(s.physical)
+		values["vdisks"], values["vdisks_unhealthy"] = len(s.virtual), unhealthy(s.virtual)
+	}
+	if s.hasQuotas {
+		over := 0
+		for _, q := range s.quotas {
+			if q.Size > 0 && float64(q.Usage) >= 0.9*float64(q.Size) {
+				over++
+			}
+		}
+		values["quotas"], values["quotas_over_90"] = len(s.quotas), over
+	}
+	if s.hasVolumes {
+		fixed, unprotected := 0, 0
+		for _, v := range s.volumes {
+			if v.VolumeType > 1 {
+				continue
+			}
+			fixed++
+			if v.ProtectionStatus != 1 {
+				unprotected++
+			}
+		}
+		values["volumes"], values["volumes_unprotected"] = fixed, unprotected
+	}
+	return values
+}
+
+// printJob is one row of Win32_PrintJob.
+type printJob struct {
+	StatusMask    uint32
+	TimeSubmitted time.Time
+}
+
+// printer is one row of Win32_Printer.
+type printer struct {
+	DetectedErrorState    uint16
+	ExtendedPrinterStatus uint16
+	WorkOffline           bool
+}
+
+// printJobFault: the StatusMask bits Error (2), Offline (32), Paper Out (64), Blocked_DevQ
+// (512) and User Intervention Required (1024).
+const printJobFault = 2 | 32 | 64 | 512 | 1024
+
+// printerFault reports a printer that cannot print: DetectedErrorState No Paper (4), No
+// Toner (6), Door Open (7), Jammed (8), Offline (9), Service Requested (10), Output Bin
+// Full (11); ExtendedPrinterStatus Offline (7) or Error (9); or set to work offline. Low
+// paper and low toner still print.
+func printerFault(p printer) bool {
+	switch p.DetectedErrorState {
+	case 4, 6, 7, 8, 9, 10, 11:
+		return true
+	}
+	return p.ExtendedPrinterStatus == 7 || p.ExtendedPrinterStatus == 9 || p.WorkOffline
+}
+
+func printValues(printers []printer, jobs []printJob, now time.Time) map[string]any {
+	faulty := 0
+	for _, p := range printers {
+		if printerFault(p) {
+			faulty++
+		}
+	}
+	jobsFaulty := 0
+	var oldest time.Time
+	for _, j := range jobs {
+		if j.StatusMask&printJobFault != 0 {
+			jobsFaulty++
+		}
+		if !j.TimeSubmitted.IsZero() && (oldest.IsZero() || j.TimeSubmitted.Before(oldest)) {
+			oldest = j.TimeSubmitted
+		}
+	}
+	values := map[string]any{
+		"printers":       len(printers),
+		"printers_error": faulty,
+		"jobs":           len(jobs),
+		"jobs_error":     jobsFaulty,
+	}
+	if !oldest.IsZero() {
+		values["oldest_job_age_s"] = max(0, int64(now.Sub(oldest)/time.Second))
+	}
+	return values
+}
+
+// mpStatus is the one row of MSFT_MpComputerStatus (root\Microsoft\Windows\Defender).
+type mpStatus struct {
+	RealTimeProtectionEnabled bool
+	AntivirusEnabled          bool
+	AntivirusSignatureAge     uint32 // days; 65535 when the signatures were never updated
+}
+
+// mpMode is AMRunningMode, asked apart: older Defender versions lack the property, and a
+// query naming it would fail as a whole. Not verified: "Normal", "Passive Mode", "SxS
+// Passive Mode", "EDR Block Mode".
+type mpMode struct {
+	AMRunningMode string
+}
+
+// mpThreat is one row of MSFT_MpThreatDetection.
+type mpThreat struct {
+	InitialDetectionTime time.Time
+}
+
+const mpSignatureNever = 65535
+
+func defenderValues(s mpStatus, mode string, threats []mpThreat, now time.Time) map[string]any {
+	recent := 0
+	for _, t := range threats {
+		if !t.InitialDetectionTime.IsZero() && now.Sub(t.InitialDetectionTime) <= appEventsWindow {
+			recent++
+		}
+	}
+	values := map[string]any{
+		"realtime_on":    s.RealTimeProtectionEnabled,
+		"antivirus_on":   s.AntivirusEnabled,
+		"detections_24h": recent,
+	}
+	if s.AntivirusSignatureAge != mpSignatureNever {
+		values["signature_age_d"] = int(s.AntivirusSignatureAge)
+	}
+	if mode != "" {
+		values["passive"] = strings.Contains(mode, "Passive")
+	}
+	return values
+}
+
+// mssqlServiceRe is the service of an SQL Server instance: MSSQLSERVER for the default
+// one, MSSQL$<instance> for a named one. Its name is the source of its events in the
+// Application log (not verified on a SQL Server).
+var mssqlServiceRe = regexp.MustCompile(`^MSSQL(SERVER|\$[A-Za-z0-9_]{1,16})$`)
+
+// mssqlSource returns the event source of the SQL Server instance the target unit names.
+func mssqlSource(unit string) (string, error) {
+	name := strings.TrimSuffix(unit, ".service")
+	if !mssqlServiceRe.MatchString(name) {
+		return "", fmt.Errorf("%w: %q is no SQL Server service", ErrInvalid, unit)
+	}
+	return name, nil
+}
+
+// freeValues reports the free space of the volume a directory is on.
+func freeValues(free, total uint64) map[string]any {
+	values := map[string]any{"content_free_bytes": free}
+	if total > 0 {
+		values["content_free_pct"] = math.Round(1000*float64(free)/float64(total)) / 10
 	}
 	return values
 }

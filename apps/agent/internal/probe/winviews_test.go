@@ -9,6 +9,7 @@ import (
 	"math"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -202,6 +203,13 @@ func TestTheWindowsViewsAreUnsupportedElsewhere(t *testing.T) {
 		"win_updates":    func() (map[string]any, error) { return winUpdates(ctx) },
 		"win_certs":      func() (map[string]any, error) { return winCerts(ctx) },
 		"win_events":     func() (map[string]any, error) { return winEvents(ctx, time.Hour) },
+		"hyperv":         func() (map[string]any, error) { return hypervState(ctx, Target{}) },
+		"dfsr":           func() (map[string]any, error) { return dfsrState(ctx, Target{}) },
+		"print":          func() (map[string]any, error) { return printState(ctx, Target{}) },
+		"mssql_events":   func() (map[string]any, error) { return mssqlEvents(ctx, Target{}) },
+		"wsus":           func() (map[string]any, error) { return wsusState(ctx, Target{}) },
+		"storage":        func() (map[string]any, error) { return storageHealth(ctx) },
+		"defender":       func() (map[string]any, error) { return defenderStatus(ctx) },
 	} {
 		if _, err := read(); !errors.Is(err, ErrUnsupported) {
 			t.Errorf("%s: err = %v, want ErrUnsupported", name, err)
@@ -210,15 +218,123 @@ func TestTheWindowsViewsAreUnsupportedElsewhere(t *testing.T) {
 }
 
 func TestTheHostSensorTakesTheWindowsViews(t *testing.T) {
-	for _, view := range []string{"win_updates", "win_certs", "win_events"} {
+	for _, view := range []string{"win_updates", "win_certs", "win_events", "storage", "defender"} {
 		_, err := hostSensor(t.Context(), Probe{Sensor: "host", Params: map[string]any{"view": view}}, "")
 		if errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v", view, err)
 		}
 	}
-	for _, view := range []string{"ad_replication", "dhcp_scopes", "iis_state", "rds_licenses"} {
+	for _, view := range []string{"ad_replication", "dhcp_scopes", "iis_state", "rds_licenses",
+		"hyperv", "dfsr", "print", "mssql_events", "wsus", "cups_queues"} {
 		if _, ok := appViews[view]; !ok {
 			t.Errorf("app view %s is missing", view)
 		}
+	}
+}
+
+var winNow = time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+
+func TestHypervValuesCountsGuestsAndSkipsTheHost(t *testing.T) {
+	vms := []hypervVM{
+		{Name: "HV01", EnabledState: 2, HealthState: 25}, // the host's own row
+		{Name: "6F2D1C3A-1B2C-4D5E-8F90-A1B2C3D4E5F6", EnabledState: 2, HealthState: 5, ReplicationHealth: 1},
+		{Name: "0a1b2c3d-0000-1111-2222-333344445555", EnabledState: 3, HealthState: 20, ReplicationHealth: 3},
+		{Name: "11111111-2222-3333-4444-555555555555", EnabledState: 32768, HealthState: 5, ReplicationHealth: 2},
+	}
+	beats := []hypervHeartbeat{{OperationalStatus: []uint16{2}}, {OperationalStatus: []uint16{12}},
+		{OperationalStatus: []uint16{13}}, {OperationalStatus: []uint16{7, 2}}, {}}
+	settings := []hypervSetting{
+		{VirtualSystemType: "Microsoft:Hyper-V:System:Realized", CreationTime: winNow.Add(-1000 * time.Hour)},
+		{VirtualSystemType: hypervCheckpoint, CreationTime: winNow.Add(-48 * time.Hour)},
+		{VirtualSystemType: hypervCheckpoint, CreationTime: winNow.Add(-2 * time.Hour)},
+	}
+	want := map[string]any{"vms": 3, "vms_running": 1, "vms_unhealthy": 1, "heartbeat_lost": 2,
+		"replication_warning": 1, "replication_critical": 1, "checkpoints": 2,
+		"oldest_checkpoint_age_s": int64(48 * 3600)}
+	if got := hypervValues(vms, beats, settings, winNow); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v\nwant %v", got, want)
+	}
+	if got := hypervValues(nil, nil, nil, winNow); got["vms"] != 0 || got["oldest_checkpoint_age_s"] != nil {
+		t.Fatalf("a host without VMs: %v", got)
+	}
+}
+
+func TestDfsrValuesCountsFoldersNotInNormalOperation(t *testing.T) {
+	got := dfsrValues([]dfsrFolder{{State: 4}, {State: 5}, {State: 2}, {State: 4}}, 1, 0)
+	want := map[string]any{"folders": 4, "folders_error": 1, "folders_not_normal": 2,
+		"stopped_events_24h": 1, "offline_too_long_24h": 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestStorageValuesLeavesOutWhatTheHostLacks(t *testing.T) {
+	s := storageState{
+		shadows:    []shadowCopy{{InstallDate: winNow.Add(-30 * time.Hour)}, {InstallDate: winNow.Add(-6 * time.Hour)}},
+		physical:   []storageDisk{{HealthStatus: 0}, {HealthStatus: 2}, {HealthStatus: 5}},
+		virtual:    []storageDisk{{HealthStatus: 1}},
+		quotas:     []fsrmQuota{{Size: 100, Usage: 90}, {Size: 100, Usage: 89}, {Size: 0, Usage: 5}},
+		volumes:    []encVolume{{ProtectionStatus: 1, VolumeType: 0}, {ProtectionStatus: 0, VolumeType: 1}, {ProtectionStatus: 0, VolumeType: 2}},
+		hasDisks:   true,
+		hasQuotas:  true,
+		hasVolumes: true,
+	}
+	want := map[string]any{"shadow_copies": 2, "newest_shadow_age_s": int64(6 * 3600),
+		"disks": 3, "disks_unhealthy": 1, "vdisks": 1, "vdisks_unhealthy": 1,
+		"quotas": 3, "quotas_over_90": 1, "volumes": 2, "volumes_unprotected": 1}
+	if got := storageValues(s, winNow); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v\nwant %v", got, want)
+	}
+	if got := storageValues(storageState{}, winNow); !reflect.DeepEqual(got, map[string]any{"shadow_copies": 0}) {
+		t.Fatalf("a host without Storage Spaces, FSRM and BitLocker: %v", got)
+	}
+}
+
+func TestPrintValuesCountsFaultsAndTheOldestJob(t *testing.T) {
+	printers := []printer{{}, {DetectedErrorState: 3}, {DetectedErrorState: 8}, {ExtendedPrinterStatus: 7}, {WorkOffline: true}}
+	jobs := []printJob{{StatusMask: 16, TimeSubmitted: winNow.Add(-10 * time.Minute)},
+		{StatusMask: 2 | 16, TimeSubmitted: winNow.Add(-3 * time.Hour)}, {StatusMask: 1024}}
+	want := map[string]any{"printers": 5, "printers_error": 3, "jobs": 3, "jobs_error": 2,
+		"oldest_job_age_s": int64(3 * 3600)}
+	if got := printValues(printers, jobs, winNow); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestDefenderValues(t *testing.T) {
+	threats := []mpThreat{{InitialDetectionTime: winNow.Add(-time.Hour)}, {InitialDetectionTime: winNow.Add(-50 * time.Hour)}, {}}
+	got := defenderValues(mpStatus{RealTimeProtectionEnabled: true, AntivirusEnabled: true, AntivirusSignatureAge: 2}, "SxS Passive Mode", threats, winNow)
+	want := map[string]any{"realtime_on": true, "antivirus_on": true, "detections_24h": 1, "signature_age_d": 2, "passive": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	got = defenderValues(mpStatus{AntivirusSignatureAge: mpSignatureNever}, "", nil, winNow)
+	if _, ok := got["signature_age_d"]; ok {
+		t.Fatalf("signatures never updated read as an age: %v", got)
+	}
+	if _, ok := got["passive"]; ok {
+		t.Fatalf("an unknown mode read as a state: %v", got)
+	}
+}
+
+func TestMssqlSourceTakesOnlyAnSQLServerService(t *testing.T) {
+	for unit, want := range map[string]string{"MSSQLSERVER": "MSSQLSERVER", "MSSQL$SQLEXPRESS.service": "MSSQL$SQLEXPRESS"} {
+		if got, err := mssqlSource(unit); err != nil || got != want {
+			t.Errorf("%s: %q, %v; want %q", unit, got, err, want)
+		}
+	}
+	for _, unit := range []string{"MSSQL$", "SQLSERVERAGENT", "MSSQL$a'b", "MSSQL$" + strings.Repeat("x", 17), "mssqlserver"} {
+		if _, err := mssqlSource(unit); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", unit, err)
+		}
+	}
+}
+
+func TestFreeValues(t *testing.T) {
+	if got := freeValues(25, 200); !reflect.DeepEqual(got, map[string]any{"content_free_bytes": uint64(25), "content_free_pct": 12.5}) {
+		t.Fatalf("got %v", got)
+	}
+	if got := freeValues(0, 0); !reflect.DeepEqual(got, map[string]any{"content_free_bytes": uint64(0)}) {
+		t.Fatalf("no total: %v", got)
 	}
 }

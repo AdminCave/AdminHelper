@@ -17,6 +17,7 @@ import (
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 // adReplication reads the inbound replication links of this domain controller alone
@@ -245,4 +246,166 @@ func winCerts(context.Context) (map[string]any, error) {
 		notAfter[i] = c.notAfter
 	}
 	return machineCertValues(notAfter, time.Now()), nil
+}
+
+// hypervState reads the VMs of this Hyper-V host, their heartbeats and their checkpoints.
+func hypervState(ctx context.Context, _ Target) (map[string]any, error) {
+	const ns = `root\virtualization\v2`
+	var vms []hypervVM
+	if err := (wmiQuery{namespace: ns, class: "Msvm_ComputerSystem"}).run(ctx, &vms); err != nil {
+		return nil, err
+	}
+	var beats []hypervHeartbeat
+	if err := (wmiQuery{namespace: ns, class: "Msvm_HeartbeatComponent"}).run(ctx, &beats); err != nil {
+		return nil, err
+	}
+	// The type is compared here, not in a where clause: the query alphabet has no colon.
+	var settings []hypervSetting
+	if err := (wmiQuery{namespace: ns, class: "Msvm_VirtualSystemSettingData"}).run(ctx, &settings); err != nil {
+		return nil, err
+	}
+	return hypervValues(vms, beats, settings, time.Now()), nil
+}
+
+// dfsrState reads the replicated folders of this DFS-R member and the day's events 2213
+// and 4012 of the DFS Replication log.
+func dfsrState(ctx context.Context, _ Target) (map[string]any, error) {
+	var folders []dfsrFolder
+	if err := (wmiQuery{namespace: `root\MicrosoftDfs`, class: "DfsrReplicatedFolderInfo"}).run(ctx, &folders); err != nil {
+		return nil, err
+	}
+	count := func(id uint16) (int, error) {
+		return countEvents(ctx, eventQuery{channel: "DFS Replication", provider: "DFSR", ids: []uint16{id}, within: appEventsWindow})
+	}
+	stopped, err := count(2213)
+	if err != nil {
+		return nil, err
+	}
+	stale, err := count(4012)
+	if err != nil {
+		return nil, err
+	}
+	return dfsrValues(folders, stopped, stale), nil
+}
+
+// optionalQuery reads q into dst; a class or namespace the host lacks (its role or feature is
+// not installed) is no error, only ok false.
+func optionalQuery(ctx context.Context, q wmiQuery, dst any) (bool, error) {
+	err := q.run(ctx, dst)
+	if errors.Is(err, ErrUnsupported) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// storageHealth reads the disks of the Storage Management API, the FSRM quotas, the shadow
+// copies and the protection state of the BitLocker volumes.
+func storageHealth(ctx context.Context) (map[string]any, error) {
+	const storageNS = `root\Microsoft\Windows\Storage`
+	var s storageState
+	if err := (wmiQuery{namespace: `root\cimv2`, class: "Win32_ShadowCopy"}).run(ctx, &s.shadows); err != nil {
+		return nil, err
+	}
+	var err error
+	if s.hasDisks, err = optionalQuery(ctx, wmiQuery{namespace: storageNS, class: "MSFT_PhysicalDisk"}, &s.physical); err != nil {
+		return nil, err
+	}
+	if s.hasDisks {
+		if _, err := optionalQuery(ctx, wmiQuery{namespace: storageNS, class: "MSFT_VirtualDisk"}, &s.virtual); err != nil {
+			return nil, err
+		}
+	}
+	if s.hasQuotas, err = optionalQuery(ctx, wmiQuery{namespace: `root\Microsoft\Windows\FSRM`, class: "MSFT_FSRMQuota"}, &s.quotas); err != nil {
+		return nil, err
+	}
+	if s.hasVolumes, err = optionalQuery(ctx, wmiQuery{namespace: `root\CIMV2\Security\MicrosoftVolumeEncryption`, class: "Win32_EncryptableVolume"}, &s.volumes); err != nil {
+		return nil, err
+	}
+	return storageValues(s, time.Now()), nil
+}
+
+// printState reads the printers and the queued jobs of the print spooler.
+func printState(ctx context.Context, _ Target) (map[string]any, error) {
+	var printers []printer
+	if err := (wmiQuery{namespace: `root\cimv2`, class: "Win32_Printer"}).run(ctx, &printers); err != nil {
+		return nil, err
+	}
+	var jobs []printJob
+	if err := (wmiQuery{namespace: `root\cimv2`, class: "Win32_PrintJob"}).run(ctx, &jobs); err != nil {
+		return nil, err
+	}
+	return printValues(printers, jobs, time.Now()), nil
+}
+
+// defenderStatus reads the protection state of Microsoft Defender and its detections.
+func defenderStatus(ctx context.Context) (map[string]any, error) {
+	const ns = `root\Microsoft\Windows\Defender`
+	var status []mpStatus
+	if err := (wmiQuery{namespace: ns, class: "MSFT_MpComputerStatus"}).run(ctx, &status); err != nil {
+		return nil, err
+	}
+	if len(status) == 0 {
+		return nil, fmt.Errorf("%w: Defender reports no status", ErrUnsupported)
+	}
+	// An older Defender lacks the property, and then the query fails: the mode is left out.
+	var modes []mpMode
+	mode := ""
+	if err := (wmiQuery{namespace: ns, class: "MSFT_MpComputerStatus"}).run(ctx, &modes); err == nil && len(modes) > 0 {
+		mode = modes[0].AMRunningMode
+	} else if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	var threats []mpThreat
+	if err := (wmiQuery{namespace: ns, class: "MSFT_MpThreatDetection"}).run(ctx, &threats); err != nil {
+		return nil, err
+	}
+	return defenderValues(status[0], mode, threats, time.Now()), nil
+}
+
+// mssqlEvents counts the day's critical and error events of the SQL Server instance the
+// target names, in the Application log.
+func mssqlEvents(ctx context.Context, t Target) (map[string]any, error) {
+	source, err := mssqlSource(t.Name)
+	if err != nil {
+		return nil, err
+	}
+	n, err := countEvents(ctx, eventQuery{channel: "Application", provider: source, levels: []uint8{1, 2}, within: appEventsWindow})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"errors_24h": n}, nil
+}
+
+// wsusContentKey holds ContentDir, the content folder WSUS setup chose (not verified on a
+// WSUS server).
+const wsusContentKey = `SOFTWARE\Microsoft\Update Services\Server\Setup`
+
+// wsusState reads the free space at the WSUS content folder and the day's critical and error
+// events of WSUS in the Application log. The last synchronization is not read: it is only in
+// the WSUS database and its .NET API (Kevin 2026-11-14).
+func wsusState(ctx context.Context, _ Target) (map[string]any, error) {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, wsusContentKey, registry.QUERY_VALUE)
+	if err != nil {
+		return nil, fmt.Errorf("%w: no WSUS setup key", ErrUnsupported)
+	}
+	dir, _, err := key.GetStringValue("ContentDir")
+	key.Close()
+	if err != nil || dir == "" {
+		return nil, fmt.Errorf("%w: no WSUS content folder", ErrUnsupported)
+	}
+	path, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return nil, fmt.Errorf("%w: WSUS content folder", ErrInvalid)
+	}
+	var avail, total, free uint64
+	if err := windows.GetDiskFreeSpaceEx(path, &avail, &total, &free); err != nil {
+		return nil, fmt.Errorf("wsus content folder: %w", err)
+	}
+	values := freeValues(avail, total)
+	n, err := countEvents(ctx, eventQuery{channel: "Application", provider: "Windows Server Update Services", levels: []uint8{1, 2}, within: appEventsWindow})
+	if err != nil {
+		return nil, err
+	}
+	values["errors_24h"] = n
+	return values, nil
 }
