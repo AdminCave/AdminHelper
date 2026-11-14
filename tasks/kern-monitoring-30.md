@@ -43,8 +43,10 @@ einer Nachkommastelle, nie unter 0) und `hours_left` (ganze Stunden, abgerundet)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 
-### T4 — R-1433: dns fragt mit Ziel den Dienst direkt  [ ]
+### T4 — R-1433: dns fragt mit Ziel den Dienst direkt  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_dns.go, apps/agent/internal/probe/sensor_dns_test.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @13f191f09 2026-11-14T09:32:55+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T4.verdict.json)
 Änderung: Ohne Ziel wie heute. Mit Ziel eine Anfrage nach RFC 1035 über TCP mit Längenpräfix (RFC 7766) durch den
 Wächter an den Port; ohne EDNS, RD gesetzt; Felder `resolved`, `answers`, `duration_ms`, neu `rcode`
 (`noerror|nxdomain|servfail|refused|other`). Neue Testdatei `sensor_dns_test.go` (SPDX-Header) mit einem
@@ -91,3 +93,4 @@ Abhängt von: T6, T7
 ## Entscheidungen
 - Kevin 2026-11-14: Offene Frage 1 wie empfohlen: dns-Check mit `localhost` A (nur lokal).
 - T2 `auto`: Schweigen bis `answerWait` (2 s) zählt als Klartext, nicht nur ein Nicht-TLS-Datensatz: ein Go-HTTP-Server (etwa Mattermost) wartet auf ein `\n` im ClientHello und antwortet nie. Ein Abbruch oder Alert zählt als TLS, ein abgelaufener Probe-Kontext ist ein Fehler.
+- T4 dns mit Ziel: `answers` ist ANCOUNT aus dem Kopf (zählt etwa eine CNAME-Kette mit), der Rest der Antwort wird nicht gelesen; ohne Ziel zählt der Resolver weiter nur die Endergebnisse. Ein IPv6-PTR-Name steht wie bisher als ip6.arpa-Name im Parameter. Der alte Fall "a target" in `TestDNSSensorTakesItsParams` prüft jetzt ein Ziel ohne Port (gewollte Verhaltensänderung).

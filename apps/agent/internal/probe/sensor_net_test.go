@@ -61,6 +61,7 @@ func TestTheTCPSensorsDialThroughTheGuard(t *testing.T) {
 		onLoopback("tls", 0, nil),
 		onLoopback("proto", 0, map[string]any{"protocol": "smtp"}),
 		onLoopback("proto", 0, map[string]any{"protocol": "auto"}),
+		onLoopback("dns", 0, map[string]any{"name": "localhost"}),
 	} {
 		t.Run(fmt.Sprint(p.Sensor, p.Params), func(t *testing.T) {
 			srv := listen(t, func(c *fakeConn) { c.f.record("accepted") })
@@ -803,7 +804,7 @@ func TestDNSSensorTakesItsParams(t *testing.T) {
 	ctx := context.Background()
 	asked := stubLookup(t, 1, nil)
 	withTarget := dnsProbe(map[string]any{"name": "example.org"})
-	withTarget.Target = &Target{Kind: kindLoopback, PortHint: 53}
+	withTarget.Target = &Target{Kind: kindLoopback}
 	withCredential := dnsProbe(map[string]any{"name": "example.org"})
 	withCredential.Credential = &Credential{Ref: "c1", Use: "bearer"}
 	for _, c := range []struct {
@@ -822,7 +823,7 @@ func TestDNSSensorTakesItsParams(t *testing.T) {
 		{"rrtype ANY", dnsProbe(map[string]any{"name": "example.org", "rrtype": "ANY"})},
 		{"rrtype in lower case", dnsProbe(map[string]any{"name": "example.org", "rrtype": "a"})},
 		{"another param", dnsProbe(map[string]any{"name": "example.org", "server": "192.0.2.53"})},
-		{"a target", withTarget},
+		{"a target without a port", withTarget},
 		{"a credential", withCredential},
 	} {
 		if _, err := dnsSensor(ctx, c.p, ""); !errors.Is(err, ErrInvalid) {
