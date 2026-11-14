@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -91,4 +92,18 @@ func TestTheWordPressViewOutsideLinux(t *testing.T) {
 	if err == nil || err.Error() != "container web: its root cannot be opened: gone" {
 		t.Errorf("a root that cannot be opened = %v", err)
 	}
+}
+
+func TestOpenProcRootIsLinuxAlone(t *testing.T) {
+	root, err := openProcRoot(os.Getpid())
+	if runtime.GOOS != "linux" {
+		if !errors.Is(err, ErrUnsupported) {
+			t.Errorf("error %v, want ErrUnsupported outside Linux", err)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("openProcRoot of this process = %v, want it opened on Linux", err)
+	}
+	root.Close()
 }

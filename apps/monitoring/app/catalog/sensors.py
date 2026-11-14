@@ -10,9 +10,10 @@ entry or a probe check may set for it. The agent checks the same bounds again an
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
 Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense, app and host the set
-of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
-stats) also return fields under ``data.`` — a path into that answer, which the agent
-resolves to one scalar.
+of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS).
+The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy stats) also
+return fields under ``data.`` — a path into that answer, which the agent resolves to one
+scalar.
 """
 
 from __future__ import annotations
