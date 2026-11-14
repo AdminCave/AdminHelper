@@ -428,9 +428,17 @@ def test_compose_instance_is_the_project_with_all_its_services():
 
     assert match_inventory(inv, CATALOG) == {
         ("paperless", "paperless"): {
-            "services": {"broker": "redis", "db": "postgres", "webserver": PAPERLESS_IMAGE}
+            "services": {"broker": "redis", "db": "postgres", "webserver": PAPERLESS_IMAGE},
+            "containers": {
+                "broker": "paperless-broker-1",
+                "db": "paperless-db-1",
+                "webserver": "paperless-web-1",
+            },
         },
-        ("paperless", "docs2"): {"services": {"webserver": PAPERLESS_IMAGE}},
+        ("paperless", "docs2"): {
+            "services": {"webserver": PAPERLESS_IMAGE},
+            "containers": {"webserver": "docs2-web-1"},
+        },
         ("paperless", "lonely"): {"container": "lonely", "image": PAPERLESS_IMAGE},
         ("postgres", "paperless-db-1"): {
             "image": "postgres",
@@ -707,7 +715,10 @@ def test_new_instance_is_one_open_finding_that_follows_its_summary(db):
     row = _finding(db)
     assert db.query(MonitorFinding).count() == 1
     assert (row.kind, row.status, row.first_seen, row.last_seen) == ("new", "open", T0, T0 + DAY)
-    assert json.loads(row.summary) == {"services": {"broker": "redis", "web": PAPERLESS_IMAGE}}
+    assert json.loads(row.summary) == {
+        "services": {"broker": "redis", "web": PAPERLESS_IMAGE},
+        "containers": {"broker": "paperless-broker-1", "web": "paperless-web-1"},
+    }
 
 
 def test_findings_of_other_servers_stay_apart(db):
@@ -728,6 +739,34 @@ def test_adopted_finding_reopens_as_changed_only_when_its_summary_changes(db):
     row = _finding(db)
     assert (row.kind, row.status, row.decided_at) == ("changed", "open", None)
     assert "broker" in json.loads(row.summary)["services"]
+
+
+def test_a_renamed_container_leaves_an_adopted_finding_adopted(db):
+    _scan(db, T0, **_paperless("web"))
+    _decide(db, "adopted")
+    renamed = _paperless("web")
+    renamed["containers"][0]["name"] = "paperless_web_2"
+
+    _scan(db, T0 + DAY, **renamed)
+
+    row = _finding(db)
+    assert (row.kind, row.status, row.decided_at) == ("new", "adopted", T0)
+    # The stored summary names the container the checks bind to today.
+    assert json.loads(row.summary)["containers"] == {"web": "paperless_web_2"}
+
+
+def test_two_containers_of_one_service_name_the_first_by_name():
+    inv = clean_inventory(
+        _block(
+            containers=[
+                _container("paperless-web-2", PAPERLESS_IMAGE, "paperless", "web"),
+                _container("paperless-web-1", PAPERLESS_IMAGE, "paperless", "web"),
+            ]
+        )
+    )
+
+    found = match_inventory(inv, CATALOG)[("paperless", "paperless")]
+    assert found["containers"] == {"web": "paperless-web-1"}
 
 
 def test_dismissed_finding_stays_dismissed_until_it_changes(db):

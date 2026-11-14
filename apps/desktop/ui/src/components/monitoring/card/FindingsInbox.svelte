@@ -5,7 +5,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorFinding, MonitorFindingKind } from '$lib/api/types';
+  import type {
+    MonitorFinding,
+    MonitorFindingContainers,
+    MonitorFindingKind,
+  } from '$lib/api/types';
   import { t } from '$lib/i18n';
   import { ageText, findingDetail } from '$lib/models/monitoringText';
   import Badge from '../../ui/Badge.svelte';
@@ -35,6 +39,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     } finally {
       busy = null;
     }
+  }
+
+  // "service: container" of a compose finding, null for any other.
+  function containerList(summary: Record<string, unknown>): string | null {
+    const raw = summary.containers;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const pairs = Object.entries(raw as MonitorFindingContainers).filter(
+      ([, name]) => typeof name === 'string' && name !== '',
+    );
+    return pairs.length ? pairs.map(([service, name]) => `${service}: ${name}`).join(', ') : null;
   }
 
   const KIND_TONE: Record<MonitorFindingKind, 'info' | 'warning' | 'neutral'> = {
@@ -74,6 +88,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <ul class="inbox-list">
       {#each findings as finding (finding.id)}
         {@const detail = findingDetail(finding.summary)}
+        {@const containers = containerList(finding.summary)}
+        {@const updatable = finding.updatableChecks?.length ?? 0}
         <li class="inbox-item" data-kind={finding.kind}>
           <div class="inbox-main">
             <div class="inbox-title">
@@ -94,11 +110,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
               {#if finding.droppedChecks.length > 0}
                 {$t('monitoring.findings.dropped', { count: finding.droppedChecks.length })}
               {/if}
+              {#if updatable > 0}
+                {$t('monitoring.findings.updatable', { count: updatable })}
+              {/if}
             </p>
             <p class="inbox-meta">
               {#if detail}<span class="inbox-detail">{detail}</span> ·{/if}
               {$t('monitoring.findings.seen', { age: ageText($t, finding.lastSeen) })}
             </p>
+            {#if containers}
+              <p class="inbox-meta">
+                {$t('monitoring.findings.containers', { list: containers })}
+              </p>
+            {/if}
           </div>
           <div class="inbox-actions">
             <Button

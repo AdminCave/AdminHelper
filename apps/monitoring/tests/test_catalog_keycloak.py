@@ -125,7 +125,10 @@ def test_both_readiness_checks_get_health_ready_on_9000_in_plain_http_or_tls():
 def test_keycloak_in_its_project_gets_its_container_and_9000():
     block = _block(COMPOSE)
     assert _found(block) == {
-        "sso": {"services": {"db": "postgres", "keycloak": "quay.io/keycloak/keycloak"}}
+        "sso": {
+            "services": {"db": "postgres", "keycloak": "quay.io/keycloak/keycloak"},
+            "containers": {"db": "sso-db-1", "keycloak": "sso-keycloak-1"},
+        }
     }
     assert _bind(block, "sso") == {
         "container": ("sso-keycloak-1", None),

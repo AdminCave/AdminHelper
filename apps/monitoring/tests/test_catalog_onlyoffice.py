@@ -140,7 +140,10 @@ def test_the_project_without_listening_ports_gets_its_container_check_only():
     # An older agent tells no listening ports; 8000 is not exposed.
     block = _block(COMPOSE)
     assert _found(block) == {
-        "onlyoffice": {"services": {"onlyoffice-documentserver": "onlyoffice/documentserver"}}
+        "onlyoffice": {
+            "services": {"onlyoffice-documentserver": "onlyoffice/documentserver"},
+            "containers": {"onlyoffice-documentserver": "onlyoffice-documentserver"},
+        }
     }
     assert _bind(block, "onlyoffice") == {
         "container": ("onlyoffice-documentserver", None),

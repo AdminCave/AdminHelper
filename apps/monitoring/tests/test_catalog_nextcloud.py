@@ -108,7 +108,13 @@ def test_a_compose_project_binds_both_containers_and_status_to_app_only():
                 "cron": "nextcloud",
                 "db": "mariadb",
                 "redis": "redis",
-            }
+            },
+            "containers": {
+                "app": "cloud-app-1",
+                "cron": "cloud-cron-1",
+                "db": "cloud-db-1",
+                "redis": "cloud-redis-1",
+            },
         }
     }
     assert _bind(_block(COMPOSE), "cloud") == {

@@ -357,6 +357,12 @@ FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
 _ABS_PATH = r"^/[^\x00]*$"
 _LABEL = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 _HOSTNAME = rf"^{_LABEL}(\.{_LABEL})*\.?$"
+# The agent's dnsName (sensor_dns.go): labels may carry underscores, for the names of
+# services (_ldap._tcp.example.org).
+_DNS_LABEL = r"[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
+_DNS_NAME = rf"^{_DNS_LABEL}(\.{_DNS_LABEL})*\.?$"
+# The agent's maxSocketPath: sun_path holds 108 bytes, the last a NUL.
+_MAX_SOCKET_PATH = 107
 
 
 class _Params(BaseModel):
@@ -415,6 +421,10 @@ class FileAgeParams(_Params):
         return self
 
 
+# The agent's implicitTLSProtocols (sensor_proto.go).
+_IMPLICIT_TLS_PROTOCOLS = frozenset({"smtp", "imap", "pop3", "ldap", "redis", "banner"})
+
+
 class ProtoParams(_Params):
     # auto: the agent recognises the protocol as its discovery does (banner, typical
     # probe, TLS) and reports it in `detail`; for a port no module knows.
@@ -422,12 +432,31 @@ class ProtoParams(_Params):
         "auto", "banner", "smtp", "imap", "pop3", "ldap", "postgres", "redis", "fastcgi", "haproxy"
     ]
     starttls: StrictBool = False
+    # TLS from the first byte (smtps, imaps, pop3s, ldaps, Redis tls-port, a banner behind
+    # TLS). Absent rather than false by default, so the checks of the catalog keep their hash.
+    tls: StrictBool | None = None
     # fastcgi only: the status path of the pool (php-fpm pm.status_path).
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
 
+    @field_validator("tls", mode="before")
+    @classmethod
+    def _tls_set_or_absent(cls, v: object) -> object:
+        # The agent answers invalid to a null.
+        if v is None:
+            raise ValueError("set it or leave it out")
+        return v
+
+    @model_validator(mode="after")
+    def _tls_of_the_protocol(self) -> ProtoParams:
+        if self.tls and self.starttls:
+            raise ValueError("tls and starttls exclude each other")
+        if self.tls and self.protocol not in _IMPLICIT_TLS_PROTOCOLS:
+            raise ValueError(f"protocol {self.protocol} is not spoken inside TLS")
+        return self
+
 
 class UnixSocketParams(_Params):
-    path: str = Field(pattern=_ABS_PATH, max_length=1024)
+    path: str = Field(pattern=_ABS_PATH, max_length=_MAX_SOCKET_PATH)
     protocol: Literal["connect", "http", "redis", "fastcgi", "haproxy"] = "connect"
     http_path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
@@ -455,7 +484,7 @@ class SqlParams(_Params):
 
 
 class DnsParams(_Params):
-    name: str = Field(pattern=_HOSTNAME, max_length=253)
+    name: str = Field(pattern=_DNS_NAME, max_length=253)
     rrtype: Literal["A", "AAAA", "MX", "TXT", "SRV", "CNAME", "NS", "PTR"] = "A"
 
 

@@ -141,7 +141,12 @@ def test_the_project_gets_the_container_and_livez_on_3000():
                 "rocketchat": "registry.rocket.chat/rocketchat/rocket.chat",
                 "mongodb": "mongodb/mongodb-community-server",
                 "nats": "nats",
-            }
+            },
+            "containers": {
+                "mongodb": "rocketchat-mongodb-1",
+                "nats": "rocketchat-nats-1",
+                "rocketchat": "rocketchat-rocketchat-1",
+            },
         }
     }
     assert _bind(block, "rocketchat") == {

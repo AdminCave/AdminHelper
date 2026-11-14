@@ -266,3 +266,45 @@ def test_alert_quality_backfill_and_downgrade(monkeypatch):
         # downgrade dropped only its own columns.
         assert {"consecutive_fails"} <= check_cols
         assert {"fail_count", "notified_status"} <= state_cols
+
+
+def test_module_tombstones_upgrade_and_downgrade(monkeypatch):
+    # kern-monitoring-20 T1: additive. A module check from before keeps its row with
+    # no hash; one tombstone per (server, module, instance, check key); the
+    # downgrade takes the table and the column away again.
+    from alembic import command
+    from sqlalchemy import exc, inspect, text
+
+    with scratch_db(monkeypatch, "tombstones") as (cfg, engine):
+        command.upgrade(cfg, "c1e3a5b7d9f0")  # just before the tombstone migration
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_checks"
+                    " (id, name, check_type, config, interval, severity, module_id)"
+                    " VALUES ('c1', 'C', 'tcp', '{}', '5m', 'critical', 'nginx')"
+                )
+            )
+        command.upgrade(cfg, "a7c9e1f3b5d7")
+        with engine.connect() as conn:
+            hashes = conn.execute(text("SELECT id, module_check_hash FROM monitor_checks")).all()
+        assert hashes == [("c1", None)]
+        insert = text(
+            "INSERT INTO monitor_module_tombstones"
+            " (id, server_id, module_id, instance_key, check_key)"
+            " VALUES (:id, 's1', 'nginx', '', 'port')"
+        )
+        with engine.begin() as conn:
+            conn.execute(insert, {"id": "t1"})
+        with pytest.raises(exc.IntegrityError), engine.begin() as conn:
+            conn.execute(insert, {"id": "t2"})
+
+        command.downgrade(cfg, "c1e3a5b7d9f0")
+        insp = inspect(engine)
+        assert "monitor_module_tombstones" not in insp.get_table_names()
+        check_cols = {c["name"] for c in insp.get_columns("monitor_checks")}
+        assert "module_check_hash" not in check_cols
+        # Paired with the negatives: the inspector reads the schema, and the
+        # downgrade dropped only what the migration added.
+        assert {"module_id", "module_check_key"} <= check_cols
+        assert "monitor_check_tombstones" in insp.get_table_names()

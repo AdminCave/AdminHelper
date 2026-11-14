@@ -49,6 +49,7 @@ from app.models import (
     MonitorServiceLog,
     MonitorState,
 )
+from app.module_sync import tombstone_module_check
 from app.scheduler import add_check, interval_timedelta, remove_check
 from app.schemas import (
     VALID_INTERVALS,
@@ -488,6 +489,8 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Check not found")
 
     tombstone_check(db, check)
+    # A module check stays deleted on the next adopt and catalog sync, too.
+    tombstone_module_check(db, check)
     db.delete(check)
     db.commit()
     # Only now: if the commit fails, the check stays and its job must keep running.

@@ -35,7 +35,9 @@ const (
 	useBearer    = "bearer"
 	useBasic     = "basic"
 	useRedisAuth = "redis_auth"
-	useHeader    = "header:"
+	// useRedisACL presents user:password to Redis as AUTH <user> <password> (ACL, Redis 6).
+	useRedisACL = "redis_acl"
+	useHeader   = "header:"
 	// usePassword hands the secret to one read command of the allowlist in an environment variable
 	// (passwordEnv), never as an argument.
 	usePassword = "password"

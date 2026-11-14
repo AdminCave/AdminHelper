@@ -132,7 +132,12 @@ def test_gitea_in_its_project_gets_its_container_and_3000():
         "runner": "docker.gitea.com/act_runner",
         "server": "docker.gitea.com/gitea",
     }
-    assert _found(block) == {"git": {"services": services}}
+    assert _found(block) == {
+        "git": {
+            "services": services,
+            "containers": {"db": "git-db-1", "runner": "git-runner-1", "server": "git-server-1"},
+        }
+    }
     assert _bind(block, "git") == {
         "container": ("git-server-1", None),
         "health": ("git-server-1", None),
