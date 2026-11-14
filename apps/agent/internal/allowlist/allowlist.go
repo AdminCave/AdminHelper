@@ -275,7 +275,7 @@ var commands = map[string][][]string{
 	// `wg showconf` (they print the private key), fail2ban-client unban|reload|set, cscli decisions
 	// add, tailscale netcheck.
 	"wg":              {{"show", "all", "latest-handshakes"}, {"show", "all", "persistent-keepalive"}},
-	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}},
+	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}, {"--test"}},
 	"cscli":           {{"bouncers", "list", "-o", "json"}},
 	"tailscale":       {{"status", "--json", "--peers=false"}},
 	// The read commands of the DNS and time views (probe, app_dns.go). Kept out: `rndc stats` (writes
@@ -284,6 +284,17 @@ var commands = map[string][][]string{
 	"unbound-control": {{"stats_noreset"}},
 	"chronyc":         {{"-c", "tracking"}},
 	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
+	// The configuration tests of the service views (probe, app_conftest.go): each reads the
+	// configuration at its default place and starts nothing. Kept out: named-checkconf -z (loads the
+	// zones), unbound-checkconf -o and a file argument, keepalived without --config-test (starts the
+	// daemon) and --config-test=FILE (writes the file), squid -k with any action but parse (signals
+	// the running copy, check among them), fail2ban-client --test with start parameters, dnsmasq
+	// without --test (starts it). fail2ban-client --test is with fail2ban-client's other calls above.
+	"named-checkconf":   {{}},
+	"unbound-checkconf": {{}},
+	"keepalived":        {{"--config-test"}},
+	"squid":             {{"-k", "parse"}},
+	"dnsmasq":           {{"--test"}},
 	// The UPS views (probe, app_ups.go): the UPS list and the variables of one UPS from the upsd on
 	// localhost, the status report of the apcupsd on localhost. Kept out: upscmd and upsrw (commands
 	// and settings to the UPS), upsmon -c (fsd shuts every client down), upsc against another host,

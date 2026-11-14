@@ -10,6 +10,10 @@ dropped because the request list was full and the share of SERVFAIL answers; abo
 warns. The share needs extended statistics (statistics-extended: yes) and at least one
 query: without them the check stays unknown. Turn extended statistics on, or the check off.
 
+Daily the agent runs `unbound-checkconf` and reports only whether the configuration loads: one
+that does not would fail the next restart or reload while the running resolver goes on, a
+warning.
+
 Not covered: a remote-control interface unbound-control cannot reach with its defaults
 (control-enable: no), per-thread counters and the cache.
 """
@@ -17,7 +21,7 @@ Not covered: a remote-control interface unbound-control cannot reach with its de
 MODULE = {
     "id": "unbound",
     "name": "Unbound",
-    "version": 1,
+    "version": 2,
     "description": "Unbound: the unit, its queries and the share of SERVFAIL answers.",
     "detect": {"units": ["unbound.service"]},
     "instance": "unit",
@@ -42,6 +46,17 @@ MODULE = {
             "interval": 300,
             "fields": ["queries", "requestlist_exceeded", "servfail_pct"],
             "rules": [{"field": "servfail_pct", "op": "gt", "value": 5, "level": "warning"}],
+        },
+        {
+            "key": "config",
+            "name": "Configuration test",
+            "sensor": "app",
+            "target": {"kind": "unit"},
+            "params": {"view": "service_config"},
+            "interval": 86400,
+            "timeout_s": 20,
+            "fields": ["config_ok"],
+            "rules": [{"field": "config_ok", "op": "eq", "value": False, "level": "warning"}],
         },
     ],
     "card": [
