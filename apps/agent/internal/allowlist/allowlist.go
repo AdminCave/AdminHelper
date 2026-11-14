@@ -326,6 +326,15 @@ var commands = map[string][][]string{
 	// Veeam Agent for Linux (probe, app_backup.go): the list of sessions. Kept out: job start, session
 	// stop, backup delete and every other veeamconfig command.
 	"veeamconfig": {{"session", "list"}},
+	// The print queues of the local CUPS (probe, app_cups.go). Kept out: lpstat -h (another server),
+	// cupsenable, cupsdisable, cancel, lpadmin and every other command that changes a queue.
+	"lpstat": {{"-p"}},
+	// The Windows views (probe, winviews_windows.go): the inbound replication links of this domain
+	// controller alone, and the sites and application pools of IIS (appcmd.exe from
+	// %windir%\system32\inetsrv, by its base name). Kept out: `repadmin /showrepl *` and every other
+	// DC, /replicate, /syncall and every other repadmin command, appcmd start|stop|set|add|delete.
+	"repadmin": {{"/showrepl", "localhost", "/csv"}},
+	"appcmd":   {{"list", "site", "/xml"}, {"list", "apppool", "/xml"}},
 	// The repository views (probe, app_repo.go): the newest snapshot, without a lock and without writing
 	// restic's cache; the repository and its password come in the environment. Kept out: restic
 	// backup|forget|prune|unlock|check and any call that locks, borg create|prune|compact|delete|

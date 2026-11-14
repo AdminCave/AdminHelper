@@ -481,6 +481,16 @@ def test_a_false_marker_or_a_stopped_unit_alone_finds_nothing():
     assert match_inventory(inv, CATALOG) == {}
 
 
+def test_a_windows_service_without_suffix_finds_its_module_under_its_own_name():
+    # The agent lists a Windows service by its bare name and asks the service manager by it.
+    inv = clean_inventory(
+        _block(units=[_unit("nginx"), _unit("example", state="inactive"), _unit("nginxd")])
+    )
+    assert match_inventory(inv, CATALOG) == {
+        ("nginx", "nginx"): {"unit": "nginx"},
+    }
+
+
 @pytest.mark.parametrize("name", ["-db", "a" * 121, "db container"])
 def test_a_name_unfit_for_a_credential_reference_makes_no_instance(name):
     inv = clean_inventory(_block(containers=[_container(name, "postgres")]))
