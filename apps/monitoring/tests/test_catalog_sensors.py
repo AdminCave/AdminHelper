@@ -513,6 +513,80 @@ def test_only_dns_goes_without_the_target_it_could_have():
     assert "sensor 'http' needs a target" in _only_error(_http_module({}, target=None))
 
 
+def _sensor_module(sensor, params, field, target=None):
+    check = {
+        "key": "svc",
+        "name": "Service",
+        "sensor": sensor,
+        "params": params,
+        "interval": 300,
+        "fields": [field],
+    }
+    if target:
+        check["target"] = target
+    raw = {
+        "id": "svc",
+        "name": "Service",
+        "version": 1,
+        "detect": {"units": ["svc.service"]},
+        "instance": "unit",
+        "checks": [check],
+    }
+    return load_catalog([("svc", raw)])
+
+
+def _proto(params):
+    return _sensor_module("proto", params, "ok", {"kind": "unit", "port_hint": 993})
+
+
+@pytest.mark.parametrize("protocol", ["smtp", "imap", "pop3", "ldap", "redis", "banner"])
+def test_a_proto_check_speaks_inside_tls_where_the_agent_does(protocol):
+    assert _proto({"protocol": protocol, "tls": True}).errors == ()
+
+
+@pytest.mark.parametrize("protocol", ["auto", "postgres", "fastcgi", "haproxy"])
+def test_a_proto_check_takes_no_tls_where_the_agent_does_not(protocol):
+    assert "is not spoken inside TLS" in _only_error(_proto({"protocol": protocol, "tls": True}))
+
+
+def test_tls_and_starttls_exclude_each_other():
+    error = _only_error(_proto({"protocol": "imap", "tls": True, "starttls": True}))
+    assert "tls and starttls exclude each other" in error
+
+
+def test_tls_is_set_or_left_out():
+    assert "set it or leave it out" in _only_error(_proto({"protocol": "imap", "tls": None}))
+    assert _only_error(_proto({"protocol": "imap", "tls": "yes"}))
+    assert _proto({"protocol": "imap", "tls": False}).errors == ()
+
+
+def test_tls_left_out_keeps_the_params_of_a_proto_check():
+    # A default of false would enter the stored params and change the hash of every proto
+    # check of the catalog.
+    catalog = _proto({"protocol": "imap"})
+    assert catalog.errors == ()
+    assert "tls" not in catalog.modules["svc"].checks[0].params
+
+
+def test_a_socket_path_fits_into_sun_path():
+    path = "/" + "s" * 106
+    assert _sensor_module("unixsocket", {"path": path}, "connected").errors == ()
+    error = _only_error(_sensor_module("unixsocket", {"path": path + "s"}, "connected"))
+    assert "at most 107 characters" in error
+
+
+@pytest.mark.parametrize(
+    "name", ["_ldap._tcp.example.org", "_kerberos._udp.example.org.", "localhost"]
+)
+def test_a_dns_check_asks_the_names_of_services(name):
+    assert _dns_module(params={"name": name}).errors == ()
+
+
+@pytest.mark.parametrize("name", ["-x.example.org", "a..b", "a b", "ex\u00e4mple.org", "x" * 64])
+def test_a_dns_check_asks_no_other_name(name):
+    assert _only_error(_dns_module(params={"name": name}))
+
+
 def _host_module(**check):
     raw_check = {
         "key": "arrays",

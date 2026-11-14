@@ -122,7 +122,12 @@ def test_both_health_checks_ask_the_database_server_too_on_8069_in_plain_http():
 
 def test_odoo_in_its_project_gets_its_container_and_8069():
     block = _block(COMPOSE)
-    assert _found(block) == {"erp": {"services": {"db": "postgres", "odoo": "odoo"}}}
+    assert _found(block) == {
+        "erp": {
+            "services": {"db": "postgres", "odoo": "odoo"},
+            "containers": {"db": "erp-db-1", "odoo": "erp-odoo-1"},
+        }
+    }
     assert _bind(block, "erp") == {
         "container": ("erp-odoo-1", None),
         "health": ("erp-odoo-1", None),

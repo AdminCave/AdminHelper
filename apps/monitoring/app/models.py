@@ -140,6 +140,9 @@ class MonitorCheck(Base):
     module_id = Column(String, nullable=True, index=True)
     module_instance = Column(String, nullable=True)
     module_check_key = Column(String, nullable=True)
+    # The hash of the catalog definition the module check was made from: a sync that finds
+    # another offers the new definition as an update. NULL for a check from before it.
+    module_check_hash = Column(String, nullable=True)
     # Evaluated and shown, never alerted: a module check the admin took over quietly.
     silent = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, server_default=utc_now_sql())
@@ -389,6 +392,29 @@ class MonitorCheckTombstone(Base):
     )
     server_id = Column(String, nullable=False, index=True)
     def_id = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=utc_now_sql())
+
+
+class MonitorModuleTombstone(Base):
+    """A module check the admin deleted on one server, so neither the catalog sync nor
+    an adopt creates (server, module, instance, check key) again."""
+
+    __tablename__ = "monitor_module_tombstones"
+    __table_args__ = (
+        UniqueConstraint(
+            "server_id",
+            "module_id",
+            "instance_key",
+            "check_key",
+            name="uq_module_tombstone_server_module_instance_check",
+        ),
+    )
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, nullable=False, index=True)
+    module_id = Column(String, nullable=False)
+    instance_key = Column(String, nullable=False)
+    check_key = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=utc_now_sql())
 
 

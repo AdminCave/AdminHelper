@@ -1109,7 +1109,9 @@ class TestProbeConfig:
     def test_credential_refs_of_instance_keys_are_accepted(self, ref):
         validate_check_config("probe", _probe(credential={"ref": ref, "use": "basic"}))
 
-    @pytest.mark.parametrize("use", ["bearer", "basic", "redis_auth", "header:X-Api-Key"])
+    @pytest.mark.parametrize(
+        "use", ["bearer", "basic", "redis_auth", "redis_acl", "header:X-Api-Key"]
+    )
     def test_credential_uses_of_the_catalog_are_accepted(self, use):
         ref = "paperless/paperless/default"
         validate_check_config("probe", _probe(credential={"ref": ref, "use": use}))

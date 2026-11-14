@@ -90,7 +90,12 @@ def test_the_image_in_a_compose_project_gets_the_container_check_on_moodle():
                 "moodle": "erseco/alpine-moodle",
                 "postgres": "postgres",
                 "redis": "redis",
-            }
+            },
+            "containers": {
+                "moodle": "lms-moodle-1",
+                "postgres": "lms-postgres-1",
+                "redis": "lms-redis-1",
+            },
         }
     }
     config, why = probe_config(MODULE, CHECKS["container"], "lms", found["lms"], COMPOSE)
