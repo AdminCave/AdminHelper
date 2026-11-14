@@ -43,8 +43,10 @@ SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/
 Doku: → T7
 
-### T4 — Katalog: Felder und Ziele der neuen Ansichten  [ ]
+### T4 — Katalog: Felder und Ziele der neuen Ansichten  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @f71fe8782 2026-11-14T18:16:52+01:00
+Review: approve (.ah-out/review/kern-monitoring-11/T4.verdict.json)
 Änderung: `APP_VIEW_FIELDS` und `APP_VIEW_TARGETS` um die Ansichten aus T1–T3, gleich wie im Agent.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py
 Doku: → T7

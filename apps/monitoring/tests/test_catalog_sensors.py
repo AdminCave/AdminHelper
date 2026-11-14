@@ -10,6 +10,8 @@ the agent's allowlist, the one kind of target that view is bound to, and only it
 (R-1228). The http sensor's expect and scheme auto, the dns sensor's optional target
 (kern-monitoring-30)."""
 
+from typing import get_args
+
 import pytest
 
 from app.catalog import load_catalog
@@ -20,6 +22,7 @@ from app.catalog.sensors import (
     OPNSENSE_VIEW_FIELDS,
     SENSOR_FIELDS,
     SENSOR_TARGETS,
+    AppParams,
 )
 
 
@@ -159,6 +162,11 @@ def test_an_app_check_takes_no_target_outside_its_views(kind):
     assert f"sensor 'app' cannot target {kind!r}" in error
 
 
+def test_a_mailcow_view_reads_only_a_container():
+    error = _only_error(_app_module(params={"view": "mailcow_queue"}, fields=["total"], rules=[]))
+    assert "view 'mailcow_queue' of sensor 'app' targets only ['container'], not 'unit'" in error
+
+
 def test_an_app_check_needs_a_target():
     assert "sensor 'app' needs a target" in _only_error(_app_module(target=None))
 
@@ -167,6 +175,7 @@ def test_the_app_fields_and_targets_are_exactly_those_of_its_views():
     assert SENSOR_FIELDS["app"] == frozenset().union(*APP_VIEW_FIELDS.values())
     assert SENSOR_TARGETS["app"] == frozenset().union(*APP_VIEW_TARGETS.values())
     assert APP_VIEW_FIELDS.keys() == APP_VIEW_TARGETS.keys()
+    assert set(get_args(AppParams.model_fields["view"].annotation)) == APP_VIEW_FIELDS.keys()
 
 
 def test_the_app_views_are_those_the_agent_returns():
@@ -348,6 +357,27 @@ def test_the_app_views_are_those_the_agent_returns():
         "wsus": ["content_free_bytes", "content_free_pct", "errors_24h"],
         "cups_queues": ["queues", "queues_disabled"],
         "veeam_windows": ["last_result", "last_run_age_s", "runs"],
+        "postfix_queue": ["active", "capped", "deferred", "hold", "incoming", "total"],
+        "postfix_queue_age": ["age_read", "oldest_age_s"],
+        "dovecot_status": ["errors_1h", "services", "services_at_limit", "warnings_1h"],
+        "mailcow_queue": ["active", "capped", "deferred", "hold", "incoming", "total"],
+        "mailcow_watchdog": ["last_age_s", "logged", "services", "services_failing"],
+        "piler_status": ["archived", "last_age_s"],
+        "clamav_db": ["age_s", "version"],
+        "spamd_ping": ["reachable"],
+        "opendkim_keys": ["keys", "keys_failed"],
+        "samba_drs": [
+            "last_success_age_s",
+            "links",
+            "links_failing",
+            "outbound_failing",
+            "partners",
+        ],
+        "samba_fsmo": ["roles", "roles_without_owner"],
+        "samba_member": ["config_ok", "dc_ok", "open_files", "sessions", "tcons", "winbind_ok"],
+        "samba_trust": ["trust_ok"],
+        "lmn_devices": ["import_completed", "import_errors", "import_pending", "last_import_age_s"],
+        "lmn_linbo": ["images", "torrents_stale"],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -403,6 +433,21 @@ def test_the_app_views_are_those_the_agent_returns():
         "wsus": ["unit"],
         "cups_queues": ["unit"],
         "veeam_windows": ["unit"],
+        "postfix_queue": ["unit"],
+        "postfix_queue_age": ["unit"],
+        "dovecot_status": ["unit"],
+        "mailcow_queue": ["container"],
+        "mailcow_watchdog": ["container"],
+        "piler_status": ["unit"],
+        "clamav_db": ["unit"],
+        "spamd_ping": ["unit"],
+        "opendkim_keys": ["unit"],
+        "samba_drs": ["unit"],
+        "samba_fsmo": ["unit"],
+        "samba_member": ["unit"],
+        "samba_trust": ["unit"],
+        "lmn_devices": ["unit"],
+        "lmn_linbo": ["unit"],
     }
 
 
