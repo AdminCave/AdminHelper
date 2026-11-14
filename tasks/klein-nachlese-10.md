@@ -10,8 +10,10 @@ Heavy: linux-full — apps/agent (Agent-Checks dovecot_status und lmn_linbo)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Agent: Kommentar, Test, Body nur mit body_match lesen  [ ]
+### T1 — Agent: Kommentar, Test, Body nur mit body_match lesen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/app_samba_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a6e860ab6 2026-11-15T00:56:00+01:00
+Review: approve (.ah-out/review/klein-nachlese-10/T1.verdict.json)
 Beweis: R-1473 (reviewer kern-monitoring-14 T5), R-1497 (reviewer kern-monitoring-11 T8 @72644422a), R-1458 (review kern-monitoring-30 @a4a220b9e) 2026-11-14
 Änderung: Kommentarzeile in `sensor_host.go` auf etwa 100 Spalten umbrechen. `app_samba_test.go`: der Fall „smbstatus fehlt“ prüft `errors.Is(err, ErrUnsupported)`. `fetchExpecting` liest den Body bei `expect` ohne `body_match` nicht; `sensor_net_test.go`: die 200-ms-Frist bekommt den Kommentar nach `testing.md` (Grund der festen Frist). Test zum Body-Lesen, falls `sensor_http.go` ihn heute liest (Gegenprobe rot).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
