@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Mail, Verzeichnis und Schule — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-11 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-11 · Review: pro Task
 Spec: docs/features/kern-monitoring-11.md (Roadmap R-1239, R-1240)
 Heavy: linux-full — neue Ansichten und Freigabeliste im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
