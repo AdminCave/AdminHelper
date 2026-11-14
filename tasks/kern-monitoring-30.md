@@ -83,3 +83,4 @@ Task-Review: am Ende
 Abhängt von: T6, T7
 
 ## Entscheidungen
+- Kevin 2026-11-14: Offene Frage 1 wie empfohlen: dns-Check mit `localhost` A (nur lokal).
