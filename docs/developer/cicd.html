@@ -518,8 +518,8 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
           <p><code>release.yml</code> läuft auf Tag <code>v*</code> und hängt die gebauten Artefakte an ein <strong>Draft</strong>-Release (nicht veröffentlicht, bis ein Mensch „Publish" drückt). Der Draft ist als &bdquo;Pre-release&ldquo; markiert, &bdquo;Publish&ldquo; macht daraus also ein Beta, nie &bdquo;Latest&ldquo;:</p>
           <ul>
             <li>Desktop-Client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF-Binary</li>
-            <li>Go-Agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>-Binaries</li>
-            <li>Agent-Paket-Repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signiertes apt+rpm-Repo, sobald <code>REPO_GPG_PRIVATE_KEY</code> gesetzt) &mdash; zus&auml;tzlich der Archive-Keyring <code>adminhelper-archive-keyring.gpg</code> als eigenst&auml;ndiges Asset (zweiter Kanal, um seinen Fingerprint gegen <code>SHA256SUMS</code> + minisign zu pr&uuml;fen)</li>
+            <li>Go-Agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>/<code>freebsd</code>-Binaries (<code>adminhelper-agent-freebsd-x86_64</code>, statisch)</li>
+            <li>Agent-Paket-Repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signiertes apt+rpm-Repo und, unter <code>freebsd/</code>, das signierte pkg-Repo f&uuml;r FreeBSD&nbsp;14 und&nbsp;15 mit <code>adminhelper-agent</code> und dem OPNsense-Plugin <code>os-adminhelper</code>) &mdash; zus&auml;tzlich der Archive-Keyring <code>adminhelper-archive-keyring.gpg</code> als eigenst&auml;ndiges Asset (zweiter Kanal, um seinen Fingerprint gegen <code>SHA256SUMS</code> + minisign zu pr&uuml;fen)</li>
             <li>Desktop-Client Windows-<code>.msi</code> (best-effort &ndash; blockiert das Release nicht, wenn der Windows-Build fehlschlägt)</li>
             <li><code>SHA256SUMS</code> über alle Assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign-Signatur), sobald scharf geschaltet</li>
           </ul>
@@ -588,7 +588,7 @@ Ein Release-Image <code>X.Y.Z</code> wird gegen genau die Identit&auml;t gepr&uu
           <p><code>release.yml</code> baut zus&auml;tzlich ein <strong>GPG-signiertes</strong> apt-/rpm-Repo (<code>apps/agent/build-repo.sh</code>: <code>InRelease</code>/<code>Release.gpg</code>, <code>rpm --addsign</code> + <code>repomd.xml.asc</code>) und h&auml;ngt es als ein Asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> ans Release &ndash; in <code>SHA256SUMS</code> + minisign mit abgedeckt. Der Server liefert es &uuml;ber die certless Repo-Plane des Gateways (<code>:8445</code>) aus; <code>install.sh</code>/<code>update.sh</code> ziehen das Asset nach <code>./repo</code>. Agent-Hosts vertrauen dem <strong>GPG-Fingerprint</strong> (Vertrauenswurzel), nicht dem Transport (siehe <a href="../admin/agent-deployment.html">Agent-Deployment</a>).</p>
           <div class="callout">
             <div><div class="callout-title">Scharfschalten (Maintainer, einmalig)</div>
-            <p>Ohne konfigurierten Schl&uuml;ssel &uuml;berspringt <code>release.yml</code> das Repo-Asset (mit Warnung) und <code>/repo</code> liefert <code>404</code> &ndash; kein Bruch. Zum Aktivieren einen <strong>passwortlosen</strong> GPG-Schl&uuml;ssel erzeugen:</p>
+            <p>Ohne <code>REPO_GPG_PRIVATE_KEY</code> oder mit einem Schl&uuml;ssel, dessen Fingerprint nicht der gepinnte ist, schl&auml;gt <code>release.yml</code> fehl. Zum Aktivieren einen <strong>passwortlosen</strong> GPG-Schl&uuml;ssel erzeugen:</p>
 <pre><code># 1) Passwortlosen Signaturschluessel erzeugen
 gpg --batch --passphrase '' \
     --quick-generate-key "AdminHelper Repo &lt;repo@admincave.com&gt;" rsa3072 sign 0
@@ -611,6 +611,19 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
             </ol>
             </div>
           </div>
+
+          <h2>pkg-Signatur (FreeBSD und OPNsense)</h2>
+          <p>Das pkg-Repo unter <code>freebsd/&lt;ABI&gt;/</code> im Asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> baut <code>apps/agent/build-pkg.sh</code> mit <code>pkg create</code> und <code>pkg repo</code>. <code>pkg</code> selbst baut <code>scripts/release/build-pkg-tool.sh</code> auf dem Ubuntu-Runner aus den Quellen von <code>freebsd/pkg</code> (Tag und Commit gepinnt, der Commit wird nach dem Klonen gepr&uuml;ft). frpc kommt als <code>frp_&lt;v&gt;_freebsd_amd64.tar.gz</code> aus dem frp-Release, gepr&uuml;ft gegen <code>FRP_SHA256_FREEBSD_AMD64</code>; den Pin vergleicht der Job <code>frp-consistency</code> mit <code>scripts/tests/freebsd_box.sh</code>. Der Job <code>pkg-repo</code> in <code>ci.yml</code> f&auml;hrt auf jedem PR <code>scripts/tests/pkg_repo_build_test.sh</code>: beide ABIs mit einem Wegwerf-Schl&uuml;ssel bauen, den Katalog mit <code>pkg update</code> gegen dessen &ouml;ffentlichen Teil annehmen und gegen einen fremden ablehnen.</p>
+          <p>Signiert wird mit dem RSA-Schl&uuml;ssel aus dem Secret <code>PKG_REPO_SIGNING_KEY</code> (PKCS#8-PEM, <code>BEGIN PRIVATE KEY</code>). Sein &ouml;ffentlicher Teil liegt als <code>apps/agent/freebsd/adminhelper-pkg.pub</code> im Repo, das Plugin liefert ihn aus, und FreeBSD-Hosts pinnen ihn (<a href="../admin/agent-deployment.html#freebsd">Agent-Deployment &rarr; FreeBSD</a>). Fehlt das Secret oder passt sein &ouml;ffentlicher Teil nicht zu dieser Datei, schl&auml;gt <code>release.yml</code> fehl. Die Schl&uuml;sseldatei liegt nur w&auml;hrend des Schritts in einem eigenen Verzeichnis und wird an seinem Ende gel&ouml;scht.</p>
+          <ul>
+            <li>SHA-256 der Datei <code>adminhelper-pkg.pub</code>, gegen die Hosts vor dem Installieren pr&uuml;fen: <code>75ccb5ed23cc2ea60ce9b945143bcb16e588b7994c351c21f2423726c56be804</code></li>
+            <li>SHA-256 der DER-Form des &ouml;ffentlichen Schl&uuml;ssels, die <code>release.yml</code> mit dem Secret vergleicht: <code>bc8650e0e98a8554f4224c7d6b016eeda08e2a615343c05a23c33798c51dddd4</code></li>
+          </ul>
+<pre><code># Schluessel erzeugen und als Secret hinterlegen (Maintainer, einmalig)
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out adminhelper-pkg.key
+gh secret set PKG_REPO_SIGNING_KEY &lt; adminhelper-pkg.key
+openssl pkey -in adminhelper-pkg.key -pubout -out apps/agent/freebsd/adminhelper-pkg.pub
+sha256sum apps/agent/freebsd/adminhelper-pkg.pub   # neuer Wert fuer diese Seite und agent-deployment.html</code></pre>
 
           <h2>Version-Stellen</h2>
           <p>Bei einem Release muss die neue Version an mehreren Stellen parallel gesetzt werden &ndash; der Tag allein reicht nicht:</p>

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -60,6 +61,7 @@ func TestTheTCPSensorsDialThroughTheGuard(t *testing.T) {
 		onLoopback("tls", 0, nil),
 		onLoopback("proto", 0, map[string]any{"protocol": "smtp"}),
 		onLoopback("proto", 0, map[string]any{"protocol": "auto"}),
+		onLoopback("dns", 0, map[string]any{"name": "localhost"}),
 	} {
 		t.Run(fmt.Sprint(p.Sensor, p.Params), func(t *testing.T) {
 			srv := listen(t, func(c *fakeConn) { c.f.record("accepted") })
@@ -152,6 +154,72 @@ func TestHTTPSensorReadsStatusTimeAndData(t *testing.T) {
 	want := "GET /health?full=1,GET /health,HEAD /health,GET /text,GET /two,GET /down,GET /secret,GET /forbidden,GET /away,GET /,GET //192.0.2.1/x"
 	if strings.Join(methods, ",") != want {
 		t.Errorf("the server saw %v\nwant %s", methods, want)
+	}
+}
+
+func TestHTTPSensorComparesAShortAnswerWithoutSendingIt(t *testing.T) {
+	srv := localServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/true":
+			_, _ = fmt.Fprint(w, " true\r\n")
+		case "/false":
+			_, _ = fmt.Fprint(w, "false")
+		case "/json":
+			_, _ = fmt.Fprint(w, `{"status":"true"}`)
+		case "/long":
+			_, _ = fmt.Fprint(w, "true"+strings.Repeat(" ", maxExpectBody))
+		case "/edge":
+			_, _ = fmt.Fprint(w, "true"+strings.Repeat(" ", maxExpectBody-4))
+		case "/down":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, "true")
+		}
+	}))
+	ctx := context.Background()
+	port := portOf(t, srv.URL)
+	probe := func(path, expect string, fields ...string) (map[string]any, error) {
+		return httpSensor(ctx, onLoopback("http", port, map[string]any{"path": path, "expect": expect}, fields...), "")
+	}
+
+	for _, c := range []struct {
+		path string
+		want bool
+	}{{"/true", true}, {"/false", false}, {"/json", false}, {"/long", false}, {"/edge", true}, {"/down", true}} {
+		got, err := probe(c.path, "true", "status_code", "body_match")
+		if err != nil || got["body_match"] != c.want {
+			t.Errorf("%s = %v, %v; want body_match %v", c.path, got, err, c.want)
+		}
+		for k, v := range got {
+			if s, ok := v.(string); ok || (k != "status_code" && k != "duration_ms" && k != "body_match" && k != "tls") {
+				t.Errorf("%s: value %s = %#v, want no part of the body", c.path, k, s)
+			}
+		}
+	}
+	got, err := probe("/json", "OK", "data.status", "body_match")
+	data, _ := got["data"].(map[string]any)
+	if err != nil || got["body_match"] != false || data["status"] != "true" {
+		t.Errorf("expect with data = %v, %v; want both from one answer", got, err)
+	}
+
+	for _, c := range []struct {
+		name   string
+		params map[string]any
+		fields []string
+	}{
+		{"an empty expect", map[string]any{"expect": ""}, nil},
+		{"an expect with a space", map[string]any{"expect": "all good"}, nil},
+		{"an expect with a control character", map[string]any{"expect": "ok\n"}, nil},
+		{"a long expect", map[string]any{"expect": strings.Repeat("ä", 65)}, nil},
+		{"an expect of another type", map[string]any{"expect": true}, nil},
+		{"an expect with HEAD", map[string]any{"expect": "true", "method": "HEAD"}, nil},
+		{"body_match without expect", nil, []string{"body_match"}},
+	} {
+		if _, err := httpSensor(ctx, onLoopback("http", port, c.params, c.fields...), ""); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", c.name, err)
+		}
+	}
+	if _, err := probe("/true", strings.Repeat("ä", 64), "body_match"); err != nil {
+		t.Errorf("an expect of 64 characters = %v, want it taken", err)
 	}
 }
 
@@ -308,8 +376,108 @@ func TestHTTPSensorSpeaksHTTPSWithoutCheckingTheCertificate(t *testing.T) {
 		t.Errorf("https = %v, %v; want 200 despite a certificate of an unknown root", got, err)
 	}
 	p.Target.Scheme = "http"
-	if got, err := httpSensor(ctx, p, ""); err != nil || got["status_code"] != 400 {
-		t.Errorf("http to a server of https = %v, %v; want its 400", got, err)
+	if got, err := httpSensor(ctx, p, ""); err != nil || got["status_code"] != 400 || got["tls"] != false {
+		t.Errorf("http to a server of https = %v, %v; want its 400 without tls", got, err)
+	}
+}
+
+func TestHTTPSensorAsksThePortWhetherItSpeaksTLS(t *testing.T) {
+	ctx := context.Background()
+	plain := portOf(t, localServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, "ok")
+	})).URL)
+	secure := quietHTTPS(t, newPKI(t).chain)
+	for _, c := range []struct {
+		name   string
+		port   int
+		scheme string
+		tls    bool
+	}{{"plain text", plain, "auto", false}, {"TLS", secure, "auto", true}, {"https", secure, "https", true}, {"no scheme", plain, "", false}} {
+		p := onLoopback("http", c.port, map[string]any{"expect": "ok"}, "status_code", "tls")
+		p.Target.Scheme = c.scheme
+		got, err := httpSensor(ctx, p, "")
+		if err != nil || got["status_code"] != 200 || got["tls"] != c.tls {
+			t.Errorf("%s = %v, %v; want 200 with tls %v", c.name, got, err, c.tls)
+		}
+	}
+}
+
+// rawServer accepts connections on loopback and hands each to serve.
+func rawServer(t *testing.T, serve func(net.Conn)) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { defer c.Close(); serve(c) }()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// readHello reads the client's whole first TLS record before a server answers: closing with
+// unread data makes Windows reset the connection, and the reset drops the answer at the client.
+func readHello(c net.Conn) {
+	head := make([]byte, 5)
+	if _, err := io.ReadFull(c, head); err != nil {
+		return
+	}
+	_, _ = io.CopyN(io.Discard, c, int64(head[3])<<8|int64(head[4]))
+}
+
+func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
+	stubHost(t, &fakeHost{live: true})
+	ctx := context.Background()
+	// Each server starts after the last snapshot of the listeners: age it, or the guard sees none.
+	age := func() {
+		snapshot.Lock()
+		snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+		snapshot.Unlock()
+	}
+	check := func(port int) (bool, error) {
+		age()
+		ep, err := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return speaksTLS(ctx, NewGuard(ep.extra...), ep)
+	}
+	for _, c := range []struct {
+		name  string
+		serve func(net.Conn)
+		want  bool
+	}{
+		{"an answer of HTTP", func(c net.Conn) {
+			readHello(c)
+			_, _ = c.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
+		}, false},
+		{"silence", func(c net.Conn) { _, _ = io.Copy(io.Discard, c) }, false},
+		{"a closed connection", func(c net.Conn) { _, _ = c.Read(make([]byte, 16)) }, true},
+		{"an alert", func(c net.Conn) {
+			readHello(c)
+			_, _ = c.Write([]byte{21, 3, 3, 0, 2, 2, 40})
+		}, true},
+	} {
+		got, err := check(rawServer(t, c.serve))
+		if err != nil || got != c.want {
+			t.Errorf("%s = %v, %v; want %v", c.name, got, err, c.want)
+		}
+	}
+
+	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	port := rawServer(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })
+	age()
+	ep, _ := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
+	if _, err := speaksTLS(short, NewGuard(ep.extra...), ep); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("silence until the deadline = %v, want the probe's timeout", err)
 	}
 }
 
@@ -405,7 +573,7 @@ func TestTLSSensorReadsTheCertificateOfTheServer(t *testing.T) {
 	}
 	want := map[string]any{
 		"not_after": pki.leaf.NotAfter.Unix(), "days_left": int64(30), "chain_ok": true, "hostname_ok": true,
-		"issuer": "CN=Test Intermediate,O=AdminHelper",
+		"issuer": "CN=Test Intermediate,O=AdminHelper", "hours_left": int64(732), "lifetime_pct": 99.9,
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("tls = %v\nwant %v", got, want)
@@ -429,8 +597,13 @@ func TestTLSSensorReadsTheCertificateOfTheServer(t *testing.T) {
 
 	stubNow(t, start.Add(40*24*time.Hour))
 	got, err = tlsSensor(ctx, onLoopback("tls", port, nil), "")
-	if err != nil || got["chain_ok"] != false || got["days_left"] != int64(-10) {
-		t.Errorf("after expiry = %v, %v; want the chain broken and -10 days (9.5 days ago)", got, err)
+	if err != nil || got["chain_ok"] != false || got["days_left"] != int64(-10) || got["hours_left"] != int64(-228) || got["lifetime_pct"] != 0.0 {
+		t.Errorf("after expiry = %v, %v; want the chain broken, -10 days, -228 hours (9.5 days ago) and 0 %%", got, err)
+	}
+	stubNow(t, start.Add(27*24*time.Hour+10*time.Hour+30*time.Minute))
+	got, err = tlsSensor(ctx, onLoopback("tls", port, nil), "")
+	if err != nil || got["hours_left"] != int64(73) || got["lifetime_pct"] != 10.0 {
+		t.Errorf("73.5 hours of 733 left = %v, %v; want 73 hours and 10.0 %%", got, err)
 	}
 	stubNow(t, start)
 	stubRoots(t, nil)
@@ -641,7 +814,7 @@ func TestDNSSensorTakesItsParams(t *testing.T) {
 	ctx := context.Background()
 	asked := stubLookup(t, 1, nil)
 	withTarget := dnsProbe(map[string]any{"name": "example.org"})
-	withTarget.Target = &Target{Kind: kindLoopback, PortHint: 53}
+	withTarget.Target = &Target{Kind: kindLoopback}
 	withCredential := dnsProbe(map[string]any{"name": "example.org"})
 	withCredential.Credential = &Credential{Ref: "c1", Use: "bearer"}
 	for _, c := range []struct {
@@ -660,7 +833,7 @@ func TestDNSSensorTakesItsParams(t *testing.T) {
 		{"rrtype ANY", dnsProbe(map[string]any{"name": "example.org", "rrtype": "ANY"})},
 		{"rrtype in lower case", dnsProbe(map[string]any{"name": "example.org", "rrtype": "a"})},
 		{"another param", dnsProbe(map[string]any{"name": "example.org", "server": "192.0.2.53"})},
-		{"a target", withTarget},
+		{"a target without a port", withTarget},
 		{"a credential", withCredential},
 	} {
 		if _, err := dnsSensor(ctx, c.p, ""); !errors.Is(err, ErrInvalid) {
@@ -680,3 +853,20 @@ func TestDNSSensorTakesItsParams(t *testing.T) {
 
 // lookupDNS0 is the resolver of the agent, whatever a test put in.
 var lookupDNS0 = lookupDNS
+
+func TestLifetimePctOfACertificateWithoutALifetime(t *testing.T) {
+	for _, c := range []struct {
+		left, lifetime time.Duration
+		want           float64
+	}{
+		{time.Hour, 0, 0},
+		{time.Hour, -time.Hour, 0},
+		{-time.Hour, 10 * time.Hour, 0},
+		{3 * time.Hour, 8 * time.Hour, 37.5},
+		{time.Hour, 3 * time.Hour, 33.3},
+	} {
+		if got := lifetimePct(c.left, c.lifetime); got != c.want {
+			t.Errorf("lifetimePct(%s, %s) = %v, want %v", c.left, c.lifetime, got, c.want)
+		}
+	}
+}

@@ -1,0 +1,56 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# FRP: Ergebnis des Policy-Abgleichs nach Schlüssel-Erneuerung — Task-Ledger
+Status: erledigt · Branch: feature/kern-frp-7 · Review: am Ende
+Spec: docs/features/kern-frp-7.md (Roadmap R-1437)
+Heavy: none — additives Antwortfeld und UI-Hinweis; kein Stack-, Gateway- oder FRP-Datenpfad geändert
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+### T1 — Server: Rotation meldet policySynced  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/servers/router.py, apps/server/app/modules/servers/schemas.py, apps/server/tests/test_servers_frp_key_rotate.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c7af85f78 2026-11-14T07:20:53+01:00
+Review: am Ende (Branch-Review)
+Änderung: R-1437. `sync_policy` gibt `True`/`False` zurück; `rotate_frp_key` antwortet zusätzlich `policySynced`.
+Test: Schreiben gelingt → `true`; `write_frps_policy` scheitert → `200`, Generation erhöht, `policySynced: false`.
+OpenAPI-Snapshot nachziehen.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_frp_key_rotate.py tests/test_openapi_snapshot.py
+Doku: → T3
+
+### T2 — Desktop: Warnung bei nicht geschriebener Policy  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/frp.ts, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.svelte, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6f9118a4a 2026-11-14T07:27:01+01:00
+Review: am Ende (Branch-Review)
+Änderung: R-1437. `rotateKey` liefert `{ generation, policySynced }`; bei `policySynced === false` eine Warnung
+(DE+EN) statt der Erfolgsmeldung. Test für beide Fälle.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/TunnelsTab.test.ts
+Doku: → T3
+Abhängt von: T1
+
+### T3 — Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-frp-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c991624aa 2026-11-14T07:32:13+01:00
+Review: am Ende (Branch-Review)
+Änderung: Antwortfeld `policySynced` in der API-Referenz; ein Satz zur Warnung auf der Admin-Seite FRP-Tunnel;
+Fragment unter `### Changed`.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die genannten Dateien
+Task-Review: am Ende
+Abhängt von: T2
+
+### T4 — Abschlussprüfung: Testfrist und Warntext  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/TunnelsTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e5d45e3e1 2026-11-14T07:43:39+01:00
+Review: am Ende (Branch-Review)
+Änderung: reviewer branch (wichtig): `waitFor` im neuen Test mit `{ timeout: 30_000 }` (testing.md „Fristen“).
+security branch (Nit): Warntext DE+EN und Admin-Doku sagen „bis ein Abgleich gelingt“ statt „bis zum nächsten
+Abgleich“; ein dauerhafter Schreibfehler hält die alte Generation sonst unbemerkt gültig.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/TunnelsTab.test.ts
+Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Abhängt von: T3
+
+## Entscheidungen
+- Kevin 2026-11-14: Variante (a) `policySynced` plus Warnung in der UI.

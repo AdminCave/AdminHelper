@@ -78,6 +78,9 @@ var classes = map[string]string{
 	// A UPS name as `upsc -l` lists it (probe's upsNamePattern): no '@' or ':', so a call with it names
 	// no other host or port.
 	"upsname": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
+	// The user of a unit pm2-<user> (probe's pm2Unit, useradd's NAME_REGEX), any but root: r, ro and
+	// roo, a name on from root, or one that leaves root earlier.
+	"pmuser": `root[a-z0-9_-]+|r(?:o(?:o[a-su-z0-9_-]|[a-np-z0-9_-])|[a-np-z0-9_-])[a-z0-9_-]*|r|ro|roo|[a-qs-z_][a-z0-9_-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -120,6 +123,14 @@ var mariadbCalls = func() [][]string {
 			"FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'THREADS_CONNECTED'",
 		"SHOW ALL SLAVES STATUS",
 		"SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS size_bytes FROM information_schema.TABLES",
+		"SELECT (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'ABORTED_CONNECTS') " +
+			"AS aborted_connects, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS " +
+			"WHERE VARIABLE_NAME = 'CONNECTION_ERRORS_MAX_CONNECTIONS') AS connection_errors_max_connections",
+		"SELECT (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_VARIABLES WHERE VARIABLE_NAME = 'WSREP_ON') " +
+			"AS wsrep_on, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_CLUSTER_STATUS') " +
+			"AS cluster_status, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_READY') " +
+			"AS ready, (SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'WSREP_CLUSTER_SIZE') " +
+			"AS cluster_size",
 	} {
 		calls = append(calls, []string{"--host=localhost", "--protocol=socket", "--batch", "--column-names",
 			"--connect-timeout=5", "--execute=SET STATEMENT max_statement_time=5 FOR " + query})
@@ -140,6 +151,9 @@ var postgresCalls = func() [][]string {
 			"CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0 " +
 			"ELSE GREATEST(0, floor(extract(epoch FROM now() - pg_last_xact_replay_timestamp())))::bigint END",
 		"SELECT sum(pg_database_size(oid))::bigint FROM pg_database",
+		"SELECT max(age(datfrozenxid))::bigint FROM pg_database",
+		"SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend' " +
+			"AND xact_start < now() - interval '1 hour'",
 	} {
 		calls = append(calls, []string{"-u", "postgres", "--", "psql", "--no-psqlrc", "--no-align",
 			"--tuples-only", "--quiet", "--field-separator=\t", "--set=ON_ERROR_STOP=1",
@@ -207,13 +221,22 @@ var commands = map[string][][]string{
 		{"show", "-p", "Id,Names,ActiveState,MainPID", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent", "--", "<unit>..."},
-		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "<unitarg>"},
+		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
+		// Where a backup unit keeps its repository (probe, app_repo.go): its environment, read in the agent.
+		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
 	"mariadb":    mariadbCalls,
 	"mysql":      mariadbCalls,
-	"runuser":    postgresCalls,
+	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps;
+	// BackupPC_serverMesg status hosts as backuppc (Debian's path and EPEL's), which reads the server's
+	// status. Kept out: its other messages (backup, stop, server reload, log).
+	"runuser": append(slices.Clone(postgresCalls),
+		[]string{"-u", "<pmuser>", "--", "pm2", "jlist"},
+		[]string{"-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		[]string{"-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
+	),
 	"dpkg-query": {{"--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "<package>..."}},
 	"rpm":        {{"--query", `--queryformat=%{NAME}\n`, "<package>..."}},
 	"sc": {
@@ -252,7 +275,7 @@ var commands = map[string][][]string{
 	// `wg showconf` (they print the private key), fail2ban-client unban|reload|set, cscli decisions
 	// add, tailscale netcheck.
 	"wg":              {{"show", "all", "latest-handshakes"}, {"show", "all", "persistent-keepalive"}},
-	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}},
+	"fail2ban-client": {{"ping"}, {"status"}, {"status", "<jail>"}, {"--test"}},
 	"cscli":           {{"bouncers", "list", "-o", "json"}},
 	"tailscale":       {{"status", "--json", "--peers=false"}},
 	// The read commands of the DNS and time views (probe, app_dns.go). Kept out: `rndc stats` (writes
@@ -261,6 +284,17 @@ var commands = map[string][][]string{
 	"unbound-control": {{"stats_noreset"}},
 	"chronyc":         {{"-c", "tracking"}},
 	"ntpq":            {{"-c", "rv 0 leap,stratum,offset"}},
+	// The configuration tests of the service views (probe, app_conftest.go): each reads the
+	// configuration at its default place and starts nothing. Kept out: named-checkconf -z (loads the
+	// zones), unbound-checkconf -o and a file argument, keepalived without --config-test (starts the
+	// daemon) and --config-test=FILE (writes the file), squid -k with any action but parse (signals
+	// the running copy, check among them), fail2ban-client --test with start parameters, dnsmasq
+	// without --test (starts it). fail2ban-client --test is with fail2ban-client's other calls above.
+	"named-checkconf":   {{}},
+	"unbound-checkconf": {{}},
+	"keepalived":        {{"--config-test"}},
+	"squid":             {{"-k", "parse"}},
+	"dnsmasq":           {{"--test"}},
 	// The UPS views (probe, app_ups.go): the UPS list and the variables of one UPS from the upsd on
 	// localhost, the status report of the apcupsd on localhost. Kept out: upscmd and upsrw (commands
 	// and settings to the UPS), upsmon -c (fsd shuts every client down), upsc against another host,
@@ -279,8 +313,28 @@ var commands = map[string][][]string{
 		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "sync", "--limit", "50", "--output-format", "json"},
 		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
 	},
-	"ceph":   {{"health", "-f", "json"}, {"df", "-f", "json"}},
-	"sanoid": {{"--monitor-snapshots"}},
+	// The web server views (probe, app_web.go): the configuration tests, which read the configuration and
+	// start nothing, the dump of nginx's configuration and Apache's list of its files. Kept out: nginx
+	// -s (signals the master: stop, reload, reopen), nginx -c/-g, apachectl start|stop|restart|graceful
+	// and -k, haproxy without -c (starts a proxy) and with -sf/-st (stops the running one).
+	"nginx":      {{"-t"}, {"-T"}},
+	"apache2ctl": {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
+	"apachectl":  {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
+	"haproxy":    {{"-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"}},
+	"ceph":       {{"health", "-f", "json"}, {"df", "-f", "json"}},
+	"sanoid":     {{"--monitor-snapshots"}},
+	// Veeam Agent for Linux (probe, app_backup.go): the list of sessions. Kept out: job start, session
+	// stop, backup delete and every other veeamconfig command.
+	"veeamconfig": {{"session", "list"}},
+	// The repository views (probe, app_repo.go): the newest snapshot, without a lock and without writing
+	// restic's cache; the repository and its password come in the environment. Kept out: restic
+	// backup|forget|prune|unlock|check and any call that locks, borg create|prune|compact|delete|
+	// break-lock and any list without --bypass-lock, kopia snapshot create|delete and maintenance, and
+	// duplicati-server-util's other commands (pause, run, logout, change-password).
+	"restic":                {{"snapshots", "--json", "--latest", "1", "--no-lock", "--no-cache"}},
+	"borg":                  {{"list", "--last", "1", "--json", "--bypass-lock"}},
+	"kopia":                 {{"snapshot", "list", "--json", "-n", "1"}},
+	"duplicati-server-util": {{"health"}},
 	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.

@@ -63,7 +63,8 @@ type Target struct {
 	Kind     string `json:"kind"`
 	Name     string `json:"name"`
 	PortHint int    `json:"port_hint"`
-	Scheme   string `json:"scheme"`
+	// Scheme is http or https; auto lets the http sensor ask the port whether it speaks TLS.
+	Scheme string `json:"scheme"`
 }
 
 // Credential names the stored credential a probe uses and how it presents it (bearer, basic,
@@ -212,7 +213,8 @@ type Binding struct {
 }
 
 // bindingOf names the target p presents its credential to: sensor, use, the kind, name, port and
-// scheme of its target and the path of its socket. On this host they say where the sensor connects.
+// scheme of its target and the path of its socket, for the app sensor its view. On this host they say
+// where the sensor connects, or which command the secret goes to.
 func bindingOf(p Probe) string {
 	parts := []string{p.Sensor, p.Credential.Use}
 	if t := p.Target; t != nil {
@@ -221,7 +223,11 @@ func bindingOf(p Probe) string {
 		parts = append(parts, "", "", "", "")
 	}
 	path, _ := p.Params["path"].(string)
-	if p.Sensor != "unixsocket" {
+	switch p.Sensor {
+	case "unixsocket":
+	case "app":
+		path, _ = p.Params["view"].(string)
+	default:
 		path = ""
 	}
 	b, _ := json.Marshal(append(parts, path))

@@ -6,7 +6,7 @@
 own health check (from 10.0) asks /healthcheck, and GET /healthcheck on the docservice's 8000
 once the scan saw it listening in the container (R-1393); the package's ds-docservice.service
 gets the unit check and GET /healthcheck on 8000; both health checks are test objects every
-15 min; the converter, the split images and Nextcloud AIO's container are not ONLYOFFICE
+15 min and compare the answer with true on the host; the converter, the split images and Nextcloud AIO's container are not ONLYOFFICE
 Docs."""
 
 from datetime import UTC, datetime
@@ -120,8 +120,8 @@ def test_the_module_loads_with_container_service_and_both_healthchecks():
 def test_the_healthcheck_is_a_get_and_a_test_object_every_15_min(key):
     # It writes and deletes a small object in the file storage on every call.
     check = CHECKS[key]
-    assert check.params == {"path": "/healthcheck", "method": "GET"}
-    assert check.fields == ["status_code"]
+    assert check.params == {"path": "/healthcheck", "method": "GET", "expect": "true"}
+    assert check.fields == ["status_code", "body_match"]
     assert (check.interval, check.test_object) == (900, True)
     assert check.rules == CHECKS["healthcheck"].rules
 
@@ -244,16 +244,17 @@ def test_other_images_are_not_taken_for_onlyoffice(image):
 @pytest.mark.parametrize(
     ("values", "status", "error", "want"),
     [
-        # 200 carries true or false; the agent reads no body that is no JSON object.
-        ({"status_code": 200}, "ok", "", "ok"),
-        ({"status_code": 404}, "ok", "", "critical"),
-        ({"status_code": 500}, "ok", "", "critical"),
+        # 200 carries true or false; the agent compares it with true on the host.
+        ({"status_code": 200, "body_match": True}, "ok", "", "ok"),
+        ({"status_code": 200, "body_match": False}, "ok", "", "critical"),
+        ({"status_code": 404, "body_match": False}, "ok", "", "critical"),
+        ({"status_code": 500, "body_match": False}, "ok", "", "critical"),
         # The docservice refuses or hangs: the probe fails.
         ({}, "error", "connection refused", "critical"),
         ({}, "error", "timeout", "critical"),
     ],
 )
-def test_the_healthcheck_is_critical_on_anything_but_200(values, status, error, want):
+def test_the_healthcheck_is_critical_on_anything_but_200_and_true(values, status, error, want):
     assert _status("healthcheck", values, status, error) == want
 
 

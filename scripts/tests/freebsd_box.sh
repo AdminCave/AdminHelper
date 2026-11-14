@@ -29,6 +29,7 @@ while [ $# -gt 0 ]; do case "$1" in
 
 # The frpc the package carries; the version is the one bootstrap_linux.sh installs on the Linux
 # boxes. The sha256 is the line for frp_<v>_freebsd_amd64.tar.gz of the release's checksum file.
+# Both move with FRP_VERSION in ci.yml; the frp-consistency job compares them.
 FRP_VERSION=0.72.0
 FRP_SHA256_FREEBSD_AMD64=584662abdb72ca01cf01fb9734d99b3bb7183d4cb564dc50b549ee4a46bbf21b
 FRP_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/adminhelper/frp"

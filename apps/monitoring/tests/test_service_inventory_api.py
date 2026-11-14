@@ -201,3 +201,71 @@ def test_the_options_take_exactly_one_boolean(client_db, body):
     assert _options(client, body).status_code == 422
     with factory() as db:
         assert db.get(MonitorServiceInventory, "srv-1") is None
+
+
+def _inventory_locks(factory):
+    """The statements on the inventory table a session of `factory` runs from now on, as
+    Postgres gets them: sqlite drops FOR UPDATE, the stack's database takes it."""
+    from sqlalchemy import event
+    from sqlalchemy.dialects import postgresql
+
+    seen = []
+
+    @event.listens_for(factory, "do_orm_execute")
+    def _record(state):
+        sql = str(state.statement.compile(dialect=postgresql.dialect()))
+        if "monitor_service_inventory" in sql:
+            seen.append(sql)
+
+    return seen
+
+
+@pytest.mark.parametrize("server_has_row", [False, True])
+def test_the_switch_locks_the_inventory_a_report_writes(client_db, server_has_row):
+    # R-1415: switch and report take the same row lock, so lines of a report in flight
+    # are gone once the switch is off.
+    client, factory = client_db
+    if server_has_row:
+        _push(client, _report())
+    else:
+        _add_key(factory)
+    seen = _inventory_locks(factory)
+
+    assert _options(client, {"log_lines": False}).status_code == 200
+
+    # _known_server and the reload after the commit read without a lock; the read the
+    # switch is written on holds it.
+    assert any("FOR UPDATE" in sql for sql in seen), seen
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", _URL, None),
+        ("PUT", f"{_URL}/options", {"log_lines": False}),
+    ],
+    ids=["list", "options"],
+)
+@pytest.mark.parametrize("headers", [{}, {"X-Internal-Key": "wrong"}], ids=["none", "wrong"])
+def test_the_service_routes_need_the_internal_key(
+    client_db, monkeypatch, method, path, body, headers
+):
+    # R-1415: both routes sit behind require_internal; without it the list showed the
+    # redacted lines and the switch was open to anyone reaching the service.
+    from app.core import auth
+    from app.core.auth import require_internal
+    from app.main import app
+
+    client, factory = client_db
+    _push(client, _report())
+    monkeypatch.setattr(auth, "INTERNAL_API_KEY", "right-key")
+    del app.dependency_overrides[require_internal]
+
+    r = client.request(method, path, json=body, headers=headers)
+
+    assert r.status_code == 401
+    with factory() as db:
+        assert db.get(MonitorServiceInventory, "srv-1").log_lines is not False
+        assert db.query(MonitorServiceLog).count() == 1
+    ok = client.request(method, path, json=body, headers={"X-Internal-Key": "right-key"})
+    assert ok.status_code == 200, ok.text
