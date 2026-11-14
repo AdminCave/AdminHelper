@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sen
 Doku: → T9
 Abhängt von: T3, T4, T5
 
-### T7 — R-1245: Module Windows Server  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/windows_host.py, apps/monitoring/app/catalog/modules/windows_ad.py, apps/monitoring/app/catalog/modules/windows_dhcp.py, apps/monitoring/app/catalog/modules/windows_dns.py, apps/monitoring/app/catalog/modules/windows_iis.py, apps/monitoring/app/catalog/modules/windows_rds.py, apps/monitoring/tests/test_catalog_windows_server.py
+### T7 — R-1245: Module Windows Server  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/windows_host.py, apps/monitoring/app/catalog/modules/windows_ad.py, apps/monitoring/app/catalog/modules/windows_dhcp.py, apps/monitoring/app/catalog/modules/windows_dns.py, apps/monitoring/app/catalog/modules/windows_iis.py, apps/monitoring/app/catalog/modules/windows_rds.py, apps/monitoring/tests/test_catalog_windows_server.py, apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8beec4349 2026-11-14T14:05:46+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T7.verdict.json)
 Änderung: Module nach Konzept §6.8 mit Erkennung über die Dienstnamen; Schwellen: Replikation > 12 h critical,
 Scopes 80/95 %, gestoppte Sites/Pools, Updates (Neustart nötig, Suche älter als 3 Tage), Zertifikate relativ wie
 `tls`, Ereignisse als Warnzähler. Neue Dateien mit SPDX-Header.
@@ -111,3 +113,4 @@ Abhängt von: T7, T8
 
 ## Entscheidungen
 - Kevin 2026-11-14: Offene Fragen 1–3 wie empfohlen: ohne Windows-Vorlage bauen und mergen, Prüfung vor dem Release als eigene Zeile; WSUS ohne „letzte Synchronisation“; `dcdiag` entfällt.
+- T7: Zertifikate in `windows-host` nach Resttagen (14 warning, 3 critical), nicht relativ wie `tls`: der Agent liest kein Ausstellungsdatum. Abgelaufene Zertifikate nur gezeigt (alte bleiben oft ungenutzt im Speicher). Ohne Zertifikat bzw. ohne gezählten Lizenz-Pack fehlt `min_days_left`/`used_pct`: der Check steht auf unknown wie bei den Proxy-Zertifikaten. Ebenso der Replikations-Check eines einzelnen DC (keine eingehenden Links, kein Alter); die Ursache (Agent meldet bei leerem Bestand keinen Wert) als eigene Roadmap-Zeile. Ereignisse: jede Fehler-/kritische Meldung seit dem letzten Lauf ist eine Warnung. RDS-Schwellen 85/95 % und 30/7 Tage.

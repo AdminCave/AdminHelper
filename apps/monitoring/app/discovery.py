@@ -281,6 +281,15 @@ def _unit_name(name: str) -> str:
     return name if "." in name else name + ".service"
 
 
+def _listed_unit_wanted(name: str, wanted: set[str]) -> bool:
+    # A Windows service has no suffix: NTDS is wanted as NTDS.service, by its exact name only
+    # (the patterns and templates are systemd's), and its instance keeps the name the agent
+    # asks the service manager by.
+    if "." not in name:
+        return name + ".service" in wanted
+    return _unit_wanted(name, wanted)
+
+
 def _unit_wanted(name: str, wanted: set[str]) -> bool:
     # A template unit (wg-quick@.service) takes each of its instances (wg-quick@wg0.service):
     # list-units names the instances, never the template.
@@ -317,7 +326,7 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
     ]
     wanted_units = {_unit_name(u) for u in detect.units}
     installed_units = sorted(
-        {u["name"] for u in inv["units"] if _unit_wanted(u["name"], wanted_units)}
+        {u["name"] for u in inv["units"] if _listed_unit_wanted(u["name"], wanted_units)}
     )
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
     # A oneshot unit behind a timer rests inactive between its runs (detect.idle_units).
@@ -325,7 +334,7 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         {
             u["name"]
             for u in inv["units"]
-            if _unit_wanted(u["name"], wanted_units)
+            if _listed_unit_wanted(u["name"], wanted_units)
             and (u["state"] != "inactive" or detect.idle_units)
         }
     )
