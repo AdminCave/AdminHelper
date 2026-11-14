@@ -19,8 +19,10 @@ Beweis: reviewer kern-monitoring-20 T3/T4 2026-11-14 · Dedup-Key: REF:monitorin
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_discovery_match.py
 Doku: keine (Tests)
 
-### T2 — R-1464: Negativtest der Container-Zeile zählt die Zeilen  [ ]
+### T2 — R-1464: Negativtest der Container-Zeile zählt die Zeilen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/card/FindingsInbox.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @73835ea58 2026-11-14T20:42:20+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer kern-monitoring-20 T5 2026-11-14
 Änderung: `queryByText(/Container: .*not a map/)` durch `queryAllByText(/^Container: /)` mit `toHaveLength(1)` ersetzen (nur die Zeile des ersten Fundes); Gegenprobe: ohne die Map-Prüfung im Svelte-Code wäre der Test rot.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/card/FindingsInbox.test.ts
