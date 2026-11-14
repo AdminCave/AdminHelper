@@ -177,6 +177,37 @@ func TestUnixSocketSensorSpeaksTheProtocolOfItsService(t *testing.T) {
 		t.Errorf("redis heard %s", heard)
 	}
 
+	for _, c := range []struct{ use, secret, want string }{
+		{useRedisAuth, "s3cret", "[*2 $4 AUTH $6 s3cret *1 $4 INFO]"},
+		{useRedisACL, "monitor:s3c:ret", "[*3 $4 AUTH $7 monitor $7 s3c:ret *1 $4 INFO]"},
+	} {
+		words := 5
+		if c.use == useRedisACL {
+			words = 7
+		}
+		path, srv = unixFake(t, func(f *fakeConn) {
+			for range words {
+				f.hear()
+			}
+			f.say("+OK\r\n")
+			for range 3 {
+				f.hear()
+			}
+			f.say(redisInfoAnswer)
+			f.hear()
+		})
+		p := unixProbe(map[string]any{"path": path, "protocol": "redis"}, "data.role")
+		p.Credential = &Credential{Ref: "c1", Use: c.use}
+		got, err = unixSocketSensor(ctx, p, c.secret)
+		data, _ = got["data"].(map[string]any)
+		if err != nil || data["role"] != "master" {
+			t.Errorf("%s = %v, %v; want its INFO", c.use, got, err)
+		}
+		if heard := fmt.Sprint(srv.close()); heard != c.want {
+			t.Errorf("%s: redis heard %s, want %s", c.use, heard, c.want)
+		}
+	}
+
 	path, _ = unixFake(t, func(c *fakeConn) {
 		for range 3 {
 			c.hear()

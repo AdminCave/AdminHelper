@@ -63,6 +63,9 @@ func unixSocketSensor(ctx context.Context, p Probe, secret string) (map[string]a
 	if err != nil {
 		return nil, err
 	}
+	if err := checkRedisACL(use, secret); err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	conn, err := dialUnix(ctx, path)
 	switch {
