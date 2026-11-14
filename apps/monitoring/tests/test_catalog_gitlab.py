@@ -101,7 +101,10 @@ def test_the_module_loads_with_container_unit_readiness_and_liveness():
 
 def test_the_image_in_a_compose_project_gets_its_container_check_only():
     assert _found(_block(COMPOSE)) == {
-        "git": {"services": {"gitlab": "gitlab/gitlab-ee", "runner": "gitlab/gitlab-runner"}}
+        "git": {
+            "services": {"gitlab": "gitlab/gitlab-ee", "runner": "gitlab/gitlab-runner"},
+            "containers": {"gitlab": "git-gitlab-1", "runner": "git-runner-1"},
+        }
     }
     assert _bind(_block(COMPOSE), "git") == {
         "container": ("git-gitlab-1", None),

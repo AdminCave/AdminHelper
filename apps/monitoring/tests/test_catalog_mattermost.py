@@ -111,7 +111,11 @@ def test_the_image_in_a_compose_project_gets_its_container_check_only():
             "services": {
                 "mattermost": "mattermost/mattermost-enterprise-edition",
                 "postgres": "postgres",
-            }
+            },
+            "containers": {
+                "mattermost": "mattermost-mattermost-1",
+                "postgres": "mattermost-postgres-1",
+            },
         }
     }
     assert _bind(block, "mattermost") == {

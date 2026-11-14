@@ -149,7 +149,10 @@ def test_only_the_package_gets_the_certificate_behind_starttls_once_an_hour():
 def test_slapd_in_its_project_gets_its_container_and_389():
     block = _block(COMPOSE)
     assert _found(block) == {
-        "ldap": {"services": {"admin": "osixia/phpldapadmin", "openldap": "osixia/openldap"}}
+        "ldap": {
+            "services": {"admin": "osixia/phpldapadmin", "openldap": "osixia/openldap"},
+            "containers": {"admin": "ldap-admin-1", "openldap": "ldap-openldap-1"},
+        }
     }
     assert _bind(block, "ldap") == {
         "container": ("ldap-openldap-1", None),

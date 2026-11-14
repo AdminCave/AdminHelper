@@ -120,7 +120,10 @@ def test_the_frontend_check_asks_the_root_on_8123_in_plain_http():
 def test_the_container_on_the_hosts_network_gets_its_container_and_8123():
     block = _block(COMPOSE)
     assert _found(block) == {
-        "ha": {"services": {"homeassistant": "ghcr.io/home-assistant/home-assistant"}}
+        "ha": {
+            "services": {"homeassistant": "ghcr.io/home-assistant/home-assistant"},
+            "containers": {"homeassistant": "homeassistant"},
+        }
     }
     assert _bind(block, "ha") == {
         "container": ("homeassistant", None),

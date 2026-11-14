@@ -96,7 +96,12 @@ def test_the_module_loads_with_container_service_and_alive():
 
 
 def test_the_image_in_a_compose_project_gets_its_container_check_only():
-    assert _found(_block(COMPOSE)) == {"vw": {"services": {"vaultwarden": "vaultwarden/server"}}}
+    assert _found(_block(COMPOSE)) == {
+        "vw": {
+            "services": {"vaultwarden": "vaultwarden/server"},
+            "containers": {"vaultwarden": "vw-vaultwarden-1"},
+        }
+    }
     assert _bind(_block(COMPOSE), "vw") == {
         "container": ("vw-vaultwarden-1", None),
         "service": (None, "no unit for this instance"),
