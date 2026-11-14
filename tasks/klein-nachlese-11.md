@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-11 — Task-Ledger
-Status: geplant · Branch: feature/klein-nachlese-11 · Review: pro Task
+Status: aktiv · Branch: feature/klein-nachlese-11 · Review: pro Task
 Spec: docs/features/klein-nachlese-11.md (Roadmap R-1460, R-1461, R-1466, R-1467, R-1468, R-1478, R-1483)
 Heavy: linux-full — apps/agent (die Änderung steckt in Windows-Dateien; auf Linux belegt der Cross-Build sie nur)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
