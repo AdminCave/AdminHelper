@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync
 Doku: → T9
 Abhängt von: T2
 
-### T4 — R-1301: compose-Fund nennt den gebundenen Container  [ ]
+### T4 — R-1301: compose-Fund nennt den gebundenen Container  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7d1e5036b 2026-11-14T11:40:09+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T4.verdict.json)
 Änderung: Die Summary eines `compose_project`-Funds trägt `containers` (`{Dienst: Container}`); `_seen_again`
 vergleicht die Summary ohne diesen Schlüssel und speichert die neue Summary trotzdem. Test: ein umbenannter
 Container lässt einen übernommenen Fund `adopted`.
@@ -103,3 +105,4 @@ Abhängt von: T3, T4, T5, T6, T7
   Name, Intervall und Schalter des Admins bleiben. Bindet die neue Definition nicht, bleibt die alte (Grund in
   `skippedChecks`). Zeilen ohne Hash bekommen beim Start den heutigen, für alle Funde, ohne Angebot.
 - T9-Doku nennt: Übernehmen eines Updates ersetzt die Regeln (Schwellen) des Admins durch die des Katalogs (security-Nit T3).
+- T4: Laufen mehrere Container eines Dienstes (scale), nennt `containers` den ersten nach Namen; die Bindung meldet mehrere ohnehin in `skippedChecks`.
