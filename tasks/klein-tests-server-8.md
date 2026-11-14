@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-server-8 — Task-Ledger
-Status: geplant · Branch: feature/klein-tests-server-8 · Review: am Ende
+Status: aktiv · Branch: feature/klein-tests-server-8 · Review: am Ende
 Spec: docs/features/klein-tests-server-8.md (Roadmap R-1416, R-1417)
 Heavy: none — nur pytest
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
