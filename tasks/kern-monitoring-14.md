@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Windows Server, Windows-Rollen und Windows-Backup — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-14 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-14 · Review: pro Task
 Spec: docs/features/kern-monitoring-14.md (Roadmap R-1245, R-1246, R-1436)
 Heavy: linux-full — Discovery und neue Ansichten im Agent (`apps/agent`); Windows über den CI-Job `agent-windows` (keine Windows-Vorlage im Pool), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -114,6 +114,16 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 Abhängt von: T7, T8
+
+### T10 — Doku: Befunde der Abschlussprüfung  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Windows-Absatz der Erkennung nennt Sockets nicht mehr als ungelesen (`collectSockets` läuft auf jeder
+Plattform); windows-host: abgelaufene Zertifikate nur angezeigt (`machineCertValues` lässt sie aus `min_days_left`);
+Windows-Gruppe: fehlende WMI-Klasse ist `unknown` „Sensor not supported on this host“, ein älterer Agent lehnt den
+Check ab (`invalid`).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die genannten Dateien
+Task-Review: am Ende
 
 ## Entscheidungen
 - Kevin 2026-11-14: Offene Fragen 1–3 wie empfohlen: ohne Windows-Vorlage bauen und mergen, Prüfung vor dem Release als eigene Zeile; WSUS ohne „letzte Synchronisation“; `dcdiag` entfällt.
