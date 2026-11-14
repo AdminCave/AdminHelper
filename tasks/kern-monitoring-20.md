@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Katalog-Updates, Grabsteine für Modul-Checks, Fühler-Erweiterungen — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-20 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-20 · Review: pro Task
 Spec: docs/features/kern-monitoring-20.md (Roadmap R-1264, R-1301)
 Heavy: linux-full — Alembic-Migration im Monitoring-Dienst, neue Params und Zugänge im Agent (`apps/agent`), Desktop-Inbox; kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -95,8 +95,10 @@ Review: approve (.ah-out/review/kern-monitoring-20/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py tests/test_module_sync.py tests/test_agent_plan.py tests/test_check_configs.py tests/test_catalog_sensors.py
 Doku: → T9
 
-### T9 — Doku DE+EN und CHANGELOG  [ ]
+### T9 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-20.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8a39658b9 2026-11-14T12:23:15+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Katalog-Updates als Angebot, Grabsteine, Container im compose-Fund, implizites TLS, `redis_acl`, dns mit
 Unterstrich; `changelog.d/kern-monitoring-20.md` unter `### Added`/`### Changed`, ohne Umlaute. `doc-smoke --env`
 lokal fahren.
