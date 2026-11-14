@@ -562,7 +562,7 @@ func TestTLSSensorReadsTheCertificateOfTheServer(t *testing.T) {
 	}
 	want := map[string]any{
 		"not_after": pki.leaf.NotAfter.Unix(), "days_left": int64(30), "chain_ok": true, "hostname_ok": true,
-		"issuer": "CN=Test Intermediate,O=AdminHelper",
+		"issuer": "CN=Test Intermediate,O=AdminHelper", "hours_left": int64(732), "lifetime_pct": 99.9,
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("tls = %v\nwant %v", got, want)
@@ -586,8 +586,13 @@ func TestTLSSensorReadsTheCertificateOfTheServer(t *testing.T) {
 
 	stubNow(t, start.Add(40*24*time.Hour))
 	got, err = tlsSensor(ctx, onLoopback("tls", port, nil), "")
-	if err != nil || got["chain_ok"] != false || got["days_left"] != int64(-10) {
-		t.Errorf("after expiry = %v, %v; want the chain broken and -10 days (9.5 days ago)", got, err)
+	if err != nil || got["chain_ok"] != false || got["days_left"] != int64(-10) || got["hours_left"] != int64(-228) || got["lifetime_pct"] != 0.0 {
+		t.Errorf("after expiry = %v, %v; want the chain broken, -10 days, -228 hours (9.5 days ago) and 0 %%", got, err)
+	}
+	stubNow(t, start.Add(27*24*time.Hour+10*time.Hour+30*time.Minute))
+	got, err = tlsSensor(ctx, onLoopback("tls", port, nil), "")
+	if err != nil || got["hours_left"] != int64(73) || got["lifetime_pct"] != 10.0 {
+		t.Errorf("73.5 hours of 733 left = %v, %v; want 73 hours and 10.0 %%", got, err)
 	}
 	stubNow(t, start)
 	stubRoots(t, nil)
@@ -837,3 +842,20 @@ func TestDNSSensorTakesItsParams(t *testing.T) {
 
 // lookupDNS0 is the resolver of the agent, whatever a test put in.
 var lookupDNS0 = lookupDNS
+
+func TestLifetimePctOfACertificateWithoutALifetime(t *testing.T) {
+	for _, c := range []struct {
+		left, lifetime time.Duration
+		want           float64
+	}{
+		{time.Hour, 0, 0},
+		{time.Hour, -time.Hour, 0},
+		{-time.Hour, 10 * time.Hour, 0},
+		{3 * time.Hour, 8 * time.Hour, 37.5},
+		{time.Hour, 3 * time.Hour, 33.3},
+	} {
+		if got := lifetimePct(c.left, c.lifetime); got != c.want {
+			t.Errorf("lifetimePct(%s, %s) = %v, want %v", c.left, c.lifetime, got, c.want)
+		}
+	}
+}

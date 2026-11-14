@@ -34,8 +34,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 Abhängt von: T1
 
-### T3 — R-1394: tls meldet Anteil der Laufzeit und Stunden bis Ablauf  [ ]
+### T3 — R-1394: tls meldet Anteil der Laufzeit und Stunden bis Ablauf  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_tls.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @5425607b3 2026-11-14T09:22:18+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T3.verdict.json)
 Änderung: `certValues` liefert zusätzlich `lifetime_pct` (Rest geteilt durch `NotAfter − NotBefore`, Prozent mit
 einer Nachkommastelle, nie unter 0) und `hours_left` (ganze Stunden, abgerundet). Tests mit festem Zeitpunkt.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
