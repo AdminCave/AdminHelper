@@ -10,8 +10,10 @@ Heavy: linux-full — apps/agent (die Änderung steckt in Windows-Dateien; auf L
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Agent Windows: Zertifikatsspeicher, VARIANT-Freigabe, eigener WUA-Slot, Namenstest  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/certstore_windows.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_test.go
+### T1 — Agent Windows: Zertifikatsspeicher, VARIANT-Freigabe, eigener WUA-Slot, Namenstest  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/certstore_windows.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/certstore_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6580d200c 2026-11-15T00:10:01+01:00
+Review: approve (.ah-out/review/klein-nachlese-11/T1.verdict.json)
 Beweis: R-1460, R-1461 (reviewer kern-monitoring-14 T2), R-1466, R-1467, R-1468 (T3), R-1483 (branch) 2026-11-14
 Änderung: `machineCerts` liest `NotBefore`/`NotAfter` aus `ctx.CertInfo` (FILETIME) und lässt kein Zertifikat mehr aus; `runtime.KeepAlive(name)` nach `CertOpenStore`. In `wuaRead` gibt jedes VARIANT aus `oleutil.GetProperty` (`Count`, `MsrcSeverity`, `RebootRequired`, `LastSearchSuccessDate`) `Clear()` frei. `winUpdates` bekommt einen eigenen Slot `wuaSlot` statt `wmiSlot`. `TestTheHostSensorTakesTheWindowsViews` prüft die Namen über `hostViews`/`appViews`, ohne einen Lesezugriff.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
