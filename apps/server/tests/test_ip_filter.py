@@ -292,6 +292,31 @@ class TestTrustedProxyNameParsing:
         ]
 
 
+def _sleep_in_this_thread_only(monkeypatch, fake):
+    # mw.time is the global time module: a bare patch also catches every other thread's sleep
+    # (another resolver's name thread), which then writes into the test's records or raises.
+    me = threading.current_thread()
+    real_sleep = time.sleep
+
+    def sleep(delay):
+        if threading.current_thread() is me:
+            return fake(delay)
+        return real_sleep(delay)
+
+    monkeypatch.setattr(mw.time, "sleep", sleep)
+
+
+def test_the_thread_local_sleep_fake_ignores_other_threads(monkeypatch):
+    calls = []
+    _sleep_in_this_thread_only(monkeypatch, calls.append)
+    other = threading.Thread(target=time.sleep, args=(0,))
+    other.start()
+    other.join(timeout=5)
+    assert calls == []
+    time.sleep(0.25)
+    assert calls == [0.25]
+
+
 class TestTrustedProxyNameThread:
     def test_lookup_runs_off_the_request_path(self):
         release = threading.Event()
@@ -334,7 +359,7 @@ class TestTrustedProxyNameThread:
             if len(seen) == 3:
                 raise _Stop
 
-        monkeypatch.setattr(mw.time, "sleep", sleep)
+        _sleep_in_this_thread_only(monkeypatch, sleep)
         with pytest.raises(_Stop):
             resolver._run()
         gateway = [ipaddress.ip_network("192.0.2.10")]
@@ -367,7 +392,7 @@ class TestTrustedProxyNameThread:
             raise _Stop
 
         monkeypatch.setattr(mw.logger, "exception", log_exception)
-        monkeypatch.setattr(mw.time, "sleep", sleep)
+        _sleep_in_this_thread_only(monkeypatch, sleep)
         with pytest.raises(_Stop):
             resolver._run()
         assert not out_of_turn.is_alive()
