@@ -1,5 +1,5 @@
 # /api/servers: 422 in der Form des Schemas — Task-Ledger
-Status: bereit · Branch: feature/kern-server-9 · Review: am Ende
+Status: erledigt · Branch: feature/kern-server-9 · Review: am Ende
 Spec: Roadmap R-1450
 Heavy: linux-full — Server-API; der Fund kommt aus schemathesis im Sammellauf, der ihn nach dem Merge erneut prüft
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
