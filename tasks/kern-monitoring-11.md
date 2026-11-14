@@ -23,8 +23,10 @@ SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/
 Doku: → T7
 
-### T2 — R-1239: Ansichten Mailcow, MailPiler, ClamAV, SpamAssassin, OpenDKIM  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_mail_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T2 — R-1239: Ansichten Mailcow, MailPiler, ClamAV, SpamAssassin, OpenDKIM  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_mail_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/app_mail_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @78da35d24 2026-11-14T15:45:39+01:00
+Review: approve (.ah-out/review/kern-monitoring-11/T2.verdict.json)
 Änderung: `mailcow_watchdog` (Redis `WATCHDOG_LOG` auf Loopback, `REDISPASS` aus `mailcow.conf`, nie in einer
 Meldung), `mailcow_queue`, `piler_status` (DB-Zugang aus `piler.conf`, nur das Alter), `clamav_db` (CVD-Kopf),
 `spamd_ping` (`spamc -K`), `opendkim_keys` (`opendkim-testkey`). Tests mit Stubs und Fixtures.
@@ -81,3 +83,17 @@ Abhängt von: T5, T6
   `postconf -h queue_directory`. `dovecot_status` zählt Fehler und Warnungen der letzten Stunde (`-s` jetzt − 3600)
   statt „seit dem letzten Lauf“: die Ansicht bleibt zustandslos. `doveadm service status` und die Feldnamen sind
   für Dovecot 2.4 belegt, für 2.3 nicht verifiziert (der Kopf wird gelesen, fehlende Felder sind ein Fehler).
+- T2: `mailcow_watchdog` verbindet sich mit der Container-Adresse von `redis-mailcow` (Port 6379, `secretGuard`),
+  nicht mit dem veröffentlichten `127.0.0.1:7654`: so prüft der Guard den Lauscher des Containers selbst. Den
+  Projektordner nennt das Compose-Label `com.docker.compose.project.working_dir`; ohne `REDISPASS` (ältere Mailcow)
+  geht kein `AUTH`. Je Dienst zählt der neueste Eintrag der letzten 500; Dienstnamen bleiben auf dem Host.
+- T2: `piler_status` fragt nur über den Socket aus `piler.conf` (`--no-defaults`, Passwort als `MYSQL_PWD`); ein
+  `piler.conf` ohne Socket ist „nicht unterstützt“. Fehler melden nur den Code (`ERROR 1045`), nie Nutzer oder Host.
+  `MYSQL_PWD` unter MySQL 9 nicht verifiziert.
+- T2: `clamav_db` liest nur die 512 Byte des Kopfs von `daily.cld`/`daily.cvd` unter `/var/lib/clamav` (fester Ort);
+  Feld 9 als Epoch ist aus dem Format gefolgert, für `.cld` nicht verifiziert. `spamd_ping` nimmt Host und Port aus
+  `spamc.conf` des Admins; erreichbar nur bei Exit 0 und der Antwort `SPAMD/<ver> 0` (der sichere Rückfall von
+  spamc gilt für `-K` nicht, belegt an `spamc.c`/`libspamc.c`), sonst `reachable: false`. `opendkim_keys` liest nur
+  die Summenzeile von `opendkim-testkey -v` (stdout); Schlüssel und Domains (stderr) bleiben auf dem Host, Exit 78
+  (keine KeyTable) ist „nicht unterstützt“. Die DNS-Abfrage des Werkzeugs ist eine Resolver-Abfrage, keine LAN-Sonde
+  (Konzept §10 Nr. 4); Intervall täglich im Katalog (T5).

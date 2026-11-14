@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -226,10 +227,164 @@ func TestDovecotStatusRefusesWhatIsNoServiceTable(t *testing.T) {
 	}
 }
 
-func TestMailViewsAreBoundToUnits(t *testing.T) {
-	for _, view := range []string{"postfix_queue", "postfix_queue_age", "dovecot_status"} {
-		if v, ok := appViews[view]; !ok || !slices.Equal(v.kinds, unitKinds) {
+func TestMailViewsAreBoundToTheirKinds(t *testing.T) {
+	for _, view := range []string{"postfix_queue", "postfix_queue_age", "dovecot_status", "piler_status", "clamav_db",
+		"spamd_ping", "opendkim_keys"} {
+		if v, ok := appViews[view]; !ok || !slices.Equal(v.kinds, unitKinds) || v.uses != nil {
 			t.Errorf("view %s: %+v", view, v)
 		}
+	}
+	for _, view := range []string{"mailcow_queue", "mailcow_watchdog"} {
+		if v, ok := appViews[view]; !ok || !slices.Equal(v.kinds, containerKinds) || v.uses != nil {
+			t.Errorf("view %s: %+v", view, v)
+		}
+	}
+}
+
+func TestWatchdogValuesTakeTheNewestEntryOfEachService(t *testing.T) {
+	stubNow(t, time.Unix(1_795_000_000, 0))
+	// Newest first, as LRANGE answers: postfix failing now, healthy before; a message names no service.
+	got, err := watchdogValues([][]byte{
+		[]byte(`{"time":"1794999940","service":"Postfix","lvl":"3","hpnow":"2","hptotal":"8","hpdiff":"-1"}`),
+		[]byte(`{"time":"1794999930","message":"Postfix hit error limit"}`),
+		[]byte(`{"time":"1794999900","service":"Dovecot","lvl":"0","hpnow":"12","hptotal":"12","hpdiff":"0"}`),
+		[]byte(`{"time":"1794999800","service":"Postfix","lvl":"0","hpnow":"8","hptotal":"8","hpdiff":"0"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"services": 2, "services_failing": 1, "logged": true, "last_age_s": int64(60)}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	got, err = watchdogValues(nil)
+	if want := (map[string]any{"services": 0, "services_failing": 0, "logged": false}); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("an empty log = %v, %v; want %v", got, err, want)
+	}
+}
+
+func TestWatchdogValuesRefuseWhatIsNoEntryOfTheWatchdog(t *testing.T) {
+	for _, raw := range []string{
+		`not json`,
+		`{"service":"Postfix","hpnow":"8","hptotal":"8"}`,
+		`{"time":"-5","service":"Postfix","hpnow":"8","hptotal":"8"}`,
+		`{"time":"1794999940","service":"Postfix","hpnow":"eight","hptotal":"8"}`,
+		`{"time":"1794999940","service":"Postfix","hpnow":"8","hptotal":"0"}`,
+		`{"time":1794999940,"service":"Postfix","hpnow":"8","hptotal":"8"}`,
+	} {
+		if _, err := watchdogValues([][]byte{[]byte(raw)}); err == nil {
+			t.Errorf("entry %s read", raw)
+		}
+	}
+}
+
+func TestMailcowQueueCountsTheQueuesInItsContainer(t *testing.T) {
+	dir := t.TempDir()
+	queueFiles(t, dir, "var/spool/postfix/deferred/B", 2)
+	queueFiles(t, dir, "var/spool/postfix/active", 1)
+	tl := stubTool(t, inspectJSON(t, "running", "", "bridge"), nil)
+	pids := stubContainerRoot(t, func(int) (*os.Root, error) { return os.OpenRoot(dir) })
+	got, err := mailcowQueue(context.Background(), Target{Kind: kindContainer, Name: "postfix-mailcow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"incoming": 0, "active": 1, "deferred": 2, "hold": 0, "total": 3, "capped": false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if !slices.Equal(*pids, []int{4242}) || tl.args[len(tl.args)-1] != "postfix-mailcow" {
+		t.Fatalf("roots %v, inspect %q", *pids, tl.args)
+	}
+	stubTool(t, inspectJSON(t, "exited", "", "bridge"), nil)
+	if _, err := mailcowQueue(context.Background(), Target{Kind: kindContainer, Name: "postfix-mailcow"}); err == nil {
+		t.Fatal("a stopped container reads as a queue")
+	}
+}
+
+func TestSpamdPingSaysWhetherSpamdAnswers(t *testing.T) {
+	calls := stubToolsEnv(t, answer{out: "SPAMD/1.5 0\n"})
+	got, err := spamdPing(context.Background(), Target{Kind: kindUnit, Name: "spamd.service"})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"reachable": true}) {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if c := (*calls)[0]; !slices.Equal(c.args, []string{"spamc", "-K"}) || !slices.Contains(c.env, "LC_ALL=C") {
+		t.Fatalf("call %q env %q", c.args, c.env)
+	}
+	for _, out := range []string{"", "SPAMD/1.5 76\n", "PONG\n"} {
+		stubToolsEnv(t, answer{out: out})
+		got, err := spamdPing(context.Background(), Target{Kind: kindUnit, Name: "spamd.service"})
+		if err != nil || !reflect.DeepEqual(got, map[string]any{"reachable": false}) {
+			t.Errorf("spamc printing %q = %v, %v; want not reachable", out, got, err)
+		}
+	}
+	for _, err := range []error{repoExit(t, 69, "connection refused\n"), context.DeadlineExceeded} {
+		stubToolsEnv(t, answer{err: err})
+		got, gotErr := spamdPing(context.Background(), Target{Kind: kindUnit, Name: "spamd.service"})
+		if gotErr != nil || !reflect.DeepEqual(got, map[string]any{"reachable": false}) {
+			t.Errorf("spamc %v = %v, %v; want not reachable", err, got, gotErr)
+		}
+	}
+	stubToolsEnv(t, answer{err: exec.ErrNotFound})
+	if _, err := spamdPing(context.Background(), Target{Kind: kindUnit, Name: "spamd.service"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("no spamc = %v, want unsupported", err)
+	}
+	// The run of the agent ends: no answer of spamd is to be read from that.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stubToolsEnv(t, answer{err: context.Canceled})
+	if _, err := spamdPing(ctx, Target{Kind: kindUnit, Name: "spamd.service"}); err == nil {
+		t.Fatal("a cancelled run reads as an answer")
+	}
+}
+
+// opendkimOut is opendkim-testkey -v of a KeyTable of three keys, one failing; the key and its error
+// go to stderr.
+const opendkimOut = "opendkim-testkey: using default configfile /etc/opendkim.conf\n" +
+	"opendkim-testkey: checking key 'mail._domainkey.example.org'\n" +
+	"opendkim-testkey: 3 keys checked; 2 pass, 1 fail\n"
+
+func TestOpendkimKeysCountsTheKeysAndTheFailing(t *testing.T) {
+	calls := stubToolsEnv(t, answer{out: opendkimOut})
+	got, err := opendkimKeys(context.Background(), Target{Kind: kindUnit, Name: "opendkim.service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"keys": 3, "keys_failed": 1}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if c := (*calls)[0]; !slices.Equal(c.args, []string{"opendkim-testkey", "-v"}) {
+		t.Fatalf("call %q", c.args)
+	}
+	stubToolsEnv(t, answer{out: "opendkim-testkey: 1 key checked; 1 pass, 0 fail\n"})
+	if got, err := opendkimKeys(context.Background(), Target{Kind: kindUnit, Name: "opendkim.service"}); err != nil ||
+		!reflect.DeepEqual(got, map[string]any{"keys": 1, "keys_failed": 0}) {
+		t.Fatalf("one key = %v, %v", got, err)
+	}
+}
+
+func TestOpendkimKeysKeepsTheKeysOnThisHost(t *testing.T) {
+	stubToolsEnv(t, answer{err: repoExit(t, opendkimNoKeyTable, "opendkim-testkey: no KeyTable\n")})
+	if _, err := opendkimKeys(context.Background(), Target{Kind: kindUnit, Name: "opendkim.service"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("no KeyTable = %v, want unsupported", err)
+	}
+	stubToolsEnv(t, answer{err: repoExit(t, 1, "opendkim-testkey: key mail._domainkey.example.org: cannot load\n")})
+	_, err := opendkimKeys(context.Background(), Target{Kind: kindUnit, Name: "opendkim.service"})
+	if err == nil || strings.Contains(err.Error(), "example.org") {
+		t.Fatalf("a failed test = %v, want an error without the key", err)
+	}
+	for _, out := range []string{
+		"",
+		"opendkim-testkey: 3 keys checked; 2 pass, 4 fail\n",
+		"opendkim-testkey: 1 key checked; 1 pass, 0 fail\nopendkim-testkey: 1 key checked; 1 pass, 0 fail\n",
+		"3 keys checked\n",
+	} {
+		stubToolsEnv(t, answer{out: out})
+		if _, err := opendkimKeys(context.Background(), Target{Kind: kindUnit, Name: "opendkim.service"}); err == nil {
+			t.Errorf("output %q read as a summary", out)
+		}
+	}
+	stubToolsEnv(t, answer{err: exec.ErrNotFound})
+	if _, err := opendkimKeys(context.Background(), Target{Kind: kindUnit, Name: "opendkim.service"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("no opendkim-testkey = %v, want unsupported", err)
 	}
 }

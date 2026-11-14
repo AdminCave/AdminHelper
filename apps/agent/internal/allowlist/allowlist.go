@@ -60,6 +60,11 @@ var classes = map[string]string{
 	"priority": `[0-7]`,
 	// A whole number of seconds.
 	"seconds": `[0-9]+`,
+	// A socket of a database below this host's root (piler.conf mysqlsocket): no segment begins with '.',
+	// so no "..".
+	"sockpath": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
+	// A user or database name of MariaDB or MySQL as piler_status hands it on.
+	"dbident": `[A-Za-z0-9_]+`,
 	// A journal cursor as journalctl --show-cursor prints it (sd_journal_get_cursor(3): s=…;i=…;b=…;
 	// m=…;t=…;x=…, hex values).
 	"cursor": `[a-z0-9=;]+`,
@@ -112,6 +117,12 @@ func journalVariants() [][]string {
 // messages of this boot, err and above, of the last seconds. Its own entry, apart from the log
 // sensor's calls: --dmesg and the priority are fixed.
 var oomJournalCall = []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-<seconds>s"}
+
+// pilerCall is the one query of piler_status (probe, app_mail.go): the arrival of the newest archived
+// mail, over the local socket and without option files (the password comes in the environment). Kept
+// out: any other query, a client without --no-defaults or with --host.
+var pilerCall = []string{"--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5",
+	"--socket=<sockpath>", "--user=<dbident>", "--database=<dbident>", "--execute=SELECT MAX(arrived) FROM metadata"}
 
 // The sql sensor's MariaDB calls, by the client mariadb or, before 10.4.6, mysql. Each query is the
 // sensor's own (mariadbQueries), under a statement timeout; probe's tests run every one through here.
@@ -227,8 +238,8 @@ var commands = map[string][][]string{
 		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
-	"mariadb":    mariadbCalls,
-	"mysql":      mariadbCalls,
+	"mariadb":    append(slices.Clone(mariadbCalls), pilerCall),
+	"mysql":      append(slices.Clone(mariadbCalls), pilerCall),
 	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps;
 	// BackupPC_serverMesg status hosts as backuppc (Debian's path and EPEL's), which reads the server's
 	// status. Kept out: its other messages (backup, stop, server reload, log).
@@ -337,6 +348,11 @@ var commands = map[string][][]string{
 	"postconf":  {{"-h", "queue_directory"}},
 	"postqueue": {{"-j"}},
 	"doveadm":   {{"-f", "tab", "service", "status"}, {"log", "errors", "-s", "<seconds>"}},
+	// SpamAssassin and OpenDKIM (probe, app_mail.go; MailPiler's query is pilerCall): a PING to spamd,
+	// the test of the keys of the KeyTable. Kept out: spamc with anything but -K (it would hand a mail
+	// on), opendkim-testkey -d/-s/-k/-x (another key or configuration).
+	"spamc":            {{"-K"}},
+	"opendkim-testkey": {{"-v"}},
 	// The Windows views (probe, winviews_windows.go): the inbound replication links of this domain
 	// controller alone, and the sites and application pools of IIS (appcmd.exe from
 	// %windir%\system32\inetsrv, by its base name). Kept out: `repadmin /showrepl *` and every other

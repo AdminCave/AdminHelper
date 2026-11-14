@@ -810,12 +810,22 @@ func TestAllowlistCupsQueues(t *testing.T) {
 	}
 }
 
+// piler is the query of piler_status over sock as user on db.
+func piler(sock, user, db string) []string {
+	return []string{"--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=" + sock,
+		"--user=" + user, "--database=" + db, "--execute=SELECT MAX(arrived) FROM metadata"}
+}
+
 func TestAllowlistMailViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"postconf", "-h", "queue_directory"},
 		{"postqueue", "-j"},
 		{"doveadm", "-f", "tab", "service", "status"},
 		{"doveadm", "log", "errors", "-s", "1795000000"},
+		{"spamc", "-K"},
+		{"opendkim-testkey", "-v"},
+		append([]string{"mariadb"}, piler("/var/run/mysqld/mysqld.sock", "piler", "piler")...),
+		append([]string{"mysql"}, piler("/run/mysqld/mysqld.sock", "piler_ro", "piler2")...),
 	} {
 		if !Allowed(call[0], call[1:]) {
 			t.Errorf("refused: %q", call)
@@ -841,6 +851,23 @@ func TestAllowlistMailViews(t *testing.T) {
 		{"doveadm", "-f", "tab", "service", "stop", "imap"},
 		{"doveadm", "kick", "alice"},
 		{"doveadm", "expunge", "-A", "mailbox", "INBOX", "all"},
+		{"spamc"},
+		{"spamc", "-K", "-d", "mx.example.org"},
+		{"spamc", "-L", "spam"},
+		{"opendkim-testkey"},
+		{"opendkim-testkey", "-v", "-d", "example.org", "-s", "mail"},
+		{"opendkim-testkey", "-v", "-x", "/tmp/evil.conf"},
+		{"opendkim-testkey", "-v", "-k", "/tmp/keytable"},
+		append([]string{"mariadb"}, piler("/var/run/../mysqld.sock", "piler", "piler")...),
+		append([]string{"mariadb"}, piler("run/mysqld.sock", "piler", "piler")...),
+		append([]string{"mariadb"}, piler("/run/mysqld.sock", "piler --host=evil", "piler")...),
+		append([]string{"mariadb"}, piler("/run/mysqld.sock", "piler", "piler;DROP")...),
+		{"mariadb", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=/run/mysqld.sock", "--user=piler",
+			"--database=piler", "--execute=SELECT MAX(arrived) FROM metadata"},
+		{"mariadb", "--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=/run/mysqld.sock",
+			"--user=piler", "--database=piler", "--execute=DELETE FROM metadata"},
+		{"mariadb", "--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--host=db.example.org",
+			"--user=piler", "--database=piler", "--execute=SELECT MAX(arrived) FROM metadata"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)

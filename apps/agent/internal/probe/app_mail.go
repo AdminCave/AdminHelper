@@ -13,9 +13,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -280,4 +282,456 @@ func dovecotErrors(out string) (errs, warnings int) {
 		}
 	}
 	return errs, warnings
+}
+
+const (
+	// mailcowRedisPort is the port of Redis in its container of Mailcow (redis-mailcow).
+	mailcowRedisPort = 6379
+	// watchdogEntries is how many of the newest entries of WATCHDOG_LOG mailcow_watchdog reads: the
+	// watchdog pushes one per service and check and never trims the list.
+	watchdogEntries = 500
+	// maxWatchdogEntry caps one entry of WATCHDOG_LOG, a JSON object of some 100 bytes.
+	maxWatchdogEntry = 8 << 10
+	// maxMailConfBytes caps mailcow.conf and piler.conf, a few KiB each.
+	maxMailConfBytes = 64 << 10
+	// cvdHeaderBytes is the size of the header of a ClamAV database (.cvd, .cld).
+	cvdHeaderBytes = 512
+	// opendkimNoKeyTable is the exit of opendkim-testkey without a KeyTable to test (EX_CONFIG).
+	opendkimNoKeyTable = 78
+)
+
+var (
+	// mailcowEndpoint finds where Redis of Mailcow listens; tests point it at their server.
+	mailcowEndpoint = resolve
+
+	// mailcowQueueDir is the queue directory of Postfix in its container of Mailcow (postfix-mailcow),
+	// the volume postfix-vol-1.
+	mailcowQueueDir = "/var/spool/postfix"
+
+	// pilerConfs are where piler.conf lives, below the root of this host: the packages of MailPiler,
+	// then a build from source with its default prefix.
+	pilerConfs = []string{"etc/piler/piler.conf", "usr/local/etc/piler/piler.conf"}
+	// pilerQuery reads when the newest mail arrived in the archive, from the index on arrived.
+	pilerQuery = "SELECT MAX(arrived) FROM metadata"
+	// mysqlName is a user or database name piler_status hands to the client of the database.
+	mysqlName = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
+	// mysqlError is the code of an error of the database client ("ERROR 1045 (28000): …").
+	mysqlError = regexp.MustCompile(`^ERROR ([0-9]{1,5})\b`)
+
+	// clamavDBFiles are the daily databases of ClamAV below the root of this host: freshclam keeps the
+	// one or the other.
+	clamavDBFiles = []string{"var/lib/clamav/daily.cld", "var/lib/clamav/daily.cvd"}
+
+	// spamdPong is spamd's answer to PING as spamc -K prints it.
+	spamdPong = regexp.MustCompile(`^SPAMD/[0-9]+(?:\.[0-9]+)* 0$`)
+
+	// opendkimSummary is the summary opendkim-testkey -v prints after testing its KeyTable.
+	opendkimSummary = regexp.MustCompile(`(?m)^[^:\n]+: ([0-9]+) keys? checked; ([0-9]+) pass, ([0-9]+) fail$`)
+)
+
+// mailcowWatchdog reads the health of the services of Mailcow from the log its watchdog keeps in
+// Redis: how many services the newest entries name, how many of them stand below their full health,
+// and how old the newest entry is. It reads the password of Redis from mailcow.conf in the directory
+// of the compose project of the container t (redis-mailcow) and connects to the container's own
+// address; the password goes to that connection alone and into no error.
+func mailcowWatchdog(ctx context.Context, t Target) (map[string]any, error) {
+	c, err := inspectContainer(ctx, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	dir := c.Config.Labels["com.docker.compose.project.working_dir"]
+	if !path.IsAbs(dir) || path.Clean(dir) != dir || strings.ContainsAny(dir, "\n\x00") {
+		return nil, fmt.Errorf("%w: container %s belongs to no compose project", ErrUnsupported, t.Name)
+	}
+	pass, err := untilDone(ctx, func() (string, error) { return mailcowRedisPass(dir) })
+	if err != nil {
+		return nil, err
+	}
+	if t.PortHint == 0 {
+		t.PortHint = mailcowRedisPort
+	}
+	ep, err := mailcowEndpoint(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := dialThrough(ctx, secretGuard(ep), ep)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	entries, err := watchdogLog(conn, pass)
+	if err != nil {
+		return nil, netErr(ctx, err)
+	}
+	return watchdogValues(entries)
+}
+
+// mailcowRedisPass reads REDISPASS of mailcow.conf in dir of this host; "" if it sets none, as Mailcow
+// did before its Redis took a password.
+func mailcowRedisPass(dir string) (string, error) {
+	root, err := hostRoot()
+	if err != nil {
+		return "", fmt.Errorf("the root of this host cannot be opened: %v", cause(err))
+	}
+	defer root.Close()
+	name := strings.TrimPrefix(path.Join(dir, "mailcow.conf"), "/")
+	data, err := readRootFile(root, name, "/"+name, maxMailConfBytes)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("%w: %s holds no mailcow.conf", ErrUnsupported, dir)
+	}
+	if err != nil {
+		return "", err
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "REDISPASS="); ok {
+			if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+				v = v[1 : len(v)-1]
+			}
+			return v, nil
+		}
+	}
+	return "", nil
+}
+
+// watchdogLog asks Redis on conn for the newest watchdogEntries entries of WATCHDOG_LOG, after AUTH
+// with pass if there is one (RESP2: a command is an array of bulk strings).
+func watchdogLog(conn net.Conn, pass string) ([][]byte, error) {
+	w := bufio.NewWriter(conn)
+	if pass != "" {
+		respCommand(w, "AUTH", pass)
+	}
+	respCommand(w, "LRANGE", "WATCHDOG_LOG", "0", strconv.Itoa(watchdogEntries-1))
+	if err := w.Flush(); err != nil {
+		return nil, err
+	}
+	r := bufio.NewReaderSize(conn, 16<<10)
+	if pass != "" {
+		line, err := respLine(r)
+		if err != nil {
+			return nil, err
+		}
+		if line != "+OK" {
+			return nil, fmt.Errorf("%w: Redis refuses the password of mailcow.conf", ErrDenied)
+		}
+	}
+	line, err := respLine(r)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case strings.HasPrefix(line, "-NOAUTH"):
+		return nil, fmt.Errorf("%w: Redis wants a password mailcow.conf does not set", ErrDenied)
+	case strings.HasPrefix(line, "-"):
+		return nil, errors.New("Redis refuses to read WATCHDOG_LOG")
+	case line == "*-1":
+		return nil, nil
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(line, "*"))
+	if !strings.HasPrefix(line, "*") || err != nil || n < 0 || n > watchdogEntries {
+		return nil, errors.New("Redis answers LRANGE with no list")
+	}
+	entries := make([][]byte, 0, n)
+	for range n {
+		line, err := respLine(r)
+		if err != nil {
+			return nil, err
+		}
+		size, err := strconv.Atoi(strings.TrimPrefix(line, "$"))
+		if !strings.HasPrefix(line, "$") || err != nil || size < 0 || size > maxWatchdogEntry {
+			return nil, errors.New("Redis answers LRANGE with an entry that is no string")
+		}
+		buf := make([]byte, size+2)
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return nil, err
+		}
+		if !bytes.HasSuffix(buf, []byte("\r\n")) {
+			return nil, errors.New("Redis answers LRANGE with an entry that is no string")
+		}
+		entries = append(entries, buf[:size])
+	}
+	return entries, nil
+}
+
+// respCommand writes a command of RESP2 to w.
+func respCommand(w *bufio.Writer, args ...string) {
+	fmt.Fprintf(w, "*%d\r\n", len(args))
+	for _, a := range args {
+		fmt.Fprintf(w, "$%d\r\n%s\r\n", len(a), a)
+	}
+}
+
+// respLine reads one line of RESP2 without its CRLF.
+func respLine(r *bufio.Reader) (string, error) {
+	line, err := r.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) {
+		return "", errors.New("Redis answers with a line that is too long")
+	}
+	if err != nil {
+		return "", err
+	}
+	s, ok := strings.CutSuffix(string(line), "\r\n")
+	if !ok {
+		return "", errors.New("Redis answers with a line that is no line of RESP")
+	}
+	return s, nil
+}
+
+// watchdogEntry is an entry of WATCHDOG_LOG as the watchdog of Mailcow pushes it (watchdog.sh,
+// progress and log_msg): every value a string, time in seconds since the epoch; an entry of a check
+// names its service and its health now and in full, a message names none.
+type watchdogEntry struct {
+	Time    string `json:"time"`
+	Service string `json:"service"`
+	HPNow   string `json:"hpnow"`
+	HPTotal string `json:"hptotal"`
+}
+
+// watchdogValues reduces the newest entries of WATCHDOG_LOG, newest first, to the values of
+// mailcow_watchdog: per service its newest entry counts. Names of services stay on this host.
+func watchdogValues(entries [][]byte) (map[string]any, error) {
+	malformed := errors.New("WATCHDOG_LOG holds an entry that is no entry of the watchdog")
+	var newest int64
+	seen := map[string]bool{}
+	failing := 0
+	for _, raw := range entries {
+		var e watchdogEntry
+		if json.Unmarshal(raw, &e) != nil {
+			return nil, malformed
+		}
+		at, err := strconv.ParseInt(e.Time, 10, 64)
+		if err != nil || at <= 0 {
+			return nil, malformed
+		}
+		newest = max(newest, at)
+		if e.Service == "" || seen[e.Service] {
+			continue
+		}
+		hp, err1 := strconv.Atoi(e.HPNow)
+		total, err2 := strconv.Atoi(e.HPTotal)
+		if err1 != nil || err2 != nil || hp < 0 || total <= 0 {
+			return nil, malformed
+		}
+		seen[e.Service] = true
+		if hp < total {
+			failing++
+		}
+	}
+	values := map[string]any{"services": len(seen), "services_failing": failing, "logged": newest > 0}
+	if newest > 0 {
+		values["last_age_s"] = max(now().Unix()-newest, 0)
+	}
+	return values, nil
+}
+
+// mailcowQueue counts the mails in each queue of Postfix in its container of Mailcow, t
+// (postfix-mailcow), as postfixQueue does on this host: by listing the queue directories below the
+// root of the container, without opening a queue file or starting a command in it.
+func mailcowQueue(ctx context.Context, t Target) (map[string]any, error) {
+	c, err := inspectContainer(ctx, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	if !c.State.Running || c.State.Pid <= 0 {
+		return nil, fmt.Errorf("container %s is not running", t.Name)
+	}
+	return untilDone(ctx, func() (map[string]any, error) {
+		root, err := containerRoot(c.State.Pid)
+		if errors.Is(err, ErrUnsupported) {
+			return nil, err
+		}
+		if err != nil {
+			return nil, fmt.Errorf("container %s: its root cannot be opened: %v", t.Name, cause(err))
+		}
+		defer root.Close()
+		return countQueues(root, mailcowQueueDir)
+	})
+}
+
+// pilerStatus reads how long ago the newest mail arrived in the archive of the local MailPiler, from
+// its database with the access piler.conf names. The password goes to the database client in its
+// environment (MYSQL_PWD), in no argument and no error; only the socket of this host is asked.
+func pilerStatus(ctx context.Context, _ Target) (map[string]any, error) {
+	conf, err := untilDone(ctx, readPilerConf)
+	if err != nil {
+		return nil, err
+	}
+	sock, user, db := conf["mysqlsocket"], conf["mysqluser"], conf["mysqldb"]
+	if sock == "" {
+		return nil, fmt.Errorf("%w: piler.conf names no socket of its database", ErrUnsupported)
+	}
+	if !path.IsAbs(sock) || path.Clean(sock) != sock || strings.ContainsAny(sock, " \t\n\x00") {
+		return nil, errors.New("piler.conf names a socket that is no absolute path")
+	}
+	if !mysqlName.MatchString(user) || !mysqlName.MatchString(db) {
+		return nil, errors.New("piler.conf names a user or database the agent does not hand on")
+	}
+	env := []string{"LC_ALL=C"}
+	if pwd := conf["mysqlpwd"]; pwd != "" {
+		if strings.ContainsRune(pwd, 0) {
+			return nil, errors.New("piler.conf holds a password with a NUL byte")
+		}
+		env = append(env, "MYSQL_PWD="+pwd)
+	}
+	args := []string{"--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5", "--socket=" + sock, "--user=" + user,
+		"--database=" + db, "--execute=" + pilerQuery}
+	out, err := runToolEnv(ctx, toolTimeout, env, "mariadb", args...)
+	if errors.Is(err, exec.ErrNotFound) {
+		out, err = runToolEnv(ctx, toolTimeout, env, "mysql", args...)
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil, fmt.Errorf("%w: no client of MariaDB or MySQL is installed", ErrUnsupported)
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		// The client's message names the user and host; only its code leaves this host.
+		if m := mysqlError.FindSubmatch(bytes.TrimSpace(exitErr.Stderr)); m != nil {
+			return nil, fmt.Errorf("the database of piler answers with error %s", m[1])
+		}
+		return nil, fmt.Errorf("the database client fails with exit %d", exitErr.ExitCode())
+	}
+	if err != nil {
+		return nil, fmt.Errorf("the database client: %w", err)
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "NULL" {
+		return map[string]any{"archived": false}, nil
+	}
+	at, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || at <= 0 {
+		return nil, errors.New("the database of piler answers with no time of arrival")
+	}
+	return map[string]any{"archived": true, "last_age_s": max(now().Unix()-at, 0)}, nil
+}
+
+// readPilerConf reads the settings of the first piler.conf of pilerConfs: lines of key=value.
+func readPilerConf() (map[string]string, error) {
+	root, err := hostRoot()
+	if err != nil {
+		return nil, fmt.Errorf("the root of this host cannot be opened: %v", cause(err))
+	}
+	defer root.Close()
+	for _, name := range pilerConfs {
+		data, err := readRootFile(root, name, "/"+name, maxMailConfBytes)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		conf := map[string]string{}
+		for line := range strings.SplitSeq(string(data), "\n") {
+			k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+			if ok && !strings.HasPrefix(k, ";") && !strings.HasPrefix(k, "#") {
+				conf[strings.TrimSpace(k)] = strings.TrimSpace(v)
+			}
+		}
+		return conf, nil
+	}
+	return nil, fmt.Errorf("%w: this host holds no piler.conf", ErrUnsupported)
+}
+
+// clamavDB reads the version and age of the daily signature database of the local ClamAV from the
+// header of daily.cld or daily.cvd, the newer of the two. It reads the 512 bytes of the header and
+// nothing else of the file.
+func clamavDB(ctx context.Context, _ Target) (map[string]any, error) {
+	return untilDone(ctx, func() (map[string]any, error) {
+		root, err := hostRoot()
+		if err != nil {
+			return nil, fmt.Errorf("the root of this host cannot be opened: %v", cause(err))
+		}
+		defer root.Close()
+		version, built, found := 0, int64(0), false
+		for _, name := range clamavDBFiles {
+			v, b, err := cvdHeader(root, name)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if !found || v > version {
+				version, built, found = v, b, true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: this host holds no daily database of ClamAV", ErrUnsupported)
+		}
+		return map[string]any{"version": version, "age_s": max(now().Unix()-built, 0)}, nil
+	})
+}
+
+// cvdHeader reads the version and build time of the database name below root from its header:
+// "ClamAV-VDB:<build time>:<version>:<signatures>:<functionality level>:<md5>:<signature>:<builder>:
+// <build time in seconds since the epoch>", padded to 512 bytes (docs.clamav.net, CVD format).
+func cvdHeader(root *os.Root, name string) (version int, built int64, err error) {
+	shown := "/" + name
+	if _, err := root.Lstat(name); errors.Is(err, fs.ErrNotExist) {
+		return 0, 0, fs.ErrNotExist
+	}
+	f, err := openRegular(root, name, shown)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	buf := make([]byte, cvdHeaderBytes)
+	if _, err := io.ReadFull(f, buf); err != nil {
+		return 0, 0, fmt.Errorf("%s holds no header of a ClamAV database", shown)
+	}
+	fields := strings.Split(string(buf), ":")
+	if len(fields) < 9 || fields[0] != "ClamAV-VDB" {
+		return 0, 0, fmt.Errorf("%s holds no header of a ClamAV database", shown)
+	}
+	version, err1 := strconv.Atoi(fields[2])
+	built, err2 := strconv.ParseInt(strings.TrimRight(fields[8], " \x00"), 10, 64)
+	if err1 != nil || err2 != nil || version <= 0 || built <= 0 {
+		return 0, 0, fmt.Errorf("%s holds no version and build time of a ClamAV database", shown)
+	}
+	return version, built, nil
+}
+
+// spamdPing says whether the local spamd answers a PING of spamc -K. spamc prints spamd's answer,
+// "SPAMD/<version> 0", and exits 0 only then: its safe fallback (exit 0 without spamd) does not hold for
+// -K (spamc.c, main; libspamc.c, message_filter). A spamc that fails, takes too long or prints no such
+// answer found no spamd answering.
+func spamdPing(ctx context.Context, _ Target) (map[string]any, error) {
+	out, err := runToolEnv(ctx, toolTimeout, []string{"LC_ALL=C"}, "spamc", "-K")
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		return map[string]any{"reachable": spamdPong.Match(bytes.TrimSpace(out))}, nil
+	case errors.Is(err, exec.ErrNotFound):
+		return nil, fmt.Errorf("%w: spamc is not installed", ErrUnsupported)
+	case errors.As(err, &exitErr), errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
+		return map[string]any{"reachable": false}, nil
+	}
+	return nil, toolError("spamc", err)
+}
+
+// opendkimKeys tests the keys of the KeyTable of the local OpenDKIM against their records in the DNS
+// with opendkim-testkey -v and counts them and those that fail, from its summary; with a KeyTable it
+// exits 0 however many keys fail (opendkim-testkey.c, main). Which key fails and
+// why it prints to its stderr, which names keys and domains; that stays on this host.
+func opendkimKeys(ctx context.Context, _ Target) (map[string]any, error) {
+	out, err := runToolEnv(ctx, toolTimeout, []string{"LC_ALL=C"}, "opendkim-testkey", "-v")
+	var exitErr *exec.ExitError
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return nil, fmt.Errorf("%w: opendkim-testkey is not installed", ErrUnsupported)
+	case errors.As(err, &exitErr) && exitErr.ExitCode() == opendkimNoKeyTable:
+		return nil, fmt.Errorf("%w: OpenDKIM signs without a KeyTable", ErrUnsupported)
+	case errors.As(err, &exitErr):
+		return nil, fmt.Errorf("opendkim-testkey fails with exit %d", exitErr.ExitCode())
+	case err != nil:
+		return nil, fmt.Errorf("opendkim-testkey: %w", err)
+	}
+	m := opendkimSummary.FindAllSubmatch(out, -1)
+	if len(m) != 1 {
+		return nil, errors.New("opendkim-testkey answers without its summary")
+	}
+	keys, err1 := strconv.Atoi(string(m[0][1]))
+	failed, err2 := strconv.Atoi(string(m[0][3]))
+	if err1 != nil || err2 != nil || failed > keys {
+		return nil, errors.New("opendkim-testkey answers with a summary that does not add up")
+	}
+	return map[string]any{"keys": keys, "keys_failed": failed}, nil
 }
