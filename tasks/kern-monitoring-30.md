@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fühler http, tls und dns für die Katalog-Module — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-30 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-30 · Review: pro Task
 Spec: docs/features/kern-monitoring-30.md (Roadmap R-1392, R-1394, R-1395, R-1433)
 Heavy: linux-full — neue Parameter, Felder und ein Ziel für dns im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
