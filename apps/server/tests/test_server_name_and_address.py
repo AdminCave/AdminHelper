@@ -108,6 +108,8 @@ def test_a_null_name_is_refused_not_a_500(test_client, db_session, admin_user):
     created = _create(test_client, headers, name="web01.kunde.example")
     r = test_client.put(f"/api/servers/{created['id']}", json={"name": None}, headers=headers)
     assert r.status_code == 422, r.text
+    # HTTPValidationError, the shape the OpenAPI declares for 422 (R-1450).
+    assert r.json()["detail"][0]["loc"] == ["body", "name"], r.text
     db_session.expire_all()
     assert db_session.get(Server, created["id"]).name == "web01.kunde.example"
 
