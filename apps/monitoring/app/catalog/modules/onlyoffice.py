@@ -23,8 +23,8 @@ module sends GET only: a PUT or DELETE on /internal/cluster/inactive shuts the s
 
 Not covered: the converter
 (ds-converter.service), a data container (ONLYOFFICE_DATA_CONTAINER=true), which runs no
-docservice, the split images of the docservice, converter and proxy, and the container of
-Nextcloud AIO (nextcloud/aio-onlyoffice).
+docservice, the split images of the docservice, converter and proxy, the container of
+Nextcloud AIO (nextcloud/aio-onlyoffice) and the image onlyoffice/documentserver-ie.
 """
 
 _HEALTHCHECK = {"path": "/healthcheck", "expect": "true"}

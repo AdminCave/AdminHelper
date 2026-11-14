@@ -285,6 +285,13 @@ def test_the_container_and_unit_rules(module, check_key, values, want):
     assert _status(module, check_key, values) == want
 
 
+def test_jicofo_unit_stays_active_after_a_crash_but_exited():
+    # jicofo.service is sysv-generated with RemainAfterExit=yes: active (exited) after a crash.
+    exited = {"active_state": "active", "sub_state": "exited"}
+    assert _status(JICOFO, "service", exited) == "critical"
+    assert _status(JICOFO, "service", {"active_state": "active", "sub_state": "running"}) == "ok"
+
+
 def test_the_cards_show_the_container_or_the_service_and_health():
     assert [(i.check_key, i.field) for i in JVB.card] == [
         ("container", "state"),

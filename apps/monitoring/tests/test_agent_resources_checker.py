@@ -972,3 +972,12 @@ def test_at_most_five_top_processes_per_list():
     top = {"cpu": cpu, "memory": memory}
     _, _, metrics = CHECKER.evaluate(T, _report(cpu_percent=99, top_processes=top))
     assert metrics["_details"]["top_processes"] == {"cpu": cpu[:5], "memory": memory[:5]}
+
+
+def test_unusable_top_processes_take_no_place_of_the_five():
+    junk = [{"pid": 0, "name": "junk"}] * 6
+    cpu = [{"pid": pid, "name": f"p{pid}", "cpu_pct": 1} for pid in range(1, 8)]
+    memory = [{"pid": pid, "name": f"p{pid}", "rss": 1} for pid in range(1, 8)]
+    top = {"cpu": [*junk, *cpu], "memory": [*junk, *memory]}
+    _, _, metrics = CHECKER.evaluate(T, _report(cpu_percent=99, top_processes=top))
+    assert metrics["_details"]["top_processes"] == {"cpu": cpu[:5], "memory": memory[:5]}
