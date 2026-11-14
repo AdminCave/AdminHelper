@@ -8,14 +8,15 @@ The module is found by postfix.service (Debian, Ubuntu, RHEL). On Debian and Ubu
 oneshot that stays active (exited) while postfix@-.service runs the mail system, so the unit
 alone does not show a dead master: every 5 minutes the agent also asks for the SMTP greeting on
 port 25 of the loopback, and a missing or wrong greeting is critical. A Postfix whose
-inet_interfaces leaves out the loopback fails this check: turn it off there. Every 5 minutes
-the agent's app sensor counts the mails in the queues incoming, active, deferred and hold from
-the directory entries of the queue directory postconf names, opening no queue file; more than 100 deferred mails warn, as does a count that stopped at its
-cap. Every 15 minutes it reads the arrival times of postqueue -j, and nothing else of its
-JSON, for the age of the oldest mail: older than a day warns, older than four days (Postfix's
-maximal_queue_lifetime before it bounces, 5 d) is critical. With 5000 mails or more it does not
-ask showq and age_read is false, which warns. A mail an admin holds counts as well. No
-address, domain or queue ID leaves the host.
+inet_interfaces leaves out the loopback fails this check: turn it off there. Every 5 minutes the
+agent's app sensor counts the mails in the queues incoming, active, deferred and hold from the
+directory entries of the queue directory postconf names, opening no queue file; more than 100
+deferred mails warn, as does a count that stopped at its cap. Every 15 minutes it reads the
+arrival times of postqueue -j, and nothing else of its JSON, for the age of the oldest mail:
+older than a day warns, older than four days (Postfix's maximal_queue_lifetime before it
+bounces, 5 d) is critical. With 5000 mails or more it does not ask showq and age_read is false,
+which warns. A mail an admin holds counts as well. No address, domain or queue ID leaves the
+host.
 
 Not covered: further instances of postmulti, a queue directory outside the root of the
 host, and the Postfix of Mailcow (module mailcow).

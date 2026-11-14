@@ -29,3 +29,12 @@ Beweis: review kern-monitoring-31 / -30 / reviewer kern-monitoring-11 2026-11-14
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/klein-nachlese-9.md
 Abhängt von: T1
+
+### T3 — Nachbesserung aus der Abschlussprüfung: Docstring-Umbruch, fail2ban-client --test in der Liste  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/postfix.py, apps/monitoring/app/catalog/modules/windows_host.py, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1ce853e98 2026-11-14T23:33:21+01:00
+Review: am Ende (Branch-Review)
+Beweis: reviewer klein-nachlese-9 branch 2026-11-14 (wichtig: postfix.py:13 154 Zeichen; nits: windows_host.py-Umbruch, fail2ban-client --test fehlt in der Aufzählung)
+Änderung: die Absätze der Docstrings von `postfix` und `windows_host` neu umbrochen (höchstens 100 Zeichen); die Aufzählung der Konfigurationstests im Agent-Handbuch (DE+EN) nennt `fail2ban-client --test`
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_mail.py tests/test_catalog_windows_server.py
+Doku: docs/developer/agent.html, docs/en/developer/agent.html
