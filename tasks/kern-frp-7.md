@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Ergebnis des Policy-Abgleichs nach Schlüssel-Erneuerung — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-frp-7 · Review: am Ende
 Spec: docs/features/kern-frp-7.md (Roadmap R-1437)
 Heavy: none — additives Antwortfeld und UI-Hinweis; kein Stack-, Gateway- oder FRP-Datenpfad geändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/t
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku DE+EN und CHANGELOG  [ ]
+### T3 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-frp-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c991624aa 2026-11-14T07:32:13+01:00
+Review: am Ende (Branch-Review)
 Änderung: Antwortfeld `policySynced` in der API-Referenz; ein Satz zur Warnung auf der Admin-Seite FRP-Tunnel;
 Fragment unter `### Changed`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
