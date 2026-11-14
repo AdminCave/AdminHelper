@@ -425,11 +425,18 @@ async function domTexts(selector) {
   );
 }
 
+// A finding named after its module (an md RAID found by its package) has no .inbox-instance,
+// so the index is found in the page and not by asking each item.
 async function findingItem(instance) {
-  for (const item of await $$(".inbox-item")) {
-    if ((await textContentOf(await item.$(".inbox-instance"))) === instance) return item;
-  }
-  throw new Error(`no finding ${instance} in the inbox`);
+  const index = await browser.execute(
+    (want) =>
+      [...document.querySelectorAll(".inbox-item")].findIndex(
+        (el) => el.querySelector(".inbox-instance")?.textContent.trim() === want,
+      ),
+    instance,
+  );
+  if (index < 0) throw new Error(`no finding ${instance} in the inbox`);
+  return (await $$(".inbox-item"))[index];
 }
 
 // A fixed report in the agent's wire form, invented for the look of the views: a mail and a
