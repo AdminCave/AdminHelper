@@ -161,7 +161,7 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           <div class="code-header"><span>sh</span></div>
 <pre><code>SERVER=srm.example.com                 # your AdminHelper server
 VERSION=0.47.0                         # match the server's release
-PUBSHA=&lt;sha256-from-cicd&gt;             # published value (CI/CD &amp; Release)
+PUBSHA=75ccb5ed23cc2ea60ce9b945143bcb16e588b7994c351c21f2423726c56be804  # published value (CI/CD &amp; Release)
 
 # 1) Fetch the public repo key, check it (ENFORCED), install it only then
 TMP=$(mktemp -d)
@@ -193,6 +193,7 @@ EOF
 
 pkg update -r adminhelper
 pkg install -r adminhelper adminhelper-agent   # later updates: pkg upgrade</code></pre>
+          <p>If you started with option&nbsp;B, switch the <code>ENV</code> entry in <code>/usr/local/etc/pkg/repos/adminhelper.conf</code> to option&nbsp;A after provisioning (the internal CA is then at <code>/usr/local/etc/adminhelper/identity/ca.crt</code>) and run <code>pkg update -r adminhelper</code> and <code>pkg upgrade</code>: from then on pkg checks the server's certificate too.</p>
           <p>Then provision the host as in <a href="#provisioning">Provisioning</a>, as root and without <code>sudo</code>. What differs from Linux on FreeBSD:</p>
           <ul>
             <li><strong>Paths:</strong> configuration and identity live under <code>/usr/local/etc/adminhelper/</code> (<code>monitor.conf</code>, <code>identity/</code>), the FRP files under <code>/usr/local/etc/adminhelper/frp/</code> (<code>frpc.toml</code>, <code>adminhelper.conf</code>, <code>admin.conf</code>). The log is <code>/var/log/adminhelper/agent.log</code>, as on Linux.</li>
@@ -215,7 +216,7 @@ pkg install -r adminhelper adminhelper-agent   # later updates: pkg upgrade</cod
           <div class="code-header"><span>sh</span></div>
 <pre><code>SERVER=srm.example.com                 # your AdminHelper server
 VERSION=0.47.0                         # match the server's release
-PUBSHA=&lt;sha256-from-cicd&gt;             # published value (CI/CD &amp; Release)
+PUBSHA=75ccb5ed23cc2ea60ce9b945143bcb16e588b7994c351c21f2423726c56be804  # published value (CI/CD &amp; Release)
 
 # 1) Fetch the public repo key, check it STRICTLY, install it only then
 TMP=$(mktemp -d)

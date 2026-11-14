@@ -8,8 +8,9 @@ A request that looks like reading can make a service act (monitoring concept §3
 HTTP check asks a known trap, and a path that makes the service do real work is marked
 as a test object. No HTTP check asks the loopback address, where a web server answers
 with its default site rather than the app's. No module detects itself by a name every
-other stack runs too, or it would claim their containers and units. Each rule is shown
-to catch a module that breaks it.
+other stack runs too, or it would claim their containers and units; only the modules of
+those services themselves (R-1231) detect them by name. Each rule is shown to catch a
+module that breaks it.
 """
 
 import re
@@ -50,12 +51,16 @@ GENERIC_NAMES = frozenset(
         "redis",
         "redis-server",
         "mariadb",
+        "mysql",
+        "mysqld",
         "node",
         "python3",
         "java",
     }
 )
 _PHP_FPM = re.compile(r"^php[0-9.]*-fpm$")
+# The modules of the generic services themselves: their units are theirs to claim.
+SERVICE_MODULES = frozenset({"nginx", "apache", "php_fpm", "mariadb", "postgres", "redis"})
 
 
 def _http_paths(module: Module):
@@ -94,11 +99,19 @@ def _generic(name: str) -> bool:
     return name in GENERIC_NAMES or bool(_PHP_FPM.fullmatch(name))
 
 
+def _unit_name(unit: str) -> str:
+    """The service a unit or unit pattern names: postgresql@.service and postgresql-*.service
+    name postgresql."""
+    return unit.removesuffix(".service").removesuffix("@").removesuffix("-*")
+
+
 def _generic_detect(module: Module) -> list[str]:
+    if module.id in SERVICE_MODULES:
+        return []
     d = module.detect
     return (
         [f"image:{i}" for i in d.container_images if _generic(image_repo(i))]
-        + [f"unit:{u}" for u in d.units if _generic(u.removesuffix(".service"))]
+        + [f"unit:{u}" for u in d.units if _generic(_unit_name(u))]
         + [f"process:{p}" for p in d.processes if _generic(p)]
     )
 
@@ -185,3 +198,13 @@ def test_a_module_that_keeps_the_rules_passes_them():
         test_object=True,
     )
     assert {rule: check(module) for rule, check in RULES.items()} == dict.fromkeys(RULES, [])
+
+
+def test_the_service_modules_detect_only_their_own_service():
+    # The exemption of _generic_detect must not hide an app: these modules detect by units
+    # and images of the generic service and nothing else.
+    for module_id in SERVICE_MODULES:
+        d = SHIPPED.modules[module_id].detect
+        assert d.units and not (d.processes or d.markers)
+        assert all(_generic(_unit_name(u)) for u in d.units), module_id
+        assert all(_generic(image_repo(i)) for i in d.container_images), module_id
