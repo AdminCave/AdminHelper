@@ -182,3 +182,22 @@ def test_each_rule_fires_at_its_threshold(module_id, key, values, want):
 )
 def test_a_stopped_role_service_is_critical(module_id, state, want):
     assert _status(module_id, "service", active_state=state, sub_state="dead") == want
+
+
+def test_port_53_of_the_dns_server_is_not_a_port_finding_too():
+    # The Windows sockets carry no unit, so the module's own port is claimed by its hint.
+    inv = _block(["DNS"])
+    inv["sockets"] = [
+        {
+            "proto": "tcp",
+            "addr": "0.0.0.0",
+            "port": 53,
+            "process": "dns",
+            "container": "",
+            "unit": "",
+        }
+    ]
+    inv["ports"] = [{"port": 53, "proto": "tcp", "protocol": "dns"}]
+    seen = match_inventory(inv, CATALOG)
+    assert ("windows-dns", "DNS") in seen
+    assert not any(key[1] == "tcp-53" for key in seen)
