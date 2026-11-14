@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: gespeicherte Texte und Dienste-Fehlerzeilen nachziehen — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-27 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-27 · Review: pro Task
 Spec: docs/features/kern-monitoring-27.md (Roadmap R-1372, R-1373, R-1415)
 Heavy: none — Monitoring-Dienst und ein Desktop-Helfer; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
