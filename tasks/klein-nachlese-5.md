@@ -10,8 +10,10 @@ Heavy: none — nur Agent-Unit-Tests und ein Docstring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1429: LDAP-Fallname, openProcRoot direkt testen  [ ]
+### T1 — R-1429: LDAP-Fallname, openProcRoot direkt testen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_ldap_test.go, apps/agent/internal/probe/app_wordpress_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @907fbd54c 2026-11-14T22:19:29+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer arch-monitoring-app-collector T3/T4 2026-11-13 · Dedup-Key: REF:agent:app_ldap_test.go:nachlese-arch-monitoring-app-collector
 Änderung: der Fall „a notice of disconnection“ (Zeile 540) heißt „a closed connection“; neuer Test ruft `openProcRoot(os.Getpid())` auf: unter Linux öffnet er, sonst `ErrUnsupported` (kein Skip).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
