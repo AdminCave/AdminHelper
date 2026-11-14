@@ -1,5 +1,5 @@
 # Tägliche Konfigurationstests (DNS, DHCP, VRRP, Proxy, fail2ban) — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-31 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-31 · Review: am Ende
 Spec: docs/features/kern-monitoring-31.md (Roadmap R-1432)
 Heavy: linux-full — neue Agent-Ansicht und Freigabeliste (apps/agent), Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
