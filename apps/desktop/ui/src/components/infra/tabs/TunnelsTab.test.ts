@@ -84,14 +84,14 @@ describe('TunnelsTab tunnel key renewal', () => {
     expect(showNotice).not.toHaveBeenCalled();
   });
 
-  // R-1437: the rotation stands, but frps still admits the old key until the next sync.
+  // R-1437: the rotation stands, but frps still admits the old key until a sync succeeds.
   it('warns when the server could not write the frps policy', async () => {
     h.confirm.mockResolvedValueOnce(true);
     h.rotateKey.mockResolvedValueOnce({ generation: 2, policySynced: false });
     const { container } = render(TunnelsTab, { props: { server } });
-    await waitFor(() => expect(rotateButton(container)).not.toBeNull());
+    await waitFor(() => expect(rotateButton(container)).not.toBeNull(), { timeout: 30_000 });
     await fireEvent.click(rotateButton(container)!);
-    await waitFor(() => expect(showNotice).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(showNotice).toHaveBeenCalledTimes(1), { timeout: 30_000 });
     const notice = vi.mocked(showNotice).mock.calls[0][0];
     expect(notice.tone).toBe('warning');
     expect(notice.title).toContain('alpha');
