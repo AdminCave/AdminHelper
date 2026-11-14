@@ -210,6 +210,8 @@ func TestTheWindowsViewsAreUnsupportedElsewhere(t *testing.T) {
 		"wsus":           func() (map[string]any, error) { return wsusState(ctx, Target{}) },
 		"storage":        func() (map[string]any, error) { return storageHealth(ctx) },
 		"defender":       func() (map[string]any, error) { return defenderStatus(ctx) },
+		"win_backup":     func() (map[string]any, error) { return winBackup(ctx) },
+		"veeam_windows":  func() (map[string]any, error) { return veeamWindows(ctx, Target{}) },
 	} {
 		if _, err := read(); !errors.Is(err, ErrUnsupported) {
 			t.Errorf("%s: err = %v, want ErrUnsupported", name, err)
@@ -218,14 +220,14 @@ func TestTheWindowsViewsAreUnsupportedElsewhere(t *testing.T) {
 }
 
 func TestTheHostSensorTakesTheWindowsViews(t *testing.T) {
-	for _, view := range []string{"win_updates", "win_certs", "win_events", "storage", "defender"} {
+	for _, view := range []string{"win_updates", "win_certs", "win_events", "storage", "defender", "win_backup"} {
 		_, err := hostSensor(t.Context(), Probe{Sensor: "host", Params: map[string]any{"view": view}}, "")
 		if errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v", view, err)
 		}
 	}
 	for _, view := range []string{"ad_replication", "dhcp_scopes", "iis_state", "rds_licenses",
-		"hyperv", "dfsr", "print", "mssql_events", "wsus", "cups_queues"} {
+		"hyperv", "dfsr", "print", "mssql_events", "wsus", "cups_queues", "veeam_windows"} {
 		if _, ok := appViews[view]; !ok {
 			t.Errorf("app view %s is missing", view)
 		}
@@ -336,5 +338,28 @@ func TestFreeValues(t *testing.T) {
 	}
 	if got := freeValues(0, 0); !reflect.DeepEqual(got, map[string]any{"content_free_bytes": uint64(0)}) {
 		t.Fatalf("no total: %v", got)
+	}
+}
+
+func TestWinBackupValues(t *testing.T) {
+	got := winBackupValues(winNow.Add(-26*time.Hour), true, 2, winNow)
+	want := map[string]any{"last_failed": true, "failures_24h": 2, "last_success_age_s": int64(26 * 3600)}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got := winBackupValues(time.Time{}, false, 0, winNow); !reflect.DeepEqual(got, map[string]any{"last_failed": false, "failures_24h": 0}) {
+		t.Fatalf("never a success: %v", got)
+	}
+}
+
+func TestVeeamWindowsValuesTakesTheResultFromTheLevel(t *testing.T) {
+	for level, want := range map[uint8]string{0: "success", 4: "success", 3: "warning", 2: "failed", 1: "failed"} {
+		got := veeamWindowsValues(true, winNow.Add(-time.Hour), level, winNow)
+		if got["last_result"] != want || got["last_run_age_s"] != int64(3600) || got["runs"] != 1 {
+			t.Errorf("level %d: %v, want %s", level, got, want)
+		}
+	}
+	if got := veeamWindowsValues(false, time.Time{}, 0, winNow); !reflect.DeepEqual(got, map[string]any{"runs": 0}) {
+		t.Fatalf("no job end: %v", got)
 	}
 }

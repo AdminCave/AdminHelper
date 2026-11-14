@@ -112,6 +112,7 @@ var appViews = map[string]appView{
 	"traefik_certs":     {kinds: eitherKinds, read: traefikCerts},
 	"unbound_stats":     {kinds: unitKinds, read: unboundStats},
 	"urbackup_status":   {kinds: unitKinds, uses: []string{useBasic}, readCred: urbackupStatus},
+	"veeam_windows":     {kinds: unitKinds, read: veeamWindows},
 	"veeam_sessions":    {kinds: unitKinds, read: veeamSessions},
 	"wg_peers":          {kinds: unitKinds, read: wgPeers},
 	"web_config":        {kinds: unitKinds, read: webConfig},

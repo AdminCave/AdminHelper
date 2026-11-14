@@ -402,10 +402,65 @@ func wsusState(ctx context.Context, _ Target) (map[string]any, error) {
 		return nil, fmt.Errorf("wsus content folder: %w", err)
 	}
 	values := freeValues(avail, total)
+	// The source name of WSUS's events is not verified on a WSUS server.
 	n, err := countEvents(ctx, eventQuery{channel: "Application", provider: "Windows Server Update Services", levels: []uint8{1, 2}, within: appEventsWindow})
 	if err != nil {
 		return nil, err
 	}
 	values["errors_24h"] = n
 	return values, nil
+}
+
+// The log and the event IDs of Windows Server Backup: 4 a backup that succeeded, 5 one that
+// failed (not verified for current Windows Server versions).
+const (
+	wbChannel = "Microsoft-Windows-Backup"
+	wbSuccess = 4
+	wbFailure = 5
+)
+
+// winBackup reads the newest successful and the newest finished backup of Windows Server
+// Backup, and the day's failures.
+func winBackup(ctx context.Context) (map[string]any, error) {
+	q := eventQuery{channel: wbChannel, provider: wbChannel}
+	ok := q
+	ok.ids = []uint16{wbSuccess}
+	success, found, err := latestEvent(ctx, ok)
+	if err != nil {
+		return nil, err
+	}
+	var lastSuccess time.Time
+	if found {
+		lastSuccess = success.at
+	}
+	done := q
+	done.ids = []uint16{wbSuccess, wbFailure}
+	last, found, err := latestEvent(ctx, done)
+	if err != nil {
+		return nil, err
+	}
+	lastFailed := found && last.id == wbFailure
+	failed := q
+	failed.ids, failed.within = []uint16{wbFailure}, appEventsWindow
+	failures, err := countEvents(ctx, failed)
+	if err != nil {
+		return nil, err
+	}
+	return winBackupValues(lastSuccess, lastFailed, failures, time.Now()), nil
+}
+
+// veeamChannel and veeamJobEnd: the Veeam Agent for Windows writes event 190 into its own log
+// when a backup job ends, with the level as its result (not verified on a current version).
+const (
+	veeamChannel = "Veeam Agent"
+	veeamJobEnd  = 190
+)
+
+// veeamWindows reads the newest job end of the Veeam Agent for Windows.
+func veeamWindows(ctx context.Context, _ Target) (map[string]any, error) {
+	last, found, err := latestEvent(ctx, eventQuery{channel: veeamChannel, ids: []uint16{veeamJobEnd}})
+	if err != nil {
+		return nil, err
+	}
+	return veeamWindowsValues(found, last.at, last.level, time.Now()), nil
 }

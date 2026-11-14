@@ -60,8 +60,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T9
 Abhängt von: T3
 
-### T5 — R-1436: Ansichten Windows Server Backup und Veeam-Agent für Windows  [ ]
+### T5 — R-1436: Ansichten Windows Server Backup und Veeam-Agent für Windows  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/winviews.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_other.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @bfc05178b 2026-11-14T12:43:43+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T5.verdict.json)
 Änderung: `win_backup` (Ereignisse `Microsoft-Windows-Backup` 4/5: Alter des letzten Erfolgs, Fehlschläge) und
 `veeam_windows` (Ereignis 190 im Log „Veeam Agent“, Ergebnis über den Level). Ereignis-IDs als „nicht
 verifiziert“ markiert, wo die Doku sie für aktuelle Versionen nicht belegt.

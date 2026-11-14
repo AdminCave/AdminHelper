@@ -594,3 +594,33 @@ func freeValues(free, total uint64) map[string]any {
 	}
 	return values
 }
+
+// winBackupValues reports the age of the newest successful backup, whether the newest finished
+// one failed, and the day's failures. A host that never backed up successfully has no age.
+func winBackupValues(lastSuccess time.Time, lastFailed bool, failures int, now time.Time) map[string]any {
+	values := map[string]any{"last_failed": lastFailed, "failures_24h": failures}
+	if !lastSuccess.IsZero() {
+		values["last_success_age_s"] = max(0, int64(now.Sub(lastSuccess)/time.Second))
+	}
+	return values
+}
+
+// veeamWindowsValues reports the age and the result of the newest job end: information is
+// success, warning a warning, error or critical a failure. Without one, only runs 0.
+func veeamWindowsValues(found bool, at time.Time, level uint8, now time.Time) map[string]any {
+	if !found {
+		return map[string]any{"runs": 0}
+	}
+	result := "success"
+	switch level {
+	case 1, 2:
+		result = "failed"
+	case 3:
+		result = "warning"
+	}
+	values := map[string]any{"runs": 1, "last_result": result}
+	if !at.IsZero() {
+		values["last_run_age_s"] = max(0, int64(now.Sub(at)/time.Second))
+	}
+	return values
+}
