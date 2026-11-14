@@ -67,6 +67,7 @@ var (
 var appViews = map[string]appView{
 	"apcupsd":           {kinds: unitKinds, read: apcupsd},
 	"apache_status":     {kinds: unitKinds, read: apacheStatus},
+	"backuppc_status":   {kinds: unitKinds, read: backuppcStatus},
 	"bbb_meetings":      {kinds: unitKinds, read: bbbMeetings},
 	"bbb_recordings":    {kinds: unitKinds, read: bbbRecordings},
 	"bind_status":       {kinds: unitKinds, read: bindStatus},
@@ -96,6 +97,8 @@ var appViews = map[string]appView{
 	"tailscale_status":  {kinds: unitKinds, read: tailscaleStatus},
 	"traefik_certs":     {kinds: eitherKinds, read: traefikCerts},
 	"unbound_stats":     {kinds: unitKinds, read: unboundStats},
+	"urbackup_status":   {kinds: unitKinds, uses: []string{useBasic}, readCred: urbackupStatus},
+	"veeam_sessions":    {kinds: unitKinds, read: veeamSessions},
 	"wg_peers":          {kinds: unitKinds, read: wgPeers},
 	"web_config":        {kinds: unitKinds, read: webConfig},
 	"wordpress_version": {kinds: containerKinds, read: wordpressVersion},

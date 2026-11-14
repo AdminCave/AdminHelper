@@ -227,8 +227,14 @@ var commands = map[string][][]string{
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
 	"mariadb":    mariadbCalls,
 	"mysql":      mariadbCalls,
-	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps.
-	"runuser":    append(slices.Clone(postgresCalls), []string{"-u", "<pmuser>", "--", "pm2", "jlist"}),
+	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps;
+	// BackupPC_serverMesg status hosts as backuppc (Debian's path and EPEL's), which reads the server's
+	// status. Kept out: its other messages (backup, stop, server reload, log).
+	"runuser": append(slices.Clone(postgresCalls),
+		[]string{"-u", "<pmuser>", "--", "pm2", "jlist"},
+		[]string{"-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		[]string{"-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
+	),
 	"dpkg-query": {{"--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "<package>..."}},
 	"rpm":        {{"--query", `--queryformat=%{NAME}\n`, "<package>..."}},
 	"sc": {
@@ -304,6 +310,9 @@ var commands = map[string][][]string{
 	"haproxy":    {{"-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"}},
 	"ceph":       {{"health", "-f", "json"}, {"df", "-f", "json"}},
 	"sanoid":     {{"--monitor-snapshots"}},
+	// Veeam Agent for Linux (probe, app_backup.go): the list of sessions. Kept out: job start, session
+	// stop, backup delete and every other veeamconfig command.
+	"veeamconfig": {{"session", "list"}},
 	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.

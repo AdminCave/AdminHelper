@@ -677,3 +677,39 @@ func TestClassesIsACopy(t *testing.T) {
 		t.Error("Classes returned the list's own map")
 	}
 }
+
+func TestAllowlistBackupViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"veeamconfig", "session", "list"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "backup", "pc1", "pc1", "backuppc", "1"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "stop", "pc1"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "server", "reload"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "host(pc1)"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts", "x"},
+		{"runuser", "-u", "root", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"runuser", "-u", "backuppc", "--", "/tmp/BackupPC_serverMesg", "status", "hosts"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_dump", "-f", "pc1"},
+		{"/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"BackupPC_serverMesg", "backup", "pc1", "pc1", "backuppc", "1"},
+		{"rsnapshot", "alpha"},
+		{"rsnapshot", "du"},
+		{"rsnapshot", "diff", "alpha.0", "alpha.1"},
+		{"veeamconfig", "job", "start", "--name", "j"},
+		{"veeamconfig", "session", "stop", "--id", "1"},
+		{"veeamconfig", "session", "list", "--24"},
+		{"veeamconfig", "backup", "delete", "--id", "1"},
+		{"urbackupsrv", "remove-unknown"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
