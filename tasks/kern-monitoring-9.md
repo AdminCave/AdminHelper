@@ -61,13 +61,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sen
 Doku: → T8
 Abhängt von: T4
 
-### T6 — R-1235: Monitoring-Dienst meldet Scheduler-Verzug und Mailzustellung  [?] (neue Route GET /health/detail nur im Compose-Netz mit scheduler_lag_s, mail_last_ok_age_s, mail_failed_24h? Empfehlung: ja, /health bleibt unverändert)
+### T6 — R-1235: Monitoring-Dienst meldet Scheduler-Verzug und Mailzustellung  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/main.py, apps/monitoring/tests/test_health.py
 Änderung: nach Kevins Antwort (Spec, Offene Fragen 1).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_health.py
 Doku: → T8
 
-### T7 — R-1235: Modul adminhelper prüft Scheduler-Verzug und Mailzustellung  [?] (hängt an T6)
+### T7 — R-1235: Modul adminhelper prüft Scheduler-Verzug und Mailzustellung  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/adminhelper.py, apps/monitoring/tests/test_catalog_adminhelper.py
 Änderung: `http` auf `/health/detail` mit `data.scheduler_lag_s` (> 600 s warning, > 1800 s critical) und
 `data.mail_failed_24h` > 0 warning; Modulversion hoch.
@@ -89,3 +89,4 @@ Abhängt von: T3, T5
   Timer.
 - Der `/healthz` des Gateways hört nur im Container auf `127.0.0.1:8081`; das Gateway prüfen `tls` auf 443 und der
   Container-Zustand.
+- Kevin 2026-11-14: T6/T7 wie empfohlen: neue Route `GET /health/detail` nur im Compose-Netz, `/health` bleibt unverändert; übrige Monitoring-Entscheidungen wie im Ledger vorgeschlagen.
