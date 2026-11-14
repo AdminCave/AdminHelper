@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Windows Server, Windows-Rollen und Windows-Backup — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-14 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-14 · Review: pro Task
 Spec: docs/features/kern-monitoring-14.md (Roadmap R-1245, R-1246, R-1436)
 Heavy: linux-full — Discovery und neue Ansichten im Agent (`apps/agent`); Windows über den CI-Job `agent-windows` (keine Windows-Vorlage im Pool), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -103,8 +103,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_win
 Doku: → T9
 Abhängt von: T6
 
-### T9 — Doku DE+EN und CHANGELOG  [ ]
+### T9 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f18d0a6e3 2026-11-14T14:24:54+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Windows-Gruppe der App-Module, Discovery unter Windows, Ansichten und Lesewege, Katalog;
 `changelog.d/kern-monitoring-14.md` unter `### Added`, ohne Umlaute, mit dem Hinweis „nicht verifiziert auf einem
 Windows Server mit den Rollen“.
