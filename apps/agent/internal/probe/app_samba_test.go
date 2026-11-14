@@ -188,9 +188,9 @@ func TestSambaMemberRefusesWhatItCannotRead(t *testing.T) {
 	if _, err := sambaMember(context.Background(), sambaUnit); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("no testparm = %v, want unsupported", err)
 	}
-	stubToolsEnv(t, answer{}, answer{err: toolExit(t, 1, "ERROR: smbstatus needs root: /run/samba/locking.tdb\n")})
-	if _, err := sambaMember(context.Background(), sambaUnit); err == nil || strings.Contains(err.Error(), "locking") {
-		t.Fatalf("a failed smbstatus = %v", err)
+	stubToolsEnv(t, answer{}, answer{err: notInstalled("smbstatus")})
+	if _, err := sambaMember(context.Background(), sambaUnit); err == nil {
+		t.Fatal("a missing smbstatus reads as a state")
 	}
 	for _, out := range []string{"", "sessions: 2", `{"sessions": []}`, `{"tcons": 3}`, `{"open_files": "none"}`} {
 		stubToolsEnv(t, answer{}, answer{out: out})
@@ -201,6 +201,27 @@ func TestSambaMemberRefusesWhatItCannotRead(t *testing.T) {
 	stubToolsEnv(t, answer{}, answer{out: smbstatusJSON}, answer{err: errors.New("fork failed")})
 	if _, err := sambaMember(context.Background(), sambaUnit); err == nil {
 		t.Fatal("a wbinfo that cannot start reads as a state")
+	}
+}
+
+// An smbstatus before Samba 4.17 knows no --json and exits 1: the counts go, smb.conf and winbind stay.
+func TestSambaMemberWithoutSmbstatusJSONKeepsConfigAndWinbind(t *testing.T) {
+	calls := stubToolsEnv(t,
+		answer{},
+		answer{err: toolExit(t, 1, "smbstatus: unknown option --json\n")},
+		answer{},
+		answer{err: toolExit(t, 1, "")},
+	)
+	got, err := sambaMember(context.Background(), sambaUnit)
+	if err != nil {
+		t.Fatalf("sambaMember = %v", err)
+	}
+	want := map[string]any{"config_ok": true, "winbind_ok": true, "dc_ok": false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if len(*calls) != 4 {
+		t.Fatalf("calls = %v", *calls)
 	}
 }
 

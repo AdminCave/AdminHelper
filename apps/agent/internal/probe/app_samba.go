@@ -171,6 +171,8 @@ func sambaFSMO(ctx context.Context, _ Target) (map[string]any, error) {
 // checking that the processes still live), and, with winbind installed, whether winbindd answers and
 // whether it reaches its domain controller over NETLOGON (wbinfo -p, -P; each exits 0 on success,
 // nsswitch/wbinfo.c). It quotes nothing of what the tools print: share names, users, clients, files.
+// An smbstatus that exits with a code (one before Samba 4.17 knows no --json, source3/utils/status.c)
+// leaves only the counts out: they are shown, no rule reads them, and smb.conf and winbind still count.
 func sambaMember(ctx context.Context, _ Target) (map[string]any, error) {
 	_, err := runToolEnv(ctx, toolTimeout, sambaEnv, "testparm", "-s")
 	var exitErr *exec.ExitError
@@ -180,22 +182,8 @@ func sambaMember(ctx context.Context, _ Target) (map[string]any, error) {
 		return nil, sambaFailure("testparm", err)
 	}
 	values := map[string]any{"config_ok": err == nil}
-	out, err := runToolEnv(ctx, toolTimeout, sambaEnv, "smbstatus", "--json", "--fast")
-	if err != nil {
-		return nil, sambaFailure("smbstatus", err)
-	}
-	var status map[string]json.RawMessage
-	if err := json.Unmarshal(out, &status); err != nil {
-		return nil, errors.New("smbstatus answers with no JSON")
-	}
-	// smbstatus keys sessions and share connections by their ID, open_files by file
-	// (source3/utils/status_json.c).
-	for _, section := range []string{"sessions", "tcons", "open_files"} {
-		n, err := jsonMembers(status[section])
-		if err != nil {
-			return nil, fmt.Errorf("smbstatus answers with %s that is no object", section)
-		}
-		values[section] = n
+	if err := smbstatusCounts(ctx, values); err != nil {
+		return nil, err
 	}
 	ok, err := wbinfoOK(ctx, "-p")
 	if errors.Is(err, ErrUnsupported) {
@@ -212,6 +200,33 @@ func sambaMember(ctx context.Context, _ Target) (map[string]any, error) {
 	}
 	values["dc_ok"] = ok
 	return values, nil
+}
+
+// smbstatusCounts adds the sessions, share connections and open files from smbstatus --json --fast
+// to values; an smbstatus that exits with a code adds none.
+func smbstatusCounts(ctx context.Context, values map[string]any) error {
+	out, err := runToolEnv(ctx, toolTimeout, sambaEnv, "smbstatus", "--json", "--fast")
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return nil
+	}
+	if err != nil {
+		return sambaFailure("smbstatus", err)
+	}
+	var status map[string]json.RawMessage
+	if err := json.Unmarshal(out, &status); err != nil {
+		return errors.New("smbstatus answers with no JSON")
+	}
+	// smbstatus keys sessions and share connections by their ID, open_files by file
+	// (source3/utils/status_json.c).
+	for _, section := range []string{"sessions", "tcons", "open_files"} {
+		n, err := jsonMembers(status[section])
+		if err != nil {
+			return fmt.Errorf("smbstatus answers with %s that is no object", section)
+		}
+		values[section] = n
+	}
+	return nil
 }
 
 // sambaTrust says whether the trust account of this domain member is valid: wbinfo -t checks it
