@@ -4,7 +4,7 @@
 
 """The catalog module vaultwarden (R-1241): each of the three images gets the container
 check, whose own health check asks /alive; the systemd service gets the unit check and
-/alive on Rocket's port 8000; /admin is never asked."""
+/alive on Rocket's port 8000 in plain HTTP or TLS; /admin is never asked."""
 
 from datetime import UTC, datetime
 
@@ -132,7 +132,7 @@ def test_the_systemd_service_asks_alive_on_rockets_port_8000():
     config, _ = probe_config(
         MODULE, CHECKS["alive"], "vaultwarden", _found(block)["vaultwarden"], []
     )
-    assert config["target"] == {"kind": "unit", "name": UNIT, "port_hint": 8000, "scheme": "http"}
+    assert config["target"] == {"kind": "unit", "name": UNIT, "port_hint": 8000, "scheme": "auto"}
 
 
 @pytest.mark.parametrize(

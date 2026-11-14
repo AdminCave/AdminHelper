@@ -8,9 +8,8 @@ The module asks slapd on 389 an anonymous WhoAmI (RFC 4532), which needs no bind
 no entry. Any LDAP answer counts, a refusal by the server's access rules too; the check is
 critical when slapd refuses or closes the connection, answers no LDAP, or reports itself
 busy or unavailable. For the package it also asks StartTLS on 389 once an hour and reads the
-certificate slapd presents: warning below 22 days left, critical below 9 or when StartTLS or
-the handshake fails. The agent reports days left, not the share of the lifetime (concept
-§5); the thresholds are that share of the 90 days an ACME certificate lives. A slapd without
+certificate slapd presents: warning below 25 % of its lifetime left, critical below 10 % or
+12 hours, or when StartTLS or the handshake fails (concept §5). A slapd without
 TLS, the Debian default, refuses StartTLS and the certificate check is critical: set up TLS
 or turn the check off. On Debian and Ubuntu slapd.service comes from the init script and
 stays active when slapd dies, its sub-state exited instead of running; the module rates
@@ -42,7 +41,7 @@ _ANSWERS_RULES = [{"field": "ok", "op": "eq", "value": False, "level": "critical
 MODULE = {
     "id": "openldap",
     "name": "OpenLDAP",
-    "version": 2,
+    "version": 3,
     "description": (
         "OpenLDAP's slapd from its package or image: the unit or the container, whether slapd "
         "answers LDAP, and for the package the certificate behind StartTLS and the state of "
@@ -106,10 +105,18 @@ MODULE = {
             "target": {"kind": "unit", "port_hint": 389},
             "params": {"starttls": "ldap"},
             "interval": 3600,
-            "fields": ["days_left", "not_after", "issuer", "chain_ok"],
+            "fields": [
+                "days_left",
+                "hours_left",
+                "lifetime_pct",
+                "not_after",
+                "issuer",
+                "chain_ok",
+            ],
             "rules": [
-                {"field": "days_left", "op": "lt", "value": 22, "level": "warning"},
-                {"field": "days_left", "op": "lt", "value": 9, "level": "critical"},
+                {"field": "lifetime_pct", "op": "lt", "value": 25, "level": "warning"},
+                {"field": "lifetime_pct", "op": "lt", "value": 10, "level": "critical"},
+                {"field": "hours_left", "op": "lt", "value": 12, "level": "critical"},
             ],
         },
         {

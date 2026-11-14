@@ -30,6 +30,7 @@ from pydantic import (
 from app.catalog.sensors import (
     APP_VIEW_TARGETS,
     FIELD_PATTERN,
+    OPTIONAL_TARGET_SENSORS,
     PASSWORD_VIEWS,
     SENSOR_TARGETS,
     SENSORS,
@@ -91,7 +92,7 @@ class Detect(_Model):
 
 class Alternative(_Model):
     port_hint: _PORT
-    scheme: Literal["http", "https", "tcp"]
+    scheme: Literal["http", "https", "tcp", "auto"]
 
 
 class Target(_Model):
@@ -102,7 +103,8 @@ class Target(_Model):
     # no other check's service names (Nextcloud started by `docker run` or as `nextcloud`).
     image_fallback: StrictBool = False
     port_hint: _PORT | None = None
-    scheme: Literal["http", "https", "tcp"] | None = None
+    # auto: the http sensor asks the port whether it speaks TLS (field tls).
+    scheme: Literal["http", "https", "tcp", "auto"] | None = None
     # In order: the first whose port the last scan saw at the container (Bitwarden's nginx
     # listens on 8443 with TLS and redirects 8080 there, on 8080 alone without).
     alternatives: list[Alternative] | None = Field(None, min_length=1, max_length=4)
@@ -213,9 +215,10 @@ class Check(_Model):
         kinds = SENSOR_TARGETS[self.sensor]
         if kinds is None and self.target is not None:
             raise ValueError(f"sensor {self.sensor!r} takes no target")
-        if kinds is not None:
-            if self.target is None:
+        if kinds is not None and self.target is None:
+            if self.sensor not in OPTIONAL_TARGET_SENSORS:
                 raise ValueError(f"sensor {self.sensor!r} needs a target")
+        elif kinds is not None:
             if self.target.kind not in kinds:
                 raise ValueError(
                     f"sensor {self.sensor!r} cannot target {self.target.kind!r}, "
@@ -228,6 +231,11 @@ class Check(_Model):
                         f"view {view!r} of sensor 'app' targets only "
                         f"{sorted(APP_VIEW_TARGETS[view])}, not {self.target.kind!r}"
                     )
+        if self.target is not None and self.sensor != "http":
+            schemes = [self.target.scheme] + [a.scheme for a in self.target.alternatives or []]
+            if "auto" in schemes:
+                # Only the http sensor asks the port; any other would take auto for a scheme.
+                raise ValueError(f"scheme 'auto' only for sensor 'http', not {self.sensor!r}")
         if (
             self.credential is not None
             and self.credential.use == "password"

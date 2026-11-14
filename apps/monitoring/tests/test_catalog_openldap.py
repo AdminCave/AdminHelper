@@ -6,7 +6,7 @@
 check and an LDAP WhoAmI on 389; the package's slapd.service gets the unit check, the same
 WhoAmI, the certificate behind StartTLS on 389 once an hour and the replication view every
 five minutes; any LDAP answer counts, busy or unavailable is critical; the certificate warns
-below 22 days and is critical below 9; a consumer without a connection warns, a slapd
+below 25 % of its lifetime and is critical below 10 % or 12 hours; a consumer without a connection warns, a slapd
 without cn=Monitor leaves the replication unknown; the pre-releases on 3890, phpLDAPadmin
 and other LDAP servers are not bound or not taken."""
 
@@ -105,7 +105,7 @@ def _status(check_key, values, status="ok", error=""):
 
 def test_the_module_loads_with_its_checks():
     assert CATALOG.errors == ()
-    assert MODULE.version == 2
+    assert MODULE.version == 3
     assert list(CHECKS) == [
         "container",
         "answers",
@@ -135,7 +135,14 @@ def test_only_the_package_gets_the_certificate_behind_starttls_once_an_hour():
     check = CHECKS["certificate"]
     assert (check.target.kind, check.target.port_hint) == ("unit", 389)
     assert check.params == {"server_name": "", "starttls": "ldap"}
-    assert check.fields == ["days_left", "not_after", "issuer", "chain_ok"]
+    assert check.fields == [
+        "days_left",
+        "hours_left",
+        "lifetime_pct",
+        "not_after",
+        "issuer",
+        "chain_ok",
+    ]
     assert (check.interval, check.test_object) == (3600, False)
 
 
@@ -242,9 +249,11 @@ def test_the_protocol_check_is_critical_unless_slapd_answers(
     assert _status(check_key, values, status, error) == want
 
 
-def _cert(days_left):
+def _cert(lifetime_pct, hours_left=1000):
     return {
-        "days_left": days_left,
+        "days_left": hours_left // 24,
+        "hours_left": hours_left,
+        "lifetime_pct": lifetime_pct,
         "not_after": "2020-03-01T00:00:00Z",
         "issuer": "CN=Example CA",
         "chain_ok": True,
@@ -254,18 +263,24 @@ def _cert(days_left):
 @pytest.mark.parametrize(
     ("values", "status", "error", "want"),
     [
-        (_cert(60), "ok", "", "ok"),
-        (_cert(22), "ok", "", "ok"),
-        (_cert(21), "ok", "", "warning"),
-        (_cert(9), "ok", "", "warning"),
-        (_cert(8), "ok", "", "critical"),
-        (_cert(-3), "ok", "", "critical"),
+        (_cert(66.7), "ok", "", "ok"),
+        (_cert(25.0), "ok", "", "ok"),
+        (_cert(24.9), "ok", "", "warning"),
+        (_cert(10.0), "ok", "", "warning"),
+        (_cert(9.9), "ok", "", "critical"),
+        # Expired: the agent reports no share left.
+        (_cert(0.0, hours_left=-72), "ok", "", "critical"),
+        # A long-lived certificate on its last day: the share alone would not see it.
+        (_cert(50.0, hours_left=12), "ok", "", "ok"),
+        (_cert(50.0, hours_left=11), "ok", "", "critical"),
         # A slapd without TLS refuses StartTLS.
         ({}, "error", "ldap: StartTLS refused (result 2)", "critical"),
         ({}, "error", "tls: handshake failure", "critical"),
     ],
 )
-def test_the_certificate_warns_below_22_days_and_is_critical_below_9(values, status, error, want):
+def test_the_certificate_rates_the_share_of_its_lifetime_and_its_last_hours(
+    values, status, error, want
+):
     assert _status("certificate", values, status, error) == want
 
 

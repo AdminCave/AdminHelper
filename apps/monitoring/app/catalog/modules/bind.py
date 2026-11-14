@@ -9,6 +9,12 @@ its control channel, how many zones it serves and how many recursive clients it 
 its limit; no zone name, no address. A named that does not answer is critical. Debian and
 RHEL name the unit named.service (Debian's bind9.service is an alias of it).
 
+Every five minutes the agent also asks named localhost A on its port 53 over TCP: critical
+on SERVFAIL or no answer. That the packages' default configuration holds a localhost zone
+is not verified; a named without one asks the root servers and answers NXDOMAIN (an answer),
+REFUSED without recursion (an answer too), or SERVFAIL when it cannot reach them (critical:
+it resolves nothing).
+
 Daily the agent runs `named-checkconf` and reports only whether the configuration loads: one
 that does not would fail the next restart or reload while the running server goes on, a
 warning.
@@ -17,10 +23,15 @@ Not covered: a control channel rndc cannot reach with its default key (rndc.key 
 rndc.conf), the zones' contents and their transfers, and `rndc stats` (it writes a file).
 """
 
+# The agent asks localhost A at the service's own port 53 over TCP. Only a SERVFAIL or no
+# answer at all is critical: NXDOMAIN or REFUSED is an answer, and what the server holds
+# for localhost depends on its configuration.
+_ANSWER_RULES = [{"field": "rcode", "op": "eq", "value": "servfail", "level": "critical"}]
+
 MODULE = {
     "id": "bind",
     "name": "BIND",
-    "version": 2,
+    "version": 3,
     "description": (
         "BIND 9: the unit, whether named answers rndc, its zones and recursive clients."
     ),
@@ -49,6 +60,16 @@ MODULE = {
             "rules": [{"field": "running", "op": "eq", "value": False, "level": "critical"}],
         },
         {
+            "key": "answers",
+            "name": "DNS answer",
+            "sensor": "dns",
+            "target": {"kind": "unit", "port_hint": 53},
+            "params": {"name": "localhost"},
+            "interval": 300,
+            "fields": ["rcode", "answers", "duration_ms"],
+            "rules": _ANSWER_RULES,
+        },
+        {
             "key": "config",
             "name": "Configuration test",
             "sensor": "app",
@@ -64,5 +85,6 @@ MODULE = {
         {"check_key": "service", "field": "active_state", "label": "Service"},
         {"check_key": "status", "field": "zones", "label": "Zones"},
         {"check_key": "status", "field": "recursive_clients", "label": "Recursive clients"},
+        {"check_key": "answers", "field": "rcode", "label": "DNS answer"},
     ],
 }

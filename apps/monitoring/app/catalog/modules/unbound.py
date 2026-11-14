@@ -10,6 +10,11 @@ dropped because the request list was full and the share of SERVFAIL answers; abo
 warns. The share needs extended statistics (statistics-extended: yes) and at least one
 query: without them the check stays unknown. Turn extended statistics on, or the check off.
 
+Every five minutes the agent also asks Unbound localhost A on its port 53 over TCP: critical
+on SERVFAIL or no answer. Unbound answers localhost from its default local zone with
+127.0.0.1 (unbound.conf(5)); its access-control refuses other clients than 127.0.0.0/8 by
+default, and a REFUSED counts as an answer.
+
 Daily the agent runs `unbound-checkconf` and reports only whether the configuration loads: one
 that does not would fail the next restart or reload while the running resolver goes on, a
 warning.
@@ -18,10 +23,15 @@ Not covered: a remote-control interface unbound-control cannot reach with its de
 (control-enable: no), per-thread counters and the cache.
 """
 
+# The agent asks localhost A at the service's own port 53 over TCP. Only a SERVFAIL or no
+# answer at all is critical: NXDOMAIN or REFUSED is an answer, and what the server holds
+# for localhost depends on its configuration.
+_ANSWER_RULES = [{"field": "rcode", "op": "eq", "value": "servfail", "level": "critical"}]
+
 MODULE = {
     "id": "unbound",
     "name": "Unbound",
-    "version": 2,
+    "version": 3,
     "description": "Unbound: the unit, its queries and the share of SERVFAIL answers.",
     "detect": {"units": ["unbound.service"]},
     "instance": "unit",
@@ -48,6 +58,16 @@ MODULE = {
             "rules": [{"field": "servfail_pct", "op": "gt", "value": 5, "level": "warning"}],
         },
         {
+            "key": "answers",
+            "name": "DNS answer",
+            "sensor": "dns",
+            "target": {"kind": "unit", "port_hint": 53},
+            "params": {"name": "localhost"},
+            "interval": 300,
+            "fields": ["rcode", "answers", "duration_ms"],
+            "rules": _ANSWER_RULES,
+        },
+        {
             "key": "config",
             "name": "Configuration test",
             "sensor": "app",
@@ -62,5 +82,6 @@ MODULE = {
     "card": [
         {"check_key": "service", "field": "active_state", "label": "Service"},
         {"check_key": "stats", "field": "servfail_pct", "label": "SERVFAIL %"},
+        {"check_key": "answers", "field": "rcode", "label": "DNS answer"},
     ],
 }

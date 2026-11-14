@@ -9,13 +9,13 @@ is ready, 503 when one of its checks fails, the database connection among them. 
 endpoints exist only when the operator turned on health-enabled; without it the management
 port is closed or answers 404, and the check is critical: turn health on or the check off.
 The management interface takes TLS over from the main server (http-management-scheme
-inherited) and its path from http-relative-path; the module asks plain HTTP on /health/ready,
-so it needs http-management-scheme=http and no relative path. The images
+inherited) and its path from http-relative-path; the module asks /health/ready over plain
+HTTP or TLS, whichever the port speaks, so it needs no relative path. The images
 (quay.io/keycloak/keycloak, on Docker Hub keycloak/keycloak) expose 9000 from 25.0 on and
 have no HEALTHCHECK of their own; the container's health carries one a compose file adds.
 Keycloak ships no unit; the module knows keycloak.service, the name setups commonly give it.
 
-Not covered: the health endpoints over TLS or below a relative path, the images before 25.0
+Not covered: the health endpoints below a relative path, the images before 25.0
 (no port 9000: the check is not bound), the discontinued images bitnami/keycloak and
 jboss/keycloak, a unit under another name, and the metrics.
 """
@@ -28,7 +28,7 @@ _READY_RULES = [{"field": "status_code", "op": "ne", "value": 200, "level": "cri
 MODULE = {
     "id": "keycloak",
     "name": "Keycloak",
-    "version": 1,
+    "version": 2,
     "description": (
         "Keycloak from its image or its own unit: the container or the unit, and its "
         "readiness on the management port (needs health-enabled)."
@@ -55,7 +55,7 @@ MODULE = {
             "key": "ready",
             "name": "Ready",
             "sensor": "http",
-            "target": {"kind": "container", "port_hint": 9000, "scheme": "http"},
+            "target": {"kind": "container", "port_hint": 9000, "scheme": "auto"},
             "params": _READY,
             "interval": 300,
             "fields": _READY_FIELDS,
@@ -76,7 +76,7 @@ MODULE = {
             "key": "service_ready",
             "name": "Ready (service)",
             "sensor": "http",
-            "target": {"kind": "unit", "port_hint": 9000, "scheme": "http"},
+            "target": {"kind": "unit", "port_hint": 9000, "scheme": "auto"},
             "params": _READY,
             "interval": 300,
             "fields": _READY_FIELDS,
