@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fühler http, tls und dns für die Katalog-Module — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-30 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-30 · Review: pro Task
 Spec: docs/features/kern-monitoring-30.md (Roadmap R-1392, R-1394, R-1395, R-1433)
 Heavy: linux-full — neue Parameter, Felder und ein Ziel für dns im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -86,8 +86,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_ope
 Doku: → T8
 Abhängt von: T5
 
-### T8 — Doku DE+EN und CHANGELOG  [ ]
+### T8 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-30.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @32e7ff437 2026-11-14T09:59:29+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Modul-Tabelle (neun Module), Probe-Checks (Anteil der Laufzeit), Katalog (`HttpParams.expect`, Schema
 `auto`, dns mit Ziel), Sensorliste; `changelog.d/kern-monitoring-30.md` unter `### Added`, ohne Umlaute.
 `doc-smoke --env` lokal fahren.
