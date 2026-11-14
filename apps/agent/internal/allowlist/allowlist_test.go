@@ -683,6 +683,11 @@ func TestAllowlistBackupViews(t *testing.T) {
 		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
 		{"runuser", "-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
 		{"veeamconfig", "session", "list"},
+		{"restic", "snapshots", "--json", "--latest", "1", "--no-lock", "--no-cache"},
+		{"borg", "list", "--last", "1", "--json", "--bypass-lock"},
+		{"kopia", "snapshot", "list", "--json", "-n", "1"},
+		{"duplicati-server-util", "health"},
+		{"systemctl", "show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "restic-backup.service"},
 	} {
 		if !Allowed(call[0], call[1:]) {
 			t.Errorf("refused: %q", call)
@@ -707,6 +712,31 @@ func TestAllowlistBackupViews(t *testing.T) {
 		{"veeamconfig", "session", "list", "--24"},
 		{"veeamconfig", "backup", "delete", "--id", "1"},
 		{"urbackupsrv", "remove-unknown"},
+		// The repository views: no call that locks, writes or deletes, no repository in an argument.
+		{"restic", "snapshots", "--json", "--latest", "1"},
+		{"restic", "snapshots", "--json", "--latest", "1", "--no-lock"},
+		{"restic", "-r", "/srv/restic", "snapshots", "--json", "--latest", "1", "--no-lock", "--no-cache"},
+		{"restic", "forget", "--prune", "--keep-last", "1"},
+		{"restic", "prune"},
+		{"restic", "unlock", "--remove-all"},
+		{"restic", "check"},
+		{"restic", "backup", "/"},
+		{"borg", "list", "--last", "1", "--json"},
+		{"borg", "list", "--last", "1", "--json", "--bypass-lock", "/srv/borg"},
+		{"borg", "info", "--json", "--bypass-lock"},
+		{"borg", "compact"},
+		{"borg", "break-lock"},
+		{"borg", "delete", "--force"},
+		{"borg", "prune", "--keep-last", "1"},
+		{"kopia", "maintenance", "run", "--full"},
+		{"kopia", "snapshot", "delete", "k1", "--delete"},
+		{"kopia", "snapshot", "list", "--json", "-n", "1", "--all"},
+		{"kopia", "repository", "disconnect"},
+		{"duplicati-server-util", "pause"},
+		{"duplicati-server-util", "run", "1"},
+		{"duplicati-server-util", "change-password", "x"},
+		{"systemctl", "show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "a.service", "b.service"},
+		{"systemctl", "show", "-p", "Environment", "--", "restic-backup.service"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)

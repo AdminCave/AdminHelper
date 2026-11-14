@@ -223,6 +223,8 @@ var commands = map[string][][]string{
 		{"show", "-p", "Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent", "--", "<unit>..."},
 		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
+		// Where a backup unit keeps its repository (probe, app_repo.go): its environment, read in the agent.
+		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
 	"mariadb":    mariadbCalls,
@@ -313,6 +315,15 @@ var commands = map[string][][]string{
 	// Veeam Agent for Linux (probe, app_backup.go): the list of sessions. Kept out: job start, session
 	// stop, backup delete and every other veeamconfig command.
 	"veeamconfig": {{"session", "list"}},
+	// The repository views (probe, app_repo.go): the newest snapshot, without a lock and without writing
+	// restic's cache; the repository and its password come in the environment. Kept out: restic
+	// backup|forget|prune|unlock|check and any call that locks, borg create|prune|compact|delete|
+	// break-lock and any list without --bypass-lock, kopia snapshot create|delete and maintenance, and
+	// duplicati-server-util's other commands (pause, run, logout, change-password).
+	"restic":                {{"snapshots", "--json", "--latest", "1", "--no-lock", "--no-cache"}},
+	"borg":                  {{"list", "--last", "1", "--json", "--bypass-lock"}},
+	"kopia":                 {{"snapshot", "list", "--json", "-n", "1"}},
+	"duplicati-server-util": {{"health"}},
 	// The host sensor's thin pool view (probe, host_storage.go): attributes and fill levels only. The md
 	// view reads sysfs, so mdadm stays off the list (its --action, --fail and --remove write). Kept out:
 	// lvchange, lvextend, dmsetup and any other lvs argument list.
