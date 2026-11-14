@@ -63,11 +63,14 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_mai
 Doku: → T7
 Abhängt von: T4
 
-### T6 — R-1240: Module Samba, linuxmuster, edulution  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/samba_ad_dc.py, apps/monitoring/app/catalog/modules/samba_member.py, apps/monitoring/app/catalog/modules/linuxmuster.py, apps/monitoring/app/catalog/modules/edulution.py, apps/monitoring/tests/test_catalog_directory.py
-Änderung: Module nach Konzept §6.7: DRS-Fehler > 0 warning, letzter Erfolg > 12 h critical; smbd/nmbd/winbind
-aktiv auf einem DC ist ein Befund; LDAPS-Zertifikat relativ zur Laufzeit; SRV-Einträge über dns mit Ziel;
-linuxmuster-Units, Server-Zertifikat, Geräte-Import, LINBO; edulution über Container-Health und HTTP.
+### T6 — R-1240: Module Samba, linuxmuster  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/samba_ad_dc.py, apps/monitoring/app/catalog/modules/samba_member.py, apps/monitoring/app/catalog/modules/linuxmuster.py, apps/monitoring/tests/test_catalog_directory.py, tasks/kern-monitoring-11.md, docs/features/kern-monitoring-11.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e7ab5de1f 2026-11-14T18:35:52+01:00
+Review: approve (.ah-out/review/kern-monitoring-11/T6.verdict.json)
+Änderung: Module nach Konzept §6.3: DRS-Fehler > 0 warning, letzter Erfolg > 12 h critical; FSMO-Rollen;
+LDAPS-Zertifikat relativ zur Laufzeit; Samba-Mitglied (testparm, smbstatus, winbind, Vertrauensstellung);
+linuxmuster-Units, Server-Zertifikat, Geräte-Import, LINBO. Nicht in T6 (Entscheidungen): smbd/nmbd/winbind auf
+einem DC (R-1487), SRV-Einträge (R-1488), edulution (R-1489).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_directory.py
 Doku: → T7
 Abhängt von: T4
@@ -125,3 +128,12 @@ Abhängt von: T5, T6
   `pong` auf 11334; OpenDKIM täglich. Mailcow wird am Postfix-Image erkannt (`ghcr.io/mailcow/postfix`, ältere
   `mailcow/postfix`); ClamAV unter RHEL (`clamd@scan`) und der Socket von clamd bleiben draußen (Unitname nicht
   verifiziert, der Sensor `unixsocket` spricht kein zPING).
+- T6: Katalog bindet je Unit eine Instanz und eine `unit`-Prüfung nur an deren Unit; darum ohne Befund „smbd/nmbd/winbind
+  aktiv auf einem DC“ und ohne SRV-Abfrage (der Katalog kennt den Realm nicht), R-1487 und R-1488. edulution
+  entfällt in diesem Zug: Image-Namen und `/edu-api/health/check` sind an keiner öffentlichen Quelle belegbar (Repo
+  privat, 2026-11-14), Erkennung wäre geraten; R-1489. linuxmuster: `server.cert.pem` aus base7 `certs.py`,
+  Verzeichnis `/etc/linuxmuster/ssl` aus dem Konzept (Wert nicht verifiziert); linbo-multicast/linbo-torrent sind
+  oneshots mit `RemainAfterExit` (linbo7 `src/serverfs`), ihre Unit sagt nichts; linuxmuster-api (:8001, https)
+  verlangt für jeden Pfad ein Token, bleibt draußen. Schwellen: DRS-Link-Fehler Warnung, letzter Erfolg > 12 h
+  kritisch (Konzept), FSMO ohne Inhaber Warnung, LDAPS wie OpenLDAP (25/10 %, 12 h), Server-Zertifikat 30/7 Tage,
+  Import ausstehend und veraltete Torrents Warnung, winbind ohne Antwort kritisch, DC/Trust Warnung.
