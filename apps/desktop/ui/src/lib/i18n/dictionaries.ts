@@ -129,6 +129,8 @@ export const translations: Translations = {
     'infra.tun.rotateConfirm':
       'Tunnel-Schlüssel von „{name}“ erneuern? Der Host meldet seine Tunnel nach dem nächsten Agent-Lauf mit dem neuen Schlüssel an. Eine von Hand verteilte frpc.toml muss danach neu verteilt werden. Wenn du dem Host selbst nicht mehr vertraust, provisioniere ihn stattdessen neu.',
     'infra.tun.rotated': 'Tunnel-Schlüssel von „{name}“ erneuert',
+    'infra.tun.rotatedPolicyPending':
+      'Der Server konnte die frps-Policy nicht schreiben. frps lässt den alten Schlüssel zu, bis ein Abgleich gelingt (der Server versucht es etwa jede Minute); das Server-Log nennt den Grund.',
     'infra.tun.validation.configRequired': 'Bitte eine FRP-Konfiguration wählen',
     'infra.tun.validation.portRequired': 'Lokaler Port erforderlich',
     'infra.tun.validation.visitorPortRange': 'Visitor-Port muss zwischen 1 und 65535 liegen',
@@ -844,6 +846,9 @@ export const translations: Translations = {
     'monitoring.findings.hint.gone': 'Nicht mehr gefunden. Übernehmen schaltet die Checks ab.',
     'monitoring.findings.silent': 'Stille Checks bis dahin: {count}.',
     'monitoring.findings.dropped': 'Nicht mehr im Katalog, bleiben wie sie sind: {count}.',
+    'monitoring.findings.updatable':
+      'Neue Katalog-Definition, Übernehmen aktualisiert sie: {count}.',
+    'monitoring.findings.containers': 'Container: {list}',
     'monitoring.findings.seen': 'zuletzt gesehen {age}',
     'monitoring.findings.stale': 'Liste nicht aktuell: {error}',
     'monitoring.findings.unavailable': 'Funde gerade nicht abrufbar',
@@ -1677,6 +1682,8 @@ export const translations: Translations = {
     'infra.tun.rotateConfirm':
       'Renew the tunnel key of “{name}”? The host registers its tunnels with the new key after the next agent run. A frpc.toml distributed by hand must be distributed again afterwards. If you no longer trust the host itself, provision it again instead.',
     'infra.tun.rotated': 'Tunnel key of “{name}” renewed',
+    'infra.tun.rotatedPolicyPending':
+      'The server could not write the frps policy. frps still admits the old key until a sync succeeds (the server retries about every minute); the server log names the reason.',
     'infra.tun.validation.configRequired': 'Please select an FRP configuration',
     'infra.tun.validation.portRequired': 'Local port is required',
     'infra.tun.validation.visitorPortRange': 'The visitor port must be between 1 and 65535',
@@ -2388,6 +2395,8 @@ export const translations: Translations = {
     'monitoring.findings.hint.gone': 'No longer found. Adopting switches its checks off.',
     'monitoring.findings.silent': 'Silent checks until then: {count}.',
     'monitoring.findings.dropped': 'No longer in the catalog, kept as they are: {count}.',
+    'monitoring.findings.updatable': 'New catalog definition, adopting updates them: {count}.',
+    'monitoring.findings.containers': 'Containers: {list}',
     'monitoring.findings.seen': 'last seen {age}',
     'monitoring.findings.stale': 'List not current: {error}',
     'monitoring.findings.unavailable': 'Findings cannot be loaded right now',

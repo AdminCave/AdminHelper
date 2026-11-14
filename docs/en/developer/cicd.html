@@ -507,8 +507,8 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           <p><code>release.yml</code> runs on a <code>v*</code> tag and attaches the built artifacts to a <strong>draft</strong> release (not published until a human clicks &ldquo;Publish&rdquo;). The draft is marked as a &ldquo;Pre-release&rdquo;, so &ldquo;Publish&rdquo; turns it into a beta, never into &ldquo;Latest&rdquo;:</p>
           <ul>
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
-            <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
-            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo, once <code>REPO_GPG_PRIVATE_KEY</code> is set) &mdash; plus the archive keyring <code>adminhelper-archive-keyring.gpg</code> as a standalone asset (a second channel to fingerprint-verify it against <code>SHA256SUMS</code> + minisign)</li>
+            <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>/<code>freebsd</code> binaries (<code>adminhelper-agent-freebsd-x86_64</code>, static)</li>
+            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo and, under <code>freebsd/</code>, the signed pkg repo for FreeBSD&nbsp;14 and&nbsp;15 with <code>adminhelper-agent</code> and the OPNsense plugin <code>os-adminhelper</code>) &mdash; plus the archive keyring <code>adminhelper-archive-keyring.gpg</code> as a standalone asset (a second channel to fingerprint-verify it against <code>SHA256SUMS</code> + minisign)</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
             <li><code>SHA256SUMS</code> over all assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign signature) once armed</li>
           </ul>
@@ -577,7 +577,7 @@ A release image <code>X.Y.Z</code> is verified against exactly the identity <cod
           <p><code>release.yml</code> also builds a <strong>GPG-signed</strong> apt/rpm repo (<code>apps/agent/build-repo.sh</code>: <code>InRelease</code>/<code>Release.gpg</code>, <code>rpm --addsign</code> + <code>repomd.xml.asc</code>) and attaches it as one asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> &ndash; covered by <code>SHA256SUMS</code> + minisign. The server serves it over the gateway's certless repo plane (<code>:8445</code>); <code>install.sh</code>/<code>update.sh</code> pull the asset into <code>./repo</code>. Agent hosts trust the <strong>GPG fingerprint</strong> (trust root), not the transport (see <a href="../admin/agent-deployment.html">Agent deployment</a>).</p>
           <div class="callout">
             <div><div class="callout-title">Arming (maintainer, one-time)</div>
-            <p>Without a configured key, <code>release.yml</code> skips the repo asset (with a warning) and <code>/repo</code> returns <code>404</code> &ndash; no breakage. To arm, generate a <strong>passphrase-less</strong> GPG key:</p>
+            <p>Without <code>REPO_GPG_PRIVATE_KEY</code>, or with a key whose fingerprint is not the pinned one, <code>release.yml</code> fails. To arm, generate a <strong>passphrase-less</strong> GPG key:</p>
 <pre><code># 1) Generate a passphrase-less signing key
 gpg --batch --passphrase '' \
     --quick-generate-key "AdminHelper Repo &lt;repo@admincave.com&gt;" rsa3072 sign 0
@@ -600,6 +600,19 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
             </ol>
             </div>
           </div>
+
+          <h2>pkg signing (FreeBSD and OPNsense)</h2>
+          <p><code>apps/agent/build-pkg.sh</code> builds the pkg repo under <code>freebsd/&lt;ABI&gt;/</code> of the asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> with <code>pkg create</code> and <code>pkg repo</code>. <code>scripts/release/build-pkg-tool.sh</code> builds <code>pkg</code> itself on the Ubuntu runner from the <code>freebsd/pkg</code> sources (tag and commit pinned, the commit is checked after the clone). frpc comes from the frp release as <code>frp_&lt;v&gt;_freebsd_amd64.tar.gz</code>, checked against <code>FRP_SHA256_FREEBSD_AMD64</code>; the <code>frp-consistency</code> job compares that pin with <code>scripts/tests/freebsd_box.sh</code>. The <code>pkg-repo</code> job in <code>ci.yml</code> runs <code>scripts/tests/pkg_repo_build_test.sh</code> on every PR: it builds both ABIs with a throwaway key, and <code>pkg update</code> must accept the catalogue with its public part and reject it with a foreign one.</p>
+          <p>The signing key is the RSA key in the secret <code>PKG_REPO_SIGNING_KEY</code> (PKCS#8 PEM, <code>BEGIN PRIVATE KEY</code>). Its public part is <code>apps/agent/freebsd/adminhelper-pkg.pub</code> in the repo; the plugin ships it, and FreeBSD hosts pin it (<a href="../admin/agent-deployment.html#freebsd">Agent deployment &rarr; FreeBSD</a>). If the secret is missing or its public part does not match that file, <code>release.yml</code> fails. The key file exists only while the step runs, in a directory of its own that is deleted when the step ends.</p>
+          <ul>
+            <li>SHA-256 of the file <code>adminhelper-pkg.pub</code>, which hosts check before installing it: <code>75ccb5ed23cc2ea60ce9b945143bcb16e588b7994c351c21f2423726c56be804</code></li>
+            <li>SHA-256 of the public key's DER form, which <code>release.yml</code> compares with the secret: <code>bc8650e0e98a8554f4224c7d6b016eeda08e2a615343c05a23c33798c51dddd4</code></li>
+          </ul>
+<pre><code># Generate the key and store it as the secret (maintainer, one-time)
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out adminhelper-pkg.key
+gh secret set PKG_REPO_SIGNING_KEY &lt; adminhelper-pkg.key
+openssl pkey -in adminhelper-pkg.key -pubout -out apps/agent/freebsd/adminhelper-pkg.pub
+sha256sum apps/agent/freebsd/adminhelper-pkg.pub   # new value for this page and agent-deployment.html</code></pre>
 
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>

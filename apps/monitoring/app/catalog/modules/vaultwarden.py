@@ -10,9 +10,9 @@
 quay.io/vaultwarden/server) asks it every 60 s in its own HEALTHCHECK, on ROCKET_PORT,
 below the path of DOMAIN and over TLS when ROCKET_TLS is set; the container's health
 carries it, and the module asks nothing more there. A build run as vaultwarden.service has
-no health check: the module asks /alive on Rocket's default port 8000 over plain HTTP. A
-DOMAIN with a path (https://host/vault) moves /alive below it, the service's check then
-gets a 404 and is critical; Rocket's own TLS on the service is not covered either.
+no health check: the module asks /alive on Rocket's default port 8000 over plain HTTP or
+Rocket's own TLS, whichever the port speaks. A DOMAIN with a path (https://host/vault) moves
+/alive below it, the service's check then gets a 404 and is critical.
 
 /admin is never asked: its login is rate limited (ADMIN_RATELIMIT_*).
 """
@@ -20,7 +20,7 @@ gets a 404 and is critical; Rocket's own TLS on the service is not covered eithe
 MODULE = {
     "id": "vaultwarden",
     "name": "Vaultwarden",
-    "version": 1,
+    "version": 2,
     "description": (
         "Vaultwarden from its image or as a systemd service: the container with its own "
         "health check, or the unit and /alive, which asks the database."
@@ -62,7 +62,7 @@ MODULE = {
             "key": "alive",
             "name": "Alive",
             "sensor": "http",
-            "target": {"kind": "unit", "port_hint": 8000, "scheme": "http"},
+            "target": {"kind": "unit", "port_hint": 8000, "scheme": "auto"},
             "params": {"path": "/alive"},
             "interval": 300,
             "fields": ["status_code"],

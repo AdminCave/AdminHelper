@@ -703,13 +703,21 @@ export interface MonitorFinding {
   silentChecks: string[];
   /** Ids of the instance's checks whose catalog check is gone. */
   droppedChecks: string[];
+  /** Ids of the instance's checks the catalog changed; adopting updates them. Absent
+   * from a server before the catalog updates. */
+  updatableChecks?: string[];
 }
+
+/** The container each compose service runs in (`summary.containers` of a compose finding). */
+export type MonitorFindingContainers = Record<string, string>;
 
 export interface MonitorAdoptResult {
   finding: MonitorFinding;
   enabledChecks: string[];
   disabledChecks: string[];
   skippedChecks: { key: string; reason: string }[];
+  /** Ids of the checks adopting brought to the catalog's new definition. */
+  updatedChecks?: string[];
 }
 
 export interface MonitorAdoptAllResult {

@@ -77,3 +77,93 @@ func TestTheAppSensorRunsThroughRunWithOnlyTheAskedFields(t *testing.T) {
 
 // unitView: the view reads a unit alone.
 func unitView(v appView) bool { return len(v.kinds) == 1 && v.kinds[0] == kindUnit }
+
+// credView registers a view that takes a password and hands it to a command, as the backup views do.
+func credView(t *testing.T) *[][]string {
+	t.Helper()
+	var envs [][]string
+	appViews["test_cred"] = appView{kinds: unitKinds, uses: []string{usePassword},
+		readCred: func(ctx context.Context, _ Target, c appCredential) (map[string]any, error) {
+			env, err := passwordEnv(c, "RESTIC_PASSWORD")
+			if err != nil {
+				return nil, err
+			}
+			if _, err := runToolEnv(ctx, toolTimeout, env, "restic", "version"); err != nil {
+				return nil, err
+			}
+			envs = append(envs, env)
+			return map[string]any{"ok": true}, nil
+		}}
+	old := runToolEnv
+	runToolEnv = func(context.Context, time.Duration, []string, string, ...string) ([]byte, error) { return nil, nil }
+	t.Cleanup(func() {
+		delete(appViews, "test_cred")
+		runToolEnv = old
+	})
+	return &envs
+}
+
+func TestAViewTakesTheCredentialOfItsUseOnly(t *testing.T) {
+	envs := credView(t)
+	p := appProbe("test_cred", unitTarget("restic-backup.service"), "ok")
+	p.Credential = &Credential{Ref: "repo", Use: usePassword}
+	acc := access(map[string][2]string{"repo": {"s3cr3t", "id1"}})
+
+	if res := Run(context.Background(), p, start, acc); res.Status != StatusOK {
+		t.Fatalf("a password for its view = %+v, want ok", res)
+	}
+	if len(*envs) != 1 || strings.Join((*envs)[0], ",") != "RESTIC_PASSWORD=s3cr3t" {
+		t.Errorf("environment %q, want the password in RESTIC_PASSWORD alone", *envs)
+	}
+
+	for name, use := range map[string]string{"bearer": useBearer, "a header": "header:X-Key", "basic": useBasic} {
+		q := p
+		q.Credential = &Credential{Ref: "repo", Use: use}
+		if _, err := appSensor(context.Background(), q, "s3cr3t"); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s for a password view = %v, want ErrInvalid", name, err)
+		}
+	}
+
+	// Without a credential the view runs without one.
+	q := p
+	q.Credential = nil
+	if _, err := appSensor(context.Background(), q, ""); err != nil {
+		t.Errorf("no credential = %v, want the view to run", err)
+	}
+	if len(*envs) != 2 || (*envs)[1] != nil {
+		t.Errorf("environment without a credential %q, want none", (*envs)[1:])
+	}
+}
+
+func TestAViewWithoutUsesRefusesEveryCredential(t *testing.T) {
+	stubRecordingDir(t)
+	for _, use := range []string{usePassword, useBearer, "header:Authorization"} {
+		p := appProbe("bbb_recordings", unitTarget("bbb-web.service"))
+		p.Credential = &Credential{Ref: "x", Use: use}
+		if _, err := appSensor(context.Background(), p, "secret"); !errors.Is(err, ErrInvalid) {
+			t.Errorf("a credential for %s = %v, want ErrInvalid", use, err)
+		}
+	}
+}
+
+func TestAPasswordIsNeverQuotedAndNeverEmpty(t *testing.T) {
+	for name, c := range map[string]appCredential{
+		"empty":     {use: usePassword},
+		"NUL":       {use: usePassword, secret: "ab\x00cd"},
+		"wrong use": {use: useBearer, secret: "s3cr3t"},
+	} {
+		env, err := passwordEnv(c, "BORG_PASSPHRASE")
+		if !errors.Is(err, ErrInvalid) || env != nil || (c.secret != "" && strings.Contains(err.Error(), c.secret)) {
+			t.Errorf("%s = %q, %v; want ErrInvalid without the secret", name, env, err)
+		}
+	}
+}
+
+func TestOtherSensorsRefuseAPassword(t *testing.T) {
+	for _, sensor := range []string{"http", "tls", "dns"} {
+		p := Probe{Sensor: sensor, Credential: &Credential{Ref: "x", Use: usePassword}}
+		if _, err := credentialUse(p, useBearer, useBasic, useHeader, useRedisAuth); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s with a password = %v, want ErrInvalid", sensor, err)
+		}
+	}
+}

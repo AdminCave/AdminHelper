@@ -82,11 +82,17 @@ func stubHost(t *testing.T) *fakeHost {
 	}
 	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening :=
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening
+	oldWindows, oldServices := windowsHost, listServices
 	t.Cleanup(func() {
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening =
 			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening
+		windowsHost, listServices = oldWindows, oldServices
 	})
-	linuxHost, markerHost = true, true
+	linuxHost, markerHost, windowsHost = true, true, false
+	listServices = func() ([]Unit, error) {
+		t.Error("the Windows services listed off Windows")
+		return nil, nil
+	}
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		h.mu.Lock()
 		h.calls = append(h.calls, append([]string{name}, args...))
@@ -454,20 +460,57 @@ func TestADiscoveryOfANearlyEmptyHostIsWhole(t *testing.T) {
 	}
 }
 
-func TestADiscoveryOnWindowsReadsTheSocketsAlone(t *testing.T) {
+func TestADiscoveryOnWindowsReadsTheServicesAndSockets(t *testing.T) {
 	h := wholeHost(t)
-	linuxHost, markerHost = false, false
+	linuxHost, markerHost, windowsHost = false, false, true
+	services := []Unit{{Name: "NTDS", State: "active", Sub: "running"}, {Name: "Spooler", State: "inactive", Sub: "stopped"}}
+	listServices = func() ([]Unit, error) { return services, nil }
 
 	inv := Run(context.Background(), wholeMarkers)
 
-	if inv.Partial || len(inv.Units) != 0 || len(inv.Containers) != 0 || len(inv.Markers) != 0 {
-		t.Errorf("inventory = %+v, want sockets and ports alone, whole", inv)
+	if inv.Partial || !reflect.DeepEqual(inv.Units, services) || len(inv.Containers) != 0 || len(inv.Markers) != 0 {
+		t.Errorf("inventory = %+v, want the services as units, sockets and ports, whole", inv)
 	}
 	if len(inv.Sockets) == 0 || len(inv.Ports) != 2 {
 		t.Errorf("sockets %d, ports %+v: want them read", len(inv.Sockets), inv.Ports)
 	}
 	if len(h.calls) != 0 {
 		t.Errorf("tool calls %q off Linux, want none", h.calls)
+	}
+}
+
+func TestAServiceTheContractCannotCarryIsLeftOut(t *testing.T) {
+	stubHost(t)
+	windowsHost = true
+	listServices = func() ([]Unit, error) {
+		return []Unit{
+			{Name: "W3SVC", State: "active", Sub: "running"},
+			{Name: "bad\x01name", State: "active", Sub: "running"},
+			{Name: strings.Repeat("s", maxNameLen+1), State: "active", Sub: "running"},
+		}, nil
+	}
+
+	units, ok := collectUnits(context.Background())
+
+	if want := []Unit{{Name: "W3SVC", State: "active", Sub: "running"}}; !ok || !reflect.DeepEqual(units, want) {
+		t.Errorf("collectUnits = %+v, whole %v; want %+v, whole", units, ok, want)
+	}
+}
+
+func TestServicesBeyondTheCapOrAFailedListMakeTheUnitsPartial(t *testing.T) {
+	stubHost(t)
+	windowsHost = true
+	many := make([]Unit, maxUnits+1)
+	for i := range many {
+		many[i] = Unit{Name: fmt.Sprintf("svc%d", i), State: "active", Sub: "running"}
+	}
+	listServices = func() ([]Unit, error) { return many, nil }
+	if units, ok := collectUnits(context.Background()); ok || len(units) != maxUnits {
+		t.Errorf("over the cap: %d units, whole %v; want %d, partial", len(units), ok, maxUnits)
+	}
+	listServices = func() ([]Unit, error) { return nil, errors.New("access denied") }
+	if units, ok := collectUnits(context.Background()); ok || units == nil || len(units) != 0 {
+		t.Errorf("failed list: %+v, whole %v; want an empty list, partial", units, ok)
 	}
 }
 

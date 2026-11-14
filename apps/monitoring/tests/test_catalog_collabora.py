@@ -129,7 +129,12 @@ def test_collabora_in_the_nextcloud_project_gets_its_container_and_9980():
                 "app": "nextcloud",
                 "collabora": "collabora/code",
                 "db": "mariadb",
-            }
+            },
+            "containers": {
+                "app": "nextcloud-app-1",
+                "collabora": "nextcloud-collabora-1",
+                "db": "nextcloud-db-1",
+            },
         }
     }
     assert _bind(block, "nextcloud") == {

@@ -279,3 +279,44 @@ def test_plan_leaves_out_a_probe_check_no_module_brought(client_db):
     _add_check(factory, "chk-loose", _PROBE, module_id=None)
 
     assert [p["id"] for p in _plan(client)["probes"]] == ["chk-module"]
+
+
+def _store_credentials(factory, refs):
+    with factory() as db:
+        db.add(
+            MonitorDiscovery(server_id="srv-1", credentials=json.dumps(dict.fromkeys(refs, True)))
+        )
+        db.commit()
+
+
+def _optional(probe=_PROBE):
+    return {**probe, "credential": {**probe["credential"], "optional": True}}
+
+
+def test_an_optional_credential_the_host_has_not_stored_is_left_out(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-a", _optional())
+    _add_check(factory, "chk-b", _PROBE)
+    _store_credentials(factory, ["other/other/default"])
+
+    probes = {p["id"]: p for p in _plan(client)["probes"]}
+    # The optional one runs without; the one that needs it is sent and reports no_credential.
+    assert probes["chk-a"]["credential"] is None
+    assert probes["chk-b"]["credential"] == {"ref": "paperless/paperless/api", "use": "bearer"}
+
+
+def test_an_optional_credential_the_host_has_stored_is_sent(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-a", _optional())
+    _store_credentials(factory, ["paperless/paperless/api"])
+
+    [probe] = _plan(client)["probes"]
+    assert probe["credential"] == {"ref": "paperless/paperless/api", "use": "bearer"}
+
+
+def test_an_optional_credential_without_a_report_is_left_out(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-a", _optional())
+
+    [probe] = _plan(client)["probes"]
+    assert probe["credential"] is None

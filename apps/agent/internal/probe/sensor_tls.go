@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 )
 
 func init() {
@@ -87,14 +88,26 @@ func certValues(certs []*x509.Certificate, serverName string) (map[string]any, e
 		inter.AddCert(c)
 	}
 	_, verr := leaf.Verify(x509.VerifyOptions{Roots: certRoots, Intermediates: inter, CurrentTime: now()})
+	left := leaf.NotAfter.Sub(now())
 	values := map[string]any{
-		"not_after": leaf.NotAfter.Unix(),
-		"days_left": int64(math.Floor(leaf.NotAfter.Sub(now()).Hours() / 24)),
-		"issuer":    leaf.Issuer.String(),
-		"chain_ok":  verr == nil,
+		"not_after":    leaf.NotAfter.Unix(),
+		"days_left":    int64(math.Floor(left.Hours() / 24)),
+		"hours_left":   int64(math.Floor(left.Hours())),
+		"lifetime_pct": lifetimePct(left, leaf.NotAfter.Sub(leaf.NotBefore)),
+		"issuer":       leaf.Issuer.String(),
+		"chain_ok":     verr == nil,
 	}
 	if serverName != "" {
 		values["hostname_ok"] = leaf.VerifyHostname(serverName) == nil
 	}
 	return values, nil
+}
+
+// lifetimePct is the share of its lifetime a certificate has left, in percent to one decimal and never
+// below 0. A certificate without a lifetime has nothing left: a quotient by zero is no number JSON carries.
+func lifetimePct(left, lifetime time.Duration) float64 {
+	if left <= 0 || lifetime <= 0 {
+		return 0
+	}
+	return math.Round(float64(left)/float64(lifetime)*1000) / 10
 }

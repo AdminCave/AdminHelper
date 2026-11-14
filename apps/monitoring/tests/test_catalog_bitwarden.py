@@ -160,7 +160,10 @@ def test_an_external_database_leaves_the_mssql_check_unbound():
 
 def test_lite_in_its_compose_project_gets_the_check_of_its_one_container():
     assert _found(_block(LITE)) == {
-        "bitwarden": {"services": {"bitwarden": "ghcr.io/bitwarden/lite", "db": "mariadb"}}
+        "bitwarden": {
+            "services": {"bitwarden": "ghcr.io/bitwarden/lite", "db": "mariadb"},
+            "containers": {"bitwarden": "bitwarden-bitwarden-1", "db": "bitwarden-db-1"},
+        }
     }
     assert _bind(_block(LITE), "bitwarden") == {
         "nginx": (None, "no container for this instance"),

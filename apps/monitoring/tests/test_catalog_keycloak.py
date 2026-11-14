@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The catalog module keycloak (R-1242): the image from quay.io or Docker Hub gets the
-container check and GET /health/ready on the management port 9000 in plain HTTP; a
+container check and GET /health/ready on the management port 9000 in plain HTTP or TLS; a
 keycloak.service gets the unit check and the same; anything but 200 is critical, a Keycloak
 without health-enabled too; an image before 25.0 has no 9000 and gets no readiness check;
 the operator image and the discontinued images are not Keycloak."""
@@ -112,12 +112,12 @@ def test_the_module_loads_with_its_checks():
     assert all(c.credential is None for c in MODULE.checks)
 
 
-def test_both_readiness_checks_get_health_ready_on_9000_in_plain_http():
+def test_both_readiness_checks_get_health_ready_on_9000_in_plain_http_or_tls():
     for key in ("ready", "service_ready"):
         check = CHECKS[key]
         assert check.sensor == "http"
         assert check.params == {"path": "/health/ready", "method": "GET"}
-        assert (check.target.port_hint, check.target.scheme) == (9000, "http")
+        assert (check.target.port_hint, check.target.scheme) == (9000, "auto")
         assert check.fields == ["status_code"]
         assert (check.interval, check.test_object) == (300, False)
 
@@ -125,7 +125,10 @@ def test_both_readiness_checks_get_health_ready_on_9000_in_plain_http():
 def test_keycloak_in_its_project_gets_its_container_and_9000():
     block = _block(COMPOSE)
     assert _found(block) == {
-        "sso": {"services": {"db": "postgres", "keycloak": "quay.io/keycloak/keycloak"}}
+        "sso": {
+            "services": {"db": "postgres", "keycloak": "quay.io/keycloak/keycloak"},
+            "containers": {"db": "sso-db-1", "keycloak": "sso-keycloak-1"},
+        }
     }
     assert _bind(block, "sso") == {
         "container": ("sso-keycloak-1", None),
@@ -137,7 +140,7 @@ def test_keycloak_in_its_project_gets_its_container_and_9000():
         "kind": "container",
         "name": "sso-keycloak-1",
         "port_hint": 9000,
-        "scheme": "http",
+        "scheme": "auto",
     }
 
 
@@ -176,7 +179,7 @@ def test_a_keycloak_unit_gets_the_unit_check_and_9000():
         "kind": "unit",
         "name": UNIT,
         "port_hint": 9000,
-        "scheme": "http",
+        "scheme": "auto",
     }
 
 

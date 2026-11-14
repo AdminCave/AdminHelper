@@ -286,14 +286,15 @@ def test_target_must_fit_the_sensor():
     unit.update(rules=[], credential=None)
     assert "cannot target 'container'" in _only_error(_load(_module(checks=[unit], card=[])))
     assert "needs a target" in _only_error(_load(_module(checks=[_check(target=None)])))
-    dns = _check(
-        sensor="dns",
-        params={"name": "example.org"},
-        fields=["resolved"],
+    # dns takes a target since kern-monitoring-30; file_age names its object in params.
+    file_age = _check(
+        sensor="file_age",
+        params={"path": "/var/backups/db.dump"},
+        fields=["age_s"],
         rules=[],
         target={"kind": "loopback"},
     )
-    assert "takes no target" in _only_error(_load(_module(checks=[dns], card=[])))
+    assert "takes no target" in _only_error(_load(_module(checks=[file_age], card=[])))
 
 
 def test_target_service_needs_a_compose_project():
@@ -387,6 +388,29 @@ def test_credential_uses(use):
 @pytest.mark.parametrize("use", ["none", "header:", "header:X Key", "cookie"])
 def test_credential_use_outside_the_list_is_rejected(use):
     assert _load(_module(checks=[_check(credential={"use": use})])).modules == {}
+
+
+def test_an_optional_credential_is_written_only_when_set():
+    catalog = _load(_module(checks=[_check(credential={"use": "redis_auth", "optional": True})]))
+    assert catalog.errors == ()
+    credential = next(iter(catalog.modules.values())).checks[0].credential
+    assert credential.optional is True
+    assert credential.model_dump()["optional"] is True
+    # A credential that is not optional keeps the form, and the module its hash.
+    catalog = _load(_module(checks=[_check(credential={"use": "redis_auth"})]))
+    assert "optional" not in next(iter(catalog.modules.values())).checks[0].credential.model_dump()
+    assert (
+        "optional"
+        not in next(iter(catalog.modules.values())).model_dump(mode="json")["checks"][0][
+            "credential"
+        ]
+    )
+
+
+@pytest.mark.parametrize("optional", [None, "yes", 1])
+def test_optional_is_a_boolean(optional):
+    raw = _module(checks=[_check(credential={"use": "bearer", "optional": optional})])
+    assert _load(raw).modules == {}
 
 
 def _sock(key, path, slot="default"):

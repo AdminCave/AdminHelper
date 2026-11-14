@@ -59,7 +59,8 @@ func TestUnitSensorReadsTheStateOfASystemdUnit(t *testing.T) {
 	if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("unit = %v, %v; want %v", got, err, want)
 	}
-	wantArgs := []string{"systemctl", "show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "nginx.service"}
+	wantArgs := []string{"systemctl", "show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic," +
+		"Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "nginx.service"}
 	if !slices.Equal(tl.args, wantArgs) {
 		t.Errorf("runTool %v, want %v", tl.args, wantArgs)
 	}
@@ -98,6 +99,46 @@ func TestUnitSensorReadsTheStateOfASystemdUnit(t *testing.T) {
 	tl.args = nil
 	if _, err := unitSensor(ctx, p, ""); !errors.Is(err, ErrUnsupported) || tl.args != nil {
 		t.Errorf("no systemd = %v (ran %v), want ErrUnsupported without running systemctl", err, tl.args)
+	}
+}
+
+func TestUnitSensorReadsTheLastRunOfAService(t *testing.T) {
+	stubNow(t, start)
+	stubUnits(t, 65*time.Second)
+	ctx := context.Background()
+	p := Probe{Sensor: "unit", Target: &Target{Kind: kindUnit, Name: "restic-backup.service"}}
+	base := "LoadState=loaded\nActiveState=inactive\nSubState=dead\n"
+	tl := stubTool(t, "", nil)
+	for _, c := range []struct {
+		name, out string
+		want      map[string]any
+	}{
+		{"a run that succeeded 20 s ago",
+			"Result=success\nExecMainCode=1\nExecMainStatus=0\nExecMainExitTimestampMonotonic=45000000\n",
+			map[string]any{"result": "success", "exec_status": 0, "last_run_age_s": int64(20)}},
+		{"a run that exited 3",
+			"Result=exit-code\nExecMainCode=1\nExecMainStatus=3\nExecMainExitTimestampMonotonic=5000000\n",
+			map[string]any{"result": "exit-code", "exec_status": 3, "last_run_age_s": int64(60)}},
+		// After a signal ExecMainStatus is the signal's number, no exit status.
+		{"a run killed by SIGKILL",
+			"Result=signal\nExecMainCode=2\nExecMainStatus=9\nExecMainExitTimestampMonotonic=5000000\n",
+			map[string]any{"result": "signal", "last_run_age_s": int64(60)}},
+		{"a service that never ran",
+			"Result=success\nExecMainCode=0\nExecMainStatus=0\nExecMainExitTimestampMonotonic=0\n",
+			map[string]any{"result": "success"}},
+		{"a systemd without these properties", "", map[string]any{}},
+	} {
+		tl.out = base + c.out
+		got, err := unitSensor(ctx, p, "")
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		for _, k := range []string{"result", "exec_status", "last_run_age_s"} {
+			if fmt.Sprint(got[k]) != fmt.Sprint(c.want[k]) {
+				t.Errorf("%s: %s = %v, want %v", c.name, k, got[k], c.want[k])
+			}
+		}
 	}
 }
 
@@ -275,6 +316,34 @@ func TestReadSmallFileNeverWaitsForAFIFO(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("certfile waits on a FIFO")
+	}
+}
+
+func TestFileAgeNewestInNeverWaitsForAFIFO(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := Probe{Sensor: "file_age", Params: map[string]any{"newest_in": path}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := fileAgeSensor(context.Background(), p, "")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, errNotDir) {
+			t.Errorf("newest_in on a FIFO = %v, want no directory", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("newest_in waits on a FIFO")
+	}
+}
+
+func TestFileAgeNewestInNeverListsADirectoryOfTheKernel(t *testing.T) {
+	p := Probe{Sensor: "file_age", Params: map[string]any{"newest_in": "/proc/self"}}
+	if _, err := fileAgeSensor(context.Background(), p, ""); err == nil || !strings.Contains(err.Error(), "file system of the kernel") {
+		t.Errorf("newest_in /proc/self = %v, want it refused", err)
 	}
 }
 
