@@ -10,8 +10,10 @@ Heavy: none — Monitoring-Dienst und ein Desktop-Helfer; kein Stack-, Gateway-,
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Speicherbare Zeichen im Alert-Log und beim Lesen alter Zeilen  [ ]
+### T1 — Speicherbare Zeichen im Alert-Log und beim Lesen alter Zeilen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/bounds.py, apps/monitoring/app/check_engine.py, apps/monitoring/app/alerter.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_alerter_dispatch.py, apps/monitoring/tests/test_stored_json_numbers.py, changelog.d/kern-monitoring-27.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9dda9c8cc 2026-11-14T07:56:09+01:00
+Review: approve (.ah-out/review/kern-monitoring-27/T1.verdict.json)
 Änderung: R-1372, R-1373. `_UNSTORABLE`/`_storable` aus `check_engine.py:53,254` als `storable()` nach
 `app/core/bounds.py`; `send_to_rule` (`alerter.py:140`) speichert `error` durch `storable()`. `loads_readable`
 (`models.py:45`) ersetzt einzelne Surrogate in Strings und Schlüsseln durch U+FFFD. Tests zuerst rot: Kanal-Fehler mit

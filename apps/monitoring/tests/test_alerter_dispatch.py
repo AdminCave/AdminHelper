@@ -539,3 +539,17 @@ def test_send_to_rule_returns_what_the_rule_did(monkeypatch, dispatch, ok):
 
     assert result == alerter.RuleResult("Ops", "email", ok, "s1")
     assert [(row.check_id, row.success) for row in db.added] == [("c1", ok)]
+
+
+def test_send_to_rule_stores_a_channel_error_the_database_can_take(monkeypatch):
+    # R-1372: a channel's reason may quote a peer's reply; NUL and a lone surrogate
+    # cannot go into the text column and would fail the whole commit.
+    monkeypatch.setattr(
+        alerter, "_dispatch", lambda rule, check, msg: (False, "bad\x00 \ud800 reply")
+    )
+    rule = SimpleNamespace(id="r1", name="Ops", channel="webhook", match_server_id=None)
+    db = _AddingDb()
+
+    alerter.send_to_rule(db, rule, [(CHECK, "ok")], MSG, "critical")
+
+    assert [row.error for row in db.added] == ["bad\ufffd \ufffd reply"]
