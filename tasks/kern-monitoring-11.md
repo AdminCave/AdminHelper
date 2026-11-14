@@ -52,9 +52,11 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sen
 Doku: → T7
 Abhängt von: T1, T2, T3
 
-### T5 — R-1239: Mail-Module  [ ]
+### T5 — R-1239: Mail-Module  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/postfix.py, apps/monitoring/app/catalog/modules/dovecot.py, apps/monitoring/app/catalog/modules/mailcow.py, apps/monitoring/app/catalog/modules/mailpiler.py, apps/monitoring/app/catalog/modules/clamav.py, apps/monitoring/app/catalog/modules/rspamd.py, apps/monitoring/app/catalog/modules/spamassassin.py, apps/monitoring/app/catalog/modules/opendkim.py, apps/monitoring/tests/test_catalog_mail.py
-Änderung: Module nach Konzept §6.6 und §6.14 mit den Schwellen von dort (ClamAV-Datenbank > 2 / 5 Tage). Neun
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @67c82ddf8 2026-11-14T18:28:31+01:00
+Review: approve (.ah-out/review/kern-monitoring-11/T5.verdict.json)
+Änderung: Module nach Konzept §6.2 und §6.14 mit den Schwellen von dort (ClamAV-Datenbank > 2 / 5 Tage). Neun
 Dateien, weil jedes Modul eine kleine eigene Datei ist und ein gemeinsamer Test sie prüft. Neue Dateien mit
 SPDX-Header.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_mail.py
@@ -80,7 +82,7 @@ Task-Review: am Ende
 Abhängt von: T5, T6
 
 ## Entscheidungen
-- Mailcow und MailPiler lesen den Zugang aus der Konfiguration des Dienstes, wie das Konzept §6.6 es nennt; das
+- Mailcow und MailPiler lesen den Zugang aus der Konfiguration des Dienstes, wie das Konzept §6.2 es nennt; das
   Passwort verlässt den Host nicht.
 - T1: `postfix_queue` (readdir, billig, 5 min) und `postfix_queue_age` (`postqueue -j` nur unter 5000 Mails,
   15 min) sind zwei Ansichten, damit der Katalog beide Intervalle der Spec setzen kann; die Queue-Wurzel nennt
@@ -115,3 +117,11 @@ Abhängt von: T5, T6
   `import-devices.log` (neuere base7) einen Lauf-Beginn trägt, gelesen aus den letzten 256 KiB. `lmn_linbo` zählt
   wie `linbo-torrent` Images in `/srv/linbo/images` und eine Ebene tiefer, ohne Punkt-Verzeichnisse (`.incoming`)
   und höchstens 4096 Einträge je Verzeichnis; `linbo-torrent` selbst bleibt draußen (sein `status` chownt).
+- T5: Schwellen der Mail-Module (eigene Wahl): Postfix mehr als 100 `deferred` oder gekappte Zählung Warnung,
+  älteste Mail über 1 d Warnung, über 4 d kritisch (vor `maximal_queue_lifetime` 5 d), `age_read: false` (ab 5000
+  Mails) Warnung; Dovecot Dienst am Prozesslimit oder ein Fehler der letzten Stunde Warnung; Mailcow-Watchdog ein
+  Dienst unter voller Gesundheit Warnung, keine Regel aufs Alter; MailPiler neueste Mail über 2 d Warnung, ein leeres
+  Archiv bleibt `unknown`; ClamAV über 2 d Warnung, über 5 d kritisch (Spec); Rspamd nur `GET /ping` mit `expect`
+  `pong` auf 11334; OpenDKIM täglich. Mailcow wird am Postfix-Image erkannt (`ghcr.io/mailcow/postfix`, ältere
+  `mailcow/postfix`); ClamAV unter RHEL (`clamd@scan`) und der Socket von clamd bleiben draußen (Unitname nicht
+  verifiziert, der Sensor `unixsocket` spricht kein zPING).
