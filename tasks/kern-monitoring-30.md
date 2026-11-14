@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Gebaut wird erst nach dem Merge von kern-monitoring-8 (dieselben Agent- und Katalog-Dateien); vor T1 `origin/main`
 in den Branch mergen. Ein älterer Agent meldet die neuen Checks als `invalid`, der Check steht dann auf `unknown`.
 
-### T1 — R-1392: http vergleicht eine kurze Klartext-Antwort  [ ]
+### T1 — R-1392: http vergleicht eine kurze Klartext-Antwort  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f54a29ead 2026-11-14T09:04:02+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T1.verdict.json)
 Änderung: Parameter `expect` (1–64 Zeichen, ohne Leer- und Steuerzeichen, nur mit `GET`) und Feld `body_match`
 (bool). Der Agent liest höchstens 4 KiB, schneidet Leerraum am Rand ab und vergleicht genau; der Body verlässt den
 Agent nie. `body_match` ohne `expect` ist `invalid`.

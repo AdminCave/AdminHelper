@@ -155,6 +155,72 @@ func TestHTTPSensorReadsStatusTimeAndData(t *testing.T) {
 	}
 }
 
+func TestHTTPSensorComparesAShortAnswerWithoutSendingIt(t *testing.T) {
+	srv := localServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/true":
+			_, _ = fmt.Fprint(w, " true\r\n")
+		case "/false":
+			_, _ = fmt.Fprint(w, "false")
+		case "/json":
+			_, _ = fmt.Fprint(w, `{"status":"true"}`)
+		case "/long":
+			_, _ = fmt.Fprint(w, "true"+strings.Repeat(" ", maxExpectBody))
+		case "/edge":
+			_, _ = fmt.Fprint(w, "true"+strings.Repeat(" ", maxExpectBody-4))
+		case "/down":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, "true")
+		}
+	}))
+	ctx := context.Background()
+	port := portOf(t, srv.URL)
+	probe := func(path, expect string, fields ...string) (map[string]any, error) {
+		return httpSensor(ctx, onLoopback("http", port, map[string]any{"path": path, "expect": expect}, fields...), "")
+	}
+
+	for _, c := range []struct {
+		path string
+		want bool
+	}{{"/true", true}, {"/false", false}, {"/json", false}, {"/long", false}, {"/edge", true}, {"/down", true}} {
+		got, err := probe(c.path, "true", "status_code", "body_match")
+		if err != nil || got["body_match"] != c.want {
+			t.Errorf("%s = %v, %v; want body_match %v", c.path, got, err, c.want)
+		}
+		for k, v := range got {
+			if s, ok := v.(string); ok || (k != "status_code" && k != "duration_ms" && k != "body_match") {
+				t.Errorf("%s: value %s = %#v, want no part of the body", c.path, k, s)
+			}
+		}
+	}
+	got, err := probe("/json", "OK", "data.status", "body_match")
+	data, _ := got["data"].(map[string]any)
+	if err != nil || got["body_match"] != false || data["status"] != "true" {
+		t.Errorf("expect with data = %v, %v; want both from one answer", got, err)
+	}
+
+	for _, c := range []struct {
+		name   string
+		params map[string]any
+		fields []string
+	}{
+		{"an empty expect", map[string]any{"expect": ""}, nil},
+		{"an expect with a space", map[string]any{"expect": "all good"}, nil},
+		{"an expect with a control character", map[string]any{"expect": "ok\n"}, nil},
+		{"a long expect", map[string]any{"expect": strings.Repeat("ä", 65)}, nil},
+		{"an expect of another type", map[string]any{"expect": true}, nil},
+		{"an expect with HEAD", map[string]any{"expect": "true", "method": "HEAD"}, nil},
+		{"body_match without expect", nil, []string{"body_match"}},
+	} {
+		if _, err := httpSensor(ctx, onLoopback("http", port, c.params, c.fields...), ""); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", c.name, err)
+		}
+	}
+	if _, err := probe("/true", strings.Repeat("ä", 64), "body_match"); err != nil {
+		t.Errorf("an expect of 64 characters = %v, want it taken", err)
+	}
+}
+
 func TestHTTPSensorPresentsItsCredential(t *testing.T) {
 	headers := make(chan http.Header, 1)
 	srv := localServer(t, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { headers <- r.Header.Clone() }))
