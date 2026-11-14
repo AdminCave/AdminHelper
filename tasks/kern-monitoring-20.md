@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Gebaut wird nach dem Merge von kern-monitoring-8 und kern-monitoring-30 (`sensors.py`, `model.py`, `sensor_proto.go`);
 vor T1 `origin/main` in den Branch mergen.
 
-### T1 — R-1264: Migration Grabstein-Tabelle und Definitions-Hash  [ ]
+### T1 — R-1264: Migration Grabstein-Tabelle und Definitions-Hash  [x]
 Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/a7c9e1f3b5d7_module_check_tombstones.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_migrations_smoke.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @19e25bf6c 2026-11-14T11:12:14+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T1.verdict.json)
 Änderung: Tabelle `monitor_module_tombstones` (`id`, `server_id` indiziert, `module_id`, `instance_key`,
 `check_key`, `created_at`; eindeutig über die vier Schlüssel) und Spalte `monitor_checks.module_check_hash`
 (nullable); Downgrade entfernt beide. Modell `MonitorModuleTombstone`. Neue Datei mit SPDX-Header.
