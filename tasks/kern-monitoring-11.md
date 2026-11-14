@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Mail, Verzeichnis und Schule — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-11 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-11 · Review: pro Task
 Spec: docs/features/kern-monitoring-11.md (Roadmap R-1239, R-1240)
 Heavy: linux-full — neue Ansichten und Freigabeliste im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -75,8 +75,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_dir
 Doku: → T7
 Abhängt von: T4
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-11.md
+### T7 — Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-11.md, docs/features/kern-monitoring-11.md, tasks/kern-monitoring-11.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ace6fd213 2026-11-14T18:46:40+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: App-Module Mail, Verzeichnis, Schule; Ansichten; Katalog; `changelog.d/kern-monitoring-11.md` unter
 `### Added`, ohne Umlaute.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

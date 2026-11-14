@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Roadmap: R-1239 (Postfix, Dovecot, Mailcow ohne API-Key, MailPiler, ClamAV, rspamd, SpamAssassin, OpenDKIM),
 R-1240 (Samba AD DC, Samba-Datei/Mitglied, linuxmuster 7.x, edulution.io; edulution, SRV-Einträge und
 smbd/nmbd/winbind auf dem DC nicht in diesem Zug: R-1487..R-1489). Kevin 2026-11-09 diktiert
-(Monitoring-Konzept §6.6, §6.7, §6.14), vor dem Release 0.47.0.
+(Monitoring-Konzept §6.2, §6.3, §6.14), vor dem Release 0.47.0.
 
 ## Problem / Motivation
 
@@ -63,9 +63,9 @@ Check steht dann auf `unknown`.
 | `samba_fsmo` | Unit samba-ad-dc | `samba-tool fsmo show` (täglich) | Rollen ohne gültigen Inhaber |
 | `samba_member` | Unit smbd/winbind | `testparm -s` (Exit), `smbstatus --json --fast`, `wbinfo -p`, `-P`, täglich `-t` | Konfiguration ok, Sitzungen, Sperren, winbind und Vertrauensstellung ok |
 | `lmn_devices` | Unit linuxmuster-webui | mtime von `devices.csv` gegen `devices.conf`, Fehler in `import-devices.log` | Import ausstehend, Fehler |
-| `lmn_linbo` | Unit linbo-multicast | `.torrent` gegen Image unter `/srv/linbo` | Images mit veraltetem Torrent |
+| `lmn_linbo` | Unit linuxmuster-webui | `.torrent` gegen Image unter `/srv/linbo` | Images mit veraltetem Torrent |
 
-rspamd (`/ping`, `/stat` über localhost), ClamAV `zPING` (Unix-Socket), das LDAPS-Zertifikat (tls mit `lifetime_pct`)
+rspamd (nur `/ping` an 11334), das LDAPS-Zertifikat (tls mit `lifetime_pct`)
 und die Units laufen über die vorhandenen Fühler, ohne neue Ansicht.
 
 ## Externe Integrationen
