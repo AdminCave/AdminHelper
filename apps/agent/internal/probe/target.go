@@ -368,6 +368,11 @@ type containerInfo struct {
 	HostConfig struct {
 		NetworkMode string
 	}
+	// Config.Labels holds the labels of docker compose among others: its label
+	// com.docker.compose.project.working_dir names the directory of the project.
+	Config struct {
+		Labels map[string]string
+	}
 	NetworkSettings struct {
 		Networks map[string]struct {
 			IPAddress         string
