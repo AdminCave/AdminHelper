@@ -73,7 +73,7 @@ höchstens 107 Zeichen. Bestehende Module bleiben in Version und Hash gleich.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_check_configs.py
 Doku: → T9
 
-### T8 — R-1264: credential use none  [?] (Bedeutung: Zugang ohne Nutzung, der nur „hinterlegt“ meldet, oder optionaler Zugang, ohne den der Check läuft? Empfehlung: optional)
+### T8 — R-1264: credential use none  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/tests/test_catalog_sensors.py
 Änderung: nach Kevins Antwort (Spec, Offene Fragen 1).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py
@@ -92,3 +92,4 @@ Abhängt von: T3, T4, T5, T6, T7
 ## Entscheidungen
 - `fastcgi status_path` aus R-1264 ist schon gebaut (Agent `sensor_proto.go` `statusPath`, Katalog `ProtoParams`,
   `UnixSocketParams`); keine Task.
+- Kevin 2026-11-14: T8 `credential use none` heißt optionaler Zugang: ohne ihn läuft der Check, mit ihm liest er mehr.
