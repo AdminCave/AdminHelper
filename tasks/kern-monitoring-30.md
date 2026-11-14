@@ -64,8 +64,10 @@ Version und Hash gleich.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_check_configs.py tests/test_catalog.py
 Doku: → T8
 
-### T6 — R-1392, R-1395: Module onlyoffice, keycloak, vaultwarden, mattermost  [ ]
+### T6 — R-1392, R-1395: Module onlyoffice, keycloak, vaultwarden, mattermost  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/app/catalog/modules/keycloak.py, apps/monitoring/app/catalog/modules/vaultwarden.py, apps/monitoring/app/catalog/modules/mattermost.py, apps/monitoring/tests/test_catalog_onlyoffice.py, apps/monitoring/tests/test_catalog_keycloak.py, apps/monitoring/tests/test_catalog_vaultwarden.py, apps/monitoring/tests/test_catalog_mattermost.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @638f54010 2026-11-14T09:43:54+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T6.verdict.json)
 Änderung: onlyoffice `/healthcheck` mit `expect: "true"`, `body_match` false ⇒ critical; keycloak, vaultwarden und
 mattermost mit Schema `auto`, Docstring ohne „nicht abgedeckt: TLS“. Version je Modul +1.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py tests/test_catalog_keycloak.py tests/test_catalog_vaultwarden.py tests/test_catalog_mattermost.py
