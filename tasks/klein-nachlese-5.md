@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-5 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-5 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-5 · Review: am Ende
 Spec: docs/features/klein-nachlese-5.md (Roadmap R-1429)
 Heavy: none — nur Agent-Unit-Tests und ein Docstring
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -19,8 +19,10 @@ Beweis: reviewer arch-monitoring-app-collector T3/T4 2026-11-13 · Dedup-Key: RE
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (Tests)
 
-### T2 — R-1429: Docstring-Zeile in sensors.py umbrechen  [ ]
+### T2 — R-1429: Docstring-Zeile in sensors.py umbrechen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3e5a9f67f 2026-11-14T22:20:28+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer arch-monitoring-app-collector T5 2026-11-13
 Änderung: die 169 Zeichen lange Zeile 13 im Modul-Docstring wird auf die Breite der übrigen umbrochen; Text unverändert.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py
