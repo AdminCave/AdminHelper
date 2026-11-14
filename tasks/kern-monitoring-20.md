@@ -77,8 +77,10 @@ Geheimnis. Vorher Redis `AUTH` an der Doku prüfen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T9
 
-### T7 — R-1264: Katalog: tls, redis_acl, dns mit Unterstrich, Socket-Pfad  [ ]
+### T7 — R-1264: Katalog: tls, redis_acl, dns mit Unterstrich, Socket-Pfad  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @dd8a84ef8 2026-11-14T12:12:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T7.verdict.json)
 Änderung: `ProtoParams.tls` (nicht zusammen mit `starttls`); `Credential.use` und `ProbeCredential` nehmen
 `redis_acl`; `DnsParams.name` nach dem Muster des Agents (`dnsName`, mit Unterstrich); `UnixSocketParams.path`
 höchstens 107 Zeichen. Bestehende Module bleiben in Version und Hash gleich.

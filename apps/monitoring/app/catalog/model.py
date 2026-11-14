@@ -150,7 +150,9 @@ class Rule(_Model):
 class Credential(_Model):
     # Becomes the reference <module id>/<instance key>/<slot> when an instance is adopted.
     slot: str = Field("default", pattern=_KEY)
-    use: str = Field(pattern=r"^(bearer|basic|redis_auth|password|header:[A-Za-z0-9-]{1,64})$")
+    use: str = Field(
+        pattern=r"^(bearer|basic|redis_auth|redis_acl|password|header:[A-Za-z0-9-]{1,64})$"
+    )
 
 
 class Check(_Model):
