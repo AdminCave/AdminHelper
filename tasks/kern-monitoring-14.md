@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Windows Server, Windows-Rollen und Windows-Backup — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-14 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-14 · Review: pro Task
 Spec: docs/features/kern-monitoring-14.md (Roadmap R-1245, R-1246, R-1436)
 Heavy: linux-full — Discovery und neue Ansichten im Agent (`apps/agent`); Windows über den CI-Job `agent-windows` (keine Windows-Vorlage im Pool), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
