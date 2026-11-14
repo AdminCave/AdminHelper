@@ -68,7 +68,7 @@ type Target struct {
 }
 
 // Credential names the stored credential a probe uses and how it presents it (bearer, basic,
-// redis_auth, header:<name>), never the value.
+// redis_auth, redis_acl, header:<name>), never the value.
 type Credential struct {
 	Ref string `json:"ref"`
 	Use string `json:"use"`

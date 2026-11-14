@@ -52,6 +52,10 @@ var protocols = map[string]func(*session, protoOpts) (protoResult, error){
 // startTLSProtocols are the protocols that can ask for TLS on their connection.
 var startTLSProtocols = []string{"smtp", "imap", "pop3", "ldap", "postgres"}
 
+// implicitTLSProtocols are the protocols proto can speak inside TLS from the first byte (smtps on 465,
+// imaps, pop3s, ldaps, Redis with tls-port, a banner behind TLS).
+var implicitTLSProtocols = []string{"smtp", "imap", "pop3", "ldap", "redis", "banner"}
+
 var errLineTooLong = errors.New("line too long")
 
 // protoFail is an answer outside what the protocol expects: the service answered, but not well.
@@ -59,10 +63,11 @@ type protoFail struct{ detail string }
 
 func (f protoFail) Error() string { return f.detail }
 
-// protoOpts is how proto speaks a protocol: with STARTTLS, with a credential.
+// protoOpts is how proto speaks a protocol: inside TLS from the start, with STARTTLS, with a
+// credential.
 type protoOpts struct {
-	starttls    bool
-	use, secret string
+	tls, starttls bool
+	use, secret   string
 }
 
 // protoResult is what proto found: whether the service answers well, what it is, whether the
@@ -216,7 +221,7 @@ func protoSensor(ctx context.Context, p Probe, secret string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	if err := knownParams(p, "protocol", "starttls", "status_path"); err != nil {
+	if err := knownParams(p, "protocol", "tls", "starttls", "status_path"); err != nil {
 		return nil, err
 	}
 	protocol, err := choiceParam(p, "protocol", "", "auto", "banner", "smtp", "imap", "pop3", "ldap",
@@ -231,12 +236,22 @@ func protoSensor(ctx context.Context, p Probe, secret string) (map[string]any, e
 	if starttls && !slices.Contains(startTLSProtocols, protocol) {
 		return nil, fmt.Errorf("%w: protocol %s has no STARTTLS", ErrInvalid, protocol)
 	}
+	implicit, err := boolParam(p, "tls")
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case implicit && starttls:
+		return nil, fmt.Errorf("%w: tls and starttls exclude each other", ErrInvalid)
+	case implicit && !slices.Contains(implicitTLSProtocols, protocol):
+		return nil, fmt.Errorf("%w: protocol %s is not spoken inside TLS", ErrInvalid, protocol)
+	}
 	if err := statusPath(p, protocol); err != nil {
 		return nil, err
 	}
 	var uses []string
 	if protocol == "redis" {
-		uses = []string{useRedisAuth}
+		uses = []string{useRedisAuth, useRedisACL}
 	}
 	use, err := credentialUse(p, uses...)
 	if err != nil {
@@ -255,7 +270,7 @@ func protoSensor(ctx context.Context, p Probe, secret string) (map[string]any, e
 	if protocol == "auto" {
 		res, err = recognize(ctx, dial)
 	} else {
-		res, err = speak(ctx, dial, protocol, protoOpts{starttls: starttls, use: use, secret: secret})
+		res, err = speak(ctx, dial, protocol, protoOpts{tls: implicit, starttls: starttls, use: use, secret: secret})
 	}
 	if err != nil {
 		return nil, err
@@ -290,9 +305,17 @@ func speak(ctx context.Context, dial func(context.Context) (net.Conn, error), pr
 	return res, err
 }
 
-// runProto speaks protocol name on s. An answer outside the protocol is a result that is not ok.
+// runProto speaks protocol name on s, inside TLS from the start with o.tls. An answer outside the
+// protocol, a failed handshake among them, is a result that is not ok.
 func runProto(s *session, name string, o protoOpts) (protoResult, error) {
-	res, err := protocols[name](s, o)
+	var res protoResult
+	var err error
+	if o.tls {
+		err = s.startTLS("", 0)
+	}
+	if err == nil {
+		res, err = protocols[name](s, o)
+	}
 	var pf protoFail
 	switch {
 	case errors.As(err, &pf):
@@ -729,10 +752,23 @@ func redisErr(l string) string {
 	return "an error"
 }
 
-// speakRedis reads INFO, after AUTH if the probe has a credential.
+// speakRedis reads INFO, after AUTH if the probe has a credential: the password of the default user
+// (redis_auth), or an ACL user and its password (redis_acl, AUTH <user> <password>). No error quotes
+// the user or the password.
 func speakRedis(s *session, o protoOpts) (protoResult, error) {
-	if o.use == useRedisAuth {
-		if err := s.send("AUTH", redisCommand("AUTH", o.secret)); err != nil {
+	var auth []string
+	switch o.use {
+	case useRedisAuth:
+		auth = []string{"AUTH", o.secret}
+	case useRedisACL:
+		user, password, ok := strings.Cut(o.secret, ":")
+		if !ok || user == "" {
+			return protoResult{}, fmt.Errorf("%w: a credential for redis_acl needs the form user:password", ErrInvalid)
+		}
+		auth = []string{"AUTH", user, password}
+	}
+	if auth != nil {
+		if err := s.send("AUTH", redisCommand(auth...)); err != nil {
 			return protoResult{}, err
 		}
 		l, err := s.line("AUTH")

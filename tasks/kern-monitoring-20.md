@@ -66,8 +66,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T9
 Abhängt von: T3, T4
 
-### T6 — R-1264: proto mit implizitem TLS, Redis mit ACL-Nutzer  [ ]
+### T6 — R-1264: proto mit implizitem TLS, Redis mit ACL-Nutzer  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_proto.go, apps/agent/internal/probe/sensor_unixsocket.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_proto_test.go, apps/agent/internal/probe/probe.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a6439605a 2026-11-14T12:07:46+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T6.verdict.json)
 Änderung: Param `tls` (bool) bei `proto` für `smtp`, `imap`, `pop3`, `ldap`, `redis`, `banner`: TLS-Handshake vor dem
 Protokoll, ohne Zertifikatsprüfung; `tls` und `starttls` zusammen sind `invalid`. Zugang `redis_acl` (Geheimnis
 `user:password`, `AUTH <user> <passwort>`), über `proto` und `unixsocket`; kein Fehlertext zitiert Nutzer oder
