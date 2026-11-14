@@ -10,8 +10,10 @@ Heavy: linux-full — apps/agent (R-1470): Sammellauf über main
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1462, R-1463: zwei Monitoring-Tests (module_sync-Update, Alt-Summary bleibt adopted)  [ ]
+### T1 — R-1462, R-1463: zwei Monitoring-Tests (module_sync-Update, Alt-Summary bleibt adopted)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_discovery_match.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @48a89c675 2026-11-14T20:37:04+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer kern-monitoring-20 T3/T4 2026-11-14 · Dedup-Key: REF:monitoring:module_sync.py:_update-invalid-test, REF:monitoring:discovery.py:_seen_again-legacy-summary-test
 Änderung: R-1462: Test, dass `_update` bei einer Admin-Zeit (`interval_s`/`timeout_s`), mit der die neue Definition `ProbeConfig` nicht besteht, den Grund zurückgibt und die Zeile unverändert lässt. R-1463: Test, dass ein übernommener compose-Fund mit Alt-Summary ohne `containers` beim Scan (`_seen_again`) `adopted` bleibt. Reine Tests; ein Test, der schon grün ist, wird mit einer Gegenprobe am Code belegt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_discovery_match.py
