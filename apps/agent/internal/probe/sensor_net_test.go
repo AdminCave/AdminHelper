@@ -422,6 +422,16 @@ func rawServer(t *testing.T, serve func(net.Conn)) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
+// readHello reads the client's whole first TLS record before a server answers: closing with
+// unread data makes Windows reset the connection, and the reset drops the answer at the client.
+func readHello(c net.Conn) {
+	head := make([]byte, 5)
+	if _, err := io.ReadFull(c, head); err != nil {
+		return
+	}
+	_, _ = io.CopyN(io.Discard, c, int64(head[3])<<8|int64(head[4]))
+}
+
 func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
 	stubHost(t, &fakeHost{live: true})
 	ctx := context.Background()
@@ -445,13 +455,13 @@ func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
 		want  bool
 	}{
 		{"an answer of HTTP", func(c net.Conn) {
-			_, _ = c.Read(make([]byte, 16))
+			readHello(c)
 			_, _ = c.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
 		}, false},
 		{"silence", func(c net.Conn) { _, _ = io.Copy(io.Discard, c) }, false},
 		{"a closed connection", func(c net.Conn) { _, _ = c.Read(make([]byte, 16)) }, true},
 		{"an alert", func(c net.Conn) {
-			_, _ = c.Read(make([]byte, 16))
+			readHello(c)
 			_, _ = c.Write([]byte{21, 3, 3, 0, 2, 2, 40})
 		}, true},
 	} {

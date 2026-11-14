@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fühler http, tls und dns für die Katalog-Module — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-30 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-30 · Review: pro Task
 Spec: docs/features/kern-monitoring-30.md (Roadmap R-1392, R-1394, R-1395, R-1433)
 Heavy: linux-full — neue Parameter, Felder und ein Ziel für dns im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -107,8 +107,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 
-### T10 — Test speaksTLS: der Klartext-Server liest das ganze ClientHello  [ ]
+### T10 — Test speaksTLS: der Klartext-Server liest das ganze ClientHello  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0aeb110b3 2026-11-14T10:43:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T10.verdict.json)
 Änderung: PR-CI 2026-11-14, Job „Go Agent (test, Windows)“: `TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence` „an answer of HTTP = true“. Der Test-Server las nur 16 Bytes des ClientHello und schloss mit ungelesenen Daten; Windows sendet dann ein RST und verwirft die schon gesendete HTTP-Antwort beim Client. Der Server liest den ganzen TLS-Datensatz (Kopf und Länge), wie es ein echter HTTP-Server mit seiner Anfrage tut, bevor er antwortet.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (nur Test)
