@@ -846,6 +846,9 @@ export const translations: Translations = {
     'monitoring.findings.hint.gone': 'Nicht mehr gefunden. Übernehmen schaltet die Checks ab.',
     'monitoring.findings.silent': 'Stille Checks bis dahin: {count}.',
     'monitoring.findings.dropped': 'Nicht mehr im Katalog, bleiben wie sie sind: {count}.',
+    'monitoring.findings.updatable':
+      'Neue Katalog-Definition, Übernehmen aktualisiert sie: {count}.',
+    'monitoring.findings.containers': 'Container: {list}',
     'monitoring.findings.seen': 'zuletzt gesehen {age}',
     'monitoring.findings.stale': 'Liste nicht aktuell: {error}',
     'monitoring.findings.unavailable': 'Funde gerade nicht abrufbar',
@@ -2392,6 +2395,8 @@ export const translations: Translations = {
     'monitoring.findings.hint.gone': 'No longer found. Adopting switches its checks off.',
     'monitoring.findings.silent': 'Silent checks until then: {count}.',
     'monitoring.findings.dropped': 'No longer in the catalog, kept as they are: {count}.',
+    'monitoring.findings.updatable': 'New catalog definition, adopting updates them: {count}.',
+    'monitoring.findings.containers': 'Containers: {list}',
     'monitoring.findings.seen': 'last seen {age}',
     'monitoring.findings.stale': 'List not current: {error}',
     'monitoring.findings.unavailable': 'Findings cannot be loaded right now',

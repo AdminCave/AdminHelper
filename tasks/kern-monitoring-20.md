@@ -56,8 +56,10 @@ Container lässt einen übernommenen Fund `adopted`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py
 Doku: → T9
 
-### T5 — R-1264, R-1301: Desktop-Inbox zeigt Updates und Container  [ ]
+### T5 — R-1264, R-1301: Desktop-Inbox zeigt Updates und Container  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/card/FindingsInbox.svelte, apps/desktop/ui/src/components/monitoring/card/FindingsInbox.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @496c5d175 2026-11-14T11:49:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T5.verdict.json)
 Änderung: Ein `changed`-Fund nennt die Zahl der Checks mit neuer Definition; ein compose-Fund den Container je
 Dienst. Typen `updatableChecks`, `updatedChecks`, `containers` in `types.ts`, Texte DE+EN in `dictionaries.ts`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/card/FindingsInbox.test.ts

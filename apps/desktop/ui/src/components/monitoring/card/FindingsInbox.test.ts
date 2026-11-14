@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // arch-monitoring-ui T4 (R-1225): the "Neu gefunden" inbox. Pins what a finding
-// shows (kind, module, instance, server, detail, silent and dropped checks, age), that
+// shows (kind, module, instance, server, detail, silent, dropped and updatable checks, the
+// containers of a compose finding, age), that
 // adopt and dismiss hand over the finding, that one action runs at a time, and when
 // "adopt all" is offered.
 
@@ -99,6 +100,41 @@ describe('FindingsInbox', () => {
     expect(getByText('Server srv-1')).toBeTruthy();
     expect(getByText(/Stille Checks bis dahin: 2\./)).toBeTruthy();
     expect(getByText(/Nicht mehr im Katalog, bleiben wie sie sind: 1\./)).toBeTruthy();
+  });
+
+  it('counts the checks a changed catalog definition updates on adopt', () => {
+    const { getByText, queryAllByText } = render(FindingsInbox, {
+      // A server before the catalog updates sends no list (f2): nothing to count.
+      findings: [
+        finding({ kind: 'changed', updatableChecks: ['c1', 'c2'] }),
+        finding({ id: 'f2', kind: 'changed', instanceKey: 'nginx@b' }),
+      ],
+      onAdopt: resolved(),
+      onDismiss: resolved(),
+    });
+    expect(getByText(/Neue Katalog-Definition, Übernehmen aktualisiert sie: 2\./)).toBeTruthy();
+    expect(queryAllByText(/Neue Katalog-Definition/)).toHaveLength(1);
+  });
+
+  it('names the container of each compose service, and none for another finding', () => {
+    const { getByText, queryByText } = render(FindingsInbox, {
+      findings: [
+        finding({
+          id: 'f1',
+          moduleId: 'paperless',
+          instanceKey: 'paperless',
+          summary: {
+            services: { web: 'paperless', broker: 'redis' },
+            containers: { broker: 'paperless-broker-1', web: 'paperless_web_2' },
+          },
+        }),
+        finding({ id: 'f2', summary: { image: 'nginx', containers: 'not a map' } }),
+      ],
+      onAdopt: resolved(),
+      onDismiss: resolved(),
+    });
+    expect(getByText('Container: broker: paperless-broker-1, web: paperless_web_2')).toBeTruthy();
+    expect(queryByText(/Container: .*not a map/)).toBeNull();
   });
 
   it('hands the finding to adopt and blocks every button until it is done', async () => {
