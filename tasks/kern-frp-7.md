@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Ergebnis des Policy-Abgleichs nach Schlüssel-Erneuerung — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-7 · Review: am Ende
+Status: erledigt · Branch: feature/kern-frp-7 · Review: am Ende
 Spec: docs/features/kern-frp-7.md (Roadmap R-1437)
 Heavy: none — additives Antwortfeld und UI-Hinweis; kein Stack-, Gateway- oder FRP-Datenpfad geändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
