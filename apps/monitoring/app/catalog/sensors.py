@@ -277,8 +277,20 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
     "process": frozenset({"count", "rss_bytes", "uptime_s"}),
     "socket": frozenset({"listening", "port"}),
     "container": frozenset({"state", "health", "restarts", "started_at"}),
-    "http": frozenset({"status_code", "duration_ms"}),
-    "tls": frozenset({"days_left", "not_after", "hostname_ok", "chain_ok", "issuer"}),
+    # body_match only with the param expect (field_allowed); tls only says something with
+    # scheme auto.
+    "http": frozenset({"status_code", "duration_ms", "body_match", "tls"}),
+    "tls": frozenset(
+        {
+            "days_left",
+            "hours_left",
+            "lifetime_pct",
+            "not_after",
+            "hostname_ok",
+            "chain_ok",
+            "issuer",
+        }
+    ),
     "certfile": frozenset({"days_left", "not_after", "issuer", "subject"}),
     "file_age": frozenset({"exists", "age_s", "size_bytes"}),
     "proto": frozenset({"ok", "duration_ms", "tls_ok", "detail"}),
@@ -302,7 +314,7 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
             "long_transactions",
         }
     ),
-    "dns": frozenset({"resolved", "duration_ms", "answers"}),
+    "dns": frozenset({"resolved", "duration_ms", "answers", "rcode"}),
     "log": frozenset({"count"}),
     "opnsense": frozenset().union(*OPNSENSE_VIEW_FIELDS.values()),
     "app": frozenset().union(*APP_VIEW_FIELDS.values()),
@@ -326,13 +338,18 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "file_age": None,
     "unixsocket": None,
     "sql": None,
-    "dns": None,
+    # Optional (OPTIONAL_TARGET_SENSORS): without one the host's resolver, with one the DNS
+    # service there, asked over TCP.
+    "dns": frozenset({"loopback", "port", "process", "container", "unit"}),
     "log": None,
     "opnsense": None,
     # Narrowed to the kinds of its view (APP_VIEW_TARGETS, checked on Check).
     "app": frozenset().union(*APP_VIEW_TARGETS.values()),
     "host": None,
 }
+
+# Sensors that may go without the target SENSOR_TARGETS allows them.
+OPTIONAL_TARGET_SENSORS = frozenset({"dns"})
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
 _ABS_PATH = r"^/[^\x00]*$"
@@ -354,14 +371,23 @@ class HttpParams(_Params):
     # Host header localhost for apps that answer only to the names they trust (Nextcloud);
     # unset, the agent sends IP:port. No other name: a check must not pose as a site.
     host: Literal["localhost"] | None = None
+    # The whole answer the agent compares with, for body_match (sensor_http.go plainText):
+    # 1 to 64 characters without space or control character.
+    expect: str | None = Field(None, pattern=r"^[^\s\x00-\x1f\x7f-\x9f]{1,64}$")
 
-    @field_validator("host", mode="before")
+    @field_validator("host", "expect", mode="before")
     @classmethod
-    def _host_set_or_absent(cls, v: object) -> object:
+    def _set_or_absent(cls, v: object) -> object:
         # A probe check sends its params as given, and the agent answers invalid to a null.
         if v is None:
-            raise ValueError("host is localhost or left out")
+            raise ValueError("set it or leave it out")
         return v
+
+    @model_validator(mode="after")
+    def _expect_with_get(self) -> HttpParams:
+        if self.expect is not None and self.method != "GET":
+            raise ValueError("expect needs method GET")
+        return self
 
 
 class TlsParams(_Params):
@@ -527,6 +553,8 @@ def field_allowed(sensor: str, field: str, params: dict) -> bool:
         return field in APP_VIEW_FIELDS[params["view"]]
     if sensor == "host":
         return field in HOST_VIEW_FIELDS[params["view"]]
+    if sensor == "http" and field == "body_match":
+        return "expect" in params
     if field in SENSOR_FIELDS[sensor]:
         return True
     return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")

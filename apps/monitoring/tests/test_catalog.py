@@ -286,14 +286,15 @@ def test_target_must_fit_the_sensor():
     unit.update(rules=[], credential=None)
     assert "cannot target 'container'" in _only_error(_load(_module(checks=[unit], card=[])))
     assert "needs a target" in _only_error(_load(_module(checks=[_check(target=None)])))
-    dns = _check(
-        sensor="dns",
-        params={"name": "example.org"},
-        fields=["resolved"],
+    # dns takes a target since kern-monitoring-30; file_age names its object in params.
+    file_age = _check(
+        sensor="file_age",
+        params={"path": "/var/backups/db.dump"},
+        fields=["age_s"],
         rules=[],
         target={"kind": "loopback"},
     )
-    assert "takes no target" in _only_error(_load(_module(checks=[dns], card=[])))
+    assert "takes no target" in _only_error(_load(_module(checks=[file_age], card=[])))
 
 
 def test_target_service_needs_a_compose_project():

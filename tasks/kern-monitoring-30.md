@@ -54,12 +54,14 @@ DNS-Stub auf Loopback, Antwortlänge begrenzt.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 
-### T5 — Katalog: neue Parameter, Felder, Schema auto, dns mit Ziel  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/model.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_check_configs.py
+### T5 — Katalog: neue Parameter, Felder, Schema auto, dns mit Ziel  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/model.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_check_configs.py, apps/monitoring/tests/test_catalog.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d03e34231 2026-11-14T09:39:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T5.verdict.json)
 Änderung: `HttpParams.expect`, Felder `body_match`/`tls` (http), `lifetime_pct`/`hours_left` (tls), `rcode` (dns);
 `auto` in `Target.scheme` und `Alternative.scheme`; `dns` nimmt ein optionales Ziel. Bestehende Module bleiben in
 Version und Hash gleich.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_check_configs.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_check_configs.py tests/test_catalog.py
 Doku: → T8
 
 ### T6 — R-1392, R-1395: Module onlyoffice, keycloak, vaultwarden, mattermost  [ ]
@@ -94,3 +96,4 @@ Abhängt von: T6, T7
 - Kevin 2026-11-14: Offene Frage 1 wie empfohlen: dns-Check mit `localhost` A (nur lokal).
 - T2 `auto`: Schweigen bis `answerWait` (2 s) zählt als Klartext, nicht nur ein Nicht-TLS-Datensatz: ein Go-HTTP-Server (etwa Mattermost) wartet auf ein `\n` im ClientHello und antwortet nie. Ein Abbruch oder Alert zählt als TLS, ein abgelaufener Probe-Kontext ist ein Fehler.
 - T4 dns mit Ziel: `answers` ist ANCOUNT aus dem Kopf (zählt etwa eine CNAME-Kette mit), der Rest der Antwort wird nicht gelesen; ohne Ziel zählt der Resolver weiter nur die Endergebnisse. Ein IPv6-PTR-Name steht wie bisher als ip6.arpa-Name im Parameter. Der alte Fall "a target" in `TestDNSSensorTakesItsParams` prüft jetzt ein Ziel ohne Port (gewollte Verhaltensänderung).
+- T5: `dns` nimmt ein optionales Ziel (`OPTIONAL_TARGET_SENSORS`); `test_catalog.py::test_target_must_fit_the_sensor` prüfte „takes no target“ am dns-Fühler und nimmt dafür jetzt `file_age` (gewollte Verhaltensänderung, gleichwertiger Ersatz). `auto` nur für den Fühler `http`: die App-Ansichten (`app_db.go`) und `proto`/`tls` kennen den Wert nicht. `body_match` nur mit `expect`, `expect` nur mit `GET`, wie der Agent.
