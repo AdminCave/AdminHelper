@@ -4,8 +4,11 @@
 
 """Pi-hole from its installer or image (R-1237).
 
-The module watches the unit pihole-FTL.service (the installer's) or the container, and
-whether FTL listens on port 53, every five minutes. It does not use Pi-hole's API: v6 has
+The module watches the unit pihole-FTL.service (the installer's) or the container, whether
+FTL listens on port 53, and asks it localhost A on that port over TCP, every five minutes:
+critical on SERVFAIL or no answer. FTL is built on dnsmasq, which answers from /etc/hosts;
+that it answers localhost from there is not verified, an NXDOMAIN counts as an answer. The
+query shows in Pi-hole's query log. It does not use Pi-hole's API: v6 has
 16 session slots, and a monitor that logs in takes them from the admins. The age of the
 gravity database (/etc/pihole/gravity.db, the blocklists) is asked daily: Pi-hole renews it
 weekly, older than 14 days warns. In a container the file lies in a volume the agent does
@@ -14,8 +17,8 @@ not know: there the gravity check stays unknown, turn it off.
 A service that stops listening on 53 but keeps its web ports is critical when one port
 is left, unknown (ambiguous target) when several are.
 
-Not covered: whether FTL answers a query (the agent's dns sensor asks the host's own
-resolver, which need not be Pi-hole), the blocklists' contents and the DHCP server.
+Not covered: whether FTL resolves names upstream, the blocklists' contents and the DHCP
+server.
 """
 
 # The agent takes another port when the hint does not listen (the only one, or none of
@@ -25,10 +28,15 @@ _LISTENING_RULES = [
     {"field": "port", "op": "ne", "value": 53, "level": "critical"},
 ]
 
+# The agent asks localhost A at the service's own port 53 over TCP. Only a SERVFAIL or no
+# answer at all is critical: NXDOMAIN or REFUSED is an answer, and what the server holds
+# for localhost depends on its configuration.
+_ANSWER_RULES = [{"field": "rcode", "op": "eq", "value": "servfail", "level": "critical"}]
+
 MODULE = {
     "id": "pihole",
     "name": "Pi-hole",
-    "version": 1,
+    "version": 2,
     "description": (
         "Pi-hole from its installer or image: the unit or the container, whether it listens "
         "for DNS, and the age of its blocklists."
@@ -61,6 +69,16 @@ MODULE = {
             "rules": _LISTENING_RULES,
         },
         {
+            "key": "answers",
+            "name": "DNS answer",
+            "sensor": "dns",
+            "target": {"kind": "container", "port_hint": 53},
+            "params": {"name": "localhost"},
+            "interval": 300,
+            "fields": ["rcode", "answers", "duration_ms"],
+            "rules": _ANSWER_RULES,
+        },
+        {
             "key": "service",
             "name": "Service",
             "sensor": "unit",
@@ -81,6 +99,16 @@ MODULE = {
             "rules": _LISTENING_RULES,
         },
         {
+            "key": "service_answers",
+            "name": "DNS answer (service)",
+            "sensor": "dns",
+            "target": {"kind": "unit", "port_hint": 53},
+            "params": {"name": "localhost"},
+            "interval": 300,
+            "fields": ["rcode", "answers", "duration_ms"],
+            "rules": _ANSWER_RULES,
+        },
+        {
             "key": "gravity",
             "name": "Blocklists age",
             "sensor": "file_age",
@@ -92,9 +120,9 @@ MODULE = {
     ],
     "card": [
         {"check_key": "container", "field": "state", "label": "Container"},
-        {"check_key": "dns", "field": "listening", "label": "DNS port"},
+        {"check_key": "answers", "field": "rcode", "label": "DNS answer"},
         {"check_key": "service", "field": "active_state", "label": "Service"},
-        {"check_key": "service_dns", "field": "listening", "label": "DNS port"},
+        {"check_key": "service_answers", "field": "rcode", "label": "DNS answer"},
         {"check_key": "gravity", "field": "age_s", "label": "Blocklists age"},
     ],
 }

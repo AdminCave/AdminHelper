@@ -19,7 +19,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -323,6 +325,102 @@ func TestFileAgeSensorReadsAgeAndSizeOnly(t *testing.T) {
 	got, err := fileAgeSensor(ctx, p, "")
 	if err != nil || len(got) != 1 || got["exists"] != false {
 		t.Errorf("a missing file = %v, %v; want exists false alone", got, err)
+	}
+}
+
+func TestFileAgeNewestInReadsTheNewestRegularFileOfADirectory(t *testing.T) {
+	stubNow(t, start)
+	ctx := context.Background()
+	dir := t.TempDir()
+	write := func(name, data string, mtime time.Time) {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := Probe{Sensor: "file_age", Params: map[string]any{"newest_in": slashPath(t, dir)}}
+
+	got, err := fileAgeSensor(ctx, p, "")
+	if err != nil || len(got) != 1 || got["exists"] != false {
+		t.Errorf("an empty directory = %v, %v; want exists false alone", got, err)
+	}
+
+	write("old.tar", "1", start.Add(-time.Hour))
+	write("new.tar", "123", start.Add(-90*time.Second))
+	// Neither a directory nor anything below it counts, however new.
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "newer.tar"), []byte("12345"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(sub, start, start); err != nil {
+		t.Fatal(err)
+	}
+	// A link is not followed, though it points at a newer file outside.
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("1234567"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(outside, start, start); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil && runtime.GOOS != "windows" {
+		t.Fatal(err)
+	}
+
+	got, err = fileAgeSensor(ctx, p, "")
+	want := map[string]any{"exists": true, "age_s": int64(90), "size_bytes": int64(3)}
+	if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("newest_in = %v, %v; want %v", got, err, want)
+	}
+
+	p.Params["newest_in"] = slashPath(t, dir) + "/gone"
+	if got, err := fileAgeSensor(ctx, p, ""); err != nil || len(got) != 1 || got["exists"] != false {
+		t.Errorf("a missing directory = %v, %v; want exists false alone", got, err)
+	}
+	p.Params["newest_in"] = slashPath(t, dir) + "/new.tar"
+	if _, err := fileAgeSensor(ctx, p, ""); !errors.Is(err, errNotDir) {
+		t.Errorf("newest_in on a file = %v, want no directory", err)
+	}
+}
+
+func TestFileAgeNewestInRefusesADirectoryOfTooManyEntries(t *testing.T) {
+	dir := t.TempDir()
+	for i := range maxDirEntries + 1 {
+		f, err := os.Create(filepath.Join(dir, strconv.Itoa(i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+	}
+	p := Probe{Sensor: "file_age", Params: map[string]any{"newest_in": slashPath(t, dir)}}
+	if _, err := fileAgeSensor(context.Background(), p, ""); err == nil || !strings.Contains(err.Error(), "more than 10000 entries") {
+		t.Errorf("a directory of %d entries = %v, want it refused", maxDirEntries+1, err)
+	}
+	if err := os.Remove(filepath.Join(dir, "0")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := fileAgeSensor(context.Background(), p, ""); err != nil || got["exists"] != true {
+		t.Errorf("a directory of %d entries = %v, %v; want the newest", maxDirEntries, got, err)
+	}
+}
+
+func TestFileAgeTakesEitherPathOrNewestIn(t *testing.T) {
+	for name, params := range map[string]map[string]any{
+		"both":                 {"path": "/var/backups/a.tar", "newest_in": "/var/backups"},
+		"a relative newest_in": {"newest_in": "var/backups"},
+		"newest_in not a path": {"newest_in": 3},
+	} {
+		p := Probe{ID: "f1", Sensor: "file_age", TimeoutS: 5, Params: params}
+		if res := Run(context.Background(), p, start, nil); res.Status != StatusInvalid {
+			t.Errorf("file_age with %s = %+v, want invalid", name, res)
+		}
 	}
 }
 

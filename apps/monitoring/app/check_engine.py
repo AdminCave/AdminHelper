@@ -14,7 +14,6 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -23,6 +22,7 @@ from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import CheckContext, PartnerState, get_checker
 from app.core import database
+from app.core.bounds import storable
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
@@ -45,12 +45,6 @@ MAX_MESSAGE = 2000
 
 # The note a skipped central run leaves behind the message; the next one replaces it.
 _SKIP_NOTE = re.compile(r" \(skipped: [^()]*\)\Z")
-
-# What the state write cannot take: Postgres keeps no NUL in a text column, and the driver
-# cannot encode a lone surrogate (U+D800 to U+DFFF) — nor can a response that later carries
-# the stored details. The agent report refuses both at its boundary (core/bounds.py); a
-# scheduler checker's text has no sender to refuse, so apply_result replaces them.
-_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
 
 
 def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
@@ -219,8 +213,8 @@ def apply_result(
 
     Returns (old_status, effective status, notification decision).
     """
-    message = _storable(message)
-    details = _storable(details)
+    message = storable(message)
+    details = storable(details)
     old_status = state.status if state else "pending"
     eff_status, message, new_fail_count, new_ok_count = _damp(
         check, state, old_status, result_status, message
@@ -249,23 +243,6 @@ def apply_result(
     if decision == "silent_ack":
         state.notified_status = eff_status
     return old_status, eff_status, decision
-
-
-def _storable(value: Any) -> Any:
-    """`value` with every _UNSTORABLE character in its strings, dict keys included, as U+FFFD.
-
-    Recursive like the json.dumps that writes the details: a checker builds them, so the
-    depth is the checker's."""
-    if isinstance(value, str):
-        return _UNSTORABLE.sub("\ufffd", value)
-    if isinstance(value, dict):
-        return {
-            (_storable(key) if isinstance(key, str) else key): _storable(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, list | tuple):
-        return [_storable(item) for item in value]
-    return value
 
 
 def _damp(

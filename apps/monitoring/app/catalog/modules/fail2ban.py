@@ -12,12 +12,16 @@ critical: the unit can be active while the socket is dead. A jail whose file lis
 warns: its log path matched nothing, so it bans no one (a jail of the systemd backend
 shows journal matches instead of a file list and does not count). More than 10000 bans in
 one jail warns: a large ban list slows fail2ban and the firewall.
+
+Daily the agent runs `fail2ban-client --test` and reports only whether the configuration loads: one
+that does not would fail the next restart or reload while the running server goes on, a
+warning.
 """
 
 MODULE = {
     "id": "fail2ban",
     "name": "fail2ban",
-    "version": 1,
+    "version": 2,
     "description": (
         "fail2ban: the unit, whether the server answers, its jails and how many addresses they ban."
     ),
@@ -48,6 +52,17 @@ MODULE = {
                 {"field": "jails_without_files", "op": "gt", "value": 0, "level": "warning"},
                 {"field": "max_banned", "op": "gt", "value": 10000, "level": "warning"},
             ],
+        },
+        {
+            "key": "config",
+            "name": "Configuration test",
+            "sensor": "app",
+            "target": {"kind": "unit"},
+            "params": {"view": "service_config"},
+            "interval": 86400,
+            "timeout_s": 20,
+            "fields": ["config_ok"],
+            "rules": [{"field": "config_ok", "op": "eq", "value": False, "level": "warning"}],
         },
     ],
     "card": [

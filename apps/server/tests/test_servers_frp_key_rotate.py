@@ -17,7 +17,7 @@ import pytest
 from app.core.auth import hash_api_key
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit.models import AuditLog
-from app.modules.frp import docker_manager
+from app.modules.frp import docker_manager, policy
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.proxy_key import proxy_key, proxy_key_hash
 from app.modules.servers.models import Server
@@ -96,7 +96,10 @@ def test_a_rotation_replaces_the_key_of_its_server_everywhere(
     second = test_client.post(f"/api/servers/{SERVER_A}/frp-key/rotate", headers=admin)
 
     assert first.status_code == 200, first.text
-    assert (first.json(), second.json()) == ({"generation": 1}, {"generation": 2})
+    assert (first.json(), second.json()) == (
+        {"generation": 1, "policySynced": True},
+        {"generation": 2, "policySynced": True},
+    )
     db_session.expire_all()
     assert db_session.get(Server, SERVER_A).frp_key_generation == 2
     assert db_session.get(Server, SERVER_B).frp_key_generation == 0
@@ -163,3 +166,25 @@ def test_without_a_login_the_rotation_is_401(test_client, db_session):
     _seed(db_session)
     r = test_client.post(f"/api/servers/{SERVER_A}/frp-key/rotate")
     assert r.status_code == 401, r.text
+
+
+def test_a_rotation_whose_policy_write_fails_stands_and_says_so(
+    test_client, db_session, admin_user, policy_file, monkeypatch
+):
+    """R-1437: the policy is best effort; a failed write leaves the rotation in place
+    (generation committed, audited) and the answer tells the admin frps lags behind."""
+    _seed(db_session)
+
+    def refuse(_text: str) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(policy, "write_frps_policy", refuse)
+    r = test_client.post(f"/api/servers/{SERVER_A}/frp-key/rotate", headers=_login(test_client))
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"generation": 1, "policySynced": False}
+    db_session.expire_all()
+    assert db_session.get(Server, SERVER_A).frp_key_generation == 1
+    assert not policy_file.exists()
+    rows = db_session.query(AuditLog).filter(AuditLog.action == "server.frp_key.rotated").all()
+    assert [row.detail for row in rows] == ["generation=1"]

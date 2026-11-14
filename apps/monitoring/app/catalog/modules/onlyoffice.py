@@ -6,8 +6,9 @@
 
 GET /healthcheck of the docservice checks the database, Redis, pubsub and the queue, and
 then writes and deletes a small object in the file storage: a test object, every 15 min.
-It answers 200 with the text true or false, which is no JSON object; the agent reads only
-the status code, so the check shows that the docservice answers, not what it found. The
+It answers 200 with the text true or false, which is no JSON object; the agent compares
+it with true on the host and sends only whether it matched (body_match), so false is
+critical as much as an answer other than 200. The
 packages run ds-docservice.service on 8000 over plain HTTP, whatever nginx in front of it
 does (TLS on 443, a redirect on 80); the module asks /healthcheck there. The images
 (onlyoffice/documentserver, -de, -ee) run nginx and the docservice in one container and
@@ -20,16 +21,23 @@ unbound). From 10.0 on, the image's own HEALTHCHECK compares the answer of /heal
 with true every 30 s and the container's health carries it; the 9.x images have none. The
 module sends GET only: a PUT or DELETE on /internal/cluster/inactive shuts the server down.
 
-Not covered: the answer of /healthcheck (true or false), the converter
+Not covered: the converter
 (ds-converter.service), a data container (ONLYOFFICE_DATA_CONTAINER=true), which runs no
 docservice, the split images of the docservice, converter and proxy, and the container of
 Nextcloud AIO (nextcloud/aio-onlyoffice).
 """
 
+_HEALTHCHECK = {"path": "/healthcheck", "expect": "true"}
+_HEALTHCHECK_FIELDS = ["status_code", "body_match"]
+_HEALTHCHECK_RULES = [
+    {"field": "status_code", "op": "ne", "value": 200, "level": "critical"},
+    {"field": "body_match", "op": "eq", "value": False, "level": "critical"},
+]
+
 MODULE = {
     "id": "onlyoffice",
     "name": "ONLYOFFICE Docs",
-    "version": 2,
+    "version": 3,
     "description": (
         "ONLYOFFICE Docs from its image or package: the container with its own health check, "
         "or the docservice unit, and the docservice's health check every 15 min."
@@ -72,22 +80,22 @@ MODULE = {
             "name": "Health check",
             "sensor": "http",
             "target": {"kind": "unit", "port_hint": 8000, "scheme": "http"},
-            "params": {"path": "/healthcheck"},
+            "params": _HEALTHCHECK,
             "interval": 900,
             "test_object": True,
-            "fields": ["status_code"],
-            "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+            "fields": _HEALTHCHECK_FIELDS,
+            "rules": _HEALTHCHECK_RULES,
         },
         {
             "key": "container_healthcheck",
             "name": "Health check",
             "sensor": "http",
             "target": {"kind": "container", "port_hint": 8000, "scheme": "http"},
-            "params": {"path": "/healthcheck"},
+            "params": _HEALTHCHECK,
             "interval": 900,
             "test_object": True,
-            "fields": ["status_code"],
-            "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+            "fields": _HEALTHCHECK_FIELDS,
+            "rules": _HEALTHCHECK_RULES,
         },
     ],
     "card": [

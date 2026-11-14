@@ -44,6 +44,41 @@ WindowMinutes = Annotated[int, Field(ge=1, le=1440)]
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
+# What the state write cannot take: Postgres keeps no NUL in a text column, and the driver
+# cannot encode a lone surrogate (U+D800 to U+DFFF) — nor can a response that later carries
+# the stored text. The agent report refuses both at its boundary (find_unstorable); a text
+# with no sender to refuse — a scheduler checker's, a channel's reason — is replaced.
+_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
+
+
+def _replaced(value: Any, pattern: re.Pattern[str]) -> Any:
+    """`value` with every `pattern` match in its strings, dict keys included, as U+FFFD.
+
+    Recursive like the json.dumps that writes the value: a checker builds it, so the
+    depth is the checker's."""
+    if isinstance(value, str):
+        return pattern.sub("\ufffd", value)
+    if isinstance(value, dict):
+        return {
+            (_replaced(key, pattern) if isinstance(key, str) else key): _replaced(item, pattern)
+            for key, item in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [_replaced(item, pattern) for item in value]
+    return value
+
+
+def storable(value: Any) -> Any:
+    """`value` with every NUL and lone surrogate replaced, so a text column takes it."""
+    return _replaced(value, _UNSTORABLE)
+
+
+def readable(value: Any) -> Any:
+    """`value` read from a stored JSON column with every lone surrogate replaced, so a
+    response can encode it; an older row may hold one as an escape (\\ud800)."""
+    return _replaced(value, _LONE_SURROGATE)
+
+
 def _unstorable(text: str) -> str | None:
     """Why `text` can be neither stored nor answered, if it cannot."""
     if "\x00" in text:

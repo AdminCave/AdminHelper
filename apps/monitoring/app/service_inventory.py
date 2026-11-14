@@ -184,7 +184,9 @@ def store_service_report(db: Session, server_id: str, systemd: object) -> None:
         return
     now = utcnow_naive()
     listed = not systemd.get("error")
-    row = db.get(MonitorServiceInventory, server_id)
+    # Locked until the commit: a switch turned off meanwhile waits for this report and then
+    # deletes its lines, or this report waits and sees the switch off.
+    row = db.get(MonitorServiceInventory, server_id, with_for_update=True)
 
     services = systemd.get("all_services")
     if listed and isinstance(services, list):

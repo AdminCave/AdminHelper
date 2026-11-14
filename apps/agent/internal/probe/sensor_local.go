@@ -51,6 +51,9 @@ const (
 	maxPathBytes = 1024
 	// maxCertFileBytes caps what the certfile sensor reads.
 	maxCertFileBytes = 1 << 20
+	// maxDirEntries caps the entries file_age reads in a directory (newest_in): a spool of millions
+	// of files would cost the host a long scan every interval.
+	maxDirEntries = 10000
 )
 
 // The seams of the local sensors to the host; tests stand in their own.
@@ -79,12 +82,17 @@ func noParams(p Probe) error {
 // "/" must be a local path (filepath.IsLocal): no second separator, no "..", on Windows no colon and no
 // device name. So it never names a share of another host (//host/share), a pipe or a device.
 func pathParam(p Probe) (string, error) {
+	return pathParamNamed(p, "path")
+}
+
+// pathParamNamed is pathParam for the one parameter key.
+func pathParamNamed(p Probe, key string) (string, error) {
 	for k := range p.Params {
-		if k != "path" {
+		if k != key {
 			return "", fmt.Errorf("%w: sensor %s takes no parameter %s", ErrInvalid, p.Sensor, k)
 		}
 	}
-	path, ok := p.Params["path"].(string)
+	path, ok := p.Params[key].(string)
 	if !ok || !validLocalPath(path) {
 		return "", fmt.Errorf("%w: sensor %s needs an absolute local path of at most %d bytes", ErrInvalid, p.Sensor, maxPathBytes)
 	}
@@ -425,16 +433,21 @@ func certfileSensor(ctx context.Context, p Probe, _ string) (map[string]any, err
 }
 
 // fileAgeSensor reads whether a file exists, how long ago it was changed and its size, never what it
-// holds. A file that does not exist is no error: exists is false.
+// holds. A file that does not exist is no error: exists is false. With newest_in instead of path it
+// reads the newest regular file of a directory (newestIn), never its name.
 func fileAgeSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
 	if err := noTarget(p); err != nil {
 		return nil, err
 	}
-	path, err := pathParam(p)
+	key, stat := "path", statPath
+	if _, ok := p.Params["newest_in"]; ok {
+		key, stat = "newest_in", newestIn
+	}
+	path, err := pathParamNamed(p, key)
 	if err != nil {
 		return nil, err
 	}
-	fi, err := untilDone(ctx, func() (fs.FileInfo, error) { return statPath(path) })
+	fi, err := untilDone(ctx, func() (fs.FileInfo, error) { return stat(path) })
 	if errors.Is(err, fs.ErrNotExist) {
 		return map[string]any{"exists": false}, nil
 	}
@@ -446,6 +459,54 @@ func fileAgeSensor(ctx context.Context, p Probe, _ string) (map[string]any, erro
 		"age_s":      int64(now().Sub(fi.ModTime()) / time.Second),
 		"size_bytes": fi.Size(),
 	}, nil
+}
+
+// newestIn returns the newest regular file directly in the directory dir, fs.ErrNotExist for a
+// directory without one. It reads no file and follows no link: an entry's own type and times
+// (lstat) decide. openDir opens a directory and nothing else, so a FIFO put at dir is never waited on.
+func newestIn(dir string) (fs.FileInfo, error) {
+	d, err := openDir(nil, dir)
+	if errors.Is(err, errNotDir) {
+		return nil, fmt.Errorf("%s is %w", dir, errNotDir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer d.Close()
+	if err := refuseKernelFile(d, dir); err != nil {
+		return nil, err
+	}
+	entries, err := d.ReadDir(maxDirEntries + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(entries) > maxDirEntries {
+		return nil, fmt.Errorf("%s holds more than %d entries", dir, maxDirEntries)
+	}
+	var newest fs.FileInfo
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		fi, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // removed since the directory was read
+		}
+		if err != nil {
+			// The error of lstat quotes the entry, and newest_in never names a file.
+			return nil, fmt.Errorf("an entry of %s cannot be read", dir)
+		}
+		if !fi.Mode().IsRegular() {
+			continue // replaced since the directory was read
+		}
+		if newest == nil || fi.ModTime().After(newest.ModTime()) {
+			newest = fi
+		}
+	}
+	if newest == nil {
+		return nil, fs.ErrNotExist
+	}
+	return newest, nil
 }
 
 // errNoRegularFile is what checkRegular returns for a file that is not regular.

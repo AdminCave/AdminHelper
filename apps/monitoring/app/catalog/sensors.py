@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 SENSORS = (
     "unit",
@@ -147,7 +147,116 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"datastores", "maintenance", "tasks_failed", "max_used_pct", "min_full_days"}
     ),
     "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
+    "web_config": frozenset({"config_ok"}),
+    "service_config": frozenset({"config_ok"}),
+    "nginx_status": frozenset(
+        {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
+    ),
+    "apache_status": frozenset({"busy_workers", "idle_workers", "slots", "busy_pct"}),
+    "haproxy_servers": frozenset(
+        {"backends", "backends_down", "servers", "servers_down", "servers_maint"}
+    ),
+    "fpm_pools": frozenset(
+        {
+            "pools",
+            "pools_read",
+            "pools_exposed",
+            "listen_queue",
+            "max_children_reached",
+            "slow_requests",
+        }
+    ),
+    "pm2_apps": frozenset({"apps", "apps_errored", "apps_stopped", "restarts"}),
+    "es_nodes": frozenset({"nodes", "nodes_failed", "heap_used_pct_max", "disk_used_pct_max"}),
+    "backuppc_status": frozenset(
+        {
+            "hosts",
+            "hosts_failed",
+            "hosts_no_ping",
+            "hosts_never_backed_up",
+            "jobs_active",
+            "backup_age_max_s",
+        }
+    ),
+    "urbackup_status": frozenset(
+        {
+            "clients",
+            "clients_file_failed",
+            "clients_image_failed",
+            "clients_unseen_24h",
+            "file_backup_age_max_s",
+            "nospc_fatal",
+            "database_error",
+        }
+    ),
+    "veeam_sessions": frozenset(
+        {"jobs", "jobs_failed", "jobs_warning", "sessions_running", "last_success_age_max_s"}
+    ),
+    # The repository named in the unit's environment, asked with the locally stored password
+    # (credential use password): whether it holds a snapshot and the age of the newest.
+    "restic_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
+    "borg_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
+    "kopia_latest": frozenset({"has_snapshot", "snapshot_age_s"}),
+    "duplicati_health": frozenset({"healthy"}),
+    # Windows Server and its roles (R-1245, R-1246, R-1436) and CUPS: counts, ages and states
+    # from fixed WMI and event queries or read commands; no name, no event text.
+    "ad_replication": frozenset(
+        {
+            "failing_links",
+            "links",
+            "never_links",
+            "oldest_success_age_s",
+            "partners",
+        }
+    ),
+    "dhcp_scopes": frozenset({"max_used_pct", "scopes", "scopes_over_80", "scopes_over_95"}),
+    "iis_state": frozenset({"pools", "pools_stopped", "sites", "sites_stopped"}),
+    "rds_licenses": frozenset(
+        {
+            "licenses_issued",
+            "licenses_total",
+            "min_days_left",
+            "used_pct",
+        }
+    ),
+    "hyperv": frozenset(
+        {
+            "checkpoints",
+            "heartbeat_lost",
+            "oldest_checkpoint_age_s",
+            "replication_critical",
+            "replication_warning",
+            "vms",
+            "vms_running",
+            "vms_unhealthy",
+        }
+    ),
+    "dfsr": frozenset(
+        {
+            "folders",
+            "folders_error",
+            "folders_not_normal",
+            "offline_too_long_24h",
+            "stopped_events_24h",
+        }
+    ),
+    "print": frozenset(
+        {
+            "jobs",
+            "jobs_error",
+            "oldest_job_age_s",
+            "printers",
+            "printers_error",
+        }
+    ),
+    "mssql_events": frozenset({"errors_24h"}),
+    "wsus": frozenset({"content_free_bytes", "content_free_pct", "errors_24h"}),
+    "cups_queues": frozenset({"queues", "queues_disabled"}),
+    "veeam_windows": frozenset({"last_result", "last_run_age_s", "runs"}),
 }
+
+# The views that read a repository: the only ones a credential of use password may go to.
+PASSWORD_VIEWS = frozenset({"restic_latest", "borg_latest", "kopia_latest"})
 
 # The views of the host sensor and the fields each one returns: the allowlist of the agent's
 # sensor_host.go, parts of the agent's own host that belong to no unit and no container
@@ -158,6 +267,43 @@ HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "raid_ctrl": frozenset({"controllers", "ctrl_bad", "vd_not_optimal", "pd_failed", "bbu_bad"}),
     "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
     "zfs_snapshots": frozenset({"status"}),
+    "rsnapshot": frozenset({"last_status", "running", "lock_stale", "last_success_age_s"}),
+    # Windows (R-1245, R-1436): the open updates, the day's critical and error events, the
+    # machine certificates, the storage health, Defender and Windows Server Backup.
+    "win_updates": frozenset(
+        {
+            "reboot_required",
+            "search_age_s",
+            "updates_open",
+            "updates_security",
+        }
+    ),
+    "win_events": frozenset({"application", "system", "total"}),
+    "win_certs": frozenset({"certs", "expired", "min_days_left"}),
+    "storage": frozenset(
+        {
+            "disks",
+            "disks_unhealthy",
+            "newest_shadow_age_s",
+            "quotas",
+            "quotas_over_90",
+            "shadow_copies",
+            "vdisks",
+            "vdisks_unhealthy",
+            "volumes",
+            "volumes_unprotected",
+        }
+    ),
+    "defender": frozenset(
+        {
+            "antivirus_on",
+            "detections_24h",
+            "passive",
+            "realtime_on",
+            "signature_age_d",
+        }
+    ),
+    "win_backup": frozenset({"failures_24h", "last_failed", "last_success_age_s"}),
 }
 
 _UNIT = frozenset({"unit"})
@@ -191,15 +337,64 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "pve_updates": _UNIT,
     "pbs_status": _UNIT,
     "ceph_health": _UNIT,
+    "web_config": _UNIT,
+    "service_config": _UNIT,
+    "nginx_status": _UNIT,
+    "apache_status": _UNIT,
+    "haproxy_servers": _UNIT,
+    "fpm_pools": _UNIT,
+    "pm2_apps": _UNIT,
+    "es_nodes": _UNIT_OR_CONTAINER,
+    "backuppc_status": _UNIT,
+    "urbackup_status": _UNIT,
+    "veeam_sessions": _UNIT,
+    "restic_latest": _UNIT,
+    "borg_latest": _UNIT,
+    "kopia_latest": _UNIT,
+    "duplicati_health": _UNIT,
+    "ad_replication": _UNIT,
+    "dhcp_scopes": _UNIT,
+    "iis_state": _UNIT,
+    "rds_licenses": _UNIT,
+    "hyperv": _UNIT,
+    "dfsr": _UNIT,
+    "print": _UNIT,
+    "mssql_events": _UNIT,
+    "wsus": _UNIT,
+    "cups_queues": _UNIT,
+    "veeam_windows": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
-    "unit": frozenset({"active_state", "sub_state", "restarts", "active_since"}),
+    # result, exec_status and last_run_age_s: the last run of a service behind a timer (Linux).
+    "unit": frozenset(
+        {
+            "active_state",
+            "sub_state",
+            "restarts",
+            "active_since",
+            "result",
+            "exec_status",
+            "last_run_age_s",
+        }
+    ),
     "process": frozenset({"count", "rss_bytes", "uptime_s"}),
     "socket": frozenset({"listening", "port"}),
     "container": frozenset({"state", "health", "restarts", "started_at"}),
-    "http": frozenset({"status_code", "duration_ms"}),
-    "tls": frozenset({"days_left", "not_after", "hostname_ok", "chain_ok", "issuer"}),
+    # body_match only with the param expect (field_allowed); tls only says something with
+    # scheme auto.
+    "http": frozenset({"status_code", "duration_ms", "body_match", "tls"}),
+    "tls": frozenset(
+        {
+            "days_left",
+            "hours_left",
+            "lifetime_pct",
+            "not_after",
+            "hostname_ok",
+            "chain_ok",
+            "issuer",
+        }
+    ),
     "certfile": frozenset({"days_left", "not_after", "issuer", "subject"}),
     "file_age": frozenset({"exists", "age_s", "size_bytes"}),
     "proto": frozenset({"ok", "duration_ms", "tls_ok", "detail"}),
@@ -210,12 +405,20 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
             "duration_ms",
             "connections",
             "max_connections",
+            "connections_pct",
             "replication_running",
             "replication_lag_s",
             "size_bytes",
+            "aborted_connects",
+            "connection_errors_max_connections",
+            "galera_primary",
+            "galera_ready",
+            "galera_cluster_size",
+            "xid_age",
+            "long_transactions",
         }
     ),
-    "dns": frozenset({"resolved", "duration_ms", "answers"}),
+    "dns": frozenset({"resolved", "duration_ms", "answers", "rcode"}),
     "log": frozenset({"count"}),
     "opnsense": frozenset().union(*OPNSENSE_VIEW_FIELDS.values()),
     "app": frozenset().union(*APP_VIEW_FIELDS.values()),
@@ -239,7 +442,9 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "file_age": None,
     "unixsocket": None,
     "sql": None,
-    "dns": None,
+    # Optional (OPTIONAL_TARGET_SENSORS): without one the host's resolver, with one the DNS
+    # service there, asked over TCP.
+    "dns": frozenset({"loopback", "port", "process", "container", "unit"}),
     "log": None,
     "opnsense": None,
     # Narrowed to the kinds of its view (APP_VIEW_TARGETS, checked on Check).
@@ -247,10 +452,19 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "host": None,
 }
 
+# Sensors that may go without the target SENSOR_TARGETS allows them.
+OPTIONAL_TARGET_SENSORS = frozenset({"dns"})
+
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
 _ABS_PATH = r"^/[^\x00]*$"
 _LABEL = r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 _HOSTNAME = rf"^{_LABEL}(\.{_LABEL})*\.?$"
+# The agent's dnsName (sensor_dns.go): labels may carry underscores, for the names of
+# services (_ldap._tcp.example.org).
+_DNS_LABEL = r"[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
+_DNS_NAME = rf"^{_DNS_LABEL}(\.{_DNS_LABEL})*\.?$"
+# The agent's maxSocketPath: sun_path holds 108 bytes, the last a NUL.
+_MAX_SOCKET_PATH = 107
 
 
 class _Params(BaseModel):
@@ -267,14 +481,23 @@ class HttpParams(_Params):
     # Host header localhost for apps that answer only to the names they trust (Nextcloud);
     # unset, the agent sends IP:port. No other name: a check must not pose as a site.
     host: Literal["localhost"] | None = None
+    # The whole answer the agent compares with, for body_match (sensor_http.go plainText):
+    # 1 to 64 characters without space or control character.
+    expect: str | None = Field(None, pattern=r"^[^\s\x00-\x1f\x7f-\x9f]{1,64}$")
 
-    @field_validator("host", mode="before")
+    @field_validator("host", "expect", mode="before")
     @classmethod
-    def _host_set_or_absent(cls, v: object) -> object:
+    def _set_or_absent(cls, v: object) -> object:
         # A probe check sends its params as given, and the agent answers invalid to a null.
         if v is None:
-            raise ValueError("host is localhost or left out")
+            raise ValueError("set it or leave it out")
         return v
+
+    @model_validator(mode="after")
+    def _expect_with_get(self) -> HttpParams:
+        if self.expect is not None and self.method != "GET":
+            raise ValueError("expect needs method GET")
+        return self
 
 
 class TlsParams(_Params):
@@ -287,6 +510,23 @@ class PathParams(_Params):
     path: str = Field(pattern=_ABS_PATH, max_length=1024)
 
 
+class FileAgeParams(_Params):
+    # One of the two: the file itself, or a directory whose newest regular file counts (a
+    # backup folder whose files carry a date in their names).
+    path: str | None = Field(None, pattern=_ABS_PATH, max_length=1024)
+    newest_in: str | None = Field(None, pattern=_ABS_PATH, max_length=1024)
+
+    @model_validator(mode="after")
+    def _one_of_them(self) -> FileAgeParams:
+        if (self.path is None) == (self.newest_in is None):
+            raise ValueError("file_age takes exactly one of path and newest_in")
+        return self
+
+
+# The agent's implicitTLSProtocols (sensor_proto.go).
+_IMPLICIT_TLS_PROTOCOLS = frozenset({"smtp", "imap", "pop3", "ldap", "redis", "banner"})
+
+
 class ProtoParams(_Params):
     # auto: the agent recognises the protocol as its discovery does (banner, typical
     # probe, TLS) and reports it in `detail`; for a port no module knows.
@@ -294,25 +534,59 @@ class ProtoParams(_Params):
         "auto", "banner", "smtp", "imap", "pop3", "ldap", "postgres", "redis", "fastcgi", "haproxy"
     ]
     starttls: StrictBool = False
+    # TLS from the first byte (smtps, imaps, pop3s, ldaps, Redis tls-port, a banner behind
+    # TLS). Absent rather than false by default, so the checks of the catalog keep their hash.
+    tls: StrictBool | None = None
     # fastcgi only: the status path of the pool (php-fpm pm.status_path).
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
 
+    @field_validator("tls", mode="before")
+    @classmethod
+    def _tls_set_or_absent(cls, v: object) -> object:
+        # The agent answers invalid to a null.
+        if v is None:
+            raise ValueError("set it or leave it out")
+        return v
+
+    @model_validator(mode="after")
+    def _tls_of_the_protocol(self) -> ProtoParams:
+        if self.tls and self.starttls:
+            raise ValueError("tls and starttls exclude each other")
+        if self.tls and self.protocol not in _IMPLICIT_TLS_PROTOCOLS:
+            raise ValueError(f"protocol {self.protocol} is not spoken inside TLS")
+        return self
+
 
 class UnixSocketParams(_Params):
-    path: str = Field(pattern=_ABS_PATH, max_length=1024)
+    path: str = Field(pattern=_ABS_PATH, max_length=_MAX_SOCKET_PATH)
     protocol: Literal["connect", "http", "redis", "fastcgi", "haproxy"] = "connect"
     http_path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
 
 
+# The queries of each engine (the agent's sensor_sql.go); one of the other engine is invalid.
+SQL_QUERIES: dict[str, frozenset[str]] = {
+    "mariadb": frozenset({"ping", "connections", "replication", "size", "errors", "galera"}),
+    "postgres": frozenset({"ping", "connections", "replication", "size", "xid_age", "long_tx"}),
+}
+
+
 class SqlParams(_Params):
     engine: Literal["mariadb", "postgres"]
     # Fixed queries compiled into the agent; the server picks one, never writes SQL.
-    query: Literal["ping", "connections", "replication", "size"]
+    query: Literal[
+        "ping", "connections", "replication", "size", "errors", "galera", "xid_age", "long_tx"
+    ]
+
+    @model_validator(mode="after")
+    def _query_of_the_engine(self) -> SqlParams:
+        if self.query not in SQL_QUERIES[self.engine]:
+            raise ValueError(f"engine {self.engine} has no query {self.query}")
+        return self
 
 
 class DnsParams(_Params):
-    name: str = Field(pattern=_HOSTNAME, max_length=253)
+    name: str = Field(pattern=_DNS_NAME, max_length=253)
     rrtype: Literal["A", "AAAA", "MX", "TXT", "SRV", "CNAME", "NS", "PTR"] = "A"
 
 
@@ -361,11 +635,50 @@ class AppParams(_Params):
         "pve_updates",
         "pbs_status",
         "ceph_health",
+        "web_config",
+        "service_config",
+        "nginx_status",
+        "apache_status",
+        "haproxy_servers",
+        "fpm_pools",
+        "pm2_apps",
+        "es_nodes",
+        "backuppc_status",
+        "urbackup_status",
+        "veeam_sessions",
+        "restic_latest",
+        "borg_latest",
+        "kopia_latest",
+        "duplicati_health",
+        "ad_replication",
+        "dhcp_scopes",
+        "iis_state",
+        "rds_licenses",
+        "hyperv",
+        "dfsr",
+        "print",
+        "mssql_events",
+        "wsus",
+        "cups_queues",
+        "veeam_windows",
     ]
 
 
 class HostParams(_Params):
-    view: Literal["mdadm", "lvm_thin", "raid_ctrl", "ipmi_sensors", "zfs_snapshots"]
+    view: Literal[
+        "mdadm",
+        "lvm_thin",
+        "raid_ctrl",
+        "ipmi_sensors",
+        "zfs_snapshots",
+        "rsnapshot",
+        "win_updates",
+        "win_events",
+        "win_certs",
+        "storage",
+        "defender",
+        "win_backup",
+    ]
 
 
 PARAM_MODELS: dict[str, type[_Params]] = {
@@ -376,7 +689,7 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "http": HttpParams,
     "tls": TlsParams,
     "certfile": PathParams,
-    "file_age": PathParams,
+    "file_age": FileAgeParams,
     "proto": ProtoParams,
     "unixsocket": UnixSocketParams,
     "sql": SqlParams,
@@ -398,6 +711,8 @@ def field_allowed(sensor: str, field: str, params: dict) -> bool:
         return field in APP_VIEW_FIELDS[params["view"]]
     if sensor == "host":
         return field in HOST_VIEW_FIELDS[params["view"]]
+    if sensor == "http" and field == "body_match":
+        return "expect" in params
     if field in SENSOR_FIELDS[sensor]:
         return True
     return sensor in DATA_SENSORS and field.startswith("data.") and len(field) > len("data.")

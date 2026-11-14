@@ -53,8 +53,8 @@ func TestServiceStatesMapToTheStatesOfAUnit(t *testing.T) {
 		svc.State(99):       {"unknown", "state_99"},
 	}
 	for s, want := range cases {
-		if active, sub := serviceState(s); active != want[0] || sub != want[1] {
-			t.Errorf("serviceState(%d) = %s, %s; want %s, %s", s, active, sub, want[0], want[1])
+		if active, sub := ServiceState(s); active != want[0] || sub != want[1] {
+			t.Errorf("ServiceState(%d) = %s, %s; want %s, %s", s, active, sub, want[0], want[1])
 		}
 	}
 }

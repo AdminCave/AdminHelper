@@ -144,7 +144,8 @@ def test_linuxserver_in_its_project_gets_its_container_and_80_only():
             "services": {
                 "bookstack": "lscr.io/linuxserver/bookstack",
                 "bookstack_db": "lscr.io/linuxserver/mariadb",
-            }
+            },
+            "containers": {"bookstack": "wiki-bookstack-1", "bookstack_db": "wiki-db-1"},
         }
     }
     assert _bind(block, "wiki") == {

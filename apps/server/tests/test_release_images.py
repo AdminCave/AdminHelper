@@ -62,6 +62,7 @@ _PINNED = (
     ".github/workflows/release.yml",
     _FRPS_DOCKERFILE,
     "scripts/vm/bootstrap_linux.sh",
+    "scripts/tests/freebsd_box.sh",
     # Not a pin: the step runs it for the tauri-cli pins.
     ".github/scripts/tauri_cli_pins.sh",
 )
@@ -407,7 +408,7 @@ def _lockstep(tmp_path: Path, dockerfile: str | None = None) -> subprocess.Compl
         target.write_bytes((_ROOT / name).read_bytes())
     if dockerfile is not None:
         (tree / _FRPS_DOCKERFILE).write_text(dockerfile, encoding="utf-8")
-    step = _step("ci.yml", "frp-consistency", "Compare the four FRP_VERSION pins")
+    step = _step("ci.yml", "frp-consistency", "Compare the FRP_VERSION pins")
     return _run_step(step, tmp_path, tree, os.environ["PATH"])
 
 

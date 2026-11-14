@@ -11,17 +11,18 @@ module never sends it. The images (mattermost/mattermost-enterprise-edition and
 mattermost/mattermost-team-edition) ask the server every 30 s in their own HEALTHCHECK; the
 container's health carries it, and the module asks nothing more there. The package of
 deb.packages.mattermost.com and the tarball install of the docs run mattermost.service on
-8065 over plain HTTP: the module asks the ping there.
+8065 over plain HTTP, or over TLS when Mattermost terminates it itself: the module asks
+the ping there, over whichever the port speaks.
 
-Not covered: the database and the file store (only the deep ping tests them), Mattermost
-behind its own TLS on 8065, and the preview image (mattermost/mattermost-preview), which is
+Not covered: the database and the file store (only the deep ping tests them), and the
+preview image (mattermost/mattermost-preview), which is
 no installation to watch.
 """
 
 MODULE = {
     "id": "mattermost",
     "name": "Mattermost",
-    "version": 1,
+    "version": 2,
     "description": (
         "Mattermost from its image or package: the container with its own health check, or "
         "the unit and the system ping."
@@ -62,7 +63,7 @@ MODULE = {
             "key": "ping",
             "name": "System ping",
             "sensor": "http",
-            "target": {"kind": "unit", "port_hint": 8065, "scheme": "http"},
+            "target": {"kind": "unit", "port_hint": 8065, "scheme": "auto"},
             "params": {"path": "/api/v4/system/ping"},
             "interval": 300,
             "fields": ["status_code"],

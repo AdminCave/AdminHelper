@@ -27,6 +27,7 @@ import httpx
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app.core.bounds import storable
 from app.core.config import (
     INTERNAL_API_KEY,
     SERVER_HUB_URL,
@@ -168,7 +169,7 @@ def send_to_rule(
                 new_status=new_status,
                 sent_at=stamp,
                 success=success,
-                error=error,
+                error=storable(error),
             )
         )
     return RuleResult(rule.name, rule.channel, success, rule.match_server_id)

@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import validates
 
-from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
+from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN, readable
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
 
@@ -47,12 +47,15 @@ def loads_readable(text: str):
     -Infinity, a float beyond range (1e400) and an integer beyond float range come back as
     None. Python wrote such values in older rows; JSONResponse refuses a non-finite float, and
     a strict reader such as serde_json in the desktop also rejects the integer, either way the
-    whole listing with it. The stored text stays as it is."""
-    return json.loads(
-        text,
-        parse_constant=lambda _token: None,
-        parse_float=_finite_float,
-        parse_int=_float_range_int,
+    whole listing with it. A lone surrogate escape comes back as U+FFFD (readable). The stored
+    text stays as it is."""
+    return readable(
+        json.loads(
+            text,
+            parse_constant=lambda _token: None,
+            parse_float=_finite_float,
+            parse_int=_float_range_int,
+        )
     )
 
 
@@ -137,6 +140,9 @@ class MonitorCheck(Base):
     module_id = Column(String, nullable=True, index=True)
     module_instance = Column(String, nullable=True)
     module_check_key = Column(String, nullable=True)
+    # The hash of the catalog definition the module check was made from: a sync that finds
+    # another offers the new definition as an update. NULL for a check from before it.
+    module_check_hash = Column(String, nullable=True)
     # Evaluated and shown, never alerted: a module check the admin took over quietly.
     silent = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, server_default=utc_now_sql())
@@ -386,6 +392,29 @@ class MonitorCheckTombstone(Base):
     )
     server_id = Column(String, nullable=False, index=True)
     def_id = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=utc_now_sql())
+
+
+class MonitorModuleTombstone(Base):
+    """A module check the admin deleted on one server, so neither the catalog sync nor
+    an adopt creates (server, module, instance, check key) again."""
+
+    __tablename__ = "monitor_module_tombstones"
+    __table_args__ = (
+        UniqueConstraint(
+            "server_id",
+            "module_id",
+            "instance_key",
+            "check_key",
+            name="uq_module_tombstone_server_module_instance_check",
+        ),
+    )
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, nullable=False, index=True)
+    module_id = Column(String, nullable=False)
+    instance_key = Column(String, nullable=False)
+    check_key = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=utc_now_sql())
 
 

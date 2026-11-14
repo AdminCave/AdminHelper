@@ -146,6 +146,10 @@ def _rule_holds(rule: dict, value: object, before: object, ts: float) -> bool | 
         # run there is nothing to compare, which is not a problem either.
         start = agent_number(before)
         return start is not None and number - start > limit
+    if op == "drop_pct_gt":
+        # Against the run before only: the alert holds until the next run measures again.
+        start = agent_number(before)
+        return start is not None and start > 0 and (start - number) * 100 / start > limit
     return None
 
 
@@ -155,6 +159,8 @@ def _rule_text(rule: dict, value: object, before: object, ts: float) -> str:
         return f"{field} is {int(ts - value)} s old ({op} {_shown(want)})"
     if op == "delta_gt":
         return f"{field} rose by {value - before:g} ({op} {_shown(want)})"
+    if op == "drop_pct_gt":
+        return f"{field} fell by {(before - value) * 100 / before:.0f} % ({op} {_shown(want)})"
     return f"{field} = {_shown(value)} ({op} {_shown(want)})"
 
 

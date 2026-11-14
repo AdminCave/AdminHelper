@@ -70,6 +70,7 @@ def _probes(db: Session, server_id: str) -> list[dict]:
         .order_by(MonitorCheck.id)
         .all()
     )
+    stored = _stored_credentials(db.get(MonitorDiscovery, server_id))
     probes = []
     for check in checks:
         # The plan is what the agent runs: a stored config is checked again against
@@ -80,13 +81,27 @@ def _probes(db: Session, server_id: str) -> list[dict]:
         except ValueError as exc:
             logger.warning("Probe check %s left out of the plan: %s", check.id, type(exc).__name__)
             continue
-        probes.append(_probe(check.id, config))
+        probes.append(_probe(check.id, config, stored))
     return probes
 
 
-def _probe(check_id: str, config: ProbeConfig) -> dict:
+def _stored_credentials(row: MonitorDiscovery | None) -> frozenset[str]:
+    """The credential references the host reported as stored."""
+    if row is None:
+        return frozenset()
+    try:
+        return frozenset(json.loads(row.credentials or "{}"))
+    except ValueError:
+        return frozenset()
+
+
+def _probe(check_id: str, config: ProbeConfig, stored: frozenset[str]) -> dict:
     target = config.target
     credential = config.credential
+    if credential is not None and credential.optional and credential.ref not in stored:
+        # Without it the check runs as one without a credential, instead of reporting
+        # no_credential; once the host reports it stored, the next plan names it.
+        credential = None
     return {
         "id": check_id,
         "sensor": config.sensor,

@@ -281,12 +281,32 @@ def _unit_name(name: str) -> str:
     return name if "." in name else name + ".service"
 
 
+def _listed_unit_wanted(name: str, wanted: set[str]) -> bool:
+    # A Windows service has no suffix: NTDS is wanted as NTDS.service, by its exact name only
+    # (the patterns and templates are systemd's), and its instance keeps the name the agent
+    # asks the service manager by.
+    if "." not in name:
+        return name + ".service" in wanted
+    return _unit_wanted(name, wanted)
+
+
 def _unit_wanted(name: str, wanted: set[str]) -> bool:
     # A template unit (wg-quick@.service) takes each of its instances (wg-quick@wg0.service):
     # list-units names the instances, never the template.
     if name.endswith("@.service"):
         return False  # a template itself runs nothing
     if name in wanted:
+        return True
+    # A pattern names units of a fixed form whose middle the admin picks (pm2-*.service,
+    # pm2 startup's unit pm2-<user>); it takes only services.
+    # The middle is a name like a user's (pm2-<user>): no instance (@) and no dot.
+    stem = name.removesuffix(".service")
+    if (
+        name.endswith(".service")
+        and "@" not in stem
+        and "." not in stem
+        and any("*" in t and fnmatch.fnmatchcase(name, t) for t in wanted)
+    ):
         return True
     return any(
         t.endswith("@.service")
@@ -306,14 +326,16 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
     ]
     wanted_units = {_unit_name(u) for u in detect.units}
     installed_units = sorted(
-        {u["name"] for u in inv["units"] if _unit_wanted(u["name"], wanted_units)}
+        {u["name"] for u in inv["units"] if _listed_unit_wanted(u["name"], wanted_units)}
     )
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
+    # A oneshot unit behind a timer rests inactive between its runs (detect.idle_units).
     units = sorted(
         {
             u["name"]
             for u in inv["units"]
-            if _unit_wanted(u["name"], wanted_units) and u["state"] != "inactive"
+            if _listed_unit_wanted(u["name"], wanted_units)
+            and (u["state"] != "inactive" or detect.idle_units)
         }
     )
     wanted_processes = set(detect.processes)
@@ -336,7 +358,16 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
                     for o in inv["containers"]
                     if o["compose_project"] == project
                 }
-                found[project] = {"services": dict(sorted(services.items()))}
+                # The container each service runs in, by name: a renamed or recreated
+                # container is no change of the instance (_seen_again leaves it out).
+                names: dict[str, str] = {}
+                for o in sorted(inv["containers"], key=lambda o: o["name"]):
+                    if o["compose_project"] == project:
+                        names.setdefault(o["compose_service"], o["name"])
+                found[project] = {
+                    "services": dict(sorted(services.items())),
+                    "containers": dict(sorted(names.items())),
+                }
                 if tagged:
                     found[project]["tag_checks"] = _tag_checks(
                         module, [o for o in containers if o["compose_project"] == project]
@@ -431,7 +462,8 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
     """(module id, instance key) → summary of every module instance in the inventory.
 
     The summary holds only what makes the instance what it is (names, images, the
-    recognised protocol), never a state; a different summary is a finding "changed".
+    recognised protocol), never a state; a different summary is a finding "changed",
+    except for the container names of a compose project (_UNCOMPARED).
     """
     seen: dict[tuple[str, str], dict] = {}
     claimed_containers: set[str] = set()
@@ -451,7 +483,8 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
         claimed_processes.update(processes)
         claimed_ports.update(module.detect.port_hints)
         # The ports the processes of the module's units listen on (gitea.service on 3000).
-        claimed_ports.update(s["port"] for s in inv["sockets"] if s["unit"] in units)
+        if module.detect.claims_unit_ports:
+            claimed_ports.update(s["port"] for s in inv["sockets"] if s["unit"] in units)
     for module in port_modules:
         found = _port_instances(inv, claimed_containers, claimed_processes, claimed_ports)
         seen.update({(module.id, key): summary for key, summary in found.items()})
@@ -472,8 +505,20 @@ def _summary(row: MonitorFinding) -> object:
         return None
 
 
+# Summary keys that name what an instance runs in, not what it is: they are kept, but
+# no change of them is a finding "changed".
+_UNCOMPARED = ("containers",)
+
+
+def _compared(summary: object) -> object:
+    if not isinstance(summary, dict):
+        return summary
+    return {k: v for k, v in summary.items() if k not in _UNCOMPARED}
+
+
 def _seen_again(row: MonitorFinding, summary: dict, watched: bool, in_step: bool) -> None:
-    same = _summary(row) == summary
+    stored = _summary(row)
+    same = _compared(stored) == _compared(summary)
     before = (row.kind, row.status)
     if row.kind == "gone":
         if row.status != "adopted" and watched and same and in_step:
@@ -494,7 +539,7 @@ def _seen_again(row: MonitorFinding, summary: dict, watched: bool, in_step: bool
         row.status = "open"
     if (row.kind, row.status) != before and row.status == "open":
         row.decided_at = None
-    if not same or (row.kind, row.status) != before:
+    if stored != summary or (row.kind, row.status) != before:
         row.summary = _dump(summary)
 
 

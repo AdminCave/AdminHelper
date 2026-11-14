@@ -212,3 +212,11 @@ def test_the_proxies_never_ask_an_api_with_a_login(module_id):
     assert all(c.credential is None for c in module.checks)
     for c in module.checks:
         assert "/config" not in c.params.get("path", "")
+
+
+def test_squid_warns_daily_on_a_configuration_that_does_not_load():
+    config = _config("squid", "config", "squid.service", {"unit": "squid.service"})
+    assert config["params"] == {"view": "service_config"}
+    assert config["interval_s"] == 86400
+    assert _rate(config, {"config_ok": True}) == "ok"
+    assert _rate(config, {"config_ok": False}) == "warning"

@@ -11,14 +11,18 @@ localhost); an answer other than 200 warns. A manager the configuration denies t
 (403) or guards with cachemgr_passwd (401) is a refusal, which the agent reports as an error:
 the check is critical then. Allow the manager from localhost or turn the check off.
 
-Not covered: several listening ports without 3128 (the target is ambiguous, unknown), the
-cache's hit rate and contents, and the configuration test (squid -k check).
+Daily the agent runs `squid -k parse` and reports only whether the configuration loads: one
+that does not would fail the next restart or reload while the running proxy goes on, a
+warning.
+
+Not covered: several listening ports without 3128 (the target is ambiguous, unknown) and
+the cache's hit rate and contents.
 """
 
 MODULE = {
     "id": "squid",
     "name": "Squid",
-    "version": 1,
+    "version": 2,
     "description": "The Squid proxy: the unit, its port and its cache manager on loopback.",
     "detect": {"units": ["squid.service"]},
     "instance": "unit",
@@ -52,6 +56,17 @@ MODULE = {
             "interval": 900,
             "fields": ["status_code"],
             "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "warning"}],
+        },
+        {
+            "key": "config",
+            "name": "Configuration test",
+            "sensor": "app",
+            "target": {"kind": "unit"},
+            "params": {"view": "service_config"},
+            "interval": 86400,
+            "timeout_s": 20,
+            "fields": ["config_ok"],
+            "rules": [{"field": "config_ok", "op": "eq", "value": False, "level": "warning"}],
         },
     ],
     "card": [

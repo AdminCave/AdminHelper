@@ -100,7 +100,10 @@ def test_the_module_loads_with_container_service_and_health():
 def test_the_image_in_a_compose_project_gets_its_container_check_only():
     block = _block(COMPOSE)
     assert _found(block) == {
-        "matrix": {"services": {"synapse": "matrixdotorg/synapse", "db": "postgres"}}
+        "matrix": {
+            "services": {"synapse": "matrixdotorg/synapse", "db": "postgres"},
+            "containers": {"db": "matrix-db-1", "synapse": "matrix-synapse-1"},
+        }
     }
     assert _bind(block, "matrix") == {
         "container": ("matrix-synapse-1", None),

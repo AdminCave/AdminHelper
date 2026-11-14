@@ -234,6 +234,12 @@ _ALWAYS_ON = {
     "rdp-embedded": ("apps/desktop/src-tauri/**",),
     "docker-build": _IMAGES,
     "frp-consistency": ("apps/frps/Dockerfile",),
+    "pkg-repo": (
+        "apps/agent/build-common.sh",
+        "apps/agent/build-pkg.sh",
+        "apps/agent/freebsd/**",
+        "apps/agent/opnsense/**",
+    ),
     "openapi-compat": ("apps/server/**", "apps/monitoring/**"),
     # Reads every changed path and tests none of them.
     "public-repo-guard": (),

@@ -50,9 +50,9 @@ var queryService = func(name string) (svc.Status, error) {
 	return s.Query()
 }
 
-// serviceState maps the state of a Windows service to the active_state of a systemd unit and a
+// ServiceState maps the state of a Windows service to the active_state of a systemd unit and a
 // sub_state of its own, so that one check fits both platforms.
-func serviceState(s svc.State) (active, sub string) {
+func ServiceState(s svc.State) (active, sub string) {
 	switch s {
 	case svc.Running:
 		return "active", "running"
@@ -80,7 +80,7 @@ func measureUnit(ctx context.Context, name string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	active, sub := serviceState(st.State)
+	active, sub := ServiceState(st.State)
 	values := map[string]any{"active_state": active, "sub_state": sub}
 	if st.State == svc.Running && st.ProcessId != 0 {
 		if p, err := process.NewProcessWithContext(ctx, int32(st.ProcessId)); err == nil {
