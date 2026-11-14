@@ -24,8 +24,10 @@ und Zustand, gekürzt auf die Grenzen des Vertrags. Neue Dateien `discovery_wind
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/discovery/
 Doku: → T9
 
-### T2 — R-1245: Lesebausteine WMI, Ereignisse, Zertifikatsspeicher  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/wmi_windows.go, apps/agent/internal/probe/eventlog_windows.go, apps/agent/internal/probe/certstore_windows.go, apps/agent/internal/probe/winread_windows_test.go, apps/agent/go.mod, apps/agent/go.sum, THIRD_PARTY_LICENSES.md
+### T2 — R-1245: Lesebausteine WMI, Ereignisse, Zertifikatsspeicher  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/wmi_windows.go, apps/agent/internal/probe/eventlog_windows.go, apps/agent/internal/probe/certstore_windows.go, apps/agent/internal/probe/winread_windows_test.go, apps/agent/go.mod, apps/agent/go.sum, THIRD_PARTY_LICENSES.md, apps/agent/internal/probe/winread.go, apps/agent/internal/probe/winread_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c3d678a1d 2026-11-14T11:25:47+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T2.verdict.json)
 Änderung: `wmiQuery` nimmt nur Abfragen aus einer festen Tabelle (Namensraum, Klasse, Eigenschaften); kein WQL von
 außen, keine Methoden. `countEvents` zählt über `EvtQuery`/`EvtNext` nach Kanal, Quelle, IDs, Level und Zeitfenster,
 ohne Text zu rendern. `certStore` liest `LocalMachine\My`. Tests: echte Abfrage gegen `Win32_OperatingSystem`
