@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Linux-Extras und AdminHelper überwacht sich selbst — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-9 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-9 · Review: pro Task
 Spec: docs/features/kern-monitoring-9.md (Roadmap R-1234, R-1235)
 Heavy: linux-full — neue Ansichten, Fühler und Freigabeliste im Agent (`apps/agent`); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
