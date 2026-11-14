@@ -404,13 +404,6 @@ jobs:
               | xargs sha256sum > MANIFEST.sha256 )
           tar czf "release/adminhelper-runtime-${TAG}.tar.gz" -C stage .
           echo "=== runtime bundle ==="; tar tzf "release/adminhelper-runtime-${TAG}.tar.gz"
-      # The agent package repo (GPG-signed apt + rpm) as ONE asset the updater
-      # drops into the gateway's ./repo. Built BEFORE "Flatten and checksum" so it
-      # lands in SHA256SUMS (and thus the minisign signature). Skips with a warning
-      # until REPO_GPG_PRIVATE_KEY is configured — like MINISIGN_SECRET_KEY it must
-      # never block a release. Generate a PASSPHRASE-LESS key once, store
-      # `gpg --export-secret-keys --armor <KEYID> | base64 -w0` as the secret, and
-      # pin the public key in the docs + client setup snippet (docs/.../cicd).
       # The FreeBSD packages (adminhelper-agent, OPNsense plugin os-adminhelper) and their
       # signed pkg repository for FreeBSD 14 and 15 (R-1303), with pkg built from the
       # freebsd/pkg sources (tag and commit pinned in build-pkg-tool.sh; the ci.yml job
@@ -454,6 +447,13 @@ jobs:
             FRPC_BINARY="$FRP_DIR/frp_${FRP_VERSION}_freebsd_amd64/frpc" OUT_DIR=pkg-out \
             PKG_REPO_KEY="$KEYDIR/key.pem" bash apps/agent/build-pkg.sh
           echo "=== FreeBSD pkg repo ==="; find pkg-out/freebsd -type f | sort
+      # The agent package repo (GPG-signed apt + rpm, plus the FreeBSD pkg repo of the
+      # step before) as ONE asset the updater drops into the gateway's ./repo. Built
+      # BEFORE "Flatten and checksum" so it lands in SHA256SUMS (and thus the minisign
+      # signature). Mandatory: a missing REPO_GPG_PRIVATE_KEY or one whose fingerprint is
+      # not the pinned one fails the release. Generate a PASSPHRASE-LESS key once, store
+      # `gpg --export-secret-keys --armor <KEYID> | base64 -w0` as the secret, and
+      # pin the public key in the docs + client setup snippet (docs/.../cicd).
       - name: Build signed agent repo (apt + rpm)
         env:
           REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
