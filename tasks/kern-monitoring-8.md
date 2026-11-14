@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Webserver, Datenbanken und Backup-Werkzeuge — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-8 · Review: pro Task
 Spec: docs/features/kern-monitoring-8.md (Roadmap R-1231, R-1232, R-1233)
 Heavy: linux-full — neue Agent-Ansichten, Fühler-Felder und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -189,8 +189,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T17 — Agent-Tests mit Unix-Pfaden nur auf Linux und FreeBSD (PR-CI Windows rot)  [ ]
+### T17 — Agent-Tests mit Unix-Pfaden nur auf Linux und FreeBSD (PR-CI Windows rot)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_backup_test.go, apps/agent/internal/probe/app_backup_unix_test.go, apps/agent/internal/probe/app_repo_test.go, apps/agent/internal/probe/app_repo_unix_test.go, apps/agent/internal/probe/app_web_test.go, apps/agent/internal/probe/app_web_unix_test.go, apps/agent/internal/probe/app_pm2_test.go, apps/agent/internal/probe/app_pm2_unix_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3351c08f1 2026-11-14T02:48:55+01:00
+Review: approve (.ah-out/review/kern-monitoring-8/T17.verdict.json)
 Änderung: Der Job „Go Agent (test, Windows)“ von #522 scheitert an 12 Tests, deren Fixtures unter `t.TempDir()` liegen und
 durch `validLocalPath` (führender `/`) bzw. absolute Unit-Pfade gehen; die Ansichten rsnapshot, PM2, borg/kopia,
 Unit-Umgebung und Apache-Status lesen Unix-Hosts. Die Tests ziehen unverändert in `*_unix_test.go` mit
