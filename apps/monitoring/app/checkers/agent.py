@@ -521,20 +521,22 @@ _MAX_TOP_PROCESSES = 5
 
 def _top_processes(value: object) -> dict | None:
     """top_processes of the report, for the details only: per list (cpu with cpu_pct, memory
-    with rss) of the first _MAX_TOP_PROCESSES objects those with a pid from 1, a name and a
-    number from 0, the name cut by cap_agent_text. A list without such an entry is left out,
-    None without either list."""
+    with rss) the first _MAX_TOP_PROCESSES objects with a pid from 1, a name and a number from
+    0, the name cut by cap_agent_text; an unusable entry takes no place. A list without such
+    an entry is left out, None without either list."""
     if not isinstance(value, dict):
         return None
     top = {}
     for key, number_key in (("cpu", "cpu_pct"), ("memory", "rss")):
         entries = []
-        for entry in capped_objects(value.get(key))[:_MAX_TOP_PROCESSES]:
+        for entry in capped_objects(value.get(key)):
             pid = agent_number(entry.get("pid"))
             name = cap_agent_text(entry.get("name"))
             number = agent_number(entry.get(number_key))
             if isinstance(pid, int) and pid > 0 and name and number is not None and number >= 0:
                 entries.append({"pid": pid, "name": name, number_key: number})
+                if len(entries) == _MAX_TOP_PROCESSES:
+                    break
         if entries:
             top[key] = entries
     return top or None

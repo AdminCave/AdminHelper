@@ -10,8 +10,10 @@ Heavy: none — nur Monitoring-Service (Checker, Katalog), Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1403: erst filtern, dann auf N begrenzen (Top-Prozesse, OOM-Liste)  [ ]
+### T1 — R-1403: erst filtern, dann auf N begrenzen (Top-Prozesse, OOM-Liste)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/app/checkers/system.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/monitoring/tests/test_system_state_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9c63e49d1 2026-11-14T21:19:49+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer klein-nachlese-3 T3 2026-11-12 · Dedup-Key: REF:monitoring:checkers/agent.py:_top_processes
 Änderung: `_top_processes` und `_oom_processes` nehmen die ersten N *brauchbaren* Einträge (pid ≥ 1, Name) statt der ersten N Objekte; Tests: unbrauchbare Einträge vor den brauchbaren verdrängen keinen Platz (erst rot).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py tests/test_system_state_checker.py
