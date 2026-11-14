@@ -1,5 +1,5 @@
 # Tägliche Konfigurationstests (DNS, DHCP, VRRP, Proxy, fail2ban) — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-31 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-31 · Review: am Ende
 Spec: docs/features/kern-monitoring-31.md (Roadmap R-1432)
 Heavy: linux-full — neue Agent-Ansicht und Freigabeliste (apps/agent), Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_dns
 Doku: → T3
 Abhängt von: T1
 
-### T3 — Doku: Konfigurationstests DE+EN, CHANGELOG  [ ]
+### T3 — Doku: Konfigurationstests DE+EN, CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-31.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5c74b11ba 2026-11-14T08:53:33+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1432. Die sechs Modulzeilen nennen den täglichen Test und `warning`; bei Squid entfällt „Nicht abgedeckt: der Konfigurationstest“; die Ansicht `service_config` in der Liste des Fühlers `app`; CHANGELOG-Fragment unter `### Added`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
