@@ -11,7 +11,7 @@
 # signed catalogue must be there, and pkg itself must accept the catalogue with the key's public
 # part and reject it with a foreign one, as a FreeBSD host does on `pkg update`.
 #
-# Native when PKG_TOOL_PREFIX names a prefix with sbin/pkg (the CI job builds and caches it);
+# Native, as root, when PKG_TOOL_PREFIX names a prefix with sbin/pkg (the CI job builds and caches it);
 # otherwise the test re-execs itself in an ubuntu container that installs the build dependencies
 # and builds pkg first. Without either it exits 75 (not run).
 set -euo pipefail
@@ -41,6 +41,11 @@ if [ ! -x "${PKG_TOOL_PREFIX:-/nonexistent}/sbin/pkg" ]; then
 fi
 
 # --- Native run ------------------------------------------------------------------
+# pkg update refuses a database directory not owned by root (0/0), so the client side needs root.
+if [ "$(id -u)" -ne 0 ]; then
+    echo "FAIL: the native run needs root (pkg checks PKG_DBDIR ownership); run it with sudo." >&2
+    exit 1
+fi
 PKG="${PKG_TOOL_PREFIX}/sbin/pkg"
 export PATH="${PKG_TOOL_PREFIX}/sbin:${PATH}"
 for t in openssl bsdtar; do
