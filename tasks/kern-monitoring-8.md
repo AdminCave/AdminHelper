@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Webserver, Datenbanken und Backup-Werkzeuge — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-8 · Review: pro Task
 Spec: docs/features/kern-monitoring-8.md (Roadmap R-1231, R-1232, R-1233)
 Heavy: linux-full — neue Agent-Ansichten, Fühler-Felder und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -179,8 +179,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T16 — Doku: Schwelle lange Transaktion PostgreSQL (Abschlussprüfung)  [ ]
+### T16 — Doku: Schwelle lange Transaktion PostgreSQL (Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @df51270b2 2026-11-14T02:28:00+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Die Admin-Doku nennt für lange Transaktionen 5 Minuten, Abfrage `long_tx` und `postgres.py` nutzen 1 Stunde;
 DE+EN auf 1 Stunde.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
