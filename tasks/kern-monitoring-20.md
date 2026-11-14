@@ -87,10 +87,12 @@ höchstens 107 Zeichen. Bestehende Module bleiben in Version und Hash gleich.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_check_configs.py
 Doku: → T9
 
-### T8 — R-1264: credential use none  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/tests/test_catalog_sensors.py
-Änderung: nach Kevins Antwort (Spec, Offene Fragen 1).
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py
+### T8 — R-1264: credential use none  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/module_plan.py, apps/monitoring/tests/test_catalog.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_agent_plan.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @87063a57a 2026-11-14T12:18:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-20/T8.verdict.json)
+Änderung: nach Kevins Antwort (Spec, Offene Fragen 1): `credential.optional`; der Plan lässt einen optionalen Zugang weg, solange der Host ihn nicht als hinterlegt meldet.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py tests/test_module_sync.py tests/test_agent_plan.py tests/test_check_configs.py tests/test_catalog_sensors.py
 Doku: → T9
 
 ### T9 — Doku DE+EN und CHANGELOG  [ ]
@@ -107,6 +109,7 @@ Abhängt von: T3, T4, T5, T6, T7
 - `fastcgi status_path` aus R-1264 ist schon gebaut (Agent `sensor_proto.go` `statusPath`, Katalog `ProtoParams`,
   `UnixSocketParams`); keine Task.
 - Kevin 2026-11-14: T8 `credential use none` heißt optionaler Zugang: ohne ihn läuft der Check, mit ihm liest er mehr.
+- T8: Der Server lässt den optionalen Zugang im Plan weg, solange der Bericht des Hosts die Referenz nicht als hinterlegt meldet (`MonitorDiscovery.credentials`); der Agent bleibt unverändert. `optional` steht im Katalog-Dump nur, wenn gesetzt (Hash der übrigen Module bleibt).
 - T3: Ein Update übernimmt die Katalog-Definition samt Regeln; `interval_s`/`timeout_s` der gespeicherten Konfiguration,
   Name, Intervall und Schalter des Admins bleiben. Bindet die neue Definition nicht, bleibt die alte (Grund in
   `skippedChecks`). Zeilen ohne Hash bekommen beim Start den heutigen, für alle Funde, ohne Angebot.

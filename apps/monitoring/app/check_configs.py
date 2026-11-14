@@ -191,6 +191,8 @@ class ProbeTarget(_StrictConfig):
 class ProbeCredential(_StrictConfig):
     ref: str = Field(max_length=CREDENTIAL_REF_MAX, pattern=CREDENTIAL_REF_PATTERN)
     use: str
+    # The plan leaves an optional credential out while the host has none stored.
+    optional: StrictBool = False
 
 
 class ProbeConfig(_StrictConfig):
@@ -244,7 +246,9 @@ class ProbeConfig(_StrictConfig):
                     "timeout_s": self.timeout_s,
                     "fields": self.fields,
                     "rules": self.rules,
-                    "credential": None if self.credential is None else {"use": self.credential.use},
+                    "credential": None
+                    if self.credential is None
+                    else {"use": self.credential.use, "optional": self.credential.optional},
                     "test_object": self.test_object,
                 }
             )

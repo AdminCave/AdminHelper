@@ -286,6 +286,20 @@ def test_a_bound_check_carries_the_instance_and_holds():
     ProbeConfig.model_validate(config)
 
 
+def test_a_bound_check_keeps_its_credential_optional():
+    web = {**WEB, "credential": {"slot": "api", "use": "bearer", "optional": True}}
+    catalog = load_catalog([_paperless(web, BROKER, SCHED), NGINX, ("port", PORT_MODULE)])
+    config, reason = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, catalog=catalog)
+
+    assert reason is None
+    assert config["credential"] == {
+        "ref": "paperless/paperless/api",
+        "use": "bearer",
+        "optional": True,
+    }
+    assert ProbeConfig.model_validate(config).credential.optional is True
+
+
 @pytest.mark.parametrize(
     ("module_id", "key", "check_key", "summary", "name", "reason"),
     [

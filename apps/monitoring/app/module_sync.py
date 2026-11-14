@@ -304,7 +304,11 @@ def probe_config(
         "rules": [rule.model_dump() for rule in check.rules],
         "credential": None
         if check.credential is None
-        else {"ref": f"{module.id}/{key}/{check.credential.slot}", "use": check.credential.use},
+        else {
+            "ref": f"{module.id}/{key}/{check.credential.slot}",
+            "use": check.credential.use,
+            **({"optional": True} if check.credential.optional else {}),
+        },
         "test_object": check.test_object,
     }
     try:

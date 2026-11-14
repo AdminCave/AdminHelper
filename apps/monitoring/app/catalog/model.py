@@ -24,6 +24,7 @@ from pydantic import (
     StrictInt,
     StrictStr,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -153,6 +154,17 @@ class Credential(_Model):
     use: str = Field(
         pattern=r"^(bearer|basic|redis_auth|redis_acl|password|header:[A-Za-z0-9-]{1,64})$"
     )
+    # Kevin 2026-11-14 (R-1264): the check runs without it while the host has none stored,
+    # and reads more with it (Redis and many web services run without a password).
+    optional: StrictBool = False
+
+    @model_serializer(mode="wrap")
+    def _optional_only_when_set(self, handler: Any) -> dict[str, Any]:
+        # Left out when false, so the modules that do not use it keep their hash.
+        data = handler(self)
+        if not self.optional:
+            data.pop("optional", None)
+        return data
 
 
 class Check(_Model):
