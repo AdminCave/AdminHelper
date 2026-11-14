@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Katalog-Updates, Grabsteine für Modul-Checks, Fühler-Erweiterungen — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-20 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-20 · Review: pro Task
 Spec: docs/features/kern-monitoring-20.md (Roadmap R-1264, R-1301)
 Heavy: linux-full — Alembic-Migration im Monitoring-Dienst, neue Params und Zugänge im Agent (`apps/agent`), Desktop-Inbox; kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
