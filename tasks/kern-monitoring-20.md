@@ -102,3 +102,4 @@ Abhängt von: T3, T4, T5, T6, T7
 - T3: Ein Update übernimmt die Katalog-Definition samt Regeln; `interval_s`/`timeout_s` der gespeicherten Konfiguration,
   Name, Intervall und Schalter des Admins bleiben. Bindet die neue Definition nicht, bleibt die alte (Grund in
   `skippedChecks`). Zeilen ohne Hash bekommen beim Start den heutigen, für alle Funde, ohne Angebot.
+- T9-Doku nennt: Übernehmen eines Updates ersetzt die Regeln (Schwellen) des Admins durch die des Katalogs (security-Nit T3).
