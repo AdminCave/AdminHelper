@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-7 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-7 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-7 · Review: am Ende
 Spec: docs/features/klein-nachlese-7.md (Roadmap R-1403, R-1405)
 Heavy: none — nur Monitoring-Service (Checker, Katalog), Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Beweis: arch-monitoring-apps-1 Task-Prüfer 2026-11-12 · Dedup-Key: ref:monitor
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_jitsi.py tests/test_catalog_onlyoffice.py tests/test_catalog.py
 Doku: → T3
 
-### T3 — R-1405 (2)(4): Doku Rocket.Chat/jicofo (DE+EN), Ledger-Dateiname, Changelog  [ ]
+### T3 — R-1405 (2)(4): Doku Rocket.Chat/jicofo (DE+EN), Ledger-Dateiname, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, tasks/arch-monitoring-apps-1.md, changelog.d/klein-nachlese-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b624ac330 2026-11-14T21:25:06+01:00
+Review: am Ende (Branch-Review)
 Task-Review: am Ende
 Änderung: Zeile jitsi-jicofo: die Unit ist `critical`, wenn sie `exited` ist (statt „bleibt active“); Zeile rocketchat: eine Antwort ohne die `checks`-Felder ist `unknown`; `modules/jitsi.py` in T7 von arch-monitoring-apps-1 wird `jitsi_videobridge.py, …/jitsi_jicofo.py`; Fragment `changelog.d/klein-nachlese-7.md`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
