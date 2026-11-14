@@ -72,7 +72,8 @@ func showUnit(ctx context.Context, name string, props ...string) (map[string]str
 // measureUnit reads the state of the systemd unit name; restarts only for a service, active_since only
 // while it is active.
 func measureUnit(ctx context.Context, name string) (map[string]any, error) {
-	props, err := showUnit(ctx, name, "ActiveState", "SubState", "NRestarts", "ActiveEnterTimestampMonotonic")
+	props, err := showUnit(ctx, name, "ActiveState", "SubState", "NRestarts", "ActiveEnterTimestampMonotonic",
+		"Result", "ExecMainCode", "ExecMainStatus", "ExecMainExitTimestampMonotonic")
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +85,20 @@ func measureUnit(ctx context.Context, name string) (map[string]any, error) {
 		if since, ok := activeSince(props["ActiveEnterTimestampMonotonic"]); ok {
 			values["active_since"] = since
 		}
+	}
+	// The outcome of the last run, for the service behind a timer: result as systemd words it
+	// (success, exit-code, signal, timeout, ...), exec_status only for a main process that exited
+	// (ExecMainCode 1, CLD_EXITED): after a signal ExecMainStatus holds the signal's number.
+	if props["Result"] != "" {
+		values["result"] = props["Result"]
+	}
+	if props["ExecMainCode"] == "1" {
+		if n, err := strconv.Atoi(props["ExecMainStatus"]); err == nil {
+			values["exec_status"] = n
+		}
+	}
+	if ended, ok := activeSince(props["ExecMainExitTimestampMonotonic"]); ok {
+		values["last_run_age_s"] = now().Unix() - ended
 	}
 	return values, nil
 }

@@ -36,6 +36,9 @@ const (
 	useBasic     = "basic"
 	useRedisAuth = "redis_auth"
 	useHeader    = "header:"
+	// usePassword hands the secret to one read command of the allowlist in an environment variable
+	// (passwordEnv), never as an argument.
+	usePassword = "password"
 )
 
 // headerName is the name of a header a credential goes in, as the monitoring service allows it.
@@ -196,14 +199,18 @@ func netErr(ctx context.Context, err error) error {
 	return context.DeadlineExceeded
 }
 
+// maxExpectBody is as much of an answer as the http sensor reads to compare it with its param expect.
+const maxExpectBody = 4 << 10
+
 // httpSensor sends a GET or HEAD to its target through the guard: status code, time to the headers
-// and, for GET, fields of the JSON object the target answers.
+// and, for GET, fields of the JSON object the target answers or whether a short answer in plain text
+// is the one expected (body_match).
 func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, error) {
 	t, err := targetOf(p, httpTargets...)
 	if err != nil {
 		return nil, err
 	}
-	if err := knownParams(p, "path", "method", "host"); err != nil {
+	if err := knownParams(p, "path", "method", "host", "expect"); err != nil {
 		return nil, err
 	}
 	path, err := requestPath(p, "path", "/", 512, false)
@@ -213,6 +220,21 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	method, err := choiceParam(p, "method", http.MethodGet, http.MethodGet, http.MethodHead)
 	if err != nil {
 		return nil, err
+	}
+	// expect is compared with the whole answer, so a probe learns from it no more than one bit of the
+	// body, never the body itself.
+	expect, err := textParam(p, "expect", "")
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := p.Params["expect"]; ok && (expect == "" || !plainText(expect, 64)) {
+		return nil, fmt.Errorf("%w: parameter expect of sensor http needs 1 to 64 characters without spaces", ErrInvalid)
+	}
+	if expect != "" && method != http.MethodGet {
+		return nil, fmt.Errorf("%w: sensor http compares an answer only for GET", ErrInvalid)
+	}
+	if expect == "" && slices.Contains(p.Fields, "body_match") {
+		return nil, fmt.Errorf("%w: field body_match of sensor http needs the parameter expect", ErrInvalid)
 	}
 	// Some apps answer only to the names they trust and always trust localhost (Nextcloud's trusted
 	// domains); the param names no other host, so it lets no probe pose as a site of the host.
@@ -226,7 +248,7 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	switch scheme {
 	case "":
 		scheme = "http"
-	case "http", "https":
+	case "http", "https", "auto":
 	default:
 		return nil, fmt.Errorf("%w: sensor http takes no scheme %q", ErrInvalid, scheme)
 	}
@@ -249,14 +271,64 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	if use != "" {
 		g = secretGuard(ep)
 	}
+	if scheme == "auto" {
+		on, err := speaksTLS(ctx, g, ep)
+		if err != nil {
+			return nil, err
+		}
+		scheme = "http"
+		if on {
+			scheme = "https"
+		}
+		u.Scheme = scheme
+	}
 	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
-	return fetch(ctx, client, method, u.String(), host, use, secret, p.Fields)
+	values, err := fetchExpecting(ctx, client, method, u.String(), host, use, secret, p.Fields, expect)
+	if err != nil {
+		return nil, err
+	}
+	values["tls"] = scheme == "https"
+	return values, nil
+}
+
+// speaksTLS says whether the service at ep answers a TLS handshake, on a connection of its own
+// through g that sends nothing but the handshake. An answer that is no TLS record is a service of
+// plain text (one of HTTP answers 400); so is silence for answerWait, as a server of HTTP that waits
+// for the end of a request line inside the client's hello never answers it. Any other end of the
+// handshake (an alert, a closed connection) comes from a server that read it as TLS.
+func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
+	conn, err := dialThrough(ctx, g, ep)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	if d, ok := ctx.Deadline(); !ok || time.Now().Add(answerWait).Before(d) {
+		_ = conn.SetDeadline(time.Now().Add(answerWait))
+	}
+	err = tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx) //nolint:gosec // only whether TLS answers
+	var rh tls.RecordHeaderError
+	switch {
+	case err == nil:
+		return true, nil
+	case ended(ctx):
+		return false, netErr(ctx, err)
+	case errors.As(err, &rh), timeout(err):
+		return false, nil
+	}
+	return true, nil
 }
 
 // fetch sends one request to target with client: the status code, the time to the headers and, if a
 // field asks for data (GET only), the JSON object of the body as data. 401 and 403 are ErrDenied. A
 // host that is not empty is the Host header of the request instead of target's.
 func fetch(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string) (map[string]any, error) {
+	return fetchExpecting(ctx, client, method, target, host, use, secret, fields, "")
+}
+
+// fetchExpecting is fetch that, with an expect that is not empty (GET only), also reports as
+// body_match whether the body, without the space around it, is expect. It reads at most
+// maxExpectBody bytes for it; a longer body matches nothing.
+func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string, expect string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
@@ -281,12 +353,23 @@ func fetch(ctx context.Context, client *http.Client, method, target, host, use, 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return nil, fmt.Errorf("%w: HTTP %d", ErrDenied, resp.StatusCode)
 	}
-	if method != http.MethodGet || !slices.ContainsFunc(fields, func(f string) bool { return strings.HasPrefix(f, "data.") }) {
+	wantData := slices.ContainsFunc(fields, func(f string) bool { return strings.HasPrefix(f, "data.") })
+	if method != http.MethodGet || (!wantData && expect == "") {
 		return values, nil
 	}
-	body, err := io.ReadAll(resp.Body)
+	var r io.Reader = resp.Body
+	if !wantData {
+		r = io.LimitReader(resp.Body, maxExpectBody+1)
+	}
+	body, err := io.ReadAll(r)
 	if err != nil {
 		return nil, netErr(ctx, err)
+	}
+	if expect != "" {
+		values["body_match"] = len(body) <= maxExpectBody && string(bytes.TrimSpace(body)) == expect
+	}
+	if !wantData {
+		return values, nil
 	}
 	data, err := jsonObject(body)
 	if err != nil {

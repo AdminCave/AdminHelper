@@ -117,10 +117,12 @@ pub(crate) fn build_journal_args(
     connection: &Connection,
     unit: &str,
 ) -> Result<Vec<String>, AppError> {
-    if unit.len() > JOURNAL_UNIT_MAX || !JOURNAL_UNIT_RE.is_match(unit) {
+    // No unit name ends in `\`, and fish, a possible login shell, reads `\'` inside single
+    // quotes as an escaped quote: the closing quote would not close.
+    if unit.len() > JOURNAL_UNIT_MAX || !JOURNAL_UNIT_RE.is_match(unit) || unit.ends_with('\\') {
         return Err(AppError::Validation(format!(
-            "invalid unit name: letters, digits and _ . : @ \\ -, not starting with -, \
-             at most {JOURNAL_UNIT_MAX} characters"
+            "invalid unit name: letters, digits and _ . : @ \\ -, not starting with - nor \
+             ending with \\, at most {JOURNAL_UNIT_MAX} characters"
         )));
     }
     let (mut args, target) = base_args(connection, false)?;
@@ -213,9 +215,9 @@ pub(crate) fn control_socket_of(args: &[String]) -> Option<PathBuf> {
 /// `terminal`.
 fn base_args(connection: &Connection, terminal: bool) -> Result<(Vec<String>, String), AppError> {
     // Host, user and key_path are validated at the boundary — open_connection,
-    // terminal_open_ssh and terminal_open_ssh_credential run validate_connection_input before
-    // this, and they are the only callers. Only the empty-host guard stays: the boundary allows
-    // an empty host, we don't (2.80).
+    // terminal_open_ssh, terminal_open_ssh_credential and terminal_open_ssh_journal run
+    // validate_connection_input before this, and they are the only callers. Only the empty-host
+    // guard stays: the boundary allows an empty host, we don't (2.80).
     let host = required(&connection.host, "Host")?;
     let port = connection.port.unwrap_or(22);
     let mut args: Vec<String> = Vec::new();
@@ -764,6 +766,9 @@ mod tests {
             "a\t",
             "a/b",
             "ä",
+            "\\",
+            r"a\",
+            r"a\\",
             too_long.as_str(),
         ] {
             assert!(

@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import validates
 
-from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
+from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN, readable
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
 
@@ -47,12 +47,15 @@ def loads_readable(text: str):
     -Infinity, a float beyond range (1e400) and an integer beyond float range come back as
     None. Python wrote such values in older rows; JSONResponse refuses a non-finite float, and
     a strict reader such as serde_json in the desktop also rejects the integer, either way the
-    whole listing with it. The stored text stays as it is."""
-    return json.loads(
-        text,
-        parse_constant=lambda _token: None,
-        parse_float=_finite_float,
-        parse_int=_float_range_int,
+    whole listing with it. A lone surrogate escape comes back as U+FFFD (readable). The stored
+    text stays as it is."""
+    return readable(
+        json.loads(
+            text,
+            parse_constant=lambda _token: None,
+            parse_float=_finite_float,
+            parse_int=_float_range_int,
+        )
     )
 
 

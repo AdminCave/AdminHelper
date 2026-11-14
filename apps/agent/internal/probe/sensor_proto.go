@@ -773,7 +773,10 @@ func speakRedis(s *session, o protoOpts) (protoResult, error) {
 	return protoResult{data: redisInfo(body[:n])}, nil
 }
 
-// redisInfo reads the lines key:value of INFO; sections (# …) drop, a number stays json.Number.
+// redisInfo reads the lines key:value of INFO; sections (# …) drop, a number stays json.Number. To
+// them it adds maxmemory_used_pct, used_memory as a share of maxmemory rounded down, where maxmemory
+// is set (0 is no limit): a rule compares a field with a number, never with another field. INFO has
+// no key of that name.
 func redisInfo(b []byte) map[string]any {
 	data := map[string]any{}
 	for line := range strings.Lines(string(b)) {
@@ -782,7 +785,21 @@ func redisInfo(b []byte) map[string]any {
 			data[k] = numberOrText(v)
 		}
 	}
+	used, errUsed := redisWhole(data["used_memory"])
+	most, errMost := redisWhole(data["maxmemory"])
+	if errUsed == nil && errMost == nil && used >= 0 && most > 0 {
+		data["maxmemory_used_pct"] = json.Number(strconv.FormatInt(used*100/most, 10))
+	}
 	return data
+}
+
+// redisWhole is v as a whole number if it is a json.Number of one.
+func redisWhole(v any) (int64, error) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, errors.New("no number")
+	}
+	return n.Int64()
 }
 
 // numberOrText is v as json.Number if it is a number, else v.
@@ -859,23 +876,130 @@ func fcgiLength(b []byte) (int, []byte, bool) {
 	return 0, nil, false
 }
 
+// The FastCGI records of a request (FastCGI 1.0 §8): its id is 1, the one request of the connection.
+const (
+	fcgiBeginRequest = 1
+	fcgiEndRequest   = 3
+	fcgiParams       = 4
+	fcgiStdin        = 5
+	fcgiStdout       = 6
+	fcgiStderr       = 7
+	fcgiResponder    = 1
+)
+
+// fcgiRecord is a record of request 1 of type typ with body, which is shorter than 64 KiB.
+func fcgiRecord(typ byte, body []byte) []byte {
+	head := []byte{1, typ, 0, 1, 0, 0, 0, 0}
+	binary.BigEndian.PutUint16(head[4:6], uint16(len(body)))
+	return append(head, body...)
+}
+
+// fcgiPair is a name-value pair (FastCGI 1.0 §3.4) with name and value shorter than 128 bytes.
+func fcgiPair(name, value string) []byte {
+	return append([]byte{byte(len(name)), byte(len(value))}, name+value...)
+}
+
+// fcgiStatusRequest is the request a web server passes on for GET <path>?json: the status page of
+// PHP-FPM answers on the SCRIPT_NAME of pm.status_path (php.net/manual/en/fpm.status.php).
+func fcgiStatusRequest(path string) []byte {
+	var params []byte
+	for _, kv := range [][2]string{
+		{"REQUEST_METHOD", "GET"}, {"SCRIPT_NAME", path}, {"SCRIPT_FILENAME", path},
+		{"REQUEST_URI", path + "?json"}, {"QUERY_STRING", "json"},
+	} {
+		params = append(params, fcgiPair(kv[0], kv[1])...)
+	}
+	b := fcgiRecord(fcgiBeginRequest, []byte{0, fcgiResponder, 0, 0, 0, 0, 0, 0})
+	b = append(b, fcgiRecord(fcgiParams, params)...)
+	b = append(b, fcgiRecord(fcgiParams, nil)...)
+	return append(b, fcgiRecord(fcgiStdin, nil)...)
+}
+
+// fcgiStatusPage asks a FastCGI application for the page at path with the query json and returns the
+// body of its answer, at most limit bytes; an answer with a Status other than 200 fails. What the
+// application writes to FCGI_STDERR is dropped unread.
+func fcgiStatusPage(s *session, path string, limit int) ([]byte, error) {
+	// Not the path: the error goes to the server, and the path may carry the name of a pool.
+	const what = "the request for the status page"
+	if err := s.send(what, fcgiStatusRequest(path)); err != nil {
+		return nil, err
+	}
+	var out []byte
+	for {
+		var head [8]byte
+		if _, err := io.ReadFull(s.r, head[:]); err != nil {
+			return nil, s.fail(err, what)
+		}
+		n := int(binary.BigEndian.Uint16(head[4:6]))
+		body := make([]byte, n+int(head[6]))
+		if head[0] != 1 || binary.BigEndian.Uint16(head[2:4]) != 1 {
+			return nil, protoFail{"no answer to " + what}
+		}
+		if _, err := io.ReadFull(s.r, body); err != nil {
+			return nil, s.fail(err, what)
+		}
+		switch head[1] {
+		case fcgiStdout:
+			if len(out)+n > limit {
+				return nil, protoFail{"the answer to " + what + " is too long"}
+			}
+			out = append(out, body[:n]...)
+		case fcgiStderr:
+		case fcgiEndRequest:
+			if n < 8 || body[4] != 0 {
+				return nil, protoFail{"the application refuses " + what}
+			}
+			return cgiBody(out, what)
+		default:
+			return nil, protoFail{"no answer to " + what}
+		}
+	}
+}
+
+// cgiBody is the body of a CGI answer (RFC 3875 §6) whose Status, if it has one, is 200.
+func cgiBody(b []byte, what string) ([]byte, error) {
+	header, body, ok := bytes.Cut(b, []byte("\r\n\r\n"))
+	if !ok {
+		return nil, protoFail{"no answer to " + what}
+	}
+	for l := range strings.Lines(string(header)) {
+		name, value, _ := strings.Cut(l, ":")
+		if strings.EqualFold(strings.TrimSpace(name), "Status") {
+			if code, _, _ := strings.Cut(strings.TrimSpace(value), " "); code != "200" {
+				return nil, protoFail{"the answer to " + what + " is status " + printable(code, 3)}
+			}
+		}
+	}
+	return body, nil
+}
+
 // speakHAProxy reads show stat from the stats socket: data[proxy][server][field].
 func speakHAProxy(s *session, _ protoOpts) (protoResult, error) {
-	if err := s.send("show stat", []byte("show stat\n")); err != nil {
+	b, err := haproxyAnswer(s, "show stat")
+	if err != nil {
 		return protoResult{}, err
-	}
-	b, err := io.ReadAll(io.LimitReader(s.r, maxProtoBytes+1))
-	switch {
-	case err != nil:
-		return protoResult{}, s.fail(err, "show stat")
-	case len(b) > maxProtoBytes:
-		return protoResult{}, protoFail{"the answer to show stat is too long"}
 	}
 	data, ok := haproxyStat(b)
 	if !ok {
 		return protoResult{}, protoFail{"no answer to show stat"}
 	}
 	return protoResult{data: data}, nil
+}
+
+// haproxyAnswer sends the command cmd to the stats socket and reads the whole answer: the socket
+// answers one command and closes.
+func haproxyAnswer(s *session, cmd string) ([]byte, error) {
+	if err := s.send(cmd, []byte(cmd+"\n")); err != nil {
+		return nil, err
+	}
+	b, err := io.ReadAll(io.LimitReader(s.r, maxProtoBytes+1))
+	switch {
+	case err != nil:
+		return nil, s.fail(err, cmd)
+	case len(b) > maxProtoBytes:
+		return nil, protoFail{"the answer to " + cmd + " is too long"}
+	}
+	return b, nil
 }
 
 // haproxyStat reads the CSV of show stat, its header after "# ": empty values drop, a number stays

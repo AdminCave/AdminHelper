@@ -254,16 +254,18 @@ def policy_text(db: Session) -> str:
     return json.dumps(build_policy(db), sort_keys=True, indent=2) + "\n"
 
 
-def sync_policy(db: Session) -> None:
+def sync_policy(db: Session) -> bool:
     """Writes the policy for the DB's state, best effort: the DB stays the source of truth
     and the next sync writes what this one could not. A failure rolls db back and is logged
     with its type alone (a psycopg error quotes the connection string), so a request goes on
-    with its own work."""
+    with its own work. Returns whether the policy was written."""
     try:
         write_frps_policy(policy_text(db))
     except Exception as exc:
         db.rollback()
         logger.error("frps policy not written (%s)", type(exc).__name__)
+        return False
+    return True
 
 
 def _sync_in_own_session() -> None:

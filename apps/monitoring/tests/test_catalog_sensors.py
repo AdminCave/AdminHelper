@@ -7,7 +7,8 @@ no target, and only the fields that view returns (R-1248). The http sensor's hos
 or left out, and left out it is not sent (arch-monitoring-apps-1). The app sensor: a view from
 the agent's allowlist, the one kind of target that view is bound to, and only its fields
 (R-1404). The host sensor: a view from the agent's allowlist, no target, only its fields
-(R-1228)."""
+(R-1228). The http sensor's expect and scheme auto, the dns sensor's optional target
+(kern-monitoring-30)."""
 
 import pytest
 
@@ -251,6 +252,64 @@ def test_the_app_views_are_those_the_agent_returns():
             "runtime_s",
             "transfers",
         ],
+        "web_config": ["config_ok"],
+        "service_config": ["config_ok"],
+        "nginx_status": [
+            "accepts",
+            "active",
+            "dropped",
+            "handled",
+            "reading",
+            "requests",
+            "waiting",
+            "writing",
+        ],
+        "apache_status": ["busy_pct", "busy_workers", "idle_workers", "slots"],
+        "haproxy_servers": [
+            "backends",
+            "backends_down",
+            "servers",
+            "servers_down",
+            "servers_maint",
+        ],
+        "fpm_pools": [
+            "listen_queue",
+            "max_children_reached",
+            "pools",
+            "pools_exposed",
+            "pools_read",
+            "slow_requests",
+        ],
+        "pm2_apps": ["apps", "apps_errored", "apps_stopped", "restarts"],
+        "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
+        "backuppc_status": [
+            "backup_age_max_s",
+            "hosts",
+            "hosts_failed",
+            "hosts_never_backed_up",
+            "hosts_no_ping",
+            "jobs_active",
+        ],
+        "urbackup_status": [
+            "clients",
+            "clients_file_failed",
+            "clients_image_failed",
+            "clients_unseen_24h",
+            "database_error",
+            "file_backup_age_max_s",
+            "nospc_fatal",
+        ],
+        "veeam_sessions": [
+            "jobs",
+            "jobs_failed",
+            "jobs_warning",
+            "last_success_age_max_s",
+            "sessions_running",
+        ],
+        "restic_latest": ["has_snapshot", "snapshot_age_s"],
+        "borg_latest": ["has_snapshot", "snapshot_age_s"],
+        "kopia_latest": ["has_snapshot", "snapshot_age_s"],
+        "duplicati_health": ["healthy"],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -280,10 +339,25 @@ def test_the_app_views_are_those_the_agent_returns():
         "pve_updates": ["unit"],
         "pbs_status": ["unit"],
         "ceph_health": ["unit"],
+        "web_config": ["unit"],
+        "service_config": ["unit"],
+        "nginx_status": ["unit"],
+        "apache_status": ["unit"],
+        "haproxy_servers": ["unit"],
+        "fpm_pools": ["unit"],
+        "pm2_apps": ["unit"],
+        "es_nodes": ["container", "unit"],
+        "backuppc_status": ["unit"],
+        "urbackup_status": ["unit"],
+        "veeam_sessions": ["unit"],
+        "restic_latest": ["unit"],
+        "borg_latest": ["unit"],
+        "kopia_latest": ["unit"],
+        "duplicati_health": ["unit"],
     }
 
 
-def _http_module(params):
+def _http_module(params, **check):
     raw = {
         "id": "app",
         "name": "App",
@@ -299,6 +373,7 @@ def _http_module(params):
                 "params": params,
                 "interval": 900,
                 "fields": ["status_code"],
+                **check,
             }
         ],
     }
@@ -325,6 +400,117 @@ def test_an_http_check_without_host_sends_no_host():
 @pytest.mark.parametrize("host", ["example.org", "", "localhost:80", "LOCALHOST", 1, None])
 def test_an_http_check_names_no_other_host(host):
     assert "host" in _only_error(_http_module({"host": host}))
+
+
+def test_an_http_check_compares_its_answer_with_expect():
+    catalog = _http_module({"path": "/healthcheck", "expect": "true"}, fields=["body_match"])
+    assert catalog.errors == ()
+    assert catalog.modules["app"].checks[0].params == {
+        "path": "/healthcheck",
+        "method": "GET",
+        "expect": "true",
+    }
+
+
+@pytest.mark.parametrize(
+    "expect", ["", "two words", " true", "true\n", "a" * 65, "x\x85", "x\u00a0", 1, None]
+)
+def test_expect_is_short_plain_text(expect):
+    # The agent's plainText: 1 to 64 characters without space or control character.
+    assert "expect" in _only_error(_http_module({"expect": expect}))
+
+
+def test_expect_of_64_characters_is_taken():
+    assert _http_module({"expect": "ä" * 64}).errors == ()
+
+
+def test_expect_needs_get():
+    assert "expect needs method GET" in _only_error(
+        _http_module({"method": "HEAD", "expect": "true"})
+    )
+
+
+def test_body_match_needs_expect():
+    assert "returns no field 'body_match'" in _only_error(_http_module({}, fields=["body_match"]))
+
+
+def test_an_http_check_asks_the_port_for_tls():
+    target = {"kind": "container", "scheme": "auto"}
+    assert _http_module({}, target=target, fields=["status_code", "tls"]).errors == ()
+    alternatives = [{"port_hint": 8443, "scheme": "auto"}, {"port_hint": 8080, "scheme": "http"}]
+    target = {"kind": "container", "alternatives": alternatives}
+    assert _http_module({}, target=target).errors == ()
+
+
+@pytest.mark.parametrize(
+    ("sensor", "params", "field"),
+    [("tls", {}, "chain_ok"), ("proto", {"protocol": "banner"}, "ok"), ("socket", {}, "listening")],
+)
+def test_scheme_auto_is_only_for_http(sensor, params, field):
+    raw = {
+        "id": "app",
+        "name": "App",
+        "version": 1,
+        "detect": {"container_images": ["example/app"]},
+        "instance": "container",
+        "checks": [
+            {
+                "key": "web",
+                "name": "Web",
+                "sensor": sensor,
+                "target": {
+                    "kind": "container",
+                    "alternatives": [{"port_hint": 1, "scheme": "auto"}],
+                },
+                "params": params,
+                "interval": 900,
+                "fields": [field],
+            }
+        ],
+    }
+    assert "scheme 'auto' only for sensor 'http'" in _only_error(load_catalog([("app", raw)]))
+
+
+def test_the_tls_sensor_tells_hours_and_share_of_lifetime_left():
+    assert {"hours_left", "lifetime_pct"} <= SENSOR_FIELDS["tls"]
+
+
+def _dns_module(**check):
+    raw = {
+        "id": "res",
+        "name": "Resolver",
+        "version": 1,
+        "detect": {"units": ["unbound.service"]},
+        "instance": "unit",
+        "checks": [
+            {
+                "key": "local",
+                "name": "Local",
+                "sensor": "dns",
+                "params": {"name": "localhost"},
+                "interval": 300,
+                "fields": ["resolved", "answers", "rcode"],
+                "rules": [{"field": "rcode", "op": "ne", "value": "noerror", "level": "critical"}],
+                **check,
+            }
+        ],
+    }
+    return load_catalog([("res", raw)])
+
+
+def test_a_dns_check_asks_the_resolver_of_the_host_without_a_target():
+    assert _dns_module().errors == ()
+
+
+@pytest.mark.parametrize("kind", sorted(SENSOR_TARGETS["dns"]))
+def test_a_dns_check_asks_the_service_of_its_target(kind):
+    target = {"kind": kind, "port_hint": 53}
+    assert _dns_module(target=target).errors == ()
+
+
+def test_only_dns_goes_without_the_target_it_could_have():
+    # Every other sensor with targets needs one: an http check without one asks nothing.
+    assert "sensor 'http' needs a target" in _only_error(_http_module({}, target=None))
 
 
 def _host_module(**check):
@@ -389,4 +575,5 @@ def test_the_host_views_are_those_the_agent_returns():
         "raid_ctrl": ["bbu_bad", "controllers", "ctrl_bad", "pd_failed", "vd_not_optimal"],
         "ipmi_sensors": ["critical", "noncritical", "sensors"],
         "zfs_snapshots": ["status"],
+        "rsnapshot": ["last_status", "last_success_age_s", "lock_stale", "running"],
     }

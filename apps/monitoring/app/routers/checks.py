@@ -680,8 +680,9 @@ def _known_server(db: Session, server_id: str) -> bool:
 
 def _services_out(db: Session, server_id: str, row: MonitorServiceInventory | None) -> dict:
     log_lines = row is None or row.log_lines is not False
-    # A report already running when the switch went off may store its lines once more;
-    # they are not shown, and that report's successor deletes them.
+    # Lines stored while the switch is off are not shown: a report for a server without an
+    # inventory row yet has no row to lock (store_service_report), and its successor
+    # deletes them.
     logs = (
         db.query(MonitorServiceLog)
         .filter(MonitorServiceLog.server_id == server_id)
@@ -731,14 +732,15 @@ def set_server_service_options(
     the stored lines at once; the agent learns it with its next plan."""
     if not _known_server(db, server_id):
         raise HTTPException(404, "Server not found")
-    row = db.get(MonitorServiceInventory, server_id)
+    # Locked like store_service_report: a report in flight finishes before the lines go.
+    row = db.get(MonitorServiceInventory, server_id, with_for_update=True)
     if row is None:
         db.add(MonitorServiceInventory(server_id=server_id, log_lines=data.log_lines))
         try:
             db.commit()
         except IntegrityError:
             db.rollback()  # a report created the row meanwhile
-        row = db.get(MonitorServiceInventory, server_id)
+        row = db.get(MonitorServiceInventory, server_id, with_for_update=True)
     row.log_lines = data.log_lines
     if not data.log_lines:
         db.query(MonitorServiceLog).filter(MonitorServiceLog.server_id == server_id).delete(

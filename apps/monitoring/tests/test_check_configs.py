@@ -952,6 +952,74 @@ class TestProbeConfig:
             validate_check_config("probe", _probe(**changes))
 
     @pytest.mark.parametrize(
+        "changes",
+        [
+            # kern-monitoring-30: an answer compared on the host, a port asked for TLS, a DNS
+            # check with or without the service it asks.
+            {
+                "params": {"path": "/healthcheck", "expect": "true"},
+                "fields": ["body_match"],
+                "rules": [{"field": "body_match", "op": "eq", "value": False, "level": "critical"}],
+            },
+            {
+                "target": {"kind": "port", "port_hint": 8080, "scheme": "auto"},
+                "fields": ["status_code", "tls"],
+                "rules": [],
+            },
+            {
+                "sensor": "tls",
+                "target": {"kind": "port", "port_hint": 443},
+                "params": {},
+                "fields": ["hours_left", "lifetime_pct"],
+                "rules": [],
+                "credential": None,
+            },
+            {
+                "sensor": "dns",
+                "target": None,
+                "params": {"name": "localhost"},
+                "fields": ["resolved", "rcode"],
+                "rules": [],
+                "credential": None,
+            },
+            {
+                "sensor": "dns",
+                "target": {"kind": "unit", "name": "unbound.service"},
+                "params": {"name": "localhost", "rrtype": "AAAA"},
+                "fields": ["answers", "rcode"],
+                "rules": [],
+                "credential": None,
+            },
+        ],
+    )
+    def test_the_new_params_fields_and_targets_are_valid(self, changes):
+        validate_check_config("probe", _probe(**changes))
+
+    @pytest.mark.parametrize(
+        ("changes", "reason"),
+        [
+            ({"fields": ["body_match"], "rules": []}, "returns no field 'body_match'"),
+            ({"params": {"method": "HEAD", "expect": "true"}}, "expect needs method GET"),
+            ({"params": {"expect": "two words"}}, "expect"),
+            ({"params": {"expect": None}}, "expect"),
+            (
+                {
+                    "sensor": "tls",
+                    "target": {"kind": "port", "scheme": "auto"},
+                    "params": {},
+                    "fields": ["chain_ok"],
+                    "rules": [],
+                    "credential": None,
+                },
+                "scheme 'auto' only for sensor 'http', not 'tls'",
+            ),
+        ],
+    )
+    def test_the_new_params_hold_their_rules(self, changes, reason):
+        with pytest.raises(ValueError, match=re.escape(reason)):
+            validate_check_config("probe", _probe(**changes))
+
+    @pytest.mark.parametrize(
         ("params", "valid"),
         [
             ({"unit": "nginx.service", "match": "_COMM=nginx"}, True),

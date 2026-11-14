@@ -288,6 +288,17 @@ def _unit_wanted(name: str, wanted: set[str]) -> bool:
         return False  # a template itself runs nothing
     if name in wanted:
         return True
+    # A pattern names units of a fixed form whose middle the admin picks (pm2-*.service,
+    # pm2 startup's unit pm2-<user>); it takes only services.
+    # The middle is a name like a user's (pm2-<user>): no instance (@) and no dot.
+    stem = name.removesuffix(".service")
+    if (
+        name.endswith(".service")
+        and "@" not in stem
+        and "." not in stem
+        and any("*" in t and fnmatch.fnmatchcase(name, t) for t in wanted)
+    ):
+        return True
     return any(
         t.endswith("@.service")
         and len(name) > len(t)
@@ -309,11 +320,13 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         {u["name"] for u in inv["units"] if _unit_wanted(u["name"], wanted_units)}
     )
     # An installed but stopped unit is not in use; a failed one is, and must stay watched.
+    # A oneshot unit behind a timer rests inactive between its runs (detect.idle_units).
     units = sorted(
         {
             u["name"]
             for u in inv["units"]
-            if _unit_wanted(u["name"], wanted_units) and u["state"] != "inactive"
+            if _unit_wanted(u["name"], wanted_units)
+            and (u["state"] != "inactive" or detect.idle_units)
         }
     )
     wanted_processes = set(detect.processes)
@@ -451,7 +464,8 @@ def match_inventory(inv: dict, catalog: Catalog) -> dict[tuple[str, str], dict]:
         claimed_processes.update(processes)
         claimed_ports.update(module.detect.port_hints)
         # The ports the processes of the module's units listen on (gitea.service on 3000).
-        claimed_ports.update(s["port"] for s in inv["sockets"] if s["unit"] in units)
+        if module.detect.claims_unit_ports:
+            claimed_ports.update(s["port"] for s in inv["sockets"] if s["unit"] in units)
     for module in port_modules:
         found = _port_instances(inv, claimed_containers, claimed_processes, claimed_ports)
         seen.update({(module.id, key): summary for key, summary in found.items()})

@@ -250,7 +250,7 @@ def rotate_frp_key(
     server.frp_key_generation += 1
     generation = server.frp_key_generation
     db.commit()
-    sync_policy(db)
+    policy_synced = sync_policy(db)
     audit.record(
         db,
         "server.frp_key.rotated",
@@ -260,7 +260,7 @@ def rotate_frp_key(
         object_label=server.name,
         detail=f"generation={generation}",
     )
-    return {"generation": generation}
+    return {"generation": generation, "policySynced": policy_synced}
 
 
 @router.delete("/{server_id}", status_code=status.HTTP_204_NO_CONTENT)

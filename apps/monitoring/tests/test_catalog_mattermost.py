@@ -4,7 +4,7 @@
 
 """The catalog module mattermost (R-1242): both images get the container check, whose own
 health check asks the server; the package's mattermost.service gets the unit check and the
-system ping on 8065, never the deep ping with get_server_status."""
+system ping on 8065 in plain HTTP or TLS, never the deep ping with get_server_status."""
 
 from datetime import UTC, datetime
 
@@ -143,7 +143,7 @@ def test_the_package_asks_the_ping_on_8065():
         "ping": (UNIT, None),
     }
     config, _ = probe_config(MODULE, CHECKS["ping"], "mattermost", _found(block)["mattermost"], [])
-    assert config["target"] == {"kind": "unit", "name": UNIT, "port_hint": 8065, "scheme": "http"}
+    assert config["target"] == {"kind": "unit", "name": UNIT, "port_hint": 8065, "scheme": "auto"}
 
 
 @pytest.mark.parametrize(

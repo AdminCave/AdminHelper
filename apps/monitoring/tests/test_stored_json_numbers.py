@@ -213,3 +213,22 @@ def test_stored_rows_stay_unchanged(client_db):
         assert "NaN" in db.get(MonitorState, "chk-1").details
         assert "NaN" in db.get(MonitorAlertRule, "rule-1").channel_config
         assert "Infinity" in db.get(MonitorTemplate, "tpl-1").check_definitions
+
+
+def test_stored_lone_surrogate_escapes_read_as_replacement_characters(client_db):
+    # R-1373: an older row may hold "\ud800" as a JSON escape; read back it is a lone
+    # surrogate no response can encode. The stored text stays as it is.
+    client, factory = client_db
+    _seed(factory)
+    raw = '{"bad\\udc80": "x\\ud800y", "list": ["\\udfff"], "ok": "\\ud83d\\ude00"}'
+    with factory() as db:
+        db.get(MonitorState, "chk-1").details = raw
+        db.commit()
+
+    resp = client.get("/checks/chk-1")
+
+    assert resp.status_code == 200
+    details = resp.json()["state"]["details"]
+    assert details == {"bad\ufffd": "x\ufffdy", "list": ["\ufffd"], "ok": "\U0001f600"}
+    with factory() as db:
+        assert db.get(MonitorState, "chk-1").details == raw

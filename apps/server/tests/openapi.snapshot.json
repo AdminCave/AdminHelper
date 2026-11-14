@@ -1444,10 +1444,15 @@
           "generation": {
             "title": "Generation",
             "type": "integer"
+          },
+          "policySynced": {
+            "title": "Policysynced",
+            "type": "boolean"
           }
         },
         "required": [
-          "generation"
+          "generation",
+          "policySynced"
         ],
         "title": "FrpKeyRotateOut",
         "type": "object"

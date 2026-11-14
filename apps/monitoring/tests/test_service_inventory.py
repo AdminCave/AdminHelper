@@ -264,23 +264,56 @@ def test_one_report_stores_the_lines_of_at_most_max_log_units_units(db):
     assert sorted(_logs(db)) == units[:MAX_LOG_UNITS]
 
 
-def test_a_hostile_report_is_redacted_within_its_budget(db):
-    # This test checks the budget itself (.claude/rules/testing.md, Fristen): for 500
-    # failed units with ten such lines, a key rule with an unbounded name before its
-    # keyword takes about a minute even for the first MAX_LOG_UNITS units; linear rules
-    # need well under a second.
+def test_a_hostile_report_stores_its_lines_redacted_and_cut(db):
     hostile = ["key" * 166, "tokenkey" * 62, "password" * 62]
     lines = [hostile[i % len(hostile)] for i in range(MAX_LOG_LINES)]
     units = [f"u{i:03d}.service" for i in range(MAX_REPORT_ENTRIES)]
 
-    start = time.perf_counter()
     store_service_report(db, "srv-1", _failed(units, lines))
-    elapsed = time.perf_counter() - start
 
-    assert elapsed < 30
     stored = _logs(db)
     assert len(stored) == MAX_LOG_UNITS
     assert stored["u000.service"][0] == ("key" * 166)[: MAX_LOG_LINE - 1] + "…"
+
+
+# One hostile text per rule: a run its leading part, its name or its separator could
+# backtrack over (R-1415). Each is repeated to the length the measurement asks for.
+_HOSTILE_UNITS = [
+    "a",  # a scheme or a name before a keyword
+    "authorization",
+    "authorization ",
+    "key",
+    "tokenkey",
+    "password",
+    "a://",
+    "0",  # hex
+    "aA0",  # Base64
+    " ",
+]
+
+
+def _redact_seconds(unit, length):
+    text = (unit * (length // len(unit) + 1))[:length]
+    best = None
+    for _ in range(5):
+        start = time.perf_counter()
+        redact(text)
+        elapsed = time.perf_counter() - start
+        best = elapsed if best is None else min(best, elapsed)
+    return best
+
+
+@pytest.mark.parametrize("unit", _HOSTILE_UNITS)
+def test_the_rules_take_linear_time_on_hostile_text(unit):
+    # A comparison over two lengths instead of a fixed budget: eight times the text may
+    # cost about eight times as long, a rule that backtracks costs about 64 times. The
+    # bound leaves room for a noisy runner and none for a quadratic rule.
+    short, long = 4_000, 32_000
+    base = max(_redact_seconds(unit, short), 1e-4)
+
+    ratio = _redact_seconds(unit, long) / base
+
+    assert ratio < 24, f"{unit!r}: {ratio:.1f} times as long for 8 times the text"
 
 
 def test_a_recovered_unit_loses_its_lines(db):
@@ -341,3 +374,22 @@ def test_a_systemd_block_that_is_no_object_changes_nothing(db, systemd):
     store_service_report(db, "srv-1", _failed(["a.service"], ["boom"]))
     store_service_report(db, "srv-1", systemd)
     assert _logs(db) == {"a.service": ["boom"]}
+
+
+def test_a_report_locks_the_inventory_it_reads(db):
+    # R-1415: the switch route takes the same lock (test_service_inventory_api).
+    from sqlalchemy import event
+    from sqlalchemy.dialects import postgresql
+
+    store_service_report(db, "srv-1", _failed(["a.service"], ["boom"], all_services=[]))
+    seen = []
+
+    @event.listens_for(db, "do_orm_execute")
+    def _record(state):
+        sql = str(state.statement.compile(dialect=postgresql.dialect()))
+        if "monitor_service_inventory" in sql:
+            seen.append(sql)
+
+    store_service_report(db, "srv-1", _failed(["a.service"], ["boom"]))
+
+    assert seen and "FOR UPDATE" in seen[0], seen

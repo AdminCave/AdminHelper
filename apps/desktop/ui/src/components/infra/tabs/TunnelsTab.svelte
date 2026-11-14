@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { FrpConfig, FrpTunnel, Server } from '$lib/api/types';
   import { frpApi } from '$lib/api/frp';
   import { session } from '$lib/stores/session';
-  import { reportError, showStatus } from '$lib/stores/statusBar';
+  import { reportError, showNotice, showStatus } from '$lib/stores/statusBar';
   import { KeyRound, Pencil, Plus } from '@lucide/svelte';
   import { confirmDialog } from '../../ui/ConfirmDialog.svelte';
   import TunnelModal from '../TunnelModal.svelte';
@@ -66,8 +66,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (!ok) return;
     rotating = true;
     try {
-      await frpApi.rotateKey(s, server.id);
-      showStatus($t('infra.tun.rotated', { name: server.name }));
+      const res = await frpApi.rotateKey(s, server.id);
+      if (res.policySynced === false) {
+        // The rotation stands; frps keeps the old key until the server's periodic sync (R-1437).
+        showNotice({
+          title: $t('infra.tun.rotated', { name: server.name }),
+          body: $t('infra.tun.rotatedPolicyPending'),
+          tone: 'warning',
+        });
+      } else {
+        showStatus($t('infra.tun.rotated', { name: server.name }));
+      }
     } catch (err) {
       reportError(errMsg(err));
     } finally {

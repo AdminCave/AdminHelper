@@ -161,7 +161,7 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
           <div class="code-header"><span>sh</span></div>
 <pre><code>SERVER=srm.example.com                 # dein AdminHelper-Server
 VERSION=0.47.0                         # an das Release des Servers anpassen
-PUBSHA=&lt;sha256-aus-cicd&gt;              # veroeffentlichter Wert (CI/CD &amp; Release)
+PUBSHA=75ccb5ed23cc2ea60ce9b945143bcb16e588b7994c351c21f2423726c56be804  # veroeffentlichter Wert (CI/CD &amp; Release)
 
 # 1) Oeffentlichen Repo-Schluessel holen, ERZWUNGEN pruefen, nur dann installieren
 TMP=$(mktemp -d)
@@ -193,6 +193,7 @@ EOF
 
 pkg update -r adminhelper
 pkg install -r adminhelper adminhelper-agent   # spaetere Updates: pkg upgrade</code></pre>
+          <p>Hast du mit Variante&nbsp;B begonnen, stelle nach der Provisionierung (dann liegt die interne CA unter <code>/usr/local/etc/adminhelper/identity/ca.crt</code>) in <code>/usr/local/etc/pkg/repos/adminhelper.conf</code> den Eintrag <code>ENV</code> auf Variante&nbsp;A um und f&uuml;hre <code>pkg update -r adminhelper</code> und <code>pkg upgrade</code> aus: Ab dann pr&uuml;ft pkg auch das Zertifikat des Servers.</p>
           <p>Danach provisionierst du den Host wie unter <a href="#erst-provisionierung">Erst-Provisionierung</a>, als root und ohne <code>sudo</code>. Was unter FreeBSD anders ist als unter Linux:</p>
           <ul>
             <li><strong>Pfade:</strong> Konfiguration und Identität liegen unter <code>/usr/local/etc/adminhelper/</code> (<code>monitor.conf</code>, <code>identity/</code>), die FRP-Dateien unter <code>/usr/local/etc/adminhelper/frp/</code> (<code>frpc.toml</code>, <code>adminhelper.conf</code>, <code>admin.conf</code>). Das Log steht wie unter Linux in <code>/var/log/adminhelper/agent.log</code>.</li>
@@ -215,7 +216,7 @@ pkg install -r adminhelper adminhelper-agent   # spaetere Updates: pkg upgrade</
           <div class="code-header"><span>sh</span></div>
 <pre><code>SERVER=srm.example.com                 # dein AdminHelper-Server
 VERSION=0.47.0                         # an das Release des Servers anpassen
-PUBSHA=&lt;sha256-aus-cicd&gt;              # veroeffentlichter Wert (CI/CD &amp; Release)
+PUBSHA=75ccb5ed23cc2ea60ce9b945143bcb16e588b7994c351c21f2423726c56be804  # veroeffentlichter Wert (CI/CD &amp; Release)
 
 # 1) Oeffentlichen Repo-Schluessel holen, ERZWUNGEN pruefen, nur dann installieren
 TMP=$(mktemp -d)
