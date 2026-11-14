@@ -65,6 +65,7 @@ var (
 // the application with fixed arguments, started through the allowlist (runTool). The server names a
 // view, never a path, a command or a query.
 var appViews = map[string]appView{
+	"ad_replication":    {kinds: unitKinds, read: adReplication},
 	"apcupsd":           {kinds: unitKinds, read: apcupsd},
 	"apache_status":     {kinds: unitKinds, read: apacheStatus},
 	"backuppc_status":   {kinds: unitKinds, read: backuppcStatus},
@@ -78,11 +79,13 @@ var appViews = map[string]appView{
 	"chrony_tracking":   {kinds: unitKinds, read: chronyTracking},
 	"crowdsec_bouncers": {kinds: unitKinds, read: crowdsecBouncers},
 	"dnsmasq_leases":    {kinds: unitKinds, read: dnsmasqLeaseView},
+	"dhcp_scopes":       {kinds: unitKinds, read: dhcpScopes},
 	"duplicati_health":  {kinds: unitKinds, read: duplicatiHealth},
 	"es_nodes":          {kinds: eitherKinds, uses: []string{useBasic}, readCred: esNodes},
 	"fail2ban":          {kinds: unitKinds, read: fail2ban},
 	"fpm_pools":         {kinds: unitKinds, read: fpmPools},
 	"haproxy_servers":   {kinds: unitKinds, read: haproxyServers},
+	"iis_state":         {kinds: unitKinds, read: iisState},
 	"kea_pools":         {kinds: unitKinds, read: keaPools},
 	"keepalived_vips":   {kinds: unitKinds, read: keepalivedVIPs},
 	"kopia_latest":      {kinds: unitKinds, uses: []string{usePassword}, readCred: kopiaLatest},
@@ -97,6 +100,7 @@ var appViews = map[string]appView{
 	"pve_cluster":       {kinds: unitKinds, read: pveCluster},
 	"pve_jobs":          {kinds: unitKinds, read: pveJobs},
 	"pve_updates":       {kinds: unitKinds, read: pveUpdates},
+	"rds_licenses":      {kinds: unitKinds, read: rdsLicenses},
 	"restic_latest":     {kinds: unitKinds, uses: []string{usePassword}, readCred: resticLatest},
 	"service_config":    {kinds: unitKinds, read: serviceConfig},
 	"tailscale_status":  {kinds: unitKinds, read: tailscaleStatus},

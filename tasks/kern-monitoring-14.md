@@ -37,8 +37,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T9
 Abhängt von: T1
 
-### T3 — R-1245: Ansichten AD DS, DHCP, IIS, RDS, Updates, Ereignisse, Zertifikate  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_windows.go, apps/agent/internal/probe/host_windows.go, apps/agent/internal/probe/app_windows_test.go, apps/agent/internal/probe/host_windows_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T3 — R-1245: Ansichten AD DS, DHCP, IIS, RDS, Updates, Ereignisse, Zertifikate  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/winviews.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_other.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @259874fea 2026-11-14T11:59:34+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T3.verdict.json)
 Änderung: Ansichten `ad_replication` (`repadmin /showrepl localhost /csv`), `dhcp_scopes`, `iis_state`
 (`appcmd list site|apppool /xml`), `rds_licenses`, `win_updates` (WUA `Online=false`), `win_events`, `win_certs`;
 nur Zahlen und Zustände. Die Parser werden mit Fixtures getestet. Neue Dateien mit SPDX-Header. Acht Dateien, weil

@@ -790,3 +790,41 @@ func TestAllowlistBackupViews(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowlistWindowsViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"repadmin", "/showrepl", "localhost", "/csv"},
+		{"appcmd", "list", "site", "/xml"},
+		{"appcmd", "list", "apppool", "/xml"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		appcmd := `C:\Windows\System32\inetsrv\appcmd.exe`
+		if !Allowed(appcmd, []string{"list", "site", "/xml"}) || Allowed(appcmd, []string{"stop", "site", "Default"}) {
+			t.Errorf("appcmd.exe by its path: the list takes stop or refuses list")
+		}
+	}
+	for _, call := range [][]string{
+		{"repadmin", "/showrepl", "*", "/csv"},
+		{"repadmin", "/showrepl", "dc2.example", "/csv"},
+		{"repadmin", "/showrepl", "localhost"},
+		{"repadmin", "/showrepl", "localhost", "/csv", "/verbose"},
+		{"repadmin", "/replicate", "localhost", "dc2.example", "DC=example,DC=org"},
+		{"repadmin", "/syncall", "localhost"},
+		{"repadmin", "/showrepl"},
+		{"appcmd", "list", "site"},
+		{"appcmd", "list", "site", "/xml", "/config"},
+		{"appcmd", "list", "config", "/xml"},
+		{"appcmd", "stop", "site", "Default Web Site"},
+		{"appcmd", "start", "apppool", "DefaultAppPool"},
+		{"appcmd", "set", "site", "/xml"},
+		{"appcmd", "delete", "site", "Default Web Site"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
