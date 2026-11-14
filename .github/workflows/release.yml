@@ -23,6 +23,9 @@ env:
   # Pinned SHA-256 of the official frp release artifacts (verified before use).
   FRP_SHA256_LINUX_AMD64: "daf719b32ca2778770bb92955e231a07414d754378b9af328aa2642862479804"
   FRP_SHA256_WINDOWS_AMD64: "5197c1b69564089cdc229fc1260a0e25db1e722b1b7db45fe1542c3c43edf9ae"
+  # frpc of the FreeBSD agent package (apps/agent/build-pkg.sh); same release, line
+  # frp_<v>_freebsd_amd64.tar.gz of its checksum file (R-1303).
+  FRP_SHA256_FREEBSD_AMD64: "584662abdb72ca01cf01fb9734d99b3bb7183d4cb564dc50b549ee4a46bbf21b"
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
@@ -116,7 +119,7 @@ jobs:
         # (GLIBC_2.34 not found on Debian Stretch / RHEL 8 / UniFi firmware), while
         # the VM tests — which DO use `make` — stayed green. One build
         # definition means the tested binary is the shipped binary.
-        run: make build-linux build-windows
+        run: make build-linux build-windows build-freebsd
       # The Makefile pins CGO_ENABLED=0, but nothing checked the RESULT. Defect
       # 4120005 shipped a dynamically linked agent (GLIBC_2.34 not found on older
       # distros) because the build had been inlined; the tests stayed green
@@ -175,6 +178,14 @@ jobs:
           cp adminhelper-agent-*.rpm dist/
           cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
           cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
+          cp apps/agent/bin/adminhelper-agent-freebsd dist/adminhelper-agent-freebsd-x86_64
+          # The FreeBSD package carries this binary; FreeBSD has no glibc, but a dynamic
+          # binary would still need the build host's loader, so assert static here too.
+          ftype="$(file -b dist/adminhelper-agent-freebsd-x86_64)"
+          case "$ftype" in
+            *FreeBSD*"statically linked"*) echo "ok: $ftype" ;;
+            *) echo "::error::FreeBSD agent is not a static FreeBSD binary: $ftype"; exit 1 ;;
+          esac
           # build-deb.sh guards its own output; this guards the artifact that is
           # actually uploaded. zstd members are unreadable by dpkg on Debian
           # Stretch/Buster and appliance firmware ("unknown compression for member").
@@ -393,11 +404,54 @@ jobs:
               | xargs sha256sum > MANIFEST.sha256 )
           tar czf "release/adminhelper-runtime-${TAG}.tar.gz" -C stage .
           echo "=== runtime bundle ==="; tar tzf "release/adminhelper-runtime-${TAG}.tar.gz"
-      # The agent package repo (GPG-signed apt + rpm) as ONE asset the updater
-      # drops into the gateway's ./repo. Built BEFORE "Flatten and checksum" so it
-      # lands in SHA256SUMS (and thus the minisign signature). Skips with a warning
-      # until REPO_GPG_PRIVATE_KEY is configured — like MINISIGN_SECRET_KEY it must
-      # never block a release. Generate a PASSPHRASE-LESS key once, store
+      # The FreeBSD packages (adminhelper-agent, OPNsense plugin os-adminhelper) and their
+      # signed pkg repository for FreeBSD 14 and 15 (R-1303), with pkg built from the
+      # freebsd/pkg sources (tag and commit pinned in build-pkg-tool.sh; the ci.yml job
+      # pkg-repo tests the same build on every pull request). Mandatory like the apt/rpm repo:
+      # the plugin pins the key's public part, so a missing or wrong PKG_REPO_SIGNING_KEY
+      # (PKCS#8 PEM of an RSA key) fails the release instead of signing a repository no
+      # installation trusts. The key's public part must be apps/agent/freebsd/adminhelper-pkg.pub
+      # (SHA-256 of its DER form in docs/developer/cicd). The output goes to pkg-out/ and
+      # joins the agent repo bundle in the next step (build-repo.sh clears its OUT_DIR).
+      - name: Build signed FreeBSD pkg repo (agent + OPNsense plugin)
+        env:
+          PKG_REPO_SIGNING_KEY: ${{ secrets.PKG_REPO_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PKG_REPO_SIGNING_KEY:-}" ]; then
+            echo "::error::PKG_REPO_SIGNING_KEY not set — the signed FreeBSD pkg repo is mandatory (its public key is pinned in apps/agent/freebsd/adminhelper-pkg.pub and the OPNsense plugin)."
+            exit 1
+          fi
+          TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            $(bash scripts/release/build-pkg-tool.sh --deps) openssl
+          bash scripts/release/build-pkg-tool.sh "$RUNNER_TEMP/pkg-tool"
+          FRP_DIR="$RUNNER_TEMP/frp-freebsd"; mkdir -p "$FRP_DIR"
+          curl -fsSL -o "$FRP_DIR/frpc.tar.gz" \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_freebsd_amd64.tar.gz"
+          echo "${FRP_SHA256_FREEBSD_AMD64}  $FRP_DIR/frpc.tar.gz" | sha256sum -c -
+          tar xzf "$FRP_DIR/frpc.tar.gz" -C "$FRP_DIR" "frp_${FRP_VERSION}_freebsd_amd64/frpc"
+          # The signing key lives here only while this step runs, even on failure.
+          KEYDIR="$(mktemp -d)"
+          trap 'rm -rf -- "$KEYDIR"' EXIT
+          ( umask 077; printf '%s\n' "$PKG_REPO_SIGNING_KEY" > "$KEYDIR/key.pem" )
+          got="$(openssl pkey -in "$KEYDIR/key.pem" -pubout -outform DER | sha256sum | cut -d" " -f1)" \
+            || { echo "::error::PKG_REPO_SIGNING_KEY is no readable private key (PKCS#8 PEM of an RSA key)"; exit 1; }
+          want="$(openssl pkey -pubin -in apps/agent/freebsd/adminhelper-pkg.pub -outform DER | sha256sum | cut -d" " -f1)"
+          [ -n "$want" ] && [ "$got" = "$want" ] || {
+            echo "::error::PKG_REPO_SIGNING_KEY public key sha256 $got != pinned $want (apps/agent/freebsd/adminhelper-pkg.pub, docs/developer/cicd) — wrong secret?"; exit 1; }
+          # download-artifact drops the exec bit; build-pkg.sh installs with its own mode.
+          AGENT=artifacts/agent/adminhelper-agent-freebsd-x86_64
+          PATH="$RUNNER_TEMP/pkg-tool/sbin:$PATH" VERSION="$VER" AGENT_BINARY="$AGENT" \
+            FRPC_BINARY="$FRP_DIR/frp_${FRP_VERSION}_freebsd_amd64/frpc" OUT_DIR=pkg-out \
+            PKG_REPO_KEY="$KEYDIR/key.pem" bash apps/agent/build-pkg.sh
+          echo "=== FreeBSD pkg repo ==="; find pkg-out/freebsd -type f | sort
+      # The agent package repo (GPG-signed apt + rpm, plus the FreeBSD pkg repo of the
+      # step before) as ONE asset the updater drops into the gateway's ./repo. Built
+      # BEFORE "Flatten and checksum" so it lands in SHA256SUMS (and thus the minisign
+      # signature). Mandatory: a missing REPO_GPG_PRIVATE_KEY or one whose fingerprint is
+      # not the pinned one fails the release. Generate a PASSPHRASE-LESS key once, store
       # `gpg --export-secret-keys --armor <KEYID> | base64 -w0` as the secret, and
       # pin the public key in the docs + client setup snippet (docs/.../cicd).
       - name: Build signed agent repo (apt + rpm)
@@ -430,6 +484,8 @@ jobs:
           RPM="$(ls artifacts/agent/adminhelper-agent-*.x86_64.rpm | head -1)"
           VERSION="$VER" REPO_GPG_KEY_ID="$KEY_ID" OUT_DIR=repo DEB="$DEB" RPM="$RPM" \
             bash apps/agent/build-repo.sh
+          # The FreeBSD pkg repo of the step before; the :8445 repo plane serves /freebsd/.
+          cp -a pkg-out/freebsd repo/freebsd
           tar czf "release/adminhelper-agent-repo-${TAG}.tar.gz" -C repo .
           # Also publish the archive keyring as its OWN asset — a second, independent
           # channel so an admin can fetch it and fingerprint-verify it against
