@@ -50,7 +50,7 @@ Doku: → T9
 Abhängt von: T2
 
 ### T4 — R-1246: Ansichten Hyper-V, DFS-R, Speicher, Druck, Defender, SQL Server, WSUS  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_windows.go, apps/agent/internal/probe/host_windows.go, apps/agent/internal/probe/app_windows_test.go, apps/agent/internal/probe/host_windows_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/app_cups.go, apps/agent/internal/probe/app_cups_test.go, apps/agent/internal/allowlist/allowlist.go
+Komponente: agent · Dateien: apps/agent/internal/probe/winviews.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_other.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/probe/app_cups.go, apps/agent/internal/probe/app_cups_test.go, apps/agent/internal/allowlist/allowlist.go
 Änderung: Ansichten `hyperv`, `dfsr`, `storage` (ohne `KeyProtector`), `print`, `defender`, `mssql_events`, `wsus`
 (Spec, Offene Frage 2: ohne letzte Synchronisation) und `cups_queues` (Linux, `lpstat -p` mit `LC_ALL=C`).
 Parser mit Fixtures. Neue Dateien mit SPDX-Header.
@@ -59,7 +59,7 @@ Doku: → T9
 Abhängt von: T3
 
 ### T5 — R-1436: Ansichten Windows Server Backup und Veeam-Agent für Windows  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_windows.go, apps/agent/internal/probe/host_windows.go, apps/agent/internal/probe/app_windows_test.go, apps/agent/internal/probe/host_windows_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go
+Komponente: agent · Dateien: apps/agent/internal/probe/winviews.go, apps/agent/internal/probe/winviews_windows.go, apps/agent/internal/probe/winviews_other.go, apps/agent/internal/probe/winviews_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/sensor_host.go
 Änderung: `win_backup` (Ereignisse `Microsoft-Windows-Backup` 4/5: Alter des letzten Erfolgs, Fehlschläge) und
 `veeam_windows` (Ereignis 190 im Log „Veeam Agent“, Ergebnis über den Level). Ereignis-IDs als „nicht
 verifiziert“ markiert, wo die Doku sie für aktuelle Versionen nicht belegt.
