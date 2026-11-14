@@ -23,8 +23,10 @@ Agent nie. `body_match` ohne `expect` ist `invalid`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 
-### T2 — R-1395: http erkennt Klartext oder TLS am Port (Schema auto)  [ ]
+### T2 — R-1395: http erkennt Klartext oder TLS am Port (Schema auto)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/probe.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1a06f239d 2026-11-14T09:15:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-30/T2.verdict.json)
 Änderung: Schema `auto`: eigener TLS-Handshake über den Wächter; ein Nicht-TLS-Datensatz als Antwort ⇒ Klartext,
 sonst HTTPS wie bisher ohne Zertifikatsprüfung. Feld `tls` (bool) meldet den Weg. Tests mit Klartext- und
 TLS-Server auf Loopback.
@@ -86,3 +88,4 @@ Abhängt von: T6, T7
 
 ## Entscheidungen
 - Kevin 2026-11-14: Offene Frage 1 wie empfohlen: dns-Check mit `localhost` A (nur lokal).
+- T2 `auto`: Schweigen bis `answerWait` (2 s) zählt als Klartext, nicht nur ein Nicht-TLS-Datensatz: ein Go-HTTP-Server (etwa Mattermost) wartet auf ein `\n` im ClientHello und antwortet nie. Ein Abbruch oder Alert zählt als TLS, ein abgelaufener Probe-Kontext ist ein Fehler.

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -188,7 +189,7 @@ func TestHTTPSensorComparesAShortAnswerWithoutSendingIt(t *testing.T) {
 			t.Errorf("%s = %v, %v; want body_match %v", c.path, got, err, c.want)
 		}
 		for k, v := range got {
-			if s, ok := v.(string); ok || (k != "status_code" && k != "duration_ms" && k != "body_match") {
+			if s, ok := v.(string); ok || (k != "status_code" && k != "duration_ms" && k != "body_match" && k != "tls") {
 				t.Errorf("%s: value %s = %#v, want no part of the body", c.path, k, s)
 			}
 		}
@@ -374,8 +375,98 @@ func TestHTTPSensorSpeaksHTTPSWithoutCheckingTheCertificate(t *testing.T) {
 		t.Errorf("https = %v, %v; want 200 despite a certificate of an unknown root", got, err)
 	}
 	p.Target.Scheme = "http"
-	if got, err := httpSensor(ctx, p, ""); err != nil || got["status_code"] != 400 {
-		t.Errorf("http to a server of https = %v, %v; want its 400", got, err)
+	if got, err := httpSensor(ctx, p, ""); err != nil || got["status_code"] != 400 || got["tls"] != false {
+		t.Errorf("http to a server of https = %v, %v; want its 400 without tls", got, err)
+	}
+}
+
+func TestHTTPSensorAsksThePortWhetherItSpeaksTLS(t *testing.T) {
+	ctx := context.Background()
+	plain := portOf(t, localServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, "ok")
+	})).URL)
+	secure := quietHTTPS(t, newPKI(t).chain)
+	for _, c := range []struct {
+		name   string
+		port   int
+		scheme string
+		tls    bool
+	}{{"plain text", plain, "auto", false}, {"TLS", secure, "auto", true}, {"https", secure, "https", true}, {"no scheme", plain, "", false}} {
+		p := onLoopback("http", c.port, map[string]any{"expect": "ok"}, "status_code", "tls")
+		p.Target.Scheme = c.scheme
+		got, err := httpSensor(ctx, p, "")
+		if err != nil || got["status_code"] != 200 || got["tls"] != c.tls {
+			t.Errorf("%s = %v, %v; want 200 with tls %v", c.name, got, err, c.tls)
+		}
+	}
+}
+
+// rawServer accepts connections on loopback and hands each to serve.
+func rawServer(t *testing.T, serve func(net.Conn)) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { defer c.Close(); serve(c) }()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
+	stubHost(t, &fakeHost{live: true})
+	ctx := context.Background()
+	// Each server starts after the last snapshot of the listeners: age it, or the guard sees none.
+	age := func() {
+		snapshot.Lock()
+		snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+		snapshot.Unlock()
+	}
+	check := func(port int) (bool, error) {
+		age()
+		ep, err := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return speaksTLS(ctx, NewGuard(ep.extra...), ep)
+	}
+	for _, c := range []struct {
+		name  string
+		serve func(net.Conn)
+		want  bool
+	}{
+		{"an answer of HTTP", func(c net.Conn) {
+			_, _ = c.Read(make([]byte, 16))
+			_, _ = c.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
+		}, false},
+		{"silence", func(c net.Conn) { _, _ = io.Copy(io.Discard, c) }, false},
+		{"a closed connection", func(c net.Conn) { _, _ = c.Read(make([]byte, 16)) }, true},
+		{"an alert", func(c net.Conn) {
+			_, _ = c.Read(make([]byte, 16))
+			_, _ = c.Write([]byte{21, 3, 3, 0, 2, 2, 40})
+		}, true},
+	} {
+		got, err := check(rawServer(t, c.serve))
+		if err != nil || got != c.want {
+			t.Errorf("%s = %v, %v; want %v", c.name, got, err, c.want)
+		}
+	}
+
+	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	port := rawServer(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })
+	age()
+	ep, _ := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
+	if _, err := speaksTLS(short, NewGuard(ep.extra...), ep); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("silence until the deadline = %v, want the probe's timeout", err)
 	}
 }
 

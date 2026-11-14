@@ -63,7 +63,8 @@ type Target struct {
 	Kind     string `json:"kind"`
 	Name     string `json:"name"`
 	PortHint int    `json:"port_hint"`
-	Scheme   string `json:"scheme"`
+	// Scheme is http or https; auto lets the http sensor ask the port whether it speaks TLS.
+	Scheme string `json:"scheme"`
 }
 
 // Credential names the stored credential a probe uses and how it presents it (bearer, basic,

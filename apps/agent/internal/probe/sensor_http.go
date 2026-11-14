@@ -248,7 +248,7 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	switch scheme {
 	case "":
 		scheme = "http"
-	case "http", "https":
+	case "http", "https", "auto":
 	default:
 		return nil, fmt.Errorf("%w: sensor http takes no scheme %q", ErrInvalid, scheme)
 	}
@@ -271,8 +271,51 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	if use != "" {
 		g = secretGuard(ep)
 	}
+	if scheme == "auto" {
+		on, err := speaksTLS(ctx, g, ep)
+		if err != nil {
+			return nil, err
+		}
+		scheme = "http"
+		if on {
+			scheme = "https"
+		}
+		u.Scheme = scheme
+	}
 	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
-	return fetchExpecting(ctx, client, method, u.String(), host, use, secret, p.Fields, expect)
+	values, err := fetchExpecting(ctx, client, method, u.String(), host, use, secret, p.Fields, expect)
+	if err != nil {
+		return nil, err
+	}
+	values["tls"] = scheme == "https"
+	return values, nil
+}
+
+// speaksTLS says whether the service at ep answers a TLS handshake, on a connection of its own
+// through g that sends nothing but the handshake. An answer that is no TLS record is a service of
+// plain text (one of HTTP answers 400); so is silence for answerWait, as a server of HTTP that waits
+// for the end of a request line inside the client's hello never answers it. Any other end of the
+// handshake (an alert, a closed connection) comes from a server that read it as TLS.
+func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
+	conn, err := dialThrough(ctx, g, ep)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	if d, ok := ctx.Deadline(); !ok || time.Now().Add(answerWait).Before(d) {
+		_ = conn.SetDeadline(time.Now().Add(answerWait))
+	}
+	err = tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx) //nolint:gosec // only whether TLS answers
+	var rh tls.RecordHeaderError
+	switch {
+	case err == nil:
+		return true, nil
+	case ended(ctx):
+		return false, netErr(ctx, err)
+	case errors.As(err, &rh), timeout(err):
+		return false, nil
+	}
+	return true, nil
 }
 
 // fetch sends one request to target with client: the status code, the time to the headers and, if a
