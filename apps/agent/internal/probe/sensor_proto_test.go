@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -895,5 +896,125 @@ func TestProtoSensorRecognizesThroughTheGuard(t *testing.T) {
 	}
 	if heard := fmt.Sprint(srv.close()); heard != "[QUIT]" {
 		t.Errorf("the server heard %s", heard)
+	}
+}
+
+func TestFCGIStatusRequestIsOneResponderRequestOfJSON(t *testing.T) {
+	b := fcgiStatusRequest("/status")
+	var types []byte
+	var params []byte
+	for len(b) > 0 {
+		n := int(binary.BigEndian.Uint16(b[4:6]))
+		if b[0] != 1 || binary.BigEndian.Uint16(b[2:4]) != 1 || b[6] != 0 {
+			t.Fatalf("record % x, want version 1, request 1, no padding", b[:8])
+		}
+		switch b[1] {
+		case fcgiBeginRequest:
+			if string(b[8:8+n]) != "\x00\x01\x00\x00\x00\x00\x00\x00" {
+				t.Errorf("FCGI_BEGIN_REQUEST % x, want the responder without keep-conn", b[8:8+n])
+			}
+		case fcgiParams:
+			params = append(params, b[8:8+n]...)
+		}
+		types = append(types, b[1])
+		b = b[8+n:]
+	}
+	if fmt.Sprint(types) != "[1 4 4 5]" {
+		t.Errorf("records %v, want BEGIN_REQUEST, PARAMS, empty PARAMS, empty STDIN", types)
+	}
+	got := fmt.Sprint(fcgiPairs(params))
+	if got != "map[QUERY_STRING:json REQUEST_METHOD:GET REQUEST_URI:/status?json SCRIPT_FILENAME:/status SCRIPT_NAME:/status]" {
+		t.Errorf("params %s", got)
+	}
+}
+
+// fcgiAnswer answers the request on the other end of the returned session with records, after
+// reading the request whole.
+func fcgiAnswer(t *testing.T, records ...[]byte) *session {
+	t.Helper()
+	client, server := net.Pipe()
+	go func() {
+		defer func() { _ = server.Close() }()
+		if _, err := io.ReadFull(server, make([]byte, len(fcgiStatusRequest("/status")))); err != nil {
+			return
+		}
+		for _, r := range records {
+			if _, err := server.Write(r); err != nil {
+				return
+			}
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	s := newSession(ctx, client)
+	t.Cleanup(s.end)
+	return s
+}
+
+func TestFCGIStatusPageReadsStdoutAndDropsStderr(t *testing.T) {
+	padded := append(fcgiRecord(fcgiStdout, []byte("Content-Type: application/json\r\n\r\n{\"a\":")), 0, 0, 0)
+	padded[6] = 3
+	s := fcgiAnswer(t, padded, fcgiRecord(fcgiStderr, []byte("PHP Warning: x")),
+		fcgiRecord(fcgiStdout, []byte("1}")), fcgiRecord(fcgiStdout, nil), fcgiRecord(fcgiEndRequest, make([]byte, 8)))
+	page, err := fcgiStatusPage(s, "/status", 1024)
+	if err != nil || string(page) != `{"a":1}` {
+		t.Errorf("fcgiStatusPage = %q, %v; want the body of stdout", page, err)
+	}
+}
+
+func TestFCGIStatusPageRefusesAnAnswerOutsideTheRequest(t *testing.T) {
+	end := fcgiRecord(fcgiEndRequest, make([]byte, 8))
+	ok := fcgiRecord(fcgiStdout, []byte("Status: 200 OK\r\n\r\n{}"))
+	otherID := fcgiRecord(fcgiStdout, []byte("Status: 200 OK\r\n\r\n{}"))
+	otherID[3] = 2
+	overloaded := fcgiRecord(fcgiEndRequest, []byte{0, 0, 0, 0, 2, 0, 0, 0})
+	for name, c := range map[string]struct {
+		records [][]byte
+		limit   int
+		want    string
+	}{
+		"another request":   {[][]byte{otherID, end}, 1024, "no answer to the request for the status page"},
+		"an unknown record": {[][]byte{fcgiRecord(11, make([]byte, 8)), end}, 1024, "no answer to"},
+		"overloaded":        {[][]byte{ok, overloaded}, 1024, "the application refuses"},
+		"too long":          {[][]byte{ok, end}, 8, "is too long"},
+		"no header":         {[][]byte{fcgiRecord(fcgiStdout, []byte("{}")), end}, 1024, "no answer to"},
+		"not found":         {[][]byte{fcgiRecord(fcgiStdout, []byte("Status: 404 Not Found\r\n\r\nx")), end}, 1024, "is status 404"},
+		"closed":            {[][]byte{ok}, 1024, "closed at the request for the status page"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := fcgiStatusPage(fcgiAnswer(t, c.records...), "/status", c.limit)
+			var pf protoFail
+			if !errors.As(err, &pf) || !strings.Contains(pf.detail, c.want) || strings.Contains(pf.detail, "/status") {
+				t.Errorf("fcgiStatusPage = %v, want a protoFail naming %q and not the path", err, c.want)
+			}
+		})
+	}
+	page, err := fcgiStatusPage(fcgiAnswer(t, ok, end), "/status", 1024)
+	if err != nil || string(page) != "{}" {
+		t.Errorf("Status 200 = %q, %v; want the body", page, err)
+	}
+}
+
+func TestRedisInfoAddsTheShareOfMaxmemory(t *testing.T) {
+	info := func(used, most string) map[string]any {
+		return redisInfo([]byte("# Memory\r\nused_memory:" + used + "\r\nmaxmemory:" + most + "\r\n"))
+	}
+	if got := info("805306368", "1073741824")["maxmemory_used_pct"]; got != json.Number("75") {
+		t.Errorf("768 MiB of 1 GiB = %v, want 75", got)
+	}
+	if got := info("1999", "1000")["maxmemory_used_pct"]; got != json.Number("199") {
+		t.Errorf("above the limit = %v, want 199", got)
+	}
+	for name, d := range map[string]map[string]any{
+		"no limit":      info("1048576", "0"),
+		"no number":     info("much", "1000"),
+		"a fraction":    info("1.5", "1000"),
+		"below none":    info("-1", "1000"),
+		"without INFO":  redisInfo([]byte("# Server\r\nredis_version:7.2.4\r\n")),
+		"only the used": redisInfo([]byte("used_memory:10\r\n")),
+	} {
+		if v, ok := d["maxmemory_used_pct"]; ok {
+			t.Errorf("%s: maxmemory_used_pct = %v, want none", name, v)
+		}
 	}
 }
