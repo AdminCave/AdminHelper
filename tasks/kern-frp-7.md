@@ -20,8 +20,10 @@ OpenAPI-Snapshot nachziehen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_servers_frp_key_rotate.py tests/test_openapi_snapshot.py
 Doku: → T3
 
-### T2 — Desktop: Warnung bei nicht geschriebener Policy  [ ]
+### T2 — Desktop: Warnung bei nicht geschriebener Policy  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/frp.ts, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.svelte, apps/desktop/ui/src/components/infra/tabs/TunnelsTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6f9118a4a 2026-11-14T07:27:01+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1437. `rotateKey` liefert `{ generation, policySynced }`; bei `policySynced === false` eine Warnung
 (DE+EN) statt der Erfolgsmeldung. Test für beide Fälle.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/TunnelsTab.test.ts

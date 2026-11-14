@@ -12,7 +12,7 @@ import type { Server } from '$lib/api/types';
 const h = vi.hoisted(() => ({
   listTunnels: vi.fn().mockResolvedValue([]),
   listConfigs: vi.fn().mockResolvedValue([]),
-  rotateKey: vi.fn().mockResolvedValue({ generation: 1 }),
+  rotateKey: vi.fn().mockResolvedValue({ generation: 1, policySynced: true }),
   confirm: vi.fn(),
   isAdmin: true,
 }));
@@ -29,11 +29,15 @@ vi.mock('$lib/stores/session', () => ({
     },
   },
 }));
-vi.mock('$lib/stores/statusBar', () => ({ reportError: vi.fn(), showStatus: vi.fn() }));
+vi.mock('$lib/stores/statusBar', () => ({
+  reportError: vi.fn(),
+  showStatus: vi.fn(),
+  showNotice: vi.fn(),
+}));
 vi.mock('../../ui/ConfirmDialog.svelte', () => ({ confirmDialog: h.confirm }));
 
 import { setLanguage } from '$lib/i18n';
-import { reportError, showStatus } from '$lib/stores/statusBar';
+import { reportError, showNotice, showStatus } from '$lib/stores/statusBar';
 import TunnelsTab from './TunnelsTab.svelte';
 
 setLanguage('de');
@@ -76,6 +80,23 @@ describe('TunnelsTab tunnel key renewal', () => {
     await waitFor(() => expect(h.rotateKey).toHaveBeenCalledTimes(1));
     expect(h.rotateKey).toHaveBeenCalledWith(expect.objectContaining({ isAdmin: true }), 'srv-1');
     await waitFor(() => expect(showStatus).toHaveBeenCalledWith(expect.stringContaining('alpha')));
+    expect(reportError).not.toHaveBeenCalled();
+    expect(showNotice).not.toHaveBeenCalled();
+  });
+
+  // R-1437: the rotation stands, but frps still admits the old key until the next sync.
+  it('warns when the server could not write the frps policy', async () => {
+    h.confirm.mockResolvedValueOnce(true);
+    h.rotateKey.mockResolvedValueOnce({ generation: 2, policySynced: false });
+    const { container } = render(TunnelsTab, { props: { server } });
+    await waitFor(() => expect(rotateButton(container)).not.toBeNull());
+    await fireEvent.click(rotateButton(container)!);
+    await waitFor(() => expect(showNotice).toHaveBeenCalledTimes(1));
+    const notice = vi.mocked(showNotice).mock.calls[0][0];
+    expect(notice.tone).toBe('warning');
+    expect(notice.title).toContain('alpha');
+    expect(notice.body).toContain('frps-Policy');
+    expect(showStatus).not.toHaveBeenCalled();
     expect(reportError).not.toHaveBeenCalled();
   });
 
