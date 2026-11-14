@@ -10,8 +10,10 @@ Heavy: none — additives Antwortfeld und UI-Hinweis; kein Stack-, Gateway- oder
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Server: Rotation meldet policySynced  [ ]
+### T1 — Server: Rotation meldet policySynced  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/policy.py, apps/server/app/modules/servers/router.py, apps/server/app/modules/servers/schemas.py, apps/server/tests/test_servers_frp_key_rotate.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c7af85f78 2026-11-14T07:20:53+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1437. `sync_policy` gibt `True`/`False` zurück; `rotate_frp_key` antwortet zusätzlich `policySynced`.
 Test: Schreiben gelingt → `true`; `write_frps_policy` scheitert → `200`, Generation erhöht, `policySynced: false`.
 OpenAPI-Snapshot nachziehen.
