@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Ergebnis des Policy-Abgleichs nach Schlüssel-Erneuerung — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-7 · Review: am Ende
+Status: aktiv · Branch: feature/kern-frp-7 · Review: am Ende
 Spec: docs/features/kern-frp-7.md (Roadmap R-1437)
 Heavy: none — additives Antwortfeld und UI-Hinweis; kein Stack-, Gateway- oder FRP-Datenpfad geändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -40,6 +40,15 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 Abhängt von: T2
+
+### T4 — Abschlussprüfung: Testfrist und Warntext  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/TunnelsTab.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Änderung: reviewer branch (wichtig): `waitFor` im neuen Test mit `{ timeout: 30_000 }` (testing.md „Fristen“).
+security branch (Nit): Warntext DE+EN und Admin-Doku sagen „bis ein Abgleich gelingt“ statt „bis zum nächsten
+Abgleich“; ein dauerhafter Schreibfehler hält die alte Generation sonst unbemerkt gültig.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/TunnelsTab.test.ts
+Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Abhängt von: T3
 
 ## Entscheidungen
 - Kevin 2026-11-14: Variante (a) `policySynced` plus Warnung in der UI.
