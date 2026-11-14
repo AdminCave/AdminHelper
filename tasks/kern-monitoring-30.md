@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fühler http, tls und dns für die Katalog-Module — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-30 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-30 · Review: pro Task
 Spec: docs/features/kern-monitoring-30.md (Roadmap R-1392, R-1394, R-1395, R-1433)
 Heavy: linux-full — neue Parameter, Felder und ein Ziel für dns im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -97,6 +97,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 Abhängt von: T6, T7
+
+### T9 — Doku: aelterer Agent und HTTP-Check mit Schema auto  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-30.md
+Änderung: Abschlussprüfung 2026-11-14: ein Agent älter als der Monitoring-Dienst lässt die geänderten Checks (keycloak, vaultwarden, mattermost wegen `auto`, onlyoffice wegen `expect`, dns mit Ziel) `unknown` („invalid“): Punkt nach dem Muster „Neuer Parameter `host`“ DE+EN und ein Satz im CHANGELOG-Fragment; der Punkt „HTTP-Check“ nennt das Schema `auto` statt „nur HTTPS ist critical“ ohne Ausnahme.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die genannten Dateien
+Task-Review: am Ende
 
 ## Entscheidungen
 - Kevin 2026-11-14: Offene Frage 1 wie empfohlen: dns-Check mit `localhost` A (nur lokal).
