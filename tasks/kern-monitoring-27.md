@@ -22,8 +22,10 @@ Beweis: feature/arch-monitoring-module-2@5ce886191 (security-Randnotiz T16) · D
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_dispatch.py tests/test_stored_json_numbers.py tests/test_check_engine.py
 Doku: changelog.d/kern-monitoring-27.md (### Fixed)
 
-### T2 — Dienste-Routen und Fehlerzeilen nachhärten  [ ]
+### T2 — Dienste-Routen und Fehlerzeilen nachhärten  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/service_inventory.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_service_inventory.py, apps/monitoring/tests/test_service_inventory_api.py, changelog.d/kern-monitoring-27.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @357f642e4 2026-11-14T08:11:52+01:00
+Review: approve (.ah-out/review/kern-monitoring-27/T2.verdict.json)
 Änderung: R-1415 (Einzelheiten privat). Negativtests ohne interne Berechtigung für GET
 `/status/server/{id}/services` und PUT `.../services/options` (`checks.py:710`); Zeilensperre auf dem Inventar in
 `store_service_report` (`service_inventory.py:172`) und in der PUT-Route, Test dazu; der feste Budget-Test
@@ -46,3 +48,9 @@ Doku: keine (interne Prüfung, kein dokumentiertes Verhalten)
 - Gate 2026-11-14: R-1406 (nach 0.47.0) in `tasks/kern-monitoring-21.md`, R-1400 (Abhilfe ist Kevins Wahl) in
   `tasks/kern-monitoring-34.md`.
 - `Review: pro Task` trotz drei Tasks: SEC-Zeile, `security` je Task.
+- T2: der Sperr-Test prüft das für postgresql kompilierte SQL (`FOR UPDATE`), weil sqlite die Klausel verwirft;
+  ein Server ohne Inventarzeile hat nichts zu sperren, dort verbirgt `_services_out` die Zeilen bei ausgeschaltetem
+  Schalter. Der Laufzeit-Test (Faktor < 24 bei 8-facher Länge) fiel in der Gegenprobe mit `[a-z]*authorization` (Faktor ~62).
+- T2, Prüfer-Nit `populate_existing` am gesperrten `get`: nicht übernommen. `_known_server` hält keine Referenz auf die
+  Inventarzeile, die schwache Identity-Map gibt sie frei, der gesperrte `get` lädt frisch; ein Test mit gleichzeitigem
+  Schreiber vor der Sperre blieb ohne Änderung grün.
