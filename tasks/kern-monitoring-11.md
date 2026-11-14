@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Mail, Verzeichnis und Schule — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-11 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-11 · Review: pro Task
 Spec: docs/features/kern-monitoring-11.md (Roadmap R-1239, R-1240)
 Heavy: linux-full — neue Ansichten und Freigabeliste im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -85,6 +85,15 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die genannten Dateien
 Task-Review: am Ende
 Abhängt von: T5, T6
+
+### T8 — samba_member ohne smbstatus --json  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_samba.go, apps/agent/internal/probe/app_samba_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, tasks/kern-monitoring-11.md
+Änderung: Fund der Abschlussprüfung (wichtig): `sambaMember` bricht ab, wenn `smbstatus --json --fast` mit einem
+Exit-Code endet (Samba vor 4.17 kennt `--json` nicht), und meldet dann weder `config_ok` noch winbind. Endet
+`smbstatus` mit einem Exit-Code, fehlen nur die drei angezeigten Zähler; `config_ok`, `winbind_ok` und `dc_ok`
+kommen weiter. Test mit `smbstatus` Exit 1; Doku DE+EN nennt das Verhalten vor 4.17.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html
 
 ## Entscheidungen
 - Mailcow und MailPiler lesen den Zugang aus der Konfiguration des Dienstes, wie das Konzept §6.2 es nennt; das
