@@ -14,8 +14,10 @@ Gebaut wird erst nach den Merges von kern-monitoring-8 und kern-monitoring-30 (`
 `allowlist.go`); vor T1 `origin/main` in den Branch mergen. Windows-Code prüft lokal `GOOS=windows go vet` und
 `go test -c`; laufen lässt ihn nur der CI-Job `agent-windows`. Das Ergebnis steht im Commit-Body.
 
-### T1 — R-1245: Discovery liest die Windows-Dienste  [ ]
-Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_windows.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/discovery/discovery_windows_test.go
+### T1 — R-1245: Discovery liest die Windows-Dienste  [x]
+Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_windows.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/discovery/discovery_windows_test.go, apps/agent/internal/discovery/discovery_linux.go, apps/agent/internal/probe/sensor_local_windows.go, apps/agent/internal/probe/sensor_local_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8a6a5cebf 2026-11-14T11:10:47+01:00
+Review: approve (.ah-out/review/kern-monitoring-14/T1.verdict.json)
 Änderung: Unter Windows listet `collectUnits` die Dienste über den Dienst-Manager (`svc/mgr`, nur lesend): Name
 und Zustand, gekürzt auf die Grenzen des Vertrags. Neue Dateien `discovery_windows.go` und
 `discovery_windows_test.go` (SPDX-Header, Build-Tag `windows`).

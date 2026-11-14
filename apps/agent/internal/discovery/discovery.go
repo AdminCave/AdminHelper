@@ -69,8 +69,10 @@ const (
 
 // Seams for the tests.
 var (
-	// linuxHost says whether the units and containers of this host can be read: on Linux alone.
-	linuxHost = runtime.GOOS == "linux"
+	// linuxHost says whether the systemd units and the containers of this host can be read: on Linux
+	// alone. windowsHost says whether its units are the services of the Windows service manager.
+	linuxHost   = runtime.GOOS == "linux"
+	windowsHost = runtime.GOOS == "windows"
 	// markerHost says whether the markers of this host can be checked: the catalog writes Unix paths,
 	// on FreeBSD those of OPNsense (/usr/local/opnsense/…) among them.
 	markerHost    = linuxHost || runtime.GOOS == "freebsd"
@@ -188,8 +190,12 @@ func Run(ctx context.Context, markers []probe.Marker) Inventory {
 	return inv
 }
 
-// collectUnits lists the service units systemd has loaded, in any state.
+// collectUnits lists the service units systemd has loaded, in any state; on Windows the services the
+// service manager knows, as units.
 func collectUnits(ctx context.Context) ([]Unit, bool) {
+	if windowsHost {
+		return collectServices()
+	}
 	if !linuxHost {
 		return []Unit{}, true
 	}
@@ -205,6 +211,28 @@ func collectUnits(ctx context.Context) ([]Unit, bool) {
 		return []Unit{}, false
 	}
 	units := parseUnits(out)
+	if len(units) > maxUnits {
+		return units[:maxUnits], false
+	}
+	return units, true
+}
+
+// collectServices lists the Windows services in any state, a unit each; one whose name the contract
+// cannot carry is left out.
+func collectServices() ([]Unit, bool) {
+	services, err := listServices()
+	if err != nil {
+		logger.Warnf("discovery: the services cannot be listed: %v", err)
+		return []Unit{}, false
+	}
+	units := []Unit{}
+	for _, u := range services {
+		u = Unit{Name: contractText(u.Name, maxNameLen), State: contractText(u.State, maxStateLen),
+			Sub: contractText(u.Sub, maxStateLen)}
+		if u.Name != "" {
+			units = append(units, u)
+		}
+	}
 	if len(units) > maxUnits {
 		return units[:maxUnits], false
 	}

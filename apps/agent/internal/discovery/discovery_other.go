@@ -2,14 +2,19 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//go:build !linux
+//go:build !linux && !windows
 
 package discovery
 
-import "adminhelper-agent/internal/probe"
+import (
+	"errors"
 
-// Containers and units are discovered on Linux alone; seams for the tests.
+	"adminhelper-agent/internal/probe"
+)
+
+// Containers and units are discovered on Linux and Windows alone; seams for the tests.
 var (
 	cgroupsOf          = func(int32) probe.Cgroups { return nil }
 	containerListening = func(int32) ([]uint16, error) { return nil, nil }
+	listServices       = func() ([]Unit, error) { return nil, errors.ErrUnsupported }
 )
