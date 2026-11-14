@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Module Webserver, Datenbanken und Backup-Werkzeuge — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-8 · Review: pro Task
 Spec: docs/features/kern-monitoring-8.md (Roadmap R-1231, R-1232, R-1233)
 Heavy: linux-full — neue Agent-Ansichten, Fühler-Felder und Freigabeliste (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -169,8 +169,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_bac
 Doku: → T14
 Abhängt von: T1, T11
 
-### T14 — Doku Web, Datenbanken, Backup  [ ]
+### T14 — Doku Web, Datenbanken, Backup  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-8.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5321312b1 2026-11-14T02:15:16+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Modultabellen, Ansichten und Abfragen, Unit-Felder, `file_age newest_in`, Nutzung `password` und lokal
 hinterlegte Zugangsdaten, „Nie aufgerufen“; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
