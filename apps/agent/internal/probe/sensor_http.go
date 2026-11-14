@@ -36,6 +36,9 @@ const (
 	useBasic     = "basic"
 	useRedisAuth = "redis_auth"
 	useHeader    = "header:"
+	// usePassword hands the secret to one read command of the allowlist in an environment variable
+	// (passwordEnv), never as an argument.
+	usePassword = "password"
 )
 
 // headerName is the name of a header a credential goes in, as the monitoring service allows it.

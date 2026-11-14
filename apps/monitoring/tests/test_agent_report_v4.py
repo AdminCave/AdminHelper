@@ -102,8 +102,8 @@ def test_discovery_block_is_stored_and_makes_findings(client_db):
     assert row["scanned_at"] is not None
     assert row["inventory"]["sockets"][0]["port"] == 8443
     with factory() as db:
-        findings = [(f.module_id, f.instance_key, f.kind) for f in db.query(MonitorFinding)]
-    assert findings == [("port", "tcp-8443", "new")]
+        findings = sorted((f.module_id, f.instance_key, f.kind) for f in db.query(MonitorFinding))
+    assert findings == [("nginx", "nginx.service", "new"), ("port", "tcp-8443", "new")]
 
 
 def test_credentials_block_stores_only_valid_references(client_db):

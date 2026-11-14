@@ -6,18 +6,50 @@ package probe
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
+	"strings"
+
+	"adminhelper-agent/internal/allowlist"
 )
 
 func init() {
 	sensors["app"] = appSensor
 }
 
-// appView is one view of the app sensor: the kinds of target it is bound to and what reads it.
+// appView is one view of the app sensor: the kinds of target it is bound to and what reads it. A view
+// that reads with a credential stored on this host names the uses it takes and reads with readCred.
 type appView struct {
-	kinds []string
-	read  func(ctx context.Context, t Target) (map[string]any, error)
+	kinds    []string
+	read     func(ctx context.Context, t Target) (map[string]any, error)
+	uses     []string
+	readCred func(ctx context.Context, t Target, c appCredential) (map[string]any, error)
+}
+
+// appCredential is the credential a probe hands to its view: how it is presented (use, "" without
+// one) and the secret.
+type appCredential struct {
+	use, secret string
+}
+
+// runToolEnv starts a read command with a credential in its environment (passwordEnv); tests stand in
+// their own.
+var runToolEnv = allowlist.RunEnv
+
+// passwordEnv returns the environment entry name=secret for a credential of use password, nil
+// without a credential. The secret goes to the one command it is handed to and in no argument, where
+// every user of the host could read it (/proc/<pid>/cmdline); no error quotes it.
+func passwordEnv(c appCredential, name string) ([]string, error) {
+	switch {
+	case c.use == "":
+		return nil, nil
+	case c.use != usePassword:
+		return nil, fmt.Errorf("%w: a credential for %q cannot be handed to a command", ErrInvalid, c.use)
+	case c.secret == "" || strings.ContainsRune(c.secret, 0):
+		return nil, fmt.Errorf("%w: a password must be non-empty and hold no NUL byte", ErrInvalid)
+	}
+	return []string{name + "=" + c.secret}, nil
 }
 
 // The kinds of target of the views: most read one application installed as a unit or running in a
@@ -33,37 +65,52 @@ var (
 // the application with fixed arguments, started through the allowlist (runTool). The server names a
 // view, never a path, a command or a query.
 var appViews = map[string]appView{
-	"apcupsd":           {unitKinds, apcupsd},
-	"bbb_meetings":      {unitKinds, bbbMeetings},
-	"bbb_recordings":    {unitKinds, bbbRecordings},
-	"bind_status":       {unitKinds, bindStatus},
-	"caddy_certs":       {eitherKinds, caddyCerts},
-	"caddy_upstreams":   {unitKinds, caddyUpstreams},
-	"ceph_health":       {unitKinds, cephHealth},
-	"chrony_tracking":   {unitKinds, chronyTracking},
-	"crowdsec_bouncers": {unitKinds, crowdsecBouncers},
-	"dnsmasq_leases":    {unitKinds, dnsmasqLeaseView},
-	"fail2ban":          {unitKinds, fail2ban},
-	"kea_pools":         {unitKinds, keaPools},
-	"keepalived_vips":   {unitKinds, keepalivedVIPs},
-	"ldap_replication":  {unitKinds, ldapReplication},
-	"npm_certs":         {containerKinds, npmCerts},
-	"ntpsec_status":     {unitKinds, ntpsecStatus},
-	"nut_ups":           {unitKinds, nutUPS},
-	"openvpn_status":    {unitKinds, openvpnStatus},
-	"pbs_status":        {unitKinds, pbsStatus},
-	"pve_cluster":       {unitKinds, pveCluster},
-	"pve_jobs":          {unitKinds, pveJobs},
-	"pve_updates":       {unitKinds, pveUpdates},
-	"tailscale_status":  {unitKinds, tailscaleStatus},
-	"traefik_certs":     {eitherKinds, traefikCerts},
-	"unbound_stats":     {unitKinds, unboundStats},
-	"wg_peers":          {unitKinds, wgPeers},
-	"wordpress_version": {containerKinds, wordpressVersion},
+	"apcupsd":           {kinds: unitKinds, read: apcupsd},
+	"apache_status":     {kinds: unitKinds, read: apacheStatus},
+	"backuppc_status":   {kinds: unitKinds, read: backuppcStatus},
+	"bbb_meetings":      {kinds: unitKinds, read: bbbMeetings},
+	"bbb_recordings":    {kinds: unitKinds, read: bbbRecordings},
+	"bind_status":       {kinds: unitKinds, read: bindStatus},
+	"borg_latest":       {kinds: unitKinds, uses: []string{usePassword}, readCred: borgLatest},
+	"caddy_certs":       {kinds: eitherKinds, read: caddyCerts},
+	"caddy_upstreams":   {kinds: unitKinds, read: caddyUpstreams},
+	"ceph_health":       {kinds: unitKinds, read: cephHealth},
+	"chrony_tracking":   {kinds: unitKinds, read: chronyTracking},
+	"crowdsec_bouncers": {kinds: unitKinds, read: crowdsecBouncers},
+	"dnsmasq_leases":    {kinds: unitKinds, read: dnsmasqLeaseView},
+	"duplicati_health":  {kinds: unitKinds, read: duplicatiHealth},
+	"es_nodes":          {kinds: eitherKinds, uses: []string{useBasic}, readCred: esNodes},
+	"fail2ban":          {kinds: unitKinds, read: fail2ban},
+	"fpm_pools":         {kinds: unitKinds, read: fpmPools},
+	"haproxy_servers":   {kinds: unitKinds, read: haproxyServers},
+	"kea_pools":         {kinds: unitKinds, read: keaPools},
+	"keepalived_vips":   {kinds: unitKinds, read: keepalivedVIPs},
+	"kopia_latest":      {kinds: unitKinds, uses: []string{usePassword}, readCred: kopiaLatest},
+	"ldap_replication":  {kinds: unitKinds, read: ldapReplication},
+	"npm_certs":         {kinds: containerKinds, read: npmCerts},
+	"nginx_status":      {kinds: unitKinds, read: nginxStatus},
+	"ntpsec_status":     {kinds: unitKinds, read: ntpsecStatus},
+	"nut_ups":           {kinds: unitKinds, read: nutUPS},
+	"openvpn_status":    {kinds: unitKinds, read: openvpnStatus},
+	"pbs_status":        {kinds: unitKinds, read: pbsStatus},
+	"pm2_apps":          {kinds: unitKinds, read: pm2Apps},
+	"pve_cluster":       {kinds: unitKinds, read: pveCluster},
+	"pve_jobs":          {kinds: unitKinds, read: pveJobs},
+	"pve_updates":       {kinds: unitKinds, read: pveUpdates},
+	"restic_latest":     {kinds: unitKinds, uses: []string{usePassword}, readCred: resticLatest},
+	"tailscale_status":  {kinds: unitKinds, read: tailscaleStatus},
+	"traefik_certs":     {kinds: eitherKinds, read: traefikCerts},
+	"unbound_stats":     {kinds: unitKinds, read: unboundStats},
+	"urbackup_status":   {kinds: unitKinds, uses: []string{useBasic}, readCred: urbackupStatus},
+	"veeam_sessions":    {kinds: unitKinds, read: veeamSessions},
+	"wg_peers":          {kinds: unitKinds, read: wgPeers},
+	"web_config":        {kinds: unitKinds, read: webConfig},
+	"wordpress_version": {kinds: containerKinds, read: wordpressVersion},
 }
 
-// appSensor reads the view the probe names of the application its target belongs to.
-func appSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
+// appSensor reads the view the probe names of the application its target belongs to. A credential
+// goes only to a view that takes its use; any other view refuses it.
+func appSensor(ctx context.Context, p Probe, secret string) (map[string]any, error) {
 	if err := knownParams(p, "view"); err != nil {
 		return nil, err
 	}
@@ -72,9 +119,16 @@ func appSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
 		return nil, err
 	}
 	v := appViews[view]
+	use, err := credentialUse(p, v.uses...)
+	if err != nil {
+		return nil, err
+	}
 	t, err := targetOf(p, v.kinds...)
 	if err != nil {
 		return nil, err
+	}
+	if v.readCred != nil {
+		return v.readCred(ctx, t, appCredential{use: use, secret: secret})
 	}
 	return v.read(ctx, t)
 }

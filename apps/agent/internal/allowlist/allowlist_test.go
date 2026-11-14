@@ -31,7 +31,7 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 		journal("--priority=3", "--unit=getty@tty1.service", "--after-cursor="+cursor, "--", "_COMM=sshd"),
 		journal("--priority=4", "--since=-60s", "--", "SYSLOG_IDENTIFIER=postfix/smtpd"),
 		journal("--priority=4", "--unit=-.slice", "--since=-60s", "--", "CONTAINER_NAME=web-1"),
-		{"systemctl", "show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic", "--", "nginx.service"},
+		{"systemctl", "show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "nginx.service"},
 		{"systemctl", "show", "-p", "LoadState,ControlGroup", "--", "-.slice"},
 		{"systemctl", "show", "-p", "LoadState,ControlGroup", "--", `systemd-fsck@dev-disk-by\x2duuid-1a2b.service`},
 		{"docker", "inspect", "--type", "container", "--", "web_1.prod"},
@@ -52,13 +52,16 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 	for _, args := range postgresCalls {
 		calls = append(calls, append([]string{"runuser"}, args...))
 	}
+	for _, user := range []string{"web", "node_1", "_svc", "r", "ro", "roo", "rooter", "rob", "rot", "roox", "deploy-2"} {
+		calls = append(calls, []string{"runuser", "-u", user, "--", "pm2", "jlist"})
+	}
 	for _, call := range calls {
 		if !Allowed(call[0], call[1:]) {
 			t.Errorf("refused: %q", call)
 		}
 	}
-	if len(journalCalls) != 8 || len(mariadbCalls) != 4 || len(postgresCalls) != 4 {
-		t.Errorf("%d journalctl, %d MariaDB, %d PostgreSQL calls; want 8, 4, 4",
+	if len(journalCalls) != 8 || len(mariadbCalls) != 6 || len(postgresCalls) != 6 {
+		t.Errorf("%d journalctl, %d MariaDB, %d PostgreSQL calls; want 8, 6, 6",
 			len(journalCalls), len(mariadbCalls), len(postgresCalls))
 	}
 }
@@ -98,6 +101,19 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 		append([]string{"mysql"}, append(append([]string{}, sql...), "--user=root")...),
 		append([]string{"runuser"}, append(append([]string{}, pg[:len(pg)-1]...), "--command=SELECT * FROM pg_authid")...),
 		append([]string{"runuser", "-u", "root"}, pg[2:]...),
+		{"runuser", "-u", "root", "--", "pm2", "jlist"},
+		{"runuser", "-u", "Root", "--", "pm2", "jlist"},
+		{"runuser", "-u", "-web", "--", "pm2", "jlist"},
+		{"runuser", "-u", "web", "--", "pm2", "restart", "all"},
+		{"runuser", "-u", "web", "--", "pm2", "reload", "all"},
+		{"runuser", "-u", "web", "--", "pm2", "delete", "all"},
+		{"runuser", "-u", "web", "--", "pm2", "flush"},
+		{"runuser", "-u", "web", "--", "pm2", "jlist", "--silent"},
+		{"runuser", "-u", "web", "--", "pm2", "prettylist"},
+		{"runuser", "-u", "web", "pm2", "jlist"},
+		{"runuser", "-u", "web", "--", "psql", "--command=SELECT 1"},
+		{"runuser", "-u", "postgres", "--", "pm2", "jlist", "x"},
+		{"pm2", "jlist"},
 		{"psql", "--command=SELECT 1"},
 		{"sockstat", "-46", "-l", "-n", "-q", "-w", "-P", "tcp", "-j", "web"},
 		{"sockstat", "-46", "-c", "-n", "-q", "-w", "-P", "tcp"},
@@ -280,6 +296,50 @@ func TestAllowlistNetSecurityViews(t *testing.T) {
 		{"tailscale", "status", "--json", "--peers=false", "--web"},
 		{"tailscale", "up"},
 		{"tailscale", "down"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistWebViews: the web server views run the configuration tests, the dump of nginx's
+// configuration and Apache's list of its files, HAProxy's test only on the file of the packages. The
+// traps signal or start the server, or point it at another configuration.
+func TestAllowlistWebViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"nginx", "-t"},
+		{"/usr/sbin/nginx", "-T"},
+		{"apache2ctl", "-t"},
+		{"apache2ctl", "-t", "-D", "DUMP_INCLUDES"},
+		{"apachectl", "-t"},
+		{"apachectl", "-t", "-D", "DUMP_INCLUDES"},
+		{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"nginx"},
+		{"nginx", "-s", "stop"},
+		{"nginx", "-s", "reload"},
+		{"nginx", "-s", "reopen"},
+		{"nginx", "-t", "-c", "/tmp/x.conf"},
+		{"nginx", "-T", "-g", "daemon off;"},
+		{"nginx", "-t", "-q"},
+		{"apache2ctl", "graceful"},
+		{"apache2ctl", "restart"},
+		{"apache2ctl", "stop"},
+		{"apachectl", "-k", "graceful"},
+		{"apachectl", "-t", "-D", "DUMP_RUN_CFG"},
+		{"apachectl", "-t", "-f", "/tmp/x.conf"},
+		{"apache2ctl", "configtest", "-D", "DUMP_INCLUDES"},
+		{"haproxy", "-f", "/etc/haproxy/haproxy.cfg"},
+		{"haproxy", "-c", "-f", "/etc/haproxy/haproxy.cfg"},
+		{"haproxy", "-c", "-q", "-f", "/tmp/x.cfg"},
+		{"haproxy", "-f", "/etc/haproxy/haproxy.cfg", "-sf", "1234"},
+		{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg", "-st", "1234"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)
@@ -615,5 +675,71 @@ func TestClassesIsACopy(t *testing.T) {
 	c["unit"] = ".*"
 	if Classes()["unit"] == ".*" {
 		t.Error("Classes returned the list's own map")
+	}
+}
+
+func TestAllowlistBackupViews(t *testing.T) {
+	for _, call := range [][]string{
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"veeamconfig", "session", "list"},
+		{"restic", "snapshots", "--json", "--latest", "1", "--no-lock", "--no-cache"},
+		{"borg", "list", "--last", "1", "--json", "--bypass-lock"},
+		{"kopia", "snapshot", "list", "--json", "-n", "1"},
+		{"duplicati-server-util", "health"},
+		{"systemctl", "show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "restic-backup.service"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "backup", "pc1", "pc1", "backuppc", "1"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "stop", "pc1"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "server", "reload"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "host(pc1)"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts", "x"},
+		{"runuser", "-u", "root", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"runuser", "-u", "backuppc", "--", "/tmp/BackupPC_serverMesg", "status", "hosts"},
+		{"runuser", "-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_dump", "-f", "pc1"},
+		{"/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
+		{"BackupPC_serverMesg", "backup", "pc1", "pc1", "backuppc", "1"},
+		{"rsnapshot", "alpha"},
+		{"rsnapshot", "du"},
+		{"rsnapshot", "diff", "alpha.0", "alpha.1"},
+		{"veeamconfig", "job", "start", "--name", "j"},
+		{"veeamconfig", "session", "stop", "--id", "1"},
+		{"veeamconfig", "session", "list", "--24"},
+		{"veeamconfig", "backup", "delete", "--id", "1"},
+		{"urbackupsrv", "remove-unknown"},
+		// The repository views: no call that locks, writes or deletes, no repository in an argument.
+		{"restic", "snapshots", "--json", "--latest", "1"},
+		{"restic", "snapshots", "--json", "--latest", "1", "--no-lock"},
+		{"restic", "-r", "/srv/restic", "snapshots", "--json", "--latest", "1", "--no-lock", "--no-cache"},
+		{"restic", "forget", "--prune", "--keep-last", "1"},
+		{"restic", "prune"},
+		{"restic", "unlock", "--remove-all"},
+		{"restic", "check"},
+		{"restic", "backup", "/"},
+		{"borg", "list", "--last", "1", "--json"},
+		{"borg", "list", "--last", "1", "--json", "--bypass-lock", "/srv/borg"},
+		{"borg", "info", "--json", "--bypass-lock"},
+		{"borg", "compact"},
+		{"borg", "break-lock"},
+		{"borg", "delete", "--force"},
+		{"borg", "prune", "--keep-last", "1"},
+		{"kopia", "maintenance", "run", "--full"},
+		{"kopia", "snapshot", "delete", "k1", "--delete"},
+		{"kopia", "snapshot", "list", "--json", "-n", "1", "--all"},
+		{"kopia", "repository", "disconnect"},
+		{"duplicati-server-util", "pause"},
+		{"duplicati-server-util", "run", "1"},
+		{"duplicati-server-util", "change-password", "x"},
+		{"systemctl", "show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "a.service", "b.service"},
+		{"systemctl", "show", "-p", "Environment", "--", "restic-backup.service"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
 	}
 }
