@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Katalog-Updates, Grabsteine für Modul-Checks, Fühler-Erweiterungen — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-20 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-20 · Review: pro Task
 Spec: docs/features/kern-monitoring-20.md (Roadmap R-1264, R-1301)
 Heavy: linux-full — Alembic-Migration im Monitoring-Dienst, neue Params und Zugänge im Agent (`apps/agent`), Desktop-Inbox; kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -117,3 +117,11 @@ Abhängt von: T3, T4, T5, T6, T7
   `skippedChecks`). Zeilen ohne Hash bekommen beim Start den heutigen, für alle Funde, ohne Angebot.
 - T9-Doku nennt: Übernehmen eines Updates ersetzt die Regeln (Schwellen) des Admins durch die des Katalogs (security-Nit T3).
 - T4: Laufen mehrere Container eines Dienstes (scale), nennt `containers` den ersten nach Namen; die Bindung meldet mehrere ohnehin in `skippedChecks`.
+
+### T10 — R-1301: Katalog-Tests erwarten den Container im compose-Fund  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_catalog_bitwarden.py apps/monitoring/tests/test_catalog_bookstack.py apps/monitoring/tests/test_catalog_collabora.py apps/monitoring/tests/test_catalog_frigate.py apps/monitoring/tests/test_catalog_gitea.py apps/monitoring/tests/test_catalog_gitlab.py apps/monitoring/tests/test_catalog_home_assistant.py apps/monitoring/tests/test_catalog_jitsi.py apps/monitoring/tests/test_catalog_keycloak.py apps/monitoring/tests/test_catalog_mattermost.py apps/monitoring/tests/test_catalog_moodle.py apps/monitoring/tests/test_catalog_nextcloud.py apps/monitoring/tests/test_catalog_odoo.py apps/monitoring/tests/test_catalog_onlyoffice.py apps/monitoring/tests/test_catalog_openldap.py apps/monitoring/tests/test_catalog_rocketchat.py apps/monitoring/tests/test_catalog_synapse.py apps/monitoring/tests/test_catalog_uptime_kuma.py apps/monitoring/tests/test_catalog_vaultwarden.py apps/monitoring/tests/test_catalog_wikijs.py apps/monitoring/tests/test_catalog_wordpress.py 
+Änderung: Die PR-CI (#528, Monitoring pytest) war rot: 22 Tests in 21 Katalog-Testdateien vergleichen die
+Zusammenfassung eines compose-Funds mit einem Dict ohne `containers` (R-1301, T-Abschnitt Container-Feld). Die
+Erwartungen nennen jetzt auch den gebundenen Container je Dienst; kein Test wird abgeschwächt.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_*.py
+Doku: keine (nur Tests)
