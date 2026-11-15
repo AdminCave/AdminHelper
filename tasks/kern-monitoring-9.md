@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Gebaut wird nach den Merges von kern-monitoring-8, -30, -14, -11 und -20 (`sensor_host.go`, `allowlist.go`,
 `sensors.py`, `sensor_local.go`); vor T1 `origin/main` in den Branch mergen.
 
-### T1 — R-1234: Ansichten systemd_timers und kernel_taint  [ ]
+### T1 — R-1234: Ansichten systemd_timers und kernel_taint  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/host_linux_extras.go, apps/agent/internal/probe/host_linux_extras_test.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ac6ddebce 2026-11-15T18:38:16+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T1.verdict.json)
 Änderung: `systemd_timers` (`systemctl list-timers --all`, dann `show -p Id,Result` der auslösenden Dienste; Zahl der
 Timer und der gescheiterten letzten Läufe) und `kernel_taint` (`/proc/sys/kernel/tainted` als Bits, Livepatches in
 Transition aus `/sys/kernel/livepatch/*/transition`, nur lesend). Neue Dateien mit SPDX-Header.
@@ -90,3 +92,6 @@ Abhängt von: T3, T5
 - Der `/healthz` des Gateways hört nur im Container auf `127.0.0.1:8081`; das Gateway prüfen `tls` auf 443 und der
   Container-Zustand.
 - Kevin 2026-11-14: T6/T7 wie empfohlen: neue Route `GET /health/detail` nur im Compose-Netz, `/health` bleibt unverändert; übrige Monitoring-Entscheidungen wie im Ledger vorgeschlagen.
+- T1: Timer über `systemctl list-units --type=timer --all --full --plain` statt `list-timers --all`: die Spalten von
+  `list-timers` sind Zeitangaben mit Leerzeichen, die JSON-Ausgabe braucht ein neueres systemd. Gezählt werden geladene,
+  aktive Timer; die ausgelösten Units fragt ein `show -p Id,Triggers`, ihr Ergebnis ein `show -p Id,Result`.

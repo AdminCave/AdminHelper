@@ -231,6 +231,10 @@ var commands = map[string][][]string{
 		{"list-units", "--type=service", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
 		{"list-unit-files", "--type=service", "--no-legend", "--no-pager"},
 		{"list-units", "--state=failed", "--no-legend", "--plain"},
+		// The timers and the last result of the units they trigger (probe, host_linux_extras.go).
+		{"list-units", "--type=timer", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
+		{"show", "-p", "Id,Triggers", "--", "<unit>..."},
+		{"show", "-p", "Id,Result", "--", "<unit>..."},
 		{"show", "-p", "Id,Names", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,ActiveState,MainPID", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", "--", "<unit>..."},
