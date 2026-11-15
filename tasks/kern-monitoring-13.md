@@ -50,8 +50,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_uni
 Doku: → T4
 Abhängt von: T1
 
-### T3 — R-1244: Lab-Test auf einer frisch installierten UOS-VM  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_unifi.go, apps/agent/internal/probe/app_unifi_test.go
+### T3 — R-1244: Lab-Test auf einer frisch installierten UOS-VM  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_unifi.go, apps/agent/internal/probe/app_unifi_test.go, apps/agent/internal/probe/app_unifi_linux.go, apps/agent/internal/probe/app_unifi_other.go, apps/agent/internal/probe/app_unifi_linux_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a643767d7 2026-11-15T11:18:38+01:00
+Review: approve (.ah-out/review/kern-monitoring-13/T3.verdict.json)
 Änderung:
 - Eine Box der Lane (Profil `linux-server`) bekommt UOS 5.1.42 linux-x64. Der Installer kommt von
   `fw-update.ui.com`, der sha256 wird geprüft. Die Box wird nicht aus einer UOS-VM geklont (Kevin 2026-11-15).
@@ -60,7 +62,7 @@ Komponente: agent · Dateien: apps/agent/internal/probe/app_unifi.go, apps/agent
 - Abweichungen in T1-Code und -Tests nachziehen. Der Docstring nennt die geprüfte Version.
 - Keine Box-IP und kein Key in Dateien.
 - Verlangt das Setup ein UI-Konto, wird die Task `[?]` mit Frage an Kevin.
-Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/
 Doku: → T4
 Abhängt von: T1
 

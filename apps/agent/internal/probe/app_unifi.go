@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	// unifiPort is the HTTPS port of a UniFi OS Server (not verified until the lab test).
+	// unifiPort is the HTTPS port of a UniFi OS Server (5.1.42).
 	unifiPort = 11443
 	// unifiBase is where the Network application serves its Integration API.
 	unifiBase = "/proxy/network/integration"
@@ -35,7 +35,22 @@ const (
 )
 
 // unifiEndpoint finds where the UniFi OS Server listens; tests point it at their server.
-var unifiEndpoint = resolve
+var unifiEndpoint = unifiResolve
+
+// unifiResolve is resolve, but a unit owns the listeners of unifiOwner: those of its rootless
+// Podman as well as its own.
+func unifiResolve(ctx context.Context, t Target) (endpoint, error) {
+	if t.Kind != kindUnit {
+		return resolve(ctx, t)
+	}
+	owns, err := unifiOwner(ctx, t.Name)
+	if err != nil {
+		return endpoint{}, err
+	}
+	return ruledEndpoint(ctx, t, func() func(listener) bool {
+		return func(l listener) bool { return owns(l.pid) }
+	})
+}
 
 // unifiUUID is the form of the ids of sites and devices; only ids of this form go into a path.
 const unifiUUID = `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`
@@ -181,7 +196,8 @@ var unifiOffline = []string{"OFFLINE", "CONNECTION_INTERRUPTED", "ISOLATED"}
 // Integration API v11.0.97 (developer.ui.com, OpenAPI): GET /v1/info, /v1/sites,
 // /v1/sites/{siteId}/devices (offset, limit ≤ 200, totalCount), /v1/sites/{siteId}/devices/{deviceId}
 // (uplink.deviceId), /v1/pending-devices, /v1/sites/{siteId}/clients. An offline device whose details
-// are not asked (more than unifiMaxDetails, or the request budget is spent) counts as a cause.
+// are not asked (more than unifiMaxDetails, or the request budget is spent) counts as a cause. Tested
+// against UniFi OS Server 5.1.42 with Network 10.5.67: the paths, the header and the pages as above.
 func unifiNetwork(ctx context.Context, t Target, c appCredential) (map[string]any, error) {
 	if name, ok := strings.CutPrefix(c.use, useHeader); !ok || !strings.EqualFold(name, unifiKeyHeader) {
 		return nil, fmt.Errorf("%w: view unifi_network takes its key in header %s", ErrInvalid, unifiKeyHeader)
