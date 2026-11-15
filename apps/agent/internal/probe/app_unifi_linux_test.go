@@ -23,13 +23,16 @@ const (
 	uosPastaCgroup = "/user.slice/user-1001.slice/user@1001.service/user.slice/podman-3052.scope"
 )
 
-// stubUOS puts in a systemd with the unit uosserver.service whose main process 100 runs as uid and
-// processes in the cgroups of cgroups.
+// stubUOS puts in a systemd with the unit uosserver.service whose main process 100 runs as uid in
+// the unit's cgroup (an entry 100 in cgroups replaces it) and processes in the cgroups of cgroups.
 func stubUOS(t *testing.T, uid string, cgroups map[int32]string) *tool {
 	t.Helper()
 	stubUnits(t, time.Minute)
 	tl := stubTool(t, "LoadState=loaded\nControlGroup="+uosUnitCgroup+"\nMainPID=100\n", nil)
-	files := map[string]string{"/proc/100/status": "Name:\tuosserver-servi\nUid:\t" + uid + "\t" + uid + "\t" + uid + "\t" + uid + "\n"}
+	files := map[string]string{
+		"/proc/100/status": "Name:\tuosserver-servi\nUid:\t" + uid + "\t" + uid + "\t" + uid + "\t" + uid + "\n",
+		"/proc/100/cgroup": "0::" + uosUnitCgroup + "\n",
+	}
 	for pid, cg := range cgroups {
 		files["/proc/"+strconv.Itoa(int(pid))+"/cgroup"] = "0::" + cg + "\n"
 	}
@@ -87,6 +90,18 @@ func TestUnifiOwnerTakesNoManagerWithoutTheMainProcess(t *testing.T) {
 	}
 	if owns(103) {
 		t.Error("a manager was taken although the user of the main process could not be read")
+	}
+}
+
+func TestUnifiOwnerTakesNoManagerOfAMainPidThatLeftTheUnit(t *testing.T) {
+	// The main process ended and its pid went to a process of user 1001 outside the unit.
+	stubUOS(t, "1001", map[int32]string{100: "/user.slice/user-1001.slice/session-3.scope", 103: uosPastaCgroup})
+	owns, err := unifiOwner(context.Background(), "uosserver.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owns(103) {
+		t.Error("a manager was taken for a main pid that no longer runs in the unit")
 	}
 }
 

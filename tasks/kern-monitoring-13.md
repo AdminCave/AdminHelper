@@ -78,8 +78,10 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T2, T3
 
-### T5 — R-1244: Hauptprozess der Unit vor dem Lesen seiner uid prüfen  [ ]
+### T5 — R-1244: Hauptprozess der Unit vor dem Lesen seiner uid prüfen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_unifi_linux.go, apps/agent/internal/probe/app_unifi_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @216010b32 2026-11-15T12:43:10+01:00
+Review: approve (.ah-out/review/kern-monitoring-13/T5.verdict.json)
 Änderung:
 - `unifiOwner` nimmt den Manager des Users nur, wenn der `MainPID` noch im cgroup der Unit läuft (`inCgroup`), sonst
   keinen Manager: eine wiederverwendete PID darf keinen fremden User-Manager freigeben (Prüfer-Nit T3).

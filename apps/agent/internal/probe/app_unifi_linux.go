@@ -28,13 +28,16 @@ func unifiOwner(ctx context.Context, name string) (func(pid int32) bool, error) 
 	if cg == "" || cg == "/" || main <= 0 {
 		return nil, fmt.Errorf("unit %s is not running: it %w", name, errNotListening)
 	}
+	inUnit := func(path string) bool { return path == cg || strings.HasPrefix(path, cg+"/") }
 	var manager string
-	if uid, ok := procUID(int32(main)); ok && uid != 0 {
+	// The cgroup is read after the uid: a main process that ended and whose pid went to another
+	// process meanwhile must not hand that process's user manager the key.
+	if uid, ok := procUID(int32(main)); ok && uid != 0 && inCgroup(int32(main), inUnit) {
 		manager = fmt.Sprintf("/user.slice/user-%d.slice/user@%d.service/", uid, uid)
 	}
 	return func(pid int32) bool {
 		return inCgroup(pid, func(path string) bool {
-			return path == cg || strings.HasPrefix(path, cg+"/") || (manager != "" && strings.HasPrefix(path, manager))
+			return inUnit(path) || (manager != "" && strings.HasPrefix(path, manager))
 		})
 	}, nil
 }
