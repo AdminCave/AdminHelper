@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Check-Status info — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-17 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-17 · Review: pro Task
 Spec: docs/features/kern-monitoring-17.md (Roadmap R-1280)
 Heavy: linux-full — neuer Status in Monitoring-API und Desktop-Journeys (Übersicht, Verlauf), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -50,6 +50,13 @@ Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monito
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @abb61523c 2026-11-15T17:38:21+01:00
 Review: am Ende (nur Doku, Branch-Review)
 Änderung: Status-Abschnitt (fünfter Status `info`, Farbe, Ampel, Zählung), Alert-Regeln (Entwarnung auf `info`, stille Wechsel), OPNsense-Tabelle (Regeln der Version 2), Werte von `monitor_check_status` (4 info); Changelog-Fragment.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: die Dateien dieser Task
+Task-Review: am Ende
+
+### T6 — Entwickler-Doku: info in Zählern, Checker-Vertrag und Alert-Pipeline (R-1280)  [ ]
+Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Fund der Abschlussprüfung: `next_ok_count()`/`holds_recovery()` zählen `info` wie `ok`, der Checker-Vertrag nennt `info`, die Alert-Pipeline nennt die Umsetzung `info → ok` (`alert_status`); Admin-Doku: eine warning-/critical-Regel ohne Wert macht den Check `unknown`, auch wenn eine info-Regel hält.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Dateien dieser Task
 Task-Review: am Ende
