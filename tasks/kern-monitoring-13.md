@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # UniFi OS Server lokal — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-13 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-13 · Review: pro Task
 Spec: docs/features/kern-monitoring-13.md (Roadmap R-1244)
 Heavy: linux-full — neue Ansicht und HTTP-Client im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -66,8 +66,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T4
 Abhängt von: T1
 
-### T4 — Doku DE+EN und CHANGELOG  [ ]
+### T4 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-13.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5a6753d6f 2026-11-15T13:18:51+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - Admin-Doku: Modul `unifi-os-server` (Key anlegen: erbt die Rechte des anlegenden Admins, braucht Network-Vollzugriff,
   ein View-Only-Key ist nicht möglich; hinterlegen per Desktop, was gesendet wird, nicht abgedeckt).
