@@ -11,7 +11,7 @@ DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku i
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 ### T1 — R-1388: HTTP-Sensor mit Parameter `accept`  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_http_test.go
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go
 Änderung: `knownParams` nimmt `accept` an, einziger Wert `application/json` (sonst `invalid`); gesetzt schickt der
 Agent den Header `Accept: application/json`. Test: der Header kommt beim Ziel an, ein anderer Wert ist `invalid`,
 ohne den Parameter kein `Accept`-Header.
