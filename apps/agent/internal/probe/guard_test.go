@@ -406,7 +406,8 @@ func TestGuardNeverProbesAPortAForwarderListensOn(t *testing.T) {
 		{"127.0.0.1:8001", "belongs to rootlesskit"},
 		{"127.0.0.1:8002", "belongs to rootlessport"},
 		{"127.0.0.1:8003", "belongs to slirp4netns"},
-		{"127.0.0.1:8004", "belongs to pasta.avx2"},
+		// pasta is judged by its arguments; this one tells none (TestGuardJudgesPastaByItsArguments).
+		{"127.0.0.1:8004", "port forwarder pasta.avx2 on port 8004 cannot be read"},
 		{"127.0.0.1:8005", "belongs to passt"},
 		{"127.0.0.1:8006", "belongs to kube-proxy"},
 		{"127.0.0.1:8007", "belongs to socat"},
@@ -856,6 +857,89 @@ func TestGuardJudgesTheContainerBehindADockerProxy(t *testing.T) {
 	inside.Unlock()
 	if err := allowed(g, "tcp4", "127.0.0.1:18080"); err != nil {
 		t.Fatalf("a server in the container behind a docker-proxy: %v, want it allowed", err)
+	}
+}
+
+// uosPasta is the argv of the pasta of UniFi OS Server 5.1.42 (addresses and the namespace path
+// replaced by placeholders).
+var uosPasta = []string{"/var/lib/uosserver/bin/pasta", "--config-net", "-t", "5671-5671:5671-5671",
+	"-t", "8880-8882:8880-8882", "-t", "11443-11443:443-443", "-u", "3478-3478:3478-3478",
+	"-t", "127.0.0.1/11084-11084:11084-11084", "--ns-ifname", "eth0", "--map-host-loopback", "192.0.2.1",
+	"-T", "none", "-U", "none", "--no-map-gw", "--netns", "/run/user/1001/netns/netns-0"}
+
+func TestGuardJudgesPastaByItsArguments(t *testing.T) {
+	stubHost(t, &fakeHost{
+		list: []listener{lst("0.0.0.0", 11443, 50), lst("0.0.0.0", 2222, 51), lst("0.0.0.0", 8443, 52),
+			lst("0.0.0.0", 8444, 53)},
+		names: map[int32]string{50: "pasta", 51: "pasta.avx2", 52: "pasta", 53: "passt"},
+		args: map[int32][]string{
+			50: uosPasta,
+			51: {"pasta", "--config-net", "-t", "2222:22"},
+			52: {"pasta", "-t", "all"},
+			53: {"passt", "-t", "8444:443"},
+		},
+	})
+	g := NewGuard()
+	if err := allowed(g, "tcp4", "127.0.0.1:11443"); err != nil {
+		t.Errorf("the pasta of the UniFi OS Server: %v, want it allowed", err)
+	}
+	for _, c := range []struct{ address, want string }{
+		{"127.0.0.1:2222", "forwards to port 22 of a namespace"},
+		{"127.0.0.1:8443", "does not tell one port"},
+		{"127.0.0.1:8444", "belongs to passt"},
+	} {
+		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want it refused: %s", c.address, err, c.want)
+		}
+	}
+}
+
+func TestPastaPortReadsOnlyPlainRules(t *testing.T) {
+	v4, v6 := netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("::1")
+	for _, c := range []struct {
+		args []string
+		ip   netip.Addr
+		port uint16
+		to   uint16
+		ok   bool
+	}{
+		{uosPasta, v4, 11443, 443, true},
+		{uosPasta, v4, 8881, 8881, true},
+		{uosPasta, v4, 11084, 11084, true},
+		// The rule of 11084 listens on 127.0.0.1 alone.
+		{uosPasta, v6, 11084, 0, false},
+		{uosPasta, v4, 3478, 0, false}, // UDP
+		{uosPasta, v4, 9999, 0, false},
+		{[]string{"pasta", "--tcp-ports=8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "--tcp-ports", "8080:80,9090"}, v4, 9090, 9090, true},
+		{[]string{"pasta", "-t8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-t", "*/8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-t", "%eth0/8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-t", "0.0.0.0/8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-t", "none", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-t", "8000-8100:9000-9100"}, v4, 8080, 9080, true},
+		// Not plain: all, auto, exclusions, a target address, a range of another length, no value.
+		{[]string{"pasta", "-t", "all"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "auto"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8000-8100,~22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8080:192.0.2.5/80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8080:192.0.2.5"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8000-8100:9000-9050"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8080:0"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t"}, v4, 8080, 0, false},
+		// A control socket for pesto: the forwards may change at run time.
+		{[]string{"pasta", "-c", "/run/p.sock", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-c/run/p.sock", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8080:80", "--conf-path", "/run/p.sock"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--conf-path=/run/p.sock", "-t", "8080:80"}, v4, 8080, 0, false},
+		// Two rules that disagree, one after "--" that does not count.
+		{[]string{"pasta", "-t", "8080:80", "-t", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "8080:80", "--", "-t", "8080:22"}, v4, 8080, 80, true},
+	} {
+		to, ok := pastaPort(c.args, c.ip, c.port)
+		if to != c.to || ok != c.ok {
+			t.Errorf("%v %v:%d = %d, %v; want %d, %v", c.args, c.ip, c.port, to, ok, c.to, c.ok)
+		}
 	}
 }
 

@@ -90,8 +90,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (Verhalten unverändert für eine laufende Unit)
 Abhängt von: T3
 
-### T6 — R-1244: Guard prüft pasta wie docker-proxy  [ ]
+### T6 — R-1244: Guard prüft pasta wie docker-proxy  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c2b31eb1b 2026-11-15T12:55:57+01:00
+Review: approve (.ah-out/review/kern-monitoring-13/T6.verdict.json)
 Änderung:
 - pasta (rootless Podman, auch UOS) wird nicht mehr pauschal als Weiterleiter abgelehnt, sondern wie `checkProxy`
   geprüft: aus den `-t`/`--tcp-ports`-Angaben seiner argv den Zielport des gewählten Ports lesen; `blockedPort` des
@@ -130,3 +132,6 @@ Abhängt von: T6
   A2 (alle Lauscher im netns prüfen). Restrisiko: ein gefälschter pasta-Prozess ist gleichwertig zu einem umbenannten
   Weiterleiter; die Entscheidung trifft Kevin (T6).
 - Kevin 2026-11-15: Restrisiko pasta-Guard „Hinnehmen“ (gefälschter pasta wie umbenannter docker-proxy); T6/T7 bauen.
+- Lab T6/T7 (UOS 5.1.42, VM der Lane, 2026-11-15): mit der pasta-Prüfung lässt der Guard 11443 auf 127.0.0.1 und ::1
+  zu; die Ansicht `unifi_network` liefert ihre Zahlen (sites=1), ein falscher Key ergibt 401 → denied. Die argv des
+  UOS-pasta trägt auch eine Regel mit Listen-Adresse (`<addr>/11084…`): der Parser liest `addr/ports`.
