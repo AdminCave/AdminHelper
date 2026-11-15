@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Nextcloud All-in-One und die Last der Jitsi-Bridge — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-33 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-33 · Review: pro Task
 Spec: docs/features/kern-monitoring-33.md (Roadmap R-1383, R-1388)
 Heavy: linux-full — neue Ansicht und neuer HTTP-Parameter im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_nex
 Doku: → T5
 Abhängt von: T3
 
-### T5 — Doku DE+EN und CHANGELOG  [ ]
+### T5 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-33.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @af8076c35 2026-11-15T09:34:52+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Modul `nextcloud-aio` (was es prüft, Backup-Fenster, nicht abgedeckt: `status.php`), `jitsi-videobridge`
 mit Last und dem Nein zu Jicofo; Ansicht und Parameter `accept` in der Entwickler-Doku; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict
@@ -68,3 +70,5 @@ Abhängt von: T2, T4
 ## Entscheidungen
 - Kein HTTP-Check auf `status.php` von AIO (Spec, Nicht-Ziele): er stünde jede Nacht im Backup-Fenster rot. Die
   Bedingung über Checks hinweg wird eine Roadmap-Zeile `neu`.
+- `inspectAllContainers` ist eine dritte Kopie von `docker ps --all` + `inspect` + `goneSince` (wie `dockerPublications`,
+  `wpDBContainer`); das Zusammenführen ist eigene Arbeit (R-1516), nicht Teil dieses Zugs.
