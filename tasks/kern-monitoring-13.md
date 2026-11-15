@@ -10,8 +10,10 @@ Heavy: linux-full — neue Ansicht und HTTP-Client im Agent (`apps/agent`), kein
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1244: GET-only-Client und Ansicht `unifi_network`  [ ]
+### T1 — R-1244: GET-only-Client und Ansicht `unifi_network`  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_unifi.go, apps/agent/internal/probe/app_unifi_test.go, apps/agent/internal/probe/sensor_app.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @09be28829 2026-11-15T10:33:36+01:00
+Review: approve (.ah-out/review/kern-monitoring-13/T1.verdict.json)
 Änderung:
 - Neue Dateien mit SPDX-Header.
 - Client über `secretGuard`: nur `GET`, Pfade nur aus der Freigabeliste der Spec, `CheckRedirect` endet mit
