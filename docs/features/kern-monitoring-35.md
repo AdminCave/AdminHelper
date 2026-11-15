@@ -98,6 +98,7 @@ Freigaben), DE+EN; `THIRD_PARTY_LICENSES.md`; Changelog.
 
 ## Offene Fragen
 
-- An Kevin: R-1424 und R-1434 brauchen einen Vergleich über Hosts auf dem Monitoring-Server (neuer Mechanismus,
-  neue Wertform). Empfehlung: eigenes Architektur-Vorhaben (`start-session.sh arch`); bis dahin geplant in
-  `tasks/kern-monitoring-36.md`.
+- Beantwortet: R-1424 und R-1434 (Vergleich über Hosts) hat Kevin am 2026-11-15 zurückgestellt; sie sind in keinem
+  Zug geplant.
+- Abweichung beim Bau (Ledger `## Entscheidungen`, T2): ungesetzte `WORDPRESS_DB_HOST`, `_NAME` und
+  `WORDPRESS_TABLE_PREFIX` nehmen die Voreinstellungen von `wp-config-docker.php`, so wie WordPress im Container.
