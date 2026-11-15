@@ -8,9 +8,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -196,5 +198,79 @@ func TestTheAIOViewAsksARunningMastercontainer(t *testing.T) {
 func TestTheAIOViewIsAViewOfContainers(t *testing.T) {
 	if v, ok := appViews["nextcloud_aio"]; !ok || !slices.Equal(v.kinds, containerKinds) {
 		t.Errorf("appViews[nextcloud_aio] = %+v, want a view of containers", v)
+	}
+}
+
+// aioID is the ID aioInspect gives the container named name.
+func aioID(name string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(name))) }
+
+// stubAIOTools answers docker ps with the answers in turn (the last one repeats) and docker inspect with
+// inspect.
+func stubAIOTools(t *testing.T, inspect func() ([]byte, error), ps ...func() ([]byte, error)) {
+	t.Helper()
+	old := runTool
+	runTool = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "ps":
+			answer := ps[0]
+			if len(ps) > 1 {
+				ps = ps[1:]
+			}
+			return answer()
+		case "inspect":
+			return inspect()
+		}
+		t.Errorf("unexpected call %v", args)
+		return nil, errors.New("unexpected")
+	}
+	t.Cleanup(func() { runTool = old })
+}
+
+func aioPS(names ...string) func() ([]byte, error) {
+	return func() ([]byte, error) {
+		var ids []string
+		for _, n := range names {
+			ids = append(ids, aioID(n))
+		}
+		return []byte(strings.Join(ids, "\n") + "\n"), nil
+	}
+}
+
+func TestInspectAllContainersFailsWhereDockerFails(t *testing.T) {
+	ok := func() ([]byte, error) { return []byte("[]"), nil }
+	for name, c := range map[string]struct {
+		ps      func() ([]byte, error)
+		inspect func() ([]byte, error)
+	}{
+		"docker ps fails":             {func() ([]byte, error) { return nil, errors.New("no daemon") }, ok},
+		"docker inspect cannot start": {aioPS("a"), func() ([]byte, error) { return nil, errors.New("no docker") }},
+		"docker inspect fails without an answer": {aioPS("a"), func() ([]byte, error) {
+			return []byte("Error: daemon gone"), &exec.ExitError{}
+		}},
+		"docker inspect answers in another form": {aioPS("a"), func() ([]byte, error) { return []byte("{}"), nil }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubAIOTools(t, c.inspect, c.ps)
+			if got, err := inspectAllContainers(context.Background()); err == nil {
+				t.Errorf("inspectAllContainers = %v, nil; want an error", got)
+			}
+		})
+	}
+}
+
+func TestInspectAllContainersTakesOnlyAContainerRemovedSinceDockerPs(t *testing.T) {
+	// docker prints what it found and ends with exit 1 for the rest.
+	partial := func() ([]byte, error) {
+		return []byte("[" + aioInspect(t, "a", "running", "unless-stopped", 0) + "]"), &exec.ExitError{}
+	}
+	stubAIOTools(t, partial, aioPS("a", "b"), aioPS("a"))
+	got, err := inspectAllContainers(context.Background())
+	if err != nil || len(got) != 1 || got[0].ID != aioID("a") {
+		t.Fatalf("a container removed since docker ps = %v, %v; want the other one", got, err)
+	}
+
+	stubAIOTools(t, partial, aioPS("a", "b"))
+	if got, err := inspectAllContainers(context.Background()); err == nil {
+		t.Errorf("a container docker inspect skipped but docker ps still lists = %v, nil; want an error", got)
 	}
 }

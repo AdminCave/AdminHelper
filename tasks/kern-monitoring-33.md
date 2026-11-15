@@ -67,8 +67,10 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T2, T4
 
-### T6 — Fehlerpfade von `inspectAllContainers` (Abschlussprüfung)  [ ]
+### T6 — Fehlerpfade von `inspectAllContainers` (Abschlussprüfung)  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_nextcloud_aio_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a592c1f55 2026-11-15T09:59:06+01:00
+Review: approve (.ah-out/review/kern-monitoring-33/T6.verdict.json)
 Änderung: Tests nach dem Vorbild von `wpDBContainer`: `docker ps` scheitert, `inspect` scheitert ohne lesbare
 Antwort, Teilantwort mit `ExitError` (ein seit `docker ps` entfernter Container wird genommen, einer, den `docker ps`
 weiter nennt, ist ein Fehler, `goneSince`).
