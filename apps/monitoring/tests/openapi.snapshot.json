@@ -2723,6 +2723,10 @@
             "title": "Critical",
             "type": "integer"
           },
+          "info": {
+            "title": "Info",
+            "type": "integer"
+          },
           "lastResultAt": {
             "anyOf": [
               {
@@ -2773,6 +2777,7 @@
           "critical",
           "unknown",
           "pending",
+          "info",
           "lastResultAt",
           "minIntervalS"
         ],

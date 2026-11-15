@@ -1250,6 +1250,10 @@ body {
 .mon-unknown {
   background: var(--text-muted);
 }
+/* .mon-info alone is also a container class in MonitoringTab. */
+.mon-dot.mon-info {
+  background: var(--info);
+}
 .mon-pending {
   background: var(--text-muted);
   opacity: 0.5;

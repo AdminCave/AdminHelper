@@ -25,6 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     1: 'var(--warning)',
     2: 'var(--danger)',
     3: 'var(--text-muted)',
+    4: 'var(--info)',
   };
 
   let segments = $derived.by<Segment[]>(() => {

@@ -86,7 +86,8 @@ export interface ServerInput {
   notes: string;
 }
 
-export type MonStatus = 'ok' | 'warning' | 'critical' | 'unknown' | 'pending';
+// info: a hint without an alarm (R-1280); host and group lights count it like ok.
+export type MonStatus = 'ok' | 'info' | 'warning' | 'critical' | 'unknown' | 'pending';
 
 export interface MonCheckSummary {
   id: string;
@@ -578,6 +579,7 @@ export interface MonitoringStatusSummary {
   critical: number;
   unknown: number;
   pending: number;
+  info: number;
   lastResultAt: string | null;
   minIntervalS: number | null;
 }

@@ -5,15 +5,15 @@
 """An OPNsense firewall, read through the agent's opnsense sensor (R-1248).
 
 The agent of the os-adminhelper plugin asks configd, without an API key: one check per
-view of the sensor. An available update and the CARP maintenance mode carry no rule
-(Kevin 2026-11-10): the card and the check details show them, the status stays ok. A
+view of the sensor. An available update (with or without a reboot) and the CARP
+maintenance mode are hints of level info (Kevin 2026-11-10, R-1280): blue, no alarm. A
 pending reboot is the system checker's (reboot_required), not this module's.
 """
 
 MODULE = {
     "id": "opnsense",
     "name": "OPNsense",
-    "version": 1,
+    "version": 2,
     "description": (
         "An OPNsense firewall with the os-adminhelper plugin: services, gateways, the "
         "firmware, the state table and CARP, read through configd without an API key."
@@ -77,6 +77,10 @@ MODULE = {
                 "major_upgrade",
                 "check_age_s",
             ],
+            "rules": [
+                {"field": "update_available", "op": "eq", "value": True, "level": "info"},
+                {"field": "update_reboot", "op": "eq", "value": True, "level": "info"},
+            ],
         },
         {
             "key": "states",
@@ -102,6 +106,7 @@ MODULE = {
             "rules": [
                 {"field": "init", "op": "gt", "value": 0, "level": "critical"},
                 {"field": "demotion", "op": "gt", "value": 0, "level": "warning"},
+                {"field": "maintenance", "op": "eq", "value": True, "level": "info"},
             ],
         },
     ],

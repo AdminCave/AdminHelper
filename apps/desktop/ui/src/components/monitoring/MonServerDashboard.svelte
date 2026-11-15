@@ -23,7 +23,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     adoptAllFindings,
     dismissFinding,
   } from '$lib/stores/monitoring';
-  import { STATUS_PRIORITY, computeSummary, worstStatus } from '$lib/models/monitoring';
+  import { STATUS_PRIORITY, cardStatus, computeSummary, worstStatus } from '$lib/models/monitoring';
   import { adoptNoteLines, ageText, cardNote, cardSummary } from '$lib/models/monitoringText';
   import type { MonitorCheck, MonitorCheckType, MonitorFinding } from '$lib/api/types';
   import { Plus, RefreshCw, TriangleAlert, Wrench, X } from '@lucide/svelte';
@@ -89,6 +89,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let worstLabel = $derived(
     {
       ok: $t('monitoring.status.ok'),
+      info: $t('monitoring.status.info'),
       warning: $t('monitoring.status.warning'),
       critical: $t('monitoring.status.critical'),
       unknown: $t('monitoring.status.unknown'),
@@ -263,7 +264,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {:else}
     <MonCard
       title={cardTitle(card.kind)}
-      status={worstStatus(card.checks)}
+      status={cardStatus(card.checks)}
       summary={cardSummary($t, card.checks)}
       note={cardNote($t, card.checks)}
     >
@@ -329,6 +330,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <Pill tone="warn">{summary.warning} {$t('monitoring.status.warning')}</Pill>
           {/if}
           <Pill tone="ok">{summary.ok} {$t('monitoring.status.ok')}</Pill>
+          {#if summary.info > 0}
+            <Pill tone="info">{summary.info} {$t('monitoring.status.info')}</Pill>
+          {/if}
           {#if summary.unknown > 0}
             <Pill>{summary.unknown} {$t('monitoring.status.unknown')}</Pill>
           {/if}

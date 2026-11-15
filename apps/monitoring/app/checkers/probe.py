@@ -46,7 +46,8 @@ _NOT_RUN: dict[str, tuple[str, str]] = {
     "ambiguous_target": ("unknown", "Target listens on several ports and none matches the hint"),
     "invalid": ("unknown", "Agent rejected the probe parameters"),
 }
-_LEVELS = {"warning": 1, "critical": 2}
+_LEVELS = {"info": 0, "warning": 1, "critical": 2}
+_LEVEL_NAMES = {n: name for name, n in _LEVELS.items()}
 _COMPARE = {"lt": operator.lt, "le": operator.le, "gt": operator.gt, "ge": operator.ge}
 
 
@@ -176,15 +177,22 @@ def _rate(rules: object, values: dict, baseline: dict | None, ts: float) -> tupl
         value = values.get(field)
         before = (baseline or {}).get(field)
         holds = _rule_holds(rule, value, before, ts)
+        if holds is None and rule.get("level") == "info":
+            # A hint never makes a check worse than info: no value, no hint (OPNsense sends
+            # update_available only after an update check).
+            continue
         if holds is None:
             unrated.append(f"{field}: no usable value in the probe result")
         elif holds:
             held.append(_rule_text(rule, value, before, ts))
             worst = max(worst, _LEVELS.get(rule.get("level"), _LEVELS["critical"]))
-    if held:
-        return ("critical" if worst == _LEVELS["critical"] else "warning"), held
+    # A held info rule must not hide a rule without a value: unknown ranks above info.
+    if held and worst > _LEVELS["info"]:
+        return _LEVEL_NAMES[worst], held
     if unrated:
         return "unknown", unrated
+    if held:
+        return "info", held
     return "ok", []
 
 

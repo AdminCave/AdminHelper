@@ -27,6 +27,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="mon-summary-label">{$t('monitoring.status.ok')}</div>
     </div>
   </div>
+  <div class="mon-summary-card mon-summary-info">
+    <Dot st="info" size={10} ring />
+    <div>
+      <div class="mon-summary-value">{summary.info}</div>
+      <div class="mon-summary-label">{$t('monitoring.status.info')}</div>
+    </div>
+  </div>
   <div class="mon-summary-card mon-summary-warning">
     <Dot st="warning" size={10} ring />
     <div>

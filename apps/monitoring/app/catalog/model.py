@@ -138,7 +138,8 @@ class Rule(_Model):
     # value percent since the run before (a backup file half the size of the last one).
     op: Literal["eq", "ne", "lt", "le", "gt", "ge", "in", "max_age", "delta_gt", "drop_pct_gt"]
     value: _Scalar | list[_Scalar]
-    level: Literal["warning", "critical"]
+    # info: a hint without an alarm (R-1280): the check shows it, nothing notifies.
+    level: Literal["info", "warning", "critical"]
 
     @model_validator(mode="after")
     def _value_fits_op(self) -> Rule:

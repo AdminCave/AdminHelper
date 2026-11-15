@@ -140,6 +140,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (status === 'critical') return 'var(--danger)';
     if (status === 'warning') return 'var(--warning)';
     if (status === 'ok') return 'var(--success)';
+    if (status === 'info') return 'var(--info)';
     return 'var(--text-muted)';
   }
 
