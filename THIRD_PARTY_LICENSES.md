@@ -97,6 +97,8 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 |---|---|
 | github.com/spf13/cobra | Apache-2.0 |
 | github.com/spf13/pflag | BSD-3-Clause |
+| github.com/go-sql-driver/mysql | MPL-2.0 |
+| filippo.io/edwards25519 | BSD-3-Clause |
 | github.com/shirou/gopsutil/v4 | BSD-3-Clause |
 | github.com/tklauser/numcpus | Apache-2.0 |
 | gopkg.in/natefinch/lumberjack.v2 | MIT |
@@ -117,7 +119,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 | github.com/go-ole/go-ole | MIT |
 | github.com/yusufpapurcu/wmi | MIT |
 
-**Auflagen-relevant:** Apache-2.0 (NOTICE) — `cobra`, `numcpus`, `mousetrap`.
+**Auflagen-relevant:** Apache-2.0 (NOTICE) — `cobra`, `numcpus`, `mousetrap`; MPL-2.0 — `go-sql-driver/mysql`.
 
 ## 3. Rust — Desktop-Client (`apps/desktop/src-tauri/`, Tauri 2)
 
@@ -274,8 +276,8 @@ jeweiligen Paket) gehören zur Distribution.
 
 ### MPL-2.0
 
-`MPL-2.0` betrifft `certifi` (Python, Server + Monitoring) sowie im
-Rust-Graphen `cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext` und
+`MPL-2.0` betrifft `certifi` (Python, Server + Monitoring), im Agent
+`github.com/go-sql-driver/mysql` (Go) sowie im Rust-Graphen `cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext` und
 `selectors`. Auflage: Der jeweilige MPL-Quelltext (unverändert) bzw. der
 Verweis darauf ist in der Distribution mitzuführen; die MPL-Dateien bleiben
 unter MPL, ohne die GPL-Gesamtlizenz zu berühren.

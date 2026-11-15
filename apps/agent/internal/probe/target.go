@@ -374,14 +374,20 @@ type containerInfo struct {
 		NetworkMode string
 	}
 	// Config.Labels holds the labels of docker compose among others: its label
-	// com.docker.compose.project.working_dir names the directory of the project.
+	// com.docker.compose.project.working_dir names the directory of the project. Config.Env holds
+	// "KEY=value" pairs, secrets among them: no error and no value quotes it.
 	Config struct {
+		Image  string
 		Labels map[string]string
+		Env    []string
 	}
 	NetworkSettings struct {
+		// Aliases and DNSNames are the names other containers of the network reach the container by.
 		Networks map[string]struct {
 			IPAddress         string
 			GlobalIPv6Address string
+			Aliases           []string
+			DNSNames          []string
 		}
 		// Ports maps "<port>/<proto>" of the container to the host ports docker publishes it on.
 		Ports map[string][]struct {

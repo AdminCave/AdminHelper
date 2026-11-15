@@ -135,6 +135,7 @@ var appViews = map[string]appView{
 	"wg_peers":          {kinds: unitKinds, read: wgPeers},
 	"web_config":        {kinds: unitKinds, read: webConfig},
 	"web_vhost_cert":    {kinds: vhostKinds, read: webVhostCert},
+	"wordpress_cron":    {kinds: containerKinds, read: wordpressCron},
 	"wordpress_version": {kinds: containerKinds, read: wordpressVersion},
 	"wsus":              {kinds: unitKinds, read: wsusState},
 }

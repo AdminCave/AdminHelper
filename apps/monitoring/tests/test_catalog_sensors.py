@@ -206,6 +206,7 @@ def test_the_app_views_are_those_the_agent_returns():
             "monitor",
             "refreshing",
         ],
+        "wordpress_cron": ["events", "oldest_overdue_s", "overdue"],
         "wordpress_version": ["version"],
         "wg_peers": [
             "interfaces",
@@ -392,6 +393,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "bbb_meetings": ["unit"],
         "bbb_recordings": ["unit"],
         "ldap_replication": ["unit"],
+        "wordpress_cron": ["container"],
         "wordpress_version": ["container"],
         "wg_peers": ["unit"],
         "fail2ban": ["unit"],

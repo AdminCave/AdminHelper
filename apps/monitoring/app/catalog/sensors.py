@@ -98,6 +98,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"contexts", "csn_age_s", "monitor", "consumers", "disconnected", "refreshing"}
     ),
     "wordpress_version": frozenset({"version"}),
+    "wordpress_cron": frozenset({"events", "overdue", "oldest_overdue_s"}),
     "wg_peers": frozenset(
         {
             "interfaces",
@@ -343,6 +344,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "bbb_recordings": _UNIT,
     "ldap_replication": _UNIT,
     "wordpress_version": _CONTAINER,
+    "wordpress_cron": _CONTAINER,
     "wg_peers": _UNIT,
     "fail2ban": _UNIT,
     "crowdsec_bouncers": _UNIT,
@@ -666,6 +668,7 @@ class AppParams(_Params):
         "bbb_recordings",
         "ldap_replication",
         "wordpress_version",
+        "wordpress_cron",
         "wg_peers",
         "fail2ban",
         "crowdsec_bouncers",
