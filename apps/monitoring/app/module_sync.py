@@ -272,6 +272,11 @@ def probe_config(
                 port_hint = summary.get("port")
             if port_hint is None:
                 return None, "no port for this instance"
+        elif t.kind == "vhost":
+            # The vhost's own port: the agent finds the vhost again by its name and port.
+            name, port_hint = key, summary.get("port")
+            if port_hint is None:
+                return None, "no port for this vhost"
         elif t.kind != "loopback":
             name, why = _target_name(
                 module, t.kind, t.service, key, summary, containers, t.image_fallback

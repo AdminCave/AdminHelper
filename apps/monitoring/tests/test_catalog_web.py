@@ -3,14 +3,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The catalog modules of a web host (R-1231): nginx, apache, haproxy, php_fpm, pm2, varnish,
-proftpd and cloudpanel. Their unit or marker finds them, each check asks its view, and each
-rule fires at its threshold and not without it."""
+proftpd and cloudpanel, and web_domain for the TLS vhosts (R-1435). Their unit, marker or vhost
+finds them, each check asks its view, and each rule fires at its threshold and not without it."""
 
 from datetime import UTC, datetime
 
 import pytest
 
 from app.catalog.loader import load_catalog
+from app.check_configs import ProbeConfig
 from app.checkers.probe import ProbeChecker
 from app.discovery import clean_inventory, match_inventory
 from app.module_sync import probe_config
@@ -29,10 +30,11 @@ UNITS = {
     "varnish": "varnish.service",
     "proftpd": "proftpd.service",
 }
-MODULES = (*UNITS, "cloudpanel")
+MODULES = (*UNITS, "cloudpanel", "web_domain")
+VHOST_SUMMARY = {"server": "nginx", "port": 8443, "tls": True}
 
 
-def _inventory(units=(), markers=None, state="running"):
+def _inventory(units=(), markers=None, state="running", vhosts=()):
     return clean_inventory(
         {
             "ts": T0,
@@ -43,6 +45,7 @@ def _inventory(units=(), markers=None, state="running"):
             "containers": [],
             "markers": markers or {},
             "ports": [],
+            "vhosts": list(vhosts),
         }
     )
 
@@ -62,7 +65,8 @@ def _check(module_id, check_key):
 def _config(module_id, check_key):
     module = CATALOG.modules[module_id]
     key = UNITS.get(module_id, module_id)
-    config, why = probe_config(module, _check(module_id, check_key), key, {}, [])
+    summary = VHOST_SUMMARY if module.instance == "vhost" else {}
+    config, why = probe_config(module, _check(module_id, check_key), key, summary, [])
     assert why is None, why
     return {**config, "_check_id": "chk"}
 
@@ -207,6 +211,7 @@ def test_a_cloudpanel_host_has_its_services_modules_too():
         ("apache", "status", "apache_status", 300),
         ("haproxy", "config", "web_config", 86400),
         ("haproxy", "servers", "haproxy_servers", 300),
+        ("haproxy", "certs", "haproxy_certs", 86400),
         ("php_fpm", "pools", "fpm_pools", 300),
         ("pm2", "apps", "pm2_apps", 300),
     ],
@@ -336,3 +341,115 @@ def test_the_panel_certificate_warns_three_weeks_ahead(days_left, want):
         "chain_ok": True,
     }
     assert _status("cloudpanel", "certificate", **values) == want
+
+
+@pytest.mark.parametrize(("change", "want"), [({}, "ok"), ({"expiring_14d": 1}, "warning")])
+def test_haproxy_warns_for_a_certificate_that_ends_within_14_days(change, want):
+    values = {"certs": 3, "min_days_left": 40, "expiring_14d": 0, **change}
+    assert _status("haproxy", "certs", **values) == want
+
+
+def test_haproxy_without_certificates_is_fine():
+    # The agent tells no min_days_left without a certificate; no rule may need it.
+    assert _status("haproxy", "certs", certs=0, expiring_14d=0) == "ok"
+
+
+def _vhost(name, port=443, tls=True, server="nginx", app=""):
+    return {"server": server, "name": name, "port": port, "tls": tls, "app": app}
+
+
+def test_each_tls_vhost_is_a_web_domain_named_after_it():
+    inv = _inventory(
+        units=["nginx.service"],
+        vhosts=[
+            _vhost("cloud.example.org"),
+            _vhost("lms.example.org", port=8443, server="apache", app="moodle"),
+            _vhost("www.example.org", port=80, tls=False),
+        ],
+    )
+    seen = match_inventory(inv, CATALOG)
+    assert _instances(inv, "web_domain") == ["cloud.example.org", "lms.example.org"]
+    assert seen[("web_domain", "lms.example.org")] == {
+        "server": "apache",
+        "port": 8443,
+        "tls": True,
+    }
+    # The web server keeps its own module beside its domains.
+    assert _instances(inv, "nginx") == ["nginx.service"]
+
+
+def test_without_tls_vhosts_there_is_no_web_domain():
+    assert _instances(_inventory(units=["nginx.service"]), "web_domain") == []
+    plain = _inventory(vhosts=[_vhost("www.example.org", port=80, tls=False)])
+    assert _instances(plain, "web_domain") == []
+
+
+@pytest.mark.parametrize("check_key", ["certificate", "reload"])
+def test_the_web_domain_checks_ask_the_vhost_by_its_name_and_port(check_key):
+    assert _check("web_domain", check_key).interval == 3600
+    config = _config("web_domain", check_key)
+    assert config["params"] == {"view": "web_vhost_cert"}
+    assert config["target"] == {
+        "kind": "vhost",
+        "name": "web_domain",
+        "port_hint": 8443,
+        "scheme": None,
+    }
+    config.pop("_check_id")
+    ProbeConfig.model_validate(config)
+
+
+def test_a_web_domain_without_its_port_is_not_bound():
+    module = CATALOG.modules["web_domain"]
+    config, why = probe_config(module, _check("web_domain", "certificate"), "a.example.org", {}, [])
+    assert (config, why) == (None, "no port for this vhost")
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        pytest.param({"kind": "vhost", "name": "", "port_hint": 443}, id="no-name"),
+        pytest.param({"kind": "vhost", "name": "a.example.org"}, id="no-port"),
+    ],
+)
+def test_a_vhost_probe_needs_its_name_and_port(target):
+    config = {**_config("web_domain", "certificate"), "target": target}
+    config.pop("_check_id")
+    with pytest.raises(ValueError, match="required for kind 'vhost'"):
+        ProbeConfig.model_validate(config)
+
+
+SERVED_OK = {"served_days_left": 60, "hostname_ok": True, "chain_ok": True}
+
+
+@pytest.mark.parametrize(
+    ("change", "want"),
+    [
+        ({}, "ok"),
+        ({"served_days_left": 14}, "ok"),
+        ({"served_days_left": 13}, "warning"),
+        ({"served_days_left": 3}, "warning"),
+        ({"served_days_left": 2}, "critical"),
+        ({"served_days_left": -1}, "critical"),
+        ({"hostname_ok": False}, "critical"),
+        # An internal CA the host does not trust would warn for good: shown, not rated.
+        ({"chain_ok": False}, "ok"),
+    ],
+)
+def test_the_served_certificate_warns_two_weeks_ahead_and_is_critical_three_days_ahead(
+    change, want
+):
+    assert _status("web_domain", "certificate", **{**SERVED_OK, **change}) == want
+
+
+@pytest.mark.parametrize(
+    ("values", "want"),
+    [
+        ({"file_days_left": 80, "reload_missing": False}, "ok"),
+        ({"file_days_left": 80, "reload_missing": True}, "warning"),
+        # A file the agent cannot tell: nothing compared, the check cannot say.
+        ({}, "unknown"),
+    ],
+)
+def test_a_renewed_file_the_server_does_not_serve_warns(values, want):
+    assert _status("web_domain", "reload", **values) == want

@@ -222,12 +222,15 @@ class ProbeConfig(_StrictConfig):
         target = self.target
         if (
             target is not None
-            and target.kind in ("container", "unit", "process")
+            and target.kind in ("container", "unit", "process", "vhost")
             and not target.name
         ):
-            # The agent asks exactly this container, unit or process; without a name it
+            # The agent asks exactly this container, unit, process or vhost; without a name it
             # would have to guess.
             raise ValueError(f"target.name is required for kind '{target.kind}'")
+        if target is not None and target.kind == "vhost" and target.port_hint is None:
+            # The agent finds the vhost again by its name and port.
+            raise ValueError("target.port_hint is required for kind 'vhost'")
         try:
             Check.model_validate(
                 {

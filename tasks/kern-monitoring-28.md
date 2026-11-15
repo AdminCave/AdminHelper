@@ -51,8 +51,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 Abhängt von: T2
 
-### T4 — R-1435: Instanz vhost und Modul web_domain  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/catalog/modules/web_domain.py, apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_catalog_web.py
+### T4 — R-1435: Instanz vhost und Modul web_domain  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/check_configs.py, apps/monitoring/app/catalog/modules/web_domain.py, apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_catalog_web.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @a9529b788 2026-11-15T04:51:57+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T4.verdict.json)
 Änderung: `clean_inventory` um `vhosts` (MAX_VHOSTS, Name als DNS-Name kleingeschrieben, `app` aus fester Menge).
 Dazu kommen Instanzart und Zielart `vhost` sowie `Detect.vhost_tls` und `vhost_apps`. `_target_name` liefert für
 `vhost` den Schlüssel und als `port_hint` den Port aus der Zusammenfassung. Neues Modul `web_domain`: je TLS-vHost
@@ -136,3 +138,8 @@ Abhängt von: T7
   `crt-store` liest der Agent nicht. Prüfer-Nit aus T2 mitgenommen: `IncludeOptional` auf eine fehlende Datei und
   `Include` eines Verzeichnisses machen die Discovery nicht mehr dauerhaft unvollständig (das Verzeichnis wird nicht
   gelesen). Die Tests mit Dateien liegen in `_linux_test.go`: die Ansichten lesen nur feste Unix-Pfade.
+- T4: Ein fehlendes Feld im Ergebnis bewertet `_rate` als `unknown`; darum ist der Vergleich Datei gegen
+  ausgeliefert ein eigener Check `reload`, und eine unbekannte Datei lässt nur ihn `unknown`. `chain_ok` steht auf der
+  Karte, wird aber nicht bewertet (interne CA). HAProxy bekommt keine Regel auf `min_days_left`: das Feld fehlt bei
+  null Zertifikaten. HAProxy-Modul auf Version 2 wie bei früheren Check-Zugängen. Der Port des vHost-Ziels kommt aus
+  der Zusammenfassung der Instanz; ohne Port wird der Check nicht gebunden.

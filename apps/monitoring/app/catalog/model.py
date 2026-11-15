@@ -73,6 +73,10 @@ class Marker(_Model):
         return self
 
 
+# The applications the agent recognises in the document root of a vhost (web_vhosts.go webApp).
+VHOST_APPS = ("nextcloud", "moodle", "wordpress", "bookstack")
+
+
 class Detect(_Model):
     container_images: list[_NAME_ITEM] = Field(default_factory=list, max_length=32)
     units: list[_NAME_ITEM] = Field(default_factory=list, max_length=32)
@@ -86,9 +90,15 @@ class Detect(_Model):
     # True for a oneshot unit a timer starts (a backup job): between its runs it is inactive
     # and still in use, so an inactive unit makes an instance too.
     idle_units: StrictBool = False
+    # For a module with instance "vhost": only vhosts with TLS, only vhosts of these applications.
+    vhost_tls: StrictBool = False
+    vhost_apps: list[Literal[VHOST_APPS]] = Field(default_factory=list, max_length=len(VHOST_APPS))
 
     def is_empty(self) -> bool:
         return not (self.container_images or self.units or self.processes or self.markers)
+
+    def by_vhost(self) -> bool:
+        return self.vhost_tls or bool(self.vhost_apps)
 
 
 class Alternative(_Model):
@@ -97,7 +107,7 @@ class Alternative(_Model):
 
 
 class Target(_Model):
-    kind: Literal["loopback", "container", "process", "unit", "port"]
+    kind: Literal["loopback", "container", "process", "unit", "port", "vhost"]
     # Compose service of the instance's project whose container the check asks.
     service: str = Field("", max_length=255)
     # Without the service: the one container of the instance with the module's image that
@@ -281,14 +291,23 @@ class Module(_Model):
     version: int = Field(ge=1, strict=True)
     description: str = Field("", max_length=1000)
     detect: Detect = Field(default_factory=Detect)
-    instance: Literal["compose_project", "container", "unit", "process", "port"]
+    instance: Literal["compose_project", "container", "unit", "process", "port", "vhost"]
     checks: list[Check] = Field(min_length=1, max_length=50)
     card: list[CardItem] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def _consistent(self) -> Module:
         # The port module stands for every listening port no other module claims.
-        if self.instance != "port" and self.detect.is_empty():
+        if self.instance == "vhost":
+            # A vhost is found by its name alone; a stand-in from a unit or a marker would be
+            # an instance with no name to ask.
+            if not self.detect.by_vhost() or not self.detect.is_empty():
+                raise ValueError(
+                    "a module with instance 'vhost' detects by vhost_tls or vhost_apps only"
+                )
+        elif self.detect.by_vhost():
+            raise ValueError("vhost_tls and vhost_apps need instance 'vhost'")
+        elif self.instance != "port" and self.detect.is_empty():
             raise ValueError("a module needs at least one detection criterion")
         for marker in self.detect.markers:
             if not marker.id.startswith(f"{self.id}."):

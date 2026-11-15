@@ -290,6 +290,14 @@ def test_the_app_views_are_those_the_agent_returns():
             "slow_requests",
         ],
         "pm2_apps": ["apps", "apps_errored", "apps_stopped", "restarts"],
+        "web_vhost_cert": [
+            "chain_ok",
+            "file_days_left",
+            "hostname_ok",
+            "reload_missing",
+            "served_days_left",
+        ],
+        "haproxy_certs": ["certs", "expiring_14d", "min_days_left"],
         "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
         "backuppc_status": [
             "backup_age_max_s",
@@ -414,6 +422,8 @@ def test_the_app_views_are_those_the_agent_returns():
         "haproxy_servers": ["unit"],
         "fpm_pools": ["unit"],
         "pm2_apps": ["unit"],
+        "web_vhost_cert": ["vhost"],
+        "haproxy_certs": ["unit"],
         "es_nodes": ["container", "unit"],
         "backuppc_status": ["unit"],
         "urbackup_status": ["unit"],
