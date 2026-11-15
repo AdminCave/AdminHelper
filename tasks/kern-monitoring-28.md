@@ -37,8 +37,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T8
 Abhängt von: T1
 
-### T3 — R-1435: Zielart vhost und Zertifikats-Ansichten  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/probe.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_test.go, apps/agent/internal/probe/app_haproxy.go, apps/agent/internal/probe/app_haproxy_test.go
+### T3 — R-1435: Zielart vhost und Zertifikats-Ansichten  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_apache_linux_test.go, apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go, apps/agent/internal/probe/app_proxy.go, apps/agent/internal/probe/app_haproxy.go, apps/agent/internal/probe/app_haproxy_certs_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2d11d2952 2026-11-15T04:37:08+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T3.verdict.json)
 Änderung: Zielart `vhost` (Name = Domain, `port_hint` = Port). `resolve` macht daraus Loopback am Port durch den
 Wächter. Ansicht `web_vhost_cert`: sucht zur Prüfzeit über `WebVhosts` den vHost und dessen Zertifikatsdatei
 (Cache 60 s), liest die Datei (nur das Zertifikat, nie den Schlüssel) und schüttelt mit SNI die Hand. Felder:
@@ -125,3 +127,12 @@ Abhängt von: T7
   `SSLEngine on` in `options-ssl-apache.conf`), nur feste Pfade, relativ zu `ServerRoot` aus `-S`, keine Muster.
   Ein Block ohne eigenes `ServerName` meldet den von `-S` geerbten Namen nicht. Jede Datei wird je Lauf einmal
   gelesen (höchstens 512 Dateien, je `maxApacheFileBytes`).
+- T3: Ein Ziel `vhost` löst wie ein Ziel `port` auf (Port des Hosts durch den Wächter); der Name geht nur als SNI
+  und Host in die Anfrage. Ein vHost ohne bekannte Zertifikatsdatei (keine im Block, kein fester Pfad) meldet nur
+  die ausgelieferten Werte. Aus einer Datei mit Schlüssel und Zertifikat (HAProxy, `combined`) liest der Agent nur
+  den ersten `CERTIFICATE`-Block, andere Blöcke parst er nicht; eine eigene Schlüsseldatei öffnet er nie. HAProxy:
+  `crt` mehrfach je `bind`, relativ zu `crt-base`, ein Verzeichnis wie HAProxy (ohne `.key .issuer .ocsp .sctl` und
+  Punkt-Dateien, höchstens 256); eine fehlende Datei fällt aus (Bundles `.rsa`/`.ecdsa`), `crt-list` und
+  `crt-store` liest der Agent nicht. Prüfer-Nit aus T2 mitgenommen: `IncludeOptional` auf eine fehlende Datei und
+  `Include` eines Verzeichnisses machen die Discovery nicht mehr dauerhaft unvollständig (das Verzeichnis wird nicht
+  gelesen). Die Tests mit Dateien liegen in `_linux_test.go`: die Ansichten lesen nur feste Unix-Pfade.

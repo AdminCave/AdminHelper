@@ -27,6 +27,7 @@ const (
 	kindProcess   = "process"
 	kindUnit      = "unit"
 	kindContainer = "container"
+	kindVhost     = "vhost"
 )
 
 // maxNameRunes caps the name of a target, as the monitoring service does.
@@ -50,7 +51,8 @@ type endpoint struct {
 }
 
 // targetOf returns p's target if its kind is one of kinds and it carries what that kind needs: a port
-// hint for loopback and port, a valid name for the others. Else the error wraps ErrInvalid.
+// hint for loopback and port, a valid name for the others, both for a vhost (its domain and port).
+// Else the error wraps ErrInvalid.
 func targetOf(p Probe, kinds ...string) (Target, error) {
 	if p.Target == nil {
 		return Target{}, fmt.Errorf("%w: sensor %s needs a target", ErrInvalid, p.Sensor)
@@ -72,6 +74,8 @@ func targetOf(p Probe, kinds ...string) (Target, error) {
 		ok = unitPattern.MatchString(t.Name)
 	case kindContainer:
 		ok = containerPattern.MatchString(t.Name)
+	case kindVhost:
+		ok = t.PortHint > 0 && t.Name != "" && vhostName(t.Name) == t.Name
 	}
 	if !ok {
 		return Target{}, fmt.Errorf("%w: %s target %q", ErrInvalid, t.Kind, t.Name)
@@ -104,12 +108,13 @@ func processKey(name string) string {
 
 // resolve returns where t listens on this host. The port is t's port hint if t listens on it, else
 // the one port t listens on; several ports without the hint are ErrAmbiguousTarget, none at all
-// errNotListening. A loopback target is its port hint on 127.0.0.1, unchecked.
+// errNotListening. A loopback target is its port hint on 127.0.0.1, unchecked. A vhost is its port, as a
+// port target is: the name goes into the request (SNI, Host), not into where the sensor connects.
 func resolve(ctx context.Context, t Target) (endpoint, error) {
 	switch t.Kind {
 	case kindLoopback:
 		return endpoint{addr: netip.AddrFrom4([4]byte{127, 0, 0, 1}), port: uint16(t.PortHint)}, nil
-	case kindPort:
+	case kindPort, kindVhost:
 		return ruledEndpoint(ctx, t, func() func(listener) bool {
 			return func(l listener) bool { return l.port == uint16(t.PortHint) }
 		})

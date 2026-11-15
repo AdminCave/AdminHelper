@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/netip"
 	"os"
@@ -525,8 +526,9 @@ func (c *apacheConf) block(dirs []apacheDirective, i int) apacheVhostBlock {
 	return b
 }
 
-// include is the directives of an included file, read once per call; none for a pattern or a path
-// that is no plain absolute one after ServerRoot.
+// include is the directives of an included file, read once per run; none for a pattern or a path
+// that is no plain absolute one after ServerRoot. A file that is not there (IncludeOptional) and a
+// directory, whose files Apache reads, add none without counting as unread: the configuration loaded.
 func (c *apacheConf) include(name string) []apacheDirective {
 	if !path.IsAbs(name) && c.root != "" {
 		name = path.Join(c.root, name)
@@ -536,6 +538,10 @@ func (c *apacheConf) include(name string) []apacheDirective {
 	}
 	dirs, ok := c.included[name]
 	if !ok {
+		if fi, err := os.Stat(name); errors.Is(err, fs.ErrNotExist) || (err == nil && fi.IsDir()) {
+			c.included[name] = nil
+			return nil
+		}
 		dirs = c.read(name)
 		c.included[name] = dirs
 	}

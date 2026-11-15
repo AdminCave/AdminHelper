@@ -215,3 +215,20 @@ func TestAVhostOfApacheWithoutAServerNameIsNotReportedUnderTheInheritedOne(t *te
 		t.Errorf("vhosts = %+v, %v; want %+v", got, err, want)
 	}
 }
+
+func TestABlockOfApacheIncludingNothingIsWhole(t *testing.T) {
+	stubVhostRoots(t)
+	dir := t.TempDir()
+	if err := os.Mkdir(dir+"/conf.d", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conf := "<VirtualHost *:443>\n  ServerName a.example.org\n  SSLEngine on\n" +
+		"  IncludeOptional " + dir + "/missing.conf\n  Include " + dir + "/conf.d\n</VirtualHost>\n"
+	out := writeApacheConf(t, conf, "ServerRoot: \""+dir+"\"\n"+
+		"*:443                  a.example.org (CONF:1)\n")
+	got, err := apacheVhosts([]byte(out))
+	want := []Vhost{{Server: "apache", Name: "a.example.org", Port: 443, TLS: true}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("vhosts = %+v, %v; want %+v without an error", got, err, want)
+	}
+}
