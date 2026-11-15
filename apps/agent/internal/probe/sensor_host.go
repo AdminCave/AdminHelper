@@ -16,16 +16,19 @@ func init() {
 
 // hostViews are the views of the host sensor: parts of this host that belong to no unit and no
 // container (software and hardware RAID, thin pools, IPMI sensors, sanoid's snapshot freshness,
-// rsnapshot's last run, systemd timers, the kernel's taint; on Windows the open updates, the
-// machine certificates, the storage health, Microsoft Defender and Windows Server Backup). Each reads kernel files, its own log or a fixed
-// Windows query, or starts a read command with fixed arguments through the allowlist (runTool), and
-// reports counts and percentages, never a name.
+// rsnapshot's last run, systemd timers, the kernel's taint, needrestart, the package state; on
+// Windows the open updates, the machine certificates, the storage health, Microsoft Defender and
+// Windows Server Backup). Each reads kernel files, its own log or a fixed Windows query, or starts a
+// read command with fixed arguments through the allowlist (runTool), and reports counts and
+// percentages, never a name.
 var hostViews = map[string]func(ctx context.Context) (map[string]any, error){
+	"apt_state":      aptState,
 	"defender":       defenderStatus,
 	"ipmi_sensors":   ipmiSensors,
 	"kernel_taint":   kernelTaint,
 	"lvm_thin":       lvmThin,
 	"mdadm":          mdArrays,
+	"needrestart":    needrestartStatus,
 	"raid_ctrl":      raidCtrl,
 	"rsnapshot":      rsnapshotStatus,
 	"storage":        storageHealth,

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -163,5 +164,146 @@ func TestHostSensorKnowsTheLinuxExtras(t *testing.T) {
 	}
 	if got["tainted"] != uint64(0) {
 		t.Errorf("host kernel_taint %v, want an untainted kernel", got)
+	}
+}
+
+// stubPackageTools answers needrestart, dpkg and apt-mark by their command name, checks each call
+// against the allowlist and that it runs with LC_ALL=C; an answer of nil stands for a missing tool.
+func stubPackageTools(t *testing.T, answers map[string][]byte) {
+	t.Helper()
+	old := runToolEnv
+	runToolEnv = func(_ context.Context, _ time.Duration, env []string, name string, args ...string) ([]byte, error) {
+		checkAllowed(t, name, args)
+		if !slices.Equal(env, []string{"LC_ALL=C"}) {
+			t.Errorf("%s runs with env %q, want LC_ALL=C", name, env)
+		}
+		out, ok := answers[name]
+		if !ok {
+			t.Fatalf("unexpected call %s %v", name, args)
+		}
+		if out == nil {
+			return nil, exec.ErrNotFound
+		}
+		return out, nil
+	}
+	t.Cleanup(func() { runToolEnv = old })
+}
+
+func TestNeedrestartReadsTheBatchLines(t *testing.T) {
+	// The form of needrestart 3.11 -b (README.batch), with one service, a container and a session.
+	stubPackageTools(t, map[string][]byte{"needrestart": []byte("NEEDRESTART-VER: 3.11\n" +
+		"NEEDRESTART-KCUR: 6.12.48+deb13-amd64\nNEEDRESTART-KEXP: 6.12.57+deb13-amd64\n" +
+		"NEEDRESTART-KSTA: 3\nNEEDRESTART-UCSTA: 2\nNEEDRESTART-UCCUR: 0x000000f0\n" +
+		"NEEDRESTART-SVC: nginx.service\nNEEDRESTART-SVC: ssh.service\n" +
+		"NEEDRESTART-CONT: LXC web\nNEEDRESTART-SESS: kevin @ session #3\n")})
+	got, err := needrestartStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"kernel_status": 3, "microcode_status": 2, "services": 2}; !reflect.DeepEqual(got, want) {
+		t.Errorf("needrestart %v, want %v", got, want)
+	}
+
+	stubPackageTools(t, map[string][]byte{"needrestart": []byte("NEEDRESTART-VER: 3.11\nNEEDRESTART-KCUR: 6.12\n" +
+		"NEEDRESTART-KSTA: 1\nNEEDRESTART-UCSTA: 0\n")})
+	got, err = needrestartStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"kernel_status": 1, "microcode_status": 0, "services": 0}; !reflect.DeepEqual(got, want) {
+		t.Errorf("needrestart %v, want %v", got, want)
+	}
+}
+
+func TestNeedrestartRefusesAnotherForm(t *testing.T) {
+	for _, out := range []string{"", "NEEDRESTART-VER: 3.11\n", "NEEDRESTART-KSTA: high\n"} {
+		stubPackageTools(t, map[string][]byte{"needrestart": []byte(out)})
+		if _, err := needrestartStatus(context.Background()); err == nil || errors.Is(err, ErrUnsupported) {
+			t.Errorf("needrestart on %q: err %v, want an error of form", out, err)
+		}
+	}
+	stubPackageTools(t, map[string][]byte{"needrestart": nil})
+	if _, err := needrestartStatus(context.Background()); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("err %v, want ErrUnsupported", err)
+	}
+}
+
+// dpkgAudit is the answer of dpkg 1.22 --audit with one half-configured package (probed on Debian
+// trixie): a heading of three lines, the package line indented by one space, a blank line.
+const dpkgAudit = "The following packages are only half configured, probably due to problems\n" +
+	"configuring them the first time.  The configuration should be retried using\n" +
+	"dpkg --configure <package> or the configure menu option in dselect:\n" +
+	" ahprobe              probe package for audit\n" +
+	"  continued description of it\n\n"
+
+// stubUULog points the unattended-upgrades log at a fresh file with content; nil leaves it out.
+func stubUULog(t *testing.T, content []byte) string {
+	t.Helper()
+	old := uuLog
+	uuLog = filepath.Join(t.TempDir(), "unattended-upgrades.log")
+	t.Cleanup(func() { uuLog = old })
+	if content != nil {
+		if err := os.WriteFile(uuLog, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return uuLog
+}
+
+func TestAptStateCountsAndReadsTheLastRun(t *testing.T) {
+	stubPackageTools(t, map[string][]byte{"dpkg": []byte(dpkgAudit), "apt-mark": []byte("linux-image-amd64\nnginx\n")})
+	// The first run failed; the last, two hours later, logged one error of its own.
+	stubUULog(t, []byte("2026-11-14 06:10:01,512 INFO Starting unattended upgrades script\n"+
+		"2026-11-14 06:12:40,001 ERROR Installing the upgrades failed!\n"+
+		"2026-11-14 06:12:40,002 ERROR error message: E:Sub-process returned an error code\n"+
+		"Traceback (most recent call last):\n"+
+		"2026-11-14 08:15:00,000 INFO Starte das Skript für unbeaufsichtigte Aktualisierungen\n"+
+		"2026-11-14 08:15:30,250 WARNING Ein Paket wurde zurückgehalten\n"+
+		"2026-11-14 08:16:02,700 ERROR dpkg returned a error!\n"+
+		"2026-11-14 08:16:03,000 INFO All upgrades installed\n"))
+	stubNow(t, time.Date(2026, 11, 14, 9, 16, 3, 0, time.Local))
+	got, err := aptState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"audit": 1, "held": 2, "uu_last_run_age_s": int64(3600), "uu_errors": 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("apt_state %v, want %v", got, want)
+	}
+}
+
+func TestAptStateWithoutTheLogHasNoRunFields(t *testing.T) {
+	stubPackageTools(t, map[string][]byte{"dpkg": []byte(""), "apt-mark": []byte("")})
+	stubUULog(t, nil)
+	got, err := aptState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"audit": 0, "held": 0}; !reflect.DeepEqual(got, want) {
+		t.Errorf("apt_state %v, want %v", got, want)
+	}
+}
+
+func TestAptStateFallsBackToTheLogsTime(t *testing.T) {
+	stubPackageTools(t, map[string][]byte{"dpkg": []byte(""), "apt-mark": []byte("")})
+	log := stubUULog(t, []byte("a line of another form\n"))
+	at := time.Date(2026, 11, 10, 6, 0, 0, 0, time.Local)
+	if err := os.Chtimes(log, at, at); err != nil {
+		t.Fatal(err)
+	}
+	stubNow(t, at.Add(3*24*time.Hour))
+	got, err := aptState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["uu_last_run_age_s"] != int64(3*24*3600) || got["uu_errors"] != 0 {
+		t.Errorf("apt_state %v, want the log's age and no error", got)
+	}
+}
+
+func TestAptStateWithoutDpkgIsUnsupported(t *testing.T) {
+	stubPackageTools(t, map[string][]byte{"dpkg": nil})
+	if _, err := aptState(context.Background()); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("err %v, want ErrUnsupported", err)
 	}
 }

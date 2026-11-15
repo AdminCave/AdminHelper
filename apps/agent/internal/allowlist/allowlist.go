@@ -275,6 +275,12 @@ var commands = map[string][][]string{
 	"timedatectl":      {{"show"}},
 	"apt-get":          {{"-s", "dist-upgrade"}},
 	"dnf":              {{"-C", "-q", "updateinfo", "list", "--security"}},
+	// The host sensor's needrestart and apt_state (probe, host_linux_extras.go): -b never restarts
+	// anything, --audit and showhold only read dpkg's database. Kept out: needrestart without -b,
+	// unattended-upgrade itself, apt-mark hold|unhold.
+	"needrestart": {{"-b"}},
+	"dpkg":        {{"--audit"}},
+	"apt-mark":    {{"showhold"}},
 	// FreeBSD: the rc.d services, the versions of kernel and userland, and pkg audit against the local
 	// vuln.xml only (never -F, which fetches it). onestatus is the probe's unit sensor: it answers
 	// whether or not rc.conf enables the service.

@@ -23,8 +23,10 @@ Transition aus `/sys/kernel/livepatch/*/transition`, nur lesend). Neue Dateien m
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/
 Doku: → T8
 
-### T2 — R-1234: Ansichten needrestart und apt_state  [ ]
+### T2 — R-1234: Ansichten needrestart und apt_state  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/host_linux_extras.go, apps/agent/internal/probe/host_linux_extras_test.go, apps/agent/internal/probe/sensor_host.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @2664f0f72 2026-11-15T18:53:35+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T2.verdict.json)
 Änderung: `needrestart` (`needrestart -b`, nur die Zeilen `NEEDRESTART-KSTA`, `-UCSTA`, Zahl der `-SVC`) und
 `apt_state` (`dpkg --audit`, `apt-mark showhold` mit `LC_ALL=C`, Zahlen; Log von unattended-upgrades: Alter des
 letzten Laufs, Fehler im letzten Lauf). Nie `apt-get check`; ein Test hält fest, dass die Freigabeliste es nicht
@@ -95,3 +97,8 @@ Abhängt von: T3, T5
 - T1: Timer über `systemctl list-units --type=timer --all --full --plain` statt `list-timers --all`: die Spalten von
   `list-timers` sind Zeitangaben mit Leerzeichen, die JSON-Ausgabe braucht ein neueres systemd. Gezählt werden geladene,
   aktive Timer; die ausgelösten Units fragt ein `show -p Id,Triggers`, ihr Ergebnis ein `show -p Id,Result`.
+- T2: Felder `apt_state`: `audit`, `held`, `uu_last_run_age_s`, `uu_errors` (Sekunden wie `check_age_s`, statt
+  `last_run_age_h` der Spec; ohne Log fehlen beide `uu_`-Felder). Die Startzeile von unattended-upgrades ist übersetzt
+  (gettext), darum trennt eine Pause von über einer Stunde zwei Läufe; Format `%(asctime)s %(levelname)s %(message)s`
+  aus `_setup_logging` (u-u 2.12, trixie) gelesen. `needrestart -b` mit `LC_ALL=C` und 30 s Timeout, dem Höchstwert des Katalogs (`timeout_s`): die Prüfung in T3
+  setzt `timeout_s: 30`.

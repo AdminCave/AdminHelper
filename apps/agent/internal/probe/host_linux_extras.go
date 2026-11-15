@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // timerListArgs list the timer units systemd has loaded, one per line: unit, load, active, sub,
@@ -147,4 +148,139 @@ func kernelTaint(_ context.Context) (map[string]any, error) {
 		"bad_page":             taint&taintBadPage != 0,
 		"livepatch_transition": transition,
 	}, nil
+}
+
+// needrestartTimeout caps `needrestart -b`, which reads the maps of every process in /proc and so
+// takes longer than the other tools on a busy host: the 30 s a probe may take at most (catalog
+// timeout_s), which its check sets.
+const needrestartTimeout = 30 * time.Second
+
+// needrestartStatus asks needrestart in batch mode (README.batch: it never shows a dialog nor
+// restarts anything) whether the running kernel and microcode are current and how many services
+// still run with replaced libraries. kernel_status is NEEDRESTART-KSTA (0 unknown, 1 current, 2 an
+// ABI-compatible upgrade pending, 3 a version upgrade pending), microcode_status NEEDRESTART-UCSTA
+// (0 unknown, 1 current, 2 obsolete), services the count of NEEDRESTART-SVC lines. No unit name
+// leaves it.
+func needrestartStatus(ctx context.Context) (map[string]any, error) {
+	out, err := runToolEnv(ctx, needrestartTimeout, []string{"LC_ALL=C"}, "needrestart", "-b")
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return nil, fmt.Errorf("%w: needrestart is not installed", ErrUnsupported)
+	case err != nil:
+		return nil, toolError("needrestart", err)
+	}
+	fields := map[string]string{"NEEDRESTART-KSTA": "kernel_status", "NEEDRESTART-UCSTA": "microcode_status"}
+	values := map[string]any{}
+	services := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), ": ")
+		if !ok {
+			continue
+		}
+		if key == "NEEDRESTART-SVC" {
+			services++
+		} else if field, ok := fields[key]; ok {
+			n, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil {
+				return nil, errors.New("needrestart: a status of another form")
+			}
+			values[field] = n
+		}
+	}
+	values["services"] = services
+	if _, ok := values["kernel_status"]; !ok {
+		return nil, errors.New("needrestart: an answer without the kernel status")
+	}
+	return values, nil
+}
+
+// uuLog is the log of unattended-upgrades (its _setup_logging: Unattended-Upgrade::LogDir and
+// ::LogFile, Debian's defaults); tests point it at a file of their own.
+var uuLog = "/var/log/unattended-upgrades/unattended-upgrades.log"
+
+const (
+	// uuLogTail caps what is read from the end of the log: a run writes a few dozen lines.
+	uuLogTail = 64 << 10
+	// uuRunGap separates two runs in the log: its start line is translated, so a run is told by the
+	// pause before it. The timer runs it once a day, a run itself logs at least every few minutes.
+	uuRunGap = time.Hour
+	// uuTimeLayout is logging's asctime (basicConfig with format '%(asctime)s %(levelname)s
+	// %(message)s', the default date format), in local time.
+	uuTimeLayout = "2006-01-02 15:04:05,000"
+)
+
+// aptState counts the packages dpkg finds broken (`dpkg --audit`: a package line begins with one
+// space, the headings and blank lines do not; it exits 0 either way) and the packages held back
+// (`apt-mark showhold`, one per line), and reads from the end of unattended-upgrades' log how long ago
+// it last ran and how many errors its last run logged. Never `apt-get check`, which rebuilds the
+// package cache. A host without dpkg is unsupported; one without the log has no uu_ fields.
+func aptState(ctx context.Context) (map[string]any, error) {
+	out, err := runToolEnv(ctx, toolTimeout, []string{"LC_ALL=C"}, "dpkg", "--audit")
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return nil, fmt.Errorf("%w: dpkg is not installed", ErrUnsupported)
+	case err != nil:
+		return nil, toolError("dpkg", err)
+	}
+	audit := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if len(line) > 1 && line[0] == ' ' && line[1] != ' ' {
+			audit++
+		}
+	}
+	out, err = runToolEnv(ctx, toolTimeout, []string{"LC_ALL=C"}, "apt-mark", "showhold")
+	if err != nil {
+		return nil, toolError("apt-mark", err)
+	}
+	held := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			held++
+		}
+	}
+	values := map[string]any{"audit": audit, "held": held}
+	tail, err := readTail(uuLog, uuLogTail)
+	if errors.Is(err, fs.ErrNotExist) {
+		return values, nil
+	}
+	if err != nil {
+		return nil, errors.New("unattended-upgrades: its log cannot be read")
+	}
+	last, errs := uuLastRun(tail)
+	if last.IsZero() {
+		// No line of the known form: the file's time stands for the last run, no error is counted.
+		fi, err := statPath(uuLog)
+		if err != nil {
+			return nil, errors.New("unattended-upgrades: its log cannot be read")
+		}
+		last = fi.ModTime()
+	}
+	values["uu_last_run_age_s"] = ageSeconds(last)
+	values["uu_errors"] = errs
+	return values, nil
+}
+
+// uuLastRun reads the time of the log's last line and the ERROR lines of the last run, the lines after
+// the last pause of more than uuRunGap. Lines of another form (a traceback, a wrapped message) count
+// for neither.
+func uuLastRun(log []byte) (time.Time, int) {
+	var last time.Time
+	errs := 0
+	for line := range strings.Lines(string(log)) {
+		if len(line) < len(uuTimeLayout)+1 {
+			continue
+		}
+		at, err := time.ParseInLocation(uuTimeLayout, line[:len(uuTimeLayout)], time.Local)
+		if err != nil {
+			continue
+		}
+		if !last.IsZero() && at.Sub(last) > uuRunGap {
+			errs = 0
+		}
+		last = at
+		if level, _, _ := strings.Cut(line[len(uuTimeLayout)+1:], " "); level == "ERROR" {
+			errs++
+		}
+	}
+	return last, errs
 }

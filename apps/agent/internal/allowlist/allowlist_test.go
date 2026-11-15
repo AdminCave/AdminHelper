@@ -1035,3 +1035,35 @@ func TestAllowlistMoodleChecks(t *testing.T) {
 		}
 	}
 }
+
+// TestAllowlistPackageState: the host sensor's needrestart and apt_state read the restart state and
+// dpkg's database. The traps restart services, rebuild the package cache (apt-get check), run the
+// upgrades, or hold a package.
+func TestAllowlistPackageState(t *testing.T) {
+	for _, call := range [][]string{
+		{"needrestart", "-b"},
+		{"dpkg", "--audit"},
+		{"apt-mark", "showhold"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"apt-get", "check"},
+		{"apt-get", "update"},
+		{"needrestart"},
+		{"needrestart", "-r", "a"},
+		{"needrestart", "-b", "-r", "a"},
+		{"unattended-upgrade"},
+		{"unattended-upgrade", "--dry-run"},
+		{"dpkg", "--configure", "-a"},
+		{"dpkg", "--audit", "nginx"},
+		{"apt-mark", "hold", "nginx"},
+		{"apt-mark", "unhold", "nginx"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
