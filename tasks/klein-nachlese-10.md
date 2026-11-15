@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-10 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-10 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-10 · Review: pro Task
 Spec: docs/features/klein-nachlese-10.md (Roadmap R-1453, R-1458, R-1473, R-1485, R-1490, R-1492, R-1495, R-1497)
 Heavy: linux-full — apps/agent (Agent-Checks dovecot_status und lmn_linbo)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -47,8 +47,10 @@ Beweis: R-1492 (reviewer branch kern-desktop-e2e-1) 2026-11-14
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test-Hilfe)
 
-### T5 — Doku: cicd.html DE+EN, Spec und Ledger von ci-11  [ ]
+### T5 — Doku: cicd.html DE+EN, Spec und Ledger von ci-11  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html, docs/features/ci-11.md, tasks/ci-11.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @35ed1ad11 2026-11-15T01:18:37+01:00
+Review: approve (.ah-out/review/klein-nachlese-10/T5.verdict.json)
 Beweis: R-1453 (review ci-11 @8bc8d4398) 2026-11-14
 Änderung: In der Tabellenzeile `ci.yml` nennt der FRP-Pin-Check zusätzlich `scripts/tests/freebsd_box.sh` (Version und SHA-256 `freebsd_amd64`, gegen `release.yml`), und `pkg-repo` steht neben `agent-windows` (baut pkg aus den Quellen, baut und prüft das signierte pkg-Repo). `docs/features/ci-11.md` Ziel 5: „SHA-256 der Datei“ statt „(DER)“, Ziel 4: Ablauf wie in der Ledger-Entscheidung T3 (`OUT_DIR=pkg-out` vor `build-repo.sh`); `tasks/ci-11.md` Entscheidungen: der Satz „wie die Spec in Ziel 4 noch sagt“ entfällt.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
