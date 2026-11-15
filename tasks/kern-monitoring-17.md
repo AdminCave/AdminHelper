@@ -10,8 +10,10 @@ Heavy: linux-full — neuer Status in Monitoring-API und Desktop-Journeys (Über
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Regelstufe info, Bewertung und Benachrichtigung (R-1280)  [ ]
+### T1 — Regelstufe info, Bewertung und Benachrichtigung (R-1280)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/checkers/probe.py, apps/monitoring/app/check_engine.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_status_info.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e1329dad1 2026-11-15T17:00:45+01:00
+Review: approve (.ah-out/review/kern-monitoring-17/T1.verdict.json)
 Änderung: `Rule.level` nimmt `info`; `_rate` gibt `info`, wenn nur info-Regeln halten. Die Engine zählt `info` wie `ok` (Fehler- und Ok-Zähler, Dämpfung, Hold der Entwarnung). Für die Benachrichtigung gilt `info` als `ok`: `warning/critical → info` ist eine Entwarnung, `ok ↔ info` still, `info → warning` alarmiert. Neue Testdatei mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info.py tests/test_alerter.py tests/test_alerter_sent_state.py tests/test_catalog_sensors.py
 Doku: → T5
