@@ -278,6 +278,11 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	if err != nil {
 		return nil, fmt.Errorf("%w: parameter path of sensor http is no path of a request", ErrInvalid)
 	}
+	if t.Kind == kindVhost {
+		if _, err := servedVhost(ctx, t); err != nil {
+			return nil, err
+		}
+	}
 	ep, err := resolve(ctx, t)
 	if err != nil {
 		return nil, err

@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -56,19 +55,15 @@ var moodleStatus = regexp.MustCompile(`^ *(?:\x1b\[[0-9;]*m)*[A-Za-z]+(?:\x1b\[[
 // only warnings and errors), never their text. Options and output: moodle main admin/cli/checks.php,
 // moodledev.io/docs/apis/subsystems/check (Check API since Moodle 3.9).
 func moodleChecks(ctx context.Context, t Target) (map[string]any, error) {
-	list, lerr := cachedVhosts(ctx)
-	i := slices.IndexFunc(list, func(v Vhost) bool { return v.Name == t.Name && int(v.Port) == t.PortHint })
+	v, err := servedVhost(ctx, t)
 	switch {
-	case i < 0 && lerr != nil:
-		return nil, lerr
-	case i < 0:
-		return nil, fmt.Errorf("no web server of this host serves %s on port %d", t.Name, t.PortHint)
-	case list[i].App != "moodle":
+	case err != nil:
+		return nil, err
+	case v.App != "moodle":
 		return nil, fmt.Errorf("%w: %s serves no Moodle", ErrUnsupported, t.Name)
-	case list[i].user == "" || list[i].user == "root":
+	case v.user == "" || v.user == "root":
 		return nil, fmt.Errorf("%w: the web server of %s names no user other than root", ErrUnsupported, t.Name)
 	}
-	v := list[i]
 	root, err := moodleOwned(v.root, v.user)
 	if err != nil {
 		return nil, err

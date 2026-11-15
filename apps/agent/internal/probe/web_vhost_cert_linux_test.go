@@ -25,19 +25,6 @@ import (
 	"time"
 )
 
-// stubVhostCache makes list (with err) the vhosts cachedVhosts gives, read at at; afterwards the cache is
-// empty again.
-func stubVhostCache(t *testing.T, at time.Time, list []Vhost, err error) {
-	t.Helper()
-	set := func(at time.Time, list []Vhost, err error) {
-		vhostCache.Lock()
-		vhostCache.at, vhostCache.list, vhostCache.err = at, list, err
-		vhostCache.Unlock()
-	}
-	set(at, list, err)
-	t.Cleanup(func() { set(time.Time{}, nil, nil) })
-}
-
 // namedCertPEM is a certificate for name valid until notAfter, as PEM, after a private key when withKey.
 func namedCertPEM(t *testing.T, name string, notAfter time.Time, withKey bool) []byte {
 	t.Helper()

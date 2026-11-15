@@ -38,6 +38,21 @@ func cachedVhosts(ctx context.Context) ([]Vhost, error) {
 	return vhostCache.list, vhostCache.err
 }
 
+// servedVhost finds the vhost t again among those the web servers of this host serve (cachedVhosts), by
+// name and port. A probe of a vhost sends its name as Host and SNI to a port of this host; a name no
+// web server here serves would let it pose as any site the web server answers or passes on.
+func servedVhost(ctx context.Context, t Target) (Vhost, error) {
+	list, lerr := cachedVhosts(ctx)
+	i := slices.IndexFunc(list, func(v Vhost) bool { return v.Name == t.Name && int(v.Port) == t.PortHint })
+	switch {
+	case i < 0 && lerr != nil:
+		return Vhost{}, lerr
+	case i < 0:
+		return Vhost{}, fmt.Errorf("no web server of this host serves %s on port %d", t.Name, t.PortHint)
+	}
+	return list[i], nil
+}
+
 // webVhostCert compares the certificate a vhost's file holds with the one its web server serves.
 // It finds the vhost again in the configuration (cachedVhosts): the server never names the file. It
 // shakes hands with the vhost's port through the guard, the domain as SNI, and reads the served
@@ -48,17 +63,13 @@ func cachedVhosts(ctx context.Context) ([]Vhost, error) {
 // whose file the agent does not know (none in its block, or a path that is no plain absolute one)
 // gives the served values alone.
 func webVhostCert(ctx context.Context, t Target) (map[string]any, error) {
-	list, lerr := cachedVhosts(ctx)
-	i := slices.IndexFunc(list, func(v Vhost) bool { return v.Name == t.Name && int(v.Port) == t.PortHint })
-	switch {
-	case i < 0 && lerr != nil:
-		return nil, lerr
-	case i < 0:
-		return nil, fmt.Errorf("no web server of this host serves %s on port %d", t.Name, t.PortHint)
-	case !list[i].TLS:
+	v, err := servedVhost(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	if !v.TLS {
 		return nil, fmt.Errorf("%s is served without TLS on port %d", t.Name, t.PortHint)
 	}
-	v := list[i]
 	ep, err := resolve(ctx, t)
 	if err != nil {
 		return nil, err

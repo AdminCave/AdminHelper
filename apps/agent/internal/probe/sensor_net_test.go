@@ -766,12 +766,36 @@ func vhostPair(t *testing.T) (int, chan [2]string) {
 	return portOf(t, srv.URL), asked
 }
 
+// stubVhostCache makes list (with err) the vhosts cachedVhosts gives, read at at; afterwards the cache is
+// empty again.
+func stubVhostCache(t *testing.T, at time.Time, list []Vhost, err error) {
+	t.Helper()
+	set := func(at time.Time, list []Vhost, err error) {
+		vhostCache.Lock()
+		vhostCache.at, vhostCache.list, vhostCache.err = at, list, err
+		vhostCache.Unlock()
+	}
+	set(at, list, err)
+	t.Cleanup(func() { set(time.Time{}, nil, nil) })
+}
+
+// servedOn makes names the vhosts with TLS this host serves on port.
+func servedOn(t *testing.T, port int, names ...string) {
+	t.Helper()
+	list := make([]Vhost, 0, len(names))
+	for _, n := range names {
+		list = append(list, Vhost{Server: "nginx", Name: n, Port: uint16(port), TLS: true})
+	}
+	stubVhostCache(t, time.Now(), list, nil)
+}
+
 func onVhost(sensor, name string, port int, scheme string, params map[string]any) Probe {
 	return Probe{Sensor: sensor, Target: &Target{Kind: kindVhost, Name: name, PortHint: port, Scheme: scheme}, Params: params}
 }
 
 func TestHTTPSensorAsksAVhostByItsName(t *testing.T) {
 	port, asked := vhostPair(t)
+	servedOn(t, port, "a.example.org", "b.example.org")
 	ctx := context.Background()
 	for _, c := range []struct {
 		name string
@@ -820,6 +844,7 @@ func TestHTTPSensorTakesAVhostOnlyWithItsOwnNameAndScheme(t *testing.T) {
 
 func TestTLSSensorAsksAVhostByItsName(t *testing.T) {
 	port, asked := vhostPair(t)
+	servedOn(t, port, "svc.example.org", "b.example.org")
 	ctx := context.Background()
 	got, err := tlsSensor(ctx, onVhost("tls", "svc.example.org", port, "", nil), "")
 	if err != nil || got["hostname_ok"] != true || got["days_left"] == nil {
@@ -835,6 +860,38 @@ func TestTLSSensorAsksAVhostByItsName(t *testing.T) {
 	_, err = tlsSensor(ctx, onVhost("tls", "b.example.org", port, "", map[string]any{"server_name": "svc.example.org"}), "")
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("a vhost with another server_name = %v, want ErrInvalid", err)
+	}
+}
+
+func TestAVhostTargetNeedsAVhostOfThisHost(t *testing.T) {
+	port, asked := vhostPair(t)
+	ctx := context.Background()
+	servedOn(t, port, "a.example.org")
+	other := port + 1
+	if other > 65535 {
+		other = port - 1
+	}
+	for _, c := range []struct {
+		name string
+		p    Probe
+		run  func(context.Context, Probe, string) (map[string]any, error)
+	}{
+		{"http, a name no web server serves", onVhost("http", "c.example.org", port, "https", nil), httpSensor},
+		{"http, the name on another port", onVhost("http", "a.example.org", other, "https", nil), httpSensor},
+		{"tls, a name no web server serves", onVhost("tls", "c.example.org", port, "", nil), tlsSensor},
+	} {
+		got, err := c.run(ctx, c.p, "")
+		if err == nil || !strings.Contains(err.Error(), "no web server of this host serves") {
+			t.Errorf("%s = %v, %v; want it refused", c.name, got, err)
+		}
+	}
+	if len(asked) != 0 {
+		t.Errorf("a request reached the web server")
+	}
+
+	stubVhostCache(t, time.Now(), nil, errors.New("nginx -T failed"))
+	if _, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", nil), ""); err == nil {
+		t.Errorf("a vhost was asked while the vhosts of this host could not be read")
 	}
 }
 

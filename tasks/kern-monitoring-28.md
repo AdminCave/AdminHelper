@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Domains aus vHosts, Zertifikate und native PHP-Apps — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-28 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-28 · Review: pro Task
 Spec: docs/features/kern-monitoring-28.md (Roadmap R-1435, R-1378, R-1422)
 Heavy: linux-full — neue Discovery, Zielart, Ansichten und Freigabeliste im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -190,8 +190,10 @@ Abhängt von: T7
 - T7: Moodle `state` `unknown` (checks.php Exit 3) hat keine Regel und bleibt ohne Bewertung ok, wie diktiert
   (critical → critical, warning → warning).
 
-### T9 — Ziel `vhost` nur für vHosts dieses Hosts (Abschlussprüfung)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/app_moodle.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_tls.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go
+### T9 — Ziel `vhost` nur für vHosts dieses Hosts (Abschlussprüfung)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/app_moodle.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_tls.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @553e510a8 2026-11-15T06:16:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T9.verdict.json)
 Änderung: `http` und `tls` nehmen ein Ziel `vhost` nur, wenn ein Webserver dieses Hosts Name und Port bedient
 (`servedVhost` über `cachedVhosts`, wie `web_vhost_cert` und `moodle_checks`); Test mit einem nicht gemeldeten Namen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/

@@ -52,6 +52,11 @@ func tlsSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
 	if _, err := credentialUse(p); err != nil {
 		return nil, err
 	}
+	if t.Kind == kindVhost {
+		if _, err := servedVhost(ctx, t); err != nil {
+			return nil, err
+		}
+	}
 	ep, err := resolve(ctx, t)
 	if err != nil {
 		return nil, err
