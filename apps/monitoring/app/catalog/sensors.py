@@ -533,8 +533,11 @@ class HttpParams(_Params):
     # The whole answer the agent compares with, for body_match (sensor_http.go plainText):
     # 1 to 64 characters without space or control character.
     expect: str | None = Field(None, pattern=r"^[^\s\x00-\x1f\x7f-\x9f]{1,64}$")
+    # Accept header for services that answer JSON only when asked (the Jitsi bridge's /metrics);
+    # unset, the agent sends none.
+    accept: Literal["application/json"] | None = None
 
-    @field_validator("host", "expect", mode="before")
+    @field_validator("host", "expect", "accept", mode="before")
     @classmethod
     def _set_or_absent(cls, v: object) -> object:
         # A probe check sends its params as given, and the agent answers invalid to a null.

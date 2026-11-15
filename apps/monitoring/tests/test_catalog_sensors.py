@@ -8,7 +8,8 @@ or left out, and left out it is not sent (arch-monitoring-apps-1). The app senso
 the agent's allowlist, the one kind of target that view is bound to, and only its fields
 (R-1404). The host sensor: a view from the agent's allowlist, no target, only its fields
 (R-1228). The http sensor's expect and scheme auto, the dns sensor's optional target
-(kern-monitoring-30)."""
+(kern-monitoring-30). The http sensor's accept: application/json or left out
+(kern-monitoring-33)."""
 
 from typing import get_args
 
@@ -518,6 +519,21 @@ def test_an_http_check_compares_its_answer_with_expect():
         "method": "GET",
         "expect": "true",
     }
+
+
+def test_an_http_check_asks_for_json_when_told():
+    catalog = _http_module({"path": "/metrics", "accept": "application/json"})
+    assert catalog.errors == ()
+    assert catalog.modules["app"].checks[0].params == {
+        "path": "/metrics",
+        "method": "GET",
+        "accept": "application/json",
+    }
+
+
+@pytest.mark.parametrize("accept", ["text/html", "", "application/*", "*/*", 1, None])
+def test_an_http_check_asks_for_no_other_answer(accept):
+    assert "accept" in _only_error(_http_module({"accept": accept}))
 
 
 @pytest.mark.parametrize(

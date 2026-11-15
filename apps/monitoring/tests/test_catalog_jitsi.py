@@ -5,7 +5,8 @@
 """The catalog modules jitsi-videobridge and jitsi-jicofo (R-1242): docker-jitsi-meet's
 project gets the bridge's container and /about/health on 8080 and Jicofo's container; the
 packages get their units and /about/health on 8080 and 8888; a bridge on a host of its own
-is no Jicofo; no check asks anything but /about/health."""
+is no Jicofo; no check asks anything but /about/health and the bridge's stress from /metrics
+as JSON, a warning above 0.8 (R-1388)."""
 
 from datetime import UTC, datetime
 
@@ -116,21 +117,37 @@ def _status(module, check_key, values):
 
 def test_the_modules_load_with_their_checks():
     assert CATALOG.errors == ()
-    assert [c.key for c in JVB.checks] == ["container", "health", "service", "service_health"]
+    assert [c.key for c in JVB.checks] == [
+        "container",
+        "health",
+        "load",
+        "service",
+        "service_health",
+        "service_load",
+    ]
+    assert JVB.version == 2
     assert [c.key for c in JICOFO.checks] == ["container", "service", "health"]
     assert JVB.detect.units == [JVB_UNIT]
     assert JICOFO.detect.units == [JICOFO_UNIT]
     assert all(c.credential is None for c in JVB.checks + JICOFO.checks)
 
 
-def test_no_check_asks_anything_but_about_health():
+def test_no_check_asks_anything_but_about_health_and_the_bridges_stress():
     # Jicofo's server also answers /move-endpoints (moves participants), /debug, /pin and
     # /stats; the bridge's /colibri/stats is off by default.
     http = [c for c in JVB.checks + JICOFO.checks if c.sensor == "http"]
-    assert len(http) == 3
+    assert len(http) == 5
     for check in http:
-        assert check.params == {"path": "/about/health", "method": "GET"}
-        assert check.fields == ["status_code"]
+        if check.key in ("load", "service_load"):
+            assert check.params == {
+                "path": "/metrics",
+                "method": "GET",
+                "accept": "application/json",
+            }
+            assert check.fields == ["data.stress"]
+        else:
+            assert check.params == {"path": "/about/health", "method": "GET"}
+            assert check.fields == ["status_code"]
         assert (check.interval, check.test_object) == (300, False)
 
 
@@ -150,15 +167,18 @@ def test_the_project_gets_the_bridge_container_and_its_health_on_8080():
     assert _bind(JVB, block, "meet") == {
         "container": ("meet-jvb-1", None),
         "health": ("meet-jvb-1", None),
+        "load": ("meet-jvb-1", None),
         "service": (None, "no unit for this instance"),
         "service_health": (None, "no unit for this instance"),
+        "service_load": (None, "no unit for this instance"),
     }
-    assert _target(JVB, "health", block, "meet") == {
-        "kind": "container",
-        "name": "meet-jvb-1",
-        "port_hint": 8080,
-        "scheme": "http",
-    }
+    for key in ("health", "load"):
+        assert _target(JVB, key, block, "meet") == {
+            "kind": "container",
+            "name": "meet-jvb-1",
+            "port_hint": 8080,
+            "scheme": "http",
+        }
 
 
 def test_the_project_gets_jicofos_container_only():
@@ -188,15 +208,18 @@ def test_the_packages_get_their_units_and_health_on_8080_and_8888():
     assert _bind(JVB, block, "jitsi-videobridge") == {
         "container": (None, "no container for this instance"),
         "health": (None, "no container for this instance"),
+        "load": (None, "no container for this instance"),
         "service": (JVB_UNIT, None),
         "service_health": (JVB_UNIT, None),
+        "service_load": (JVB_UNIT, None),
     }
-    assert _target(JVB, "service_health", block, "jitsi-videobridge") == {
-        "kind": "unit",
-        "name": JVB_UNIT,
-        "port_hint": 8080,
-        "scheme": "http",
-    }
+    for key in ("service_health", "service_load"):
+        assert _target(JVB, key, block, "jitsi-videobridge") == {
+            "kind": "unit",
+            "name": JVB_UNIT,
+            "port_hint": 8080,
+            "scheme": "http",
+        }
     assert _found(JICOFO, block) == {"jitsi-jicofo": {"matched_by": [f"unit:{JICOFO_UNIT}"]}}
     assert _bind(JICOFO, block, "jitsi-jicofo") == {
         "container": (None, "no container for this instance"),
@@ -292,12 +315,23 @@ def test_jicofo_unit_stays_active_after_a_crash_but_exited():
     assert _status(JICOFO, "service", {"active_state": "active", "sub_state": "running"}) == "ok"
 
 
+@pytest.mark.parametrize("check_key", ["load", "service_load"])
+@pytest.mark.parametrize(
+    ("stress", "want"),
+    [(0, "ok"), (0.8, "ok"), (0.81, "warning"), (1.5, "warning")],
+)
+def test_the_bridges_stress_warns_above_0_8(check_key, stress, want):
+    assert _status(JVB, check_key, {"data.stress": stress}) == want
+
+
 def test_the_cards_show_the_container_or_the_service_and_health():
     assert [(i.check_key, i.field) for i in JVB.card] == [
         ("container", "state"),
         ("health", "status_code"),
+        ("load", "data.stress"),
         ("service", "active_state"),
         ("service_health", "status_code"),
+        ("service_load", "data.stress"),
     ]
     assert [(i.check_key, i.field) for i in JICOFO.card] == [
         ("container", "state"),

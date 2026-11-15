@@ -20,8 +20,10 @@ ohne den Parameter kein `Accept`-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T5
 
-### T2 — R-1388: `jitsi-videobridge` v2 mit der Last der Bridge  [ ]
+### T2 — R-1388: `jitsi-videobridge` v2 mit der Last der Bridge  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/jitsi_videobridge.py, apps/monitoring/tests/test_catalog_jitsi.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6f35b6814 2026-11-15T09:02:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-33/T2.verdict.json)
 Änderung: `HttpParams.accept: Literal["application/json"]` (gesetzt oder weggelassen, wie `host`). Checks `load`
 (Container, `port_hint` 8080) und `service_load` (Unit, 8080) auf `/metrics` mit `accept`, Feld `data.stress`, alle
 300 s, `data.stress` > 0.8 `warning`; Karte „Load“. Version 2, Docstring (Quellen, Jicofo nicht abgedeckt).
