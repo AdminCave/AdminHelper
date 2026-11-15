@@ -103,6 +103,9 @@ func TestTheVhostsOfNginxAreReadFromItsDump(t *testing.T) {
 		{Server: "nginx", Name: "blog.example.org", Port: 80, root: "$document_root_by_map"},
 		{Server: "nginx", Name: "legacy.example.org", Port: 8080, TLS: true, cert: "/etc/ssl/default.pem"},
 	}
+	for i := range want {
+		want[i].user = "www-data" // the user directive of the main context / User of DUMP_RUN_CFG
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("vhosts =\n%+v\nwant\n%+v", got, want)
 	}

@@ -85,7 +85,10 @@ var classes = map[string]string{
 	"upsname": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
 	// The user of a unit pm2-<user> (probe's pm2Unit, useradd's NAME_REGEX), any but root: r, ro and
 	// roo, a name on from root, or one that leaves root earlier.
-	"pmuser": `root[a-z0-9_-]+|r(?:o(?:o[a-su-z0-9_-]|[a-np-z0-9_-])|[a-np-z0-9_-])[a-z0-9_-]*|r|ro|roo|[a-qs-z_][a-z0-9_-]*`,
+	// The status checks of a Moodle (admin/cli/checks.php) below an absolute document root: no
+	// segment begins with '.', so no "..", and no other script of the site.
+	"moodlechecks": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)*/admin/cli/checks\.php`,
+	"pmuser":       `root[a-z0-9_-]+|r(?:o(?:o[a-su-z0-9_-]|[a-np-z0-9_-])|[a-np-z0-9_-])[a-z0-9_-]*|r|ro|roo|[a-qs-z_][a-z0-9_-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -245,6 +248,8 @@ var commands = map[string][][]string{
 	// status. Kept out: its other messages (backup, stop, server reload, log).
 	"runuser": append(slices.Clone(postgresCalls),
 		[]string{"-u", "<pmuser>", "--", "pm2", "jlist"},
+		// The status checks of a Moodle as its web server's user (probe's moodleChecks), never root.
+		[]string{"-u", "<pmuser>", "--", "php", "<moodlechecks>"},
 		[]string{"-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
 		[]string{"-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
 	),
@@ -498,4 +503,13 @@ func RunEnv(ctx context.Context, timeout time.Duration, env []string, name strin
 		return nil, fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
 	}
 	return execx.RunEnv(ctx, timeout, env, name, args...)
+}
+
+// RunCapped is execx.RunCapped for a call on the list: at most limit bytes of stdout, no stderr.
+func RunCapped(ctx context.Context, timeout time.Duration, limit int, name string, args ...string) ([]byte, error) {
+	if !Allowed(name, args) {
+		logger.Warnf("%s call refused, %s", filepath.Base(name), ErrNotAllowed)
+		return nil, fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
+	}
+	return execx.RunCapped(ctx, timeout, limit, name, args...)
 }

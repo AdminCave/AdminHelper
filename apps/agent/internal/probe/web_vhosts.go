@@ -23,8 +23,8 @@ import (
 
 // Vhost is a name a web server of this host serves: the server (nginx), the name, the port and
 // whether it speaks TLS there, and the application its document root holds ("" for none known).
-// Only these go into the discovery; where the root and the certificate lie stays on the host, a view
-// finds them again when it runs.
+// Only these go into the discovery; where the root and the certificate lie and the user the web server
+// runs as stay on the host, a view finds them again when it runs.
 type Vhost struct {
 	Server string
 	Name   string
@@ -33,6 +33,7 @@ type Vhost struct {
 	App    string
 	root   string
 	cert   string
+	user   string
 }
 
 // maxVhostName is the longest name a vhost is reported by, the longest instance key of the monitoring
@@ -180,7 +181,7 @@ func nginxDumpFiles(dump []byte) (names []string, texts [][]byte) {
 func nginxVhosts(dump []byte) []Vhost {
 	var servers []*nginxVhost
 	var includes []nginxInclude
-	httpCert := ""
+	httpCert, user := "", ""
 	names, texts := nginxDumpFiles(dump)
 	prefix := ""
 	if len(names) > 0 {
@@ -200,15 +201,20 @@ func nginxVhosts(dump []byte) []Vhost {
 			}
 		}
 		for _, base := range bases {
-			servers, includes, httpCert = nginxRead(file, base, prefix, servers, includes, httpCert)
+			servers, includes, httpCert = nginxRead(file, base, prefix, servers, includes, httpCert, &user)
 		}
 	}
-	return nginxVhostsOf(servers, httpCert)
+	vhosts := nginxVhostsOf(servers, httpCert)
+	for i := range vhosts {
+		vhosts[i].user = user
+	}
+	return vhosts
 }
 
-// nginxRead reads one file of the dump inside the block base and adds what it finds.
+// nginxRead reads one file of the dump inside the block base and adds what it finds; user is the
+// user the workers run as, from the user directive of the main context (ngx_core_module.html#user).
 func nginxRead(file []byte, base nginxFrame, prefix string, servers []*nginxVhost, includes []nginxInclude,
-	httpCert string) ([]*nginxVhost, []nginxInclude, string) {
+	httpCert string, user *string) ([]*nginxVhost, []nginxInclude, string) {
 	stack := []nginxFrame{base}
 	var words []string
 	for _, tok := range nginxTokens(file) {
@@ -239,6 +245,8 @@ func nginxRead(file []byte, base nginxFrame, prefix string, servers []*nginxVhos
 					pattern = path.Join(prefix, pattern)
 				}
 				includes = append(includes, nginxInclude{pattern: pattern, in: top})
+			case top.name == "" && words[0] == "user":
+				*user = words[1]
 			case top.name == "http" && words[0] == "ssl_certificate":
 				if httpCert == "" {
 					httpCert = words[1]
@@ -354,12 +362,14 @@ func webApp(root string) string {
 // or below "*:80 is a NameVirtualHost" each of its virtual hosts ("port 80 namevhost www.example.org
 // (…:4)") with its aliases ("alias example.org"). "default server" repeats a namevhost, "wild alias"
 // is a wildcard; both are left out. "port *" (<VirtualHost *>) names no port and is left out too.
-// ServerRoot is the directory relative Include paths are taken from.
+// ServerRoot is the directory relative Include paths are taken from; User (DUMP_RUN_CFG) the user the
+// children run as, APACHE_RUN_USER of envvars on Debian.
 var (
 	apacheOneVhost   = regexp.MustCompile(`^\S+:([0-9]+)\s+(\S+) \((/.+):([0-9]+)\)$`)
 	apacheNameVhost  = regexp.MustCompile(`^\s+port ([0-9]+) namevhost (\S+) \((/.+):([0-9]+)\)$`)
 	apacheAlias      = regexp.MustCompile(`^\s+alias (\S+)$`)
 	apacheServerRoot = regexp.MustCompile(`^ServerRoot: "(/.*)"$`)
+	apacheUser       = regexp.MustCompile(`^User: name="([^"]+)" id=[0-9]+$`)
 )
 
 // apacheVhost is a virtual host of apachectl -S: its names, its port and where it is defined.
@@ -410,11 +420,16 @@ func (c *apacheConf) read(name string) []apacheDirective {
 func apacheVhosts(out []byte) ([]Vhost, error) {
 	var list []*apacheVhost
 	var last *apacheVhost
+	user := ""
 	conf := &apacheConf{included: map[string][]apacheDirective{}}
 	for raw := range strings.Lines(string(out)) {
 		line := strings.TrimRight(raw, "\r\n")
 		if m := apacheServerRoot.FindStringSubmatch(line); m != nil {
 			conf.root = m[1]
+			continue
+		}
+		if m := apacheUser.FindStringSubmatch(line); m != nil {
+			user = m[1]
 			continue
 		}
 		m := apacheOneVhost.FindStringSubmatch(line)
@@ -463,6 +478,9 @@ func apacheVhosts(out []byte) ([]Vhost, error) {
 		}
 	}
 	vhosts := slices.Concat(found...)
+	for i := range vhosts {
+		vhosts[i].user = user
+	}
 	switch {
 	case conf.tooMany:
 		return vhosts, fmt.Errorf("the configuration of Apache has more than %d files", maxApacheFiles)

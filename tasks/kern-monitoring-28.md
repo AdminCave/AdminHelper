@@ -79,15 +79,17 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 Abhängt von: T3
 
-### T6 — R-1422: Ansicht moodle_checks  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_moodle.go, apps/agent/internal/probe/app_moodle_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T6 — R-1422: Ansicht moodle_checks  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_moodle.go, apps/agent/internal/probe/app_moodle_linux_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go, apps/agent/internal/probe/web_vhosts_apache_linux_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/app_moodle_unix.go, apps/agent/internal/probe/app_moodle_windows.go, apps/agent/internal/execx/execx.go, apps/agent/internal/execx/execx_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6d82a7348 2026-11-15T05:31:47+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T6.verdict.json)
 Änderung: Vorher die Optionen von `admin/cli/checks.php` in der Moodle-Doku nachlesen (WebFetch) und im Kommentar
 belegen. `moodle_checks` an die Zielart `vhost` liest so: Wurzel und Webserver-Benutzer zur Prüfzeit aus
 `WebVhosts` (nginx `user`, Apache `APACHE_RUN_USER` aus `envvars`), dann `runuser -u <user> -- php
 <wurzel>/admin/cli/checks.php`. Die Freigabeliste nimmt nur einen absoluten Pfad, der auf `/admin/cli/checks.php`
 endet, und nie root als Benutzer. Felder: `state` (ok/warning/critical/unknown aus dem Exitcode), `not_ok` (Zahl der
 nicht-OK-Zeilen), nie Text. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/allowlist/ ./internal/execx/
 Doku: → T8
 Abhängt von: T3
 
@@ -150,3 +152,23 @@ Abhängt von: T7
   `scheme: auto` (der Handshake von `speaksTLS` nennt keinen Namen; das Schema liefert der Server aus der Instanz).
   Eine Umleitung auf den eigenen Namen ist eine auf ein anderes Ziel (`sameTarget`), denn verbunden wird mit
   Loopback. Die Tests liegen in `sensor_net_test.go` bei den übrigen Netz-Fühlern statt in einer neuen Datei.
+- T6: Der Webserver-Benutzer steht als ungemeldetes Feld `user` am `Vhost`: nginx aus der `user`-Direktive des
+  Hauptkontexts (ohne sie keiner, also kein Lauf), Apache aus der Zeile `User: name="…"` von `apachectl -S`
+  (DUMP_RUN_CFG, der wirksame Wert von `APACHE_RUN_USER`) statt aus `envvars`. Die Freigabeliste nimmt den Benutzer
+  über die Klasse `pmuser` (nie root) und genau ein Argument der neuen Klasse `moodlechecks`; `checks.php` läuft ohne
+  Optionen (nur Typ status). Format und Exitcodes wörtlich aus `admin/cli/checks.php` (moodle main): erste Zeile
+  `OK|WARNING|CRITICAL|UNKNOWN: `, Trenner `----------+`, Ergebniszeilen `%10s|` mit einem Status-Wort; eine
+  umbrochene Detailzeile ohne Spalte zählt nicht. An einem echten Moodle nicht verifiziert (Ausgabe des
+  CLI-Renderers für die Statusspalte). Der Test liegt in `app_moodle_linux_test.go` (echte Exitcodes über `sh`,
+  `stubVhostCache` ist Linux-Test-Code).
+- T6 (nach dem `security`-Review): `checks.php` startet nur, wenn Document Root, jedes Verzeichnis darüber und die
+  Dateien, die es zuerst lädt, root oder dem Laufbenutzer gehören und sonst niemand sie schreiben darf
+  (`moodleOwned`, `app_moodle_unix.go`; Windows: nie). Die Ausgabe hält `execx.RunCapped` bei 64 KiB, stderr wird
+  verworfen, ein Fehler nennt nur den Exitcode. `moodleTimeout` 30 s wie die Obergrenze von `timeout_s`.
+- T6 (zweite Runde, Kevin 2026-11-15: korrigieren und eine dritte Prüfrunde): `checks.php` läuft auf dem Pfad, den
+  `moodleOwned` geprüft hat (Document Root mit aufgelösten Links); der Laufbenutzer hat nie uid 0; schreiben darf eine
+  Gruppe nur, wenn sie root gehört; keine der geprüften Dateien ist ein Link. Dazu gehört das `dataroot` aus
+  `config.php` (nur eine literale Zuweisung) dem Laufbenutzer, und seine Verzeichnisse darüber sowie `muc/`,
+  `cache/`, `localcache/` folgen denselben Regeln; verlegt `config.php` die Caches, läuft nichts. Welche Dateien unter
+  `dataroot` Moodle als PHP lädt, ist nicht am Moodle-Quelltext verifiziert. Ein Moodle mit den Standardrechten
+  `directorypermissions` 02777 bleibt damit `unsupported`.

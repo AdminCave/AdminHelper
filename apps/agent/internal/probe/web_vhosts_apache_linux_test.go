@@ -117,6 +117,9 @@ func TestTheVhostsOfApacheAreReadFromItsListAndTheirBlocks(t *testing.T) {
 		{Server: "apache", Name: "other.example.org", Port: 443, TLS: true, cert: cert},
 		{Server: "apache", Name: "third.example.org", Port: 443, TLS: true, cert: cert},
 	}
+	for i := range want {
+		want[i].user = "www-data" // the user directive of the main context / User of DUMP_RUN_CFG
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("vhosts =\n%+v\nwant\n%+v", got, want)
 	}
