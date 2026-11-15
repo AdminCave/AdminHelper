@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""WordPress from the official image wordpress (R-1243, R-1404).
+"""WordPress from the official image wordpress (R-1243, R-1404, R-1423).
 
 The module asks the index of the REST API on port 80 of the container without a login, as
 GET /?rest_route=/ rather than /wp-json/: WordPress answers the query form with and without
@@ -24,19 +24,29 @@ version of WordPress; it follows no link out of the container and reports nothin
 the file. The fpm variant has the file too and gets the version. The check has no rule: the
 version is shown, not rated.
 
+Every 15 minutes the app sensor (R-1423) counts the scheduled events of WP-Cron: the option
+cron of <prefix>options, read with one fixed query over the Unix socket of the database
+container on the same host, the one that carries WORDPRESS_DB_HOST as an alias or DNS name in
+a network it shares with WordPress and runs mariadb or mysql. User and password come from the
+container's WORDPRESS_DB_* and stay on the host; the agent sends only events, overdue (due
+for more than 10 minutes) and oldest_overdue_s. Waiting more than an hour warns, more than a
+day is critical: WP-Cron runs on visits, so a quiet site lets events wait, and a site with
+DISABLE_WP_CRON needs a system cron. A database on another host or by address, Docker
+secrets (WORDPRESS_DB_PASSWORD_FILE) and an own wp-config.php leave the check unknown.
+
 Not covered: the fpm variant's HTTP (it serves FastCGI on 9000: the check is not bound), a
 project that keeps a container of wordpress:cli next to the site (two containers of the
-image: nothing is bound), a WordPress installed on the host and its version, the cron of
-any WordPress (it needs the site's database), and the image bitnami/wordpress.
+image: nothing is bound), a WordPress installed on the host, its version and its cron, and
+the image bitnami/wordpress.
 """
 
 MODULE = {
     "id": "wordpress",
     "name": "WordPress",
-    "version": 2,
+    "version": 3,
     "description": (
         "WordPress from its official image: the container, whether the site answers its "
-        "REST API, and the version of WordPress it ships."
+        "REST API, the version of WordPress it ships and whether its scheduled events run."
     ),
     "detect": {"container_images": ["wordpress"]},
     "instance": "compose_project",
@@ -72,11 +82,25 @@ MODULE = {
             "interval": 3600,
             "fields": ["version"],
         },
+        {
+            "key": "cron",
+            "name": "WP-Cron",
+            "sensor": "app",
+            "target": {"kind": "container"},
+            "params": {"view": "wordpress_cron"},
+            "interval": 900,
+            "fields": ["events", "overdue", "oldest_overdue_s"],
+            "rules": [
+                {"field": "oldest_overdue_s", "op": "gt", "value": 86400, "level": "critical"},
+                {"field": "oldest_overdue_s", "op": "gt", "value": 3600, "level": "warning"},
+            ],
+        },
     ],
     "card": [
         {"check_key": "container", "field": "state", "label": "Container"},
         {"check_key": "container", "field": "health", "label": "Container health"},
         {"check_key": "rest", "field": "status_code", "label": "REST API"},
         {"check_key": "version", "field": "version", "label": "Version"},
+        {"check_key": "cron", "field": "overdue", "label": "Overdue events"},
     ],
 }

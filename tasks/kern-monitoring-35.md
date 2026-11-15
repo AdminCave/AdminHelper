@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T4
 Abhängt von: T1
 
-### T3 — R-1423: Katalog `wordpress` v3 mit Check `cron`  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/wordpress.py, apps/monitoring/tests/test_catalog_wordpress.py, apps/monitoring/tests/test_catalog_sensors.py
+### T3 — R-1423: Katalog `wordpress` v3 mit Check `cron`  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/wordpress.py, apps/monitoring/tests/test_catalog_wordpress.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/app/catalog/sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @10240dacd 2026-11-15T07:38:10+01:00
+Review: approve (.ah-out/review/kern-monitoring-35/T3.verdict.json)
 Änderung: Check `cron` (Sensor `app`, Ansicht `wordpress_cron`, Ziel Container, alle 900 s, Felder `events`,
 `overdue`, `oldest_overdue_s`; `oldest_overdue_s` > 3600 warn, > 86400 crit), Version 3, Docstring (Grenzen,
 Zugangsdaten bleiben lokal); Ansicht in der Sensor-Liste des Katalogs.

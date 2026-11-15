@@ -2,12 +2,13 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The catalog module wordpress (R-1243, R-1404): the official image gets the container
-check, GET /?rest_route=/ on port 80 in plain HTTP every five minutes and the version from
-the container once an hour; anything but 200 is critical, a refused REST API is the access
-brake, the version is shown and not rated; the fpm variant gets no HTTP check but the
-version, a second container of the image leaves the project unbound, a WordPress on the
-host and other images are not taken; no check asks wp-cron.php."""
+"""The catalog module wordpress (R-1243, R-1404, R-1423): the official image gets the container
+check, GET /?rest_route=/ on port 80 in plain HTTP every five minutes, the version from
+the container once an hour and the events of WP-Cron every 15 minutes; anything but 200 is
+critical, a refused REST API is the access brake, the version is shown and not rated, an event
+waiting more than an hour warns and more than a day is critical; the fpm variant gets no HTTP
+check but the version and the cron, a second container of the image leaves the project
+unbound, a WordPress on the host and other images are not taken; no check asks wp-cron.php."""
 
 from datetime import UTC, datetime
 
@@ -100,8 +101,8 @@ def _status(check_key, values, status="ok", error=""):
 
 def test_the_module_loads_with_its_checks():
     assert CATALOG.errors == ()
-    assert MODULE.version == 2
-    assert list(CHECKS) == ["container", "rest", "version"]
+    assert MODULE.version == 3
+    assert list(CHECKS) == ["container", "rest", "version", "cron"]
     assert MODULE.detect.container_images == ["wordpress"]
     assert (MODULE.detect.units, MODULE.detect.processes) == ([], [])
     assert all(c.credential is None for c in MODULE.checks)
@@ -139,6 +140,7 @@ def test_wordpress_in_its_project_gets_its_container_and_80():
         "container": ("blog-wordpress-1", None),
         "rest": ("blog-wordpress-1", None),
         "version": ("blog-wordpress-1", None),
+        "cron": ("blog-wordpress-1", None),
     }
     assert _target("rest", block, "blog") == {
         "kind": "container",
@@ -164,10 +166,11 @@ def test_the_image_started_without_compose_gets_the_container_and_80(image):
         "container": ("wordpress", None),
         "rest": ("wordpress", None),
         "version": ("wordpress", None),
+        "cron": ("wordpress", None),
     }
 
 
-def test_the_fpm_variant_serves_no_http_and_gets_the_container_check_and_the_version():
+def test_the_fpm_variant_serves_no_http_and_gets_the_container_check_the_version_and_the_cron():
     block = _block(
         [
             _container("blog-wordpress-1", "wordpress:6-fpm", "blog", "wordpress", ((9000, None),)),
@@ -178,6 +181,7 @@ def test_the_fpm_variant_serves_no_http_and_gets_the_container_check_and_the_ver
         "container": ("blog-wordpress-1", None),
         "rest": (None, "container blog-wordpress-1 has no port 80"),
         "version": ("blog-wordpress-1", None),
+        "cron": ("blog-wordpress-1", None),
     }
 
 
@@ -188,6 +192,7 @@ def test_a_cli_container_next_to_the_site_leaves_the_project_unbound():
         "container": (None, why),
         "rest": (None, why),
         "version": (None, why),
+        "cron": (None, why),
     }
 
 
@@ -274,10 +279,51 @@ def test_the_version_is_shown_and_not_rated(values, status, error, want):
     assert _status("version", values, status, error) == want
 
 
-def test_the_card_shows_the_container_the_rest_api_and_the_version():
+def test_the_cron_is_counted_in_the_container_every_15_minutes():
+    check = CHECKS["cron"]
+    assert (check.sensor, check.params) == ("app", {"view": "wordpress_cron"})
+    assert check.fields == ["events", "overdue", "oldest_overdue_s"]
+    assert (check.interval, check.test_object, check.credential) == (900, False, None)
+    assert _target("cron", _block(COMPOSE), "blog") == {
+        "kind": "container",
+        "name": "blog-wordpress-1",
+        "port_hint": None,
+        "scheme": None,
+    }
+
+
+def _cron(events, overdue, oldest):
+    return {"events": events, "overdue": overdue, "oldest_overdue_s": oldest}
+
+
+@pytest.mark.parametrize(
+    ("values", "status", "error", "want"),
+    [
+        (_cron(9, 0, 0), "ok", "", "ok"),
+        # A quiet site lets events wait until the next visit.
+        (_cron(9, 2, 3600), "ok", "", "ok"),
+        (_cron(9, 2, 3601), "ok", "", "warning"),
+        (_cron(9, 2, 86400), "ok", "", "warning"),
+        (_cron(9, 5, 86401), "ok", "", "critical"),
+        # No database container on this host, Docker secrets, a refused login.
+        ({}, "unsupported", "container blog-wordpress-1: WORDPRESS_DB_PASSWORD_FILE", "unknown"),
+        (
+            {},
+            "error",
+            "container blog-wordpress-1: its database refuses with error 1045",
+            "critical",
+        ),
+    ],
+)
+def test_the_cron_warns_after_an_hour_and_is_critical_after_a_day(values, status, error, want):
+    assert _status("cron", values, status, error) == want
+
+
+def test_the_card_shows_the_container_the_rest_api_the_version_and_the_cron():
     assert [(i.check_key, i.field, i.label) for i in MODULE.card] == [
         ("container", "state", "Container"),
         ("container", "health", "Container health"),
         ("rest", "status_code", "REST API"),
         ("version", "version", "Version"),
+        ("cron", "overdue", "Overdue events"),
     ]
