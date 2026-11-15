@@ -8,9 +8,9 @@ GET /healthcheck of the docservice checks the database, Redis, pubsub and the qu
 then writes and deletes a small object in the file storage: a test object, every 15 min.
 It answers 200 with the text true or false, which is no JSON object; the agent compares
 it with true on the host and sends only whether it matched (body_match), so false is
-critical as much as an answer other than 200. The
-packages run ds-docservice.service on 8000 over plain HTTP, whatever nginx in front of it
-does (TLS on 443, a redirect on 80); the module asks /healthcheck there. The images
+critical as much as an answer other than 200. The packages run ds-docservice.service on 8000
+over plain HTTP, whatever nginx in front of it does (TLS on 443, a redirect on 80); the
+module asks /healthcheck there. The images
 (onlyoffice/documentserver, -de, -ee) run nginx and the docservice in one container and
 expose only nginx's 80 and 443; asked from outside, port 80 redirects to HTTPS once a
 certificate is set up, so the module asks nothing there. Inside the container the
@@ -21,10 +21,10 @@ unbound). From 10.0 on, the image's own HEALTHCHECK compares the answer of /heal
 with true every 30 s and the container's health carries it; the 9.x images have none. The
 module sends GET only: a PUT or DELETE on /internal/cluster/inactive shuts the server down.
 
-Not covered: the converter
-(ds-converter.service), a data container (ONLYOFFICE_DATA_CONTAINER=true), which runs no
-docservice, the split images of the docservice, converter and proxy, the container of
-Nextcloud AIO (nextcloud/aio-onlyoffice) and the image onlyoffice/documentserver-ie.
+Not covered: the converter (ds-converter.service), a data container
+(ONLYOFFICE_DATA_CONTAINER=true), which runs no docservice, the split images of the docservice,
+converter and proxy, the container of Nextcloud AIO (nextcloud/aio-onlyoffice) and the image
+onlyoffice/documentserver-ie.
 """
 
 _HEALTHCHECK = {"path": "/healthcheck", "expect": "true"}

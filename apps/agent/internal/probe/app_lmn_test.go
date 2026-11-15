@@ -129,6 +129,33 @@ func TestLmnLinboCountsImagesWithAStaleTorrent(t *testing.T) {
 	}
 }
 
+func TestLmnLinboLeavesOutAnImageThatIsGone(t *testing.T) {
+	root := mailRoot(t)
+	putHostFile(t, root, lmnImageDir+"/kept.qcow2", "x", time.Unix(1_795_000_000, 0))
+	putHostFile(t, root, lmnImageDir+"/gone.qcow2", "x", time.Unix(1_795_000_000, 0))
+	r, err := hostRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := torrentStale(r, lmnImageDir+"/nothing.qcow2"); !errors.Is(err, errImageGone) {
+		t.Fatalf("an image that is not there = %v, want errImageGone", err)
+	}
+	// The listing is taken first and the image leaves after it, as an upload or a cleanup beside
+	// the check would do.
+	entries, err := readDirCapped(r, lmnImageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Remove(lmnImageDir + "/gone.qcow2"); err != nil {
+		t.Fatal(err)
+	}
+	images, stale, err := countLinboImages(r, lmnImageDir, entries)
+	if err != nil || images != 1 || stale != 1 {
+		t.Fatalf("got %d images, %d stale, %v; want the one that is there, without a torrent", images, stale, err)
+	}
+}
+
 func TestLmnLinboWithoutImages(t *testing.T) {
 	root := mailRoot(t)
 	if _, err := lmnLinbo(context.Background(), lmnUnit); !errors.Is(err, ErrUnsupported) {

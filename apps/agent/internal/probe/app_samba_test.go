@@ -189,8 +189,8 @@ func TestSambaMemberRefusesWhatItCannotRead(t *testing.T) {
 		t.Fatalf("no testparm = %v, want unsupported", err)
 	}
 	stubToolsEnv(t, answer{}, answer{err: notInstalled("smbstatus")})
-	if _, err := sambaMember(context.Background(), sambaUnit); err == nil {
-		t.Fatal("a missing smbstatus reads as a state")
+	if _, err := sambaMember(context.Background(), sambaUnit); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("no smbstatus = %v, want unsupported", err)
 	}
 	for _, out := range []string{"", "sessions: 2", `{"sessions": []}`, `{"tcons": 3}`, `{"open_files": "none"}`} {
 		stubToolsEnv(t, answer{}, answer{out: out})
