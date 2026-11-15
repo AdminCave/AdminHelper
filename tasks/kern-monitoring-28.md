@@ -68,8 +68,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_m
 Doku: → T8
 Abhängt von: T3
 
-### T5 — R-1378: http- und tls-Fühler über den vHost  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_http_test.go, apps/agent/internal/probe/sensor_tls.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go
+### T5 — R-1378: http- und tls-Fühler über den vHost  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_http_test.go, apps/agent/internal/probe/sensor_tls.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @872bb3c19 2026-11-15T04:57:00+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T5.verdict.json)
 Änderung: `http` und `tls` nehmen die Zielart `vhost`: Loopback am Port, `Host` und SNI sind der vHost-Name;
 `https` bei `tls`. Es gibt keine Umleitung auf einen anderen Host. Der Test hat einen Loopback-Server mit zwei Namen
 und prüft, dass der richtige antwortet.
@@ -143,3 +145,8 @@ Abhängt von: T7
   Karte, wird aber nicht bewertet (interne CA). HAProxy bekommt keine Regel auf `min_days_left`: das Feld fehlt bei
   null Zertifikaten. HAProxy-Modul auf Version 2 wie bei früheren Check-Zugängen. Der Port des vHost-Ziels kommt aus
   der Zusammenfassung der Instanz; ohne Port wird der Check nicht gebunden.
+- T5: `http` und `tls` nehmen `vhost` über eine eigene Liste (`vhostTargets`); `dns` und `proto` bleiben ohne. Der
+  Parameter `host` ist an einem vHost nicht erlaubt, ebenso ein `server_name`, der vom vHost-Namen abweicht, und
+  `scheme: auto` (der Handshake von `speaksTLS` nennt keinen Namen; das Schema liefert der Server aus der Instanz).
+  Eine Umleitung auf den eigenen Namen ist eine auf ein anderes Ziel (`sameTarget`), denn verbunden wird mit
+  Loopback. Die Tests liegen in `sensor_net_test.go` bei den übrigen Netz-Fühlern statt in einer neuen Datei.

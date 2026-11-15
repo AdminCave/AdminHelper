@@ -22,9 +22,10 @@ var certRoots *x509.CertPool
 
 // tlsSensor shakes hands with its target through the guard, after STARTTLS of a protocol if starttls
 // names one, and reads the server's certificate: when it expires, who issued it, whether its chain
-// leads to a root of this host and, if server_name is set, whether it is valid for that name.
+// leads to a root of this host and, if server_name is set, whether it is valid for that name. A vhost's
+// name is its server_name.
 func tlsSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
-	t, err := targetOf(p, httpTargets...)
+	t, err := targetOf(p, vhostTargets...)
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +38,12 @@ func tlsSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
 	}
 	if !plainText(serverName, 253) {
 		return nil, fmt.Errorf("%w: parameter server_name of sensor tls needs a name of at most 253 characters without spaces", ErrInvalid)
+	}
+	if t.Kind == kindVhost {
+		if serverName != "" && serverName != t.Name {
+			return nil, fmt.Errorf("%w: sensor tls asks a vhost by its own name, not by server_name", ErrInvalid)
+		}
+		serverName = t.Name
 	}
 	starttls, err := choiceParam(p, "starttls", "none", append([]string{"none"}, startTLSProtocols...)...)
 	if err != nil {
