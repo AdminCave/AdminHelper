@@ -228,6 +228,9 @@ var (
 	db3ID = strings.Repeat("d4", 32)
 )
 
+// wpPIDs gives each container of the tests its own pid, so a test sees whose root the view opens.
+var wpPIDs = map[string]int{wpID: 4343, dbID: 4344, db2ID: 4345, db3ID: 4346}
+
 // wpInspect is `docker inspect` of one container: id, state, image, environment and its networks with
 // their aliases and DNS names.
 func wpInspect(id, state, image string, env []string, networks map[string][]string) string {
@@ -236,7 +239,7 @@ func wpInspect(id, state, image string, env []string, networks map[string][]stri
 		nets[name] = map[string]any{"IPAddress": "192.0.2.9", "Aliases": names[:1], "DNSNames": names[1:]}
 	}
 	b, _ := json.Marshal(map[string]any{
-		"Id": id, "State": map[string]any{"Status": state, "Running": state == "running", "Pid": 4343},
+		"Id": id, "State": map[string]any{"Status": state, "Running": state == "running", "Pid": wpPIDs[id]},
 		"Config": map[string]any{"Image": image, "Env": env}, "NetworkSettings": map[string]any{"Networks": nets},
 	})
 	return string(b)
@@ -388,6 +391,8 @@ func TestReadWPCronNamesNoUserInItsErrors(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			// The server that answers nothing holds the login until the context ends; 1 s keeps the test
+			// below the view's own limit of wpDBTimeout.
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			_, err := readWPCron(ctx, dial, db, true)
@@ -413,20 +418,22 @@ func TestWPDBErrorKeepsTheServersTextOut(t *testing.T) {
 }
 
 // fakeMySQL plays a database server on s: the handshake of protocol 10 with mysql_native_password, OK for
-// any login, then answer for the query.
-func fakeMySQL(s net.Conn, answer func(w func(seq byte, payload []byte) error) error) {
+// any login, then answer for the query, which it is given without its command byte.
+func fakeMySQL(s net.Conn, answer func(query string, w func(seq byte, payload []byte) error) error) {
 	defer s.Close()
 	w := func(seq byte, payload []byte) error {
 		n := len(payload)
 		_, err := s.Write(append([]byte{byte(n), byte(n >> 8), byte(n >> 16), seq}, payload...))
 		return err
 	}
+	var last []byte
 	read := func() error {
 		var h [4]byte
 		if _, err := io.ReadFull(s, h[:]); err != nil {
 			return err
 		}
-		_, err := io.ReadFull(s, make([]byte, int(h[0])|int(h[1])<<8|int(h[2])<<16))
+		last = make([]byte, int(h[0])|int(h[1])<<8|int(h[2])<<16)
+		_, err := io.ReadFull(s, last)
 		return err
 	}
 	// CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH.
@@ -443,7 +450,7 @@ func fakeMySQL(s net.Conn, answer func(w func(seq byte, payload []byte) error) e
 	if w(0, hello) != nil || read() != nil || w(2, ok) != nil || read() != nil {
 		return
 	}
-	_ = answer(w)
+	_ = answer(string(last[1:]), w)
 }
 
 func lenencStr(s string) []byte {
@@ -453,25 +460,30 @@ func lenencStr(s string) []byte {
 	return append([]byte{byte(len(s))}, s...)
 }
 
+// honestAnswer answers the query with the option cron in one column of type BLOB.
+func honestAnswer(option string) func(string, func(byte, []byte) error) error {
+	return func(_ string, w func(byte, []byte) error) error {
+		var col []byte
+		for _, f := range []string{"def", "site_1", "wp_options", "wp_options", "option_value", "option_value"} {
+			col = append(col, lenencStr(f)...)
+		}
+		// Character set, length, type MYSQL_TYPE_BLOB, flags, decimals, filler.
+		col = append(col, 0x0c, 45, 0, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x10, 0, 0, 0, 0)
+		eof := []byte{0xfe, 0, 0, 2, 0}
+		for i, p := range [][]byte{{1}, col, eof, lenencStr(option), eof} {
+			if err := w(byte(1+i), p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
 func TestReadWPCronTakesTheOptionFromAnHonestServer(t *testing.T) {
 	db := wpDB{host: "db", user: "wpuser", password: wpSecret, name: "site_1", prefix: "wp_"}
 	dial := func(context.Context) (net.Conn, error) {
 		c, s := net.Pipe()
-		go fakeMySQL(s, func(w func(byte, []byte) error) error {
-			var col []byte
-			for _, f := range []string{"def", "site_1", "wp_options", "wp_options", "option_value", "option_value"} {
-				col = append(col, lenencStr(f)...)
-			}
-			// Character set, length, type MYSQL_TYPE_BLOB, flags, decimals, filler.
-			col = append(col, 0x0c, 45, 0, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x10, 0, 0, 0, 0)
-			eof := []byte{0xfe, 0, 0, 2, 0}
-			for i, p := range [][]byte{{1}, col, eof, lenencStr(wpCronOption), eof} {
-				if err := w(byte(1+i), p); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
+		go fakeMySQL(s, honestAnswer(wpCronOption))
 		return c, nil
 	}
 	got, err := readWPCron(context.Background(), dial, db, true)
@@ -482,19 +494,19 @@ func TestReadWPCronTakesTheOptionFromAnHonestServer(t *testing.T) {
 
 func TestReadWPCronStopsAServerThatSendsMoreThanItReads(t *testing.T) {
 	db := wpDB{host: "db", user: "wpuser", password: wpSecret, name: "site_1", prefix: "wp_"}
-	for name, answer := range map[string]func(w func(byte, []byte) error) error{
+	for name, answer := range map[string]func(string, func(byte, []byte) error) error{
 		// The count of columns the driver allocates by: 2^38 is an out of memory, no panic.
-		"a result of 2^38 columns": func(w func(byte, []byte) error) error {
+		"a result of 2^38 columns": func(_ string, w func(byte, []byte) error) error {
 			return w(1, []byte{0xfe, 0, 0, 0, 0, 0x40, 0, 0, 0})
 		},
-		"a result of two columns": func(w func(byte, []byte) error) error {
+		"a result of two columns": func(_ string, w func(byte, []byte) error) error {
 			return w(1, []byte{2})
 		},
-		"a packet longer than the budget": func(w func(byte, []byte) error) error {
+		"a packet longer than the budget": func(_ string, w func(byte, []byte) error) error {
 			return w(1, make([]byte, wpDBReadBudget))
 		},
 		// Packets of 16 MiB - 1 continue each other without end.
-		"continued packets without end": func(w func(byte, []byte) error) error {
+		"continued packets without end": func(_ string, w func(byte, []byte) error) error {
 			full := make([]byte, 1<<24-1)
 			full[0] = 1
 			for seq := byte(1); ; seq++ {
@@ -516,5 +528,82 @@ func TestReadWPCronStopsAServerThatSendsMoreThanItReads(t *testing.T) {
 				t.Fatalf("readWPCron = %q, want an error", got)
 			}
 		})
+	}
+}
+
+func TestWordPressCronCountsTheEventsInTheDatabaseOfItsSite(t *testing.T) {
+	wp := wpInspect(wpID, "running", "wordpress:6", wpEnv(), map[string][]string{"site": {"wordpress"}})
+	db := wpInspect(dbID, "running", "mariadb:11", nil, map[string][]string{"site": {"db"}})
+	stubDocker(t, wp, wp, db)
+	pids := stubContainerRoot(t, func(int) (*os.Root, error) { return os.OpenRoot(t.TempDir()) })
+	stubNow(t, time.Unix(1794729508+3600, 0))
+	var queries []string
+	old := dialSocket
+	dialSocket = func(context.Context, *os.Root) (net.Conn, error) {
+		c, s := net.Pipe()
+		answer := honestAnswer(wpCronOption)
+		go fakeMySQL(s, func(q string, w func(byte, []byte) error) error {
+			queries = append(queries, q)
+			return answer(q, w)
+		})
+		return c, nil
+	}
+	t.Cleanup(func() { dialSocket = old })
+	got, err := wordpressCron(context.Background(), wpTarget())
+	want := map[string]any{"events": int64(3), "overdue": int64(3), "oldest_overdue_s": int64(7200)}
+	if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("wordpressCron = %v, %v; want %v", got, err, want)
+	}
+	if !slices.Equal(*pids, []int{wpPIDs[dbID]}) {
+		t.Errorf("opened the roots of %v, want the database's %d alone", *pids, wpPIDs[dbID])
+	}
+	if !slices.Equal(queries, []string{wpCronQuery("wp_", true)}) {
+		t.Errorf("queries = %q, want the one query in the form of mariadb", queries)
+	}
+}
+
+// guardedRead sends frames to a wpDBGuard after the client's query and returns what the guard lets through.
+func guardedRead(t *testing.T, budget int, frames ...[]byte) ([]byte, error) {
+	t.Helper()
+	c, s := net.Pipe()
+	g := &wpDBGuard{Conn: c, budget: budget}
+	t.Cleanup(func() { g.Close() })
+	go func() {
+		defer s.Close()
+		_, _ = io.ReadFull(s, make([]byte, 9))
+		for _, f := range frames {
+			n := len(f)
+			if _, err := s.Write(append([]byte{byte(n), byte(n >> 8), byte(n >> 16), 1}, f...)); err != nil {
+				return
+			}
+		}
+	}()
+	if _, err := g.Write([]byte{5, 0, 0, 0, 0x03, 'S', 'E', 'L', 0}); err != nil {
+		t.Fatal(err)
+	}
+	return io.ReadAll(g)
+}
+
+func TestWPDBGuardLetsThroughOnlyTheAnswerTheViewReads(t *testing.T) {
+	got, err := guardedRead(t, 64, []byte{1})
+	if err != nil || !slices.Equal(got, []byte{1, 0, 0, 1, 1}) {
+		t.Fatalf("one column = %v, %v; want it passed", got, err)
+	}
+	got, err = guardedRead(t, 64, []byte{0xff, 0x15, 0x04})
+	if err != nil || len(got) != 7 {
+		t.Fatalf("an error = %v, %v; want it passed", got, err)
+	}
+	for name, frames := range map[string][][]byte{
+		"two columns":          {{2}},
+		"an OK":                {{0, 0, 0, 2, 0, 0, 0}},
+		"a local file":         {{0xfb, 'x'}},
+		"a count of 8 bytes":   {{0xfe, 0, 0, 0, 0, 0x40, 0, 0, 0}},
+		"more than the budget": {{1}, make([]byte, 64)},
+		// Empty packets cost their headers alone: 5 bytes and 15 headers of 4 are one more than 64.
+		"headers beyond the budget": append([][]byte{{1}}, make([][]byte, 15)...),
+	} {
+		if _, err := guardedRead(t, 64, frames...); !errors.Is(err, errWPDBServer) {
+			t.Errorf("%s: %v, want errWPDBServer", name, err)
+		}
 	}
 }

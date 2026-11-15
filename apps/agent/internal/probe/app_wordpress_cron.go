@@ -158,7 +158,9 @@ func (p *phpParser) str() error {
 	return p.expect(`"`)
 }
 
-// integer reads a decimal int of at most 19 digits, an optional '-' before it, and the byte end after it.
+// integer reads a decimal int64, an optional '-' before it, and the byte end after it. The loop stops after
+// 20 digits, one more than an int64 holds, so that ParseInt refuses a longer number without the parser
+// walking all of it.
 func (p *phpParser) integer(end byte) (int64, error) {
 	start := p.pos
 	if p.pos < len(p.data) && p.data[p.pos] == '-' {

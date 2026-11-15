@@ -60,8 +60,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
-### T5 — R-1423: `wordpressCron` bis zum Ergebnis testen  [ ]
+### T5 — R-1423: `wordpressCron` bis zum Ergebnis testen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_wordpress_cron_test.go, apps/agent/internal/probe/app_wordpress_cron_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b9a6199a6 2026-11-15T08:09:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-35/T5.verdict.json)
 Änderung: Abschlussprüfung: kein Test fährt `wordpressCron` bis zu den Zahlen. Neuer Test über `stubDocker`,
 `stubContainerRoot` und `dialSocket` gegen `fakeMySQL`: die Wurzel des Datenbank-Containers (eigene PID je Container
 in `wpInspect`), die MariaDB-Form der Abfrage und die drei Zahlen. Dazu ein direkter Test von `wpDBGuard.Read`

@@ -130,7 +130,8 @@ func TestDialRootSocketGoesNowhereElse(t *testing.T) {
 			}
 		})
 	}
-	// Nothing ever reached a socket outside the root.
+	// Nothing ever reached a socket outside the root. Every dial above has returned, so a connection would
+	// already wait in the backlog: 100 ms only bounds Accept, it waits for nothing in flight.
 	for _, l := range []*net.UnixListener{host, linked} {
 		if err := l.SetDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 			t.Fatal(err)
