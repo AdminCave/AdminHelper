@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # UniFi OS Server lokal — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-13 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-13 · Review: pro Task
 Spec: docs/features/kern-monitoring-13.md (Roadmap R-1244)
 Heavy: linux-full — neue Ansicht und HTTP-Client im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -120,8 +120,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_uni
 Doku: → T4
 Abhängt von: T6
 
-### T8 — R-1244: Admin-Doku nennt die pasta-Regel und die Site-Grenze  [ ]
+### T8 — R-1244: Admin-Doku nennt die pasta-Regel und die Site-Grenze  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @26278d218 2026-11-15T13:49:53+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - Abschlussprüfung (wichtig): Das Sicherheitsmodell zählt `pasta/passt` noch zu den pauschal abgewiesenen
   Weiterleitern. `pasta` aus der Liste nehmen und wie die Ausnahme für `docker-proxy` beschreiben.
