@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Vor T1 `origin/main` in den Branch mergen. Domainnamen dürfen als Instanz zum Server (Kevin 2026-11-15); Pfade,
 Konfigurationstext und Inhalte nie.
 
-### T1 — R-1435: vHosts von nginx in der Discovery  [ ]
+### T1 — R-1435: vHosts von nginx in der Discovery  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go, apps/agent/internal/probe/app_web.go, apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3422d0759 2026-11-15T03:58:34+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T1.verdict.json)
 Änderung: `WebVhosts` liest aus `nginx -T` je `server` die Namen, den Port, ob `ssl`, und, falls erkannt, die App im
 `root`: Nextcloud (`occ` und `status.php`), Moodle (`admin/cli/checks.php`), WordPress (`wp-login.php`), BookStack
 (`../artisan` mit `bookstack` in `../composer.json`). Die Discovery meldet daraus den Block `vhosts` mit `{server,
@@ -110,3 +112,6 @@ Abhängt von: T7
 - 2026-11-15 Kevin: Domain als Instanz (Domainnamen der vHosts gehen zum Monitoring-Server).
 - Nicht in diesem Zug (neue Zeilen am Gate): zentrale Domain-Checks für vHost-Domains, HAProxy Datei gegen
   ausgeliefert, vHosts im Container, Moodle moodledata Platz/Inodes.
+- T1: BookStack wird an `../artisan` und `../app/Entities/Models/Bookshelf.php` erkannt statt an `bookstack` in
+  `../composer.json` (kein Dateiinhalt lesen; je App alle Merkdateien). `app_web.go` bleibt unverändert. Ein Name
+  steht einmal in `vhosts`: TLS-Port vor Klartext, der niedrigere Port zuerst.

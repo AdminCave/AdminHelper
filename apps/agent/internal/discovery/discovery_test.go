@@ -67,6 +67,8 @@ type fakeHost struct {
 	listening  map[int32][]uint16
 	recognize  func(ctx context.Context, port uint16) (string, error)
 	recognized []uint16
+	vhosts     []probe.Vhost
+	vhostErr   error
 }
 
 func stubHost(t *testing.T) *fakeHost {
@@ -82,8 +84,9 @@ func stubHost(t *testing.T) *fakeHost {
 	}
 	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening :=
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening
-	oldWindows, oldServices := windowsHost, listServices
+	oldWindows, oldServices, oldVhosts := windowsHost, listServices, webVhosts
 	t.Cleanup(func() {
+		webVhosts = oldVhosts
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening =
 			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening
 		windowsHost, listServices = oldWindows, oldServices
@@ -116,6 +119,7 @@ func stubHost(t *testing.T) *fakeHost {
 		return nil, fs.ErrNotExist
 	}
 	listSockets = func(context.Context) ([]probe.Listener, error) { return h.listeners, h.listenErr }
+	webVhosts = func(context.Context) ([]probe.Vhost, error) { return h.vhosts, h.vhostErr }
 	processName = func(_ context.Context, pid int32) string { return h.processes[pid] }
 	cgroupsOf = func(pid int32) probe.Cgroups {
 		h.mu.Lock()
@@ -210,6 +214,7 @@ var inspectJSON = `[
 // host's, listeners of all kinds, markers by path and by package.
 func wholeHost(t *testing.T) *fakeHost {
 	h := stubHost(t)
+	h.vhosts = []probe.Vhost{{Server: "nginx", Name: "cloud.example.org", Port: 443, TLS: true, App: "nextcloud"}}
 	h.answer("systemctl", units, nil)
 	h.answer("docker", "", nil)
 	h.tools["docker"] = func(args []string) ([]byte, error) {
@@ -410,7 +415,7 @@ func TestTheInventoryHasTheContractsShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	var inv struct {
-		Units, Sockets, Containers, Ports []json.RawMessage
+		Units, Sockets, Containers, Ports, Vhosts []json.RawMessage
 	}
 	if err := json.Unmarshal(data, &inv); err != nil {
 		t.Fatal(err)
@@ -420,11 +425,12 @@ func TestTheInventoryHasTheContractsShape(t *testing.T) {
 		got  []string
 		want string
 	}{
-		{"inventory", keys(t, data), "containers duration_ms markers partial ports sockets ts units"},
+		{"inventory", keys(t, data), "containers duration_ms markers partial ports sockets ts units vhosts"},
 		{"unit", keys(t, inv.Units[0]), "name state sub"},
 		{"socket", keys(t, inv.Sockets[0]), "addr container port process proto unit"},
 		{"container", keys(t, inv.Containers[2]), "compose_project compose_service health id image listening mounts name ports state"},
 		{"port", keys(t, inv.Ports[0]), "port proto protocol"},
+		{"vhost", keys(t, inv.Vhosts[0]), "app name port server tls"},
 	} {
 		if strings.Join(c.got, " ") != c.want {
 			t.Errorf("%s keys = %v, want %s", c.name, c.got, c.want)
@@ -963,5 +969,42 @@ func TestAUnitTheContractCannotCarryIsLeftEmpty(t *testing.T) {
 	want := []Socket{{"tcp", "0.0.0.0", 3000, "gitea", "", "gitea.service"}, {"tcp", "0.0.0.0", 3001, "app", "", ""}}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("sockets = %+v, %v, want %+v: a unit too long is left empty", got, ok, want)
+	}
+}
+
+func TestTheVhostsGoIntoTheInventoryWithoutPathsAndCut(t *testing.T) {
+	h := stubHost(t)
+	for i := range maxVhosts + 1 {
+		h.vhosts = append(h.vhosts, probe.Vhost{Server: "nginx", Name: fmt.Sprintf("h%d.example.org", i), Port: 443, TLS: true})
+	}
+	inv := Run(context.Background(), nil)
+	if len(inv.Vhosts) != maxVhosts || !inv.Partial {
+		t.Errorf("vhosts = %d, partial %v; want %d and partial", len(inv.Vhosts), inv.Partial, maxVhosts)
+	}
+
+	h.vhosts = h.vhosts[:2]
+	inv = Run(context.Background(), nil)
+	if len(inv.Vhosts) != 2 || inv.Vhosts[1] != (Vhost{Server: "nginx", Name: "h1.example.org", Port: 443, TLS: true}) {
+		t.Errorf("vhosts = %+v", inv.Vhosts)
+	}
+}
+
+func TestANginxThatDoesNotLoadMakesTheDiscoveryPartial(t *testing.T) {
+	h := stubHost(t)
+	h.vhosts = []probe.Vhost{{Server: "nginx", Name: "a.example.org", Port: 80}}
+	h.vhostErr = errors.New("nginx -T fails")
+	inv := Run(context.Background(), nil)
+	if !inv.Partial || len(inv.Vhosts) != 1 {
+		t.Errorf("partial %v, vhosts %+v; want partial with the vhost read", inv.Partial, inv.Vhosts)
+	}
+}
+
+func TestNoVhostsAreReadOffLinux(t *testing.T) {
+	h := stubHost(t)
+	linuxHost, markerHost = false, false
+	h.vhosts = []probe.Vhost{{Server: "nginx", Name: "a.example.org", Port: 80}}
+	inv := Run(context.Background(), nil)
+	if inv.Vhosts == nil || len(inv.Vhosts) != 0 {
+		t.Errorf("vhosts = %#v, want an empty list", inv.Vhosts)
 	}
 }
