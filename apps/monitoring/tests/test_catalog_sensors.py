@@ -786,8 +786,8 @@ def test_a_host_check_takes_no_target():
 
 
 def test_the_host_views_are_those_the_agent_returns():
-    # Written out, not derived: the names the agent's host_storage.go, host_hw.go, app_pbs.go and
-    # winviews.go return.
+    # Written out, not derived: the names the agent's host_storage.go, host_hw.go, host_linux_extras.go,
+    # app_pbs.go and winviews.go return.
     assert SENSOR_FIELDS["host"] == frozenset().union(*HOST_VIEW_FIELDS.values())
     assert SENSOR_TARGETS["host"] is None
     assert {v: sorted(f) for v, f in HOST_VIEW_FIELDS.items()} == {
@@ -797,6 +797,10 @@ def test_the_host_views_are_those_the_agent_returns():
         "ipmi_sensors": ["critical", "noncritical", "sensors"],
         "zfs_snapshots": ["status"],
         "rsnapshot": ["last_status", "last_success_age_s", "lock_stale", "running"],
+        "systemd_timers": ["failed", "timers"],
+        "kernel_taint": ["bad_page", "livepatch_transition", "mce", "oops", "tainted"],
+        "needrestart": ["kernel_status", "microcode_status", "services"],
+        "apt_state": ["audit", "held", "uu_errors", "uu_last_run_age_s"],
         "win_updates": [
             "reboot_required",
             "search_age_s",

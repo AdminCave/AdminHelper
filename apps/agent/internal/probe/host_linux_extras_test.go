@@ -213,10 +213,27 @@ func TestNeedrestartReadsTheBatchLines(t *testing.T) {
 	if want := map[string]any{"kernel_status": 1, "microcode_status": 0, "services": 0}; !reflect.DeepEqual(got, want) {
 		t.Errorf("needrestart %v, want %v", got, want)
 	}
+
+	// In a container needrestart 3.11 skips the kernel and the microcode check, in a VM the microcode
+	// check, and prints neither status line: both read as its 0, unknown, not as an error.
+	for _, out := range []string{"NEEDRESTART-VER: 3.11\n", "NEEDRESTART-VER: 3.11\nNEEDRESTART-KCUR: 6.12\nNEEDRESTART-KSTA: 1\n"} {
+		stubPackageTools(t, map[string][]byte{"needrestart": []byte(out)})
+		got, err = needrestartStatus(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		kernel := 0
+		if strings.Contains(out, "KSTA") {
+			kernel = 1
+		}
+		if want := map[string]any{"kernel_status": kernel, "microcode_status": 0, "services": 0}; !reflect.DeepEqual(got, want) {
+			t.Errorf("needrestart on %q: %v, want %v", out, got, want)
+		}
+	}
 }
 
 func TestNeedrestartRefusesAnotherForm(t *testing.T) {
-	for _, out := range []string{"", "NEEDRESTART-VER: 3.11\n", "NEEDRESTART-KSTA: high\n"} {
+	for _, out := range []string{"", "NEEDRESTART-KSTA: 1\n", "NEEDRESTART-VER: 3.11\nNEEDRESTART-KSTA: high\n"} {
 		stubPackageTools(t, map[string][]byte{"needrestart": []byte(out)})
 		if _, err := needrestartStatus(context.Background()); err == nil || errors.Is(err, ErrUnsupported) {
 			t.Errorf("needrestart on %q: err %v, want an error of form", out, err)

@@ -159,8 +159,10 @@ const needrestartTimeout = 30 * time.Second
 // restarts anything) whether the running kernel and microcode are current and how many services
 // still run with replaced libraries. kernel_status is NEEDRESTART-KSTA (0 unknown, 1 current, 2 an
 // ABI-compatible upgrade pending, 3 a version upgrade pending), microcode_status NEEDRESTART-UCSTA
-// (0 unknown, 1 current, 2 obsolete), services the count of NEEDRESTART-SVC lines. No unit name
-// leaves it.
+// (0 unknown, 1 current, 2 obsolete), services the count of NEEDRESTART-SVC lines. In a container
+// needrestart skips the kernel check, in a container or VM the microcode check, and prints no
+// status line then: a missing one is its own 0, unknown. Every batch answer begins with
+// NEEDRESTART-VER, one without it is of another form. No unit name leaves it.
 func needrestartStatus(ctx context.Context) (map[string]any, error) {
 	out, err := runToolEnv(ctx, needrestartTimeout, []string{"LC_ALL=C"}, "needrestart", "-b")
 	switch {
@@ -170,14 +172,16 @@ func needrestartStatus(ctx context.Context) (map[string]any, error) {
 		return nil, toolError("needrestart", err)
 	}
 	fields := map[string]string{"NEEDRESTART-KSTA": "kernel_status", "NEEDRESTART-UCSTA": "microcode_status"}
-	values := map[string]any{}
-	services := 0
+	values := map[string]any{"kernel_status": 0, "microcode_status": 0}
+	services, batch := 0, false
 	for _, line := range strings.Split(string(out), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), ": ")
 		if !ok {
 			continue
 		}
-		if key == "NEEDRESTART-SVC" {
+		if key == "NEEDRESTART-VER" {
+			batch = true
+		} else if key == "NEEDRESTART-SVC" {
 			services++
 		} else if field, ok := fields[key]; ok {
 			n, err := strconv.Atoi(strings.TrimSpace(value))
@@ -187,10 +191,10 @@ func needrestartStatus(ctx context.Context) (map[string]any, error) {
 			values[field] = n
 		}
 	}
-	values["services"] = services
-	if _, ok := values["kernel_status"]; !ok {
-		return nil, errors.New("needrestart: an answer without the kernel status")
+	if !batch {
+		return nil, errors.New("needrestart: an answer of another form")
 	}
+	values["services"] = services
 	return values, nil
 }
 

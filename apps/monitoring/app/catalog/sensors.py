@@ -314,6 +314,12 @@ HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
     "zfs_snapshots": frozenset({"status"}),
     "rsnapshot": frozenset({"last_status", "running", "lock_stale", "last_success_age_s"}),
+    # The Linux extras (R-1234): systemd timers, the kernel's taint, needrestart and the
+    # package state.
+    "systemd_timers": frozenset({"timers", "failed"}),
+    "kernel_taint": frozenset({"tainted", "oops", "mce", "bad_page", "livepatch_transition"}),
+    "needrestart": frozenset({"kernel_status", "microcode_status", "services"}),
+    "apt_state": frozenset({"audit", "held", "uu_last_run_age_s", "uu_errors"}),
     # Windows (R-1245, R-1436): the open updates, the day's critical and error events, the
     # machine certificates, the storage health, Defender and Windows Server Backup.
     "win_updates": frozenset(
@@ -776,6 +782,10 @@ class HostParams(_Params):
         "storage",
         "defender",
         "win_backup",
+        "systemd_timers",
+        "kernel_taint",
+        "needrestart",
+        "apt_state",
     ]
 
 

@@ -35,13 +35,15 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T8
 Abhängt von: T1
 
-### T3 — R-1234: Katalog und Module Linux-Extras  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/systemd_timers.py, apps/monitoring/app/catalog/modules/needrestart.py, apps/monitoring/app/catalog/modules/kernel.py, apps/monitoring/app/catalog/modules/apt.py, apps/monitoring/tests/test_catalog_linux_extras.py
+### T3 — R-1234: Katalog und Module Linux-Extras  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/systemd_timers.py, apps/monitoring/app/catalog/modules/needrestart.py, apps/monitoring/app/catalog/modules/kernel.py, apps/monitoring/app/catalog/modules/apt.py, apps/monitoring/tests/test_catalog_linux_extras.py, apps/monitoring/app/catalog/modules/unattended_upgrades.py, apps/monitoring/tests/test_catalog_sensors.py, apps/agent/internal/probe/host_linux_extras.go, apps/agent/internal/probe/host_linux_extras_test.go
+Evidenz: run.sh[quick] monitoring agent: 6 passed, 0 failed, 12 skipped @a71c6f997 2026-11-15T19:16:24+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T3.verdict.json)
 Änderung: `HOST_VIEW_FIELDS` um die Ansichten aus T1/T2, gleich wie im Agent. Module nach Konzept §6.14: gescheiterte
 Timer > 0 warning; Kernel-Status ≥ 2 warning, Dienste > 0 warning; OOPS/MCE/bad page critical, Livepatch in Transition
 warning; `dpkg --audit` > 0 warning, letzter unattended-upgrades-Lauf > 2 Tage warning, Fehler > 0 warning.
 Erkennung über Marker (Pfade, Pakete) wie `mdadm.py`. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_linux_extras.py tests/test_catalog_sensors.py
+Verify: bash scripts/dev/verify.sh monitoring agent --strict
 Doku: → T8
 Abhängt von: T2
 
@@ -102,3 +104,12 @@ Abhängt von: T3, T5
   (gettext), darum trennt eine Pause von über einer Stunde zwei Läufe; Format `%(asctime)s %(levelname)s %(message)s`
   aus `_setup_logging` (u-u 2.12, trixie) gelesen. `needrestart -b` mit `LC_ALL=C` und 30 s Timeout, dem Höchstwert des Katalogs (`timeout_s`): die Prüfung in T3
   setzt `timeout_s: 30`.
+- T3: unattended-upgrades als eigenes Modul (`unattended-upgrades`, Marker Paket `unattended-upgrades`) neben `apt`,
+  beide auf der Ansicht `apt_state`: eine Warnregel auf ein fehlendes Feld macht den Check `unknown`, so bliebe `apt`
+  auf Hosts ohne u-u nie grün. Warnung ab 2 Tagen ohne Lauf (der Timer läuft täglich) und bei einem ERROR im letzten
+  Lauf. needrestart warnt zusätzlich bei veraltetem Microcode (`microcode_status` ≥ 2), über den Ledger-Text hinaus;
+  KSTA/UCSTA 0 (unbekannt) bleibt still. Gehaltene Pakete stehen nur auf der Karte (Halten ist eine Entscheidung).
+- T3 (Prüfer Runde 1): needrestart 3.11 lässt im Container die Kernel-, im Container und in der VM die
+  Microcode-Prüfung aus und druckt dann keine KSTA-/UCSTA-Zeile; der Agent (T2-Datei, in T3 nachgezogen) liest eine
+  fehlende als 0 (unbekannt) statt als Fehler, eine Antwort ohne `NEEDRESTART-VER` ist von anderer Form. Verify darum
+  über `monitoring agent` (Zusatzargumente gehen nur an eine Komponente).
