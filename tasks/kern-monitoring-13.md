@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # UniFi OS Server lokal — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-13 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-13 · Review: pro Task
 Spec: docs/features/kern-monitoring-13.md (Roadmap R-1244)
 Heavy: linux-full — neue Ansicht und HTTP-Client im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -119,6 +119,17 @@ Review: approve (.ah-out/review/kern-monitoring-13/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_unifi.py tests/test_catalog_sensors.py
 Doku: → T4
 Abhängt von: T6
+
+### T8 — R-1244: Admin-Doku nennt die pasta-Regel und die Site-Grenze  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung:
+- Abschlussprüfung (wichtig): Das Sicherheitsmodell zählt `pasta/passt` noch zu den pauschal abgewiesenen
+  Weiterleitern. `pasta` aus der Liste nehmen und wie die Ausnahme für `docker-proxy` beschreiben.
+- Prüfer-Nit: In der Modulzeile `unifi-os-server` die Grenze von 20 Anfragen nennen (ab neun Sites `unknown`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: diese Task
+Task-Review: am Ende
+Abhängt von: T4
 
 ## Entscheidungen
 - Kevin 2026-11-15: hier nur Zähler, die Geräteliste kommt mit dem Reiter „Geräte“ in R-1518. Der View-Only-Test
