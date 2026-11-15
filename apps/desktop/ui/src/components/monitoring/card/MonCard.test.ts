@@ -31,6 +31,7 @@ describe('opensByDefault', () => {
   it('opens a problem and keeps green and pending closed', () => {
     expect(opensByDefault('ok')).toBe(false);
     expect(opensByDefault('pending')).toBe(false);
+    expect(opensByDefault('info')).toBe(false);
     expect(opensByDefault('warning')).toBe(true);
     expect(opensByDefault('critical')).toBe(true);
     expect(opensByDefault('unknown')).toBe(true);

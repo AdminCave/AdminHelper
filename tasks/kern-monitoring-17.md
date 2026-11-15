@@ -36,10 +36,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_opn
 Doku: → T5
 Abhängt von: T1
 
-### T4 — Desktop: info blau, Host bleibt grün, eigene Zählung (R-1280)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/models/monitoring.test.ts, apps/desktop/ui/src/components/monitoring/MonSummaryCards.svelte, apps/desktop/ui/src/components/monitoring/MonStatusTimeline.svelte, apps/desktop/ui/src/components/charts/TimeChart.svelte, apps/desktop/ui/src/components/monitoring/card/MonCard.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: `MonStatus` und `MonitoringStatusSummary` um `info`; `STATUS_PRIORITY.info` 0 (die Ampel bleibt grün), `computeSummary` zählt `info`; Karte „Hinweis“ in der Übersicht, Zeitleiste (Wert 4) und Chart blau, `MonCard` mit `data-status='info'`; Label DE/EN. Mehr als acht Dateien nur, weil Typ, Modell und die Farb-Stellen eine Änderung sind.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitoring.test.ts src/lib/api/types.contract.test.ts src/components/monitoring/MonHeartbeatBar.test.ts
+### T4 — Desktop: info blau, Host bleibt grün, eigene Zählung (R-1280)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/models/monitoring.test.ts, apps/desktop/ui/src/components/monitoring/MonSummaryCards.svelte, apps/desktop/ui/src/components/monitoring/MonStatusTimeline.svelte, apps/desktop/ui/src/components/charts/TimeChart.svelte, apps/desktop/ui/src/components/monitoring/card/MonCard.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/components/monitoring/MonServerListItem.svelte, apps/desktop/ui/src/components/ui/Pill.svelte, apps/desktop/ui/src/lib/stores/monitoringPulse.test.ts, apps/desktop/ui/src/components/monitoring/card/ModuleCard.svelte, apps/desktop/ui/src/components/monitoring/card/MonCard.test.ts, apps/desktop/ui/src/styles/app.css
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @86897cbcc 2026-11-15T17:18:14+01:00
+Review: approve (.ah-out/review/kern-monitoring-17/T4.verdict.json)
+Änderung: `MonStatus` und `MonitoringStatusSummary` um `info`; `STATUS_PRIORITY.info` 0 (die Ampel bleibt grün), `computeSummary` zählt `info`; Karte „Hinweis“ in der Übersicht, Zeitleiste (Wert 4) und Chart blau, `MonCard` mit `data-status='info'`; Label DE/EN. Mehr als acht Dateien nur, weil Typ, Modell und die Farb-Stellen eine Änderung sind: die Label-Maps in `MonServerDashboard`/`MonServerListItem` müssen unter TS strict jeden `MonStatus` tragen, die Server-Ansicht bekommt eine blaue `Pill` (Ton `info`), die Fixture in `monitoringPulse.test.ts` das neue Pflichtfeld. Karten nehmen `cardStatus` (blau bei nur Hinweisen, `ModuleCard`), der Punkt einer info-Zeile braucht `.mon-dot.mon-info` in `app.css`, `opensByDefault` lässt eine Hinweis-Karte zu (`MonCard.test.ts`).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitoring.test.ts src/lib/api/types.contract.test.ts src/components/monitoring/MonHeartbeatBar.test.ts src/lib/stores/monitoringPulse.test.ts src/components/monitoring/card/MonCard.test.ts
 Doku: → T5
 Abhängt von: T2
 
@@ -51,4 +53,5 @@ Doku: die Dateien dieser Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T4: Eine Karte mit nur Hinweisen öffnet nicht von selbst und steht nicht unter den Problemen (`opensByDefault('info')` false): ein Hinweis ist kein Problem (Roadmap-Titel „kein Gelb, keine Glocke“).
 - T3: Eine info-Regel ohne verwertbaren Wert wird übersprungen, statt den Check `unknown` zu machen: OPNsense sendet `update_available`/`update_reboot` erst nach einer Update-Prüfung, und ein Hinweis soll einen Check nie schlechter als `info` machen. Fehlende Werte von warning/critical-Regeln bleiben `unknown` (Fund aus T1).

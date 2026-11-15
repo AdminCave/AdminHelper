@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  type Tone = 'ok' | 'warn' | 'crit' | 'accent' | 'muted';
+  type Tone = 'ok' | 'info' | 'warn' | 'crit' | 'accent' | 'muted';
 
   interface Props {
     tone?: Tone;
@@ -38,6 +38,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     background: var(--success-bg);
     border-color: var(--success-border);
     color: var(--success);
+  }
+  .pill-info {
+    background: var(--info-bg);
+    border-color: var(--info-border);
+    color: var(--info);
   }
   .pill-warn {
     background: var(--warning-bg);

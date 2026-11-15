@@ -5,6 +5,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   worstStatus,
+  cardStatus,
+  STATUS_PRIORITY,
   groupChecksByServer,
   filterChecks,
   statusClass,
@@ -50,6 +52,23 @@ describe('worstStatus', () => {
   });
   it('all ok yields ok', () => {
     expect(worstStatus([{ state: { status: 'ok' } }])).toBe('ok');
+  });
+  it('info keeps the host green and loses to every problem (R-1280)', () => {
+    expect(worstStatus([{ state: { status: 'ok' } }, { state: { status: 'info' } }])).toBe('ok');
+    expect(worstStatus([{ state: { status: 'info' } }, { state: { status: 'warning' } }])).toBe(
+      'warning',
+    );
+    expect(STATUS_PRIORITY.info).toBe(STATUS_PRIORITY.ok);
+  });
+  it('a card with a hint shows info, a problem still wins (R-1280)', () => {
+    expect(cardStatus([{ state: { status: 'ok' } }, { state: { status: 'info' } }])).toBe('info');
+    expect(cardStatus([{ state: { status: 'ok' } }])).toBe('ok');
+    expect(cardStatus([{ state: { status: 'info' } }, { state: { status: 'warning' } }])).toBe(
+      'warning',
+    );
+    expect(cardStatus([{ state: { status: 'info' } }, { state: { status: 'pending' } }])).toBe(
+      'pending',
+    );
   });
 });
 
@@ -145,6 +164,14 @@ describe('computeSummary', () => {
     expect(s.warning).toBe(1);
     expect(s.critical).toBe(1);
     expect(s.pending).toBe(1);
+  });
+  it('counts info apart from ok (R-1280)', () => {
+    const s = computeSummary([
+      chk('1', null, 'ping', { status: 'ok' }),
+      chk('2', null, 'ping', { status: 'info' }),
+      chk('3', null, 'ping', { status: 'info' }),
+    ]);
+    expect([s.total, s.ok, s.info]).toEqual([3, 1, 2]);
   });
 });
 

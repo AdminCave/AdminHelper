@@ -9,7 +9,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   /** Concept §3.14: what is green is one line; a problem opens its card. */
   export function opensByDefault(status: MonStatus): boolean {
-    return status !== 'ok' && status !== 'pending';
+    // A hint is no problem: its card stays closed like an ok one.
+    return status !== 'ok' && status !== 'info' && status !== 'pending';
   }
 </script>
 
@@ -59,6 +60,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     status &&
       {
         ok: $t('monitoring.status.ok'),
+        info: $t('monitoring.status.info'),
         warning: $t('monitoring.status.warning'),
         critical: $t('monitoring.status.critical'),
         unknown: $t('monitoring.status.unknown'),
@@ -119,6 +121,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .mon-card[data-status='warning'] {
     border-color: var(--warning-border);
+  }
+  .mon-card[data-status='info'] {
+    border-color: var(--info-border);
   }
   .mon-card-head {
     display: flex;
