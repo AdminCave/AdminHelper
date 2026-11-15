@@ -58,23 +58,51 @@ func vhostName(name string) string {
 }
 
 // WebVhosts lists the names the web servers of this host serve, a name once: nginx from the dump of
-// nginx -T. A web server that is not installed adds none; one whose configuration cannot be read
-// gives an error with the names of the others, so the caller knows the list is not whole.
+// nginx -T, Apache from apache2ctl -S (Debian) or apachectl -S (RHEL). A web server that is not
+// installed adds none; one whose configuration cannot be read gives an error with the names of the
+// others, so the caller knows the list is not whole.
 func WebVhosts(ctx context.Context) ([]Vhost, error) {
 	var vhosts []Vhost
 	var errs []error
-	out, err := runTool(ctx, toolTimeout, "nginx", "-T")
-	var exitErr *exec.ExitError
+	out, err := webServerOut(ctx, "nginx", "-T")
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-	case errors.As(err, &exitErr):
-		errs = append(errs, errors.New("nginx -T fails: the configuration does not load"))
 	case err != nil:
-		errs = append(errs, fmt.Errorf("nginx: %w", err))
+		errs = append(errs, err)
 	default:
 		vhosts = append(vhosts, nginxVhosts(out)...)
 	}
+	out, err = webServerOut(ctx, "apache2ctl", "-S")
+	if errors.Is(err, exec.ErrNotFound) {
+		out, err = webServerOut(ctx, "apachectl", "-S")
+	}
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+	case err != nil:
+		errs = append(errs, err)
+	default:
+		v, err := apacheVhosts(out)
+		vhosts = append(vhosts, v...)
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return uniqueVhosts(vhosts), errors.Join(errs...)
+}
+
+// webServerOut runs the dump of a web server's configuration; exec.ErrNotFound for one not installed.
+func webServerOut(ctx context.Context, name, flag string) ([]byte, error) {
+	out, err := runTool(ctx, toolTimeout, name, flag)
+	var exitErr *exec.ExitError
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return nil, err
+	case errors.As(err, &exitErr):
+		return nil, fmt.Errorf("%s %s fails: the configuration does not load", name, flag)
+	case err != nil:
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return out, nil
 }
 
 // uniqueVhosts keeps each name once, in the order given: the first web server that serves it, and
@@ -317,4 +345,246 @@ func webApp(root string) string {
 		}
 	}
 	return ""
+}
+
+// The lines of apachectl -S (-t -D DUMP_VHOSTS -D DUMP_RUN_CFG) that name a virtual host, checked
+// against httpd 2.4.68 (the form is not documented; it is dump_a_vhost of server/vhost.c): an address
+// with one virtual host ("*:443                  secure.example.org (/etc/apache2/sites-enabled/a.conf:1)"),
+// or below "*:80 is a NameVirtualHost" each of its virtual hosts ("port 80 namevhost www.example.org
+// (…:4)") with its aliases ("alias example.org"). "default server" repeats a namevhost, "wild alias"
+// is a wildcard; both are left out. "port *" (<VirtualHost *>) names no port and is left out too.
+// ServerRoot is the directory relative Include paths are taken from.
+var (
+	apacheOneVhost   = regexp.MustCompile(`^\S+:([0-9]+)\s+(\S+) \((/.+):([0-9]+)\)$`)
+	apacheNameVhost  = regexp.MustCompile(`^\s+port ([0-9]+) namevhost (\S+) \((/.+):([0-9]+)\)$`)
+	apacheAlias      = regexp.MustCompile(`^\s+alias (\S+)$`)
+	apacheServerRoot = regexp.MustCompile(`^ServerRoot: "(/.*)"$`)
+)
+
+// apacheVhost is a virtual host of apachectl -S: its names, its port and where it is defined.
+type apacheVhost struct {
+	names []string
+	port  uint16
+	file  string
+	line  int
+}
+
+// apacheDirective is a directive of an Apache configuration file, its words and the line it starts at.
+type apacheDirective struct {
+	line int
+	f    []string
+}
+
+// apacheConf reads the files of Apache's configuration for apacheVhosts, each at most once and no
+// more than maxApacheFiles of them.
+type apacheConf struct {
+	root     string
+	included map[string][]apacheDirective
+	files    int
+	unread   bool
+	tooMany  bool
+}
+
+// read reads a file's directives; nil for one that cannot be read or is past the cap.
+func (c *apacheConf) read(name string) []apacheDirective {
+	if c.files == maxApacheFiles {
+		c.tooMany = true
+		return nil
+	}
+	c.files++
+	text, err := readCapped(name, maxApacheFileBytes)
+	if err != nil {
+		c.unread = true
+		return nil
+	}
+	return apacheDirectives(text)
+}
+
+// apacheVhosts reads the virtual hosts from the output of apachectl -S, and from the <VirtualHost>
+// each is defined at what -S does not tell: SSLEngine on for TLS, the first SSLCertificateFile, the
+// DocumentRoot and the ServerAlias (-S lists the aliases only of a name-based virtual host). A
+// virtual host without a ServerName of its own is listed by -S under the name it inherits (the main
+// server's, else the host name) and is left out under it. A file that cannot be read gives an error,
+// its virtual hosts stay without TLS; past maxApacheFiles files the rest are left out, with an error.
+func apacheVhosts(out []byte) ([]Vhost, error) {
+	var list []*apacheVhost
+	var last *apacheVhost
+	conf := &apacheConf{included: map[string][]apacheDirective{}}
+	for raw := range strings.Lines(string(out)) {
+		line := strings.TrimRight(raw, "\r\n")
+		if m := apacheServerRoot.FindStringSubmatch(line); m != nil {
+			conf.root = m[1]
+			continue
+		}
+		m := apacheOneVhost.FindStringSubmatch(line)
+		if m == nil {
+			m = apacheNameVhost.FindStringSubmatch(line)
+		}
+		if m != nil {
+			last = nil
+			port, err := strconv.ParseUint(m[1], 10, 16)
+			n, lerr := strconv.Atoi(m[4])
+			if err == nil && port > 0 && lerr == nil && safePath.MatchString(m[3]) {
+				last = &apacheVhost{names: []string{m[2]}, port: uint16(port), file: m[3], line: n}
+				list = append(list, last)
+			}
+			continue
+		}
+		if a := apacheAlias.FindStringSubmatch(line); a != nil && last != nil {
+			last.names = append(last.names, a[1])
+		}
+	}
+	// Each file is read once and dropped before the next, its virtual hosts found by their line.
+	var files []string
+	byFile := map[string][]int{}
+	for k, a := range list {
+		if _, seen := byFile[a.file]; !seen {
+			files = append(files, a.file)
+		}
+		byFile[a.file] = append(byFile[a.file], k)
+	}
+	found := make([][]Vhost, len(list))
+	for _, file := range files {
+		dirs := conf.read(file)
+		if conf.tooMany {
+			break
+		}
+		at := map[int]int{}
+		for j, d := range dirs {
+			at[d.line] = j
+		}
+		for _, k := range byFile[file] {
+			j, ok := at[list[k].line]
+			if !ok {
+				j = -1 // unread, or the file changed since apachectl -S read it
+			}
+			found[k] = apacheVhostsOf(list[k], conf.block(dirs, j))
+		}
+	}
+	vhosts := slices.Concat(found...)
+	switch {
+	case conf.tooMany:
+		return vhosts, fmt.Errorf("the configuration of Apache has more than %d files", maxApacheFiles)
+	case conf.unread:
+		return vhosts, errors.New("a file of the configuration of Apache cannot be read")
+	}
+	return vhosts, nil
+}
+
+// apacheVhostsOf are the vhosts of a virtual host of -S with what its block tells.
+func apacheVhostsOf(a *apacheVhost, b apacheVhostBlock) []Vhost {
+	names := a.names
+	if b.found && !b.named {
+		names = names[1:]
+	}
+	app := webApp(b.root)
+	var vhosts []Vhost
+	for _, n := range append(slices.Clone(names), b.aliases...) {
+		name := vhostName(n)
+		if name == "" {
+			continue
+		}
+		v := Vhost{Server: "apache", Name: name, Port: a.port, TLS: b.tls, App: app, root: b.root}
+		if v.TLS {
+			v.cert = b.cert
+		}
+		vhosts = append(vhosts, v)
+	}
+	return vhosts
+}
+
+// apacheVhostBlock is what block keeps of a <VirtualHost>.
+type apacheVhostBlock struct {
+	found, named, tls bool
+	root, cert        string
+	aliases           []string
+}
+
+// block reads the <VirtualHost> that starts at directive i (nothing for none there), and the files it
+// includes by a plain path (Include, IncludeOptional; relative to ServerRoot), one level deep: certbot's
+// <VirtualHost> includes SSLEngine on from /etc/letsencrypt/options-ssl-apache.conf.
+func (c *apacheConf) block(dirs []apacheDirective, i int) apacheVhostBlock {
+	var b apacheVhostBlock
+	if i < 0 || i >= len(dirs) || strings.ToLower(dirs[i].f[0]) != "<virtualhost" {
+		return b
+	}
+	b.found = true
+	for _, d := range dirs[i+1:] {
+		key := strings.ToLower(d.f[0])
+		if key == "</virtualhost>" {
+			break
+		}
+		if (key == "include" || key == "includeoptional") && len(d.f) == 2 {
+			for _, inc := range c.include(strings.Trim(d.f[1], `"`)) {
+				b.set(inc.f)
+			}
+			continue
+		}
+		b.set(d.f)
+	}
+	return b
+}
+
+// include is the directives of an included file, read once per call; none for a pattern or a path
+// that is no plain absolute one after ServerRoot.
+func (c *apacheConf) include(name string) []apacheDirective {
+	if !path.IsAbs(name) && c.root != "" {
+		name = path.Join(c.root, name)
+	}
+	if !safePath.MatchString(name) {
+		return nil
+	}
+	dirs, ok := c.included[name]
+	if !ok {
+		dirs = c.read(name)
+		c.included[name] = dirs
+	}
+	return dirs
+}
+
+// set takes a directive of a <VirtualHost> into the block.
+func (b *apacheVhostBlock) set(f []string) {
+	if len(f) < 2 {
+		return
+	}
+	switch strings.ToLower(f[0]) {
+	case "sslengine":
+		b.tls = strings.EqualFold(f[1], "on")
+	case "sslcertificatefile":
+		if b.cert == "" {
+			b.cert = strings.Trim(f[1], `"`) // the first of several (RSA beside ECDSA)
+		}
+	case "documentroot":
+		b.root = strings.Trim(f[1], `"`)
+	case "servername":
+		b.named = true
+	case "serveralias":
+		b.aliases = append(b.aliases, f[1:]...)
+	}
+}
+
+// apacheDirectives returns the directives of an Apache configuration file as apacheLines does
+// (continuations joined, comments and empty lines dropped), each with the line it starts at.
+func apacheDirectives(text []byte) []apacheDirective {
+	var dirs []apacheDirective
+	var cur strings.Builder
+	n, start := 0, 0
+	for raw := range strings.Lines(string(text)) {
+		n++
+		line := strings.TrimSpace(raw)
+		if cur.Len() == 0 {
+			start = n
+		}
+		if strings.HasSuffix(line, "\\") {
+			cur.WriteString(strings.TrimSuffix(line, "\\") + " ")
+			continue
+		}
+		cur.WriteString(line)
+		full := strings.TrimSpace(cur.String())
+		cur.Reset()
+		if full != "" && !strings.HasPrefix(full, "#") {
+			dirs = append(dirs, apacheDirective{line: start, f: strings.Fields(full)})
+		}
+	}
+	return dirs
 }

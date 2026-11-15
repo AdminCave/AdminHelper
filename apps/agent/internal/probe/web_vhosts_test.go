@@ -7,6 +7,7 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -86,7 +87,7 @@ server {
 `
 
 func TestTheVhostsOfNginxAreReadFromItsDump(t *testing.T) {
-	stubTool(t, nginxSitesDump, nil)
+	stubTools(t, answer{out: nginxSitesDump}, answer{err: exec.ErrNotFound}, answer{err: exec.ErrNotFound})
 	stubVhostRoots(t, "/var/www/nextcloud/occ", "/var/www/nextcloud/status.php",
 		"/srv/moodle/admin/cli/checks.php", "/srv/moodle/lib/moodlelib.php")
 
@@ -170,17 +171,42 @@ func TestANameIsKeptOnceWithTheTLSPortFirst(t *testing.T) {
 
 func TestAWebServerThatIsNotThereOrDoesNotLoad(t *testing.T) {
 	stubVhostRoots(t)
-	stubTool(t, "", exec.ErrNotFound)
+	none := answer{err: exec.ErrNotFound}
+	calls := stubTools(t, none, none, none)
 	if got, err := WebVhosts(context.Background()); err != nil || len(got) != 0 {
-		t.Errorf("without nginx: %+v, %v; want none and no error", got, err)
+		t.Errorf("without a web server: %+v, %v; want none and no error", got, err)
 	}
-	stubTool(t, "", &exec.ExitError{})
-	if _, err := WebVhosts(context.Background()); err == nil || !strings.Contains(err.Error(), "does not load") {
+	want := [][]string{{"nginx", "-T"}, {"apache2ctl", "-S"}, {"apachectl", "-S"}}
+	if !reflect.DeepEqual(*calls, want) {
+		t.Errorf("calls = %q, want %q", *calls, want)
+	}
+	stubTools(t, answer{err: &exec.ExitError{}}, none, none)
+	if _, err := WebVhosts(context.Background()); err == nil || !strings.Contains(err.Error(), "nginx -T fails: the configuration does not load") {
 		t.Errorf("broken nginx: err = %v, want the configuration that does not load", err)
 	}
-	stubTool(t, "", errors.New("timeout"))
+	stubTools(t, none, answer{err: &exec.ExitError{}})
+	if _, err := WebVhosts(context.Background()); err == nil || !strings.Contains(err.Error(), "apache2ctl -S fails: the configuration does not load") {
+		t.Errorf("broken Apache: err = %v, want the configuration that does not load", err)
+	}
+	stubTools(t, answer{err: errors.New("timeout")}, none, none)
 	if _, err := WebVhosts(context.Background()); err == nil {
 		t.Error("a failed nginx -T gave no error")
+	}
+	stubTools(t, none, none, answer{err: errors.New("timeout")})
+	if _, err := WebVhosts(context.Background()); err == nil {
+		t.Error("a failed apachectl -S gave no error")
+	}
+}
+
+func TestTheFilesOfApacheVhostsAreCapped(t *testing.T) {
+	stubVhostRoots(t)
+	var out strings.Builder
+	for i := range maxApacheFiles + 1 {
+		fmt.Fprintf(&out, "*:80                   h%d.example.org (/nonexistent/%d.conf:1)\n", i, i)
+	}
+	got, err := apacheVhosts([]byte(out.String()))
+	if len(got) != maxApacheFiles || err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Errorf("%d vhosts, err %v; want %d and the cap", len(got), err, maxApacheFiles)
 	}
 }
 

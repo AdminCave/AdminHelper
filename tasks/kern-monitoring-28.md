@@ -25,8 +25,10 @@ Dateien mit SPDX-Header.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./internal/discovery/
 Doku: → T8
 
-### T2 — R-1435: vHosts von Apache  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T2 — R-1435: vHosts von Apache  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/web_vhosts_apache_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @40e1e44ff 2026-11-15T04:20:04+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T2.verdict.json)
 Änderung: `apache2ctl -S` / `apachectl -S` in die Freigabeliste. `WebVhosts` liest `namevhost` und `alias` mit Port
 und der Datei:Zeile, dort `SSLEngine on`, `SSLCertificateFile` und `DocumentRoot` des `<VirtualHost>`. Die Form der
 Ausgabe gegen ein echtes httpd 2.4 (Docker `httpd:2.4`) prüfen und die Version im Kommentar nennen. Fixture aus
@@ -115,3 +117,11 @@ Abhängt von: T7
 - T1: BookStack wird an `../artisan` und `../app/Entities/Models/Bookshelf.php` erkannt statt an `bookstack` in
   `../composer.json` (kein Dateiinhalt lesen; je App alle Merkdateien). `app_web.go` bleibt unverändert. Ein Name
   steht einmal in `vhosts`: TLS-Port vor Klartext, der niedrigere Port zuerst.
+- T2: Apache heißt in `vhosts` `server: apache` (Debian apache2 und RHEL httpd gleich). Erst `apache2ctl -S`, fehlt
+  es, `apachectl -S`. Ein `<VirtualHost *>` (`port *` in `-S`) nennt keinen Port und wird ausgelassen. Namen aus `-S`
+  (Name, `alias`) und `ServerAlias` des Blocks (`-S` nennt Aliase nur bei namensbasierten vHosts). Steht an der
+  Zeile aus `-S` kein `<VirtualHost` mehr, bleibt der vHost ohne TLS, Wurzel und Zertifikat. Den Webserver-Benutzer
+  (`User:` in `-S`) liest erst T6. `Include`/`IncludeOptional` im Block wird eine Ebene tief gelesen (certbot legt
+  `SSLEngine on` in `options-ssl-apache.conf`), nur feste Pfade, relativ zu `ServerRoot` aus `-S`, keine Muster.
+  Ein Block ohne eigenes `ServerName` meldet den von `-S` geerbten Namen nicht. Jede Datei wird je Lauf einmal
+  gelesen (höchstens 512 Dateien, je `maxApacheFileBytes`).

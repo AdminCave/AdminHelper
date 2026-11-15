@@ -304,8 +304,8 @@ func TestAllowlistNetSecurityViews(t *testing.T) {
 }
 
 // TestAllowlistWebViews: the web server views run the configuration tests, the dump of nginx's
-// configuration and Apache's list of its files, HAProxy's test only on the file of the packages. The
-// traps signal or start the server, or point it at another configuration.
+// configuration, Apache's lists of its files and its virtual hosts, HAProxy's test only on the file
+// of the packages. The traps signal or start the server, or point it at another configuration.
 func TestAllowlistWebViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"nginx", "-t"},
@@ -314,6 +314,8 @@ func TestAllowlistWebViews(t *testing.T) {
 		{"apache2ctl", "-t", "-D", "DUMP_INCLUDES"},
 		{"apachectl", "-t"},
 		{"apachectl", "-t", "-D", "DUMP_INCLUDES"},
+		{"apache2ctl", "-S"},
+		{"apachectl", "-S"},
 		{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"},
 	} {
 		if !Allowed(call[0], call[1:]) {
@@ -335,6 +337,9 @@ func TestAllowlistWebViews(t *testing.T) {
 		{"apachectl", "-t", "-D", "DUMP_RUN_CFG"},
 		{"apachectl", "-t", "-f", "/tmp/x.conf"},
 		{"apache2ctl", "configtest", "-D", "DUMP_INCLUDES"},
+		{"apache2ctl", "-S", "-f", "/tmp/x.conf"},
+		{"apachectl", "-S", "-k", "start"},
+		{"apachectl", "-D", "DUMP_VHOSTS"},
 		{"haproxy", "-f", "/etc/haproxy/haproxy.cfg"},
 		{"haproxy", "-c", "-f", "/etc/haproxy/haproxy.cfg"},
 		{"haproxy", "-c", "-q", "-f", "/tmp/x.cfg"},

@@ -325,12 +325,14 @@ var commands = map[string][][]string{
 		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
 	},
 	// The web server views (probe, app_web.go): the configuration tests, which read the configuration and
-	// start nothing, the dump of nginx's configuration and Apache's list of its files. Kept out: nginx
+	// start nothing, the dump of nginx's configuration and Apache's list of its files; for the vhosts of
+	// the discovery (probe, web_vhosts.go) Apache's list of its virtual hosts (-S, which is -t -D
+	// DUMP_VHOSTS -D DUMP_RUN_CFG and starts nothing either). Kept out: nginx
 	// -s (signals the master: stop, reload, reopen), nginx -c/-g, apachectl start|stop|restart|graceful
 	// and -k, haproxy without -c (starts a proxy) and with -sf/-st (stops the running one).
 	"nginx":      {{"-t"}, {"-T"}},
-	"apache2ctl": {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
-	"apachectl":  {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
+	"apache2ctl": {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}, {"-S"}},
+	"apachectl":  {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}, {"-S"}},
 	"haproxy":    {{"-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"}},
 	"ceph":       {{"health", "-f", "json"}, {"df", "-f", "json"}},
 	"sanoid":     {{"--monitor-snapshots"}},
