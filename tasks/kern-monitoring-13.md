@@ -69,8 +69,8 @@ Abhängt von: T1
 ### T4 — Doku DE+EN und CHANGELOG  [ ]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-13.md
 Änderung:
-- Admin-Doku: Modul `unifi-os-server` (Key anlegen, View-Only-Key bevorzugen, hinterlegen per Desktop, was
-  gesendet wird, nicht abgedeckt).
+- Admin-Doku: Modul `unifi-os-server` (Key anlegen: erbt die Rechte des anlegenden Admins, braucht Network-Vollzugriff,
+  ein View-Only-Key ist nicht möglich; hinterlegen per Desktop, was gesendet wird, nicht abgedeckt).
 - Entwickler-Doku: Ansicht und Client-Regeln.
 - Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict
@@ -82,3 +82,10 @@ Abhängt von: T2, T3
 - Kevin 2026-11-15: hier nur Zähler, die Geräteliste kommt mit dem Reiter „Geräte“ in R-1518. Der View-Only-Test
   läuft auf einer frisch installierten UOS-VM im Pool.
 - Gebaut wird nach dem Merge von feature/kern-monitoring-33: Beide ändern `sensor_app.go` und `sensors.py`.
+- Lab T3 (UOS 5.1.42, Network 10.5.67, frisch installierte Wegwerf-VM, 2026-11-15): kein UI-Konto nötig. Ein Key hat
+  nur Name, Beschreibung und Ablauf, keine Scopes, und erbt die Rechte des anlegenden Admins. Admins mit Network
+  „View Only“ (auch mit Konsole „Full Management“) bekommen auf der Seite Integrations „Access Prohibited“: ein
+  View-Only-Key lässt sich nicht anlegen. Der Key eines Owners schrieb (ein Hotspot-Voucher per POST, 201). Darum
+  bleibt der GET-only-Client mit Pfadliste die einzige Bremse; Restrisiko §10 Nr. 16 hat Kevin schon angenommen.
+- Lab T3: pasta (rootless Podman) hält 11443 unter user@<uid>.service, nicht im cgroup der Unit (→ unifiOwner).
+  Der Guard lehnt pasta als Weiterleiter ab, auch für den tls-Check: offen, eigene Task nach Rat des advisor.
