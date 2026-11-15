@@ -27,10 +27,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info
 Doku: → T5
 Abhängt von: T1
 
-### T3 — OPNsense: Hinweise für Update und CARP-Wartung (R-1280)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/opnsense.py, apps/monitoring/tests/test_catalog_opnsense.py
+### T3 — OPNsense: Hinweise für Update und CARP-Wartung (R-1280)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/opnsense.py, apps/monitoring/tests/test_catalog_opnsense.py, apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_status_info.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @149865080 2026-11-15T17:05:03+01:00
+Review: approve (.ah-out/review/kern-monitoring-17/T3.verdict.json)
 Änderung: Modul `opnsense` Version 2: `update_available` wahr und `update_reboot` wahr sind `info` (Check firmware), `maintenance` wahr ist `info` (Check carp); Docstring nachziehen.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_opnsense.py tests/test_catalog_sensors.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_opnsense.py tests/test_catalog_sensors.py tests/test_status_info.py
 Doku: → T5
 Abhängt von: T1
 
@@ -49,3 +51,4 @@ Doku: die Dateien dieser Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T3: Eine info-Regel ohne verwertbaren Wert wird übersprungen, statt den Check `unknown` zu machen: OPNsense sendet `update_available`/`update_reboot` erst nach einer Update-Prüfung, und ein Hinweis soll einen Check nie schlechter als `info` machen. Fehlende Werte von warning/critical-Regeln bleiben `unknown` (Fund aus T1).

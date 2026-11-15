@@ -66,6 +66,11 @@ def test_a_held_info_rule_does_not_hide_a_rule_without_a_value():
     assert message == "down: no usable value in the probe result"
 
 
+def test_an_info_rule_without_a_value_is_no_hint_and_no_gap():
+    assert _rate([INFO, WARN], down=0)[0] == "ok"
+    assert _rate([INFO, WARN], down=1)[0] == "warning"
+
+
 def test_an_info_rule_that_does_not_hold_stays_ok():
     assert _rate([INFO, WARN], update=False, down=0)[0] == "ok"
 

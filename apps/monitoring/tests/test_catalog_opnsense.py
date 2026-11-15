@@ -79,8 +79,26 @@ def test_without_the_marker_there_is_no_firewall(markers):
         ("states", {"used_pct": 94.9}, "warning"),
         ("carp", {"init": 1, "demotion": 0}, "critical"),
         ("carp", {"init": 0, "demotion": 240}, "warning"),
-        ("carp", {"init": 0, "demotion": 0, "maintenance": True}, "ok"),
-        ("firmware", {"version": "26.7.1", "update_available": True, "update_reboot": True}, "ok"),
+        ("carp", {"init": 0, "demotion": 0, "maintenance": True}, "info"),
+        ("carp", {"init": 0, "demotion": 0, "maintenance": False}, "ok"),
+        ("carp", {"init": 0, "demotion": 240, "maintenance": True}, "warning"),
+        (
+            "firmware",
+            {"version": "26.7.1", "update_available": True, "update_reboot": True},
+            "info",
+        ),
+        (
+            "firmware",
+            {"version": "26.7.1", "update_available": True, "update_reboot": False},
+            "info",
+        ),
+        (
+            "firmware",
+            {"version": "26.7.1", "update_available": False, "update_reboot": False},
+            "ok",
+        ),
+        # Never checked for updates: the agent sends no update fields, the check stays ok.
+        ("firmware", {"version": "26.7.1", "checked": False}, "ok"),
     ],
 )
 def test_each_rule_fires_at_its_threshold(check_key, values, want):
