@@ -106,8 +106,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T4
 Abhängt von: T3
 
-### T7 — R-1244: Zertifikats-Check von UOS auf loopback 11443  [ ]
+### T7 — R-1244: Zertifikats-Check von UOS auf loopback 11443  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/unifi_os_server.py, apps/monitoring/tests/test_catalog_unifi.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8b02bc895 2026-11-15T12:58:19+01:00
+Review: approve (.ah-out/review/kern-monitoring-13/T7.verdict.json)
 Änderung:
 - Das Ziel des Checks `certificate` wird `loopback` mit `port_hint` 11443 (pasta liegt nicht im cgroup der Unit);
   Docstring nennt die geprüfte Version. Test: Ziele je Check, Grenzen der Zertifikatstage.

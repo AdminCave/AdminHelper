@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The catalog module unifi-os-server (R-1244): the unit uosserver is the instance and gets the
-service, the certificate of port 11443 and the view unifi_network every five minutes with the
+service, the certificate of port 11443 on loopback and the view unifi_network every five minutes with the
 key in header X-API-KEY; a gateway offline is critical, a cause offline warns, devices offline
 behind a cause, updating devices and firmware updates alone are no problem."""
 
@@ -86,13 +86,34 @@ def test_the_unit_is_the_instance_and_every_check_binds_to_it():
         "port_hint": None,
         "scheme": None,
     }
-    for key in ("certificate", "network"):
-        assert _config(key)["target"] == {
-            "kind": "unit",
-            "name": UNIT,
-            "port_hint": 11443,
-            "scheme": None,
+    assert _config("network")["target"] == {
+        "kind": "unit",
+        "name": UNIT,
+        "port_hint": 11443,
+        "scheme": None,
+    }
+    # The port forwarder of the rootless Podman is not in the unit's cgroup: loopback.
+    assert _config("certificate")["target"]["kind"] == "loopback"
+    assert _config("certificate")["target"]["port_hint"] == 11443
+
+
+def test_port_11443_of_the_rootless_podman_is_not_a_port_finding_too():
+    # pasta listens outside the unit's cgroup, its socket carries no unit of the module.
+    block = _block([_unit(UNIT)])
+    block["sockets"] = [
+        {
+            "proto": "tcp",
+            "addr": "0.0.0.0",
+            "port": 11443,
+            "process": "pasta",
+            "container": "",
+            "unit": "",
         }
+    ]
+    block["ports"] = [{"port": 11443, "proto": "tcp", "protocol": "https"}]
+    seen = match_inventory(block, CATALOG)
+    assert ("unifi-os-server", UNIT) in seen
+    assert not any(key[1] == "tcp-11443" for key in seen)
 
 
 def test_other_units_make_no_instance():
@@ -148,7 +169,10 @@ def test_the_service_is_critical_when_it_is_not_active(state, want):
     assert _status("service", {"active_state": state, "sub_state": "dead"}) == want
 
 
-@pytest.mark.parametrize(("days", "want"), [(400, "ok"), (21, "warning"), (8, "critical")])
+@pytest.mark.parametrize(
+    ("days", "want"),
+    [(400, "ok"), (22, "ok"), (21, "warning"), (9, "warning"), (8, "critical")],
+)
 def test_the_certificate_warns_three_weeks_ahead(days, want):
     values = {"days_left": days, "not_after": "2030-01-01", "issuer": "UniFi", "chain_ok": False}
     assert _status("certificate", values) == want

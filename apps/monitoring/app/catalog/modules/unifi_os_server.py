@@ -12,9 +12,12 @@ Every five minutes the agent's app sensor reads the view unifi_network: it asks 
 Integration API of the Network application (/proxy/network/integration/v1, OpenAPI of the
 application 11.0.97 from developer.ui.com) with the key in header X-API-KEY, only by GET, only
 on a list of read paths, without following a redirect, at most 20 requests per run, and sends
-the key only to the port the unit holds. The key has no scopes and could restart, power-cycle
-or reset devices, which is why the agent's client allows nothing but those reads. The key is
-kept on the host (credential slot default); the server only knows that one is set.
+the key only to the port the unit or the rootless Podman of its user holds. The key has no
+scopes, inherits the rights of the admin who creates it and needs one with full Network
+management: an admin with View Only cannot open the integrations, so no read-only key exists,
+and the key could restart, power-cycle or reset devices, which is why the agent's client allows
+nothing but those reads. The key is kept on the host (credential slot default); the server only
+knows that one is set. Tested against UniFi OS Server 5.1.42 with Network 10.5.67.
 
 The view sends counts only: sites, devices, devices offline, offline_root (offline devices
 whose uplink is not itself offline: the cause, not what hangs behind it), gateways offline,
@@ -35,7 +38,8 @@ MODULE = {
         "UniFi OS Server: the service, the certificate of its web port and the state of the "
         "devices its UniFi Network application manages, as counts."
     ),
-    "detect": {"units": ["uosserver.service"]},
+    # pasta holds 11443 outside the unit's cgroup: the hint claims it, or it stays a port finding.
+    "detect": {"units": ["uosserver.service"], "port_hints": [11443]},
     "instance": "unit",
     "checks": [
         {
@@ -53,7 +57,9 @@ MODULE = {
             "key": "certificate",
             "name": "Web certificate",
             "sensor": "tls",
-            "target": {"kind": "unit", "port_hint": 11443},
+            # Rootless Podman's port forwarder holds 11443 outside the unit's cgroup, so the
+            # unit rule finds no port; the check needs no key and reads it on loopback.
+            "target": {"kind": "loopback", "port_hint": 11443},
             "interval": 3600,
             "fields": ["days_left", "not_after", "issuer", "chain_ok"],
             "rules": [
