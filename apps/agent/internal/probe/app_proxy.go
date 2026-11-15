@@ -388,22 +388,31 @@ func readRootFile(root *os.Root, name, shown string, limit int64) ([]byte, error
 	return data, nil
 }
 
-// leafNotAfter returns the end of validity of the first certificate in the PEM data, the leaf of a
-// chain. Any other block, a private key among them, it skips and never quotes.
+// leafNotAfter returns the end of validity of the first certificate in the PEM data (leafCert).
 func leafNotAfter(data []byte) (time.Time, error) {
+	cert, err := leafCert(data)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return cert.NotAfter, nil
+}
+
+// leafCert returns the first certificate in the PEM data, the leaf of a chain. Any other block, a
+// private key among them, it skips unparsed and never quotes.
+func leafCert(data []byte) (*x509.Certificate, error) {
 	for {
 		var b *pem.Block
 		b, data = pem.Decode(data)
 		if b == nil {
-			return time.Time{}, errors.New("holds no PEM certificate")
+			return nil, errors.New("holds no PEM certificate")
 		}
 		if b.Type != "CERTIFICATE" {
 			continue
 		}
 		cert, err := x509.ParseCertificate(b.Bytes)
 		if err != nil {
-			return time.Time{}, errors.New("holds a certificate that cannot be parsed")
+			return nil, errors.New("holds a certificate that cannot be parsed")
 		}
-		return cert.NotAfter, nil
+		return cert, nil
 	}
 }

@@ -53,11 +53,12 @@ func passwordEnv(c appCredential, name string) ([]string, error) {
 }
 
 // The kinds of target of the views: most read one application installed as a unit or running in a
-// container; the certificates of a reverse proxy are read in either.
+// container; the certificates of a reverse proxy are read in either, a web domain's at its vhost.
 var (
 	unitKinds      = []string{kindUnit}
 	containerKinds = []string{kindContainer}
 	eitherKinds    = []string{kindUnit, kindContainer}
+	vhostKinds     = []string{kindVhost}
 )
 
 // appViews are the views of the app sensor. Each reads the inside of one application on this host,
@@ -88,6 +89,7 @@ var appViews = map[string]appView{
 	"es_nodes":          {kinds: eitherKinds, uses: []string{useBasic}, readCred: esNodes},
 	"fail2ban":          {kinds: unitKinds, read: fail2ban},
 	"fpm_pools":         {kinds: unitKinds, read: fpmPools},
+	"haproxy_certs":     {kinds: unitKinds, read: haproxyCerts},
 	"haproxy_servers":   {kinds: unitKinds, read: haproxyServers},
 	"hyperv":            {kinds: unitKinds, read: hypervState},
 	"iis_state":         {kinds: unitKinds, read: iisState},
@@ -100,6 +102,7 @@ var appViews = map[string]appView{
 	"mailcow_queue":     {kinds: containerKinds, read: mailcowQueue},
 	"mailcow_watchdog":  {kinds: containerKinds, read: mailcowWatchdog},
 	"npm_certs":         {kinds: containerKinds, read: npmCerts},
+	"moodle_checks":     {kinds: vhostKinds, read: moodleChecks},
 	"mssql_events":      {kinds: unitKinds, read: mssqlEvents},
 	"nginx_status":      {kinds: unitKinds, read: nginxStatus},
 	"ntpsec_status":     {kinds: unitKinds, read: ntpsecStatus},
@@ -131,6 +134,7 @@ var appViews = map[string]appView{
 	"veeam_sessions":    {kinds: unitKinds, read: veeamSessions},
 	"wg_peers":          {kinds: unitKinds, read: wgPeers},
 	"web_config":        {kinds: unitKinds, read: webConfig},
+	"web_vhost_cert":    {kinds: vhostKinds, read: webVhostCert},
 	"wordpress_version": {kinds: containerKinds, read: wordpressVersion},
 	"wsus":              {kinds: unitKinds, read: wsusState},
 }

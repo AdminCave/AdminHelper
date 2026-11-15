@@ -34,7 +34,7 @@ from itertools import islice
 from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
-from app.catalog.model import Module
+from app.catalog.model import VHOST_APPS, Module
 from app.checkers.agent import agent_number
 from app.core.bounds import CREDENTIAL_REF_MAX, CREDENTIAL_REF_PATTERN
 from app.core.time import utcnow_naive
@@ -52,6 +52,7 @@ MAX_PORTS = 1000
 MAX_CONTAINER_PORTS = 64
 MAX_MOUNTS = 32
 MAX_CREDENTIALS = 256
+MAX_VHOSTS = 500
 
 SCAN_AFTER_MIN = timedelta(hours=24)
 SCAN_AFTER_MAX = timedelta(hours=48)
@@ -72,6 +73,12 @@ _PROTOCOL = re.compile(r"[a-z0-9][a-z0-9_+.-]{0,31}")
 # An instance key becomes a segment of a credential reference <module>/<instance>/<slot>
 # (check_configs.ProbeCredential, at most 255 characters), so it has to fit one.
 _INSTANCE_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@-]{0,119}")
+# A vhost is reported by one DNS name in lowercase (Kevin 2026-11-15: the names of the vhosts
+# may come to this service); the agent leaves out wildcards, "_", localhost and addresses.
+_VHOST_NAME = re.compile(
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+)
+_VHOST_SERVERS = frozenset({"nginx", "apache"})
 _TCP = ("tcp", "tcp6")
 
 
@@ -175,6 +182,32 @@ def _recognised_port(raw: object) -> dict | None:
     return {"port": port, "proto": proto, "protocol": protocol}
 
 
+def _vhost(raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    name, port, tls = _text(raw.get("name"), 120), _port(raw.get("port")), raw.get("tls")
+    if not _VHOST_NAME.fullmatch(name) or name == "localhost" or _is_address(name):
+        return None
+    if port is None or not isinstance(tls, bool) or raw.get("server") not in _VHOST_SERVERS:
+        return None
+    app = raw.get("app")
+    return {
+        "server": raw["server"],
+        "name": name,
+        "port": port,
+        "tls": tls,
+        "app": app if app in VHOST_APPS else "",
+    }
+
+
+def _is_address(name: str) -> bool:
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return True
+
+
 def clean_inventory(block: object) -> dict | None:
     """The discovery block cut to the contract; None if it is no object. Entries that
     break the contract are dropped one by one, fields outside it are never kept."""
@@ -184,6 +217,11 @@ def clean_inventory(block: object) -> dict | None:
     sockets, cut_sockets = _cleaned(block.get("sockets"), _socket, MAX_SOCKETS)
     containers, cut_containers = _cleaned(block.get("containers"), _container, MAX_CONTAINERS)
     ports, cut_ports = _cleaned(block.get("ports"), _recognised_port, MAX_PORTS)
+    vhosts, cut_vhosts = _cleaned(block.get("vhosts"), _vhost, MAX_VHOSTS)
+    # A name is one instance key: the first entry for it counts, as the agent sends it once.
+    named: dict[str, dict] = {}
+    for vhost in vhosts:
+        named.setdefault(vhost["name"], vhost)
     raw_markers = block.get("markers")
     raw_markers = raw_markers if isinstance(raw_markers, dict) else {}
     markers = {
@@ -191,7 +229,14 @@ def clean_inventory(block: object) -> dict | None:
         for key, value in islice(raw_markers.items(), MAX_MARKERS)
         if isinstance(key, str) and _MARKER_ID.fullmatch(key) and isinstance(value, bool)
     }
-    cut = cut_units or cut_sockets or cut_containers or cut_ports or len(raw_markers) > MAX_MARKERS
+    cut = (
+        cut_units
+        or cut_sockets
+        or cut_containers
+        or cut_ports
+        or cut_vhosts
+        or len(raw_markers) > MAX_MARKERS
+    )
     duration = agent_number(block.get("duration_ms"))
     return {
         "ts": agent_number(block.get("ts")),
@@ -202,6 +247,7 @@ def clean_inventory(block: object) -> dict | None:
         "containers": containers,
         "markers": markers,
         "ports": ports,
+        "vhosts": list(named.values()),
     }
 
 
@@ -390,6 +436,14 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
         claimed_units = set(units)
     elif module.instance == "process":
         found = {name: {"process": name} for name in processes}
+    elif module.instance == "vhost":
+        # An inventory stored before the agent sent vhosts has none.
+        found = {
+            v["name"]: {"server": v["server"], "port": v["port"], "tls": v["tls"]}
+            for v in inv.get("vhosts", [])
+            if (v["tls"] or not detect.vhost_tls)
+            and (v["app"] in detect.vhost_apps or not detect.vhost_apps)
+        }
     if not found and (containers or units or processes or markers):
         # Every installed unit, running or not: a service stopped for a while must not
         # change the stand-in's summary (and reopen an adopted finding as "changed").

@@ -304,8 +304,8 @@ func TestAllowlistNetSecurityViews(t *testing.T) {
 }
 
 // TestAllowlistWebViews: the web server views run the configuration tests, the dump of nginx's
-// configuration and Apache's list of its files, HAProxy's test only on the file of the packages. The
-// traps signal or start the server, or point it at another configuration.
+// configuration, Apache's lists of its files and its virtual hosts, HAProxy's test only on the file
+// of the packages. The traps signal or start the server, or point it at another configuration.
 func TestAllowlistWebViews(t *testing.T) {
 	for _, call := range [][]string{
 		{"nginx", "-t"},
@@ -314,6 +314,8 @@ func TestAllowlistWebViews(t *testing.T) {
 		{"apache2ctl", "-t", "-D", "DUMP_INCLUDES"},
 		{"apachectl", "-t"},
 		{"apachectl", "-t", "-D", "DUMP_INCLUDES"},
+		{"apache2ctl", "-S"},
+		{"apachectl", "-S"},
 		{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"},
 	} {
 		if !Allowed(call[0], call[1:]) {
@@ -335,6 +337,9 @@ func TestAllowlistWebViews(t *testing.T) {
 		{"apachectl", "-t", "-D", "DUMP_RUN_CFG"},
 		{"apachectl", "-t", "-f", "/tmp/x.conf"},
 		{"apache2ctl", "configtest", "-D", "DUMP_INCLUDES"},
+		{"apache2ctl", "-S", "-f", "/tmp/x.conf"},
+		{"apachectl", "-S", "-k", "start"},
+		{"apachectl", "-D", "DUMP_VHOSTS"},
 		{"haproxy", "-f", "/etc/haproxy/haproxy.cfg"},
 		{"haproxy", "-c", "-f", "/etc/haproxy/haproxy.cfg"},
 		{"haproxy", "-c", "-q", "-f", "/tmp/x.cfg"},
@@ -690,6 +695,28 @@ func TestRunStartsAnAllowedCall(t *testing.T) {
 	}
 }
 
+// TestRunCappedTakesOnlyACallOnTheList: RunCapped refuses as Run does and starts what Run starts.
+func TestRunCappedTakesOnlyACallOnTheList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("starts a shell script")
+	}
+	marker := filepath.Join(t.TempDir(), "started")
+	if out, err := RunCapped(context.Background(), time.Minute, 1<<10, "sh", "-c", "touch "+marker); out != nil ||
+		!errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("RunCapped = %q, %v; want no output and ErrNotAllowed", out, err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the refused call started: %v", err)
+	}
+	tool := filepath.Join(t.TempDir(), "timedatectl")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\necho \"ran $1\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := RunCapped(context.Background(), time.Minute, 1<<10, tool, "show"); err != nil || string(out) != "ran show\n" {
+		t.Errorf("RunCapped = %q, %v; want the script's output", out, err)
+	}
+}
+
 // TestKeyTakesASlashRootedName: the FreeBSD calls' absolute paths count by their base name on every
 // host, Windows included (no volume there); a relative name with a slash stays as it is.
 func TestKeyTakesASlashRootedName(t *testing.T) {
@@ -954,6 +981,42 @@ func TestAllowlistWindowsViews(t *testing.T) {
 		{"appcmd", "start", "apppool", "DefaultAppPool"},
 		{"appcmd", "set", "site", "/xml"},
 		{"appcmd", "delete", "site", "Default Web Site"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistMoodleChecks: the status checks of a Moodle run as a user other than root, one
+// absolute path that ends in admin/cli/checks.php and nothing after it. The traps run another script
+// of the site (cron.php, scheduled_task.php --execute), climb out of the root, add an option (--type
+// performance), run as root or hand php code of its own.
+func TestAllowlistMoodleChecks(t *testing.T) {
+	for _, call := range [][]string{
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/checks.php"},
+		{"runuser", "-u", "apache", "--", "php", "/srv/moodle_4.5/admin/cli/checks.php"},
+		{"runuser", "-u", "nginx", "--", "php", "/admin/cli/checks.php"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"runuser", "-u", "root", "--", "php", "/var/www/moodle/admin/cli/checks.php"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/cron.php"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/scheduled_task.php", "--execute=x"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cron.php"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/../x/admin/cli/checks.php"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/.m/admin/cli/checks.php"},
+		{"runuser", "-u", "www-data", "--", "php", "var/www/moodle/admin/cli/checks.php"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/checks.php", "--type=performance"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/checks.php", "-v"},
+		{"runuser", "-u", "www-data", "--", "php", "-r", "phpinfo();"},
+		{"runuser", "-u", "www-data", "--", "php", "-d", "auto_prepend_file=/tmp/x", "/var/www/moodle/admin/cli/checks.php"},
+		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/checks.phpx"},
+		{"runuser", "-u", "www-data", "php", "/var/www/moodle/admin/cli/checks.php"},
+		{"php", "/var/www/moodle/admin/cli/checks.php"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)

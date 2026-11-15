@@ -60,6 +60,13 @@ func TestTargetOfTakesOnlyTheKindsOfTheSensorWithWhatTheyNeed(t *testing.T) {
 		{"container", []string{kindContainer}, &Target{Kind: kindContainer, Name: "mailcow_postfix-1"}, true},
 		{"container starting with a dash", []string{kindContainer}, &Target{Kind: kindContainer, Name: "-x"}, false},
 		{"container with a slash", []string{kindContainer}, &Target{Kind: kindContainer, Name: "a/b"}, false},
+		{"vhost", []string{kindVhost}, &Target{Kind: kindVhost, Name: "www.example.org", PortHint: 443}, true},
+		{"vhost without port", []string{kindVhost}, &Target{Kind: kindVhost, Name: "www.example.org"}, false},
+		{"vhost without name", []string{kindVhost}, &Target{Kind: kindVhost, PortHint: 443}, false},
+		{"vhost in capitals", []string{kindVhost}, &Target{Kind: kindVhost, Name: "WWW.example.org", PortHint: 443}, false},
+		{"vhost of a wildcard", []string{kindVhost}, &Target{Kind: kindVhost, Name: "*.example.org", PortHint: 443}, false},
+		{"vhost of an address", []string{kindVhost}, &Target{Kind: kindVhost, Name: "192.0.2.1", PortHint: 443}, false},
+		{"vhost localhost", []string{kindVhost}, &Target{Kind: kindVhost, Name: "localhost", PortHint: 443}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -280,6 +287,8 @@ func TestResolveFindsWhereATargetListens(t *testing.T) {
 		{"a port", Target{Kind: kindPort, PortHint: 443}, "127.0.0.1:443", nil},
 		{"a port on another address", Target{Kind: kindPort, PortHint: 8080}, "192.0.2.1:8080", nil},
 		{"a port nobody listens on", Target{Kind: kindPort, PortHint: 8081}, "", errNotListening},
+		{"a vhost at its port", Target{Kind: kindVhost, Name: "www.example.org", PortHint: 8080}, "192.0.2.1:8080", nil},
+		{"a vhost at a port nobody listens on", Target{Kind: kindVhost, Name: "www.example.org", PortHint: 8443}, "", errNotListening},
 		{"a process of any case, with .exe", Target{Kind: kindProcess, Name: "nginx", PortHint: 80}, "127.0.0.1:80", nil},
 		{"a process of several ports", Target{Kind: kindProcess, Name: "NGINX"}, "", ErrAmbiguousTarget},
 		{"a process of one port", Target{Kind: kindProcess, Name: "php-fpm", PortHint: 9001}, "127.0.0.1:9000", nil},
