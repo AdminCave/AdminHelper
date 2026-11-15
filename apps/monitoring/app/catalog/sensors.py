@@ -99,6 +99,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "wordpress_version": frozenset({"version"}),
     "wordpress_cron": frozenset({"events", "overdue", "oldest_overdue_s"}),
+    "nextcloud_aio": frozenset({"containers", "stopped", "backup", "backup_age_s"}),
     "wg_peers": frozenset(
         {
             "interfaces",
@@ -345,6 +346,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "ldap_replication": _UNIT,
     "wordpress_version": _CONTAINER,
     "wordpress_cron": _CONTAINER,
+    "nextcloud_aio": _CONTAINER,
     "wg_peers": _UNIT,
     "fail2ban": _UNIT,
     "crowdsec_bouncers": _UNIT,
@@ -672,6 +674,7 @@ class AppParams(_Params):
         "ldap_replication",
         "wordpress_version",
         "wordpress_cron",
+        "nextcloud_aio",
         "wg_peers",
         "fail2ban",
         "crowdsec_bouncers",

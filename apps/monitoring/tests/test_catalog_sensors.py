@@ -208,6 +208,7 @@ def test_the_app_views_are_those_the_agent_returns():
             "refreshing",
         ],
         "wordpress_cron": ["events", "oldest_overdue_s", "overdue"],
+        "nextcloud_aio": ["backup", "backup_age_s", "containers", "stopped"],
         "wordpress_version": ["version"],
         "wg_peers": [
             "interfaces",
@@ -395,6 +396,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "bbb_recordings": ["unit"],
         "ldap_replication": ["unit"],
         "wordpress_cron": ["container"],
+        "nextcloud_aio": ["container"],
         "wordpress_version": ["container"],
         "wg_peers": ["unit"],
         "fail2ban": ["unit"],

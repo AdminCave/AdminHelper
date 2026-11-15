@@ -44,8 +44,10 @@ per Datei, per `borgbackup`, ohne Backup mit gestopptem Container, Link als Fehl
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T5
 
-### T4 — R-1383: Modul `nextcloud-aio`  [ ]
+### T4 — R-1383: Modul `nextcloud-aio`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/nextcloud_aio.py, apps/monitoring/app/catalog/modules/nextcloud.py, apps/monitoring/tests/test_catalog_nextcloud_aio.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @67dcb890c 2026-11-15T09:14:08+01:00
+Review: approve (.ah-out/review/kern-monitoring-33/T4.verdict.json)
 Änderung: Ansicht `nextcloud_aio` mit ihren Feldern und Ziel Container in `sensors.py`. Neues Modul (SPDX-Header),
 erkannt an `ghcr.io/nextcloud-releases/all-in-one` und `nextcloud/all-in-one`, Instanz `container`: Check `master`
 (Container) und `aio` (Ansicht, alle 300 s, `stopped` > 0 `critical`, `backup_age_s` > 21600 `warning`), Karte.
