@@ -88,7 +88,7 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (Verhalten unverändert für eine laufende Unit)
 Abhängt von: T3
 
-### T6 — R-1244: Guard prüft pasta wie docker-proxy  [?] (Restrisiko: Guard prüft pasta statt es abzulehnen?)
+### T6 — R-1244: Guard prüft pasta wie docker-proxy  [ ]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
 Änderung:
 - pasta (rootless Podman, auch UOS) wird nicht mehr pauschal als Weiterleiter abgelehnt, sondern wie `checkProxy`
@@ -102,7 +102,7 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T4
 Abhängt von: T3
 
-### T7 — R-1244: Zertifikats-Check von UOS auf loopback 11443  [?] (hängt an T6)
+### T7 — R-1244: Zertifikats-Check von UOS auf loopback 11443  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/unifi_os_server.py, apps/monitoring/tests/test_catalog_unifi.py
 Änderung:
 - Das Ziel des Checks `certificate` wird `loopback` mit `port_hint` 11443 (pasta liegt nicht im cgroup der Unit);
@@ -127,3 +127,4 @@ Abhängt von: T6
   Container-netns lauschen auch mongod, postgres und weitere. Darum Variante A1 (argv lesen wie bei docker-proxy) statt
   A2 (alle Lauscher im netns prüfen). Restrisiko: ein gefälschter pasta-Prozess ist gleichwertig zu einem umbenannten
   Weiterleiter; die Entscheidung trifft Kevin (T6).
+- Kevin 2026-11-15: Restrisiko pasta-Guard „Hinnehmen“ (gefälschter pasta wie umbenannter docker-proxy); T6/T7 bauen.
