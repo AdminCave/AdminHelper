@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-10 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-10 · Review: pro Task
+Status: erledigt · Branch: feature/klein-nachlese-10 · Review: pro Task
 Spec: docs/features/klein-nachlese-10.md (Roadmap R-1453, R-1458, R-1473, R-1485, R-1490, R-1492, R-1495, R-1497)
 Heavy: linux-full — apps/agent (Agent-Checks dovecot_status und lmn_linbo)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
