@@ -3,14 +3,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The catalog modules of a web host (R-1231): nginx, apache, haproxy, php_fpm, pm2, varnish,
-proftpd and cloudpanel. Their unit or marker finds them, each check asks its view, and each
-rule fires at its threshold and not without it."""
+proftpd and cloudpanel, web_domain for the TLS vhosts (R-1435) and the PHP apps a vhost
+serves (R-1378, R-1422). Their unit, marker or vhost
+finds them, each check asks its view, and each rule fires at its threshold and not without it."""
 
 from datetime import UTC, datetime
 
 import pytest
 
 from app.catalog.loader import load_catalog
+from app.check_configs import ProbeConfig
 from app.checkers.probe import ProbeChecker
 from app.discovery import clean_inventory, match_inventory
 from app.module_sync import probe_config
@@ -29,10 +31,17 @@ UNITS = {
     "varnish": "varnish.service",
     "proftpd": "proftpd.service",
 }
-MODULES = (*UNITS, "cloudpanel")
+NATIVE = {
+    "nextcloud": "nextcloud_native",
+    "moodle": "moodle_native",
+    "wordpress": "wordpress_native",
+    "bookstack": "bookstack_native",
+}
+MODULES = (*UNITS, "cloudpanel", "web_domain", *NATIVE.values())
+VHOST_SUMMARY = {"server": "nginx", "port": 8443, "tls": True}
 
 
-def _inventory(units=(), markers=None, state="running"):
+def _inventory(units=(), markers=None, state="running", vhosts=()):
     return clean_inventory(
         {
             "ts": T0,
@@ -43,6 +52,7 @@ def _inventory(units=(), markers=None, state="running"):
             "containers": [],
             "markers": markers or {},
             "ports": [],
+            "vhosts": list(vhosts),
         }
     )
 
@@ -62,7 +72,8 @@ def _check(module_id, check_key):
 def _config(module_id, check_key):
     module = CATALOG.modules[module_id]
     key = UNITS.get(module_id, module_id)
-    config, why = probe_config(module, _check(module_id, check_key), key, {}, [])
+    summary = VHOST_SUMMARY if module.instance == "vhost" else {}
+    config, why = probe_config(module, _check(module_id, check_key), key, summary, [])
     assert why is None, why
     return {**config, "_check_id": "chk"}
 
@@ -207,6 +218,7 @@ def test_a_cloudpanel_host_has_its_services_modules_too():
         ("apache", "status", "apache_status", 300),
         ("haproxy", "config", "web_config", 86400),
         ("haproxy", "servers", "haproxy_servers", 300),
+        ("haproxy", "certs", "haproxy_certs", 86400),
         ("php_fpm", "pools", "fpm_pools", 300),
         ("pm2", "apps", "pm2_apps", 300),
     ],
@@ -336,3 +348,210 @@ def test_the_panel_certificate_warns_three_weeks_ahead(days_left, want):
         "chain_ok": True,
     }
     assert _status("cloudpanel", "certificate", **values) == want
+
+
+@pytest.mark.parametrize(("change", "want"), [({}, "ok"), ({"expiring_14d": 1}, "warning")])
+def test_haproxy_warns_for_a_certificate_that_ends_within_14_days(change, want):
+    values = {"certs": 3, "min_days_left": 40, "expiring_14d": 0, **change}
+    assert _status("haproxy", "certs", **values) == want
+
+
+def test_haproxy_without_certificates_is_fine():
+    # The agent tells no min_days_left without a certificate; no rule may need it.
+    assert _status("haproxy", "certs", certs=0, expiring_14d=0) == "ok"
+
+
+def _vhost(name, port=443, tls=True, server="nginx", app=""):
+    return {"server": server, "name": name, "port": port, "tls": tls, "app": app}
+
+
+def test_each_tls_vhost_is_a_web_domain_named_after_it():
+    inv = _inventory(
+        units=["nginx.service"],
+        vhosts=[
+            _vhost("cloud.example.org"),
+            _vhost("lms.example.org", port=8443, server="apache", app="moodle"),
+            _vhost("www.example.org", port=80, tls=False),
+        ],
+    )
+    seen = match_inventory(inv, CATALOG)
+    assert _instances(inv, "web_domain") == ["cloud.example.org", "lms.example.org"]
+    assert seen[("web_domain", "lms.example.org")] == {
+        "server": "apache",
+        "port": 8443,
+        "tls": True,
+    }
+    # The web server keeps its own module beside its domains.
+    assert _instances(inv, "nginx") == ["nginx.service"]
+
+
+def test_without_tls_vhosts_there_is_no_web_domain():
+    assert _instances(_inventory(units=["nginx.service"]), "web_domain") == []
+    plain = _inventory(vhosts=[_vhost("www.example.org", port=80, tls=False)])
+    assert _instances(plain, "web_domain") == []
+
+
+@pytest.mark.parametrize("check_key", ["certificate", "reload"])
+def test_the_web_domain_checks_ask_the_vhost_by_its_name_and_port(check_key):
+    assert _check("web_domain", check_key).interval == 3600
+    config = _config("web_domain", check_key)
+    assert config["params"] == {"view": "web_vhost_cert"}
+    assert config["target"] == {
+        "kind": "vhost",
+        "name": "web_domain",
+        "port_hint": 8443,
+        "scheme": None,
+    }
+    config.pop("_check_id")
+    ProbeConfig.model_validate(config)
+
+
+def test_a_web_domain_without_its_port_is_not_bound():
+    module = CATALOG.modules["web_domain"]
+    config, why = probe_config(module, _check("web_domain", "certificate"), "a.example.org", {}, [])
+    assert (config, why) == (None, "no port for this vhost")
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        pytest.param({"kind": "vhost", "name": "", "port_hint": 443}, id="no-name"),
+        pytest.param({"kind": "vhost", "name": "a.example.org"}, id="no-port"),
+    ],
+)
+def test_a_vhost_probe_needs_its_name_and_port(target):
+    config = {**_config("web_domain", "certificate"), "target": target}
+    config.pop("_check_id")
+    with pytest.raises(ValueError, match="required for kind 'vhost'"):
+        ProbeConfig.model_validate(config)
+
+
+SERVED_OK = {"served_days_left": 60, "hostname_ok": True, "chain_ok": True}
+
+
+@pytest.mark.parametrize(
+    ("change", "want"),
+    [
+        ({}, "ok"),
+        ({"served_days_left": 14}, "ok"),
+        ({"served_days_left": 13}, "warning"),
+        ({"served_days_left": 3}, "warning"),
+        ({"served_days_left": 2}, "critical"),
+        ({"served_days_left": -1}, "critical"),
+        ({"hostname_ok": False}, "critical"),
+        # An internal CA the host does not trust would warn for good: shown, not rated.
+        ({"chain_ok": False}, "ok"),
+    ],
+)
+def test_the_served_certificate_warns_two_weeks_ahead_and_is_critical_three_days_ahead(
+    change, want
+):
+    assert _status("web_domain", "certificate", **{**SERVED_OK, **change}) == want
+
+
+@pytest.mark.parametrize(
+    ("values", "want"),
+    [
+        ({"file_days_left": 80, "reload_missing": False}, "ok"),
+        ({"file_days_left": 80, "reload_missing": True}, "warning"),
+        # A file the agent cannot tell: nothing compared, the check cannot say.
+        ({}, "unknown"),
+    ],
+)
+def test_a_renewed_file_the_server_does_not_serve_warns(values, want):
+    assert _status("web_domain", "reload", **values) == want
+
+
+@pytest.mark.parametrize(("app", "module_id"), NATIVE.items())
+def test_a_vhost_of_an_app_is_an_instance_of_its_module_named_after_it(app, module_id):
+    inv = _inventory(
+        vhosts=[
+            _vhost(f"{app}.example.org", app=app),
+            _vhost(f"plain-{app}.example.org", port=80, tls=False, app=app),
+            _vhost("other.example.org", app=next(a for a in NATIVE if a != app)),
+            _vhost("none.example.org"),
+        ]
+    )
+    assert _instances(inv, module_id) == sorted([f"{app}.example.org", f"plain-{app}.example.org"])
+
+
+def test_a_domain_of_an_app_with_tls_is_a_web_domain_too():
+    inv = _inventory(vhosts=[_vhost("lms.example.org", server="apache", app="moodle")])
+    seen = match_inventory(inv, CATALOG)
+    assert sorted(m for m, k in seen if k == "lms.example.org") == ["moodle_native", "web_domain"]
+
+
+@pytest.mark.parametrize(
+    ("module_id", "check_key", "path", "interval"),
+    [
+        ("nextcloud_native", "status", "/status.php", 300),
+        ("moodle_native", "site", "/", 300),
+        ("wordpress_native", "rest", "/?rest_route=/", 300),
+        ("bookstack_native", "status", "/status", 900),
+    ],
+)
+@pytest.mark.parametrize(("tls", "scheme"), [(True, "https"), (False, "http")])
+def test_an_app_check_asks_the_vhost_by_its_name_with_the_scheme_of_its_tls(
+    module_id, check_key, path, interval, tls, scheme
+):
+    module = CATALOG.modules[module_id]
+    summary = {"server": "nginx", "port": 8443, "tls": tls}
+    config, why = probe_config(module, _check(module_id, check_key), "a.example.org", summary, [])
+    assert why is None, why
+    assert (config["sensor"], config["params"]["path"], config["interval_s"]) == (
+        "http",
+        path,
+        interval,
+    )
+    assert config["target"] == {
+        "kind": "vhost",
+        "name": "a.example.org",
+        "port_hint": 8443,
+        "scheme": scheme,
+    }
+
+
+def test_the_bookstack_status_is_a_test_object():
+    assert _check("bookstack_native", "status").test_object
+    assert not _check("nextcloud_native", "status").test_object
+
+
+NEXTCLOUD_OK = {"status_code": 200, "data.maintenance": False, "data.needsDbUpgrade": False}
+
+
+@pytest.mark.parametrize(
+    ("module_id", "check_key", "values", "want"),
+    [
+        ("nextcloud_native", "status", NEXTCLOUD_OK, "ok"),
+        ("nextcloud_native", "status", {**NEXTCLOUD_OK, "status_code": 503}, "critical"),
+        ("nextcloud_native", "status", {**NEXTCLOUD_OK, "data.maintenance": True}, "warning"),
+        ("nextcloud_native", "status", {**NEXTCLOUD_OK, "data.needsDbUpgrade": True}, "warning"),
+        ("moodle_native", "site", {"status_code": 200}, "ok"),
+        ("moodle_native", "site", {"status_code": 500}, "critical"),
+        ("wordpress_native", "rest", {"status_code": 200}, "ok"),
+        ("wordpress_native", "rest", {"status_code": 404}, "critical"),
+        ("bookstack_native", "status", {"status_code": 200}, "ok"),
+        ("bookstack_native", "status", {"status_code": 500}, "critical"),
+    ],
+)
+def test_each_app_rule_fires(module_id, check_key, values, want):
+    assert _status(module_id, check_key, **values) == want
+
+
+def test_the_moodle_checks_ask_their_view_every_15_minutes():
+    check = _check("moodle_native", "checks")
+    assert (check.interval, check.timeout_s) == (900, 30)
+    config = _config("moodle_native", "checks")
+    assert config["params"] == {"view": "moodle_checks"}
+    # The view runs checks.php, not HTTP: no scheme.
+    assert config["target"]["scheme"] is None
+    config.pop("_check_id")
+    ProbeConfig.model_validate(config)
+
+
+@pytest.mark.parametrize(
+    ("state", "want"),
+    [("ok", "ok"), ("warning", "warning"), ("critical", "critical"), ("unknown", "ok")],
+)
+def test_the_moodle_checks_rate_the_state_of_checks_php(state, want):
+    assert _status("moodle_native", "checks", state=state, not_ok=1) == want

@@ -49,6 +49,10 @@ var headerName = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 // httpTargets are the kinds of target a TCP sensor takes.
 var httpTargets = []string{kindLoopback, kindPort, kindProcess, kindContainer, kindUnit}
 
+// vhostTargets are the kinds of target http and tls take: those of httpTargets and a vhost, whose name
+// they send as SNI and Host.
+var vhostTargets = append(slices.Clone(httpTargets), kindVhost)
+
 // knownParams returns an error wrapping ErrInvalid if p has a param that is none of keys.
 func knownParams(p Probe, keys ...string) error {
 	for k := range p.Params {
@@ -206,9 +210,10 @@ const maxExpectBody = 4 << 10
 
 // httpSensor sends a GET or HEAD to its target through the guard: status code, time to the headers
 // and, for GET, fields of the JSON object the target answers or whether a short answer in plain text
-// is the one expected (body_match).
+// is the one expected (body_match). A vhost it asks at its port by its name (Host and SNI); a redirect
+// to its name, which is not where the sensor connects, is one to another target (sameTarget).
 func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, error) {
-	t, err := targetOf(p, httpTargets...)
+	t, err := targetOf(p, vhostTargets...)
 	if err != nil {
 		return nil, err
 	}
@@ -240,17 +245,28 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	}
 	// Some apps answer only to the names they trust and always trust localhost (Nextcloud's trusted
 	// domains); the param names no other host, so it lets no probe pose as a site of the host.
-	host := ""
+	host, sni := "", ""
 	if _, ok := p.Params["host"]; ok {
+		if t.Kind == kindVhost {
+			return nil, fmt.Errorf("%w: sensor http asks a vhost by its own name, parameter host is not taken", ErrInvalid)
+		}
 		if host, err = choiceParam(p, "host", "", "localhost"); err != nil {
 			return nil, err
 		}
+	}
+	if t.Kind == kindVhost {
+		host, sni = t.Name, t.Name
 	}
 	scheme := t.Scheme
 	switch scheme {
 	case "":
 		scheme = "http"
-	case "http", "https", "auto":
+	case "http", "https":
+	case "auto":
+		// The handshake of speaksTLS names no server; a vhost's scheme comes with its target.
+		if t.Kind == kindVhost {
+			return nil, fmt.Errorf("%w: sensor http needs the scheme of a vhost, not auto", ErrInvalid)
+		}
 	default:
 		return nil, fmt.Errorf("%w: sensor http takes no scheme %q", ErrInvalid, scheme)
 	}
@@ -261,6 +277,11 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	u, err := url.ParseRequestURI(path)
 	if err != nil {
 		return nil, fmt.Errorf("%w: parameter path of sensor http is no path of a request", ErrInvalid)
+	}
+	if t.Kind == kindVhost {
+		if _, err := servedVhost(ctx, t); err != nil {
+			return nil, err
+		}
 	}
 	ep, err := resolve(ctx, t)
 	if err != nil {
@@ -284,7 +305,7 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 		}
 		u.Scheme = scheme
 	}
-	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
+	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true, ServerName: sni}) //nolint:gosec // the tls sensor checks certificates
 	values, err := fetchExpecting(ctx, client, method, u.String(), host, use, secret, p.Fields, expect)
 	if err != nil {
 		return nil, err

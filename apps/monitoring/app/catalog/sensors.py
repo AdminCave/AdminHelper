@@ -149,6 +149,10 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
     "web_config": frozenset({"config_ok"}),
+    "web_vhost_cert": frozenset(
+        {"served_days_left", "hostname_ok", "chain_ok", "file_days_left", "reload_missing"}
+    ),
+    "moodle_checks": frozenset({"state", "not_ok"}),
     "service_config": frozenset({"config_ok"}),
     "nginx_status": frozenset(
         {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
@@ -157,6 +161,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "haproxy_servers": frozenset(
         {"backends", "backends_down", "servers", "servers_down", "servers_maint"}
     ),
+    "haproxy_certs": frozenset({"certs", "min_days_left", "expiring_14d"}),
     "fpm_pools": frozenset(
         {
             "pools",
@@ -402,6 +407,9 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "samba_trust": _UNIT,
     "lmn_devices": _UNIT,
     "lmn_linbo": _UNIT,
+    "web_vhost_cert": frozenset({"vhost"}),
+    "moodle_checks": frozenset({"vhost"}),
+    "haproxy_certs": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -474,8 +482,8 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "process": frozenset({"process"}),
     "socket": frozenset({"port", "process", "container", "unit"}),
     "container": frozenset({"container"}),
-    "http": frozenset({"loopback", "port", "process", "container", "unit"}),
-    "tls": frozenset({"loopback", "port", "process", "container", "unit"}),
+    "http": frozenset({"loopback", "port", "process", "container", "unit", "vhost"}),
+    "tls": frozenset({"loopback", "port", "process", "container", "unit", "vhost"}),
     "proto": frozenset({"loopback", "port", "process", "container", "unit"}),
     "certfile": None,
     "file_age": None,
@@ -682,10 +690,13 @@ class AppParams(_Params):
         "pbs_status",
         "ceph_health",
         "web_config",
+        "web_vhost_cert",
+        "moodle_checks",
         "service_config",
         "nginx_status",
         "apache_status",
         "haproxy_servers",
+        "haproxy_certs",
         "fpm_pools",
         "pm2_apps",
         "es_nodes",

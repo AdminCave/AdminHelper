@@ -53,6 +53,7 @@ const (
 	maxContainers     = 500
 	maxMarkers        = 1000
 	maxPorts          = 1000
+	maxVhosts         = 500
 	maxContainerPorts = 64
 	maxMounts         = 32
 	maxMarkerPaths    = 16
@@ -81,6 +82,7 @@ var (
 	listSockets   = probe.Listeners
 	processName   = probe.ProcessName
 	recognizePort = probe.RecognizePort
+	webVhosts     = probe.WebVhosts
 	partTimeout   = 20 * time.Second
 )
 
@@ -102,6 +104,17 @@ type Inventory struct {
 	Containers []Container     `json:"containers"`
 	Markers    map[string]bool `json:"markers"`
 	Ports      []Port          `json:"ports"`
+	Vhosts     []Vhost         `json:"vhosts"`
+}
+
+// Vhost is a name a web server of this host serves (Kevin 2026-11-15: the names of the vhosts may go
+// to the monitoring service); where its root and certificate lie stays on the host.
+type Vhost struct {
+	Server string `json:"server"`
+	Name   string `json:"name"`
+	Port   uint16 `json:"port"`
+	TLS    bool   `json:"tls"`
+	App    string `json:"app"`
 }
 
 // Unit is a service unit of systemd: its name, active and sub state.
@@ -163,7 +176,7 @@ type Port struct {
 }
 
 // Run discovers this host within ctx, in a frame of at most frame: the units, the containers, the
-// listening sockets, the markers, then the protocols of the ports beyond loopback. A part that a tool
+// listening sockets, the markers, the vhosts, then the protocols of the ports beyond loopback. A part that a tool
 // failed or that the time cut short makes the inventory partial; a tool that is not installed does
 // not, its part is empty.
 func Run(ctx context.Context, markers []probe.Marker) Inventory {
@@ -183,11 +196,29 @@ func Run(ctx context.Context, markers []probe.Marker) Inventory {
 	part(func(ctx context.Context) (ok bool) { inv.Containers, ok = collectContainers(ctx); return })
 	part(func(ctx context.Context) (ok bool) { inv.Sockets, ok = collectSockets(ctx, inv.Containers); return })
 	part(func(ctx context.Context) (ok bool) { inv.Markers, ok = checkMarkers(ctx, markers); return })
+	part(func(ctx context.Context) (ok bool) { inv.Vhosts, ok = collectVhosts(ctx); return })
 	var portsWhole bool
 	inv.Ports, portsWhole = recognizePorts(ctx, inv.Sockets)
 	inv.Partial = !whole || !portsWhole || ctx.Err() != nil
 	inv.DurationMS = time.Since(began).Milliseconds()
 	return inv
+}
+
+// collectVhosts lists the vhosts of the web servers of this host, at most maxVhosts. A web server whose
+// configuration does not load leaves the list partial.
+func collectVhosts(ctx context.Context) ([]Vhost, bool) {
+	if !linuxHost {
+		return []Vhost{}, true
+	}
+	found, err := webVhosts(ctx)
+	if err != nil {
+		logger.Warnf("discovery: the vhosts were not all read: %v", err)
+	}
+	vhosts := make([]Vhost, 0, min(len(found), maxVhosts))
+	for _, v := range found[:min(len(found), maxVhosts)] {
+		vhosts = append(vhosts, Vhost{Server: v.Server, Name: v.Name, Port: v.Port, TLS: v.TLS, App: v.App})
+	}
+	return vhosts, err == nil && len(found) <= maxVhosts
 }
 
 // collectUnits lists the service units systemd has loaded, in any state; on Windows the services the

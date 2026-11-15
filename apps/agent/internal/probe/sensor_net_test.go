@@ -741,6 +741,160 @@ func TestTLSSensorTakesItsParams(t *testing.T) {
 	}
 }
 
+// vhostPair serves two names on one port of 127.0.0.1 over TLS: a.example.org answers 200, any other
+// name 404, and /away sends the client to https://a.example.org/. It returns the port and the Host and
+// server name (SNI) of each request.
+func vhostPair(t *testing.T) (int, chan [2]string) {
+	t.Helper()
+	stubHost(t, &fakeHost{live: true})
+	freshSnapshot(t)
+	asked := make(chan [2]string, 8)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked <- [2]string{r.Host, r.TLS.ServerName}
+		switch {
+		case r.URL.Path == "/away":
+			http.Redirect(w, r, "https://a.example.org/", http.StatusFound)
+		case r.Host == "a.example.org":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{newPKI(t).chain}}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return portOf(t, srv.URL), asked
+}
+
+// stubVhostCache makes list (with err) the vhosts cachedVhosts gives, read at at; afterwards the cache is
+// empty again.
+func stubVhostCache(t *testing.T, at time.Time, list []Vhost, err error) {
+	t.Helper()
+	set := func(at time.Time, list []Vhost, err error) {
+		vhostCache.Lock()
+		vhostCache.at, vhostCache.list, vhostCache.err = at, list, err
+		vhostCache.Unlock()
+	}
+	set(at, list, err)
+	t.Cleanup(func() { set(time.Time{}, nil, nil) })
+}
+
+// servedOn makes names the vhosts with TLS this host serves on port.
+func servedOn(t *testing.T, port int, names ...string) {
+	t.Helper()
+	list := make([]Vhost, 0, len(names))
+	for _, n := range names {
+		list = append(list, Vhost{Server: "nginx", Name: n, Port: uint16(port), TLS: true})
+	}
+	stubVhostCache(t, time.Now(), list, nil)
+}
+
+func onVhost(sensor, name string, port int, scheme string, params map[string]any) Probe {
+	return Probe{Sensor: sensor, Target: &Target{Kind: kindVhost, Name: name, PortHint: port, Scheme: scheme}, Params: params}
+}
+
+func TestHTTPSensorAsksAVhostByItsName(t *testing.T) {
+	port, asked := vhostPair(t)
+	servedOn(t, port, "a.example.org", "b.example.org")
+	ctx := context.Background()
+	for _, c := range []struct {
+		name string
+		code int
+	}{{"a.example.org", 200}, {"b.example.org", 404}} {
+		got, err := httpSensor(ctx, onVhost("http", c.name, port, "https", nil), "")
+		if err != nil || got["status_code"] != c.code || got["tls"] != true {
+			t.Errorf("%s = %v, %v; want %d over tls", c.name, got, err, c.code)
+		}
+		if a := <-asked; a != [2]string{c.name, c.name} {
+			t.Errorf("%s was asked as Host %q, SNI %q; want its name for both", c.name, a[0], a[1])
+		}
+	}
+
+	_, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": "/away"}), "")
+	if !errors.Is(err, ErrNotAllowed) {
+		t.Errorf("a redirect to the vhost's name = %v, want ErrNotAllowed: it is not where the sensor connects", err)
+	}
+	<-asked
+	if len(asked) != 0 {
+		t.Errorf("the redirect was followed")
+	}
+}
+
+func TestHTTPSensorTakesAVhostOnlyWithItsOwnNameAndScheme(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name string
+		p    Probe
+	}{
+		{"another host", onVhost("http", "a.example.org", 443, "https", map[string]any{"host": "localhost"})},
+		{"scheme auto", onVhost("http", "a.example.org", 443, "auto", nil)},
+		{"a name in capitals", onVhost("http", "A.example.org", 443, "https", nil)},
+		{"no port", onVhost("http", "a.example.org", 0, "https", nil)},
+		{"the dns sensor", Probe{Sensor: "dns", Target: &Target{Kind: kindVhost, Name: "a.example.org", PortHint: 53}}},
+	} {
+		run := httpSensor
+		if c.p.Sensor == "dns" {
+			run = dnsSensor
+		}
+		if _, err := run(ctx, c.p, ""); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", c.name, err)
+		}
+	}
+}
+
+func TestTLSSensorAsksAVhostByItsName(t *testing.T) {
+	port, asked := vhostPair(t)
+	servedOn(t, port, "svc.example.org", "b.example.org")
+	ctx := context.Background()
+	got, err := tlsSensor(ctx, onVhost("tls", "svc.example.org", port, "", nil), "")
+	if err != nil || got["hostname_ok"] != true || got["days_left"] == nil {
+		t.Errorf("tls of a vhost = %v, %v; want the certificate checked for its name", got, err)
+	}
+	if len(asked) != 0 {
+		t.Errorf("the tls sensor sent a request")
+	}
+	got, err = tlsSensor(ctx, onVhost("tls", "b.example.org", port, "", map[string]any{"server_name": "b.example.org"}), "")
+	if err != nil || got["hostname_ok"] != false {
+		t.Errorf("tls of another vhost = %v, %v; want hostname_ok false", got, err)
+	}
+	_, err = tlsSensor(ctx, onVhost("tls", "b.example.org", port, "", map[string]any{"server_name": "svc.example.org"}), "")
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("a vhost with another server_name = %v, want ErrInvalid", err)
+	}
+}
+
+func TestAVhostTargetNeedsAVhostOfThisHost(t *testing.T) {
+	port, asked := vhostPair(t)
+	ctx := context.Background()
+	servedOn(t, port, "a.example.org")
+	other := port + 1
+	if other > 65535 {
+		other = port - 1
+	}
+	for _, c := range []struct {
+		name string
+		p    Probe
+		run  func(context.Context, Probe, string) (map[string]any, error)
+	}{
+		{"http, a name no web server serves", onVhost("http", "c.example.org", port, "https", nil), httpSensor},
+		{"http, the name on another port", onVhost("http", "a.example.org", other, "https", nil), httpSensor},
+		{"tls, a name no web server serves", onVhost("tls", "c.example.org", port, "", nil), tlsSensor},
+	} {
+		got, err := c.run(ctx, c.p, "")
+		if err == nil || !strings.Contains(err.Error(), "no web server of this host serves") {
+			t.Errorf("%s = %v, %v; want it refused", c.name, got, err)
+		}
+	}
+	if len(asked) != 0 {
+		t.Errorf("a request reached the web server")
+	}
+
+	stubVhostCache(t, time.Now(), nil, errors.New("nginx -T failed"))
+	if _, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", nil), ""); err == nil {
+		t.Errorf("a vhost was asked while the vhosts of this host could not be read")
+	}
+}
+
 // query is a lookup the dns sensor asked for.
 type query struct{ rrtype, name string }
 
