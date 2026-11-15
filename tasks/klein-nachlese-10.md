@@ -29,11 +29,13 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
 Doku: changelog.d/klein-nachlese-10.md
 Abhängt von: T1
 
-### T3 — Katalog: SSLDIR belegt, Docstrings auf 100 Zeichen und gleichen Umbruch  [ ]
+### T3 — Katalog: SSLDIR belegt, Docstrings auf 100 Zeichen und gleichen Umbruch  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/linuxmuster.py, apps/monitoring/app/catalog/modules/mattermost.py, apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_catalog_onlyoffice.py, apps/monitoring/tests/test_catalog_openldap.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ae23dcbe3 2026-11-15T01:07:36+01:00
+Review: approve (.ah-out/review/klein-nachlese-10/T3.verdict.json)
 Beweis: R-1490 (kern-monitoring-11 T6 Review), R-1458 (review kern-monitoring-30) 2026-11-14
 Änderung: `linuxmuster.py` streicht „the directory's value in base7's environment module is not verified“ (belegt: `linuxmuster-common` `lib/environment.py` Zeile 14/24 `SSLDIR = '/etc/linuxmuster/ssl'`, `linuxmuster-base7` `functions/certs.py:252` `<item>.cert.pem`); die Docstrings der zwei Test-Dateien, `mattermost.py` (Zeile 17) und `onlyoffice.py` (Zeile 11, 24) brechen gleichmäßig auf ≤ 100 Zeichen um. Keine Wortänderung außer der Streichung.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py tests/test_catalog_openldap.py tests/test_catalog_linuxmuster.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py tests/test_catalog_openldap.py tests/test_catalog_directory.py
 Doku: keine (Docstrings; der Katalogtext der Karte bleibt gleich)
 
 ### T4 — Desktop-E2E: findingItem wählt den Eintrag atomar  [ ]

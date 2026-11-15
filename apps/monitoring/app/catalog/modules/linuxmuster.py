@@ -13,9 +13,9 @@ missing field would hold the check at unknown.
 Every hour it counts the LINBO images under /srv/linbo/images whose .torrent is older than the
 image, which warns: clients would fetch the old image. Once a day the agent reads the server
 certificate /etc/linuxmuster/ssl/server.cert.pem (the name from linuxmuster-base7 certs.py,
-the directory from the concept; the directory's value in base7's environment module is not
-verified): fewer than 30 days left warn, fewer than 7 are critical. Neither the device list
-nor an image name leaves the host; linbo-torrent status and sophomorix-check are never run.
+the directory SSLDIR of its environment module): fewer than 30 days left warn, fewer than 7 are
+critical. Neither the device list nor an image name leaves the host; linbo-torrent status and
+sophomorix-check are never run.
 
 Not covered: other schools than default-school, the units linbo-multicast and linbo-torrent
 (oneshots with RemainAfterExit: active says nothing about their tmux sessions), tftpd-hpa and
