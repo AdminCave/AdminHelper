@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-10 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-10 · Review: pro Task
+Status: aktiv · Branch: feature/klein-nachlese-10 · Review: pro Task
 Spec: docs/features/klein-nachlese-10.md (Roadmap R-1453, R-1458, R-1473, R-1485, R-1490, R-1492, R-1495, R-1497)
 Heavy: linux-full — apps/agent (Agent-Checks dovecot_status und lmn_linbo)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,6 +56,14 @@ Beweis: R-1453 (review ci-11 @8bc8d4398) 2026-11-14
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
 Task-Review: am Ende
+
+### T6 — Agent: lmn_linbo-Test erreicht das Überspringen in lmnLinbo  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_lmn.go, apps/agent/internal/probe/app_lmn_test.go
+Beweis: Abschlussprüfung klein-nachlese-10 2026-11-15 (Gegenprobe: ohne das `continue` an der Aufrufstelle bleibt `TestLmnLinboLeavesOutAnImageThatIsGone` grün)
+Änderung: Die Zählschleife von `lmnLinbo` wird zur Funktion `countLinboImages(root, dir, entries)`; der Test listet ein Verzeichnis, löscht ein Image und ruft sie mit der alten Liste auf. Verhalten unverändert.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
+Doku: keine (Testlücke, Verhalten unverändert)
+Abhängt von: T2
 
 ## Entscheidungen
 - R-1458 geteilt: fünf eindeutige Nits in T1/T3; `timeout_s <= 2` mit `auto` und das OnlyOffice-Kartenfeld `body_match`
