@@ -368,6 +368,30 @@ func TestHTTPSensorAsksAsLocalhostOnlyWhenTold(t *testing.T) {
 	}
 }
 
+func TestHTTPSensorAsksForJSONOnlyWhenTold(t *testing.T) {
+	var mu sync.Mutex
+	var accepts []string
+	srv := localServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		accepts = append(accepts, r.URL.Path+" "+strings.Join(r.Header.Values("Accept"), ";"))
+		mu.Unlock()
+	}))
+	ctx := context.Background()
+	port := portOf(t, srv.URL)
+	if _, err := httpSensor(ctx, onLoopback("http", port, map[string]any{"path": "/plain"}), ""); err != nil {
+		t.Fatal(err)
+	}
+	asJSON := map[string]any{"path": "/json", "accept": "application/json"}
+	if _, err := httpSensor(ctx, onLoopback("http", port, asJSON), ""); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got, want := strings.Join(accepts, ","), "/plain ,/json application/json"; got != want {
+		t.Errorf("the server saw %q, want %q", got, want)
+	}
+}
+
 func TestHTTPSensorTakesOnlyWhatItCanSend(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
@@ -385,6 +409,8 @@ func TestHTTPSensorTakesOnlyWhatItCanSend(t *testing.T) {
 		{"an empty host", onLoopback("http", 8080, map[string]any{"host": ""})},
 		{"localhost with a port", onLoopback("http", 8080, map[string]any{"host": "localhost:80"})},
 		{"a host of another type", onLoopback("http", 8080, map[string]any{"host": 1})},
+		{"another type of answer", onLoopback("http", 8080, map[string]any{"accept": "text/html"})},
+		{"an empty accept", onLoopback("http", 8080, map[string]any{"accept": ""})},
 		{"a scheme of another protocol", Probe{Sensor: "http", Target: &Target{Kind: kindLoopback, PortHint: 8080, Scheme: "ftp"}}},
 		{"no target", Probe{Sensor: "http"}},
 	} {

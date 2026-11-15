@@ -217,7 +217,7 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	if err := knownParams(p, "path", "method", "host", "expect"); err != nil {
+	if err := knownParams(p, "path", "method", "host", "expect", "accept"); err != nil {
 		return nil, err
 	}
 	path, err := requestPath(p, "path", "/", 512, false)
@@ -242,6 +242,14 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	}
 	if expect == "" && slices.Contains(p.Fields, "body_match") {
 		return nil, fmt.Errorf("%w: field body_match of sensor http needs the parameter expect", ErrInvalid)
+	}
+	// Some services answer JSON only when asked for it (the metrics of a Jitsi videobridge); the header
+	// stays off by default, as another service may answer it differently.
+	accept := ""
+	if _, ok := p.Params["accept"]; ok {
+		if accept, err = choiceParam(p, "accept", "", "application/json"); err != nil {
+			return nil, err
+		}
 	}
 	// Some apps answer only to the names they trust and always trust localhost (Nextcloud's trusted
 	// domains); the param names no other host, so it lets no probe pose as a site of the host.
@@ -306,7 +314,7 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 		u.Scheme = scheme
 	}
 	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true, ServerName: sni}) //nolint:gosec // the tls sensor checks certificates
-	values, err := fetchExpecting(ctx, client, method, u.String(), host, use, secret, p.Fields, expect)
+	values, err := fetchExpecting(ctx, client, method, u.String(), host, accept, use, secret, p.Fields, expect)
 	if err != nil {
 		return nil, err
 	}
@@ -345,19 +353,23 @@ func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
 // field asks for data (GET only), the JSON object of the body as data. 401 and 403 are ErrDenied. A
 // host that is not empty is the Host header of the request instead of target's.
 func fetch(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string) (map[string]any, error) {
-	return fetchExpecting(ctx, client, method, target, host, use, secret, fields, "")
+	return fetchExpecting(ctx, client, method, target, host, "", use, secret, fields, "")
 }
 
 // fetchExpecting is fetch that, with an expect that is not empty and a field body_match (GET only),
 // also reports as body_match whether the body, without the space around it, is expect. It reads at
-// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none.
-func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string, expect string) (map[string]any, error) {
+// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none. An
+// accept that is not empty is the Accept header of the request.
+func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, accept, use, secret string, fields []string, expect string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	if host != "" {
 		req.Host = host
+	}
+	if accept != "" {
+		req.Header.Set("Accept", accept)
 	}
 	if err := authorize(req, use, secret); err != nil {
 		return nil, err

@@ -99,6 +99,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "wordpress_version": frozenset({"version"}),
     "wordpress_cron": frozenset({"events", "overdue", "oldest_overdue_s"}),
+    "nextcloud_aio": frozenset({"containers", "stopped", "backup", "backup_age_s"}),
     "wg_peers": frozenset(
         {
             "interfaces",
@@ -345,6 +346,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "ldap_replication": _UNIT,
     "wordpress_version": _CONTAINER,
     "wordpress_cron": _CONTAINER,
+    "nextcloud_aio": _CONTAINER,
     "wg_peers": _UNIT,
     "fail2ban": _UNIT,
     "crowdsec_bouncers": _UNIT,
@@ -533,8 +535,11 @@ class HttpParams(_Params):
     # The whole answer the agent compares with, for body_match (sensor_http.go plainText):
     # 1 to 64 characters without space or control character.
     expect: str | None = Field(None, pattern=r"^[^\s\x00-\x1f\x7f-\x9f]{1,64}$")
+    # Accept header for services that answer JSON only when asked (the Jitsi bridge's /metrics);
+    # unset, the agent sends none.
+    accept: Literal["application/json"] | None = None
 
-    @field_validator("host", "expect", mode="before")
+    @field_validator("host", "expect", "accept", mode="before")
     @classmethod
     def _set_or_absent(cls, v: object) -> object:
         # A probe check sends its params as given, and the agent answers invalid to a null.
@@ -669,6 +674,7 @@ class AppParams(_Params):
         "ldap_replication",
         "wordpress_version",
         "wordpress_cron",
+        "nextcloud_aio",
         "wg_peers",
         "fail2ban",
         "crowdsec_bouncers",
