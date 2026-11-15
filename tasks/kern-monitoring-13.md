@@ -78,6 +78,40 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T2, T3
 
+### T5 — R-1244: Hauptprozess der Unit vor dem Lesen seiner uid prüfen  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_unifi_linux.go, apps/agent/internal/probe/app_unifi_linux_test.go
+Änderung:
+- `unifiOwner` nimmt den Manager des Users nur, wenn der `MainPID` noch im cgroup der Unit läuft (`inCgroup`), sonst
+  keinen Manager: eine wiederverwendete PID darf keinen fremden User-Manager freigeben (Prüfer-Nit T3).
+- Test: MainPID außerhalb des cgroups der Unit → kein Manager.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (Verhalten unverändert für eine laufende Unit)
+Abhängt von: T3
+
+### T6 — R-1244: Guard prüft pasta wie docker-proxy  [?] (Restrisiko: Guard prüft pasta statt es abzulehnen?)
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Änderung:
+- pasta (rootless Podman, auch UOS) wird nicht mehr pauschal als Weiterleiter abgelehnt, sondern wie `checkProxy`
+  geprüft: aus den `-t`/`--tcp-ports`-Angaben seiner argv den Zielport des gewählten Ports lesen; `blockedPort` des
+  Ziels lehnt ab, ebenso jede Angabe, die sich nicht eindeutig lesen lässt (Zieladresse, Bereichsformen außer `a-b:c-d`
+  gleicher Länge, `-c`/`--conf-path`, `auto`/`all`, fehlendes Ziel). passt, rootlesskit, slirp4netns und die übrigen
+  bleiben abgelehnt.
+- Tests: die argv des UOS-pasta (11443 → 443 ok), Ziel 22 → abgelehnt, unlesbare Formen → abgelehnt; der bisherige
+  Test „belongs to pasta.avx2“ wird auf die neue Meldung umgestellt (gleichwertig, kein Test entfällt).
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: → T4
+Abhängt von: T3
+
+### T7 — R-1244: Zertifikats-Check von UOS auf loopback 11443  [?] (hängt an T6)
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/unifi_os_server.py, apps/monitoring/tests/test_catalog_unifi.py
+Änderung:
+- Das Ziel des Checks `certificate` wird `loopback` mit `port_hint` 11443 (pasta liegt nicht im cgroup der Unit);
+  Docstring nennt die geprüfte Version. Test: Ziele je Check, Grenzen der Zertifikatstage.
+- Prüfer-Nit T3: 11443 gilt als Port des Moduls, damit er kein Fund „unbekannter Port“ bleibt.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_unifi.py tests/test_catalog_sensors.py
+Doku: → T4
+Abhängt von: T6
+
 ## Entscheidungen
 - Kevin 2026-11-15: hier nur Zähler, die Geräteliste kommt mit dem Reiter „Geräte“ in R-1518. Der View-Only-Test
   läuft auf einer frisch installierten UOS-VM im Pool.
@@ -89,3 +123,7 @@ Abhängt von: T2, T3
   bleibt der GET-only-Client mit Pfadliste die einzige Bremse; Restrisiko §10 Nr. 16 hat Kevin schon angenommen.
 - Lab T3: pasta (rootless Podman) hält 11443 unter user@<uid>.service, nicht im cgroup der Unit (→ unifiOwner).
   Der Guard lehnt pasta als Weiterleiter ab, auch für den tls-Check: offen, eigene Task nach Rat des advisor.
+- Lab T3 (pasta auf UOS): pasta hält keinen netns-Deskriptor (nur einen Pfad unter /run/user/<uid>/netns), im
+  Container-netns lauschen auch mongod, postgres und weitere. Darum Variante A1 (argv lesen wie bei docker-proxy) statt
+  A2 (alle Lauscher im netns prüfen). Restrisiko: ein gefälschter pasta-Prozess ist gleichwertig zu einem umbenannten
+  Weiterleiter; die Entscheidung trifft Kevin (T6).
