@@ -60,6 +60,24 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 
+### T5 — R-1423: `wordpressCron` bis zum Ergebnis testen  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_wordpress_cron_test.go, apps/agent/internal/probe/app_wordpress_cron_linux_test.go
+Änderung: Abschlussprüfung: kein Test fährt `wordpressCron` bis zu den Zahlen. Neuer Test über `stubDocker`,
+`stubContainerRoot` und `dialSocket` gegen `fakeMySQL`: die Wurzel des Datenbank-Containers (eigene PID je Container
+in `wpInspect`), die MariaDB-Form der Abfrage und die drei Zahlen. Dazu ein direkter Test von `wpDBGuard.Read`
+(`errWPDBServer`), Kommentar „19 Ziffern“ zur Schleife, Warum der festen Zeitgrenzen in den Tests.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (Tests und Kommentare)
+
+### T6 — Doku: Wächter und Zugangsdaten nennen `wordpress_cron`  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Änderung: Abschlussprüfung: Sicherheitsmodell (Admin) und Wächter (Entwickler) sagen, der Agent verbinde sich nie mit
+mysqld/mariadbd, auch nicht über ein Unix-Socket, und nennen die einzigen Stellen mit Zugangsdaten. `wordpress_cron`
+als feste Ausnahme mit Grund und in der Liste der Zugangsdaten, DE+EN.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: diese Task
+Task-Review: am Ende
+
 ## Entscheidungen
 - T1: Der Parser nimmt außer `a`, `i`, `s`, `b`, `N` auch `d:` und `O:` an: Argumente eines Ereignisses können Floats
   oder Objekte tragen (Prüfer-Nit T1). `R:`/`r:`, `C:` und `E:` bleiben Formfehler.
