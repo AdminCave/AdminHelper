@@ -19,8 +19,10 @@ Beweis: R-1473 (reviewer kern-monitoring-14 T5), R-1497 (reviewer kern-monitorin
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...
 Doku: keine (Agent-Interna ohne dokumentiertes Verhalten)
 
-### T2 — Agent: dovecot_status meldet unbekannte Zeilen, lmn_linbo überspringt ein verschwundenes Image  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_mail_test.go, apps/agent/internal/probe/app_lmn.go, apps/agent/internal/probe/app_lmn_test.go, changelog.d/klein-nachlese-10.md
+### T2 — Agent: dovecot_status meldet unbekannte Zeilen, lmn_linbo überspringt ein verschwundenes Image  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_mail_test.go, apps/agent/internal/probe/app_lmn.go, apps/agent/internal/probe/app_lmn_test.go, changelog.d/klein-nachlese-10.md, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3d58aa414 2026-11-15T01:05:37+01:00
+Review: approve (.ah-out/review/klein-nachlese-10/T2.verdict.json)
 Beweis: R-1485 (reviewer kern-monitoring-11 T1 @78da35d24), R-1495 (reviewer kern-monitoring-11 @d92c8f450) 2026-11-14
 Änderung: `dovecotErrors` gibt für eine nicht leere Zeile ohne bekannte Form (weniger als vier Felder oder unbekannter Typ) einen Fehler zurück statt zu überspringen; der Fehler nennt keinen Zeileninhalt. `lmnLinbo`: fehlt ein Image bei `Lstat` (`fs.ErrNotExist`), wird der Eintrag übersprungen, jeder andere Fehler bleibt. Beide mit Test (erst rot). Changelog-Fragment (German `### Fixed`).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...

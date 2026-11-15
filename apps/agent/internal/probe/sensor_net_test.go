@@ -5,6 +5,7 @@
 package probe
 
 import (
+	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -162,10 +163,18 @@ func TestHTTPSensorReadsNoBodyWithoutTheFieldBodyMatch(t *testing.T) {
 	// runs into the deadline, one that does not has its answer at once. The deadline is fixed and
 	// long: it is only reached when the body is read, and then the test fails.
 	port := rawServer(t, func(c net.Conn) {
+		// The request first: an answer before it is read can be lost to a reset on a busy host.
+		if _, err := bufio.NewReader(c).ReadString('\n'); err != nil {
+			return
+		}
 		_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\n"))
 		_, _ = io.Copy(io.Discard, c)
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// The server started after the last snapshot of the listeners: age it, or the guard sees none.
+	snapshot.Lock()
+	snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+	snapshot.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	got, err := httpSensor(ctx, onLoopback("http", port, map[string]any{"path": "/", "expect": "true"}, "status_code"), "")
 	if err != nil || got["status_code"] != 200 {

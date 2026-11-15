@@ -129,6 +129,23 @@ func TestLmnLinboCountsImagesWithAStaleTorrent(t *testing.T) {
 	}
 }
 
+func TestLmnLinboLeavesOutAnImageThatIsGone(t *testing.T) {
+	root := mailRoot(t)
+	putHostFile(t, root, lmnImageDir+"/kept.qcow2", "x", time.Unix(1_795_000_000, 0))
+	r, err := hostRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := torrentStale(r, lmnImageDir+"/gone.qcow2"); !errors.Is(err, errImageGone) {
+		t.Fatalf("an image that is gone = %v, want errImageGone", err)
+	}
+	got, err := lmnLinbo(context.Background(), lmnUnit)
+	if err != nil || got["images"] != 1 {
+		t.Fatalf("got %v, %v; want the image that is there", got, err)
+	}
+}
+
 func TestLmnLinboWithoutImages(t *testing.T) {
 	root := mailRoot(t)
 	if _, err := lmnLinbo(context.Background(), lmnUnit); !errors.Is(err, ErrUnsupported) {

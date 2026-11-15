@@ -167,6 +167,9 @@ func lmnLinbo(ctx context.Context, _ Target) (map[string]any, error) {
 					continue
 				}
 				outdated, err := torrentStale(root, path.Join(dir, e.Name()))
+				if errors.Is(err, errImageGone) {
+					continue
+				}
 				if err != nil {
 					return err
 				}
@@ -197,9 +200,16 @@ func lmnLinbo(ctx context.Context, _ Target) (map[string]any, error) {
 	})
 }
 
+// errImageGone says an image listed in its directory is gone by the time its torrent is looked at:
+// an upload or a cleanup runs beside the check, and an image that left is no image to count.
+var errImageGone = errors.New("the image is gone")
+
 // torrentStale says whether the torrent of the image name below root is missing or older than it.
 func torrentStale(root *os.Root, name string) (bool, error) {
 	img, err := root.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, errImageGone
+	}
 	if err != nil {
 		return false, fmt.Errorf("/%s cannot be read: %v", name, cause(err))
 	}

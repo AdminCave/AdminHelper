@@ -205,6 +205,25 @@ func TestDovecotStatusCountsLimitsAndErrors(t *testing.T) {
 	}
 }
 
+func TestDovecotStatusRefusesALogLineOfNoKnownForm(t *testing.T) {
+	stubNow(t, time.Unix(1_795_000_000, 0))
+	for _, out := range []string{
+		doveadmErrors + "doveadm: something went wrong for alice\n",
+		doveadmErrors + "Nov 14 14:50:00.000001 Oops: imap(alice): unknown type\n",
+		"Nov 14 14:12:01.004211\n",
+	} {
+		stubToolsEnv(t, answer{out: doveadmServices}, answer{out: out})
+		got, err := dovecotStatus(context.Background(), Target{Kind: kindUnit, Name: "dovecot.service"})
+		if err == nil || strings.Contains(err.Error(), "alice") {
+			t.Errorf("log %q read as %v, %v; want an error without the line", out, got, err)
+		}
+	}
+	stubToolsEnv(t, answer{out: doveadmServices}, answer{out: "\n" + doveadmErrors + "\n"})
+	if _, err := dovecotStatus(context.Background(), Target{Kind: kindUnit, Name: "dovecot.service"}); err != nil {
+		t.Errorf("blank lines = %v, want them skipped", err)
+	}
+}
+
 func TestDovecotStatusRefusesWhatIsNoServiceTable(t *testing.T) {
 	for _, out := range []string{
 		"name\tprocess_count\nimap\t3\n",
