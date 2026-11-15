@@ -361,7 +361,9 @@ func (c Cgroups) Holds(p Cgroups) bool {
 // containerInfo holds the fields of `docker inspect` the container sensor and target read (Engine
 // API ContainerInspectResponse); Health is nil for a container without a healthcheck.
 type containerInfo struct {
-	ID           string `json:"Id"`
+	ID string `json:"Id"`
+	// Name is the container's name with a leading slash.
+	Name         string
 	RestartCount int
 	State        struct {
 		Status    string
@@ -371,7 +373,8 @@ type containerInfo struct {
 		Health    *struct{ Status string }
 	}
 	HostConfig struct {
-		NetworkMode string
+		NetworkMode   string
+		RestartPolicy struct{ Name string }
 	}
 	// Config.Labels holds the labels of docker compose among others: its label
 	// com.docker.compose.project.working_dir names the directory of the project. Config.Env holds

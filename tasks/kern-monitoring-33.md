@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_jit
 Doku: → T5
 Abhängt von: T1
 
-### T3 — R-1383: Ansicht `nextcloud_aio` am Mastercontainer  [ ]
+### T3 — R-1383: Ansicht `nextcloud_aio` am Mastercontainer  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_nextcloud_aio.go, apps/agent/internal/probe/app_nextcloud_aio_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/target.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @27b1cbce2 2026-11-15T09:12:37+01:00
+Review: approve (.ah-out/review/kern-monitoring-33/T3.verdict.json)
 Änderung: Ablauf der Spec: `Lstat` der Markierung `mnt/docker-aio-config/data/daily_backup_running` unter der
 Wurzel des Mastercontainers über `os.Root` (nie gelesen, kein Link), dann `docker ps --all` + `docker inspect`:
 dauerhafte `nextcloud-aio-*`-Container (`unless-stopped`, ohne den Mastercontainer) zählen, `borgbackup` läuft →
