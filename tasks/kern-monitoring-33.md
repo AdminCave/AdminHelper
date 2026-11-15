@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Nextcloud All-in-One und die Last der Jitsi-Bridge — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-33 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-33 · Review: pro Task
 Spec: docs/features/kern-monitoring-33.md (Roadmap R-1383, R-1388)
 Heavy: linux-full — neue Ansicht und neuer HTTP-Parameter im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -66,6 +66,22 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T2, T4
+
+### T6 — Fehlerpfade von `inspectAllContainers` (Abschlussprüfung)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_nextcloud_aio_test.go
+Änderung: Tests nach dem Vorbild von `wpDBContainer`: `docker ps` scheitert, `inspect` scheitert ohne lesbare
+Antwort, Teilantwort mit `ExitError` (ein seit `docker ps` entfernter Container wird genommen, einer, den `docker ps`
+weiter nennt, ist ein Fehler, `goneSince`).
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (nur Tests)
+
+### T7 — Parameter `accept` in der Entwickler-Doku Monitoring (Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Änderung: Die Aufzählung der Parameter von `http` nennt `accept` (optional, einziger Wert `application/json`, der
+Agent sendet dann den Header `Accept`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: diese Task
+Task-Review: am Ende
 
 ## Entscheidungen
 - Kein HTTP-Check auf `status.php` von AIO (Spec, Nicht-Ziele): er stünde jede Nacht im Backup-Fenster rot. Die
