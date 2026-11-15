@@ -252,6 +252,7 @@ def test_status_summary_equals_the_producer(client_db):
         "critical": 0,
         "unknown": 0,
         "pending": 0,
+        "info": 0,
         # chk-sparse is not enabled (NULL), so only chk-full counts here.
         "lastResultAt": "2026-10-03T08:05:00Z",
         "minIntervalS": 60,

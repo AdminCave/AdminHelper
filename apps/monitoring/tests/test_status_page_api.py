@@ -283,6 +283,7 @@ class TestSummary:
             "critical": 0,
             "unknown": 0,
             "pending": 0,
+            "info": 0,
             "lastResultAt": None,
             "minIntervalS": None,
         }

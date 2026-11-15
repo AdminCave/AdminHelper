@@ -171,3 +171,21 @@ def test_info_to_warning_alerts(pipeline):
     step("info")
     step("warning")
     assert sent == [("ok", "warning")]
+
+
+@pytest.mark.parametrize(("status", "value"), [("ok", 0), ("unknown", 3), ("info", 4)])
+def test_the_status_metric_writes_info_as_4(status, value):
+    from app.core.victoria import VictoriaClient
+
+    lines = VictoriaClient().build_check_result_lines("c1", "probe", None, "n", status, None)
+    assert lines[0].split(" ")[1] == f"value={value}i"
+
+
+def test_the_summary_counts_info_apart(client_db):
+    client, factory = client_db
+    with factory() as db:
+        for i, st in enumerate(["ok", "info", "info", "warning"]):
+            db.add(MonitorState(check_id=f"c{i}", status=st))
+        db.commit()
+    body = client.get("/status/summary").json()
+    assert (body["total"], body["ok"], body["info"], body["warning"]) == (4, 1, 2, 1)

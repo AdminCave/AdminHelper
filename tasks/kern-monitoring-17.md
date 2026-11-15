@@ -18,10 +18,12 @@ Review: approve (.ah-out/review/kern-monitoring-17/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info.py tests/test_alerter.py tests/test_alerter_sent_state.py tests/test_catalog_sensors.py
 Doku: → T5
 
-### T2 — Übersicht und Metrik für info (R-1280)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/core/victoria.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_status_info.py
+### T2 — Übersicht und Metrik für info (R-1280)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/core/victoria.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_status_info.py, apps/monitoring/tests/test_response_shapes.py, apps/monitoring/tests/test_pagination.py, apps/monitoring/tests/test_status_page_api.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @83cb5c6fc 2026-11-15T17:03:24+01:00
+Review: approve (.ah-out/review/kern-monitoring-17/T2.verdict.json)
 Änderung: `StatusSummaryOut` und `GET /status/summary` zählen `info`; `monitor_check_status` schreibt für `info` den Wert 4. OpenAPI-Snapshot nachziehen.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info.py tests/test_openapi_snapshot.py tests/test_response_shapes.py tests/test_pagination.py tests/test_status_page_api.py
 Doku: → T5
 Abhängt von: T1
 
