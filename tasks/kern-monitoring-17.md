@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Check-Status info — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-17 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-17 · Review: pro Task
 Spec: docs/features/kern-monitoring-17.md (Roadmap R-1280)
 Heavy: linux-full — neuer Status in Monitoring-API und Desktop-Journeys (Übersicht, Verlauf), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitor
 Doku: → T5
 Abhängt von: T2
 
-### T5 — Doku DE+EN und Changelog (R-1280)  [ ]
+### T5 — Doku DE+EN und Changelog (R-1280)  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-17.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @abb61523c 2026-11-15T17:38:21+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Status-Abschnitt (fünfter Status `info`, Farbe, Ampel, Zählung), Alert-Regeln (Entwarnung auf `info`, stille Wechsel), OPNsense-Tabelle (Regeln der Version 2), Werte von `monitor_check_status` (4 info); Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Dateien dieser Task
