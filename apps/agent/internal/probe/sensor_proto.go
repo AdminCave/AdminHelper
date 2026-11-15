@@ -257,6 +257,9 @@ func protoSensor(ctx context.Context, p Probe, secret string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
+	if err := checkRedisACL(use, secret); err != nil {
+		return nil, err
+	}
 	ep, err := resolve(ctx, t)
 	if err != nil {
 		return nil, err
@@ -752,6 +755,18 @@ func redisErr(l string) string {
 	return "an error"
 }
 
+// checkRedisACL refuses a credential of use redis_acl that is not user:password, before any
+// connection. No error quotes the secret.
+func checkRedisACL(use, secret string) error {
+	if use != useRedisACL {
+		return nil
+	}
+	if user, _, ok := strings.Cut(secret, ":"); !ok || user == "" {
+		return fmt.Errorf("%w: a credential for redis_acl needs the form user:password", ErrInvalid)
+	}
+	return nil
+}
+
 // speakRedis reads INFO, after AUTH if the probe has a credential: the password of the default user
 // (redis_auth), or an ACL user and its password (redis_acl, AUTH <user> <password>). No error quotes
 // the user or the password.
@@ -761,10 +776,7 @@ func speakRedis(s *session, o protoOpts) (protoResult, error) {
 	case useRedisAuth:
 		auth = []string{"AUTH", o.secret}
 	case useRedisACL:
-		user, password, ok := strings.Cut(o.secret, ":")
-		if !ok || user == "" {
-			return protoResult{}, fmt.Errorf("%w: a credential for redis_acl needs the form user:password", ErrInvalid)
-		}
+		user, password, _ := strings.Cut(o.secret, ":") // the form was checked before the dial (checkRedisACL)
 		auth = []string{"AUTH", user, password}
 	}
 	if auth != nil {

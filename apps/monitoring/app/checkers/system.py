@@ -55,14 +55,17 @@ def _names(value: object) -> list[str] | None:
 
 
 def _oom_processes(value: object) -> list[dict] | None:
-    """oom_processes of the block: of the first _MAX_OOM_PROCESSES objects those with a pid
-    from 1 and a name, the name cut by cap_agent_text; None without one."""
+    """oom_processes of the block: the first _MAX_OOM_PROCESSES objects with a pid from 1 and
+    a name, the name cut by cap_agent_text; an unusable entry takes no place. None without
+    one."""
     processes = []
-    for entry in capped_objects(value)[:_MAX_OOM_PROCESSES]:
+    for entry in capped_objects(value):
         pid = _count(entry.get("pid"))
         name = cap_agent_text(entry.get("name"))
         if pid is not None and pid > 0 and name:
             processes.append({"pid": pid, "name": name})
+            if len(processes) == _MAX_OOM_PROCESSES:
+                break
     return processes or None
 
 

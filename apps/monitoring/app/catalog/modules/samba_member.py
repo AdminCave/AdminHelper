@@ -6,7 +6,8 @@
 
 The module is found by smbd.service. Every 15 minutes the agent's app sensor asks testparm -s
 whether smb.conf holds no error (an error warns) and counts the sessions, share connections
-and open files from smbstatus --json --fast (Samba 4.17 or later). The same view asks winbind
+and open files from smbstatus --json --fast (Samba 4.17 or later; an older Samba leaves just
+these three numbers out, the other checks of the view stay). The same view asks winbind
 with wbinfo -p whether it answers (critical if not) and wbinfo -P whether it reaches its domain
 controller (warning if not); once a day wbinfo -t checks the trust account of the member
 (warning if not valid). A file server without winbind has neither answer, and the checks domain

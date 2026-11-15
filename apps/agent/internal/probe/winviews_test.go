@@ -220,11 +220,15 @@ func TestTheWindowsViewsAreUnsupportedElsewhere(t *testing.T) {
 }
 
 func TestTheHostSensorTakesTheWindowsViews(t *testing.T) {
-	for _, view := range []string{"win_updates", "win_certs", "win_events", "storage", "defender", "win_backup"} {
-		_, err := hostSensor(t.Context(), Probe{Sensor: "host", Params: map[string]any{"view": view}}, "")
-		if errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: %v", view, err)
+	// By name only: a call would start a real Windows Update search and read the event log on
+	// Windows.
+	for _, view := range []string{"win_updates", "win_certs", "storage", "defender", "win_backup"} {
+		if _, ok := hostViews[view]; !ok {
+			t.Errorf("host view %s is missing", view)
 		}
+	}
+	if winEventsView != "win_events" {
+		t.Errorf("winEventsView = %q", winEventsView)
 	}
 	for _, view := range []string{"ad_replication", "dhcp_scopes", "iis_state", "rds_licenses",
 		"hyperv", "dfsr", "print", "mssql_events", "wsus", "cups_queues", "veeam_windows"} {

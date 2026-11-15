@@ -666,7 +666,15 @@ def test_a_socket_path_fits_into_sun_path():
     path = "/" + "s" * 106
     assert _sensor_module("unixsocket", {"path": path}, "connected").errors == ()
     error = _only_error(_sensor_module("unixsocket", {"path": path + "s"}, "connected"))
-    assert "at most 107 characters" in error
+    assert "at most 107 bytes" in error
+
+
+def test_a_socket_path_counts_bytes_not_characters():
+    fits = "/" + "ä" * 53
+    assert len(fits) == 54 and len(fits.encode()) == 107
+    assert _sensor_module("unixsocket", {"path": fits}, "connected").errors == ()
+    error = _only_error(_sensor_module("unixsocket", {"path": fits + "ä"}, "connected"))
+    assert "at most 107 bytes" in error
 
 
 @pytest.mark.parametrize(

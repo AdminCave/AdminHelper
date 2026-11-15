@@ -765,6 +765,23 @@ def test_a_renamed_container_leaves_an_adopted_finding_adopted(db):
     assert json.loads(row.summary)["containers"] == {"web": "paperless_web_2"}
 
 
+def test_an_adopted_finding_with_a_summary_from_before_containers_stays_adopted(db):
+    _scan(db, T0, **_paperless("web"))
+    _decide(db, "adopted")
+    row = _finding(db)
+    old = json.loads(row.summary)
+    del old["containers"]
+    row.summary = json.dumps(old)
+    db.commit()
+
+    _scan(db, T0 + DAY, **_paperless("web"))
+
+    row = _finding(db)
+    assert (row.kind, row.status, row.decided_at) == ("new", "adopted", T0)
+    # The scan fills the key in without reopening the finding.
+    assert json.loads(row.summary)["containers"] == {"web": "paperless-web-1"}
+
+
 def test_two_containers_of_one_service_name_the_first_by_name():
     inv = clean_inventory(
         _block(

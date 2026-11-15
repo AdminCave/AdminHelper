@@ -10,9 +10,10 @@ entry or a probe check may set for it. The agent checks the same bounds again an
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
 Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense, app and host the set
-of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
-stats) also return fields under ``data.`` — a path into that answer, which the agent
-resolves to one scalar.
+of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS).
+The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy stats) also
+return fields under ``data.`` — a path into that answer, which the agent resolves to one
+scalar.
 """
 
 from __future__ import annotations
@@ -501,7 +502,7 @@ _HOSTNAME = rf"^{_LABEL}(\.{_LABEL})*\.?$"
 # services (_ldap._tcp.example.org).
 _DNS_LABEL = r"[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
 _DNS_NAME = rf"^{_DNS_LABEL}(\.{_DNS_LABEL})*\.?$"
-# The agent's maxSocketPath: sun_path holds 108 bytes, the last a NUL.
+# The agent's maxSocketPath counts bytes: sun_path holds 108, the last a NUL.
 _MAX_SOCKET_PATH = 107
 
 
@@ -596,10 +597,17 @@ class ProtoParams(_Params):
 
 
 class UnixSocketParams(_Params):
-    path: str = Field(pattern=_ABS_PATH, max_length=_MAX_SOCKET_PATH)
+    path: str = Field(pattern=_ABS_PATH)
     protocol: Literal["connect", "http", "redis", "fastcgi", "haproxy"] = "connect"
     http_path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
+
+    @field_validator("path")
+    @classmethod
+    def _path_fits_sun_path(cls, v: str) -> str:
+        if len(v.encode()) > _MAX_SOCKET_PATH:
+            raise ValueError(f"at most {_MAX_SOCKET_PATH} bytes")
+        return v
 
 
 # The queries of each engine (the agent's sensor_sql.go); one of the other engine is invalid.

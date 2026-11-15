@@ -45,9 +45,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     $sessionStore.settings?.mode === 'server' && Boolean($sessionStore.session),
   );
 
+  // The hub answers monitoring with 403 to a non-admin, and /monitoring is not theirs either.
+  let monitoringShown = $derived(serverMode && $sessionStore.session?.isAdmin === true);
+
   onMount(() => {
     void loadConnections();
-    if (serverMode) void loadServers().then(() => loadMonitoring());
+    if (monitoringShown) void loadServers().then(() => loadMonitoring());
   });
 
   let enabledChecks = $derived($monitoringChecks.filter((c) => c.enabled !== false));
@@ -95,7 +98,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         })}
       </div>
     </div>
-    {#if serverMode}
+    {#if monitoringShown}
       <div class="dash-card" data-card="servers">
         <div class="dash-card-label">{$t('dashboard.servers')}</div>
         <div class="dash-card-value">{$monitoringServers.length}</div>
@@ -137,45 +140,48 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </Panel>
 
     {#if serverMode}
-      <Panel title={$t('dashboard.monitoring')} icon={Activity} pad={8}>
-        {#snippet action()}
-          <Button variant="ghost" size="sm" onclick={() => navigate('/monitoring')}>
-            {$t('dashboard.showAll')}
-          </Button>
-        {/snippet}
-        <div data-panel="monitoring">
-          {#if $monitoringError}
-            <div class="dash-empty dash-error" role="alert">
-              {$t('error.monitoring', { message: $monitoringError })}
-            </div>
-          {:else if $monitoringHasLoaded}
-            <div class="dash-pills">
-              <Pill tone="crit">{$t('dashboard.pillCrit', { count: summary.critical })}</Pill>
-              <Pill tone="warn">{$t('dashboard.pillWarn', { count: summary.warning })}</Pill>
-              <Pill tone="ok">{$t('dashboard.pillOk', { count: summary.ok })}</Pill>
-            </div>
-            {#if problemServers.length > 0}
-              <ul class="dash-rows">
-                {#each problemServers as g (g.key)}
-                  {@const hb = heartbeatOf(g.checks)}
-                  <li class="dash-row" data-server={g.key}>
-                    <Dot st={g.worst} label={$t(`monitoring.status.${g.worst}`)} />
-                    <span class="dash-row-name">{g.serverName}</span>
-                    {#if hb}<span class="dash-row-bar"><MonHeartbeatBar checkId={hb} /></span>{/if}
-                    <Button variant="ghost" size="sm" onclick={() => openServer(g.key)}>
-                      {$t('dashboard.open')}
-                    </Button>
-                  </li>
-                {/each}
-              </ul>
+      {#if monitoringShown}
+        <Panel title={$t('dashboard.monitoring')} icon={Activity} pad={8}>
+          {#snippet action()}
+            <Button variant="ghost" size="sm" onclick={() => navigate('/monitoring')}>
+              {$t('dashboard.showAll')}
+            </Button>
+          {/snippet}
+          <div data-panel="monitoring">
+            {#if $monitoringError}
+              <div class="dash-empty dash-error" role="alert">
+                {$t('error.monitoring', { message: $monitoringError })}
+              </div>
+            {:else if $monitoringHasLoaded}
+              <div class="dash-pills">
+                <Pill tone="crit">{$t('dashboard.pillCrit', { count: summary.critical })}</Pill>
+                <Pill tone="warn">{$t('dashboard.pillWarn', { count: summary.warning })}</Pill>
+                <Pill tone="ok">{$t('dashboard.pillOk', { count: summary.ok })}</Pill>
+              </div>
+              {#if problemServers.length > 0}
+                <ul class="dash-rows">
+                  {#each problemServers as g (g.key)}
+                    {@const hb = heartbeatOf(g.checks)}
+                    <li class="dash-row" data-server={g.key}>
+                      <Dot st={g.worst} label={$t(`monitoring.status.${g.worst}`)} />
+                      <span class="dash-row-name">{g.serverName}</span>
+                      {#if hb}<span class="dash-row-bar"><MonHeartbeatBar checkId={hb} /></span
+                        >{/if}
+                      <Button variant="ghost" size="sm" onclick={() => openServer(g.key)}>
+                        {$t('dashboard.open')}
+                      </Button>
+                    </li>
+                  {/each}
+                </ul>
+              {:else}
+                <div class="dash-empty">{$t('dashboard.noProblems')}</div>
+              {/if}
             {:else}
-              <div class="dash-empty">{$t('dashboard.noProblems')}</div>
+              <div class="dash-empty">{$t('loading.generic')}</div>
             {/if}
-          {:else}
-            <div class="dash-empty">{$t('loading.generic')}</div>
-          {/if}
-        </div>
-      </Panel>
+          </div>
+        </Panel>
+      {/if}
 
       <Panel title={$t('dashboard.tunnel')} icon={Cable} pad={8}>
         <div data-panel="tunnel">

@@ -425,3 +425,10 @@ def test_report_stores_the_names_in_details_not_in_the_message(client_db):
         "2 security updates pending",
         {**fields, "problems": ["security_updates"]},
     )
+
+
+def test_unusable_oom_processes_take_no_place_of_the_ten():
+    junk = [{"pid": 0, "name": "junk"}] * 12
+    processes = [{"pid": pid, "name": f"p{pid}"} for pid in range(1, 15)]
+    _, _, metrics = _rate(oom_kills=2, oom_processes=[*junk, *processes])
+    assert metrics["_details"]["oom_processes"] == processes[:10]

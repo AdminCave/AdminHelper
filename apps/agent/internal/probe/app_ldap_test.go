@@ -537,7 +537,7 @@ func TestTheReplicationViewFailsWithoutLeakingAnything(t *testing.T) {
 			d.tamper = onSearchOf("", ldapDone(0x65, 0))
 		}, "root DSE with no entry"},
 		"a failing search of cn=Monitor": {func(d *slapd) { d.monitor = 80 }, "cn=Monitor with result 80"},
-		"a notice of disconnection": {func(d *slapd) {
+		"a closed connection": {func(d *slapd) {
 			d.tamper = func(r ldapRequest, own [][]byte) [][]byte {
 				if r.op == 0x63 && r.base == "dc=example,dc=org" {
 					return [][]byte{nil}

@@ -5,6 +5,7 @@
 package probe
 
 import (
+	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -154,6 +155,33 @@ func TestHTTPSensorReadsStatusTimeAndData(t *testing.T) {
 	want := "GET /health?full=1,GET /health,HEAD /health,GET /text,GET /two,GET /down,GET /secret,GET /forbidden,GET /away,GET /,GET //192.0.2.1/x"
 	if strings.Join(methods, ",") != want {
 		t.Errorf("the server saw %v\nwant %s", methods, want)
+	}
+}
+
+func TestHTTPSensorReadsNoBodyWithoutTheFieldBodyMatch(t *testing.T) {
+	// A server that sends the headers of a body and then holds it back: a probe that reads the body
+	// runs into the deadline, one that does not has its answer at once. The deadline is fixed and
+	// long: it is only reached when the body is read, and then the test fails.
+	port := rawServer(t, func(c net.Conn) {
+		// The request first: an answer before it is read can be lost to a reset on a busy host.
+		if _, err := bufio.NewReader(c).ReadString('\n'); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\n"))
+		_, _ = io.Copy(io.Discard, c)
+	})
+	// The server started after the last snapshot of the listeners: age it, or the guard sees none.
+	snapshot.Lock()
+	snapshot.at = snapshot.at.Add(-2 * listenerFresh)
+	snapshot.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	got, err := httpSensor(ctx, onLoopback("http", port, map[string]any{"path": "/", "expect": "true"}, "status_code"), "")
+	if err != nil || got["status_code"] != 200 {
+		t.Fatalf("expect without body_match = %v, %v; want the status without reading the body", got, err)
+	}
+	if _, ok := got["body_match"]; ok {
+		t.Errorf("body_match = %v without the field", got["body_match"])
 	}
 }
 
@@ -471,6 +499,9 @@ func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
 		}
 	}
 
+	// A fixed deadline on purpose: the silent server never answers, so the probe can only end at its
+	// own deadline; 200 ms lies before answerWait (2 s), which makes the deadline of the probe, not
+	// the wait for the answer, the one that ends it.
 	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
 	port := rawServer(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })

@@ -327,9 +327,9 @@ func fetch(ctx context.Context, client *http.Client, method, target, host, use, 
 	return fetchExpecting(ctx, client, method, target, host, use, secret, fields, "")
 }
 
-// fetchExpecting is fetch that, with an expect that is not empty (GET only), also reports as
-// body_match whether the body, without the space around it, is expect. It reads at most
-// maxExpectBody bytes for it; a longer body matches nothing.
+// fetchExpecting is fetch that, with an expect that is not empty and a field body_match (GET only),
+// also reports as body_match whether the body, without the space around it, is expect. It reads at
+// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none.
 func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string, expect string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
@@ -356,7 +356,8 @@ func fetchExpecting(ctx context.Context, client *http.Client, method, target, ho
 		return nil, fmt.Errorf("%w: HTTP %d", ErrDenied, resp.StatusCode)
 	}
 	wantData := slices.ContainsFunc(fields, func(f string) bool { return strings.HasPrefix(f, "data.") })
-	if method != http.MethodGet || (!wantData && expect == "") {
+	wantMatch := expect != "" && slices.Contains(fields, "body_match")
+	if method != http.MethodGet || (!wantData && !wantMatch) {
 		return values, nil
 	}
 	var r io.Reader = resp.Body
@@ -367,7 +368,7 @@ func fetchExpecting(ctx context.Context, client *http.Client, method, target, ho
 	if err != nil {
 		return nil, netErr(ctx, err)
 	}
-	if expect != "" {
+	if wantMatch {
 		values["body_match"] = len(body) <= maxExpectBody && string(bytes.TrimSpace(body)) == expect
 	}
 	if !wantData {

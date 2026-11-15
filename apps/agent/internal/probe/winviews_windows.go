@@ -83,12 +83,16 @@ func rdsLicenses(ctx context.Context, _ Target) (map[string]any, error) {
 	return rdsValues(packs, time.Now()), nil
 }
 
+// wuaSlot lets one Windows Update search run at a time, apart from wmiSlot: a search that
+// hangs keeps its own slot and holds no WMI view back.
+var wuaSlot = make(chan struct{}, 1)
+
 // winUpdates asks the Windows Update Agent for the open updates, offline: the search reads
 // the agent's own catalog and contacts no update server (Online=false). Read only: no
 // download, no install, no change of a setting.
 func winUpdates(ctx context.Context) (map[string]any, error) {
 	select {
-	case wmiSlot <- struct{}{}:
+	case wuaSlot <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -98,7 +102,7 @@ func winUpdates(ctx context.Context) (map[string]any, error) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		defer func() { <-wmiSlot }()
+		defer func() { <-wuaSlot }()
 		s, err := wuaRead()
 		done <- result{s, err}
 	}()
@@ -153,6 +157,7 @@ func wuaRead() (s wuaState, err error) {
 		return s, err
 	}
 	s.open = int(count.Val)
+	_ = count.Clear()
 	for i := range s.open {
 		item, err := comGet(updates, "Item", i)
 		if err != nil {
@@ -163,7 +168,9 @@ func wuaRead() (s wuaState, err error) {
 		if err != nil {
 			return s, err
 		}
-		if wuaSecurity(sev.ToString()) {
+		security := wuaSecurity(sev.ToString())
+		_ = sev.Clear()
+		if security {
 			s.security++
 		}
 	}
@@ -178,6 +185,7 @@ func wuaRead() (s wuaState, err error) {
 		return s, err
 	}
 	s.reboot, _ = reboot.Value().(bool)
+	_ = reboot.Clear()
 
 	// Windows Update's own last successful search. Not verified: an agent that never
 	// searched answers no date, which leaves the age out.
@@ -187,6 +195,7 @@ func wuaRead() (s wuaState, err error) {
 			defer results.Release()
 			if at, err := oleutil.GetProperty(results, "LastSearchSuccessDate"); err == nil {
 				s.lastSearch, _ = at.Value().(time.Time)
+				_ = at.Clear()
 			}
 		}
 	}

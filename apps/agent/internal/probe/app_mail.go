@@ -229,7 +229,11 @@ func dovecotStatus(ctx context.Context, _ Target) (map[string]any, error) {
 	if err != nil {
 		return nil, toolError("doveadm", err)
 	}
-	values["errors_1h"], values["warnings_1h"] = dovecotErrors(string(out))
+	errs, warnings, err := dovecotErrors(string(out))
+	if err != nil {
+		return nil, err
+	}
+	values["errors_1h"], values["warnings_1h"] = errs, warnings
 	return values, nil
 }
 
@@ -267,21 +271,29 @@ func dovecotServices(out string) (map[string]any, error) {
 }
 
 // dovecotErrors counts the lines of doveadm log errors by their type: "<Mon> <dd> <hh:mm:ss.us>
-// <Type>: <prefix><text>" (src/doveadm/doveadm-log.c); Error, Fatal and Panic are errors.
-func dovecotErrors(out string) (errs, warnings int) {
+// <Type>: <prefix><text>" (src/doveadm/doveadm-log.c); Error, Fatal and Panic are errors. A line
+// of no such form is an error of the run, not a line to skip: it would hide errors behind a format
+// this code does not know. The error quotes no line, which carries user names and addresses.
+func dovecotErrors(out string) (errs, warnings int, err error) {
 	for line := range strings.SplitSeq(out, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
 		fields := strings.Fields(line)
 		if len(fields) < 4 {
-			continue
+			return 0, 0, errors.New("doveadm log errors answers with a line of no known form")
 		}
 		switch fields[3] {
 		case "Error:", "Fatal:", "Panic:":
 			errs++
 		case "Warning:":
 			warnings++
+		case "Debug:", "Info:":
+		default:
+			return 0, 0, errors.New("doveadm log errors answers with a line of no known form")
 		}
 	}
-	return errs, warnings
+	return errs, warnings, nil
 }
 
 const (

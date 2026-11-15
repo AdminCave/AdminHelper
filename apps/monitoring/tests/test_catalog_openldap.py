@@ -6,9 +6,9 @@
 check and an LDAP WhoAmI on 389; the package's slapd.service gets the unit check, the same
 WhoAmI, the certificate behind StartTLS on 389 once an hour and the replication view every
 five minutes; any LDAP answer counts, busy or unavailable is critical; the certificate warns
-below 25 % of its lifetime and is critical below 10 % or 12 hours; a consumer without a connection warns, a slapd
-without cn=Monitor leaves the replication unknown; the pre-releases on 3890, phpLDAPadmin
-and other LDAP servers are not bound or not taken."""
+below 25 % of its lifetime and is critical below 10 % or 12 hours; a consumer without a
+connection warns, a slapd without cn=Monitor leaves the replication unknown; the pre-releases on
+3890, phpLDAPadmin and other LDAP servers are not bound or not taken."""
 
 from datetime import UTC, datetime
 
