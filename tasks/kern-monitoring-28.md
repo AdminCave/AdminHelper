@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Domains aus vHosts, Zertifikate und native PHP-Apps — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-28 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-28 · Review: pro Task
 Spec: docs/features/kern-monitoring-28.md (Roadmap R-1435, R-1378, R-1422)
 Heavy: linux-full — neue Discovery, Zielart, Ansichten und Freigabeliste im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
