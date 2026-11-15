@@ -102,6 +102,7 @@ var appViews = map[string]appView{
 	"mailcow_queue":     {kinds: containerKinds, read: mailcowQueue},
 	"mailcow_watchdog":  {kinds: containerKinds, read: mailcowWatchdog},
 	"npm_certs":         {kinds: containerKinds, read: npmCerts},
+	"nextcloud_aio":     {kinds: containerKinds, read: nextcloudAIO},
 	"moodle_checks":     {kinds: vhostKinds, read: moodleChecks},
 	"mssql_events":      {kinds: unitKinds, read: mssqlEvents},
 	"nginx_status":      {kinds: unitKinds, read: nginxStatus},
