@@ -38,8 +38,10 @@ Beweis: R-1490 (kern-monitoring-11 T6 Review), R-1458 (review kern-monitoring-30
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py tests/test_catalog_openldap.py tests/test_catalog_directory.py
 Doku: keine (Docstrings; der Katalogtext der Karte bleibt gleich)
 
-### T4 — Desktop-E2E: findingItem wählt den Eintrag atomar  [ ]
+### T4 — Desktop-E2E: findingItem wählt den Eintrag atomar  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-server-page.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @943e66b62 2026-11-15T01:09:36+01:00
+Review: approve (.ah-out/review/klein-nachlese-10/T4.verdict.json)
 Beweis: R-1492 (reviewer branch kern-desktop-e2e-1) 2026-11-14
 Änderung: `findingItem` liefert das Element aus `browser.execute` (Element-Referenz) statt Index und zweiter Abfrage per `$$`; kein Treffer wirft weiter `no finding … in the inbox`. Lokal nur ESLint (das Live-Spec fährt die Desktop-Box); im Commit-Body als nicht laufbar vermerkt.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
