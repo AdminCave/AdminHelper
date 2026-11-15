@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-10 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-10 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-10 · Review: pro Task
 Spec: docs/features/klein-nachlese-10.md (Roadmap R-1453, R-1458, R-1473, R-1485, R-1490, R-1492, R-1495, R-1497)
 Heavy: linux-full — apps/agent (Agent-Checks dovecot_status und lmn_linbo)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -57,8 +57,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
 Task-Review: am Ende
 
-### T6 — Agent: lmn_linbo-Test erreicht das Überspringen in lmnLinbo  [ ]
+### T6 — Agent: lmn_linbo-Test erreicht das Überspringen in lmnLinbo  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_lmn.go, apps/agent/internal/probe/app_lmn_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @21ce3033c 2026-11-15T01:29:55+01:00
+Review: approve (.ah-out/review/klein-nachlese-10/T6.verdict.json)
 Beweis: Abschlussprüfung klein-nachlese-10 2026-11-15 (Gegenprobe: ohne das `continue` an der Aufrufstelle bleibt `TestLmnLinboLeavesOutAnImageThatIsGone` grün)
 Änderung: Die Zählschleife von `lmnLinbo` wird zur Funktion `countLinboImages(root, dir, entries)`; der Test listet ein Verzeichnis, löscht ein Image und ruft sie mit der alten Liste auf. Verhalten unverändert.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/...

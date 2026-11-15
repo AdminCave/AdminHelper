@@ -162,23 +162,9 @@ func lmnLinbo(ctx context.Context, _ Target) (map[string]any, error) {
 		}
 		images, stale := 0, 0
 		count := func(dir string, entries []fs.DirEntry) error {
-			for _, e := range entries {
-				if !e.Type().IsRegular() || !slicesHasSuffix(e.Name(), linboImageExts) {
-					continue
-				}
-				outdated, err := torrentStale(root, path.Join(dir, e.Name()))
-				if errors.Is(err, errImageGone) {
-					continue
-				}
-				if err != nil {
-					return err
-				}
-				images++
-				if outdated {
-					stale++
-				}
-			}
-			return nil
+			n, outdated, err := countLinboImages(root, dir, entries)
+			images, stale = images+n, stale+outdated
+			return err
 		}
 		if err := count(lmnImageDir, top); err != nil {
 			return nil, err
@@ -198,6 +184,28 @@ func lmnLinbo(ctx context.Context, _ Target) (map[string]any, error) {
 		}
 		return map[string]any{"images": images, "torrents_stale": stale}, nil
 	})
+}
+
+// countLinboImages counts the images among the entries of dir and those of them whose torrent is
+// missing or older; an image that is gone since the directory was listed is no image.
+func countLinboImages(root *os.Root, dir string, entries []fs.DirEntry) (images, stale int, err error) {
+	for _, e := range entries {
+		if !e.Type().IsRegular() || !slicesHasSuffix(e.Name(), linboImageExts) {
+			continue
+		}
+		outdated, err := torrentStale(root, path.Join(dir, e.Name()))
+		if errors.Is(err, errImageGone) {
+			continue
+		}
+		if err != nil {
+			return images, stale, err
+		}
+		images++
+		if outdated {
+			stale++
+		}
+	}
+	return images, stale, nil
 }
 
 // errImageGone says an image listed in its directory is gone by the time its torrent is looked at:
