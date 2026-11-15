@@ -17,7 +17,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.alerter import process_alert, resolve_notification
+from app.alerter import alert_status, process_alert, resolve_notification
 from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import CheckContext, PartnerState, get_checker
@@ -45,6 +45,9 @@ MAX_MESSAGE = 2000
 
 # The note a skipped central run leaves behind the message; the next one replaces it.
 _SKIP_NOTE = re.compile(r" \(skipped: [^()]*\)\Z")
+
+# info is a hint without an alarm (R-1280): it counts like ok for damping and the recovery hold.
+_HEALTHY = ("ok", "info")
 
 
 def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
@@ -77,9 +80,9 @@ def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
 
 
 def next_fail_count(result_status: str, prev_fail_count: int) -> int:
-    """Counts consecutive failures. 'ok' resets to 0.
+    """Counts consecutive failures. 'ok' and 'info' reset to 0.
 
-    POLICY NOTE: any non-'ok' status increments the counter, including
+    POLICY NOTE: any other status increments the counter, including
     'unknown' (e.g. "waiting for agent data", or an SSRF-blocked target), so a
     persistently-unknown check still becomes visible as such on the dashboard
     after ``consecutive_fails`` occurrences. Notifications are decided
@@ -87,7 +90,7 @@ def next_fail_count(result_status: str, prev_fail_count: int) -> int:
     neither rules nor hub (guard in process_alert); real "agent gone" is the
     persisted agent_ping check going critical.
     """
-    if result_status != "ok":
+    if result_status not in _HEALTHY:
         return prev_fail_count + 1
     return 0
 
@@ -95,7 +98,7 @@ def next_fail_count(result_status: str, prev_fail_count: int) -> int:
 def is_suppressed(result_status: str, new_fail_count: int, consecutive_fails: int) -> bool:
     """True as long as a non-OK result has not yet reached the required number
     of consecutive failures."""
-    return result_status != "ok" and new_fail_count < consecutive_fails
+    return result_status not in _HEALTHY and new_fail_count < consecutive_fails
 
 
 def effective_status(
@@ -122,9 +125,9 @@ def effective_status(
 
 
 def next_ok_count(result_status: str, prev_ok_count: int) -> int:
-    """Counts consecutive 'ok' results — the counterpart of next_fail_count.
-    Any other status resets to 0."""
-    if result_status == "ok":
+    """Counts consecutive 'ok' (and 'info') results — the counterpart of
+    next_fail_count. Any other status resets to 0."""
+    if result_status in _HEALTHY:
         return prev_ok_count + 1
     return 0
 
@@ -147,7 +150,7 @@ def holds_recovery(
     alert. pending -> ok and ok -> ok never hold, and consecutive_oks 1 is the
     behaviour from before the hold.
     """
-    if result_status != "ok" or notified_status not in ("warning", "critical"):
+    if result_status not in _HEALTHY or notified_status not in ("warning", "critical"):
         return False
     return old_status in ("warning", "critical", "unknown") and new_ok_count < consecutive_oks
 
@@ -241,7 +244,7 @@ def apply_result(
     # under FOR UPDATE, so a stale read here only costs a no-op task.
     decision = resolve_notification(state.notified_status, eff_status)
     if decision == "silent_ack":
-        state.notified_status = eff_status
+        state.notified_status = alert_status(eff_status)
     return old_status, eff_status, decision
 
 

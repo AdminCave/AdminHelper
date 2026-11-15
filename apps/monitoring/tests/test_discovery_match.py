@@ -23,6 +23,7 @@ from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.discovery import (
     MAX_CONTAINERS,
     MAX_UNITS,
+    MAX_VHOSTS,
     apply_credentials,
     apply_discovery,
     clean_inventory,
@@ -210,6 +211,7 @@ def test_inventory_keeps_only_the_contract_fields():
         "containers",
         "markers",
         "ports",
+        "vhosts",
     }
     assert inv["units"] == [_unit("nginx.service")]
     assert inv["sockets"] == [_socket(443, "nginx")]
@@ -260,6 +262,149 @@ def test_lists_beyond_the_contract_bounds_are_cut_and_make_the_scan_partial():
     assert clean_inventory(_block(units=units[:MAX_UNITS]))["partial"] is False
     assert clean_inventory(_block(partial=True))["partial"] is True
     assert clean_inventory(_block(partial="yes"))["partial"] is False
+
+
+def _vhost(name="cloud.example.org", port=443, tls=True, server="nginx", app=""):
+    return {"server": server, "name": name, "port": port, "tls": tls, "app": app}
+
+
+# The longest name an instance key holds, in labels of at most 63 characters.
+NAME_120 = "a" * 59 + "." + "b" * 60
+
+
+@pytest.mark.parametrize(
+    ("raw", "kept"),
+    [
+        pytest.param(_vhost(), _vhost(), id="tls"),
+        pytest.param(_vhost(port=80, tls=False), _vhost(port=80, tls=False), id="plain"),
+        pytest.param(
+            _vhost(server="apache", app="moodle"), _vhost(server="apache", app="moodle"), id="app"
+        ),
+        pytest.param(_vhost(app="joomla"), _vhost(), id="unknown-app"),
+        pytest.param(_vhost(app=5), _vhost(), id="app-no-text"),
+        pytest.param(_vhost(name=NAME_120), _vhost(name=NAME_120), id="name-at-the-bound"),
+        pytest.param(_vhost(name=NAME_120 + "b"), None, id="name-beyond-the-bound"),
+        pytest.param(_vhost(name="intranet"), _vhost(name="intranet"), id="one-label"),
+        pytest.param(_vhost(name="Cloud.example.org"), None, id="uppercase"),
+        pytest.param(_vhost(name="*.example.org"), None, id="wildcard"),
+        pytest.param(_vhost(name="_"), None, id="catch-all"),
+        pytest.param(_vhost(name="localhost"), None, id="localhost"),
+        pytest.param(_vhost(name="192.0.2.10"), None, id="address"),
+        pytest.param(_vhost(name="-x.example.org"), None, id="hyphen-first"),
+        pytest.param(_vhost(name="a" * 64 + ".org"), None, id="label-too-long"),
+        pytest.param(_vhost(name="x.example.org."), None, id="trailing-dot"),
+        pytest.param(_vhost(name=""), None, id="no-name"),
+        pytest.param(_vhost(port=0), None, id="port-0"),
+        pytest.param(_vhost(port=65536), None, id="port-beyond"),
+        pytest.param(_vhost(port=65535), _vhost(port=65535), id="port-at-the-bound"),
+        pytest.param(_vhost(tls="yes"), None, id="tls-no-bool"),
+        pytest.param(_vhost(server="caddy"), None, id="other-server"),
+        pytest.param(
+            {**_vhost(), "root": "/var/www", "cert": "/etc/ssl/x.pem"}, _vhost(), id="paths"
+        ),
+        pytest.param("cloud.example.org", None, id="no-object"),
+    ],
+)
+def test_a_vhost_keeps_its_name_port_tls_server_and_known_app_only(raw, kept):
+    inv = clean_inventory(_block(vhosts=[raw]))
+    assert inv["vhosts"] == ([kept] if kept else [])
+
+
+def test_a_name_counts_once_the_first_entry_for_it():
+    first, again = _vhost(), _vhost(port=8443, server="apache")
+    inv = clean_inventory(_block(vhosts=[first, again, _vhost(name="www.example.org")]))
+    assert inv["vhosts"] == [first, _vhost(name="www.example.org")]
+
+
+def test_an_older_agent_sends_no_vhosts():
+    assert clean_inventory(_block())["vhosts"] == []
+    assert clean_inventory(_block(vhosts="cloud.example.org"))["vhosts"] == []
+
+
+def test_vhosts_beyond_the_bound_are_cut_and_make_the_scan_partial():
+    vhosts = [_vhost(name=f"h{i}.example.org") for i in range(MAX_VHOSTS + 1)]
+
+    cut = clean_inventory(_block(vhosts=vhosts))
+
+    assert (len(cut["vhosts"]), cut["partial"]) == (MAX_VHOSTS, True)
+    assert clean_inventory(_block(vhosts=vhosts[:MAX_VHOSTS]))["partial"] is False
+
+
+def test_an_inventory_stored_before_vhosts_still_matches():
+    inv = clean_inventory(_block(units=[_unit("nginx.service")]))
+    del inv["vhosts"]
+    assert ("nginx", "nginx.service") in match_inventory(inv, CATALOG)
+
+
+def _vhost_module(**detect):
+    module_id, module = _module("site", "unit", units=["site"])
+    module["instance"], module["detect"] = "vhost", detect
+    module["checks"][0]["target"] = {"kind": "vhost"}
+    module["checks"][0].update(sensor="app", params={"view": "web_vhost_cert"})
+    module["checks"][0]["fields"] = ["served_days_left"]
+    return module_id, module
+
+
+@pytest.mark.parametrize(
+    ("detect", "error"),
+    [
+        pytest.param({"vhost_tls": True}, None, id="tls"),
+        pytest.param({"vhost_apps": ["moodle"]}, None, id="app"),
+        pytest.param({}, "detects by vhost_tls or vhost_apps only", id="nothing"),
+        pytest.param(
+            {"vhost_tls": True, "units": ["site"]},
+            "detects by vhost_tls or vhost_apps only",
+            id="and-a-unit",
+        ),
+        pytest.param({"vhost_apps": ["joomla"]}, "vhost_apps", id="unknown-app"),
+    ],
+)
+def test_a_vhost_module_detects_by_its_vhosts_alone(detect, error):
+    catalog = load_catalog([_vhost_module(**detect)])
+    if error is None:
+        assert catalog.errors == ()
+    else:
+        assert len(catalog.errors) == 1 and error in str(catalog.errors[0])
+
+
+def test_vhost_criteria_need_instance_vhost():
+    catalog = load_catalog([_module("nginx", "unit", units=["nginx"], vhost_tls=True)])
+    assert len(catalog.errors) == 1 and "need instance 'vhost'" in str(catalog.errors[0])
+
+
+def test_a_vhost_module_finds_the_vhosts_it_detects_and_claims_nothing_else():
+    catalog = load_catalog(
+        [
+            _vhost_module(vhost_tls=True),
+            ("moodle", _vhost_module(vhost_apps=["moodle"])[1] | {"id": "moodle"}),
+            ("port", PORT_MODULE),
+        ]
+    )
+    inv = clean_inventory(
+        _block(
+            vhosts=[
+                _vhost(),
+                _vhost(name="www.example.org", port=80, tls=False),
+                _vhost(name="lms.example.org", server="apache", app="moodle"),
+            ],
+            sockets=[_socket(443, "nginx")],
+            ports=[_recognised(443)],
+        )
+    )
+    assert match_inventory(inv, catalog) == {
+        ("site", "cloud.example.org"): {"server": "nginx", "port": 443, "tls": True},
+        ("site", "lms.example.org"): {"server": "apache", "port": 443, "tls": True},
+        ("moodle", "lms.example.org"): {"server": "apache", "port": 443, "tls": True},
+        # A vhost claims no port: 443 stays the port finding it was.
+        ("port", "tcp-443"): {
+            "port": 443,
+            "proto": "tcp",
+            "protocol": "https",
+            "process": "nginx",
+            "container": "",
+        },
+    }
+    assert match_inventory(clean_inventory(_block()), catalog) == {}
 
 
 @pytest.mark.parametrize("block", [None, "discovery", [], 5])
@@ -763,6 +908,23 @@ def test_a_renamed_container_leaves_an_adopted_finding_adopted(db):
     assert (row.kind, row.status, row.decided_at) == ("new", "adopted", T0)
     # The stored summary names the container the checks bind to today.
     assert json.loads(row.summary)["containers"] == {"web": "paperless_web_2"}
+
+
+def test_an_adopted_finding_with_a_summary_from_before_containers_stays_adopted(db):
+    _scan(db, T0, **_paperless("web"))
+    _decide(db, "adopted")
+    row = _finding(db)
+    old = json.loads(row.summary)
+    del old["containers"]
+    row.summary = json.dumps(old)
+    db.commit()
+
+    _scan(db, T0 + DAY, **_paperless("web"))
+
+    row = _finding(db)
+    assert (row.kind, row.status, row.decided_at) == ("new", "adopted", T0)
+    # The scan fills the key in without reopening the finding.
+    assert json.loads(row.summary)["containers"] == {"web": "paperless-web-1"}
 
 
 def test_two_containers_of_one_service_name_the_first_by_name():

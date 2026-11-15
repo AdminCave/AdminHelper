@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -1076,8 +1077,10 @@ func TestProtoSensorSpeaksInsideTLS(t *testing.T) {
 }
 
 func TestProtoSensorPresentsARedisACLUser(t *testing.T) {
+	var dialed atomic.Int32
 	probe := func(auth, secret string) (map[string]any, []string, error) {
 		srv := fakeServer(t, func(c *fakeConn) {
+			dialed.Add(1)
 			if c.hear() != "*3" {
 				c.drain()
 				return
@@ -1105,10 +1108,14 @@ func TestProtoSensorPresentsARedisACLUser(t *testing.T) {
 	if !errors.Is(err, ErrDenied) || err.Error() != "access denied: AUTH answered WRONGPASS" || len(heard) != 7 {
 		t.Errorf("a wrong password = %v; the server heard %v; want ErrDenied without INFO", err, heard)
 	}
+	dialed.Store(0)
 	for _, secret := range []string{"s3cret", ":s3cret", ""} {
 		_, heard, err = probe("+OK\r\n", secret)
 		if !errors.Is(err, ErrInvalid) || secret != "" && strings.Contains(err.Error(), secret) || len(heard) != 0 {
 			t.Errorf("the secret %q = %v; the server heard %v; want ErrInvalid before any word", secret, err, heard)
 		}
+	}
+	if n := dialed.Load(); n != 0 {
+		t.Errorf("a malformed redis_acl secret opened %d connections, want none", n)
 	}
 }

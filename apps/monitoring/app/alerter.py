@@ -81,6 +81,12 @@ _SUBJECT_TO_SPACE = str.maketrans(
 )
 
 
+def alert_status(status: str) -> str:
+    """The status a notification sees: info is a hint without an alarm (R-1280) and
+    reports like ok, so warning -> info is a recovery and ok <-> info stays silent."""
+    return "ok" if status == "info" else status
+
+
 def resolve_notification(notified_status: str | None, new_status: str) -> str:
     """Sent-state decision (docs/features/alert-sent-state.md): compare the
     status the alerter last actually reported with the current evaluation.
@@ -93,6 +99,7 @@ def resolve_notification(notified_status: str | None, new_status: str) -> str:
         "skip"       — nothing to report; notified_status stays untouched so a
                        suppressed discrepancy survives for later catch-up.
     """
+    new_status = alert_status(new_status)
     if new_status == notified_status:
         return "skip"
     # unknown never notifies (unknown policy) and never counts as reported —
@@ -250,7 +257,7 @@ def _claim_transition(
     # Re-read the CURRENT status under the lock: the caller's new_status may be
     # stale when dispatches run out of submission order — dispatching the
     # snapshot would report a phantom transition and move notified backwards.
-    current = state.status if state is not None else new_status
+    current = alert_status(state.status if state is not None else new_status)
     notified = state.notified_status if state is not None else old_status
     decision = resolve_notification(notified, current)
     if decision == "skip":

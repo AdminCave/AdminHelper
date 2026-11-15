@@ -9,7 +9,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"math"
+	"os"
+	"path"
 	"runtime"
 	"slices"
 	"strconv"
@@ -186,4 +190,181 @@ func haproxyServerStates(b []byte) (servers, down, maint int, ok bool) {
 		}
 	}
 	return servers, down, maint, true
+}
+
+// maxHAProxyCerts caps the certificate files haproxyCerts reads.
+const maxHAProxyCerts = 256
+
+// haproxyReserved are the endings of the files HAProxy loads beside a certificate of a directory, not
+// as one (configuration manual 3.2, bind option crt).
+var haproxyReserved = []string{".key", ".issuer", ".ocsp", ".sctl"}
+
+// haproxyCerts reads when the certificates HAProxy serves expire: the files of every "crt" of a bind
+// line, a relative one below crt-base, a directory as HAProxy reads it (each file in it but those
+// starting with a dot and those of haproxyReserved). certs counts them, min_days_left is the fewest
+// days one has left, expiring_14d those with fewer than 14. Of each file it reads the first
+// certificate; the private key HAProxy keeps in the same file it skips unparsed. A file that is not
+// there is left out; crt-list and crt-store are not read.
+func haproxyCerts(ctx context.Context, t Target) (map[string]any, error) {
+	if webServer(t.Name) != "haproxy" {
+		return nil, fmt.Errorf("%w: unit %s is no haproxy", ErrUnsupported, t.Name)
+	}
+	return untilDone(ctx, func() (map[string]any, error) {
+		cfg, err := haproxyConfigText()
+		if err != nil {
+			return nil, err
+		}
+		files, err := haproxyCertFiles(haproxyCertPaths(cfg))
+		if err != nil {
+			return nil, err
+		}
+		values := map[string]any{"certs": 0, "expiring_14d": 0}
+		var least int64
+		for _, name := range files {
+			data, err := readCapped(name, maxCertFileBytes)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("a certificate file of haproxy %w", err)
+			}
+			cert, err := leafCert(data)
+			if err != nil {
+				return nil, fmt.Errorf("a certificate file of haproxy %w", err)
+			}
+			left := int64(math.Floor(cert.NotAfter.Sub(now()).Hours() / 24))
+			if values["certs"] == 0 || left < least {
+				least = left
+			}
+			values["certs"] = values["certs"].(int) + 1
+			if left < 14 {
+				values["expiring_14d"] = values["expiring_14d"].(int) + 1
+			}
+		}
+		if values["certs"] != 0 {
+			values["min_days_left"] = least
+		}
+		return values, nil
+	})
+}
+
+// haproxyConfigText is the first configuration of haproxyConfigs there is.
+func haproxyConfigText() ([]byte, error) {
+	for _, name := range haproxyConfigs {
+		b, err := readCapped(name, maxHAProxyConfig)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return nil, fmt.Errorf("the configuration %s %w", name, err)
+		}
+		return b, nil
+	}
+	return nil, fmt.Errorf("%w: haproxy has no configuration here", ErrUnsupported)
+}
+
+// haproxyCertPaths are the plain absolute paths the crt of the bind lines of cfg name, each once.
+func haproxyCertPaths(cfg []byte) []string {
+	var lines [][]string
+	base := ""
+	for line := range strings.Lines(string(cfg)) {
+		f := strings.Fields(line)
+		if i := slices.IndexFunc(f, func(w string) bool { return strings.HasPrefix(w, "#") }); i >= 0 {
+			f = f[:i]
+		}
+		switch {
+		case len(f) == 2 && f[0] == "crt-base":
+			base = strings.Trim(f[1], `"'`)
+		case len(f) > 0 && f[0] == "bind":
+			lines = append(lines, f)
+		}
+	}
+	var paths []string
+	for _, f := range lines {
+		for i := 1; i+1 < len(f); i++ {
+			if f[i] != "crt" {
+				continue
+			}
+			p := strings.Trim(f[i+1], `"'`)
+			if !path.IsAbs(p) && base != "" {
+				p = path.Join(base, p)
+			}
+			if safePath.MatchString(p) && !slices.Contains(paths, p) {
+				paths = append(paths, p)
+			}
+		}
+	}
+	return paths
+}
+
+// haproxyCertFiles are the files of paths, a directory as HAProxy reads it, at most maxHAProxyCerts.
+func haproxyCertFiles(paths []string) ([]string, error) {
+	var files []string
+	add := func(name string) error {
+		if slices.Contains(files, name) {
+			return nil
+		}
+		if len(files) == maxHAProxyCerts {
+			return fmt.Errorf("haproxy names more than %d certificate files", maxHAProxyCerts)
+		}
+		files = append(files, name)
+		return nil
+	}
+	for _, p := range paths {
+		fi, err := os.Stat(p)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return nil, errors.New("a certificate file of haproxy cannot be read")
+		case !fi.IsDir():
+			if err := add(p); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		names, err := haproxyCertDir(p)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range names {
+			if err := add(path.Join(p, n)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return files, nil
+}
+
+// haproxyCertDir lists the certificate files of the directory dir in alphabetic order, as HAProxy
+// loads them; past maxHAProxyCerts entries it stops with an error.
+func haproxyCertDir(dir string) ([]string, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, errors.New("a directory of certificates of haproxy cannot be read")
+	}
+	defer root.Close()
+	d, err := root.Open(".")
+	if err != nil {
+		return nil, errors.New("a directory of certificates of haproxy cannot be read")
+	}
+	defer d.Close()
+	entries, err := d.ReadDir(maxHAProxyCerts + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, errors.New("a directory of certificates of haproxy cannot be read")
+	}
+	if len(entries) > maxHAProxyCerts {
+		return nil, fmt.Errorf("a directory of certificates of haproxy holds more than %d entries", maxHAProxyCerts)
+	}
+	var names []string
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || strings.HasPrefix(n, ".") ||
+			slices.ContainsFunc(haproxyReserved, func(s string) bool { return strings.HasSuffix(n, s) }) {
+			continue
+		}
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return names, nil
 }

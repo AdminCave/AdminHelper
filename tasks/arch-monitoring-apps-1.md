@@ -88,7 +88,7 @@ Doku: → T14
 Abhängt von: T2
 
 ### T7 — R-1242: Module Jitsi Meet und Matrix Synapse  [x]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/jitsi.py, apps/monitoring/app/catalog/modules/synapse.py, apps/monitoring/tests/test_catalog_jitsi.py, apps/monitoring/tests/test_catalog_synapse.py, apps/monitoring/app/catalog/modules/jitsi_videobridge.py, apps/monitoring/app/catalog/modules/jitsi_jicofo.py
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/synapse.py, apps/monitoring/tests/test_catalog_jitsi.py, apps/monitoring/tests/test_catalog_synapse.py, apps/monitoring/app/catalog/modules/jitsi_videobridge.py, apps/monitoring/app/catalog/modules/jitsi_jicofo.py
 Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6110e641c 2026-11-12T15:00:35+01:00
 Review: approve (.ah-out/review/arch-monitoring-apps-1/T7.verdict.json)
 Änderung: Jitsi: Docker (`jitsi/jvb`, `jitsi/jicofo` …) und Pakete; JVB `/about/health` (8080), Jicofo

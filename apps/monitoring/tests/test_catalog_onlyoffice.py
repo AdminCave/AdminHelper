@@ -6,8 +6,8 @@
 own health check (from 10.0) asks /healthcheck, and GET /healthcheck on the docservice's 8000
 once the scan saw it listening in the container (R-1393); the package's ds-docservice.service
 gets the unit check and GET /healthcheck on 8000; both health checks are test objects every
-15 min and compare the answer with true on the host; the converter, the split images and Nextcloud AIO's container are not ONLYOFFICE
-Docs."""
+15 min and compare the answer with true on the host; the converter, the split images and
+Nextcloud AIO's container are not ONLYOFFICE Docs."""
 
 from datetime import UTC, datetime
 

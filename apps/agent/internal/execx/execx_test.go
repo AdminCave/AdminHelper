@@ -37,6 +37,17 @@ func TestHelperProcess(t *testing.T) {
 		time.Sleep(time.Minute)
 	case "fail":
 		os.Exit(3)
+	case "flood":
+		// A tool that writes without end, and whose stderr would carry text of its own.
+		fmt.Fprint(os.Stderr, "a secret of the site")
+		for {
+			if _, err := fmt.Print(strings.Repeat("x", 1024)); err != nil {
+				os.Exit(0)
+			}
+		}
+	case "fail-loud":
+		fmt.Fprint(os.Stderr, "a secret of the site")
+		os.Exit(3)
 	case "exit-orphan":
 		// A tool that starts a grandchild with its own stdout (a daemon, a pager) and exits 0.
 		grandchild := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
@@ -164,5 +175,50 @@ func TestCountTimeoutsLeavesOutTheCallsCtxEnded(t *testing.T) {
 
 	if got := timeouts.Load(); got != 0 {
 		t.Errorf("timeouts = %d, want 0", got)
+	}
+}
+
+// runCapped runs the test binary through RunCapped as a child process that behaves as mode says.
+func runCapped(t *testing.T, mode string, limit int) ([]byte, error, time.Duration) {
+	t.Helper()
+	t.Setenv(helperEnv, mode)
+	start := time.Now()
+	out, err := RunCapped(context.Background(), time.Minute, limit, os.Args[0], "-test.run=^TestHelperProcess$")
+	return out, err, time.Since(start)
+}
+
+func TestRunCappedKeepsAnOutputWithinItsLimit(t *testing.T) {
+	out, err, _ := runCapped(t, "print", 64<<10)
+	if err != nil || !strings.HasPrefix(string(out), helperOutput) {
+		t.Errorf("RunCapped = %q, %v, want %q", out, err, helperOutput)
+	}
+}
+
+func TestRunCappedKillsTheCommandThatWritesPastItsLimit(t *testing.T) {
+	out, err, elapsed := runCapped(t, "flood", 16<<10)
+	if !errors.Is(err, ErrOutputLimit) || out != nil {
+		t.Errorf("RunCapped = %d bytes, %v, want ErrOutputLimit and no output", len(out), err)
+	}
+	if elapsed > 10*time.Second {
+		t.Errorf("RunCapped returned after %s, the flood was not stopped", elapsed)
+	}
+}
+
+func TestRunCappedDropsTheStderrOfAFailingCommand(t *testing.T) {
+	_, err, _ := runCapped(t, "fail-loud", 1<<10)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 3 {
+		t.Fatalf("err = %v, want the ExitError with code 3", err)
+	}
+	if strings.Contains(err.Error(), "secret") || len(exitErr.Stderr) != 0 {
+		t.Errorf("err = %v carries the stderr %q", err, exitErr.Stderr)
+	}
+}
+
+func TestRunCappedTimeoutIsDeadlineExceeded(t *testing.T) {
+	t.Setenv(helperEnv, "hang")
+	_, err := RunCapped(context.Background(), 100*time.Millisecond, 1<<10, os.Args[0], "-test.run=^TestHelperProcess$")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want context.DeadlineExceeded", err)
 	}
 }

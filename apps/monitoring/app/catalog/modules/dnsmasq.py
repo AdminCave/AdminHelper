@@ -15,7 +15,8 @@ that does not would fail the next restart or reload while the running server goe
 warning.
 
 Not covered: DHCPv6, static and proxy ranges, constructor ranges, a lease file set by
-DHCP_LEASE in /etc/default/dnsmasq, and dnsmasq's DNS side.
+DHCP_LEASE in /etc/default/dnsmasq, and dnsmasq's DNS side. dnsmasq --test does not read
+/etc/dnsmasq.d on Debian (only the service includes it), so a line there goes unchecked.
 """
 
 MODULE = {

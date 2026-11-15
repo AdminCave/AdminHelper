@@ -15,8 +15,7 @@ deb.packages.mattermost.com and the tarball install of the docs run mattermost.s
 the ping there, over whichever the port speaks.
 
 Not covered: the database and the file store (only the deep ping tests them), and the
-preview image (mattermost/mattermost-preview), which is
-no installation to watch.
+preview image (mattermost/mattermost-preview), which is no installation to watch.
 """
 
 MODULE = {

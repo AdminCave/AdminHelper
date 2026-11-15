@@ -42,6 +42,7 @@ function summary(over: Partial<MonitoringStatusSummary> = {}): MonitoringStatusS
     critical: 0,
     unknown: 0,
     pending: 0,
+    info: 0,
     lastResultAt: new Date(Date.now()).toISOString(),
     minIntervalS: 60,
     ...over,

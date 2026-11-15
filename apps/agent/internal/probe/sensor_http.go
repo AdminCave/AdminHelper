@@ -49,6 +49,10 @@ var headerName = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 // httpTargets are the kinds of target a TCP sensor takes.
 var httpTargets = []string{kindLoopback, kindPort, kindProcess, kindContainer, kindUnit}
 
+// vhostTargets are the kinds of target http and tls take: those of httpTargets and a vhost, whose name
+// they send as SNI and Host.
+var vhostTargets = append(slices.Clone(httpTargets), kindVhost)
+
 // knownParams returns an error wrapping ErrInvalid if p has a param that is none of keys.
 func knownParams(p Probe, keys ...string) error {
 	for k := range p.Params {
@@ -206,13 +210,14 @@ const maxExpectBody = 4 << 10
 
 // httpSensor sends a GET or HEAD to its target through the guard: status code, time to the headers
 // and, for GET, fields of the JSON object the target answers or whether a short answer in plain text
-// is the one expected (body_match).
+// is the one expected (body_match). A vhost it asks at its port by its name (Host and SNI); a redirect
+// to its name, which is not where the sensor connects, is one to another target (sameTarget).
 func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, error) {
-	t, err := targetOf(p, httpTargets...)
+	t, err := targetOf(p, vhostTargets...)
 	if err != nil {
 		return nil, err
 	}
-	if err := knownParams(p, "path", "method", "host", "expect"); err != nil {
+	if err := knownParams(p, "path", "method", "host", "expect", "accept"); err != nil {
 		return nil, err
 	}
 	path, err := requestPath(p, "path", "/", 512, false)
@@ -238,19 +243,38 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	if expect == "" && slices.Contains(p.Fields, "body_match") {
 		return nil, fmt.Errorf("%w: field body_match of sensor http needs the parameter expect", ErrInvalid)
 	}
+	// Some services answer JSON only when asked for it (the metrics of a Jitsi videobridge); the header
+	// stays off by default, as another service may answer it differently.
+	accept := ""
+	if _, ok := p.Params["accept"]; ok {
+		if accept, err = choiceParam(p, "accept", "", "application/json"); err != nil {
+			return nil, err
+		}
+	}
 	// Some apps answer only to the names they trust and always trust localhost (Nextcloud's trusted
 	// domains); the param names no other host, so it lets no probe pose as a site of the host.
-	host := ""
+	host, sni := "", ""
 	if _, ok := p.Params["host"]; ok {
+		if t.Kind == kindVhost {
+			return nil, fmt.Errorf("%w: sensor http asks a vhost by its own name, parameter host is not taken", ErrInvalid)
+		}
 		if host, err = choiceParam(p, "host", "", "localhost"); err != nil {
 			return nil, err
 		}
+	}
+	if t.Kind == kindVhost {
+		host, sni = t.Name, t.Name
 	}
 	scheme := t.Scheme
 	switch scheme {
 	case "":
 		scheme = "http"
-	case "http", "https", "auto":
+	case "http", "https":
+	case "auto":
+		// The handshake of speaksTLS names no server; a vhost's scheme comes with its target.
+		if t.Kind == kindVhost {
+			return nil, fmt.Errorf("%w: sensor http needs the scheme of a vhost, not auto", ErrInvalid)
+		}
 	default:
 		return nil, fmt.Errorf("%w: sensor http takes no scheme %q", ErrInvalid, scheme)
 	}
@@ -261,6 +285,11 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 	u, err := url.ParseRequestURI(path)
 	if err != nil {
 		return nil, fmt.Errorf("%w: parameter path of sensor http is no path of a request", ErrInvalid)
+	}
+	if t.Kind == kindVhost {
+		if _, err := servedVhost(ctx, t); err != nil {
+			return nil, err
+		}
 	}
 	ep, err := resolve(ctx, t)
 	if err != nil {
@@ -284,8 +313,8 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 		}
 		u.Scheme = scheme
 	}
-	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the tls sensor checks certificates
-	values, err := fetchExpecting(ctx, client, method, u.String(), host, use, secret, p.Fields, expect)
+	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true, ServerName: sni}) //nolint:gosec // the tls sensor checks certificates
+	values, err := fetchExpecting(ctx, client, method, u.String(), host, accept, use, secret, p.Fields, expect)
 	if err != nil {
 		return nil, err
 	}
@@ -324,19 +353,23 @@ func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
 // field asks for data (GET only), the JSON object of the body as data. 401 and 403 are ErrDenied. A
 // host that is not empty is the Host header of the request instead of target's.
 func fetch(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string) (map[string]any, error) {
-	return fetchExpecting(ctx, client, method, target, host, use, secret, fields, "")
+	return fetchExpecting(ctx, client, method, target, host, "", use, secret, fields, "")
 }
 
-// fetchExpecting is fetch that, with an expect that is not empty (GET only), also reports as
-// body_match whether the body, without the space around it, is expect. It reads at most
-// maxExpectBody bytes for it; a longer body matches nothing.
-func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, use, secret string, fields []string, expect string) (map[string]any, error) {
+// fetchExpecting is fetch that, with an expect that is not empty and a field body_match (GET only),
+// also reports as body_match whether the body, without the space around it, is expect. It reads at
+// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none. An
+// accept that is not empty is the Accept header of the request.
+func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, accept, use, secret string, fields []string, expect string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	if host != "" {
 		req.Host = host
+	}
+	if accept != "" {
+		req.Header.Set("Accept", accept)
 	}
 	if err := authorize(req, use, secret); err != nil {
 		return nil, err
@@ -356,7 +389,8 @@ func fetchExpecting(ctx context.Context, client *http.Client, method, target, ho
 		return nil, fmt.Errorf("%w: HTTP %d", ErrDenied, resp.StatusCode)
 	}
 	wantData := slices.ContainsFunc(fields, func(f string) bool { return strings.HasPrefix(f, "data.") })
-	if method != http.MethodGet || (!wantData && expect == "") {
+	wantMatch := expect != "" && slices.Contains(fields, "body_match")
+	if method != http.MethodGet || (!wantData && !wantMatch) {
 		return values, nil
 	}
 	var r io.Reader = resp.Body
@@ -367,7 +401,7 @@ func fetchExpecting(ctx context.Context, client *http.Client, method, target, ho
 	if err != nil {
 		return nil, netErr(ctx, err)
 	}
-	if expect != "" {
+	if wantMatch {
 		values["body_match"] = len(body) <= maxExpectBody && string(bytes.TrimSpace(body)) == expect
 	}
 	if !wantData {

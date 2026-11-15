@@ -45,10 +45,14 @@ wait_log() {  # container pattern timeout — readiness via the log, so we don't
 # returns — a one-shot grep races it (SSH/web land earlier and were never
 # flaky). Poll the container log instead of asserting once.
 wait_rdp_log() {  # container timeout
+    local xrdp_log ctr_log
     for _ in $(seq 1 "$2"); do
-        docker exec "$1" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
-            | grep -qiE "connect|incoming|login|session|TLS" && return 0
-        docker logs "$1" 2>&1 | grep -qiE "connect|incoming" && return 0
+        # In a variable first: under pipefail a "grep -q" that stops at its match gives the
+        # producer in front of it a SIGPIPE, and the match would not count.
+        xrdp_log=$(docker exec "$1" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null)
+        grep -qiE "connect|incoming|login|session|TLS" <<<"$xrdp_log" && return 0
+        ctr_log=$(docker logs "$1" 2>&1)
+        grep -qiE "connect|incoming" <<<"$ctr_log" && return 0
         sleep 1
     done
     return 1

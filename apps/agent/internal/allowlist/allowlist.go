@@ -60,6 +60,11 @@ var classes = map[string]string{
 	"priority": `[0-7]`,
 	// A whole number of seconds.
 	"seconds": `[0-9]+`,
+	// A socket of a database below this host's root (piler.conf mysqlsocket): no segment begins with '.',
+	// so no "..".
+	"sockpath": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
+	// A user or database name of MariaDB or MySQL as piler_status hands it on.
+	"dbident": `[A-Za-z0-9_]+`,
 	// A journal cursor as journalctl --show-cursor prints it (sd_journal_get_cursor(3): s=…;i=…;b=…;
 	// m=…;t=…;x=…, hex values).
 	"cursor": `[a-z0-9=;]+`,
@@ -80,7 +85,10 @@ var classes = map[string]string{
 	"upsname": `[A-Za-z0-9_][A-Za-z0-9._-]*`,
 	// The user of a unit pm2-<user> (probe's pm2Unit, useradd's NAME_REGEX), any but root: r, ro and
 	// roo, a name on from root, or one that leaves root earlier.
-	"pmuser": `root[a-z0-9_-]+|r(?:o(?:o[a-su-z0-9_-]|[a-np-z0-9_-])|[a-np-z0-9_-])[a-z0-9_-]*|r|ro|roo|[a-qs-z_][a-z0-9_-]*`,
+	// The status checks of a Moodle (admin/cli/checks.php) below an absolute document root: no
+	// segment begins with '.', so no "..", and no other script of the site.
+	"moodlechecks": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)*/admin/cli/checks\.php`,
+	"pmuser":       `root[a-z0-9_-]+|r(?:o(?:o[a-su-z0-9_-]|[a-np-z0-9_-])|[a-np-z0-9_-])[a-z0-9_-]*|r|ro|roo|[a-qs-z_][a-z0-9_-]*`,
 }
 
 // Classes returns a copy of the argument classes by name, each an unanchored pattern.
@@ -112,6 +120,12 @@ func journalVariants() [][]string {
 // messages of this boot, err and above, of the last seconds. Its own entry, apart from the log
 // sensor's calls: --dmesg and the priority are fixed.
 var oomJournalCall = []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-<seconds>s"}
+
+// pilerCall is the one query of piler_status (probe, app_mail.go): the arrival of the newest archived
+// mail, over the local socket and without option files (the password comes in the environment). Kept
+// out: any other query, a client without --no-defaults or with --host.
+var pilerCall = []string{"--no-defaults", "--batch", "--skip-column-names", "--connect-timeout=5",
+	"--socket=<sockpath>", "--user=<dbident>", "--database=<dbident>", "--execute=SELECT MAX(arrived) FROM metadata"}
 
 // The sql sensor's MariaDB calls, by the client mariadb or, before 10.4.6, mysql. Each query is the
 // sensor's own (mariadbQueries), under a statement timeout; probe's tests run every one through here.
@@ -223,17 +237,21 @@ var commands = map[string][][]string{
 		{"show", "-p", "Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent", "--", "<unit>..."},
 		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
+		// Whose rootless Podman forwards the port of the UniFi OS Server (probe, app_unifi_linux.go).
+		{"show", "-p", "LoadState,ControlGroup,MainPID", "--", "<unitarg>"},
 		// Where a backup unit keeps its repository (probe, app_repo.go): its environment, read in the agent.
 		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},
 	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
-	"mariadb":    mariadbCalls,
-	"mysql":      mariadbCalls,
+	"mariadb":    append(slices.Clone(mariadbCalls), pilerCall),
+	"mysql":      append(slices.Clone(mariadbCalls), pilerCall),
 	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps;
 	// BackupPC_serverMesg status hosts as backuppc (Debian's path and EPEL's), which reads the server's
 	// status. Kept out: its other messages (backup, stop, server reload, log).
 	"runuser": append(slices.Clone(postgresCalls),
 		[]string{"-u", "<pmuser>", "--", "pm2", "jlist"},
+		// The status checks of a Moodle as its web server's user (probe's moodleChecks), never root.
+		[]string{"-u", "<pmuser>", "--", "php", "<moodlechecks>"},
 		[]string{"-u", "backuppc", "--", "/usr/share/backuppc/bin/BackupPC_serverMesg", "status", "hosts"},
 		[]string{"-u", "backuppc", "--", "/usr/share/BackupPC/bin/BackupPC_serverMesg", "status", "hosts"},
 	),
@@ -314,12 +332,14 @@ var commands = map[string][][]string{
 		{"api", "get", "/nodes/localhost/tasks", "--typefilter", "prune", "--limit", "50", "--output-format", "json"},
 	},
 	// The web server views (probe, app_web.go): the configuration tests, which read the configuration and
-	// start nothing, the dump of nginx's configuration and Apache's list of its files. Kept out: nginx
+	// start nothing, the dump of nginx's configuration and Apache's list of its files; for the vhosts of
+	// the discovery (probe, web_vhosts.go) Apache's list of its virtual hosts (-S, which is -t -D
+	// DUMP_VHOSTS -D DUMP_RUN_CFG and starts nothing either). Kept out: nginx
 	// -s (signals the master: stop, reload, reopen), nginx -c/-g, apachectl start|stop|restart|graceful
 	// and -k, haproxy without -c (starts a proxy) and with -sf/-st (stops the running one).
 	"nginx":      {{"-t"}, {"-T"}},
-	"apache2ctl": {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
-	"apachectl":  {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}},
+	"apache2ctl": {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}, {"-S"}},
+	"apachectl":  {{"-t"}, {"-t", "-D", "DUMP_INCLUDES"}, {"-S"}},
 	"haproxy":    {{"-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"}},
 	"ceph":       {{"health", "-f", "json"}, {"df", "-f", "json"}},
 	"sanoid":     {{"--monitor-snapshots"}},
@@ -329,6 +349,30 @@ var commands = map[string][][]string{
 	// The print queues of the local CUPS (probe, app_cups.go). Kept out: lpstat -h (another server),
 	// cupsenable, cupsdisable, cancel, lpadmin and every other command that changes a queue.
 	"lpstat": {{"-p"}},
+	// The mail views (probe, app_mail.go): where Postfix keeps its queues, the queue as JSON (showq,
+	// only under 5000 mails), the state of Dovecot's services and its error log of the last hour. Kept
+	// out: postconf -e/-X/-# (they edit main.cf), postqueue -f/-i/-s/-p (flush and delivery), postsuper,
+	// postfix check, doveadm log reopen|test, doveadm stats dump -r (resets the counters) and every
+	// other doveadm command (kick, expunge, sync and the like).
+	"postconf":  {{"-h", "queue_directory"}},
+	"postqueue": {{"-j"}},
+	"doveadm":   {{"-f", "tab", "service", "status"}, {"log", "errors", "-s", "<seconds>"}},
+	// SpamAssassin and OpenDKIM (probe, app_mail.go; MailPiler's query is pilerCall): a PING to spamd,
+	// the test of the keys of the KeyTable. Kept out: spamc with anything but -K (it would hand a mail
+	// on), opendkim-testkey -d/-s/-k/-x (another key or configuration).
+	"spamc":            {{"-K"}},
+	"opendkim-testkey": {{"-v"}},
+	// The Samba views (probe, app_samba.go): the replication links of this domain controller as JSON,
+	// the owners of the FSMO roles, the check of smb.conf, the counts of smbstatus without the check of
+	// its processes, winbindd's ping, the NETLOGON ping of its domain controller and the check of the
+	// trust account. Kept out: samba-tool dbcheck (with --fix it writes), drs replicate|kcc|options,
+	// fsmo transfer|seize and every other samba-tool command, smbstatus -B, --profile and -n, wbinfo
+	// -c/--change-secret and every other wbinfo call (lookups of users and groups), and of
+	// linuxmuster.net linbo-torrent (its status chowns the image tree) and sophomorix-check.
+	"samba-tool": {{"drs", "showrepl", "--json"}, {"fsmo", "show"}},
+	"testparm":   {{"-s"}},
+	"smbstatus":  {{"--json", "--fast"}},
+	"wbinfo":     {{"-p"}, {"-P"}, {"-t"}},
 	// The Windows views (probe, winviews_windows.go): the inbound replication links of this domain
 	// controller alone, and the sites and application pools of IIS (appcmd.exe from
 	// %windir%\system32\inetsrv, by its base name). Kept out: `repadmin /showrepl *` and every other
@@ -461,4 +505,13 @@ func RunEnv(ctx context.Context, timeout time.Duration, env []string, name strin
 		return nil, fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
 	}
 	return execx.RunEnv(ctx, timeout, env, name, args...)
+}
+
+// RunCapped is execx.RunCapped for a call on the list: at most limit bytes of stdout, no stderr.
+func RunCapped(ctx context.Context, timeout time.Duration, limit int, name string, args ...string) ([]byte, error) {
+	if !Allowed(name, args) {
+		logger.Warnf("%s call refused, %s", filepath.Base(name), ErrNotAllowed)
+		return nil, fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
+	}
+	return execx.RunCapped(ctx, timeout, limit, name, args...)
 }

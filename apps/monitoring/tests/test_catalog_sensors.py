@@ -8,7 +8,10 @@ or left out, and left out it is not sent (arch-monitoring-apps-1). The app senso
 the agent's allowlist, the one kind of target that view is bound to, and only its fields
 (R-1404). The host sensor: a view from the agent's allowlist, no target, only its fields
 (R-1228). The http sensor's expect and scheme auto, the dns sensor's optional target
-(kern-monitoring-30)."""
+(kern-monitoring-30). The http sensor's accept: application/json or left out
+(kern-monitoring-33)."""
+
+from typing import get_args
 
 import pytest
 
@@ -20,6 +23,7 @@ from app.catalog.sensors import (
     OPNSENSE_VIEW_FIELDS,
     SENSOR_FIELDS,
     SENSOR_TARGETS,
+    AppParams,
 )
 
 
@@ -159,6 +163,11 @@ def test_an_app_check_takes_no_target_outside_its_views(kind):
     assert f"sensor 'app' cannot target {kind!r}" in error
 
 
+def test_a_mailcow_view_reads_only_a_container():
+    error = _only_error(_app_module(params={"view": "mailcow_queue"}, fields=["total"], rules=[]))
+    assert "view 'mailcow_queue' of sensor 'app' targets only ['container'], not 'unit'" in error
+
+
 def test_an_app_check_needs_a_target():
     assert "sensor 'app' needs a target" in _only_error(_app_module(target=None))
 
@@ -167,6 +176,7 @@ def test_the_app_fields_and_targets_are_exactly_those_of_its_views():
     assert SENSOR_FIELDS["app"] == frozenset().union(*APP_VIEW_FIELDS.values())
     assert SENSOR_TARGETS["app"] == frozenset().union(*APP_VIEW_TARGETS.values())
     assert APP_VIEW_FIELDS.keys() == APP_VIEW_TARGETS.keys()
+    assert set(get_args(AppParams.model_fields["view"].annotation)) == APP_VIEW_FIELDS.keys()
 
 
 def test_the_app_views_are_those_the_agent_returns():
@@ -197,6 +207,8 @@ def test_the_app_views_are_those_the_agent_returns():
             "monitor",
             "refreshing",
         ],
+        "wordpress_cron": ["events", "oldest_overdue_s", "overdue"],
+        "nextcloud_aio": ["backup", "backup_age_s", "containers", "stopped"],
         "wordpress_version": ["version"],
         "wg_peers": [
             "interfaces",
@@ -281,6 +293,15 @@ def test_the_app_views_are_those_the_agent_returns():
             "slow_requests",
         ],
         "pm2_apps": ["apps", "apps_errored", "apps_stopped", "restarts"],
+        "web_vhost_cert": [
+            "chain_ok",
+            "file_days_left",
+            "hostname_ok",
+            "reload_missing",
+            "served_days_left",
+        ],
+        "haproxy_certs": ["certs", "expiring_14d", "min_days_left"],
+        "moodle_checks": ["not_ok", "state"],
         "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
         "backuppc_status": [
             "backup_age_max_s",
@@ -348,11 +369,45 @@ def test_the_app_views_are_those_the_agent_returns():
         "wsus": ["content_free_bytes", "content_free_pct", "errors_24h"],
         "cups_queues": ["queues", "queues_disabled"],
         "veeam_windows": ["last_result", "last_run_age_s", "runs"],
+        "postfix_queue": ["active", "capped", "deferred", "hold", "incoming", "total"],
+        "postfix_queue_age": ["age_read", "oldest_age_s"],
+        "dovecot_status": ["errors_1h", "services", "services_at_limit", "warnings_1h"],
+        "mailcow_queue": ["active", "capped", "deferred", "hold", "incoming", "total"],
+        "mailcow_watchdog": ["last_age_s", "logged", "services", "services_failing"],
+        "piler_status": ["archived", "last_age_s"],
+        "clamav_db": ["age_s", "version"],
+        "spamd_ping": ["reachable"],
+        "opendkim_keys": ["keys", "keys_failed"],
+        "samba_drs": [
+            "last_success_age_s",
+            "links",
+            "links_failing",
+            "outbound_failing",
+            "partners",
+        ],
+        "samba_fsmo": ["roles", "roles_without_owner"],
+        "samba_member": ["config_ok", "dc_ok", "open_files", "sessions", "tcons", "winbind_ok"],
+        "samba_trust": ["trust_ok"],
+        "lmn_devices": ["import_completed", "import_errors", "import_pending", "last_import_age_s"],
+        "lmn_linbo": ["images", "torrents_stale"],
+        "unifi_network": [
+            "clients",
+            "devices",
+            "firmware_updatable",
+            "gateways_offline",
+            "offline",
+            "offline_root",
+            "pending",
+            "sites",
+            "updating",
+        ],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
         "bbb_recordings": ["unit"],
         "ldap_replication": ["unit"],
+        "wordpress_cron": ["container"],
+        "nextcloud_aio": ["container"],
         "wordpress_version": ["container"],
         "wg_peers": ["unit"],
         "fail2ban": ["unit"],
@@ -384,6 +439,9 @@ def test_the_app_views_are_those_the_agent_returns():
         "haproxy_servers": ["unit"],
         "fpm_pools": ["unit"],
         "pm2_apps": ["unit"],
+        "web_vhost_cert": ["vhost"],
+        "moodle_checks": ["vhost"],
+        "haproxy_certs": ["unit"],
         "es_nodes": ["container", "unit"],
         "backuppc_status": ["unit"],
         "urbackup_status": ["unit"],
@@ -403,6 +461,22 @@ def test_the_app_views_are_those_the_agent_returns():
         "wsus": ["unit"],
         "cups_queues": ["unit"],
         "veeam_windows": ["unit"],
+        "postfix_queue": ["unit"],
+        "postfix_queue_age": ["unit"],
+        "dovecot_status": ["unit"],
+        "mailcow_queue": ["container"],
+        "mailcow_watchdog": ["container"],
+        "piler_status": ["unit"],
+        "clamav_db": ["unit"],
+        "spamd_ping": ["unit"],
+        "opendkim_keys": ["unit"],
+        "samba_drs": ["unit"],
+        "samba_fsmo": ["unit"],
+        "samba_member": ["unit"],
+        "samba_trust": ["unit"],
+        "lmn_devices": ["unit"],
+        "lmn_linbo": ["unit"],
+        "unifi_network": ["unit"],
     }
 
 
@@ -459,6 +533,21 @@ def test_an_http_check_compares_its_answer_with_expect():
         "method": "GET",
         "expect": "true",
     }
+
+
+def test_an_http_check_asks_for_json_when_told():
+    catalog = _http_module({"path": "/metrics", "accept": "application/json"})
+    assert catalog.errors == ()
+    assert catalog.modules["app"].checks[0].params == {
+        "path": "/metrics",
+        "method": "GET",
+        "accept": "application/json",
+    }
+
+
+@pytest.mark.parametrize("accept", ["text/html", "", "application/*", "*/*", 1, None])
+def test_an_http_check_asks_for_no_other_answer(accept):
+    assert "accept" in _only_error(_http_module({"accept": accept}))
 
 
 @pytest.mark.parametrize(
@@ -621,7 +710,15 @@ def test_a_socket_path_fits_into_sun_path():
     path = "/" + "s" * 106
     assert _sensor_module("unixsocket", {"path": path}, "connected").errors == ()
     error = _only_error(_sensor_module("unixsocket", {"path": path + "s"}, "connected"))
-    assert "at most 107 characters" in error
+    assert "at most 107 bytes" in error
+
+
+def test_a_socket_path_counts_bytes_not_characters():
+    fits = "/" + "ä" * 53
+    assert len(fits) == 54 and len(fits.encode()) == 107
+    assert _sensor_module("unixsocket", {"path": fits}, "connected").errors == ()
+    error = _only_error(_sensor_module("unixsocket", {"path": fits + "ä"}, "connected"))
+    assert "at most 107 bytes" in error
 
 
 @pytest.mark.parametrize(

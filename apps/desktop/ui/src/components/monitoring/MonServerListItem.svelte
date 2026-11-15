@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const worstLabel = $derived(
     {
       ok: $t('monitoring.status.ok'),
+      info: $t('monitoring.status.info'),
       warning: $t('monitoring.status.warning'),
       critical: $t('monitoring.status.critical'),
       unknown: $t('monitoring.status.unknown'),

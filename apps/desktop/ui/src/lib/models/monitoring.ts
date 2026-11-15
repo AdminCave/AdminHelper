@@ -22,6 +22,7 @@ export const STATUS_PRIORITY: Record<MonStatus, number> = {
   unknown: 2,
   pending: 1,
   ok: 0,
+  info: 0,
 };
 
 export function worstStatus(checks: Array<{ state?: { status?: MonStatus } | null }>): MonStatus {
@@ -33,6 +34,13 @@ export function worstStatus(checks: Array<{ state?: { status?: MonStatus } | nul
     }
   }
   return worst;
+}
+
+/** The status of a card: the worst of its checks, but info when that is ok and a check
+ *  carries a hint, so the card shows the blue info tone while the host light stays green. */
+export function cardStatus(checks: Array<{ state?: { status?: MonStatus } | null }>): MonStatus {
+  const worst = worstStatus(checks);
+  return worst === 'ok' && checks.some((c) => c.state?.status === 'info') ? 'info' : worst;
 }
 
 export interface ServerGroup {
@@ -204,10 +212,19 @@ export interface MonitoringSummary {
   critical: number;
   unknown: number;
   pending: number;
+  info: number;
 }
 
 export function computeSummary(checks: MonCheckSummary[] | MonitorCheck[]): MonitoringSummary {
-  const s: MonitoringSummary = { total: 0, ok: 0, warning: 0, critical: 0, unknown: 0, pending: 0 };
+  const s: MonitoringSummary = {
+    total: 0,
+    ok: 0,
+    warning: 0,
+    critical: 0,
+    unknown: 0,
+    pending: 0,
+    info: 0,
+  };
   for (const c of checks) {
     s.total += 1;
     const st = (c.state?.status ?? 'pending') as keyof MonitoringSummary;

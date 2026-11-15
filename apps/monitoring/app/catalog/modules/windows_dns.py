@@ -17,7 +17,7 @@ MODULE = {
     "name": "Windows DNS Server",
     "version": 1,
     "description": "Windows DNS Server: the service and whether it answers on port 53.",
-    "detect": {"units": ["DNS.service"]},
+    "detect": {"units": ["DNS.service"], "port_hints": [53]},
     "instance": "unit",
     "checks": [
         {

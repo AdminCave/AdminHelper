@@ -1141,6 +1141,23 @@ def test_an_unhashed_check_of_an_unchanged_catalog_gets_its_hash_too(db, actions
     )
 
 
+def test_an_update_the_admins_timeout_cannot_hold_keeps_the_old_row(db, actions):
+    finding = _adopted(db, actions)
+    web = _checks(db, finding)["web"]
+    # Out of ProbeConfig's range (timeout_s <= 30): the admin's value is carried into the
+    # new config, which then fails validation.
+    _admin_edit(web, timeout_s=99)
+    db.commit()
+    before, old_hash = web.config, web.module_check_hash
+
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 1
+    result = adopt(db, finding.id, catalog=WEB_CHANGED, now=NOW)
+
+    assert result.updated == []
+    assert {"key": "web", "reason": "the updated check does not hold"} in result.skipped
+    assert (web.config, web.module_check_hash) == (before, old_hash)
+
+
 def test_a_new_definition_that_does_not_bind_keeps_the_old_one(db, actions):
     finding = _adopted(db, actions)
     web = _checks(db, finding)["web"]

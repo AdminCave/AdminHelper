@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -175,6 +176,52 @@ func TestUnixSocketSensorSpeaksTheProtocolOfItsService(t *testing.T) {
 	}
 	if heard := fmt.Sprint(srv.close()); heard != "[*1 $4 INFO]" {
 		t.Errorf("redis heard %s", heard)
+	}
+
+	for _, c := range []struct{ use, secret, want string }{
+		{useRedisAuth, "s3cret", "[*2 $4 AUTH $6 s3cret *1 $4 INFO]"},
+		{useRedisACL, "monitor:s3c:ret", "[*3 $4 AUTH $7 monitor $7 s3c:ret *1 $4 INFO]"},
+	} {
+		words := 5
+		if c.use == useRedisACL {
+			words = 7
+		}
+		path, srv = unixFake(t, func(f *fakeConn) {
+			for range words {
+				f.hear()
+			}
+			f.say("+OK\r\n")
+			for range 3 {
+				f.hear()
+			}
+			f.say(redisInfoAnswer)
+			f.hear()
+		})
+		p := unixProbe(map[string]any{"path": path, "protocol": "redis"}, "data.role")
+		p.Credential = &Credential{Ref: "c1", Use: c.use}
+		got, err = unixSocketSensor(ctx, p, c.secret)
+		data, _ = got["data"].(map[string]any)
+		if err != nil || data["role"] != "master" {
+			t.Errorf("%s = %v, %v; want its INFO", c.use, got, err)
+		}
+		if heard := fmt.Sprint(srv.close()); heard != c.want {
+			t.Errorf("%s: redis heard %s, want %s", c.use, heard, c.want)
+		}
+	}
+
+	for _, secret := range []string{"s3cret", ":s3cret", ""} {
+		var dialed atomic.Int32
+		path, srv = unixFake(t, func(f *fakeConn) {
+			dialed.Add(1)
+			f.drain()
+		})
+		p := unixProbe(map[string]any{"path": path, "protocol": "redis"})
+		p.Credential = &Credential{Ref: "c1", Use: useRedisACL}
+		_, err = unixSocketSensor(ctx, p, secret)
+		srv.close()
+		if !errors.Is(err, ErrInvalid) || secret != "" && strings.Contains(err.Error(), secret) || dialed.Load() != 0 {
+			t.Errorf("the redis_acl secret %q = %v after %d connections; want ErrInvalid before any", secret, err, dialed.Load())
+		}
 	}
 
 	path, _ = unixFake(t, func(c *fakeConn) {

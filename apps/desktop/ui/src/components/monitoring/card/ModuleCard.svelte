@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { MonitorCatalogModule, MonitorCheck } from '$lib/api/types';
   import { t } from '$lib/i18n';
   import { probeDetails } from '$lib/models/checkDetails';
-  import { worstStatus } from '$lib/models/monitoring';
+  import { cardStatus } from '$lib/models/monitoring';
   import { cardNote, cardSummary, probeStatusText, valueText } from '$lib/models/monitoringText';
   import { connections } from '$lib/stores/connections';
   import { monitoringServers } from '$lib/stores/monitoring';
@@ -32,7 +32,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const name = $derived(module?.name ?? moduleId);
   // A single-instance module's instance key repeats the module id: not shown twice.
   const title = $derived(instance && instance !== moduleId ? `${name} · ${instance}` : name);
-  const status = $derived(worstStatus(checks));
+  const status = $derived(cardStatus(checks));
 
   // What a check says beyond its dot: why its sensor delivered nothing, else the first
   // rule it broke. The checker's raw message stays in the expanded row.

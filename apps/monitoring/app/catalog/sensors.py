@@ -10,9 +10,10 @@ entry or a probe check may set for it. The agent checks the same bounds again an
 answers ``invalid`` to anything else, so a bound here is a promise, not the guard.
 
 Each sensor returns a fixed set of fields (SENSOR_FIELDS, for opnsense, app and host the set
-of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS). The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy
-stats) also return fields under ``data.`` — a path into that answer, which the agent
-resolves to one scalar.
+of its view); a view of the app sensor also fixes the kinds of its target (APP_VIEW_TARGETS).
+The sensors that read a structured answer (a JSON body, Redis INFO, HAProxy stats) also
+return fields under ``data.`` — a path into that answer, which the agent resolves to one
+scalar.
 """
 
 from __future__ import annotations
@@ -97,6 +98,8 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"contexts", "csn_age_s", "monitor", "consumers", "disconnected", "refreshing"}
     ),
     "wordpress_version": frozenset({"version"}),
+    "wordpress_cron": frozenset({"events", "overdue", "oldest_overdue_s"}),
+    "nextcloud_aio": frozenset({"containers", "stopped", "backup", "backup_age_s"}),
     "wg_peers": frozenset(
         {
             "interfaces",
@@ -148,6 +151,10 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "ceph_health": frozenset({"health", "checks", "raw_used_pct", "max_pool_used_pct"}),
     "web_config": frozenset({"config_ok"}),
+    "web_vhost_cert": frozenset(
+        {"served_days_left", "hostname_ok", "chain_ok", "file_days_left", "reload_missing"}
+    ),
+    "moodle_checks": frozenset({"state", "not_ok"}),
     "service_config": frozenset({"config_ok"}),
     "nginx_status": frozenset(
         {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
@@ -156,6 +163,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "haproxy_servers": frozenset(
         {"backends", "backends_down", "servers", "servers_down", "servers_maint"}
     ),
+    "haproxy_certs": frozenset({"certs", "min_days_left", "expiring_14d"}),
     "fpm_pools": frozenset(
         {
             "pools",
@@ -253,6 +261,44 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "wsus": frozenset({"content_free_bytes", "content_free_pct", "errors_24h"}),
     "cups_queues": frozenset({"queues", "queues_disabled"}),
     "veeam_windows": frozenset({"last_result", "last_run_age_s", "runs"}),
+    # Mail, directory and school services (R-1239, R-1240): queue counts and ages, states of
+    # services, keys and replication links; no address, domain, user, share or name of a DC.
+    "postfix_queue": frozenset({"active", "capped", "deferred", "hold", "incoming", "total"}),
+    "postfix_queue_age": frozenset({"age_read", "oldest_age_s"}),
+    "dovecot_status": frozenset({"errors_1h", "services", "services_at_limit", "warnings_1h"}),
+    "mailcow_queue": frozenset({"active", "capped", "deferred", "hold", "incoming", "total"}),
+    "mailcow_watchdog": frozenset({"last_age_s", "logged", "services", "services_failing"}),
+    "piler_status": frozenset({"archived", "last_age_s"}),
+    "clamav_db": frozenset({"age_s", "version"}),
+    "spamd_ping": frozenset({"reachable"}),
+    "opendkim_keys": frozenset({"keys", "keys_failed"}),
+    "samba_drs": frozenset(
+        {"last_success_age_s", "links", "links_failing", "outbound_failing", "partners"}
+    ),
+    "samba_fsmo": frozenset({"roles", "roles_without_owner"}),
+    "samba_member": frozenset(
+        {"config_ok", "dc_ok", "open_files", "sessions", "tcons", "winbind_ok"}
+    ),
+    "samba_trust": frozenset({"trust_ok"}),
+    "lmn_devices": frozenset(
+        {"import_completed", "import_errors", "import_pending", "last_import_age_s"}
+    ),
+    "lmn_linbo": frozenset({"images", "torrents_stale"}),
+    # UniFi OS Server (R-1244): counts from the local Integration API only; no device or client
+    # name, MAC or address leaves the host.
+    "unifi_network": frozenset(
+        {
+            "clients",
+            "devices",
+            "firmware_updatable",
+            "gateways_offline",
+            "offline",
+            "offline_root",
+            "pending",
+            "sites",
+            "updating",
+        }
+    ),
 }
 
 # The views that read a repository: the only ones a credential of use password may go to.
@@ -314,6 +360,8 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "bbb_recordings": _UNIT,
     "ldap_replication": _UNIT,
     "wordpress_version": _CONTAINER,
+    "wordpress_cron": _CONTAINER,
+    "nextcloud_aio": _CONTAINER,
     "wg_peers": _UNIT,
     "fail2ban": _UNIT,
     "crowdsec_bouncers": _UNIT,
@@ -363,6 +411,25 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "wsus": _UNIT,
     "cups_queues": _UNIT,
     "veeam_windows": _UNIT,
+    "postfix_queue": _UNIT,
+    "postfix_queue_age": _UNIT,
+    "dovecot_status": _UNIT,
+    "mailcow_queue": _CONTAINER,
+    "mailcow_watchdog": _CONTAINER,
+    "piler_status": _UNIT,
+    "clamav_db": _UNIT,
+    "spamd_ping": _UNIT,
+    "opendkim_keys": _UNIT,
+    "samba_drs": _UNIT,
+    "samba_fsmo": _UNIT,
+    "samba_member": _UNIT,
+    "samba_trust": _UNIT,
+    "lmn_devices": _UNIT,
+    "lmn_linbo": _UNIT,
+    "unifi_network": _UNIT,
+    "web_vhost_cert": frozenset({"vhost"}),
+    "moodle_checks": frozenset({"vhost"}),
+    "haproxy_certs": _UNIT,
 }
 
 SENSOR_FIELDS: dict[str, frozenset[str]] = {
@@ -435,8 +502,8 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "process": frozenset({"process"}),
     "socket": frozenset({"port", "process", "container", "unit"}),
     "container": frozenset({"container"}),
-    "http": frozenset({"loopback", "port", "process", "container", "unit"}),
-    "tls": frozenset({"loopback", "port", "process", "container", "unit"}),
+    "http": frozenset({"loopback", "port", "process", "container", "unit", "vhost"}),
+    "tls": frozenset({"loopback", "port", "process", "container", "unit", "vhost"}),
     "proto": frozenset({"loopback", "port", "process", "container", "unit"}),
     "certfile": None,
     "file_age": None,
@@ -463,7 +530,7 @@ _HOSTNAME = rf"^{_LABEL}(\.{_LABEL})*\.?$"
 # services (_ldap._tcp.example.org).
 _DNS_LABEL = r"[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
 _DNS_NAME = rf"^{_DNS_LABEL}(\.{_DNS_LABEL})*\.?$"
-# The agent's maxSocketPath: sun_path holds 108 bytes, the last a NUL.
+# The agent's maxSocketPath counts bytes: sun_path holds 108, the last a NUL.
 _MAX_SOCKET_PATH = 107
 
 
@@ -484,8 +551,11 @@ class HttpParams(_Params):
     # The whole answer the agent compares with, for body_match (sensor_http.go plainText):
     # 1 to 64 characters without space or control character.
     expect: str | None = Field(None, pattern=r"^[^\s\x00-\x1f\x7f-\x9f]{1,64}$")
+    # Accept header for services that answer JSON only when asked (the Jitsi bridge's /metrics);
+    # unset, the agent sends none.
+    accept: Literal["application/json"] | None = None
 
-    @field_validator("host", "expect", mode="before")
+    @field_validator("host", "expect", "accept", mode="before")
     @classmethod
     def _set_or_absent(cls, v: object) -> object:
         # A probe check sends its params as given, and the agent answers invalid to a null.
@@ -558,10 +628,17 @@ class ProtoParams(_Params):
 
 
 class UnixSocketParams(_Params):
-    path: str = Field(pattern=_ABS_PATH, max_length=_MAX_SOCKET_PATH)
+    path: str = Field(pattern=_ABS_PATH)
     protocol: Literal["connect", "http", "redis", "fastcgi", "haproxy"] = "connect"
     http_path: str = Field("/", pattern=r"^/[^\s\x00]*$", max_length=512)
     status_path: str = Field("", pattern=r"^(/[^\s\x00]*)?$", max_length=256)
+
+    @field_validator("path")
+    @classmethod
+    def _path_fits_sun_path(cls, v: str) -> str:
+        if len(v.encode()) > _MAX_SOCKET_PATH:
+            raise ValueError(f"at most {_MAX_SOCKET_PATH} bytes")
+        return v
 
 
 # The queries of each engine (the agent's sensor_sql.go); one of the other engine is invalid.
@@ -612,6 +689,8 @@ class AppParams(_Params):
         "bbb_recordings",
         "ldap_replication",
         "wordpress_version",
+        "wordpress_cron",
+        "nextcloud_aio",
         "wg_peers",
         "fail2ban",
         "crowdsec_bouncers",
@@ -636,10 +715,13 @@ class AppParams(_Params):
         "pbs_status",
         "ceph_health",
         "web_config",
+        "web_vhost_cert",
+        "moodle_checks",
         "service_config",
         "nginx_status",
         "apache_status",
         "haproxy_servers",
+        "haproxy_certs",
         "fpm_pools",
         "pm2_apps",
         "es_nodes",
@@ -661,6 +743,22 @@ class AppParams(_Params):
         "wsus",
         "cups_queues",
         "veeam_windows",
+        "postfix_queue",
+        "postfix_queue_age",
+        "dovecot_status",
+        "mailcow_queue",
+        "mailcow_watchdog",
+        "piler_status",
+        "clamav_db",
+        "spamd_ping",
+        "opendkim_keys",
+        "samba_drs",
+        "samba_fsmo",
+        "samba_member",
+        "samba_trust",
+        "lmn_devices",
+        "lmn_linbo",
+        "unifi_network",
     ]
 
 

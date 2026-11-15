@@ -4,12 +4,12 @@
 
 """A Windows host (R-1245): its updates, its critical and error events, its machine certificates.
 
-The Windows Event Log service runs on every Windows, so it finds the module on each Windows
-host with an agent. The agent asks the Windows Update Agent for the open updates of its last
-offline search (no search of its own: that would load the update servers), counts the
-critical and error events of the System and Application logs since its last run, and reads
-the not-after dates of the certificates in LocalMachine\\My. Only counts, ages and booleans
-leave the host, never an update's title, an event text or a certificate's subject.
+The Windows Event Log service runs on every Windows, so it finds the module on each Windows host
+with an agent. The agent asks the Windows Update Agent for the open updates of its last offline
+search (it starts no online search: that would load the update servers; wuaRead searches offline
+itself), counts the critical and error events of the System and Application logs since its last
+run, and reads the not-after dates of the certificates in LocalMachine\\My. Only counts, ages
+and booleans leave the host, never an update's title, an event text or a certificate's subject.
 
 A pending reboot and a search older than three days are warnings; open security updates
 (MSRC severity Critical or Important) too. Events are a warning count: a single error event is

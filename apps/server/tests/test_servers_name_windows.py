@@ -15,6 +15,14 @@ def _headers(client):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def _assert_name_error(r):
+    # The shape the OpenAPI declares for 422 (HTTPValidationError, R-1450), as in R-0207.
+    detail = r.json()["detail"]
+    assert isinstance(detail, list) and len(detail) == 1, r.text
+    assert detail[0]["loc"] == ["body", "name"], r.text
+    assert detail[0]["msg"].startswith("name "), r.text
+
+
 def test_create_refuses_a_colon_and_a_device_name(test_client, db_session, admin_user):
     headers = _headers(test_client)
     for name in ("srv:1", "aux", "NUL.lab"):
@@ -22,7 +30,7 @@ def test_create_refuses_a_colon_and_a_device_name(test_client, db_session, admin
             "/api/servers", json={"name": name, "hostname": "h.example"}, headers=headers
         )
         assert r.status_code == 422, (name, r.text)
-        assert isinstance(r.json()["detail"], str)
+        _assert_name_error(r)
     assert db_session.query(Server).count() == 0
 
 
@@ -34,7 +42,7 @@ def test_create_refuses_the_console_handle_names(test_client, db_session, admin_
             "/api/servers", json={"name": name, "hostname": "h.example"}, headers=headers
         )
         assert r.status_code == 422, (name, r.text)
-        assert isinstance(r.json()["detail"], str)
+        _assert_name_error(r)
     assert db_session.query(Server).count() == 0
 
 
@@ -56,6 +64,7 @@ def test_rename_to_a_device_name_is_refused(test_client, db_session, admin_user)
     sid = created.json()["id"]
     r = test_client.put(f"/api/servers/{sid}", json={"name": "com3"}, headers=headers)
     assert r.status_code == 422, r.text
+    _assert_name_error(r)
     db_session.expire_all()
     assert db_session.get(Server, sid).name == "web-1"
 
@@ -70,6 +79,7 @@ def test_rename_to_a_console_handle_name_is_refused(test_client, db_session, adm
         f"/api/servers/{created.json()['id']}", json={"name": "CONOUT$"}, headers=headers
     )
     assert r.status_code == 422, r.text
+    _assert_name_error(r)
 
 
 def test_a_stored_console_handle_name_stays_editable(test_client, db_session, admin_user):

@@ -10,6 +10,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,14 @@ from app.modules.servers.schemas import (
 logger = logging.getLogger("adminhelper.servers")
 
 
+def _invalid_name(msg: str, value: object) -> RequestValidationError:
+    """A 422 in the format the OpenAPI promises (HTTPValidationError, R-0207, R-1450):
+    FastAPI's own handler renders it as {"detail": [{"loc", "msg", "type", "input"}]}."""
+    return RequestValidationError(
+        [{"type": "value_error", "loc": ("body", "name"), "msg": msg, "input": value}]
+    )
+
+
 def _check_new_name(db: Session, name: str, server_id: str | None = None) -> None:
     """A new or changed name: a folder name on Windows (R-1056), and no other server's name,
     case aside (R-1210: every connection and tunnel shows it). Names stored twice before
@@ -47,7 +56,7 @@ def _check_new_name(db: Session, name: str, server_id: str | None = None) -> Non
     try:
         reject_windows_unsafe_server_name(name)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=f"name {e}") from None
+        raise _invalid_name(f"name {e}", name) from None
     taken = db.query(Server.id).filter(func.lower(Server.name) == func.lower(name))
     if server_id is not None:
         taken = taken.filter(Server.id != server_id)
@@ -193,7 +202,7 @@ def update_server(
 
     sent = data.model_fields_set
     if "name" in sent and data.name is None:
-        raise HTTPException(status_code=422, detail="name must not be null")
+        raise _invalid_name("name must not be null", None)
     # Only a new name: one stored before the rule stays valid when an edit sends it back.
     if "name" in sent and data.name != server.name:
         _check_new_name(db, data.name, server.id)

@@ -7,7 +7,9 @@
 Jicofo's REST server listens on 127.0.0.1:8888. GET /about/health answers 200 and "OK" with
 the result of its periodic health check, else 500 or 503 and the reason; the check fails
 when no bridge is operational, so a Jitsi without a working bridge is critical here. The
-package starts Jicofo from /etc/init.d/jicofo, which systemd runs as jicofo.service.
+package starts Jicofo from /etc/init.d/jicofo, which systemd runs as jicofo.service: a
+sysv-generated unit with RemainAfterExit=yes, which stays active (exited) after Jicofo has
+crashed, so the unit is critical on sub_state exited as well (version 2).
 
 The image of docker-jitsi-meet (ghcr.io/jitsi/jicofo, the old tags on Docker Hub as
 jitsi/jicofo) has no HEALTHCHECK, and its REST server stays on the container's loopback
@@ -21,7 +23,7 @@ default), /debug and /pin; the module asks none of them, and not /stats either.
 MODULE = {
     "id": "jitsi-jicofo",
     "name": "Jitsi Jicofo",
-    "version": 1,
+    "version": 2,
     "description": (
         "Jicofo, the conference focus of Jitsi Meet, from its image or package: the container, "
         "or the unit and Jicofo's health check, which fails without an operational bridge."
@@ -52,7 +54,8 @@ MODULE = {
             "interval": 300,
             "fields": ["active_state", "sub_state"],
             "rules": [
-                {"field": "active_state", "op": "ne", "value": "active", "level": "critical"}
+                {"field": "active_state", "op": "ne", "value": "active", "level": "critical"},
+                {"field": "sub_state", "op": "eq", "value": "exited", "level": "critical"},
             ],
         },
         {

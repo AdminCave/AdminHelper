@@ -355,6 +355,7 @@ class StatusSummaryOut(BaseModel):
     critical: int
     unknown: int
     pending: int
+    info: int
     lastResultAt: str | None
     minIntervalS: int | None
 

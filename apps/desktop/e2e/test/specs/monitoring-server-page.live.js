@@ -425,11 +425,19 @@ async function domTexts(selector) {
   );
 }
 
+// A finding named after its module (an md RAID found by its package) has no .inbox-instance,
+// so the item is found in the page and not by asking each one. The script returns the element
+// itself: an index followed by a second query could point at another item after a re-render.
 async function findingItem(instance) {
-  for (const item of await $$(".inbox-item")) {
-    if ((await textContentOf(await item.$(".inbox-instance"))) === instance) return item;
-  }
-  throw new Error(`no finding ${instance} in the inbox`);
+  const ref = await browser.execute(
+    (want) =>
+      [...document.querySelectorAll(".inbox-item")].find(
+        (el) => el.querySelector(".inbox-instance")?.textContent.trim() === want,
+      ) ?? null,
+    instance,
+  );
+  if (!ref) throw new Error(`no finding ${instance} in the inbox`);
+  return $(ref);
 }
 
 // A fixed report in the agent's wire form, invented for the look of the views: a mail and a

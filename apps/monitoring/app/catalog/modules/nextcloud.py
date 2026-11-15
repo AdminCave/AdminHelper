@@ -22,7 +22,8 @@ service, since a lone container cannot tell its job. The snap runs its web serve
 watched; its HTTP answer redirects to HTTPS once that is on, so it gets no HTTP check.
 
 Not covered here: the All-in-One images (nextcloud/aio-*; their backup stops the
-containers, port and TLS of the web server are the admin's), a cron container under
+containers, port and TLS of the web server are the admin's; the module nextcloud-aio watches
+them from their mastercontainer, R-1383), a cron container under
 another service name, a package install behind the host's web server
 (R-1231), and the serverinfo app (a costly answer from the database and the file system).
 """

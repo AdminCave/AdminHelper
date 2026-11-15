@@ -44,6 +44,51 @@ func RunEnv(ctx context.Context, timeout time.Duration, env []string, name strin
 	}
 	cmd.WaitDelay = WaitDelay
 	out, err := cmd.Output()
+	return ended(parent, ctx, out, err)
+}
+
+// ErrOutputLimit is the error of RunCapped for a command that wrote more than its limit.
+var ErrOutputLimit = errors.New("the output exceeded its limit")
+
+// RunCapped is Run for a command whose output the agent does not trust to stay small (code of a site
+// it runs): it keeps at most limit bytes of stdout, and a command that writes more it kills and
+// returns ErrOutputLimit, so its output never grows in the agent's memory. stderr is dropped, and
+// with it any text of the command in the ExitError.
+func RunCapped(ctx context.Context, timeout time.Duration, limit int, name string, args ...string) ([]byte, error) {
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	w := &capWriter{limit: limit, kill: cancel}
+	cmd.Stdout = w
+	cmd.WaitDelay = WaitDelay
+	err := cmd.Run()
+	if w.over {
+		return nil, ErrOutputLimit
+	}
+	return ended(parent, ctx, w.buf, err)
+}
+
+// capWriter keeps what is written to it up to limit bytes; the first write past it calls kill.
+type capWriter struct {
+	limit int
+	buf   []byte
+	over  bool
+	kill  func()
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if len(w.buf)+len(p) > w.limit {
+		w.over = true
+		w.kill()
+		return 0, ErrOutputLimit
+	}
+	w.buf = append(w.buf, p...)
+	return len(p), nil
+}
+
+// ended is the result of a command run under ctx, a child of parent with the command's own timeout.
+func ended(parent, ctx context.Context, out []byte, err error) ([]byte, error) {
 	if errors.Is(err, exec.ErrWaitDelay) {
 		return out, nil
 	}

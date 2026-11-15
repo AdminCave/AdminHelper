@@ -771,6 +771,7 @@ def get_status_summary(db: Session = Depends(get_db)):
         "critical": 0,
         "unknown": 0,
         "pending": 0,
+        "info": 0,
     }
     for status_, count in rows:
         if status_ in summary:
