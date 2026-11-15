@@ -10,8 +10,10 @@ Heavy: linux-full — neue Ansicht und neuer HTTP-Parameter im Agent (`apps/agen
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1388: HTTP-Sensor mit Parameter `accept`  [ ]
+### T1 — R-1388: HTTP-Sensor mit Parameter `accept`  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @285a28bd9 2026-11-15T09:00:31+01:00
+Review: approve (.ah-out/review/kern-monitoring-33/T1.verdict.json)
 Änderung: `knownParams` nimmt `accept` an, einziger Wert `application/json` (sonst `invalid`); gesetzt schickt der
 Agent den Header `Accept: application/json`. Test: der Header kommt beim Ziel an, ein anderer Wert ist `invalid`,
 ohne den Parameter kein `Accept`-Header.
