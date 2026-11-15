@@ -237,6 +237,8 @@ var commands = map[string][][]string{
 		{"show", "-p", "Id,Names,SubState,Result,ExecMainCode,ExecMainStatus,NRestarts,StateChangeTimestampMonotonic,MemoryCurrent", "--", "<unit>..."},
 		{"show", "-p", "LoadState,ActiveState,SubState,NRestarts,ActiveEnterTimestampMonotonic,Result,ExecMainCode,ExecMainStatus,ExecMainExitTimestampMonotonic", "--", "<unitarg>"},
 		{"show", "-p", "LoadState,ControlGroup", "--", "<unitarg>"},
+		// Whose rootless Podman forwards the port of the UniFi OS Server (probe, app_unifi_linux.go).
+		{"show", "-p", "LoadState,ControlGroup,MainPID", "--", "<unitarg>"},
 		// Where a backup unit keeps its repository (probe, app_repo.go): its environment, read in the agent.
 		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},

@@ -66,7 +66,8 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 
 // forwarders start the names of the processes that forward a port of this host to a port they do
 // not name to the guard: rootless container networks (rootlesskit, Podman's rootlessport, slirp4netns,
-// pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit), kube-proxy,
+// pasta and passt, whose binaries may carry a suffix such as .avx2, gvproxy, vpnkit; on a port pasta is
+// judged by its arguments instead, as docker-proxy is: checkPasta), kube-proxy,
 // kubectl (port-forward), autossh, socat, systemd-socket-proxyd (the kernel cuts the name to
 // systemd-socket-), sslh with sslh-ev and sslh-select, rinetd, redir, stunnel (Debian names it
 // stunnel4), 6tunnel, spiped, chisel, gost, ncat, the netcat variants (nc.openbsd, nc.traditional,
@@ -588,7 +589,11 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		if neverProbed(name) {
 			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
 		}
-		if err := checkForwarder(ctx, l.pid, name, fmt.Sprintf("port %d", port)); err != nil {
+		if pasta(name) {
+			if err := checkPasta(ctx, l.pid, name, ip, port); err != nil {
+				return err
+			}
+		} else if err := checkForwarder(ctx, l.pid, name, fmt.Sprintf("port %d", port)); err != nil {
 			return err
 		}
 		if service, err := serviceForwarder(ctx, l.pid); err != nil {
@@ -834,6 +839,130 @@ func proxiedPort(args []string) (uint16, bool) {
 		return 0, false
 	}
 	return uint16(port), true
+}
+
+// pasta says whether name (processKey) is pasta, the port forwarder of rootless Podman, whose binary
+// may carry a suffix such as .avx2.
+func pasta(name string) bool {
+	k := processKey(name)
+	return k == "pasta" || strings.HasPrefix(k, "pasta.")
+}
+
+// checkPasta returns an error unless the pasta pid, which listens on port, forwards connections to
+// ip and port to a port of its namespace a probe may connect to. As with docker-proxy, only its
+// arguments name that port; the UniFi OS Server 5.1.42 publishes its HTTPS port so (-t 11443:443).
+func checkPasta(ctx context.Context, pid int32, name string, ip netip.Addr, port uint16) error {
+	args, err := processArgs(ctx, pid)
+	if err != nil {
+		return fmt.Errorf("%w: the port forwarder %.64s on port %d cannot be read: %v", ErrNotAllowed, name, port, err)
+	}
+	to, ok := pastaPort(args, ip, port)
+	if !ok {
+		return fmt.Errorf("%w: the port forwarder %.64s on port %d does not tell one port it forwards to", ErrNotAllowed, name, port)
+	}
+	if blockedPort(to) {
+		return fmt.Errorf("%w: port %d forwards to port %d of a namespace, one the agent never probes", ErrNotAllowed, port, to)
+	}
+	return nil
+}
+
+// pastaPort reads from the arguments of pasta the port that its TCP forwarding rules (-t,
+// --tcp-ports; getopt: the value apart, after "=" or glued to -t) send connections to ip and port to.
+// It reads only plain rules, [address[%interface]/]first[-last][:tofirst[-tolast]] in a comma list:
+// a rule pasta reads otherwise (all, auto, ~exclusions, a target address) or two rules that disagree
+// tell no one port, and nothing is told then.
+func pastaPort(args []string, ip netip.Addr, port uint16) (uint16, bool) {
+	var specs []string
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		switch {
+		case strings.HasPrefix(a, "-c") || a == "--conf-path" || strings.HasPrefix(a, "--conf-path="):
+			// pesto changes the forwards at run time over this socket: argv no longer tells them.
+			return 0, false
+		case a == "-t" || a == "--tcp-ports":
+			if i+1 >= len(args) {
+				return 0, false
+			}
+			i++
+			specs = append(specs, args[i])
+		case strings.HasPrefix(a, "--tcp-ports="):
+			specs = append(specs, strings.TrimPrefix(a, "--tcp-ports="))
+		case strings.HasPrefix(a, "-t") && !strings.HasPrefix(a, "--"):
+			specs = append(specs, a[2:])
+		}
+	}
+	var to uint16
+	found := false
+	for _, spec := range specs {
+		if spec == "none" {
+			continue
+		}
+		ports := spec
+		if before, after, ok := strings.Cut(spec, "/"); ok {
+			addr, _, _ := strings.Cut(before, "%")
+			switch {
+			case addr == "" || addr == "*":
+			default:
+				a, err := netip.ParseAddr(addr)
+				if err != nil {
+					// pasta reads it as ports with a target address: not a plain rule.
+					return 0, false
+				}
+				if !a.IsUnspecified() && a.Unmap() != ip.Unmap() {
+					// The rule listens on another address than ip.
+					ports = ""
+				}
+			}
+			if ports != "" {
+				ports = after
+			}
+		}
+		if ports == "" {
+			continue
+		}
+		for chunk := range strings.SplitSeq(ports, ",") {
+			from, target, ok := strings.Cut(chunk, ":")
+			first, last, okFrom := portRange(from)
+			if !okFrom {
+				return 0, false
+			}
+			tofirst, tolast := first, last
+			if ok {
+				var okTo bool
+				if tofirst, tolast, okTo = portRange(target); !okTo || tolast-tofirst != last-first {
+					return 0, false
+				}
+			}
+			if port < first || port > last {
+				continue
+			}
+			t := tofirst + (port - first)
+			if found && t != to {
+				return 0, false
+			}
+			to, found = t, true
+		}
+	}
+	return to, found
+}
+
+// portRange reads first[-last] of ports above zero, last not below first.
+func portRange(s string) (first, last uint16, ok bool) {
+	a, b, isRange := strings.Cut(s, "-")
+	f, err := strconv.ParseUint(a, 10, 16)
+	if err != nil || f == 0 {
+		return 0, 0, false
+	}
+	l := f
+	if isRange {
+		if l, err = strconv.ParseUint(b, 10, 16); err != nil || l < f {
+			return 0, 0, false
+		}
+	}
+	return uint16(f), uint16(l), true
 }
 
 // currentListeners returns the listening TCP sockets of this host, at most listenerTTL old.
