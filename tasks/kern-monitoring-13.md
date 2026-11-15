@@ -32,8 +32,10 @@ Review: approve (.ah-out/review/kern-monitoring-13/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T4
 
-### T2 — R-1244: Modul `unifi-os-server`  [ ]
+### T2 — R-1244: Modul `unifi-os-server`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/unifi_os_server.py, apps/monitoring/tests/test_catalog_unifi.py, apps/monitoring/tests/test_catalog_sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ba2c0e540 2026-11-15T10:41:29+01:00
+Review: approve (.ah-out/review/kern-monitoring-13/T2.verdict.json)
 Änderung:
 - Ansicht `unifi_network` mit Feldern und Ziel Unit in `sensors.py`.
 - Neues Modul (SPDX-Header), erkannt an der Unit `uosserver`, Instanz `unit`. Checks:

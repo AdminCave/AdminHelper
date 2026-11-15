@@ -390,6 +390,17 @@ def test_the_app_views_are_those_the_agent_returns():
         "samba_trust": ["trust_ok"],
         "lmn_devices": ["import_completed", "import_errors", "import_pending", "last_import_age_s"],
         "lmn_linbo": ["images", "torrents_stale"],
+        "unifi_network": [
+            "clients",
+            "devices",
+            "firmware_updatable",
+            "gateways_offline",
+            "offline",
+            "offline_root",
+            "pending",
+            "sites",
+            "updating",
+        ],
     }
     assert {v: sorted(k) for v, k in APP_VIEW_TARGETS.items()} == {
         "bbb_meetings": ["unit"],
@@ -465,6 +476,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "samba_trust": ["unit"],
         "lmn_devices": ["unit"],
         "lmn_linbo": ["unit"],
+        "unifi_network": ["unit"],
     }
 
 

@@ -284,6 +284,21 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"import_completed", "import_errors", "import_pending", "last_import_age_s"}
     ),
     "lmn_linbo": frozenset({"images", "torrents_stale"}),
+    # UniFi OS Server (R-1244): counts from the local Integration API only; no device or client
+    # name, MAC or address leaves the host.
+    "unifi_network": frozenset(
+        {
+            "clients",
+            "devices",
+            "firmware_updatable",
+            "gateways_offline",
+            "offline",
+            "offline_root",
+            "pending",
+            "sites",
+            "updating",
+        }
+    ),
 }
 
 # The views that read a repository: the only ones a credential of use password may go to.
@@ -411,6 +426,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "samba_trust": _UNIT,
     "lmn_devices": _UNIT,
     "lmn_linbo": _UNIT,
+    "unifi_network": _UNIT,
     "web_vhost_cert": frozenset({"vhost"}),
     "moodle_checks": frozenset({"vhost"}),
     "haproxy_certs": _UNIT,
@@ -742,6 +758,7 @@ class AppParams(_Params):
         "samba_trust",
         "lmn_devices",
         "lmn_linbo",
+        "unifi_network",
     ]
 
 
