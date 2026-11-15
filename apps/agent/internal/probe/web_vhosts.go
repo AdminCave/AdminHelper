@@ -22,7 +22,8 @@ import (
 )
 
 // Vhost is a name a web server of this host serves: the server (nginx), the name, the port and
-// whether it speaks TLS there, and the application its document root holds ("" for none known).
+// whether it speaks TLS there, and the application its document root holds ("" for none known; only
+// the first name of a server block or virtual host carries it, its aliases serve the same one).
 // Only these go into the discovery; where the root and the certificate lie and the user the web server
 // runs as stay on the host, a view finds them again when it runs.
 type Vhost struct {
@@ -299,6 +300,7 @@ func nginxVhostsOf(servers []*nginxVhost, httpCert string) []Vhost {
 				}
 				vhosts = append(vhosts, v)
 			}
+			app = "" // the application is its first name's: an alias would watch it twice
 		}
 	}
 	return vhosts
@@ -508,6 +510,7 @@ func apacheVhostsOf(a *apacheVhost, b apacheVhostBlock) []Vhost {
 			v.cert = b.cert
 		}
 		vhosts = append(vhosts, v)
+		app = "" // the application is its first name's: an alias would watch it twice
 	}
 	return vhosts
 }

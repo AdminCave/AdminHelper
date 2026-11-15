@@ -277,6 +277,10 @@ def probe_config(
             name, port_hint = key, summary.get("port")
             if port_hint is None:
                 return None, "no port for this vhost"
+            # The agent asks a vhost by its name and cannot tell its scheme by a handshake
+            # (sensor_http.go): the scheme of an HTTP check comes from the vhost's TLS.
+            if scheme is None and check.sensor == "http":
+                scheme = "https" if summary.get("tls") else "http"
         elif t.kind != "loopback":
             name, why = _target_name(
                 module, t.kind, t.service, key, summary, containers, t.image_fallback

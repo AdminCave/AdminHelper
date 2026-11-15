@@ -258,3 +258,30 @@ server { server_name d.example.org; }
 		t.Errorf("vhosts =\n%+v\nwant\n%+v", got, want)
 	}
 }
+
+func TestAnApplicationIsWatchedOnlyUnderTheFirstNameOfItsVhost(t *testing.T) {
+	stubVhostRoots(t, "/srv/moodle/admin/cli/checks.php", "/srv/moodle/lib/moodlelib.php")
+
+	nginx := nginxVhostsOf([]*nginxVhost{{
+		listens: []nginxListen{{port: 443, tls: true}, {port: 8443, tls: true}}, listened: true,
+		names: []string{"_", "learn.example.org", "www.learn.example.org"}, root: "/srv/moodle",
+	}}, "")
+	apache := apacheVhostsOf(&apacheVhost{names: []string{"learn.example.org"}, port: 443},
+		apacheVhostBlock{found: true, named: true, root: "/srv/moodle", aliases: []string{"www.learn.example.org"}})
+
+	apps := func(vhosts []Vhost) []string {
+		var got []string
+		for _, v := range vhosts {
+			got = append(got, fmt.Sprintf("%s:%d=%s", v.Name, v.Port, v.App))
+		}
+		return got
+	}
+	// Every name stays a vhost of its own (its certificate is watched), the application only once.
+	if got, want := apps(nginx), []string{"learn.example.org:443=moodle", "learn.example.org:8443=moodle",
+		"www.learn.example.org:443=", "www.learn.example.org:8443="}; !reflect.DeepEqual(got, want) {
+		t.Errorf("nginx = %v, want %v", got, want)
+	}
+	if got, want := apps(apache), []string{"learn.example.org:443=moodle", "www.learn.example.org:443="}; !reflect.DeepEqual(got, want) {
+		t.Errorf("apache = %v, want %v", got, want)
+	}
+}

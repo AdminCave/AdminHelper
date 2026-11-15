@@ -93,8 +93,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/ ./interna
 Doku: → T8
 Abhängt von: T3
 
-### T7 — R-1378, R-1422: native PHP-App-Module  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/nextcloud_native.py, apps/monitoring/app/catalog/modules/moodle_native.py, apps/monitoring/app/catalog/modules/wordpress_native.py, apps/monitoring/app/catalog/modules/bookstack_native.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_apps.py, apps/monitoring/tests/test_catalog_moodle.py, apps/monitoring/tests/test_discovery_match.py
+### T7 — R-1378, R-1422: native PHP-App-Module  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/nextcloud_native.py, apps/monitoring/app/catalog/modules/moodle_native.py, apps/monitoring/app/catalog/modules/wordpress_native.py, apps/monitoring/app/catalog/modules/bookstack_native.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_catalog_web.py, apps/monitoring/tests/test_catalog_sensors.py, apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go
+Evidenz: run.sh[quick] monitoring agent: 6 passed, 0 failed, 12 skipped @8c3154147 2026-11-15T05:57:20+01:00
+Review: approve (.ah-out/review/kern-monitoring-28/T7.verdict.json)
 Änderung: Je App ein Modul mit Instanzart `vhost` und `detect.vhost_apps`, alle 5 Minuten:
 - Nextcloud: `status.php`, `installed`/`maintenance`/`needsDbUpgrade` wie das Container-Modul;
 - Moodle: `/login/index.php` 200;
@@ -104,7 +106,7 @@ Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/nextcloud
 Moodle zusätzlich `moodle_checks` alle 15 Minuten, `state` critical → critical, warning → warning. Die Erkennung ist
 im Test belegt: dieselbe Domain in zwei Modulen (`web_domain` und App) ergibt zwei Funde. Neue Dateien mit
 SPDX-Header.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_apps.py tests/test_catalog_moodle.py tests/test_discovery_match.py tests/test_catalog_sensors.py tests/test_catalog.py
+Verify: bash scripts/dev/verify.sh monitoring agent --strict
 Doku: → T8
 Abhängt von: T4, T5, T6
 
@@ -172,3 +174,16 @@ Abhängt von: T7
   `cache/`, `localcache/` folgen denselben Regeln; verlegt `config.php` die Caches, läuft nichts. Welche Dateien unter
   `dataroot` Moodle als PHP lädt, ist nicht am Moodle-Quelltext verifiziert. Ein Moodle mit den Standardrechten
   `directorypermissions` 02777 bleibt damit `unsupported`.
+- T7 Pfade: Moodle fragt `/` statt `/login/index.php` und WordPress `/?rest_route=/` statt `/wp-login.php`
+  (Login-Routen sind Fallen in `test_catalog_apps.py`, Sicherheits-Plugins melden sie). Einer Weiterleitung folgt
+  der Agent nicht: er fragt `127.0.0.1:<port>`, und `sameTarget` lehnt einen anderen Hostnamen ab; ein Moodle mit
+  `forcelogin` bleibt im Seiten-Check daher `unknown` (dokumentiert, eigene Zeile). BookStack `/status` ist ein Testobjekt, daher alle 15 statt 5
+  Minuten, wie das Container-Modul. Nextcloud ohne `host`-Parameter (der Agent fragt einen vhost bei seinem Namen).
+- T7 Schema: ein HTTP-Check auf einen vhost bekommt in `module_sync.probe_config` `https`/`http` aus dem `tls` des
+  vhosts; der Agent nimmt für einen vhost kein `auto`. Checks anderer Sensoren behalten `scheme` None (web_domain).
+- T7 Aliase: der Agent setzt `App` nur am ersten gültigen Namen eines server-Blocks/VirtualHost; Aliase bleiben
+  `web_domain`-Instanzen (Zertifikat), werden aber keine App-Instanz (sonst checks.php je Alias, BookStack-Sitzung
+  je Alias). Kein Wire-Wechsel; Test `TestAnApplicationIsWatchedOnlyUnderTheFirstNameOfItsVhost` (Gegenprobe rot).
+  Verify deshalb über `monitoring agent` ganz (`--` nimmt nur eine Komponente).
+- T7: Moodle `state` `unknown` (checks.php Exit 3) hat keine Regel und bleibt ohne Bewertung ok, wie diktiert
+  (critical → critical, warning → warning).
