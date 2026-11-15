@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # UniFi OS Server lokal — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-13 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-13 · Review: pro Task
 Spec: docs/features/kern-monitoring-13.md (Roadmap R-1244)
 Heavy: linux-full — neue Ansicht und HTTP-Client im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
