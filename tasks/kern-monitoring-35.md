@@ -14,8 +14,10 @@ Baut erst, wenn kern-monitoring-28 (#542) gemergt ist (`sensor_app.go`, Katalog)
 Nur lesende feste Abfragen, nur über das Unix-Socket des Datenbank-Containers, der Zugang verlässt den Host nie
 (Kevin 2026-11-14). `security` je Task (Zugangsdaten, fremde Container-Wurzel).
 
-### T1 — R-1423: Option `cron` zählen  [ ]
+### T1 — R-1423: Option `cron` zählen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_wordpress_cron_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b5f49beb3 2026-11-15T07:01:24+01:00
+Review: approve (.ah-out/review/kern-monitoring-35/T1.verdict.json)
 Änderung: Kleiner Parser für PHP-`serialize()` (nur `a:`, `i:`, `s:`, `b:`, `N;`, verschachtelt, Grenzen für Tiefe,
 Länge und Einträge) und `wpCronCounts(data, now)`: zählt die ganzzahligen Schlüssel der obersten Ebene als
 `events`, überfällig (älter als 10 Minuten) als `overdue`, dazu `oldest_overdue_s`; `version` und andere Schlüssel
@@ -53,3 +55,7 @@ Doku: diese Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T1: Der Parser nimmt außer `a`, `i`, `s`, `b`, `N` auch `d:` und `O:` an: Argumente eines Ereignisses können Floats
+  oder Objekte tragen (Prüfer-Nit T1). `R:`/`r:`, `C:` und `E:` bleiben Formfehler.
+- T2 nimmt die Prüfer-Nits aus T1 mit (zweiter überfälliger Zeitstempel im Test; Text von `s:` nur, wo er gebraucht
+  wird).
