@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # WordPress-Cron aus der Site-Datenbank — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-35 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-35 · Review: pro Task
 Spec: docs/features/kern-monitoring-35.md (Roadmap R-1423)
 Heavy: linux-full — neue Ansicht und Abhängigkeit im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -71,8 +71,10 @@ in `wpInspect`), die MariaDB-Form der Abfrage und die drei Zahlen. Dazu ein dire
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: keine (Tests und Kommentare)
 
-### T6 — Doku: Wächter und Zugangsdaten nennen `wordpress_cron`  [ ]
+### T6 — Doku: Wächter und Zugangsdaten nennen `wordpress_cron`  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @364caf8b8 2026-11-15T08:29:58+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschlussprüfung: Sicherheitsmodell (Admin) und Wächter (Entwickler) sagen, der Agent verbinde sich nie mit
 mysqld/mariadbd, auch nicht über ein Unix-Socket, und nennen die einzigen Stellen mit Zugangsdaten. `wordpress_cron`
 als feste Ausnahme mit Grund und in der Liste der Zugangsdaten, DE+EN.
