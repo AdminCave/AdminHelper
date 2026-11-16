@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Wächter, Listener-Liste und Discovery — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-6 · Review: pro Task
+Status: erledigt · Branch: feature/kern-agent-6 · Review: pro Task
 Spec: docs/features/kern-agent-6.md (Roadmap R-1440, R-1441, R-1442, R-1447, R-1516)
 Heavy: linux-full — Wächter, Listener-Leser und Discovery des Agents (`apps/agent`) auf echten Boxen; dazu vor dem Merge `freebsd_box.sh` (FreeBSD-Plattformcode und R-1442); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
