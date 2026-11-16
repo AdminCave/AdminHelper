@@ -63,8 +63,10 @@ Beweis: feature/kern-monitoring-30@a4a220b9e sensor_http.go speaksTLS (Review ke
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T8
 
-### T6 — R-1517: Body-Grenze im Leser von fetchExpecting  [ ]
+### T6 — R-1517: Body-Grenze im Leser von fetchExpecting  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @07e1df74e 2026-11-16T16:53:58+01:00
+Review: approve (.ah-out/review/kern-agent-5/T6.verdict.json)
 Änderung: der `data.`-Zweig liest höchstens `maxBodyBytes`+1 über `io.LimitReader` und meldet darüber
 `errBodyTooLarge`, unabhängig vom Transport. Erst der rote Test mit einem Client ohne `cappedBody`.
 Beweis: feature/kern-monitoring-33@67dcb890c apps/agent/internal/probe/sensor_http.go fetchExpecting

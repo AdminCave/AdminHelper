@@ -361,8 +361,9 @@ func fetch(ctx context.Context, client *http.Client, method, target, host, use, 
 
 // fetchExpecting is fetch that, with an expect that is not empty and a field body_match (GET only),
 // also reports as body_match whether the body, without the space around it, is expect. It reads at
-// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none. An
-// accept that is not empty is the Accept header of the request.
+// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none. For
+// a field data. it reads at most maxBodyBytes, whatever transport client has; a longer body is
+// errBodyTooLarge. An accept that is not empty is the Accept header of the request.
 func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, accept, use, secret string, fields []string, expect string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
@@ -396,13 +397,16 @@ func fetchExpecting(ctx context.Context, client *http.Client, method, target, ho
 	if method != http.MethodGet || (!wantData && !wantMatch) {
 		return values, nil
 	}
-	var r io.Reader = resp.Body
-	if !wantData {
-		r = io.LimitReader(resp.Body, maxExpectBody+1)
+	limit := int64(maxExpectBody)
+	if wantData {
+		limit = maxBodyBytes
 	}
-	body, err := io.ReadAll(r)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, netErr(ctx, err)
+	}
+	if wantData && len(body) > maxBodyBytes {
+		return nil, errBodyTooLarge
 	}
 	if wantMatch {
 		values["body_match"] = len(body) <= maxExpectBody && string(bytes.TrimSpace(body)) == expect

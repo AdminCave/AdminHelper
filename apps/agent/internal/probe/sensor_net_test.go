@@ -479,6 +479,29 @@ func TestHTTPSensorTellsASilentServerOfPlainTextWithinAShortTimeout(t *testing.T
 	}
 }
 
+// The data a sensor reads stays within maxBodyBytes with any client, not only with the guard's
+// transport that caps the body: a longer answer is errBodyTooLarge, one at the limit is read.
+func TestFetchReadsTheDataOfAnAnswerUpToTheCapAlone(t *testing.T) {
+	answer := func(n int) string {
+		return `{"pad":"` + strings.Repeat("x", n-len(`{"pad":""}`)) + `"}`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := maxBodyBytes
+		if r.URL.Path == "/over" {
+			n++
+		}
+		_, _ = io.WriteString(w, answer(n))
+	}))
+	t.Cleanup(srv.Close)
+	ctx := context.Background()
+	if got, err := fetch(ctx, srv.Client(), http.MethodGet, srv.URL+"/exact", "", "", "", []string{"data.pad"}); err != nil || got["data"] == nil {
+		t.Errorf("an answer of maxBodyBytes = %v, %v; want its data", got, err)
+	}
+	if got, err := fetch(ctx, srv.Client(), http.MethodGet, srv.URL+"/over", "", "", "", []string{"data.pad"}); !errors.Is(err, errBodyTooLarge) {
+		t.Errorf("an answer beyond maxBodyBytes = %d values, %v; want errBodyTooLarge", len(got), err)
+	}
+}
+
 // rawServer accepts connections on loopback and hands each to serve.
 func rawServer(t *testing.T, serve func(net.Conn)) int {
 	t.Helper()
