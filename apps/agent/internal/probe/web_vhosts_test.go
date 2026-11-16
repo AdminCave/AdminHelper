@@ -172,6 +172,33 @@ func TestANameIsKeptOnceWithTheTLSPortFirst(t *testing.T) {
 	}
 }
 
+func TestAnAppIsOnOneNameWhateverTheOrderOfNamesInEachBlock(t *testing.T) {
+	// Two blocks of one site name its hosts in another order: the application sits on the first name of
+	// each block, and the name the TLS block wins would else carry it a second time.
+	got := uniqueVhosts([]Vhost{
+		{Server: "nginx", Name: "a", Port: 443, TLS: true, App: "nextcloud", root: "/srv/cloud"},
+		{Server: "nginx", Name: "b", Port: 80, App: "nextcloud", root: "/srv/cloud"},
+		{Server: "nginx", Name: "a", Port: 80},
+	})
+	var apps []string
+	for _, v := range got {
+		if v.App != "" {
+			apps = append(apps, v.Name)
+		}
+	}
+	if !reflect.DeepEqual(apps, []string{"a"}) {
+		t.Errorf("the application is on %v, want on a alone: %+v", apps, got)
+	}
+	// Another root is another site.
+	got = uniqueVhosts([]Vhost{
+		{Server: "nginx", Name: "a", Port: 443, TLS: true, App: "nextcloud", root: "/srv/cloud"},
+		{Server: "nginx", Name: "b", Port: 443, TLS: true, App: "moodle", root: "/srv/learn"},
+	})
+	if got[0].App != "nextcloud" || got[1].App != "moodle" {
+		t.Errorf("two sites lost an application: %+v", got)
+	}
+}
+
 func TestAWebServerThatIsNotThereOrDoesNotLoad(t *testing.T) {
 	stubVhostRoots(t)
 	none := answer{err: exec.ErrNotFound}

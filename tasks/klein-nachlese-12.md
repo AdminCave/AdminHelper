@@ -28,11 +28,13 @@ Beweis: reviewer kern-monitoring-28 T6 2026-11-15 · Dedup-Key: REF:agent:execx.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/execx
 Doku: keine (interner Aufruf)
 
-### T3 — R-1509: web_vhosts, App bei abweichender Namensreihenfolge  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go
+### T3 — R-1509: web_vhosts, App bei abweichender Namensreihenfolge  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go, apps/agent/internal/execx/execx_unix_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @23be76ec9 2026-11-16T13:41:28+01:00
+Review: approve (.ah-out/review/klein-nachlese-12/T3.verdict.json)
 Beweis: kern-monitoring-28 T7 review 2026-11-15 · Dedup-Key: REF:agent:web_vhosts.go:uniqueVhosts-app
-Änderung: Test erst: zwei Blöcke desselben Servers mit verschiedener Namensreihenfolge (App am ersten Namen je Block); die App darf nach `uniqueVhosts` nur einmal und am ersten Namen des gewählten (TLS-)Blocks stehen. Ergibt der Test Rot, `uniqueVhosts` anpassen, sonst bleibt er als Absicherung.
-Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'Vhost'
+Änderung: Test erst: zwei Blöcke desselben Servers mit verschiedener Namensreihenfolge (App am ersten Namen je Block); die App darf nach `uniqueVhosts` nur einmal und am ersten Namen des gewählten (TLS-)Blocks stehen. Der Test war rot (die App stand auf zwei Namen): `uniqueVhosts` lässt die App je Wurzelverzeichnis auf dem ersten Namen, der sie trägt.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'AnAppIsOnOneName|ANameIsKept|Vhost'
 Doku: keine (interne Auswahl)
 
 ### T4 — R-1514: errWPDBServer erreicht den Aufrufer; Docstring _before_app_checks  [ ]
@@ -56,3 +58,6 @@ Beweis: kern-monitoring-28 branch-Review 2026-11-15 · Semantik: docs/features/k
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 Task-Review: am Ende
+
+## Entscheidungen
+- T2: Der Test von T2 liegt in execx_unix_test.go (Ledger nannte execx_test.go) und kam erst mit dem Commit von T3 in den Branch; T3 führt die Datei in Dateien:.
