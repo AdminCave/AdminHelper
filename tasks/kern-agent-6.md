@@ -78,8 +78,10 @@ Abhängt von: T2
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T5 — R-1442: Probe-Tests als Box-Nutzer unter FreeBSD  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_bbb_test.go, apps/agent/internal/probe/app_bbb_unix_test.go, apps/agent/internal/probe/app_proxy_test.go
+### T5 — R-1442: Probe-Tests als Box-Nutzer unter FreeBSD  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/main_freebsd_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @7981f1e04 2026-11-16T20:21:45+01:00
+Review: approve (.ah-out/review/kern-agent-6/T5.verdict.json)
 Beweis: kern-agent-4 T4 2026-11-13, `freebsd_box.sh` (62 passed, 1 failed, Phase tests internal/probe); Gegenprobe
 origin/main@1ece3d3e6, Testbinary als Box-Nutzer `-run MeetingsView|CaddyUpstreams`: 9 FAIL mit `getcred: operation
 not permitted` · Dedup-Key: BUG:agent:freebsd-box:probe-getcred-user-phase
