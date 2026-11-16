@@ -158,3 +158,32 @@ func TestTheVhostsAreReadOnceAMinute(t *testing.T) {
 		t.Errorf("a read after a minute = %v, %d tools; want the configuration read again", err, len(*calls))
 	}
 }
+
+func TestAFailureOfTheCallersOwnContextIsNotKept(t *testing.T) {
+	stubVhostCache(t, time.Time{}, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	old := runTool
+	runTool = func(ctx context.Context, _ time.Duration, _ string, _ ...string) ([]byte, error) {
+		cancel() // the caller gives up while the web server's configuration is read
+		return nil, ctx.Err()
+	}
+	if _, err := cachedVhosts(ctx); err == nil {
+		t.Fatal("a read the caller's context cut short gave no error")
+	}
+	runTool = old
+	calls := stubTools(t, answer{out: "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\n"},
+		answer{err: exec.ErrNotFound}, answer{err: exec.ErrNotFound})
+	if _, err := cachedVhosts(context.Background()); err != nil || len(*calls) != 3 {
+		t.Errorf("the next caller got %v after %d tools; want its own read, not the canceled one's error", err, len(*calls))
+	}
+}
+
+func TestAWaiterWhoseContextEndedDoesNotRead(t *testing.T) {
+	stubVhostCache(t, time.Time{}, nil, nil)
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	calls := stubTools(t)
+	if _, err := cachedVhosts(gone); !errors.Is(err, context.Canceled) || len(*calls) != 0 {
+		t.Errorf("a caller with an ended context = %v, %d tools; want its context's error and no read", err, len(*calls))
+	}
+}

@@ -53,7 +53,8 @@ var ErrOutputLimit = errors.New("the output exceeded its limit")
 // RunCapped is Run for a command whose output the agent does not trust to stay small (code of a site
 // it runs): it keeps at most limit bytes of stdout, and a command that writes more it kills and
 // returns ErrOutputLimit, so its output never grows in the agent's memory. stderr is dropped, and
-// with it any text of the command in the ExitError.
+// with it any text of the command in the ExitError. The kill reaches the command's whole process group
+// (a tool that runs another leaves no orphan), where the platform has one.
 func RunCapped(ctx context.Context, timeout time.Duration, limit int, name string, args ...string) ([]byte, error) {
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -62,6 +63,7 @@ func RunCapped(ctx context.Context, timeout time.Duration, limit int, name strin
 	w := &capWriter{limit: limit, kill: cancel}
 	cmd.Stdout = w
 	cmd.WaitDelay = WaitDelay
+	ownGroup(cmd)
 	err := cmd.Run()
 	if w.over {
 		return nil, ErrOutputLimit

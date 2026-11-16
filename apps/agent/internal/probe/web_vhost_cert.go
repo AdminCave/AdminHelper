@@ -26,16 +26,25 @@ var vhostCache struct {
 	err  error
 }
 
-// cachedVhosts is WebVhosts, at most vhostTTL old.
+// cachedVhosts is WebVhosts, at most vhostTTL old. A caller whose context ended while it waited for the
+// lock reads nothing, and a read the caller's own context cut short is not kept: the next caller, with
+// a context of its own, would else get that error for a minute.
 func cachedVhosts(ctx context.Context) ([]Vhost, error) {
 	vhostCache.Lock()
 	defer vhostCache.Unlock()
 	if !vhostCache.at.IsZero() && time.Since(vhostCache.at) < vhostTTL {
 		return vhostCache.list, vhostCache.err
 	}
-	vhostCache.list, vhostCache.err = WebVhosts(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	list, err := WebVhosts(ctx)
+	if ctx.Err() != nil {
+		return list, err
+	}
+	vhostCache.list, vhostCache.err = list, err
 	vhostCache.at = time.Now()
-	return vhostCache.list, vhostCache.err
+	return list, err
 }
 
 // servedVhost finds the vhost t again among those the web servers of this host serve (cachedVhosts), by

@@ -418,12 +418,21 @@ func readWPCron(ctx context.Context, dial func(context.Context) (net.Conn, error
 	cfg := mysql.NewConfig()
 	cfg.User, cfg.Passwd, cfg.DBName = db.user, db.password, db.name
 	cfg.Net = "unix"
+	var guard *wpDBGuard
 	cfg.DialFunc = func(ctx context.Context, _, _ string) (net.Conn, error) {
 		c, err := dial(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return &wpDBGuard{Conn: c, budget: wpDBReadBudget}, nil
+		guard = &wpDBGuard{Conn: c, budget: wpDBReadBudget}
+		return guard, nil
+	}
+	// The driver turns the guard's error into its own bad connection: the guard still knows why it stopped.
+	dbError := func(err error) error {
+		if guard != nil && guard.err != nil {
+			return guard.err
+		}
+		return wpDBError(err)
 	}
 	cfg.Timeout, cfg.ReadTimeout, cfg.WriteTimeout = wpDBTimeout, wpDBTimeout, wpDBTimeout
 	cfg.Logger = quietLogger{}
@@ -435,7 +444,7 @@ func readWPCron(ctx context.Context, dial func(context.Context) (net.Conn, error
 	defer cancel()
 	conn, err := connector.Connect(ctx)
 	if err != nil {
-		return nil, wpDBError(err)
+		return nil, dbError(err)
 	}
 	defer conn.Close()
 	q, ok := conn.(driver.QueryerContext)
@@ -444,7 +453,7 @@ func readWPCron(ctx context.Context, dial func(context.Context) (net.Conn, error
 	}
 	rows, err := q.QueryContext(ctx, wpCronQuery(db.prefix, mariadb), nil)
 	if err != nil {
-		return nil, wpDBError(err)
+		return nil, dbError(err)
 	}
 	defer rows.Close()
 	if len(rows.Columns()) != 1 {
@@ -455,7 +464,7 @@ func readWPCron(ctx context.Context, dial func(context.Context) (net.Conn, error
 	case errors.Is(err, io.EOF):
 		return nil, fmt.Errorf("its database holds no option cron of at most %d bytes", wpCronMaxBytes)
 	case err != nil:
-		return nil, wpDBError(err)
+		return nil, dbError(err)
 	}
 	value, ok := dest[0].([]byte)
 	if !ok {
