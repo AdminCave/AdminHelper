@@ -134,6 +134,19 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/agent.html · docs/en/developer/agent.html · docs/admin/monitoring.html · docs/en/admin/monitoring.html
 Task-Review: am Ende
 
+### T12 — R-1442: Box-Nutzer-Tests unter FreeBSD, Rest  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_log_test.go, apps/agent/internal/probe/app_fpm.go, apps/agent/internal/probe/guard_test.go
+Beweis: freebsd_box.sh auf feature/kern-agent-6@3023efa92 2026-11-16: `fbsdbox tests: 17 passed, 1 failed` (internal/probe:
+TestPoolDirIsThePlaceOfThePackages, TestNginxStatusReadsTheCountersOfItsPlace, TestAnIPv6PlaceIsAskedWithItsAddressInBrackets,
+TestNginxStatusWithoutAPlaceOrAPageOfItsForm, TestApacheStatusReadsTheWorkersOfItsPlace, TestGuardChecksTheOwnersOfThePortAfterTheConnect)
+Änderung: `stubTools` reicht den `sockstat`-Aufruf des Wächters (FreeBSD liest Listener über `runTool`) an den echten
+Runner durch, statt ihn als Antwort der Ansicht zu zählen; `poolDirOf` streicht `.service` nur unter Linux (FreeBSD kennt
+nur rc.d-Namen); der Test der Besitzerprüfung nach dem connect verlangt unter FreeBSD kein `Accept` einer abgewiesenen
+Verbindung (Go überspringt dort die zurückgesetzte mit `ECONNABORTED`; dass nach dem connect geprüft wurde, belegt
+`ownersCalls`).
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (Tests und eine FreeBSD-Randbedingung ohne dokumentiertes Verhalten)
+
 ## Entscheidungen
 - 2026-11-16 R-1448 (FreeBSD-rc.d-Dienste als Units) fährt im Zug `tasks/kern-agent-7.md`: braucht eine Namensregel
   zwischen Agent-Discovery und den Unit-Namen der Monitoring-Module (`haproxy.service`), also Agent und Monitoring.
