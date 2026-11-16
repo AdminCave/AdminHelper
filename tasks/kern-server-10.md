@@ -1,5 +1,5 @@
 # Server: Supervisor-Frist und 422-Form — Task-Ledger
-Status: bereit · Branch: feature/kern-server-10 · Review: am Ende
+Status: erledigt · Branch: feature/kern-server-10 · Review: am Ende
 Spec: docs/features/kern-server-10.md (Roadmap R-1444, R-1494)
 Heavy: none — nur Server-Tests und die Form vierer 422-Bodys, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
