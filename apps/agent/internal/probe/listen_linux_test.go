@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,5 +132,20 @@ func TestListenTCPSeesWhatGopsutilSees(t *testing.T) {
 		}) {
 			t.Errorf("gopsutil lists %v, the reader does not", k)
 		}
+	}
+}
+
+func TestOSPrivilegedPortsEndBelowTheKernelsFirstUnprivilegedPort(t *testing.T) {
+	data, err := os.ReadFile("/proc/sys/net/ipv4/ip_unprivileged_port_start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lo, hi := osPrivilegedPorts()
+	if lo != 1 || int(hi) != start-1 {
+		t.Errorf("osPrivilegedPorts = %d..%d, want 1..%d", lo, hi, start-1)
 	}
 }

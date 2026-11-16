@@ -207,6 +207,11 @@ func TestParseProcNetTCPReadsTheListeningSockets(t *testing.T) {
 	}
 	// The lines of tcp carry their inode; the short lines of tcp6 none.
 	want[0].sock, want[1].sock, want[2].sock = "2001", "2002", "2004"
+	// And the uid of their creator (field 8).
+	want[0].uid = 113
+	for i := range 3 {
+		want[i].hasUID = true
+	}
 	got := append(parseProcNetTCP([]byte(tcp)), parseProcNetTCP([]byte(tcp6))...)
 	if !slices.Equal(got, want) {
 		t.Fatalf("parseProcNetTCP = %v, want %v", got, want)
@@ -370,5 +375,16 @@ func TestSocketSensorSaysWhetherAndWhereTheTargetListens(t *testing.T) {
 	res = run(Target{Kind: kindLoopback, PortHint: 80})
 	if res.Status != StatusInvalid {
 		t.Errorf("a loopback target = %+v, want invalid: the socket sensor reads listeners", res)
+	}
+}
+
+func TestStrictKindsAreTheTargetsWithoutAProcessTree(t *testing.T) {
+	for kind, want := range map[string]bool{
+		kindLoopback: true, kindPort: true, kindVhost: true, kindProcess: true,
+		kindUnit: false, kindContainer: false,
+	} {
+		if got := strictKind(kind); got != want {
+			t.Errorf("strictKind(%q) = %v, want %v", kind, got, want)
+		}
 	}
 }

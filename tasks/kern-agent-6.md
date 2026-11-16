@@ -26,8 +26,10 @@ Gegenprobe im Test: dieselben Adressen und Ports wie gopsutil auf dem Testhost.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (internes Lesen, Verhalten nur in der Reihenfolge-Abhängigkeit korrigiert)
 
-### T2 — R-1440: Härtung des Wächters für Fühler mit Zugangsdaten (Linux, FreeBSD)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/listen_freebsd.go, apps/agent/internal/probe/sockstat.go, apps/agent/internal/probe/sockstat_test.go
+### T2 — R-1440: Härtung des Wächters für Fühler mit Zugangsdaten (Linux, FreeBSD)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/listen_freebsd.go, apps/agent/internal/probe/sockstat.go, apps/agent/internal/probe/sockstat_test.go, apps/agent/internal/probe/listen_linux.go, apps/agent/internal/probe/listen_linux_test.go, apps/agent/internal/probe/listen_gopsutil.go, apps/agent/internal/probe/sensor_net_test.go, apps/agent/internal/probe/sensor_proto_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @059fb6b75 2026-11-16T18:25:32+01:00
+Review: approve (.ah-out/review/kern-agent-6/T2.verdict.json)
 Abhängt von: T1
 Änderung: Regel nach Kevins Entscheidung vom 2026-11-16 (privat). Gilt für jeden Aufrufer von `secretGuard`
 (http, proto/redis, App-Views); unit- und container-Ziele unverändert. Tabellentests je Zielart mit und ohne

@@ -1663,3 +1663,79 @@ func TestGuardRefusesSuperServersAtAUnixSocket(t *testing.T) {
 		}
 	}
 }
+
+// allPortsPrivileged makes every port one only root may bind, for tests that hand a secret to a
+// server of their own on a high port and test the sensor, not the guard's rule of strict targets.
+func allPortsPrivileged(t *testing.T) {
+	t.Helper()
+	old := privilegedPorts
+	privilegedPorts = func() (uint16, uint16) { return 1, 65535 }
+	t.Cleanup(func() { privilegedPorts = old })
+}
+
+// TestGuardHandsASecretOnlyToAProtectedListenerOfAStrictTarget: a target that names no process
+// tree gets a secret only on a privileged port or from a listener of a system account; unit and
+// container targets and connections without a secret keep their rule.
+func TestGuardHandsASecretOnlyToAProtectedListenerOfAStrictTarget(t *testing.T) {
+	by := func(addr string, port uint16, uid uint32) listener {
+		l := lst(addr, port, 50)
+		l.uid, l.hasUID = uid, true
+		return l
+	}
+	unknownOwner := lst("0.0.0.0", 8090, 50)
+	mine := func() func(listener) bool { return func(l listener) bool { return l.pid == 50 || l.pid == 60 } }
+	lo := netip.MustParseAddr("127.0.0.1")
+	strictRule := endpoint{addr: lo, port: 8090, owns: mine, strict: true}
+	strictNoRule := endpoint{addr: lo, port: 8090, strict: true}
+	unitRule := endpoint{addr: lo, port: 8090, owns: mine}
+	for _, c := range []struct {
+		name   string
+		ep     endpoint
+		port   uint16
+		list   []listener
+		pubs   []publication
+		lo, hi uint16
+		want   bool
+	}{
+		{"strict, high port, user", strictRule, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, false},
+		{"strict, high port, root", strictRule, 8090, []listener{by("0.0.0.0", 8090, 0)}, nil, 1, 1023, true},
+		{"strict, high port, system account", strictRule, 8090, []listener{by("0.0.0.0", 8090, 113)}, nil, 1, 1023, true},
+		{"strict, high port, last system uid", strictRule, 8090, []listener{by("0.0.0.0", 8090, 999)}, nil, 1, 1023, true},
+		{"strict, high port, nobody", strictRule, 8090, []listener{by("0.0.0.0", 8090, nobodyUID)}, nil, 1, 1023, false},
+		{"strict, high port, owner unknown", strictRule, 8090, []listener{unknownOwner}, nil, 1, 1023, false},
+		{"strict, high port, root beside a user", strictRule, 8090, []listener{by("0.0.0.0", 8090, 0), func() listener {
+			l := by("127.0.0.1", 8090, 1000)
+			l.pid = 60
+			return l
+		}()}, nil, 1, 1023, false},
+		{"strict, privileged port, user", endpoint{addr: lo, port: 443, owns: mine, strict: true}, 443, []listener{by("0.0.0.0", 443, 1000)}, nil, 1, 1023, true},
+		{"strict, no port privileged, user", endpoint{addr: lo, port: 443, owns: mine, strict: true}, 443, []listener{by("0.0.0.0", 443, 1000)}, nil, 1, 0, false},
+		{"strict, privileged range of FreeBSD, user", endpoint{addr: lo, port: 0x0400, owns: mine, strict: true}, 0x0400, []listener{by("0.0.0.0", 0x0400, 1000)}, nil, 0, 1024, true},
+		{"strict without a rule, user", strictNoRule, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, false},
+		{"strict without a rule, root", strictNoRule, 8090, []listener{by("0.0.0.0", 8090, 0)}, nil, 1, 1023, true},
+		{"strict without a rule, published by docker", strictNoRule, 8090, []listener{by("0.0.0.0", 8090, 0)}, []publication{{hostPort: 8090, to: 80}}, 1, 1023, false},
+		{"unit, high port, user", unitRule, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, true},
+		{"no rule, not strict, user", endpoint{addr: lo, port: 8090}, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stubHost(t, &fakeHost{list: c.list, pubs: c.pubs, names: map[int32]string{50: "app", 60: "app"}})
+			old := privilegedPorts
+			privilegedPorts = func() (uint16, uint16) { return c.lo, c.hi }
+			t.Cleanup(func() { privilegedPorts = old })
+			address := netip.AddrPortFrom(lo, c.port).String()
+			err := allowed(secretGuard(c.ep), "tcp4", address)
+			if c.want && err != nil {
+				t.Errorf("with a secret: %v, want it allowed", err)
+			}
+			if !c.want && !errors.Is(err, ErrNotAllowed) {
+				t.Errorf("with a secret: %v, want ErrNotAllowed", err)
+			}
+			// Without a secret the plain guard keeps its rule.
+			if c.pubs == nil {
+				if err := allowed(NewGuard(), "tcp4", address); err != nil {
+					t.Errorf("without a secret: %v, want it allowed", err)
+				}
+			}
+		})
+	}
+}

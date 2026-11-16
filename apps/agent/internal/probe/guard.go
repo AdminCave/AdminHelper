@@ -278,15 +278,19 @@ type listener struct {
 	// sock names the socket where the reader can tell one (the inode under Linux), else "": two
 	// listeners of one sock are one socket that two processes hold.
 	sock string
+	// uid owns the socket if hasUID; a reader that cannot tell leaves the owner unknown.
+	uid    uint32
+	hasUID bool
 }
 
 // The seams of the guard to the host; tests stand in their own.
 var (
-	interfaceAddrs = net.InterfaceAddrs
-	listeners      = listenTCP
-	processName    = nameOf
-	processArgs    = argsOf
-	peerSocket     = osPeerSocket
+	privilegedPorts = osPrivilegedPorts
+	interfaceAddrs  = net.InterfaceAddrs
+	listeners       = listenTCP
+	processName     = nameOf
+	processArgs     = argsOf
+	peerSocket      = osPeerSocket
 	// serviceForwarder names the service of the process pid if that service forwards the ports it
 	// listens on (Windows portproxy), else "".
 	serviceForwarder = osServiceForwarder
@@ -313,6 +317,9 @@ type Guard struct {
 	// its target, nil for none.
 	secret bool
 	owns   func() func(listener) bool
+	// strict: a secret goes only to a listener on a privileged port or of a system account
+	// (protected), for targets whose rule names no process tree (endpoint.strict).
+	strict bool
 }
 
 // NewGuard returns a guard that also lets the sensors connect to extra, the addresses of this host's
@@ -331,7 +338,7 @@ func NewGuard(extra ...netip.Addr) *Guard {
 // connection, never a port docker forwards.
 func secretGuard(ep endpoint) *Guard {
 	g := NewGuard(ep.extra...)
-	g.secret, g.owns = true, ep.owns
+	g.secret, g.owns, g.strict = true, ep.owns, ep.strict
 	return g
 }
 
@@ -496,7 +503,7 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 			return err
 		}
 		if g.secret {
-			return checkOwner(ctx, ip, port, g.contained(ip), g.owns)
+			return checkOwner(ctx, ip, port, g.contained(ip), g.owns, g.strict)
 		}
 		return checkListener(ctx, ip, port, g.contained(ip))
 	}
@@ -505,15 +512,20 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 
 // checkOwner is checkListener on a snapshot at most listenerFresh old for a connection that carries a
 // secret: every listener that takes connections to ip and port must be one owns accepts, at least one
-// must listen, and docker must not forward the port. Without owns (a loopback target, a container's
-// address) the fresh snapshot alone is asked.
-func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool, owns func() func(listener) bool) error {
+// must listen, and docker must not forward the port. For a strict guard each listener must also be
+// protected, unless port is privileged; without owns there every listener counts as the target's.
+// Without owns otherwise (a container's address) the fresh snapshot alone is asked.
+func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool, owns func() func(listener) bool, strict bool) error {
 	if err := judgeListener(ctx, ip, port, contained, listenerFresh); err != nil {
 		return err
 	}
-	if owns == nil || contained {
+	if contained || (owns == nil && !strict) {
 		return nil
 	}
+	if owns == nil {
+		owns = func() func(listener) bool { return func(listener) bool { return true } }
+	}
+	privileged := strict && privilegedPort(port)
 	published, err := checkPublished(ctx, ip, port, listenerFresh)
 	if err != nil {
 		return err
@@ -530,6 +542,9 @@ func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool,
 	for _, l := range list {
 		if l.port != port || !carries(l.addr, ip) {
 			continue
+		}
+		if strict && !privileged && !protected(l) {
+			return fmt.Errorf("%w: port %d is no privileged port and its listener runs under no system account", ErrNotAllowed, port)
 		}
 		if match(l) {
 			owned = append(owned, l.sock)
@@ -553,6 +568,21 @@ func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool,
 		}
 	}
 	return nil
+}
+
+// nobodyUID is the uid of nobody on Linux and FreeBSD, a system account for processes of no one.
+const nobodyUID = 65534
+
+// protected says whether l runs under a system account: root or another uid below 1000 (Debian's
+// SYS_UID_MAX, FreeBSD's first user 1001), never nobody. A user cannot take such a uid.
+func protected(l listener) bool {
+	return l.hasUID && l.uid < 1000 && l.uid != nobodyUID
+}
+
+// privilegedPort says whether only root may bind port on this host (osPrivilegedPorts).
+func privilegedPort(port uint16) bool {
+	lo, hi := privilegedPorts()
+	return port >= lo && port <= hi
 }
 
 // contained says whether ip is one of the extra addresses, of a container of this host: its

@@ -38,8 +38,13 @@ const sockstat14 = `0        sshd       812   4  tcp6   *:22                    
 `
 
 func TestParseSockstatReadsBothForms(t *testing.T) {
-	l := func(addr string, port uint16, pid int32) listener {
-		return listener{addr: netip.MustParseAddr(addr), port: port, pid: pid}
+	// USER (numeric with -n) owns the socket; ? leaves the owner unknown.
+	l := func(addr string, port uint16, pid int32, uid ...uint32) listener {
+		out := listener{addr: netip.MustParseAddr(addr), port: port, pid: pid}
+		if len(uid) == 1 {
+			out.uid, out.hasUID = uid[0], true
+		}
+		return out
 	}
 	cases := []struct {
 		name string
@@ -47,23 +52,23 @@ func TestParseSockstatReadsBothForms(t *testing.T) {
 		want []listener
 	}{
 		{"15.x", sockstat15, []listener{
-			l("127.0.0.1", 44864, 5974),
-			l("2001:db8:1234:5678:9abc:def0:1234:5678", 44863, 5973),
-			l("::1", 44861, 5832),
-			l("::", 22, 1478),
-			l("0.0.0.0", 22, 1478),
-			l("127.0.0.1", 9000, 2210),
-			l("127.0.0.1", 9001, 1500),
+			l("127.0.0.1", 44864, 5974, 1001),
+			l("2001:db8:1234:5678:9abc:def0:1234:5678", 44863, 5973, 1001),
+			l("::1", 44861, 5832, 1001),
+			l("::", 22, 1478, 0),
+			l("0.0.0.0", 22, 1478, 0),
+			l("127.0.0.1", 9000, 2210, 80),
+			l("127.0.0.1", 9001, 1500, 0),
 			l("::", 9100, 0),
 		}},
 		{"14.x", sockstat14, []listener{
-			l("::", 22, 812),
-			l("::1", 8080, 1001),
-			l("::", 443, 1001),
-			l("192.0.2.1", 8443, 1001),
+			l("::", 22, 812, 0),
+			l("::1", 8080, 1001, 80),
+			l("::", 443, 1001, 80),
+			l("192.0.2.1", 8443, 1001, 80),
 			l("127.0.0.1", 2049, 0),
-			l("192.0.2.10", 5201, 1200),
-			l("192.0.2.11", 5202, 1300),
+			l("192.0.2.10", 5201, 1200, 0),
+			l("192.0.2.11", 5202, 1300, 0),
 		}},
 	}
 	for _, c := range cases {

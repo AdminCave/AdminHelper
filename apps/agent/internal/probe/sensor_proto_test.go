@@ -516,6 +516,7 @@ func TestProtoSensorReadsRedisINFO(t *testing.T) {
 }
 
 func TestProtoSensorPresentsTheRedisPassword(t *testing.T) {
+	allPortsPrivileged(t)
 	probe := func(auth, info, secret string) (map[string]any, []string, error) {
 		srv := fakeServer(t, func(c *fakeConn) {
 			for range 5 {
@@ -1077,6 +1078,7 @@ func TestProtoSensorSpeaksInsideTLS(t *testing.T) {
 }
 
 func TestProtoSensorPresentsARedisACLUser(t *testing.T) {
+	allPortsPrivileged(t)
 	var dialed atomic.Int32
 	probe := func(auth, secret string) (map[string]any, []string, error) {
 		srv := fakeServer(t, func(c *fakeConn) {

@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 // listenTCP reads the listening TCP sockets of this host from /proc/net/tcp and tcp6 and finds the
@@ -88,4 +89,21 @@ func socketHolders(ctx context.Context, socks []listener) (map[string][]int32, e
 		}
 	}
 	return holders, nil
+}
+
+// osPrivilegedPorts returns the ports only root may bind in the agent's network namespace: below
+// ip_unprivileged_port_start (Linux ip-sysctl), 1024 where the kernel predates the sysctl.
+func osPrivilegedPorts() (lo, hi uint16) {
+	data, err := os.ReadFile("/proc/sys/net/ipv4/ip_unprivileged_port_start")
+	if err != nil {
+		return 1, 1023
+	}
+	start, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 16)
+	if err != nil {
+		return 1, 1023
+	}
+	if start == 0 {
+		return 1, 0
+	}
+	return 1, uint16(start - 1)
 }

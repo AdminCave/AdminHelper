@@ -6,7 +6,11 @@
 
 package probe
 
-import "context"
+import (
+	"context"
+
+	"golang.org/x/sys/unix"
+)
 
 // sockstatPath is absolute: cron gives the agent a short PATH.
 const sockstatPath = "/usr/bin/sockstat"
@@ -19,4 +23,15 @@ func listenTCP(ctx context.Context) ([]listener, error) {
 		return nil, err
 	}
 	return parseSockstat(out)
+}
+
+// osPrivilegedPorts returns the ports only root may bind: net.inet.ip.portrange.reservedlow to
+// reservedhigh (ip(4)), 0 to 1023 where they cannot be read.
+func osPrivilegedPorts() (lo, hi uint16) {
+	l, errLo := unix.SysctlUint32("net.inet.ip.portrange.reservedlow")
+	h, errHi := unix.SysctlUint32("net.inet.ip.portrange.reservedhigh")
+	if errLo != nil || errHi != nil || l > 0xffff || h > 0xffff {
+		return 0, 1023
+	}
+	return uint16(l), uint16(h)
 }

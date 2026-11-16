@@ -34,3 +34,8 @@ func listenTCP(ctx context.Context) ([]listener, error) {
 	}
 	return list, nil
 }
+
+// osPrivilegedPorts: Windows reserves no ports for its administrators, so no port is privileged.
+func osPrivilegedPorts() (lo, hi uint16) {
+	return 1, 0
+}
