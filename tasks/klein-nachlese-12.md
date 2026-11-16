@@ -19,8 +19,10 @@ Beweis: reviewer kern-monitoring-28 T3 2026-11-15 · Dedup-Key: REF:agent:web_vh
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'CallersOwn|WaiterWhose|Vhost'
 Doku: keine (interner Cache)
 
-### T2 — R-1507: RunCapped beendet die Prozessgruppe  [ ]
+### T2 — R-1507: RunCapped beendet die Prozessgruppe  [x]
 Komponente: agent · Dateien: apps/agent/internal/execx/execx.go, apps/agent/internal/execx/execx_unix.go, apps/agent/internal/execx/execx_other.go, apps/agent/internal/execx/execx_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @75259e1ee 2026-11-16T13:34:50+01:00
+Review: approve (.ah-out/review/klein-nachlese-12/T2.verdict.json)
 Beweis: reviewer kern-monitoring-28 T6 2026-11-15 · Dedup-Key: REF:agent:execx.go:RunCapped-orphan
 Änderung: `RunCapped` startet das Kommando in eigener Prozessgruppe (`Setpgid`, `cmd.Cancel` sendet SIGKILL an die Gruppe); nur Unix, andere Plattformen unverändert (Build-Tags, SPDX in neuen Dateien). Test erst rot: `sh -c` mit Enkel, nach Frist ist der Enkel weg. Windows-Build: `GOOS=windows go vet ./internal/execx/`.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/execx
