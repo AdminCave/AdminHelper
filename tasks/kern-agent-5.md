@@ -53,8 +53,10 @@ Pfad. Test unter Linux mit einem Prozess, dessen cgroup die ID nicht trägt.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (keine sichtbare Änderung, außer einer Abweisung im Wettlauf)
 
-### T5 — R-1499: Stille-Frist der TLS-Erkennung am Budget ausrichten  [ ]
+### T5 — R-1499: Stille-Frist der TLS-Erkennung am Budget ausrichten  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @5a2d5a9d5 2026-11-16T16:47:54+01:00
+Review: approve (.ah-out/review/kern-agent-5/T5.verdict.json)
 Änderung: `speaksTLS` wartet höchstens min(`answerWait`, halbe Restzeit bis zur Frist des Kontexts) (Kevin
 2026-11-16, Option B). Erst der rote Test: stiller Klartext-Server, `timeout_s` 1 → Schema http und gesund.
 Beweis: feature/kern-monitoring-30@a4a220b9e sensor_http.go speaksTLS (Review kern-monitoring-30 2026-11-14)

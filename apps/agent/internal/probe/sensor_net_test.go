@@ -456,6 +456,29 @@ func TestHTTPSensorAsksThePortWhetherItSpeaksTLS(t *testing.T) {
 	}
 }
 
+// A server of plain text that keeps silent on a TLS hello (it waits for the end of a request line)
+// leaves a probe of timeout_s 1 half of its time for the request: http, and healthy.
+func TestHTTPSensorTellsASilentServerOfPlainTextWithinAShortTimeout(t *testing.T) {
+	port := rawServer(t, func(c net.Conn) {
+		r := bufio.NewReader(c)
+		if b, err := r.Peek(1); err != nil || b[0] == 0x16 {
+			_, _ = io.Copy(io.Discard, r)
+			return
+		}
+		if _, err := http.ReadRequest(r); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"))
+	})
+	p := onLoopback("http", port, map[string]any{"expect": "ok"}, "status_code", "tls")
+	p.Target.Scheme = "auto"
+	p.TimeoutS = 1
+	res := Run(context.Background(), p, time.Now(), nil)
+	if res.Status != StatusOK || res.Values["status_code"] != 200 || res.Values["tls"] != false {
+		t.Errorf("status %s (%s) with %v, want ok with 200 without tls", res.Status, res.Error, res.Values)
+	}
+}
+
 // rawServer accepts connections on loopback and hands each to serve.
 func rawServer(t *testing.T, serve func(net.Conn)) int {
 	t.Helper()
@@ -525,16 +548,16 @@ func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
 		}
 	}
 
-	// A fixed deadline on purpose: the silent server never answers, so the probe can only end at its
-	// own deadline; 200 ms lies before answerWait (2 s), which makes the deadline of the probe, not
-	// the wait for the answer, the one that ends it.
+	// A fixed deadline on purpose: the silent server never answers; 200 ms lies before answerWait
+	// (2 s), so the wait is half the time left, and the answer, plain text, comes before the deadline
+	// with the other half left for the request.
 	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
 	port := rawServer(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })
 	age()
 	ep, _ := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
-	if _, err := speaksTLS(short, NewGuard(ep.extra...), ep); !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("silence until the deadline = %v, want the probe's timeout", err)
+	if got, err := speaksTLS(short, NewGuard(ep.extra...), ep); got || err != nil || short.Err() != nil {
+		t.Errorf("silence with 200 ms left = %v, %v (deadline %v); want plain text before the deadline", got, err, short.Err())
 	}
 }
 

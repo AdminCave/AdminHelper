@@ -324,8 +324,9 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 
 // speaksTLS says whether the service at ep answers a TLS handshake, on a connection of its own
 // through g that sends nothing but the handshake. An answer that is no TLS record is a service of
-// plain text (one of HTTP answers 400); so is silence for answerWait, as a server of HTTP that waits
-// for the end of a request line inside the client's hello never answers it. Any other end of the
+// plain text (one of HTTP answers 400); so is silence for answerWait, or for half the time left to
+// the deadline of ctx if that is shorter, as a server of HTTP that waits for the end of a request line
+// inside the client's hello never answers it: the other half is the request's. Any other end of the
 // handshake (an alert, a closed connection) comes from a server that read it as TLS.
 func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
 	conn, err := dialThrough(ctx, g, ep)
@@ -333,9 +334,11 @@ func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
 		return false, err
 	}
 	defer conn.Close()
-	if d, ok := ctx.Deadline(); !ok || time.Now().Add(answerWait).Before(d) {
-		_ = conn.SetDeadline(time.Now().Add(answerWait))
+	wait := answerWait
+	if d, ok := ctx.Deadline(); ok {
+		wait = min(wait, time.Until(d)/2)
 	}
+	_ = conn.SetDeadline(time.Now().Add(wait))
 	err = tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx) //nolint:gosec // only whether TLS answers
 	var rh tls.RecordHeaderError
 	switch {
