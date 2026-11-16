@@ -105,7 +105,10 @@ func fpmPools(ctx context.Context, t Target) (map[string]any, error) {
 // Ubuntu: php<version>-fpm), /etc/php-fpm.d (RHEL: php-fpm), /usr/local/etc/php-fpm.d (FreeBSD ports:
 // php_fpm or php-fpm).
 func poolDirOf(unit string) (string, error) {
-	name := strings.TrimSuffix(unit, ".service")
+	name := unit
+	if runtime.GOOS == "linux" {
+		name = strings.TrimSuffix(unit, ".service")
+	}
 	switch m := debianFPM.FindStringSubmatch(name); {
 	case m != nil && runtime.GOOS == "linux":
 		return "/etc/php/" + m[1] + "/fpm/pool.d", nil

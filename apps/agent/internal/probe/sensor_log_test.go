@@ -67,7 +67,12 @@ func stubTools(t *testing.T, answers ...answer) *[][]string {
 	t.Helper()
 	var calls [][]string
 	old := runTool
-	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
+	runTool = func(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+		// The guard reads the listeners through runTool on FreeBSD (listenTCP): those of the test's own
+		// server, no answer of the view under test.
+		if name == "/usr/bin/sockstat" {
+			return old(ctx, timeout, name, args...)
+		}
 		calls = append(calls, append([]string{name}, args...))
 		checkAllowed(t, name, args)
 		if len(calls) > len(answers) {

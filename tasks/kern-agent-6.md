@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Wächter, Listener-Liste und Discovery — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-6 · Review: pro Task
 Spec: docs/features/kern-agent-6.md (Roadmap R-1440, R-1441, R-1442, R-1447, R-1516)
 Heavy: linux-full — Wächter, Listener-Leser und Discovery des Agents (`apps/agent`) auf echten Boxen; dazu vor dem Merge `freebsd_box.sh` (FreeBSD-Plattformcode und R-1442); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -136,8 +136,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/agent.html · docs/en/developer/agent.html · docs/admin/monitoring.html · docs/en/admin/monitoring.html
 Task-Review: am Ende
 
-### T12 — R-1442: Box-Nutzer-Tests unter FreeBSD, Rest  [ ]
+### T12 — R-1442: Box-Nutzer-Tests unter FreeBSD, Rest  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/sensor_log_test.go, apps/agent/internal/probe/app_fpm.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fe3f35765 2026-11-16T21:12:33+01:00
+Review: approve (.ah-out/review/kern-agent-6/T12.verdict.json)
 Beweis: freebsd_box.sh auf feature/kern-agent-6@3023efa92 2026-11-16: `fbsdbox tests: 17 passed, 1 failed` (internal/probe:
 TestPoolDirIsThePlaceOfThePackages, TestNginxStatusReadsTheCountersOfItsPlace, TestAnIPv6PlaceIsAskedWithItsAddressInBrackets,
 TestNginxStatusWithoutAPlaceOrAPageOfItsForm, TestApacheStatusReadsTheWorkersOfItsPlace, TestGuardChecksTheOwnersOfThePortAfterTheConnect)

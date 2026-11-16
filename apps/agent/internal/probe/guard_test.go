@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1813,6 +1814,11 @@ func TestGuardChecksTheOwnersOfThePortAfterTheConnect(t *testing.T) {
 				}
 				if asked := h.ownersCalls > 0; asked != c.wantAsked {
 					t.Errorf("owners asked = %v, want %v", asked, c.wantAsked)
+				}
+				// FreeBSD fails the accept of a connection reset before it with ECONNABORTED, which Go
+				// skips: there only ownersCalls tells that the guard judged after the connect.
+				if !c.want && runtime.GOOS == "freebsd" {
+					return
 				}
 				select {
 				case taken := <-accepted:
