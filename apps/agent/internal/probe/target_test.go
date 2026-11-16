@@ -205,6 +205,8 @@ func TestParseProcNetTCPReadsTheListeningSockets(t *testing.T) {
 		lst("127.0.0.1", 3306, 0), lst("0.0.0.0", 8080, 0), lst("192.0.2.10", 443, 0),
 		lst("::1", 8080, 0), lst("::", 22, 0), lst("192.0.2.10", 443, 0), lst("2001:db8::5", 80, 0),
 	}
+	// The lines of tcp carry their inode; the short lines of tcp6 none.
+	want[0].sock, want[1].sock, want[2].sock = "2001", "2002", "2004"
 	got := append(parseProcNetTCP([]byte(tcp)), parseProcNetTCP([]byte(tcp6))...)
 	if !slices.Equal(got, want) {
 		t.Fatalf("parseProcNetTCP = %v, want %v", got, want)

@@ -243,8 +243,8 @@ func dialAddr(ls []listener, port uint16, fallback []netip.Addr) netip.Addr {
 }
 
 // parseProcNetTCP returns the listening sockets of a /proc/<pid>/net/tcp or tcp6 file, without
-// their process. The kernel prints each 32-bit word of an address as the number its bytes make in
-// the host's byte order.
+// their process, each with its inode (field 10, proc_pid_net(5)) as sock where the line has one. The
+// kernel prints each 32-bit word of an address as the number its bytes make in the host's byte order.
 func parseProcNetTCP(data []byte) []listener {
 	var list []listener
 	sc := bufio.NewScanner(bytes.NewReader(data))
@@ -270,7 +270,11 @@ func parseProcNetTCP(data []byte) []listener {
 		if err != nil {
 			continue
 		}
-		list = append(list, listener{addr: addr.Unmap(), port: uint16(p)})
+		l := listener{addr: addr.Unmap(), port: uint16(p)}
+		if len(f) >= 10 {
+			l.sock = f[9]
+		}
+		list = append(list, l)
 	}
 	return list
 }

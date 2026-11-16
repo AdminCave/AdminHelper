@@ -275,6 +275,9 @@ type listener struct {
 	addr netip.Addr
 	port uint16
 	pid  int32
+	// sock names the socket where the reader can tell one (the inode under Linux), else "": two
+	// listeners of one sock are one socket that two processes hold.
+	sock string
 }
 
 // The seams of the guard to the host; tests stand in their own.
@@ -522,18 +525,32 @@ func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool,
 	if err != nil {
 		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
 	}
-	match, found := owns(), false
+	match := owns()
+	var owned, held []string
 	for _, l := range list {
 		if l.port != port || !carries(l.addr, ip) {
 			continue
 		}
-		if !match(l) {
+		if match(l) {
+			owned = append(owned, l.sock)
+			continue
+		}
+		// systemd hands a socket it holds on to the service it starts, which accepts on it: an
+		// activator counts only on the very socket the target holds, and only a reader that names
+		// sockets can tell that; a socket of its own on the same address would take connections too.
+		if name, err := processName(ctx, l.pid); err == nil && l.sock != "" && activator(processKey(name)) {
+			held = append(held, l.sock)
+			continue
+		}
+		return fmt.Errorf("%w: port %d is held by another process than the target of the secret", ErrNotAllowed, port)
+	}
+	if len(owned) == 0 {
+		return fmt.Errorf("%w: the target of the secret no longer listens on port %d", ErrNotAllowed, port)
+	}
+	for _, s := range held {
+		if !slices.Contains(owned, s) {
 			return fmt.Errorf("%w: port %d is held by another process than the target of the secret", ErrNotAllowed, port)
 		}
-		found = true
-	}
-	if !found {
-		return fmt.Errorf("%w: the target of the secret no longer listens on port %d", ErrNotAllowed, port)
 	}
 	return nil
 }

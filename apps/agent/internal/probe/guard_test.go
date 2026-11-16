@@ -1570,6 +1570,53 @@ func TestGuardChecksTheTargetAfreshBeforeASecret(t *testing.T) {
 	}
 }
 
+// TestGuardJudgesEveryProcessOfASharedSocket: systemd holds the socket of the service it started,
+// and the service holds it too; the listener list names both, in either order (R-1441).
+func TestGuardJudgesEveryProcessOfASharedSocket(t *testing.T) {
+	on := func(addr string, pid int32, sock string) listener {
+		l := lst(addr, 8091, pid)
+		l.sock = sock
+		return l
+	}
+	ep := endpoint{addr: netip.MustParseAddr("127.0.0.1"), port: 8091, owns: func() func(listener) bool {
+		return func(l listener) bool { return l.pid == 70 }
+	}}
+	names := map[int32]string{1: "systemd", 70: "cupsd", 80: "java"}
+	judge := func(list []listener) (plain, secret error) {
+		stubHost(t, &fakeHost{list: list, names: names})
+		return allowed(NewGuard(), "tcp4", "127.0.0.1:8091"), allowed(secretGuard(ep), "tcp4", "127.0.0.1:8091")
+	}
+	for _, list := range [][]listener{
+		{on("0.0.0.0", 1, "4711"), on("0.0.0.0", 70, "4711")},
+		{on("0.0.0.0", 70, "4711"), on("0.0.0.0", 1, "4711")},
+	} {
+		plain, secret := judge(list)
+		if plain != nil {
+			t.Errorf("%v: %v, want the service behind systemd allowed", list, plain)
+		}
+		if secret != nil {
+			t.Errorf("%v with a secret: %v, want the target allowed beside systemd", list, secret)
+		}
+	}
+
+	for _, c := range []struct {
+		name string
+		list []listener
+	}{
+		// A socket of its own on the same address (SO_REUSEPORT) takes connections too, whatever
+		// its process is called.
+		{"systemd on its own socket of the same address", []listener{on("0.0.0.0", 70, "4711"), on("0.0.0.0", 1, "4712")}},
+		{"systemd on another address", []listener{on("0.0.0.0", 70, "4711"), on("127.0.0.1", 1, "4712")}},
+		// Without a reader that names sockets (Windows, FreeBSD) the guard cannot tell them apart.
+		{"systemd beside the target, sockets unnamed", []listener{on("0.0.0.0", 70, ""), on("0.0.0.0", 1, "")}},
+		{"another process on the target's socket", []listener{on("0.0.0.0", 70, "4711"), on("0.0.0.0", 80, "4711")}},
+	} {
+		if _, secret := judge(c.list); !errors.Is(secret, ErrNotAllowed) {
+			t.Errorf("%s: %v, want ErrNotAllowed", c.name, secret)
+		}
+	}
+}
+
 func TestGuardListsNameMoreForwardersSuperServersAndSSHServers(t *testing.T) {
 	for _, name := range []string{"dbclient", "oc", "oc.exe", "k9s", "gs-netcat", "bore", "ligolo-ng", "ligolo",
 		"inlets", "inlets-pro", "nc64.exe", "nc64"} {

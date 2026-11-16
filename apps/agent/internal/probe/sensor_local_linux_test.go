@@ -285,8 +285,9 @@ func TestNamespaceListenersReadsTheKernelsTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, l := range want {
-		if !slices.Contains(list, l) {
-			t.Errorf("namespaceListeners = %v, want %v among them", list, l)
+		// Each socket carries its inode, which the test cannot know beforehand.
+		if !slices.ContainsFunc(list, func(got listener) bool { return got.addr == l.addr && got.port == l.port && got.sock != "" }) {
+			t.Errorf("namespaceListeners = %v, want %v with its inode among them", list, l)
 		}
 	}
 }

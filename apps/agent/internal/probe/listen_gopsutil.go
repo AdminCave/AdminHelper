@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//go:build !freebsd
+//go:build !freebsd && !linux
 
 package probe
 
@@ -14,7 +14,8 @@ import (
 )
 
 // listenTCP reads the listening TCP sockets of this host. Not on FreeBSD: gopsutil asks lsof there,
-// which the base system lacks (listen_freebsd.go).
+// which the base system lacks (listen_freebsd.go); not on Linux, where gopsutil keeps one process per
+// socket (listen_linux.go).
 func listenTCP(ctx context.Context) ([]listener, error) {
 	conns, err := gnet.ConnectionsWithContext(ctx, "tcp")
 	if err != nil {

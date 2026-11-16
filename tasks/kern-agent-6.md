@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Jede Task mit Wächter-Bezug (T1–T4): `security` parallel zum `reviewer`. Einzelheiten zu T2–T4 nur in
 `tasks/private/sec-kern-agent-6-notes.md`.
 
-### T1 — R-1441: lauschende Sockets unter Linux mit allen Prozessen lesen  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/listen_linux.go, apps/agent/internal/probe/listen_linux_test.go, apps/agent/internal/probe/listen_gopsutil.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+### T1 — R-1441: lauschende Sockets unter Linux mit allen Prozessen lesen  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/listen_linux.go, apps/agent/internal/probe/listen_linux_test.go, apps/agent/internal/probe/listen_gopsutil.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/sensor_local_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @704f89b89 2026-11-16T18:12:57+01:00
+Review: approve (.ah-out/review/kern-agent-6/T1.verdict.json)
 Beweis: gopsutil v4 `net/net_linux.go` `connectionDedupKey` ohne PID (reviewer kern-agent-4 T2 2026-11-13)
 Änderung: Neuer Leser `listen_linux.go` (SPDX) für `/proc/net/tcp` und `tcp6` (LISTEN-Zeilen, Adresse, Port, Inode,
 UID nach proc_pid_net(5)) und eine Inode-Zuordnung über `/proc/<pid>/fd`; ein Listener trägt alle PIDs, die die
