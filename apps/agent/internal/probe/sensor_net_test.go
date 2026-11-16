@@ -814,8 +814,9 @@ func TestTLSSensorTakesItsParams(t *testing.T) {
 }
 
 // vhostPair serves two names on one port of 127.0.0.1 over TLS: a.example.org answers 200, any other
-// name 404, and /away sends the client to https://a.example.org/. It returns the port and the Host and
-// server name (SNI) of each request.
+// name 404. /away sends the client to https://a.example.org/ (port 443), /here to a.example.org at
+// this port, /there to b.example.org at this port and /plain to http://a.example.org at this port. It
+// returns the port and the Host and server name (SNI) of each request.
 func vhostPair(t *testing.T) (int, chan [2]string) {
 	t.Helper()
 	stubHost(t, &fakeHost{live: true})
@@ -823,9 +824,16 @@ func vhostPair(t *testing.T) (int, chan [2]string) {
 	asked := make(chan [2]string, 8)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		asked <- [2]string{r.Host, r.TLS.ServerName}
+		_, port, _ := net.SplitHostPort(r.Context().Value(http.LocalAddrContextKey).(net.Addr).String())
 		switch {
 		case r.URL.Path == "/away":
 			http.Redirect(w, r, "https://a.example.org/", http.StatusFound)
+		case r.URL.Path == "/here":
+			http.Redirect(w, r, "https://a.example.org:"+port+"/login", http.StatusFound)
+		case r.URL.Path == "/there":
+			http.Redirect(w, r, "https://b.example.org:"+port+"/", http.StatusFound)
+		case r.URL.Path == "/plain":
+			http.Redirect(w, r, "http://a.example.org:"+port+"/", http.StatusFound)
 		case r.Host == "a.example.org":
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -882,13 +890,34 @@ func TestHTTPSensorAsksAVhostByItsName(t *testing.T) {
 		}
 	}
 
-	_, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": "/away"}), "")
-	if !errors.Is(err, ErrNotAllowed) {
-		t.Errorf("a redirect to the vhost's name = %v, want ErrNotAllowed: it is not where the sensor connects", err)
+	// A redirect to the vhost's own name at its scheme and port goes to the address the sensor asked,
+	// by that name.
+	got, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": "/here"}), "")
+	if err != nil || got["status_code"] != 200 {
+		t.Errorf("a redirect to the vhost's name at its port = %v, %v; want 200", got, err)
 	}
-	<-asked
-	if len(asked) != 0 {
-		t.Errorf("the redirect was followed")
+	if len(asked) != 2 {
+		t.Fatalf("the server got %d requests, want /here and /login", len(asked))
+	}
+	for _, want := range []string{"/here", "/login"} {
+		if a := <-asked; a != [2]string{"a.example.org", "a.example.org"} {
+			t.Errorf("%s was asked as Host %q, SNI %q; want the vhost's name for both", want, a[0], a[1])
+		}
+	}
+
+	for path, why := range map[string]string{
+		"/away":  "another port",
+		"/there": "another name",
+		"/plain": "another scheme",
+	} {
+		_, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": path}), "")
+		if !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("a redirect to %s = %v, want ErrNotAllowed", why, err)
+		}
+		<-asked
+		if len(asked) != 0 {
+			t.Errorf("the redirect to %s was followed", why)
+		}
 	}
 }
 

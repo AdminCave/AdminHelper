@@ -602,6 +602,39 @@ func TestHTTPClientSendsOnlyRequestsThatChangeNothing(t *testing.T) {
 	}
 }
 
+// A redirect to the vhost's name goes to the address of the first request, by that name; at another
+// scheme or port, or to another name, it is one to another target.
+func TestSameVhostSendsARedirectToItsNameToItsAddress(t *testing.T) {
+	check := sameVhost("www.example.org")
+	for _, c := range []struct {
+		name, to string
+		ok       bool
+	}{
+		{"the name at its port", "https://www.example.org:8443/login", true},
+		{"the name in capitals", "https://WWW.example.org:8443/", true},
+		{"the address", "https://192.0.2.1:8443/", true},
+		{"another name", "https://ex.example.org:8443/", false},
+		{"another port", "https://www.example.org/", false},
+		{"another scheme", "http://www.example.org:8443/", false},
+	} {
+		first := httptest.NewRequest(http.MethodGet, "https://192.0.2.1:8443/", nil)
+		first.Host = "www.example.org"
+		req := httptest.NewRequest(http.MethodGet, c.to, nil)
+		req.Host = ""
+		err := check(req, []*http.Request{first})
+		if c.ok != (err == nil) {
+			t.Errorf("%s: %v, want allowed %v", c.name, err, c.ok)
+			continue
+		}
+		if c.ok && req.URL.Host != "192.0.2.1:8443" {
+			t.Errorf("%s goes to %s, want the first request's address", c.name, req.URL.Host)
+		}
+		if c.ok && req.Host != "" && req.Host != "www.example.org" {
+			t.Errorf("%s asks as %q, want the vhost's name", c.name, req.Host)
+		}
+	}
+}
+
 func TestHTTPClientFollowsARedirectOnlyToTheSameTarget(t *testing.T) {
 	var otherHits atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { otherHits.Add(1) }))

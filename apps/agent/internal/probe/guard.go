@@ -1184,6 +1184,23 @@ func sameTarget(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// sameVhost is sameTarget for the vhost name, asked at its address: a redirect to name at the scheme
+// and port of the first request goes to the address of that request, with name as its Host header
+// (the server name of TLS stays name), and so never reaches another target.
+func sameVhost(name string) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects || !strings.EqualFold(req.URL.Hostname(), name) {
+			return sameTarget(req, via)
+		}
+		first := via[0].URL
+		if !strings.EqualFold(req.URL.Scheme, first.Scheme) || effectivePort(req.URL) != effectivePort(first) {
+			return fmt.Errorf("%w: a redirect to another target", ErrNotAllowed)
+		}
+		req.URL.Host, req.Host = first.Host, name
+		return nil
+	}
+}
+
 // effectivePort is the port u connects to.
 func effectivePort(u *url.URL) string {
 	if p := u.Port(); p != "" {

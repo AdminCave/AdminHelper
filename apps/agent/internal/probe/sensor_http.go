@@ -211,7 +211,7 @@ const maxExpectBody = 4 << 10
 // httpSensor sends a GET or HEAD to its target through the guard: status code, time to the headers
 // and, for GET, fields of the JSON object the target answers or whether a short answer in plain text
 // is the one expected (body_match). A vhost it asks at its port by its name (Host and SNI); a redirect
-// to its name, which is not where the sensor connects, is one to another target (sameTarget).
+// to its name at its scheme and port goes to where the sensor connects (sameVhost).
 func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, error) {
 	t, err := targetOf(p, vhostTargets...)
 	if err != nil {
@@ -314,6 +314,10 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 		u.Scheme = scheme
 	}
 	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true, ServerName: sni}) //nolint:gosec // the tls sensor checks certificates
+	if t.Kind == kindVhost {
+		// A site sends a visitor to its login page by its own name (Moodle with forcelogin).
+		client.CheckRedirect = sameVhost(t.Name)
+	}
 	values, err := fetchExpecting(ctx, client, method, u.String(), host, accept, use, secret, p.Fields, expect)
 	if err != nil {
 		return nil, err

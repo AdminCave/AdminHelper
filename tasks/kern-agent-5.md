@@ -75,8 +75,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Grenze gilt heute schon über den Transport)
 Abhängt von: T5
 
-### T7 — R-1508: vHost folgt der Weiterleitung auf seinen eigenen Namen  [ ]
+### T7 — R-1508: vHost folgt der Weiterleitung auf seinen eigenen Namen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/sensor_http.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @9a80d6d56 2026-11-16T17:09:58+01:00
+Review: approve (.ah-out/review/kern-agent-5/T7.verdict.json)
 Änderung: Eine Weiterleitung auf denselben Namen wie der Host-Header des ersten Requests, mit demselben Schema und
 Port, geht weiter an die Adresse des ersten Requests (Host und SNI bleiben der Name); alles andere lehnt
 `sameTarget` ab wie bisher. Test: vHost leitet auf `https://<name>/login` → 200; Weiterleitung auf anderen Namen
@@ -105,3 +107,9 @@ Abhängt von: T7
   rootless-Container öffnen damit nichts (fail-closed). Eine ID, die nicht 64 Hex-Zeichen hat, öffnet nichts. Die
   Wurzel öffnet `os.OpenRoot` über `/proc/self/fd/<n>` des per `openat` geöffneten `root`, `os.Root` folgt dem
   Magic-Link selbst nicht.
+- T7: Nur ein vHost-Ziel folgt einer Weiterleitung auf seinen eigenen Namen (`sameVhost`, eigenes `CheckRedirect` des
+  Clients im http-Fühler), bei gleichem Schema und Port, an die Adresse des ersten Requests mit dem Namen als
+  Host-Header; SNI bleibt der Name. `sameTarget` bleibt unverändert: der Parameter `host=localhost` erweitert keine
+  Weiterleitung (bestehender Test). Go entscheidet vor `CheckRedirect`, ob es `Authorization` und Cookies abstreift
+  (`net/http/client.go`: Host der URL geändert); nach einem Sprung auf den Namen fehlen sie also, ein eigener Header
+  (`use: header`) geht mit, aber nur an dieselbe Adresse.
