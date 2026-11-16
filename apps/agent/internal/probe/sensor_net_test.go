@@ -456,6 +456,52 @@ func TestHTTPSensorAsksThePortWhetherItSpeaksTLS(t *testing.T) {
 	}
 }
 
+// A server of plain text that keeps silent on a TLS hello (it waits for the end of a request line)
+// leaves a probe of timeout_s 1 half of its time for the request: http, and healthy.
+func TestHTTPSensorTellsASilentServerOfPlainTextWithinAShortTimeout(t *testing.T) {
+	port := rawServer(t, func(c net.Conn) {
+		r := bufio.NewReader(c)
+		if b, err := r.Peek(1); err != nil || b[0] == 0x16 {
+			_, _ = io.Copy(io.Discard, r)
+			return
+		}
+		if _, err := http.ReadRequest(r); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"))
+	})
+	p := onLoopback("http", port, map[string]any{"expect": "ok"}, "status_code", "tls")
+	p.Target.Scheme = "auto"
+	p.TimeoutS = 1
+	res := Run(context.Background(), p, time.Now(), nil)
+	if res.Status != StatusOK || res.Values["status_code"] != 200 || res.Values["tls"] != false {
+		t.Errorf("status %s (%s) with %v, want ok with 200 without tls", res.Status, res.Error, res.Values)
+	}
+}
+
+// The data a sensor reads stays within maxBodyBytes with any client, not only with the guard's
+// transport that caps the body: a longer answer is errBodyTooLarge, one at the limit is read.
+func TestFetchReadsTheDataOfAnAnswerUpToTheCapAlone(t *testing.T) {
+	answer := func(n int) string {
+		return `{"pad":"` + strings.Repeat("x", n-len(`{"pad":""}`)) + `"}`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := maxBodyBytes
+		if r.URL.Path == "/over" {
+			n++
+		}
+		_, _ = io.WriteString(w, answer(n))
+	}))
+	t.Cleanup(srv.Close)
+	ctx := context.Background()
+	if got, err := fetch(ctx, srv.Client(), http.MethodGet, srv.URL+"/exact", "", "", "", []string{"data.pad"}); err != nil || got["data"] == nil {
+		t.Errorf("an answer of maxBodyBytes = %v, %v; want its data", got, err)
+	}
+	if got, err := fetch(ctx, srv.Client(), http.MethodGet, srv.URL+"/over", "", "", "", []string{"data.pad"}); !errors.Is(err, errBodyTooLarge) {
+		t.Errorf("an answer beyond maxBodyBytes = %d values, %v; want errBodyTooLarge", len(got), err)
+	}
+}
+
 // rawServer accepts connections on loopback and hands each to serve.
 func rawServer(t *testing.T, serve func(net.Conn)) int {
 	t.Helper()
@@ -525,16 +571,16 @@ func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
 		}
 	}
 
-	// A fixed deadline on purpose: the silent server never answers, so the probe can only end at its
-	// own deadline; 200 ms lies before answerWait (2 s), which makes the deadline of the probe, not
-	// the wait for the answer, the one that ends it.
-	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
+	// A fixed deadline on purpose: the silent server never answers; 200 ms lies before answerWait
+	// (2 s), so the wait is half the time left, and the answer, plain text, comes before the deadline
+	// with the other half left for the request.
 	port := rawServer(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })
 	age()
 	ep, _ := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
-	if _, err := speaksTLS(short, NewGuard(ep.extra...), ep); !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("silence until the deadline = %v, want the probe's timeout", err)
+	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if got, err := speaksTLS(short, NewGuard(ep.extra...), ep); got || err != nil || short.Err() != nil {
+		t.Errorf("silence with 200 ms left = %v, %v (deadline %v); want plain text before the deadline", got, err, short.Err())
 	}
 }
 
@@ -768,8 +814,9 @@ func TestTLSSensorTakesItsParams(t *testing.T) {
 }
 
 // vhostPair serves two names on one port of 127.0.0.1 over TLS: a.example.org answers 200, any other
-// name 404, and /away sends the client to https://a.example.org/. It returns the port and the Host and
-// server name (SNI) of each request.
+// name 404. /away sends the client to https://a.example.org/ (port 443), /here to a.example.org at
+// this port, /there to b.example.org at this port and /plain to http://a.example.org at this port. It
+// returns the port and the Host and server name (SNI) of each request.
 func vhostPair(t *testing.T) (int, chan [2]string) {
 	t.Helper()
 	stubHost(t, &fakeHost{live: true})
@@ -777,9 +824,16 @@ func vhostPair(t *testing.T) (int, chan [2]string) {
 	asked := make(chan [2]string, 8)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		asked <- [2]string{r.Host, r.TLS.ServerName}
+		_, port, _ := net.SplitHostPort(r.Context().Value(http.LocalAddrContextKey).(net.Addr).String())
 		switch {
 		case r.URL.Path == "/away":
 			http.Redirect(w, r, "https://a.example.org/", http.StatusFound)
+		case r.URL.Path == "/here":
+			http.Redirect(w, r, "https://a.example.org:"+port+"/login", http.StatusFound)
+		case r.URL.Path == "/there":
+			http.Redirect(w, r, "https://b.example.org:"+port+"/", http.StatusFound)
+		case r.URL.Path == "/plain":
+			http.Redirect(w, r, "http://a.example.org:"+port+"/", http.StatusFound)
 		case r.Host == "a.example.org":
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -836,13 +890,34 @@ func TestHTTPSensorAsksAVhostByItsName(t *testing.T) {
 		}
 	}
 
-	_, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": "/away"}), "")
-	if !errors.Is(err, ErrNotAllowed) {
-		t.Errorf("a redirect to the vhost's name = %v, want ErrNotAllowed: it is not where the sensor connects", err)
+	// A redirect to the vhost's own name at its scheme and port goes to the address the sensor asked,
+	// by that name.
+	got, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": "/here"}), "")
+	if err != nil || got["status_code"] != 200 {
+		t.Errorf("a redirect to the vhost's name at its port = %v, %v; want 200", got, err)
 	}
-	<-asked
-	if len(asked) != 0 {
-		t.Errorf("the redirect was followed")
+	if len(asked) != 2 {
+		t.Fatalf("the server got %d requests, want /here and /login", len(asked))
+	}
+	for _, want := range []string{"/here", "/login"} {
+		if a := <-asked; a != [2]string{"a.example.org", "a.example.org"} {
+			t.Errorf("%s was asked as Host %q, SNI %q; want the vhost's name for both", want, a[0], a[1])
+		}
+	}
+
+	for path, why := range map[string]string{
+		"/away":  "another port",
+		"/there": "another name",
+		"/plain": "another scheme",
+	} {
+		_, err := httpSensor(ctx, onVhost("http", "a.example.org", port, "https", map[string]any{"path": path}), "")
+		if !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("a redirect to %s = %v, want ErrNotAllowed", why, err)
+		}
+		<-asked
+		if len(asked) != 0 {
+			t.Errorf("the redirect to %s was followed", why)
+		}
 	}
 }
 

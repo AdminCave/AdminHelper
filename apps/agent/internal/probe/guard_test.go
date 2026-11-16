@@ -602,6 +602,39 @@ func TestHTTPClientSendsOnlyRequestsThatChangeNothing(t *testing.T) {
 	}
 }
 
+// A redirect to the vhost's name goes to the address of the first request, by that name; at another
+// scheme or port, or to another name, it is one to another target.
+func TestSameVhostSendsARedirectToItsNameToItsAddress(t *testing.T) {
+	check := sameVhost("www.example.org")
+	for _, c := range []struct {
+		name, to string
+		ok       bool
+	}{
+		{"the name at its port", "https://www.example.org:8443/login", true},
+		{"the name in capitals", "https://WWW.example.org:8443/", true},
+		{"the address", "https://192.0.2.1:8443/", true},
+		{"another name", "https://ex.example.org:8443/", false},
+		{"another port", "https://www.example.org/", false},
+		{"another scheme", "http://www.example.org:8443/", false},
+	} {
+		first := httptest.NewRequest(http.MethodGet, "https://192.0.2.1:8443/", nil)
+		first.Host = "www.example.org"
+		req := httptest.NewRequest(http.MethodGet, c.to, nil)
+		req.Host = ""
+		err := check(req, []*http.Request{first})
+		if c.ok != (err == nil) {
+			t.Errorf("%s: %v, want allowed %v", c.name, err, c.ok)
+			continue
+		}
+		if c.ok && req.URL.Host != "192.0.2.1:8443" {
+			t.Errorf("%s goes to %s, want the first request's address", c.name, req.URL.Host)
+		}
+		if c.ok && req.Host != "" && req.Host != "www.example.org" {
+			t.Errorf("%s asks as %q, want the vhost's name", c.name, req.Host)
+		}
+	}
+}
+
 func TestHTTPClientFollowsARedirectOnlyToTheSameTarget(t *testing.T) {
 	var otherHits atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { otherHits.Add(1) }))
@@ -935,6 +968,25 @@ func TestPastaPortReadsOnlyPlainRules(t *testing.T) {
 		// Two rules that disagree, one after "--" that does not count.
 		{[]string{"pasta", "-t", "8080:80", "-t", "8080:22"}, v4, 8080, 0, false},
 		{[]string{"pasta", "-t", "8080:80", "--", "-t", "8080:22"}, v4, 8080, 80, true},
+		// Read as getopt reads them, or not at all: options end at the command or PID, the value of an
+		// option is skipped, a bundle or an abbreviated, unknown or misused long option tells nothing.
+		{[]string{"pasta", "-t", "8080:80", "sh", "-t", "8080:22"}, v4, 8080, 80, true},
+		{[]string{"pasta", "sh", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-P", "/run/p.pid", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-P", "-t8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--pid", "-t8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-P-t8080:22", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-ft", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-ft8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-f", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-x", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--tcp-p", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--tcp", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--conf", "/run/p.sock", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--frobnicate", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--no-map-gw=1", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--netns", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "-u", "8080:80"}, v4, 8080, 0, false},
 	} {
 		to, ok := pastaPort(c.args, c.ip, c.port)
 		if to != c.to || ok != c.ok {
@@ -1515,5 +1567,52 @@ func TestGuardChecksTheTargetAfreshBeforeASecret(t *testing.T) {
 	age()
 	if err := allowed(secretGuard(endpoint{addr: ep.addr, port: ep.port}), "tcp4", "127.0.0.1:8090"); err != nil {
 		t.Fatalf("no rule: %v, want it allowed", err)
+	}
+}
+
+func TestGuardListsNameMoreForwardersSuperServersAndSSHServers(t *testing.T) {
+	for _, name := range []string{"dbclient", "oc", "oc.exe", "k9s", "gs-netcat", "bore", "ligolo-ng", "ligolo",
+		"inlets", "inlets-pro", "nc64.exe", "nc64"} {
+		if !forwarder(name) {
+			t.Errorf("%s: want it a forwarder", name)
+		}
+	}
+	// Whole names: a prefix would take these too.
+	for _, name := range []string{"ocserv", "octez-node", "borgbackup", "boreal", "dbclient-x", "k9s-x", "nc640",
+		"nginx"} {
+		if forwarder(name) {
+			t.Errorf("%s: want it no forwarder", name)
+		}
+	}
+	for _, name := range []string{"tcpsvd", "sslserver"} {
+		if !activator(name) {
+			t.Errorf("%s: want it a super-server", name)
+		}
+	}
+	for _, name := range []string{"tcpsvd-x", "sslserverd", "udpsvd"} {
+		if activator(name) {
+			t.Errorf("%s: want it no super-server", name)
+		}
+	}
+	if !neverProbed("dropbear") {
+		t.Error("dropbear: want it never probed")
+	}
+	if neverProbed("dropbearkey") {
+		t.Error("dropbearkey: want it probed (matched whole)")
+	}
+}
+
+func TestGuardRefusesSuperServersAtAUnixSocket(t *testing.T) {
+	for _, name := range []string{"systemd", "systemd-journald", "inetd", "xinetd", "unixserver", "s6-ipcserver",
+		"s6-ipcserverd", "UnixServer"} {
+		if !unixActivator(name) {
+			t.Errorf("%s: want it a super-server at a unix socket", name)
+		}
+	}
+	for _, name := range []string{"unixserverx", "unixclient", "s6-ipcclient", "systemdx", "php-fpm", "mysqld",
+		"tcpserver"} {
+		if unixActivator(name) {
+			t.Errorf("%s: want it no super-server at a unix socket", name)
+		}
 	}
 }

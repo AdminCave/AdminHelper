@@ -271,7 +271,7 @@ func proxyCerts(ctx context.Context, t Target, proxy string, read func(*os.Root,
 		if !c.State.Running || c.State.Pid <= 0 {
 			return nil, fmt.Errorf("container %s is not running", t.Name)
 		}
-		open = func() (*os.Root, error) { return containerRoot(c.State.Pid) }
+		open = func() (*os.Root, error) { return containerRoot(c.State.Pid, c.ID) }
 	}
 	return untilDone(ctx, func() (map[string]any, error) {
 		root, err := open()

@@ -311,8 +311,8 @@ func TestMailcowQueueCountsTheQueuesInItsContainer(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	if !slices.Equal(*pids, []int{4242}) || tl.args[len(tl.args)-1] != "postfix-mailcow" {
-		t.Fatalf("roots %v, inspect %q", *pids, tl.args)
+	if !slices.Equal(*pids, []int{4242}) || openedIDs[4242] != containerID || tl.args[len(tl.args)-1] != "postfix-mailcow" {
+		t.Fatalf("roots %v of %v, inspect %q", *pids, openedIDs, tl.args)
 	}
 	stubTool(t, inspectJSON(t, "exited", "", "bridge"), nil)
 	if _, err := mailcowQueue(context.Background(), Target{Kind: kindContainer, Name: "postfix-mailcow"}); err == nil {

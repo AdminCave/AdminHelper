@@ -42,8 +42,8 @@ func blockedPort(port uint16) bool {
 }
 
 // blockedProcesses are the processes, by name, whose TCP listeners a probe never connects to, for the
-// same reasons as blockedPort: they serve on other ports too.
-var blockedProcesses = map[string]bool{"sshd": true, "mysqld": true, "mariadbd": true}
+// same reasons as blockedPort: they serve on other ports too (dropbear is an SSH server).
+var blockedProcesses = map[string]bool{"sshd": true, "dropbear": true, "mysqld": true, "mariadbd": true}
 
 // hostDaemons are the processes, by name, that control this host or its guests (containers, virtual
 // machines and the processes that run them, the system bus, its keys): a probe never talks to them,
@@ -73,23 +73,30 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // stunnel4), 6tunnel, spiped, chisel, gost, ncat, the netcat variants (nc.openbsd, nc.traditional,
 // netcat), frpc (a visitor listens here for a remote service) and frps (a tcp proxy hands its port to
 // the far end of a tunnel), cloudflared (access tcp), the AWS session-manager-plugin (the kernel cuts
-// the name to session-manager), wstunnel, boundary (connect), ghostunnel, rathole, and on Windows
-// PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
+// the name to session-manager), wstunnel, boundary (connect), ghostunnel, rathole, gs-netcat (gsocket),
+// inlets and inlets-pro, ligolo-ng (whose release binaries may also be named agent and proxy, which no
+// name rule can take), and on Windows PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before
+// it wslhost);
 // forwarderNames are matched whole, since a prefix would take other programs too: ssh also sshd and
-// ssh-agent, nc also ncurses tools, tsh (Teleport) also tshark. A probe never connects to a port or a
+// ssh-agent, nc also ncurses tools, tsh (Teleport) also tshark, oc (OpenShift, port-forward) and bore
+// every name that starts with them; dbclient is Dropbear's client (-L), k9s forwards Kubernetes ports,
+// nc64 is a Windows netcat build. Only dbclient and dropbear are checked against a package (Debian
+// dropbear-bin); the other added names are not verified upstream. A probe never connects to a port or a
 // socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
 	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir", "stunnel",
 	"6tunnel", "spiped", "chisel", "gost", "ncat", "nc.", "netcat", "frpc", "frps", "cloudflared",
-	"session-manager", "wstunnel", "boundary", "ghostunnel", "rathole", "putty", "plink", "kitty", "wslrelay",
-	"wslhost"}
+	"session-manager", "wstunnel", "boundary", "ghostunnel", "rathole", "gs-netcat", "inlets", "ligolo", "putty",
+	"plink", "kitty", "wslrelay", "wslhost"}
 
-var forwarderNames = []string{"ssh", "nc", "tsh"}
+var forwarderNames = []string{"ssh", "nc", "tsh", "oc", "bore", "dbclient", "k9s", "nc64"}
 
 // activators names the processes that hold a listening socket for a service they start per
-// connection, by processKey: systemd (socket activation), xinetd, inetd and the tcpserver of
-// ucspi-tcp; superServers start the names of s6's s6-tcpserver4, s6-tcpserver6 and s6-tcpserverd.
-var activators = []string{"systemd", "xinetd", "inetd", "tcpserver"}
+// connection, by processKey: systemd (socket activation), xinetd, inetd, the tcpserver of ucspi-tcp,
+// the tcpsvd of ipsvd (Debian ipsvd: runs a program per connection; busybox has an applet of that name)
+// and the sslserver of ucspi-ssl (not verified upstream); superServers start the names of s6's
+// s6-tcpserver4, s6-tcpserver6 and s6-tcpserverd.
+var activators = []string{"systemd", "xinetd", "inetd", "tcpserver", "tcpsvd", "sslserver"}
 
 var superServers = []string{"s6-tcpserver"}
 
@@ -99,6 +106,30 @@ func activator(k string) bool {
 		return true
 	}
 	for _, prefix := range superServers {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// unixActivators names the processes, by processKey, that hold a unix socket for a service they
+// start per connection: systemd (socket activation), inetd and xinetd (unix services of FreeBSD's
+// inetd; on Linux not verified) and the unixserver of ucspi-unix (Debian ucspi-unix: "runs a program
+// of your choice"); unixSuperServers start the names of more: systemd's own daemons and s6's
+// s6-ipcserver and s6-ipcserverd (not verified upstream). What answers on such a socket is the
+// program started behind it, which peer credentials do not name: a probe never talks to it.
+var unixActivators = []string{"systemd", "inetd", "xinetd", "unixserver"}
+
+var unixSuperServers = []string{"systemd-", "s6-ipcserver"}
+
+// unixActivator says whether name (a process name) is one of unixActivators or unixSuperServers.
+func unixActivator(name string) bool {
+	k := processKey(name)
+	if slices.Contains(unixActivators, k) {
+		return true
+	}
+	for _, prefix := range unixSuperServers {
 		if strings.HasPrefix(k, prefix) {
 			return true
 		}
@@ -866,32 +897,85 @@ func checkPasta(ctx context.Context, pid int32, name string, ip netip.Addr, port
 	return nil
 }
 
+// pastaShortArg are the short options of pasta that take a value and pastaShortFlag those that take
+// none, from the getopt string of passt 2025-05-03 (Debian 13): "+dqfel:hs:F:I:p:P:m:a:n:M:g:i:o:D:S:H:461t:u:T:U:".
+// pastaLong are its long options (passt(1) of that version), true where they take a value.
+const (
+	pastaShortArg  = "lsFIpPmanMgioDSHtuTU"
+	pastaShortFlag = "dqfeh461"
+)
+
+var pastaLong = map[string]bool{
+	"debug": false, "trace": false, "quiet": false, "foreground": false, "stderr": false, "help": false,
+	"version": false, "no-dhcp-dns": false, "dhcp-dns": false, "no-dhcp-search": false, "dhcp-search": false,
+	"no-tcp": false, "no-udp": false, "no-icmp": false, "no-dhcp": false, "no-ndp": false, "no-dhcpv6": false,
+	"no-ra": false, "freebind": false, "no-map-gw": false, "ipv4-only": false, "ipv6-only": false,
+	"vhost-user": false, "print-capabilities": false, "one-off": false, "host-lo-to-ns-lo": false,
+	"netns-only": false, "no-netns-quit": false, "config-net": false, "no-copy-routes": false,
+	"no-copy-addrs": false, "no-splice": false,
+	"log-file": true, "log-size": true, "runas": true, "pcap": true, "pid": true, "mtu": true, "address": true,
+	"netmask": true, "mac-addr": true, "gateway": true, "interface": true, "outbound": true,
+	"outbound-if4": true, "outbound-if6": true, "dns": true, "dns-forward": true, "dns-host": true,
+	"search": true, "map-host-loopback": true, "map-guest-addr": true, "hostname": true, "fqdn": true,
+	"socket-path": true, "socket": true, "repair-path": true, "fd": true, "tcp-ports": true, "udp-ports": true,
+	"ns-ifname": true, "tcp-ns": true, "udp-ns": true, "userns": true, "netns": true, "ns-mac-addr": true,
+}
+
 // pastaPort reads from the arguments of pasta the port that its TCP forwarding rules (-t,
-// --tcp-ports; getopt: the value apart, after "=" or glued to -t) send connections to ip and port to.
-// It reads only plain rules, [address[%interface]/]first[-last][:tofirst[-tolast]] in a comma list:
-// a rule pasta reads otherwise (all, auto, ~exclusions, a target address) or two rules that disagree
-// tell no one port, and nothing is told then.
+// --tcp-ports) send connections to ip and port to. It reads the options as pasta's getopt does: they
+// end at "--" or at the first operand (the command or PID: the getopt string starts with "+"), and a
+// value is skipped. Anything getopt might read otherwise in another version tells nothing: a letter
+// or long option not listed above (the -c and --conf-path of newer versions among them: pesto changes
+// the forwards at run time over that socket), an abbreviated long option, -t bundled after another
+// letter, a value in the next argument that starts with "-". It reads only plain rules,
+// [address[%interface]/]first[-last][:tofirst[-tolast]] in a comma list: a rule pasta reads otherwise
+// (all, auto, ~exclusions, a target address) or two rules that disagree tell no one port, and nothing
+// is told then.
 func pastaPort(args []string, ip netip.Addr, port uint16) (uint16, bool) {
 	var specs []string
 	for i := 1; i < len(args); i++ {
 		a := args[i]
-		if a == "--" {
+		if a == "--" || a == "-" || !strings.HasPrefix(a, "-") {
 			break
 		}
-		switch {
-		case strings.HasPrefix(a, "-c") || a == "--conf-path" || strings.HasPrefix(a, "--conf-path="):
-			// pesto changes the forwards at run time over this socket: argv no longer tells them.
-			return 0, false
-		case a == "-t" || a == "--tcp-ports":
-			if i+1 >= len(args) {
+		if long, ok := strings.CutPrefix(a, "--"); ok {
+			name, value, inline := strings.Cut(long, "=")
+			takes, known := pastaLong[name]
+			if !known || (inline && !takes) {
 				return 0, false
 			}
-			i++
-			specs = append(specs, args[i])
-		case strings.HasPrefix(a, "--tcp-ports="):
-			specs = append(specs, strings.TrimPrefix(a, "--tcp-ports="))
-		case strings.HasPrefix(a, "-t") && !strings.HasPrefix(a, "--"):
-			specs = append(specs, a[2:])
+			if takes && !inline {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+					return 0, false
+				}
+				i++
+				value = args[i]
+			}
+			if name == "tcp-ports" {
+				specs = append(specs, value)
+			}
+			continue
+		}
+		for j := 1; j < len(a); j++ {
+			c := a[j]
+			if strings.IndexByte(pastaShortFlag, c) >= 0 {
+				continue
+			}
+			if strings.IndexByte(pastaShortArg, c) < 0 || (c == 't' && j > 1) {
+				return 0, false
+			}
+			value := a[j+1:]
+			if value == "" {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+					return 0, false
+				}
+				i++
+				value = args[i]
+			}
+			if c == 't' {
+				specs = append(specs, value)
+			}
+			break
 		}
 	}
 	var to uint16
@@ -1098,6 +1182,23 @@ func sameTarget(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("%w: a redirect to another target", ErrNotAllowed)
 	}
 	return nil
+}
+
+// sameVhost is sameTarget for the vhost name, asked at its address: a redirect to name at the scheme
+// and port of the first request goes to the address of that request, with name as its Host header
+// (the server name of TLS stays name), and so never reaches another target.
+func sameVhost(name string) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects || !strings.EqualFold(req.URL.Hostname(), name) {
+			return sameTarget(req, via)
+		}
+		first := via[0].URL
+		if !strings.EqualFold(req.URL.Scheme, first.Scheme) || effectivePort(req.URL) != effectivePort(first) {
+			return fmt.Errorf("%w: a redirect to another target", ErrNotAllowed)
+		}
+		req.URL.Host, req.Host = first.Host, name
+		return nil
+	}
 }
 
 // effectivePort is the port u connects to.

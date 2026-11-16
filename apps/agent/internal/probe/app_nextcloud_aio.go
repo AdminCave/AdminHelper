@@ -51,7 +51,7 @@ func nextcloudAIO(ctx context.Context, t Target) (map[string]any, error) {
 		exists bool
 	}
 	m, err := untilDone(ctx, func() (marker, error) {
-		age, exists, err := aioMarker(c.State.Pid)
+		age, exists, err := aioMarker(c.State.Pid, c.ID)
 		return marker{age, exists}, err
 	})
 	if err != nil {
@@ -82,11 +82,11 @@ func nextcloudAIO(ctx context.Context, t Target) (map[string]any, error) {
 	return map[string]any{"containers": containers, "stopped": stopped, "backup": backup, "backup_age_s": m.age}, nil
 }
 
-// aioMarker stats aioBackupMarker below the root of the process pid without following a link at it:
+// aioMarker stats aioBackupMarker below the root of the process pid of the container id without following a link at it:
 // whether it is there and its age in seconds, never below 0. A config directory that is missing, or a
 // marker that is no regular file, is an error.
-func aioMarker(pid int) (int64, bool, error) {
-	root, err := containerRoot(pid)
+func aioMarker(pid int, id string) (int64, bool, error) {
+	root, err := containerRoot(pid, id)
 	if errors.Is(err, ErrUnsupported) {
 		return 0, false, err
 	}

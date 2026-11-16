@@ -10,10 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"regexp"
-	"runtime"
-	"strconv"
 )
 
 // maxWPVersionBytes caps version.php, about 1 KiB in WordPress 6 and 7.
@@ -24,8 +21,9 @@ var (
 	// the official image (VOLUME /var/www/html), relative to the root of the container.
 	wpVersionFile = "var/www/html/wp-includes/version.php"
 
-	// containerRoot opens the root directory of the process pid, the root of its container.
-	containerRoot = openProcRoot
+	// containerRoot opens the root directory of the process pid of the container id, the root of that
+	// container.
+	containerRoot = openContainerRoot
 
 	// wpVersionLine is a line of version.php that sets $wp_version.
 	wpVersionLine = regexp.MustCompile(`(?m)^\$wp_version\b.*$`)
@@ -46,7 +44,7 @@ func wordpressVersion(ctx context.Context, t Target) (map[string]any, error) {
 	if !c.State.Running || c.State.Pid <= 0 {
 		return nil, fmt.Errorf("container %s is not running", t.Name)
 	}
-	data, err := untilDone(ctx, func() ([]byte, error) { return readWPVersionFile(c.State.Pid) })
+	data, err := untilDone(ctx, func() ([]byte, error) { return readWPVersionFile(c.State.Pid, c.ID) })
 	if err != nil {
 		return nil, fmt.Errorf("container %s: %w", t.Name, err)
 	}
@@ -61,18 +59,10 @@ func wordpressVersion(ctx context.Context, t Target) (map[string]any, error) {
 	return map[string]any{"version": string(m[1])}, nil
 }
 
-// openProcRoot opens /proc/<pid>/root: lookups below it see the files and mounts of the process.
-func openProcRoot(pid int) (*os.Root, error) {
-	if runtime.GOOS != "linux" {
-		return nil, fmt.Errorf("%w: the files of a container are read on Linux alone", ErrUnsupported)
-	}
-	return os.OpenRoot("/proc/" + strconv.Itoa(pid) + "/root")
-}
-
-// readWPVersionFile reads wpVersionFile below the root of the process pid. Its errors name the file,
-// never its content or where a link in it leads.
-func readWPVersionFile(pid int) ([]byte, error) {
-	root, err := containerRoot(pid)
+// readWPVersionFile reads wpVersionFile below the root of the process pid of the container id. Its
+// errors name the file, never its content or where a link in it leads.
+func readWPVersionFile(pid int, id string) ([]byte, error) {
+	root, err := containerRoot(pid, id)
 	if errors.Is(err, ErrUnsupported) {
 		return nil, err
 	}

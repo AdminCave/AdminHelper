@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -170,19 +171,33 @@ func TestTheWordPressViewReadsThroughTheRootOfTheProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	stubWPVersionFile(t, strings.TrimPrefix(file, "/"))
+	// This process is in no container: the root of it is opened past the check of its cgroup.
+	stubContainerRoot(t, func(pid int) (*os.Root, error) {
+		return openProcRoot(pid, func([]byte) bool { return true })
+	})
 	res := Run(context.Background(), appProbe("wordpress_version", &Target{Kind: kindContainer, Name: "web"}, "version"), time.Now(), nil)
 	if res.Status != StatusOK || !reflect.DeepEqual(res.Values, map[string]any{"version": "6.8.12"}) {
 		t.Errorf("status %s (%s) with %v, want ok with version 6.8.12", res.Status, res.Error, res.Values)
 	}
 
-	root, err := openProcRoot(pid)
+	own, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen []byte
+	root, err := openProcRoot(pid, func(cgroup []byte) bool { seen = cgroup; return true })
 	if err != nil {
 		t.Fatalf("openProcRoot(%d) = %v", pid, err)
 	}
-	if want := "/proc/" + strconv.Itoa(pid) + "/root"; root.Name() != want {
-		t.Errorf("root %s, want %s", root.Name(), want)
+	if string(seen) != string(own) {
+		t.Errorf("cgroup %q, want the one of the process, %q", seen, own)
 	}
+	in, err := root.Stat(".")
 	_ = root.Close()
+	slash, serr := os.Stat("/")
+	if err != nil || serr != nil || !os.SameFile(in, slash) {
+		t.Errorf("root %v (%v), want / of this process", in, err)
+	}
 
 	stubWPVersionFile(t, "proc/self/status")
 	if _, err := wordpressVersion(context.Background(), wpTarget()); err == nil ||
@@ -199,8 +214,8 @@ func TestTheWordPressViewReadsTheVersion(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(got, map[string]any{"version": v}) {
 				t.Errorf("values %v, %v; want version %s", got, err, v)
 			}
-			if !slices.Equal(*pids, []int{4242}) {
-				t.Errorf("opened the roots of %v, want the root of the container's process 4242", *pids)
+			if !slices.Equal(*pids, []int{4242}) || openedIDs[4242] != containerID {
+				t.Errorf("opened the roots of %v of %v, want the root of the container's process 4242", *pids, openedIDs)
 			}
 		})
 	}
@@ -270,5 +285,64 @@ func TestTheWordPressViewRunsThroughRunWithItsTarget(t *testing.T) {
 	}
 	if _, err := appSensor(context.Background(), appProbe("wordpress_version", unitTarget("apache2.service")), ""); !errors.Is(err, ErrInvalid) {
 		t.Errorf("a unit as target = %v, want ErrInvalid", err)
+	}
+}
+
+// A process whose cgroup is not the container's, or that ended, never has its root opened: its pid may
+// be another's since docker named it.
+func TestTheRootOfAContainerIsOpenedForItsOwnProcessAlone(t *testing.T) {
+	if _, err := openContainerRoot(os.Getpid(), containerID); err == nil ||
+		err.Error() != "its process belongs to the container no longer" {
+		t.Errorf("a process outside the container = %v, want it refused", err)
+	}
+	if _, err := openContainerRoot(os.Getpid(), "web"); err == nil {
+		t.Error("an ID of another form: want it refused")
+	}
+	if _, err := openProcRoot(os.Getpid(), func([]byte) bool { return false }); err == nil {
+		t.Error("a cgroup that does not belong: want it refused")
+	}
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	if _, err := openProcRoot(pid, func([]byte) bool { return true }); err == nil {
+		t.Errorf("the root of process %d that ended: want an error", pid)
+	}
+}
+
+func TestCgroupNamesTheContainerAsDockerAndPodmanDo(t *testing.T) {
+	id := containerID
+	for _, cg := range []string{
+		"0::/system.slice/docker-" + id + ".scope\n",
+		"0::/docker/" + id + "\n",
+		"0::/machine.slice/libpod-" + id + ".scope/container\n",
+		"12:pids:/docker/" + id + "\n11:memory:/docker/" + id + "\n",
+		"0::/libpod_parent/libpod-" + id + "\n",
+	} {
+		if !cgroupNames([]byte(cg), id) {
+			t.Errorf("%q: want it the container's", cg)
+		}
+	}
+	for _, cg := range []string{
+		"0::/user.slice/user-1000.slice/session-3.scope\n",
+		"0::/user.slice/user-1000.slice/user@1000.service/app.slice/docker-" + id + ".scope\n",
+		"0::/user.slice/user-1000.slice/user@1000.service/" + id + "\n",
+		"0::/docker/" + id[:63] + "\n",
+		"0::/docker/x" + id + "\n",
+		"0::/system.slice/docker-" + id + "x.scope\n",
+		"0::/docker/" + id + "x\n",
+		"0::/system.slice/backup.service/docker-" + id + ".scope\n",
+		"0::/machine.slice/libpod-" + strings.Repeat("b", 64) + ".scope/container/docker-" + id + ".scope\n",
+		"0::/lxc.payload.ct1/docker/" + id + "\n",
+		"0::/kubepods.slice/kubepods-pod1.slice/cri-containerd-" + id + ".scope\n",
+		"/docker/" + id + "\n",
+		"",
+	} {
+		if cgroupNames([]byte(cg), id) {
+			t.Errorf("%q: want it not the container's", cg)
+		}
 	}
 }

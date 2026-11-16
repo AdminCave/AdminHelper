@@ -211,7 +211,7 @@ const maxExpectBody = 4 << 10
 // httpSensor sends a GET or HEAD to its target through the guard: status code, time to the headers
 // and, for GET, fields of the JSON object the target answers or whether a short answer in plain text
 // is the one expected (body_match). A vhost it asks at its port by its name (Host and SNI); a redirect
-// to its name, which is not where the sensor connects, is one to another target (sameTarget).
+// to its name at its scheme and port goes to where the sensor connects (sameVhost).
 func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, error) {
 	t, err := targetOf(p, vhostTargets...)
 	if err != nil {
@@ -314,6 +314,10 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 		u.Scheme = scheme
 	}
 	client := g.HTTPClient(&tls.Config{InsecureSkipVerify: true, ServerName: sni}) //nolint:gosec // the tls sensor checks certificates
+	if t.Kind == kindVhost {
+		// A site sends a visitor to its login page by its own name (Moodle with forcelogin).
+		client.CheckRedirect = sameVhost(t.Name)
+	}
 	values, err := fetchExpecting(ctx, client, method, u.String(), host, accept, use, secret, p.Fields, expect)
 	if err != nil {
 		return nil, err
@@ -324,8 +328,9 @@ func httpSensor(ctx context.Context, p Probe, secret string) (map[string]any, er
 
 // speaksTLS says whether the service at ep answers a TLS handshake, on a connection of its own
 // through g that sends nothing but the handshake. An answer that is no TLS record is a service of
-// plain text (one of HTTP answers 400); so is silence for answerWait, as a server of HTTP that waits
-// for the end of a request line inside the client's hello never answers it. Any other end of the
+// plain text (one of HTTP answers 400); so is silence for answerWait, or for half the time left to
+// the deadline of ctx if that is shorter, as a server of HTTP that waits for the end of a request line
+// inside the client's hello never answers it: the other half is the request's. Any other end of the
 // handshake (an alert, a closed connection) comes from a server that read it as TLS.
 func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
 	conn, err := dialThrough(ctx, g, ep)
@@ -333,9 +338,11 @@ func speaksTLS(ctx context.Context, g *Guard, ep endpoint) (bool, error) {
 		return false, err
 	}
 	defer conn.Close()
-	if d, ok := ctx.Deadline(); !ok || time.Now().Add(answerWait).Before(d) {
-		_ = conn.SetDeadline(time.Now().Add(answerWait))
+	wait := answerWait
+	if d, ok := ctx.Deadline(); ok {
+		wait = min(wait, time.Until(d)/2)
 	}
+	_ = conn.SetDeadline(time.Now().Add(wait))
 	err = tls.Client(conn, &tls.Config{InsecureSkipVerify: true}).HandshakeContext(ctx) //nolint:gosec // only whether TLS answers
 	var rh tls.RecordHeaderError
 	switch {
@@ -358,8 +365,9 @@ func fetch(ctx context.Context, client *http.Client, method, target, host, use, 
 
 // fetchExpecting is fetch that, with an expect that is not empty and a field body_match (GET only),
 // also reports as body_match whether the body, without the space around it, is expect. It reads at
-// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none. An
-// accept that is not empty is the Accept header of the request.
+// most maxExpectBody bytes for it; a longer body matches nothing. Without the field it reads none. For
+// a field data. it reads at most maxBodyBytes, whatever transport client has; a longer body is
+// errBodyTooLarge. An accept that is not empty is the Accept header of the request.
 func fetchExpecting(ctx context.Context, client *http.Client, method, target, host, accept, use, secret string, fields []string, expect string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
@@ -393,13 +401,16 @@ func fetchExpecting(ctx context.Context, client *http.Client, method, target, ho
 	if method != http.MethodGet || (!wantData && !wantMatch) {
 		return values, nil
 	}
-	var r io.Reader = resp.Body
-	if !wantData {
-		r = io.LimitReader(resp.Body, maxExpectBody+1)
+	limit := int64(maxExpectBody)
+	if wantData {
+		limit = maxBodyBytes
 	}
-	body, err := io.ReadAll(r)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, netErr(ctx, err)
+	}
+	if wantData && len(body) > maxBodyBytes {
+		return nil, errBodyTooLarge
 	}
 	if wantMatch {
 		values["body_match"] = len(body) <= maxExpectBody && string(bytes.TrimSpace(body)) == expect
