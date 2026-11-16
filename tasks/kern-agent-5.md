@@ -43,8 +43,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T8
 Abhängt von: T1
 
-### T4 — R-1513: Container-Wurzel an den Container binden  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress.go, apps/agent/internal/probe/app_wordpress_linux.go, apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_proxy.go, apps/agent/internal/probe/app_nextcloud_aio.go, apps/agent/internal/probe/app_wordpress_linux_test.go
+### T4 — R-1513: Container-Wurzel an den Container binden  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress.go, apps/agent/internal/probe/app_wordpress_linux.go, apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_mail.go, apps/agent/internal/probe/app_proxy.go, apps/agent/internal/probe/app_nextcloud_aio.go, apps/agent/internal/probe/app_wordpress_linux_test.go, apps/agent/internal/probe/app_wordpress_other.go, apps/agent/internal/probe/app_wordpress_test.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/app_mail_test.go, apps/agent/internal/probe/app_nextcloud_aio_test.go, apps/agent/internal/probe/app_proxy_linux_test.go, apps/agent/internal/probe/app_wordpress_cron_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ec03c65c9 2026-11-16T16:40:12+01:00
+Review: approve (.ah-out/review/kern-agent-5/T4.verdict.json)
 Änderung: `containerRoot` bekommt die Container-ID, öffnet zuerst `/proc/<pid>` als Verzeichnis, prüft über dieses
 Handle die cgroup des Prozesses gegen die ID und öffnet die Wurzel über dasselbe Handle; passt sie nicht, Fehler ohne
 Pfad. Test unter Linux mit einem Prozess, dessen cgroup die ID nicht trägt.
@@ -93,3 +95,9 @@ Abhängt von: T7
 - T2: `pastaPort` liest die Optionen wie pasta selbst (getopt-String und Optionsliste aus passt 2025-05-03, Debian
   13, `apt-get download passt`; Optionen enden am ersten Operanden, `+`); jede Form, die eine andere Version anders
   lesen könnte, sagt nichts (fail-closed) statt nur Präfixe `--tcp`/`--c` und Bündel mit `t`/`c` abzulehnen.
+- T4: Die cgroup gehört dem Container nur an festen Orten ab der Wurzel: `/docker/<id>`, `/system.slice/docker-<id>.scope`,
+  `/machine.slice/libpod-<id>.scope`, `/libpod_parent/libpod-<id>` oder darunter; diese Eltern legt nur root an, ein
+  delegierter Teilbaum (Nutzer, Unit, Gast) kann keinen davon tragen. Ein eigenes `--cgroup-parent` und
+  rootless-Container öffnen damit nichts (fail-closed). Eine ID, die nicht 64 Hex-Zeichen hat, öffnet nichts. Die
+  Wurzel öffnet `os.OpenRoot` über `/proc/self/fd/<n>` des per `openat` geöffneten `root`, `os.Root` folgt dem
+  Magic-Link selbst nicht.

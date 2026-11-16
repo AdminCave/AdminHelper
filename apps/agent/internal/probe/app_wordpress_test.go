@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -47,15 +48,25 @@ func writeWPFile(t *testing.T, root, content string) {
 	}
 }
 
+// openedIDs is the container ID each pid a view opened the root of came with (stubContainerRoot).
+var openedIDs map[int]string
+
+// stubContainerRoot opens roots with open and returns the pids it was asked for; the ID each came with
+// is in openedIDs and must have the form docker gives it, not a name or nothing.
 func stubContainerRoot(t *testing.T, open func(int) (*os.Root, error)) *[]int {
 	t.Helper()
 	var pids []int
-	old := containerRoot
-	containerRoot = func(pid int) (*os.Root, error) {
+	old, oldIDs := containerRoot, openedIDs
+	openedIDs = map[int]string{}
+	containerRoot = func(pid int, id string) (*os.Root, error) {
+		if len(id) != 64 || strings.Trim(id, "0123456789abcdef") != "" {
+			t.Errorf("opened the root of pid %d for the container ID %q, want the 64 hex digits docker gives", pid, id)
+		}
 		pids = append(pids, pid)
+		openedIDs[pid] = id
 		return open(pid)
 	}
-	t.Cleanup(func() { containerRoot = old })
+	t.Cleanup(func() { containerRoot, openedIDs = old, oldIDs })
 	return &pids
 }
 
@@ -94,16 +105,9 @@ func TestTheWordPressViewOutsideLinux(t *testing.T) {
 	}
 }
 
-func TestOpenProcRootIsLinuxAlone(t *testing.T) {
-	root, err := openProcRoot(os.Getpid())
-	if runtime.GOOS != "linux" {
-		if !errors.Is(err, ErrUnsupported) {
-			t.Errorf("error %v, want ErrUnsupported outside Linux", err)
-		}
-		return
+func TestOpenContainerRootIsLinuxAlone(t *testing.T) {
+	_, err := openContainerRoot(os.Getpid(), containerID)
+	if runtime.GOOS != "linux" && !errors.Is(err, ErrUnsupported) {
+		t.Errorf("error %v, want ErrUnsupported outside Linux", err)
 	}
-	if err != nil {
-		t.Fatalf("openProcRoot of this process = %v, want it opened on Linux", err)
-	}
-	root.Close()
 }

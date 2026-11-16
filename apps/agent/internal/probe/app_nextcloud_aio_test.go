@@ -102,6 +102,9 @@ func TestTheAIOViewCountsTheContainersAIOKeepsRunning(t *testing.T) {
 			if !slices.Equal(*pids, []int{4545}) {
 				t.Errorf("opened the roots of %v, want the mastercontainer's", *pids)
 			}
+			if want := fmt.Sprintf("%x", sha256.Sum256([]byte("nextcloud-aio-mastercontainer"))); openedIDs[4545] != want {
+				t.Errorf("opened the root of the mastercontainer for the container %q, want its own ID", openedIDs[4545])
+			}
 		})
 	}
 }

@@ -547,7 +547,7 @@ func mailcowQueue(ctx context.Context, t Target) (map[string]any, error) {
 		return nil, fmt.Errorf("container %s is not running", t.Name)
 	}
 	return untilDone(ctx, func() (map[string]any, error) {
-		root, err := containerRoot(c.State.Pid)
+		root, err := containerRoot(c.State.Pid, c.ID)
 		if errors.Is(err, ErrUnsupported) {
 			return nil, err
 		}

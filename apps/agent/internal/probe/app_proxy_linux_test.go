@@ -117,8 +117,8 @@ func TestCaddyCertsReadsTheDataDirectoryOfTheImage(t *testing.T) {
 	caddySite(t, root, "data/caddy", letsEncrypt, "example.org", start.Add(30*24*time.Hour))
 	got, err := caddyCerts(context.Background(), Target{Kind: kindContainer, Name: "web"})
 	wantCerts(t, got, err, 1, 0, 30)
-	if len(*pids) != 1 || (*pids)[0] != 4242 {
-		t.Errorf("opened the roots of %v, want the container's process 4242", *pids)
+	if len(*pids) != 1 || (*pids)[0] != 4242 || openedIDs[4242] != containerID {
+		t.Errorf("opened the roots of %v of %v, want the container's process 4242", *pids, openedIDs)
 	}
 }
 

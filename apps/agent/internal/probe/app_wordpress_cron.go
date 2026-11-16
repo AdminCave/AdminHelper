@@ -589,7 +589,7 @@ func wordpressCron(ctx context.Context, t Target) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("container %s: %w", t.Name, err)
 	}
-	root, err := containerRoot(server.State.Pid)
+	root, err := containerRoot(server.State.Pid, server.ID)
 	if errors.Is(err, ErrUnsupported) {
 		return nil, err
 	}

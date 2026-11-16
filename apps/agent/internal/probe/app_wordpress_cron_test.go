@@ -562,6 +562,9 @@ func TestWordPressCronCountsTheEventsInTheDatabaseOfItsSite(t *testing.T) {
 	if !slices.Equal(*pids, []int{wpPIDs[dbID]}) {
 		t.Errorf("opened the roots of %v, want the database's %d alone", *pids, wpPIDs[dbID])
 	}
+	if openedIDs[wpPIDs[dbID]] != dbID {
+		t.Errorf("opened the root of the database for the container %q, want its own ID", openedIDs[wpPIDs[dbID]])
+	}
 	if !slices.Equal(queries, []string{wpCronQuery("wp_", true)}) {
 		t.Errorf("queries = %q, want the one query in the form of mariadb", queries)
 	}

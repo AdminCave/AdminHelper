@@ -120,8 +120,8 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 
 // checkPeer refuses the socket path unless the socket it reached lies outside controlSockets
 // (checkPeerName) and the process serving it may be probed: not a process the guard refuses on TCP
-// and no forwarder (checkForwarder), and not inetd, which holds the sockets of the services it starts
-// on their behalf (LOCAL_PEERCRED names the process that called listen).
+// and no forwarder (checkForwarder), and no super-server (unixActivator), which holds the sockets of
+// the services it starts on their behalf (LOCAL_PEERCRED names the process that called listen).
 func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	bound, err := peerName(conn)
 	if err != nil {

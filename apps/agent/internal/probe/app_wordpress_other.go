@@ -15,3 +15,8 @@ import (
 func openRegular(*os.Root, string, string) (*os.File, error) {
 	return nil, fmt.Errorf("%w: the files of a container are read on Linux alone", ErrUnsupported)
 }
+
+// openContainerRoot is Linux alone: the files of a container are read there.
+func openContainerRoot(int, string) (*os.Root, error) {
+	return nil, fmt.Errorf("%w: the files of a container are read on Linux alone", ErrUnsupported)
+}
