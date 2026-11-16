@@ -48,6 +48,9 @@ type endpoint struct {
 	port  uint16
 	extra []netip.Addr
 	owns  func() func(listener) bool
+	// strict marks a target that names no process tree of its own (loopback, port, vhost, process):
+	// a secret goes there only to a listener the system protects (Guard.strict).
+	strict bool
 }
 
 // targetOf returns p's target if its kind is one of kinds and it carries what that kind needs: a port
@@ -111,6 +114,22 @@ func processKey(name string) string {
 // errNotListening. A loopback target is its port hint on 127.0.0.1, unchecked. A vhost is its port, as a
 // port target is: the name goes into the request (SNI, Host), not into where the sensor connects.
 func resolve(ctx context.Context, t Target) (endpoint, error) {
+	ep, err := resolveKind(ctx, t)
+	if err != nil {
+		return endpoint{}, err
+	}
+	ep.strict = strictKind(t.Kind)
+	return ep, nil
+}
+
+// strictKind says whether a target of kind names no process tree of its own: its listener is
+// whoever holds the port.
+func strictKind(kind string) bool {
+	return kind == kindLoopback || kind == kindPort || kind == kindVhost || kind == kindProcess
+}
+
+// resolveKind is resolve by the kind of t.
+func resolveKind(ctx context.Context, t Target) (endpoint, error) {
 	switch t.Kind {
 	case kindLoopback:
 		return endpoint{addr: netip.AddrFrom4([4]byte{127, 0, 0, 1}), port: uint16(t.PortHint)}, nil
@@ -243,8 +262,9 @@ func dialAddr(ls []listener, port uint16, fallback []netip.Addr) netip.Addr {
 }
 
 // parseProcNetTCP returns the listening sockets of a /proc/<pid>/net/tcp or tcp6 file, without
-// their process. The kernel prints each 32-bit word of an address as the number its bytes make in
-// the host's byte order.
+// their process, each with its inode (field 10, proc_pid_net(5)) as sock and its uid where the line
+// has them. The
+// kernel prints each 32-bit word of an address as the number its bytes make in the host's byte order.
 func parseProcNetTCP(data []byte) []listener {
 	var list []listener
 	sc := bufio.NewScanner(bytes.NewReader(data))
@@ -270,7 +290,15 @@ func parseProcNetTCP(data []byte) []listener {
 		if err != nil {
 			continue
 		}
-		list = append(list, listener{addr: addr.Unmap(), port: uint16(p)})
+		l := listener{addr: addr.Unmap(), port: uint16(p)}
+		if len(f) >= 10 {
+			l.sock = f[9]
+			// The uid of the socket's creator (field 8).
+			if uid, err := strconv.ParseUint(f[7], 10, 32); err == nil {
+				l.uid, l.hasUID = uint32(uid), true
+			}
+		}
+		list = append(list, l)
 	}
 	return list
 }

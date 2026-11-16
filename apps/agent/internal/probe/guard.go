@@ -263,6 +263,15 @@ func checkPeerName(name, sock string) error {
 	return nil
 }
 
+// checkPeerOwner refuses the unix socket path, which a connection with a secret reached, unless the
+// process serving it runs under uid of a system account: the rule of the guard on TCP (checkOwner).
+func checkPeerOwner(uid uint32, path string) error {
+	if peerProtected(uid) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is served by no system account", ErrNotAllowed, path)
+}
+
 // listenerTTL is how long one snapshot of the listening sockets serves the guard.
 const listenerTTL = 30 * time.Second
 
@@ -275,15 +284,24 @@ type listener struct {
 	addr netip.Addr
 	port uint16
 	pid  int32
+	// sock names the socket where the reader can tell one (the inode under Linux), else "": two
+	// listeners of one sock are one socket that two processes hold.
+	sock string
+	// uid owns the socket if hasUID; a reader that cannot tell leaves the owner unknown.
+	uid    uint32
+	hasUID bool
 }
 
 // The seams of the guard to the host; tests stand in their own.
 var (
-	interfaceAddrs = net.InterfaceAddrs
-	listeners      = listenTCP
-	processName    = nameOf
-	processArgs    = argsOf
-	peerSocket     = osPeerSocket
+	privilegedPorts = osPrivilegedPorts
+	interfaceAddrs  = net.InterfaceAddrs
+	listeners       = listenTCP
+	processName     = nameOf
+	processArgs     = argsOf
+	peerSocket      = osPeerSocket
+	// takerOwners returns the uids of the sockets that hold the port a connection went to.
+	takerOwners = osTakerOwners
 	// serviceForwarder names the service of the process pid if that service forwards the ports it
 	// listens on (Windows portproxy), else "".
 	serviceForwarder = osServiceForwarder
@@ -293,6 +311,9 @@ var (
 	containerListeners = namespaceProcesses
 	dockerServes       = dockerSocketServes
 	dockerdRunning     = dockerdRuns
+	// peerProtected says whether the process that serves a unix socket, under uid, runs under a
+	// system account (protected).
+	peerProtected = func(uid uint32) bool { return protected(listener{uid: uid, hasUID: true}) }
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.
@@ -310,6 +331,9 @@ type Guard struct {
 	// its target, nil for none.
 	secret bool
 	owns   func() func(listener) bool
+	// strict: a secret goes only to a listener on a privileged port or of a system account
+	// (protected), for targets whose rule names no process tree (endpoint.strict).
+	strict bool
 }
 
 // NewGuard returns a guard that also lets the sensors connect to extra, the addresses of this host's
@@ -328,7 +352,7 @@ func NewGuard(extra ...netip.Addr) *Guard {
 // connection, never a port docker forwards.
 func secretGuard(ep endpoint) *Guard {
 	g := NewGuard(ep.extra...)
-	g.secret, g.owns = true, ep.owns
+	g.secret, g.owns, g.strict = true, ep.owns, ep.strict
 	return g
 }
 
@@ -435,11 +459,12 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		state, err := peerSocket(server, client)
 		switch {
 		case errors.Is(err, errPeerUnsupported):
-			return nil
+			// Without the taker, a strict guard still sees who holds the port now.
+			return g.checkTakerOwner(server, client)
 		case err != nil:
 			return fmt.Errorf("%w: the socket that took the connection to port %d cannot be told: %v", ErrNotAllowed, server.Port(), err)
 		case state == peerConnected:
-			return nil
+			return g.checkTakerOwner(server, client)
 		case try == peerTries:
 			return takenElsewhere(ip, server, client, state)
 		}
@@ -449,6 +474,27 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		case <-time.After(peerWait):
 		}
 	}
+}
+
+// checkTakerOwner applies the rule of a strict guard (checkOwner) once more after the connect: the
+// snapshot it judged on may be up to listenerFresh old, and the port may have changed hands since.
+func (g *Guard) checkTakerOwner(server, client netip.AddrPort) error {
+	if !g.strict || privilegedPort(server.Port()) {
+		return nil
+	}
+	owners, err := takerOwners(server, client)
+	if err != nil {
+		return fmt.Errorf("%w: the owner of port %d cannot be told after the connect: %v", ErrNotAllowed, server.Port(), err)
+	}
+	if len(owners) == 0 {
+		return fmt.Errorf("%w: no socket holds port %d after the connect", ErrNotAllowed, server.Port())
+	}
+	for _, uid := range owners {
+		if !protected(listener{uid: uid, hasUID: true}) {
+			return fmt.Errorf("%w: port %d is no privileged port and a socket on it runs under no system account", ErrNotAllowed, server.Port())
+		}
+	}
+	return nil
 }
 
 // takenElsewhere judges a connection no socket of the port took, after the last try. A listener
@@ -493,7 +539,7 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 			return err
 		}
 		if g.secret {
-			return checkOwner(ctx, ip, port, g.contained(ip), g.owns)
+			return checkOwner(ctx, ip, port, g.contained(ip), g.owns, g.strict)
 		}
 		return checkListener(ctx, ip, port, g.contained(ip))
 	}
@@ -502,15 +548,20 @@ func (g *Guard) control(ctx context.Context, network, address string, _ syscall.
 
 // checkOwner is checkListener on a snapshot at most listenerFresh old for a connection that carries a
 // secret: every listener that takes connections to ip and port must be one owns accepts, at least one
-// must listen, and docker must not forward the port. Without owns (a loopback target, a container's
-// address) the fresh snapshot alone is asked.
-func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool, owns func() func(listener) bool) error {
+// must listen, and docker must not forward the port. For a strict guard each listener must also be
+// protected, unless port is privileged; without owns there every listener counts as the target's.
+// Without owns otherwise (a container's address) the fresh snapshot alone is asked.
+func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool, owns func() func(listener) bool, strict bool) error {
 	if err := judgeListener(ctx, ip, port, contained, listenerFresh); err != nil {
 		return err
 	}
-	if owns == nil || contained {
+	if contained || (owns == nil && !strict) {
 		return nil
 	}
+	if owns == nil {
+		owns = func() func(listener) bool { return func(listener) bool { return true } }
+	}
+	privileged := strict && privilegedPort(port)
 	published, err := checkPublished(ctx, ip, port, listenerFresh)
 	if err != nil {
 		return err
@@ -522,20 +573,67 @@ func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool,
 	if err != nil {
 		return fmt.Errorf("%w: the listening sockets cannot be read: %v", ErrNotAllowed, err)
 	}
-	match, found := owns(), false
+	match := owns()
+	var owned, held []string
 	for _, l := range list {
 		if l.port != port || !carries(l.addr, ip) {
 			continue
 		}
-		if !match(l) {
-			return fmt.Errorf("%w: port %d is held by another process than the target of the secret", ErrNotAllowed, port)
+		if strict && !privileged && !protected(l) {
+			return fmt.Errorf("%w: port %d is no privileged port and its listener runs under no system account", ErrNotAllowed, port)
 		}
-		found = true
+		if match(l) {
+			owned = append(owned, l.sock)
+			continue
+		}
+		// systemd hands a socket it holds on to the service it starts, which accepts on it: an
+		// activator counts only on the very socket the target holds, and only a reader that names
+		// sockets can tell that; a socket of its own on the same address would take connections too.
+		if name, err := processName(ctx, l.pid); err == nil && l.sock != "" && activator(processKey(name)) {
+			held = append(held, l.sock)
+			continue
+		}
+		return fmt.Errorf("%w: port %d is held by another process than the target of the secret", ErrNotAllowed, port)
 	}
-	if !found {
+	if len(owned) == 0 {
 		return fmt.Errorf("%w: the target of the secret no longer listens on port %d", ErrNotAllowed, port)
 	}
+	for _, s := range held {
+		if !slices.Contains(owned, s) {
+			return fmt.Errorf("%w: port %d is held by another process than the target of the secret", ErrNotAllowed, port)
+		}
+	}
 	return nil
+}
+
+// nobodyUID is the uid of nobody on Linux and FreeBSD, a system account for processes of no one.
+const nobodyUID = 65534
+
+// protected says whether l runs under a system account: root or another uid below 1000 (Debian's
+// SYS_UID_MAX, FreeBSD's first user 1001), never nobody. A user cannot take such a uid.
+func protected(l listener) bool {
+	return l.hasUID && l.uid < 1000 && l.uid != nobodyUID
+}
+
+// accountUser is the uid a listener stands under whose Windows account is no service account
+// (serviceAccountSID): any uid protected refuses.
+const accountUser uint32 = 1 << 31
+
+// serviceAccountSID says whether sid names an account a Windows user cannot run a process under
+// (Microsoft Learn, "Security identifiers"): LocalSystem, LocalService, NetworkService or the
+// virtual account of a service (NT SERVICE\<name>).
+func serviceAccountSID(sid string) bool {
+	switch sid {
+	case "S-1-5-18", "S-1-5-19", "S-1-5-20":
+		return true
+	}
+	return strings.HasPrefix(sid, "S-1-5-80-")
+}
+
+// privilegedPort says whether only root may bind port on this host (osPrivilegedPorts).
+func privilegedPort(port uint16) bool {
+	lo, hi := privilegedPorts()
+	return port >= lo && port <= hi
 }
 
 // contained says whether ip is one of the extra addresses, of a container of this host: its

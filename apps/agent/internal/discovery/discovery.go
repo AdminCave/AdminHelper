@@ -393,8 +393,8 @@ func toContainer(c inspected) Container {
 }
 
 // listeningIn returns the ports something listens on beyond loopback in the network namespace of
-// the running container c, at most maxContainerPorts; nil for one that does not run, has no network
-// of its own (host, none, another container's) or whose namespace cannot be read.
+// the running container c; nil for one that does not run, has no network of its own (host, none,
+// another container's), whose namespace cannot be read or that listens on more than maxContainerPorts.
 func listeningIn(c inspected) []uint16 {
 	mode := c.HostConfig.NetworkMode
 	if c.State.Status != "running" || c.State.Pid <= 0 || mode == "host" || mode == "none" ||
@@ -408,7 +408,11 @@ func listeningIn(c inspected) []uint16 {
 	if ports == nil {
 		ports = []uint16{}
 	}
-	return ports[:min(len(ports), maxContainerPorts)]
+	// Cut, the list would pass for the whole one and a port beyond it for missing (module_sync).
+	if len(ports) > maxContainerPorts {
+		return nil
+	}
+	return ports
 }
 
 // tcpBinds are the host addresses and ports the TCP ports of the port map m are published on; a

@@ -67,7 +67,7 @@ func unixSocketSensor(ctx context.Context, p Probe, secret string) (map[string]a
 		return nil, err
 	}
 	start := time.Now()
-	conn, err := dialUnix(ctx, path)
+	conn, err := dialUnixFor(ctx, path, use != "")
 	switch {
 	case errors.Is(err, errNoListener) && !ended(ctx):
 		return map[string]any{"connected": false}, nil
@@ -112,7 +112,7 @@ func unixHTTP(ctx context.Context, conn net.Conn, path, httpPath, use, secret st
 		if c != nil {
 			return c, nil
 		}
-		c, err := dialUnix(ctx, path)
+		c, err := dialUnixFor(ctx, path, use != "")
 		if err != nil {
 			return nil, err
 		}

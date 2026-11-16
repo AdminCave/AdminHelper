@@ -252,6 +252,7 @@ func TestHTTPSensorComparesAShortAnswerWithoutSendingIt(t *testing.T) {
 }
 
 func TestHTTPSensorPresentsItsCredential(t *testing.T) {
+	allPortsPrivileged(t)
 	headers := make(chan http.Header, 1)
 	srv := localServer(t, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { headers <- r.Header.Clone() }))
 	ctx := context.Background()

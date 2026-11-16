@@ -52,6 +52,17 @@ func servedBy(t *testing.T, name string) *fakeHost {
 	return h
 }
 
+// servedBySystem names the process of the test name and lets it count as a system account's, as
+// the services a credential goes to run.
+func servedBySystem(t *testing.T, name string) *fakeHost {
+	t.Helper()
+	h := servedBy(t, name)
+	old := peerProtected
+	peerProtected = func(uint32) bool { return true }
+	t.Cleanup(func() { peerProtected = old })
+	return h
+}
+
 func unixProbe(params map[string]any, fields ...string) Probe {
 	return Probe{Sensor: "unixsocket", Params: params, Fields: fields}
 }
@@ -101,7 +112,7 @@ func TestUnixSocketSensorConnects(t *testing.T) {
 }
 
 func TestUnixSocketSensorSpeaksHTTP(t *testing.T) {
-	servedBy(t, "nginx")
+	servedBySystem(t, "nginx")
 	path := socketIn(t)
 	ln, err := net.Listen("unix", path)
 	if err != nil {
@@ -153,10 +164,22 @@ func TestUnixSocketSensorSpeaksHTTP(t *testing.T) {
 	if _, err := unixSocketSensor(ctx, secret, "wr0ng"); !errors.Is(err, ErrDenied) || strings.Contains(err.Error(), "wr0ng") {
 		t.Errorf("a wrong token = %v, want ErrDenied without the token", err)
 	}
+
+	// The connection a redirect opens anew carries the token too, so it answers to the same rule.
+	var asked int
+	peerProtected = func(uint32) bool {
+		asked++
+		return asked == 1
+	}
+	moved := probe("/moved")
+	moved.Credential = &Credential{Ref: "c1", Use: useBearer}
+	if _, err := unixSocketSensor(ctx, moved, "t0ken"); !errors.Is(err, ErrNotAllowed) || asked != 2 {
+		t.Errorf("a redirect to a socket of no system account = %v after %d questions; want ErrNotAllowed after 2", err, asked)
+	}
 }
 
 func TestUnixSocketSensorSpeaksTheProtocolOfItsService(t *testing.T) {
-	servedBy(t, "redis-server")
+	servedBySystem(t, "redis-server")
 	ctx := context.Background()
 
 	path, srv := unixFake(t, func(c *fakeConn) {
@@ -242,6 +265,47 @@ func TestUnixSocketSensorSpeaksTheProtocolOfItsService(t *testing.T) {
 	data, _ = got["data"].(map[string]any)
 	if web, _ := data["web"].(map[string]any); err != nil || fmt.Sprint(web["FRONTEND"]) != "map[status:OPEN]" {
 		t.Errorf("haproxy = %v, %v; want its stats", got, err)
+	}
+}
+
+// TestUnixSocketSensorSendsACredentialOnlyToASystemAccount: a socket whose server runs under the
+// account of a user gets no credential, and hears nothing; without one it is probed as before.
+func TestUnixSocketSensorSendsACredentialOnlyToASystemAccount(t *testing.T) {
+	servedBy(t, "redis-server")
+	ctx := context.Background()
+	path, srv := unixFake(t, func(c *fakeConn) {
+		for c.hear() != "" {
+		}
+	})
+	p := unixProbe(map[string]any{"path": path, "protocol": "redis"})
+	p.Credential = &Credential{Ref: "c1", Use: useRedisAuth}
+	protectedSelf := os.Geteuid() < 1000
+	_, err := unixSocketSensor(ctx, p, "s3cret")
+	if !protectedSelf && (!errors.Is(err, ErrNotAllowed) || strings.Contains(err.Error(), "s3cret")) {
+		t.Errorf("a credential to a socket of uid %d = %v; want ErrNotAllowed", os.Geteuid(), err)
+	}
+	if got := fmt.Sprint(srv.close()); !protectedSelf && got != "[]" {
+		t.Errorf("the socket of a user heard %s; want nothing", got)
+	}
+
+	old := peerProtected
+	t.Cleanup(func() { peerProtected = old })
+	var asked []uint32
+	peerProtected = func(uid uint32) bool {
+		asked = append(asked, uid)
+		return false
+	}
+	path, _ = unixFake(t, func(c *fakeConn) { c.drain() })
+	p.Params["path"] = path
+	if _, err := unixSocketSensor(ctx, p, "s3cret"); !errors.Is(err, ErrNotAllowed) {
+		t.Errorf("a credential to a socket of no system account = %v; want ErrNotAllowed", err)
+	}
+	if len(asked) != 1 || asked[0] != uint32(os.Geteuid()) {
+		t.Errorf("the guard asked about %v; want the uid of the server, %d", asked, os.Geteuid())
+	}
+	asked = nil
+	if got, err := unixSocketSensor(ctx, unixProbe(map[string]any{"path": path}), ""); err != nil || got["connected"] != true || len(asked) != 0 {
+		t.Errorf("a connect without credential = %v, %v (asked %v); want it connected unasked", got, err, asked)
 	}
 }
 

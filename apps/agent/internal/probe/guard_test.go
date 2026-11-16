@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -37,6 +38,9 @@ type fakeHost struct {
 	// peer answers which socket took a connection; nil says the one bound to its server end.
 	peer      func(server, client netip.AddrPort) (peerState, error)
 	peerCalls int
+	// owners answers the owners of the port a connection went to; nil says root.
+	owners      func(server, client netip.AddrPort) ([]uint32, error)
+	ownersCalls int
 	// services names the forwarding service of a process; servicesErr fails reading it.
 	services    map[int32]string
 	servicesErr error
@@ -54,7 +58,14 @@ const containerApp int32 = 7001
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
 	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
-	oldPeer, oldService, oldInside := peerSocket, serviceForwarder, containerListeners
+	oldPeer, oldService, oldInside, oldOwners := peerSocket, serviceForwarder, containerListeners, takerOwners
+	takerOwners = func(server, client netip.AddrPort) ([]uint32, error) {
+		h.ownersCalls++
+		if h.owners == nil {
+			return []uint32{0}, nil
+		}
+		return h.owners(server, client)
+	}
 	containerListeners = func(_ context.Context, pid int32, _ uint16) ([]int32, error) {
 		h.insideCalls++
 		if h.inside == nil && h.insideErr == nil {
@@ -128,7 +139,7 @@ func stubHost(t *testing.T, h *fakeHost) {
 	resetSnapshot()
 	t.Cleanup(func() {
 		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
-		peerSocket, serviceForwarder, containerListeners = oldPeer, oldService, oldInside
+		peerSocket, serviceForwarder, containerListeners, takerOwners = oldPeer, oldService, oldInside, oldOwners
 		resetSnapshot()
 	})
 }
@@ -1570,6 +1581,53 @@ func TestGuardChecksTheTargetAfreshBeforeASecret(t *testing.T) {
 	}
 }
 
+// TestGuardJudgesEveryProcessOfASharedSocket: systemd holds the socket of the service it started,
+// and the service holds it too; the listener list names both, in either order (R-1441).
+func TestGuardJudgesEveryProcessOfASharedSocket(t *testing.T) {
+	on := func(addr string, pid int32, sock string) listener {
+		l := lst(addr, 8091, pid)
+		l.sock = sock
+		return l
+	}
+	ep := endpoint{addr: netip.MustParseAddr("127.0.0.1"), port: 8091, owns: func() func(listener) bool {
+		return func(l listener) bool { return l.pid == 70 }
+	}}
+	names := map[int32]string{1: "systemd", 70: "cupsd", 80: "java"}
+	judge := func(list []listener) (plain, secret error) {
+		stubHost(t, &fakeHost{list: list, names: names})
+		return allowed(NewGuard(), "tcp4", "127.0.0.1:8091"), allowed(secretGuard(ep), "tcp4", "127.0.0.1:8091")
+	}
+	for _, list := range [][]listener{
+		{on("0.0.0.0", 1, "4711"), on("0.0.0.0", 70, "4711")},
+		{on("0.0.0.0", 70, "4711"), on("0.0.0.0", 1, "4711")},
+	} {
+		plain, secret := judge(list)
+		if plain != nil {
+			t.Errorf("%v: %v, want the service behind systemd allowed", list, plain)
+		}
+		if secret != nil {
+			t.Errorf("%v with a secret: %v, want the target allowed beside systemd", list, secret)
+		}
+	}
+
+	for _, c := range []struct {
+		name string
+		list []listener
+	}{
+		// A socket of its own on the same address (SO_REUSEPORT) takes connections too, whatever
+		// its process is called.
+		{"systemd on its own socket of the same address", []listener{on("0.0.0.0", 70, "4711"), on("0.0.0.0", 1, "4712")}},
+		{"systemd on another address", []listener{on("0.0.0.0", 70, "4711"), on("127.0.0.1", 1, "4712")}},
+		// Without a reader that names sockets (Windows, FreeBSD) the guard cannot tell them apart.
+		{"systemd beside the target, sockets unnamed", []listener{on("0.0.0.0", 70, ""), on("0.0.0.0", 1, "")}},
+		{"another process on the target's socket", []listener{on("0.0.0.0", 70, "4711"), on("0.0.0.0", 80, "4711")}},
+	} {
+		if _, secret := judge(c.list); !errors.Is(secret, ErrNotAllowed) {
+			t.Errorf("%s: %v, want ErrNotAllowed", c.name, secret)
+		}
+	}
+}
+
 func TestGuardListsNameMoreForwardersSuperServersAndSSHServers(t *testing.T) {
 	for _, name := range []string{"dbclient", "oc", "oc.exe", "k9s", "gs-netcat", "bore", "ligolo-ng", "ligolo",
 		"inlets", "inlets-pro", "nc64.exe", "nc64"} {
@@ -1614,5 +1672,184 @@ func TestGuardRefusesSuperServersAtAUnixSocket(t *testing.T) {
 		if unixActivator(name) {
 			t.Errorf("%s: want it no super-server at a unix socket", name)
 		}
+	}
+}
+
+// allPortsPrivileged makes every port one only root may bind, for tests that hand a secret to a
+// server of their own on a high port and test the sensor, not the guard's rule of strict targets.
+func allPortsPrivileged(t *testing.T) {
+	t.Helper()
+	old := privilegedPorts
+	privilegedPorts = func() (uint16, uint16) { return 1, 65535 }
+	t.Cleanup(func() { privilegedPorts = old })
+}
+
+// TestGuardHandsASecretOnlyToAProtectedListenerOfAStrictTarget: a target that names no process
+// tree gets a secret only on a privileged port or from a listener of a system account; unit and
+// container targets and connections without a secret keep their rule.
+func TestGuardHandsASecretOnlyToAProtectedListenerOfAStrictTarget(t *testing.T) {
+	by := func(addr string, port uint16, uid uint32) listener {
+		l := lst(addr, port, 50)
+		l.uid, l.hasUID = uid, true
+		return l
+	}
+	unknownOwner := lst("0.0.0.0", 8090, 50)
+	mine := func() func(listener) bool { return func(l listener) bool { return l.pid == 50 || l.pid == 60 } }
+	lo := netip.MustParseAddr("127.0.0.1")
+	strictRule := endpoint{addr: lo, port: 8090, owns: mine, strict: true}
+	strictNoRule := endpoint{addr: lo, port: 8090, strict: true}
+	unitRule := endpoint{addr: lo, port: 8090, owns: mine}
+	for _, c := range []struct {
+		name   string
+		ep     endpoint
+		port   uint16
+		list   []listener
+		pubs   []publication
+		lo, hi uint16
+		want   bool
+	}{
+		{"strict, high port, user", strictRule, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, false},
+		{"strict, high port, root", strictRule, 8090, []listener{by("0.0.0.0", 8090, 0)}, nil, 1, 1023, true},
+		{"strict, high port, system account", strictRule, 8090, []listener{by("0.0.0.0", 8090, 113)}, nil, 1, 1023, true},
+		{"strict, high port, last system uid", strictRule, 8090, []listener{by("0.0.0.0", 8090, 999)}, nil, 1, 1023, true},
+		{"strict, high port, nobody", strictRule, 8090, []listener{by("0.0.0.0", 8090, nobodyUID)}, nil, 1, 1023, false},
+		{"strict, high port, owner unknown", strictRule, 8090, []listener{unknownOwner}, nil, 1, 1023, false},
+		{"strict, high port, root beside a user", strictRule, 8090, []listener{by("0.0.0.0", 8090, 0), func() listener {
+			l := by("127.0.0.1", 8090, 1000)
+			l.pid = 60
+			return l
+		}()}, nil, 1, 1023, false},
+		{"strict, privileged port, user", endpoint{addr: lo, port: 443, owns: mine, strict: true}, 443, []listener{by("0.0.0.0", 443, 1000)}, nil, 1, 1023, true},
+		{"strict, no port privileged, user", endpoint{addr: lo, port: 443, owns: mine, strict: true}, 443, []listener{by("0.0.0.0", 443, 1000)}, nil, 1, 0, false},
+		{"strict, privileged range of FreeBSD, user", endpoint{addr: lo, port: 0x0400, owns: mine, strict: true}, 0x0400, []listener{by("0.0.0.0", 0x0400, 1000)}, nil, 0, 1024, true},
+		{"strict without a rule, user", strictNoRule, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, false},
+		{"strict without a rule, root", strictNoRule, 8090, []listener{by("0.0.0.0", 8090, 0)}, nil, 1, 1023, true},
+		{"strict without a rule, published by docker", strictNoRule, 8090, []listener{by("0.0.0.0", 8090, 0)}, []publication{{hostPort: 8090, to: 80}}, 1, 1023, false},
+		{"unit, high port, user", unitRule, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, true},
+		{"no rule, not strict, user", endpoint{addr: lo, port: 8090}, 8090, []listener{by("0.0.0.0", 8090, 1000)}, nil, 1, 1023, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stubHost(t, &fakeHost{list: c.list, pubs: c.pubs, names: map[int32]string{50: "app", 60: "app"}})
+			old := privilegedPorts
+			privilegedPorts = func() (uint16, uint16) { return c.lo, c.hi }
+			t.Cleanup(func() { privilegedPorts = old })
+			address := netip.AddrPortFrom(lo, c.port).String()
+			err := allowed(secretGuard(c.ep), "tcp4", address)
+			if c.want && err != nil {
+				t.Errorf("with a secret: %v, want it allowed", err)
+			}
+			if !c.want && !errors.Is(err, ErrNotAllowed) {
+				t.Errorf("with a secret: %v, want ErrNotAllowed", err)
+			}
+			// Without a secret the plain guard keeps its rule.
+			if c.pubs == nil {
+				if err := allowed(NewGuard(), "tcp4", address); err != nil {
+					t.Errorf("without a secret: %v, want it allowed", err)
+				}
+			}
+		})
+	}
+}
+
+// TestGuardChecksTheOwnersOfThePortAfterTheConnect: the listener a strict guard judged before the
+// connect may have gone since, and another one may hold the port; on a port no system account
+// reserves, every socket that holds it after the connect must run under a system account too.
+func TestGuardChecksTheOwnersOfThePortAfterTheConnect(t *testing.T) {
+	ownedBy := func(uids []uint32, err error) func(netip.AddrPort, netip.AddrPort) ([]uint32, error) {
+		return func(netip.AddrPort, netip.AddrPort) ([]uint32, error) { return uids, err }
+	}
+	for _, c := range []struct {
+		name      string
+		strict    bool
+		owners    func(netip.AddrPort, netip.AddrPort) ([]uint32, error)
+		lo, hi    uint16
+		want      bool
+		wantAsked bool
+	}{
+		{"root holds it", true, ownedBy([]uint32{0}, nil), 1, 1023, true, true},
+		{"a system account holds it", true, ownedBy([]uint32{113}, nil), 1, 1023, true, true},
+		{"root and a system account hold it", true, ownedBy([]uint32{0, 113}, nil), 1, 1023, true, true},
+		{"a user holds it", true, ownedBy([]uint32{1000}, nil), 1, 1023, false, true},
+		{"root and a user hold it", true, ownedBy([]uint32{0, 1000}, nil), 1, 1023, false, true},
+		{"nobody holds it", true, ownedBy([]uint32{nobodyUID}, nil), 1, 1023, false, true},
+		{"no socket holds it", true, ownedBy(nil, nil), 1, 1023, false, true},
+		{"its owners cannot be read", true, ownedBy(nil, errors.New("read /proc/net/tcp: denied")), 1, 1023, false, true},
+		{"the port is privileged", true, ownedBy([]uint32{1000}, nil), 1, 65535, true, false},
+		{"no secret rule", false, ownedBy([]uint32{1000}, nil), 1, 1023, true, false},
+	} {
+		for _, noPeer := range []bool{false, true} {
+			name := c.name
+			if noPeer {
+				name += " on a host that tells no taker"
+			}
+			t.Run(name, func(t *testing.T) {
+				h := &fakeHost{owners: c.owners}
+				if noPeer {
+					h.peer = func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerNone, errPeerUnsupported }
+				}
+				address, accepted := takenBy(t, h)
+				port := netip.MustParseAddrPort(address).Port()
+				root := lst("127.0.0.1", port, 4242)
+				root.uid, root.hasUID = 0, true
+				h.live = false
+				h.list = []listener{root}
+				h.names = map[int32]string{4242: "web"}
+				h.args = map[int32][]string{4242: {"web"}}
+				old := privilegedPorts
+				privilegedPorts = func() (uint16, uint16) { return c.lo, c.hi }
+				t.Cleanup(func() { privilegedPorts = old })
+				ep := endpoint{
+					addr: netip.MustParseAddr("127.0.0.1"), port: port, strict: c.strict,
+					owns: func() func(listener) bool { return func(l listener) bool { return l.pid == 4242 } },
+				}
+				conn, err := secretGuard(ep).DialContext(context.Background(), "tcp", address)
+				if conn != nil {
+					_ = conn.Close()
+				}
+				if c.want && err != nil {
+					t.Errorf("dial: %v, want it connected", err)
+				}
+				if !c.want && !errors.Is(err, ErrNotAllowed) {
+					t.Errorf("dial: %v, want ErrNotAllowed", err)
+				}
+				if asked := h.ownersCalls > 0; asked != c.wantAsked {
+					t.Errorf("owners asked = %v, want %v", asked, c.wantAsked)
+				}
+				// FreeBSD fails the accept of a connection reset before it with ECONNABORTED, which Go
+				// skips: there only ownersCalls tells that the guard judged after the connect.
+				if !c.want && runtime.GOOS == "freebsd" {
+					return
+				}
+				select {
+				case taken := <-accepted:
+					_ = taken.Close()
+				case <-time.After(30 * time.Second):
+					t.Error("the listener took no connection")
+				}
+			})
+		}
+	}
+}
+
+// TestServiceAccountSIDsAreTheAccountsNoUserRunsUnder: Microsoft Learn, "Security identifiers".
+func TestServiceAccountSIDsAreTheAccountsNoUserRunsUnder(t *testing.T) {
+	for sid, want := range map[string]bool{
+		"S-1-5-18": true, // LocalSystem
+		"S-1-5-19": true, // LocalService
+		"S-1-5-20": true, // NetworkService
+		"S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464": true,  // NT SERVICE\TrustedInstaller
+		"S-1-5-82-3006700770-424185619-1745488364-794895919-4004696415":  false, // an IIS application pool
+		"S-1-5-21-1004336348-1177238915-682003330-500":                   false, // an administrator
+		"S-1-5-21-1004336348-1177238915-682003330-1001":                  false,
+		"S-1-5-32-544": false, // the group of the administrators
+		"S-1-5-80":     false,
+		"S-1-5-180":    false,
+	} {
+		if got := serviceAccountSID(sid); got != want {
+			t.Errorf("serviceAccountSID(%s) = %v, want %v", sid, got, want)
+		}
+	}
+	if protected(listener{uid: accountUser, hasUID: true}) {
+		t.Error("accountUser is protected")
 	}
 }

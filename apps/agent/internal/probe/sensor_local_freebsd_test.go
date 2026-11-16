@@ -57,10 +57,10 @@ func TestDialUnixNamesTheProcessServingTheSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pid, err := peerPID(conn.(*net.UnixConn))
+	pid, uid, err := peerCred(conn.(*net.UnixConn))
 	_ = conn.Close()
-	if err != nil || pid != int32(os.Getpid()) {
-		t.Fatalf("peerPID = %d, %v, want the test's own %d", pid, err, os.Getpid())
+	if err != nil || pid != int32(os.Getpid()) || uid != uint32(os.Geteuid()) {
+		t.Fatalf("peerCred = %d, %d, %v, want the test's own %d, %d", pid, uid, err, os.Getpid(), os.Geteuid())
 	}
 
 	h := &fakeHost{names: map[int32]string{int32(os.Getpid()): "nginx"}}
@@ -81,6 +81,27 @@ func TestDialUnixNamesTheProcessServingTheSocket(t *testing.T) {
 	}
 	if _, err := dialUnix(ctx, filepath.Join(t.TempDir(), "none.sock")); !errors.Is(err, errNoListener) {
 		t.Errorf("dialUnix of a missing socket = %v, want errNoListener", err)
+	}
+
+	h.names[int32(os.Getpid())] = "nginx"
+	old := peerProtected
+	t.Cleanup(func() { peerProtected = old })
+	var asked []uint32
+	for _, system := range []bool{false, true} {
+		peerProtected = func(uid uint32) bool {
+			asked = append(asked, uid)
+			return system
+		}
+		c, err := dialUnixFor(ctx, path, true)
+		if c != nil {
+			_ = c.Close()
+		}
+		if system && err != nil || !system && !errors.Is(err, ErrNotAllowed) {
+			t.Errorf("dialUnix with a secret, served by a system account %v = %v", system, err)
+		}
+	}
+	if len(asked) != 2 || asked[0] != uint32(os.Geteuid()) {
+		t.Errorf("the guard asked about %v; want the uid of the server, %d, twice", asked, os.Geteuid())
 	}
 }
 

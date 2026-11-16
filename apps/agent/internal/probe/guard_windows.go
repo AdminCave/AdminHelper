@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -50,4 +51,46 @@ func osServiceForwarder(_ context.Context, pid int32) (string, error) {
 		return forwardingService, nil
 	}
 	return "", nil
+}
+
+// systemPID is the process of the kernel. Its sockets are those of HTTP.sys, which serves the URL
+// reservations of any account, so they count as no service account's.
+const systemPID = 4
+
+// osListenerAccount returns the uid the guard judges a listener by whose socket process pid created
+// at the FILETIME created: 0 for a process under a service account (serviceAccountSID), accountUser
+// for any other, nothing when the process or its token cannot be read or when the process did not
+// start well before the socket (createdByProcess), so that its pid may be the reuse of another's.
+func osListenerAccount(pid int32, created int64) (uint32, bool) {
+	if pid <= 0 {
+		return 0, false
+	}
+	if pid == systemPID {
+		return accountUser, true
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return 0, false
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	var start, exit, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(h, &start, &exit, &kernel, &user); err != nil {
+		return 0, false
+	}
+	if !createdByProcess(int64(start.HighDateTime)<<32|int64(start.LowDateTime), created) {
+		return 0, false
+	}
+	var token windows.Token
+	if err := windows.OpenProcessToken(h, windows.TOKEN_QUERY, &token); err != nil {
+		return 0, false
+	}
+	defer func() { _ = token.Close() }()
+	account, err := token.GetTokenUser()
+	if err != nil {
+		return 0, false
+	}
+	if serviceAccountSID(account.User.Sid.String()) {
+		return 0, true
+	}
+	return accountUser, true
 }

@@ -16,7 +16,8 @@ import (
 // 14.x never cuts and only pads wider.
 var sockstatArgs = []string{"-46", "-l", "-n", "-q", "-w", "-P", "tcp"}
 
-// parseSockstat reads the output of sockstat with sockstatArgs, one socket per line: USER COMMAND
+// parseSockstat reads the output of sockstat with sockstatArgs, one socket per line: USER (numeric
+// with -n) COMMAND
 // PID FD PROTO LOCAL-ADDRESS FOREIGN-ADDRESS. COMMAND is the process name, which may hold blanks or
 // none at all, so the columns after it count from the end. The local address is addr:port, an IPv6
 // address in brackets since 15.1 and bare before (so the port is what follows the last colon), and
@@ -102,7 +103,12 @@ func sockstatListener(f []string) (listener, bool) {
 			return listener{}, false
 		}
 	}
-	return listener{addr: addr.Unmap().WithZone(""), port: uint16(port), pid: pid}, true
+	l := listener{addr: addr.Unmap().WithZone(""), port: uint16(port), pid: pid}
+	// USER is the uid that owns the socket (-n), ? or ?? where no process holds it.
+	if uid, err := strconv.ParseUint(f[0], 10, 32); err == nil && digits(f[0]) {
+		l.uid, l.hasUID = uint32(uid), true
+	}
+	return l, true
 }
 
 // digits reports whether s is a non-empty run of ASCII digits.

@@ -160,6 +160,12 @@ func openChecked(path string) (*os.File, error) {
 // errNoListener; one at a path of controlSockets, as given or with its links resolved, or served by a
 // process the agent never probes is ErrNotAllowed.
 func dialUnix(ctx context.Context, path string) (net.Conn, error) {
+	return dialUnixFor(ctx, path, false)
+}
+
+// dialUnixFor is dialUnix for a connection that carries a credential if secret is set: then a socket
+// served by no system account is ErrNotAllowed too (checkPeerOwner).
+func dialUnixFor(ctx context.Context, path string, secret bool) (net.Conn, error) {
 	real, err := socketToDial(path)
 	if err != nil {
 		return nil, err
@@ -172,7 +178,7 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := checkPeer(ctx, conn.(*net.UnixConn), path); err != nil {
+	if err := checkPeer(ctx, conn.(*net.UnixConn), path, secret); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
@@ -185,7 +191,7 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 // the services it starts on their behalf (SO_PEERCRED names the process that called listen).
 // conn.RemoteAddr would not do for the name: Go falls back to the dialed address when getpeername
 // names nothing.
-func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
+func checkPeer(ctx context.Context, conn *net.UnixConn, path string, secret bool) error {
 	raw, err := conn.SyscallConn()
 	if err != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read", ErrNotAllowed, path)
@@ -208,6 +214,11 @@ func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	}
 	if credErr != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read", ErrNotAllowed, path)
+	}
+	if secret {
+		if err := checkPeerOwner(cred.Uid, path); err != nil {
+			return err
+		}
 	}
 	name, err := processName(ctx, cred.Pid)
 	if err != nil {
