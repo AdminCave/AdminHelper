@@ -4,14 +4,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-desktop-6 — Task-Ledger
-Status: aktiv · Branch: feature/klein-tests-desktop-6 · Review: am Ende
+Status: bereit · Branch: feature/klein-tests-desktop-6 · Review: am Ende
 Spec: docs/features/klein-tests-desktop-6.md (Roadmap R-1493, R-1135)
 Heavy: none — Live-Skript braucht Docker und Desktop-Box; Verhalten bleibt bis zum nächsten Heavy-Lauf nicht verifiziert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1493: wait_log und Web-Prüfung fassen docker logs erst in eine Variable  [ ]
+### T1 — R-1493: wait_log und Web-Prüfung fassen docker logs erst in eine Variable  [x]
 Komponente: scripts · Dateien: scripts/tests/desktop_e2e_connect.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a9e532a8a 2026-11-16T15:18:45+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer klein-tests-desktop-5 2026-11-14 · scripts/tests/desktop_e2e_connect.sh:40 · Dedup-Key: bug:tests:desktop_e2e_connect.sh:wait-log-sigpipe
 Semantik: docs/developer/cicd.html — keine Stelle zum Verhalten dieses Skripts gefunden; Gegenprobe der SIGPIPE-Semantik im Commit-Body
 Änderung: In `wait_log` (Z. 40) und der Web-Prüfung (Z. 222) `docker logs … 2>&1` in eine Variable lesen und mit `grep -qE … <<<"$log"` prüfen, wie `wait_rdp_log`. Kein pipefail-Abschalten. Live-Verhalten nicht verifiziert.
