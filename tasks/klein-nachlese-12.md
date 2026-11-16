@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-12 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-12 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-12 · Review: pro Task
 Spec: docs/features/klein-nachlese-12.md (Roadmap R-1505, R-1507, R-1509, R-1510, R-1511, R-1512, R-1514; R-1506 abgelehnt: bereits behoben)
 Heavy: none — Agent-Unit-Tests, Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -55,8 +55,10 @@ Beweis: reviewer kern-monitoring-35 branch 2026-11-15 · test_module_sync.py:775
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: keine (Docstring eines Tests)
 
-### T6 — R-1511, R-1512: Doku berichtigen  [ ]
+### T6 — R-1511, R-1512: Doku berichtigen  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-monitoring-28.md, changelog.d/klein-nachlese-12.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @081c16190 2026-11-16T13:49:59+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: kern-monitoring-28 branch-Review 2026-11-15 · Semantik: docs/features/kern-monitoring-28.md „Last: pro Domain ein Handshake auf Loopback je Stunde“ (zu berichtigen)
 Änderung: Der Agent fragt die Adresse, auf der der Webserver am Port des vHosts lauscht (meist Loopback), nicht fest `127.0.0.1` (agent/monitoring developer, admin monitoring, DE+EN). `web_domain` fährt zwei Checks mit je einem Handshake: zwei je Domain und Stunde (admin monitoring DE+EN, Spec-Zeile „Last“). Zuvor `resolve`/`ruledEndpoint` lesen, damit der Wortlaut stimmt.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test

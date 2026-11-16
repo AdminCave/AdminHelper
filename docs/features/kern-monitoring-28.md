@@ -133,7 +133,7 @@ graceful|restart`. Der private Schlüssel eines Zertifikats wird nie geöffnet.
   und zwar ausdrücklich so, wie das Konzept es vorsieht. Das Argument ist genau ein Pfad, der auf
   `/admin/cli/checks.php` endet und den der Agent aus der Konfiguration des Webservers liest; laufen darf es nur als
   der `user` aus nginx bzw. `APACHE_RUN_USER`, nie als root. Ein `security`-Review je Task mit Freigabeliste.
-- **Last:** pro Domain ein Handshake auf Loopback je Stunde, pro App ein HTTP-Abruf je 5 Minuten.
+- **Last:** pro Domain zwei Handshakes je Stunde (je Check einer) an der Adresse, auf der der Webserver lauscht, meist Loopback, pro App ein HTTP-Abruf je 5 Minuten.
 - **Rollback:** einzelne Task-Commits zurücknehmen; der Block `vhosts` ist optional.
 
 ## Doku-Impact
