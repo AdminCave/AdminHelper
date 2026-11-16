@@ -113,6 +113,30 @@ func activator(k string) bool {
 	return false
 }
 
+// unixActivators names the processes, by processKey, that hold a unix socket for a service they
+// start per connection: systemd (socket activation), inetd and xinetd (unix services of FreeBSD's
+// inetd; on Linux not verified) and the unixserver of ucspi-unix (Debian ucspi-unix: "runs a program
+// of your choice"); unixSuperServers start the names of more: systemd's own daemons and s6's
+// s6-ipcserver and s6-ipcserverd (not verified upstream). What answers on such a socket is the
+// program started behind it, which peer credentials do not name: a probe never talks to it.
+var unixActivators = []string{"systemd", "inetd", "xinetd", "unixserver"}
+
+var unixSuperServers = []string{"systemd-", "s6-ipcserver"}
+
+// unixActivator says whether name (a process name) is one of unixActivators or unixSuperServers.
+func unixActivator(name string) bool {
+	k := processKey(name)
+	if slices.Contains(unixActivators, k) {
+		return true
+	}
+	for _, prefix := range unixSuperServers {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // forwarder says whether name (processKey, or the base of an argv[0]) is one of forwarders.
 func forwarder(name string) bool {
 	k := processKey(name)

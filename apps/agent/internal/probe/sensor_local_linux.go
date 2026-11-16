@@ -212,7 +212,7 @@ func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	if err != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read: %v", ErrNotAllowed, path, err)
 	}
-	if k := processKey(name); neverProbed(name) || k == "systemd" || strings.HasPrefix(k, "systemd-") {
+	if neverProbed(name) || unixActivator(name) {
 		return fmt.Errorf("%w: %s belongs to %s, which the agent never probes", ErrNotAllowed, path, name)
 	}
 	return checkForwarder(ctx, cred.Pid, name, path)

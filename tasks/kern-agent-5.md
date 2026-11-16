@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (gleiche Abweisung wie bisher, nur in mehr Fällen)
 Abhängt von: T1
 
-### T3 — R-1439: Super-Server-Regel am Unix-Socket  [ ]
+### T3 — R-1439: Super-Server-Regel am Unix-Socket  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6020ac427 2026-11-16T16:24:22+01:00
+Review: approve (.ah-out/review/kern-agent-5/T3.verdict.json)
 Änderung: `checkPeer` (Linux und FreeBSD) weist einen Unix-Socket ab, den ein Super-Server hält, der je Verbindung
 einen Dienst startet (wie systemd und inetd schon heute); die Namen in einer Liste neben `activators`. Tests über die
 Namensprüfung.

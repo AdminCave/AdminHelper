@@ -1568,3 +1568,18 @@ func TestGuardListsNameMoreForwardersSuperServersAndSSHServers(t *testing.T) {
 		t.Error("dropbearkey: want it probed (matched whole)")
 	}
 }
+
+func TestGuardRefusesSuperServersAtAUnixSocket(t *testing.T) {
+	for _, name := range []string{"systemd", "systemd-journald", "inetd", "xinetd", "unixserver", "s6-ipcserver",
+		"s6-ipcserverd", "UnixServer"} {
+		if !unixActivator(name) {
+			t.Errorf("%s: want it a super-server at a unix socket", name)
+		}
+	}
+	for _, name := range []string{"unixserverx", "unixclient", "s6-ipcclient", "systemdx", "php-fpm", "mysqld",
+		"tcpserver"} {
+		if unixActivator(name) {
+			t.Errorf("%s: want it no super-server at a unix socket", name)
+		}
+	}
+}
