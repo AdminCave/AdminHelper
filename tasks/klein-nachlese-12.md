@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-12 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-12 · Review: pro Task
+Status: aktiv · Branch: feature/klein-nachlese-12 · Review: pro Task
 Spec: docs/features/klein-nachlese-12.md (Roadmap R-1505, R-1507, R-1509, R-1510, R-1511, R-1512, R-1514; R-1506 abgelehnt: bereits behoben)
 Heavy: none — Agent-Unit-Tests, Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -61,6 +61,14 @@ Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @081c16190 2026-1
 Review: am Ende (nur Doku, Branch-Review)
 Beweis: kern-monitoring-28 branch-Review 2026-11-15 · Semantik: docs/features/kern-monitoring-28.md „Last: pro Domain ein Handshake auf Loopback je Stunde“ (zu berichtigen)
 Änderung: Der Agent fragt die Adresse, auf der der Webserver am Port des vHosts lauscht (meist Loopback), nicht fest `127.0.0.1` (agent/monitoring developer, admin monitoring, DE+EN). `web_domain` fährt zwei Checks mit je einem Handshake: zwei je Domain und Stunde (admin monitoring DE+EN, Spec-Zeile „Last“). Zuvor `resolve`/`ruledEndpoint` lesen, damit der Wortlaut stimmt.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die Änderung selbst
+Task-Review: am Ende
+
+### T7 — R-1511: Zieladresse auch im vHost-Absatz der Admin-Doku  [ ]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-monitoring-28.md
+Beweis: Abschlussprüfung klein-nachlese-12 2026-11-16 · docs/admin/monitoring.html:577 „Jeder Check fragt den Port des vHosts auf Loopback“
+Änderung: Der Absatz der vHost-Checks (DE+EN) und die Spec-Zeilen 41 und 73 nennen die Adresse, auf der der Webserver am Port lauscht, nicht fest Loopback.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 Task-Review: am Ende
