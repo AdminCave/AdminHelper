@@ -125,6 +125,11 @@ func refuseKernelFile(*os.File, string) error {
 }
 
 // dialUnix is not supported: the agent probes unix sockets on Linux and FreeBSD only.
-func dialUnix(context.Context, string) (net.Conn, error) {
+func dialUnix(ctx context.Context, path string) (net.Conn, error) {
+	return dialUnixFor(ctx, path, false)
+}
+
+// dialUnixFor is not supported either.
+func dialUnixFor(context.Context, string, bool) (net.Conn, error) {
 	return nil, fmt.Errorf("%w: unix sockets are probed on Linux and FreeBSD only", ErrUnsupported)
 }

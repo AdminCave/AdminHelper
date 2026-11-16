@@ -69,8 +69,10 @@ Erst der Test für den Grenzfall.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T4 — R-1440: dieselbe Härtung für Unix-Sockets  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_freebsd_test.go
+### T4 — R-1440: dieselbe Härtung für Unix-Sockets  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/sensor_local_linux.go, apps/agent/internal/probe/sensor_local_linux_test.go, apps/agent/internal/probe/sensor_local_freebsd.go, apps/agent/internal/probe/sensor_local_freebsd_test.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/sensor_unixsocket.go, apps/agent/internal/probe/sensor_local_windows.go, apps/agent/internal/probe/sensor_net_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f3288fa16 2026-11-16T20:11:24+01:00
+Review: approve (.ah-out/review/kern-agent-6/T4.verdict.json)
 Abhängt von: T2
 Änderung: Unix-Socket-Fühler mit Zugangsdaten folgen derselben Regel über die Peer-Credentials (privat).
 Verify: bash scripts/dev/verify.sh agent --strict

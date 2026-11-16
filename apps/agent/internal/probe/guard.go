@@ -263,6 +263,15 @@ func checkPeerName(name, sock string) error {
 	return nil
 }
 
+// checkPeerOwner refuses the unix socket path, which a connection with a secret reached, unless the
+// process serving it runs under uid of a system account: the rule of the guard on TCP (checkOwner).
+func checkPeerOwner(uid uint32, path string) error {
+	if peerProtected(uid) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is served by no system account", ErrNotAllowed, path)
+}
+
 // listenerTTL is how long one snapshot of the listening sockets serves the guard.
 const listenerTTL = 30 * time.Second
 
@@ -302,6 +311,9 @@ var (
 	containerListeners = namespaceProcesses
 	dockerServes       = dockerSocketServes
 	dockerdRunning     = dockerdRuns
+	// peerProtected says whether the process that serves a unix socket, under uid, runs under a
+	// system account (protected).
+	peerProtected = func(uid uint32) bool { return protected(listener{uid: uid, hasUID: true}) }
 )
 
 // snapshot is the last list of listeners, shared by every guard of the process.

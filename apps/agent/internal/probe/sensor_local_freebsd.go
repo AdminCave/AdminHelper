@@ -99,6 +99,12 @@ func openChecked(path string) (*os.File, error) {
 // errNoListener; one at a path of controlSockets, as given or with its links resolved, or served by a
 // process the agent never probes is ErrNotAllowed.
 func dialUnix(ctx context.Context, path string) (net.Conn, error) {
+	return dialUnixFor(ctx, path, false)
+}
+
+// dialUnixFor is dialUnix for a connection that carries a credential if secret is set: then a socket
+// served by no system account is ErrNotAllowed too (checkPeerOwner).
+func dialUnixFor(ctx context.Context, path string, secret bool) (net.Conn, error) {
 	real, err := socketToDial(path)
 	if err != nil {
 		return nil, err
@@ -111,7 +117,7 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := checkPeer(ctx, conn.(*net.UnixConn), path); err != nil {
+	if err := checkPeer(ctx, conn.(*net.UnixConn), path, secret); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
@@ -122,7 +128,7 @@ func dialUnix(ctx context.Context, path string) (net.Conn, error) {
 // (checkPeerName) and the process serving it may be probed: not a process the guard refuses on TCP
 // and no forwarder (checkForwarder), and no super-server (unixActivator), which holds the sockets of
 // the services it starts on their behalf (LOCAL_PEERCRED names the process that called listen).
-func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
+func checkPeer(ctx context.Context, conn *net.UnixConn, path string, secret bool) error {
 	bound, err := peerName(conn)
 	if err != nil {
 		return fmt.Errorf("%w: the socket %s reached cannot be read: %v", ErrNotAllowed, path, err)
@@ -130,9 +136,14 @@ func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	if err := checkPeerName(bound, path); err != nil {
 		return err
 	}
-	pid, err := peerPID(conn)
+	pid, uid, err := peerCred(conn)
 	if err != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read: %v", ErrNotAllowed, path, err)
+	}
+	if secret {
+		if err := checkPeerOwner(uid, path); err != nil {
+			return err
+		}
 	}
 	name, err := processName(ctx, pid)
 	if err != nil {
@@ -144,13 +155,13 @@ func checkPeer(ctx context.Context, conn *net.UnixConn, path string) error {
 	return checkForwarder(ctx, pid, name, path)
 }
 
-// peerPID returns the pid of the process that serves conn. struct xucred (sys/ucred.h) ends in a
-// union of a pointer and cr_pid, which x/sys leaves unnamed: cr_pid starts where the union does, a
-// pointer's size before the end, on either byte order.
-func peerPID(conn *net.UnixConn) (int32, error) {
+// peerCred returns the pid and the effective uid of the process that serves conn. struct xucred
+// (sys/ucred.h) ends in a union of a pointer and cr_pid, which x/sys leaves unnamed: cr_pid starts
+// where the union does, a pointer's size before the end, on either byte order.
+func peerCred(conn *net.UnixConn) (int32, uint32, error) {
 	raw, err := conn.SyscallConn()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var cred *unix.Xucred
 	var credErr error
@@ -160,17 +171,17 @@ func peerPID(conn *net.UnixConn) (int32, error) {
 		credErr = err
 	}
 	if credErr != nil {
-		return 0, credErr
+		return 0, 0, credErr
 	}
 	// XUCRED_VERSION 0 is the only layout there is; another one could move cr_pid.
 	if cred.Version != 0 {
-		return 0, fmt.Errorf("xucred version %d", cred.Version)
+		return 0, 0, fmt.Errorf("xucred version %d", cred.Version)
 	}
 	pid := *(*int32)(unsafe.Add(unsafe.Pointer(cred), unsafe.Sizeof(*cred)-unsafe.Sizeof(uintptr(0))))
 	if pid <= 0 {
-		return 0, fmt.Errorf("xucred names pid %d", pid)
+		return 0, 0, fmt.Errorf("xucred names pid %d", pid)
 	}
-	return pid, nil
+	return pid, cred.Uid, nil
 }
 
 // peerName returns the address the server of conn bound, from getpeername: conn.RemoteAddr falls
