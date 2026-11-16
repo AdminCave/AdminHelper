@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -506,5 +507,256 @@ func checkAllowed(t *testing.T, name string, args []string) {
 	t.Helper()
 	if !allowlist.Allowed(name, args) {
 		t.Errorf("call %q is not on the command allowlist", append([]string{name}, args...))
+	}
+}
+
+// mountsJSON is what `docker inspect` prints for a running container web with mounts, each a type,
+// a source and a destination.
+func mountsJSON(t *testing.T, mounts ...[3]string) string {
+	t.Helper()
+	type mount struct{ Type, Source, Destination, Mode, Propagation string }
+	list := []mount{}
+	for _, m := range mounts {
+		list = append(list, mount{m[0], m[1], m[2], "", "rprivate"})
+	}
+	data, err := json.Marshal(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf(`[{"Id":%q,"Name":"/web","State":{"Status":"running","Running":true,"Pid":4242},"Mounts":%s}]`, containerID, data)
+}
+
+func TestHostPathTakesTheLongestBindOrVolumeMount(t *testing.T) {
+	var list []containerInfo
+	out := mountsJSON(t,
+		[3]string{"bind", "/srv/web", "/data"},
+		[3]string{"volume", "/var/lib/docker/volumes/db/_data", "/data/db/"},
+		[3]string{"bind", "/srv/x", "/datax"},
+		[3]string{"tmpfs", "", "/tmp"},
+		[3]string{"volume", "", "/cloud"},
+		[3]string{"image", "/var/lib/docker/image", "/img"},
+	)
+	if err := json.Unmarshal([]byte(out), &list); err != nil || len(list) != 1 {
+		t.Fatalf("inspect = %v, %v", list, err)
+	}
+	for path, want := range map[string][2]string{
+		"/data/f":      {"/srv/web", "f"},
+		"/data/sub/f":  {"/srv/web", "sub/f"},
+		"/data":        {"/srv/web", "."},
+		"/data/db":     {"/var/lib/docker/volumes/db/_data", "."},
+		"/data/db/x/y": {"/var/lib/docker/volumes/db/_data", "x/y"},
+		"/datax/f":     {"/srv/x", "f"},
+	} {
+		source, rel, ok := list[0].hostPath(path)
+		if !ok || source != want[0] || rel != want[1] {
+			t.Errorf("hostPath(%s) = %s, %s, %t; want %s, %s", path, source, rel, ok, want[0], want[1])
+		}
+	}
+	for _, path := range []string{"/dat", "/etc/hosts", "/tmp/f", "/cloud/f", "/img/f", "/"} {
+		if source, rel, ok := list[0].hostPath(path); ok {
+			t.Errorf("hostPath(%s) = %s, %s; want no mount", path, source, rel)
+		}
+	}
+}
+
+// containerProbe is a probe of sensor on a path in the container web.
+func containerProbe(sensor, key, path string) Probe {
+	return Probe{Sensor: sensor, Target: &Target{Kind: kindContainer, Name: "web"}, Params: map[string]any{key: path}}
+}
+
+func TestCertfileReadsAPathInsideAContainer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("docker names the sources of its mounts on Linux")
+	}
+	stubNow(t, start)
+	ctx := context.Background()
+	notAfter := start.Add(10*24*time.Hour + time.Minute)
+	src := filepath.Dir(writeCert(t, notAfter))
+	outside := writeCert(t, notAfter)
+	if err := os.Symlink(outside, filepath.Join(src, "abs.pem")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../"+filepath.Base(filepath.Dir(outside))+"/cert.pem", filepath.Join(src, "rel.pem")); err != nil {
+		t.Fatal(err)
+	}
+	// certbot's form: live/<name>/cert.pem links to archive/<name>/cert1.pem.
+	for _, dir := range []string{"live/web", "archive/web"} {
+		if err := os.MkdirAll(filepath.Join(src, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Rename(filepath.Join(src, "cert.pem"), filepath.Join(src, "archive/web/cert1.pem")); err != nil {
+		t.Fatal(err)
+	}
+	for link, to := range map[string]string{"live/web/cert.pem": "../../archive/web/cert1.pem", "cert.pem": "live/web/cert.pem"} {
+		if err := os.Symlink(to, filepath.Join(src, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("loop.pem", filepath.Join(src, "loop.pem")); err != nil {
+		t.Fatal(err)
+	}
+	tl := stubTool(t, mountsJSON(t, [3]string{"bind", src, "/etc/certs"}), nil)
+
+	got, err := certfileSensor(ctx, containerProbe("certfile", "path", "/etc/certs/cert.pem"), "")
+	if runtime.GOOS != "linux" {
+		if !errors.Is(err, ErrUnsupported) {
+			t.Fatalf("certfile in a container off Linux = %v, %v; want ErrUnsupported", got, err)
+		}
+		return
+	}
+	want := map[string]any{
+		"not_after": notAfter.Unix(), "days_left": int64(10),
+		"issuer": "CN=Test CA,O=AdminHelper", "subject": "CN=mail.example.org",
+	}
+	if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("certfile in a container = %v, %v; want %v", got, err, want)
+	}
+	if want := []string{"docker", "inspect", "--type", "container", "--", "web"}; !slices.Equal(tl.args, want) {
+		t.Errorf("runTool %v, want %v", tl.args, want)
+	}
+	// A relative link is followed within the mount alone, an absolute one not at all.
+	for _, name := range []string{"abs.pem", "rel.pem", "loop.pem"} {
+		_, err := certfileSensor(ctx, containerProbe("certfile", "path", "/etc/certs/"+name), "")
+		if err == nil || strings.Contains(err.Error(), src) || strings.Contains(err.Error(), outside) {
+			t.Errorf("certfile on the link %s = %v, want an error without a host path", name, err)
+		}
+	}
+	_, err = certfileSensor(ctx, containerProbe("certfile", "path", "/etc/ssl/cert.pem"), "")
+	if !errors.Is(err, ErrInvalid) || strings.Contains(err.Error(), "/etc") {
+		t.Errorf("certfile on no mount = %v, want invalid without the path", err)
+	}
+	_, err = certfileSensor(ctx, containerProbe("certfile", "path", "/etc/certs/gone.pem"), "")
+	if err == nil || strings.Contains(err.Error(), src) || !strings.Contains(err.Error(), "/etc/certs/gone.pem") {
+		t.Errorf("certfile on a missing file = %v, want an error naming the container path alone", err)
+	}
+}
+
+func TestFileAgeReadsAPathInsideAContainer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("docker names the sources of its mounts on Linux")
+	}
+	stubNow(t, start)
+	ctx := context.Background()
+	src := t.TempDir()
+	write := func(dir, name, data string, mtime time.Time) {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(src, "old.tar", "1", start.Add(-time.Hour))
+	write(src, "new.tar", "123", start.Add(-90*time.Second))
+	outside := t.TempDir()
+	write(outside, "newer.tar", "1234567", start)
+	if err := os.Symlink(outside, filepath.Join(src, "out")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "newer.tar"), filepath.Join(src, "link.tar")); err != nil {
+		t.Fatal(err)
+	}
+	stubTool(t, mountsJSON(t, [3]string{"volume", src, "/backups"}), nil)
+
+	cases := []struct {
+		key, path string
+		want      map[string]any
+	}{
+		{"path", "/backups/new.tar", map[string]any{"exists": true, "age_s": int64(90), "size_bytes": int64(3)}},
+		{"path", "/backups/gone.tar", map[string]any{"exists": false}},
+		// The link in the directory is not followed, though it points at a newer file outside.
+		{"newest_in", "/backups", map[string]any{"exists": true, "age_s": int64(90), "size_bytes": int64(3)}},
+		{"newest_in", "/backups/gone", map[string]any{"exists": false}},
+	}
+	for _, c := range cases {
+		got, err := fileAgeSensor(ctx, containerProbe("file_age", c.key, c.path), "")
+		if err != nil || fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("file_age %s %s = %v, %v; want %v", c.key, c.path, got, err, c.want)
+		}
+	}
+	// A link out of the mount is followed nowhere: neither the file nor the directory outside is read.
+	for _, c := range [][2]string{{"path", "/backups/link.tar"}, {"newest_in", "/backups/out"}, {"path", "/backups/out/newer.tar"}} {
+		got, err := fileAgeSensor(ctx, containerProbe("file_age", c[0], c[1]), "")
+		if err == nil || strings.Contains(err.Error(), src) || strings.Contains(err.Error(), outside) {
+			t.Errorf("file_age %s %s through a link out of the mount = %v, %v; want an error without a host path", c[0], c[1], got, err)
+		}
+	}
+	if _, err := fileAgeSensor(ctx, containerProbe("file_age", "newest_in", "/backups/new.tar"), ""); !errors.Is(err, errNotDir) {
+		t.Errorf("newest_in on a file in a container = %v, want no directory", err)
+	}
+	_, err := fileAgeSensor(ctx, containerProbe("file_age", "path", "/var/backups/a.tar"), "")
+	if !errors.Is(err, ErrInvalid) || strings.Contains(err.Error(), "/var") {
+		t.Errorf("file_age on no mount = %v, want invalid without the path", err)
+	}
+}
+
+// A bind of a single file, a certificate handed to the container: the mount point is the file itself.
+func TestTheFileSensorsReadABindOfASingleFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("docker names the sources of its mounts on Linux")
+	}
+	stubNow(t, start)
+	ctx := context.Background()
+	notAfter := start.Add(10*24*time.Hour + time.Minute)
+	file := writeCert(t, notAfter)
+	stubTool(t, mountsJSON(t, [3]string{"bind", file, "/etc/nginx/cert.pem"}), nil)
+	got, err := fileAgeSensor(ctx, containerProbe("file_age", "path", "/etc/nginx/cert.pem"), "")
+	if err != nil || got["exists"] != true {
+		t.Errorf("file_age on a bind of a file = %v, %v; want it read", got, err)
+	}
+	if _, err := fsSensor(ctx, containerProbe("fs", "path", "/etc/nginx/cert.pem"), ""); !errors.Is(err, errNotDir) {
+		t.Errorf("fs on a bind of a file = %v, want no directory", err)
+	}
+	got, err = certfileSensor(ctx, containerProbe("certfile", "path", "/etc/nginx/cert.pem"), "")
+	if runtime.GOOS == "linux" && (err != nil || got["days_left"] != int64(10)) {
+		t.Errorf("certfile on a bind of a file = %v, %v; want it read", got, err)
+	}
+	// docker inspect names a source as given, a link among them, and docker mounted what it resolves to.
+	links := t.TempDir()
+	if err := os.Symlink(file, filepath.Join(links, "cert.pem")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(file), filepath.Join(links, "data")); err != nil {
+		t.Fatal(err)
+	}
+	stubTool(t, mountsJSON(t, [3]string{"bind", filepath.Join(links, "cert.pem"), "/etc/nginx/cert.pem"}), nil)
+	got, err = fileAgeSensor(ctx, containerProbe("file_age", "path", "/etc/nginx/cert.pem"), "")
+	if err != nil || got["exists"] != true {
+		t.Errorf("file_age on a bind of a link to a file = %v, %v; want it read", got, err)
+	}
+	stubTool(t, mountsJSON(t, [3]string{"bind", filepath.Join(links, "data"), "/data"}), nil)
+	got, err = fsSensor(ctx, containerProbe("fs", "path", "/data"), "")
+	if _, ok := got["used_pct"]; err != nil || !ok {
+		t.Errorf("fs on a bind of a link to a directory = %v, %v; want it read", got, err)
+	}
+	got, err = fileAgeSensor(ctx, containerProbe("file_age", "newest_in", "/data"), "")
+	if err != nil || got["exists"] != true {
+		t.Errorf("newest_in on a bind of a link to a directory = %v, %v; want it read", got, err)
+	}
+}
+
+func TestTheFileSensorsTakeOnlyAValidContainerTarget(t *testing.T) {
+	ctx := context.Background()
+	tl := stubTool(t, "", errors.New("must not run"))
+	for _, sensor := range []string{"certfile", "file_age", "fs"} {
+		for name, p := range map[string]Probe{
+			"a unit":            {Target: &Target{Kind: kindUnit, Name: "web.service"}, Params: map[string]any{"path": "/data"}},
+			"a bad name":        {Target: &Target{Kind: kindContainer, Name: "-web"}, Params: map[string]any{"path": "/data"}},
+			"a relative path":   {Target: &Target{Kind: kindContainer, Name: "web"}, Params: map[string]any{"path": "data"}},
+			"a path with ..":    {Target: &Target{Kind: kindContainer, Name: "web"}, Params: map[string]any{"path": "/data/../etc"}},
+			"no path":           {Target: &Target{Kind: kindContainer, Name: "web"}},
+			"another parameter": {Target: &Target{Kind: kindContainer, Name: "web"}, Params: map[string]any{"path": "/data", "x": 1}},
+		} {
+			p.Sensor = sensor
+			if _, err := sensors[sensor](ctx, p, ""); !errors.Is(err, ErrInvalid) {
+				t.Errorf("%s with %s = %v, want ErrInvalid", sensor, name, err)
+			}
+		}
+	}
+	if tl.args != nil {
+		t.Errorf("an invalid probe ran %v", tl.args)
 	}
 }

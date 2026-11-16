@@ -47,8 +47,10 @@ Verify: bash scripts/dev/verify.sh monitoring agent --strict
 Doku: → T8
 Abhängt von: T2
 
-### T4 — R-1235: Pfad im Container für certfile und file_age, Fühler fs  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/sensor_fs.go, apps/agent/internal/probe/sensor_fs_test.go, apps/agent/internal/probe/sensor_local_test.go
+### T4 — R-1235: Pfad im Container für certfile und file_age, Fühler fs  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/target.go, apps/agent/internal/probe/sensor_fs.go, apps/agent/internal/probe/sensor_fs_test.go, apps/agent/internal/probe/sensor_local_test.go, apps/agent/internal/probe/sensor_fs_unix.go, apps/agent/internal/probe/sensor_fs_windows.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @9b6129938 2026-11-16T13:24:10+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T4.verdict.json)
 Änderung: `certfile` und `file_age` nehmen optional das Ziel `container`: der Pfad gilt im Container und wird über
 `Mounts` aus `docker inspect` (Bind/Volume, längster passender Ziel-Präfix) auf den Host abgebildet; ohne passenden
 Mount `invalid`, kein Pfad in einer Meldung. Neuer Fühler `fs` (`statfs`, ohne Ziel oder mit Ziel `container`):
@@ -113,3 +115,18 @@ Abhängt von: T3, T5
   Microcode-Prüfung aus und druckt dann keine KSTA-/UCSTA-Zeile; der Agent (T2-Datei, in T3 nachgezogen) liest eine
   fehlende als 0 (unbekannt) statt als Fehler, eine Antwort ohne `NEEDRESTART-VER` ist von anderer Form. Verify darum
   über `monitoring agent` (Zusatzargumente gehen nur an eine Komponente).
+- T4: Unter dem Container-Pfad liest der Agent nur durch ein `os.Root` an der Mount-Quelle: ein Link im Volume führt
+  nie zu einer Host-Datei außerhalb. `certfile` folgt relativen Links innerhalb des Mounts selbst (certbots
+  `live/` → `archive/`), absolute (ein Pfad des Containers, evtl. auf einem anderen Mount) lehnt es ab; die Datei
+  öffnet `openRegular` (O_PATH, kein Gerät, keine FIFO). Ein Container-Pfad muss sauber sein (kein `..`), weil er
+  über den Präfix abgebildet wird. Lesen im Container nur auf Linux (`openRegular`), `fs` auf Linux und FreeBSD
+  (`statfs` über ein als Verzeichnis geöffnetes fd), Windows `unsupported`. `fs` nimmt nur Verzeichnisse;
+  `used_pct` wie df (ohne Root-Reserve), `inodes_used_pct` 0 ohne feste Inode-Zahl (btrfs). Keine Meldung nennt
+  den Host-Pfad; ohne passenden Bind-/Volume-Mount `invalid` ohne Pfad.
+- T4 (Review): Ein Bind einer einzelnen Datei (`-v ./fullchain.pem:/etc/nginx/cert.pem`) öffnet der Agent über den
+  Ordner, der sie hält, mit der Datei als Pfad. Eine Quelle, die ein Link ist (docker inspect nennt sie, wie sie
+  angegeben wurde), löst er auf wie docker beim Mounten; danach muss sie Ordner oder reguläre Datei sein, sonst
+  Fehler ohne Pfad. `fs` auf einem Datei-Bind ist `no directory`. Grenze für T8: ein Datei-Bind hängt an der Inode;
+  ersetzt der Host die Datei per rename, sieht der Container die alte, der Agent die neue; Doku empfiehlt Ordner-Binds.
+- T4: dritte Prüfrunde (nur das Delta seit Runde 2) durch einen frischen Prüfer, weil Runde 2 eine Regression des
+  Fixes fand und der erste Prüfer kompaktiert war (Kevin 2026-11-16, einmalige Ausnahme von CLAUDE.md §6).
