@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Jede Task mit SEC- oder Wächter-Bezug (T1–T4, T7): `security` parallel zum `reviewer`.
 
-### T1 — R-1438: Namenslisten des Wächters vervollständigen  [ ]
+### T1 — R-1438: Namenslisten des Wächters vervollständigen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b1c944014 2026-11-16T16:10:12+01:00
+Review: approve (.ah-out/review/kern-agent-5/T1.verdict.json)
 Änderung: `forwarders`/`forwarderNames`, `activators`/`superServers` und `blockedProcesses` um die Programme aus der
 Zeile ergänzen (Details privat); Namen vorher an Handbuch oder Quelle prüfen, ganze Namen dort, wo ein Präfix fremde
 Programme träfe. Tabellentests je Name, Negativtests für ähnliche Namen.

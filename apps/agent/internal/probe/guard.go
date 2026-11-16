@@ -42,8 +42,8 @@ func blockedPort(port uint16) bool {
 }
 
 // blockedProcesses are the processes, by name, whose TCP listeners a probe never connects to, for the
-// same reasons as blockedPort: they serve on other ports too.
-var blockedProcesses = map[string]bool{"sshd": true, "mysqld": true, "mariadbd": true}
+// same reasons as blockedPort: they serve on other ports too (dropbear is an SSH server).
+var blockedProcesses = map[string]bool{"sshd": true, "dropbear": true, "mysqld": true, "mariadbd": true}
 
 // hostDaemons are the processes, by name, that control this host or its guests (containers, virtual
 // machines and the processes that run them, the system bus, its keys): a probe never talks to them,
@@ -73,23 +73,30 @@ var hostDaemonPrefixes = []string{"containerd-shim", "virt", "vbox", "qemu", "cl
 // stunnel4), 6tunnel, spiped, chisel, gost, ncat, the netcat variants (nc.openbsd, nc.traditional,
 // netcat), frpc (a visitor listens here for a remote service) and frps (a tcp proxy hands its port to
 // the far end of a tunnel), cloudflared (access tcp), the AWS session-manager-plugin (the kernel cuts
-// the name to session-manager), wstunnel, boundary (connect), ghostunnel, rathole, and on Windows
-// PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before it wslhost);
+// the name to session-manager), wstunnel, boundary (connect), ghostunnel, rathole, gs-netcat (gsocket),
+// inlets and inlets-pro, ligolo-ng (whose release binaries may also be named agent and proxy, which no
+// name rule can take), and on Windows PuTTY, plink and KiTTY (-L) and the WSL2 relay (wslrelay, before
+// it wslhost);
 // forwarderNames are matched whole, since a prefix would take other programs too: ssh also sshd and
-// ssh-agent, nc also ncurses tools, tsh (Teleport) also tshark. A probe never connects to a port or a
+// ssh-agent, nc also ncurses tools, tsh (Teleport) also tshark, oc (OpenShift, port-forward) and bore
+// every name that starts with them; dbclient is Dropbear's client (-L), k9s forwards Kubernetes ports,
+// nc64 is a Windows netcat build. Only dbclient and dropbear are checked against a package (Debian
+// dropbear-bin); the other added names are not verified upstream. A probe never connects to a port or a
 // socket one of them serves, since what lies behind it cannot be checked.
 var forwarders = []string{"rootlesskit", "rootlessport", "slirp4netns", "pasta", "passt", "gvproxy", "vpnkit",
 	"kube-proxy", "kubectl", "autossh", "socat", "systemd-socket-", "sslh", "rinetd", "redir", "stunnel",
 	"6tunnel", "spiped", "chisel", "gost", "ncat", "nc.", "netcat", "frpc", "frps", "cloudflared",
-	"session-manager", "wstunnel", "boundary", "ghostunnel", "rathole", "putty", "plink", "kitty", "wslrelay",
-	"wslhost"}
+	"session-manager", "wstunnel", "boundary", "ghostunnel", "rathole", "gs-netcat", "inlets", "ligolo", "putty",
+	"plink", "kitty", "wslrelay", "wslhost"}
 
-var forwarderNames = []string{"ssh", "nc", "tsh"}
+var forwarderNames = []string{"ssh", "nc", "tsh", "oc", "bore", "dbclient", "k9s", "nc64"}
 
 // activators names the processes that hold a listening socket for a service they start per
-// connection, by processKey: systemd (socket activation), xinetd, inetd and the tcpserver of
-// ucspi-tcp; superServers start the names of s6's s6-tcpserver4, s6-tcpserver6 and s6-tcpserverd.
-var activators = []string{"systemd", "xinetd", "inetd", "tcpserver"}
+// connection, by processKey: systemd (socket activation), xinetd, inetd, the tcpserver of ucspi-tcp,
+// the tcpsvd of ipsvd (Debian ipsvd: runs a program per connection; busybox has an applet of that name)
+// and the sslserver of ucspi-ssl (not verified upstream); superServers start the names of s6's
+// s6-tcpserver4, s6-tcpserver6 and s6-tcpserverd.
+var activators = []string{"systemd", "xinetd", "inetd", "tcpserver", "tcpsvd", "sslserver"}
 
 var superServers = []string{"s6-tcpserver"}
 

@@ -1517,3 +1517,35 @@ func TestGuardChecksTheTargetAfreshBeforeASecret(t *testing.T) {
 		t.Fatalf("no rule: %v, want it allowed", err)
 	}
 }
+
+func TestGuardListsNameMoreForwardersSuperServersAndSSHServers(t *testing.T) {
+	for _, name := range []string{"dbclient", "oc", "oc.exe", "k9s", "gs-netcat", "bore", "ligolo-ng", "ligolo",
+		"inlets", "inlets-pro", "nc64.exe", "nc64"} {
+		if !forwarder(name) {
+			t.Errorf("%s: want it a forwarder", name)
+		}
+	}
+	// Whole names: a prefix would take these too.
+	for _, name := range []string{"ocserv", "octez-node", "borgbackup", "boreal", "dbclient-x", "k9s-x", "nc640",
+		"nginx"} {
+		if forwarder(name) {
+			t.Errorf("%s: want it no forwarder", name)
+		}
+	}
+	for _, name := range []string{"tcpsvd", "sslserver"} {
+		if !activator(name) {
+			t.Errorf("%s: want it a super-server", name)
+		}
+	}
+	for _, name := range []string{"tcpsvd-x", "sslserverd", "udpsvd"} {
+		if activator(name) {
+			t.Errorf("%s: want it no super-server", name)
+		}
+	}
+	if !neverProbed("dropbear") {
+		t.Error("dropbear: want it never probed")
+	}
+	if neverProbed("dropbearkey") {
+		t.Error("dropbearkey: want it probed (matched whole)")
+	}
+}
