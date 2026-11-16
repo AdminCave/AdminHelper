@@ -76,7 +76,7 @@ COMPOSE = REPO_ROOT / "docker-compose.yml"
 TOKEN = "test-token-0123456789abcdef"
 NEW_TOKEN = "next-token-fedcba9876543210"
 PEMS = ("frps.crt", "frps.key", "ca.crt")
-WAIT = 10.0
+WAIT = 30.0
 HEX64 = re.compile(r"[0-9a-f]{64}")
 # The log line of a poll that sees an input it has not taken over yet.
 CHANGED = "input changed"

@@ -5,8 +5,10 @@ Heavy: none — nur Server-Tests und die Form vierer 422-Bodys, kein Stack-, Gat
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1444: Frist der Supervisor-Tests auf 30 s  [ ]
+### T1 — R-1444: Frist der Supervisor-Tests auf 30 s  [x]
 Komponente: server · Dateien: apps/server/tests/test_frps_supervisor.py, tasks/kern-server-10.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c0ecad72d 2026-11-16T22:40:45+01:00
+Review: am Ende (Branch-Review)
 Änderung: `WAIT = 10.0` → `30.0` (`apps/server/tests/test_frps_supervisor.py:79`), alle Verwendungen sind
 Obergrenzen einer Abfrage. Dauerlauf nach `testing.md` („Wackler“) über den betroffenen Test, Summary in den
 Commit-Body.
