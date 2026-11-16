@@ -1170,6 +1170,11 @@ export const translations: Translations = {
     'monitoring.live.top.process': 'Prozess',
     'monitoring.services.allOk': 'Alle OK',
     'monitoring.services.allOkHint': 'Keine Probleme gefunden',
+    'monitoring.services.ignore': 'Ignorieren',
+    'monitoring.services.ignoreConfirm':
+      '„{name}“ ignorieren? Der Check meldet diesen Dienst nicht mehr, die übrigen weiter. Zurücknehmen lässt es sich im Check-Editor unter „Ignorieren“.',
+    'monitoring.services.unwatchConfirm':
+      '„{name}“ nicht mehr überwachen? Der Check meldet diesen Dienst nicht mehr, die übrigen weiter. Zurücknehmen lässt es sich im Check-Editor unter „Dienste“.',
     'monitoring.services.noData': 'Noch keine Daten',
     'monitoring.services.unknown': 'Keine Daten',
     'monitoring.services.problems': 'Probleme',
@@ -2719,6 +2724,11 @@ export const translations: Translations = {
     'monitoring.live.top.process': 'Process',
     'monitoring.services.allOk': 'All OK',
     'monitoring.services.allOkHint': 'No problems found',
+    'monitoring.services.ignore': 'Ignore',
+    'monitoring.services.ignoreConfirm':
+      'Ignore "{name}"? The check stops reporting this service and keeps reporting the others. To undo it, use "Ignore" in the check editor.',
+    'monitoring.services.unwatchConfirm':
+      'Stop watching "{name}"? The check stops reporting this service and keeps reporting the others. To undo it, use "Services" in the check editor.',
     'monitoring.services.noData': 'No data yet',
     'monitoring.services.unknown': 'No data',
     'monitoring.services.problems': 'problems',

@@ -8,11 +8,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { MonitorCheck } from '$lib/api/types';
   import { serviceDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
+  import { ignoreService } from '$lib/stores/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
   import ServiceList from './ServiceList.svelte';
   import Button from '../../ui/Button.svelte';
   import Modal from '../../ui/Modal.svelte';
+  import { confirmDialog } from '../../ui/ConfirmDialog.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -135,6 +137,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     };
   }
 
+  // The power button of the line turns off the whole check; a problem row takes out
+  // its one service. Auto mode ignores it, list mode stops watching it (R-1520).
+  async function onIgnore(check: MonitorCheck, name: string): Promise<void> {
+    const auto = (check.config?.mode ?? 'list') === 'auto';
+    const ok = await confirmDialog(
+      $t(auto ? 'monitoring.services.ignoreConfirm' : 'monitoring.services.unwatchConfirm', {
+        name,
+      }),
+      { confirmLabel: $t('monitoring.services.ignore') },
+    );
+    if (ok) await ignoreService(check, name);
+  }
+
   // The dot's source, the effective status: the raw problems of a first, still
   // damped failure leave it ok, and then the pill must not turn red either.
   function problemPill(check: MonitorCheck): string {
@@ -184,6 +199,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   <span class="mon-dot {DOT[s.level]}"></span>
                   <span class="mon-expand-name">{s.name}</span>
                   <span class="mon-expand-note">{$t(NOTE_KEY[s.note])}</span>
+                  {#if s.note !== 'nodata'}
+                    <Button variant="ghost" size="sm" onclick={() => onIgnore(check, s.name)}>
+                      {$t('monitoring.services.ignore')}
+                    </Button>
+                  {/if}
                 </div>
               {/each}
             </div>

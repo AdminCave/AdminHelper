@@ -14,6 +14,7 @@ import type {
   AlertRule,
   AlertRuleInput,
   MonitorCheck,
+  MonitorCheckConfig,
   MonitorCheckInput,
   MonitoringBuiltinUpdate,
   MonitoringMetricsResponse,
@@ -170,6 +171,19 @@ export const monitoringApi = {
       'PUT',
       `/api/monitoring/checks/${encodeURIComponent(id)}`,
       data,
+    );
+  },
+  // The update route leaves every field it is not sent as it is.
+  updateCheckConfig(
+    session: AuthSession,
+    id: string,
+    config: MonitorCheckConfig,
+  ): Promise<MonitorCheck> {
+    return apiRequest<MonitorCheck>(
+      session,
+      'PUT',
+      `/api/monitoring/checks/${encodeURIComponent(id)}`,
+      { config },
     );
   },
   removeCheck(session: AuthSession, id: string): Promise<void> {
