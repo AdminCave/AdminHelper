@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Wächter, Listener-Liste und Discovery — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-6 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-6 · Review: pro Task
 Spec: docs/features/kern-agent-6.md (Roadmap R-1440, R-1441, R-1442, R-1447, R-1516)
 Heavy: linux-full — Wächter, Listener-Leser und Discovery des Agents (`apps/agent`) auf echten Boxen; dazu vor dem Merge `freebsd_box.sh` (FreeBSD-Plattformcode und R-1442); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -122,6 +122,17 @@ Review: approve (.ah-out/review/kern-agent-6/T8.verdict.json)
 Refactor: Suite grün vorher und nachher, Fehlerpfade durch Bestandstests gedeckt.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (internes Refactoring)
+
+### T11 — Entwickler-Doku des Wächters und Grenzen der Regel  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Änderung: Abschlussprüfung (reviewer branch, wichtig): der Wächter-Absatz der Entwickler-Doku DE+EN nennt den
+eigenen Linux-Leser und den Windows-Leser statt gopsutil, streicht den Satz zur ersten PID, nennt die Prüfung der
+Listener nach dem Verbindungsaufbau (auch Windows) und die strenge Regel für Ziele mit Zugangsdaten. Monitoring-Seite:
+der Bezug von „Einzige Ausnahme von beidem“ eindeutig, die Grenze nennt `mac_portacl` und root in Jail bzw. Container
+mit Host-Netz.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/developer/agent.html · docs/en/developer/agent.html · docs/admin/monitoring.html · docs/en/admin/monitoring.html
+Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-16 R-1448 (FreeBSD-rc.d-Dienste als Units) fährt im Zug `tasks/kern-agent-7.md`: braucht eine Namensregel
