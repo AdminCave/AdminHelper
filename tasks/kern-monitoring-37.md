@@ -1,5 +1,5 @@
 # Dienste einzeln ignorieren — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-37 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-37 · Review: am Ende
 Spec: Roadmap R-1520
 Heavy: none — nur Desktop-UI-Komponente und Store, kein Stack-, Gateway-, Journey- oder Install-Pfad; die PUT-Route gibt es schon
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -18,8 +18,10 @@ HEAD: a94445872
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecServices.test.ts
 Doku: → T2
 
-### T2 — Doku DE+EN und Changelog  [ ]
+### T2 — Doku DE+EN und Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-37.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c64708f3b 2026-11-16T15:06:20+01:00
+Review: am Ende (Branch-Review)
 Änderung: Absatz zur Dienste-Zeile im Desktop (Knopf Ignorieren, Rückfrage, Rückweg über Ignorieren bzw. Dienste im Check-Editor) DE+EN; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/monitoring.html docs/en/admin/monitoring.html changelog.d/kern-monitoring-37.md
