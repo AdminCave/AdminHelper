@@ -1,0 +1,54 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# klein-nachlese-12 — Task-Ledger
+Status: geplant · Branch: feature/klein-nachlese-12 · Review: pro Task
+Spec: docs/features/klein-nachlese-12.md (Roadmap R-1505, R-1507, R-1509, R-1510, R-1511, R-1512, R-1514; R-1506 abgelehnt: bereits behoben)
+Heavy: none — Agent-Unit-Tests, Doku
+DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+### T1 — R-1505, R-1510: cachedVhosts cached keinen Fehler aus dem ctx des Aufrufers  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go
+Beweis: reviewer kern-monitoring-28 T3 2026-11-15 · Dedup-Key: REF:agent:web_vhost_cert.go:cachedVhosts
+Änderung: Endet `WebVhosts` mit einem Fehler, während `ctx.Err() != nil`, wird nichts gemerkt; Wartende am Lock geben bei eigenem `ctx.Err()` auf (Lock als Kanal mit `select`). Test erst rot: erster Aufruf mit abgelaufenem ctx, zweiter mit frischem ctx liest neu.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'Vhost'
+Doku: keine (interner Cache)
+
+### T2 — R-1507: RunCapped beendet die Prozessgruppe  [ ]
+Komponente: agent · Dateien: apps/agent/internal/execx/execx.go, apps/agent/internal/execx/execx_unix.go, apps/agent/internal/execx/execx_other.go, apps/agent/internal/execx/execx_test.go
+Beweis: reviewer kern-monitoring-28 T6 2026-11-15 · Dedup-Key: REF:agent:execx.go:RunCapped-orphan
+Änderung: `RunCapped` startet das Kommando in eigener Prozessgruppe (`Setpgid`, `cmd.Cancel` sendet SIGKILL an die Gruppe); nur Unix, andere Plattformen unverändert (Build-Tags, SPDX in neuen Dateien). Test erst rot: `sh -c` mit Enkel, nach Frist ist der Enkel weg. Windows-Build: `GOOS=windows go vet ./internal/execx/`.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/execx
+Doku: keine (interner Aufruf)
+
+### T3 — R-1509: web_vhosts, App bei abweichender Namensreihenfolge  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/web_vhosts_test.go
+Beweis: kern-monitoring-28 T7 review 2026-11-15 · Dedup-Key: REF:agent:web_vhosts.go:uniqueVhosts-app
+Änderung: Test erst: zwei Blöcke desselben Servers mit verschiedener Namensreihenfolge (App am ersten Namen je Block); die App darf nach `uniqueVhosts` nur einmal und am ersten Namen des gewählten (TLS-)Blocks stehen. Ergibt der Test Rot, `uniqueVhosts` anpassen, sonst bleibt er als Absicherung.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'Vhost'
+Doku: keine (interne Auswahl)
+
+### T4 — R-1514: errWPDBServer erreicht den Aufrufer; Docstring _before_app_checks  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_wordpress_cron_test.go
+Beweis: reviewer kern-monitoring-35 T2 2026-11-15 · app_wordpress_cron.go:472
+Änderung: Test erst rot: ein Server, der die Grenze reißt, ergibt aus `wpCronValue` eine Meldung, die „sends more than the view reads“ nennt (heute „connection fails“); der Wächter merkt sich seinen Fehler, `wpDBError` fragt ihn ab (`errors.Is(g.err, errWPDBServer)` an der Verbindung, nicht am Treiberfehler).
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'WordPress|WP'
+Doku: keine (Fehlertext)
+
+### T5 — R-1514: Docstring von _before_app_checks  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_module_sync.py
+Beweis: reviewer kern-monitoring-35 branch 2026-11-15 · test_module_sync.py:775
+Änderung: Docstring beschreibt, was die Funktion tut (ohne die Checks des Katalogs `APP_CHECKS`, version 1); kein Verhalten ändert sich.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
+Doku: keine (Docstring eines Tests)
+
+### T6 — R-1511, R-1512: Doku berichtigen  [ ]
+Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/features/kern-monitoring-28.md, changelog.d/klein-nachlese-12.md
+Beweis: kern-monitoring-28 branch-Review 2026-11-15 · Semantik: docs/features/kern-monitoring-28.md „Last: pro Domain ein Handshake auf Loopback je Stunde“ (zu berichtigen)
+Änderung: Der Agent fragt die Adresse, auf der der Webserver am Port des vHosts lauscht (meist Loopback), nicht fest `127.0.0.1` (agent/monitoring developer, admin monitoring, DE+EN). `web_domain` fährt zwei Checks mit je einem Handshake: zwei je Domain und Stunde (admin monitoring DE+EN, Spec-Zeile „Last“). Zuvor `resolve`/`ruledEndpoint` lesen, damit der Wortlaut stimmt.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: die Änderung selbst
+Task-Review: am Ende
