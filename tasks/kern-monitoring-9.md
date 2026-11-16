@@ -80,8 +80,10 @@ Alarm-Mails in 24 h, Alter der letzten zugestellten Mail), `/health` bleibt unve
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_health.py tests/test_openapi_snapshot.py
 Doku: → T8
 
-### T7 — R-1235: Modul adminhelper prüft Scheduler-Verzug und Mailzustellung  [ ]
+### T7 — R-1235: Modul adminhelper prüft Scheduler-Verzug und Mailzustellung  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/adminhelper.py, apps/monitoring/tests/test_catalog_adminhelper.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7fe7eb4cf 2026-11-16T13:48:56+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T7.verdict.json)
 Änderung: `http` auf `/health/detail` mit `data.scheduler_lag_s` (> 600 s warning, > 1800 s critical) und
 `data.mail_failed_24h` > 0 warning; Modulversion hoch.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_adminhelper.py
@@ -158,3 +160,7 @@ Abhängt von: T3, T5
   Ohne Auth wie `/health`: nur Zahlen; weder Gateway noch der Monitoring-Proxy des Servers (`_ALLOWED_PATH_PREFIXES`
   ohne `health`) leiten den Pfad weiter, erreichbar nur aus dem Compose-Netz und vom Host. OpenAPI-Snapshot neu
   aufgenommen.
+- T7: eigene Prüfung `monitoring_scheduler` (http auf `/health/detail`, Port 8080) neben `monitoring_health`: `/health`
+  bleibt der billige Lebenszeichen-Check, die Detail-Abfrage fragt die DB. `mail_last_ok_age_s` wird nur gemeldet,
+  ohne Regel (ohne Mail-Regel bliebe es `null`). Modulversion bleibt 1: das Modul entsteht auf diesem Branch und war
+  nie ausgeliefert. Kachel unverändert (6 von 6).

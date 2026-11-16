@@ -8,7 +8,8 @@ The services, ports and paths are those of AdminHelper's docker-compose.yml. db-
 once per `up` and then stays exited, so it has no container check; the frps container is
 the frps module's (it finds AdminHelper's frps image too). The monitoring service
 answers GET /health (port 8080), the CA issuer GET /healthz (port 8090), both without
-touching the database. The gateway's TLS leaf is the one on 443 (nginx.conf); the issuer
+touching the database; GET /health/detail of the monitoring service carries the scheduler's
+lag and the failed alert mails of the last day. The gateway's TLS leaf is the one on 443 (nginx.conf); the issuer
 keeps the root and the intermediates in its PKI directory (/app/data/pki: root.crt,
 <scope>.crt) and the frps leaf in CA_FRPS_CERT_DIR (/app/frps-certs/frps.crt). The agent
 reads these files through the container's mounts and opens nothing but the named file.
@@ -93,6 +94,33 @@ MODULE = {
         _container("victoria", "VictoriaMetrics container", "victoria"),
         _health("monitoring_health", "Monitoring health", "monitoring", 8080, "/health"),
         _health("ca_issuer_health", "CA issuer health", "ca-issuer", 8090, "/healthz"),
+        {
+            # Numbers only (R-1235); neither the gateway nor the server's proxy forwards the
+            # path. The scheduler runs each interval within it: ten minutes past is late.
+            "key": "monitoring_scheduler",
+            "name": "Monitoring scheduler and alert mail",
+            "sensor": "http",
+            "target": {
+                "kind": "container",
+                "service": "monitoring",
+                "port_hint": 8080,
+                "scheme": "http",
+            },
+            "params": {"path": "/health/detail"},
+            "interval": 300,
+            "fields": [
+                "status_code",
+                "data.scheduler_lag_s",
+                "data.mail_failed_24h",
+                "data.mail_last_ok_age_s",
+            ],
+            "rules": [
+                {"field": "status_code", "op": "ne", "value": 200, "level": "critical"},
+                {"field": "data.scheduler_lag_s", "op": "gt", "value": 600, "level": "warning"},
+                {"field": "data.scheduler_lag_s", "op": "gt", "value": 1800, "level": "critical"},
+                {"field": "data.mail_failed_24h", "op": "gt", "value": 0, "level": "warning"},
+            ],
+        },
         {
             # The issuer re-mints the leaf on boot past half its 365 days (pki.py
             # LEAF_DAYS_GATEWAY): a warning means the stack has not restarted since.

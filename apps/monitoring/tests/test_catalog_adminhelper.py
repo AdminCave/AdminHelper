@@ -116,6 +116,8 @@ def test_each_check_binds_to_the_container_of_its_service():
 
 def test_the_health_checks_ask_the_ports_of_docker_compose():
     assert _config("monitoring_health")["target"]["port_hint"] == 8080
+    assert _config("monitoring_scheduler")["target"]["port_hint"] == 8080
+    assert _config("monitoring_scheduler")["params"]["path"] == "/health/detail"
     assert _config("monitoring_health")["params"]["path"] == "/health"
     assert _config("ca_issuer_health")["target"]["port_hint"] == 8090
     assert _config("ca_issuer_health")["params"]["path"] == "/healthz"
@@ -212,6 +214,31 @@ def test_the_certificate_days(key, days, want):
 @pytest.mark.parametrize("key", ["monitoring_health", "ca_issuer_health"])
 def test_the_health_rules(key, values, want):
     assert _status(key, **values) == want
+
+
+@pytest.mark.parametrize(
+    ("lag", "failed", "want"),
+    [
+        (0, 0, "ok"),
+        (600, 0, "ok"),
+        (601, 0, "warning"),
+        (1801, 0, "critical"),
+        (0, 1, "warning"),
+        (1801, 3, "critical"),
+    ],
+)
+def test_the_scheduler_lag_and_the_failed_mails(lag, failed, want):
+    values = {
+        "status_code": 200,
+        "data.scheduler_lag_s": lag,
+        "data.mail_failed_24h": failed,
+        "data.mail_last_ok_age_s": None,
+    }
+    assert _status("monitoring_scheduler", **values) == want
+
+
+def test_an_unreachable_detail_is_critical():
+    assert _status("monitoring_scheduler", status_code=503) == "critical"
 
 
 def _pg_backup(tmp_path, pg_dump_body):
