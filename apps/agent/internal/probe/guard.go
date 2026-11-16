@@ -291,6 +291,8 @@ var (
 	processName     = nameOf
 	processArgs     = argsOf
 	peerSocket      = osPeerSocket
+	// takerOwners returns the uids of the sockets that hold the port a connection went to.
+	takerOwners = osTakerOwners
 	// serviceForwarder names the service of the process pid if that service forwards the ports it
 	// listens on (Windows portproxy), else "".
 	serviceForwarder = osServiceForwarder
@@ -449,7 +451,7 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		case err != nil:
 			return fmt.Errorf("%w: the socket that took the connection to port %d cannot be told: %v", ErrNotAllowed, server.Port(), err)
 		case state == peerConnected:
-			return nil
+			return g.checkTakerOwner(server, client)
 		case try == peerTries:
 			return takenElsewhere(ip, server, client, state)
 		}
@@ -459,6 +461,27 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		case <-time.After(peerWait):
 		}
 	}
+}
+
+// checkTakerOwner applies the rule of a strict guard (checkOwner) once more after the connect: the
+// snapshot it judged on may be up to listenerFresh old, and the port may have changed hands since.
+func (g *Guard) checkTakerOwner(server, client netip.AddrPort) error {
+	if !g.strict || privilegedPort(server.Port()) {
+		return nil
+	}
+	owners, err := takerOwners(server, client)
+	if err != nil {
+		return fmt.Errorf("%w: the owner of port %d cannot be told after the connect: %v", ErrNotAllowed, server.Port(), err)
+	}
+	if len(owners) == 0 {
+		return fmt.Errorf("%w: no socket holds port %d after the connect", ErrNotAllowed, server.Port())
+	}
+	for _, uid := range owners {
+		if !protected(listener{uid: uid, hasUID: true}) {
+			return fmt.Errorf("%w: port %d is no privileged port and a socket on it runs under no system account", ErrNotAllowed, server.Port())
+		}
+	}
+	return nil
 }
 
 // takenElsewhere judges a connection no socket of the port took, after the last try. A listener

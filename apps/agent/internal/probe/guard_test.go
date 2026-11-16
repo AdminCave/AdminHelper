@@ -37,6 +37,9 @@ type fakeHost struct {
 	// peer answers which socket took a connection; nil says the one bound to its server end.
 	peer      func(server, client netip.AddrPort) (peerState, error)
 	peerCalls int
+	// owners answers the owners of the port a connection went to; nil says root.
+	owners      func(server, client netip.AddrPort) ([]uint32, error)
+	ownersCalls int
 	// services names the forwarding service of a process; servicesErr fails reading it.
 	services    map[int32]string
 	servicesErr error
@@ -54,7 +57,14 @@ const containerApp int32 = 7001
 func stubHost(t *testing.T, h *fakeHost) {
 	t.Helper()
 	oldAddrs, oldList, oldName, oldArgs, oldPubs := interfaceAddrs, listeners, processName, processArgs, publishedPorts
-	oldPeer, oldService, oldInside := peerSocket, serviceForwarder, containerListeners
+	oldPeer, oldService, oldInside, oldOwners := peerSocket, serviceForwarder, containerListeners, takerOwners
+	takerOwners = func(server, client netip.AddrPort) ([]uint32, error) {
+		h.ownersCalls++
+		if h.owners == nil {
+			return []uint32{0}, nil
+		}
+		return h.owners(server, client)
+	}
 	containerListeners = func(_ context.Context, pid int32, _ uint16) ([]int32, error) {
 		h.insideCalls++
 		if h.inside == nil && h.insideErr == nil {
@@ -128,7 +138,7 @@ func stubHost(t *testing.T, h *fakeHost) {
 	resetSnapshot()
 	t.Cleanup(func() {
 		interfaceAddrs, listeners, processName, processArgs, publishedPorts = oldAddrs, oldList, oldName, oldArgs, oldPubs
-		peerSocket, serviceForwarder, containerListeners = oldPeer, oldService, oldInside
+		peerSocket, serviceForwarder, containerListeners, takerOwners = oldPeer, oldService, oldInside, oldOwners
 		resetSnapshot()
 	})
 }
@@ -1735,6 +1745,72 @@ func TestGuardHandsASecretOnlyToAProtectedListenerOfAStrictTarget(t *testing.T) 
 				if err := allowed(NewGuard(), "tcp4", address); err != nil {
 					t.Errorf("without a secret: %v, want it allowed", err)
 				}
+			}
+		})
+	}
+}
+
+// TestGuardChecksTheOwnersOfThePortAfterTheConnect: the listener a strict guard judged before the
+// connect may have gone since, and another one may hold the port; on a port no system account
+// reserves, every socket that holds it after the connect must run under a system account too.
+func TestGuardChecksTheOwnersOfThePortAfterTheConnect(t *testing.T) {
+	ownedBy := func(uids []uint32, err error) func(netip.AddrPort, netip.AddrPort) ([]uint32, error) {
+		return func(netip.AddrPort, netip.AddrPort) ([]uint32, error) { return uids, err }
+	}
+	for _, c := range []struct {
+		name      string
+		strict    bool
+		owners    func(netip.AddrPort, netip.AddrPort) ([]uint32, error)
+		lo, hi    uint16
+		want      bool
+		wantAsked bool
+	}{
+		{"root holds it", true, ownedBy([]uint32{0}, nil), 1, 1023, true, true},
+		{"a system account holds it", true, ownedBy([]uint32{113}, nil), 1, 1023, true, true},
+		{"root and a system account hold it", true, ownedBy([]uint32{0, 113}, nil), 1, 1023, true, true},
+		{"a user holds it", true, ownedBy([]uint32{1000}, nil), 1, 1023, false, true},
+		{"root and a user hold it", true, ownedBy([]uint32{0, 1000}, nil), 1, 1023, false, true},
+		{"nobody holds it", true, ownedBy([]uint32{nobodyUID}, nil), 1, 1023, false, true},
+		{"no socket holds it", true, ownedBy(nil, nil), 1, 1023, false, true},
+		{"its owners cannot be read", true, ownedBy(nil, errors.New("read /proc/net/tcp: denied")), 1, 1023, false, true},
+		{"the port is privileged", true, ownedBy([]uint32{1000}, nil), 1, 65535, true, false},
+		{"no secret rule", false, ownedBy([]uint32{1000}, nil), 1, 1023, true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := &fakeHost{owners: c.owners}
+			address, accepted := takenBy(t, h)
+			port := netip.MustParseAddrPort(address).Port()
+			root := lst("127.0.0.1", port, 4242)
+			root.uid, root.hasUID = 0, true
+			h.live = false
+			h.list = []listener{root}
+			h.names = map[int32]string{4242: "web"}
+			h.args = map[int32][]string{4242: {"web"}}
+			old := privilegedPorts
+			privilegedPorts = func() (uint16, uint16) { return c.lo, c.hi }
+			t.Cleanup(func() { privilegedPorts = old })
+			ep := endpoint{
+				addr: netip.MustParseAddr("127.0.0.1"), port: port, strict: c.strict,
+				owns: func() func(listener) bool { return func(l listener) bool { return l.pid == 4242 } },
+			}
+			conn, err := secretGuard(ep).DialContext(context.Background(), "tcp", address)
+			if conn != nil {
+				_ = conn.Close()
+			}
+			if c.want && err != nil {
+				t.Errorf("dial: %v, want it connected", err)
+			}
+			if !c.want && !errors.Is(err, ErrNotAllowed) {
+				t.Errorf("dial: %v, want ErrNotAllowed", err)
+			}
+			if asked := h.ownersCalls > 0; asked != c.wantAsked {
+				t.Errorf("owners asked = %v, want %v", asked, c.wantAsked)
+			}
+			select {
+			case taken := <-accepted:
+				_ = taken.Close()
+			case <-time.After(30 * time.Second):
+				t.Error("the listener took no connection")
 			}
 		})
 	}

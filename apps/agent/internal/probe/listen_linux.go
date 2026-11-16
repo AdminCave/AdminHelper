@@ -9,7 +9,9 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"net/netip"
 	"os"
 	"slices"
 	"strconv"
@@ -106,4 +108,30 @@ func osPrivilegedPorts() (lo, hi uint16) {
 		return 1, 0
 	}
 	return 1, uint16(start - 1)
+}
+
+// osTakerOwners returns the uids of the sockets that listen on server's port for server's address
+// or for every address. The socket of the connection itself tells no owner: until accept it has no
+// inode (sock_diag and /proc/net/tcp show uid 0), after it the uid of the process that accepted
+// (sock_graft). The listeners do: their uid is their creator's, the rule the guard judged before
+// the connect (checkOwner).
+func osTakerOwners(server, _ netip.AddrPort) ([]uint32, error) {
+	ip := server.Addr().Unmap()
+	var owners []uint32
+	for _, name := range []string{"tcp", "tcp6"} {
+		data, err := readProcFile("/proc/net/" + name)
+		if err != nil && !(name == "tcp6" && errors.Is(err, fs.ErrNotExist)) {
+			return nil, err
+		}
+		for _, l := range parseProcNetTCP(data) {
+			if l.port != server.Port() || (l.addr != ip && !l.addr.IsUnspecified()) {
+				continue
+			}
+			if !l.hasUID {
+				return nil, fmt.Errorf("a listener of port %d names no owner", server.Port())
+			}
+			owners = append(owners, l.uid)
+		}
+	}
+	return owners, nil
 }

@@ -13,3 +13,8 @@ import "net/netip"
 func osPeerSocket(netip.AddrPort, netip.AddrPort) (peerState, error) {
 	return peerNone, errPeerUnsupported
 }
+
+// osTakerOwners: see osPeerSocket.
+func osTakerOwners(netip.AddrPort, netip.AddrPort) ([]uint32, error) {
+	return nil, errPeerUnsupported
+}

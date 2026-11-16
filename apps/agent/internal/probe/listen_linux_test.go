@@ -149,3 +149,37 @@ func TestOSPrivilegedPortsEndBelowTheKernelsFirstUnprivilegedPort(t *testing.T) 
 		t.Errorf("osPrivilegedPorts = %d..%d, want 1..%d", lo, hi, start-1)
 	}
 }
+
+// TestTakerOwnersNameTheListenersOfThePort asks the kernel of the test host, right after the
+// connect and before any accept: the listener of the dialed port runs under the test's own uid, a
+// listener of another port is not asked about.
+func TestTakerOwnersNameTheListenersOfThePort(t *testing.T) {
+	for _, c := range []struct{ network, address, dial string }{
+		{"tcp4", "127.0.0.1:0", "127.0.0.1"},
+		{"tcp6", "[::1]:0", "::1"},
+		{"tcp", "[::]:0", "127.0.0.1"}, // a dual-stack listener for every address
+	} {
+		ln, err := net.Listen(c.network, c.address)
+		if err != nil {
+			t.Fatalf("listen %s: %v", c.address, err)
+		}
+		other, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := ln.Addr().(*net.TCPAddr).Port
+		conn, err := net.Dial("tcp", net.JoinHostPort(c.dial, strconv.Itoa(port)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := conn.RemoteAddr().(*net.TCPAddr).AddrPort()
+		client := conn.LocalAddr().(*net.TCPAddr).AddrPort()
+		owners, err := osTakerOwners(server, client)
+		if err != nil || len(owners) != 1 || owners[0] != uint32(os.Geteuid()) {
+			t.Errorf("%s %s: owners = %v, %v; want [%d]", c.network, c.address, owners, err, os.Geteuid())
+		}
+		_ = conn.Close()
+		_ = other.Close()
+		_ = ln.Close()
+	}
+}

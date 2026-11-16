@@ -37,8 +37,10 @@ Zugangsdaten, fail-closed bei unlesbarer Eigenschaft.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T9 — R-1440: dieselbe Regel für die Socket, die die Verbindung annimmt (Linux, FreeBSD)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/peer_linux_test.go, apps/agent/internal/probe/peer_freebsd.go, apps/agent/internal/probe/peer_freebsd_test.go, apps/agent/internal/probe/peer_other.go
+### T9 — R-1440: dieselbe Regel für die Socket, die die Verbindung annimmt (Linux, FreeBSD)  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/peer_linux_test.go, apps/agent/internal/probe/peer_freebsd.go, apps/agent/internal/probe/peer_freebsd_test.go, apps/agent/internal/probe/peer_other.go, apps/agent/internal/probe/listen_linux.go, apps/agent/internal/probe/listen_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e06ab71c3 2026-11-16T19:37:28+01:00
+Review: approve (.ah-out/review/kern-agent-6/T9.verdict.json)
 Abhängt von: T2
 Beweis: security-Prüfung T2 2026-11-16 (privat)
 Änderung: Die Prüfung nach dem Verbindungsaufbau wendet die Regel aus T2 auch auf die Socket an, die die Verbindung

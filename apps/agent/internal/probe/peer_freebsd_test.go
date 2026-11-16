@@ -61,6 +61,12 @@ func TestPeerSocketOnFreeBSDFindsTheTaker(t *testing.T) {
 			if got, err := osPeerSocket(server, other); err != nil || got != peerNone {
 				t.Errorf("another client port = %v, %v, want peerNone", got, err)
 			}
+			if owners, err := osTakerOwners(server, client); err != nil || len(owners) != 1 || owners[0] != uint32(os.Geteuid()) {
+				t.Errorf("owners = %v, %v, want [%d]", owners, err, os.Geteuid())
+			}
+			if owners, err := osTakerOwners(server, other); err != nil || owners != nil {
+				t.Errorf("owners of another client port = %v, %v, want none", owners, err)
+			}
 		})
 	}
 }
