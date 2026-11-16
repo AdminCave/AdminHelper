@@ -10,7 +10,7 @@ Heavy: linux-full — Wächter, Listener-Leser und Discovery des Agents (`apps/a
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Jede Task mit Wächter-Bezug (T1–T4): `security` parallel zum `reviewer`. Einzelheiten zu T2–T4 nur in
+Jede Task mit Wächter-Bezug (T1–T4, T9): `security` parallel zum `reviewer`. Einzelheiten zu T2–T4 nur in
 `tasks/private/sec-kern-agent-6-notes.md`.
 
 ### T1 — R-1441: lauschende Sockets unter Linux mit allen Prozessen lesen  [x]
@@ -34,6 +34,15 @@ Abhängt von: T1
 Änderung: Regel nach Kevins Entscheidung vom 2026-11-16 (privat). Gilt für jeden Aufrufer von `secretGuard`
 (http, proto/redis, App-Views); unit- und container-Ziele unverändert. Tabellentests je Zielart mit und ohne
 Zugangsdaten, fail-closed bei unlesbarer Eigenschaft.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: → T7
+
+### T9 — R-1440: dieselbe Regel für die Socket, die die Verbindung annimmt (Linux, FreeBSD)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go, apps/agent/internal/probe/peer_linux.go, apps/agent/internal/probe/peer_linux_test.go, apps/agent/internal/probe/peer_freebsd.go, apps/agent/internal/probe/peer_freebsd_test.go, apps/agent/internal/probe/peer_other.go
+Abhängt von: T2
+Beweis: security-Prüfung T2 2026-11-16 (privat)
+Änderung: Die Prüfung nach dem Verbindungsaufbau wendet die Regel aus T2 auch auf die Socket an, die die Verbindung
+angenommen hat (Einzelheiten privat). Erst der rote Test.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
@@ -74,7 +83,7 @@ Doku: → T7
 
 ### T7 — Doku und Changelog  [ ]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-agent-6.md
-Abhängt von: T2, T3, T4, T6
+Abhängt von: T2, T3, T4, T6, T9
 Änderung: Monitoring-Seite DE+EN: die Regel für Fühler mit Zugangsdaten und ihr Ausweg (Unit- oder Container-Ziel),
 die Discovery-Ports „unbekannt“ ab 64. `changelog.d/kern-agent-6.md` (SPDX) neutral: Härtung, Fixes.
 Verify: bash scripts/dev/verify.sh scripts --strict
