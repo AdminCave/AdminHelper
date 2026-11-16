@@ -405,6 +405,14 @@
             <div><div class="callout-title">Ingest-Validierung</div><p>Der Push-Endpunkt pr&uuml;ft, dass der API-Key wirklich zur angegebenen <code>server_id</code> geh&ouml;rt. Ein kompromittierter Agent-Key kann also keine fremden Server-Metriken f&auml;lschen.</p></div>
           </div>
 
+          <h2 id="health-detail">Gesundheit des Dienstes (<code>/health</code>, <code>/health/detail</code>)</h2>
+          <p><code>GET /health</code> bleibt die billige Antwort <code>{"status": "ok"}</code> ohne Datenbank, für den HEALTHCHECK des Containers. <code>GET /health/detail</code> (<code>main.py</code>, ohne Auth wie <code>/health</code>) fragt die Datenbank und liefert nur Zahlen für das Modul <code>adminhelper</code> (<a href="../admin/monitoring.html#app-module-adminhelper">Admin-Handbuch</a>):</p>
+          <ul>
+            <li><code>scheduler_lag_s</code>: je Intervall die Zeit seit dem jüngsten Lauf irgendeines Checks dieses Intervalls über das Intervall hinaus, das späteste zählt. Als Lauf zählen <code>MonitorState.last_check</code>, <code>MonitorCheck.updated_at</code> und <code>scheduler.loaded_at</code> (gesetzt am Ende von <code>load_all_checks</code>: ein <code>IntervalTrigger</code> ohne <code>start_date</code> feuert erst eine Periode nach dem Start). <code>PUSH_ONLY_TYPES</code> und abgeschaltete Checks zählen nicht; ohne zählbaren Check 0, nicht <code>null</code> (eine Regel auf <code>null</code> bliebe <code>unknown</code>).</li>
+            <li><code>mail_failed_24h</code>: fehlgeschlagene Sendungen (<code>MonitorAlertLog</code> je Regel und <code>sent_at</code>, nicht je Check) der Regeln mit Kanal <code>email</code> in 24&nbsp;Stunden; <code>mail_last_ok_age_s</code>: Alter der letzten erfolgreichen, ohne eine <code>null</code>.</li>
+            <li>Erreichbar nur aus dem Compose-Netz und vom Host: Das Gateway leitet den Monitoring-Dienst nicht weiter, und <code>_ALLOWED_PATH_PREFIXES</code> des <code>monitoring_proxy</code> kennt <code>health</code> nicht.</li>
+          </ul>
+
           <h2>Lokales Debugging</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Einzelnen Check on-demand ausf&uuml;hren

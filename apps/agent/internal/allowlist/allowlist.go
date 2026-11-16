@@ -231,6 +231,10 @@ var commands = map[string][][]string{
 		{"list-units", "--type=service", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
 		{"list-unit-files", "--type=service", "--no-legend", "--no-pager"},
 		{"list-units", "--state=failed", "--no-legend", "--plain"},
+		// The timers and the last result of the units they trigger (probe, host_linux_extras.go).
+		{"list-units", "--type=timer", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
+		{"show", "-p", "Id,Triggers", "--", "<unit>..."},
+		{"show", "-p", "Id,Result", "--", "<unit>..."},
 		{"show", "-p", "Id,Names", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,ActiveState,MainPID", "--", "<unit>..."},
 		{"show", "-p", "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", "--", "<unit>..."},
@@ -271,6 +275,12 @@ var commands = map[string][][]string{
 	"timedatectl":      {{"show"}},
 	"apt-get":          {{"-s", "dist-upgrade"}},
 	"dnf":              {{"-C", "-q", "updateinfo", "list", "--security"}},
+	// The host sensor's needrestart and apt_state (probe, host_linux_extras.go): -b never restarts
+	// anything, --audit and showhold only read dpkg's database. Kept out: needrestart without -b,
+	// unattended-upgrade itself, apt-mark hold|unhold.
+	"needrestart": {{"-b"}},
+	"dpkg":        {{"--audit"}},
+	"apt-mark":    {{"showhold"}},
 	// FreeBSD: the rc.d services, the versions of kernel and userland, and pkg audit against the local
 	// vuln.xml only (never -F, which fetches it). onestatus is the probe's unit sensor: it answers
 	// whether or not rc.conf enables the service.

@@ -38,6 +38,9 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 		{"docker", "inspect", "--type", "container", "--", "web_1.prod"},
 		{"docker", "inspect", "--type", "container", "--", "0123456789ab"},
 		{"systemctl", "list-units", "--type=service", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
+		{"systemctl", "list-units", "--type=timer", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
+		{"systemctl", "show", "-p", "Id,Triggers", "--", "apt-daily.timer", "fstrim.timer"},
+		{"systemctl", "show", "-p", "Id,Result", "--", "apt-daily.service", `systemd-tmpfiles-clean.service`},
 		{"docker", "ps", "--all", "--quiet", "--no-trunc"},
 		{"docker", "inspect", "--type", "container", strings.Repeat("a", 64), strings.Repeat("0", 64)},
 		{"dpkg-query", "--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "nginx", "libc6", "g++-12"},
@@ -90,6 +93,12 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 		{"systemctl", "show", "-p", "LoadState,ControlGroup,MainPID,ExecStart", "--", "nginx"},
 		{"systemctl", "show", "-p", "LoadState,ControlGroup", "--", "a", "b"},
 		{"systemctl", "show", "-p", "LoadState,ExecStart", "--", "nginx"},
+		// The timer calls read, they never start or stop a timer.
+		{"systemctl", "start", "apt-daily.timer"},
+		{"systemctl", "list-timers", "--all"},
+		{"systemctl", "show", "-p", "Id,Triggers", "--", "--help"},
+		{"systemctl", "show", "-p", "Id,Result", "apt-daily.service"},
+		{"systemctl", "show", "-p", "Id,Result,ExecStart", "--", "apt-daily.service"},
 		{"docker", "inspect", "--type", "container", "--", "-f"},
 		{"docker", "inspect", "--type", "container", "--", "../x"},
 		{"docker", "inspect", "--type", "container", "web"},
@@ -1020,6 +1029,38 @@ func TestAllowlistMoodleChecks(t *testing.T) {
 		{"runuser", "-u", "www-data", "--", "php", "/var/www/moodle/admin/cli/checks.phpx"},
 		{"runuser", "-u", "www-data", "php", "/var/www/moodle/admin/cli/checks.php"},
 		{"php", "/var/www/moodle/admin/cli/checks.php"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistPackageState: the host sensor's needrestart and apt_state read the restart state and
+// dpkg's database. The traps restart services, rebuild the package cache (apt-get check), run the
+// upgrades, or hold a package.
+func TestAllowlistPackageState(t *testing.T) {
+	for _, call := range [][]string{
+		{"needrestart", "-b"},
+		{"dpkg", "--audit"},
+		{"apt-mark", "showhold"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"apt-get", "check"},
+		{"apt-get", "update"},
+		{"needrestart"},
+		{"needrestart", "-r", "a"},
+		{"needrestart", "-b", "-r", "a"},
+		{"unattended-upgrade"},
+		{"unattended-upgrade", "--dry-run"},
+		{"dpkg", "--configure", "-a"},
+		{"dpkg", "--audit", "nginx"},
+		{"apt-mark", "hold", "nginx"},
+		{"apt-mark", "unhold", "nginx"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)

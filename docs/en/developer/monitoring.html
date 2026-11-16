@@ -406,6 +406,14 @@
             <div><div class="callout-title">Ingest validation</div><p>The push endpoint enforces that the API key really belongs to the supplied <code>server_id</code>. A compromised agent key cannot forge metrics for other servers.</p></div>
           </div>
 
+          <h2 id="health-detail">Health of the service (<code>/health</code>, <code>/health/detail</code>)</h2>
+          <p><code>GET /health</code> stays the cheap answer <code>{"status": "ok"}</code> without the database, for the container's HEALTHCHECK. <code>GET /health/detail</code> (<code>main.py</code>, without auth like <code>/health</code>) asks the database and returns numbers only, for the module <code>adminhelper</code> (<a href="../admin/monitoring.html#app-modules-adminhelper">admin guide</a>):</p>
+          <ul>
+            <li><code>scheduler_lag_s</code>: per interval the time since the newest run of any check of that interval beyond the interval, the latest counts. A run is <code>MonitorState.last_check</code>, <code>MonitorCheck.updated_at</code> and <code>scheduler.loaded_at</code> (set at the end of <code>load_all_checks</code>: an <code>IntervalTrigger</code> without <code>start_date</code> fires only one period after the start). <code>PUSH_ONLY_TYPES</code> and disabled checks do not count; without a countable check 0, not <code>null</code> (a rule on <code>null</code> would stay <code>unknown</code>).</li>
+            <li><code>mail_failed_24h</code>: failed sends (<code>MonitorAlertLog</code> per rule and <code>sent_at</code>, not per check) of rules with the channel <code>email</code> in 24&nbsp;hours; <code>mail_last_ok_age_s</code>: age of the last successful one, without one <code>null</code>.</li>
+            <li>Reachable only from the compose network and the host: the gateway does not forward the monitoring service, and the <code>monitoring_proxy</code>'s <code>_ALLOWED_PATH_PREFIXES</code> does not know <code>health</code>.</li>
+          </ul>
+
           <h2>Local debugging</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Run a single check on demand

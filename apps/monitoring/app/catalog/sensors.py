@@ -32,6 +32,7 @@ SENSORS = (
     "tls",
     "certfile",
     "file_age",
+    "fs",
     "proto",
     "unixsocket",
     "sql",
@@ -314,6 +315,12 @@ HOST_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "ipmi_sensors": frozenset({"sensors", "critical", "noncritical"}),
     "zfs_snapshots": frozenset({"status"}),
     "rsnapshot": frozenset({"last_status", "running", "lock_stale", "last_success_age_s"}),
+    # The Linux extras (R-1234): systemd timers, the kernel's taint, needrestart and the
+    # package state.
+    "systemd_timers": frozenset({"timers", "failed"}),
+    "kernel_taint": frozenset({"tainted", "oops", "mce", "bad_page", "livepatch_transition"}),
+    "needrestart": frozenset({"kernel_status", "microcode_status", "services"}),
+    "apt_state": frozenset({"audit", "held", "uu_last_run_age_s", "uu_errors"}),
     # Windows (R-1245, R-1436): the open updates, the day's critical and error events, the
     # machine certificates, the storage health, Defender and Windows Server Backup.
     "win_updates": frozenset(
@@ -464,6 +471,8 @@ SENSOR_FIELDS: dict[str, frozenset[str]] = {
     ),
     "certfile": frozenset({"days_left", "not_after", "issuer", "subject"}),
     "file_age": frozenset({"exists", "age_s", "size_bytes"}),
+    # The file system that holds the path (statfs): no file is read.
+    "fs": frozenset({"used_pct", "free_bytes", "inodes_used_pct"}),
     "proto": frozenset({"ok", "duration_ms", "tls_ok", "detail"}),
     "unixsocket": frozenset({"connected", "duration_ms", "status_code"}),
     "sql": frozenset(
@@ -505,8 +514,11 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
     "http": frozenset({"loopback", "port", "process", "container", "unit", "vhost"}),
     "tls": frozenset({"loopback", "port", "process", "container", "unit", "vhost"}),
     "proto": frozenset({"loopback", "port", "process", "container", "unit"}),
-    "certfile": None,
-    "file_age": None,
+    # Optional (OPTIONAL_TARGET_SENSORS): without one a path of the host, with one a path
+    # inside that container, which the agent reads through the container's mounts.
+    "certfile": frozenset({"container"}),
+    "file_age": frozenset({"container"}),
+    "fs": frozenset({"container"}),
     "unixsocket": None,
     "sql": None,
     # Optional (OPTIONAL_TARGET_SENSORS): without one the host's resolver, with one the DNS
@@ -520,7 +532,7 @@ SENSOR_TARGETS: dict[str, frozenset[str] | None] = {
 }
 
 # Sensors that may go without the target SENSOR_TARGETS allows them.
-OPTIONAL_TARGET_SENSORS = frozenset({"dns"})
+OPTIONAL_TARGET_SENSORS = frozenset({"dns", "certfile", "file_age", "fs"})
 
 FIELD_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_\-\[\]/]+)*$")
 _ABS_PATH = r"^/[^\x00]*$"
@@ -776,6 +788,10 @@ class HostParams(_Params):
         "storage",
         "defender",
         "win_backup",
+        "systemd_timers",
+        "kernel_taint",
+        "needrestart",
+        "apt_state",
     ]
 
 
@@ -788,6 +804,7 @@ PARAM_MODELS: dict[str, type[_Params]] = {
     "tls": TlsParams,
     "certfile": PathParams,
     "file_age": FileAgeParams,
+    "fs": PathParams,
     "proto": ProtoParams,
     "unixsocket": UnixSocketParams,
     "sql": SqlParams,

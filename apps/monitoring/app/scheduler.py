@@ -122,11 +122,18 @@ def remove_check(check_id: str) -> None:
         pass
 
 
+# When load_all_checks scheduled the checks (naive UTC). An interval trigger without a start
+# date fires one full period after it is added: until then a check's last run is the one
+# before the restart, and GET /health/detail counts this moment as its run.
+loaded_at: datetime | None = None
+
+
 def load_all_checks() -> None:
     """Loads and schedules all active checks at startup."""
     from app.core.database import SessionLocal
     from app.models import MonitorCheck
 
+    global loaded_at
     db = SessionLocal()
     try:
         checks = (
@@ -146,6 +153,7 @@ def load_all_checks() -> None:
             except ValueError as exc:
                 logger.warning("Check %s (%s): %s", check.id, check.name, exc)
         logger.info("%d Monitoring-Checks geladen (%d Push-Only uebersprungen)", count, skipped)
+        loaded_at = utcnow_naive()
     finally:
         db.close()
 

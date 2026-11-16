@@ -19,6 +19,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -396,17 +397,122 @@ func dockerdRuns(ctx context.Context) bool {
 	return false
 }
 
-// certfileSensor reads the first certificate of a PEM file: when it expires, who issued it, whom it
-// names. An error never holds what the file holds.
-func certfileSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
-	if err := noTarget(p); err != nil {
-		return nil, err
-	}
-	path, err := pathParam(p)
+// containerPath reads the parameter key of p, a path inside the container p targets, and maps it to
+// the bind or volume mount that holds it (containerInfo.hostPath): the mount's source on this host and
+// the path relative to it. The sensor then reads below the source through an os.Root, so a link in the
+// container's files never leads to a file of the host outside the mount. No error names the host path;
+// a path on no such mount is invalid and named in no error either.
+func containerPath(ctx context.Context, p Probe, key string) (source, rel, path string, err error) {
+	t, err := targetOf(p, kindContainer)
 	if err != nil {
-		return nil, err
+		return "", "", "", err
 	}
-	data, err := untilDone(ctx, func() ([]byte, error) { return readSmallFile(path, maxCertFileBytes) })
+	if path, err = pathParamNamed(p, key); err != nil {
+		return "", "", "", err
+	}
+	// The path is mapped by its prefix: a ".." in it would leave the mount it names.
+	if path != pathpkg.Clean(path) {
+		return "", "", "", fmt.Errorf("%w: sensor %s needs a clean path inside the container", ErrInvalid, p.Sensor)
+	}
+	info, err := inspectContainer(ctx, t.Name)
+	if err != nil {
+		return "", "", "", err
+	}
+	source, rel, ok := info.hostPath(path)
+	if !ok {
+		return "", "", "", fmt.Errorf("%w: no bind or volume mount of container %s holds the path", ErrInvalid, t.Name)
+	}
+	return source, rel, path, nil
+}
+
+// openMount opens the mount source of a container path as a root and gives the path below it; its error
+// names neither the source nor the path. docker inspect names a source as it was given, a link among
+// them, which docker resolved when it mounted it: so does openMount. A bind of a single file (a
+// certificate handed to the container) is opened through the directory that holds the resolved file,
+// with the file as the path, and only while it is a regular one: a link there would be followed within
+// that host directory, beyond what the bind holds.
+func openMount(source, rel string) (*os.Root, string, error) {
+	if rel == "." {
+		if fi, err := os.Stat(source); err == nil && !fi.IsDir() {
+			real, err := filepath.EvalSymlinks(source)
+			if err != nil {
+				return nil, "", fmt.Errorf("the mount of the container cannot be opened: %v", cause(err))
+			}
+			if fi, err := os.Lstat(real); err != nil || !fi.Mode().IsRegular() {
+				return nil, "", errors.New("the mount of the container is no directory nor regular file")
+			}
+			source, rel = filepath.Dir(real), filepath.Base(real)
+		}
+	}
+	root, err := os.OpenRoot(source)
+	if err != nil {
+		return nil, "", fmt.Errorf("the mount of the container cannot be opened: %v", cause(err))
+	}
+	return root, rel, nil
+}
+
+// maxLinks caps the links followLinks follows, as Linux does (MAXSYMLINKS).
+const maxLinks = 40
+
+// followLinks follows the links at name below root to the file they point at, which openRegular then
+// opens (a link put there since is followed within root alone, like the root's own lookups). A relative
+// link is followed within root alone, as certbot's live/ links into archive/; an absolute one names a
+// path of the container, which may lie on another mount, and is refused. Its errors call name shown.
+func followLinks(root *os.Root, name, shown string) (string, error) {
+	for range maxLinks {
+		fi, err := root.Lstat(name)
+		if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+			return name, nil // openRegular tells what is wrong with name
+		}
+		target, err := root.Readlink(name)
+		if err != nil {
+			return "", fmt.Errorf("%s cannot be read: %v", shown, cause(err))
+		}
+		if strings.HasPrefix(target, "/") {
+			return "", fmt.Errorf("%s is a link to an absolute path", shown)
+		}
+		name = pathpkg.Join(pathpkg.Dir(name), target)
+	}
+	return "", fmt.Errorf("%s is a link of more than %d links", shown, maxLinks)
+}
+
+// certfileSensor reads the first certificate of a PEM file: when it expires, who issued it, whom it
+// names. With a target container the path is one inside that container (containerPath). An error never
+// holds what the file holds.
+func certfileSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
+	var path string
+	var read func() ([]byte, error)
+	if p.Target == nil {
+		var err error
+		if path, err = pathParam(p); err != nil {
+			return nil, err
+		}
+		read = func() ([]byte, error) { return readSmallFile(path, maxCertFileBytes) }
+	} else {
+		source, rel, cpath, err := containerPath(ctx, p, "path")
+		if err != nil {
+			return nil, err
+		}
+		path = cpath
+		read = func() ([]byte, error) {
+			root, rel, err := openMount(source, rel)
+			if err != nil {
+				return nil, err
+			}
+			defer root.Close()
+			name, err := followLinks(root, rel, path)
+			if err != nil {
+				return nil, err
+			}
+			f, err := openRegular(root, name, path)
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			return readLimited(f, path, maxCertFileBytes)
+		}
+	}
+	data, err := untilDone(ctx, read)
 	if err != nil {
 		return nil, err
 	}
@@ -434,20 +540,45 @@ func certfileSensor(ctx context.Context, p Probe, _ string) (map[string]any, err
 
 // fileAgeSensor reads whether a file exists, how long ago it was changed and its size, never what it
 // holds. A file that does not exist is no error: exists is false. With newest_in instead of path it
-// reads the newest regular file of a directory (newestIn), never its name.
+// reads the newest regular file of a directory (newestIn), never its name. With a target container the
+// path is one inside that container (containerPath).
 func fileAgeSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) {
-	if err := noTarget(p); err != nil {
-		return nil, err
-	}
-	key, stat := "path", statPath
+	key := "path"
 	if _, ok := p.Params["newest_in"]; ok {
-		key, stat = "newest_in", newestIn
+		key = "newest_in"
 	}
-	path, err := pathParamNamed(p, key)
-	if err != nil {
-		return nil, err
+	var stat func() (fs.FileInfo, error)
+	if p.Target == nil {
+		path, err := pathParamNamed(p, key)
+		if err != nil {
+			return nil, err
+		}
+		stat = func() (fs.FileInfo, error) { return statPath(path) }
+		if key == "newest_in" {
+			stat = func() (fs.FileInfo, error) { return newestIn(path) }
+		}
+	} else {
+		source, rel, path, err := containerPath(ctx, p, key)
+		if err != nil {
+			return nil, err
+		}
+		stat = func() (fs.FileInfo, error) {
+			root, rel, err := openMount(source, rel)
+			if err != nil {
+				return nil, err
+			}
+			defer root.Close()
+			if key == "newest_in" {
+				return newestInRoot(root, rel, path)
+			}
+			fi, err := root.Stat(rel)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("%s cannot be read: %v", path, cause(err))
+			}
+			return fi, err
+		}
 	}
-	fi, err := untilDone(ctx, func() (fs.FileInfo, error) { return stat(path) })
+	fi, err := untilDone(ctx, stat)
 	if errors.Is(err, fs.ErrNotExist) {
 		return map[string]any{"exists": false}, nil
 	}
@@ -473,12 +604,45 @@ func newestIn(dir string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	defer d.Close()
+	return newestOf(d, dir, fs.DirEntry.Info)
+}
+
+// newestInRoot is newestIn for the directory name below root, which dir names in errors. A link at name
+// or in an entry is followed within root alone (os.Root): one out of it is an error.
+func newestInRoot(root *os.Root, name, dir string) (fs.FileInfo, error) {
+	// OpenRoot tells a file that is no directory by an error of no type of its own: Stat tells it first.
+	fi, err := root.Stat(name)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, fs.ErrNotExist
+	case err != nil:
+		return nil, fmt.Errorf("%s cannot be read: %v", dir, cause(err))
+	case !fi.IsDir():
+		return nil, fmt.Errorf("%s is %w", dir, errNotDir)
+	}
+	sub, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("%s cannot be read: %v", dir, cause(err))
+	}
+	defer sub.Close()
+	// OpenRoot opened name as a directory, so "." is one: no FIFO is waited on.
+	d, err := sub.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("%s cannot be read: %v", dir, cause(err))
+	}
+	defer d.Close()
+	return newestOf(d, dir, func(e fs.DirEntry) (fs.FileInfo, error) { return sub.Lstat(e.Name()) })
+}
+
+// newestOf returns the newest regular file directly in the open directory d, which dir names in errors;
+// info reads an entry's own type and times without following a link.
+func newestOf(d *os.File, dir string, info func(fs.DirEntry) (fs.FileInfo, error)) (fs.FileInfo, error) {
 	if err := refuseKernelFile(d, dir); err != nil {
 		return nil, err
 	}
 	entries, err := d.ReadDir(maxDirEntries + 1)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
+		return nil, fmt.Errorf("%s cannot be listed: %v", dir, cause(err))
 	}
 	if len(entries) > maxDirEntries {
 		return nil, fmt.Errorf("%s holds more than %d entries", dir, maxDirEntries)
@@ -488,7 +652,7 @@ func newestIn(dir string) (fs.FileInfo, error) {
 		if !e.Type().IsRegular() {
 			continue
 		}
-		fi, err := e.Info()
+		fi, err := info(e)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue // removed since the directory was read
 		}
@@ -529,6 +693,11 @@ func readSmallFile(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return readLimited(f, path, limit)
+}
+
+// readLimited reads f to its end, at most limit bytes; its errors call it path.
+func readLimited(f *os.File, path string, limit int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err

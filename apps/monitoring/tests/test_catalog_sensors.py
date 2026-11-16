@@ -9,7 +9,8 @@ the agent's allowlist, the one kind of target that view is bound to, and only it
 (R-1404). The host sensor: a view from the agent's allowlist, no target, only its fields
 (R-1228). The http sensor's expect and scheme auto, the dns sensor's optional target
 (kern-monitoring-30). The http sensor's accept: application/json or left out
-(kern-monitoring-33)."""
+(kern-monitoring-33). The path sensors certfile, file_age and fs: a path of the host, or
+one inside a container target (kern-monitoring-9)."""
 
 from typing import get_args
 
@@ -21,9 +22,11 @@ from app.catalog.sensors import (
     APP_VIEW_TARGETS,
     HOST_VIEW_FIELDS,
     OPNSENSE_VIEW_FIELDS,
+    OPTIONAL_TARGET_SENSORS,
     SENSOR_FIELDS,
     SENSOR_TARGETS,
     AppParams,
+    validate_params,
 )
 
 
@@ -646,9 +649,14 @@ def test_a_dns_check_asks_the_service_of_its_target(kind):
     assert _dns_module(target=target).errors == ()
 
 
-def test_only_dns_goes_without_the_target_it_could_have():
-    # Every other sensor with targets needs one: an http check without one asks nothing.
+def test_a_network_sensor_does_not_go_without_its_target():
+    # An http check without one asks nothing.
     assert "sensor 'http' needs a target" in _only_error(_http_module({}, target=None))
+
+
+def test_only_dns_and_the_path_sensors_go_without_a_target():
+    # dns asks the host's resolver, the path sensors a path of the host (kern-monitoring-9).
+    assert OPTIONAL_TARGET_SENSORS == {"dns", "certfile", "file_age", "fs"}
 
 
 def _sensor_module(sensor, params, field, target=None):
@@ -786,8 +794,8 @@ def test_a_host_check_takes_no_target():
 
 
 def test_the_host_views_are_those_the_agent_returns():
-    # Written out, not derived: the names the agent's host_storage.go, host_hw.go, app_pbs.go and
-    # winviews.go return.
+    # Written out, not derived: the names the agent's host_storage.go, host_hw.go, host_linux_extras.go,
+    # app_pbs.go and winviews.go return.
     assert SENSOR_FIELDS["host"] == frozenset().union(*HOST_VIEW_FIELDS.values())
     assert SENSOR_TARGETS["host"] is None
     assert {v: sorted(f) for v, f in HOST_VIEW_FIELDS.items()} == {
@@ -797,6 +805,10 @@ def test_the_host_views_are_those_the_agent_returns():
         "ipmi_sensors": ["critical", "noncritical", "sensors"],
         "zfs_snapshots": ["status"],
         "rsnapshot": ["last_status", "last_success_age_s", "lock_stale", "running"],
+        "systemd_timers": ["failed", "timers"],
+        "kernel_taint": ["bad_page", "livepatch_transition", "mce", "oops", "tainted"],
+        "needrestart": ["kernel_status", "microcode_status", "services"],
+        "apt_state": ["audit", "held", "uu_errors", "uu_last_run_age_s"],
         "win_updates": [
             "reboot_required",
             "search_age_s",
@@ -826,3 +838,44 @@ def test_the_host_views_are_those_the_agent_returns():
         ],
         "win_backup": ["failures_24h", "last_failed", "last_success_age_s"],
     }
+
+
+_PATH_SENSORS = [
+    ("certfile", {"path": "/app/data/pki/root.crt"}, "days_left"),
+    ("file_age", {"newest_in": "/backups"}, "age_s"),
+    ("fs", {"path": "/victoria-metrics-data"}, "used_pct"),
+]
+
+
+@pytest.mark.parametrize(("sensor", "params", "field"), _PATH_SENSORS)
+def test_a_path_sensor_reads_a_path_of_the_host_without_a_target(sensor, params, field):
+    assert _sensor_module(sensor, params, field).errors == ()
+
+
+@pytest.mark.parametrize(("sensor", "params", "field"), _PATH_SENSORS)
+def test_a_path_sensor_reads_a_path_inside_its_container(sensor, params, field):
+    assert _sensor_module(sensor, params, field, {"kind": "container"}).errors == ()
+
+
+@pytest.mark.parametrize(("sensor", "params", "field"), _PATH_SENSORS)
+@pytest.mark.parametrize("kind", ["loopback", "port", "process", "unit", "vhost"])
+def test_a_path_sensor_targets_nothing_but_a_container(sensor, params, field, kind):
+    error = _only_error(_sensor_module(sensor, params, field, {"kind": kind, "port_hint": 443}))
+    assert f"sensor {sensor!r} cannot target {kind!r}, only ['container']" in error
+
+
+def test_the_fs_fields_are_those_the_agent_returns():
+    # Written out, not derived: the names of the agent's sensor_fs.go fsValues.
+    assert SENSOR_FIELDS["fs"] == {"used_pct", "free_bytes", "inodes_used_pct"}
+
+
+@pytest.mark.parametrize(
+    "params", [{}, {"path": "victoria-metrics-data"}, {"path": "/data", "newest_in": "/data"}]
+)
+def test_fs_takes_one_absolute_path(params):
+    with pytest.raises(ValueError):
+        validate_params("fs", params)
+
+
+def test_fs_sends_its_path():
+    assert validate_params("fs", {"path": "/data"})["path"] == "/data"

@@ -8,6 +8,7 @@ AdminHelper — Monitoring Service
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import math
@@ -19,7 +20,10 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
+from app.core.database import get_db
 from app.core.middleware import NulByteMiddleware, ReportBodyLimitMiddleware
 from app.core.query_params import reject_repeated_scalar_query
 from app.models import (  # noqa: F401
@@ -171,3 +175,70 @@ for _router in all_routers:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# The window mail_failed_24h counts failed alert mails in.
+_MAIL_WINDOW = datetime.timedelta(hours=24)
+
+
+@app.get("/health/detail")
+def health_detail(db: Session = Depends(get_db)):
+    """How far the scheduler is behind and how the alert mails went: numbers only, for the
+    monitoring of AdminHelper itself."""
+    # Neither the gateway nor the server's monitoring proxy forwards this path: only the
+    # compose network and the host reach it. /health stays without the database, it is the
+    # container's healthcheck.
+    from app import scheduler
+    from app.check_types import PUSH_ONLY_TYPES
+    from app.core.time import utcnow_naive
+    from app.models import MonitorAlertLog, MonitorAlertRule
+
+    now = utcnow_naive()
+    # The scheduler runs every check of an interval once within that interval, so per
+    # interval its newest run tells whether the scheduler still runs that interval; one
+    # check that keeps failing does not make its interval late. A check created or enabled
+    # since has had no turn yet: its change counts as a run, and so does the scheduler's
+    # start (scheduler.loaded_at). The latest interval is the lag; nothing to schedule is
+    # no lag.
+    newest = (
+        db.query(
+            MonitorCheck.interval,
+            func.max(MonitorState.last_check),
+            func.max(MonitorCheck.updated_at),
+        )
+        .outerjoin(MonitorState, MonitorState.check_id == MonitorCheck.id)
+        .filter(MonitorCheck.enabled.is_(True), MonitorCheck.check_type.notin_(PUSH_ONLY_TYPES))
+        .group_by(MonitorCheck.interval)
+        .all()
+    )
+    lags = []
+    for interval, last_run, changed in newest:
+        period = scheduler.interval_timedelta(interval)
+        stamps = [t for t in (last_run, changed, scheduler.loaded_at) if t is not None]
+        if period is not None and stamps:
+            lags.append(max(0, int((now - max(stamps) - period).total_seconds())))
+    # One send writes a row per check it names: a send is its rule and its time.
+    sends = (
+        db.query(MonitorAlertLog.alert_rule_id, MonitorAlertLog.sent_at)
+        .join(MonitorAlertRule, MonitorAlertRule.id == MonitorAlertLog.alert_rule_id)
+        .filter(MonitorAlertRule.channel == "email")
+    )
+    failed = (
+        sends.filter(
+            MonitorAlertLog.success.is_(False), MonitorAlertLog.sent_at >= now - _MAIL_WINDOW
+        )
+        .distinct()
+        .count()
+    )
+    last_ok = (
+        db.query(func.max(MonitorAlertLog.sent_at))
+        .join(MonitorAlertRule, MonitorAlertRule.id == MonitorAlertLog.alert_rule_id)
+        .filter(MonitorAlertRule.channel == "email", MonitorAlertLog.success.is_(True))
+        .scalar()
+    )
+    return {
+        "status": "ok",
+        "scheduler_lag_s": max(lags, default=0),
+        "mail_failed_24h": failed,
+        "mail_last_ok_age_s": int((now - last_ok).total_seconds()) if last_ok else None,
+    }

@@ -384,6 +384,14 @@ type containerInfo struct {
 		Labels map[string]string
 		Env    []string
 	}
+	// Mounts are the file systems docker mounts into the container (Engine API MountPoint): Type is
+	// bind, volume, tmpfs and others, Source the host path of a bind or local volume, Destination the
+	// path inside the container.
+	Mounts []struct {
+		Type        string
+		Source      string
+		Destination string
+	}
 	NetworkSettings struct {
 		// Aliases and DNSNames are the names other containers of the network reach the container by.
 		Networks map[string]struct {
@@ -398,6 +406,33 @@ type containerInfo struct {
 			HostPort string
 		}
 	}
+}
+
+// hostPath maps path, an absolute path inside the container, to the bind or volume mount that holds it:
+// the mount's source on this host and path relative to it ("." for the mount point). Of mounts nested
+// in each other the one with the longest destination holds it; a path on no such mount (the
+// container's own layer, a tmpfs) is held by none, ok is false.
+func (c containerInfo) hostPath(path string) (source, rel string, ok bool) {
+	best := -1
+	for _, m := range c.Mounts {
+		if (m.Type != "bind" && m.Type != "volume") || !strings.HasPrefix(m.Source, "/") || !strings.HasPrefix(m.Destination, "/") {
+			continue
+		}
+		dest := strings.TrimSuffix(m.Destination, "/")
+		if path != dest && !strings.HasPrefix(path, dest+"/") {
+			continue
+		}
+		if len(dest) > best {
+			best, source, rel = len(dest), m.Source, strings.TrimPrefix(strings.TrimPrefix(path, dest), "/")
+		}
+	}
+	if best < 0 {
+		return "", "", false
+	}
+	if rel == "" {
+		rel = "."
+	}
+	return source, rel, true
 }
 
 // addrs returns the valid addresses of c's networks, IPv4 first.

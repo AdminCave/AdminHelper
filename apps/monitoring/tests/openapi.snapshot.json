@@ -4700,6 +4700,23 @@
         "summary": "Health"
       }
     },
+    "/health/detail": {
+      "get": {
+        "description": "How far the scheduler is behind and how the alert mails went: numbers only, for the\nmonitoring of AdminHelper itself.",
+        "operationId": "health_detail_health_detail_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Detail"
+      }
+    },
     "/maintenance": {
       "get": {
         "description": "Lists all maintenance windows.",
