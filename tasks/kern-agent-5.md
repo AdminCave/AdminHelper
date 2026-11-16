@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Wächter, Container-Wurzel und http-Fühler — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-5 · Review: pro Task
 Spec: docs/features/kern-agent-5.md (Roadmap R-1438, R-1439, R-1519, R-1513, R-1499, R-1517, R-1508)
 Heavy: linux-full — Wächter und Fühler des Agents (`apps/agent`); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -87,8 +87,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T8
 Abhängt von: T6
 
-### T8 — Doku DE+EN und Changelog  [ ]
+### T8 — Doku DE+EN und Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-agent-5.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1a0915ffd 2026-11-16T17:21:31+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: „Nur dieser Host“ (Super-Server auch am Unix-Socket, weitere Weiterleiter allgemein benannt), http-Fühler
 im Modus `auto` mit kurzem Timeout, vHost-Weiterleitung auf den eigenen Namen; Changelog neutral, umlautfrei.
 Verify: bash scripts/dev/verify.sh scripts --strict
