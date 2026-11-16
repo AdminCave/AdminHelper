@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Verschachtelungstiefe in Request-Bodies begrenzen — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-34 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-34 · Review: pro Task
 Spec: docs/features/kern-monitoring-34.md (Roadmap R-1455)
 Heavy: none — nur der Monitoring-Dienst; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
