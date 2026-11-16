@@ -71,10 +71,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sen
 Doku: → T8
 Abhängt von: T4
 
-### T6 — R-1235: Monitoring-Dienst meldet Scheduler-Verzug und Mailzustellung  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/main.py, apps/monitoring/tests/test_health.py
-Änderung: nach Kevins Antwort (Spec, Offene Fragen 1).
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_health.py
+### T6 — R-1235: Monitoring-Dienst meldet Scheduler-Verzug und Mailzustellung  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/main.py, apps/monitoring/tests/test_health.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/app/scheduler.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d671ae404 2026-11-16T13:47:37+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T6.verdict.json)
+Änderung: nach Kevins Antwort (Spec, Offene Fragen 1): neue Route `GET /health/detail` (Scheduler-Verzug, fehlgeschlagene
+Alarm-Mails in 24 h, Alter der letzten zugestellten Mail), `/health` bleibt unverändert.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_health.py tests/test_openapi_snapshot.py
 Doku: → T8
 
 ### T7 — R-1235: Modul adminhelper prüft Scheduler-Verzug und Mailzustellung  [ ]
@@ -143,3 +146,15 @@ Abhängt von: T3, T5
 - T5 (Prüfer): `pg_dump` legt die Ausgabedatei vor dem Verbindungsaufbau an; ein Fehllauf ließ jeden Tag ein
   frisches `.dump.tmp` in `/backups`, das `newest_in` als jüngste Datei zählte. `pg-backup.sh` schreibt Teil-Dumps
   jetzt nach `/backups/.partial` (gleiches Dateisystem, `mv` bleibt atomar), `newest_in` übergeht Verzeichnisse.
+- T6: `scheduler_lag_s` ist je Intervall die Zeit seit dem jüngsten Lauf irgendeiner Prüfung dieses Intervalls über
+  das Intervall hinaus, das späteste Intervall zählt: eine einzelne hängende Prüfung macht kein Intervall spät. Eine
+  Änderung (`updated_at`, Anlegen oder Wieder-Einschalten) zählt als Lauf, damit eine neue Prüfung nicht sofort als
+  Verzug gilt; ein Bearbeiten kann einen echten Verzug so für ein Intervall verdecken. Gepushte (`PUSH_ONLY_TYPES`) und
+  abgeschaltete Prüfungen zählen nicht. Ohne zählbare Prüfung 0, nicht `null` (eine Regel auf `null` wäre dauerhaft
+  unknown). Nach dem Prüfer: der Start des Schedulers (`scheduler.loaded_at`, gesetzt in `load_all_checks`) zählt als
+  Lauf jeder Prüfung, denn ein `IntervalTrigger` ohne `start_date` feuert erst eine Periode nach dem Start; sonst
+  meldete jeder Neustart bis zu einer Periode Verzug.
+- T6: `mail_failed_24h` zählt Sendungen (Regel und Zeitpunkt), nicht Zeilen je Prüfung; nur Regeln mit Kanal `email`.
+  Ohne Auth wie `/health`: nur Zahlen; weder Gateway noch der Monitoring-Proxy des Servers (`_ALLOWED_PATH_PREFIXES`
+  ohne `health`) leiten den Pfad weiter, erreichbar nur aus dem Compose-Netz und vom Host. OpenAPI-Snapshot neu
+  aufgenommen.
