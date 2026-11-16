@@ -574,11 +574,11 @@ func TestSpeaksTLSTellsAServerOfPlainTextByItsAnswerOrSilence(t *testing.T) {
 	// A fixed deadline on purpose: the silent server never answers; 200 ms lies before answerWait
 	// (2 s), so the wait is half the time left, and the answer, plain text, comes before the deadline
 	// with the other half left for the request.
-	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
 	port := rawServer(t, func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })
 	age()
 	ep, _ := resolve(ctx, Target{Kind: kindLoopback, PortHint: port})
+	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
 	if got, err := speaksTLS(short, NewGuard(ep.extra...), ep); got || err != nil || short.Err() != nil {
 		t.Errorf("silence with 200 ms left = %v, %v (deadline %v); want plain text before the deadline", got, err, short.Err())
 	}

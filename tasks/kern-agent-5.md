@@ -98,6 +98,16 @@ Doku: docs/admin/monitoring.html docs/en/admin/monitoring.html changelog.d/kern-
 Task-Review: am Ende
 Abhängt von: T7
 
+### T9 — Abschlussprüfung: Changelog und Frist im TLS-Test  [x]
+Komponente: agent · Dateien: changelog.d/kern-agent-5.md, apps/agent/internal/probe/sensor_net_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @460c28b71 2026-11-16T17:36:30+01:00
+Review: approve (.ah-out/review/kern-agent-5/T9.verdict.json)
+Änderung: Changelog-Eintrag zu R-1517 richtig (1 MiB, Checks mit JSON-Feldern), Aufzählung der Container-Ansichten
+mit „etwa“; im Test der Stille-Frist die 200-ms-Frist erst direkt vor `speaksTLS` anlegen (Branch-Review).
+Verify: bash scripts/dev/verify.sh agent --strict -- -run '^TestSpeaksTLS' ./internal/probe/
+Doku: changelog.d/kern-agent-5.md
+Abhängt von: T8
+
 ## Entscheidungen
 - R-1440 fährt nicht mit (nächster Zug `tasks/kern-agent-6.md`).
 - T2: `pastaPort` liest die Optionen wie pasta selbst (getopt-String und Optionsliste aus passt 2025-05-03, Debian
