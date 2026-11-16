@@ -309,9 +309,18 @@ def update_connection(
     elif conn.server_id and server is None:
         # Taken off its server: the name it showed keeps it nameable.
         data["label"] = conn.display_name()
-    if server is None and not (data["label"] if "label" in data else conn.name):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name darf nicht leer sein"
+    name = data["label"] if "label" in data else conn.name
+    if server is None and not name:
+        # The 422 the OpenAPI declares (HTTPValidationError, R-1494).
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "name"),
+                    "msg": "Name darf nicht leer sein",
+                    "input": name,
+                }
+            ]
         )
     conn.update_from_dict(data)
     db.commit()

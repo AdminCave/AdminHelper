@@ -599,7 +599,10 @@ def _send_test(channel: str, target: str) -> None:
         else:
             send_webhook(target, _TEST_TITLE, _TEST_BODY, "info", "test")
     except BlockedTarget as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+        # The 422 the OpenAPI declares (HTTPValidationError, R-1494); the target stays out.
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("body", "channel"), "msg": str(exc), "input": channel}]
+        ) from None
     except DeliveryFailed as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
     except Exception as exc:
