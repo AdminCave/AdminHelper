@@ -58,14 +58,16 @@ Mount `invalid`, kein Pfad in einer Meldung. Neuer Fühler `fs` (`statfs`, ohne 
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: → T8
 
-### T5 — R-1235: Katalog: Container-Ziel, Fühler fs, Modul adminhelper  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/adminhelper.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_adminhelper.py
+### T5 — R-1235: Katalog: Container-Ziel, Fühler fs, Modul adminhelper  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/catalog/modules/adminhelper.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_adminhelper.py, apps/monitoring/tests/test_catalog.py, scripts/pg-backup.sh
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @db691cca9 2026-11-16T13:41:48+01:00
+Review: approve (.ah-out/review/kern-monitoring-9/T5.verdict.json)
 Änderung: `SENSOR_TARGETS` erlaubt `container` für `certfile`/`file_age`/`fs`, `FsParams`. Modul `adminhelper`
 (`compose_project`, Images `ghcr.io/admincave/adminhelper/*`): Container laufen; `http` `/health` (monitoring:8080),
 `/healthz` (ca-issuer:8090); `tls` Gateway 443 und `certfile` frps-/CA-Zertifikat relativ zur Laufzeit; `file_age`
 `/backups` am Dienst `pg-backup` (> 26 h warning, > 50 h critical); `fs` `/victoria-metrics-data` 80/90 %. Pfade
 und Ports gegen `docker-compose.yml` und den CA-Issuer prüfen. Neue Dateien mit SPDX-Header.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog_adminhelper.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_sensors.py tests/test_catalog_adminhelper.py tests/test_catalog.py
 Doku: → T8
 Abhängt von: T4
 
@@ -130,3 +132,14 @@ Abhängt von: T3, T5
   ersetzt der Host die Datei per rename, sieht der Container die alte, der Agent die neue; Doku empfiehlt Ordner-Binds.
 - T4: dritte Prüfrunde (nur das Delta seit Runde 2) durch einen frischen Prüfer, weil Runde 2 eine Regression des
   Fixes fand und der erste Prüfer kompaktiert war (Kevin 2026-11-16, einmalige Ausnahme von CLAUDE.md §6).
+- T5: `fs` nimmt `PathParams` (ein absoluter Pfad) wie `certfile`, kein eigenes `FsParams`. Pfad-Fühler ohne Ziel
+  lesen den Host, mit Ziel `container` im Container; `test_catalog.py::test_target_must_fit_the_sensor` erwartet für
+  `file_age` + `loopback` deshalb „only ['container']“ statt „takes no target“ (gewollte Änderung).
+- T5: Modul `adminhelper`: die Backup-Prüfung bindet nur, wo `pg-backup` läuft (sonst „no container for this
+  instance“ beim Übernehmen); `newest_in` sieht nur die jüngste Datei, ein Ausfall nur eines der beiden Dumps bleibt
+  unbemerkt. Der frps-Container gehört dem Modul `frps`, `db-init` hat keinen Container-Check. `tls` am Gateway ohne
+  Hostname-Regel (Ziel ist der Container). Der CA-Issuer hängt nur am internen Netz `pki`; der Host erreicht es
+  (Docker 29.9.2 lokal geprobt). Kachel höchstens 6: kein Server-Zustand (der Container-Check alarmiert).
+- T5 (Prüfer): `pg_dump` legt die Ausgabedatei vor dem Verbindungsaufbau an; ein Fehllauf ließ jeden Tag ein
+  frisches `.dump.tmp` in `/backups`, das `newest_in` als jüngste Datei zählte. `pg-backup.sh` schreibt Teil-Dumps
+  jetzt nach `/backups/.partial` (gleiches Dateisystem, `mv` bleibt atomar), `newest_in` übergeht Verzeichnisse.
