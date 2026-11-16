@@ -7,6 +7,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-11-16
+
 ### Added
 
 - **Server: `GET /api/servers/summary`:** liefert je Server nur `id`, `name` und `hostname`, nach Name sortiert
@@ -62,6 +64,478 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   oder Wiederoeffnen im selben Browser: Liegt die letzte Bedienung dort laenger zurueck, endet die wiederhergestellte
   Sitzung beim Laden sofort mit demselben Hinweis. Doku: Benutzer & Zugriff, Installation, API-Referenz, Web-UI fuer
   Entwickler (DE+EN).
+- **CA-Issuer: Root erneuern ohne neues Enrollment:** `python -m app.cli rotate-root stage`, `switch` und `finish`
+  legen eine neue Root neben die alte, schalten mit einem Cross-Zertifikat der alten Root auf sie um und nehmen die
+  alte am Ende heraus. Agenten und Desktops gehen ueber ihre gewohnte Erneuerung mit; `status` zeigt Phase und
+  Abdeckung, und `finish` wartet, bis das Zertifikats-Register kein aktives Geraet mehr an der alten Root zeigt
+  (`--force` uebergeht das). Nach einem Leck eines Zwischenschluessels schliesst `switch --compromised <scope>` es
+  ganz. Doku: Betrieb → Root erneuern, Troubleshooting, Agent-Deployment, API-Referenz (DE+EN), ADR 0001.
+- **CA-Issuer: Vertrauensgeneration unter `GET /ca/trust`:** Die Route antwortet mit mTLS hinter dem Gateway auf
+  `:443` mit `{"generation":"<hex>"}`, dem SHA-256 ueber das DER der Zertifikate, die Enrollment und Erneuerung im
+  Feld `chain` fuer den Scope des Client-Zertifikats ausgeben, in dieser Reihenfolge. Sie aendert sich mit
+  `rotate-intermediates` und jedem Schritt von `rotate-root`. Doku: Entwickler-Architektur, Server (DE+EN), ADR 0001.
+- **Agent: FreeBSD (amd64, FreeBSD 14 und 15):** der Agent laeuft als pkg-Paket `adminhelper-agent` aus einem
+  signierten pkg-Repo je ABI, das das Gateway unter `/freebsd/` auf der Repo-Ebene (Port 8445) ausliefert. Der Takt
+  kommt aus `/usr/local/etc/cron.d/adminhelper` (alle 5 Minuten, mit `nice` und Zeitdeckel), der FRP-Tunnel ist der
+  rc.d-Dienst `adminhelper_frpc` unter daemon(8). Einrichtung: Agent-Verteilung, Abschnitt FreeBSD.
+- **Monitoring: FreeBSD-Hosts:** der Agent meldet `os: freebsd`, Sicherheitsupdates aus `pkg audit` gegen die lokale
+  Schwachstellen-Datenbank (Pakete und, auf einem RELEASE, das Basissystem; nie mit `-F`), `reboot_required` aus
+  `freebsd-version` und Dienste aus `service -e`. Ein Jail zaehlt wie ein Container
+  (kein Neustart- und kein Last-Befund), VM-Gaeste werden aus `kern.vm_guest` erkannt. FreeBSD bekommt kein
+  Standard-Template.
+- **Tests: FreeBSD-Box:** `vm.py import --profile base-freebsd` legt aus FreeBSDs Cloud-Image (gepinnte sha256) eine
+  Vorlage im Test-Pool an; `scripts/tests/freebsd_box.sh` faehrt darauf die Agent-Tests, das Paket, das signierte
+  Repo, den cron-Eintrag und den rc.d-Tunnel.
+- **Monitoring: App-Sensor fuer BigBlueButton, OpenLDAP und WordPress:** der Agent liest ueber den neuen Sensor
+  `app` das Innere dieser Anwendungen auf dem eigenen Host, nur lesend und ohne ein Programm zu starten; der
+  Monitoring-Dienst nennt nur eine feste Ansicht. BigBlueButton zeigt alle 5 min Meetings und Teilnehmer aus
+  `getMeetings` (Checksumme aus dem lokalen `securitySalt`, nur an den Port von bbb-web; nie Namen, Passwoerter,
+  Teilnehmer oder Metadaten) und warnt alle 15 min bei fehlgeschlagenen Aufzeichnungen (Marker `*.fail`).
+  OpenLDAP liest beim Paket alle 5 min die Replikation ueber `ldapi` mit SASL EXTERNAL und warnt bei einem
+  syncrepl-Consumer ohne Verbindung; ohne cn=Monitor bleibt der Check `unknown`. WordPress zeigt stuendlich die
+  Version aus `wp-includes/version.php` des Containers, auch beim fpm-Image. `bbb-conf --check` startet der Agent
+  nie. Die Checks brauchen einen Agent in der Version des Monitoring-Dienstes; auf schon uebernommenen Instanzen
+  kommen sie still hinzu. Doku: Monitoring, Abschnitt App-Module; Agent und Monitoring-Architektur (DE+EN).
+- **Monitoring: App-Module fuer selbst betriebene Anwendungen:** die Erkennung findet Nextcloud, Paperless-ngx, Immich,
+  OnlyOffice, Collabora, GitLab, Gitea/Forgejo, Zammad, Mattermost, Rocket.Chat, Synapse, Jitsi (Videobridge und
+  Jicofo), BigBlueButton, 3CX, Keycloak, OpenLDAP, Vaultwarden, Bitwarden, WordPress, Moodle, Odoo, BookStack,
+  Wiki.js, Frigate, Home Assistant und Uptime Kuma am Container-Image (eine Instanz je Compose-Projekt) oder an der
+  systemd-Unit. Je Modul prueft der Agent Container oder Unit und fragt einen lesenden HTTP-Endpunkt auf dem eigenen
+  Host — nichts, was etwas ausloest oder aendert (kein `wp-cron.php`, kein Moodle-Cron, kein Uptime-Kuma-Push), und
+  Anwendungen, die fehlgeschlagene Logins sperren, nur ohne Login. Ein Aufruf, der bei der Anwendung etwas anlegt,
+  laeuft hoechstens alle 15 min. Checks, deren Ziel auf dem Host fehlt, legt das Uebernehmen nicht an und nennt sie
+  unter "Nicht alles uebernommen". Der Status-Check von Nextcloud sendet `Host: localhost` und braucht einen Agent
+  in der Version des Monitoring-Dienstes; ein aelterer meldet ihn `unknown`. Doku: Monitoring, Abschnitt App-Module
+  (DE+EN).
+- **Monitoring: zentrale Checks (Typ `central`):** der Monitoring-Dienst prueft oeffentliche Endpunkte selbst von
+  aussen, mit sieben Fuehlern: `tls` (Kette, Name nach RFC 9525, Restlaufzeit relativ zur Laufzeit,
+  ACME-Erneuerungsfenster, CAA), `dns` (oeffentliche Resolver, Basislinie, Delegation, DNSSEC), `rdap` (Status und Ablauf der
+  Domain; `.de` nur Status), `smtp` und `imap` (Zertifikat und STARTTLS, nur Begruessung, hoechstens alle 15 min je
+  Adresse und Port), `mail_dns` (MX, FCrDNS, SPF, DMARC, MTA-STS, TLS-RPT) und `dnsbl` (freie Blocklisten, Spamhaus
+  nur mit eigenem DQS-Schluessel). Der Dienst verbindet sich nur mit oeffentlichen Adressen; ein internes Ziel meldet
+  der Check als `unknown` fuer den Agent. Ein Probe-Check des Agents als Partner erklaert ein rotes Ergebnis (Weg
+  oder Dienst) und erkennt ein erneuertes Zertifikat ohne Reload. Zentrale Checks legt ein Admin an, nicht ein
+  Template.
+- **Desktop: zentrale Checks anlegen:** Typ `central` mit Fuehler, Agent-Partner und "Basislinie neu lernen"; die
+  Zertifikatsansicht zeigt zentrale `tls`- und `rdap`-Zeilen mit der neuen Spalte Quelle.
+- **Monitoring-API: `POST /checks/{check_id}/rebaseline`** verwirft die gelernte Basislinie eines zentralen
+  `dns`-Checks.
+- **Konfiguration: `MONITOR_PUBLIC_RESOLVERS`** (Standard `9.9.9.9,1.1.1.1`) und **`MONITOR_SPAMHAUS_DQS_KEY`**
+  (leer: Spamhaus aus). Doku: Monitoring, Installation, API-Referenz (DE+EN).
+- **Agent: Schonung unter Last:** ist ein Host zwei Laeufe in Folge stark belastet (Load je CPU ab 2,0, ausser in
+  Containern und unter Windows; I/O-Wartezeit ab 25 %, nur Linux; weniger als 10 % RAM verfuegbar), setzt der Agent
+  Docker, Proxmox, ZFS, SMART, die Proben und die Erkennung aus; nach drei ruhigen Laeufen misst er wieder alles.
+  Ressourcen, Systemzustand und Dienste laufen weiter. Der Report traegt den neuen Block `self.load_shed`.
+- **Monitoring: Last-Schonung auswerten:** die Checks ausgesetzter Sammler behalten ihren letzten Status ohne die
+  45-min-Grenze der Drossel und melden "(skipped: load shedding)", bis sie wieder bewertet werden; `agent_resources`
+  warnt nach 30 min Schonung, die Metrik `monitor_agent_load_shed` zeigt den Zustand. Ein Report ohne den Block
+  bleibt wie bisher. Doku: Agent, Monitoring (DE+EN).
+- **Monitoring: Module und Erkennung:** der Agent erstellt etwa einmal am Tag (oder auf Anforderung) ein Inventar
+  seines Hosts — Units, lauschende Ports, Container, Marker, erkannte Protokolle; nur Namen, Ports und Zustaende, nie
+  Konfigurationsinhalte, Kommandozeilen oder Umgebungsvariablen. Der Monitoring-Dienst gleicht es mit seinem
+  Modul-Katalog ab und legt Funde in einen Eingang (`/api/monitoring/findings`, nur Admins); erst das Uebernehmen legt
+  Checks an, geloescht wird nie etwas. Der Katalog bringt zunaechst das Modul `port` (lauschender Port ohne bekannten
+  Dienst) mit.
+- **Monitoring: Check-Typ `probe`:** eingebaute, nur lesende Sensoren des Agents (HTTP, TLS, Protokoll, Unix-Socket,
+  DNS, Datenbank, Journal-Zaehler, Units, Prozesse, Container, Zertifikats- und Dateialter) messen Dienste des
+  eigenen Hosts nach einem Plan, den der Agent ueber `GET /api/monitoring/agent/{server_id}/plan` holt. Ziele sind
+  nur Loopback, eigene Adressen und eigene Container. Neue Checks aus einem Katalog-Update laufen still mit, bis der
+  Fund uebernommen ist.
+- **Agent: `monitor credential set|delete|list`:** Zugangsdaten fuer Probes bleiben auf dem Host; der
+  Monitoring-Dienst erfaehrt nur, welche Namen gespeichert sind.
+- **Agent: Selbstdrosselung:** der Agent misst, was jeder Collector je Lauf kostet, meldet es
+  (`monitor_agent_collector_*`) und laesst Docker, Proxmox, ZFS, SMART und die Erkennung bei wiederholten
+  Zeitlimit-Treffern seltener laufen; die Checks darauf behalten dann ihren Zustand. Report-Version 4; aeltere Agents
+  arbeiten mit dem neuen Monitoring-Dienst weiter wie bisher, nur ohne Module.
+- **Desktop: Details hinter den Monitoring-Checks:** die ausgeklappte Zeile eines Checks nennt, was hinter seinen
+  Zahlen steht. Systemzustand: die Pakete mit offenen Sicherheits-Updates, die Pakete, die einen Neustart verlangen,
+  und nach einem OOM-Kill die beendeten Prozesse mit Name und PID; der Reiter „Updates & Neustarts“ bekommt die
+  Spalte „Pakete“. Docker: Container nach Compose-Projekt gruppiert, mit veroeffentlichten Ports und Laufzeit.
+  Proxmox: je VM/CT Ablage, Groesse und Verifizierung des neuesten Backups, die Backup-Jobs und der letzte
+  vzdump-Fehler, dazu Spalten im Reiter „Backups“. ZFS: Fragmentierung, letzter Scrub und die vdevs mit Fehlern.
+  Nur Namen und Zahlen, nie eine Befehlsausgabe oder Befehlszeile, und nur im Desktop: Status, Meldung und Metriken
+  der Checks bleiben unveraendert, Mail und Webhooks nennen keine Details.
+- **Agent: Namen fuer die Details:** der Agent schickt die Paketnamen aus seiner Zaehlung (`apt-get -s`, `dnf -C`,
+  `pkg audit -q`, `/var/run/reboot-required.pkgs`, `needs-restarting -r`), nach einem OOM-Kill Name und PID aus der
+  Kernel-Meldung im Journal, die Compose-Labels, Ports und Startzeit aus `docker inspect`, die Backup-Jobs und den
+  letzten gescheiterten vzdump-Lauf ueber `pvesh get` (nur lesend, mit dem Backup-Index hoechstens alle 30 min) und
+  Scrub und vdev-Fehler aus `zpool status -j` (ab OpenZFS 2.3). Jeder neue Aufruf steht mit festen Argumenten auf
+  der Befehls-Freigabeliste.
+- **Desktop: alle Dienste eines Servers:** die Monitoring-Ansicht eines Servers zeigt das ganze Dienste-Inventar, das
+  der Agent meldet — Zustand, seit wann, Neustarts, RAM und Grund eines Ausfalls —, sortierbar, mit einem Filter
+  nach Zustand und einer Suche ueber alle Spalten samt Aliasen. Nur fuer Admins.
+- **Agent: Zustandsfakten der Dienste:** unter Linux ein gebuendeltes `systemctl show` je Lauf (Unterzustand,
+  Ergebnis, Exit-Status oder Signal, Neustarts, seit wann, RAM); unter Windows der Exit-Code aus `sc query` und, nur
+  bei einem gestoppten Dienst mit Fehler, die Absturz-Ereignisse 7031/7034 des Service Control Manager der letzten
+  24 h. Der Report traegt die neuen Felder im Inventar und `systemd.failed_details`; aeltere Monitoring-Dienste
+  ignorieren sie.
+- **Monitoring: Grund eines Ausfalls in der Meldung:** ein fehlgeschlagener Dienst nennt in Meldung, Mail und
+  Webhook seinen Grund, etwa `Failed: nginx.service (exit-code, status=1)`; im Modus `list` steht er hinter jedem
+  Dienst, der nicht laeuft, unter Windows der Fehlercode aus `sc query` (`Spooler (win32=1067)`). Der Text bleibt
+  waehrend desselben Ausfalls gleich.
+- **Monitoring: Fehlerzeilen fehlgeschlagener Dienste:** der Dienst speichert bis zu 10 Fehlerzeilen je
+  fehlgeschlagenem Dienst, vor dem Speichern geschwaerzt (Passwoerter in URLs, `password=`/`token=`/`secret=`/`key=`,
+  `Authorization`, lange Hex- und Base64-Folgen), nur solange der Dienst fehlschlaegt und nur fuer Admins im
+  Desktop; nie in Meldung, Verlauf, Mail oder Webhook. Der Schalter "Fehlerzeilen senden" je Server (ab Werk an)
+  loescht sie beim Ausschalten. Der Agent dieser Version sammelt noch keine Zeilen.
+- **Desktop: "Mehr Log":** je systemd-Dienst oeffnet ein Knopf einen Terminal-Tab ueber die gespeicherte
+  SSH-Verbindung des Servers mit `journalctl --no-pager --unit=<unit> --lines=200`, mit den Rechten des
+  SSH-Benutzers; gespeichert wird nichts. Doku: Monitoring (Admin und Entwickler), Agent, API-Referenz (DE+EN).
+- **Desktop: Serverseite im Monitoring:** je Server eine Karte je Dienst oder Modul; gruene und wartende Karten
+  bleiben zu, Probleme stehen offen. Die Karte „Neu gefunden" uebernimmt oder verwirft die Funde des Agents direkt
+  auf der Seite, „Jetzt scannen" fordert eine neue Erkennung an, und eine Karte nennt, warum ihre Checks gerade
+  schweigen (stiller Check, Wartungsfenster, Host down). Die Karte „System" traegt den Verlauf von CPU, RAM,
+  Platten, Load und Netz.
+- **Desktop: Monitoring-Kosten je Server:** eine Karte zeigt je Collector des Agents Dauer und CPU-Zeit eines Laufs,
+  gemittelt ueber die letzte Stunde, die Zeitlimit-Treffer dieser Stunde und ob die Selbstdrosselung ihn seltener
+  laufen laesst (`GET /api/monitoring/status/server/{server_id}/costs`).
+- **Desktop: Querschnitt ueber alle Server:** die Reiter „Zertifikate & Domains" (Ablauf der Zertifikate aus
+  HTTPS-Checks und den Fuehlern `tls` und `certfile`), „Backups" (Proxmox-Backups je VM), „Updates & Neustarts"
+  (Neustart noetig, offene Sicherheits-Updates je Linux-Server) und „Funde" (der Eingang aller Server, nach Server
+  gruppiert).
+- **Desktop: Warnung ohne Ergebnis:** kommt laenger als `max(10 min, 2 × kuerzestes Check-Intervall)` kein
+  Check-Ergebnis, warnen Statusleiste und Monitoring-Seite.
+- **Desktop: Zugangsdaten hinterlegen:** meldet ein Modul-Check `no_credential` oder `denied`, oeffnet ein Knopf auf
+  seiner Karte ein Terminal zum Host, in dem nur `sudo adminhelper-agent monitor credential set <ref>` laeuft; das
+  Geheimnis wird nur dort eingegeben, AdminHelper behaelt es nicht. Ohne SSH-Verbindung oder auf Windows zeigt der
+  Dialog den Befehl zum Kopieren.
+- **Monitoring-API:** die Status-Routen nennen je Check den Grund einer Unterdrueckung (`mutedReason`), Check- und
+  Status-API den Katalog-Schluessel eines Modul-Checks (`moduleCheckKey`), `GET /status/summary` das juengste
+  Ergebnis (`lastResultAt`) und das kuerzeste Intervall (`minIntervalS`); der HTTP-Check legt mit `verify_ssl` das
+  Zertifikat des ersten HTTPS-Hops in seine Details (Gueltigkeit, Aussteller, Name).
+- **Glocke: Vorfaelle statt Einzelmeldungen:** der Notification-Hub faltet die Meldungen eines Checks auf einem
+  Server in einen Vorfall mit Zaehler und Verlauf; ein Eintrag je Person, der bei jeder neuen Benachrichtigung wieder
+  ungelesen nach oben rueckt. Benachrichtigt wird bei einem neuen Vorfall, bei der Eskalation von warning auf critical
+  und fruehestens 30 Minuten nach der letzten Benachrichtigung; die Entwarnung behebt den Vorfall von selbst, ein
+  Rueckfall binnen 30 Minuten oeffnet ihn still wieder. Die neuen Agents einer Sammelmeldung werden ein gemeinsamer
+  Vorfall.
+- **Vorfaelle im Team bearbeiten:** Bestaetigen, Als behoben markieren, Wieder oeffnen und Notizen, mit Benutzername im
+  Verlauf; nur wer jeden Server des Vorfalls sieht. Neue Routen unter `/api/notifications` (`/unread`, `/hide`,
+  `/incidents/{id}`, `/incidents/ack`, `resolve`, `reopen`, `notes`, `mute`, `/server-mutes`).
+- **Stummschalten:** einen Vorfall fuer 1 Stunde oder bis morgen 07:00 (per API bis 7 Tage), einen Server fuer
+  24 Stunden; stumme Eintraege bleiben gelesen, zaehlen nicht in der Glocke und senden keine E-Mail.
+- **Desktop: Benachrichtigungs-Center mit Vorfaellen:** sechs Postfaecher (Posteingang, Offen, Bestaetigt, Behoben,
+  Stumm, Alle), Kategorien mit Anzahl, Detail mit Aktionen je Zustand, Servern, Regeln, Kanaelen, Verlauf und Notizen,
+  "Regel bearbeiten" fuer Monitoring-Vorfaelle; die Glocke bestaetigt offene Eintraege direkt, eine Auswahl wird
+  bestaetigt, ausgeblendet oder gelesen markiert.
+- **Agent: OPNsense-Plugin `os-adminhelper` (OPNsense 26.1 und 26.7, amd64):** kommt aus demselben signierten
+  pkg-Repo des Servers wie der FreeBSD-Agent und zieht ihn als Abhaengigkeit nach. Die Seite Services → AdminHelper
+  schaltet Takt und Tunnel an und aus und zeigt Registrierung, Server, Agent-Version, Takt, Tunnel-Client und den
+  letzten Monitoring-Lauf; den Tunnel fuehrt OPNsense als Dienst `adminhelper_frpc`, und die Repo-Datei haelt das
+  Plugin auf den Server des Agents gerichtet. Registriert wird nur in der Shell (`provision --token-stdin`), kein
+  Token steht in `config.xml`. Das Repo ist ein Fremd-Repo, von OPNsense nicht unterstuetzt. Einrichtung:
+  Agent-Verteilung, Abschnitt OPNsense.
+- **Monitoring: Modul OPNsense:** liest ueber lesende configd-Aktionen, ohne API-Key, Dienste, Gateways,
+  Firmware-Stand, Zustandstabelle und CARP der Firewall — gestoppte Dienste und ausgefallene Gateways sind kritisch,
+  eine Zustandstabelle ab 80 % Warnung und ab 95 % kritisch, CARP-Adressen im Zustand INIT kritisch. Ein verfuegbares
+  Update und der CARP-Wartungsmodus bewerten nichts, die Karte zeigt sie.
+- **Monitoring: Probes auf FreeBSD:** Units sind dort rc.d-Dienste (`service <name> onestatus`), Unix-Sockets prueft
+  der Agent wie unter Linux an Pfad und Gegenprozess, und die Erkennung findet Marker-Pfade auch unter FreeBSD.
+- **Tests: OPNsense-Box:** `vm.py bake --profile base-opnsense` macht aus der FreeBSD-Vorlage eine Vorlage mit
+  OPNsense 26.7; `scripts/tests/opnsense_box.sh` prueft darauf Plugin und Agent gegen das echte `configctl`.
+- **Desktop: Backend fuer eingebettetes RDP:** Die Desktop-App bringt einen eigenen RDP-Client mit (IronRDP, TLS mit
+  CredSSP, Grafik-Pipeline, festes Format 1280x720). `rdp_session_start` startet eine Sitzung zu einer gelisteten
+  RDP-Verbindung mit dem Passwort aus dem App-Keyring und gibt das Bild ueber einen WebSocket auf 127.0.0.1 mit
+  Token an die Webview; die Phasen meldet das Event `rdp-session`, `rdp_session_stop` beendet sie. Ein Watchdog
+  verbindet eine Sitzung neu, deren Eingabe kein Bild mehr beantwortet. Das Server-Zertifikat pinnt die App je
+  Workspace und Ziel erst nach Bestaetigung (`rdp_trust_certificate`), `trust_cert` wirkt wie `/cert:ignore`.
+  Noch ruft keine Oberflaeche die Befehle auf; RDP-Verbindungen oeffnet weiter der Client des Betriebssystems. Die
+  Webview-CSP erlaubt dafuer zusaetzlich `ws://127.0.0.1:*`. Doku: Desktop-Entwicklerdoku (DE+EN).
+- **Desktop: SSH im AdminHelper-Terminal:** Eine SSH-Verbindung oeffnet in einem Sitzungs-Tab im Fenster des
+  Workspace; `ssh` laeuft dort in einer Pseudo-Konsole des Desktops (unter Windows ConPTY) mit denselben Argumenten
+  wie im OS-Terminal, auch ueber den Tunnel. Mehrere Sitzungen stehen als Tabs neben der Seite; je Sitzung Suche im
+  Verlauf, Schrift kleiner und groesser, Neu verbinden nach dem Ende und eine Rueckfrage vor dem Beenden einer
+  laufenden Sitzung. Der Verbinden-Knopf im Inspector hat fuer SSH einen Pfeil, der die Konsole fuer diesen einen
+  Start waehlt (*Im AdminHelper-Terminal*, *Im OS-Terminal*); die Statusleiste zaehlt die offenen Sitzungen.
+- **Desktop: Einstellungen *Terminal*:** eine sechste Sektion mit *Konsole fuer SSH* und den Terminal-Optionen
+  (Schriftgroesse, Farbschema, Cursor, Scrollback, Kopieren beim Markieren, Rechtsklick fuegt ein, Schliessen
+  bestaetigen); sie gelten fuer alle Workspaces des Geraets.
+- **CI: naechtliche Tiefenpruefung auf GitHub:** der Workflow `nightly.yml` faehrt jede Nacht (02:23 UTC), von Hand
+  und auf einem Pull Request, der ihn aendert, das Schema-Fuzzing aller drei Dienste mit 100 Beispielen je Operation
+  und den Backup-Restore-Rundlauf des Stacks (`backup_restore_test.sh`, ein SKIP ist rot); Rechte nur lesend, kein
+  Secret.
+- **CA: Ablaufdaten anzeigen und Zwischenzertifikate unter derselben Root rotieren:**
+  `docker compose run --rm --no-deps ca-issuer python -m app.cli status` zeigt Root, aktuelle und abgeloeste
+  Zwischenzertifikate der internen CA mit Name, Ablaufdatum (UTC) und Resttagen; Exit 1, wenn die Root oder ein
+  aktuelles Zwischenzertifikat weniger als 180 Tage hat, 3, wenn eins davon nicht gueltig oder eine der Dateien nicht
+  lesbar ist, sonst 0. Exit 1 auch, wenn ein Eintrag der Datei `<scope>-retired.pem` (unten) kein Zwischenzertifikat
+  seines Scopes unter der Root ist: Der Start ueberspringt ihn mit einer WARNING, `status` markiert ihn mit `SKIPPED`
+  und dem Grund. `… python -m app.cli rotate-intermediates` stellt fuer `tunnel`, `access` und `internal` neue
+  Zwischenzertifikate unter derselben Root aus (Name mit Datum, etwa `AdminHelper Access Intermediate 2031-05-04`);
+  die abgeloesten bleiben ohne Schluessel in `<scope>-retired.pem` im Volume `ca-pki`, bis sie ablaufen. Die
+  Root-Passphrase kommt wie beim Dienst aus `CA_ROOT_PASSPHRASE_FILE` bzw. `CA_ROOT_PASSPHRASE`, sonst aus einer
+  Abfrage am Terminal oder der ersten Zeile von stdin, nie aus einem Argument; eine falsche Passphrase aendert nichts.
+  Der Befehl laeuft auch, wenn der `ca-issuer` wegen abgelaufener Zwischenzertifikate nicht startet, und nennt danach
+  den Neustart: erst `docker compose restart ca-issuer`, warten, bis `docker compose ps` ihn als `healthy` zeigt, dann
+  `docker compose restart gateway`, denn das Gateway liest seine Zertifikate nur beim eigenen Start und soll sie erst
+  lesen, nachdem der `ca-issuer` sie neu ausgestellt hat. Der Issuer signiert dann mit den neuen
+  Zwischenzertifikaten und erneuert weiter Zertifikate der abgeloesten, Gateway (`client-ca.pem`) und frps (`ca.crt`)
+  vertrauen alten und neuen, bis die alten ablaufen, und ihre Server-Zertifikate werden unter den neuen neu
+  ausgestellt. Enrollte Agenten und Desktops erneuern wie bisher und uebernehmen dabei die neue Kette. Das Image des
+  `ca-issuer` fuehrt dazu uebergebene Argumente als Nutzer `app` aus statt des Dienstes. Die Meldungen zum Ende eines
+  Zwischenzertifikats (WARNING beim Start und beim Signieren, Abbruch beim Start, ERROR und HTTP 503 beim Signieren)
+  nennen den Befehl; ist ein Zwischenzertifikat noch nicht gueltig, nennen sie stattdessen die Host-Uhr (NTP). Geht die
+  Uhr des Hosts hinter dem Ausstellen eines aktuellen Zwischenzertifikats nach, bricht die Rotation ab und aendert
+  nichts, denn unter dieser Uhr wuerde sie dem aktuellen Zwischenzertifikat nicht mehr vertrauen; die Meldung nennt
+  Datei, Name und Beginn der Gueltigkeit. Doku: Betrieb (DE+EN).
+- **Release: FreeBSD-Agent und signiertes pkg-Repo:** Das Release baut den Agent fuer FreeBSD (Asset
+  `adminhelper-agent-freebsd-x86_64`) und legt unter `freebsd/` im Agent-Paket-Repo ein signiertes pkg-Repo fuer
+  FreeBSD 14 und 15 mit `adminhelper-agent` und dem OPNsense-Plugin `os-adminhelper` bei. Signiert wird mit dem
+  Secret `PKG_REPO_SIGNING_KEY`; fehlt es oder passt es nicht zu `apps/agent/freebsd/adminhelper-pkg.pub`, schlaegt
+  das Release fehl. Die PR-CI baut und prueft das pkg-Repo auf jedem PR (Job `pkg-repo`).
+- **Server: Fehlerantworten tragen ein optionales Feld `code` neben `detail`:** ein stabiler Maschinencode der
+  Form `ERR_...`, an dem ein Client verzweigt statt am Text. Heute tragen ihn die 403 der Zertifikatspruefung
+  (`ERR_CERT_REVOKED`, `ERR_CERT_USER_MISMATCH`, `ERR_CERT_SERVER_MISMATCH`); `detail` bleibt unveraendert,
+  alle anderen Fehler bleiben ohne `code`. Doku: API-Referenz fuer Entwickler (DE+EN).
+- **CA: Rotation nach einem Leck:** `rotate-intermediates --compromised <scope>` behaelt fuer diesen Scope kein
+  abgeloestes Zwischenzertifikat im Trust-Bundle und erneuert keine Zertifikate des alten mehr. Die Geraete des Scopes
+  sind danach zu widerrufen und neu einzurichten; ganz geschlossen ist ein Leck erst mit einer neuen Root (Betrieb,
+  CA-Rotation).
+- **Web: Seite "Zertifikate" mit Ablauf-Alarm:** Das Web-Admin-Panel zeigt unter *Zertifikate* (nur Admins), wann die
+  Zertifikate der Infrastruktur (Root, Zwischenzertifikate, Gateway, frps) und der Agenten ablaufen — mit Resttagen und
+  Ampel: gelb unter 30, rot unter 7 Tagen. Der `ca-issuer` schreibt die Infrastruktur-Zertifikate bei jedem Start in
+  die Datenbank. Einmal am Tag meldet der `scheduler` jedes Zertifikat, das gelb oder rot wird, den Admins ueber den
+  Notification-Hub (Glocke und, je nach Abo, E-Mail), je Stufe einmal. Neuer Endpunkt
+  `GET /api/enrollment/certificates`. Doku: Betrieb, Web-UI, API-Referenz (DE+EN).
+- **Desktop: Befehlspalette:** Strg+K (macOS Cmd+K) oder der Suchknopf im Kopf sucht Verbindungen, Seiten und
+  Aktionen und fuehrt sie mit Enter aus.
+- **FRP: Tunnel-Schluessel je Host erneuern:** der Schluessel, mit dem frps die Proxys eines Hosts annimmt, hat je
+  Server eine Generation. Jede Provisionierung erneuert ihn, ein Admin auch von Hand im Desktop (Reiter Tunnel,
+  „Tunnel-Schluessel erneuern“) oder per `POST /api/servers/{id}/frp-key/rotate`. Der Agent holt die neue `frpc.toml`
+  beim naechsten Lauf; von Hand verteilte `frpc.toml` sind danach neu zu verteilen. Bestehende Hosts behalten ihren
+  Schluessel bis zur ersten Erneuerung.
+- **Monitoring: Module fuer Netz, DNS/DHCP/Zeit und Reverse Proxies:** die Erkennung findet WireGuard, OpenVPN,
+  fail2ban, CrowdSec, keepalived, Tailscale, Headscale, BIND, Unbound, Pi-hole, AdGuard Home, Kea, dnsmasq,
+  isc-dhcp-server, chrony, NTPsec, Caddy, Traefik, Nginx Proxy Manager und Squid. Neben Unit oder Container liest der
+  Agent je Dienst Kennzahlen auf dem eigenen Host: Alter der WireGuard-Handshakes, verbundene OpenVPN-Clients,
+  fail2ban-Jails ohne Logdatei, veraltete CrowdSec-Bouncer, gehaltene keepalived-Adressen, Tailscale-Verbindung und
+  Schluesselablauf, Zonen und rekursive Clients von BIND, SERVFAIL-Anteil von Unbound, Auslastung der Kea- und
+  dnsmasq-Pools, Synchronisation und Offset von chrony und NTPsec, Ablauf der Zertifikate von Caddy, Traefik und Nginx
+  Proxy Manager, fehlschlagende Caddy-Upstreams und der Cache-Manager von Squid. Dafuer startet der Agent nur
+  Lesekommandos aus einer festen Liste mit festen Argumenten; zum Server gehen nur Zahlen, nie Schluessel, Adressen,
+  Namen oder Konfigurationsinhalte. Die neuen Checks brauchen einen Agent in der Version des Monitoring-Dienstes; ein
+  aelterer meldet sie `unknown`. Doku: Monitoring, Abschnitt App-Module (DE+EN).
+- **Monitoring: Mail-, Verzeichnis- und Schuldienste:** neue Katalog-Module pruefen Postfix (Begruessung, Queues,
+  Alter der aeltesten Mail), Dovecot, Mailcow (Container, Queue, Watchdog ueber das lokale Redis, ohne API-Key),
+  MailPiler, ClamAV (Alter der Signaturen), Rspamd, SpamAssassin und OpenDKIM, dazu Samba als Domaenencontroller
+  (Replikation, FSMO-Rollen, LDAPS-Zertifikat) und als Dateiserver oder Domaenenmitglied (smb.conf, winbind,
+  Vertrauenskonto) und linuxmuster.net 7.x (ausstehender Geraete-Import, veraltete LINBO-Torrents, Zertifikat des
+  Servers). Der Agent liest nur Dateien und feste Lesekommandos des eigenen Hosts; Passwoerter aus `mailcow.conf`
+  und `piler.conf` verlassen den Host nicht, zum Server gehen nur Zahlen, Alter und Zustaende, keine Adressen,
+  Domains, Nutzer- oder Freigabenamen. Nicht an laufenden Diensten geprueft; edulution folgt spaeter. Doku:
+  Monitoring, Abschnitt App-Module; Agent (DE+EN).
+- **Monitoring: Modul `unifi-os-server`:** Ein UniFi OS Server wird an der Unit `uosserver.service` erkannt. Alle
+  5 Minuten liest der Agent ueber die Integration API der Network-Anwendung, wie viele Geraete offline sind: ein
+  Gateway offline ist `critical`, ein Geraet offline, dessen Uplink selbst online ist, `warning`. Dazu Dienst und
+  Zertifikat des Web-Ports 11443. Der API-Key bleibt auf dem Host; weil ein Key nicht nur lesen kann, schickt der
+  Agent nur `GET` auf einer festen Liste lesender Pfade und meldet nur Zahlen. Geprueft mit UniFi OS Server 5.1.42.
+  Doku: Monitoring, Agent (DE+EN).
+- **Monitoring: Windows-Rollen und Windows-Backups:** die Erkennung listet unter Windows die Dienste des
+  Dienst-Managers, und neue Katalog-Module pruefen Windows Update, Ereignisse und Maschinenzertifikate jedes
+  Windows-Hosts, Active Directory (Replikation dieses DCs), DHCP, DNS, IIS, RDS-Lizenzen, Hyper-V, DFS-R, SQL Server
+  (Standardinstanz), WSUS, Dateiserver (Speicherplaetze, Kontingente, Schattenkopien, BitLocker), Druckserver,
+  Defender, Windows-Server-Sicherung und Veeam Agent fuer Windows, dazu CUPS unter Linux. Der Agent liest nur feste
+  WMI-Abfragen, Ereigniszaehler, den Zertifikatsspeicher und je eine feste Zeile von `repadmin`, `appcmd` und
+  `lpstat`, ohne PowerShell und ohne WMI-Methoden; zum Server gehen nur Zahlen, Alter und Ja/Nein-Werte. Nicht an
+  einem Windows Server mit diesen Rollen geprueft. Doku: Monitoring, Abschnitte Erkennung und App-Module; Agent
+  (DE+EN).
+- **Monitoring: Check-Status `info`:** ein Hinweis ohne Alarm. Eine Modul-Regel der Stufe `info` setzt ihn, wenn
+  keine `warning`- oder `critical`-Regel haelt. Der Desktop zeigt ihn blau und zaehlt ihn in der Uebersicht als
+  "Hinweis"; fuer die Ampel von Host und Gruppe zaehlt er wie `ok`. Er benachrichtigt nie; faellt ein gemeldeter
+  Check von `warning`/`critical` auf `info`, geht die Entwarnung raus. `GET /status/summary` hat das Feld `info`,
+  `monitor_check_status` schreibt dafuer 4. Doku: Monitoring (DE+EN).
+- **Monitoring: Katalog-Updates als Angebot:** aendert eine neue Version die Definition eines uebernommenen Modul-Checks,
+  laeuft er unveraendert weiter; der Fund wird `changed` und nennt die betroffenen Checks (`updatableChecks`). Erst das
+  Uebernehmen schreibt die neue Definition samt Regeln (`updatedChecks`); Name, Intervall, Zeitlimit und Schalter
+  bleiben. Eigene Aenderungen an einem Check gelten nie als Update. Der Desktop-Client zeigt die Zahl im Funde-Eingang.
+- **Monitoring: Container im Compose-Fund:** der Fund eines Compose-Projekts nennt je Dienst den gebundenen Container
+  (`containers`); ein neuer Containername allein aendert den Fund nicht. Der Desktop-Client zeigt ihn.
+- **Agent: implizites TLS und Redis-ACL:** der Sensor `proto` spricht SMTPS, IMAPS, POP3S, LDAPS, Redis mit TLS-Port
+  und Banner hinter TLS (`tls: true`); Redis meldet sich mit einem ACL-Nutzer an (Zugang `redis_acl`,
+  `benutzer:passwort`). Ein aelterer Agent meldet solche Checks `unknown`.
+- **Monitoring: optionale Zugangsdaten:** ein Katalog-Check kann seinen Zugang als optional fuehren; solange der Host
+  ihn nicht als hinterlegt meldet, laeuft der Check ohne ihn statt `no_credential` zu melden.
+- **Monitoring: Web-Domains und PHP-Anwendungen auf dem Host:** Die Erkennung liest die vHosts von nginx und Apache
+  (nur Linux, hoechstens 500). Jede Domain mit TLS wird eine Instanz von `web_domain`: Ablauf und Name des
+  ausgelieferten Zertifikats, dazu ein Hinweis, wenn ein erneuertes Zertifikat noch nicht neu geladen wurde. Nextcloud,
+  Moodle, WordPress und BookStack ohne Container bekommen die Module `nextcloud_native`, `moodle_native`,
+  `wordpress_native` und `bookstack_native`. Die Domainnamen gehen als Instanzen zum Monitoring-Dienst; Pfade,
+  Konfigurationstext und Dateiinhalte verlassen den Host nie, den privaten Schluessel eines Zertifikats oeffnet der
+  Agent nie.
+- **Monitoring: Moodle-Systempruefungen:** `moodle_native` fuehrt alle 15 Minuten `admin/cli/checks.php` als Benutzer
+  des Webservers aus, nie als root, und meldet nur Zustand und Zahl der Pruefungen, die nicht OK sind. Gehoeren Code
+  oder Datenverzeichnis nicht nur root und diesem Benutzer, bleibt der Check `unknown`.
+- **Monitoring: HAProxy-Zertifikate:** Das Modul `haproxy` prueft taeglich die Zertifikatsdateien der `bind`-Zeilen
+  und warnt, wenn eines in weniger als 14 Tagen ablaeuft.
+- **Monitoring: mehr App-Checks:** Nextcloud bekommt Container- und Status-Check auch ohne Compose oder unter anderem
+  Dienstnamen; Bitwarden fragt `/alive` am nginx (8443 mit TLS, sonst 8080); das OnlyOffice-Image fragt
+  `/healthcheck` auf 8000, sobald der Agent den Port im Container lauschen sieht; Wiki.js 2 fragt `/healthz` (mit
+  Datenbank-Pool), ein Wechsel auf Wiki.js 3 macht den Fund geaendert und schaltet den Check beim Uebernehmen ab.
+- **Agent: Inventar mit Unit und lauschenden Container-Ports:** je Socket die systemd-Unit des Prozesses, je laufendem
+  Container mit eigenem Netz die TCP-Ports, auf denen darin etwas lauscht (nur Linux).
+- **Desktop: Verlauf eines Servers im Monitoring:** Das Dashboard eines Servers mit Agent-Daten zeigt CPU, RAM,
+  Swap, Speicher je Mount, Latenz und Load je CPU ueber 1 Std., 24 Std., 7 Tage oder 30 Tage, mit Vorperiode,
+  Schwellen, Statuswechseln, Wartungsfenstern, Zoom, Kennzahlen, Speicher-Prognose und CSV-Export.
+- **Desktop: Server vergleichen:** Der Reiter Verlauf der Monitoring-Seite vergleicht CPU, RAM, Speicher oder Load
+  je CPU ueber alle Server mit Agent-Daten, mit Rangliste und bis zu vier Servern im Chart.
+- **Monitoring:** Das Monitoring speichert Swap und die CPU-Zahl aus dem Agent-Report als eigene Serien und bietet
+  dazu `/status/server/{id}/history` und `/status/compare`, und `/checks/{id}/metrics` kennt den Zeitraum 30d.
+- **Monitoring: deeper application checks:** OnlyOffice compares its health check answer, Keycloak,
+  Mattermost and Vaultwarden are checked over plain HTTP or TLS, whichever their port speaks, OpenLDAP
+  rates its certificate by the share of its lifetime left, and Pi-hole, AdGuard Home, Unbound and BIND
+  are asked for `localhost` on their own port 53 every five minutes. An agent older than the monitoring
+  service leaves these checks `unknown` ("invalid") until it is updated, the four web checks too;
+  OpenLDAP's certificate check stays `unknown` because the old agent lacks `lifetime_pct`, not "invalid".
+- **Monitoring: taeglicher Konfigurationstest fuer BIND, Unbound, dnsmasq, keepalived, Squid und fail2ban:** der Agent
+  startet einmal am Tag den Konfigurationstest des Dienstes (etwa `named-checkconf`, `squid -k parse`) und meldet nur,
+  ob die Konfiguration laedt; eine, die nicht laedt, ist `warning`, bevor der naechste Neustart oder Reload scheitert.
+- **Monitoring: Modul `nextcloud-aio`:** Nextcloud All-in-One wird am Image des Mastercontainers erkannt. Der
+  Agent zaehlt alle 5 Minuten die Container, die All-in-One dauerhaft betreibt; ein gestoppter Container ist
+  `critical`, ausser waehrend des naechtlichen Backups, das sie absichtlich stoppt. Ein Backup laenger als 6 Stunden
+  warnt. Der Agent prueft die Markierung des Backups nur auf Existenz und Alter und liest keine Konfiguration.
+- **Monitoring: Last der Jitsi-Videobridge:** `jitsi-videobridge` v2 liest alle 5 Minuten `stress` aus `/metrics`
+  an 8080; ueber 0,8 warnt. Dafuer nimmt der HTTP-Sensor den Parameter `accept` (nur `application/json`). Ein
+  aelterer Agent meldet die neuen Checks als `invalid`, bis er aktualisiert ist. Doku: Monitoring, Agent (DE+EN).
+- **Monitoring: WP-Cron im Modul WordPress:** Der neue Check `cron` zaehlt alle 15 Minuten die geplanten Ereignisse
+  einer WordPress-Site im Docker-Container, die ueberfaelligen und das Alter des aeltesten. Wartet ein Ereignis
+  laenger als eine Stunde, warnt der Check, nach einem Tag ist er kritisch. Der Agent liest die Option `cron` mit
+  einer festen, nur lesenden Abfrage, und zwar nur ueber das Unix-Socket des Datenbank-Containers auf demselben
+  Host. Benutzer und Passwort nimmt er aus der Umgebung des WordPress-Containers. Sie verlassen den Host nie, zum
+  Server gehen nur die drei Zahlen. Doku: Monitoring, Abschnitt App-Module, und Entwickler-Doku Agent (DE+EN).
+- **Monitoring: Netzwerk im Verlauf:** der Agent meldet die Byte-Zaehler seiner Interfaces (Linux und Windows); der
+  Verlauf eines Servers zeigt den Reiter Netzwerk (eingehend und ausgehend in Mbit/s), der Serververgleich die Metrik
+  Netzwerk ein. Aeltere Agents melden nichts, der Reiter fehlt dann.
+- **Monitoring: Module fuer Speicher, Hardware, USV, Proxmox und Ceph:** die Erkennung findet Software-RAID
+  (`mdadm`), LVM-Thin-Pools (`lvm-thin`), Hardware-RAID von Broadcom, Dell und HPE (`hwraid`), die lokalen
+  IPMI-Sensoren (`ipmi`), NUT (`nut`, `nut-monitor`), apcupsd, Proxmox VE (Quorum, HA, Replikation, Backup-Laeufe,
+  Updates), Proxmox Backup Server (Fuellstand, Wartungsmodus, fehlgeschlagene GC-, Verify-, Sync- und Prune-Jobs), Ceph
+  (Health, Pool-Belegung, nur auf Monitor-Hosts) und die Snapshot-Frische von sanoid. Der Agent liest dafuer nur
+  Dateien des Kernels oder startet feste Lesekommandos (neuer Sensor `host` fuer Teile des Hosts ohne Unit) und meldet
+  nur Zahlen und Zustaende, nie Namen oder Seriennummern; schreibende Aufrufe (etwa `mdadm`, `pvesh set`,
+  `proxmox-backup-manager`, `ceph ... set`, `sanoid --cron`, `ipmitool sel`) stehen nicht auf seiner Freigabeliste.
+  Die Checks brauchen einen Agent in der Version des Monitoring-Dienstes. Doku: Monitoring, Abschnitte "Speicher,
+  Hardware und USV" und "Proxmox, Ceph und sanoid" (DE+EN).
+- **Monitoring: Module fuer Webserver und PHP:** nginx, Apache, HAProxy, PHP-FPM, PM2, Varnish, ProFTPD und
+  CloudPanel. Der Agent faehrt taeglich den Konfigurationstest des Webservers und liest die Statusseiten, die nginx,
+  Apache und PHP-FPM schon auf Loopback ausliefern, die Backends und Server am Stats-Socket von HAProxy (nur `show`)
+  und die Apps des PM2-Daemons als dessen Nutzer. CloudPanel bekommt eine Pruefung des Panel-Zertifikats; `clpctl`
+  startet der Agent nie. Doku: Monitoring, Abschnitt App-Module (DE+EN).
+- **Monitoring: Module fuer Datenbanken:** MariaDB (Verbindungen, abgebrochene Verbindungen, Replikation, Galera),
+  PostgreSQL (Erreichbarkeit, Verbindungen, lange Transaktionen, Replikation, Alter der Transaktions-IDs), Redis
+  (`INFO`: Persistenz, abgewiesene Verbindungen, verdraengte Schluessel, Speicher) und Elasticsearch (Cluster-Status,
+  Knoten, Disk-Indikator). MariaDB und PostgreSQL fragt der Agent ohne gespeichertes Passwort ueber den lokalen
+  Socket.
+- **Monitoring: Module fuer Backups:** UrBackup, BackupPC, rsnapshot, Veeam Agent for Linux, restic, borg, kopia,
+  Duplicati sowie die Backup-Verzeichnisse von GitLab (Paket und Docker) und 3CX. Gemeldet werden nur Zaehler, Alter
+  und Groessen; ein Backup aelter als 26 Stunden warnt. restic, borg und kopia fragen das Repository der Unit ohne
+  Sperre und nur mit einem Passwort, das der Admin auf dem Host hinterlegt (`monitor credential set`, neue Verwendung
+  `password`); bis dahin warnt der Check. Die Passwortdatei eines Backup-Jobs liest der Agent nie.
+- **Monitoring: Units hinter einem Timer:** Der Sensor `unit` meldet zusaetzlich Ergebnis, Exit-Status und Alter des
+  letzten Laufs, die Erkennung findet Backup-Units auch zwischen zwei Laeufen, und `file_age` liest mit `newest_in`
+  die juengste Datei eines Verzeichnisses. Diese Checks brauchen einen Agent in der Version des Monitoring-Dienstes;
+  ein aelterer meldet sie `unknown`. Doku: Entwickler-Doku Agent und Monitoring (DE+EN).
+- **Monitoring: Linux-Host im Blick:** neue Module `systemd-timers` (gescheiterte Timer-Laeufe), `kernel`
+  (OOPS, Machine Check, Bad Page, haengender Livepatch), `needrestart` (ausstehender Kernel, Microcode, Dienste auf
+  alten Bibliotheken), `apt` (kaputte und gehaltene Pakete) und `unattended-upgrades` (Alter und Fehler des letzten
+  Laufs); der Agent liest nur und meldet nur Zahlen.
+- **Monitoring: AdminHelper ueberwacht sich selbst:** Modul `adminhelper` mit den Containern des Stacks, den
+  Health-Endpunkten, dem Verzug des Schedulers und fehlgeschlagenen Alarm-Mails (neue Route `GET /health/detail`,
+  nur im Compose-Netz), den Zertifikaten von Gateway, frps und CA, dem Alter des Datenbank-Backups und der Platte
+  von VictoriaMetrics.
+- **Agent: Dateien im Container und Fuehler `fs`:** `certfile` und `file_age` lesen mit dem Ziel `container` einen
+  Pfad im Container ueber dessen Mounts; der neue Fuehler `fs` meldet Belegung, freien Platz und Inodes eines
+  Verzeichnisses.
+- **Desktop: Benachrichtigungen neu:** die Glocke zeigt ein Panel mit den Tabs Alle, Ungelesen und Offen, gruppiert
+  nach Tagen; neue Eintraege erscheinen als Hinweis (kritische bleiben stehen), "Nicht stoeren" haelt fuer 1 Std.,
+  4 Std. oder bis morgen frueh alles ausser Kritischem zurueck, und die neue Seite Benachrichtigungen filtert nach Postfach,
+  Schweregrad, Kategorie und Suche. Das Oeffnen des Panels markiert nichts mehr als gelesen.
+- **Benachrichtigungen: Kanaele ntfy, Telegram und Webhook:** jede Person hinterlegt unter Einstellungen →
+  Benachrichtigungen eigene Ziele fuer E-Mail, ntfy, Telegram und Webhook, schaltet Kanaele ab, ohne das Ziel zu
+  loeschen, und testet jeden Kanal mit einem Knopf. Telegram braucht `TELEGRAM_BOT_TOKEN`; ntfy- und Webhook-Ziele in
+  privaten Netzen sind gesperrt, ausser die CIDR-Liste `NOTIFY_PRIVATE_TARGETS` gibt das Netz frei.
+- **Benachrichtigungen: Matrix und Kategorien:** je Schweregrad (Kritisch, Warnung, Info, Erledigt) waehlt eine Person
+  die Kanaele, Desktop-Hinweise eingeschlossen; eine ausgeschaltete Kategorie landet nur noch in der Glocke.
+- **API:** `POST /api/users/me/notification-prefs/test` schickt eine Testnachricht an das gespeicherte Ziel eines
+  Kanals.
+- **Benachrichtigungen: Ruhezeiten:** je Person ein Zeitraum in ihrer Zeitzone, in dem der Desktop schweigt und der
+  Server E-Mail, ntfy, Telegram und Webhook bis zum Ende zurueckhaelt; Kritisches geht wahlweise trotzdem durch.
+- **Benachrichtigungen: Eskalation:** bleibt ein kritischer Vorfall 5, 10 oder 30 Minuten unbestaetigt offen, geht
+  einmal eine Nachricht an einen eigenen Kanal der Person.
+- **Benachrichtigungen: Zusammenfassung per E-Mail:** taeglich oder woechentlich um 08:00 eine Mail statt der
+  einzelnen Info-, Warnungs- und Erledigt-Mails.
+- **Desktop: Ton bei Kritisch:** auf Wunsch ein kurzer Ton zum kritischen Hinweis.
+- **API:** `GET`/`PUT /api/users/me/notification-prefs` tragen `timezone`, `quiet`, `escalation`, `digest` und
+  `soundCritical` bzw. `sound_critical`.
+- **Desktop: RDP im Tab (Vorschau):** Die Einstellung *RDP -> Client fuer RDP* oeffnet RDP-Verbindungen wahlweise
+  in einem Tab von AdminHelper statt im RDP-Client des Systems (Standard bleibt der Client des Systems, bis die
+  Pruefung unter Windows durch ist); das Menue am Verbinden-Knopf waehlt den Weg auch fuer einen einzelnen Start.
+  Der Tab zeigt das Bild per WebGL, leitet nach einem Klick Tastatur und Maus weiter (Strg+Alt+Pos1 gibt die
+  Tastatur frei) und hat Strg+Alt+Entf, Screenshot, Verbindungsinfo, Leistungsprofil und Trennen; die Fusszeile
+  zeigt Bildrate, Aufloesung, Bandbreite und Latenz. Ein unbekanntes oder geaendertes Server-Zertifikat bestaetigt
+  der Nutzer im Tab. Ohne gespeichertes Passwort fragt der Tab; ein getipptes Passwort bleibt nur im Tab. Neue
+  Befehle `rdp_session_screenshot` und `rdp_session_info`, `rdp_session_start` nimmt ein optionales `password`,
+  der Bild-WebSocket meldet `stats` und nimmt `cad`. Doku: Desktop-Entwicklerdoku und Admin-Handbuch (DE+EN).
+- **Desktop: Kanaele im eingebetteten RDP (Backend):** Die eingebettete Sitzung liest jetzt die RDP-Optionen der
+  Verbindung. Die Zwischenablage ist an (Text und Bilder, keine Dateien). Audio folgt `audio` (`local` oder ungesetzt
+  lokal, `remote` auf dem Server, `off` aus; Mikrofon aus, unter Windows vorerst immer aus). `drives: true` gibt den
+  Downloads-Ordner als Laufwerk frei; fehlt er, startet die Sitzung ohne Laufwerk und meldet das. Das Linux-Paket
+  haengt an `libasound2` (deb) bzw. `alsa-lib` (rpm). Noch ruft keine Oberflaeche die Sitzung auf. Doku:
+  Desktop-Entwicklerdoku (DE+EN), THIRD_PARTY_LICENSES.md.
+- **Desktop: Anzeige und Skalierung im RDP-Tab:** Die Kopfleiste des RDP-Tabs waehlt die Anzeige (*Eingepasst*,
+  *Vollbild*, *Mehrfach-Monitor*, *Benutzerdefiniert* mit Zoom 25 bis 200 %, 1:1 und Einpassen) und die Skalierung
+  (*Automatisch*, *Normal*, *HiDPI*); die Startwerte kommen aus der Verbindung bzw. den Einstellungen. Der Desktop
+  des Servers folgt der Groesse des Tabs ohne Neuverbindung, wo der Server das kann. *Mehrfach-Monitor* verteilt
+  den Desktop auf zwei Monitore, den zweiten in einem eigenen Fenster. Der Bild-WebSocket nimmt `size` und
+  `layout`, `rdp_session_start` ein optionales `display`. Doku: Desktop-Entwicklerdoku und Admin-Handbuch (DE+EN).
+- **Desktop: RDP-Tab abdocken:** Eine verbundene RDP-Sitzung laesst sich wie ein SSH-Tab in ein eigenes Fenster
+  abdocken und wieder andocken, ohne neu zu verbinden. Neue Befehle `rdp_session_attach`, `rdp_detach` und
+  `rdp_dock`; die Fenster `rdp-*` duerfen nur ihre eigene Sitzung erreichen.
+- **Desktop: H.264 im eingebetteten RDP unter Linux:** Der eingebettete RDP-Client dekodiert H.264 unter Linux
+  mit Ciscos OpenH264. Die erste Sitzung laedt Ciscos Binary 2.6.0 ueber HTTPS, prueft die gepinnte SHA-256 und
+  legt es im Datenverzeichnis der App ab; scheitert der Download binnen 15 s, laeuft die Sitzung ohne H.264. Der
+  Schalter *H.264 (OpenH264)* unter *Einstellungen -> RDP* (Standard an) zeigt Ciscos Hinweis und Lizenztext;
+  aus loescht die Bibliothek (neuer Befehl `openh264_remove`). Doku: Desktop-Entwicklerdoku und Admin-Handbuch
+  (DE+EN).
+- **Server: abgewiesener Token-Refresh im Audit-Log:** Ein Refresh, den der Server unter `MTLS_ENFORCE=true` mangels
+  Client-Zertifikat abweist, erscheint wie ein so abgewiesener Login im Audit-Log, als `auth.refresh_failed`.
+- **Desktop: Terminal-Tabs abdocken:** Ein Sitzungs-Tab des AdminHelper-Terminals oeffnet sich per Knopf am Tab,
+  Doppelklick oder Ziehen nach unten in einem eigenen Fenster; die Sitzung laeuft weiter und zeigt, was sie bisher
+  ausgegeben hat. *Andocken* oder das Schliessen des Fensters holt sie in den Tab zurueck.
+- **Desktop: SSH-Tabs wieder oeffnen:** Die Einstellung *Terminal → SSH-Tabs des letzten Starts wieder oeffnen*
+  (standardmaessig aus) verbindet nach der Anmeldung die SSH-Tabs des letzten Laufs neu, in derselben Reihenfolge.
+- **Desktop: Ansible im Tab und Probelauf:** Ist *Konsole fuer SSH* das AdminHelper-Terminal, laeuft ein Playbook
+  in einem Sitzungs-Tab mit seinem Namen; der Schalter *Probelauf* startet es auf beiden Wegen mit `--check`.
+- **Desktop: Snippets im SSH-Terminal:** Das Panel *Snippets* neben einer SSH-Sitzung tippt gespeicherte Befehle
+  per Klick in die Sitzung; die Liste gilt je Workspace und startet mit einer Standardliste. *An alle
+  SSH-Sitzungen senden* schickt ein Snippet an jede laufende SSH-Sitzung des Workspace, der Fuss jeder Sitzung
+  zeigt dann *Broadcast aktiv*.
+- **Desktop: Dateien (SFTP) im SSH-Terminal:** Das Panel *Dateien* zeigt die Ordner des Hosts, laedt Dateien per
+  Klick herunter und per Dialog oder Ziehen aufs Fenster hoch und legt Ordner an; eine vorhandene Datei wird erst
+  nach einer Rueckfrage ersetzt. Unter Linux und macOS laeuft SFTP ueber die Verbindung der Sitzung, unter Windows
+  braucht es einen SSH-Schluessel oder den SSH-Agent.
+- **Desktop: Rueckfrage vor mehrzeiligem Einfuegen:** eine Terminal-Option (ab Werk aus) haelt eingefuegten Text mit
+  Zeilenumbruch zurueck und fragt im Tab mit der Zeilenzahl nach, bevor die Zeilen in der Shell laufen.
+- **Desktop: Verbindungsliste neu:** Die Seite Verbindungen hat eine Leiste mit Bibliothek (Alle, Favoriten,
+  Letzte 24 Std., Ueber Tunnel), Typ und Ordnern, Tabelle oder Karten mit Gruppen, einen Schnellzugriff, einen
+  Inspector mit Befehlsvorschau und Tastaturbedienung (Pfeiltasten, Enter, Leertaste, Esc, Doppelklick verbindet).
+  Favoriten bleiben lokal je Workspace.
+- **Desktop: Sammelaktionen:** Mehrere Verbindungen markieren, Tags hinzufuegen oder entfernen, als CSV exportieren
+  (ohne Passwoerter und Notizen) oder loeschen.
+- **Desktop: Erreichbarkeit vom Geraet:** Die Spalte Ping misst alle 60 s per TCP-Verbindungsaufbau die
+  sichtbaren Verbindungen ohne Tunnel (Timeout 1,5 s).
+- **Desktop: Verbindungs-Editor mit Reitern und Serverzuordnung:** der Editor trennt Typ, Allgemein und Anmeldung;
+  in einem Server-Workspace ordnet „Server zuordnen“ eine Verbindung einem Server des Inventars zu.
+- **Desktop: Optionen je Verbindung:** Der Verbindungs-Editor hat fuer SSH den Reiter *Optionen* (Jump-Host, auch
+  mehrere Hops; Weiterleitungen `-L`/`-R`/`-D`; Agent-Forwarding, Kompression, Keepalive; Anmeldeart im Reiter
+  *Anmeldung*) und fuer RDP den Reiter *Anzeige* (Skalierung, Fenstermodus, Groesse, Leistungsprofil, Laufwerke,
+  Audio, Drucker, RD-Gateway, NLA). Gesetzte Werte ueberschreiben die globalen Einstellungen nur fuer diese
+  Verbindung; der Server speichert sie im neuen Feld `options` (Alembic-Revision), Export, Import und Sync tragen sie
+  mit. Ein aelterer Desktop-Client zeigt die Optionen nicht und verwirft sie in einem lokalen Workspace beim Speichern.
+- **Sitzungsverlauf je Verbindung:** Der Inspector zeigt *Letzte Sitzungen* (Beginn, Dauer, Geraet); RDP traegt das
+  Ende ein, SSH und Web nur den Beginn. Im Server-Workspace fuehrt der Server den Verlauf (neue Tabelle
+  `connection_sessions`, `POST /api/connections/{id}/touch` beginnt eine Sitzung und nimmt optional `device`,
+  `POST /api/connections/{id}/sessions/{sessionId}/end`, `GET /api/connections/{id}/sessions`), 90 Tage; Lokal und
+  Sync speichern ihn auf dem Geraet, 90 Tage und hoechstens 50 je Verbindung.
 
 ### Changed
 
@@ -458,6 +932,403 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Server nicht kennt, loest er den Namen `gateway` sofort neu auf (hoechstens einmal je Sekunde; eine Anfrage wartet
   darauf hoechstens 1 s), damit ein neu angelegtes Gateway gleich wieder zaehlt. Ohne den Namen `gateway`, also
   ausserhalb von Compose, gibt es keine Zertifikats-Identitaet. Doku: Entwickler-Handbuch (DE+EN).
+- **Monitoring-API: Antworten im OpenAPI-Schema beschrieben:** Die OpenAPI-Beschreibung des Monitoring-Dienstes
+  nennt die Felder seiner JSON-Antworten; die Antworten selbst bleiben gleich.
+- **Server-API: Antworten im OpenAPI-Schema beschrieben:** Die OpenAPI-Beschreibung des Servers nennt die Felder
+  seiner JSON-Antworten; die Antworten selbst bleiben gleich.
+- **Zertifikate: eigene Schwellen fuer die Root:** Die Root wird in der Uebersicht und in den Meldungen gelb unter
+  365 und rot unter 120 Tagen (alle anderen weiter 30 und 7). Der ca-issuer warnt ab 365 Tagen vor ihrem Ablauf und
+  nennt den naechsten Schritt der Erneuerung statt eines neuen Enrollments aller Clients. Doku: Betrieb,
+  API-Referenz (DE+EN).
+- **Enrollment und Renew: `chain` traegt jede Root, der der Client vertrauen soll:** waehrend einer Root-Erneuerung
+  das Zwischenzertifikat und beide Roots, die zu pinnende zuletzt (nach `switch --compromised` nur die neue); sonst
+  wie bisher Zwischenzertifikat und Root. Doku: ADR 0001.
+- **Gateway: eigenes Buendel fuer `:8444`:** Das Gateway liest fuer die Enrollment-Ebene
+  `gateway-enroll-fullchain.pem`, das erst der neue ca-issuer schreibt. Beide kommen mit demselben Update ueber
+  `docker compose`. Doku: ADR 0001.
+- **Agent und Desktop: Erneuerung gleich nach einer Rotation:** Der Agent fragt in jedem Lauf nach der
+  Vertrauensgeneration, der Desktop bei der Anmeldung und danach stuendlich. Nennt der ca-issuer eine andere als
+  die des gehaltenen `ca.crt` bzw. der gespeicherten Kette, erneuern sie ihr Zertifikat sofort statt erst bei halber
+  Laufzeit. Ein Server ohne die Route (404 oder die Web-Oberflaeche) laesst es bei der halben Laufzeit. Nach
+  `rotate-intermediates` und den Schritten von `rotate-root` ist das Gateway jetzt gleich nach dem healthy
+  ca-issuer neu zu starten. Doku: Betrieb, Benutzer, Troubleshooting, FRP-Tunnel, Agent-Deployment,
+  Entwickler-Desktop (DE+EN).
+- **frps nimmt nur noch die Proxies an, die der Server je Host erzeugt:** jede frpc.toml traegt einen Schluessel je
+  Host (`metadatas.ahProxyKey`), und ein Plugin im frps-Image (`frps-policy`) vergleicht jede neue Proxy-Anmeldung mit
+  der Konfiguration, die der Server fuer diesen Host erzeugt hat (Name, Typ, Domains, Gruppe); alles andere lehnt frps
+  ab, und ohne Policy-Datei oder ohne laufendes Plugin nimmt frps gar keinen Proxy an. Mit dem Update gibt es keine
+  Uebergangszeit: Tunnel kommen zurueck, sobald der Agent seine neue frpc.toml holt (sein naechster Lauf, rund 5 min).
+  Eine von Hand verteilte frpc.toml muss neu geholt und neu verteilt werden (Betrieb und FRP-Tunnel in der Doku), ebenso
+  nach einem Wechsel von `SECRET_KEY`. Das frps-Image baut jetzt aus dem Repo-Root als Kontext.
+- **Ein Name je Server, abgeleitete Namen ueberall:** ein Server braucht nur noch seinen Namen (am besten seinen FQDN);
+  seine Adresse folgt dem Namen, ausser eine abweichende (IP, interner Name) ist eingetragen, und ein Name ist nur
+  einmal vergeben (ohne Gross-/Kleinschreibung). Verbindungen eines Servers und Tunnel tragen nur noch einen optionalen
+  Zusatz und heissen "{Server} · {Zusatz}", ohne Zusatz "{Server} · SSH|RDP|Web", ueber einen Tunnel mit "(FRP)" — eine
+  Umbenennung des Servers erreicht alle. Die API gibt den Anzeigenamen als `name`, den gespeicherten Zusatz als `label`
+  und bei Servern `customHostname` aus; Clients von vorher arbeiten weiter. Namen, die nur den Server oder den Tunnel
+  kopierten (etwa "… (via FRP)"), werden mit dem Update zum leeren Zusatz.
+- **FRP kennt Server und Tunnel an ihren IDs:** `user` in frpc ist die Server-ID, der Proxy-Name die Tunnel-ID, frps
+  fuehrt einen Proxy als "{Server-ID}.{Tunnel-ID}"; eine Umbenennung aendert keine FRP-Konfiguration mehr. Mit dem Update
+  wechseln alle Tunnel einmal: Agents holen ihre neue frpc.toml beim naechsten Lauf, der Desktop sein Besucher-Bundle
+  beim naechsten Abgleich; die lokalen Ports bleiben. Eingebettetes RDP ueber einen Tunnel fragt einmal erneut nach dem
+  Zertifikat, weil die Pins den Tunnel jetzt an seiner ID nennen.
+- **Desktop:** der Server-Dialog fragt Name und optional eine Adresse; Verbindungs- und Tunnel-Dialoge fragen einen
+  optionalen Zusatz und zeigen den Anzeigenamen vorab; "nach Server" gruppiert Verbindungen unter ihrem Server, auch
+  die ueber einen Tunnel.
+- **Glocke ohne eigenen Monitoring-Cooldown:** der Monitoring-Dienst schickt jede Problem-Meldung mit dem Schluessel
+  des Checks und den Ergebnissen seiner Alert-Regeln; wen sie erreicht, entscheidet der Hub am Vorfall. Der
+  Event-Hook `alert.triggered` feuert nur noch, wenn die Glocke fuer critical benachrichtigt.
+- **Kategorien der Server-Meldungen:** `lifecycle` heisst jetzt `tunnel` (FRP), `security` (Zertifikate) oder `agent`
+  (entfernter Server); bestehende Regeln mit `lifecycle` bekommen alle drei.
+- **Feed nach letzter Benachrichtigung sortiert:** `GET /api/notifications` ordnet nach `notified_at` und laesst
+  ausgeblendete Eintraege weg; der Ungelesen-Zaehler zaehlt stumme und ausgeblendete nicht mit.
+- **Desktop: SSH startet standardmaessig im AdminHelper-Terminal:** Nach dem Update oeffnen Doppelklick, Enter,
+  *Verbinden* und der Schnellzugriff eine SSH-Verbindung in einem Tab statt im OS-Terminal. Zurueck zum OS-Terminal
+  geht es unter *Einstellungen → Terminal → Konsole fuer SSH → OS-Terminal*.
+- **CI: Stack-Test auf jedem Pull Request:** der From-outside-Test `integration-stack` laeuft auch auf Pull Requests,
+  ein manueller Lauf vor dem Merge entfaellt.
+- **CI: Suiten nach geaenderten Pfaden:** auf einem Pull Request entscheidet der Job `changes`
+  (`.github/scripts/ci_changes.py`), welche Suiten von Server, Monitoring, CA-Issuer, Schema-Fuzzing, Lock und
+  Windows laufen; der Server faehrt dort nur Python 3.14. Jedes andere Ereignis, ein Pfad ausserhalb der engen Bereiche
+  und ein Ausfall des Jobs fahren alles; uebersprungene Pflicht-Checks melden Erfolg. Fehler nur unter Python 3.15 oder
+  nur gegen den Lock fallen erst auf `main` auf.
+- **CI: Merge Queue vorbereitet:** `ci.yml` reagiert auf `merge_group`, jede Gruppe bekommt ihre eigene
+  Concurrency-Gruppe; eingeschaltet wird die Queue im Ruleset.
+- **CI: Server-Shards nach Laufzeit:** `pytest --shard` verteilt die Testdateien nach ihren Sekunden je Test aus
+  `apps/server/tests/shard_weights.toml` (erzeugt von `python -m tests.shard_weights` aus den JUnit-Artefakten eines
+  CI-Laufs) statt nach der Zahl der Tests.
+- **Desktop, Provisionierungs-Tab: `--ca-fp` ist der Fingerprint der Root der internen CA:** bisher der des
+  access-Zwischenzertifikats, der mit dessen Rotation ungueltig wurde. Der neue Wert bleibt ueber eine Rotation
+  der Zwischenzertifikate gueltig; aeltere Befehle gelten bis zur naechsten Rotation. Desktop und Server zusammen
+  aktualisieren: der Befehl eines neuen Desktops scheitert gegen einen Server, dessen Kette die Root nicht
+  enthaelt, mit der Fingerprint-Meldung. Mit `--ca-fp` auf die Root nimmt der Agent nur ein Server-Zertifikat des
+  `access`-Zwischenzertifikats an, nicht eins eines anderen Scopes unter derselben Root. Doku: Agent-Deployment,
+  Betrieb (DE+EN).
+- **Gateway: sendet die Root der internen CA in seiner Zertifikatskette mit (R-0667):** Auf `:443`, `:8444` und
+  `:8445` schickt das Gateway nach seinem Server-Zertifikat und dem `access`-Zwischenzertifikat jetzt auch die Root
+  (`gateway-fullchain.pem`); frps schickt weiter nur Server- und Zwischenzertifikat. So kann der Agent mit `--ca-fp`
+  den Fingerprint der Root pinnen, der eine Rotation der Zwischenzertifikate uebersteht; ein Wert mit dem Fingerprint
+  des Zwischenzertifikats passt weiter, bis es rotiert wird. Ein vorhandenes Gateway-Zertifikat ohne Root stellt der
+  `ca-issuer` bei seinem naechsten Start mit neuem Schluessel neu aus. Das Gateway liest seine Zertifikate nur beim
+  eigenen Start und hat sie beim Update schon gelesen, bevor der `ca-issuer` sie neu ausstellt: Nach dem Update auf
+  diese Version einmal `docker compose restart gateway`, sobald `docker compose ps` den `ca-issuer` als `healthy`
+  zeigt; bis dahin sendet das Gateway die Root nicht. Ein Desktop, der vor seiner Registrierung dem selbstsignierten
+  Zertifikat des Gateways vertraut hat, bestaetigt das neue einmal. Ein voller TLS-Handshake wird rund 430 Byte
+  groesser.
+- **CI: Release-Build ohne Caches:** `release.yml` stellt keinen Cache mehr wieder her (kein `rust-cache`,
+  `setup-node` mit `package-manager-cache: false`, `setup-go` mit `cache: false`); ein Tag-Build baut
+  Abhaengigkeiten und Werkzeuge vollstaendig neu.
+- **CI: schaerferer Cache-Waechter:** `.github/scripts/cache_settings.sh` erkennt auch gequotete `uses:`, zaehlt
+  `cache-bin` nur im `with:`-Block, meldet Cache-Pfade auf `.cargo/bin` und prueft `release.yml` mit `--uncached`.
+- **CI: Server-Images auf Tags ohne Build-Cache:** `docker.yml` baut die Images eines Release-Tags ohne den
+  Build-Cache frueherer Laeufe, wie `release.yml`; Pushes auf `main` nutzen ihn weiter. Die Pruefung der
+  Cache-Einstellungen kennt dazu den buildx-Cache, `setup-uv`, `setup-ruby` und `setup-dotnet`.
+- **Doku: Image-Signatur gegen die Release-Identitaet pruefen:** der Pruefbefehl fuer die Container-Images nennt
+  ein Release `X.Y.Z` und die genaue Identitaet seines Tag-Laufs
+  (`…/.github/workflows/docker.yml@refs/tags/vX.Y.Z`); fuer Skripte, die jede Release-Version annehmen, steht eine
+  verankerte Regex daneben.
+- **CI: Pruefung der Cache-Einstellungen strenger:** unter `--uncached`/`--tag-uncached` ist ein Build ueber
+  `docker/bake-action` oder ein `docker build`/`docker buildx build|bake` in einem `run:`-Schritt ein Fehler;
+  `cache-from`/`cache-to` auf Tags muss die ganze Form bis `|| '' }}` haben, und ein Flow-Mapping in der Zeile nach
+  `with:` wird erkannt.
+- **CI: die Shards der Server-Suite vergleichen ihre Sammlung:** jeder Shard schreibt Zahl und Hash der gesammelten
+  Tests, und der Ergebnis-Job der Leg ist rot, wenn sie abweichen oder ein Shard keins schreibt. Eine rote Leg bricht
+  die andere nicht mehr ab.
+- **CI: Actions auf dem aktuellen Release:** die Workflows pinnen das aktuelle Release ihrer Actions per SHA
+  (checkout, setup-go, setup-node und setup-python v7, die docker-Actions, action-gh-release, rust-cache), und
+  tauri-cli steht in CI und Release auf 2.12.4. Ausgenommen bleibt vorerst `sigstore/cosign-installer` (v3.9.2), das
+  Update auf v4 folgt getrennt.
+- **CI: Runner ubuntu-26.04:** alle Linux-Jobs laufen ausdruecklich auf `ubuntu-26.04`. Der Desktop-Build des
+  Releases und sein Smoke in CI bleiben auf `ubuntu-24.04`, damit das ausgelieferte Binary weiter auf Ubuntu 24.04
+  und Debian 12 startet.
+- **Images mit cosign 3 signiert:** die Signatur der Container-Images liegt als Sigstore-Bundle in einem
+  OCI-1.1-Referrer; pruefen mit cosign 3 (oder ab 2.6 mit `--new-bundle-format`). cosign 3 prueft auch die
+  aelteren Images bis 0.46.0.
+- **ruff 0.17.4:** Lint und Format der Python-Komponenten laufen mit ruff 0.17.4 (CI, Test-Boxen,
+  `requirements-dev.txt`); `ruff.toml` waehlt den bisherigen Regelsatz ausdruecklich, weil ruff 0.16 den
+  Standard-Regelsatz stark erweitert hat. Lokal zieht `pip install -r apps/server/requirements-dev.txt` das neue ruff.
+- **CI auf den Versionen des Stacks:** die Service-Container der CI laufen mit redis 8 und postgres 18 wie
+  `docker-compose.yml`; der Playwright-E2E-Job laeuft wie die anderen Linux-Jobs auf `ubuntu-26.04`.
+- **CI: Downloads mit Wiederholung:** apt-Pakete, Playwright-Browser und die Release-Downloads per curl werden bei
+  einem Haenger oder 5xx wiederholt, statt den Job rot zu machen; die Playwright-Browser und die .deb-Archive der
+  Tauri-Systempakete liegen in einem Cache.
+- **CI: eingebettetes RDP je Pull Request:** der neue Job `rdp-embedded` faehrt die xrdp-Suite
+  (`desktop_e2e_rdp_embedded.sh`) auf jedem Pull Request, nicht mehr nur im woechentlichen Lauf.
+- **CI: apt-Archiv-Cache strenger geprueft:** vor dem Paket-Download bleiben im Cache nur noch regulaere .deb-Archive,
+  die der signierte Paketindex nennt, und ein leeres `partial/`; alles andere wird geloescht.
+- **CI: jeder tauri-cli-Pin geprueft:** der Lockstep-Schritt vergleicht alle `cargo install tauri-cli`-Zeilen in
+  `ci.yml` und `release.yml`, nicht nur die erste je Datei.
+- **CI: Rust-Cache ohne Werkzeug-Binaries:** jeder `rust-cache`-Schritt in `ci.yml` laeuft mit `cache-bin: false`; `tauri-cli` wird in jedem Lauf aus seinem Pin gebaut.
+- **CI: Playwright-Cache am Lockfile:** der Browser-Cache des Web-E2E-Jobs hat einen Schluessel aus dem Hash von
+  `apps/web/package-lock.json` und keine `restore-keys`; `.github/scripts/cache_settings.sh` prueft beides.
+- **Compose: eine Postgres-Rolle je Dienst:** server, scheduler, monitoring und ca-issuer verbinden sich mit eigenen
+  Rollen ohne Superuser-Rechte; der Einmal-Dienst `db-init` legt sie bei jedem Start an. Neue `.env`-Werte
+  `SERVER_DB_PASSWORD`, `SCHEDULER_DB_PASSWORD`, `MONITOR_DB_PASSWORD`, `CA_DB_PASSWORD` (install/update erzeugen sie;
+  vor `update.sh --redeploy` `scripts/init-secrets.sh`). `restore.sh` laesst vorher `db-init` laufen und spielt jede
+  Datenbank als ihre Rolle ein; fehlt ein Rollen-Passwort in der `.env`, bricht es vor dem Stopp des Stacks mit dem
+  Hinweis auf `init-secrets.sh` ab. Doku: Installation, Betrieb, Entwickler-Index (DE+EN), DEVELOPMENT.
+- **Desktop: Anmeldung zeigt den Text des Servers:** Lehnt der Server die Anmeldung ab, zeigt der Desktop
+  dessen Text statt `Login fehlgeschlagen (<Status>): <roher Body>`; Status und Code reichen strukturiert bis
+  ins UI. Gegen einen Server ohne Feld `code` gelten die Zertifikatscodes am Anfang von `detail` weiter.
+- **Web: Fehlertext ohne Maschinencode:** Schickt der Server zu einem Fehler ein `code` (`ERR_...`), zeigt das
+  Web den Text ohne das Praefix `ERR_...:` und haelt den Code in `ApiError.code` fest. Doku: Web-UI fuer
+  Entwickler (DE+EN).
+- **Install: `--reset` nur nach getipptem Projektnamen:** `install.sh --reset` nennt die Volumes des Compose-Projekts
+  und loescht Container und Volumes erst, wenn am Terminal der Projektname eingetippt wurde, auch mit `--yes`; ohne
+  Terminal bricht es ab, ebenso, wenn die Container des Projekts zu einem anderen Verzeichnis gehoeren. Bleibt nach `docker compose down -v` etwas stehen, startet es den Stack nicht.
+- **Agent: frpc-Abgleich ohne Antwort von systemd:** Antwortet systemd nicht, laedt der Agent eine geaenderte
+  Tunnel-Liste ueber die Admin-API des laufenden frpc, sofern frpc auf seinem Admin-Port lauscht und der gemeinsame
+  Teil der Konfiguration unveraendert ist; lauscht frpc dort nicht, aendert der Abgleich wie bisher nichts.
+- **Agent: `--ca-fp` auf das Server-Zertifikat selbst:** Ist der Fingerabdruck der des vorgelegten Server-Zertifikats
+  statt einer CA, prueft der Agent dessen Gueltigkeit und Verwendungszweck wie bei einer Kette zur CA.
+- **Agent: Schluessel der Server-Konfiguration fuer frpc:** Der Agent nimmt in der frpc-Konfiguration vom Server
+  nur Schluessel mit hoechstens 32 Segmenten an; frp kennt keine tieferen Felder.
+- **Agent: `run --once` bei SIGTERM:** Stoppt systemd den Timer-Lauf, beendet der Agent den laufenden Schritt
+  ueber seinen Kontext wie im Dauerbetrieb, statt hart abzubrechen.
+- **Agent-Paket: Einrichtungs-Hinweis mit `--token-stdin`:** Der Hinweis nach der Installation des deb- und
+  rpm-Pakets gibt den Provision-Token ueber stdin statt als Argument, wie die Doku; so steht er weder in der
+  Shell-History noch in der Prozessliste.
+- **Agent: Tunnel-Abbau ohne Antwort von systemd:** Kann der Agent frpc nicht ueber systemd stoppen, obwohl der
+  Server keinen Tunnel mehr vorsieht, laedt er eine frpc-Konfiguration ohne Tunnel ueber die Admin-API des eigenen
+  frpc; der Fehler bleibt gemeldet, der naechste Lauf stoppt frpc erneut ueber systemd.
+- **Agent: Grenzen fuer die frpc-Konfiguration vom Server:** Der Agent nimmt je Tabelle hoechstens 4096 und
+  insgesamt hoechstens 131072 Schluessel an (Tabellen, die ein gepunkteter Schluessel oeffnet, zaehlen mit) und
+  kuerzt Schluessel in seinen Fehlermeldungen auf 64 Zeichen.
+- **Agent: `provision --token-stdin` am Terminal:** Ist stdin ein Terminal, fragt der Agent den Token ohne Echo ab
+  (Eingabeaufforderung auf stderr); aus einer Pipe oder Datei liest er wie bisher die erste Zeile.
+- **Agent: `monitor init --api-key-stdin`:** Der API-Key fuer `monitor init` laesst sich wie der Provisionierungs-Token
+  ueber stdin uebergeben (am Terminal ohne Echo); Paket-Hinweis, README, Doku und der Hinweis zum Neu-Provisionieren
+  zeigen die stdin-Formen.
+- **Agent: Reste unterbrochener Identitaets-Schreibvorgaenge:** Provisionierung und Zertifikats-Erneuerung raeumen
+  unter der Identitaets-Sperre liegengebliebene Temp-Dateien (`agent.key`, `agent.crt`, `ca.crt` mit Suffix
+  `.<Zahl>.tmp`) aus dem Identitaetsverzeichnis; andere Dateien bleiben.
+- **Agent auf Go 1.27:** `go.mod` verlangt Go 1.27 (Toolchain 1.27.3), dazu aktuelle Fassungen von gopsutil und
+  golang.org/x/sys und x/term.
+- **Desktop: Ansible-Gruppennamen strenger geprueft:** ein Server-Tag mit `{` oder `}` bricht einen Ansible-Lauf mit
+  einer Fehlermeldung ab, wie bisher schon ein Benutzer oder Schluesselpfad mit diesen Zeichen.
+- **Desktop: Zertifikatserneuerung mit Zeitgrenze:** die Pruefung und Erneuerung des Client-Zertifikats bei der
+  Anmeldung und im Stundentakt bricht nach 30 Sekunden ab; ein langsam antwortender Server haelt die Anmeldung nicht
+  mehr auf.
+- **Server, Monitoring, CA-Issuer: Python-Pakete auf dem aktuellen Stand:** FastAPI 0.162 (in allen drei Diensten
+  gleich), Starlette 1.10, SQLAlchemy 2.1, Alembic 1.20, Pydantic 2.14, Uvicorn 0.54, websockets 17, redis-py 8.1,
+  cryptography 50.0.2 und psycopg 3.3.7; die Locks sind neu erzeugt. Der CA-Issuer braucht greenlet nicht mehr.
+- **Web und Desktop: Frontend-Werkzeuge auf aktuell:** vitest 5, jsdom 30, jest-dom 7, vite 8.3, svelte 5.57,
+  eslint 10.14 und typescript-eslint 8.72 in Web-Panel und Desktop-UI, Playwright 1.64 fuer die Web-E2E,
+  WebdriverIO 10 fuer die Desktop-E2E; TypeScript bleibt 6.0. Die Lizenztabelle nennt die ausgelieferten Versionen
+  und die Geist-Schriften (OFL-1.1).
+- **Desktop: Design-Fundament:** Die Desktop-App nutzt die Tokens des AdminCave-Design-Systems (weiches Schwarz
+  statt True-Black, Flaechen-, Status- und Bewegungs-Tokens, Fokus-Ring), Icons aus Lucide und eine eigene
+  Komponenten-Bibliothek (Knoepfe, Felder, Menues, Tabs, Dialoge mit Fokusfalle, Hinweise, Ladeplatzhalter).
+  Bei reduzierter Bewegung laufen keine Animationen.
+- **Desktop: neue Oberflaeche nach dem Design-Mockup:** Seitenleiste und Kopf neu (aktiver Eintrag markiert,
+  Avatar mit Initialen), eine Statusleiste am Fensterfuss (Art und Host, Tunnel, Monitoring-Probleme, letzter Sync,
+  Geraeteregistrierung) und ein Dashboard mit Karten, Monitoring- und Tunnel-Panel. Meldungen erscheinen als Stapel
+  von hoechstens drei Hinweisen, jeder einzeln schliessbar.
+- **Desktop: Einstellungen in Sektionen:** Der Dialog zeigt links Allgemein, Workspace & Sync, RDP,
+  Benachrichtigungen und Geraet; Design (Dunkel/Hell) ist dort waehlbar. Diagnose, Browser-Zertifikat und
+  Geraeteregistrierung stehen unter Geraet, was nur fuer den Workspace gilt, traegt die Markierung „Dieser Workspace".
+- **Desktop: Infrastruktur, Monitoring und Ansible nach dem Design-Mockup:** Infrastruktur zeigt links die
+  Server-Liste mit Suche, rechts den Server mit Kopf und Tabs. Monitoring hat Tabs (Alerts und Templates mit Zaehler), eine Leiste mit
+  Suche und Umschalter Liste/Kacheln, ein Server-Dashboard mit schlechtestem Status, Zaehlern je Status und den
+  Knoepfen Wartungsfenster und + Check; Alert-Regeln mit Schalter je Regel, Templates als Karten. Ansible zeigt
+  links die Playbooks, rechts das gewaehlte Playbook mit Zielen nach Servern oder Tags statt des
+  3-Schritt-Assistenten.
+- **Desktop: Verbindungslisten hoechstens 16 MiB:** Der Abgleich mit dem Server und mit einer Sync-Quelle liest
+  die Liste der Verbindungen bis 16 MiB, wie ein Playbook; eine groessere Antwort ist ein Fehler, und die
+  bisherigen Verbindungen bleiben.
+- **Desktop: Client-Cache nach einem Identitaetswechsel:** Wechselt die Geraete-Identitaet oder ein gepinntes
+  Zertifikat, waehrend ein HTTP-Client entsteht, behaelt der Desktop diesen Client nicht im Cache; die naechste
+  Anfrage baut ihn neu.
+- **Desktop: RDP-Start nach Ablauf der Frist:** Ist die Zeit fuer den Verbindungsaufbau schon abgelaufen, startet
+  der Desktop keine Anmeldepruefung mehr und meldet die Zeitueberschreitung.
+- **Desktop: Geraete-Identitaet zuruecksetzen:** Das Loeschen des gepinnten Zertifikats blockiert die Oberflaeche
+  nicht mehr; konnte der Server die Identitaet nicht widerrufen und bleibt zusaetzlich der Pin stehen, nennt die
+  Fehlermeldung beides.
+- **Desktop: Anzeige nach einem gescheiterten Zuruecksetzen:** Scheitert das Zuruecksetzen der Geraete-Identitaet,
+  nachdem sie schon geloescht ist, zeigt der Einstellungsdialog das Geraet als nicht registriert statt der alten
+  Identitaet.
+- **Desktop: verweigerter Tunnel-Zugriff:** Verweigert der Server dem Geraet oder dem Benutzer die Tunnel
+  (HTTP 403), stoppt der Desktop frpc wie bisher und meldet das jetzt einmal mit dem Code in der
+  Statusleiste, statt still auf "keine Tunnel" zu gehen.
+- **Desktop: "Nur provisionieren" fragt den Token ab:** Der Befehl fuer Hosts mit installiertem Paket uebergibt den
+  Provisionierungs-Token nicht mehr als Argument, sondern mit `--token-stdin`; `adminhelper-agent provision` liest ihn
+  als erste Eingabezeile. Der Token steht wie beim Einzeiler daneben zum Kopieren. Ein Agent ohne `--token-stdin`
+  meldet die unbekannte Option; dann zuerst das Paket aktualisieren.
+- **Desktop: Gesamtfrist fuer grosse Antworten:** Den Abruf von Verbindungsliste, Tunnel-Liste und Playbook bricht
+  die App ab, wenn die Antwort laenger als 120 s braucht; bisher hielt eine troepfelnde Antwort den Abruf beliebig
+  lange offen.
+- **Desktop: Tauri 2.12:** Die Desktop-App baut auf Tauri 2.12 und den passenden Plugins (Dialog 2.8, Notification
+  2.8, Shell 2.6); die uebrigen Rust-Abhaengigkeiten sind auf ihren neuesten kompatiblen Stand gehoben.
+- **Desktop: reqwest 0.13:** Der HTTP-Client der Desktop-App laeuft auf reqwest 0.13. Die Vertrauensanker bleiben
+  gleich (Mozilla-Wurzeln fuer oeffentliche Zertifikate, TOFU-Pin und gepinnte CA wie bisher), die Kryptografie
+  weiter auf ring.
+- **Desktop: keyring 4:** Unter Linux und macOS spricht die App den Schluesselbund ueber keyring-core und die
+  Store-Crates von keyring 4 an. Gespeicherte Passwoerter, Geraete-Identitaet und TOFU-Pins bleiben unter denselben
+  Eintraegen lesbar; die Verbindung zum Secret Service entsteht weiter je Zugriff.
+- **Desktop: rcgen 0.14, sha2 0.11, toml 1, windows 0.62:** Weitere Rust-Abhaengigkeiten der Desktop-App sind auf
+  ihre neuen Hauptversionen gehoben; das Verhalten bleibt gleich.
+- **Doku Agent-Deployment: manuelles apt-Rezept installiert nur den gepinnten Signaturschluessel:** Das Rezept
+  importiert die geladene Keyring-Datei in ein Wegwerf-Verzeichnis, exportiert nur den Schluessel mit dem
+  veroeffentlichten Fingerprint, prueft den Export und installiert nur ihn — wie `agent-install.sh`. Doku:
+  Agent-Deployment (DE+EN).
+- **Doku Agent-Deployment: Pruefsatz fuer einen schon installierten apt-Keyring:** Das manuelle apt-Rezept zeigt,
+  wie man einen frueher eingerichteten Keyring prueft — genau ein Schluessel mit dem veroeffentlichten Fingerprint —
+  und wann Schritt 1 erneut auszufuehren ist. Doku: Agent-Deployment (DE+EN).
+- **Agent (FreeBSD): Swap und Load je CPU:** der FreeBSD-Agent meldet die Zahl der logischen CPUs und den Swap; das
+  Monitoring bewertet dort jetzt Swap und Load je CPU wie unter Linux.
+- **Agent (FreeBSD): eigene frpc-Logdatei:** frpc schreibt seine Ausgabe nicht mehr ins syslog, sondern nach
+  `/var/log/adminhelper/frpc.log` (0600); das Paket bringt dafuer einen newsyslog-Eintrag zur Rotation mit.
+- **Agent (FreeBSD): Hinweis auf alte frpc-Zeilen im syslog:** fruehere Builds des FreeBSD-Agents schrieben die
+  Ausgabe von frpc ins syslog (`/var/log/messages`, `/var/log/daemon.log`). Diese Zeilen und ihre Archive bleiben
+  nach dem Upgrade dort, bis newsyslog sie herausrotiert; das Paket aendert fremde Systemlogs nicht. Die Doku
+  (Agent-Deployment, Logs) nennt das.
+- **frp 0.72.0:** frps-Image, das gebuendelte frpc (Agent-Pakete, Desktop) und die Test-Boxen laufen mit frp 0.72.0
+  statt 0.69.1. Das frps-Image baut auf `snowdreamtech/frps:0.72.0-alpine`. Das Wire-Protokoll bleibt v1, Agents
+  und Desktops mit frpc 0.69.1 verbinden sich weiter.
+- **Agent: frpc-Text des Servers nur mit dem TLS-Teil des Servers:** der Agent uebernimmt den frpc-Text nur, wenn
+  `transport.tls` genau so steht, wie der Server ihn schreibt (`enable = true` und die drei Identitaetspfade).
+- **frps prueft weitere Felder jeder Proxy-Anmeldung:** das Plugin `frps-policy` vergleicht jetzt auch die
+  Benutzerliste (`allowUsers`) und den `secretKey` eines STCP-Tunnels mit dem, was der Server fuer ihn erzeugt
+  (Policy-Format Version 2; Plugin und Server kommen im selben Image-Stand), und frps speichert den Host-Schluessel
+  einer Anmeldung nicht mehr. Aendert sich, wer einen Server sieht, kommt ein neu angemeldeter STCP-Proxy erst nach dem
+  naechsten Agent-Lauf wieder.
+- **Ein Hostname auf mehreren Servern braucht eine gemeinsame Gruppe:** die Tunnel-API lehnt einen HTTPS-Tunnel mit
+  `409` ab, dessen Hostname (Domain, `subdomain` oder Platzhalter wie `*.example.net`) auch einem Tunnel eines anderen
+  Servers zugeordnet waere, wenn nicht alle denselben Namen in derselben nicht leeren `loadBalancer.group` tragen;
+  bestehende solche Tunnel laesst der Server fuer frps weg und warnt im Log (FRP-Tunnel in der Doku).
+- **Neustart des frps-Plugins als Warnung:** startet der frps-Supervisor das Plugin neu, weil es nicht antwortet,
+  schreibt er eine Warnung mit der Zahl der Neustarts (Betrieb in der Doku).
+- **Agent:** nimmt einen weiteren Schluessel in der `frpc.toml` an, den eine spaetere Version des Servers schreibt;
+  Agents vor dem naechsten Server-Update aktualisieren.
+- **FRP: Erneuern des Tunnel-Schluessels meldet den Abgleich:** die Antwort von
+  `POST /api/servers/{id}/frp-key/rotate` traegt `policySynced`; konnte der Server die frps-Policy nicht schreiben,
+  zeigt der Desktop eine Warnung statt der Erfolgsmeldung.
+- **Gateway auf nginx 1.30:** das Gateway-Image baut auf dem Stable-Zweig nginx 1.30.6 statt 1.29 (Mainline); die
+  Konfiguration bleibt unveraendert.
+- **Python 3.14 in den Images:** Server, Monitoring und CA-Issuer laufen auf python:3.14-slim statt 3.12; die
+  gehashten Locks sind unter 3.14 neu erzeugt (dieselben Versionen), die CI testet 3.14 und 3.15.
+- **Node.js 26 LTS:** Web-Frontend und Desktop-UI bauen im Image und in der CI mit Node.js 26 statt 22;
+  `@types/node` steht auf 26.
+- **VictoriaMetrics v1.155.0:** die Metrik-Datenbank laeuft auf v1.155.0 statt v1.144.0; Flags und gespeicherte
+  Daten bleiben unveraendert.
+- **Redis 8:** der Stack faehrt Redis 8.10 (`redis:8-alpine`, Lizenz AGPLv3) statt Redis 7; Rate-Limit und
+  SSE-Fan-out bleiben unveraendert, Redis haelt weiter keine Daten auf der Platte.
+- **Stack: Redis im eigenen internen Netz:** `redis` ist nur noch fuer `server` und `scheduler` erreichbar und
+  startet ohne die zusaetzlichen Module des Images. Eigene Dienste, die Redis nutzen, muessen ins Netz `redis`.
+- **Server: keine Proxy-Header in uvicorn:** uvicorn wertet `X-Forwarded-*` nicht mehr aus; die Client-Adresse
+  bestimmt der Server weiter ueber `TRUSTED_PROXIES`.
+- **Server: Refresh-Cookie hinter dem Gateway mit `Secure`:** das Cookie der Web-Anmeldung traegt `Secure`, wenn das
+  Gateway die Anfrage per HTTPS angenommen hat, wie die Entwickler-Doku es beschreibt.
+- **Agent: rootless Podman:** Der Waechter weist Ports, die `pasta` weiterleitet, nicht mehr pauschal ab, sondern
+  liest den Zielport aus den Argumenten von `pasta` und weist ein gesperrtes oder unklares Ziel ab.
+- **Monitoring: Modul `opnsense` Version 2:** "Update verfuegbar", ein Update mit Neustart und der
+  CARP-Wartungsmodus sind jetzt `info` statt nur Werte auf der Karte.
+- **Monitoring: Probe-Checks nur aus Modulen:** `probe`-Checks entstehen nur noch durch die Uebernahme eines
+  Katalog-Moduls. Die Check-API legt keinen an (422), Templates nehmen keine `probe`-Definition (422), und an einem
+  bestehenden Probe-Check aendert die API nur Regeln, Intervall, Timeout, Name, Beschreibung, Schweregrad, an/aus und
+  `consecutive_*`. Der Plan an den Agent traegt nur Checks eines Moduls. Doku: Monitoring (DE+EN).
+- **Monitoring: geloeschte Modul-Checks bleiben geloescht:** loescht ein Admin einen Check, den ein Modul angelegt hat,
+  legen ihn weder erneutes Uebernehmen noch ein Katalog-Update wieder an (Migration `module_check_tombstones`).
+- **Monitoring: Katalog-Grenzen wie der Agent:** DNS-Namen duerfen Unterstriche tragen (SRV-Namen), der Pfad eines
+  Unix-Sockets hoechstens 107 Zeichen.
+- **Monitoring: RDAP und Delegationspruefung:** der `rdap`-Check folgt einer Weiterleitung des RDAP-Servers
+  hoechstens dreimal und nur zu einer https-URL, jedes Ziel wieder nur an oeffentlichen Adressen. Die
+  Delegationspruefung fragt jede Adresse nur einmal, auch wenn mehrere Nameserver sie teilen. Doku: Monitoring
+  (DE+EN).
+- **Agent: Proben-Waechter kennt weitere Weiterleiter und Super-Server:** Proben weisen Ports ab, die weitere
+  Port-Weiterleiter oder `xinetd`/`inetd` halten, wie bisher schon bei der Socket-Aktivierung durch systemd.
+- **Agent: Ressourcen-Deckel:** unter Linux laeuft der Agent mit `Nice=19`, IO-Klasse `idle`, hoechstens einem halben
+  Kern (`CPUQuota=50%`) und `MemoryMax=256M`; ueberschreitet ein gestartetes Werkzeug den Speicher-Deckel, endet nur
+  dieses, der Report geht trotzdem raus. Unter Windows laeuft der Dienst mit Prioritaet "Niedrig". Anheben per
+  `systemctl edit adminhelper-agent.service`.
+- **Agent: Proxmox-Backups:** den Zustand der Backup-Storages liest der Agent aus `/cluster/resources`, ohne einen
+  Storage zu aktivieren; den Backup-Inhalt liest er hoechstens alle 30 Minuten.
+- **Agent: Befehls-Freigabeliste:** die Collectors starten nur noch Befehle aus einer festen Liste lesender Aufrufe;
+  ein anderer Aufruf startet nicht und erscheint als gescheiterter Aufruf.
+- **Monitoring: ZFS Health bewertet Scrub-Alter und vdev-Fehler:** ein Pool, dessen letzter abgeschlossener Scrub
+  35 Tage alt ist, warnt, ab 60 Tagen ist er kritisch; ein vdev mit Lese-, Schreib- oder Pruefsummenfehlern warnt.
+  Bestehende Installationen koennen nach dem Update dadurch neue Warnungen sehen.
+- **Benachrichtigungen: die Matrix ersetzt die Kanal-Haekchen der Regeln:** die Migration uebernimmt ein E-Mail- oder
+  Telegram-Haekchen ab dem Mindest-Schweregrad der Regel und fuer die Entwarnung; die Kanaele gelten jetzt fuer alle
+  Server, die eine Regel der Person trifft. `GET`/`PUT /api/users/me/notification-prefs` tragen die neuen Felder,
+  `channelEmail`/`channelTelegram` entfallen in der Antwort und werden beim Speichern ignoriert.
+- **Vorfaelle: hoechstens 200 Eintraege von Hand:** Notiz und Wieder oeffnen antworten 409, sobald ein Vorfall 200
+  Eintraege von Hand traegt (Notizen, Bestaetigen, Beheben, Wieder oeffnen); Bestaetigen und Beheben bleiben moeglich.
+- **PostgreSQL 18:** Der Stack laeuft auf `postgres:18-alpine` mit dem neuen Volume `postgres18-data`. Das erste
+  `update.sh` auf diese Version zieht die Daten selbst um: `pg_dumpall` aus dem laufenden PostgreSQL 17, Einspielen in
+  ein frisches PostgreSQL 18. Vorher prueft es den freien Platz und bricht ohne Aenderung ab, wenn er nicht reicht;
+  scheitert der Umzug oder der Start danach, rollt es auf die alte Version zurueck. Das alte Volume
+  `<projekt>_postgres-data` bleibt unangetastet als Rueckweg stehen; nach der Pruefung entfernen mit
+  `docker volume rm <projekt>_postgres-data`.
+- **Desktop: eingebettetes RDP pinnt jedes Zertifikat:** IronRDP kommt jetzt vom Fork `AdminCave/IronRDP`
+  (Upstream plus eine Option in `ironrdp-tls`); damit braucht auch ein Zertifikat einer oeffentlichen CA eine
+  Bestaetigung, bevor die eingebettete Sitzung verbindet.
+- **Desktop: eingebettetes RDP folgt den Verbindungsoptionen:** `nla: false` startet die eingebettete Sitzung ohne
+  CredSSP wie den RDP-Client des Betriebssystems; eine Verbindung mit RD-Gateway oder Druckern lehnt sie mit
+  `ERR_RDP_OS_CLIENT` ab, damit der Aufrufer den Client des Betriebssystems startet.
+- **Desktop: eingebettetes RDP ohne festes 1280x720:** Der Desktop hat nicht mehr fest 1280x720, sondern die
+  gewaehlte Groesse. Ein Client, der den Bild-WebSocket schliesst, beendet die Sitzung nicht mehr; ein Fenster
+  meldet sich mit `rdp_session_attach` neu an. Der Fork `AdminCave/IronRDP` steht auf Revision `1dc939ea`
+  (zusaetzlich ein Groessenwechsel mit der Grafik-Pipeline ohne Neuverbindung).
+- **Desktop: eingebettetes RDP nutzt OpenH264 2.7.0 unter Linux:** Der Desktop laedt Ciscos aktuelle
+  OpenH264-Version 2.7.0 statt 2.6.0 und prueft sie vor jedem Laden gegen den eigenen gepinnten Hash. Die alte
+  Bibliothek im App-Datenverzeichnis wird beim naechsten Sitzungsstart geloescht.
+- **Desktop: eingebettete RDP-Sitzung ohne Anzeige endet:** Zeigt 60 s lang kein Fenster und kein Tab eine
+  eingebettete RDP-Sitzung, endet sie wie nach `rdp_session_stop`. Abdocken und Tabwechsel halten die Sitzung.
+- **Desktop: eingebettetes RDP folgt keiner Server-Umleitung:** Der eingebaute RDP-Client verbindet sich nur mit
+  dem gewaehlten Ziel; eine Umleitung durch den Server beendet die Sitzung mit `redirect`. Die App schreibt keine
+  TLS-Sitzungsschluessel, auch wenn `SSLKEYLOGFILE` gesetzt ist. IronRDP-Fork auf `b3e9f580`. Doku:
+  Desktop-Entwicklerdoku (DE+EN).
+- **Desktop: H.264 im eingebetteten RDP nur auf x86_64:** auf anderen Prozessoren (etwa ARM-Linux) laedt die App
+  Ciscos OpenH264 nicht mehr herunter; die Sitzung laeuft ohne H.264 und nennt den Grund im Log.
+- **Server: Warnung bei zu weiten Rechten der Schluesseldatei:** Duerfen Gruppe oder andere `data/.secret_key`
+  lesen, warnt der Server beim Start (Pfad und Modus); der Schluessel wird weiter genutzt.
+- **Server-Hooks: eigenes HOME fuer den Worker:** Hat der Server kein `HOME`, bekommt der Hook-Worker
+  `DATA_DIR/hooks-home` (0700, beim ersten Lauf angelegt) statt `/tmp`.
+- **Server: Hostnamen in TRUSTED_PROXIES und der Gateway-Name:** Der Server loest sie ab dem Start auf statt bei
+  der ersten Anfrage, als absolute Namen ohne Suchdomaene, und die Aufloesung laeuft nach einem unerwarteten
+  Fehler weiter. Ein Eintrag, den das System als Adresse liest (etwa `0x7f000001`), gilt nicht als Hostname.
+- **Server: Servernamen auch als Windows-Ordner gueltig:** ein neuer oder umbenannter Server darf weder `:` noch
+  einen unter Windows reservierten Geraetenamen (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, auch mit
+  Endung) tragen; die API antwortet dann mit `422`. Bestehende Namen bleiben gueltig und werden im FRP-Bulk-ZIP
+  weiter ausgeliefert.
+- **Server-API: Namensfehler von `/api/servers` in der Form des Schemas:** lehnt `POST` oder `PUT /api/servers`
+  einen Namen ab (`:`, ein Windows-Geraetename, `name: null` im `PUT`), steht der Grund jetzt wie bei den anderen
+  Routen in `detail[]` mit `loc` `["body", "name"]` statt als Text in `detail`. Web und Desktop zeigen denselben
+  Text wie bisher; eigene Skripte, die `detail` als Text lesen, nehmen nun `detail[0].msg`. Doku: API-Referenz
+  (DE+EN).
+- **Server: bestimmte Verbindungs-Optionen nur per Benutzer-Login:** ein API-Schluessel darf Agent-Forwarding,
+  Weiterleitungen, den Jump-Host, Laufwerke, Drucker, das RD-Gateway und das Ausschalten von NLA nicht mehr setzen
+  oder aendern (`403`); unveraendert zurueckgesendete Werte gehen weiter durch. Traegt eine Verbindung eine dieser
+  Optionen, darf ein Schluessel auch Host, Port, Typ, Benutzername und Domaene nicht aendern.
+- **Server: Sitzungsverlauf nur fuer Benutzer-Konten:** `GET /api/connections/{id}/sessions` antwortet jedem
+  API-Schluessel mit `403`.
+- **Server und Desktop: IPv6 im Jump-Host nur im letzten Hop:** eine IPv6-Adresse in eckigen Klammern in einem
+  frueheren Hop wird abgelehnt (`422` am Server, ein Fehler vor dem Start am Desktop).
+- **Server: Zertifikat-Vertrauen nur per Benutzer-Login:** ein API-Schluessel darf `trustCert` einer Verbindung nicht
+  mehr einschalten (`403`); unveraendert zuruecksenden oder ausschalten geht weiter. Traegt eine Verbindung
+  `trustCert`, darf ein Schluessel auch Host, Port, Typ, Benutzername und Domaene nicht aendern.
+- **Web-Admin-Panel im neuen Design:** Das Web-Panel nutzt jetzt denselben Stand des AdminCave-Design-Systems wie
+  der Desktop-Client — weiches Schwarz statt True-Black, Geist lokal gebuendelt, Lucide-Icons und die
+  Komponenten-Bibliothek des Desktops fuer Shell, Login, alle Seiten und Dialoge. Kopieren sitzt als Icon-Knopf
+  direkt am angezeigten Wert, Hooks schalten ueber einen Schalter. Aufrufe, Felder und Rechte bleiben gleich.
+- Server: request paths in the IP-filter and mTLS-scope logs are escaped, so a forged path cannot inject control characters into the log
+- Server: Redis connection errors in the SSE stream and the rate limit log only the error type and in English, never connection details
+- Server: an FRP tunnel row with refused extra_config is warned about once per tunnel and key set instead of at every poll
+- Server: the OpenAPI document lists the 401, 403, 404 and 429 errors of the webhook trigger routes
+- **Server: Servername `CONIN$`/`CONOUT$` wird abgelehnt:** ein neuer oder umbenannter Servername `CONIN$` oder
+  `CONOUT$` (auch mit Endung, ohne Ruecksicht auf Gross-/Kleinschreibung) ergibt wie die uebrigen Windows-Geraetenamen
+  `422`; ein bereits gespeicherter Name bleibt gueltig.
+- **Server-CLI: `--password` zusammen mit `--password-stdin` wird abgelehnt:** `create-admin` und `reset-admin` brechen mit Exit 2 ab, statt das Passwort aus `--password` in der Prozess-argv zu lassen.
+- **install.sh: Admin-Passwort nur im Skript:** Ein in der aufrufenden Shell exportiertes `ADMIN_PASSWORD` gibt das
+  Passwort nicht mehr an die Kindprozesse von install.sh weiter. Wer install.sh bisher mit exportiertem
+  `ADMIN_PASSWORD` aufgerufen hat, erzeugt den Server-Container einmal neu (`env -u ADMIN_PASSWORD docker compose up
+  -d --force-recreate server` im Installationsverzeichnis) und aendert danach das Admin-Passwort.
+- **Update: Meldungen der .env-Pruefung englisch:** sie nennen die Zeile des Eintrags in `.env`.
+- **Entwicklung: Plaene entstehen im eigenen Worktree:** `/feature-plan` legt den Worktree des Vorhabens an und
+  committet Spec und Ledger dort, statt im Hauptcheckout den Branch zu wechseln, den alle Sessions teilen.
+  `scripts/dev/hooks/harness-guard.sh` lehnt `git switch` und `git checkout` im Hauptcheckout ab; der Weg zurueck auf
+  `main` und ein Restore mit `--` bleiben frei.
 
 ### Removed
 
@@ -886,6 +1757,445 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   mit ihm schickte, galt ebenso als Wiederverwendung, etwa wenn der Browser nach Ablauf der Inaktivitaetszeit mehrere
   Tabs wiederherstellt und jeder sich abmeldet. Ohne Web Locks, etwa ausserhalb von HTTPS, buendelt das Panel weiter
   nur im Tab, und die Abmeldung geht sofort hinaus. Doku: Web-UI fuer Entwickler (DE+EN).
+- **Web: neuer API-Schluessel zeigt sein Erstelldatum:** ein neu angelegter Schluessel zeigt das Datum in der Liste
+  sofort, nicht erst nach dem Neuladen der Seite.
+- **FRP-Statusseite:** ein Proxy, dessen Server- oder Tunnelname einen Punkt trug (ein FQDN), fand seinen Tunnel nicht;
+  Proxies werden jetzt ganz ueber "{Server-ID}.{Tunnel-ID}" zugeordnet.
+- **Server-API:** `PUT /api/servers/{id}` mit `name: null` antwortete 500, jetzt 422.
+- **Desktop: kein Monitoring-Fehler nach dem Ende der Sitzung:** Nach dem Ende der Sitzung meldet das
+  Monitoring des Desktops keinen Fehler mehr in der Statusleiste; die Anmeldung erscheint wie bisher.
+- **Desktop: Hilfen der Anmeldung nur nach dem Code:** Die Hilfen des Anmeldebildschirms — Vertrauensdialog,
+  Pin oder Geraete-Identitaet zuruecksetzen, Geraet registrieren, die Hinweise zum Zertifikat des Geraets
+  (anderer Benutzer, nicht mehr gueltig) — richten sich nur nach dem Code des Fehlers;
+  ein Text, der einen Code nur enthaelt, loest keine mehr aus.
+- **Desktop: Fehlertext des Servers statt rohem Body:** Lehnt der Server eine Anfrage des Desktops ab, zeigt die
+  Statusleiste dessen Text (`detail`), bei 422 die Feldmeldungen, statt `HTTP <Status>: <roher Body>`; ohne
+  lesbaren Text `HTTP <Status>`. Status und Code reichen strukturiert bis ins UI. Doku: Desktop fuer Entwickler
+  (DE+EN).
+- **Install: kein zweiter Lauf ueber eine bestehende Installation:** `install.sh` bricht ab, ohne etwas zu aendern,
+  wenn der Zielordner schon eine `.env` oder `docker-compose.yml` enthaelt oder das Compose-Projekt schon Container
+  oder ein Volume `postgres-data` bzw. `ca-pki` hat, und nennt `./scripts/update.sh`. Bisher schrieb es `DOMAIN` und
+  die Image-Pins neu und startete den Stack, der die Datenbank ohne Backup migrierte.
+- **Install: ohne `--domain` bleibt die `DOMAIN` der `.env`:** ein erneuter Lauf (etwa nach `--reset`) nimmt die
+  `DOMAIN` der vorhandenen `.env` als Vorgabe, auch in der Abfrage; bisher setzte er sie ohne `--domain` auf
+  `localhost`. `--domain` hat Vorrang.
+- **Install: Start mit `docker compose up --wait`:** `install.sh` wartet auf die Healthchecks aller Dienste
+  (`AH_WAIT_TIMEOUT`, Standard 600 s) statt nur auf den Server-Port und nennt bei einem Fehlschlag
+  `docker compose ps` und `docker compose logs <dienst>`. Ohne `up --wait` (Compose vor v2.17) bricht es ab, bevor
+  es etwas aendert.
+- **Restore: Projektname und Hilfs-Image von Compose:** `restore.sh` nimmt den Projektnamen (das Praefix der
+  Volumes), den Compose nutzt, auch `COMPOSE_PROJECT_NAME` aus der `.env`, und fuer seine Hilfs-Container das
+  gepinnte postgres-Image ohne Netz statt `alpine`. Scheitert `docker compose config`, bricht es ab, bevor es etwas
+  aendert.
+- **Restore: `.env` aus dem Backup auf einem leeren Host:** ohne Datenbank-Volume und ohne `.env` legt `restore.sh`
+  die `.env` aus dem Backup an (mit leerer Zeile `CA_ROOT_PASSPHRASE=`), bevor postgres startet; bisher initialisierte
+  postgres ohne `POSTGRES_PASSWORD` nicht. Eine vorhandene `.env` bleibt, `.env.restored` traegt jetzt die Zeile
+  `CA_ROOT_PASSPHRASE=`. Fehlt die `.env` im Backup oder gibt es zu einem vorhandenen Volume kein
+  `POSTGRES_PASSWORD`, bricht es ab, bevor es etwas aendert.
+- **Uninstall: Projektname von Compose:** `uninstall.sh` nimmt den Projektnamen fuer den Label-Sweep aus
+  `docker compose config`, damit er auch mit `COMPOSE_PROJECT_NAME` in der `.env` das Projekt trifft; scheitert
+  `compose config`, gilt wie bisher die Umgebung, sonst der Verzeichnisname.
+- **Agent: Abbruch waehrend des frpc-Abgleichs:** Endet der Lauf (Signal, Laufbudget) waehrend frpc neu geladen
+  wird, startet der Agent frpc nicht mehr neu und behaelt den Stand; der naechste Lauf laedt, statt alle Tunnel neu
+  aufzubauen.
+- **Agent: Monitoring-Befehle mit offenem Kindprozess:** Endet ein Werkzeug (etwa docker, zpool, apt-get) mit
+  Erfolg, waehrend ein von ihm gestarteter Prozess seine Ausgabe noch offen haelt, wertet der Agent die Ausgabe
+  aus, statt "did not start" zu melden; ein abgebrochener Lauf heisst "canceled before it ended".
+- **Agent: Terminal nach Ctrl-C bei der Token-Eingabe:** Bricht man die verdeckte Eingabe von
+  `adminhelper-agent provision --token-stdin` mit Ctrl-C ab, zeigt das Terminal danach wieder an, was man tippt
+  (Exit 130).
+- **Ansible erreicht Server wie Verbinden:** das Inventory (jetzt JSON, `inventory.json`) schickt Ansible zu
+  Adresse, Port, Benutzer, Schluessel und Sprung-Host der SSH-Verbindung des Servers, auch durch einen FRP-Tunnel.
+  Bei mehreren SSH-Verbindungen waehlt man je Server, ohne Verbindung bleibt es beim Hostnamen (in den Zielen
+  markiert). Laeuft der Tunnel-Visitor nicht, startet der Lauf nicht.
+- **Ansible fragt das SSH-Passwort ab:** nutzt eine Verbindung Passwort-Anmeldung, startet der Lauf mit
+  `--ask-pass`; Ansible fragt einmal im Terminal, ein Passwort fuer die Passwort-Server des Laufs (je nach Ansible-Version
+  wird `sshpass` gebraucht).
+- **CA-Issuer: Pruefung der Zwischenzertifikate beim Start:** Der Start prueft das aktuelle Zwischenzertifikat jedes
+  Scopes so vollstaendig wie die abgeloesten (Name des Scopes, nur zum Signieren von Endzertifikaten) und bricht
+  sonst mit Datei und Scope ab. Eine nicht lesbare `root.crt`, `<scope>.crt` oder `<scope>.key` bricht den Start mit
+  einer Meldung ab, die Datei und Scope nennt, statt mit einem `ValueError` ohne Ort.
+- **CA-Issuer: geaenderte `DOMAIN` oder `EXTRA_SANS` wirken beim naechsten Start:** Nennt das vorhandene Server-Zertifikat
+  des Gateways oder von frps andere Namen oder Adressen als konfiguriert (`DOMAIN` und `EXTRA_SANS`; fuer frps
+  `CA_FRPS_SERVER_ADDR`, ersatzweise `DOMAIN`, und `CA_FRPS_EXTRA_SANS`), stellt der `ca-issuer` es beim naechsten
+  Start neu aus; bisher erst nach der halben Laufzeit oder mit `down -v`. Das Gateway liest sein Zertifikat nur beim
+  eigenen Start (danach `docker compose restart gateway`); frps uebernimmt das neue Zertifikat selbst.
+  Reihenfolge und Leerzeichen in `EXTRA_SANS` loesen keine Neuausstellung aus. Doku: Agent-Deployment (DE+EN).
+- **CA-Issuer: Browser-Zertifikate behalten ihre Laufzeit bei der Erneuerung:** Ein Browser-Zertifikat, das vor dem
+  Ende seines Zwischenzertifikats gekuerzt ausgestellt wurde, erneuerte der `ca-issuer` bisher nur mit der kurzen
+  Laufzeit der Desktop- und Agent-Zertifikate. Die Laufzeit richtet sich jetzt nach der Art des Geraets im
+  Zertifikats-Register; nur ein dort nicht erfasstes Zertifikat wird weiter nach seiner Laufzeit eingeordnet.
+- **CA-Issuer: mit `--compromised` ersetzte Zwischenzertifikate bleiben ersetzt:** `rotate-intermediates
+  --compromised` und `rotate-root switch --compromised` fuehren sie bis zu ihrem Ablauf in
+  `<scope>-compromised.pem`; Start, Rotation, `rotate-root finish` und `status` erkennen sie daran.
+- **CA-Issuer: `rotate-root finish` waehlt je Geraetelinie das zuletzt erfasste Zertifikat**, auch wenn zwei in
+  derselben Sekunde ausgestellt wurden.
+- **CA: Rotation trotz fremdem Zertifikat:** liegt unter `<scope>.crt` ein Zertifikat, das kein Zwischenzertifikat
+  dieses Scopes ist, ersetzt die Rotation es auch dann, wenn es nach der Uhr des Hosts noch nicht gilt.
+- **Agent: Server-Zertifikat nur vom Gateway:** nach dem Enrollment nimmt der Agent fuer seine Aufrufe an den Server
+  nur ein Zertifikat an, das das `access`-Zwischenzertifikat ausgestellt hat.
+- **Server: Push-Stream prueft das Client-Zertifikat laufend vollstaendig:** ein offener Benachrichtigungs-Stream
+  prueft das Zertifikat bei der minuetlichen Neupruefung jetzt so, wie es beim Verbindungsaufbau geprueft wird.
+- **Server: Client-Zertifikat nur innerhalb seiner Laufzeit:** ein vom Gateway weitergereichtes Client-Zertifikat
+  gilt nur noch zwischen seinem Beginn und seinem Ablauf.
+- **Desktop: Server-Zertifikat im registrierten Zustand wie der Agent:** nach der Registrierung nimmt der Desktop nur
+  noch ein Server-Zertifikat des Access-Intermediates an.
+- **ca-issuer: `rotate-root finish` und `status` nach einer Erneuerung in der Startsekunde (R-1094):** ein Geraet, das
+  in derselben Sekunde wie der erste Start unter der neuen Root erneuerte, galt als noch nicht erneuert und hielt
+  `finish` bis `--force` fest. Innerhalb dieser Sekunde entscheidet jetzt der Zeitpunkt der Aufzeichnung.
+- **ca-issuer: `rotate-intermediates --compromised` nach dem Root-Wechsel (R-1095):** der Scope steht jetzt auch in
+  `root-switch.json` unter `compromised`, wie bei `rotate-root switch --compromised`; ein weiterer Lauf ergaenzt die
+  Liste.
+- **Desktop: Benachrichtigungs-Glocke:** Ecken, Hover und ungelesene Eintraege nutzen wieder definierte
+  Design-Tokens.
+- **Desktop: Zuruecksetzen der Geraete-Identitaet meldet ein gescheitertes Loeschen:** Konnte der Desktop die
+  Identitaet nicht aus dem Schluesselbund loeschen, meldete das Zuruecksetzen bisher trotzdem Erfolg. Jetzt zeigt es
+  einen Fehler; hat der Server die Identitaet schon widerrufen, sagt die Meldung das. Der Desktop versucht dabei alle
+  Eintraege der Identitaet zu loeschen, nicht nur bis zum ersten Fehler.
+- **Desktop: Tunnel-Abgleich mit Lesegrenze:** Die App liest die Tunnel-Liste vom Server hoechstens 16 MiB weit,
+  wie die Verbindungsliste; eine groessere Antwort lehnt sie ab, ohne sie zu zitieren.
+- **Desktop: Zuruecksetzen der Geraete-Identitaet haelt die App nicht auf:** Die Schritte am Schluesselbund laufen
+  auf einem eigenen Thread, ein wartender Schluesselbund blockiert keine anderen Befehle.
+- **Desktop: Registrierung, die der Workspace nicht behaelt:** Scheitert danach auch das Zuruecksetzen, sagt die
+  Meldung das und dass die Identitaet bleibt (in den Einstellungen zuruecksetzen).
+- **Agent unter FreeBSD: Proben auf eigene Adressen scheiterten:** der Agent las die Liste der lauschenden Sockets
+  nicht, sobald darin eine noch ungebundene Socket stand (etwa seine eigene waehrend einer Probe), und wies jede
+  Probe auf eine Adresse des eigenen Hosts ab.
+- **FRP: Tunnel-Altzeilen in der Config:** Ein Tunnel, dessen gespeicherte Felder die API heute ablehnen wuerde,
+  fehlt in der erzeugten frpc- und Visitor-Config; der Server loggt seinen Namen als Warnung.
+- **FRP: Config-Routen wie der Generator:** Die Routen fuer frpc-Config, Visitor-Config und den ZIP-Export lassen
+  dieselben Tunnel aus wie die erzeugte Config; ein Host ohne nutzbaren Tunnel bekommt 404 statt einer Config ohne
+  Tunnel, und der ZIP-Export enthaelt fuer ihn keine frpc.toml.
+- **FRP: Namen in der erzeugten Config geprueft:** Server- und Nutzernamen mit Zeichen, die die API ablehnt,
+  schreibt der Generator nicht in frpc- und Visitor-Config; die Routen antworten dafuer 404, der ZIP-Export
+  ueberspringt sie.
+- **FRP: frpc-Config fuer Admins wie beim Agent:** Die Admin-Route fuer die frpc.toml eines Servers liefert
+  denselben Text wie der Abgleich des Agents, auch bei Tunneln in mehreren FRP-Configs.
+- **FRP: Warnungen zu ausgelassenen Tunneln einmal:** Der Server warnt je Tunnel und Grund einmal statt bei jedem
+  Abgleich und gibt Namen maskiert aus.
+- **FRP-Server-Konfiguration mit Tunneln loeschen:** `DELETE /api/frp/server-config/{id}` endete mit `500`, wenn die
+  Konfiguration Tunnel hatte; jetzt loescht es die Konfiguration samt ihren Tunneln.
+- **Monitoring HTTP-Check: Content-Encoding-Schichten begrenzt:** Ein Check liest hoechstens fuenf gzip- oder
+  deflate-Schichten, wie urllib3; mehr meldet er als `unknown` ("Too many content encodings (>5)").
+- **Monitoring HTTP-Check: Redirect ohne Location:** Ein 3xx ohne `Location`-Header meldet `critical`
+  "Redirect without Location header" statt "Too many redirects (>5)".
+- **Monitoring-Alerts: Maske beim Anlegen:** `POST /alerts` mit `smtp_password` `"***"` antwortet mit 422,
+  statt die Maske als Passwort zu speichern.
+- **Monitoring-Templates: Steuerzeichen in Variablen:** Steuerzeichen (C0, DEL) in Hostname und Servername einer
+  Zuweisung werden beim Einsetzen in Check-Namen, Konfiguration und Alert-Regeln zu Leerzeichen.
+- **Agent-Erkennung: veroeffentlichte Ports nach Adresse und Port:** Veroeffentlichen zwei Container denselben Port
+  auf verschiedenen Host-Adressen, ordnet die Erkennung jeden Listener dem Container seiner Adresse zu.
+- **Agent: Zugangsdaten lesen ohne zu blockieren:** Unter Windows scheitert das Speichern von Zugangsdaten nicht mehr,
+  waehrend ein anderer Prozess die Datei liest; unter Linux haengt der Agent nicht an einer FIFO statt der Datei.
+- **Monitoring: Log-Sensor und Probe-Ziele:** Die API nimmt fuer den Log-Sensor nur Units und Filter an, die der Agent
+  ausfuehrt (sonst 422), statt dass der Check dauerhaft `unknown` bleibt.
+- **Monitoring-Erkennung:** Nach einem unvollstaendigen Scan kommt der naechste nach 2 bis 4 Stunden statt erst nach
+  24 bis 48. Wird ein Dienst ausser ueber seine Unit auch ueber Container, Prozess oder Markerdatei erkannt, laesst ein
+  Stopp der Unit seinen Fund unveraendert, statt ihn als geaendert zu melden.
+- **Monitoring: gebremste Sammler:** Ein vom Agenten gebremster Sammler laesst den Status seiner Checks hoechstens
+  45 Minuten stehen; danach werden sie wieder bewertet.
+- **Monitoring: Maske als SMTP-Passwort beim Anlegen eines Templates:** eine Alert-Definition mit `***` als
+  Passwort wird wie bei Alert-Regeln mit 422 abgelehnt, statt das Template still ohne Passwort anzulegen.
+- **Monitoring: Meldung zu `not_allowed`:** der Text lautet jetzt „The agent refused the target“ und passt zu jedem
+  Grund; den Grund nennt weiter die Fehlermeldung des Agents.
+- **Monitoring: keine Fehlalarme mehr auf den frps-Ports:** ein Port, der nach gelungenem Verbindungsaufbau ohne
+  erkennbares Protokoll schliesst, gilt als erreichbar (`unknown`, nach TLS `tls`); critical bleibt ein Port, dessen
+  Verbindungsaufbau scheitert. Das neue Katalog-Modul `frps` erkennt den frps-Container und prueft, ob er laeuft;
+  seine Ports werden nicht mehr als einzelne Ports geprobt, und frps schreibt dazu keine Warnungen mehr ins Log.
+  Bereits uebernommene Port-Instanzen der frps-Ports werden ein Fund `gone`.
+- **Agent: klarere Abweisung nach dem Verbinden:** Eine volle Accept-Queue oder eine Verbindung, die der Dienst sofort
+  beendet, gilt nicht mehr als Umleitung, bekommt eine eigene Meldung und sperrt den Port nicht fuer eine Stunde.
+- **Monitoring: Fehlertext eines Alarmkanals wird immer gespeichert:** enthaelt die Antwort eines Kanals Zeichen, die
+  die Datenbank nicht aufnimmt, steht an ihrer Stelle ein Ersatzzeichen; der Alarmdurchlauf geht nicht mehr verloren.
+- **Monitoring: aeltere Zeilen mit ungueltigen Unicode-Escapes lesbar:** Pruefungen, Status und Vorlagen mit solchen
+  gespeicherten Werten liefern ein Ersatzzeichen statt eines Serverfehlers.
+- **Monitoring: Dienste-Fehlerzeilen nachgehaertet:** das Ausschalten der Fehlerzeilen eines Servers und ein
+  gleichzeitig eingehender Dienste-Bericht laufen nacheinander; nach dem Ausschalten bleiben keine Zeilen sichtbar.
+- **Monitoring: Port einer App-Unit kein eigener Fund mehr:** Der Port einer erkannten Anwendung aus dem Paket (etwa
+  `gitea.service` auf 3000, slapd, Odoo) erscheint nicht mehr zusaetzlich als Fund des Moduls `port` — ein
+  uebernommener solcher Fund wird nach zwei Scans `gone`.
+- **Monitoring-Verlauf und Server-Vergleich zeigen die neuesten Werte (R-1104):** der Zeitraum endete am letzten
+  vollen Rasterschritt, die juengsten Daten fehlten bis zu einem Schritt (15 min bei 24 Std., 6 h bei 30 Tagen).
+  Er endet jetzt am ersten Rasterpunkt ab jetzt.
+- **Monitoring-API: Abfrage der Standard-Template-Aktualisierung (R-1107):** `GET /templates/{id}/builtin-update`
+  antwortete fuer die Template-IDs `assignments` und `suggestions` mit der Zuweisungs- bzw. Vorschlagsliste `[]`
+  statt mit seiner eigenen Antwort. Die Route ist jetzt vor diesen beiden registriert.
+- **pg-backup: gescheiterter Lauf sieht nicht mehr frisch aus:** halbe Dumps liegen in `/backups/.partial` statt
+  in `/backups`.
+- **Server/Monitoring: Zielpruefung ausgehender Anfragen:** zwei weitere Adressbereiche werden gesperrt bzw. nur
+  ueber die Liste privater Netze freigegeben.
+- **Benachrichtigungen: Vorfaelle:** Erholung und Bestaetigen sperren in derselben Reihenfolge und warten nicht mehr
+  aufeinander; ein Bestaetigen haelt keinen Vorfall, den es ueberspringt.
+- **Benachrichtigungen: Zusammenfassung per E-Mail:** hoechstens 200 Zeilen je Mail, der Rest als Zaehlung.
+- **Eskalation: ein Rueckfall auf warning stoppt die Frist:** ein Vorfall, der vor Ablauf der Eskalationsfrist auf
+  warning zurueckfaellt, eskaliert nicht mehr als kritisch; ein erneutes critical beginnt eine neue Frist, nach der
+  auch eskaliert, wer schon eine Nachricht bekam.
+- **Desktop: eingebettetes RDP uebersteht die Groessenaenderung an xrdp:** sendet der Server waehrend der
+  Reaktivierung Daten auf einem statischen Kanal, verarbeitet die Sitzung sie danach, statt die Verbindung
+  abzubrechen.
+- **Desktop: H.264 aus bleibt aus, auch waehrend eine Sitzung startet:** wird H.264 abgeschaltet, waehrend eine
+  Sitzung gerade die Einstellungen gelesen hat, laedt sie die OpenH264-Bibliothek nicht mehr herunter.
+- **Desktop: RDP im Tab startet ohne gespeicherte eigene Groesse mit 1920x1080:** wie der Einstellungsdialog; bisher
+  nahm eine solche Sitzung 1280x720.
+- **Desktop: eingebettetes RDP fragt nach einem Anmeldefehler neu:** *Neu verbinden* fragt Benutzer und Passwort
+  erneut ab, statt das abgelehnte noch einmal zu schicken.
+- **Desktop: H.264 aus bleibt aus:** ein beim Ausschalten laufender Download legt Ciscos OpenH264 nicht wieder an.
+- **Server: Mail-Betreff einzeilig wie im Monitoring:** Der Benachrichtigungs-Hub ersetzt Steuerzeichen und
+  Zeilentrenner im Betreff durch Leerzeichen, wie es das Monitoring seit monitoring-hardening-2 tut; der Text der
+  Mail bleibt unveraendert.
+- **Server-Hooks: NaN/Infinity im Webhook-Body ergibt 422:** Ein JSON-Body mit `NaN`, `Infinity` oder `-Infinity`
+  fuehrte zu 500, sobald die Antwort ihn zurueckgab; der Trigger lehnt nicht-endliche Zahlen jetzt mit 422 an
+  ihrer Stelle ab.
+- **Server-CLI: Passwort ueber 128 Zeichen abgewiesen:** `create-admin` und `reset-admin` nahmen ein Passwort an,
+  mit dem der Login (hoechstens 128 Zeichen) nie gelingen konnte; sie weisen es jetzt mit Exit 1 ab.
+- **Server: Bootstrap mit mehreren Workern legt genau einen Admin an:** Zwei gleichzeitige Aufrufe mit dem
+  Setup-Token konnten zwei Admins anlegen; die Pruefung "noch kein Nutzer" und das Anlegen laufen jetzt unter einer
+  Postgres-Sperre.
+- **Server-Hooks: Timeout auch beim Schreiben des Payloads:** Las ein Worker stdin nicht, blockierte ein grosser
+  Payload den Lauf ueber den Timeout hinaus; der Runner schreibt ihn jetzt nebenlaeufig.
+- **Server-Hooks: Ergebnis trotz offener Ausgabe:** Hielt ein Hintergrundprozess in eigener Session stdout des
+  Workers offen, endete der Lauf mit "Ungueltige Worker-Ausgabe"; der Runner wertet jetzt aus, was der Worker bis
+  dahin geschrieben hat.
+- **Server: Anmeldung und Refresh ohne 500:** Ein sehr grosser `WEB_SESSION_MAX_HOURS` und ein Refresh-Token, der
+  waehrend der Pruefung ablaeuft, fuehren nicht mehr zu einem Serverfehler. Der `403` ohne Client-Zertifikat an Login,
+  Refresh und Bootstrap nennt keinen Scope mehr, den er nicht prueft.
+- **Server: zu langes `ADMIN_PASSWORD` wie zu kurzes:** Ein `ADMIN_PASSWORD` mit mehr als 128 Zeichen legt keinen
+  Admin mehr an, der sich nie anmelden koennte. Der Server warnt und schreibt stattdessen den Bootstrap-Token.
+- **Server: Verbindungen mit alten `tags`-Werten:** Ein gespeicherter `tags`-Wert, der keine JSON-Liste ist, wird als
+  leere Liste gelesen (mit einer Warnung im Log), statt die Liste der Verbindungen scheitern zu lassen.
+- **Token-Refresh ohne Client-Zertifikat:** unter `MTLS_ENFORCE=true` zaehlt ein so abgewiesener Refresh wie ein
+  fehlgeschlagener Login gegen das Login-Rate-Limit je IP; darueber antwortet `/api/auth/refresh` mit `429`.
+- **FRP-Bulk-ZIP und `create-admin` mit Altnamen:** das Bulk-ZIP laesst Server- und Benutzernamen aus Altzeilen aus,
+  die die API heute nicht mehr als Namen annimmt (mit einer Warnung im Log); `python -m app.cli create-admin` prueft
+  den Benutzernamen wie die API (3 bis 64 Zeichen, Buchstaben, Ziffern, `.`, `_`, `-`).
+- **Server: Benachrichtigungs-Stream endet mit dem Ablauf des Client-Zertifikats:** ein offener Stream prueft bei
+  seiner minuetlichen Neupruefung auch, ob das mTLS-Zertifikat noch gueltig ist, und endet nach dessen Ablauf.
+- **Server: doppelter Query-Parameter:** ein Query-Parameter, den das Schema als Einzelwert beschreibt, ergibt bei
+  mehrfacher Angabe 422 statt still den letzten Wert zu nehmen, wie schon im Monitoring.
+- **Desktop: Dateien-Panel wartet auf die Anmeldung:** Steht die SSH-Sitzung noch an der Anmeldung, wartet das
+  Panel *Dateien* darauf (hoechstens zwei Minuten) statt zu scheitern; danach laedt *Aktualisieren* erneut.
+- **Desktop: Downloads im Dateien-Panel:** Die Teildatei eines Downloads wird exklusiv neu angelegt, und der
+  vorgeschlagene Dateiname ist bereinigt.
+- **Desktop: Sitzungsverlauf des AdminHelper-Terminals:** Eine SSH-Sitzung im eingebetteten Terminal endet ihren
+  Eintrag unter *Letzte Sitzungen*, wenn ihr Programm endet oder der Tab geschlossen wird, und zeigt eine Dauer.
+- **Desktop: Programmsuche:** Der Desktop sucht `ssh`, `xfreerdp` und `ansible-playbook` nur in absoluten
+  PATH-Eintraegen; das eingebettete Terminal startet nur aus dem Hauptfenster oder einem losgeloesten
+  Terminal-Fenster.
+- **Desktop: Snippet-Broadcast ohne Sitzung:** erreicht ein Broadcast keine laufende SSH-Sitzung, meldet die
+  Statuszeile das, statt still nichts zu tun.
+- **Desktop: Ansible-Lauf im Tab beim Beenden:** Wird die App waehrend eines Playbook-Laufs im Tab beendet, bleiben
+  Inventory und Playbook des Laufs nicht mehr im Temp-Verzeichnis liegen.
+- **Desktop: SFTP-Download unter Windows:** Der Speichern-Dialog schlaegt keinen Namen mehr vor, den Windows
+  ablehnt (Zeichen wie `?` oder `*`, Punkt oder Leerzeichen am Ende, Geraetenamen wie `NUL.txt`).
+- **Desktop: RDP im Tab im Sitzungsverlauf:** Eine RDP-Sitzung im Tab endet im Verlauf, sobald der Tab die Sitzung
+  beendet zeigt oder geschlossen wird, wie bei SSH.
+- **Desktop: Terminal-Tab endet nach dem Neuladen des Fensters:** eine Sitzung, deren Cursor-Abfrage beim Neuladen
+  noch offen war, endet jetzt sauber, statt unter Windows im Hintergrund weiterzulaufen.
+- **Web: neue Anmeldung bleibt bestehen:** Eine Anmeldung beginnt im Web immer eine neue Sitzung, auch wenn der
+  Client noch ein Token haelt; eine Anfrage aus der Zeit davor, die erst danach mit 401 beantwortet wird, beendet
+  die neue Sitzung nicht mehr. Ebenso uebernimmt eine Anfrage der neuen Sitzung nicht mehr die Antwort eines
+  Token-Refresh, der noch aus der alten Sitzung laeuft.
+- **Web: Abmeldung nach Inaktivitaet beim Laden:** Liegt die im Browser gespeicherte Zeit der letzten Bedienung nach
+  der Uhr des Rechners (Uhr zurueckgestellt), endet eine wiederhergestellte Sitzung beim Laden sofort, statt
+  weiterzulaufen.
+- **Web: unlesbare Zeit der letzten Bedienung beendet die Sitzung beim Laden:** steht im Browser statt einer Zeit ein
+  anderer Wert, meldet das Web-Panel beim Laden ab wie bei einer Zeit nach der Uhr des Rechners.
+- **Doku: Admin-Uebersicht DE/EN angeglichen:** Die englische Uebersicht folgt der deutschen Gliederung; die FRP-Karte nennt keine falschen Zertifikatslaufzeiten mehr (Root 10 Jahre, Zwischenzertifikate 5 Jahre, siehe Betrieb/Operations).
+- **Doku: Keyring-Pruefung im Agent-Deployment (apt) liest den Primaer-Fingerprint:** Die Pruefsaetze in Schritt 1 und 1b (DE/EN) lesen den `fpr`-Record des Hauptschluessels und brechen bei einem Schluessel mit designiertem Widerrufer nicht mehr faelschlich ab.
+- **Doku: Web-UI-Inaktivitaetswaechter nach Reload vollstaendig beschrieben:** Auch eine gespeicherte Zeit in der Zukunft oder ohne Zahl meldet sofort ab; nur eine fehlende Zeit zaehlt als Bedienung.
+- **Agent: unbekannte Zeile von `doveadm log errors`:** `dovecot_status` meldet sie als Fehler des Laufs, statt sie
+  still zu ueberspringen.
+- **Agent: Image verschwindet waehrend `lmn_linbo`:** ein Image, das zwischen dem Lesen des Verzeichnisses und der
+  Pruefung seines Torrents verschwindet, bricht den Lauf nicht mehr ab; es zaehlt nicht mit.
+- **Monitoring: Windows DNS Server ohne doppelten Fund:** Port 53 gehoert dem Modul `windows-dns`; er erscheint nicht
+  zusaetzlich als Port-Fund, weil Windows-Sockets keinen Dienst nennen.
+- Agent: ein vom Aufrufer abgebrochener Lauf haelt die vHost-Liste nicht mehr 60 s im Cache; `RunCapped` beendet bei Frist oder Ausgabegrenze die ganze Prozessgruppe; der WordPress-Check nennt einen unzulaessigen Datenbankserver beim Namen.
+- Doku: Zieladresse der vHost-Checks und Zahl der Handshakes je Domain berichtigt.
+- **Monitoring: Jicofo-Unit nach Absturz kritisch:** die Katalog-Regel von Jitsi Jicofo meldet die Unit als kritisch,
+  wenn sie `exited` ist (der sysv-Unit bleibt nach einem Absturz `active`). Das Modul steht jetzt auf Version 2, die
+  Instanzen bekommen das Update als Angebot.
+- **Monitoring: Top-Prozesse und OOM-Liste:** unbrauchbare Einträge (ohne pid oder Namen) belegen keinen der
+  angezeigten Plätze mehr.
+- **Monitoring: Socket-Pfad in Bytes:** der Katalog prueft den Pfad eines Unix-Socket-Checks wie der Agent in Bytes
+  (107), nicht in Zeichen; ein Pfad mit Umlauten, der zu lang ist, wird am Server abgewiesen statt beim Agent als
+  `invalid`.
+- **SMTP: unlesbare `SMTP_CA_FILE` nennt Variable und Pfad:** Fehlt die CA-Datei oder ist sie kein PEM, steht im
+  Fehlertext des Hubs (Outbox `last_error`) und in der Logzeile des Monitorings jetzt `SMTP_CA_FILE` samt Pfad; die
+  Meldung an den Empfaenger eines Alerts bleibt unveraendert.
+- **Agent: Hinweis beim `--insecure`-Erstkontakt:** `provision --insecure` verwies auf einen im AdminHelper-Server
+  angezeigten Fingerprint, den keine Oberflaeche zeigt. Der Hinweis nennt jetzt den Vergleich mit dem
+  Server-Zertifikat (`openssl x509 -noout -fingerprint -sha256`) und `--ca-fp` als verifizierten Erstkontakt.
+- **Desktop: Hinweis unter „Nicht stören“:** der Hinweis nennt „Kritisches kommt trotzdem durch“ nur noch, wenn
+  der Durchlass für Kritisches an ist.
+- **Desktop: Fehler im abgedockten Terminal-Fenster:** ein Fehler, der dort auftritt, wird im Fenster angezeigt.
+- **Desktop-Monitoring: Funde-Tab und Puls nur für Admins:** Eine Nicht-Admin-Sitzung fragt `/status/summary` nicht
+  mehr jede Minute (der Server antwortet ihr 403) und zeigt den Funde-Tab nicht mehr.
+- **Desktop: Monitoring nur fuer Admins:** Menuepunkt und Seite "Monitoring" erscheinen nur noch in einer Admin-Sitzung
+  (der Server antwortet allen anderen 403); ein Aufruf von `/monitoring` zeigt ihnen das Dashboard.
+- **Desktop: Namensfeld der Verbindung:** Haengt eine Verbindung an einem Server, bleibt das Namensfeld gesperrt, bis die
+  Serverliste geladen ist; vorher liess sich der Anzeigename versehentlich als eigener Text speichern.
+- **Desktop: Dashboard ohne Monitoring fuer Nicht-Admins:** im Server-Modus zeigt das Dashboard einem Nicht-Admin die
+  Karten Server und Probleme sowie das Panel Monitoring nicht mehr und laedt die Monitoring-Daten nicht (der Hub
+  antwortet ihm mit 403).
+- **Monitoring: doppelter Query-Parameter ergibt 422:** ein Parameter, den die API als einzelnen Wert beschreibt
+  (etwa `offset` oder `limit`), wird bei mehrfacher Angabe mit 422 abgewiesen, statt still den letzten Wert zu nehmen.
+- **agent-install.sh -h:** Die Hilfe druckt nur noch den Kopfkommentar, nicht mehr die Zeile `set -euo pipefail`.
+- **Diagnose-Bundle: .env-Zeilen wie compose gelesen:** `diagnostics.sh` erkennt in der `.env` jede Zuweisung so, wie
+  compose sie liest, auch mehrere Anweisungen auf einer Zeile und auskommentierte Werte ueber mehrere Zeilen; die
+  Maskierung in Logs und `env.sanitized` folgt dem.
+- **Backup: .env-Filter wie compose:** `backup.sh` entfernt `CA_ROOT_PASSPHRASE` aus `env.sanitized` auch hinter
+  anderen Anweisungen derselben Zeile und auskommentiert ueber mehrere Zeilen; die anderen Anweisungen der Zeile
+  bleiben erhalten.
+- **Diagnose-Bundle: Reihenfolge der Masken-Regeln:** die allgemeinen Token-Formen werden vor kurzen `.env`-Werten
+  maskiert, damit ein kurzer Wert ein Token nicht zerteilt; jeder `.env`-Wert bleibt maskiert.
+- **Diagnose-Bundle: Abbruch bei Fehlern der Maskierung:** scheitert das Lesen der `.env`-Werte fuer die Maskierung,
+  endet `diagnostics.sh` mit einer Fehlermeldung und schreibt kein Bundle; die Fehlerausgabe wird nicht mehr
+  verschluckt.
+- **Update: auskommentierter Pflichtschluessel in .env:** steht ein Schluessel aus `.env.example` (etwa
+  `CA_ROOT_PASSPHRASE`) nur als Kommentar in `.env`, haengt das Update ihn wieder aktiv an, statt dass
+  `docker compose up` danach abbricht. Ein Schluessel mit `export`, Leerzeichen vor dem `=` oder `:` bekommt keine
+  zweite Zeile mehr (ausser einem Geheimnis, das `init-secrets.sh` fuellt).
+- **Update: Strg-C waehrend eines Rollbacks:** INT und TERM brechen einen Rollback nach einem Fehler nicht mehr ab
+  und starten ihn nicht neu. Nach einem HUP (Terminal geschlossen) schreibt das Update weiter nach
+  `backups/update-<zeit>.log` und startet den Rollback einmal neu, weitere HUP ignoriert es. Mit `--no-rollback`
+  nennt die Meldung nach einem Signal, was an dieser Stelle wirklich stehen bleibt.
+- **Diagnose: `.env` wie compose gelesen:** `env.sanitized` im Diagnose-Bundle und die Masken der Logs zerlegen die
+  `.env` jetzt so, wie Docker Compose sie liest. Ein Wert in Anfuehrungszeichen, der ueber mehrere Zeilen laeuft,
+  konnte bisher den Wert eines geheimen Schluessels dahinter unmaskiert lassen.
+- **Diagnose: Geheimnis an einem Token ganz maskiert:** Stand ein Wert aus der `.env` ohne Trenner an einem oder in
+  einem Token (Bearer, JWT, Provisioning-Token), konnte die Maske einen Rest des Werts oder des Tokens in den Logs
+  stehen lassen. Wert und Token werden jetzt als ein Stueck maskiert.
+- **Backup: gesicherte .env behaelt die Anfuehrungszeichen anderer Werte:** steht `CA_ROOT_PASSPHRASE=` im Wert eines
+  anderen Schluessels in Anfuehrungszeichen, entfernt der Filter den Text nur noch bis zum schliessenden
+  Anfuehrungszeichen; die `env.sanitized` im Backup bleibt fuer docker compose lesbar.
+- **init-secrets.sh liest Schluessel wie docker compose:** ein Wert in der Form `export KEY=…`, `KEY = …` oder
+  `KEY: …` gilt als gesetzt und bleibt unveraendert; ein leerer Wert in diesen Formen wird ersetzt, ohne eine zweite
+  Zeile fuer denselben Schluessel.
+- **update.sh ohne Terminal:** laeuft `update.sh` ohne Terminal (`ssh host ./scripts/update.sh`) und bricht die
+  Verbindung ab, endet das Skript nicht mehr beim naechsten Schreiben mitten im Tausch oder Rollback; es rollt wie
+  nach einer getrennten Sitzung zurueck und schreibt die Ausgabe nach `backups/update-<zeit>.log`.
+- **restore.sh auf einem frischen Host:** die aus dem Backup angelegte `.env` uebernimmt nur die Schluessel der
+  Anwendung (ohne `COMPOSE_*` und `DOCKER_*`, ausser `COMPOSE_PROJECT_NAME`); vor der Rueckfrage nennt das Skript die
+  Images, mit denen der Stack startet.
+- **install.sh mit vorab angelegter .env:** der Installer prueft eine vorhandene `.env` vor dem ersten
+  docker-compose-Aufruf wie `update.sh` und bricht bei einer Zeile, die docker compose ablehnt, mit deren
+  Zeilennummer ab, ohne ihren Inhalt auszugeben.
+- **install.sh/update.sh: `$` vor einem nicht gesetzten Namen in der `.env` (R-1051):** docker compose setzte diesen
+  Teil eines Werts still leer (`$NAME`, `${NAME}`) oder brach jeden Aufruf ab (`${NAME?…}`). Beide Skripte halten
+  jetzt vor dem ersten Compose-Aufruf an und nennen nur die Zeile; `$$` und einfache Quotes bleiben der Weg fuer ein
+  woertliches `$`. install.sh gibt die Fehlermeldung eines gescheiterten `docker compose config` oder `ps` ohne
+  Steuerzeichen aus.
+- **install.sh: `--admin-user` wird vor dem Start geprueft (R-1057):** ein Name ausserhalb von 3 bis 64 Buchstaben,
+  Ziffern, `.`, `_` oder `-` endet sofort mit Exit 2, statt die Installation erst nach `docker compose up`
+  abzubrechen.
+- **update.sh: gescheitertes Backup-first (R-1050):** die Meldung ist jetzt englisch; ein Test belegt, dass das Update
+  dann ohne Aenderung endet.
+- **backup.sh: `.env`, die Compose ablehnt (R-1052):** in einer solchen Datei entfernt das Backup die Zeile von
+  `CA_ROOT_PASSPHRASE` ganz, statt ein Anfuehrungszeichen daraus stehen zu lassen.
+- **agent-install.sh: Repo-Schluessel mit designiertem Widerrufer (R-1045):** die Pruefung des gepinnten
+  Fingerabdrucks las bei einem solchen Schluessel keinen Fingerabdruck und brach die Installation ab; sie nimmt jetzt
+  den eigenen Fingerabdruck des Schluessels.
+- **restore.sh: Rollen-Passwoerter und Compose-Variablen aus der `.env` (R-1047, R-1058):** der Restore liest ein
+  Passwort jetzt so, wie docker compose die Datei liest (letzte Zeile des Schluessels, `export`, `:`, Quotes,
+  Kommentar hinter dem Wert). Einen Wert, den er nicht ebenso lesen kann, meldet er mit dem Namen des Schluessels und
+  bricht ab, bevor etwas geaendert wird. Fehlermeldungen von docker compose erscheinen ohne Steuerzeichen.
+- **Restore: Rollen-Passwort mit `$$`:** `restore.sh` nimmt ein `$`, das in der `.env` als `$$` steht, wie Docker
+  Compose als ein `$`; die Meldung bei einem Wert, den es nicht lesen kann, nennt den Ausweg über die Umgebung.
+- **Update: Umzug auf PostgreSQL 18 prüft sein Ziel:** `update.sh` prüft vor dem Leeren der neuen Datenbank, dass der
+  gestartete Container PostgreSQL 18 auf dem neuen Volume ist; sonst rollt es zurück.
+- **Backup: vorsichtiger bei ungewöhnlichen Schlüsseln in der `.env`:** ein Schlüssel mit Nicht-ASCII-Zeichen wird beim
+  Bereinigen der gesicherten `.env` vorsichtiger behandelt.
+- **Gateway: Healthcheck ueber /healthz auf 127.0.0.1:** Das Gateway hat einen Healthcheck ueber einen Listener nur auf
+  127.0.0.1 (`/healthz`); `docker compose ps` zeigt `healthy` oder `unhealthy` statt nur `running`.
+- **Compose: Healthchecks fuer victoria und monitoring ueber HTTP:** victoria hat einen Healthcheck auf `/health`;
+  monitoring fragt `/health` per HTTP statt nur einen TCP-Connect zu pruefen, ein haengender Prozess wird so
+  `unhealthy`.
+- **update.sh: Neustart wartet auf die Healthchecks aller Dienste:** `update.sh` startet den Stack mit
+  `docker compose up --wait` und rollt zurueck, wenn ein Dienst mit Healthcheck nicht gesund wird, statt nur den Server
+  zu pruefen; "zurueckgerollt" meldet es erst, wenn der alte Stand wieder gesund laeuft, sonst "unvollstaendig".
+  `update.sh` braucht dafuer Docker Compose v2.17 oder neuer und bricht mit aelterem ab, bevor es etwas aendert.
+- **update.sh: Abbruch beim Ziehen der Images laesst kein halbes Update zurueck:** Die Image-Pins kommen erst nach dem
+  Ziehen aller Images in die `.env`; ein Abbruch per Strg-C, `kill` oder eine getrennte SSH-Sitzung rollt zurueck.
+  Zuvor konnte die `.env` danach auf der neuen Version stehen, mit den alten Containern, und `update.sh --check`
+  meldete das Update als installiert. Nach einer getrennten Sitzung steht die Ausgabe in `backups/update-<zeit>.log`.
+- **update.sh: kein Rollback auf alte Images, wenn die Datenbank schon migriert ist:** Scheitert der Start nach dem
+  Update, vergleicht `update.sh` die Alembic-Revisionen beider Datenbanken mit dem Stand vor dem Update. Haben sie sich
+  geaendert oder sind sie nicht lesbar, setzt es Laufzeit-Dateien und Image-Pins zurueck, stoppt den Stack und nennt
+  `./scripts/restore.sh` mit dem Backup dieses Laufs sowie `./scripts/update.sh --ref <Ziel>`, statt die alten Images
+  auf der neuen Revision zu starten.
+
+### Security
+
+- **Monitoring: Check-Ergebnisse vor dem Speichern bereinigt:** Meldung und Details jedes Checks werden vor dem
+  Speichern auf Zeichen gebracht, die die Datenbank speichert.
+- **Agent: Probe-Waechter strenger:** weitere Weiterleiter (etwa nc/netcat, cloudflared, wstunnel, Teleport `tsh`)
+  und Super-Server (`tcpserver`, `s6-tcpserver`) ergeben `not_allowed`. Hinter einem von Docker veroeffentlichten
+  Port prueft der Agent unter Linux auch den Prozess im Container; ist er nicht ermittelbar (etwa ohne root), wird
+  die Probe abgewiesen. Zugangsdaten gehen nur an einen unmittelbar vorher erneut geprueften Listener des Ziels, nie
+  an einen von Docker veroeffentlichten Port (Ziel ist dann der Container).
+- **Agent: Dateizugriff der Fuehler:** Fuehler lesen nur regulaere Dateien und genau die geprueften (Linux und
+  FreeBSD ueber einen Pfad-Deskriptor).
+- **Desktop: Ansible-Laeufe mit `--ask-pass` ueber Sprung-Hosts:** Jeder Sprung-Host meldet sich nur ohne Passwort
+  an (Key oder Agent), auch ein `ProxyJump` aus `~/.ssh/config`; jeder Hop laeuft als eigenes `ProxyCommand`. Laesst
+  sich die Sprung-Kette nicht ermitteln, startet der Lauf nicht und nennt den Server.
+- **CA: Vertrauen nur an den gefuehrten Zwischenzertifikaten:** frps und der Server nehmen Client-Zertifikate nur
+  an, wenn ein aktuelles oder abgeloestes Zwischenzertifikat ihres Scopes sie ausgestellt hat. Nach
+  `rotate-intermediates --compromised <scope>` und dem Neustart des `ca-issuer` gelten Zertifikate des gesperrten
+  Zwischenzertifikats dort nicht mehr. Neues Volume `ca-trust` (Betrieb, CA-Rotation).
+- **FRP-Tunnel: der Agent prueft das frps-Zertifikat strenger:** frpc verlangt den festen Namen
+  `frps.adminhelper.invalid` (`transport.tls.serverName`), den nur das frps-Zertifikat traegt. Der ca-issuer stellt
+  das frps-Zertifikat beim ersten Start einmal neu aus.
+- **FRP-Tunnel: der Desktop prueft das frps-Zertifikat strenger:** wie der Agent verlangt auch der frpc des
+  Desktop-Visitors den festen Namen `frps.adminhelper.invalid` (`transport.tls.serverName`), den nur das
+  frps-Zertifikat traegt. Der Server liefert den Namen im Visitor-Bundle mit (`frps_tls_name`); gegen einen aelteren
+  Server ohne das Feld verbindet der Desktop wie bisher.
+- **Desktop-Backend: `webpki-root-certs` 1.0.9 → 1.0.11 (R-1093):** schliesst RUSTSEC-2026-0383; nur der Stand im
+  `Cargo.lock`, keine Code-Aenderung. Der woechentliche Dependency Audit ist damit wieder gruen.
+- **Agent unter FreeBSD: Proben-Waechter prueft die angenommene Verbindung:** wie unter Linux prueft der Agent nach
+  dem Verbindungsaufbau, welcher Socket die Verbindung angenommen hat, und weist eine Probe ab, die nicht beim
+  lauschenden Dienst des Ports ankommt.
+- **Agent: eine Befehls-Freigabeliste fuer alle Werkzeugaufrufe:** Auch die Probe-Sensoren (Log, Dienst, Container,
+  Datenbank) und die Erkennung starten Werkzeuge nur noch ueber die feste Befehls-Freigabeliste der Collectors; ein
+  Aufruf ausserhalb der Liste startet nicht.
+- **Agent: strengere Zuordnung von Probe-Zielen:** Der Agent ordnet einen Prozess einem Container nur zu, wenn alle
+  cgroups passen, die beide nennen. Einen Port, den allein systemd haelt (Socket-Aktivierung), weist er als
+  `not_allowed` ab, weil der Dienst dahinter nicht feststeht.
+- **Monitoring: strengere Bindung von Modul-Checks:** Passen mehrere Container eines Compose-Dienstes, bindet das
+  Uebernehmen keinen davon; der Grund nennt die Kandidaten.
+- **Monitoring: strengere Pruefung von Agent-Reports und Vorlagen:** Ein Agent-Report ist hoechstens 10 MiB gross,
+  auch innerhalb des Compose-Netzes (sonst 413). Eine Probe-Vorlage wird nach dem Ersetzen ihrer Platzhalter erneut
+  geprueft; haelt sie nicht, entsteht kein Check, und das Zuruecksetzen eines solchen Checks antwortet mit 409.
+- **Agent: Zugangsdaten fuer Proben an ihr Ziel gebunden:** Beim ersten Einsatz nach `monitor credential set`
+  bindet der Agent die Zugangsdaten an das Ziel des Checks; ein anderes Ziel bekommt sie nicht (`not_allowed`), bis
+  sie neu gesetzt werden. Doku: Monitoring, Agent (DE+EN).
+- **Agent: weitere Dienste, die eine Probe nie anspricht:** die API- und Konsolen-Dienste von Proxmox VE, Backup
+  Server und Mail Gateway, weitere VM-Prozesse und Kubernetes-Knotendienste, Unix-Sockets in den
+  Laufzeitverzeichnissen von Container-, VM-, Bus- und Sitzungsdiensten (auch ueber einen Link) und unter Linux
+  veroeffentlichte Docker-Ports, die auf einen gesperrten Container-Port weiterleiten. Doku: Monitoring, Agent
+  (DE+EN).
+- **Monitoring: Proben auf dem eigenen Host enger gefasst:** der Agent weist einen Port ab, auf dem ein Weiterleiter
+  lauscht (Netz rootless laufender Container, kube-proxy, port-forward, ssh, socat), und jede TCP-Probe auf eigene
+  Adressen, wenn ein Docker-Daemon laeuft, dessen Container er nicht lesen kann. Einen Unix-Socket prueft er an der
+  Datei selbst, nicht nur an ihrem Namen.
+- **Monitoring: Proben auf dem eigenen Host enger gefasst:** der Agent verbindet sich nicht mit einem Port einer
+  eigenen Adresse, auf dem kein Prozess lauscht (die Messung scheitert, der Check wird rot). Er erkennt weitere
+  Weiterleiter (`systemd-socket-proxyd`, sslh, rinetd, redir), auch hinter einem Unix-Socket, und unter Windows die
+  Portweiterleitung von `iphlpsvc`. Unter Linux prueft er nach dem Verbindungsaufbau, welcher Socket die Verbindung
+  angenommen hat; ist es nicht der lauschende, setzt er sie zurueck und weist den Port eine Stunde lang ab (ein
+  Neustart des Agents hebt das auf).
+- **Monitoring: zentrale Checks:** der Dienst erkennt ein eigenes NAT64-Praefix der Umgebung ueber den
+  System-Resolver (RFC 7050) und haelt eine Adresse darunter nur fuer oeffentlich, wenn die eingebettete
+  IPv4-Adresse es ist.
+- **Server: Anmeldung unter MTLS_ENFORCE nur mit Client-Zertifikat:** Login, Token-Refresh und Bootstrap verlangen
+  unter `MTLS_ENFORCE=true` (Standard) jetzt auch serverseitig ein vom Gateway geprueftes Client-Zertifikat und
+  antworten sonst mit `403`. Clients ueber das Gateway sind nicht betroffen; ein Bootstrap von Hand braucht wie bisher
+  `MTLS_ENFORCE=false`.
+- **Server: Hoechstdauer einer Web-Sitzung:** Der Server beendet eine Browser-Sitzung 24 Stunden nach der Anmeldung,
+  auch bei laufender Bedienung; danach ist eine neue Anmeldung noetig. `WEB_SESSION_MAX_HOURS` stellt die Dauer ein,
+  `0` schaltet ab. Desktop, CLI und Skripte sind nicht betroffen.
+- **Server: Vertrauen in Proxy- und Gateway-Adressen gehaertet:** Die Namensaufloesung der vertrauten Adressen haelt
+  sich auch im Fehlerfall an ihr fail-closed-Verhalten.
+- **Update: die .env-Pruefung gibt weniger aus der Datei wieder:** ihre Meldungen nennen nur noch die Zeile.
 
 ## [0.46.0] - 2026-10-22
 

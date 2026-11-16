@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.46.0</span>
+          <span>v0.47.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -260,7 +260,27 @@
             </div>
           </div>
 
-          <h2>What's new in 0.46.0?</h2>
+          <h2>What's new in 0.47.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.47.0 &ndash; New desktop design, monitoring modules &amp; FreeBSD agent (2026-11-16)</div>
+              <p>
+                <strong>Added:</strong> The agent now also runs on <strong>FreeBSD</strong> (14 and 15, as a pkg
+                package) and as a plugin for <strong>OPNsense</strong>. Monitoring discovers the services on a host
+                and binds matching <strong>catalog modules</strong> (databases, mail, directory services, Moodle,
+                Nextcloud AIO, WordPress, BigBlueButton and more) through read-only agent sensors; new are the
+                <code>info</code> status, muting and an e-mail digest. The desktop brings <strong>embedded RDP</strong>
+                (preview), detachable terminal and RDP tabs, snippets and a command palette (Ctrl+K).
+                <strong>Changed:</strong> The desktop follows the new design; the connection list, the editor and the
+                notifications are rebuilt. The stack runs on <strong>PostgreSQL 18</strong> with a new volume &ndash;
+                <code>update.sh</code> carries the data over; take a backup first.
+                <strong>Security:</strong> frps only accepts the proxies the server generates per host, the agent
+                checks the frps certificate more strictly, and the sensors only read vetted files. Details in the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
