@@ -37,8 +37,10 @@ Beweis: kern-monitoring-28 T7 review 2026-11-15 · Dedup-Key: REF:agent:web_vhos
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'AnAppIsOnOneName|ANameIsKept|Vhost'
 Doku: keine (interne Auswahl)
 
-### T4 — R-1514: errWPDBServer erreicht den Aufrufer; Docstring _before_app_checks  [ ]
+### T4 — R-1514: errWPDBServer erreicht den Aufrufer; Docstring _before_app_checks  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_wordpress_cron_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @5feff044e 2026-11-16T13:44:05+01:00
+Review: approve (.ah-out/review/klein-nachlese-12/T4.verdict.json)
 Beweis: reviewer kern-monitoring-35 T2 2026-11-15 · app_wordpress_cron.go:472
 Änderung: Test erst rot: ein Server, der die Grenze reißt, ergibt aus `wpCronValue` eine Meldung, die „sends more than the view reads“ nennt (heute „connection fails“); der Wächter merkt sich seinen Fehler, `wpDBError` fragt ihn ab (`errors.Is(g.err, errWPDBServer)` an der Verbindung, nicht am Treiberfehler).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'WordPress|WP'

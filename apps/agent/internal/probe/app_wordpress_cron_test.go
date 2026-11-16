@@ -524,8 +524,13 @@ func TestReadWPCronStopsAServerThatSendsMoreThanItReads(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if got, err := readWPCron(ctx, dial, db, true); err == nil {
+			got, err := readWPCron(ctx, dial, db, true)
+			if err == nil {
 				t.Fatalf("readWPCron = %q, want an error", got)
+			}
+			// The driver turns the guard's error into its own bad connection: the caller still hears why.
+			if !errors.Is(err, errWPDBServer) {
+				t.Errorf("readWPCron: %v, want errWPDBServer", err)
 			}
 		})
 	}
