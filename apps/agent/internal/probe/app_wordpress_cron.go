@@ -8,13 +8,11 @@ import (
 	"bytes"
 	"context"
 	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
-	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -326,27 +324,9 @@ func wpDBOf(env []string) (wpDB, error) {
 // as an alias or DNS name in a network it shares with wp, a running one before stopped ones. It must run, from
 // the image mariadb or mysql; mariadb tells which.
 func wpDBContainer(ctx context.Context, wp containerInfo, host string) (db containerInfo, mariadb bool, err error) {
-	ids, err := dockerContainers(ctx)
+	list, err := inspectAllContainers(ctx)
 	if err != nil {
 		return containerInfo{}, false, err
-	}
-	out, err := runTool(ctx, toolTimeout, "docker", append([]string{"inspect", "--type", "container"}, ids...)...)
-	var exitErr *exec.ExitError
-	if err != nil && !errors.As(err, &exitErr) {
-		return containerInfo{}, false, fmt.Errorf("docker inspect: %w", err)
-	}
-	var list []containerInfo
-	if jerr := json.Unmarshal(out, &list); jerr != nil {
-		if err != nil {
-			return containerInfo{}, false, fmt.Errorf("docker inspect: %w", err)
-		}
-		return containerInfo{}, false, errors.New("docker inspect: an answer of another form")
-	}
-	if err != nil {
-		// As in dockerPublications: a container removed since docker ps fails the inspect of it alone.
-		if err := goneSince(ctx, ids, list); err != nil {
-			return containerInfo{}, false, err
-		}
 	}
 	// A stopped container keeps its names, but only a running one answers to them.
 	var found, running []containerInfo

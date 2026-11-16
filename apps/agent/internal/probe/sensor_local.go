@@ -278,24 +278,9 @@ func dockerPublications(ctx context.Context) ([]publication, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	out, err := runTool(ctx, toolTimeout, "docker", append([]string{"inspect", "--type", "container"}, ids...)...)
-	var exitErr *exec.ExitError
-	if err != nil && !errors.As(err, &exitErr) {
-		return nil, fmt.Errorf("docker inspect: %w", err)
-	}
-	var list []containerInfo
-	if jerr := json.Unmarshal(out, &list); jerr != nil {
-		if err != nil {
-			return nil, fmt.Errorf("docker inspect: %w", err)
-		}
-		return nil, errors.New("docker inspect: an answer of another form")
-	}
+	list, err := inspectContainers(ctx, ids)
 	if err != nil {
-		// docker prints what it found and fails for the rest, a removed container as much as a
-		// daemon gone: every container missing from the answer must be gone from docker ps, too.
-		if err := goneSince(ctx, ids, list); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	var pubs []publication
 	for _, c := range list {

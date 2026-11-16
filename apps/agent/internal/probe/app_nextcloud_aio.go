@@ -109,13 +109,19 @@ func aioMarker(pid int, id string) (int64, bool, error) {
 	return max(0, int64(now().Sub(fi.ModTime())/time.Second)), true, nil
 }
 
-// inspectAllContainers returns docker inspect of every container docker knows. As in dockerPublications,
-// a container removed since docker ps fails the inspect of it alone.
+// inspectAllContainers returns docker inspect of every container docker knows.
 func inspectAllContainers(ctx context.Context) ([]containerInfo, error) {
 	ids, err := dockerContainers(ctx)
 	if err != nil || len(ids) == 0 {
 		return nil, err
 	}
+	return inspectContainers(ctx, ids)
+}
+
+// inspectContainers returns docker inspect of the containers ids, as docker ps listed them. docker prints
+// what it found and fails for the rest, a removed container as much as a daemon gone: every container
+// missing from the answer must be gone from docker ps, too.
+func inspectContainers(ctx context.Context, ids []string) ([]containerInfo, error) {
 	out, err := runTool(ctx, toolTimeout, "docker", append([]string{"inspect", "--type", "container"}, ids...)...)
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {

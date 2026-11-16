@@ -111,8 +111,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/monitoring.html · docs/en/admin/monitoring.html · changelog.d/kern-agent-6.md
 Task-Review: am Ende
 
-### T8 — R-1516: docker ps + inspect an einer Stelle  [ ]
+### T8 — R-1516: docker ps + inspect an einer Stelle  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_nextcloud_aio.go, apps/agent/internal/probe/sensor_local.go, apps/agent/internal/probe/app_wordpress_cron.go, apps/agent/internal/probe/app_nextcloud_aio_test.go, apps/agent/internal/probe/sensor_local_test.go, apps/agent/internal/probe/app_wordpress_cron_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @80d09522f 2026-11-16T20:34:16+01:00
+Review: approve (.ah-out/review/kern-agent-6/T8.verdict.json)
 Änderung: `dockerPublications` (`sensor_local.go:267`) und `wpDBContainer` (`app_wordpress_cron.go:328`) nutzen
 `inspectAllContainers` (`app_nextcloud_aio.go:114`); die Behandlung verschwundener Container steht nur noch dort.
 Refactor: Suite grün vorher und nachher, Fehlerpfade durch Bestandstests gedeckt.
