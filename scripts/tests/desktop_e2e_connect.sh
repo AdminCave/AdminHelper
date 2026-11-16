@@ -37,7 +37,14 @@ cleanup_targets() {
 
 wait_log() {  # container pattern timeout — readiness via the log, so we don't
     # pollute the target with a host-side probe (which would look like a client).
-    for _ in $(seq 1 "$3"); do docker logs "$1" 2>&1 | grep -qE "$2" && return 0; sleep 1; done
+    # In a variable first: under pipefail "grep -q" stopping at its match would SIGPIPE
+    # docker logs and the pipeline would report failure.
+    local log
+    for _ in $(seq 1 "$3"); do
+        log=$(docker logs "$1" 2>&1)
+        grep -qE "$2" <<<"$log" && return 0
+        sleep 1
+    done
     return 1
 }
 
@@ -219,7 +226,8 @@ else
 fi
 
 # Web: nginx logged the fetch the desktop's open::that(url) triggered (via shim).
-if docker logs "$WEB_C" 2>&1 | grep -qE "\"GET / HTTP"; then
+web_log=$(docker logs "$WEB_C" 2>&1)
+if grep -qE "\"GET / HTTP" <<<"$web_log"; then
     ok "nginx logged the desktop's web fetch (direct)"
 else
     bad "nginx saw no request from the desktop"
