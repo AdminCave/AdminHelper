@@ -91,8 +91,10 @@ Weg bleibt in den Root-Tests (`PROBE_ROOT_TESTS`). Beleg: `freebsd_box.sh` grün
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (nur Tests)
 
-### T6 — R-1447: Discovery meldet bei mehr als 64 lauschenden Ports „unbekannt“  [ ]
+### T6 — R-1447: Discovery meldet bei mehr als 64 lauschenden Ports „unbekannt“  [x]
 Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ffc2d93e1 2026-11-16T20:27:22+01:00
+Review: approve (.ah-out/review/kern-agent-6/T6.verdict.json)
 Beweis: kern-monitoring-29 Abschlussprüfung 2026-11-13 · Dedup-Key: bug:agent:discovery:listening-cap
 Änderung: `listeningIn` (`discovery.go:398`) gibt über `maxContainerPorts` `nil` zurück statt der ersten 64; der
 Monitoring-Server nimmt dann die exponierten Ports (`module_sync.py` `_seen_ports`). Der Test „busy“

@@ -932,6 +932,7 @@ func TestTheListeningPortsAreAskedOnlyOfARunningContainerOnItsOwnNetwork(t *test
 		many[i] = uint16(1000 + i)
 	}
 	h.listening[16] = many
+	h.listening[17] = many[:maxContainerPorts]
 	var raw []inspected
 	if err := json.Unmarshal([]byte(`[
  {"Name": "/own", "State": {"Status": "running", "Pid": 10}, "HostConfig": {"NetworkMode": "bridge"}},
@@ -941,13 +942,16 @@ func TestTheListeningPortsAreAskedOnlyOfARunningContainerOnItsOwnNetwork(t *test
  {"Name": "/gone", "State": {"Status": "running", "Pid": 14}, "HostConfig": {"NetworkMode": "bridge"}},
  {"Name": "/quiet", "State": {"Status": "running", "Pid": 15}, "HostConfig": {"NetworkMode": "bridge"}},
  {"Name": "/busy", "State": {"Status": "running", "Pid": 16}, "HostConfig": {"NetworkMode": "bridge"}},
+ {"Name": "/full", "State": {"Status": "running", "Pid": 17}, "HostConfig": {"NetworkMode": "bridge"}},
  {"Name": "/stopped", "State": {"Status": "exited", "Pid": 0}, "HostConfig": {"NetworkMode": "bridge"}}
 ]`), &raw); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string][]uint16{"own": {8000}, "host": nil, "none": nil, "joined": nil,
-		// A namespace that cannot be read is not known; one where nothing listens is known empty.
-		"gone": nil, "quiet": {}, "busy": many[:maxContainerPorts], "stopped": nil}
+		// A namespace that cannot be read is not known; one where nothing listens is known empty. More
+		// ports than the contract carries are not known either: a cut list would pass for the whole.
+		"gone": nil, "quiet": {}, "busy": nil,
+		"full": many[:maxContainerPorts], "stopped": nil}
 	for _, c := range raw {
 		name := strings.TrimPrefix(c.Name, "/")
 		got := listeningIn(c)
