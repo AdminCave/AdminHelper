@@ -464,6 +464,40 @@ export async function resetCheck(checkId: string): Promise<void> {
   }
 }
 
+// The names of an ignore list as the checker reads them (_parse_ignore in
+// checkers/agent.py): a list, or one comma-separated string from older configs.
+function ignoreNames(raw: unknown): string[] {
+  const items = typeof raw === 'string' ? [raw] : Array.isArray(raw) ? raw : [];
+  return items
+    .filter((x): x is string => typeof x === 'string')
+    .flatMap((x) => x.split(','))
+    .map((x) => x.trim())
+    .filter((x) => x !== '');
+}
+
+// Takes one service out of a service_process check instead of turning off the whole
+// check (R-1520): auto mode ignores the name, list mode stops watching it. The mode
+// is the config's, read as the checker reads it (list without one). Only the config
+// goes out; the answer is the check as it is now.
+export async function ignoreService(check: MonitorCheck, name: string): Promise<void> {
+  const session = currentSession();
+  if (!session) return;
+  const config = check.config ?? {};
+  const next =
+    (config.mode ?? 'list') === 'auto'
+      ? { ...config, ignore: [...new Set([...ignoreNames(config.ignore), name])] }
+      : { ...config, services: (config.services ?? []).filter((s) => s !== name) };
+  try {
+    const updated = await monitoringApi.updateCheckConfig(session, check.id, next);
+    _state.update((s) => ({
+      ...s,
+      checks: s.checks.map((c) => (c.id === updated.id ? updated : c)),
+    }));
+  } catch (err) {
+    reportError(errMsg(err));
+  }
+}
+
 export async function toggleAlert(ruleId: string): Promise<void> {
   const session = currentSession();
   if (!session) return;
