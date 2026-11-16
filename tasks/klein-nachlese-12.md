@@ -10,11 +10,13 @@ Heavy: none — Agent-Unit-Tests, Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1505, R-1510: cachedVhosts cached keinen Fehler aus dem ctx des Aufrufers  [ ]
+### T1 — R-1505, R-1510: cachedVhosts cached keinen Fehler aus dem ctx des Aufrufers  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @dccb97cf2 2026-11-16T13:26:36+01:00
+Review: approve (.ah-out/review/klein-nachlese-12/T1.verdict.json)
 Beweis: reviewer kern-monitoring-28 T3 2026-11-15 · Dedup-Key: REF:agent:web_vhost_cert.go:cachedVhosts
-Änderung: Endet `WebVhosts` mit einem Fehler, während `ctx.Err() != nil`, wird nichts gemerkt; Wartende am Lock geben bei eigenem `ctx.Err()` auf (Lock als Kanal mit `select`). Test erst rot: erster Aufruf mit abgelaufenem ctx, zweiter mit frischem ctx liest neu.
-Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'Vhost'
+Änderung: Endet `WebVhosts` mit einem Fehler, während `ctx.Err() != nil`, wird nichts gemerkt; ein Aufrufer mit beendetem `ctx` liest nach dem Lock nicht mehr (der Lock bleibt ein Mutex: die Wartezeit ist durch toolTimeout begrenzt). Test erst rot: erster Aufruf mit abgelaufenem ctx, zweiter mit frischem ctx liest neu.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'CallersOwn|WaiterWhose|Vhost'
 Doku: keine (interner Cache)
 
 ### T2 — R-1507: RunCapped beendet die Prozessgruppe  [ ]
