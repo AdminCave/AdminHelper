@@ -772,7 +772,8 @@ SHIPPED = load_catalog()
 
 
 def _before_app_checks(module):
-    """The catalog with the module as its version 1 had it: without the checks of R-1404."""
+    """The catalog holding the module as an instance adopted before R-1404 knows it: version 1, without the
+    checks (and their card items) that APP_CHECKS lists for it."""
     raw = copy.deepcopy(module)
     added = APP_CHECKS[raw["id"]]
     raw["version"] = 1

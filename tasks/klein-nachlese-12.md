@@ -46,8 +46,10 @@ Beweis: reviewer kern-monitoring-35 T2 2026-11-15 · app_wordpress_cron.go:472
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe -run 'WordPress|WP'
 Doku: keine (Fehlertext)
 
-### T5 — R-1514: Docstring von _before_app_checks  [ ]
+### T5 — R-1514: Docstring von _before_app_checks  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5e6efad87 2026-11-16T13:45:42+01:00
+Review: approve (.ah-out/review/klein-nachlese-12/T5.verdict.json)
 Beweis: reviewer kern-monitoring-35 branch 2026-11-15 · test_module_sync.py:775
 Änderung: Docstring beschreibt, was die Funktion tut (ohne die Checks des Katalogs `APP_CHECKS`, version 1); kein Verhalten ändert sich.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
