@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Linux-Extras und AdminHelper überwacht sich selbst — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-9 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-9 · Review: pro Task
 Spec: docs/features/kern-monitoring-9.md (Roadmap R-1234, R-1235)
 Heavy: linux-full — neue Ansichten, Fühler und Freigabeliste im Agent (`apps/agent`); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -90,8 +90,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_adm
 Doku: → T8
 Abhängt von: T5, T6
 
-### T8 — Doku DE+EN und CHANGELOG  [ ]
+### T8 — Doku DE+EN und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-9.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8eb10acec 2026-11-16T13:56:29+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Linux-Extras, Modul „AdminHelper selbst“, Fühler `fs`, Container-Ziel für `certfile`/`file_age`, Ansichten;
 `changelog.d/kern-monitoring-9.md` unter `### Added`, ohne Umlaute. `doc-smoke --env` lokal fahren.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
