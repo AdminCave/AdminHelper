@@ -22,8 +22,10 @@ Programme träfe. Tabellentests je Name, Negativtests für ähnliche Namen.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T8
 
-### T2 — R-1519: Argumente des Port-Weiterleiters streng lesen  [ ]
+### T2 — R-1519: Argumente des Port-Weiterleiters streng lesen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @86b052117 2026-11-16T16:17:25+01:00
+Review: approve (.ah-out/review/kern-agent-5/T2.verdict.json)
 Änderung: `pastaPort` liest jede Argumentform, die das Programm anders lesen könnte, als „kein Port bekannt“ und
 weist damit ab (fail-closed); Werte von Optionen mit Argument werden übersprungen. Erst die roten Tabellentests.
 Verify: bash scripts/dev/verify.sh agent --strict
@@ -86,3 +88,6 @@ Abhängt von: T7
 
 ## Entscheidungen
 - R-1440 fährt nicht mit (nächster Zug `tasks/kern-agent-6.md`).
+- T2: `pastaPort` liest die Optionen wie pasta selbst (getopt-String und Optionsliste aus passt 2025-05-03, Debian
+  13, `apt-get download passt`; Optionen enden am ersten Operanden, `+`); jede Form, die eine andere Version anders
+  lesen könnte, sagt nichts (fail-closed) statt nur Präfixe `--tcp`/`--c` und Bündel mit `t`/`c` abzulehnen.

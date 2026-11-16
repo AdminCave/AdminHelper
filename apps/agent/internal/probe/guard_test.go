@@ -935,6 +935,25 @@ func TestPastaPortReadsOnlyPlainRules(t *testing.T) {
 		// Two rules that disagree, one after "--" that does not count.
 		{[]string{"pasta", "-t", "8080:80", "-t", "8080:22"}, v4, 8080, 0, false},
 		{[]string{"pasta", "-t", "8080:80", "--", "-t", "8080:22"}, v4, 8080, 80, true},
+		// Read as getopt reads them, or not at all: options end at the command or PID, the value of an
+		// option is skipped, a bundle or an abbreviated, unknown or misused long option tells nothing.
+		{[]string{"pasta", "-t", "8080:80", "sh", "-t", "8080:22"}, v4, 8080, 80, true},
+		{[]string{"pasta", "sh", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-P", "/run/p.pid", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-P", "-t8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--pid", "-t8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-P-t8080:22", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-ft", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-ft8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-f", "-t", "8080:80"}, v4, 8080, 80, true},
+		{[]string{"pasta", "-x", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--tcp-p", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--tcp", "8080:22"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--conf", "/run/p.sock", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--frobnicate", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--no-map-gw=1", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "--netns", "-t", "8080:80"}, v4, 8080, 0, false},
+		{[]string{"pasta", "-t", "-u", "8080:80"}, v4, 8080, 0, false},
 	} {
 		to, ok := pastaPort(c.args, c.ip, c.port)
 		if to != c.to || ok != c.ok {

@@ -873,32 +873,85 @@ func checkPasta(ctx context.Context, pid int32, name string, ip netip.Addr, port
 	return nil
 }
 
+// pastaShortArg are the short options of pasta that take a value and pastaShortFlag those that take
+// none, from the getopt string of passt 2025-05-03 (Debian 13): "+dqfel:hs:F:I:p:P:m:a:n:M:g:i:o:D:S:H:461t:u:T:U:".
+// pastaLong are its long options (passt(1) of that version), true where they take a value.
+const (
+	pastaShortArg  = "lsFIpPmanMgioDSHtuTU"
+	pastaShortFlag = "dqfeh461"
+)
+
+var pastaLong = map[string]bool{
+	"debug": false, "trace": false, "quiet": false, "foreground": false, "stderr": false, "help": false,
+	"version": false, "no-dhcp-dns": false, "dhcp-dns": false, "no-dhcp-search": false, "dhcp-search": false,
+	"no-tcp": false, "no-udp": false, "no-icmp": false, "no-dhcp": false, "no-ndp": false, "no-dhcpv6": false,
+	"no-ra": false, "freebind": false, "no-map-gw": false, "ipv4-only": false, "ipv6-only": false,
+	"vhost-user": false, "print-capabilities": false, "one-off": false, "host-lo-to-ns-lo": false,
+	"netns-only": false, "no-netns-quit": false, "config-net": false, "no-copy-routes": false,
+	"no-copy-addrs": false, "no-splice": false,
+	"log-file": true, "log-size": true, "runas": true, "pcap": true, "pid": true, "mtu": true, "address": true,
+	"netmask": true, "mac-addr": true, "gateway": true, "interface": true, "outbound": true,
+	"outbound-if4": true, "outbound-if6": true, "dns": true, "dns-forward": true, "dns-host": true,
+	"search": true, "map-host-loopback": true, "map-guest-addr": true, "hostname": true, "fqdn": true,
+	"socket-path": true, "socket": true, "repair-path": true, "fd": true, "tcp-ports": true, "udp-ports": true,
+	"ns-ifname": true, "tcp-ns": true, "udp-ns": true, "userns": true, "netns": true, "ns-mac-addr": true,
+}
+
 // pastaPort reads from the arguments of pasta the port that its TCP forwarding rules (-t,
-// --tcp-ports; getopt: the value apart, after "=" or glued to -t) send connections to ip and port to.
-// It reads only plain rules, [address[%interface]/]first[-last][:tofirst[-tolast]] in a comma list:
-// a rule pasta reads otherwise (all, auto, ~exclusions, a target address) or two rules that disagree
-// tell no one port, and nothing is told then.
+// --tcp-ports) send connections to ip and port to. It reads the options as pasta's getopt does: they
+// end at "--" or at the first operand (the command or PID: the getopt string starts with "+"), and a
+// value is skipped. Anything getopt might read otherwise in another version tells nothing: a letter
+// or long option not listed above (the -c and --conf-path of newer versions among them: pesto changes
+// the forwards at run time over that socket), an abbreviated long option, -t bundled after another
+// letter, a value in the next argument that starts with "-". It reads only plain rules,
+// [address[%interface]/]first[-last][:tofirst[-tolast]] in a comma list: a rule pasta reads otherwise
+// (all, auto, ~exclusions, a target address) or two rules that disagree tell no one port, and nothing
+// is told then.
 func pastaPort(args []string, ip netip.Addr, port uint16) (uint16, bool) {
 	var specs []string
 	for i := 1; i < len(args); i++ {
 		a := args[i]
-		if a == "--" {
+		if a == "--" || a == "-" || !strings.HasPrefix(a, "-") {
 			break
 		}
-		switch {
-		case strings.HasPrefix(a, "-c") || a == "--conf-path" || strings.HasPrefix(a, "--conf-path="):
-			// pesto changes the forwards at run time over this socket: argv no longer tells them.
-			return 0, false
-		case a == "-t" || a == "--tcp-ports":
-			if i+1 >= len(args) {
+		if long, ok := strings.CutPrefix(a, "--"); ok {
+			name, value, inline := strings.Cut(long, "=")
+			takes, known := pastaLong[name]
+			if !known || (inline && !takes) {
 				return 0, false
 			}
-			i++
-			specs = append(specs, args[i])
-		case strings.HasPrefix(a, "--tcp-ports="):
-			specs = append(specs, strings.TrimPrefix(a, "--tcp-ports="))
-		case strings.HasPrefix(a, "-t") && !strings.HasPrefix(a, "--"):
-			specs = append(specs, a[2:])
+			if takes && !inline {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+					return 0, false
+				}
+				i++
+				value = args[i]
+			}
+			if name == "tcp-ports" {
+				specs = append(specs, value)
+			}
+			continue
+		}
+		for j := 1; j < len(a); j++ {
+			c := a[j]
+			if strings.IndexByte(pastaShortFlag, c) >= 0 {
+				continue
+			}
+			if strings.IndexByte(pastaShortArg, c) < 0 || (c == 't' && j > 1) {
+				return 0, false
+			}
+			value := a[j+1:]
+			if value == "" {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+					return 0, false
+				}
+				i++
+				value = args[i]
+			}
+			if c == 't' {
+				specs = append(specs, value)
+			}
+			break
 		}
 	}
 	var to uint16
