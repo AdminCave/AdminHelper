@@ -223,9 +223,10 @@ def _record_liveness(db: Session, server_id: str) -> None:
 def _refuse_unstorable_report(server_id: str, report: dict) -> None:
     # A NUL anywhere in the report would die in a text column further down, a lone
     # surrogate in a tag value would fail to encode in VictoriaClient._send and take
-    # the whole batch with it, lines of other servers included. Refused AFTER the
-    # liveness and not on the parameter: liveness is not report content, and a
-    # refused report must not turn into a "server down" alarm.
+    # the whole batch with it, lines of other servers included. A value nested past
+    # MAX_DEPTH is refused the same way. Refused AFTER the liveness and not on the
+    # parameter: liveness is not report content, and a refused report must not turn
+    # into a "server down" alarm.
     found = find_unstorable(report)
     if found is None:
         return
