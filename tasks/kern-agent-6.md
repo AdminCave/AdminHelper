@@ -48,8 +48,10 @@ angenommen hat (Einzelheiten privat). Erst der rote Test.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T3 — R-1440: dieselbe Härtung unter Windows  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard_windows.go, apps/agent/internal/probe/guard_windows_test.go, apps/agent/internal/probe/guard_other.go
+### T3 — R-1440: dieselbe Härtung unter Windows  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard_windows.go, apps/agent/internal/probe/guard_windows_test.go, apps/agent/internal/probe/listen_gopsutil.go, apps/agent/internal/probe/listen_windows.go, apps/agent/internal/probe/listen_table.go, apps/agent/internal/probe/listen_table_test.go, apps/agent/internal/probe/peer_other.go, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d87be0650 2026-11-16T19:54:02+01:00
+Review: approve (.ah-out/review/kern-agent-6/T3.verdict.json)
 Abhängt von: T2
 Änderung: Windows-Gegenstück der Regel aus T2 (privat); Windows-Konten nach Microsoft Learn „Security identifiers“.
 Verifiziert im CI-Job `agent-windows`; lokal nur Build und Lint.

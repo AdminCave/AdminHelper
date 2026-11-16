@@ -447,7 +447,8 @@ func (g *Guard) checkTaker(ctx context.Context, server, client netip.AddrPort) e
 		state, err := peerSocket(server, client)
 		switch {
 		case errors.Is(err, errPeerUnsupported):
-			return nil
+			// Without the taker, a strict guard still sees who holds the port now.
+			return g.checkTakerOwner(server, client)
 		case err != nil:
 			return fmt.Errorf("%w: the socket that took the connection to port %d cannot be told: %v", ErrNotAllowed, server.Port(), err)
 		case state == peerConnected:
@@ -600,6 +601,21 @@ const nobodyUID = 65534
 // SYS_UID_MAX, FreeBSD's first user 1001), never nobody. A user cannot take such a uid.
 func protected(l listener) bool {
 	return l.hasUID && l.uid < 1000 && l.uid != nobodyUID
+}
+
+// accountUser is the uid a listener stands under whose Windows account is no service account
+// (serviceAccountSID): any uid protected refuses.
+const accountUser uint32 = 1 << 31
+
+// serviceAccountSID says whether sid names an account a Windows user cannot run a process under
+// (Microsoft Learn, "Security identifiers"): LocalSystem, LocalService, NetworkService or the
+// virtual account of a service (NT SERVICE\<name>).
+func serviceAccountSID(sid string) bool {
+	switch sid {
+	case "S-1-5-18", "S-1-5-19", "S-1-5-20":
+		return true
+	}
+	return strings.HasPrefix(sid, "S-1-5-80-")
 }
 
 // privilegedPort says whether only root may bind port on this host (osPrivilegedPorts).

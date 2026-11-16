@@ -1776,42 +1776,74 @@ func TestGuardChecksTheOwnersOfThePortAfterTheConnect(t *testing.T) {
 		{"the port is privileged", true, ownedBy([]uint32{1000}, nil), 1, 65535, true, false},
 		{"no secret rule", false, ownedBy([]uint32{1000}, nil), 1, 1023, true, false},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			h := &fakeHost{owners: c.owners}
-			address, accepted := takenBy(t, h)
-			port := netip.MustParseAddrPort(address).Port()
-			root := lst("127.0.0.1", port, 4242)
-			root.uid, root.hasUID = 0, true
-			h.live = false
-			h.list = []listener{root}
-			h.names = map[int32]string{4242: "web"}
-			h.args = map[int32][]string{4242: {"web"}}
-			old := privilegedPorts
-			privilegedPorts = func() (uint16, uint16) { return c.lo, c.hi }
-			t.Cleanup(func() { privilegedPorts = old })
-			ep := endpoint{
-				addr: netip.MustParseAddr("127.0.0.1"), port: port, strict: c.strict,
-				owns: func() func(listener) bool { return func(l listener) bool { return l.pid == 4242 } },
+		for _, noPeer := range []bool{false, true} {
+			name := c.name
+			if noPeer {
+				name += " on a host that tells no taker"
 			}
-			conn, err := secretGuard(ep).DialContext(context.Background(), "tcp", address)
-			if conn != nil {
-				_ = conn.Close()
-			}
-			if c.want && err != nil {
-				t.Errorf("dial: %v, want it connected", err)
-			}
-			if !c.want && !errors.Is(err, ErrNotAllowed) {
-				t.Errorf("dial: %v, want ErrNotAllowed", err)
-			}
-			if asked := h.ownersCalls > 0; asked != c.wantAsked {
-				t.Errorf("owners asked = %v, want %v", asked, c.wantAsked)
-			}
-			select {
-			case taken := <-accepted:
-				_ = taken.Close()
-			case <-time.After(30 * time.Second):
-				t.Error("the listener took no connection")
-			}
-		})
+			t.Run(name, func(t *testing.T) {
+				h := &fakeHost{owners: c.owners}
+				if noPeer {
+					h.peer = func(netip.AddrPort, netip.AddrPort) (peerState, error) { return peerNone, errPeerUnsupported }
+				}
+				address, accepted := takenBy(t, h)
+				port := netip.MustParseAddrPort(address).Port()
+				root := lst("127.0.0.1", port, 4242)
+				root.uid, root.hasUID = 0, true
+				h.live = false
+				h.list = []listener{root}
+				h.names = map[int32]string{4242: "web"}
+				h.args = map[int32][]string{4242: {"web"}}
+				old := privilegedPorts
+				privilegedPorts = func() (uint16, uint16) { return c.lo, c.hi }
+				t.Cleanup(func() { privilegedPorts = old })
+				ep := endpoint{
+					addr: netip.MustParseAddr("127.0.0.1"), port: port, strict: c.strict,
+					owns: func() func(listener) bool { return func(l listener) bool { return l.pid == 4242 } },
+				}
+				conn, err := secretGuard(ep).DialContext(context.Background(), "tcp", address)
+				if conn != nil {
+					_ = conn.Close()
+				}
+				if c.want && err != nil {
+					t.Errorf("dial: %v, want it connected", err)
+				}
+				if !c.want && !errors.Is(err, ErrNotAllowed) {
+					t.Errorf("dial: %v, want ErrNotAllowed", err)
+				}
+				if asked := h.ownersCalls > 0; asked != c.wantAsked {
+					t.Errorf("owners asked = %v, want %v", asked, c.wantAsked)
+				}
+				select {
+				case taken := <-accepted:
+					_ = taken.Close()
+				case <-time.After(30 * time.Second):
+					t.Error("the listener took no connection")
+				}
+			})
+		}
+	}
+}
+
+// TestServiceAccountSIDsAreTheAccountsNoUserRunsUnder: Microsoft Learn, "Security identifiers".
+func TestServiceAccountSIDsAreTheAccountsNoUserRunsUnder(t *testing.T) {
+	for sid, want := range map[string]bool{
+		"S-1-5-18": true, // LocalSystem
+		"S-1-5-19": true, // LocalService
+		"S-1-5-20": true, // NetworkService
+		"S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464": true,  // NT SERVICE\TrustedInstaller
+		"S-1-5-82-3006700770-424185619-1745488364-794895919-4004696415":  false, // an IIS application pool
+		"S-1-5-21-1004336348-1177238915-682003330-500":                   false, // an administrator
+		"S-1-5-21-1004336348-1177238915-682003330-1001":                  false,
+		"S-1-5-32-544": false, // the group of the administrators
+		"S-1-5-80":     false,
+		"S-1-5-180":    false,
+	} {
+		if got := serviceAccountSID(sid); got != want {
+			t.Errorf("serviceAccountSID(%s) = %v, want %v", sid, got, want)
+		}
+	}
+	if protected(listener{uid: accountUser, hasUID: true}) {
+		t.Error("accountUser is protected")
 	}
 }
