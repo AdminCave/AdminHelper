@@ -123,8 +123,10 @@ Refactor: Suite grün vorher und nachher, Fehlerpfade durch Bestandstests gedeck
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (internes Refactoring)
 
-### T11 — Entwickler-Doku des Wächters und Grenzen der Regel  [ ]
+### T11 — Entwickler-Doku des Wächters und Grenzen der Regel  [x]
 Komponente: scripts · Dateien: docs/developer/agent.html, docs/en/developer/agent.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @62de16a7f 2026-11-16T21:09:57+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschlussprüfung (reviewer branch, wichtig): der Wächter-Absatz der Entwickler-Doku DE+EN nennt den
 eigenen Linux-Leser und den Windows-Leser statt gopsutil, streicht den Satz zur ersten PID, nennt die Prüfung der
 Listener nach dem Verbindungsaufbau (auch Windows) und die strenge Regel für Ziele mit Zugangsdaten. Monitoring-Seite:
