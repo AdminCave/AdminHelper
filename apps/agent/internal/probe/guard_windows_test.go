@@ -135,9 +135,12 @@ func TestGuardNeverProbesAPortproxyPort(t *testing.T) {
 	}
 }
 
-// filetimeNow is the FILETIME of now, the clock of liCreateTimestamp and of GetProcessTimes.
+// filetimeNow is the FILETIME of now, the clock of liCreateTimestamp and of GetProcessTimes. It reads
+// the precise system time: time.Now reads a coarser one, up to a tick behind a socket created just
+// before it.
 func filetimeNow() int64 {
-	ft := windows.NsecToFiletime(time.Now().UnixNano())
+	var ft windows.Filetime
+	windows.GetSystemTimePreciseAsFileTime(&ft)
 	return int64(ft.HighDateTime)<<32 | int64(ft.LowDateTime)
 }
 

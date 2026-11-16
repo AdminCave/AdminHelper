@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Wächter, Listener-Liste und Discovery — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-6 · Review: pro Task
 Spec: docs/features/kern-agent-6.md (Roadmap R-1440, R-1441, R-1442, R-1447, R-1516)
 Heavy: linux-full — Wächter, Listener-Leser und Discovery des Agents (`apps/agent`) auf echten Boxen; dazu vor dem Merge `freebsd_box.sh` (FreeBSD-Plattformcode und R-1442); kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -151,8 +151,10 @@ Verbindung (Go überspringt dort die zurückgesetzte mit `ECONNABORTED`; dass na
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Tests und eine FreeBSD-Randbedingung ohne dokumentiertes Verhalten)
 
-### T13 — R-1440: Windows-Tabellentest mit genauer Uhr  [ ]
+### T13 — R-1440: Windows-Tabellentest mit genauer Uhr  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @de995a9fa 2026-11-16T21:27:02+01:00
+Review: approve (.ah-out/review/kern-agent-6/T13.verdict.json)
 Beweis: PR-CI `Go Agent (test, Windows)` auf feature/kern-agent-6@1620a8279 2026-11-16, Job 133584317082:
 `guard_windows_test.go:241: 127.0.0.1:58115: pid 6904 created 134393339893288464; want pid 6904 created in
 [134393339798702706, 134393339893287240]`, `--- FAIL: TestListenTCPReadsTheTableOfWindows`
