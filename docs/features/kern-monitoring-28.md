@@ -37,8 +37,8 @@ die Anwendung antwortet.
   - `reload_missing` (Datei und Auslieferung verschieden, die Datei läuft länger);
   - `hostname_ok` und `chain_ok` des ausgelieferten Zertifikats.
 - HAProxy: Restlaufzeit der Zertifikatsdateien aus `bind … crt`, nur als Zahlen am Unit-Modul.
-- Native PHP-Apps (R-1378): neue Module je App mit der Instanzart `vhost`. Der `http`-Fühler fragt die App über
-  Loopback am Port des vHosts, mit dem vHost-Namen als Host und SNI: Nextcloud `status.php`, Moodle die Login-Seite,
+- Native PHP-Apps (R-1378): neue Module je App mit der Instanzart `vhost`. Der `http`-Fühler fragt die App an der
+  Adresse, auf der der Webserver am Port des vHosts lauscht (meist Loopback), mit dem vHost-Namen als Host und SNI: Nextcloud `status.php`, Moodle die Login-Seite,
   WordPress `wp-login.php`, BookStack `/status`.
 - Moodle (R-1422): die Ansicht `moodle_checks` startet `php admin/cli/checks.php` als Webserver-Benutzer
   (`runuser -u <user> --`). Sie meldet nur den Nagios-Zustand und die Zahl der nicht-OK-Checks.
@@ -70,7 +70,7 @@ graceful|restart`. Der private Schlüssel eines Zertifikats wird nie geöffnet.
 - neu `internal/probe/web_vhosts.go` und `web_vhosts_test.go` (SPDX), exportiert `WebVhosts`. Der Parser nutzt
   `splitNginxDump`/`nginxTokens` aus `app_web.go` und `apacheIncludes`, für Apache dazu `apachectl -S`;
 - `internal/discovery/discovery.go`: neuer Block `vhosts`;
-- `internal/probe/target.go`, `probe.go`: Zielart `vhost`. Sie wird zum Loopback-Endpunkt am Port des vHosts, durch
+- `internal/probe/target.go`, `probe.go`: Zielart `vhost`. Sie wird zum Endpunkt am Port des vHosts (die Adresse, auf der der Webserver lauscht, meist Loopback), durch
   den Wächter, mit dem Namen als SNI und Host;
 - `internal/probe/sensor_app.go`: Ansichten `web_vhost_cert`, `haproxy_certs`, `moodle_checks`;
 - `internal/probe/sensor_http.go`, `sensor_tls.go`: Zielart `vhost`;
@@ -133,7 +133,7 @@ graceful|restart`. Der private Schlüssel eines Zertifikats wird nie geöffnet.
   und zwar ausdrücklich so, wie das Konzept es vorsieht. Das Argument ist genau ein Pfad, der auf
   `/admin/cli/checks.php` endet und den der Agent aus der Konfiguration des Webservers liest; laufen darf es nur als
   der `user` aus nginx bzw. `APACHE_RUN_USER`, nie als root. Ein `security`-Review je Task mit Freigabeliste.
-- **Last:** pro Domain ein Handshake auf Loopback je Stunde, pro App ein HTTP-Abruf je 5 Minuten.
+- **Last:** pro Domain zwei Handshakes je Stunde (je Check einer) an der Adresse, auf der der Webserver lauscht, meist Loopback, pro App ein HTTP-Abruf je 5 Minuten.
 - **Rollback:** einzelne Task-Commits zurücknehmen; der Block `vhosts` ist optional.
 
 ## Doku-Impact

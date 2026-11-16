@@ -109,7 +109,8 @@ func webServerOut(ctx context.Context, name, flag string) ([]byte, error) {
 }
 
 // uniqueVhosts keeps each name once, in the order given: the first web server that serves it, and
-// there the TLS port before a plain one, the lower port before the higher.
+// there the TLS port before a plain one, the lower port before the higher; an application of a document
+// root stays on one name.
 func uniqueVhosts(vhosts []Vhost) []Vhost {
 	var out []Vhost
 	at := map[string]int{}
@@ -122,6 +123,18 @@ func uniqueVhosts(vhosts []Vhost) []Vhost {
 		case out[i].Server != v.Server:
 		case v.TLS && !out[i].TLS, v.TLS == out[i].TLS && v.Port < out[i].Port:
 			out[i] = v
+		}
+	}
+	// Blocks of one site may name its hosts in another order, each with the application on its first
+	// name: the application stays on the first name that carries it, once per document root.
+	owned := map[string]bool{}
+	for i := range out {
+		switch v := &out[i]; {
+		case v.App == "":
+		case owned[v.root]:
+			v.App = ""
+		default:
+			owned[v.root] = true
 		}
 	}
 	return out
