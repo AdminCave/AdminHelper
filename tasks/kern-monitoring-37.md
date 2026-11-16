@@ -7,8 +7,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Semantik: docs/admin/monitoring.html:73 „<code>ignore</code> blendet Units aus, mit oder ohne <code>.service</code> und als Glob-Muster“ — der Check kennt das Ausblenden je Name; der Desktop bietet es je Dienst nicht an, nur das Abschalten des ganzen Checks (MonCheckLine.svelte:163). Gewolltes Verhalten entschieden von Kevin 2026-11-16 (Roadmap-Notiz R-1520).
 
-### T1 — Knopf Ignorieren je betroffenem Dienst in der Dienste-Karte  [ ]
+### T1 — Knopf Ignorieren je betroffenem Dienst in der Dienste-Karte  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @df151f69d 2026-11-16T14:55:36+01:00
+Review: am Ende (Branch-Review)
 Änderung: Jede Problemzeile der aufgeklappten Dienste-Zeile (auto: fehlgeschlagen, inaktiv; list: läuft nicht) bekommt einen Knopf „Ignorieren“; nach Rückfrage schreibt der Store per PUT nur `config`: auto hängt den Namen an `config.ignore` (eine CSV-Altform wird zur Liste), list nimmt ihn aus `config.services`; die Antwort ersetzt den Check im Store. Erst der rote Test (Knopf fehlt), dann der Fix.
 Beweis: main@2f40e989e Code-Lesung SecServices.svelte:185 (Dienstzeilen ohne Aktion), MonCheckLine.svelte:163 (toggleCheck des ganzen Checks)
 Dedup-Key: bug:desktop:SecServices.svelte:ignore-single-service

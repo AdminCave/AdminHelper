@@ -15,11 +15,19 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // init calls matchMedia (missing in jsdom). SecServices never renders a chart
 // (showChart={false}) — stub the lib away, same as SecDocker.test.ts.
 vi.mock('uplot', () => ({ default: class {} }));
-const h = vi.hoisted(() => ({ fetch: vi.fn() }));
+const h = vi.hoisted(() => ({ fetch: vi.fn(), update: vi.fn(), confirm: vi.fn() }));
 vi.mock('$lib/api/monitoring', async (importOriginal) => {
   const orig = await importOriginal<typeof import('$lib/api/monitoring')>();
-  return { ...orig, monitoringApi: { ...orig.monitoringApi, fetchServerServices: h.fetch } };
+  return {
+    ...orig,
+    monitoringApi: {
+      ...orig.monitoringApi,
+      fetchServerServices: h.fetch,
+      updateCheckConfig: h.update,
+    },
+  };
 });
+vi.mock('../../ui/ConfirmDialog.svelte', () => ({ confirmDialog: h.confirm }));
 vi.mock('$lib/stores/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/stores/session')>()),
   currentSession: () => ({ serverUrl: 'https://hub.example' }),
@@ -75,6 +83,8 @@ function row(r: HTMLElement): { name: string; note: string } {
 afterEach(() => {
   cleanup();
   h.fetch.mockReset();
+  h.update.mockReset();
+  h.confirm.mockReset();
   if (get(monitoring).expandedCheckId === ID) toggleExpanded(ID);
   setLanguage('de');
 });
@@ -571,5 +581,100 @@ describe('SecServices full list', () => {
     expect(dialog?.textContent).toContain('Alle Dienste');
     expect(h.fetch).toHaveBeenCalledTimes(1);
     expect(h.fetch.mock.calls[0][1]).toBe('srv-1');
+  });
+});
+
+// R-1520: the power button of the line turns off the whole check, every service of the
+// host. A problem row ignores its one service instead: auto mode adds the name to
+// config.ignore, list mode stops watching it; only the config goes out.
+describe('SecServices ignore one service', () => {
+  function ignoreButton(r: HTMLElement): HTMLButtonElement | null {
+    return r.querySelector<HTMLButtonElement>('button');
+  }
+
+  function withConfig(state: MonitorCheckState, config: MonitorCheck['config']): MonitorCheck {
+    return { ...check(state), config };
+  }
+
+  const autoFailed = withConfig(
+    {
+      status: 'critical',
+      details: { mode: 'auto', failed: ['foo.service'], enabled_inactive: ['cron.service'] },
+    },
+    // An older config keeps ignore as one comma-separated string; the checker reads both.
+    { mode: 'auto', ignore: 'bar.service, baz@*' as unknown as string[] },
+  );
+
+  it('offers Ignorieren on every problem row of auto mode', async () => {
+    setLanguage('de');
+    const { container: el } = render(SecServices, { props: { checks: [autoFailed] } });
+    const rows = await expand(el);
+    expect(rows.map((r) => ignoreButton(r)?.textContent?.trim())).toEqual([
+      'Ignorieren',
+      'Ignorieren',
+    ]);
+  });
+
+  it('adds the name to config.ignore after the question, as a list', async () => {
+    setLanguage('de');
+    h.confirm.mockResolvedValue(true);
+    h.update.mockResolvedValue(autoFailed);
+    const { container: el } = render(SecServices, { props: { checks: [autoFailed] } });
+    const [foo] = await expand(el);
+
+    await fireEvent.click(ignoreButton(foo) as HTMLElement);
+    await tick();
+
+    expect(h.confirm).toHaveBeenCalledTimes(1);
+    expect(h.confirm.mock.calls[0][0]).toContain('foo.service');
+    expect(h.update).toHaveBeenCalledTimes(1);
+    expect(h.update.mock.calls[0][1]).toBe(ID);
+    expect(h.update.mock.calls[0][2]).toEqual({
+      mode: 'auto',
+      ignore: ['bar.service', 'baz@*', 'foo.service'],
+    });
+  });
+
+  it('changes nothing when the question is cancelled', async () => {
+    h.confirm.mockResolvedValue(false);
+    const { container: el } = render(SecServices, { props: { checks: [autoFailed] } });
+    const [foo] = await expand(el);
+
+    await fireEvent.click(ignoreButton(foo) as HTMLElement);
+    await tick();
+
+    expect(h.confirm).toHaveBeenCalledTimes(1);
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('stops watching the name in list mode and keeps the others', async () => {
+    setLanguage('de');
+    const listDown = withConfig(
+      {
+        status: 'critical',
+        details: {
+          mode: 'list',
+          watched: [
+            { name: 'nginx', state: 'down', running: false },
+            { name: 'sshd', state: 'running', running: true },
+            { name: 'typo', state: 'nodata', running: false },
+          ],
+        },
+      },
+      { mode: 'list', services: ['nginx', 'sshd', 'typo'] },
+    );
+    h.confirm.mockResolvedValue(true);
+    h.update.mockResolvedValue(listDown);
+    const { container: el } = render(SecServices, { props: { checks: [listDown] } });
+    const [nginx, typo] = await expand(el);
+    // A name without data is no problem: nothing to ignore there.
+    expect(row(typo).name).toBe('typo');
+    expect(ignoreButton(typo)).toBeNull();
+
+    await fireEvent.click(ignoreButton(nginx) as HTMLElement);
+    await tick();
+
+    expect(h.confirm.mock.calls[0][0]).toContain('nginx');
+    expect(h.update.mock.calls[0][2]).toEqual({ mode: 'list', services: ['sshd', 'typo'] });
   });
 });
