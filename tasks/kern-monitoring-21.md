@@ -1,19 +1,21 @@
 # Monitoring: tag-gebundene Checks ohne Fund-Churn — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-21 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-21 · Review: am Ende
 Spec: docs/features/kern-monitoring-21.md (Roadmap R-1446)
 Heavy: none — nur Vergleich und Übernahme von Funden im Monitoring-Dienst, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1446: fehlendes `tag_checks` macht keinen Fund `changed`  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py, changelog.d/kern-monitoring-21.md, tasks/kern-monitoring-21.md
+### T1 — R-1446: fehlendes `tag_checks` macht keinen Fund `changed`  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_module_sync.py, changelog.d/kern-monitoring-21.md, tasks/kern-monitoring-21.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @dc36e05e2 2026-11-16T22:52:39+01:00
+Review: am Ende (Branch-Review)
 Änderung: `_seen_again` (`apps/monitoring/app/discovery.py:575`) lässt `tag_checks` aus dem Vergleich, wenn eine
 der beiden Zusammenfassungen ihn nicht trägt; der Scan schreibt ihn nach. Tests: übernommener und verworfener Fund
 mit alter Zusammenfassung bleiben, wie sie sind (erst rot); ein späterer Tag-Sprung macht den Fund weiter `changed`.
 Beweis: kern-monitoring-29 Abschlussprüfung 2026-11-13 · apps/monitoring/app/discovery.py (_instances tag_checks)
 Semantik: docs/admin/monitoring.html, Zeile `wikijs`: „Wechselt das Image auf 3, wird der Fund <code>changed</code>“
 Dedup-Key: bug:monitoring:discovery:tag-checks-summary-churn
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py tests/test_catalog_wikijs.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_discovery_match.py tests/test_catalog_wikijs.py
 Doku: changelog.d/kern-monitoring-21.md
 
 ### T2 — R-1446: ein per Tag abgeschalteter Check kommt zurück  [?] (Variante A: Check bei Tag-Wechsel löschen und bei Rückkehr neu anlegen, oder B: Spalte tag_off per Migration?)

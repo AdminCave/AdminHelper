@@ -564,15 +564,24 @@ def _summary(row: MonitorFinding) -> object:
 _UNCOMPARED = ("containers",)
 
 
-def _compared(summary: object) -> object:
+def _compared(summary: object, skip: tuple[str, ...] = ()) -> object:
     if not isinstance(summary, dict):
         return summary
-    return {k: v for k, v in summary.items() if k not in _UNCOMPARED}
+    return {k: v for k, v in summary.items() if k not in _UNCOMPARED + skip}
+
+
+def _same(stored: object, summary: dict) -> bool:
+    # A summary stored before R-1397 has no tag_checks: the key appearing (or going with
+    # the module's last tag-bound check) is no change of the instance, or every adopted or
+    # dismissed one reopens after the update.
+    both = isinstance(stored, dict) and "tag_checks" in stored and "tag_checks" in summary
+    skip = () if both else ("tag_checks",)
+    return _compared(stored, skip) == _compared(summary, skip)
 
 
 def _seen_again(row: MonitorFinding, summary: dict, watched: bool, in_step: bool) -> None:
     stored = _summary(row)
-    same = _compared(stored) == _compared(summary)
+    same = _same(stored, summary)
     before = (row.kind, row.status)
     if row.kind == "gone":
         if row.status != "adopted" and watched and same and in_step:

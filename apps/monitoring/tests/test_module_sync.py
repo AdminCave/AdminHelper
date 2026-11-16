@@ -881,6 +881,34 @@ def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):
     ]
 
 
+def _drop_tag_checks(db, finding):
+    """The summary as a monitoring service before R-1397 stored it."""
+    summary = json.loads(finding.summary)
+    del summary["tag_checks"]
+    finding.summary = json.dumps(summary)
+    db.commit()
+
+
+@pytest.mark.parametrize("tag", ["2", "3", "latest"])
+@pytest.mark.parametrize("status", ["adopted", "dismissed"])
+def test_a_summary_from_before_tag_checks_keeps_the_finding_as_decided(db, actions, tag, status):
+    _scan(db, 0, SHIPPED, _wiki(tag))
+    finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
+    if status == "adopted":
+        adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+    else:
+        dismiss(db, finding.id, now=NOW)
+    _drop_tag_checks(db, finding)
+
+    _scan(db, 1, SHIPPED, _wiki(tag))
+
+    assert (finding.kind, finding.status) == ("new", status)
+    # The scan fills the key in, so the next major is a change again.
+    assert "tag_checks" in json.loads(finding.summary)
+    _scan(db, 2, SHIPPED, _wiki("3" if tag == "2" else "2"))
+    assert (finding.kind, finding.status) == ("changed" if status == "adopted" else "new", "open")
+
+
 # --- module checks the admin deleted (R-1264) ------------------------------------------
 
 
