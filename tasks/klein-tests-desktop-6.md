@@ -20,7 +20,7 @@ Semantik: docs/developer/cicd.html — keine Stelle zum Verhalten dieses Skripts
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Testskript)
 
-### T2 — R-1135: strictSelectors einschalten, mehrdeutige Selektoren eingrenzen  [?] (Box-Lauf mit Kevin abstimmen: GUI-Lauf auf der Desktop-Box, warm.env desktop)
+### T2 — R-1135: strictSelectors einschalten, mehrdeutige Selektoren eingrenzen  [~] (verschoben in klein-tests-desktop-7: GUI-Lauf auf der Desktop-Box vorher mit Kevin abstimmen)
 Komponente: desktop-ui · Dateien: apps/desktop/e2e/wdio.conf.js, apps/desktop/e2e/test/specs/*.e2e.js
 Beweis: kern-deps-3 T3 2026-11-05: wdio 10 wirft bei mehreren Treffern von `$`; Config setzt strictSelectors: false · Dedup-Key: ref:tests:desktop-e2e:strict-selectors
 Änderung: `strictSelectors` auf true, Specs per GUI-Lauf einzeln eingrenzen. Konkrete Dateiliste erst nach dem ersten Lauf.
