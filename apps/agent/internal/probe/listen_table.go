@@ -59,3 +59,14 @@ func parseTCPModuleTable(data []byte, v6 bool) ([]tableListener, error) {
 	}
 	return list, nil
 }
+
+// clockTick is the longest clock tick of Windows, 15.625 ms in FILETIME units: the creation time of a
+// process is read from the system time, which moves only once a tick.
+const clockTick = 156_250
+
+// createdByProcess reports whether a socket bound at the FILETIME created can be the socket of a
+// process that started at start: only if it was bound more than a tick later. A process that started
+// within the tick may have taken the pid of the one that bound it.
+func createdByProcess(start, created int64) bool {
+	return created > 0 && created-start > clockTick
+}

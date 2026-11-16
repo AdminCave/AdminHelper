@@ -58,8 +58,10 @@ Verifiziert im CI-Job `agent-windows`; lokal nur Build und Lint.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T10 — R-1440: Windows-Zeitvergleich mit Abstand  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/guard_windows.go, apps/agent/internal/probe/guard_windows_test.go
+### T10 — R-1440: Windows-Zeitvergleich mit Abstand  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard_windows.go, apps/agent/internal/probe/guard_windows_test.go, apps/agent/internal/probe/listen_table.go, apps/agent/internal/probe/listen_table_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8c11ffc78 2026-11-16T20:00:45+01:00
+Review: approve (.ah-out/review/kern-agent-6/T10.verdict.json)
 Abhängt von: T3
 Beweis: security-Prüfung T3 Runde 2 2026-11-16 (privat)
 Änderung: Der Zeitvergleich aus T3 verlangt einen Abstand statt bloßer Reihenfolge (Einzelheiten privat); fail-closed.

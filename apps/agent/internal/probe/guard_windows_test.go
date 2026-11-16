@@ -141,16 +141,41 @@ func filetimeNow() int64 {
 	return int64(ft.HighDateTime)<<32 | int64(ft.LowDateTime)
 }
 
+// processStart is the FILETIME the test's process started at.
+func processStart(t *testing.T) int64 {
+	t.Helper()
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	var start, exit, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(h, &start, &exit, &kernel, &user); err != nil {
+		t.Fatal(err)
+	}
+	return int64(start.HighDateTime)<<32 | int64(start.LowDateTime)
+}
+
+// pastStartTick waits until a socket bound now counts as the test's own (createdByProcess), however
+// soon after its start the test runs.
+func pastStartTick() {
+	time.Sleep(2 * clockTick * 100 * time.Nanosecond)
+}
+
 // TestListenerAccountTellsServiceAccountsFromUsers asks Windows: the test runs under a user account,
 // HTTP.sys counts as no service account's, EventLog runs as LocalService, and a socket older than
 // its process names a pid Windows gave to another process.
 func TestListenerAccountTellsServiceAccountsFromUsers(t *testing.T) {
+	pastStartTick()
 	now := filetimeNow()
 	if uid, known := osListenerAccount(int32(os.Getpid()), now); !known || uid != accountUser {
 		t.Errorf("the test's own process: %d, %v; want %d, true", uid, known, accountUser)
 	}
 	if _, known := osListenerAccount(int32(os.Getpid()), 1); known {
 		t.Error("a socket created before its process names an account")
+	}
+	if _, known := osListenerAccount(int32(os.Getpid()), processStart(t)); known {
+		t.Error("a socket created in the tick its process started names an account")
 	}
 	if _, known := osListenerAccount(int32(os.Getpid()), 0); known {
 		t.Error("a socket without a creation time names an account")
@@ -184,6 +209,7 @@ func TestListenerAccountTellsServiceAccountsFromUsers(t *testing.T) {
 // their address, port, pid and a creation time between the process's start and now, as gopsutil
 // (TCP_TABLE_OWNER_PID) names them too; the owners after a connect are the test's account.
 func TestListenTCPReadsTheTableOfWindows(t *testing.T) {
+	pastStartTick()
 	var ports []netip.AddrPort
 	for _, address := range []string{"127.0.0.1:0", "[::1]:0"} {
 		ln, err := net.Listen("tcp", address)
@@ -194,16 +220,7 @@ func TestListenTCPReadsTheTableOfWindows(t *testing.T) {
 		ports = append(ports, ln.Addr().(*net.TCPAddr).AddrPort())
 	}
 	before := filetimeNow()
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(os.Getpid()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var start, exit, kernel, user windows.Filetime
-	if err := windows.GetProcessTimes(h, &start, &exit, &kernel, &user); err != nil {
-		t.Fatal(err)
-	}
-	_ = windows.CloseHandle(h)
-	started := int64(start.HighDateTime)<<32 | int64(start.LowDateTime)
+	started := processStart(t)
 
 	conns, err := gnet.Connections("tcp")
 	if err != nil {

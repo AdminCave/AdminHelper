@@ -59,8 +59,8 @@ const systemPID = 4
 
 // osListenerAccount returns the uid the guard judges a listener by whose socket process pid created
 // at the FILETIME created: 0 for a process under a service account (serviceAccountSID), accountUser
-// for any other, nothing when the process or its token cannot be read or when the process started
-// after the socket, so that its pid is the reuse of another's.
+// for any other, nothing when the process or its token cannot be read or when the process did not
+// start well before the socket (createdByProcess), so that its pid may be the reuse of another's.
 func osListenerAccount(pid int32, created int64) (uint32, bool) {
 	if pid <= 0 {
 		return 0, false
@@ -77,7 +77,7 @@ func osListenerAccount(pid int32, created int64) (uint32, bool) {
 	if err := windows.GetProcessTimes(h, &start, &exit, &kernel, &user); err != nil {
 		return 0, false
 	}
-	if created <= 0 || int64(start.HighDateTime)<<32|int64(start.LowDateTime) > created {
+	if !createdByProcess(int64(start.HighDateTime)<<32|int64(start.LowDateTime), created) {
 		return 0, false
 	}
 	var token windows.Token

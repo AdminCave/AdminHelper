@@ -67,3 +67,24 @@ func TestParseTCPModuleTableReadsTheRowsOfBothFamilies(t *testing.T) {
 		}
 	}
 }
+
+// TestSocketOutlivesItsProcessOnlyByAMargin: a socket counts as its process's only when it was
+// bound more than a clock tick after the process started; the same tick could be another process's.
+func TestSocketOutlivesItsProcessOnlyByAMargin(t *testing.T) {
+	const start = 133_000_000_000_000_000
+	for _, c := range []struct {
+		created int64
+		want    bool
+	}{
+		{0, false},
+		{start - 1, false},
+		{start, false},
+		{start + clockTick, false},
+		{start + clockTick + 1, true},
+		{start + 10*clockTick, true},
+	} {
+		if got := createdByProcess(start, c.created); got != c.want {
+			t.Errorf("created %d after start: %v, want %v", c.created-start, got, c.want)
+		}
+	}
+}
