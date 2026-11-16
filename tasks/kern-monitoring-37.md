@@ -1,5 +1,5 @@
 # Dienste einzeln ignorieren — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-37 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-37 · Review: am Ende
 Spec: Roadmap R-1520
 Heavy: none — nur Desktop-UI-Komponente und Store, kein Stack-, Gateway-, Journey- oder Install-Pfad; die PUT-Route gibt es schon
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
