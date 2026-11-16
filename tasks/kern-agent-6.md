@@ -122,3 +122,5 @@ Doku: keine (internes Refactoring)
   zwischen Agent-Discovery und den Unit-Namen der Monitoring-Module (`haproxy.service`), also Agent und Monitoring.
 - 2026-11-16 R-1441: eigener `/proc/net/tcp`-Leser statt Patch an gopsutil (Spec, Trade-offs).
 - 2026-11-16 R-1440: Lesarten der Regel stehen in `tasks/private/sec-kern-agent-6-notes.md`.
+- 2026-11-16 R-1442: statt die BBB- und Caddy-Tests einzeln zu stubben ein `TestMain` nur für FreeBSD und Nicht-root
+  (`main_freebsd_test.go`): die Gegenprobe zeigte 31 betroffene Tests im Paket, nicht nur die 9 aus dem Beweis.
