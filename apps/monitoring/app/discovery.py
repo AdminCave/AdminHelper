@@ -329,12 +329,14 @@ def _unit_name(name: str) -> str:
 
 def _listed_unit_wanted(name: str, wanted: set[str]) -> bool:
     # A Windows service and a FreeBSD rc.d script (R-1448) have no suffix: NTDS is wanted as
-    # NTDS.service, by its exact name or a pattern (MSSQL$?*, a named SQL Server instance; the
-    # templates are systemd's), and its instance keeps the name the agent asks the service
-    # manager by.
+    # NTDS.service, by its exact name, or by a pattern with "$" (MSSQL$?*, a named SQL Server
+    # instance; no systemd unit carries a "$"). The other patterns and the templates are
+    # systemd's: postgresql-* must not take the Windows service postgresql-x64-16.
     if "." not in name:
         unit = name + ".service"
-        return unit in wanted or any("*" in t and fnmatch.fnmatchcase(unit, t) for t in wanted)
+        return unit in wanted or any(
+            "$" in t and "*" in t and fnmatch.fnmatchcase(unit, t) for t in wanted
+        )
     return _unit_wanted(name, wanted)
 
 

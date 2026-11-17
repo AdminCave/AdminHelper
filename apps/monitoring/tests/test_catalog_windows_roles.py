@@ -143,6 +143,14 @@ def test_a_stopped_named_sql_server_instance_finds_nothing():
     assert not any(m == "mssql" for m, _ in match_inventory(stopped, CATALOG))
 
 
+@pytest.mark.parametrize(
+    "service", ["postgresql-x64-16", "pm2-alice", "restic-backup", "kopia", "borgmatic"]
+)
+def test_a_systemd_pattern_takes_no_service_without_a_dot(service):
+    # Only a pattern with "$" holds for Windows services and rc.d scripts (kern-monitoring-40).
+    assert match_inventory(_block([service]), CATALOG) == {}
+
+
 def test_only_an_sql_server_service_takes_the_pattern():
     # MSSQLFDLauncher$SHOP (full-text search) and SQLAgent$SHOP belong to the instance but
     # are not it; MSSQL$ alone names none.

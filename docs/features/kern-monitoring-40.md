@@ -35,7 +35,7 @@ Keine Migration, keine API-Änderung. Bestehende Findings der Standardinstanz be
 - Ein Windows-Dienst `MSSQL-<x>` könnte theoretisch kollidieren; SQL Server vergibt solche Namen nicht.
 
 ## Risiken und Rollback
-Muster für suffixlose Dienste greifen auch für rc.d-Skripte; heute nennt nur `pm2-*.service` ein Muster (systemd).
+Für suffixlose Dienste (Windows, rc.d) gelten nur Muster mit `$`; die übrigen Muster (`pm2-*`, `postgresql-*`, `restic*`, `kopia*`, `borg*`) bleiben systemd vorbehalten (Abschlussprüfung, T2).
 Rollback: Revert des Task-Commits. Nicht auf einem SQL Server verifiziert.
 
 ## Doku-Impact
