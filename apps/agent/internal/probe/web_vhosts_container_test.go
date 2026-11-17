@@ -112,12 +112,12 @@ func TestContainerVhostsReadNginxInAContainerByItsPublishedPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The vhost on the port the container does not publish is none; the root, the certificate and the
-	// user name paths in the container and stay out.
+	// The vhost on the port the container does not publish is none; the root and the user stay out, the
+	// certificate file stays a path in the container.
 	want := []Vhost{
-		{Server: "nginx", Name: "shop.example.org", Port: 8443, TLS: true},
-		{Server: "nginx", Name: "shop.example.org", Port: 8080},
-		{Server: "nginx", Name: "www.example.org", Port: 8080},
+		{Server: "nginx", Name: "shop.example.org", Port: 8443, TLS: true, cert: "/etc/nginx/tls/shop.crt", container: nginxCtr},
+		{Server: "nginx", Name: "shop.example.org", Port: 8080, container: nginxCtr},
+		{Server: "nginx", Name: "www.example.org", Port: 8080, container: nginxCtr},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ContainerVhosts =\n%+v\nwant\n%+v", got, want)
@@ -145,7 +145,7 @@ func TestContainerVhostsTakeTheMainFileTheCommandNames(t *testing.T) {
 		"/etc/nginx/nginx.conf": buildTar(t, tarEntry{name: "nginx.conf", body: "http { server { server_name wrong.example.org; } }\n"}),
 	})
 	got, err := ContainerVhosts(context.Background())
-	if want := []Vhost{{Server: "nginx", Name: "app.example.org", Port: 80}}; err != nil || !reflect.DeepEqual(got, want) {
+	if want := []Vhost{{Server: "nginx", Name: "app.example.org", Port: 80, container: nginxCtr}}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("ContainerVhosts = %+v, %v, want %+v", got, err, want)
 	}
 }

@@ -22,7 +22,7 @@ var containerApacheConfs = []struct{ conf, root string }{
 }
 
 // containerApacheVhosts reads the vhosts of the Apache in a container: the <VirtualHost> blocks of its main
-// file and the files it includes, with ServerName, ServerAlias and SSLEngine. A container without a main
+// file and the files it includes, with ServerName, ServerAlias, SSLEngine and SSLCertificateFile. A container without a main
 // file at a known path has no Apache the agent reads. apachectl -S is not there to ask: every
 // <VirtualHost> counts, also one in an <IfModule> or <IfDefine> that would not load.
 func containerApacheVhosts(ctx context.Context, fs *containerFS) ([]Vhost, error) {
@@ -95,6 +95,11 @@ func (a *containerApache) include(ctx context.Context, name string) ([]container
 	if !path.IsAbs(name) {
 		name = path.Join(a.root, name)
 	}
+	// Debian's modules (mods-enabled: LoadModule and their settings, no <VirtualHost>) are links each,
+	// and each link costs a docker cp of its own: left out.
+	if path.Base(path.Dir(name)) == "mods-enabled" || path.Base(name) == "mods-enabled" {
+		return nil, nil
+	}
 	if strings.ContainsAny(name, `*?[`) {
 		return a.fs.glob(ctx, name, maxApacheFileBytes)
 	}
@@ -141,7 +146,11 @@ func apacheBlockVhosts(dirs []apacheDirective) []Vhost {
 		for _, port := range ports {
 			for _, n := range names {
 				if name := vhostName(n); name != "" {
-					vhosts = append(vhosts, Vhost{Server: "apache", Name: name, Port: port, TLS: b.tls})
+					v := Vhost{Server: "apache", Name: name, Port: port, TLS: b.tls}
+					if v.TLS {
+						v.cert = b.cert
+					}
+					vhosts = append(vhosts, v)
 				}
 			}
 		}

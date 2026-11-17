@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +186,56 @@ func TestAWaiterWhoseContextEndedDoesNotRead(t *testing.T) {
 	calls := stubTools(t)
 	if _, err := cachedVhosts(gone); !errors.Is(err, context.Canceled) || len(*calls) != 0 {
 		t.Errorf("a caller with an ended context = %v, %d tools; want its context's error and no read", err, len(*calls))
+	}
+}
+
+func TestWebVhostCertReadsTheFileOfAContainerThroughItsArchive(t *testing.T) {
+	pki := newPKI(t)
+	stubNow(t, start)
+	stubRoots(t, pki.roots)
+	freshSnapshot(t)
+	port, names := tlsServer(t, pki.chain)
+	ctx := context.Background()
+	renewed := namedCertPEM(t, "svc.example.org", start.Add(90*24*time.Hour), true)
+	f := &fakeArchives{archives: map[string][]byte{
+		"/etc/nginx/tls/svc.pem":  buildTar(t, tarEntry{name: "svc.pem", link: "/certs/live/svc.pem"}),
+		"/certs/live/svc.pem":     buildTar(t, tarEntry{name: "svc.pem", body: string(renewed)}),
+		"/etc/nginx/tls/link.pem": buildTar(t, tarEntry{name: "link.pem", link: "/certs/live/svc.key"}),
+	}}
+	useArchives(t, f)
+	served := map[string]any{"served_days_left": int64(30), "hostname_ok": true, "chain_ok": true}
+	cases := []struct {
+		name, cert string
+		want       map[string]any
+	}{
+		{"a renewed file behind a link", "/etc/nginx/tls/svc.pem", map[string]any{"served_days_left": int64(30),
+			"hostname_ok": true, "chain_ok": true, "file_days_left": int64(90), "reload_missing": true}},
+		{"a key file by its name", "/certs/live/svc.key", served},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubVhostCache(t, time.Now(), []Vhost{{Server: "nginx", Name: "svc.example.org", Port: uint16(port), TLS: true,
+				cert: c.cert, container: ctrID}}, nil)
+			got, err := webVhostCert(ctx, vhostTarget(port))
+			if err != nil || fmt.Sprint(got) != fmt.Sprint(c.want) {
+				t.Errorf("web_vhost_cert = %v, %v\nwant %v", got, err, c.want)
+			}
+			<-names
+		})
+	}
+	// A link to a key file ends the read before the key is asked for.
+	stubVhostCache(t, time.Now(), []Vhost{{Server: "nginx", Name: "svc.example.org", Port: uint16(port), TLS: true,
+		cert: "/etc/nginx/tls/link.pem", container: ctrID}}, nil)
+	if _, err := webVhostCert(ctx, vhostTarget(port)); !errors.Is(err, errNotInContainer) {
+		t.Errorf("a link to a key file: err = %v", err)
+	}
+	<-names
+	for _, p := range f.asked() {
+		if keyFileName(p) {
+			t.Errorf("asked docker cp for %s, a key file", p)
+		}
+	}
+	if !slices.Contains(f.asked(), "/certs/live/svc.pem") {
+		t.Errorf("asked %q, want the certificate behind the link", f.asked())
 	}
 }

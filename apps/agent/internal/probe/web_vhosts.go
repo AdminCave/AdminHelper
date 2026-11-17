@@ -35,6 +35,9 @@ type Vhost struct {
 	root   string
 	cert   string
 	user   string
+	// container is the ID of the container whose web server serves the vhost, "" for the host's own;
+	// root and cert are paths in it then.
+	container string
 }
 
 // maxVhostName is the longest name a vhost is reported by, the longest instance key of the monitoring

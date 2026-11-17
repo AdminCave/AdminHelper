@@ -40,8 +40,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T5
 Abhängt von: T2
 
-### T4 — R-1503: Zertifikatsdatei eines Container-vHosts  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go, apps/agent/internal/probe/web_vhosts.go, tasks/kern-monitoring-42.md
+### T4 — R-1503: Zertifikatsdatei eines Container-vHosts  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go, apps/agent/internal/probe/web_vhosts.go, tasks/kern-monitoring-42.md, apps/agent/internal/probe/web_vhosts_container.go, apps/agent/internal/probe/web_vhosts_container_test.go, apps/agent/internal/probe/web_vhosts_container_apache.go, apps/agent/internal/probe/web_vhosts_container_apache_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @659e25dda 2026-11-17T10:19:26+01:00
+Review: approve (.ah-out/review/kern-monitoring-42/T4.verdict.json)
 Änderung: `webVhostCert` holt für einen Container-vHost die Zertifikatsdatei einzeln per Archiv (Deckel
 `maxCertFileBytes`), sonst wie bisher; erstes Zertifikat lesen, Schlüssel in der Datei ungeparst, eine Schlüsseldatei
 nie. Test: `reload_missing` und `file_days_left` für einen Container-vHost, Schlüsselname wird nie geholt.
@@ -73,3 +75,11 @@ Task-Review: am Ende
   am Kommando `httpd`, `httpd-foreground`, `apache2`, `apache2-foreground`, `apache2ctl` oder `apachectl`.
 - T3 (Nit des T2-Prüfers): Ein Include, dessen Verzeichnis selbst ein Muster ist, macht den Container zum Fehler
   (`errContainerPattern`, Liste unvollständig), statt still ausgelassen zu werden.
+- T4: Die Zertifikatsdatei eines Container-vHosts holt `webVhostCert` per `fileOf` mit `keyFileName` (`*.key`):
+  ein Name auf `.key` und ein Link auf einen wird nie angefragt; `.pem` bleibt erlaubt (Zertifikate enden oft
+  darauf, ein Schlüssel in derselben Datei bleibt ungeparst wie auf dem Host). Apache-vHosts tragen die Datei nur
+  mit `SSLEngine on`.
+- T4 (Nit des T3-Prüfers): Debians `mods-enabled` (LoadModule und Modul-Einstellungen, kein `<VirtualHost>`) liest
+  der Agent im Container nicht: jeder Eintrag ist ein Link und kostete ein eigenes `docker cp` (Regel 2026-11-09,
+  Monitoring kostet keine Dienst-Leistung). Ein Verzeichnis-Include liest nur die oberste Ebene (Apache auch
+  Unterverzeichnisse); der Agent listet keine Verzeichnisbäume, ein vHost dort fehlt.

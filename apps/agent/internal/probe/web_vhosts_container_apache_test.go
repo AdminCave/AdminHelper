@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,10 @@ IncludeOptional mods-enabled/*.load
 IncludeOptional conf-enabled/*.conf
 IncludeOptional sites-enabled/*.conf
 `}),
+		"/etc/apache2/mods-enabled": buildTar(t,
+			tarEntry{name: "mods-enabled", dir: true},
+			tarEntry{name: "mods-enabled/ssl.load", link: "../mods-available/ssl.load"},
+		),
 		"/etc/apache2/ports.conf": buildTar(t, tarEntry{name: "ports.conf", body: "Listen 80\nListen 443\n"}),
 		"/etc/apache2/sites-enabled": buildTar(t,
 			tarEntry{name: "sites-enabled", dir: true},
@@ -66,16 +71,19 @@ IncludeOptional sites-enabled/*.conf
 		t.Fatal(err)
 	}
 	want := []Vhost{
-		{Server: "apache", Name: "shop.example.org", Port: 8080},
-		{Server: "apache", Name: "www.example.org", Port: 8080},
-		{Server: "apache", Name: "static.example.org", Port: 8080},
-		{Server: "apache", Name: "shop.example.org", Port: 8443, TLS: true},
-		{Server: "apache", Name: "alias-only.example.org", Port: 8080},
+		{Server: "apache", Name: "shop.example.org", Port: 8080, container: apacheCtr},
+		{Server: "apache", Name: "www.example.org", Port: 8080, container: apacheCtr},
+		{Server: "apache", Name: "static.example.org", Port: 8080, container: apacheCtr},
+		{Server: "apache", Name: "shop.example.org", Port: 8443, TLS: true, cert: "/etc/ssl/certs/shop.pem", container: apacheCtr},
+		{Server: "apache", Name: "alias-only.example.org", Port: 8080, container: apacheCtr},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ContainerVhosts =\n%+v\nwant\n%+v", got, want)
 	}
 	for _, p := range f.asked() {
+		if strings.Contains(p, "mods-") {
+			t.Errorf("asked docker cp for %s: the modules hold no vhost", p)
+		}
 		if keyPath(p) {
 			t.Errorf("asked docker cp for %s, a path that looks like a key", p)
 		}
@@ -98,7 +106,7 @@ Include conf/extra/vhosts.conf
 			body: "<VirtualHost *:80>\nServerName wrong.example.org\n</VirtualHost>\n"}),
 	})
 	got, err := ContainerVhosts(context.Background())
-	if want := []Vhost{{Server: "apache", Name: "app.example.org", Port: 80}}; err != nil || !reflect.DeepEqual(got, want) {
+	if want := []Vhost{{Server: "apache", Name: "app.example.org", Port: 80, container: apacheCtr}}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("ContainerVhosts = %+v, %v, want %+v", got, err, want)
 	}
 }
@@ -112,7 +120,7 @@ func TestContainerApacheReadsAFileOnceAndStopsAtTheCap(t *testing.T) {
 			body: "Include conf/httpd.conf\n<VirtualHost *:80>\nServerName a.example.org\n</VirtualHost>\n"}),
 	})
 	got, err := ContainerVhosts(context.Background())
-	if want := []Vhost{{Server: "apache", Name: "a.example.org", Port: 80}}; err != nil || !reflect.DeepEqual(got, want) {
+	if want := []Vhost{{Server: "apache", Name: "a.example.org", Port: 80, container: apacheCtr}}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("ContainerVhosts = %+v, %v, want %+v", got, err, want)
 	}
 	// A chain longer than maxApacheFiles is an error.
