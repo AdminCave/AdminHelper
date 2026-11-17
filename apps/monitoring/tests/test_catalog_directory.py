@@ -28,6 +28,8 @@ MODULES = {
         {
             "service": _SERVICE,
             "replication": ("app", "samba_drs"),
+            "side_units": ("app", "samba_dc_units"),
+            "dns": ("app", "samba_dns"),
             "fsmo": ("app", "samba_fsmo"),
             "certificate": ("tls", None),
         },
@@ -161,13 +163,29 @@ def test_the_fixed_targets():
             {"links_failing": 0, "outbound_failing": 0, "last_success_age_s": 43201},
             "critical",
         ),
-        # A single DC has no inbound link and so no last success.
+        # The only DC of its domain: the agent reports an age of 0, one before R-1491 none.
+        (
+            "samba-ad-dc",
+            "replication",
+            {
+                "partners": 0,
+                "links": 0,
+                "links_failing": 0,
+                "outbound_failing": 0,
+                "last_success_age_s": 0,
+            },
+            "ok",
+        ),
         (
             "samba-ad-dc",
             "replication",
             {"partners": 0, "links": 0, "links_failing": 0, "outbound_failing": 0},
             "unknown",
         ),
+        ("samba-ad-dc", "side_units", {"side_units_active": 0}, "ok"),
+        ("samba-ad-dc", "side_units", {"side_units_active": 1}, "warning"),
+        ("samba-ad-dc", "dns", {"srv_checked": 5, "srv_missing": 0}, "ok"),
+        ("samba-ad-dc", "dns", {"srv_checked": 5, "srv_missing": 1}, "warning"),
         ("samba-ad-dc", "fsmo", {"roles": 7, "roles_without_owner": 0}, "ok"),
         ("samba-ad-dc", "fsmo", {"roles": 7, "roles_without_owner": 1}, "warning"),
         ("samba-ad-dc", "certificate", {"lifetime_pct": 25, "hours_left": 4200}, "ok"),
@@ -219,3 +237,8 @@ def test_the_card_names_fields_of_its_checks():
         assert 1 <= len(module.card) <= 6, module_id
         for item in module.card:
             assert item.field in fields[item.check_key], (module_id, item.check_key, item.field)
+
+
+def test_the_samba_dc_card_shows_its_partners():
+    card = [(c.check_key, c.field) for c in CATALOG.modules["samba-ad-dc"].card]
+    assert ("replication", "partners") in card

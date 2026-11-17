@@ -282,6 +282,6 @@ def test_the_card_shows_the_container_or_the_docservice_and_its_healthcheck():
         ("container", "state"),
         ("container", "health"),
         ("service", "active_state"),
-        ("healthcheck", "status_code"),
-        ("container_healthcheck", "status_code"),
+        ("healthcheck", "body_match"),
+        ("container_healthcheck", "body_match"),
     ]

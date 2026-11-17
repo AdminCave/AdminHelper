@@ -121,6 +121,8 @@ var appViews = map[string]appView{
 	"pve_updates":       {kinds: unitKinds, read: pveUpdates},
 	"rds_licenses":      {kinds: unitKinds, read: rdsLicenses},
 	"restic_latest":     {kinds: unitKinds, uses: []string{usePassword}, readCred: resticLatest},
+	"samba_dc_units":    {kinds: unitKinds, read: sambaDCUnits},
+	"samba_dns":         {kinds: unitKinds, read: sambaDNS},
 	"samba_drs":         {kinds: unitKinds, read: sambaDRS},
 	"samba_fsmo":        {kinds: unitKinds, read: sambaFSMO},
 	"samba_member":      {kinds: unitKinds, read: sambaMember},

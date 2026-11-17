@@ -273,6 +273,8 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "clamav_db": frozenset({"age_s", "version"}),
     "spamd_ping": frozenset({"reachable"}),
     "opendkim_keys": frozenset({"keys", "keys_failed"}),
+    "samba_dc_units": frozenset({"side_units_active"}),
+    "samba_dns": frozenset({"srv_checked", "srv_missing"}),
     "samba_drs": frozenset(
         {"last_success_age_s", "links", "links_failing", "outbound_failing", "partners"}
     ),
@@ -427,6 +429,8 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "clamav_db": _UNIT,
     "spamd_ping": _UNIT,
     "opendkim_keys": _UNIT,
+    "samba_dc_units": _UNIT,
+    "samba_dns": _UNIT,
     "samba_drs": _UNIT,
     "samba_fsmo": _UNIT,
     "samba_member": _UNIT,
@@ -764,6 +768,8 @@ class AppParams(_Params):
         "clamav_db",
         "spamd_ping",
         "opendkim_keys",
+        "samba_dc_units",
+        "samba_dns",
         "samba_drs",
         "samba_fsmo",
         "samba_member",

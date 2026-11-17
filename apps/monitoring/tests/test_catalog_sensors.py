@@ -381,6 +381,8 @@ def test_the_app_views_are_those_the_agent_returns():
         "clamav_db": ["age_s", "version"],
         "spamd_ping": ["reachable"],
         "opendkim_keys": ["keys", "keys_failed"],
+        "samba_dc_units": ["side_units_active"],
+        "samba_dns": ["srv_checked", "srv_missing"],
         "samba_drs": [
             "last_success_age_s",
             "links",
@@ -473,6 +475,8 @@ def test_the_app_views_are_those_the_agent_returns():
         "clamav_db": ["unit"],
         "spamd_ping": ["unit"],
         "opendkim_keys": ["unit"],
+        "samba_dc_units": ["unit"],
+        "samba_dns": ["unit"],
         "samba_drs": ["unit"],
         "samba_fsmo": ["unit"],
         "samba_member": ["unit"],

@@ -870,7 +870,9 @@ def test_a_move_to_another_major_changes_the_finding_and_removes_its_tag_check(d
         {"key": "healthz", "reason": "container docs-wiki-1 runs the tag 3, the check needs 2, 2.*"}
     ]
     assert ("remove", healthz.id, None, None) in actions
-    assert set(checks) == {"container", "web"}
+    # Wiki.js 3 gets /_ready in its place (R-1445).
+    assert set(checks) == {"container", "web", "ready"}
+    assert checks["ready"].id in result.enabled
     assert all(row.enabled for row in checks.values())
 
 
@@ -886,11 +888,15 @@ def test_a_tag_check_comes_back_with_its_tag(db, actions):
     actions.clear()
     result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
 
-    healthz = _checks(db, finding)["healthz"]
+    checks = _checks(db, finding)
+    healthz = checks["healthz"]
     assert (healthz.enabled, healthz.silent) == (True, False)
     assert healthz.id in result.enabled
     assert ("add", healthz.id, healthz.interval, "probe") in actions
-    assert result.skipped == []
+    assert "ready" not in checks
+    assert result.skipped == [
+        {"key": "ready", "reason": "container docs-wiki-1 runs the tag 2.5, the check needs 3, 3.*"}
+    ]
 
 
 def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):
@@ -899,7 +905,7 @@ def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):
 
     result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
 
-    assert set(_checks(db, finding)) == {"container", "web"}
+    assert set(_checks(db, finding)) == {"container", "web", "ready"}
     assert result.skipped == [
         {"key": "healthz", "reason": "container docs-wiki-1 runs the tag 3, the check needs 2, 2.*"}
     ]

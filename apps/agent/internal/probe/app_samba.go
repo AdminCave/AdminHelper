@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -119,10 +120,85 @@ func drsValues(out []byte) (map[string]any, error) {
 	values := map[string]any{
 		"partners": len(partners), "links": links, "links_failing": failing, "outbound_failing": outFailing,
 	}
-	if !oldest.IsZero() {
+	switch {
+	case !oldest.IsZero():
 		values["last_success_age_s"] = max(int(now().Sub(oldest).Seconds()), 0)
+	case links == 0:
+		// The only domain controller of its domain pulls from nobody: nothing can be stale. Without a
+		// value the replication check would stay unknown on it for good.
+		values["last_success_age_s"] = 0
 	}
 	return values, nil
+}
+
+// sambaSideUnits are the units of a Samba file server, NetBIOS name server and winbind, by Debian's
+// names and by Fedora's (smb, nmb; not verified on a DC there): on a DC the samba service starts smbd
+// and winbindd itself, and a separate smbd, nmbd or winbind makes the DC fail (Samba wiki, "Managing
+// the Samba AD DC Service Using Systemd": mask and disable smbd nmbd winbind).
+var sambaSideUnits = []string{"smbd.service", "nmbd.service", "winbind.service", "smb.service", "nmb.service"}
+
+// sambaDCUnits counts the sambaSideUnits that are active next to this domain controller, from one
+// systemctl show; a unit this host does not know reads as inactive.
+func sambaDCUnits(ctx context.Context, _ Target) (map[string]any, error) {
+	args := append([]string{"show", "-p", "Id,Names,ActiveState,MainPID", "--"}, sambaSideUnits...)
+	out, err := runToolEnv(ctx, toolTimeout, sambaEnv, "systemctl", args...)
+	if err != nil {
+		return nil, sambaFailure("systemctl", err)
+	}
+	units, active := 0, 0
+	for line := range strings.Lines(string(out)) {
+		k, v, _ := strings.Cut(strings.TrimRight(line, "\r\n"), "=")
+		if k != "ActiveState" {
+			continue
+		}
+		units++
+		if v == "active" || v == "activating" || v == "reloading" {
+			active++
+		}
+	}
+	if units != len(sambaSideUnits) {
+		return nil, errors.New("systemctl show answers in another form")
+	}
+	return map[string]any{"side_units_active": active}, nil
+}
+
+// sambaSRV are the SRV records of a domain the samba_dnsupdate of every writable DC registers
+// (source4/setup/dns_update_list, IF_RWDC); the Samba wiki ("Setting up Samba as an Active Directory
+// Domain Controller", verifying DNS) checks the first and the third after the provision.
+var sambaSRV = []string{"_ldap._tcp.", "_kerberos._tcp.", "_kerberos._udp.", "_ldap._tcp.dc._msdcs.", "_kerberos._tcp.dc._msdcs."}
+
+// sambaDNS asks the resolver of this host for the sambaSRV records of the realm smb.conf names (testparm
+// -s): how many it checked and how many have no record. Realm and names stay on the host, and so does a
+// resolver error: it names the record.
+func sambaDNS(ctx context.Context, _ Target) (map[string]any, error) {
+	out, err := runToolEnv(ctx, toolTimeout, sambaEnv, "testparm", "-s")
+	if err != nil {
+		return nil, sambaFailure("testparm", err)
+	}
+	realm := ""
+	for line := range strings.Lines(string(out)) {
+		k, v, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(k) == "realm" {
+			realm = strings.TrimSpace(v)
+		}
+	}
+	if realm == "" || len(realm) > 200 || !dnsName.MatchString(realm) {
+		return nil, fmt.Errorf("%w: smb.conf names no DNS realm", ErrUnsupported)
+	}
+	missing := 0
+	for _, srv := range sambaSRV {
+		n, err := lookupDNS(ctx, "SRV", srv+strings.TrimSuffix(realm, ".")+".")
+		var de *net.DNSError
+		switch {
+		case errors.As(err, &de) && de.IsNotFound:
+			missing++
+		case err != nil:
+			return nil, errors.New("the resolver of this host fails")
+		case n == 0:
+			missing++
+		}
+	}
+	return map[string]any{"srv_checked": len(sambaSRV), "srv_missing": missing}, nil
 }
 
 // drsLink says whether the link n has consecutive failures and when it last succeeded, the zero time if
