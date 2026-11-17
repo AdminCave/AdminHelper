@@ -16,8 +16,10 @@ Deckel ungelesen übersprungen. Neue Datei mit SPDX-Header. Tests mit gebauten t
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T5
 
-### T2 — R-1503: nginx im Container: vHosts auf veröffentlichten Ports  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts_container.go, apps/agent/internal/probe/web_vhosts_container_test.go, apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/sensor_local.go, tasks/kern-monitoring-42.md
+### T2 — R-1503: nginx im Container: vHosts auf veröffentlichten Ports  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts_container.go, apps/agent/internal/probe/web_vhosts_container_test.go, apps/agent/internal/probe/web_vhosts.go, apps/agent/internal/probe/sensor_local.go, tasks/kern-monitoring-42.md, apps/agent/internal/probe/target.go, apps/agent/internal/probe/container_archive.go, apps/agent/internal/probe/container_archive_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @7d363bb87 2026-11-17T10:00:41+01:00
+Review: approve (.ah-out/review/kern-monitoring-42/T2.verdict.json)
 Änderung: Laufende Container, deren Kommando nginx nennt, mit veröffentlichtem TCP-Port: `nginx.conf` und ihre
 Includes (Muster über das Verzeichnis-Archiv) zu einem Dump in der Form von `nginx -T` fügen und `nginxVhosts`
 lesen lassen; nur vHosts auf einem veröffentlichten Container-Port, gemeldet mit dem Host-Port, `App` leer. `WebVhosts`
@@ -55,3 +57,12 @@ Doku: die Dateien dieser Task
 Task-Review: am Ende
 
 ## Entscheidungen
+- T2: Ein Container, in dem keiner der bekannten Pfade (`/etc/nginx/nginx.conf`, `/usr/local/nginx/conf/nginx.conf`
+  oder das `-c` seines Kommandos) eine Hauptdatei liefert, zählt als kein nginx, ohne Fehler.
+- T1/T2: Ein passender Eintrag über dem Datei-Deckel oder ein Archiv über dem Container-Budget wird nicht still
+  übersprungen, sondern macht den Container zum Fehler (Liste unvollständig). Das entspricht den Risiken der Spec,
+  der Ledger-Text von T1 („ungelesen übersprungen“) gilt nur für nicht passende und schlüsselartige Einträge.
+- T1/T2: Jeder Exit ≠ 0 von `docker cp` zählt als „Pfad nicht da“: stderr wird verworfen, damit kein Pfad in eine
+  Meldung gerät; ein Daemon, der nicht antwortet, fällt schon bei `docker ps`/`inspect` als Fehler auf.
+- T2: Ein Wildcard-Muster nimmt keinen Namen mit führendem Punkt (nginx glob(3) ohne GLOB_PERIOD, Apache
+  APR_FNM_PERIOD); `path.Match` täte es (Nit des T1-Prüfers).

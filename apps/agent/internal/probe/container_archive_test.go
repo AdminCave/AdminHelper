@@ -142,6 +142,8 @@ func TestContainerGlobTakesTheMatchingFilesOfTheDirectoryOnly(t *testing.T) {
 			tarEntry{name: "conf.d/b.conf", body: "server { listen 80; }\n"},
 			tarEntry{name: "conf.d/a.conf", body: "server { listen 443; }\n"},
 			tarEntry{name: "conf.d/notes.txt", body: "unread"},
+			// A wildcard of nginx and Apache never takes a name with a leading dot.
+			tarEntry{name: "conf.d/.old.conf", body: "unread"},
 			tarEntry{name: "conf.d/site.key", body: "-----BEGIN PRIVATE KEY-----"},
 			tarEntry{name: "conf.d/chain.PEM", body: "-----BEGIN PRIVATE KEY-----"},
 			tarEntry{name: "conf.d/sub", dir: true},

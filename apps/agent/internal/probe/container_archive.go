@@ -185,7 +185,9 @@ func (c *containerFS) globIn(ctx context.Context, from, dir, base string, limit 
 		if rest == "" || strings.Contains(rest, "/") || keyLike(rest) {
 			return nil
 		}
-		if m, _ := path.Match(base, rest); !m {
+		// nginx (glob(3) without GLOB_PERIOD) and Apache (APR_FNM_PERIOD) never take a name with a
+		// leading dot by a wildcard: path.Match would.
+		if m, _ := path.Match(base, rest); !m || rest[0] == '.' && base[0] != '.' {
 			return nil
 		}
 		name := path.Join(dir, rest)
