@@ -26,8 +26,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html DE+EN
 Abhängt von: T1
 
-### T3 — R-1491, R-1487, R-1488: Katalog samba-ad-dc  [ ]
+### T3 — R-1491, R-1487, R-1488: Katalog samba-ad-dc  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/samba_ad_dc.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_directory.py, apps/monitoring/tests/test_catalog_sensors.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8b6946d14 2026-11-17T06:33:41+01:00
+Review: approve (.ah-out/review/kern-monitoring-38/T3.verdict.json)
 Änderung: Checks `side_units` (warn bei > 0) und `dns` (warn bei `srv_missing` > 0), Karte mit `partners`,
 Ansichten `samba_dc_units` und `samba_dns` samt Feldern in `sensors.py` zulassen; Docstring und Admin-Doku ohne die erledigten „Nicht abgedeckt“ und ohne „DC ohne Partner bleibt unknown“ (gilt nur für ältere Agenten), Version + 1.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_directory.py tests/test_catalog_sensors.py
