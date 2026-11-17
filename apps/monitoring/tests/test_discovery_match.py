@@ -636,6 +636,20 @@ def test_a_windows_service_without_suffix_finds_its_module_under_its_own_name():
     }
 
 
+def test_the_rc_scripts_of_freebsd_find_their_modules_under_their_own_name():
+    # R-1448: on FreeBSD the agent lists the enabled rc.d scripts by their bare name, as for a
+    # Windows service; the ports name them haproxy (net/haproxy) and php_fpm (lang/php83).
+    inv = clean_inventory(
+        _block(units=[_unit("haproxy"), _unit("php_fpm"), _unit("sshd"), _unit("php-fpm")])
+    )
+    found = match_inventory(inv, load_catalog())
+    assert {k: v for k, v in found.items() if k[0] in ("haproxy", "php_fpm")} == {
+        ("haproxy", "haproxy"): {"unit": "haproxy"},
+        ("php_fpm", "php_fpm"): {"unit": "php_fpm"},
+        ("php_fpm", "php-fpm"): {"unit": "php-fpm"},
+    }
+
+
 @pytest.mark.parametrize("name", ["-db", "a" * 121, "db container"])
 def test_a_name_unfit_for_a_credential_reference_makes_no_instance(name):
     inv = clean_inventory(_block(containers=[_container(name, "postgres")]))
