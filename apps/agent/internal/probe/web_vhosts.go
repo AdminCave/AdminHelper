@@ -35,11 +35,17 @@ type Vhost struct {
 	root   string
 	cert   string
 	user   string
+	// container is the ID of the container whose web server serves the vhost, "" for the host's own;
+	// root and cert are paths in it then.
+	container string
 }
 
 // maxVhostName is the longest name a vhost is reported by, the longest instance key of the monitoring
 // service.
 const maxVhostName = 120
+
+// containerVhosts lists the vhosts of the containers; tests stand in their own.
+var containerVhosts = ContainerVhosts
 
 // vhostStat looks at a path of a document root; tests stand in their own.
 var vhostStat = os.Stat
@@ -61,9 +67,10 @@ func vhostName(name string) string {
 }
 
 // WebVhosts lists the names the web servers of this host serve, a name once: nginx from the dump of
-// nginx -T, Apache from apache2ctl -S (Debian) or apachectl -S (RHEL). A web server that is not
-// installed adds none; one whose configuration cannot be read gives an error with the names of the
-// others, so the caller knows the list is not whole.
+// nginx -T, Apache from apache2ctl -S (Debian) or apachectl -S (RHEL), then those of the web servers in
+// its Docker containers on their published ports (ContainerVhosts); of one name at one port the host's
+// own server wins. A web server that is not installed adds none; one whose configuration cannot be
+// read gives an error with the names of the others, so the caller knows the list is not whole.
 func WebVhosts(ctx context.Context) ([]Vhost, error) {
 	var vhosts []Vhost
 	var errs []error
@@ -89,6 +96,11 @@ func WebVhosts(ctx context.Context) ([]Vhost, error) {
 		if err != nil {
 			errs = append(errs, err)
 		}
+	}
+	v, err := containerVhosts(ctx)
+	vhosts = append(vhosts, v...)
+	if err != nil {
+		errs = append(errs, err)
 	}
 	return uniqueVhosts(vhosts), errors.Join(errs...)
 }
@@ -531,7 +543,7 @@ func apacheVhostsOf(a *apacheVhost, b apacheVhostBlock) []Vhost {
 // apacheVhostBlock is what block keeps of a <VirtualHost>.
 type apacheVhostBlock struct {
 	found, named, tls bool
-	root, cert        string
+	root, cert, name  string
 	aliases           []string
 }
 
@@ -598,6 +610,7 @@ func (b *apacheVhostBlock) set(f []string) {
 		b.root = strings.Trim(f[1], `"`)
 	case "servername":
 		b.named = true
+		b.name = f[1]
 	case "serveralias":
 		b.aliases = append(b.aliases, f[1:]...)
 	}

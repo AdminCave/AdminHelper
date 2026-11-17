@@ -391,7 +391,10 @@ func (c Cgroups) Holds(p Cgroups) bool {
 type containerInfo struct {
 	ID string `json:"Id"`
 	// Name is the container's name with a leading slash.
-	Name         string
+	Name string
+	// Path and Args are the command the container runs: its entrypoint and the rest.
+	Path         string
+	Args         []string
 	RestartCount int
 	State        struct {
 		Status    string

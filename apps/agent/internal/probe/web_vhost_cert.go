@@ -7,9 +7,11 @@ package probe
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -62,15 +64,34 @@ func servedVhost(ctx context.Context, t Target) (Vhost, error) {
 	return list[i], nil
 }
 
+// keyFileName says whether a path names a key file (*.key): a certificate file may end in .pem, with or
+// without its key in it, a .key file holds the key alone.
+func keyFileName(p string) bool { return strings.HasSuffix(strings.ToLower(p), ".key") }
+
+// containerCertErr says in the words of readCapped why the certificate file of a vhost in a container
+// gave nothing: errors of the archive speak of the configuration.
+func containerCertErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, errNotInContainer):
+		return errors.New("is not in its container")
+	case errors.Is(err, errContainerConfLarge):
+		return fmt.Errorf("is larger than %d bytes", maxCertFileBytes)
+	}
+	return errors.New("cannot be read from its container")
+}
+
 // webVhostCert compares the certificate a vhost's file holds with the one its web server serves.
 // It finds the vhost again in the configuration (cachedVhosts): the server never names the file. It
 // shakes hands with the vhost's port through the guard, the domain as SNI, and reads the served
 // certificate as the tls sensor does (served_days_left, hostname_ok for the domain, chain_ok). From
 // the file it reads only the first certificate (file_days_left); a private key in the same file it
-// skips unparsed, a key file it never opens. reload_missing: the file holds another certificate than
-// is served, and one that lasts longer, so the server was not reloaded since it was renewed. A vhost
-// whose file the agent does not know (none in its block, or a path that is no plain absolute one)
-// gives the served values alone.
+// skips unparsed, a key file it never opens. The file of a vhost in a container it reads through the
+// container's archive (containerFS), never one named like a key file (*.key). reload_missing: the file
+// holds another certificate than is served, and one that lasts longer, so the server was not reloaded
+// since it was renewed. A vhost whose file the agent does not know (none in its block, or a path that
+// is no plain absolute one) gives the served values alone.
 func webVhostCert(ctx context.Context, t Target) (map[string]any, error) {
 	v, err := servedVhost(ctx, t)
 	if err != nil {
@@ -102,10 +123,17 @@ func webVhostCert(ctx context.Context, t Target) (map[string]any, error) {
 		"hostname_ok":      served["hostname_ok"],
 		"chain_ok":         served["chain_ok"],
 	}
-	if v.cert == "" || !safePath.MatchString(v.cert) {
+	if v.cert == "" || !safePath.MatchString(v.cert) || v.container != "" && keyFileName(v.cert) {
 		return values, nil
 	}
-	data, err := untilDone(ctx, func() ([]byte, error) { return readCapped(v.cert, maxCertFileBytes) })
+	data, err := untilDone(ctx, func() ([]byte, error) {
+		if v.container != "" {
+			// One file through the container's archive; a link to a key file it does not ask for.
+			data, err := newContainerFS(v.container).fileOf(ctx, v.cert, maxCertFileBytes, keyFileName)
+			return data, containerCertErr(err)
+		}
+		return readCapped(v.cert, maxCertFileBytes)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("the certificate file of %s %w", t.Name, err)
 	}
