@@ -143,6 +143,13 @@ def test_a_connection_without_a_server_keeps_its_name(test_client, db_session, a
     assert r.status_code == 422, r.text
     r = test_client.put(f"/api/connections/{created['id']}", json={"label": ""}, headers=headers)
     assert r.status_code == 422, r.text
+    # The 422 the OpenAPI declares (HTTPValidationError, R-1494).
+    [err] = r.json()["detail"]
+    assert (err["loc"], err["msg"], err["input"]) == (
+        ["body", "name"],
+        "Name darf nicht leer sein",
+        "",
+    )
 
 
 def test_a_connection_taken_off_or_left_by_its_server_keeps_the_name_it_showed(

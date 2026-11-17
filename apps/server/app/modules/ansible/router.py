@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
@@ -47,6 +48,24 @@ def list_playbooks(db: Session = Depends(get_db), _admin=Depends(get_current_adm
     return [p.to_dict() for p in playbooks]
 
 
+def _check_yaml(content: str) -> None:
+    """A 422 in the format the OpenAPI promises (HTTPValidationError, R-1494); the
+    content is not echoed back as input."""
+    try:
+        yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "content"),
+                    "msg": f"Ungueltiges YAML: {e}",
+                    "input": None,
+                }
+            ]
+        ) from None
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PlaybookOut)
 def create_playbook(
     data: PlaybookCreate,
@@ -55,10 +74,7 @@ def create_playbook(
     _admin=Depends(get_current_admin),
 ):
     # Validate YAML
-    try:
-        yaml.safe_load(data.content)
-    except yaml.YAMLError as e:
-        raise HTTPException(status_code=422, detail=f"Ungueltiges YAML: {e}")
+    _check_yaml(data.content)
 
     playbook_id = str(uuid.uuid4())
     playbook = Playbook(
@@ -148,10 +164,7 @@ def update_playbook(
 
     # Update content
     if "content" in sent and data.content is not None:
-        try:
-            yaml.safe_load(data.content)
-        except yaml.YAMLError as e:
-            raise HTTPException(status_code=422, detail=f"Ungueltiges YAML: {e}")
+        _check_yaml(data.content)
 
         # Delete the old file if the filename changed
         if playbook.filename != old_filename:

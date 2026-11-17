@@ -133,7 +133,10 @@ class TestFailure:
         assert res.status_code == 200, res.text
         res = _test(test_client, person, "ntfy")
         assert res.status_code == 422, res.text
-        assert res.json()["detail"].startswith("ntfy: target address not allowed")
+        # The 422 the OpenAPI declares (HTTPValidationError, R-1494).
+        [err] = res.json()["detail"]
+        assert (err["loc"], err["input"]) == (["body", "channel"], "ntfy"), res.text
+        assert err["msg"].startswith("ntfy: target address not allowed"), res.text
         assert "SECRETAUTH" not in res.text and "127.0.0.1" not in res.text
 
     def test_a_failed_send_is_502_with_its_neutral_text(self, test_client, person, monkeypatch):
