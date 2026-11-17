@@ -1,5 +1,5 @@
 # Monitoring-Katalog: Samba AD DC, ONLYOFFICE-Karte, Wiki.js 3, 3CX-Zertifikat, edulution — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-38 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-38 · Review: pro Task
 Spec: docs/features/kern-monitoring-38.md (Roadmap R-1491, R-1487, R-1488, R-1500, R-1445, R-1443, R-1489)
 Heavy: linux-full — neue App-Ansichten in apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
