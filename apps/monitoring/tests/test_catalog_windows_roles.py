@@ -120,9 +120,42 @@ def test_the_resting_backup_engine_still_finds_windows_backup():
     assert ("windows-backup", "wbengine") in match_inventory(stopped, CATALOG)
 
 
-def test_a_named_sql_server_instance_is_not_taken():
-    # MSSQL$<name> makes no instance key (the "$"); only the default instance is covered.
-    assert not any(m == "mssql" for m, _ in match_inventory(_block(["MSSQL$SHOP"]), CATALOG))
+def test_each_named_sql_server_instance_is_one_and_its_checks_ask_its_service():
+    # A key takes no "$": MSSQL$SHOP becomes MSSQL-SHOP, its checks ask MSSQL$SHOP (R-1479).
+    seen = match_inventory(_block(["MSSQLSERVER", "MSSQL$SHOP", "MSSQL$HR_2"]), CATALOG)
+    ours = {k: v for k, v in seen.items() if k[0] == "mssql"}
+    assert ours == {
+        ("mssql", "MSSQLSERVER"): {"unit": "MSSQLSERVER"},
+        ("mssql", "MSSQL-SHOP"): {"unit": "MSSQL$SHOP"},
+        ("mssql", "MSSQL-HR_2"): {"unit": "MSSQL$HR_2"},
+    }
+    module = CATALOG.modules["mssql"]
+    for key in ("service", "events"):
+        config, why = probe_config(
+            module, _check("mssql", key), "MSSQL-SHOP", ours[("mssql", "MSSQL-SHOP")], []
+        )
+        assert why is None, (key, why)
+        assert config["target"]["name"] == "MSSQL$SHOP"
+
+
+def test_a_stopped_named_sql_server_instance_finds_nothing():
+    stopped = _block(["MSSQL$SHOP"], state="inactive", sub="dead")
+    assert not any(m == "mssql" for m, _ in match_inventory(stopped, CATALOG))
+
+
+@pytest.mark.parametrize(
+    "service", ["postgresql-x64-16", "pm2-alice", "restic-backup", "kopia", "borgmatic"]
+)
+def test_a_systemd_pattern_takes_no_service_without_a_dot(service):
+    # Only a pattern with "$" holds for Windows services and rc.d scripts (kern-monitoring-40).
+    assert match_inventory(_block([service]), CATALOG) == {}
+
+
+def test_only_an_sql_server_service_takes_the_pattern():
+    # MSSQLFDLauncher$SHOP (full-text search) and SQLAgent$SHOP belong to the instance but
+    # are not it; MSSQL$ alone names none.
+    others = _block(["MSSQLFDLauncher$SHOP", "SQLAgent$SHOP", "MSSQL$"])
+    assert not any(m == "mssql" for m, _ in match_inventory(others, CATALOG))
 
 
 @pytest.mark.parametrize(
