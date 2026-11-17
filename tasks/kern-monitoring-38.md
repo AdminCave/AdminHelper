@@ -53,7 +53,7 @@ veröffentlichtes Image oder belegte Route: `[~]` mit Grund.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_catalog_wikijs.py
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-38.md
 
-### T6 — R-1443: 3CX-Zertifikat der Weboberfläche  [ ]
+### T6 — R-1443: 3CX-Zertifikat der Weboberfläche  [~] (braucht einen neuen Mechanismus (Check an genau einer Unit-Instanz, Port 443/5001/frei): R-1528, R-1443 zurueckgestellt)
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/threecx.py, apps/monitoring/tests/test_catalog_threecx.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
 Änderung: Port und Dienst der Weboberfläche an der 3CX-Doku belegen; ein TLS-Check an genau einer Instanz (eigenes
 Modul oder Ziel, nach dem Beleg). Braucht es einen neuen Katalog-Mechanismus: `[~]` und eigene Zeile.
