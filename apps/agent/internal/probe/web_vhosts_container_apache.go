@@ -22,8 +22,8 @@ var containerApacheConfs = []struct{ conf, root string }{
 }
 
 // containerApacheVhosts reads the vhosts of the Apache in a container: the <VirtualHost> blocks of its main
-// file and the files it includes, with ServerName, ServerAlias, SSLEngine and SSLCertificateFile. A container without a main
-// file at a known path has no Apache the agent reads. apachectl -S is not there to ask: every
+// file and the files it includes, with ServerName, ServerAlias, SSLEngine and SSLCertificateFile. A
+// container without a main file at a known path has no Apache the agent reads. apachectl -S is not there to ask: every
 // <VirtualHost> counts, also one in an <IfModule> or <IfDefine> that would not load.
 func containerApacheVhosts(ctx context.Context, fs *containerFS) ([]Vhost, error) {
 	for _, at := range containerApacheConfs {

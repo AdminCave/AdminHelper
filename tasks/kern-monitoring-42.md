@@ -1,5 +1,5 @@
 # vHosts von nginx und Apache im Container — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-42 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-42 · Review: pro Task
 Spec: docs/features/kern-monitoring-42.md (Roadmap R-1503)
 Heavy: linux-full — apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,14 +51,15 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T5
 Abhängt von: T2
 
-### T5 — R-1503: Doku DE+EN und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-42.md, tasks/kern-monitoring-42.md
+### T5 — R-1503: Doku DE+EN und CHANGELOG  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-42.md, tasks/kern-monitoring-42.md, apps/agent/internal/probe/web_vhost_cert.go, apps/agent/internal/probe/web_vhost_cert_linux_test.go, apps/agent/internal/probe/web_vhosts_container.go, apps/agent/internal/probe/web_vhosts_container_apache.go, docs/developer/agent.html, docs/en/developer/agent.html, docs/features/kern-monitoring-42.md
+Evidenz: run.sh[quick] agent scripts: 8 passed, 0 failed, 10 skipped @6657308ff 2026-11-17T11:03:04+01:00
+Review: approve (.ah-out/review/kern-monitoring-42/T5.verdict.json)
 Änderung: Abschnitt `app-module-vhosts`, Inventar-Liste und Zeile `web_domain`: vHosts im Container (Archiv-GET,
 veröffentlichte Ports, Host-Port, Deckel, Schlüssel ungelesen, kein `docker exec`, Nicht-Ziele); Entwickler-Doku zum
 Inventar. CHANGELOG-Fragment unter „### Added“.
-Verify: bash scripts/dev/verify.sh scripts --strict
+Verify: bash scripts/dev/verify.sh agent scripts --strict
 Doku: die Dateien dieser Task
-Task-Review: am Ende
 
 ## Entscheidungen
 - T2: Ein Container, in dem keiner der bekannten Pfade (`/etc/nginx/nginx.conf`, `/usr/local/nginx/conf/nginx.conf`
@@ -83,3 +84,6 @@ Task-Review: am Ende
   der Agent im Container nicht: jeder Eintrag ist ein Link und kostete ein eigenes `docker cp` (Regel 2026-11-09,
   Monitoring kostet keine Dienst-Leistung). Ein Verzeichnis-Include liest nur die oberste Ebene (Apache auch
   Unterverzeichnisse); der Agent listet keine Verzeichnisbäume, ein vHost dort fehlt.
+- T5 (Nits des T4-Prüfers): Die Fehler des Container-Lesers beim Zertifikat sagt `containerCertErr` in den Worten
+  von `readCapped` („is not in its container“, „is larger than … bytes“), statt von der Konfiguration zu sprechen;
+  T5 trägt dafür Code und wird von Task-Prüfer geprüft (Verify `agent scripts`).

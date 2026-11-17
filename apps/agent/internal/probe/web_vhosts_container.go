@@ -56,7 +56,8 @@ func ContainerVhosts(ctx context.Context) ([]Vhost, error) {
 		}
 		for _, v := range found {
 			for _, hostPort := range ports[v.Port] {
-				vhosts = append(vhosts, Vhost{Server: v.Server, Name: v.Name, Port: hostPort, TLS: v.TLS, cert: v.cert, container: c.ID})
+				vhosts = append(vhosts, Vhost{Server: v.Server, Name: v.Name, Port: hostPort, TLS: v.TLS,
+					cert: v.cert, container: c.ID})
 			}
 		}
 	}
@@ -136,8 +137,8 @@ func nginxConfArg(c containerInfo) string {
 // containerNginxVhosts reads the vhosts of the nginx in a container: its main file (conf, or the first
 // of containerNginxConfs there is) and the files it includes, joined into a dump of the form of
 // nginx -T for nginxVhosts. The names, the ports, TLS and the certificate file (a path in the container,
-// read through its archive, webVhostCert) stay; the root and the user are left. A container without a main file at a known path has no nginx
-// the agent reads.
+// read through its archive, webVhostCert) stay; the root and the user are left. A container without a
+// main file at a known path has no nginx the agent reads.
 func containerNginxVhosts(ctx context.Context, fs *containerFS, conf string) ([]Vhost, error) {
 	confs := containerNginxConfs
 	if conf != "" {

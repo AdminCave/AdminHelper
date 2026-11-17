@@ -75,7 +75,7 @@ im Container); sie verlassen den Host nicht.
 
 ## Doku-Impact
 `docs/admin/monitoring.html` und `docs/en/admin/monitoring.html` (Abschnitt `app-module-vhosts`, Inventar-Liste,
-Zeile `web_domain`), `docs/developer/monitoring.html` DE+EN (Inventar der vHosts), `changelog.d/kern-monitoring-42.md`.
+Zeile `web_domain`), `docs/developer/agent.html` DE+EN (Inventar der vHosts, `docker cp` in der Freigabeliste), `changelog.d/kern-monitoring-42.md`.
 
 ## Offene Fragen
 Keine: Kevin hat Weg (Archiv-GET) und Glob-Verhalten am 2026-11-17 entschieden.

@@ -226,7 +226,8 @@ func TestWebVhostCertReadsTheFileOfAContainerThroughItsArchive(t *testing.T) {
 	// A link to a key file ends the read before the key is asked for.
 	stubVhostCache(t, time.Now(), []Vhost{{Server: "nginx", Name: "svc.example.org", Port: uint16(port), TLS: true,
 		cert: "/etc/nginx/tls/link.pem", container: ctrID}}, nil)
-	if _, err := webVhostCert(ctx, vhostTarget(port)); !errors.Is(err, errNotInContainer) {
+	if _, err := webVhostCert(ctx, vhostTarget(port)); err == nil ||
+		err.Error() != "the certificate file of svc.example.org is not in its container" {
 		t.Errorf("a link to a key file: err = %v", err)
 	}
 	<-names
