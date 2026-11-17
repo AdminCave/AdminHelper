@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.46.0</span>
+          <span>v0.47.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -262,7 +262,28 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.46.0?</h2>
+          <h2>Was ist neu in 0.47.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.47.0 &ndash; Neues Desktop-Design, Monitoring-Module &amp; FreeBSD-Agent (2026-11-17)</div>
+              <p>
+                <strong>Added:</strong> Der Agent laeuft jetzt auch unter <strong>FreeBSD</strong> (14 und 15, als
+                pkg-Paket) und als Plugin fuer <strong>OPNsense</strong>. Das Monitoring erkennt Dienste auf dem
+                Host und bindet passende <strong>Katalog-Module</strong> (Datenbanken, Mail, Verzeichnisdienste,
+                Moodle, Nextcloud AIO, WordPress, BigBlueButton u.&nbsp;a.) mit nur lesenden Sensoren des Agents; neu
+                sind der Status <code>info</code>, Stummschalten und eine Zusammenfassung per E-Mail. Der Desktop bringt
+                <strong>eingebettetes RDP</strong> (Vorschau), abdockbare Terminal- und RDP-Tabs, Snippets und eine
+                Befehlspalette (Strg+K).
+                <strong>Changed:</strong> Der Desktop folgt dem neuen Design; Verbindungsliste, Editor und
+                Benachrichtigungen sind neu aufgebaut. Der Stack laeuft auf <strong>PostgreSQL 18</strong> mit einem
+                neuen Volume &ndash; <code>update.sh</code> uebernimmt die Daten; vorher ein Backup ziehen.
+                <strong>Security:</strong> frps nimmt nur die Proxies an, die der Server je Host erzeugt, der Agent
+                prueft das frps-Zertifikat strenger, und die Fuehler lesen nur gepruefte Dateien. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

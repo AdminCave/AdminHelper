@@ -49,6 +49,9 @@ rm -rf -- "$APP_DATA/workspaces.json" "$APP_DATA/workspaces" "$APP_DATA/prefs.js
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$APP_DATA/settings.json"
 # wdio.conf.js opens the workspace named here, as lib_e2e_stack.sh does it.
 export AH_E2E_WORKSPACE=standard
+# The server box_serverbox.sh seeds first, with the agent that pushes; the specs look it
+# up by name (monitoring-check.live.js), and it is the one the app selects first.
+export AH_E2E_SERVER_NAME=mb-agent
 
 export AH_SERVER_URL="https://$SRV_IP" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$ADMIN_PW" \
        MONITOR_API_KEY="$MONITOR_KEY" E2E_DIR
