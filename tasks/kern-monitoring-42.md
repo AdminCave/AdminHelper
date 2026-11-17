@@ -1,5 +1,5 @@
 # vHosts von nginx und Apache im Container — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-42 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-42 · Review: pro Task
 Spec: docs/features/kern-monitoring-42.md (Roadmap R-1503)
 Heavy: linux-full — apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
