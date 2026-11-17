@@ -17,15 +17,19 @@ state (ok, warning, critical, unknown from the exit code) and the number of chec
 OK, never their text. It runs only code that belongs to root and that user and that no one
 else may write, below the dataroot too; a Moodle whose directories anyone may write (the
 default directorypermissions 02777) or whose dataroot belongs to another user stays unknown.
+
+Every 15 minutes the agent reads how full the file system of the dataroot (moodledata) is
+(moodle_data, R-1504): the dataroot of config.php, read without running code, of it only statfs as
+the sensor fs does. From 80 % used a warning, from 90 % critical, inodes from 90 % a warning.
 """
 
 MODULE = {
     "id": "moodle_native",
     "name": "Moodle (host)",
-    "version": 1,
+    "version": 2,
     "description": (
         "Moodle installed on the host behind its web server: whether the site answers, and "
-        "the state of its own status checks."
+        "the state of its own status checks, and how full its moodledata is."
     ),
     "detect": {"vhost_apps": ["moodle"]},
     "instance": "vhost",
@@ -54,10 +58,25 @@ MODULE = {
                 {"field": "state", "op": "eq", "value": "warning", "level": "warning"},
             ],
         },
+        {
+            "key": "data",
+            "name": "moodledata",
+            "sensor": "app",
+            "target": {"kind": "vhost"},
+            "params": {"view": "moodle_data"},
+            "interval": 900,
+            "fields": ["used_pct", "free_bytes", "inodes_used_pct"],
+            "rules": [
+                {"field": "used_pct", "op": "ge", "value": 80, "level": "warning"},
+                {"field": "used_pct", "op": "ge", "value": 90, "level": "critical"},
+                {"field": "inodes_used_pct", "op": "ge", "value": 90, "level": "warning"},
+            ],
+        },
     ],
     "card": [
         {"check_key": "site", "field": "status_code", "label": "Site"},
         {"check_key": "checks", "field": "state", "label": "Status checks"},
         {"check_key": "checks", "field": "not_ok", "label": "Checks not OK"},
+        {"check_key": "data", "field": "used_pct", "label": "moodledata %"},
     ],
 }

@@ -104,6 +104,7 @@ var appViews = map[string]appView{
 	"npm_certs":         {kinds: containerKinds, read: npmCerts},
 	"nextcloud_aio":     {kinds: containerKinds, read: nextcloudAIO},
 	"moodle_checks":     {kinds: vhostKinds, read: moodleChecks},
+	"moodle_data":       {kinds: vhostKinds, read: moodleDataUsage},
 	"mssql_events":      {kinds: unitKinds, read: mssqlEvents},
 	"nginx_status":      {kinds: unitKinds, read: nginxStatus},
 	"ntpsec_status":     {kinds: unitKinds, read: ntpsecStatus},

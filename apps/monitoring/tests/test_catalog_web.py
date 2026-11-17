@@ -356,9 +356,20 @@ def test_haproxy_warns_for_a_certificate_that_ends_within_14_days(change, want):
     assert _status("haproxy", "certs", **values) == want
 
 
+@pytest.mark.parametrize(("reload_missing", "want"), [(0, "ok"), (1, "warning")])
+def test_haproxy_warns_for_a_certificate_it_has_not_reloaded(reload_missing, want):
+    values = {"certs": 3, "min_days_left": 40, "expiring_14d": 0, "reload_missing": reload_missing}
+    assert _status("haproxy", "certs", **values) == want
+
+
 def test_haproxy_without_certificates_is_fine():
     # The agent tells no min_days_left without a certificate; no rule may need it.
     assert _status("haproxy", "certs", certs=0, expiring_14d=0) == "ok"
+
+
+def test_haproxy_without_an_answer_of_its_socket_rates_the_files_alone():
+    # A socket of level user tells no loaded certificate: reload_missing stays away.
+    assert _status("haproxy", "certs", certs=3, min_days_left=40, expiring_14d=0) == "ok"
 
 
 def _vhost(name, port=443, tls=True, server="nginx", app=""):
@@ -555,3 +566,25 @@ def test_the_moodle_checks_ask_their_view_every_15_minutes():
 )
 def test_the_moodle_checks_rate_the_state_of_checks_php(state, want):
     assert _status("moodle_native", "checks", state=state, not_ok=1) == want
+
+
+def test_the_moodledata_asks_its_view_every_15_minutes():
+    assert _check("moodle_native", "data").interval == 900
+    config = _config("moodle_native", "data")
+    assert config["params"] == {"view": "moodle_data"}
+    config.pop("_check_id")
+    ProbeConfig.model_validate(config)
+
+
+@pytest.mark.parametrize(
+    ("used", "inodes", "want"),
+    [
+        (79.9, 89.9, "ok"),
+        (80, 10, "warning"),
+        (90, 10, "critical"),
+        (10, 90, "warning"),
+    ],
+)
+def test_the_moodledata_rates_like_a_disk(used, inodes, want):
+    values = {"used_pct": used, "free_bytes": 1 << 30, "inodes_used_pct": inodes}
+    assert _status("moodle_native", "data", **values) == want
