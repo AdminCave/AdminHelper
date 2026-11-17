@@ -6,7 +6,7 @@
 the one of linuxserver.io get the container check and GET /favicon.ico on 3000 in plain HTTP,
 the one path both versions answer; anything but 200 is critical; the database container of
 the project and other images are not taken. An image tagged 2 or 2.x also gets GET /healthz
-(R-1397), which Wiki.js 3 does not have."""
+(R-1397), which Wiki.js 3 does not have; one tagged 3 or 3.x gets GET /_ready (R-1445)."""
 
 from datetime import UTC, datetime
 
@@ -88,7 +88,7 @@ def _status(check_key, values, status="ok", error=""):
 
 def test_the_module_loads_with_its_checks():
     assert CATALOG.errors == ()
-    assert list(CHECKS) == ["container", "web", "healthz"]
+    assert list(CHECKS) == ["container", "web", "healthz", "ready"]
     assert MODULE.detect.container_images == [
         "requarks/wiki",
         "ghcr.io/requarks/wiki",
@@ -128,6 +128,21 @@ def test_the_health_check_asks_healthz_on_3000_only_for_tag_2():
     assert (check.interval, check.test_object) == (300, False)
 
 
+def test_the_ready_check_asks_ready_on_3000_only_for_tag_3():
+    check = CHECKS["ready"]
+    assert check.sensor == "http"
+    # graceful-server answers only this exact path, ahead of the routes of Wiki.js.
+    assert check.params == {"path": "/_ready", "method": "GET"}
+    assert (check.target.kind, check.target.port_hint, check.target.scheme) == (
+        "container",
+        3000,
+        "http",
+    )
+    assert check.image_tags == ["3", "3.*"]
+    assert check.fields == ["status_code"]
+    assert (check.interval, check.test_object) == (300, False)
+
+
 def test_wikijs_in_its_project_gets_its_container_and_3000():
     block = _block(COMPOSE)
     assert _found(block) == {
@@ -141,6 +156,7 @@ def test_wikijs_in_its_project_gets_its_container_and_3000():
         "container": ("docs-wiki-1", None),
         "web": ("docs-wiki-1", None),
         "healthz": ("docs-wiki-1", None),
+        "ready": (None, "container docs-wiki-1 runs the tag 2, the check needs 3, 3.*"),
     }
     config, why = probe_config(
         MODULE, CHECKS["web"], "docs", _found(block)["docs"], block["containers"]
@@ -172,13 +188,20 @@ def test_either_version_and_either_image_get_the_container_and_3000(image, ports
     block = _block([_container("wiki", image, ports=ports)])
     bound = _bind(block, "wiki")
     assert (bound["container"], bound["web"]) == (("wiki", None), ("wiki", None))
+    why = f"container wiki runs the tag {tag or '(unknown)'}, the check needs "
     if tag in ("2", "2.5", "2.5.307"):
         assert bound["healthz"] == ("wiki", None)
+        assert bound["ready"] == (None, why + "3, 3.*")
         assert _found(block)["wiki"]["tag_checks"] == ["healthz"]
+    elif tag in ("3", "3.3.1"):
+        # Wiki.js 3 answers /healthz with 404 and has /_ready instead.
+        assert bound["healthz"] == (None, why + "2, 2.*")
+        assert bound["ready"] == ("wiki", None)
+        assert _found(block)["wiki"]["tag_checks"] == ["ready"]
     else:
-        # Wiki.js 3 answers /healthz with 404; an unknown version is not asked either.
-        why = f"container wiki runs the tag {tag or '(unknown)'}, the check needs 2, 2.*"
-        assert bound["healthz"] == (None, why)
+        # An unknown version is asked neither.
+        assert bound["healthz"] == (None, why + "2, 2.*")
+        assert bound["ready"] == (None, why + "3, 3.*")
         assert _found(block)["wiki"]["tag_checks"] == []
 
 
@@ -222,6 +245,31 @@ def test_the_web_check_is_critical_on_anything_but_200(values, status, error, wa
 )
 def test_the_health_check_is_critical_on_anything_but_200(values, status, error, want):
     assert _status("healthz", values, status, error) == want
+
+
+def _status3(values, status="ok", error=""):
+    containers = [_container("docs-wiki-1", "ghcr.io/requarks/wiki:3", "docs", "wiki")]
+    block = _block(containers)
+    config, why = probe_config(
+        MODULE, CHECKS["ready"], "docs", _found(block)["docs"], block["containers"]
+    )
+    assert why is None, why
+    result = {"ts": T0, "duration_ms": 40, "status": status, "values": values, "error": error}
+    report = {"timestamp": STAMP, "probes": {"chk": result}}
+    return ProbeChecker().evaluate({**config, "_check_id": "chk"}, report)[0]
+
+
+@pytest.mark.parametrize(
+    ("values", "status", "error", "want"),
+    [
+        ({"status_code": 200}, "ok", "", "ok"),
+        # /_ready answers 503 while the server starts or shuts down.
+        ({"status_code": 503}, "ok", "", "critical"),
+        ({}, "error", "connection refused", "critical"),
+    ],
+)
+def test_the_ready_check_is_critical_on_anything_but_200(values, status, error, want):
+    assert _status3(values, status, error) == want
 
 
 @pytest.mark.parametrize(

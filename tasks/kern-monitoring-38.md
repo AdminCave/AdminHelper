@@ -44,8 +44,10 @@ Review: approve (.ah-out/review/kern-monitoring-38/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py
 Doku: changelog.d/kern-monitoring-38.md (die Admin-Doku nennt die Kartenfelder nicht)
 
-### T5 — R-1445: Wiki.js 3 Bereitschafts-Check  [ ]
+### T5 — R-1445: Wiki.js 3 Bereitschafts-Check  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/wikijs.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_wikijs.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e268a16ee 2026-11-17T06:38:40+01:00
+Review: approve (.ah-out/review/kern-monitoring-38/T5.verdict.json)
 Änderung: Route und Tags von Wiki.js 3 an den Quellen belegen; dann ein Check mit `image_tags` 3, 3.*. Ohne
 veröffentlichtes Image oder belegte Route: `[~]` mit Grund.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_catalog_wikijs.py

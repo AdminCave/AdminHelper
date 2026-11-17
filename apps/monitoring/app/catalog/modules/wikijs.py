@@ -10,19 +10,22 @@ answers and nothing more. Wiki.js 2 also has /healthz, which looks at the databa
 Wiki.js 3, which the same image carries under the tag 3, dropped the route and answers it
 like a page with nothing public, 404. So /healthz is bound only to an image tagged 2 or 2.x
 (R-1397); a move to 3 makes the finding changed, and adopting it switches /healthz off.
-Anything but 200 is critical. The images expose 3000 (the official one 3443 for HTTPS as
-well) and have no HEALTHCHECK of their own.
+Wiki.js 3 has /_ready instead (R-1445): the library graceful-server answers it ahead of the
+web framework, without a login, 200 once the server listens and 503 while it starts or shuts
+down; it does not ask the database, which Wiki.js 3 connects to before it listens. So /_ready
+is bound to an image tagged 3 or 3.x. Anything but 200 is critical. The images expose 3000
+(the official one 3443 for HTTPS as well) and have no HEALTHCHECK of their own.
 
-Not covered: the database of Wiki.js 3 and of an image tagged otherwise (latest, the
-version-2.x tags of linuxserver.io: a connection lost while the wiki runs leaves the icon at
-200), Wiki.js installed on the host (the admin names its unit), and a wiki that serves HTTPS
-on 3000 itself.
+Not covered: the database of Wiki.js 3 while it runs and of an image tagged otherwise
+(latest, the version-2.x tags of linuxserver.io: a connection lost while the wiki runs leaves
+the icon at 200), Wiki.js installed on the host (the admin names its unit), and a wiki that
+serves HTTPS on 3000 itself.
 """
 
 MODULE = {
     "id": "wikijs",
     "name": "Wiki.js",
-    "version": 2,
+    "version": 3,
     "description": "Wiki.js from its images: the container and whether its server answers.",
     "detect": {
         "container_images": [
@@ -64,6 +67,17 @@ MODULE = {
             "target": {"kind": "container", "port_hint": 3000, "scheme": "http"},
             "params": {"path": "/healthz"},
             "image_tags": ["2", "2.*"],
+            "interval": 300,
+            "fields": ["status_code"],
+            "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
+        },
+        {
+            "key": "ready",
+            "name": "Ready",
+            "sensor": "http",
+            "target": {"kind": "container", "port_hint": 3000, "scheme": "http"},
+            "params": {"path": "/_ready"},
+            "image_tags": ["3", "3.*"],
             "interval": 300,
             "fields": ["status_code"],
             "rules": [{"field": "status_code", "op": "ne", "value": 200, "level": "critical"}],
