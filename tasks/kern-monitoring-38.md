@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_dir
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-38.md
 Abhängt von: T2
 
-### T4 — R-1500: ONLYOFFICE-Karte zeigt body_match  [ ]
+### T4 — R-1500: ONLYOFFICE-Karte zeigt body_match  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_catalog_onlyoffice.py, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @53b9bab7b 2026-11-17T06:23:03+01:00
+Review: approve (.ah-out/review/kern-monitoring-38/T4.verdict.json)
 Änderung: beide Kartenfelder „Health check“ auf `body_match` (Kevin 2026-11-17).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py
 Doku: changelog.d/kern-monitoring-38.md (die Admin-Doku nennt die Kartenfelder nicht)

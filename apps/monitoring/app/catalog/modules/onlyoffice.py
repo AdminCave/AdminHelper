@@ -102,7 +102,7 @@ MODULE = {
         {"check_key": "container", "field": "state", "label": "Container"},
         {"check_key": "container", "field": "health", "label": "Container health"},
         {"check_key": "service", "field": "active_state", "label": "Docservice"},
-        {"check_key": "healthcheck", "field": "status_code", "label": "Health check"},
-        {"check_key": "container_healthcheck", "field": "status_code", "label": "Health check"},
+        {"check_key": "healthcheck", "field": "body_match", "label": "Health check"},
+        {"check_key": "container_healthcheck", "field": "body_match", "label": "Health check"},
     ],
 }
