@@ -156,6 +156,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
         {"served_days_left", "hostname_ok", "chain_ok", "file_days_left", "reload_missing"}
     ),
     "moodle_checks": frozenset({"state", "not_ok"}),
+    "moodle_data": frozenset({"used_pct", "free_bytes", "inodes_used_pct"}),
     "service_config": frozenset({"config_ok"}),
     "nginx_status": frozenset(
         {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
@@ -164,7 +165,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     "haproxy_servers": frozenset(
         {"backends", "backends_down", "servers", "servers_down", "servers_maint"}
     ),
-    "haproxy_certs": frozenset({"certs", "min_days_left", "expiring_14d"}),
+    "haproxy_certs": frozenset({"certs", "min_days_left", "expiring_14d", "reload_missing"}),
     "fpm_pools": frozenset(
         {
             "pools",
@@ -440,6 +441,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "unifi_network": _UNIT,
     "web_vhost_cert": frozenset({"vhost"}),
     "moodle_checks": frozenset({"vhost"}),
+    "moodle_data": frozenset({"vhost"}),
     "haproxy_certs": _UNIT,
 }
 
@@ -733,6 +735,7 @@ class AppParams(_Params):
         "web_config",
         "web_vhost_cert",
         "moodle_checks",
+        "moodle_data",
         "service_config",
         "nginx_status",
         "apache_status",

@@ -5,11 +5,13 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -43,6 +45,50 @@ var moodleFirstLine = regexp.MustCompile(`(?m)^(?:OK|WARNING|CRITICAL|UNKNOWN): 
 // it, maybe coloured. A line of a check's details that html_to_text broke goes out without the
 // column; one with a '|' in it has more than a word before it.
 var moodleStatus = regexp.MustCompile(`^ *(?:\x1b\[[0-9;]*m)*[A-Za-z]+(?:\x1b\[[0-9;]*m)*$`)
+
+// maxMoodleConfig caps what is read of config.php: a few hundred lines of assignments.
+const maxMoodleConfig = 64 << 10
+
+// moodleDataroot is the one assignment of the dataroot in config.php that the agent takes: a literal
+// in single quotes on a line of its own. Any other form (a variable, a concatenation, a second
+// assignment) names a directory only PHP can tell.
+var moodleDataroot = regexp.MustCompile(`(?m)^[ \t]*\$CFG->dataroot[ \t]*=[ \t]*'([^'\\\n]+)'[ \t]*;`)
+
+// moodleDatarootOf is the dataroot config.php names (moodleDataroot), an absolute path.
+func moodleDatarootOf(conf []byte) (string, error) {
+	m := moodleDataroot.FindSubmatch(conf)
+	if m == nil || bytes.Count(conf, []byte("$CFG->dataroot")) != 1 || !filepath.IsAbs(string(m[1])) {
+		return "", fmt.Errorf("%w: the config.php of the Moodle names no dataroot the agent can tell", ErrUnsupported)
+	}
+	return string(m[1]), nil
+}
+
+// moodleDataUsage reads how full the file system of the dataroot of the Moodle a vhost serves is, as the
+// sensor fs does (fsValues): moodledata holds the uploaded files and grows with the site. The dataroot
+// it takes from config.php of the document root as moodleOwned does, without running code; it asks
+// only statfs of the directory, reads nothing in it and says no path.
+func moodleDataUsage(ctx context.Context, t Target) (map[string]any, error) {
+	v, err := servedVhost(ctx, t)
+	switch {
+	case err != nil:
+		return nil, err
+	case v.App != "moodle":
+		return nil, fmt.Errorf("%w: %s serves no Moodle", ErrUnsupported, t.Name)
+	}
+	conf, err := readCapped(filepath.Join(v.root, "config.php"), maxMoodleConfig)
+	if err != nil {
+		return nil, fmt.Errorf("%w: the config.php of the Moodle cannot be read", ErrUnsupported)
+	}
+	dataroot, err := moodleDatarootOf(conf)
+	if err != nil {
+		return nil, err
+	}
+	u, err := dirStatfs(nil, dataroot, "the dataroot of the Moodle")
+	if err != nil {
+		return nil, err
+	}
+	return fsValues(u), nil
+}
 
 // moodleChecks runs the status checks of the Moodle a vhost serves, admin/cli/checks.php of its
 // document root, as the user its web server runs as (nginx's user, Apache's User), never as root:

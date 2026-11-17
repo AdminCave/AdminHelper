@@ -89,3 +89,98 @@ func TestHAProxyCertsWithoutCertificatesOrTooMany(t *testing.T) {
 		t.Errorf("haproxy_certs of a file without a certificate = %v, %v; want an error without its path", got, err)
 	}
 }
+
+// haproxyCertAnswer is HAProxy's answer to show ssl cert <name> for a certificate ending at end, the
+// form of the Management Guide's example.
+func haproxyCertAnswer(name string, end time.Time) string {
+	return "Filename: " + name + "\nStatus: Used\nSerial: 03ECC19BA54B25E85ABA46EE561B9A10D26F\n" +
+		"notBefore: Sep 13 21:20:24 2019 GMT\nnotAfter: " + end.UTC().Format(haproxyNotAfterLayout) +
+		"\nSubject: /CN=x\nSHA1 FingerPrint: 417A11CAE25F607B24F638B4A8AEE51D1E211477\n\n"
+}
+
+func TestHAProxyCertsCountsTheFilesHAProxyDidNotReload(t *testing.T) {
+	stubNow(t, start)
+	dir := t.TempDir()
+	day := 24 * time.Hour
+	renewed := writeCertFile(t, dir, "renewed.pem", namedCertPEM(t, "a.example.org", start.Add(90*day), true))
+	same := writeCertFile(t, dir, "same.pem", namedCertPEM(t, "b.example.org", start.Add(30*day), true))
+	unlisted := writeCertFile(t, dir, "unlisted.pem", namedCertPEM(t, "c.example.org", start.Add(80*day), true))
+	// The file older than what HAProxy has loaded (it was replaced by hand): no reload is missing.
+	older := writeCertFile(t, dir, "older.pem", namedCertPEM(t, "d.example.org", start.Add(10*day), true))
+	haproxyConfigFile(t, "global\n  stats socket /run/haproxy/admin.sock mode 660 level operator\n"+
+		"frontend https\n  bind :443 ssl crt "+renewed+" crt "+same+" crt "+unlisted+" crt "+older+"\n")
+	answers := map[string]string{
+		"show ssl cert":            "# transaction\n*" + unlisted + "\n# filename\n" + renewed + "\n" + same + "\n" + older + "\n/etc/other.pem\n",
+		"show ssl cert " + renewed: haproxyCertAnswer(renewed, start.Add(20*day)),
+		"show ssl cert " + same:    haproxyCertAnswer(same, start.Add(30*day)),
+		"show ssl cert " + older:   haproxyCertAnswer(older, start.Add(40*day)),
+	}
+	_, sent := stubHAProxy(t, "/run/haproxy/admin.sock", answers)
+
+	got, err := haproxyCerts(context.Background(), Target{Kind: kindUnit, Name: "haproxy.service"})
+	if err != nil || got["reload_missing"] != 1 || got["certs"] != 4 {
+		t.Errorf("haproxy_certs = %v, %v; want reload_missing 1 of 4 certs", got, err)
+	}
+	for _, cmd := range *sent {
+		if strings.Contains(cmd, unlisted) || strings.Contains(cmd, "other.pem") {
+			t.Errorf("asked %q: only files of the bind lines that HAProxy lists are asked", cmd)
+		}
+	}
+}
+
+func TestHAProxyCertsWithoutAnAnswerOfTheSocketHasNoReloadField(t *testing.T) {
+	stubNow(t, start)
+	dir := t.TempDir()
+	file := writeCertFile(t, dir, "a.pem", namedCertPEM(t, "a.example.org", start.Add(90*24*time.Hour), true))
+	cfg := "frontend https\n  bind :443 ssl crt " + file + "\n"
+	ctx, unit := context.Background(), Target{Kind: kindUnit, Name: "haproxy.service"}
+	for name, answers := range map[string]map[string]string{
+		"refused":       {"show ssl cert": "Can't allocate memory!\n\n"},
+		"unknown":       {"show ssl cert": "Unknown command. Please enter one of the following commands only :\n"},
+		"other file":    {"show ssl cert": "# filename\n" + file + "\n", "show ssl cert " + file: haproxyCertAnswer("/etc/x.pem", start)},
+		"no notAfter":   {"show ssl cert": "# filename\n" + file + "\n", "show ssl cert " + file: "Filename: " + file + "\n\n"},
+		"not listed":    {"show ssl cert": "# filename\n/etc/x.pem\n"},
+		"detail denied": {"show ssl cert": "# filename\n" + file + "\n", "show ssl cert " + file: "Permission denied\n\n"},
+	} {
+		haproxyConfigFile(t, "global\n  stats socket /run/h.sock\n"+cfg)
+		stubHAProxy(t, "/run/h.sock", answers)
+		got, err := haproxyCerts(ctx, unit)
+		if _, has := got["reload_missing"]; err != nil || has || got["certs"] != 1 {
+			t.Errorf("%s: haproxy_certs = %v, %v; want the certificate without reload_missing", name, got, err)
+		}
+	}
+	haproxyConfigFile(t, cfg)
+	if got, err := haproxyCerts(ctx, unit); err != nil || got["reload_missing"] != nil {
+		t.Errorf("without a stats socket: haproxy_certs = %v, %v; want no reload_missing", got, err)
+	}
+}
+
+func TestHAProxyCertsNeverAsksANameThatChainsACommand(t *testing.T) {
+	stubNow(t, start)
+	// A bind line names only plain paths; a file in a crt directory may be named anyhow.
+	dir := t.TempDir()
+	file := writeCertFile(t, dir, "a;help.pem", namedCertPEM(t, "a.example.org", start.Add(90*24*time.Hour), true))
+	haproxyConfigFile(t, "global\n  stats socket /run/h.sock level operator\nfrontend https\n  bind :443 ssl crt "+dir+"\n")
+	_, sent := stubHAProxy(t, "/run/h.sock", map[string]string{"show ssl cert": "# filename\n" + file + "\n"})
+
+	got, err := haproxyCerts(context.Background(), Target{Kind: kindUnit, Name: "haproxy.service"})
+	if _, has := got["reload_missing"]; err != nil || has || got["certs"] != 1 {
+		t.Errorf("haproxy_certs = %v, %v; want the certificate without reload_missing", got, err)
+	}
+	for _, cmd := range *sent {
+		if strings.Contains(cmd, ";") {
+			t.Errorf("asked %q: a semicolon chains a second command", cmd)
+		}
+	}
+}
+
+func TestHAProxyCertEndReadsNotAfterOfThatFile(t *testing.T) {
+	answer := []byte("Filename: /etc/a.pem\nStatus: Used\nnotBefore: Sep 13 21:20:24 2019 GMT\nnotAfter: Dec  2 21:20:24 2019 GMT\n")
+	end, ok := haproxyCertEnd(answer, "/etc/a.pem")
+	if want := time.Date(2019, 12, 2, 21, 20, 24, 0, time.UTC); !ok || !end.Equal(want) {
+		t.Errorf("notAfter = %v, %v; want %v", end, ok, want)
+	}
+	if _, ok := haproxyCertEnd(answer, "/etc/b.pem"); ok {
+		t.Error("the answer for another file was taken")
+	}
+}
