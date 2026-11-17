@@ -14,7 +14,10 @@ DOWN is critical, a server DOWN a warning. Servers in maintenance are counted ap
 rated, a maintenance is set on purpose. No backend or server name leaves the host. Daily it
 reads the certificate files the configuration names (`bind … crt`, a file or a directory; R-1435)
 and counts them and those that end within 14 days (a warning); a private key in such a file it
-skips unparsed, and no name or path leaves the host.
+skips unparsed, and no name or path leaves the host. With a stats socket of level operator it also
+asks which certificates HAProxy has loaded (`show ssl cert`): a file whose certificate lasts longer
+than the loaded one was renewed without a reload of HAProxy (reload_missing, a warning; R-1502).
+A socket of level user gives no answer, and the field stays away.
 
 On OPNsense the agent reads the socket of the plugin os-haproxy (/var/run/haproxy.socket); that
 the plugin enables the rc.d script, so that the discovery finds it, is not verified.
@@ -25,7 +28,7 @@ Not covered: HAProxy in a container.
 MODULE = {
     "id": "haproxy",
     "name": "HAProxy",
-    "version": 2,
+    "version": 3,
     "description": (
         "HAProxy from its package: the unit, a daily configuration test and the backends "
         "and servers of its stats socket, and the lifetime of its certificates."
@@ -75,8 +78,18 @@ MODULE = {
             "target": {"kind": "unit"},
             "params": {"view": "haproxy_certs"},
             "interval": 86400,
-            "fields": ["certs", "min_days_left", "expiring_14d"],
-            "rules": [{"field": "expiring_14d", "op": "gt", "value": 0, "level": "warning"}],
+            "fields": ["certs", "min_days_left", "expiring_14d", "reload_missing"],
+            "rules": [
+                {"field": "expiring_14d", "op": "gt", "value": 0, "level": "warning"},
+                # A socket of level user or none: the field stays away, which is no fault.
+                {
+                    "field": "reload_missing",
+                    "op": "gt",
+                    "value": 0,
+                    "level": "warning",
+                    "if_absent": "ok",
+                },
+            ],
         },
     ],
     "card": [
@@ -84,7 +97,7 @@ MODULE = {
         {"check_key": "config", "field": "config_ok", "label": "Configuration loads"},
         {"check_key": "servers", "field": "backends_down", "label": "Backends down"},
         {"check_key": "servers", "field": "servers_down", "label": "Servers down"},
-        {"check_key": "servers", "field": "servers_maint", "label": "Servers in maintenance"},
         {"check_key": "certs", "field": "expiring_14d", "label": "Certificates expiring"},
+        {"check_key": "certs", "field": "reload_missing", "label": "Certificates not reloaded"},
     ],
 }

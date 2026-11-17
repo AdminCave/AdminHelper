@@ -303,8 +303,9 @@ def test_the_app_views_are_those_the_agent_returns():
             "reload_missing",
             "served_days_left",
         ],
-        "haproxy_certs": ["certs", "expiring_14d", "min_days_left"],
+        "haproxy_certs": ["certs", "expiring_14d", "min_days_left", "reload_missing"],
         "moodle_checks": ["not_ok", "state"],
+        "moodle_data": ["free_bytes", "inodes_used_pct", "used_pct"],
         "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
         "backuppc_status": [
             "backup_age_max_s",
@@ -446,6 +447,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "pm2_apps": ["unit"],
         "web_vhost_cert": ["vhost"],
         "moodle_checks": ["vhost"],
+        "moodle_data": ["vhost"],
         "haproxy_certs": ["unit"],
         "es_nodes": ["container", "unit"],
         "backuppc_status": ["unit"],

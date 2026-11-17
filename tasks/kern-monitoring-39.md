@@ -1,5 +1,5 @@
 # HAProxy fehlender Reload, Platz in moodledata — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-39 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-39 · Review: am Ende
 Spec: docs/features/kern-monitoring-39.md (Roadmap R-1502, R-1504)
 Heavy: linux-full — neue Socket-Frage und App-Ansicht in apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -27,8 +27,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html DE+EN
 
-### T3 — R-1502, R-1504: Monitoring — Katalog und Doku  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/app/catalog/modules/moodle_native.py, apps/monitoring/tests/test_catalog_web.py, apps/monitoring/tests/test_catalog_sensors.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-39.md, tasks/kern-monitoring-39.md
+### T3 — R-1502, R-1504: Monitoring — Katalog und Doku  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/app/catalog/modules/moodle_native.py, apps/monitoring/tests/test_catalog_web.py, apps/monitoring/tests/test_catalog_sensors.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-39.md, tasks/kern-monitoring-39.md, apps/monitoring/app/catalog/sensors.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @cce3c0b20 2026-11-17T08:05:35+01:00
+Review: am Ende (Branch-Review)
 Änderung: `haproxy`: Feld `reload_missing`, Regel `> 0` warning, Karte, Version +1. `moodle_native` v2: Check `data`
 (`moodle_data`, 900 s; ab 80 % warning, ab 90 % critical, Inodes ab 90 % warning), Karte. Tests im Katalog. Die
 Modultabelle DE und EN, CHANGELOG.
@@ -39,3 +41,4 @@ Abhängt von: T1, T2
 ## Entscheidungen
 - T1: `*`-Einträge der Liste brauchen keinen eigenen Filter: sie stehen unter `# transaction` als `*<pfad>` und treffen keine Datei einer bind-Zeile (Gegenprobe ohne Filter grün, deshalb weggelassen). notAfter wird in UTC geparst (OpenSSL druckt GMT). Namen mit Leerzeichen oder Backslash werden nicht gefragt (die CLI würde sie teilen oder entschärfen).
 - T2: Die Ansicht heißt im Code `moodleDataUsage` (der Test-Helfer `moodleData` war belegt); `moodleDataroot`, `maxMoodleConfig` und das Lesen des dataroot (`moodleDatarootOf`) liegen jetzt in `app_moodle.go`, damit die Ansicht ohne Build-Tag auskommt; Windows meldet über `dirStatfs` `unsupported`, `app_moodle_windows.go` bleibt unverändert.
+- T3: Die HAProxy-Karte nimmt höchstens sechs Einträge; „Servers in maintenance“ weicht „Certificates not reloaded“ (servers_maint bleibt Feld des Checks, unbewertet). Die Regel reload_missing trägt `if_absent: ok`: ohne Socket der Stufe operator fehlt das Feld, und der Check bewertet die Dateien allein.
