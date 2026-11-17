@@ -25,18 +25,18 @@ Doku: docs/developer/agent.html DE+EN
 Abhängt von: T1
 
 ### T3 — R-1491, R-1487, R-1488: Katalog samba-ad-dc  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/samba_ad_dc.py, apps/monitoring/tests/test_catalog_directory.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/samba_ad_dc.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/tests/test_catalog_directory.py, apps/monitoring/tests/test_catalog_sensors.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
 Änderung: Checks `side_units` (warn bei > 0) und `dns` (warn bei `srv_missing` > 0), Karte mit `partners`,
-Docstring ohne die erledigten „Not covered“, Version + 1.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_directory.py
+Ansichten `samba_dc_units` und `samba_dns` samt Feldern in `sensors.py` zulassen; Docstring und Admin-Doku ohne die erledigten „Nicht abgedeckt“ und ohne „DC ohne Partner bleibt unknown“ (gilt nur für ältere Agenten), Version + 1.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_directory.py tests/test_catalog_sensors.py
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-38.md
 Abhängt von: T2
 
 ### T4 — R-1500: ONLYOFFICE-Karte zeigt body_match  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_catalog_onlyoffice.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/onlyoffice.py, apps/monitoring/tests/test_catalog_onlyoffice.py, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
 Änderung: beide Kartenfelder „Health check“ auf `body_match` (Kevin 2026-11-17).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_onlyoffice.py
-Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-38.md
+Doku: changelog.d/kern-monitoring-38.md (die Admin-Doku nennt die Kartenfelder nicht)
 
 ### T5 — R-1445: Wiki.js 3 Bereitschafts-Check  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/wikijs.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_catalog_wikijs.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
