@@ -281,6 +281,43 @@ def test_rule_ops_with_fitting_values_load(op, value):
     assert _load(_module(checks=[_check(rules=rules)])).errors == ()
 
 
+def test_rule_options_are_written_only_when_set():
+    rules = [
+        {"field": "status_code", "op": "ne", "value": 200, "level": "critical", "if_absent": "ok"},
+        {
+            "field": "status_code",
+            "op": "gt",
+            "value": 499,
+            "level": "warning",
+            "unless": {"field": "data.database.status", "value": "OK"},
+        },
+    ]
+    catalog = _load(_module(checks=[_check(rules=rules)]))
+    assert catalog.errors == ()
+    dumped = next(iter(catalog.modules.values())).model_dump(mode="json")["checks"][0]["rules"]
+    assert dumped == rules
+    # A rule without options keeps the form, and the module its hash.
+    plain = next(iter(_load(_module()).modules.values())).model_dump(mode="json")
+    for rule in plain["checks"][0]["rules"]:
+        assert "if_absent" not in rule and "unless" not in rule
+    assert plain["checks"][0]["rules"] == _VALID["checks"][0]["rules"]
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        {"if_absent": "warning"},
+        {"if_absent": True},
+        {"unless": {"field": "duration_ms", "value": True}},
+        {"unless": {"field": "data.database.status", "value": [1]}},
+        {"unless": {"field": "data.database.status"}},
+    ],
+)
+def test_rule_options_are_checked(option):
+    rules = [{"field": "status_code", "op": "ne", "value": 200, "level": "critical", **option}]
+    assert _load(_module(checks=[_check(rules=rules)])).modules == {}
+
+
 def test_target_must_fit_the_sensor():
     unit = _check(sensor="unit", target={"kind": "container"}, params={}, fields=["sub_state"])
     unit.update(rules=[], credential=None)

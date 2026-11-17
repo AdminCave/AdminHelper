@@ -133,11 +133,12 @@ def test_a_stopped_service_or_another_case_finds_nothing(module_id):
         ("windows-host", "certs", {"certs": 4, "expired": 0, "min_days_left": 13}, "warning"),
         ("windows-host", "certs", {"certs": 4, "expired": 0, "min_days_left": 3}, "warning"),
         ("windows-host", "certs", {"certs": 4, "expired": 0, "min_days_left": 2}, "critical"),
-        # Without a certificate (or a counted pack) there is no days-left value to rate: unknown,
-        # as for the proxies' certificates (app_proxy.go).
-        ("windows-host", "certs", {"certs": 0, "expired": 0}, "unknown"),
-        # A single domain controller has no inbound link, so no age to rate: unknown.
-        ("windows-ad", "replication", {"partners": 0, "links": 0, "failing_links": 0}, "unknown"),
+        # Kevin 2026-11-16 (R-1475): without a certificate (or a counted pack, or an inbound
+        # link) the agent sends no value to rate, and nothing to rate is ok.
+        ("windows-host", "certs", {"certs": 0, "expired": 0}, "ok"),
+        ("windows-ad", "replication", {"partners": 0, "links": 0, "failing_links": 0}, "ok"),
+        # A value that is there is rated as before; one that cannot be rated stays unknown.
+        ("windows-ad", "replication", {"failing_links": 0, "oldest_success_age_s": "x"}, "unknown"),
         (
             "windows-ad",
             "replication",
@@ -169,7 +170,9 @@ def test_a_stopped_service_or_another_case_finds_nothing(module_id):
         ("windows-rds", "licenses", {"used_pct": 95.1, "min_days_left": 30}, "critical"),
         ("windows-rds", "licenses", {"used_pct": 10.0, "min_days_left": 29}, "warning"),
         ("windows-rds", "licenses", {"used_pct": 10.0, "min_days_left": 6}, "critical"),
-        ("windows-rds", "licenses", {"licenses_total": 0, "licenses_issued": 0}, "unknown"),
+        ("windows-rds", "licenses", {"licenses_total": 0, "licenses_issued": 0}, "ok"),
+        ("windows-rds", "licenses", {"used_pct": 96.0}, "critical"),
+        ("windows-rds", "licenses", {"min_days_left": 6}, "critical"),
     ],
 )
 def test_each_rule_fires_at_its_threshold(module_id, key, values, want):
