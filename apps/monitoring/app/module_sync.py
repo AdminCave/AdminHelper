@@ -416,17 +416,22 @@ def _adopt(
         containers = _containers(db, finding.server_id)
         by_key = {check.key: check for check in module.checks}
         updatable = {row.id for row in updatable_checks(checks, module)}
+        kept: list[MonitorCheck] = []
         for row in checks:
             if row.module_check_key not in keys:
+                kept.append(row)
                 continue  # dropped from the catalog: stays as the admin left it
             if row.module_check_key in tagged and fitting is not None:
                 if row.module_check_key not in fitting:
-                    # The image moved to a tag the check does not fit (Wiki.js 2 -> 3).
+                    # The image moved to a tag the check does not fit (Wiki.js 2 -> 3). Deleted
+                    # without a tombstone, not switched off: a switched-off row looks like the
+                    # admin's own choice, and only a missing one is created again on the way back.
                     if row.enabled:
-                        row.enabled = False
                         result.disabled.append(row.id)
                         actions.append(("remove", row.id, None, None))
+                    db.delete(row)
                     continue
+            kept.append(row)
             if row.id in updatable:
                 key = row.module_check_key
                 why = _update(row, module, by_key[key], finding.instance_key, summary, containers)
@@ -443,7 +448,7 @@ def _adopt(
             if row.enabled:
                 result.enabled.append(row.id)
                 actions.append(("add", row.id, row.interval, row.check_type))
-        have = {row.module_check_key for row in checks} | tombstoned_keys(db, finding)
+        have = {row.module_check_key for row in kept} | tombstoned_keys(db, finding)
         for check in module.checks:
             if check.key in have:
                 continue
