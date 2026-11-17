@@ -1,5 +1,5 @@
 # Monitoring: tag-gebundene Checks ohne Fund-Churn — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-21 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-21 · Review: am Ende
 Spec: docs/features/kern-monitoring-21.md (Roadmap R-1446)
 Heavy: none — nur Vergleich und Übernahme von Funden im Monitoring-Dienst, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Dedup-Key: bug:monitoring:discovery:tag-checks-summary-churn
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: docs/admin/monitoring.html DE+EN (Zeile `wikijs`) · changelog.d/kern-monitoring-21.md
 
-### T3 — Entwickler-Doku zu T1 und T2  [ ]
+### T3 — Entwickler-Doku zu T1 und T2  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, tasks/kern-monitoring-21.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c713983f2 2026-11-17T06:09:32+01:00
+Review: am Ende (Branch-Review)
 Änderung: Fund der Abschlussprüfung (reviewer branch 2026-11-17 @84f1f88b8): `_adopt` löscht statt abzuschalten, `_same`
 vergleicht `tag_checks` nur, wenn beide Zusammenfassungen es tragen; DE+EN.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
