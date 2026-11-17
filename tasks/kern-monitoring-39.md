@@ -1,5 +1,5 @@
 # HAProxy fehlender Reload, Platz in moodledata — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-39 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-39 · Review: am Ende
 Spec: docs/features/kern-monitoring-39.md (Roadmap R-1502, R-1504)
 Heavy: linux-full — neue Socket-Frage und App-Ansicht in apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_web
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-39.md
 Abhängt von: T1, T2
 
-### T4 — R-1502: Abschlussprüfung — Semikolon im Dateinamen, CHANGELOG umlautfrei  [ ]
+### T4 — R-1502: Abschlussprüfung — Semikolon im Dateinamen, CHANGELOG umlautfrei  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_haproxy.go, apps/agent/internal/probe/app_haproxy_certs_linux_test.go, changelog.d/kern-monitoring-39.md, tasks/kern-monitoring-39.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @756a7fd28 2026-11-17T08:28:37+01:00
+Review: am Ende (Branch-Review)
 Änderung: `haproxyLoaded` fragt keinen Namen mit `;` (die CLI trennt dort Befehle); Test dazu. Das CHANGELOG-Fragment
 ohne Umlaute (changelog.d/README.md). Funde der Abschlussprüfung.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/

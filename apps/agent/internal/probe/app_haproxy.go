@@ -270,8 +270,9 @@ const haproxyNotAfterLayout = "Jan _2 15:04:05 2006 GMT"
 // expire: "show ssl cert" lists the files it loaded, "show ssl cert <file>" tells of one its notAfter.
 // Both need level operator (HAProxy 3.2.0 src/ssl_ckch.c, cli_parse_show_cert); a socket that refuses,
 // that is not there or that answers otherwise gives none, and so does a name HAProxy writes otherwise
-// than the agent (a crt-base joined another way). A name with a blank or a backslash is not asked: the
-// CLI would split or unescape it. Management Guide 9.3 (docs.haproxy.org/3.2/management.html).
+// than the agent (a crt-base joined another way). A name with a blank, a backslash or a semicolon (a
+// file of a crt directory may be named anyhow) is not asked: the CLI would split or unescape it, or run
+// what follows the semicolon as a command of its own. Management Guide 9.3 (docs.haproxy.org/3.2/management.html).
 func haproxyLoaded(ctx context.Context, files map[string]time.Time) map[string]time.Time {
 	if len(files) == 0 {
 		return nil
@@ -290,7 +291,7 @@ func haproxyLoaded(ctx context.Context, files map[string]time.Time) map[string]t
 	}
 	loaded := map[string]time.Time{}
 	for _, name := range names {
-		if _, ok := files[name]; !ok || strings.ContainsAny(name, " \t\\") {
+		if _, ok := files[name]; !ok || strings.ContainsAny(name, " \t\\;") {
 			continue
 		}
 		b, err := haproxyAsk(ctx, sock, "show ssl cert "+name)

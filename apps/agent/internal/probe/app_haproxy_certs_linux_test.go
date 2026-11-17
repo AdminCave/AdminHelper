@@ -155,6 +155,25 @@ func TestHAProxyCertsWithoutAnAnswerOfTheSocketHasNoReloadField(t *testing.T) {
 	}
 }
 
+func TestHAProxyCertsNeverAsksANameThatChainsACommand(t *testing.T) {
+	stubNow(t, start)
+	// A bind line names only plain paths; a file in a crt directory may be named anyhow.
+	dir := t.TempDir()
+	file := writeCertFile(t, dir, "a;help.pem", namedCertPEM(t, "a.example.org", start.Add(90*24*time.Hour), true))
+	haproxyConfigFile(t, "global\n  stats socket /run/h.sock level operator\nfrontend https\n  bind :443 ssl crt "+dir+"\n")
+	_, sent := stubHAProxy(t, "/run/h.sock", map[string]string{"show ssl cert": "# filename\n" + file + "\n"})
+
+	got, err := haproxyCerts(context.Background(), Target{Kind: kindUnit, Name: "haproxy.service"})
+	if _, has := got["reload_missing"]; err != nil || has || got["certs"] != 1 {
+		t.Errorf("haproxy_certs = %v, %v; want the certificate without reload_missing", got, err)
+	}
+	for _, cmd := range *sent {
+		if strings.Contains(cmd, ";") {
+			t.Errorf("asked %q: a semicolon chains a second command", cmd)
+		}
+	}
+}
+
 func TestHAProxyCertEndReadsNotAfterOfThatFile(t *testing.T) {
 	answer := []byte("Filename: /etc/a.pem\nStatus: Used\nnotBefore: Sep 13 21:20:24 2019 GMT\nnotAfter: Dec  2 21:20:24 2019 GMT\n")
 	end, ok := haproxyCertEnd(answer, "/etc/a.pem")
