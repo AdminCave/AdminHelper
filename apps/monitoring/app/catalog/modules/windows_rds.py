@@ -8,14 +8,19 @@ The service TermServLicensing finds the module. The agent reads the license pack
 (Win32_TSLicenseKeyPack) and reports the licenses issued and in total over the counted packs,
 the share in use and the days until the nearest pack expires; no pack ID, no product name.
 Over 95 per cent in use is critical, over 85 a warning; a pack expiring within 30 days is a
-warning, within 7 critical. Built-in packs without a count and permanent packs do not count.
+warning, within 7 critical. Built-in packs without a count and permanent packs do not count;
+without a counted or an expiring pack there is nothing to rate, which is ok (Kevin 2026-11-16,
+R-1475).
 Not verified on a license server: the markers of those two come from published samples.
 """
+
+# The agent leaves the field out when there is nothing to rate.
+_EMPTY_OK = {"if_absent": "ok"}
 
 MODULE = {
     "id": "windows-rds",
     "name": "RDS licensing",
-    "version": 1,
+    "version": 2,
     "description": "Remote Desktop licensing: the service, licenses in use and pack expiry.",
     "detect": {"units": ["TermServLicensing.service"]},
     "instance": "unit",
@@ -41,10 +46,22 @@ MODULE = {
             "timeout_s": 30,
             "fields": ["licenses_issued", "licenses_total", "used_pct", "min_days_left"],
             "rules": [
-                {"field": "used_pct", "op": "gt", "value": 95, "level": "critical"},
-                {"field": "used_pct", "op": "gt", "value": 85, "level": "warning"},
-                {"field": "min_days_left", "op": "lt", "value": 7, "level": "critical"},
-                {"field": "min_days_left", "op": "lt", "value": 30, "level": "warning"},
+                {"field": "used_pct", "op": "gt", "value": 95, "level": "critical", **_EMPTY_OK},
+                {"field": "used_pct", "op": "gt", "value": 85, "level": "warning", **_EMPTY_OK},
+                {
+                    "field": "min_days_left",
+                    "op": "lt",
+                    "value": 7,
+                    "level": "critical",
+                    **_EMPTY_OK,
+                },
+                {
+                    "field": "min_days_left",
+                    "op": "lt",
+                    "value": 30,
+                    "level": "warning",
+                    **_EMPTY_OK,
+                },
             ],
         },
     ],

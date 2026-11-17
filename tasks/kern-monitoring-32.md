@@ -1,5 +1,5 @@
 # Windows-Ansichten: leerer Bestand und Defender im Passivmodus — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-32 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-32 · Review: am Ende
 Spec: docs/features/kern-monitoring-32.md (Roadmap R-1475, R-1480)
 Heavy: none — nur apps/monitoring (Katalog und Bewertung), kein Stack-, Gateway-, PKI- oder Agent-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -17,8 +17,10 @@ Bewertung mit und ohne Wert, `unless` gesetzt/nicht gesetzt/fehlend.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py tests/test_probe_checker.py
 Doku: → T2
 
-### T2 — R-1475, R-1480: Windows-Module nutzen die Optionen  [ ]
+### T2 — R-1475, R-1480: Windows-Module nutzen die Optionen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/windows_ad.py, apps/monitoring/app/catalog/modules/windows_host.py, apps/monitoring/app/catalog/modules/windows_rds.py, apps/monitoring/app/catalog/modules/defender.py, apps/monitoring/tests/test_catalog_windows_server.py, apps/monitoring/tests/test_catalog_windows_roles.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-32.md, tasks/kern-monitoring-32.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d0faea01d 2026-11-17T07:08:16+01:00
+Review: am Ende (Branch-Review)
 Änderung: `if_absent: "ok"` an `oldest_success_age_s` (windows-ad), `min_days_left` (windows-host certs) sowie
 `used_pct` und `min_days_left` (windows-rds); `unless: {passive: true}` an der Regel `realtime_on` (defender);
 Version je Modul +1, Docstrings mit Quelle (Microsoft Learn, Kompatibilitätsseite). Tests über `ProbeChecker` je Fall
@@ -28,3 +30,6 @@ Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-32.md
 Abhängt von: T1
 
 ## Entscheidungen
+- T2: die Fälle `unknown` bei leerem Bestand und „passiv bleibt kritisch“ in `test_catalog_windows_server.py` und
+  `test_catalog_windows_roles.py` erwarten jetzt `ok` (gewollte Verhaltensänderung, Kevin 2026-11-16); Gegenfälle
+  ergänzt: Wert vorhanden wird weiter bewertet, unbewertbarer Wert bleibt `unknown`, passiv mit alten Signaturen kritisch.
