@@ -1,5 +1,5 @@
 # kern-agent-7 — FreeBSD rc.d-Dienste als Units — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-7 · Review: am Ende
 Spec: docs/features/kern-agent-7.md (Roadmap R-1448)
 Heavy: linux-full — apps/agent (Discovery); der FreeBSD-Zweig selbst läuft nur mit Fake-service(8) und GOOS=freebsd vet
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,10 +13,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T2
 
-### T2 — Monitoring: php_fpm bindet an das rc.d-Skript, Doku  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py apps/monitoring/app/catalog/modules/php_fpm.py apps/monitoring/tests/test_discovery_match.py docs/admin/monitoring.html docs/en/admin/monitoring.html changelog.d/kern-agent-7.md
+### T2 — Monitoring: php_fpm bindet an das rc.d-Skript, Doku  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/catalog/modules/php_fpm.py, apps/monitoring/app/catalog/modules/haproxy.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_catalog_apps.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-agent-7.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5af21de79 2026-11-17T07:34:53+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1448. `php_fpm` kommt in `_UNITS` des Moduls php_fpm (Version +1), der Kommentar von `_listed_unit_wanted` nennt FreeBSD. Test: Ein FreeBSD-Inventar mit den Units `haproxy` und `php_fpm` (active) bindet beide Module, die Instanz trägt den bloßen Namen. Doku-Absatz zu den Units des Inventars DE+EN, Changelog.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py tests/test_catalog_apps.py tests/test_catalog_web.py tests/test_catalog_sensors.py tests/test_catalog_nextcloud.py tests/test_catalog.py
 Doku: docs/admin/monitoring.html docs/en/admin/monitoring.html changelog.d/kern-agent-7.md
 Abhängt von: T1
 

@@ -4,8 +4,10 @@
 
 """HAProxy from its package (R-1231).
 
-The module is found by haproxy.service; a unit that is not active is critical. Daily the agent
-runs `haproxy -c` on /etc/haproxy/haproxy.cfg and reports only whether the configuration loads
+The module is found by haproxy.service or, on FreeBSD, the rc.d script haproxy of the port
+net/haproxy (R-1448); a unit that is not active is critical. Daily the agent runs `haproxy -c`
+on /etc/haproxy/haproxy.cfg (FreeBSD: /usr/local/etc/haproxy.conf) and reports only whether
+the configuration loads
 (a warning if not). Every 5 minutes it asks the stats socket the configuration already
 declares (`show stat`, `show servers state`; without one the check stays unknown): a backend
 DOWN is critical, a server DOWN a warning. Servers in maintenance are counted apart and not
@@ -14,8 +16,10 @@ reads the certificate files the configuration names (`bind … crt`, a file or a
 and counts them and those that end within 14 days (a warning); a private key in such a file it
 skips unparsed, and no name or path leaves the host.
 
-Not covered: HAProxy in a container, and the OPNsense plugin: the agent reads its socket
-(/var/run/haproxy.socket), but FreeBSD has no units the discovery could find it by.
+On OPNsense the agent reads the socket of the plugin os-haproxy (/var/run/haproxy.socket); that
+the plugin enables the rc.d script, so that the discovery finds it, is not verified.
+
+Not covered: HAProxy in a container.
 """
 
 MODULE = {

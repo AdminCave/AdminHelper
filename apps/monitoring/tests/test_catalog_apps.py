@@ -39,13 +39,15 @@ TRAPS = (
 # Paths that make the service do real work: OnlyOffice writes a test object, BookStack
 # opens a session.
 TEST_OBJECT_PATHS = frozenset({"/healthcheck", "/status"})
-# Names every other stack runs too; the php-fpm units carry their version.
+# Names every other stack runs too; the php-fpm units carry their version, php_fpm is the
+# rc.d script of the FreeBSD ports (R-1448).
 GENERIC_NAMES = frozenset(
     {
         "nginx",
         "apache2",
         "httpd",
         "php-fpm",
+        "php_fpm",
         "postgres",
         "postgresql",
         "redis",

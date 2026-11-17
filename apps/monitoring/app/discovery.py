@@ -328,9 +328,9 @@ def _unit_name(name: str) -> str:
 
 
 def _listed_unit_wanted(name: str, wanted: set[str]) -> bool:
-    # A Windows service has no suffix: NTDS is wanted as NTDS.service, by its exact name only
-    # (the patterns and templates are systemd's), and its instance keeps the name the agent
-    # asks the service manager by.
+    # A Windows service and a FreeBSD rc.d script (R-1448) have no suffix: NTDS is wanted as
+    # NTDS.service, by its exact name only (the patterns and templates are systemd's), and its
+    # instance keeps the name the agent asks the service manager by.
     if "." not in name:
         return name + ".service" in wanted
     return _unit_wanted(name, wanted)
