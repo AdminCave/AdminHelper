@@ -9,7 +9,9 @@ package execx
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -49,5 +51,44 @@ func TestRunCappedEndsTheGrandchildOfACommandItKills(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 			}
 		})
+	}
+}
+
+func TestRunReaderStreamsAndEndsTheCommandWhenReadFails(t *testing.T) {
+	ctx := context.Background()
+	var got string
+	err := RunReader(ctx, time.Minute, func(r io.Reader) error {
+		b, err := io.ReadAll(r)
+		got = string(b)
+		return err
+	}, "sh", "-c", "printf abc")
+	if err != nil || got != "abc" {
+		t.Fatalf("RunReader = %q, %v", got, err)
+	}
+
+	// A read that stops early ends a command that would write on: its error is the result, and the
+	// command does not run on to its own end.
+	stop := errors.New("enough")
+	start := time.Now()
+	err = RunReader(ctx, time.Minute, func(r io.Reader) error {
+		_, _ = r.Read(make([]byte, 1))
+		return stop
+	}, "sh", "-c", "yes; sleep 60")
+	if !errors.Is(err, stop) || time.Since(start) > 20*time.Second {
+		t.Fatalf("err = %v after %v, want %v at once", err, time.Since(start), stop)
+	}
+
+	// A read that leaves the rest still sees the exit of the command.
+	err = RunReader(ctx, time.Minute, func(io.Reader) error { return nil }, "sh", "-c", "echo x; exit 3")
+	if exitErr := (*exec.ExitError)(nil); !errors.As(err, &exitErr) || exitErr.ExitCode() != 3 {
+		t.Fatalf("err = %v, want exit 3", err)
+	}
+
+	err = RunReader(ctx, 200*time.Millisecond, func(r io.Reader) error {
+		_, err := io.ReadAll(r)
+		return err
+	}, "sh", "-c", "sleep 60")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the timeout", err)
 	}
 }

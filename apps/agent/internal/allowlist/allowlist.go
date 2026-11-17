@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"path/filepath"
 	"regexp"
@@ -56,6 +57,8 @@ var classes = map[string]string{
 	// An absolute directory, meant for the agent's state directory (config.MonitorDir) but not bound to
 	// it; no segment begins with '.', so no "..".
 	"statedir": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
+	// A file or directory inside a container (docker cp): no segment begins with '.', so no "..".
+	"ctrpath": `(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_.,@+-]*)+`,
 	// A journal priority, 0 emerg … 7 debug.
 	"priority": `[0-7]`,
 	// A whole number of seconds.
@@ -192,6 +195,9 @@ var commands = map[string][][]string{
 		{"ps", "--all", "--quiet", "--no-trunc"},
 		{"inspect", "--type", "container", "<container>..."},
 		{"inspect", "--type", "container", "--", "<containername>"},
+		// The configuration of a web server in a container as a tar on stdout (GET /containers/{id}/archive),
+		// never docker exec (Kevin 2026-11-17); no -L, the agent follows a link itself.
+		{"cp", "--", "<container>:<ctrpath>", "-"},
 	},
 	"pvesh": {
 		{"get", "/nodes/<node>/status", "--output-format", "json"},
@@ -515,6 +521,15 @@ func RunEnv(ctx context.Context, timeout time.Duration, env []string, name strin
 		return nil, fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
 	}
 	return execx.RunEnv(ctx, timeout, env, name, args...)
+}
+
+// RunReader is execx.RunReader for a call on the list: read gets stdout as a stream.
+func RunReader(ctx context.Context, timeout time.Duration, read func(io.Reader) error, name string, args ...string) error {
+	if !Allowed(name, args) {
+		logger.Warnf("%s call refused, %s", filepath.Base(name), ErrNotAllowed)
+		return fmt.Errorf("%s: %w", filepath.Base(name), ErrNotAllowed)
+	}
+	return execx.RunReader(ctx, timeout, read, name, args...)
 }
 
 // RunCapped is execx.RunCapped for a call on the list: at most limit bytes of stdout, no stderr.

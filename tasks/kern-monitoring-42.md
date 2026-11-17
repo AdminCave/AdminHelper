@@ -5,8 +5,10 @@ Heavy: linux-full — apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1503: Archiv eines Container-Pfads lesen (Allowlist, Deckel, Links, Muster, Schlüssel)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/container_archive.go, apps/agent/internal/probe/container_archive_test.go, tasks/kern-monitoring-42.md
+### T1 — R-1503: Archiv eines Container-Pfads lesen (Allowlist, Deckel, Links, Muster, Schlüssel)  [x]
+Komponente: agent · Dateien: apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/container_archive.go, apps/agent/internal/probe/container_archive_test.go, tasks/kern-monitoring-42.md, apps/agent/internal/execx/execx.go, apps/agent/internal/execx/execx_unix_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d50fcdc2b 2026-11-17T09:51:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-42/T1.verdict.json)
 Änderung: Allowlist `docker cp -- <container>:<ctrpath> -` (Container-ID, einfacher absoluter Pfad). Ein Leser holt
 eine Datei oder ein Verzeichnis per `runTool` und liest das tar: Deckel 4 MiB je Container, Links selbst aufgelöst
 (höchstens 8 Stufen), bei einem Verzeichnis nur Einträge, die zum Muster passen; `*.key`, `*.pem` und Einträge über dem

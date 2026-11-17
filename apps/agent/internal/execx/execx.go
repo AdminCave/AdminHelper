@@ -10,6 +10,7 @@ package execx
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"sync/atomic"
@@ -69,6 +70,43 @@ func RunCapped(ctx context.Context, timeout time.Duration, limit int, name strin
 		return nil, ErrOutputLimit
 	}
 	return ended(parent, ctx, w.buf, err)
+}
+
+// RunReader is Run for a command whose stdout the agent reads as it comes and never keeps whole (an
+// archive that may hold more than the agent wants): read gets the stream, an error of read kills the
+// command's process group and is returned, and what read leaves unread is discarded. stderr is dropped,
+// and with it any text of the command in the ExitError.
+func RunReader(ctx context.Context, timeout time.Duration, read func(io.Reader) error, name string, args ...string) error {
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	cmd.WaitDelay = WaitDelay
+	ownGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	rerr := read(out)
+	expired := ctx.Err() // before the cancel below: a read the timeout cut short is a timeout
+	if rerr != nil {
+		cancel()
+	} else {
+		_, _ = io.Copy(io.Discard, out)
+	}
+	werr := cmd.Wait()
+	switch {
+	case expired != nil:
+		_, err = ended(parent, ctx, nil, expired)
+		return err
+	case rerr != nil:
+		return rerr
+	}
+	_, err = ended(parent, ctx, nil, werr)
+	return err
 }
 
 // capWriter keeps what is written to it up to limit bytes; the first write past it calls kill.
