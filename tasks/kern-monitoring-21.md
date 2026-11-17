@@ -1,5 +1,5 @@
 # Monitoring: tag-gebundene Checks ohne Fund-Churn — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-21 · Review: am Ende
+Status: erledigt · Branch: feature/kern-monitoring-21 · Review: am Ende
 Spec: docs/features/kern-monitoring-21.md (Roadmap R-1446)
 Heavy: none — nur Vergleich und Übernahme von Funden im Monitoring-Dienst, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
