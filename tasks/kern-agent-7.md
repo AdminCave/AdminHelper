@@ -1,5 +1,5 @@
 # kern-agent-7 — FreeBSD rc.d-Dienste als Units — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-7 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-7 · Review: am Ende
 Spec: docs/features/kern-agent-7.md (Roadmap R-1448)
 Heavy: linux-full — apps/agent (Discovery); der FreeBSD-Zweig selbst läuft nur mit Fake-service(8) und GOOS=freebsd vet
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_m
 Doku: docs/admin/monitoring.html docs/en/admin/monitoring.html changelog.d/kern-agent-7.md
 Abhängt von: T1
 
-### T3 — Doku: Modultabelle haproxy und php_fpm nennen die rc.d-Skripte  [ ]
+### T3 — Doku: Modultabelle haproxy und php_fpm nennen die rc.d-Skripte  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, tasks/kern-agent-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4768ee47f 2026-11-17T07:45:16+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1448, Fund der Abschlussprüfung. Zeile `haproxy`: der Satz „bindet unter FreeBSD noch nicht“ fällt, statt dessen das rc.d-Skript `haproxy`. Zeile `php_fpm`: das rc.d-Skript `php_fpm` und das Pool-Verzeichnis `/usr/local/etc/php-fpm.d`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html
