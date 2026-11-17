@@ -1,5 +1,5 @@
 # kern-agent-7 — FreeBSD rc.d-Dienste als Units — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-7 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-7 · Review: am Ende
 Spec: docs/features/kern-agent-7.md (Roadmap R-1448)
 Heavy: linux-full — apps/agent (Discovery); der FreeBSD-Zweig selbst läuft nur mit Fake-service(8) und GOOS=freebsd vet
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
