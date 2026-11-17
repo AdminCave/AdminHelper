@@ -1,5 +1,5 @@
 # HAProxy fehlender Reload, Platz in moodledata — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-39 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-39 · Review: am Ende
 Spec: docs/features/kern-monitoring-39.md (Roadmap R-1502, R-1504)
 Heavy: linux-full — neue Socket-Frage und App-Ansicht in apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -37,6 +37,13 @@ Modultabelle DE und EN, CHANGELOG.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_web.py tests/test_catalog_sensors.py tests/test_catalog.py
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-39.md
 Abhängt von: T1, T2
+
+### T4 — R-1502: Abschlussprüfung — Semikolon im Dateinamen, CHANGELOG umlautfrei  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/app_haproxy.go, apps/agent/internal/probe/app_haproxy_certs_linux_test.go, changelog.d/kern-monitoring-39.md, tasks/kern-monitoring-39.md
+Änderung: `haproxyLoaded` fragt keinen Namen mit `;` (die CLI trennt dort Befehle); Test dazu. Das CHANGELOG-Fragment
+ohne Umlaute (changelog.d/README.md). Funde der Abschlussprüfung.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (Verhalten unverändert dokumentiert)
 
 ## Entscheidungen
 - T1: `*`-Einträge der Liste brauchen keinen eigenen Filter: sie stehen unter `# transaction` als `*<pfad>` und treffen keine Datei einer bind-Zeile (Gegenprobe ohne Filter grün, deshalb weggelassen). notAfter wird in UTC geparst (OpenSSL druckt GMT). Namen mit Leerzeichen oder Backslash werden nicht gefragt (die CLI würde sie teilen oder entschärfen).
