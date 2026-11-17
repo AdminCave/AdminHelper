@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"syscall"
 )
@@ -34,14 +33,6 @@ var moodleDataFiles = []string{"muc", "muc/config.php", "cache", "cache/core_com
 // moodleMoved are the settings of config.php that move these files out of the dataroot: a Moodle
 // that sets one is not run.
 var moodleMoved = [][]byte{[]byte("$CFG->cachedir"), []byte("$CFG->localcachedir"), []byte("$CFG->altcacheconfigpath")}
-
-// maxMoodleConfig caps what is read of config.php: a few hundred lines of assignments.
-const maxMoodleConfig = 64 << 10
-
-// moodleDataroot is the one assignment of the dataroot in config.php that the agent takes: a literal
-// in single quotes on a line of its own. Any other form (a variable, a concatenation, a second
-// assignment) names a directory only PHP can tell.
-var moodleDataroot = regexp.MustCompile(`(?m)^[ \t]*\$CFG->dataroot[ \t]*=[ \t]*'([^'\\\n]+)'[ \t]*;`)
 
 // moodleOwned tells whether the code checks.php would run is the web server's own, and returns the
 // document root with its links resolved: the agent runs checks.php below that path, the one it checked.
@@ -72,16 +63,16 @@ func moodleOwned(root, name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: the config.php of the Moodle cannot be read", ErrUnsupported)
 	}
-	m := moodleDataroot.FindSubmatch(conf)
-	if m == nil || bytes.Count(conf, []byte("$CFG->dataroot")) != 1 || !filepath.IsAbs(string(m[1])) {
-		return "", fmt.Errorf("%w: the config.php of the Moodle names no dataroot the agent can tell", ErrUnsupported)
+	dataroot, err := moodleDatarootOf(conf)
+	if err != nil {
+		return "", err
 	}
 	for _, moved := range moodleMoved {
 		if bytes.Contains(conf, moved) {
 			return "", fmt.Errorf("%w: the config.php of the Moodle moves its caches", ErrUnsupported)
 		}
 	}
-	data, err := moodleTree(string(m[1]), moodleDataFiles, true, uid)
+	data, err := moodleTree(dataroot, moodleDataFiles, true, uid)
 	if err != nil {
 		return "", err
 	}

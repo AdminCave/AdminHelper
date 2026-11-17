@@ -17,8 +17,10 @@ Ablehnung.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html DE+EN
 
-### T2 — R-1504: Agent — Ansicht moodle_data  [ ]
+### T2 — R-1504: Agent — Ansicht moodle_data  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_moodle.go, apps/agent/internal/probe/app_moodle_unix.go, apps/agent/internal/probe/app_moodle_windows.go, apps/agent/internal/probe/app_moodle_linux_test.go, apps/agent/internal/probe/sensor_app.go, docs/developer/agent.html, docs/en/developer/agent.html, tasks/kern-monitoring-39.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @42fcf8ffc 2026-11-17T07:59:38+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neue vhost-Ansicht `moodle_data`. Sie liest das dataroot aus `config.php` (dieselbe Regel wie
 `moodle_checks`, ohne Code auszuführen) und fragt `statfs` wie der Sensor `fs` (`used_pct`, `free_bytes`,
 `inodes_used_pct`). Unter Windows `unsupported`. Tests: Werte, kein Moodle, kein dataroot.
@@ -36,3 +38,4 @@ Abhängt von: T1, T2
 
 ## Entscheidungen
 - T1: `*`-Einträge der Liste brauchen keinen eigenen Filter: sie stehen unter `# transaction` als `*<pfad>` und treffen keine Datei einer bind-Zeile (Gegenprobe ohne Filter grün, deshalb weggelassen). notAfter wird in UTC geparst (OpenSSL druckt GMT). Namen mit Leerzeichen oder Backslash werden nicht gefragt (die CLI würde sie teilen oder entschärfen).
+- T2: Die Ansicht heißt im Code `moodleDataUsage` (der Test-Helfer `moodleData` war belegt); `moodleDataroot`, `maxMoodleConfig` und das Lesen des dataroot (`moodleDatarootOf`) liegen jetzt in `app_moodle.go`, damit die Ansicht ohne Build-Tag auskommt; Windows meldet über `dirStatfs` `unsupported`, `app_moodle_windows.go` bleibt unverändert.

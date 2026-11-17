@@ -413,3 +413,47 @@ func TestTheUserOfTheWebServerStaysWithItsVhosts(t *testing.T) {
 		t.Errorf("apache vhosts %+v, %v, want user apache", got, err)
 	}
 }
+
+func TestMoodleDataReadsTheFileSystemOfTheDataroot(t *testing.T) {
+	ctx := context.Background()
+	root := moodleRoot(t, -1, -1)
+	stubVhostCache(t, time.Now(), []Vhost{moodleVhost(root, "www-data")}, nil)
+	got, err := moodleDataUsage(ctx, moodleTarget)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("moodle_data = %v, %v; want the three fields of fs", got, err)
+	}
+	u, err := dirStatfs(nil, moodleData(root), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := fsValues(u); got["used_pct"] != want["used_pct"] || got["inodes_used_pct"] != want["inodes_used_pct"] {
+		t.Errorf("moodle_data = %v, want the file system of the dataroot %v", got, want)
+	}
+}
+
+func TestMoodleDataNeedsAMoodleAndADatarootItCanTell(t *testing.T) {
+	ctx := context.Background()
+	root := moodleRoot(t, -1, -1)
+	other := moodleVhost(root, "www-data")
+	other.App = ""
+	stubVhostCache(t, time.Now(), []Vhost{other}, nil)
+	if _, err := moodleDataUsage(ctx, moodleTarget); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("no Moodle: err = %v, want unsupported", err)
+	}
+	stubVhostCache(t, time.Now(), []Vhost{moodleVhost(root, "")}, nil)
+	for name, conf := range map[string]string{
+		"a variable":   "$CFG->dataroot = $base . '/data';\n",
+		"twice":        "$CFG->dataroot = '/srv/a';\n$CFG->dataroot = '/srv/b';\n",
+		"not absolute": "$CFG->dataroot = 'data';\n",
+	} {
+		moodleConfig(t, root, conf)
+		if _, err := moodleDataUsage(ctx, moodleTarget); !errors.Is(err, ErrUnsupported) {
+			t.Errorf("%s: err = %v, want unsupported", name, err)
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "gone")
+	moodleConfig(t, root, "$CFG->dataroot = '"+missing+"';\n")
+	if _, err := moodleDataUsage(ctx, moodleTarget); err == nil || strings.Contains(err.Error(), missing) {
+		t.Errorf("a dataroot that is not there: err = %v, want an error without its path", err)
+	}
+}
