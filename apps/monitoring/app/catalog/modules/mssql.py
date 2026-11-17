@@ -2,21 +2,22 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""SQL Server, its default instance (R-1246).
+"""SQL Server, its default and its named instances (R-1246, R-1479).
 
-The service MSSQLSERVER finds the module. The local SYSTEM account normally has no SQL login,
-so without a login granted once the agent reads no database state: it counts the day's error
-and critical events of the instance's source in the Application log. One is a warning. Not
-covered: named instances (their service MSSQL$<name> makes no instance key), the databases'
-state, the backups in msdb and the Express size limit. Not verified on a SQL Server.
+The service MSSQLSERVER finds the default instance, each service MSSQL$<name> a named one; its
+instance key is MSSQL-<name> (a key takes no "$"). The local SYSTEM account normally has no SQL
+login, so without a login granted once the agent reads no database state: it counts the day's
+error and critical events of the instance's source in the Application log. One is a warning.
+Not covered: the databases' state, the backups in msdb and the Express size limit. Not verified
+on a SQL Server.
 """
 
 MODULE = {
     "id": "mssql",
     "name": "SQL Server",
-    "version": 1,
-    "description": "SQL Server (default instance): the service and its error events.",
-    "detect": {"units": ["MSSQLSERVER.service"]},
+    "version": 2,
+    "description": "SQL Server (each instance): the service and its error events.",
+    "detect": {"units": ["MSSQLSERVER.service", "MSSQL$?*.service"]},
     "instance": "unit",
     "checks": [
         {
