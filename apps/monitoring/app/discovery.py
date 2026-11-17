@@ -329,10 +329,12 @@ def _unit_name(name: str) -> str:
 
 def _listed_unit_wanted(name: str, wanted: set[str]) -> bool:
     # A Windows service and a FreeBSD rc.d script (R-1448) have no suffix: NTDS is wanted as
-    # NTDS.service, by its exact name only (the patterns and templates are systemd's), and its
-    # instance keeps the name the agent asks the service manager by.
+    # NTDS.service, by its exact name or a pattern (MSSQL$?*, a named SQL Server instance; the
+    # templates are systemd's), and its instance keeps the name the agent asks the service
+    # manager by.
     if "." not in name:
-        return name + ".service" in wanted
+        unit = name + ".service"
+        return unit in wanted or any("*" in t and fnmatch.fnmatchcase(unit, t) for t in wanted)
     return _unit_wanted(name, wanted)
 
 
@@ -432,7 +434,9 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
             if tagged:
                 found[c["name"]]["tag_checks"] = _tag_checks(module, [c])
     elif module.instance == "unit":
-        found = {name: {"unit": name} for name in units}
+        # "$" makes no instance key: a named SQL Server instance MSSQL$SHOP becomes MSSQL-SHOP
+        # (Kevin 2026-11-17); its checks ask the service by the name in the summary.
+        found = {name.replace("$", "-"): {"unit": name} for name in units}
         claimed_units = set(units)
     elif module.instance == "process":
         found = {name: {"process": name} for name in processes}

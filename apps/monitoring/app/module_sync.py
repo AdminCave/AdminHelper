@@ -169,7 +169,8 @@ def _target_name(
         names = [m.split(":", 1)[1] for m in matched_by if m.startswith(kind + ":")]
         return (names[0], None) if len(names) == 1 else (None, none)
     if kind == module.instance:
-        return key, None
+        # The key may differ from the name the agent asks by (MSSQL-SHOP for MSSQL$SHOP).
+        return summary.get(kind, key), None
     if kind == "container" and module.instance == "compose_project":
         if "container" in summary:
             # A container of the module outside any project: it has no other services.
