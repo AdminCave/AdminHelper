@@ -18,10 +18,17 @@ Dedup-Key: bug:monitoring:discovery:tag-checks-summary-churn
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_discovery_match.py tests/test_catalog_wikijs.py
 Doku: changelog.d/kern-monitoring-21.md
 
-### T2 — R-1446: ein per Tag abgeschalteter Check kommt zurück  [?] (Variante A: Check bei Tag-Wechsel löschen und bei Rückkehr neu anlegen, oder B: Spalte tag_off per Migration?)
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-21.md, tasks/kern-monitoring-21.md
-Änderung: nach Kevins Antwort (Spec, Offene Fragen); Test: 2 → 3 → 2 übernommen, `healthz` danach an (erst rot).
+### T2 — R-1446: ein per Tag entfernter Check kommt zurück  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, docs/features/kern-monitoring-21.md, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-21.md, tasks/kern-monitoring-21.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7b4f5e21f 2026-11-17T04:24:48+01:00
+Review: am Ende (Branch-Review)
+Änderung: Variante A (Kevin 2026-11-17): `_adopt` löscht einen nicht mehr passenden tag-gebundenen Check (ohne
+Grabstein) statt ihn abzuschalten; bei der Rückkehr legt das Übernehmen ihn neu an. Test: 2 → 3 → 2 übernommen,
+`healthz` danach an (erst rot).
 Beweis: kern-monitoring-29 Abschlussprüfung 2026-11-13 · apps/monitoring/app/module_sync.py (_adopt)
 Dedup-Key: bug:monitoring:discovery:tag-checks-summary-churn
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: docs/admin/monitoring.html DE+EN (Zeile `wikijs`) · changelog.d/kern-monitoring-21.md
+
+## Entscheidungen
+- T2: Variante A (Kevin 2026-11-17, Frage der Spec). Die Id des entfernten Checks steht weiter in `disabledChecks` der Übernahme-Antwort (Vertrag unverändert: er läuft nicht mehr), der Grund in `skippedChecks`, weil das Übernehmen den Schlüssel neu anzulegen versucht. Von Hand abgeschaltete Altzeilen gibt es nicht: R-1397 ist in keinem Release.

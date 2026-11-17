@@ -844,7 +844,7 @@ def _wiki(tag):
     return [_container("docs-wiki-1", "ghcr.io/requarks/wiki:" + tag, "docs", "wiki")]
 
 
-def test_a_move_to_another_major_changes_the_finding_and_switches_its_tag_check_off(db, actions):
+def test_a_move_to_another_major_changes_the_finding_and_removes_its_tag_check(db, actions):
     _scan(db, 0, SHIPPED, _wiki("2"))
     finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
     adopt(db, finding.id, catalog=SHIPPED, now=NOW)
@@ -862,11 +862,35 @@ def test_a_move_to_another_major_changes_the_finding_and_switches_its_tag_check_
     result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
 
     checks = _checks(db, finding)
-    assert checks["healthz"].enabled is False
+    # Gone, not switched off: only then does a return to a fitting tag bring it back.
+    assert "healthz" not in checks
+    assert db.get(MonitorCheck, healthz.id) is None
     assert result.disabled == [healthz.id]
+    assert result.skipped == [
+        {"key": "healthz", "reason": "container docs-wiki-1 runs the tag 3, the check needs 2, 2.*"}
+    ]
     assert ("remove", healthz.id, None, None) in actions
-    assert (checks["web"].enabled, checks["container"].enabled) == (True, True)
-    assert all(row.enabled for key, row in checks.items() if key != "healthz")
+    assert set(checks) == {"container", "web"}
+    assert all(row.enabled for row in checks.values())
+
+
+def test_a_tag_check_comes_back_with_its_tag(db, actions):
+    _scan(db, 0, SHIPPED, _wiki("2"))
+    finding = db.query(MonitorFinding).filter_by(module_id="wikijs").one()
+    adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+    _scan(db, 1, SHIPPED, _wiki("3"))
+    adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+
+    _scan(db, 2, SHIPPED, _wiki("2.5"))
+    assert (finding.kind, finding.status) == ("changed", "open")
+    actions.clear()
+    result = adopt(db, finding.id, catalog=SHIPPED, now=NOW)
+
+    healthz = _checks(db, finding)["healthz"]
+    assert (healthz.enabled, healthz.silent) == (True, False)
+    assert healthz.id in result.enabled
+    assert ("add", healthz.id, healthz.interval, "probe") in actions
+    assert result.skipped == []
 
 
 def test_a_tag_check_is_not_created_for_a_tag_it_does_not_fit(db, actions):

@@ -17,7 +17,8 @@ Roadmap: R-1446
 - Fehlt `tag_checks` in einer der beiden Zusammenfassungen, zählt der Schlüssel nicht für den Vergleich (wie
   `containers` vor R-1397, `test_an_adopted_finding_with_a_summary_from_before_containers_stays_adopted`); der Scan
   schreibt ihn still nach.
-- Teil 2 nach Kevins Entscheidung (Offene Fragen).
+- Teil 2: Variante A (Kevin 2026-11-17): ein nicht mehr passender Check wird beim Übernehmen gelöscht, bei der
+  Rückkehr neu angelegt.
 - Nicht: andere Schlüssel der Zusammenfassung, der Katalog-Sync beim Start (`sync_catalog`, er beachtet Tags schon
   über `probe_config`).
 
@@ -46,9 +47,6 @@ Teil 1 keine (die Doku beschreibt das gewollte Verhalten). Teil 2: Zeile `wikijs
 DE+EN. CHANGELOG-Fragment.
 
 ## Offene Fragen
-- **Teil 2 (Kevin):** Wie kommt ein per Tag-Wechsel abgeschalteter Check bei der Rückkehr wieder?
-  - **A (Empfehlung):** Ein nicht mehr passender Check wird beim Übernehmen gelöscht (ohne Grabstein), statt
-    abgeschaltet; bei der Rückkehr legt das Übernehmen ihn neu an, wie bei einer Instanz, die gleich auf Tag 3
-    übernommen wurde. Keine Migration. Verloren gehen eigenes Intervall, Timeout, Name und Verlauf dieses Checks.
-  - **B:** Eine Spalte `tag_off` an `monitor_checks` (Migration): `_adopt` merkt sich, dass der Tag den Check
-    abschaltete, und schaltet ihn bei der Rückkehr wieder an; ein vom Admin abgeschalteter bleibt aus.
+Keine. Teil 2 hat Kevin am 2026-11-17 entschieden: Variante A (ein nicht mehr passender Check wird beim Übernehmen
+gelöscht, ohne Grabstein, und bei der Rückkehr neu angelegt; keine Migration; Intervall, Timeout, Name und Verlauf
+dieses Checks gehen verloren). Verworfen: B, eine Spalte `tag_off` per Migration.
