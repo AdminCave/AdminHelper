@@ -5,8 +5,10 @@ Heavy: none — nur apps/monitoring (Katalog und Bewertung), kein Stack-, Gatewa
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1475, R-1480: Regel-Optionen if_absent und unless  [ ]
+### T1 — R-1475, R-1480: Regel-Optionen if_absent und unless  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/checkers/probe.py, apps/monitoring/tests/test_catalog.py, apps/monitoring/tests/test_probe_checker.py, tasks/kern-monitoring-32.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @341654588 2026-11-17T07:06:23+01:00
+Review: am Ende (Branch-Review)
 Änderung: `Rule` (`model.py:135`) bekommt `if_absent: Literal["ok"] | None` und `unless: {field, value}`; beide fehlen
 in der Serialisierung, solange sie nicht gesetzt sind (Hash der übrigen Module bleibt). `unless.field` muss unter den
 Feldern des Checks stehen (Prüfung :278). `_rate` (`probe.py:168`) überspringt eine Regel ohne Wert mit `if_absent`
