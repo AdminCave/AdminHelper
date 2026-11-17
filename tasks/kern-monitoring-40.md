@@ -1,5 +1,5 @@
 # Monitoring: benannte SQL-Server-Instanzen — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-40 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-40 · Review: am Ende
 Spec: docs/features/kern-monitoring-40.md (Roadmap R-1479)
 Heavy: none — nur Erkennung und Katalog im Monitoring-Dienst; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
