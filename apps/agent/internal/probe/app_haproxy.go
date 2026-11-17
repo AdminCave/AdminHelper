@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -204,7 +205,10 @@ var haproxyReserved = []string{".key", ".issuer", ".ocsp", ".sctl"}
 // starting with a dot and those of haproxyReserved). certs counts them, min_days_left is the fewest
 // days one has left, expiring_14d those with fewer than 14. Of each file it reads the first
 // certificate; the private key HAProxy keeps in the same file it skips unparsed. A file that is not
-// there is left out; crt-list and crt-store are not read.
+// there is left out; crt-list and crt-store are not read. reload_missing counts the files whose
+// certificate lasts longer than the one HAProxy has loaded under that name (haproxyLoaded): it was
+// renewed and HAProxy not reloaded. It is there only when the stats socket answered for one file at
+// least.
 func haproxyCerts(ctx context.Context, t Target) (map[string]any, error) {
 	if webServer(t.Name) != "haproxy" {
 		return nil, fmt.Errorf("%w: unit %s is no haproxy", ErrUnsupported, t.Name)
@@ -220,6 +224,7 @@ func haproxyCerts(ctx context.Context, t Target) (map[string]any, error) {
 		}
 		values := map[string]any{"certs": 0, "expiring_14d": 0}
 		var least int64
+		ends := map[string]time.Time{}
 		for _, name := range files {
 			data, err := readCapped(name, maxCertFileBytes)
 			if errors.Is(err, fs.ErrNotExist) {
@@ -232,6 +237,7 @@ func haproxyCerts(ctx context.Context, t Target) (map[string]any, error) {
 			if err != nil {
 				return nil, fmt.Errorf("a certificate file of haproxy %w", err)
 			}
+			ends[name] = cert.NotAfter
 			left := int64(math.Floor(cert.NotAfter.Sub(now()).Hours() / 24))
 			if values["certs"] == 0 || left < least {
 				least = left
@@ -244,8 +250,96 @@ func haproxyCerts(ctx context.Context, t Target) (map[string]any, error) {
 		if values["certs"] != 0 {
 			values["min_days_left"] = least
 		}
+		if loaded := haproxyLoaded(ctx, ends); len(loaded) > 0 {
+			missing := 0
+			for name, end := range loaded {
+				if ends[name].After(end) {
+					missing++
+				}
+			}
+			values["reload_missing"] = missing
+		}
 		return values, nil
 	})
+}
+
+// haproxyNotAfterLayout is how show ssl cert prints notAfter, OpenSSL's ASN1_TIME_print, always in GMT.
+const haproxyNotAfterLayout = "Jan _2 15:04:05 2006 GMT"
+
+// haproxyLoaded asks the stats socket when the certificates HAProxy has loaded under the names of files
+// expire: "show ssl cert" lists the files it loaded, "show ssl cert <file>" tells of one its notAfter.
+// Both need level operator (HAProxy 3.2.0 src/ssl_ckch.c, cli_parse_show_cert); a socket that refuses,
+// that is not there or that answers otherwise gives none, and so does a name HAProxy writes otherwise
+// than the agent (a crt-base joined another way). A name with a blank or a backslash is not asked: the
+// CLI would split or unescape it. Management Guide 9.3 (docs.haproxy.org/3.2/management.html).
+func haproxyLoaded(ctx context.Context, files map[string]time.Time) map[string]time.Time {
+	if len(files) == 0 {
+		return nil
+	}
+	sock, err := haproxySocket()
+	if err != nil {
+		return nil
+	}
+	list, err := haproxyAsk(ctx, sock, "show ssl cert")
+	if err != nil {
+		return nil
+	}
+	names, ok := haproxyCertList(list)
+	if !ok {
+		return nil
+	}
+	loaded := map[string]time.Time{}
+	for _, name := range names {
+		if _, ok := files[name]; !ok || strings.ContainsAny(name, " \t\\") {
+			continue
+		}
+		b, err := haproxyAsk(ctx, sock, "show ssl cert "+name)
+		if err != nil {
+			continue
+		}
+		if end, ok := haproxyCertEnd(b, name); ok {
+			loaded[name] = end
+		}
+	}
+	return loaded
+}
+
+// haproxyCertList reads the answer of show ssl cert, the files HAProxy loaded, one a line below
+// "# filename". The file of an open transaction it lists as '*' and the path, below "# transaction": no
+// file of a bind line is called so. An answer without "# filename" (an error, a refusal) is none.
+func haproxyCertList(b []byte) ([]string, bool) {
+	var names []string
+	ok := false
+	for line := range strings.Lines(string(b)) {
+		switch line = strings.TrimRight(line, "\r\n"); {
+		case line == "# filename":
+			ok = true
+		case line != "" && !strings.HasPrefix(line, "#"):
+			names = append(names, line)
+		}
+	}
+	return names, ok
+}
+
+// haproxyCertEnd reads notAfter from the answer of show ssl cert <name>, an answer only if its
+// Filename is name.
+func haproxyCertEnd(b []byte, name string) (time.Time, bool) {
+	var file, after string
+	for line := range strings.Lines(string(b)) {
+		key, value, ok := strings.Cut(strings.TrimRight(line, "\r\n"), ": ")
+		switch {
+		case !ok:
+		case key == "Filename" && file == "":
+			file = value
+		case key == "notAfter" && after == "":
+			after = value
+		}
+	}
+	if file != name {
+		return time.Time{}, false
+	}
+	end, err := time.ParseInLocation(haproxyNotAfterLayout, after, time.UTC)
+	return end, err == nil
 }
 
 // haproxyConfigText is the first configuration of haproxyConfigs there is.

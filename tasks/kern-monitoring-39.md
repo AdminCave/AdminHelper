@@ -5,8 +5,10 @@ Heavy: linux-full — neue Socket-Frage und App-Ansicht in apps/agent (Sammellau
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1502: Agent — haproxy_certs vergleicht Datei und geladenes Zertifikat  [ ]
+### T1 — R-1502: Agent — haproxy_certs vergleicht Datei und geladenes Zertifikat  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_haproxy.go, apps/agent/internal/probe/app_haproxy_certs_linux_test.go, docs/developer/agent.html, docs/en/developer/agent.html, tasks/kern-monitoring-39.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fe66680dd 2026-11-17T07:55:12+01:00
+Review: am Ende (Branch-Review)
 Änderung: `haproxyCerts` fragt den Stats-Socket mit `show ssl cert` (Liste) und `show ssl cert <file>` (`notAfter`).
 Gefragt werden nur Dateien aus `bind … crt`, die in der Liste stehen; `*`-Einträge werden übersprungen.
 `reload_missing` zählt die Dateien, deren erstes Zertifikat länger läuft als das geladene. Kein Socket, eine
@@ -33,3 +35,4 @@ Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-39.md
 Abhängt von: T1, T2
 
 ## Entscheidungen
+- T1: `*`-Einträge der Liste brauchen keinen eigenen Filter: sie stehen unter `# transaction` als `*<pfad>` und treffen keine Datei einer bind-Zeile (Gegenprobe ohne Filter grün, deshalb weggelassen). notAfter wird in UTC geparst (OpenSSL druckt GMT). Namen mit Leerzeichen oder Backslash werden nicht gefragt (die CLI würde sie teilen oder entschärfen).
