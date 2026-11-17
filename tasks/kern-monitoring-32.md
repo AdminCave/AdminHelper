@@ -1,5 +1,5 @@
 # Windows-Ansichten: leerer Bestand und Defender im Passivmodus — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-32 · Review: am Ende
+Status: erledigt · Branch: feature/kern-monitoring-32 · Review: am Ende
 Spec: docs/features/kern-monitoring-32.md (Roadmap R-1475, R-1480)
 Heavy: none — nur apps/monitoring (Katalog und Bewertung), kein Stack-, Gateway-, PKI- oder Agent-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
