@@ -119,10 +119,46 @@ func drsValues(out []byte) (map[string]any, error) {
 	values := map[string]any{
 		"partners": len(partners), "links": links, "links_failing": failing, "outbound_failing": outFailing,
 	}
-	if !oldest.IsZero() {
+	switch {
+	case !oldest.IsZero():
 		values["last_success_age_s"] = max(int(now().Sub(oldest).Seconds()), 0)
+	case links == 0:
+		// The only domain controller of its domain pulls from nobody: nothing can be stale. Without a
+		// value the replication check would stay unknown on it for good.
+		values["last_success_age_s"] = 0
 	}
 	return values, nil
+}
+
+// sambaSideUnits are the units of a Samba file server, NetBIOS name server and winbind, by Debian's
+// names and by Fedora's (smb, nmb; not verified on a DC there): on a DC the samba service starts smbd
+// and winbindd itself, and a separate smbd, nmbd or winbind makes the DC fail (Samba wiki, "Managing
+// the Samba AD DC Service Using Systemd": mask and disable smbd nmbd winbind).
+var sambaSideUnits = []string{"smbd.service", "nmbd.service", "winbind.service", "smb.service", "nmb.service"}
+
+// sambaDCUnits counts the sambaSideUnits that are active next to this domain controller, from one
+// systemctl show; a unit this host does not know reads as inactive.
+func sambaDCUnits(ctx context.Context, _ Target) (map[string]any, error) {
+	args := append([]string{"show", "-p", "Id,Names,ActiveState,MainPID", "--"}, sambaSideUnits...)
+	out, err := runToolEnv(ctx, toolTimeout, sambaEnv, "systemctl", args...)
+	if err != nil {
+		return nil, sambaFailure("systemctl", err)
+	}
+	units, active := 0, 0
+	for line := range strings.Lines(string(out)) {
+		k, v, _ := strings.Cut(strings.TrimRight(line, "\r\n"), "=")
+		if k != "ActiveState" {
+			continue
+		}
+		units++
+		if v == "active" || v == "activating" || v == "reloading" {
+			active++
+		}
+	}
+	if units != len(sambaSideUnits) {
+		return nil, errors.New("systemctl show answers in another form")
+	}
+	return map[string]any{"side_units_active": active}, nil
 }
 
 // drsLink says whether the link n has consecutive failures and when it last succeeded, the zero time if

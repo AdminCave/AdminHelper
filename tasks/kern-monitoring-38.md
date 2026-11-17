@@ -5,8 +5,10 @@ Heavy: linux-full — neue App-Ansichten in apps/agent (Sammellauf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1491, R-1487: Agent — DC ohne Partner, Units neben dem DC  [ ]
+### T1 — R-1491, R-1487: Agent — DC ohne Partner, Units neben dem DC  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_samba.go, apps/agent/internal/probe/app_samba_test.go, apps/agent/internal/probe/sensor_app.go, docs/developer/agent.html, docs/en/developer/agent.html, tasks/kern-monitoring-38.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @5cc45df0b 2026-11-17T06:21:33+01:00
+Review: approve (.ah-out/review/kern-monitoring-38/T1.verdict.json)
 Änderung: `drsValues` meldet ohne eingehende Verbindung `last_success_age_s` = 0 (Kevin 2026-11-17). Neue Ansicht
 `samba_dc_units`: Zahl der aktiven Units smbd, nmbd, winbind neben dem DC (`side_units_active`), nur der Zustand.
 Tests: Einzel-DC (erst rot), je Unit aktiv/inaktiv.

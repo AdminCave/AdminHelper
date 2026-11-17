@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"reflect"
 	"slices"
 	"strings"
@@ -68,6 +69,71 @@ func TestSambaDRSWithoutASuccessLeavesTheAgeOut(t *testing.T) {
 	want := map[string]any{"partners": 1, "links": 1, "links_failing": 1, "outbound_failing": 0}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestSambaDRSOfTheOnlyDCReportsAnAgeOfZero(t *testing.T) {
+	stubNow(t, time.Unix(1_795_000_000, 0))
+	for _, out := range []string{
+		`{"repsFrom": [], "repsTo": []}`,
+		`{"repsFrom": [` + drsLinkJSON("g9", 3, drsNever, true) + `], "repsTo": []}`,
+	} {
+		stubToolsEnv(t, answer{out: out})
+		got, err := sambaDRS(context.Background(), sambaUnit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{"partners": 0, "links": 0, "links_failing": 0, "outbound_failing": 0, "last_success_age_s": 0}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: got %v, want %v", out, got, want)
+		}
+	}
+}
+
+// sideUnitShow is the answer of systemctl show -p Id,Names,ActiveState,MainPID for units in the state given.
+func sideUnitShow(states ...string) string {
+	var b strings.Builder
+	for i, st := range states {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "MainPID=0\nId=%s\nNames=%s\nActiveState=%s\n", sambaSideUnits[i], sambaSideUnits[i], st)
+	}
+	return b.String()
+}
+
+func TestSambaDCUnitsCountsTheActiveSideUnits(t *testing.T) {
+	for _, c := range []struct {
+		states []string
+		want   int
+	}{
+		{[]string{"inactive", "inactive", "inactive", "inactive", "inactive"}, 0},
+		{[]string{"active", "inactive", "failed", "inactive", "inactive"}, 1},
+		{[]string{"inactive", "reloading", "active", "inactive", "activating"}, 3},
+	} {
+		calls := stubToolsEnv(t, answer{out: sideUnitShow(c.states...)})
+		got, err := sambaDCUnits(context.Background(), sambaUnit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := map[string]any{"side_units_active": c.want}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%v: got %v, want %v", c.states, got, want)
+		}
+		want := append([]string{"systemctl", "show", "-p", "Id,Names,ActiveState,MainPID", "--"}, sambaSideUnits...)
+		if a := (*calls)[0].args; !slices.Equal(a, want) {
+			t.Fatalf("call %q", a)
+		}
+	}
+}
+
+func TestSambaDCUnitsRefusesAnotherAnswer(t *testing.T) {
+	stubToolsEnv(t, answer{out: sideUnitShow("inactive", "active")})
+	if got, err := sambaDCUnits(context.Background(), sambaUnit); err == nil {
+		t.Fatalf("two of five units read as %v", got)
+	}
+	stubToolsEnv(t, answer{err: exec.ErrNotFound})
+	if _, err := sambaDCUnits(context.Background(), sambaUnit); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("no systemctl: %v", err)
 	}
 }
 
@@ -260,7 +326,7 @@ func TestSambaTrust(t *testing.T) {
 }
 
 func TestDirectoryViewsAreBoundToTheirKinds(t *testing.T) {
-	for _, view := range []string{"samba_drs", "samba_fsmo", "samba_member", "samba_trust", "lmn_devices", "lmn_linbo"} {
+	for _, view := range []string{"samba_dc_units", "samba_drs", "samba_fsmo", "samba_member", "samba_trust", "lmn_devices", "lmn_linbo"} {
 		if v, ok := appViews[view]; !ok || !slices.Equal(v.kinds, unitKinds) || v.uses != nil {
 			t.Errorf("view %s: %+v", view, v)
 		}
