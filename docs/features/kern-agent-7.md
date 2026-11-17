@@ -36,11 +36,9 @@ Offen war die Namensregel zwischen Discovery und den Unit-Namen der Module (vers
 **Agent** (`apps/agent`):
 - `internal/discovery/discovery.go` (`collectUnits` :226 und die Plattform-Schalter :75): neuer FreeBSD-Zweig.
 - `internal/discovery/discovery_other.go`: Seam für die rc.d-Liste.
-- `internal/probe/unit_rcd.go`: exportierte Liste (`service -e`) und Status (`rcStatus` :52).
-  `internal/monitor` importiert `discovery` (`report.go`), also kann `discovery` die rc.d-Parser aus
-  `internal/monitor/rcservice.go` (`parseRCEnabled` :61) nicht nutzen. Der Parser zieht nach `probe` um, und
-  `monitor` ruft ihn dort auf (ein Parser statt zwei). Die Tests ziehen mit.
-- Tests: `internal/discovery/discovery_test.go`, `internal/probe/unit_rcd_test.go`, `internal/monitor/rcservice_test.go`.
+- `internal/probe/unit_rcd.go`: exportierte Liste `RCUnits` (`service -e` plus onestatus); `rcStatus` :52 teilt das Lesen der pids mit ihr.
+  `internal/monitor` importiert `discovery` (`report.go`); den Parser von `internal/monitor/rcservice.go` (`parseRCEnabled`) kann `discovery` deshalb nicht nutzen, die Liste in `probe` ist eigenständig (Ledger, Entscheidungen).
+- Tests: `internal/discovery/discovery_test.go`, `internal/probe/unit_rcd_test.go`.
 
 **Monitoring** (`apps/monitoring`):
 - `app/discovery.py` `_listed_unit_wanted` :329: Der Kommentar nennt FreeBSD neben Windows, die Logik bleibt.
