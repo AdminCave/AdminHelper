@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net"
 	"os/exec"
 	"reflect"
 	"slices"
@@ -134,6 +136,116 @@ func TestSambaDCUnitsRefusesAnotherAnswer(t *testing.T) {
 	stubToolsEnv(t, answer{err: exec.ErrNotFound})
 	if _, err := sambaDCUnits(context.Background(), sambaUnit); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("no systemctl: %v", err)
+	}
+}
+
+// sambaTestparm is testparm -s of a DC of realm, trimmed to what the view reads around it.
+func sambaTestparm(realm string) string {
+	return "# Global parameters\n[global]\n\tnetbios name = DC1\n\trealm = " + realm + "\n\tserver role = active directory domain controller\n\tworkgroup = SAMDOM\n\n[sysvol]\n\tpath = /var/lib/samba/sysvol\n"
+}
+
+// stubSRV puts in a resolver that answers each SRV name from answers (a name it lacks does not exist)
+// and records what it was asked.
+func stubSRV(t *testing.T, answers map[string]int, fail error) *[]query {
+	t.Helper()
+	asked := &[]query{}
+	old := lookupDNS
+	lookupDNS = func(_ context.Context, rrtype, name string) (int, error) {
+		*asked = append(*asked, query{rrtype, name})
+		if fail != nil {
+			return 0, fail
+		}
+		n, ok := answers[name]
+		if !ok {
+			return 0, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
+		}
+		return n, nil
+	}
+	t.Cleanup(func() { lookupDNS = old })
+	return asked
+}
+
+func TestSambaDNSCountsTheMissingSRVRecords(t *testing.T) {
+	all := map[string]int{
+		"_ldap._tcp.SAMDOM.EXAMPLE.COM.":               1,
+		"_kerberos._tcp.SAMDOM.EXAMPLE.COM.":           1,
+		"_kerberos._udp.SAMDOM.EXAMPLE.COM.":           2,
+		"_ldap._tcp.dc._msdcs.SAMDOM.EXAMPLE.COM.":     1,
+		"_kerberos._tcp.dc._msdcs.SAMDOM.EXAMPLE.COM.": 1,
+	}
+	calls := stubToolsEnv(t, answer{out: sambaTestparm("SAMDOM.EXAMPLE.COM")})
+	asked := stubSRV(t, all, nil)
+	got, err := sambaDNS(context.Background(), sambaUnit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"srv_checked": 5, "srv_missing": 0}; !reflect.DeepEqual(got, want) {
+		t.Errorf("all records: got %v, want %v", got, want)
+	}
+	if a := (*calls)[0].args; !slices.Equal(a, []string{"testparm", "-s"}) {
+		t.Fatalf("call %q", a)
+	}
+	var names []string
+	for _, q := range *asked {
+		if q.rrtype != "SRV" {
+			t.Errorf("asked %v", q)
+		}
+		names = append(names, q.name)
+	}
+	slices.Sort(names)
+	want := slices.Sorted(maps.Keys(all))
+	if !slices.Equal(names, want) {
+		t.Errorf("asked %q, want %q", names, want)
+	}
+
+	delete(all, "_ldap._tcp.dc._msdcs.SAMDOM.EXAMPLE.COM.")
+	delete(all, "_kerberos._udp.SAMDOM.EXAMPLE.COM.")
+	all["_kerberos._tcp.SAMDOM.EXAMPLE.COM."] = 0
+	stubToolsEnv(t, answer{out: sambaTestparm("SAMDOM.EXAMPLE.COM. ")})
+	stubSRV(t, all, nil)
+	got, err = sambaDNS(context.Background(), sambaUnit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"srv_checked": 5, "srv_missing": 3}; !reflect.DeepEqual(got, want) {
+		t.Errorf("three missing: got %v, want %v", got, want)
+	}
+}
+
+func TestSambaDNSQuotesNeitherRealmNorRecord(t *testing.T) {
+	stubToolsEnv(t, answer{out: sambaTestparm("samdom.example.com")})
+	stubSRV(t, nil, &net.DNSError{Err: "i/o timeout", Name: "_ldap._tcp.samdom.example.com.", IsTimeout: true})
+	got, err := sambaDNS(context.Background(), sambaUnit)
+	if err == nil {
+		t.Fatalf("a resolver that times out read as %v", got)
+	}
+	if strings.Contains(err.Error(), "samdom") {
+		t.Errorf("error quotes the realm: %v", err)
+	}
+}
+
+func TestSambaDNSNeedsARealm(t *testing.T) {
+	for _, out := range []string{
+		"[global]\n\tserver role = standalone server\n",
+		sambaTestparm(""),
+		sambaTestparm("not a domain"),
+	} {
+		stubToolsEnv(t, answer{out: out})
+		asked := stubSRV(t, nil, nil)
+		if got, err := sambaDNS(context.Background(), sambaUnit); !errors.Is(err, ErrUnsupported) {
+			t.Errorf("testparm %q: %v, %v", out, got, err)
+		}
+		if len(*asked) != 0 {
+			t.Errorf("testparm %q: asked %v", out, *asked)
+		}
+	}
+	stubToolsEnv(t, answer{err: exec.ErrNotFound})
+	if _, err := sambaDNS(context.Background(), sambaUnit); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("no testparm: %v", err)
+	}
+	stubToolsEnv(t, answer{err: &exec.ExitError{}})
+	if got, err := sambaDNS(context.Background(), sambaUnit); err == nil || errors.Is(err, ErrUnsupported) {
+		t.Fatalf("a testparm that fails read as %v, %v", got, err)
 	}
 }
 
@@ -326,7 +438,7 @@ func TestSambaTrust(t *testing.T) {
 }
 
 func TestDirectoryViewsAreBoundToTheirKinds(t *testing.T) {
-	for _, view := range []string{"samba_dc_units", "samba_drs", "samba_fsmo", "samba_member", "samba_trust", "lmn_devices", "lmn_linbo"} {
+	for _, view := range []string{"samba_dc_units", "samba_dns", "samba_drs", "samba_fsmo", "samba_member", "samba_trust", "lmn_devices", "lmn_linbo"} {
 		if v, ok := appViews[view]; !ok || !slices.Equal(v.kinds, unitKinds) || v.uses != nil {
 			t.Errorf("view %s: %+v", view, v)
 		}

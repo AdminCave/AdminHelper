@@ -15,8 +15,10 @@ Tests: Einzel-DC (erst rot), je Unit aktiv/inaktiv.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/developer/agent.html DE+EN
 
-### T2 — R-1488: Agent — SRV-Einträge des DC  [ ]
+### T2 — R-1488: Agent — SRV-Einträge des DC  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/app_samba.go, apps/agent/internal/probe/app_samba_test.go, apps/agent/internal/probe/sensor_app.go, docs/developer/agent.html, docs/en/developer/agent.html, tasks/kern-monitoring-38.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @196955fa8 2026-11-17T06:31:01+01:00
+Review: approve (.ah-out/review/kern-monitoring-38/T2.verdict.json)
 Änderung: Neue Ansicht `samba_dns`: Realm auf dem Host lesen, die an der Samba-Doku belegten SRV-Einträge (dazu
 `_msdcs`) über den Resolver des Systems fragen; Felder nur Zahlen (`srv_checked`, `srv_missing`). Realm und Namen
 verlassen den Host nie. Tests mit einem Resolver-Stub.

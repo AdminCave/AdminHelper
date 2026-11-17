@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -159,6 +160,45 @@ func sambaDCUnits(ctx context.Context, _ Target) (map[string]any, error) {
 		return nil, errors.New("systemctl show answers in another form")
 	}
 	return map[string]any{"side_units_active": active}, nil
+}
+
+// sambaSRV are the SRV records of a domain the samba_dnsupdate of every writable DC registers
+// (source4/setup/dns_update_list, IF_RWDC); the Samba wiki ("Setting up Samba as an Active Directory
+// Domain Controller", verifying DNS) checks the first and the third after the provision.
+var sambaSRV = []string{"_ldap._tcp.", "_kerberos._tcp.", "_kerberos._udp.", "_ldap._tcp.dc._msdcs.", "_kerberos._tcp.dc._msdcs."}
+
+// sambaDNS asks the resolver of this host for the sambaSRV records of the realm smb.conf names (testparm
+// -s): how many it checked and how many have no record. Realm and names stay on the host, and so does a
+// resolver error: it names the record.
+func sambaDNS(ctx context.Context, _ Target) (map[string]any, error) {
+	out, err := runToolEnv(ctx, toolTimeout, sambaEnv, "testparm", "-s")
+	if err != nil {
+		return nil, sambaFailure("testparm", err)
+	}
+	realm := ""
+	for line := range strings.Lines(string(out)) {
+		k, v, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(k) == "realm" {
+			realm = strings.TrimSpace(v)
+		}
+	}
+	if realm == "" || len(realm) > 200 || !dnsName.MatchString(realm) {
+		return nil, fmt.Errorf("%w: smb.conf names no DNS realm", ErrUnsupported)
+	}
+	missing := 0
+	for _, srv := range sambaSRV {
+		n, err := lookupDNS(ctx, "SRV", srv+strings.TrimSuffix(realm, ".")+".")
+		var de *net.DNSError
+		switch {
+		case errors.As(err, &de) && de.IsNotFound:
+			missing++
+		case err != nil:
+			return nil, errors.New("the resolver of this host fails")
+		case n == 0:
+			missing++
+		}
+	}
+	return map[string]any{"srv_checked": len(sambaSRV), "srv_missing": missing}, nil
 }
 
 // drsLink says whether the link n has consecutive failures and when it last succeeded, the zero time if
