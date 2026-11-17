@@ -85,16 +85,22 @@ func stubHost(t *testing.T) *fakeHost {
 	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening :=
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening
 	oldWindows, oldServices, oldVhosts := windowsHost, listServices, webVhosts
+	oldFreeBSD, oldRCUnits := freebsdHost, listRCUnits
 	t.Cleanup(func() {
 		webVhosts = oldVhosts
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening =
 			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening
 		windowsHost, listServices = oldWindows, oldServices
+		freebsdHost, listRCUnits = oldFreeBSD, oldRCUnits
 	})
-	linuxHost, markerHost, windowsHost = true, true, false
+	linuxHost, markerHost, windowsHost, freebsdHost = true, true, false, false
 	listServices = func() ([]Unit, error) {
 		t.Error("the Windows services listed off Windows")
 		return nil, nil
+	}
+	listRCUnits = func(context.Context) ([]probe.RCUnit, bool, error) {
+		t.Error("the rc.d services listed off FreeBSD")
+		return nil, false, nil
 	}
 	runTool = func(_ context.Context, _ time.Duration, name string, args ...string) ([]byte, error) {
 		h.mu.Lock()
@@ -524,7 +530,8 @@ func TestServicesBeyondTheCapOrAFailedListMakeTheUnitsPartial(t *testing.T) {
 // rpm are not installed there, so a marker of packages alone is not installed.
 func TestADiscoveryOnFreeBSDChecksTheMarkersByTheirPaths(t *testing.T) {
 	h := wholeHost(t)
-	linuxHost = false
+	linuxHost, freebsdHost = false, true
+	listRCUnits = func(context.Context) ([]probe.RCUnit, bool, error) { return []probe.RCUnit{}, true, nil }
 	delete(h.tools, "dpkg-query")
 	h.paths["/usr/local/opnsense/version/core"] = true
 	markers := append(slices.Clone(wholeMarkers),
@@ -541,6 +548,48 @@ func TestADiscoveryOnFreeBSDChecksTheMarkersByTheirPaths(t *testing.T) {
 	}
 	if got := append(h.called("systemctl"), h.called("docker")...); got != nil {
 		t.Errorf("systemctl and docker calls %q on FreeBSD, want none", got)
+	}
+}
+
+// R-1448: on FreeBSD the units are the enabled rc.d scripts by their bare name, the name the unit
+// sensor asks service(8) by and the catalog matches like a Windows service.
+func TestADiscoveryOnFreeBSDReadsTheRCScriptsAsUnits(t *testing.T) {
+	stubHost(t)
+	linuxHost, freebsdHost = false, true
+	listRCUnits = func(context.Context) ([]probe.RCUnit, bool, error) {
+		return []probe.RCUnit{{Name: "haproxy", Running: true}, {Name: "php_fpm"}, {Name: "bad\x01name", Running: true}}, true, nil
+	}
+
+	units, whole := collectUnits(context.Background())
+
+	want := []Unit{{Name: "haproxy", State: "active", Sub: "running"}, {Name: "php_fpm", State: "inactive", Sub: "stopped"}}
+	if !whole || !reflect.DeepEqual(units, want) {
+		t.Errorf("collectUnits = %+v, whole %v; want %+v, whole", units, whole, want)
+	}
+}
+
+func TestRCScriptsCutShortOrNotListedMakeTheUnitsPartial(t *testing.T) {
+	stubHost(t)
+	linuxHost, freebsdHost = false, true
+	listRCUnits = func(context.Context) ([]probe.RCUnit, bool, error) {
+		return []probe.RCUnit{{Name: "haproxy", Running: true}}, false, nil
+	}
+	if units, whole := collectUnits(context.Background()); whole || len(units) != 1 {
+		t.Errorf("a status call that did not answer: %+v, whole %v; want the scripts asked so far, partial", units, whole)
+	}
+	listRCUnits = func(context.Context) ([]probe.RCUnit, bool, error) {
+		return nil, false, errors.New("service -e: exit status 1")
+	}
+	if units, whole := collectUnits(context.Background()); whole || units == nil || len(units) != 0 {
+		t.Errorf("a failed service -e: %+v, whole %v; want an empty list, partial", units, whole)
+	}
+	many := make([]probe.RCUnit, maxUnits+1)
+	for i := range many {
+		many[i] = probe.RCUnit{Name: fmt.Sprintf("rc%d", i)}
+	}
+	listRCUnits = func(context.Context) ([]probe.RCUnit, bool, error) { return many, true, nil }
+	if units, whole := collectUnits(context.Background()); whole || len(units) != maxUnits {
+		t.Errorf("over the cap: %d units, whole %v; want %d, partial", len(units), whole, maxUnits)
 	}
 }
 

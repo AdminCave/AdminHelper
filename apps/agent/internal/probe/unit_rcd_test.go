@@ -146,3 +146,53 @@ func TestRcNamePatternTakesTheNamesOfScriptsAlone(t *testing.T) {
 		}
 	}
 }
+
+// R-1448: the discovery's units on FreeBSD.
+func TestRCUnitsListsTheEnabledScriptsWithTheirState(t *testing.T) {
+	enabled := "/etc/rc.d/sshd\n/usr/local/etc/rc.d/php_fpm\n/usr/local/etc/rc.d/haproxy\n/etc/rc.d/ntpdate\n" +
+		"/usr/local/etc/rc.d/-x\nrelative\n/etc/rc.d/sshd\n"
+	calls := stubTools(t,
+		answer{out: enabled},
+		answer{out: "haproxy is running as pid 41 42.\n"},
+		answer{err: toolExit(t, 1, "ntpdate: unknown directive 'onestatus'.\n")},
+		answer{out: "php_fpm is not running.\n", err: toolExit(t, 1, "")},
+		answer{out: "sshd is running as pid 7.\n"},
+	)
+
+	units, whole, err := RCUnits(context.Background())
+
+	want := []RCUnit{{Name: "haproxy", Running: true}, {Name: "php_fpm"}, {Name: "sshd", Running: true}}
+	if err != nil || !whole || !slices.Equal(units, want) {
+		t.Errorf("RCUnits = %+v, whole %v, %v; want %+v, whole", units, whole, err, want)
+	}
+	asked := []string{}
+	for _, c := range (*calls)[1:] {
+		asked = append(asked, c[1]+" "+c[2])
+	}
+	if want := []string{"haproxy onestatus", "ntpdate onestatus", "php_fpm onestatus", "sshd onestatus"}; !slices.Equal(asked, want) {
+		t.Errorf("status calls %q, want %q", asked, want)
+	}
+	if want := []string{servicePath, "-e"}; !slices.Equal((*calls)[0], want) {
+		t.Errorf("first call %q, want %q", (*calls)[0], want)
+	}
+}
+
+func TestRCUnitsStopsAfterAStatusCallThatDidNotAnswer(t *testing.T) {
+	calls := stubTools(t,
+		answer{out: "/usr/local/etc/rc.d/a\n/usr/local/etc/rc.d/b\n/usr/local/etc/rc.d/c\n"},
+		answer{out: "a is running as pid 3.\n"},
+		answer{err: context.DeadlineExceeded},
+	)
+	units, whole, err := RCUnits(context.Background())
+	if err != nil || whole || !slices.Equal(units, []RCUnit{{Name: "a", Running: true}}) {
+		t.Errorf("RCUnits = %+v, whole %v, %v; want a alone, partial", units, whole, err)
+	}
+	if len(*calls) != 3 {
+		t.Errorf("calls %q, want none after the one that did not answer", *calls)
+	}
+
+	stubTools(t, answer{err: toolExit(t, 1, "")})
+	if units, whole, err := RCUnits(context.Background()); err == nil || whole || units != nil {
+		t.Errorf("a failed service -e: %+v, whole %v, %v; want an error", units, whole, err)
+	}
+}

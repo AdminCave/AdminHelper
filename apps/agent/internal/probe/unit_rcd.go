@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -55,6 +57,11 @@ func rcStatus(ctx context.Context, name string) ([]int32, error) {
 	if err != nil && !errors.As(err, &exitErr) {
 		return nil, fmt.Errorf("service %s onestatus: %w", name, err)
 	}
+	return rcPids(name, out)
+}
+
+// rcPids reads the pids from the output of `service <name> onestatus`.
+func rcPids(name string, out []byte) ([]int32, error) {
 	for line := range strings.SplitSeq(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if m := rcRunning.FindStringSubmatch(line); m != nil {
@@ -73,6 +80,43 @@ func rcStatus(ctx context.Context, name string) ([]int32, error) {
 		}
 	}
 	return nil, fmt.Errorf("service %s does not exist on this host or has no status the sensor reads", name)
+}
+
+// RCUnit is an enabled rc.d script, by the name service(8) takes, and whether a process of it runs.
+type RCUnit struct {
+	Name    string
+	Running bool
+}
+
+// RCUnits lists the enabled rc.d scripts (`service -e`, the full paths of their files) sorted by name,
+// each asked with onestatus; a script whose status rcPids cannot read is left out. whole is false
+// after a call that did not answer (it hung, was killed or did not start): no script is asked further,
+// each such call waits toolTimeout.
+func RCUnits(ctx context.Context) (units []RCUnit, whole bool, err error) {
+	out, err := runTool(ctx, toolTimeout, servicePath, "-e")
+	if err != nil {
+		return nil, false, fmt.Errorf("service -e: %w", err)
+	}
+	names := map[string]bool{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		file := strings.TrimSpace(line)
+		if name := path.Base(file); strings.HasPrefix(file, "/") && rcNamePattern.MatchString(name) {
+			names[name] = true
+		}
+	}
+	units = []RCUnit{}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		out, err := runTool(ctx, toolTimeout, servicePath, name, "onestatus")
+		// Exit 1 is the answer "not running"; a process killed by a signal exits -1.
+		var exitErr *exec.ExitError
+		if err != nil && !(errors.As(err, &exitErr) && exitErr.ExitCode() > 0) {
+			return units, false, nil
+		}
+		if pids, err := rcPids(name, out); err == nil {
+			units = append(units, RCUnit{Name: name, Running: len(pids) > 0})
+		}
+	}
+	return units, true, nil
 }
 
 // rcOwner returns whether a process is one of the rc.d service name: a pid its status names. A child

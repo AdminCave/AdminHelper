@@ -5,9 +5,11 @@ Heavy: linux-full — apps/agent (Discovery); der FreeBSD-Zweig selbst läuft nu
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Agent: Discovery meldet unter FreeBSD die eingeschalteten rc.d-Skripte als Units  [ ]
-Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go apps/agent/internal/discovery/discovery_other.go apps/agent/internal/discovery/discovery_test.go apps/agent/internal/probe/unit_rcd.go apps/agent/internal/probe/unit_rcd_test.go apps/agent/internal/monitor/rcservice.go apps/agent/internal/monitor/rcservice_test.go
-Änderung: R-1448. Der Parser von `service -e` zieht von monitor nach probe (exportiert), und monitor ruft ihn dort auf. `collectUnits` liest unter FreeBSD die eingeschalteten Skripte und fragt jedes mit onestatus: active/running oder inactive/dead, bloßer Name. Ein Skript ohne lesbaren Status fehlt. Ein Aufruf ohne Antwort beendet die Liste als partial. Tests mit Fake-service(8).
+### T1 — Agent: Discovery meldet unter FreeBSD die eingeschalteten rc.d-Skripte als Units  [x]
+Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/probe/unit_rcd.go, apps/agent/internal/probe/unit_rcd_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c067382d6 2026-11-17T07:26:31+01:00
+Review: am Ende (Branch-Review)
+Änderung: R-1448. probe bekommt `RCUnits` (`service -e` plus onestatus, exportiert). `collectUnits` liest unter FreeBSD die eingeschalteten Skripte und fragt jedes mit onestatus: active/running oder inactive/dead, bloßer Name. Ein Skript ohne lesbaren Status fehlt. Ein Aufruf ohne Antwort beendet die Liste als partial. Tests mit Fake-service(8).
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T2
 
@@ -19,3 +21,5 @@ Doku: docs/admin/monitoring.html docs/en/admin/monitoring.html changelog.d/kern-
 Abhängt von: T1
 
 ## Entscheidungen
+- T1: Der Parser von `service -e` bleibt in monitor (`parseRCEnabled`), probe bekommt eine eigene Liste (`RCUnits`). Ein Umzug hätte die Klasse `rcscript` der monitor-Allowlist (`argClasses`) mitziehen müssen, und monitors Ausgabe (enabled_inactive, stop_cmd-Regel) braucht die Dateipfade, die Discovery nicht. Die Doppelung ist ~15 Zeilen; die Namensregel ist in beiden dieselbe (`rcNamePattern` ↔ `reRCScriptName`). Statusaufruf: Exit > 0 ist eine Antwort, Timeout, Signal und Startfehler beenden die Liste (wie `answered` in monitor).
+- T1 (Reparatur vor dem Push): Die Dateien-Zeile war mit Leerzeichen statt Kommas getrennt; task-close stagte nur den ersten Pfad. Der Commit wurde um probe/unit_rcd.go und die Tests ergänzt (amend, Verify erneut: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped).
