@@ -210,7 +210,7 @@ func TestContainerGlobOfAMissingDirectoryIsNoFile(t *testing.T) {
 	if err != nil || len(files) != 0 {
 		t.Fatalf("glob = %+v, %v", files, err)
 	}
-	if _, err := fs.glob(context.Background(), "/etc/*/conf.d/*.conf", 1<<20); !errors.Is(err, errNotInContainer) {
+	if _, err := fs.glob(context.Background(), "/etc/*/conf.d/*.conf", 1<<20); !errors.Is(err, errContainerPattern) {
 		t.Fatalf("glob with a pattern directory: err = %v", err)
 	}
 }

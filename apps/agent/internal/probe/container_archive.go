@@ -35,6 +35,7 @@ var (
 	errContainerConfLarge = errors.New("the configuration in the container is larger than the agent reads")
 	errContainerLinks     = errors.New("too many links in the container")
 	errContainerNoFile    = errors.New("the path in the container is no regular file")
+	errContainerPattern   = errors.New("an include in the container names a pattern of directories")
 
 	// ctrPath is a plain absolute path in a container, the allowlist's <ctrpath>.
 	ctrPath = regexp.MustCompile(`^(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_.,@+-]*)+$`)
@@ -153,12 +154,12 @@ type containerFile struct {
 // order nginx and Apache read them in), each at most limit bytes: the archive of the directory, its other
 // entries and the ones that look like a key (keyLike) skipped unread, a link among them followed unless it
 // leads to a key. A directory that is a link is followed too; the files keep their names below the path
-// the pattern names. A pattern whose directory is a pattern itself gives errNotInContainer; one that
-// matches nothing, or a directory that is not there, no file.
+// the pattern names. A pattern whose directory is a pattern itself gives errContainerPattern (the agent
+// does not list directories); one that matches nothing, or a directory that is not there, no file.
 func (c *containerFS) glob(ctx context.Context, pattern string, limit int64) ([]containerFile, error) {
 	dir := path.Dir(pattern)
 	if strings.ContainsAny(dir, `*?[\`) {
-		return nil, errNotInContainer
+		return nil, errContainerPattern
 	}
 	from := dir
 	for range maxContainerLinks + 1 {

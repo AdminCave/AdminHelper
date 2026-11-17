@@ -24,7 +24,7 @@ var containerNginxConfs = []string{"/etc/nginx/nginx.conf", "/usr/local/nginx/co
 var listContainers = runningContainers
 
 // ContainerVhosts lists the names the web servers in the running Docker containers of this host serve
-// on a published port, by the host port: nginx from its configuration, read from the container's
+// on a published port, by the host port: nginx and Apache from their configuration, read from the container's
 // archive (containerFS), never by running anything in it (Kevin 2026-11-17). A container without a
 // published TCP port, or whose command names no web server, adds none; the application of a document
 // root is not looked for (it lies in another container more often than not). A container whose
@@ -46,6 +46,8 @@ func ContainerVhosts(ctx context.Context) ([]Vhost, error) {
 		switch containerWebServer(c) {
 		case "nginx":
 			found, err = containerNginxVhosts(ctx, newContainerFS(c.ID), nginxConfArg(c))
+		case "apache":
+			found, err = containerApacheVhosts(ctx, newContainerFS(c.ID))
 		default:
 			continue
 		}
@@ -108,13 +110,16 @@ func containerPorts(c containerInfo) map[uint16][]uint16 {
 	return ports
 }
 
-// containerWebServer is the web server the command of a container runs ("nginx", "" for none known):
-// the program or an argument of it by its name, as an entrypoint script passes it on
-// (/docker-entrypoint.sh nginx -g "daemon off;").
+// containerWebServer is the web server the command of a container runs ("nginx", "apache", "" for none
+// known): the program or an argument of it by its name, as an entrypoint script passes it on
+// (/docker-entrypoint.sh nginx -g "daemon off;", docker-php-entrypoint apache2-foreground).
 func containerWebServer(c containerInfo) string {
 	for _, w := range append([]string{c.Path}, c.Args...) {
-		if path.Base(w) == "nginx" {
+		switch path.Base(w) {
+		case "nginx":
 			return "nginx"
+		case "httpd", "httpd-foreground", "apache2", "apache2-foreground", "apache2ctl", "apachectl":
+			return "apache"
 		}
 	}
 	return ""
@@ -184,7 +189,7 @@ func containerNginxDump(ctx context.Context, fs *containerFS, conf string, main 
 			var files []containerFile
 			if strings.ContainsAny(pattern, `*?[`) {
 				var err error
-				if files, err = fs.glob(ctx, pattern, maxApacheFileBytes); err != nil && !errors.Is(err, errNotInContainer) {
+				if files, err = fs.glob(ctx, pattern, maxApacheFileBytes); err != nil {
 					return nil, err
 				}
 			} else if !keyPath(pattern) {

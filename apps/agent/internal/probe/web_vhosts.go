@@ -540,7 +540,7 @@ func apacheVhostsOf(a *apacheVhost, b apacheVhostBlock) []Vhost {
 // apacheVhostBlock is what block keeps of a <VirtualHost>.
 type apacheVhostBlock struct {
 	found, named, tls bool
-	root, cert        string
+	root, cert, name  string
 	aliases           []string
 }
 
@@ -607,6 +607,7 @@ func (b *apacheVhostBlock) set(f []string) {
 		b.root = strings.Trim(f[1], `"`)
 	case "servername":
 		b.named = true
+		b.name = f[1]
 	case "serveralias":
 		b.aliases = append(b.aliases, f[1:]...)
 	}

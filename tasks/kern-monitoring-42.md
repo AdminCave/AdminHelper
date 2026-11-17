@@ -28,8 +28,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T5
 Abhängt von: T1
 
-### T3 — R-1503: Apache (httpd) im Container  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts_container.go, apps/agent/internal/probe/web_vhosts_container_test.go, apps/agent/internal/probe/web_vhosts.go, tasks/kern-monitoring-42.md
+### T3 — R-1503: Apache (httpd) im Container  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/web_vhosts_container.go, apps/agent/internal/probe/web_vhosts_container_test.go, apps/agent/internal/probe/web_vhosts.go, tasks/kern-monitoring-42.md, apps/agent/internal/probe/web_vhosts_container_apache.go, apps/agent/internal/probe/web_vhosts_container_apache_test.go, apps/agent/internal/probe/container_archive.go, apps/agent/internal/probe/container_archive_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6d4537744 2026-11-17T10:10:23+01:00
+Review: approve (.ah-out/review/kern-monitoring-42/T3.verdict.json)
 Änderung: Container, deren Kommando httpd, `httpd-foreground` oder `apache2-foreground` nennt: Hauptdatei
 (`/usr/local/apache2/conf/httpd.conf`, `/etc/apache2/apache2.conf`, `/etc/httpd/conf/httpd.conf`), `ServerRoot`,
 `Include`/`IncludeOptional` samt Mustern, daraus die `<VirtualHost>`-Blöcke mit `ServerName`, `ServerAlias`,
@@ -66,3 +68,8 @@ Task-Review: am Ende
   Meldung gerät; ein Daemon, der nicht antwortet, fällt schon bei `docker ps`/`inspect` als Fehler auf.
 - T2: Ein Wildcard-Muster nimmt keinen Namen mit führendem Punkt (nginx glob(3) ohne GLOB_PERIOD, Apache
   APR_FNM_PERIOD); `path.Match` täte es (Nit des T1-Prüfers).
+- T3: Im Container fehlt `apachectl -S`: jeder `<VirtualHost>` zählt, auch einer in `<IfModule>`/`<IfDefine>`, der
+  nicht geladen würde; ein Block ohne `ServerName` meldet nur seine Aliase (wie auf dem Host). Erkannt wird Apache
+  am Kommando `httpd`, `httpd-foreground`, `apache2`, `apache2-foreground`, `apache2ctl` oder `apachectl`.
+- T3 (Nit des T2-Prüfers): Ein Include, dessen Verzeichnis selbst ein Muster ist, macht den Container zum Fehler
+  (`errContainerPattern`, Liste unvollständig), statt still ausgelassen zu werden.

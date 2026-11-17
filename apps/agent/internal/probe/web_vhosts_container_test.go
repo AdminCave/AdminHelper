@@ -113,7 +113,7 @@ func TestContainerVhostsReadNginxInAContainerByItsPublishedPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The vhost on the port the container does not publish is none; the root, the certificate and the
-	// user name paths in the container and stay out (T4 reads the certificate through the archive).
+	// user name paths in the container and stay out.
 	want := []Vhost{
 		{Server: "nginx", Name: "shop.example.org", Port: 8443, TLS: true},
 		{Server: "nginx", Name: "shop.example.org", Port: 8080},
@@ -232,5 +232,16 @@ http { server { listen 443 ssl; server_name a.example.org; ssl_certificate /etc/
 	}
 	if len(got) != 2 || got[0].Name != "a.example.org" || got[0].cert != "/etc/ssl/a.pem" || got[1].Name != "b.example.org" {
 		t.Fatalf("WebVhosts = %+v", got)
+	}
+}
+
+func TestAnIncludeOfAPatternOfDirectoriesLeavesTheContainerIncomplete(t *testing.T) {
+	stubContainers(t, []containerInfo{
+		webContainer(nginxCtr, "nginx", nil, map[string][]string{"80/tcp": {"80"}}),
+	}, map[string][]byte{
+		"/etc/nginx/nginx.conf": buildTar(t, tarEntry{name: "nginx.conf", body: "http { include sites-*/*.conf; }\n"}),
+	})
+	if _, err := ContainerVhosts(context.Background()); !errors.Is(err, errContainerPattern) {
+		t.Fatalf("err = %v, want the container incomplete", err)
 	}
 }
