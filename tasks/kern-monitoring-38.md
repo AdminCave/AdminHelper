@@ -60,8 +60,10 @@ Modul oder Ziel, nach dem Beleg). Braucht es einen neuen Katalog-Mechanismus: `[
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_threecx.py
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-38.md
 
-### T7 — R-1489: Modul edulution  [ ]
+### T7 — R-1489: Modul edulution  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/edulution.py, apps/monitoring/tests/test_catalog_edulution.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-38.md, tasks/kern-monitoring-38.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @949411ef8 2026-11-17T06:42:31+01:00
+Review: approve (.ah-out/review/kern-monitoring-38/T7.verdict.json)
 Änderung: erst Images, Projektname und Health-Pfad an den Quellen belegen (Kevin 2026-11-16), dann das Modul und seine Testdatei (beide neu, SPDX-Header per `reuse annotate`).
 Ohne Beleg: `[~]` mit Grund.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_edulution.py

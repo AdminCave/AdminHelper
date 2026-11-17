@@ -5,6 +5,8 @@
   Karte zeigt die Zahl der Partner.
 - **Monitoring Wiki.js: Wiki.js 3 (Image-Tag `3` oder `3.*`) bekommt den Check `/_ready`;** alles ausser 200 ist
   kritisch.
+- **Monitoring: neues Modul edulution:** die Container der Plattform aus dem Compose-Projekt des Installers und die
+  Gesundheitsroute der API.
 
 ### Changed
 
