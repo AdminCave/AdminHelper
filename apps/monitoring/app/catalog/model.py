@@ -132,6 +132,11 @@ class Target(_Model):
         return self
 
 
+class RuleUnless(_Model):
+    field: str
+    value: _Scalar
+
+
 class Rule(_Model):
     field: str
     # delta_gt: rose by more than value since the run before; drop_pct_gt: fell by more than
@@ -140,6 +145,21 @@ class Rule(_Model):
     value: _Scalar | list[_Scalar]
     # info: a hint without an alarm (R-1280): the check shows it, nothing notifies.
     level: Literal["info", "warning", "critical"]
+    # Kevin 2026-11-16 (R-1475): the agent leaves a field out when there is nothing to rate
+    # (no replication link, no certificate, no license pack); that is ok, not unknown.
+    if_absent: Literal["ok"] | None = None
+    # The rule does not apply while another field of the same result has this value
+    # (R-1480: Defender's real-time protection in passive mode).
+    unless: RuleUnless | None = None
+
+    @model_serializer(mode="wrap")
+    def _options_only_when_set(self, handler: Any) -> dict[str, Any]:
+        # Left out when unset, so the modules that do not use them keep their hash.
+        data = handler(self)
+        for key in ("if_absent", "unless"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
     @model_validator(mode="after")
     def _value_fits_op(self) -> Rule:
@@ -277,6 +297,10 @@ class Check(_Model):
         for rule in self.rules:
             if rule.field not in self.fields:
                 raise ValueError(f"rule field {rule.field!r} is not among the check's fields")
+            if rule.unless is not None and rule.unless.field not in self.fields:
+                raise ValueError(
+                    f"unless field {rule.unless.field!r} is not among the check's fields"
+                )
         return self
 
 

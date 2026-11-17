@@ -336,6 +336,40 @@ def test_a_value_the_rule_cannot_rate_is_unknown(value, rule):
     assert metrics["_details"]["problems"] == [msg]
 
 
+@pytest.mark.parametrize(
+    ("values", "want"),
+    [
+        # Kevin 2026-11-16 (R-1475): nothing to rate is ok.
+        ({}, ("ok", "")),
+        ({"f": 2}, ("ok", "")),
+        ({"f": 9}, ("critical", "f = 9 (gt 5)")),
+        # A value that is there but cannot be rated stays unknown.
+        ({"f": "slow"}, ("unknown", "f: no usable value in the probe result")),
+    ],
+)
+def test_a_rule_with_if_absent_ok_rates_a_missing_value_as_ok(values, want):
+    rule = {**_rule("f", "gt", 5), "if_absent": "ok"}
+    level, msg, _ = _rate(_ok(values), fields=["f"], rules=[rule])
+    assert (level, msg if want[0] != "ok" else "") == want
+
+
+@pytest.mark.parametrize(
+    ("values", "want"),
+    [
+        ({"on": False, "passive": True}, "ok"),
+        ({"on": False, "passive": False}, "critical"),
+        ({"on": False}, "critical"),
+        # true is not 1.
+        ({"on": False, "passive": 1}, "critical"),
+        ({"on": True, "passive": False}, "ok"),
+    ],
+)
+def test_a_rule_does_not_apply_while_its_unless_field_has_the_value(values, want):
+    rule = {**_rule("on", "eq", False), "unless": {"field": "passive", "value": True}}
+    level, _, _ = _rate(_ok(values), fields=["on", "passive"], rules=[rule])
+    assert level == want
+
+
 def test_the_worst_level_that_holds_wins_and_all_are_named():
     rules = [
         _rule("a", "gt", 1, "warning"),

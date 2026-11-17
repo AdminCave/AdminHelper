@@ -259,11 +259,24 @@ def test_a_named_sql_server_instance_is_not_taken():
             {"realtime_on": False, "detections_24h": 0, "signature_age_d": 0},
             "critical",
         ),
-        # Should passive mode report real-time protection off, the check is critical (not verified).
+        # R-1480: in passive mode real-time protection blocks nothing; off is no finding there.
         (
             "defender",
             "status",
             {"realtime_on": False, "passive": True, "detections_24h": 0, "signature_age_d": 0},
+            "ok",
+        ),
+        (
+            "defender",
+            "status",
+            {"realtime_on": False, "passive": False, "detections_24h": 0, "signature_age_d": 0},
+            "critical",
+        ),
+        # The other rules still hold in passive mode.
+        (
+            "defender",
+            "status",
+            {"realtime_on": False, "passive": True, "detections_24h": 0, "signature_age_d": 4},
             "critical",
         ),
         (

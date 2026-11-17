@@ -175,11 +175,16 @@ def _rate(rules: object, values: dict, baseline: dict | None, ts: float) -> tupl
             continue
         field = rule.get("field")
         value = values.get(field)
+        unless = rule.get("unless")
+        if isinstance(unless, dict) and _same(values.get(unless.get("field")), unless.get("value")):
+            continue
         before = (baseline or {}).get(field)
         holds = _rule_holds(rule, value, before, ts)
         if holds is None and rule.get("level") == "info":
             # A hint never makes a check worse than info: no value, no hint (OPNsense sends
             # update_available only after an update check).
+            continue
+        if value is None and rule.get("if_absent") == "ok":
             continue
         if holds is None:
             unrated.append(f"{field}: no usable value in the probe result")

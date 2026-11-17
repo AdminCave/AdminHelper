@@ -16,16 +16,20 @@ A pending reboot and a search older than three days are warnings; open security 
 common on a healthy host, so the count shows a trend rather than a fault. A machine
 certificate that expires within 14 days is a warning, within 3 days critical; the agent reads
 no issue date, so the share of the lifetime left (as the tls sensor rates it) is not known
-here. Expired certificates are shown, not alarmed: old ones often stay in the store unused.
+here. Expired certificates are shown, not alarmed: old ones often stay in the store unused. An
+empty store has no nearest expiry; nothing to rate is ok (Kevin 2026-11-16, R-1475).
 
 Not verified on Windows Server: the field values come from the documented WUA and event log
 APIs, not from a run.
 """
 
+# The agent leaves the field out when there is nothing to rate.
+_EMPTY_OK = {"if_absent": "ok"}
+
 MODULE = {
     "id": "windows-host",
     "name": "Windows host",
-    "version": 1,
+    "version": 2,
     "description": "Windows: open updates, pending reboot, error events, machine certificates.",
     "detect": {"units": ["EventLog.service"]},
     "instance": "unit",
@@ -62,8 +66,20 @@ MODULE = {
             "interval": 86400,
             "fields": ["certs", "expired", "min_days_left"],
             "rules": [
-                {"field": "min_days_left", "op": "lt", "value": 3, "level": "critical"},
-                {"field": "min_days_left", "op": "lt", "value": 14, "level": "warning"},
+                {
+                    "field": "min_days_left",
+                    "op": "lt",
+                    "value": 3,
+                    "level": "critical",
+                    **_EMPTY_OK,
+                },
+                {
+                    "field": "min_days_left",
+                    "op": "lt",
+                    "value": 14,
+                    "level": "warning",
+                    **_EMPTY_OK,
+                },
             ],
         },
     ],
