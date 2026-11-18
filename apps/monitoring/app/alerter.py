@@ -17,9 +17,11 @@ import logging
 import smtplib
 import ssl
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from typing import NamedTuple
 from urllib.parse import urlparse
 
@@ -27,6 +29,7 @@ import httpx
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app import mail_template, notify_config
 from app.core.bounds import storable
 from app.core.config import (
     INTERNAL_API_KEY,
@@ -859,6 +862,44 @@ def _email_failure(exc: Exception, *, in_starttls: bool, loading_ca: bool) -> st
     return f"SMTP error ({type(exc).__name__})"
 
 
+_MONITOR_PREFIX = "[AdminHelper Monitor] "
+_IMAGE_SUBTYPE = {"image/png": "png", "image/jpeg": "jpeg"}
+
+
+def _mime(template: mail_template.Template | None, msg: dict) -> MIMEMultipart:
+    """The mail body with its subject. Without a template plain text and the subject as
+    before (R-1533); with one the panel's prefix takes the place of the monitor prefix and
+    the parts are built as in the hub (apps/server/.../notifications/sender.py::_mime)."""
+    if template is None:
+        message = MIMEMultipart("alternative")
+        message["Subject"] = msg["subject"]
+        message.attach(MIMEText(msg["text"], "plain"))
+        return message
+    mail = mail_template.compose(
+        template,
+        title=msg["subject"].removeprefix(_MONITOR_PREFIX),
+        body=msg["text"],
+        severity="ok" if msg.get("is_recovery") else str(msg.get("severity") or ""),
+        category="monitoring",
+        time=mail_template.format_time(datetime.now(timezone.utc)),
+        source="AdminHelper Monitor",
+    )
+    alternative = MIMEMultipart("alternative")
+    alternative.attach(MIMEText(mail.text, "plain"))
+    message = alternative
+    if mail.html is not None:
+        alternative.attach(MIMEText(mail.html, "html"))
+        if mail.logo is not None:
+            message = MIMEMultipart("related")
+            message.attach(alternative)
+            image = MIMEImage(mail.logo, _subtype=_IMAGE_SUBTYPE.get(mail.logo_type or "", "png"))
+            image.add_header("Content-ID", f"<{mail_template.LOGO_CID}>")
+            image.add_header("Content-Disposition", "inline")
+            message.attach(image)
+    message["Subject"] = mail.subject.translate(_SUBJECT_TO_SPACE)
+    return message
+
+
 def _send_email(
     config: dict,
     rule: MonitorAlertRule,
@@ -872,23 +913,46 @@ def _send_email(
     if not recipients:
         return False, "No recipients configured"
 
+    # The hub's relay in effect (panel before .env, R-1531); until the hub ever answered,
+    # the .env of this service.
+    central = notify_config.get()
+    if central is not None:
+        relay = central.relay
+        hub_host, hub_port, hub_user, hub_pass, hub_from = (
+            relay.host,
+            relay.port,
+            relay.user,
+            relay.password,
+            relay.sender,
+        )
+    else:
+        hub_host, hub_port, hub_user, hub_pass, hub_from = (
+            SMTP_HOST,
+            SMTP_PORT,
+            SMTP_USER,
+            SMTP_PASSWORD,
+            SMTP_FROM,
+        )
     rule_host = str(config.get("smtp_host") or "").strip()
-    # SMTP_USER/SMTP_PASSWORD belong to the relay in SMTP_HOST; a rule naming another host
-    # logs in with its own credentials only, so the global password never reaches that host.
-    env_relay = not rule_host or rule_host.lower() == SMTP_HOST.strip().lower()
-    smtp_host = rule_host or SMTP_HOST
-    smtp_port = int(config.get("smtp_port") or SMTP_PORT)
-    smtp_user = config.get("smtp_user") or (SMTP_USER if env_relay else "")
-    smtp_pass = config.get("smtp_password") or (SMTP_PASSWORD if env_relay else "")
+    # The central user/password belong to the central relay; a rule naming another host
+    # logs in with its own credentials only, so the central password never reaches that host.
+    env_relay = not rule_host or rule_host.lower() == hub_host.strip().lower()
+    smtp_host = rule_host or hub_host
+    smtp_port = int(config.get("smtp_port") or hub_port)
+    smtp_user = config.get("smtp_user") or (hub_user if env_relay else "")
+    smtp_pass = config.get("smtp_password") or (hub_pass if env_relay else "")
 
     if not smtp_host:
         return False, "SMTP not configured (SMTP_HOST missing)"
 
-    message = MIMEMultipart("alternative")
-    message["Subject"] = msg["subject"]
-    message["From"] = config.get("from", SMTP_FROM)
+    template = central.template if central is not None else None
+    message = _mime(template, msg)
+    sender = config.get("from", hub_from)
+    if template is not None and template.from_name and "from" not in config:
+        # A rule's own "from" is taken as written; the panel's name dresses the central one.
+        sender = formataddr((template.from_name.translate(_SUBJECT_TO_SPACE).strip(), sender))
+    message["From"] = sender
     message["To"] = ", ".join(recipients)
-    message.attach(MIMEText(msg["text"], "plain"))
 
     in_starttls = loading_ca = False
     try:

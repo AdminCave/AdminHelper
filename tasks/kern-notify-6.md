@@ -80,8 +80,10 @@ bzw. mit falschem Key, Inhalt bei Panel- und bei `.env`-Werten, kein Geheimnis i
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_internal_config.py tests/test_openapi_snapshot.py
 Doku: → T10
 
-### T7 — R-1531/R-1533: Monitoring nimmt zentralen Relay und Vorlage  [ ]
+### T7 — R-1531/R-1533: Monitoring nimmt zentralen Relay und Vorlage  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/notify_config.py, apps/monitoring/app/mail_template.py, apps/monitoring/app/alerter.py, apps/monitoring/app/alert_bundle.py, apps/monitoring/tests/test_notify_config.py, apps/monitoring/tests/test_mail_template_parity.py, apps/monitoring/tests/fixtures/mail_template_parity.json, apps/monitoring/tests/test_alerter.py, tasks/kern-notify-6.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3ac9da461 2026-11-18T13:36:23+01:00
+Review: approve (.ah-out/review/kern-notify-6/T7.verdict.json)
 Änderung: `notify_config.py` holt `/api/internal/notify-config` (60 s Cache, bei Fehler der letzte gute Stand,
 ohne einen die `.env`). `_send_email` nimmt für Regeln ohne eigenen Relay die zentralen SMTP-Werte, für alle Regeln
 die Vorlage; ohne Vorlage bleiben Betreff `[AdminHelper Monitor] …` und reiner Text. `mail_template.py` ist die
@@ -115,6 +117,7 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapsho
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-notify-6.md
 
 ## Entscheidungen
+- T7: Mit Vorlage ersetzt das Präfix des Panels `[AdminHelper Monitor] ` (Titel = Betreff ohne dieses Präfix, `{{source}}` = „AdminHelper Monitor“, `{{severity}}` = `ok` bei Erholung, sonst die Schwere des Checks); ohne Antwort des Hubs gelten `.env` und die reine Textmail. Ein eigenes `from` der Regel bleibt wörtlich, der Absendername des Panels kleidet nur den zentralen Absender. Zentrale User/Passwort nur für den zentralen Host, wie zuvor die `.env`-Werte. Ein Abruf-Fehler wartet die 60 s ebenfalls ab und loggt nur den Exception-Typ. `alert_bundle.py` bleibt unverändert: seine Betreffe tragen dasselbe Präfix und gehen durch `_send_email`. Die Hub-Titel der Monitoring-Ereignisse behalten ihr Präfix (außerhalb dieses Zugs).
 - T5: Das Logo kommt als Base64 in JSON (`{data}`), weil der Web-Client nur JSON sendet; der Typ folgt allein aus den ersten Bytes (PNG/JPEG), `sender._mime` nimmt den MIME-Subtyp aus einer festen Tabelle. Admin-Kanaltest und Vorlagen-Test teilen Sperre und 10-s-Fenster (`_test_slot`) und senden beide in der gespeicherten Vorlage (Reviewer-Nit aus T4).
 - T4: `send_email` nimmt severity/category/Zeitpunkt als Keyword-Argumente für die Platzhalter; die Test-Stubs von `send_email` in fünf Testdateien nehmen dafür `**_k` an (Verify und Dateien erweitert). Ohne Vorlage bleibt die Mail byte-gleich aufgebaut wie vorher (multipart/alternative mit einem text/plain-Teil). Der Digest trägt als `{{severity}}` die schwerste seiner Meldungen.
 - 2026-11-18 Plan: Kevin — Geheimnisse verschlüsselt (Schlüssel aus SECRET_KEY), freie HTML-Vorlage, gilt für Hub- und Monitoring-Regel-Mails.
