@@ -20,8 +20,10 @@ oder ausdrücklich ohne; Ebene 1 ein Satz Grund; Schlüssel je Objekt eindeutig)
 Experiment-Proben bleiben außerhalb des öffentlichen Baums; Verfahren und Messwerte stehen im ADR. Belegte Fehler
 werden Roadmap-Zeilen (`roadmap.py add`), nicht in diesem Zug gefixt.
 
-### T1 — Mockup-Gerüst und Darstellungs-Grammatik (R-1558)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/mockup.html, apps/desktop/ui/src/mockups/monitoring-neu/main.ts, apps/desktop/ui/src/mockups/monitoring-neu/MockupApp.svelte, apps/desktop/ui/src/mockups/monitoring-neu/model.ts, apps/desktop/ui/src/mockups/monitoring-neu/grammar.ts, apps/desktop/ui/src/mockups/monitoring-neu/grammar.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/ObjectRow.svelte, apps/desktop/ui/src/mockups/monitoring-neu/ObjectDrawer.svelte, apps/desktop/ui/src/mockups/monitoring-neu/ObjectRow.test.ts
+### T1 — Mockup-Gerüst und Darstellungs-Grammatik (R-1558)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/mockup.html, apps/desktop/ui/src/mockups/monitoring-neu/main.ts, apps/desktop/ui/src/mockups/monitoring-neu/MockupApp.svelte, apps/desktop/ui/src/mockups/monitoring-neu/model.ts, apps/desktop/ui/src/mockups/monitoring-neu/grammar.ts, apps/desktop/ui/src/mockups/monitoring-neu/grammar.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/ObjectRow.svelte, apps/desktop/ui/src/mockups/monitoring-neu/ObjectDrawer.svelte, apps/desktop/ui/src/mockups/monitoring-neu/ObjectRow.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/index.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/time.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/KindsView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/isolation.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e62d7b24d 2026-11-18T12:33:18+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T1.verdict.json)
 Änderung: Zweiter Vite-Einstieg `mockup.html` (nur Dev-Server; `vite build` baut weiter nur `index.html`, ein Test prüft, dass `vite.config.ts` keinen zweiten Einstieg nennt und `main.ts` nichts aus `mockups/` importiert). `model.ts` beschreibt Objekt (Schlüssel, Art, Name, Identität, Status ok/info/warning/critical/unknown/nicht erhoben/veraltet, Grund, seit, schlecht seit, Kennzahlen mit Schwelle, Detail-Abschnitte, Ausnahme). `grammar.ts`: Sortierung (schlechteste zuerst, ausgeblendete grau am Ende), Schwellen-Text („41 °C (Warnung ab 55)“), „seit“-Text, Grammatik-Prüfung. `ObjectRow` zeigt Ebene 1 + 2 und Identitätszeile, `ObjectDrawer` Ebene 3 mit Abschnitten (Kennzahlen, Verlauf, Regeln, Ausnahmen, Rohdaten). `MockupApp` mit Navigation über die Ansichten der folgenden Tasks.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring-neu
 Doku: → T11
@@ -114,3 +116,8 @@ Task-Review: am Ende
 Abhängt von: T12
 
 ## Entscheidungen
+- 2026-11-18 T1: Statusrang kritisch > Warnung > unbekannt > veraltet > Info > nicht erhoben > OK; ausgeblendet heißt Ausnahme mit Wirkung `skip` oder `no-rating`, `no-notify`/`mute-me` bleiben an ihrem Statusplatz — Konzept §3 „ausgeblendete grau am Ende mit Grund“, Stummschalten ändert die Bewertung nicht.
+- 2026-11-18 T1: Fixtures rechnen gegen eine feste Uhr `NOW` (2026-11-18 09:00 UTC) — Screenshots und Tests bleiben reproduzierbar.
+- 2026-11-18 T1: Mockup-Texte deutsch und ohne `t()`/i18n-Schlüssel — Wegwerf-Entwurf zur Abnahme, die Produkt-Übersetzung entsteht in P1+.
+- 2026-11-18 T1: `Detail` ist eine Union, die T2/T3 um Blöcke je Objektart erweitern (ObjectDrawer und model.ts per `set-files`) — die Ebene 3 wächst mit den Objektarten statt vorab generisch zu werden (YAGNI).
+- 2026-11-18 T1: Desktop-UI-Tests ohne jest-dom-Matcher (`toBeTruthy`, `classList`) — `vitest.setup.ts` liegt außerhalb des tsconfig-`include`, svelte-check kennt die Matcher-Typen nicht.
