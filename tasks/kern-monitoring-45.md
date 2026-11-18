@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_check
 Doku: → T11
 Abhängt von: T5
 
-### T7 — R-1570: ZFS-Zustände, Scrub-Fehler und Scrub-Alter  [ ]
+### T7 — R-1570: ZFS-Zustände, Scrub-Fehler und Scrub-Alter  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_plugin_checkers.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8a11373c2 2026-11-18T12:56:39+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T7.verdict.json)
 Änderung: `SUSPENDED` und `REMOVED` sind kritisch; Scrub-Fehler ergeben `warning`; das Scrub-Alter kommt aus der
 Konfiguration (`scrub_warn_days`, `scrub_crit_days`, Vorgabe 35/60). Tests je Fall (rot vorher).
 Beweis: Code-Lesung `plugins.py` ZFS-Prüfung · Dedup-Key: bug:monitoring:plugins.py:zfs-states
@@ -144,3 +146,8 @@ Task-Review: am Ende
   (Temperatur, Attribute) bewertet und in der Meldung immer als „SMART not readable“ genannt. Fixtures in
   `test_checker_messages.py` und `test_agent_report.py` tragen jetzt `smart_passed: true` wie echte Agenten.
   Die Anzeige im Desktop (`category: unknown` in SecSmart, bisher grün) zieht T8 nach (Prüfer-Fund zu T6).
+- T7: `_BAD_POOL_HEALTH` als Tupel (die Reihenfolge entscheidet nichts, ein frozenset brach den Test mit
+  nicht hashbaren Health-Werten). Scrub-Fehler (`errors > 0`, auch während `SCANNING`) ergeben `warning`, ein
+  `critical` bleibt; das Scrub-Alter liest `scrub_warn_days`/`scrub_crit_days` (int, strict, 1..3650, Vorgabe 35/60)
+  und nennt die Grenze in der Meldung. Die Details-Fixture `_POOL_FIELDS` trägt jetzt `errors: 0`, weil Scrub-Fehler
+  seit T7 bewerten (wie das Scrub-Alter seit R-1230).
