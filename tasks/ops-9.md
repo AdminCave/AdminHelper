@@ -5,8 +5,10 @@ Heavy: scenario --box freebsd,opnsense — neues Installer-Skript; `scripts/test
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1598: scripts/agent-install-bsd.sh mit hermetischem Test  [ ]
+### T1 — R-1598: scripts/agent-install-bsd.sh mit hermetischem Test  [x]
 Komponente: scripts · Dateien: scripts/agent-install-bsd.sh, scripts/tests/agent_install_bsd_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @24fc7e67d 2026-11-18T17:28:48+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neues POSIX-sh-Skript nach Spec (Schlüssel im Skript, `--pubkey`, Repo-Datei je Plattform, `os-adminhelper` oder `adminhelper-agent`, Token verdeckt über `/dev/tty` oder `--token`, `provision --token-stdin`, danach TLS auf die interne CA; Abbruch, wenn das Paket nach `pkg update` nicht sichtbar ist). SPDX in beiden neuen Dateien. Der Test läuft unter `dash` mit Stubs und prüft: Repo-Datei vor und nach der Registrierung (FreeBSD, OPNsense über `configctl`), Paketwahl, Token nie in argv, ohne `--server-id` keine Provisionierung, Abbruch ohne root, Skript-Schlüssel gleich `apps/agent/freebsd/adminhelper-pkg.pub` und gleich `PUBSHA` der Doku. Eintrag in `AH_SCRIPT_TESTS_DEFAULT`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_bsd_test
 Doku: → T3
