@@ -588,6 +588,9 @@ func TestUnixSocketSensorNeverConnectsToAForwarder(t *testing.T) {
 		{"sslh-select", nil, "belongs to sslh-select, which forwards"},
 		{"exe", []string{"/usr/libexec/podman/rootlessport"}, "belongs to rootlessport, which forwards"},
 		{"exe", nil, "the process exe serving " + path + " cannot be told"},
+		{"busybox", []string{"busybox", "nc", "-lk", "local:" + path}, "belongs to nc, which forwards"},
+		{"dropbearmulti", []string{"dropbearmulti", "dropbear"}, "belongs to dropbear, which the agent never probes"},
+		{"busybox", nil, "the applet busybox runs cannot be read"},
 	} {
 		h.names[pid] = c.name
 		delete(h.args, pid)
@@ -601,6 +604,10 @@ func TestUnixSocketSensorNeverConnectsToAForwarder(t *testing.T) {
 	h.names[pid], h.args[pid] = "exe", []string{"/usr/bin/caddy", "run"}
 	if got, err := probe(); err != nil || got["connected"] != true {
 		t.Errorf("served by a reexec of caddy = %v, %v; want it connected", got, err)
+	}
+	h.names[pid], h.args[pid] = "busybox", []string{"busybox", "httpd", "-f"}
+	if got, err := probe(); err != nil || got["connected"] != true {
+		t.Errorf("served by busybox httpd = %v, %v; want it connected", got, err)
 	}
 }
 
