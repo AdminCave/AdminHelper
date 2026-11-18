@@ -273,15 +273,15 @@ describe('MonServerDashboard cards (R-1225)', () => {
     ]);
   });
 
-  it('shows what was newly found as an open card between problems and the rest', async () => {
+  it('shows what was newly found as an open card before the problems and the rest (R-1542)', async () => {
     findings.set([finding('f1'), finding('f2', 'srv-2')]);
     const el = await mount('srv-1', [
       check('ping', 'ping', 'critical'),
       check('svc', 'service_process', 'ok'),
     ]);
     expect(cardsOf(el)).toEqual([
-      ['System', 'true'],
       ['Neu gefunden (1)', 'true'],
+      ['System', 'true'],
       ['Dienste', 'false'],
     ]);
     await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
