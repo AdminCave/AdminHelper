@@ -164,10 +164,12 @@ func TestAContainerWithoutAKnownMainFileHasNoNginx(t *testing.T) {
 }
 
 func TestAContainerOverItsBudgetIsAnErrorThatNamesNoPath(t *testing.T) {
-	big := strings.Repeat("# filler\n", 1<<17)
+	// Each file stays under maxApacheFileBytes (1 MiB); only all of them together pass the container's
+	// budget (maxContainerConfBytes, 4 MiB), so the test meets the budget and not the file limit.
+	big := strings.Repeat("# filler\n", 1<<16)
 	var entries []tarEntry
 	entries = append(entries, tarEntry{name: "conf.d", dir: true})
-	for _, n := range []string{"a", "b", "c", "d", "e"} {
+	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
 		entries = append(entries, tarEntry{name: "conf.d/" + n + ".conf", body: big})
 	}
 	stubContainers(t, []containerInfo{

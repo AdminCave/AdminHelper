@@ -33,6 +33,11 @@
           <h1>Monitoring Stack</h1>
           <p class="lead">Monitoring is three layers cooperating: the AdminHelper server acts as a reverse proxy and forwards UI queries, the separate <code>monitoring/</code> service holds checks/alerts/templates and runs scheduler-based pull checks, VictoriaMetrics stores the time-series data (retention configurable via <code>VM_RETENTION</code>, default 90 days).</p>
 
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Proposed reorganisation (ADR 0004)</div><p>This page describes the current state. <a href="../../adr/0004-monitoring-neuordnung.md">ADR 0004</a> (German, status: proposed) proposes a reorganisation around object, rule, exception, problem and coverage, with the target model, a rule prototype, the migration plan, experiments and phases P1&ndash;P5. Until a phase is built, what this page describes applies. The UI mockup starts from the desktop UI's Vite dev server as described in <code>DEVELOPMENT.md</code> (<code>apps/desktop/ui/mockup.html</code>, not part of the build).</p></div>
+          </div>
+
           <h2>Data Flow</h2>
           <div class="code-header"><span>flow</span></div>
 <pre><code>[Agent]                                [Monitoring service]            [VictoriaMetrics]
