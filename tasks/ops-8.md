@@ -14,8 +14,10 @@ Beweis: main@db7eeb363 scripts/agent-install.sh:388 pinnt `/etc/adminhelper/iden
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T3
 
-### T2 — R-1541: smartmontools nur noch Suggests in deb und rpm  [ ]
-Komponente: agent · Dateien: apps/agent/deb/DEBIAN/control, apps/agent/rpm/adminhelper-agent.spec, apps/agent/cmd/adminhelper-agent/packaging_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+### T2 — R-1541: smartmontools nur noch Suggests in deb und rpm  [x]
+Komponente: agent · Dateien: apps/agent/deb/DEBIAN/control, apps/agent/rpm/adminhelper-agent.spec, apps/agent/cmd/adminhelper-agent/packaging_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @de1dc9fe8 2026-11-18T16:32:23+01:00
+Review: approve (.ah-out/review/ops-8/T2.verdict.json)
 Änderung: `Recommends: smartmontools` wird `Suggests: smartmontools` in control und spec; `packaging_test.go` verlangt genau eine Suggests-Zeile und weder Recommends noch eine harte Abhängigkeit (gewollte Verhaltensänderung, Ersatz gleichwertig). Satz in monitoring.html DE+EN nachziehen.
 Beweis: Kevin 2026-11-17 Agent-Rollout; main@db7eeb363 control:6, spec:18. Dedup-Key: BUG:agent:packaging:smartmontools-recommends-virt
 Verify: bash scripts/dev/verify.sh agent --strict
