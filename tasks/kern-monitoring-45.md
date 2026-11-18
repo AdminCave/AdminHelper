@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-45 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-45 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-45 · Review: pro Task
 Spec: docs/features/kern-monitoring-45.md (Roadmap R-1525, R-1565, R-1566, R-1567, R-1568, R-0518, R-1570, R-1571, R-1572, R-1573)
 Heavy: linux-full — `apps/agent` (SMART-Bericht) und der Server (Anfragegrenzen), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -129,6 +129,14 @@ Status-Zusammenfassung, Modul-Sync (eigene Regeln, eigene Schalter), `smart_pass
 (T1 neutral unter Changed).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info.py
 Doku: docs/admin/monitoring.html DE+EN · docs/developer/agent.html DE+EN · changelog.d/kern-monitoring-45.md
+Task-Review: am Ende
+
+### T12 — R-1525: Tiefengrenze in der API-Referenz  [ ]
+Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Änderung: Abschlussprüfung: die Grenze von 32 Ebenen gilt seit T1 für jeden Server-Body und den Webhook-Trigger;
+Fehlerabschnitt und Webhook-Absatz DE+EN nennen sie.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py
+Doku: docs/developer/api-reference.html DE+EN
 Task-Review: am Ende
 
 ## Entscheidungen
