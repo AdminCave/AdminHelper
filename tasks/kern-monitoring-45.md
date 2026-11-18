@@ -70,12 +70,14 @@ Beweis: Code-Lesung `smart.go` `querySmartDevice` (`Passed: raw.SmartStatus.Pass
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T11
 
-### T6 — R-1568: SMART-Prüfung dreiwertig  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/tests/test_smart_checker.py
+### T6 — R-1568: SMART-Prüfung dreiwertig  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/tests/test_smart_checker.py, apps/monitoring/tests/test_checker_messages.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0fdb2969c 2026-11-18T12:52:32+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T6.verdict.json)
 Änderung: `_absent_result` und die Plattenbewertung unterscheiden „nicht erhoben“ und „nicht lesbar“ nach Kevins
 Stufen; eine Platte ohne `smart_passed` ist „nicht lesbar“, nicht „SMART FAILED“. Tests je Fall (rot vorher).
 Beweis: Code-Lesung `smart.py` `_absent_result` · Dedup-Key: bug:monitoring:smart.py:tristate
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py tests/test_checker_messages.py tests/test_agent_report.py
 Doku: → T11
 Abhängt von: T5
 
@@ -87,12 +89,13 @@ Beweis: Code-Lesung `plugins.py` ZFS-Prüfung · Dedup-Key: bug:monitoring:plugi
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py tests/test_check_configs.py
 Doku: → T11
 
-### T8 — R-1570: Desktop zeigt DEGRADED rot  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/section/SecZfs.test.ts
-Änderung: `healthClass` gibt für `DEGRADED` `crit`, wie die Bewertung. Test: `DEGRADED` trägt die kritische Klasse
-(rot vorher).
-Beweis: Code-Lesung `SecZfs.svelte` `healthClass` · Dedup-Key: bug:monitoring:plugins.py:zfs-states
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecZfs.test.ts
+### T8 — R-1570, R-1568: Desktop zeigt DEGRADED rot und eine nicht lesbare Platte neutral  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/section/SecZfs.test.ts, apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts
+Änderung: `healthClass` gibt für `DEGRADED` `crit`, wie die Bewertung. `categoryClass` in SecSmart zeigt eine Platte
+mit `category: unknown` (T6, kein SMART-Urteil) mit neutralem Chip statt grünem OK (Prüfer-Fund zu T6). Tests:
+`DEGRADED` trägt die kritische Klasse, eine Platte `unknown` den neutralen Chip (rot vorher).
+Beweis: Code-Lesung `SecZfs.svelte` `healthClass`, `SecSmart.svelte` `categoryClass` · Dedup-Key: bug:monitoring:plugins.py:zfs-states
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecZfs.test.ts src/components/monitoring/section/SecSmart.test.ts
 Doku: keine (Anzeige folgt der dokumentierten Bewertung)
 
 ### T9 — R-1571: Abschalten oder Löschen schließt den Hub-Vorfall  [ ]
@@ -135,3 +138,9 @@ Task-Review: am Ende
   Die `config`-Markierung bleibt dauerhaft (`reset_check` verlangt `template_id`, Löschen legt einen Tombstone an):
   ein so geänderter Modul-Check bekommt kein Katalog-Update mehr; die Zwischenlösung der Spec, die Dauerlösung bringt
   die Neuordnung.
+- 2026-11-18 T6: SMART-Stufen nach Kevin: nicht erhoben (`not_installed`, `no_devices`, kein `smart`-Schlüssel, alte
+  Agenten ohne Grund) = `info`; nicht lesbar (`scan_failed`, Platte ohne oder mit `null` als `smart_passed`) =
+  `unknown`. Rang je Platte critical > warning > unknown > ok; eine Platte ohne Urteil wird mit eigener Bewertung
+  (Temperatur, Attribute) bewertet und in der Meldung immer als „SMART not readable“ genannt. Fixtures in
+  `test_checker_messages.py` und `test_agent_report.py` tragen jetzt `smart_passed: true` wie echte Agenten.
+  Die Anzeige im Desktop (`category: unknown` in SecSmart, bisher grün) zieht T8 nach (Prüfer-Fund zu T6).

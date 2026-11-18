@@ -7,8 +7,10 @@ SMART disk health checker.
 
 Evaluates SMART data from the agent report (push-only).
 Supports ATA (HDD + SSD) and NVMe protocols.
-Without disks the agent sends smart_absent with the reason instead of a smart key
-— that's OK, not an error; the message names the reason.
+Without disks the agent sends smart_absent with the reason instead of a smart key.
+Three outcomes besides a rating (Kevin 2026-11-18): data that was not collected (no
+smartctl, no disk, a VM) is info; data that could not be read (a failed query, a disk
+without a SMART verdict) is unknown; neither is an error.
 """
 
 from __future__ import annotations
@@ -41,34 +43,35 @@ def _decode_nvme_critical_warning(bits: int) -> list[str]:
     return [name for mask, name in NVME_CRITICAL_BITS.items() if bits & mask]
 
 
-_SEVERITY_RANK = {"ok": 0, "warning": 1, "critical": 2}
+_SEVERITY_RANK = {"ok": 0, "unknown": 1, "warning": 2, "critical": 3}
 
 
 def _worse(a: str, b: str) -> str:
-    """The more severe of two SMART categories (critical > warning > ok)."""
+    """The more severe of two SMART categories (critical > warning > unknown > ok)."""
     return a if _SEVERITY_RANK[a] >= _SEVERITY_RANK[b] else b
 
 
 # smart_absent.reason codes of the agent (R-0419). scan_failed also covers found
 # devices of which none gave readable SMART data, hence "query", not "scan".
 _ABSENT_MESSAGES = {
-    "not_installed": "No SMART data: smartctl is not installed",
-    "scan_failed": "No SMART data: the SMART query failed",
-    "no_devices": "No SMART data: no SMART-capable devices found",
+    "not_installed": ("info", "No SMART data: smartctl is not installed"),
+    "scan_failed": ("unknown", "No SMART data: the SMART query failed"),
+    "no_devices": ("info", "No SMART data: no SMART-capable devices found"),
 }
 
 
 def _absent_result(report: dict) -> tuple[str, str, dict | None]:
-    # No disk — not an error; smart_absent says why.
+    # No disk: not collected (info) or not readable (unknown); smart_absent says which.
     absent = report.get("smart_absent")
     reason = absent.get("reason") if isinstance(absent, dict) else None
     # The str check keeps an unhashable reason (a list) out of the dict lookup.
     if isinstance(reason, str) and reason in _ABSENT_MESSAGES:
+        status, message = _ABSENT_MESSAGES[reason]
         # Details, not None: the push path keeps stored details of a result
         # without any, and the desktop would go on showing the old disks.
-        return "ok", _ABSENT_MESSAGES[reason], {"_details": {"absent": reason}}
+        return status, message, {"_details": {"absent": reason}}
     # An agent before R-0419 or an unknown reason.
-    return "ok", "No SMART data (VM or smartctl not available)", None
+    return "info", "No SMART data (VM or smartctl not available)", None
 
 
 def _smart_thresholds(config: dict) -> tuple[dict, dict]:
@@ -92,15 +95,18 @@ def _smart_thresholds(config: dict) -> tuple[dict, dict]:
 
 
 def _check_common(
-    disk: dict, label: str, passed: bool, ec: int, temp: int, temp_warn, temp_crit
+    disk: dict, label: str, passed: bool | None, ec: int, temp: int, temp_warn, temp_crit
 ) -> tuple[str, list[str], list[str]]:
     """Checks for every protocol: SMART verdict, uncorrectables, the smartctl exit
-    code and the temperature. Returns (category, critical, warning) like _check_ata."""
+    code and the temperature. Returns (category, critical, warning) like _check_ata;
+    without a verdict (passed None) the category is at least unknown."""
     crit, warn = [], []
     category = "ok"
 
     # Universal checks (ATA + NVMe)
-    if not passed:
+    if passed is None:
+        category = "unknown"
+    elif not passed:
         crit.append(f"{label}: SMART FAILED")
         category = "critical"
 
@@ -156,16 +162,26 @@ def _disk_metrics(smart: list[dict], ignore: set) -> dict:
 
 
 def _smart_result(
-    critical_problems: list[str], warning_problems: list[str], ok_count: int, metrics: dict
+    critical_problems: list[str],
+    warning_problems: list[str],
+    unreadable: list[str],
+    ok_count: int,
+    metrics: dict,
 ) -> tuple[str, str, dict]:
+    # A disk without a SMART verdict is named after the problems, never hidden by them.
+    unread = "SMART not readable: " + join_capped(unreadable) if unreadable else ""
     if critical_problems:
         msg = "SMART problems: " + join_capped(critical_problems)
         if warning_problems:
             msg += "; warnings: " + join_capped(warning_problems)
-        return "critical", msg, metrics
+        return "critical", msg + (f"; {unread}" if unread else ""), metrics
 
     if warning_problems:
-        return "warning", "SMART warnings: " + join_capped(warning_problems), metrics
+        msg = "SMART warnings: " + join_capped(warning_problems)
+        return "warning", msg + (f"; {unread}" if unread else ""), metrics
+
+    if unreadable:
+        return "unknown", unread, metrics
 
     return "ok", f"All {ok_count} disks SMART OK", metrics
 
@@ -208,6 +224,7 @@ class SmartHealthChecker:
 
         critical_problems = []
         warning_problems = []
+        unreadable = []
         ok_count = 0
         disk_details = []
 
@@ -220,6 +237,8 @@ class SmartHealthChecker:
             )
             critical_problems.extend(crit)
             warning_problems.extend(warn)
+            if detail["smart_passed"] is None:
+                unreadable.append(f"{detail['device']} ({detail['model']})")
             if category == "ok":
                 ok_count += 1
             disk_details.append(detail)
@@ -234,7 +253,7 @@ class SmartHealthChecker:
         metrics.update(_disk_metrics(smart, ignore))
 
         metrics["_details"] = {"disks": disk_details}
-        return _smart_result(critical_problems, warning_problems, ok_count, metrics)
+        return _smart_result(critical_problems, warning_problems, unreadable, ok_count, metrics)
 
     def _grade_disk(
         self, disk: dict, device: str, thresholds: dict, temp_thresholds: dict
@@ -248,7 +267,9 @@ class SmartHealthChecker:
         label = f"{shown_device} ({model})"
         protocol = disk.get("protocol", "ATA")
         kind = entry_text(disk, "kind", "") or ("NVMe" if protocol == "NVMe" else "HDD")
-        passed = bool(disk.get("smart_passed", True))
+        # A missing (or null) smart_passed is no verdict: smartctl gave no smart_status (R-0518).
+        raw_passed = disk.get("smart_passed")
+        passed = None if raw_passed is None else bool(raw_passed)
         ec = int(entry_number(disk, "smartctl_status", 0))
         temp_c = entry_number(disk, "temp_c", 0)
         temp_warn, temp_crit = temp_thresholds.get(kind, temp_thresholds["HDD"])
