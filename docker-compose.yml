@@ -156,7 +156,8 @@ services:
       # SMTP-Relay fuer E-Mail-Benachrichtigungen (Notification-Hub). Leerer
       # SMTP_HOST = E-Mail-Kanal deaktiviert (Outbox-Eintraege scheitern dann und
       # werden nach NOTIFICATION_MAX_ATTEMPTS verworfen). Kein lokaler MTA: auf
-      # einen externen Relay zeigen (587 STARTTLS oder 465 SMTPS).
+      # einen externen Relay zeigen (587 STARTTLS oder 465 SMTPS). Werte aus dem
+      # Web-Admin (Benachrichtigungen) gehen je Feld vor, diese sind Rueckfall.
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
@@ -533,6 +534,7 @@ services:
       # retention below (VM_RETENTION) — changing one does NOT change the other.
       - ALERT_LOG_RETENTION_DAYS=${ALERT_LOG_RETENTION_DAYS:-90}
       # SMTP: e-mail alert rules send through the hub's relay unless a rule sets its own.
+      # The relay set in the web admin (fetched from the server) wins; these are the fallback.
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}

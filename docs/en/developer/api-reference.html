@@ -254,7 +254,7 @@
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/users/me/notification-prefs</code>
-            <p>The caller's subscription rules and channels: <code>email</code>, <code>telegramChatId</code>, <code>ntfyUrl</code>, <code>webhookUrl</code>, <code>matrix</code> (<code>{"critical", "warning", "info", "ok": [channels]}</code>), <code>disabledChannels</code>, <code>mutedCategories</code>, <code>available</code> (per channel whether the server can deliver it: <code>email</code> only with <code>SMTP_HOST</code>, <code>telegram</code> only with <code>TELEGRAM_BOT_TOKEN</code>) and <code>subscriptions</code> (without the former <code>channelEmail</code>/<code>channelTelegram</code>). Plus <code>timezone</code> (<code>UTC</code> without a stored zone), <code>quiet</code> (<code>{"enabled", "start", "end", "critical"}</code>), <code>escalation</code> (<code>{"enabled", "minutes", "channel"}</code>), <code>digest</code> (<code>off</code>/<code>daily</code>/<code>weekly</code>) and <code>soundCritical</code>.</p>
+            <p>The caller's subscription rules and channels: <code>email</code>, <code>telegramChatId</code>, <code>ntfyUrl</code>, <code>webhookUrl</code>, <code>matrix</code> (<code>{"critical", "warning", "info", "ok": [channels]}</code>), <code>disabledChannels</code>, <code>mutedCategories</code>, <code>available</code> (per channel whether the server can deliver it: <code>email</code> only with a relay, <code>telegram</code> only with a bot token, each from the admin panel or <code>SMTP_HOST</code>/<code>TELEGRAM_BOT_TOKEN</code>) and <code>subscriptions</code> (without the former <code>channelEmail</code>/<code>channelTelegram</code>). Plus <code>timezone</code> (<code>UTC</code> without a stored zone), <code>quiet</code> (<code>{"enabled", "start", "end", "critical"}</code>), <code>escalation</code> (<code>{"enabled", "minutes", "channel"}</code>), <code>digest</code> (<code>off</code>/<code>daily</code>/<code>weekly</code>) and <code>soundCritical</code>.</p>
           </div>
           <div class="endpoint">
             <span class="method-put">PUT</span><code>/api/users/me/notification-prefs</code>
@@ -265,8 +265,44 @@
             <p>Body <code>{ "channel": "email" | "ntfy" | "telegram" | "webhook" }</code>: sends a test message at once, without the outbox, to the stored target, also for a switched-off channel. <code>200</code> with <code>{ "channel" }</code>. <code>409</code> when the server cannot deliver the channel or no target is stored. <code>422</code> for an unknown channel or a target the SSRF guard refuses, both in the form the schema declares (<code>detail</code> is a list); for a refused target <code>loc</code> is <code>["body", "channel"]</code>, <code>input</code> the channel and <code>msg</code> <code>&lt;channel&gt;: target address not allowed …</code>, without the target (R-1494). <code>429</code> for a second test of the same channel within ten seconds or while another test of the person runs; <code>409</code> and validation errors do not count, every delivery attempt does, including one to a refused target (the SSRF guard's <code>422</code>). <code>502</code> when the delivery fails, with a neutral text (<code>&lt;channel&gt;: HTTP &lt;status&gt;</code> or <code>&lt;channel&gt;: &lt;exception type&gt;</code>), never with URL, chat ID or token.</p>
           </div>
           <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/admin/notify/channels</code>
+            <p>Admins only (else <code>403</code>), like every <code>/api/admin/notify/</code> route (usage in <a href="../admin/operations.html#notify-panel">Operations → Channels in the admin panel</a>). The delivery settings of the panel: <code>smtpHost</code>, <code>smtpPort</code>, <code>smtpUser</code>, <code>smtpFrom</code>, <code>privateTargets</code> (each <code>null</code> = not set, the <code>.env</code> applies), <code>passwordSet</code>/<code>tokenSet</code> instead of the secrets, <code>sources</code> (per field <code>panel</code>, <code>env</code> or <code>none</code>), <code>unreadable</code> (secrets that do not open with the current <code>SECRET_KEY</code>), <code>effective</code> (the values in effect, without secrets), <code>updatedAt</code>, <code>updatedBy</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/admin/notify/channels</code>
+            <p>Stores the settings; response as <code>GET</code>. A plain field <code>null</code> or empty falls back to the <code>.env</code>. <code>smtpPassword</code>/<code>telegramToken</code>: missing or <code>null</code> = keep, <code>""</code> = delete; a new <code>smtpHost</code> without a password deletes the stored one. With the host in the panel, user and password apply only from the panel. <code>422</code> for a wrong host, sender, port (1&ndash;65535), token or an invalid network. The audit names only the changed fields.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/admin/notify/channels/test</code>
+            <p>Body <code>{ "channel": "email" | "telegram", "target" }</code>: sends a test message at once over the stored settings to <code>target</code>, in the stored mail design. <code>200</code> with <code>{ "channel" }</code>; <code>409</code> when the channel is not set up; <code>422</code> for an invalid target (not an e-mail address or not a Telegram chat ID); <code>502</code> as for the personal test; <code>429</code> for a second test of the channel within ten seconds, shared with the personal test.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/admin/notify/template</code>
+            <p>The mail design: <code>subjectPrefix</code>, <code>fromName</code>, <code>html</code>, <code>text</code>, <code>logoSet</code>, <code>logoType</code> (<code>image/png</code> | <code>image/jpeg</code> | <code>null</code>), <code>placeholders</code> (the allowed names), <code>updatedAt</code>, <code>updatedBy</code>. All fields empty = the default, plain text as before the design.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/admin/notify/template</code>
+            <p>Body <code>{ "subjectPrefix", "fromName", "html", "text" }</code> (prefix and name at most 100 characters each without a line break, HTML at most 100&nbsp;000, text at most 20&nbsp;000 characters); the logo stays. <code>422</code> for an unknown placeholder or a field too long. <span class="method-delete">DELETE</span> on the same path resets design and logo to the default.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/admin/notify/template/preview</code>
+            <p>Body as <code>PUT</code>, not stored: renders with sample data and the stored logo as a <code>data:</code> URL. Response <code>{ "subject", "fromName", "text", "html" }</code> (<code>html</code> <code>null</code> without an HTML part). <code>422</code> as on save.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/admin/notify/template/test</code>
+            <p>Body <code>{ "target" }</code>: a test mail in the stored design over the relay in effect. Status as <code>/channels/test</code>, the same ten-second window.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/admin/notify/template/logo</code>
+            <p>Body <code>{ "data" }</code> (base64): PNG or JPEG, recognised by its first bytes, at most 200&nbsp;KB; else <code>422</code>. The HTML part shows it where it names <code>{{logo}}</code>. <span class="method-delete">DELETE</span> on the same path removes it. Response each time as <code>GET /template</code>.</p>
+          </div>
+          <div class="endpoint">
             <span class="method-post">POST</span><code>/api/internal/events</code>
             <p><strong>Internal only</strong> (header <code>X-Internal-Key</code>): event ingress for the monitoring&rarr;hub path. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. Fans the event out to matching recipients. Status <code>202</code>, returns <code>{ "notified" }</code>. A bundled event names its servers in <code>source_ids</code> (1&ndash;500 server ids, each 1&ndash;256 characters) instead of <code>source_id</code>; both together give <code>422</code>. The <code>source_type</code> values <code>frp_config</code>, <code>frps</code> and <code>certificate_expiry</code> are reserved for notices of the server itself and give <code>422</code>. Each recipient gets one row about the servers they may see: title <code>&lt;title&gt; (&lt;n&gt;)</code>, text <code>body</code> plus one line per server. <code>title</code> and <code>body</code> therefore name no server and carry no total &ndash; the server appends count and names per recipient. A bundled event fires the <code>alert.triggered</code> hook once per server, and only on a <code>critical</code> ping. A monitoring event carries <code>incident_key</code> (1&ndash;200 characters, <code>check:&lt;id&gt;</code>), a bundled event <code>incident_keys</code> instead (one per entry of <code>source_ids</code>, in the same order; a key with two servers gives <code>422</code>), plus an optional <code>rules</code> (at most 50 <code>{ "name", "channel", "ok" }</code>: the check's alert rules and whether each one sent). Events of one key fold into one incident; <code>notified</code> counts the rows a ping wrote, an event folded in silently gives <code>0</code>. A bundled event without keys stays rows without an incident.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/internal/notify-config</code>
+            <p><strong>Internal only</strong> (header <code>X-Internal-Key</code>, else <code>403</code>): the relay in effect including its password and the mail design, for the rule mails of monitoring; the only place the stored SMTP password leaves the server. Response <code>{ "smtp": { "host", "port", "user", "password", "sender", "sources" }, "template" }</code>; <code>template</code> is <code>null</code> without a design, else <code>{ "subjectPrefix", "fromName", "html", "text", "logo" (base64), "logoType" }</code>.</p>
           </div>
           <h2>Error Format</h2>
           <div class="code-header"><span>json</span></div>

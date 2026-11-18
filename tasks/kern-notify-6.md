@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-notify-6 — Benachrichtigungs-Kanäle und Mail-Design im Admin-Panel — Task-Ledger
-Status: aktiv · Branch: feature/kern-notify-6 · Review: pro Task
+Status: bereit · Branch: feature/kern-notify-6 · Review: pro Task
 Spec: docs/features/kern-notify-6.md (Roadmap R-1527, R-1531, R-1533)
 Heavy: linux-full — neue Server-API und Migrationen, internes Endpoint server↔monitoring, Alerter-Mailweg; kein Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -112,8 +112,10 @@ Zurücksetzen auf Standard.
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Notifications.test.ts
 Doku: → T10
 
-### T10 — Doku DE+EN, .env.example, Compose-Kommentare, CHANGELOG  [ ]
+### T10 — Doku DE+EN, .env.example, Compose-Kommentare, CHANGELOG  [x]
 Komponente: server · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, .env.example, docker-compose.yml, changelog.d/kern-notify-6.md, tasks/kern-notify-6.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @551993487 2026-11-18T14:10:03+01:00
+Review: approve (.ah-out/review/kern-notify-6/T10.verdict.json)
 Änderung: Betrieb: Kanäle im Panel, Vorrang Panel vor `.env`, Verhalten nach `SECRET_KEY`-Wechsel, Mail-Vorlage
 und Platzhalter. Monitoring: Regel-Mails mit zentralem Relay und Vorlage. API-Referenz: Admin-Routen und internes
 Endpoint. `.env.example`/Compose: Variablen sind Rückfall. CHANGELOG Added/Fixed.
