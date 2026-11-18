@@ -25,8 +25,10 @@ alter Status wird nicht gemeldet. Erst die roten Tests aus dem Patch, dann der F
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_hub.py
 Doku: → T3
 
-### T2 — R-1572: Systemjob holt Glocken-Meldungen nach, höchstens 20 je Lauf  [ ]
+### T2 — R-1572: Systemjob holt Glocken-Meldungen nach, höchstens 20 je Lauf  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/bell_catch_up.py, apps/monitoring/app/scheduler.py, apps/monitoring/app/main.py, apps/monitoring/tests/test_bell_catch_up.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d3d70990f 2026-11-18T20:03:22+01:00
+Review: am Ende (Branch-Review)
 Beweis: kern-monitoring-45 T10, roter Test (~/.cache/ah-kern-monitoring-45/T10-redtest.patch, lokal) · Dedup-Key: bug:monitoring:alerter.py:hub-post-no-retry
 Änderung: neues Modul (SPDX-Header) mit der Nachhol-Regel der Spec; `system:bell-catch-up` jede Minute,
 `max_instances=1`, Deckel 20, älteste zuerst, `FOR UPDATE SKIP LOCKED`, Platz reservieren wie `process_alert`,
