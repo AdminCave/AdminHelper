@@ -102,7 +102,7 @@ Beweis: Code-Lesung `SecZfs.svelte` `healthClass`, `SecSmart.svelte` `categoryCl
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecZfs.test.ts src/components/monitoring/section/SecSmart.test.ts
 Doku: keine (Anzeige folgt der dokumentierten Bewertung)
 
-### T9 — R-1571: Abschalten oder Löschen schließt den Hub-Vorfall  [ ]
+### T9 — R-1571: Abschalten oder Löschen schließt den Hub-Vorfall  [~] (verschoben in kern-monitoring-47: Verhalten nach Wiedereinschalten braucht Kevins Wort (2 Prüfrunden ohne approve))
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_alerter_hub.py
 Änderung: Zuerst ein Test: Check mit offenem Hub-Vorfall abschalten bzw. löschen → der Hub bekommt eine Meldung, die
 den Vorfall schließt. Rot → `toggle_check` und `delete_check` melden das; grün → `[~] nicht reproduziert` mit dem
@@ -155,3 +155,9 @@ Task-Review: am Ende
   seit T7 bewerten (wie das Scrub-Alter seit R-1230).
 - T8: SecSmart zeigt `category: unknown` als `chip-muted` mit „N/A“ (die Chips tragen feste Kürzel OK/WARN/CRIT,
   keine i18n); SecZfs `healthClass` kennt nur noch ONLINE → ok, alles andere crit, wie die Prüfung.
+- T9: Rot reproduziert (4 Tests: Abschalten/Löschen bei `hub_status` warning/critical meldeten dem Hub nichts).
+  Zwei Prüfrunden ohne `approve`: Den Vorfall beim Abschalten zu schließen, braucht eine Regel, was der eingefrorene
+  Status eines abgeschalteten Checks nach dem Wiedereinschalten bedeutet. Runde 1: Ohne Rücksetzen von
+  `notified_status` bleibt ein fortbestehendes Problem still. Runde 2: Mit Rücksetzen meldet das Agent-Bündel
+  (`alert_bundle._candidates`) den alten Status sofort neu. Das ist sichtbares Verhalten (Kevin), daher in den Zug
+  `kern-monitoring-47` verschoben; der Stand von Runde 2 liegt als Patch außerhalb des Repos.
