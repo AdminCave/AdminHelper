@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-windows-1 — Windows-Agent: frpc-Tunnel, Installation als Update, Dienst-Monitoring — Task-Ledger
-Status: bereit · Branch: feature/kern-windows-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-windows-1 · Review: pro Task
 Spec: docs/features/kern-windows-1.md (Roadmap R-1576, R-0577, R-1545, R-0708, R-1577, R-1583)
 Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Registry, w32tm) läuft nur im CI-Job agent-windows (go test auf windows-latest); lokal nur GOOS=windows Build/Vet; release.yml-Anteil im Tag-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -114,6 +114,13 @@ Test erwartet den neuen Pfad.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/card/CredentialDialog.test.ts
 Doku: → T7
 Abhängt von: T1
+
+### T10 — Doku: system_state je Plattform (Fund der Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Änderung: Der Report-Block `system_state` steht als „nur Linux“ beschrieben; seit T6 sendet Windows `time_synchronized`, FreeBSD schon vorher `reboot_required` und `security_updates`. Je Plattform die Felder nennen, DE+EN.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Task-Review: am Ende
 
 ## Entscheidungen
 - T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
