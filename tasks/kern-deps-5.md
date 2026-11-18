@@ -16,8 +16,10 @@ Toolchain des Agents); T6 und T7 nach T5; T10 zuletzt. Sonst unabhängig.
 
 ## Tasks
 
-### T1 — R-1552, R-1553: Desktop-Crates semver-kompatibel nachziehen  [ ]
+### T1 — R-1552, R-1553: Desktop-Crates semver-kompatibel nachziehen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @fda40824b 2026-11-18T13:37:06+01:00
+Review: approve (.ah-out/review/kern-deps-5/T1.verdict.json)
 Änderung: `cargo update` im semver-Rahmen von `Cargo.toml` (libz-sys 1.1.31 → ≥ 1.1.33, tauri 2.12.6 u. a.);
 keine Änderung an `Cargo.toml`. Build, Clippy und Tests grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
@@ -90,7 +92,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (Test-Abhängigkeit)
 
 ### T10 — Doku und CHANGELOG  [ ]
-Komponente: server · Dateien: docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-deps-5.md
+Komponente: server · Dateien: docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-deps-5.md, DEVELOPMENT.md
 Änderung: `gosu`-Stellen auf `setpriv`, pip fehlt im Runtime-Image; Changelog-Fragment (neutral: aktualisierte
 Abhängigkeiten und Basis-Images, Images ohne pip und gosu).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py
