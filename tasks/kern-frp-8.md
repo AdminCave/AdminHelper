@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API (`/api/frp/tunnels`) ändert sich; FRP-Konfigur
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1540 B+C: Auto-Verbindung mit Schema und Pfad, Nachziehen beim Protokollwechsel  [ ]
+### T1 — R-1540 B+C: Auto-Verbindung mit Schema und Pfad, Nachziehen beim Protokollwechsel  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/_helpers.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_auto_connection.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3679444a6 2026-11-18T19:45:35+01:00
+Review: approve (.ah-out/review/kern-frp-8/T1.verdict.json)
 Änderung: `FrpTunnelCreate`/`FrpTunnelUpdate` nehmen `auto_connection_scheme` (`http|https`) und `auto_connection_path` (beginnt mit `/`, ≤ 255, kein Leerraum, Steuerzeichen oder `#`; 422 sonst). `create_auto_connection` legt bei STCP und `web` die URL `<schema>://127.0.0.1:<Visitor-Port><pfad>` an (Vorgabe `http`), ohne Benutzername. `update_tunnel` zieht bei geändertem `protocol` oder `tunnel_type` die verknüpfte Verbindung mit (Typ; STCP: Host `127.0.0.1`, Port = Visitor-Port; `web`: URL mit Schema aus Request, alter URL oder `http`; sonst URL leer), auch eine von Hand verknüpfte. Neue Testdatei (SPDX): Anlegen mit und ohne Schema/Pfad, ungültiger Pfad 422, Wechsel ssh→web→rdp, von Hand verknüpfte Verbindung, älterer Client ohne die Felder.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_auto_connection.py tests/test_frp_tunnels.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html (neue Felder); Verhalten → T4
