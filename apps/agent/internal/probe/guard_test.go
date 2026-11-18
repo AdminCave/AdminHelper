@@ -518,10 +518,12 @@ func TestGuardJudgesAMulticallBinaryByItsApplet(t *testing.T) {
 			lst("127.0.0.1", 8101, 300), lst("127.0.0.1", 8102, 301), lst("127.0.0.1", 8103, 302),
 			lst("127.0.0.1", 8104, 303), lst("127.0.0.1", 8105, 304), lst("127.0.0.1", 8106, 305),
 			lst("127.0.0.1", 8107, 306), lst("127.0.0.1", 8108, 307), lst("127.0.0.1", 8109, 308),
-			lst("127.0.0.1", 8110, 309), lst("127.0.0.1", 8111, 310),
+			lst("127.0.0.1", 8110, 309), lst("127.0.0.1", 8111, 310), lst("127.0.0.1", 8112, 311),
+			lst("127.0.0.1", 8113, 312),
 		},
 		names: map[int32]string{300: "busybox", 301: "dropbearmulti", 302: "busybox", 303: "busybox", 304: "busybox",
-			305: "toybox", 306: "busybox", 307: "busybox", 308: "tcpsvd", 309: "busybox.static", 310: "busybox"},
+			305: "toybox", 306: "busybox", 307: "busybox", 308: "tcpsvd", 309: "busybox.static", 310: "busybox",
+			311: "toybox-x86_64", 312: "toybox"},
 		args: map[int32][]string{
 			300: {"busybox", "tcpsvd", "-vE", "0", "8101", "cat"},
 			301: {"/usr/bin/dropbearmulti", "dropbear", "-p", "8102"},
@@ -535,6 +537,9 @@ func TestGuardJudgesAMulticallBinaryByItsApplet(t *testing.T) {
 			// busybox runs argv[1] under any name of its own that starts with busybox.
 			309: {"/bin/busybox.static", "nc", "-lk", "-p", "8110"},
 			310: {"busybox-x", "nc", "-lk", "-p", "8111"},
+			// toybox does the same (its release binaries are named toybox-<arch>).
+			311: {"./toybox-x86_64", "nc", "-L", "-p", "8112"},
+			312: {"toybox-x86_64", "nc", "-L", "-p", "8113"},
 		},
 	})
 	g := NewGuard()
@@ -550,6 +555,8 @@ func TestGuardJudgesAMulticallBinaryByItsApplet(t *testing.T) {
 		// The link form, named after the applet by the kernel, as before.
 		{"127.0.0.1:8109", "tcpsvd holds port 8109 for socket activation"},
 		{"127.0.0.1:8110", "belongs to nc, which forwards"},
+		{"127.0.0.1:8112", "belongs to nc, which forwards"},
+		{"127.0.0.1:8113", "belongs to nc, which forwards"},
 		{"127.0.0.1:8111", "belongs to nc, which forwards"},
 	} {
 		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {

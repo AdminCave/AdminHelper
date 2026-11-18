@@ -156,11 +156,12 @@ func forwarder(name string) bool {
 // names such a process after the binary unless a link of the applet's name started it.
 var multicallBinaries = []string{"busybox", "toybox", "dropbearmulti"}
 
-// isMulticall says whether name (processKey) is one of multicallBinaries. busybox counts as itself by
-// any name it starts with (busybox.static, busybox-x), as busybox does. toybox also follows a link
-// in argv[0] to the command it names; that is not told here.
+// isMulticall says whether name (processKey) is one of multicallBinaries. busybox and toybox count as
+// themselves by any name they start with (busybox.static, toybox-x86_64), as both binaries do. toybox
+// also follows a link in argv[0] to the command it names; that is not told here.
 func isMulticall(name string) bool {
-	return strings.HasPrefix(name, "busybox") || slices.Contains(multicallBinaries, name)
+	return strings.HasPrefix(name, "busybox") || strings.HasPrefix(name, "toybox") ||
+		slices.Contains(multicallBinaries, name)
 }
 
 // programName returns the name the name rules judge the process pid by: its name, or for one of
@@ -175,7 +176,7 @@ func programName(ctx context.Context, pid int32) (string, error) {
 	}
 	args, err := processArgs(ctx, pid)
 	if err != nil {
-		return "", fmt.Errorf("the applet %s runs cannot be read: %v", name, err)
+		return "", fmt.Errorf("the applet %.64s runs cannot be read: %v", name, err)
 	}
 	applet := ""
 	if len(args) > 0 {
@@ -189,7 +190,7 @@ func programName(ctx context.Context, pid int32) (string, error) {
 		}
 	}
 	if applet == "" || applet == "." || applet == "/" || isMulticall(processKey(applet)) {
-		return "", fmt.Errorf("the applet %s runs cannot be told", name)
+		return "", fmt.Errorf("the applet %.64s runs cannot be told", name)
 	}
 	return applet, nil
 }

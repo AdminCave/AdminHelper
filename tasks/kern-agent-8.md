@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-8 — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-agent-8 · Review: pro Task
 Spec: docs/features/kern-agent-8.md (Roadmap R-1523)
 Heavy: linux-full — `apps/agent` (Wächter); kein PKI-, Install- oder Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -26,8 +26,10 @@ weiter erlaubt, unlesbares argv abgewiesen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-agent-8.md
 
-### T2 — R-1523: toybox wie busybox an jedem Namen mit seinem Präfix erkennen  [ ]
+### T2 — R-1523: toybox wie busybox an jedem Namen mit seinem Präfix erkennen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @94fa68497 2026-11-18T15:43:49+01:00
+Review: approve (.ah-out/review/kern-agent-8/T2.verdict.json)
 Änderung: Fund der Abschlussprüfung: toybox nimmt wie busybox jeden Namen, der mit `toybox` beginnt, als sich selbst
 (`toy_find` in `main.c`; Release-Binaries `toybox-<arch>`); `isMulticall` erkennt bisher nur den exakten Namen. Dazu
 die Namen in den Fehlern von `programName` auf 64 Zeichen gekürzt wie die übrigen. Tests: `toybox-x86_64 nc` als
