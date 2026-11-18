@@ -84,6 +84,7 @@ func TestRunReaderStreamsAndEndsTheCommandWhenReadFails(t *testing.T) {
 		t.Fatalf("err = %v, want exit 3", err)
 	}
 
+	// The deadline itself is under test, so it is short on purpose.
 	err = RunReader(ctx, 200*time.Millisecond, func(r io.Reader) error {
 		_, err := io.ReadAll(r)
 		return err
