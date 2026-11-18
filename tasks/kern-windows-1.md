@@ -61,8 +61,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: → T7
 Abhängt von: T3
 
-### T6 — R-1583: Starttyp der Windows-Dienste und Zeitsynchronisation  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/scquery_test.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/services_windows_test.go, apps/agent/internal/monitor/system_other.go, apps/agent/internal/monitor/system_windows.go, apps/agent/internal/monitor/system_windows_test.go, tasks/kern-windows-1.md
+### T6 — R-1583: Starttyp der Windows-Dienste und Zeitsynchronisation  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/scquery_test.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/services_windows_test.go, apps/agent/internal/monitor/system_other.go, apps/agent/internal/monitor/system_windows.go, apps/agent/internal/monitor/system_windows_test.go, tasks/kern-windows-1.md, apps/agent/internal/monitor/w32tm.go, apps/agent/internal/monitor/w32tm_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c56bedb19 2026-11-18T14:52:49+01:00
+Review: approve (.ah-out/review/kern-windows-1/T6.verdict.json)
 Änderung: Starttyp je Dienst in einem Durchlauf aus der Registry (`Start`, `DelayedAutostart`, `TriggerInfo`):
 Auto ohne Trigger → `enabled`, Demand → `manual`, Disabled → `disabled`; gestoppte `enabled`-Dienste in
 `enabled_inactive`. Neu `system_windows.go` (SPDX): `system_state.time_synchronized` aus `w32tm /query /status`
@@ -87,3 +89,4 @@ Doku: keine (nach Antwort)
 
 ## Entscheidungen
 - T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
+- T6: enabled_inactive nimmt jeden gestoppten „enabled“-Dienst auf, auch einen sauber gestoppten (Admin-Stopp, wie systemctl stop unter Linux, Spec Ziel 5); gewollt endende Auto-Dienste nimmt die ignore-Liste der Monitoring-Regel aus. Auto-Start mit TriggerInfo zählt als „manual“. DelayedAutostart wird nicht gelesen (ändert enabled nicht, YAGNI). w32tm-Leap-Indikator wird über Position und Wert gelesen, nicht über das Label (nur englisch verifiziert).

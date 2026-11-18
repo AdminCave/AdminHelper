@@ -10,6 +10,8 @@ import (
 	"context"
 	"regexp"
 	"strings"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 // reWinServiceName matches the characters a real Windows service name uses
@@ -28,7 +30,51 @@ func collectServiceHealth(ctx context.Context) map[string]any {
 	out, err := runWithTimeout(ctx, "sc", "query", "state=", "all")
 	return scServiceHealth(out, err, func() ([]byte, error) {
 		return runWithTimeout(ctx, "wevtutil", scmCrashArgs...)
-	})
+	}, serviceStartStates)
+}
+
+// servicesKey is the registry key under which every service has its own key with its Start value.
+const servicesKey = `SYSTEM\CurrentControlSet\Services\`
+
+// serviceStartStates reads the start type of each service from its registry key in one pass (no
+// process per service, unlike sc qc) and maps it with windowsEnabledState. A service whose key or
+// Start value cannot be read is left out and keeps "unknown".
+func serviceStartStates(names []string) map[string]string {
+	states := make(map[string]string, len(names))
+	for _, name := range names {
+		if name == "" || strings.ContainsAny(name, `\/`) {
+			continue
+		}
+		start, ok := serviceStart(name)
+		if !ok {
+			continue
+		}
+		states[name] = windowsEnabledState(start, serviceHasTriggers(name))
+	}
+	return states
+}
+
+// serviceStart reads the Start value of the service's registry key.
+func serviceStart(name string) (uint64, bool) {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, servicesKey+name, registry.QUERY_VALUE)
+	if err != nil {
+		return 0, false
+	}
+	defer k.Close()
+	start, _, err := k.GetIntegerValue("Start")
+	return start, err == nil
+}
+
+// serviceHasTriggers reports whether the service has start triggers: a TriggerInfo subkey with at
+// least one trigger under it.
+func serviceHasTriggers(name string) bool {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, servicesKey+name+`\TriggerInfo`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+	info, err := k.Stat()
+	return err == nil && info.SubKeyCount > 0
 }
 
 // collectWatchedServices checks the status of specific Windows services; ctx ends every sc call.
