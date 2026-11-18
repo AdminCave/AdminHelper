@@ -73,9 +73,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return 'ok';
   }
   function healthClass(h: string): 'ok' | 'warn' | 'crit' {
-    if (h === 'ONLINE') return 'ok';
-    if (h === 'DEGRADED') return 'warn';
-    return 'crit';
+    // Every other state, DEGRADED included, is critical as the check rates it (R-1570).
+    return h === 'ONLINE' ? 'ok' : 'crit';
   }
 </script>
 

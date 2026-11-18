@@ -20,9 +20,11 @@ type SmartDisk struct {
 	Serial   string `json:"serial"`
 	Protocol string `json:"protocol"` // "ATA" or "NVMe"
 	Kind     string `json:"kind"`     // "HDD", "SATA-SSD" or "NVMe"
-	Passed   bool   `json:"smart_passed"`
-	TempC    int    `json:"temp_c"`
-	PowerOnH int    `json:"power_on_hours"`
+	// Nil when smartctl reported no smart_status (SMART disabled or unsupported): the
+	// field is left out, so the service reads the health as unknown, not as failed.
+	Passed   *bool `json:"smart_passed,omitempty"`
+	TempC    int   `json:"temp_c"`
+	PowerOnH int   `json:"power_on_hours"`
 
 	// smartctl exit code (bit flags). 0 = all ok.
 	SmartctlStatus int `json:"smartctl_status"`
@@ -167,11 +169,15 @@ func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol s
 		return nil
 	}
 
+	var passed *bool
+	if raw.SmartStatus != nil {
+		passed = &raw.SmartStatus.Passed
+	}
 	disk := &SmartDisk{
 		Device:         device,
 		Model:          raw.ModelName,
 		Serial:         raw.SerialNumber,
-		Passed:         raw.SmartStatus.Passed,
+		Passed:         passed,
 		TempC:          raw.Temperature.Current,
 		PowerOnH:       raw.PowerOnTime.Hours,
 		SmartctlStatus: exitCode,
@@ -245,7 +251,7 @@ type smartctlJSON struct {
 	ModelName    string `json:"model_name"`
 	SerialNumber string `json:"serial_number"`
 	RotationRate int    `json:"rotation_rate"`
-	SmartStatus  struct {
+	SmartStatus  *struct {
 		Passed bool `json:"passed"`
 	} `json:"smart_status"`
 	Temperature struct {

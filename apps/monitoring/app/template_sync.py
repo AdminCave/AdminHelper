@@ -174,7 +174,7 @@ def resolve_template_check(db: Session, check: MonitorCheck) -> dict | None:
     return None
 
 
-def _read_overrides(check: MonitorCheck) -> set[str]:
+def read_overrides(check: MonitorCheck) -> set[str]:
     """The overridden fields of a check; anything but a list of known names in
     the column counts as nothing overridden."""
     try:
@@ -193,7 +193,7 @@ def mark_overrides(db: Session, check: MonitorCheck, changed: dict) -> None:
     template_values = resolve_template_check(db, check)
     if template_values is None:
         return
-    fields = _read_overrides(check)
+    fields = read_overrides(check)
     for field in TEMPLATE_CHECK_FIELDS:
         if field not in changed:
             continue
@@ -252,7 +252,7 @@ def record_override_baseline(db: Session) -> int:
             )
             check.overridden_fields = json.dumps(list(TEMPLATE_CHECK_FIELDS))
             not_comparable += 1
-        if _read_overrides(check):
+        if read_overrides(check):
             marked += 1
     db.add(MonitorSeedState(slug=OVERRIDE_BASELINE_KEY))
     db.commit()
@@ -482,7 +482,7 @@ def _sync_checks_for_server(
                 "consecutive_fails": resolved.get("consecutive_fails", check.consecutive_fails),
                 "consecutive_oks": resolved.get("consecutive_oks", DEFAULT_CONSECUTIVE_OKS),
             }
-            overridden = _read_overrides(check)
+            overridden = read_overrides(check)
             # The counterpart of mark_overrides tying a user's type to its config:
             # the template's type next to the user's config is a pair nobody
             # validated, so a changed config keeps its type too.

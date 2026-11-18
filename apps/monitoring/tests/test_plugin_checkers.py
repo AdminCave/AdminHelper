@@ -23,6 +23,13 @@ def test_zfs_degraded_pool_is_critical():
     assert status == "critical" and "DEGRADED" in msg
 
 
+@pytest.mark.parametrize("health", ["SUSPENDED", "REMOVED"])
+def test_zfs_suspended_or_removed_pool_is_critical(health):
+    # R-1570: both are pool states of zpoolprops(7) health; I/O is stopped or the device gone.
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(_pool(health=health)))
+    assert (status, msg) == ("critical", f"tank: {health}")
+
+
 def test_zfs_over_capacity_is_critical():
     r = {"zfs": {"pools": [{"name": "tank", "health": "ONLINE", "capacity_percent": 95}]}}
     status, _, _ = ZfsHealthChecker().evaluate({"capacity_crit": 90}, r)
@@ -1196,16 +1203,17 @@ _GUEST_SHOWN = {
     "backupError": "job failed with err -5 - Input/output error",
     "backupErrorTs": 999_000,
 }
-# A fresh scrub and a vdev without errors: since R-1230 an old scrub and a vdev error rate the
-# pool (test_zfs_rates_*), which these tests of the details alone must not see.
+# A fresh scrub without errors and a vdev without errors: since R-1230 an old scrub and a vdev
+# error rate the pool, since R-1570 scrub errors too (test_zfs_rates_*), which these tests of the
+# details alone must not see.
 _POOL_FIELDS = {
     "fragmentation_percent": 12,
-    "scrub": {"state": "FINISHED", "errors": 3, "end": 990_000},
+    "scrub": {"state": "FINISHED", "errors": 0, "end": 990_000},
     "vdev_errors": [{"name": "da0", "read": 0, "write": 0, "checksum": 0}],
 }
 _POOL_SHOWN = {
     "fragmentationPercent": 12,
-    "scrub": {"state": "FINISHED", "errors": 3, "end": 990_000},
+    "scrub": {"state": "FINISHED", "errors": 0, "end": 990_000},
     "vdevErrors": [{"name": "da0", "read": 0, "write": 0, "checksum": 0}],
 }
 _PLAIN = {"docker": _ctr(), "proxmox": _VM, "zfs": _pool()}
@@ -1493,3 +1501,34 @@ def test_zfs_keeps_the_worst_and_names_each_problem(monkeypatch):
         {}, _zfs(_scrubbed(36), _pool(name="b") | {"vdev_errors": [_VDEV]})
     )
     assert status == "warning"
+
+
+# --- R-1570: scrub errors and a configurable scrub age ---
+@pytest.mark.parametrize("state", ["FINISHED", "SCANNING"])
+def test_zfs_rates_scrub_errors_as_warning(monkeypatch, state):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    pool = _scrubbed(1, state=state)
+    pool["scrub"]["errors"] = 3
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(pool))
+    assert (status, msg) == ("warning", "tank: scrub found 3 error(s)")
+
+
+def test_zfs_scrub_errors_do_not_lower_a_critical(monkeypatch):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    pool = _scrubbed(1, health="DEGRADED")
+    pool["scrub"]["errors"] = 1
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(pool))
+    assert (status, msg) == ("critical", "tank: DEGRADED; tank: scrub found 1 error(s)")
+
+
+@pytest.mark.parametrize(
+    ("days_ago", "want", "limit"),
+    [(9.9, "ok", None), (10, "warning", 10), (19.9, "warning", 10), (20, "critical", 20)],
+)
+def test_zfs_scrub_age_follows_the_config(monkeypatch, days_ago, want, limit):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _SCRUB_NOW)
+    config = {"scrub_warn_days": 10, "scrub_crit_days": 20}
+    status, msg, _ = ZfsHealthChecker().evaluate(config, _zfs(_scrubbed(days_ago)))
+    assert status == want
+    if limit is not None:
+        assert msg == f"tank: last scrub {int(days_ago)} days ago (>={limit})"

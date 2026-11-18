@@ -146,6 +146,9 @@ class ProxmoxBackupConfig(_StrictConfig):
 class ZfsHealthConfig(_StrictConfig):
     capacity_warn: float = Field(80, ge=0, le=100, strict=True)
     capacity_crit: float = Field(90, ge=0, le=100, strict=True)
+    # Whole days, as the checker's message prints them (R-1570).
+    scrub_warn_days: int = Field(35, ge=1, le=3650, strict=True)
+    scrub_crit_days: int = Field(60, ge=1, le=3650, strict=True)
     # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
     # checker and the desktop checkbox as values each reads differently.
     alert_on_unavailable: StrictBool = True
