@@ -5,8 +5,10 @@ Heavy: scenario --agents 1 — `scripts/agent-install.sh` und `box_agentbox.sh` 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-0810: Agent zieht die öffentliche apt-CA-Kopie beim Speichern der Identität nach  [ ]
+### T1 — R-0810: Agent zieht die öffentliche apt-CA-Kopie beim Speichern der Identität nach  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ce66334ec 2026-11-18T16:26:19+01:00
+Review: approve (.ah-out/review/ops-8/T1.verdict.json)
 Änderung: Nach dem Commit in `Store` schreibt der Agent `ca.crt` atomar als 0644-Kopie nach `/etc/apt/adminhelper-ca.crt`, nur unter Linux und nur, wenn die Kopie schon existiert (der Installer legt sie an); ein Fehler wird gewarnt und kostet die Erneuerung nicht. Pfad als Variable, im Test umgebogen.
 Beweis: main@db7eeb363 scripts/agent-install.sh:388 pinnt `/etc/adminhelper/identity/ca.crt` unter 0700 (postinst:9); Repro der Zeile (debian:13-slim 0700 rc=100, 0644-Kopie rc=0). Dedup-Key: bug:agent:scripts/agent-install.sh:CAInfo
 Verify: bash scripts/dev/verify.sh agent --strict
@@ -30,3 +32,4 @@ Abhängt von: T1
 ## Entscheidungen
 - 2026-11-18: Ort der Kopie `/etc/apt/adminhelper-ca.crt` (Repro der Zeile), nicht Kevins Workaround-Pfad unter `/usr/local` (gehört dem Admin); Begründung in der Spec.
 - 2026-11-18: „SMART-Check auf virtuellen Hosts nicht vorschlagen“ (R-1541) fährt nicht mit: Vorlage `linux-base` gehört zur Monitoring-Neuordnung; eigene Zeile.
+- 2026-11-18 T1: `refreshRepoCA` läuft nur unter Linux (`repoCAOS`, im Test setzbar): unter Windows läge der Pfad auf dem Systemlaufwerk, wo jeder Nutzer ihn anlegen kann, und der Agent schreibt als SYSTEM (Fund der Task-Prüfung, korrigiert vor dem Commit). `TestMain` biegt `RepoCACopy` für das ganze Paket um.
