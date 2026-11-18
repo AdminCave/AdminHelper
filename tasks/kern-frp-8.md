@@ -1,5 +1,5 @@
 # STCP-Tunnel mit Protokoll web: Schema und Pfad — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-8 · Review: pro Task
 Spec: docs/features/kern-frp-8.md (Roadmap R-1540)
 Heavy: linux-full — Server-API (`/api/frp/tunnels`) ändert sich; FRP-Konfiguration, Visitor-Bundle und Datenpfad bleiben, kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -40,8 +40,10 @@ Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/ker
 Task-Review: am Ende
 Abhängt von: T1, T2, T3
 
-### T5 — R-1540: Entwickler-Doku und README zur Auflösung nachziehen (Abschlussprüfung)  [ ]
+### T5 — R-1540: Entwickler-Doku und README zur Auflösung nachziehen (Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f61dd9d2e 2026-11-18T20:35:06+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: „Tunnel-Auflösung“ (desktop.html DE+EN) und README nannten für Web über STCP noch `url = http://127.0.0.1:<port>`; jetzt: nur Host und Port der URL werden ersetzt, `http://127.0.0.1:<port>` nur ohne lesbare URL.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, README.md
