@@ -91,8 +91,10 @@ Beweis: Code-Lesung `plugins.py` ZFS-Prüfung · Dedup-Key: bug:monitoring:plugi
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py tests/test_check_configs.py
 Doku: → T11
 
-### T8 — R-1570, R-1568: Desktop zeigt DEGRADED rot und eine nicht lesbare Platte neutral  [ ]
+### T8 — R-1570, R-1568: Desktop zeigt DEGRADED rot und eine nicht lesbare Platte neutral  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/section/SecZfs.test.ts, apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @de1916de6 2026-11-18T13:03:45+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T8.verdict.json)
 Änderung: `healthClass` gibt für `DEGRADED` `crit`, wie die Bewertung. `categoryClass` in SecSmart zeigt eine Platte
 mit `category: unknown` (T6, kein SMART-Urteil) mit neutralem Chip statt grünem OK (Prüfer-Fund zu T6). Tests:
 `DEGRADED` trägt die kritische Klasse, eine Platte `unknown` den neutralen Chip (rot vorher).
@@ -151,3 +153,5 @@ Task-Review: am Ende
   `critical` bleibt; das Scrub-Alter liest `scrub_warn_days`/`scrub_crit_days` (int, strict, 1..3650, Vorgabe 35/60)
   und nennt die Grenze in der Meldung. Die Details-Fixture `_POOL_FIELDS` trägt jetzt `errors: 0`, weil Scrub-Fehler
   seit T7 bewerten (wie das Scrub-Alter seit R-1230).
+- T8: SecSmart zeigt `category: unknown` als `chip-muted` mit „N/A“ (die Chips tragen feste Kürzel OK/WARN/CRIT,
+  keine i18n); SecZfs `healthClass` kennt nur noch ONLINE → ok, alles andere crit, wie die Prüfung.
