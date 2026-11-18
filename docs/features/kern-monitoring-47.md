@@ -41,7 +41,7 @@ virtuelle Platten.
 
 - `apps/monitoring/app/routers/checks.py` — `toggle_check`, `delete_check`.
 - `apps/monitoring/app/bell_catch_up.py` (neu) — Auswahl und Nachmelden; nutzt `alerter.emit_to_hub`,
-  `build_message`, `bell_severity`, `bell_record`, `hub_decision`, `muted_reason`, `_release_hub_slot`.
+  `build_message`, `bell_severity`, `bell_record`, `hub_decision`, `muted_reason`, `release_hub_slot`.
   Eigenes Modul statt `alerter.py`: der offene Branch `feature/kern-notify-6` ändert `alerter.py` (Mail-Teil).
 - `apps/monitoring/app/scheduler.py`, `apps/monitoring/app/main.py` — Job registrieren.
 - Tests: `apps/monitoring/tests/test_alerter_hub.py` (T1), `apps/monitoring/tests/test_bell_catch_up.py` (neu, T2).
@@ -61,7 +61,7 @@ Ein Check hinkt in der Glocke, wenn
   Entwarnung (ein gescheiterter Abschalt-POST aus T1).
 
 Stumme Checks (`muted_reason`: Wartung, Host down) überspringt der Job. Er reserviert den Platz wie `process_alert`
-(`hub_status`/`hub_sent_at` vor dem POST, Commit), sendet und gibt den Platz bei Fehlschlag mit `_release_hub_slot`
+(`hub_status`/`hub_sent_at` vor dem POST, Commit), sendet und gibt den Platz bei Fehlschlag mit `release_hub_slot`
 zurück; die Auswahl sperrt mit `FOR UPDATE SKIP LOCKED`. Ein Dispatch, der zwischen Claim und POST steht, hat seinen
 Platz schon reserviert und gilt nicht als hinkend. Die Sammelmeldung reserviert nicht vor dem POST: zwischen ihrem
 Claim und ihrem POST (Sekunden) kann der Job dasselbe Ereignis ein zweites Mal senden; der Hub faltet es über

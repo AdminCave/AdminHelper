@@ -81,6 +81,12 @@ _SUBJECT_TO_SPACE = str.maketrans(
 )
 
 
+def subject_safe(text: str) -> str:
+    """``text`` fit for a mail subject: control characters and line separators
+    become a space (_SUBJECT_TO_SPACE)."""
+    return text.translate(_SUBJECT_TO_SPACE)
+
+
 def alert_status(status: str) -> str:
     """The status a notification sees: info is a hint without an alarm (R-1280) and
     reports like ok, so warning -> info is a recovery and ok <-> info stays silent."""
@@ -339,10 +345,10 @@ def _notify_bell(
     ):
         return
     if claim.state is not None:
-        _release_hub_slot(db, check.id, claim.hub_reserved, claim.hub_before)
+        release_hub_slot(db, check.id, claim.hub_reserved, claim.hub_before)
 
 
-def _release_hub_slot(
+def release_hub_slot(
     db: Session,
     check_id: str,
     reserved: tuple[str | None, datetime | None],
@@ -517,7 +523,7 @@ def bell_record(
 ) -> tuple[str | None, datetime | None]:
     """(hub_status, hub_sent_at) once the bell showed ``status``: a problem
     stamps hub_sent_at, a recovery leaves it as it was. The pair tells one
-    reservation from a later one (_release_hub_slot)."""
+    reservation from a later one (release_hub_slot)."""
     return _capped_status(status, severity), sent_at if status == "ok" else now
 
 

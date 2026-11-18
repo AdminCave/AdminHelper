@@ -38,7 +38,7 @@ _PROBLEMS = ("warning", "critical")
 def closed_message(check: MonitorCheck, what: str) -> dict:
     """The bell's all-clear of a check taken out of monitoring (``what``: disabled,
     deleted): its alarm is closed, the check is not OK again."""
-    name = check.name.translate(alerter._SUBJECT_TO_SPACE)
+    name = alerter.subject_safe(check.name)
     return {
         "subject": f"[AdminHelper Monitor] {name}: check {what}",
         "text": f"Check: {check.name} ({check.check_type})\n"
@@ -114,7 +114,7 @@ def _catch_up_one(db: Session, check_id: str) -> bool:
 
     if alerter.emit_to_hub(check, old, target, msg, severity=severity):
         return True
-    alerter._release_hub_slot(db, check_id, reserved, before)
+    alerter.release_hub_slot(db, check_id, reserved, before)
     db.commit()
     return True
 
