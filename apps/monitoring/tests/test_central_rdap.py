@@ -268,7 +268,9 @@ def test_domain_queries_ask_for_rdap_json_and_the_bootstrap_has_its_own_bound(re
 
     by_url = dict(registry.calls)
     assert by_url[rdap.BOOTSTRAP_URL] == {"max_body": rdap.BOOTSTRAP_MAX_BODY}
-    assert by_url[f"{NIC}domain/example.test"] == {"accept": "application/rdap+json"}
+    domain = by_url[f"{NIC}domain/example.test"]
+    assert domain == {"accept": "application/rdap+json", "deadline": domain["deadline"]}
+    assert isinstance(domain["deadline"], float)
 
 
 # --- the verdict ---
@@ -649,3 +651,66 @@ def test_the_bootstrap_takes_the_first_https_url_per_entry_with_a_trailing_slash
         "example": "https://b.test/rdap/",
         "one": "https://d.test/",
     }
+
+
+# --- one deadline for the whole query ---
+
+
+class _Clock:
+    """time stand-in for rdap: every request to a registry takes `per_request` seconds."""
+
+    def __init__(self, registry, per_request):
+        self.now = 1000.0
+        self._registry = registry
+        self._per_request = per_request
+
+    def monotonic(self):
+        return self.now
+
+    def get(self, url, **kwargs):
+        if url != rdap.BOOTSTRAP_URL:
+            self.now += self._per_request
+        return self._registry(url, **kwargs)
+
+
+@pytest.fixture()
+def slow_registry(registry, monkeypatch):
+    clock = _Clock(registry, per_request=fetch.DEADLINE_S)
+    monkeypatch.setattr(rdap, "time", clock)
+    monkeypatch.setattr(fetch, "get", clock.get)
+    return registry, clock
+
+
+def test_redirects_share_the_deadline_of_the_query(slow_registry):
+    registry, clock = slow_registry
+    registry.domains[f"{NIC}domain/example.test"] = _moved(
+        "https://rdap.other.test/domain/example.test"
+    )
+    registry.domains["https://rdap.other.test/domain/example.test"] = _moved(
+        f"{NIC}domain/example.test"
+    )
+    started = clock.now
+
+    result = _probe(prev=_known())
+
+    assert (result.status, result.message) == (
+        "unknown",
+        f"RDAP rdap.nic.test: no answer within {rdap.QUERY_DEADLINE_S:.0f} s",
+    )
+    # Each request may take fetch.DEADLINE_S; the query stops once its own frame is spent.
+    assert len(registry.asked) == rdap.QUERY_DEADLINE_S // fetch.DEADLINE_S
+    assert clock.now - started <= rdap.QUERY_DEADLINE_S
+    deadlines = {kwargs["deadline"] for url, kwargs in registry.calls if url != rdap.BOOTSTRAP_URL}
+    assert deadlines == {started + rdap.QUERY_DEADLINE_S}
+
+
+def test_the_parent_domains_share_the_deadline_of_the_query(slow_registry, monkeypatch):
+    registry, clock = slow_registry
+    monkeypatch.setattr(rdap, "QUERY_DEADLINE_S", 2 * fetch.DEADLINE_S)
+    registry.domains = {}
+
+    result = _probe(host="a.b.www.example.test")
+
+    assert (result.status, result.reached) == ("unknown", False)
+    assert result.message == "RDAP rdap.nic.test: no answer within 40 s"
+    assert len(registry.asked) == 2
