@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-windows-1 — Windows-Agent: frpc-Tunnel, Installation als Update, Dienst-Monitoring — Task-Ledger
-Status: aktiv · Branch: feature/kern-windows-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-windows-1 · Review: pro Task
 Spec: docs/features/kern-windows-1.md (Roadmap R-1576, R-0577, R-1545, R-0708, R-1577, R-1583)
 Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Registry, w32tm) läuft nur im CI-Job agent-windows (go test auf windows-latest); lokal nur GOOS=windows Build/Vet; release.yml-Anteil im Tag-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -115,8 +115,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: → T7
 Abhängt von: T1
 
-### T10 — Doku: system_state je Plattform (Fund der Abschlussprüfung)  [ ]
+### T10 — Doku: system_state je Plattform (Fund der Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2681243e6 2026-11-18T16:21:40+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Der Report-Block `system_state` steht als „nur Linux“ beschrieben; seit T6 sendet Windows `time_synchronized`, FreeBSD schon vorher `reboot_required` und `security_updates`. Je Plattform die Felder nennen, DE+EN.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html
