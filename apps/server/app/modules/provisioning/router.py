@@ -7,6 +7,7 @@
 POST /api/servers/{server_id}/provision/token       — create token (admin)
 GET  /api/servers/{server_id}/provision/tokens      — list active tokens (admin)
 POST /api/servers/{server_id}/provision/activate    — redeem token (X-Provision-Token)
+GET  /api/provisioning/platforms                    — platform catalog (admin, catalog.py)
 
 Activate response schema:
 {
@@ -39,6 +40,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core import config
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.config import ENROLL_PORT
 from app.core.database import get_db
@@ -49,16 +51,33 @@ from app.modules.api_keys.models import ApiKey
 from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.frp.policy import sync_policy
+from app.modules.provisioning.catalog import build_catalog
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.provisioning.schemas import (
     ActivateOut,
+    ProvisionPlatformsOut,
     ProvisionTokenCreatedOut,
     ProvisionTokenOut,
 )
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/servers", tags=["provisioning"])
+catalog_router = APIRouter(prefix="/api/provisioning", tags=["provisioning"])
+
+
+@catalog_router.get("/platforms", response_model=ProvisionPlatformsOut)
+def list_platforms(
+    _admin=Depends(get_current_admin),
+    _scope=Depends(require_scope(SCOPE_ACCESS)),
+):
+    """Platforms an agent can be provisioned on, with their commands."""
+    return build_catalog(
+        config.REPO_DIR,
+        repo_port=config.REPO_PORT,
+        enroll_port=config.ENROLL_PORT,
+        frp_port=config.FRP_BIND_PORT,
+    )
 
 
 @router.post("/{server_id}/provision/token", response_model=ProvisionTokenCreatedOut)

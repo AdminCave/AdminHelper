@@ -18,8 +18,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Infrastructu
 Doku: → T10
 Abhängt von: T1
 
-### T3 — R-1595: Plattform-Katalog GET /api/provisioning/platforms  [ ]
+### T3 — R-1595: Plattform-Katalog GET /api/provisioning/platforms  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, apps/server/app/modules/provisioning/router.py, apps/server/app/modules/provisioning/schemas.py, apps/server/app/core/config.py, apps/server/app/main.py, docker-compose.yml, apps/server/tests/test_provisioning_catalog.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @5d2dd6553 2026-11-18T18:10:07+01:00
+Review: approve (.ah-out/review/kern-provision-1/T3.verdict.json)
 Änderung: Neu `catalog.py` (SPDX) liest `REPO_DIR` (Vorgabe `/app/repo`). Daraus `available`, `versions` und ABIs je Plattform nach der Spec; Windows immer, ohne `install` bis R-1578. Je Aktion strukturierte Befehle (`shell`, `base`, `args` mit `flag`, `value` aus `serverUrl|serverId|caFp|token`, `optional`, `automation`), `prerequisites` (Versionen, Ports 443/8444/8445, 7000 mit Tunnel), `doc` je Sprache. Die Route ist nur für Admins (Scope access). `docker-compose.yml`: Dienst `server` bekommt `./repo:/app/repo:ro`. Tests mit einem Repo-Baum unter `tmp_path` (leer, nur apt, alle), Auth und Snapshot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py tests/test_openapi_snapshot.py
 Doku: → T10
@@ -55,7 +57,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning s
 Doku: keine (intern; Verhalten dokumentiert T10)
 
 ### T7 — R-1596: Provisionieren-Fenster ersetzt den Linux-Tab  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts
 Änderung: Neu `ProvisioningDialog` (SPDX), im Tab geöffnet. Er zeigt:
 - Plattform-Auswahl aus dem Katalog, vorgewählt aus `osType`; nicht verfügbare Plattformen ausgegraut mit Grund
 - Voraussetzungen
@@ -99,4 +101,4 @@ Abhängt von: T3, T8
 - 2026-11-18 Plan: Monitoring-Route in `agent.py`, nicht `checks.py` (offen auf feature/kern-monitoring-45).
 - 2026-11-18 T6 vor T3/T5: die Antwortformen stehen als Vertrag in der Spec („Antwortformen“); die Zuordnung der neuen Typen im Vertragstest `types.contract.test.ts` kommt mit T7, wenn der Server-Snapshot sie trägt.
 - 2026-11-18 T9: Kevin: Doku-Link als GitHub-blob-Link (`https://github.com/AdminCave/AdminHelper/blob/main/docs/…#anker`).
-- 2026-11-18 T3 (aus security T6): ein `powershell`-Befehlskopf ruft ein Skript oder lehnt Werte mit `"` ab — Windows PowerShell 5.1 reicht eingebettete `"` an native `.exe` kaputt weiter. T7 nutzt `ProvisionPlatformId`/`ProvisionAction` oder streicht sie und entfernt die Formen-Kopie im Tab (reviewer T6).
+- 2026-11-18 T3 (aus security T6): Windows PowerShell 5.1 reicht eingebettete `"` an native `.exe` kaputt weiter. Der Katalog (T3) ruft die `.exe` direkt auf; daher lehnt `buildCommand` in T7 bei `shell === 'powershell'` jeden Wert mit `"` ab (null), mit Test (reviewer T3: Pflicht T7 zugeordnet, `command.ts` in T7-Dateien). T7 nutzt `ProvisionPlatformId`/`ProvisionAction` oder streicht sie und entfernt die Formen-Kopie im Tab (reviewer T6).

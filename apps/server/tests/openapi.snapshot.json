@@ -4765,6 +4765,262 @@
         "title": "PlaybookUpdate",
         "type": "object"
       },
+      "ProvisionCommandArgOut": {
+        "properties": {
+          "flag": {
+            "title": "Flag",
+            "type": "string"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "interactive",
+                  "automation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "optional": {
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "value": {
+            "enum": [
+              "serverUrl",
+              "serverId",
+              "caFp",
+              "token",
+              "flag",
+              "insecure"
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flag",
+          "value",
+          "optional",
+          "mode"
+        ],
+        "title": "ProvisionCommandArgOut",
+        "type": "object"
+      },
+      "ProvisionCommandOut": {
+        "properties": {
+          "action": {
+            "enum": [
+              "install",
+              "update",
+              "reregister",
+              "remove"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "args": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionCommandArgOut"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "base": {
+            "title": "Base",
+            "type": "string"
+          },
+          "shell": {
+            "enum": [
+              "bash",
+              "sh",
+              "powershell"
+            ],
+            "title": "Shell",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "shell",
+          "base",
+          "args"
+        ],
+        "title": "ProvisionCommandOut",
+        "type": "object"
+      },
+      "ProvisionDocOut": {
+        "properties": {
+          "de": {
+            "title": "De",
+            "type": "string"
+          },
+          "en": {
+            "title": "En",
+            "type": "string"
+          }
+        },
+        "required": [
+          "de",
+          "en"
+        ],
+        "title": "ProvisionDocOut",
+        "type": "object"
+      },
+      "ProvisionPlatformOut": {
+        "properties": {
+          "abis": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Abis",
+            "type": "array"
+          },
+          "arch": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Arch",
+            "type": "array"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionCommandOut"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "doc": {
+            "$ref": "#/components/schemas/ProvisionDocOut"
+          },
+          "id": {
+            "enum": [
+              "linux",
+              "windows",
+              "freebsd",
+              "opnsense"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "prerequisites": {
+            "$ref": "#/components/schemas/ProvisionPrerequisitesOut"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "noRepo",
+                  "notYet"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "available",
+          "reason",
+          "versions",
+          "arch",
+          "abis",
+          "prerequisites",
+          "commands",
+          "doc"
+        ],
+        "title": "ProvisionPlatformOut",
+        "type": "object"
+      },
+      "ProvisionPlatformsOut": {
+        "properties": {
+          "platforms": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionPlatformOut"
+            },
+            "title": "Platforms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "platforms"
+        ],
+        "title": "ProvisionPlatformsOut",
+        "type": "object"
+      },
+      "ProvisionPortOut": {
+        "properties": {
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "purpose": {
+            "enum": [
+              "api",
+              "enroll",
+              "repo",
+              "tunnel"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "tunnelOnly": {
+            "title": "Tunnelonly",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "port",
+          "purpose",
+          "tunnelOnly"
+        ],
+        "title": "ProvisionPortOut",
+        "type": "object"
+      },
+      "ProvisionPrerequisitesOut": {
+        "properties": {
+          "ports": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionPortOut"
+            },
+            "title": "Ports",
+            "type": "array"
+          },
+          "systems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Systems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "systems",
+          "ports"
+        ],
+        "title": "ProvisionPrerequisitesOut",
+        "type": "object"
+      },
       "ProvisionTokenCreatedOut": {
         "description": "A new provision token; token is the raw value, handed out only here.",
         "properties": {
@@ -9730,6 +9986,33 @@
         "summary": "Unread Count",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/provisioning/platforms": {
+      "get": {
+        "description": "Platforms an agent can be provisioned on, with their commands.",
+        "operationId": "list_platforms_api_provisioning_platforms_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionPlatformsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Platforms",
+        "tags": [
+          "provisioning"
         ]
       }
     },

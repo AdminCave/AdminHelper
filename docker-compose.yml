@@ -88,6 +88,9 @@ services:
       - frps-state:/app/frps-state:ro
       # The listed intermediates of each scope, written by the ca-issuer (CA_TRUST_DIR below).
       - ca-trust:/app/ca-trust:ro
+      # Agent package repo the updater populates, read-only: the provisioning catalog
+      # offers a platform only when its packages are here (REPO_DIR below).
+      - ./repo:/app/repo:ro
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
@@ -117,6 +120,9 @@ services:
       # gateway's published enroll-plane port below — otherwise agent/desktop enrollment dials a closed
       # port (4.50).
       - ENROLL_PORT=${ENROLL_PORT:-8444}
+      # The gateway's published repo-plane port (below), handed to the agent installers.
+      - REPO_DIR=/app/repo
+      - REPO_PORT=${REPO_PORT:-8445}
       - FRP_CONFIG_DIR=/app/frp-config
       - FRPS_STATE_DIR=/app/frps-state
       # The host port compose publishes for frps (below), reported with the supervisor status.

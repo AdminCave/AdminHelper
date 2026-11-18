@@ -314,6 +314,12 @@ CA_TRUST_DIR = os.environ.get("CA_TRUST_DIR", "/app/ca-trust").strip()
 # provisioned against and builds <host>:ENROLL_PORT/enroll itself.
 ENROLL_PORT = int(os.environ.get("ENROLL_PORT", "8444"))
 
+# The agent package repo the updater rolls out (./repo, mounted read-only) and the gateway's
+# public repo-plane port. The provisioning catalog reads which platforms carry packages there
+# and passes a non-default port to the installers (--repo-port).
+REPO_DIR = Path(os.environ.get("REPO_DIR", "/app/repo"))
+REPO_PORT = int(os.environ.get("REPO_PORT", "8445"))
+
 # Audit-log retention. A daily system job prunes audit_log rows older than this
 # many days — the ONLY delete path for the otherwise append-only trail. Set to 0
 # to keep entries forever (no pruning).

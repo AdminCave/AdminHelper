@@ -60,6 +60,7 @@ from app.modules.notifications.router import prefs_router as notifications_prefs
 from app.modules.notifications.schemas import IncomingEvent
 from app.modules.notifications.service import default_admin_subscription, notify_users
 from app.modules.notifications.stream import stream_router as notifications_stream_router
+from app.modules.provisioning.router import catalog_router as provisioning_catalog_router
 from app.modules.provisioning.router import router as provisioning_router
 from app.modules.servers.router import internal_router as servers_internal_router
 from app.modules.servers.router import router as servers_router
@@ -538,6 +539,7 @@ app.include_router(hooks_trigger_router)  # public webhook ingest — no access 
 app.include_router(hooks_router, dependencies=_access)  # admin CRUD — access scope
 app.include_router(servers_router, dependencies=_access)
 app.include_router(provisioning_router)
+app.include_router(provisioning_catalog_router)
 # Enrollment-token mint is JWT-gated (the client has no cert yet) — a bootstrap
 # door like provision/activate, so NO router-level scope guard.
 app.include_router(enrollment_router)
