@@ -16,11 +16,13 @@ Reihenfolge: unabhängig, außer T6 nach T5 und T11 zuletzt. `check_configs.py` 
 
 ## Tasks
 
-### T1 — R-1525: Anfrageprüfung des Servers wie im Monitoring  [ ]
-Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/tests/test_bounds.py
+### T1 — R-1525: Anfrageprüfung des Servers wie im Monitoring  [x]
+Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/tests/test_bounds.py, apps/server/tests/test_hooks_webhook_payload.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @27a604a66 2026-11-18T12:35:11+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T1.verdict.json)
 Änderung: `_find_unstorable` des Servers übernimmt die Prüfung der Monitoring-Kopie (`MAX_DEPTH`); Tests für Grenze,
 Ort und Fehlermeldung.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py tests/test_hooks_webhook_payload.py
 Doku: → T11
 
 ### T2 — R-1566: Status-Zusammenfassung zählt nur aktive Checks  [ ]
@@ -32,14 +34,14 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info
 Doku: → T11
 
 ### T3 — R-1565: Vorhersage bewertet volle Platten und folgt den Plattenregeln  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/checkers/forecast.py, apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_checker_forecast.py
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/forecast.py, apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_checker_forecast.py, apps/monitoring/app/checkers/context.py, apps/monitoring/tests/test_check_engine_context.py
 Änderung: Eine Platte ≥ 100 % ist `critical` („voll“), `hours_left` 0. Die Engine hängt der Vorhersage die
 Plattenregeln der aktiven Ressourcen-Prüfung desselben Hosts an (`ignore_mounts`, `disk_overrides`,
 `disk_min_free_gb`) und `free_gb` je Mount aus deren letztem Ergebnis; die Vorhersage überspringt ignorierte Mounts
 und alarmiert nicht, solange mindestens `min_free_gb` frei ist. Tests: volle Platte critical (rot vorher),
 ignorierter Mount, Override, Grenze, ohne Ressourcen-Prüfung wie bisher.
 Beweis: Code-Lesung `forecast.py` Zweig `last_pct >= 100` · Dedup-Key: bug:monitoring:forecast.py:full-disk-stable
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_forecast.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_forecast.py tests/test_check_engine_context.py
 Doku: → T11
 
 ### T4 — R-1567, R-1573: Modul-Sync wahrt eigene Regeln und eigene Schalter  [ ]
