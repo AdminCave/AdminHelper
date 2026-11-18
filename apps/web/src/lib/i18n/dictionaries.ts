@@ -25,6 +25,7 @@ export const translations: Translations = {
     'nav.apikeys': 'API-Keys',
     'nav.hooks': 'Hooks',
     'nav.frp': 'FRP Tunnels',
+    'nav.notifications': 'Benachrichtigungen',
     'nav.certificates': 'Zertifikate',
     'nav.audit': 'Audit-Log',
     'nav.logout': 'Abmelden',
@@ -146,6 +147,44 @@ export const translations: Translations = {
     'page.certificates.status.warning': 'Bald fällig',
     'page.certificates.status.critical': 'Kritisch',
     'page.certificates.expired': 'abgelaufen',
+
+    // ── Notifications Page (R-1531) ───────────────────────────────────
+    'page.notify.title': 'Benachrichtigungen',
+    'page.notify.subtitle':
+      'Mail-Relay, Telegram-Bot und freigegebene Netze für Server, Scheduler und Monitoring.',
+    'page.notify.loading': 'Lädt …',
+    'page.notify.loadFailed': 'Die Einstellungen ließen sich nicht laden.',
+    'page.notify.channels': 'Kanäle',
+    'page.notify.smtpHost': 'SMTP-Host',
+    'page.notify.smtpPort': 'SMTP-Port',
+    'page.notify.smtpUser': 'SMTP-Benutzer',
+    'page.notify.smtpPassword': 'SMTP-Passwort',
+    'page.notify.smtpFrom': 'Absender',
+    'page.notify.telegramToken': 'Telegram-Bot-Token',
+    'page.notify.privateTargets': 'Private Ziel-Netze',
+    'page.notify.privateTargets.hint':
+      'CIDR, durch Komma getrennt; öffnet diese Netze für ntfy und Webhooks.',
+    'page.notify.fromEnv': 'Leer: aus .env – {value}',
+    'page.notify.fromEnvSecret': 'Leer: aus .env',
+    'page.notify.notSet': 'Leer: nicht gesetzt',
+    'page.notify.secretSet': 'gespeichert – leer lassen zum Behalten',
+    'page.notify.secretClear': 'Gespeicherten Wert löschen',
+    'page.notify.hostChange':
+      'Ein neuer Host ohne neues Passwort verwirft das gespeicherte Passwort.',
+    'page.notify.portInvalid': 'Port: eine Zahl von 1 bis 65535',
+    'page.notify.unreadable':
+      'Mit dem aktuellen SECRET_KEY nicht lesbar: {fields}. Bis zur Neueingabe gilt die .env.',
+    'page.notify.updated': 'Zuletzt geändert {at} von {by}',
+    'page.notify.saved': 'Kanäle gespeichert',
+    'page.notify.test': 'Test-Versand',
+    'page.notify.test.channel': 'Kanal',
+    'page.notify.test.target': 'Ziel',
+    'page.notify.test.target.hint':
+      'E-Mail-Adresse oder Telegram-Chat-ID; der Test nutzt die gespeicherten Einstellungen',
+    'page.notify.test.send': 'Test senden',
+    'page.notify.test.sent': 'Testnachricht über {channel} gesendet',
+    'page.notify.channel.email': 'E-Mail',
+    'page.notify.channel.telegram': 'Telegram',
 
     // ── API-Keys Page ─────────────────────────────────────────────────
     'page.apikeys.title': 'API-Keys',
@@ -347,6 +386,7 @@ export const translations: Translations = {
     'nav.apikeys': 'API Keys',
     'nav.hooks': 'Hooks',
     'nav.frp': 'FRP Tunnels',
+    'nav.notifications': 'Notifications',
     'nav.certificates': 'Certificates',
     'nav.audit': 'Audit log',
     'nav.logout': 'Sign out',
@@ -466,6 +506,43 @@ export const translations: Translations = {
     'page.certificates.status.warning': 'Due soon',
     'page.certificates.status.critical': 'Critical',
     'page.certificates.expired': 'expired',
+
+    // ── Notifications Page (R-1531) ───────────────────────────────────
+    'page.notify.title': 'Notifications',
+    'page.notify.subtitle':
+      'Mail relay, Telegram bot and opened networks for server, scheduler and monitoring.',
+    'page.notify.loading': 'Loading …',
+    'page.notify.loadFailed': 'The settings could not be loaded.',
+    'page.notify.channels': 'Channels',
+    'page.notify.smtpHost': 'SMTP host',
+    'page.notify.smtpPort': 'SMTP port',
+    'page.notify.smtpUser': 'SMTP user',
+    'page.notify.smtpPassword': 'SMTP password',
+    'page.notify.smtpFrom': 'Sender',
+    'page.notify.telegramToken': 'Telegram bot token',
+    'page.notify.privateTargets': 'Private target networks',
+    'page.notify.privateTargets.hint':
+      'CIDR, comma-separated; opens these networks to ntfy and webhooks.',
+    'page.notify.fromEnv': 'Empty: from .env – {value}',
+    'page.notify.fromEnvSecret': 'Empty: from .env',
+    'page.notify.notSet': 'Empty: not set',
+    'page.notify.secretSet': 'stored – leave empty to keep it',
+    'page.notify.secretClear': 'Delete the stored value',
+    'page.notify.hostChange': 'A new host without a new password drops the stored password.',
+    'page.notify.portInvalid': 'Port: a number from 1 to 65535',
+    'page.notify.unreadable':
+      'Unreadable with the current SECRET_KEY: {fields}. The .env applies until they are entered again.',
+    'page.notify.updated': 'Last changed {at} by {by}',
+    'page.notify.saved': 'Channels saved',
+    'page.notify.test': 'Test message',
+    'page.notify.test.channel': 'Channel',
+    'page.notify.test.target': 'Target',
+    'page.notify.test.target.hint':
+      'E-mail address or Telegram chat ID; the test uses the saved settings',
+    'page.notify.test.send': 'Send test',
+    'page.notify.test.sent': 'Test message sent over {channel}',
+    'page.notify.channel.email': 'E-mail',
+    'page.notify.channel.telegram': 'Telegram',
 
     // ── API-Keys Page ─────────────────────────────────────────────────
     'page.apikeys.title': 'API Keys',

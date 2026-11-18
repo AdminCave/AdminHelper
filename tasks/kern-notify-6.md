@@ -92,8 +92,10 @@ Gleichheit beider Dateien nicht, sondern die Ausgaben).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_notify_config.py tests/test_mail_template_parity.py tests/test_alerter.py tests/test_alert_bundle.py
 Doku: → T10
 
-### T8 — R-1531: Web-Admin-Seite Benachrichtigungen, Abschnitt Kanäle  [ ]
-Komponente: web · Dateien: apps/web/src/pages/Notifications.svelte, apps/web/src/pages/Notifications.test.ts, apps/web/src/lib/api/notify.ts, apps/web/src/lib/api/types.ts, apps/web/src/routes.ts, apps/web/src/lib/components/layout/Sidebar.svelte, apps/web/src/lib/i18n/dictionaries.ts, tasks/kern-notify-6.md
+### T8 — R-1531: Web-Admin-Seite Benachrichtigungen, Abschnitt Kanäle  [x]
+Komponente: web · Dateien: apps/web/src/pages/Notifications.svelte, apps/web/src/pages/Notifications.test.ts, apps/web/src/lib/api/notify.ts, apps/web/src/lib/api/types.ts, apps/web/src/routes.ts, apps/web/src/lib/components/layout/Sidebar.svelte, apps/web/src/lib/i18n/dictionaries.ts, tasks/kern-notify-6.md, apps/web/src/lib/api/types.contract.test.ts, apps/web/src/lib/components/layout/Sidebar.test.ts, apps/web/tests/e2e/mocks.ts, apps/web/tests/e2e/smoke.spec.ts, apps/web/src/lib/api/mocks.contract.test.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/notifications-chromium-linux.png
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @3e9bca0c1 2026-11-18T13:53:44+01:00
+Review: approve (.ah-out/review/kern-notify-6/T8.verdict.json)
 Änderung: Neue Admin-Seite `/notifications` (SPDX-Header in neuen Dateien): SMTP-Felder, Passwort/Token als
 write-only (Platzhalter „gesetzt“, Löschen ausdrücklich), private Netze, Quelle je Feld (`aus .env`), Warnung bei
 unlesbarem Geheimnis, Test-Versand je Kanal. Komponenten aus `components/ui`, DE+EN-Texte.

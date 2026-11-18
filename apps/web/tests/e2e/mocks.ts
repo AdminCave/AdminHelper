@@ -95,6 +95,36 @@ const CERTIFICATES = {
   ],
 };
 
+// The panel leaves the relay to the .env and keeps a password; no secret is unreadable (R-1531).
+const NOTIFY_CHANNELS = {
+  smtpHost: null,
+  smtpPort: null,
+  smtpUser: null,
+  smtpFrom: null,
+  privateTargets: null,
+  passwordSet: true,
+  tokenSet: false,
+  sources: {
+    smtp_host: 'env',
+    smtp_port: 'env',
+    smtp_user: 'none',
+    smtp_password: 'panel',
+    smtp_from: 'env',
+    telegram_token: 'none',
+    private_targets: 'none',
+  },
+  unreadable: [],
+  effective: {
+    smtpHost: 'relay.example',
+    smtpPort: 587,
+    smtpUser: '',
+    smtpFrom: 'hub@example.com',
+    privateTargets: [],
+  },
+  updatedAt: null,
+  updatedBy: null,
+};
+
 const AUDIT_ROWS: Record<string, unknown>[] = [
   {
     id: 2,
@@ -301,6 +331,7 @@ export const MOCK_FIXTURES: MockFixture[] = [
   },
   { method: 'GET', path: 'audit', status: 200, body: AUDIT_ROWS },
   { method: 'GET', path: 'enrollment/certificates', status: 200, body: CERTIFICATES },
+  { method: 'GET', path: 'admin/notify/channels', status: 200, body: NOTIFY_CHANNELS },
   { method: 'GET', path: 'frp/status', status: 200, body: { proxies: [], total: 0 } },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(false) },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(true) },
@@ -462,6 +493,9 @@ export async function mockApi(page: Page): Promise<void> {
   );
   await page.route(api('enrollment/certificates'), async (route) =>
     route.fulfill(json({ body: CERTIFICATES })),
+  );
+  await page.route(api('admin/notify/channels'), async (route) =>
+    route.fulfill(json({ body: NOTIFY_CHANNELS })),
   );
   await page.route(api('enrollment/token/for'), async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
