@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-18 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-18 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-18 · Review: pro Task
 Spec: docs/features/kern-monitoring-18.md (Roadmap R-1406, R-1302, R-1267)
 Heavy: linux-full — Inventar-Format, Discovery, Plattenliste und eine neue Ansicht im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -99,8 +99,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_m
 Doku: → T7
 Abhängt von: T3, T4
 
-### T7 — Doku DE+EN und CHANGELOG  [ ]
+### T7 — Doku DE+EN und CHANGELOG  [x]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-18.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @a9a8b3611 2026-11-18T11:56:23+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung:
 - Admin: Modul `net_share`; Netz-Mounts nicht mehr in der Plattenliste; gone je Abschnitt.
 - Developer: Inventar-Felder `complete` und `shares`, Zielart `share`, Ansicht `net_share_usage`, Frist der
