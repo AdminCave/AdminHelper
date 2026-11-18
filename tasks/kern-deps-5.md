@@ -43,8 +43,10 @@ mit `docker buildx imagetools inspect` gegenprüfen).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_policy_image.py tests/test_release_images.py
 Doku: keine (Pin)
 
-### T4 — R-1552, R-1553: Agent-Toolchain und Go-Module  [ ]
+### T4 — R-1552, R-1553: Agent-Toolchain und Go-Module  [x]
 Komponente: agent · Dateien: apps/agent/go.mod, apps/agent/go.sum
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @b462af9a2 2026-11-18T13:47:54+01:00
+Review: approve (.ah-out/review/kern-deps-5/T4.verdict.json)
 Änderung: `toolchain go1.27.4`; `golang.org/x/sys`, `golang.org/x/term`, `github.com/go-sql-driver/mysql`,
 `github.com/go-ole/go-ole` auf die Stände aus R-1553 (`go get`, `go mod tidy`); `go` bleibt 1.27.0.
 Verify: bash scripts/dev/verify.sh agent --strict
