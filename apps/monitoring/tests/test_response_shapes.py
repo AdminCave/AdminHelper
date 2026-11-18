@@ -73,6 +73,7 @@ def _ref_name(schema: dict) -> str:
         ("/maintenance/{maintenance_id}", "put", "MaintenanceOut"),
         ("/agent-keys/{server_id}", "post", "AgentKeyOut"),
         ("/agent-keys/{server_id}", "delete", "AgentKeyDeletedOut"),
+        ("/agent/{server_id}/state", "get", "AgentStateOut"),
         ("/servers/{server_id}/cleanup", "delete", "ServerCleanupOut"),
         ("/templates", "get", "TemplateOut"),
         ("/templates", "post", "TemplateOut"),

@@ -24,10 +24,12 @@ Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, 
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py tests/test_openapi_snapshot.py
 Doku: → T10
 
-### T4 — R-1597: Monitoring-Route GET /agent/{server_id}/state  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_agent_state.py
+### T4 — R-1597: Monitoring-Route GET /agent/{server_id}/state  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_agent_state.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_response_shapes.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0d9377608 2026-11-18T17:46:14+01:00
+Review: approve (.ah-out/review/kern-provision-1/T4.verdict.json)
 Änderung: Interne Route (`require_internal`) liefert `lastReportAt` (aus `MonitorAgentLiveness`) und `hostFacts` (`os`, `platform`, `platformVersion` aus `MonitorHostFacts`). Bei unbekanntem Server kommen beide als `null`, nie 404, damit der Server nicht zwischen „unbekannt“ und „noch kein Bericht“ raten muss.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_state.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_state.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
 Doku: keine (interne Route)
 
 ### T5 — R-1597/R-1594: GET /api/servers/{id}/provision/progress  [ ]
