@@ -61,8 +61,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 Abhängt von: T1, T3
 
-### T5 — R-1545: frpc.exe als Release-Asset, Pin-Gleichstand in CI  [ ]
+### T5 — R-1545: frpc.exe als Release-Asset, Pin-Gleichstand in CI  [x]
 Komponente: scripts · Dateien: .github/workflows/release.yml, .github/workflows/ci.yml, tasks/kern-windows-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @706e9cb3a 2026-11-18T16:00:31+01:00
+Review: approve (.ah-out/review/kern-windows-1/T5.verdict.json)
 Änderung: release.yml lädt das gepinnte frpc-Windows-ZIP (`FRP_SHA256_WINDOWS_AMD64`), entpackt `frpc.exe`, prüft den
 SHA-256 gegen die Go-Konstante aus `frpcpin.go` und legt sie als `frpc-windows-x86_64.exe` in `dist/` (damit in
 `SHA256SUMS` mit minisign); ci.yml prüft den Gleichstand der Konstante mit den Workflow-Pins. Der PR ändert Workflows:
@@ -84,13 +86,15 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
 ### T7 — Doku: Windows-Abschnitt der Agent-Verteilung, Changelog  [ ]
-Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-windows-1.md, tasks/kern-windows-1.md
+Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-windows-1.md, tasks/kern-windows-1.md, docs/developer/cicd.html, docs/en/developer/cicd.html
 Änderung: Windows-Abschnitt DE+EN: Programmordner `%ProgramFiles%\AdminHelper Agent` (auch in monitoring.html und
 developer/agent.html), `frpc-windows-x86_64.exe` neben den Agent legen, Install = Update, `uninstall --purge`, Tunnel
 laufen jetzt auf Windows, Starttyp und `enabled_inactive` auf Windows (gewollt endende Auto-Dienste über die
-Ausnahmen der Dienst-Regel), Defender-Hinweis; Changelog-Fragment.
+Ausnahmen der Dienst-Regel), Defender-Hinweis; developer/cicd.html DE+EN (aus T5): `frp-consistency` prüft
+`PinnedVersion` gegen `FRP_VERSION` und frpc.exe gegen `ExeSHA256`, Release-Asset `frpc-windows-x86_64.exe`;
+Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
-Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-windows-1.md
+Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/kern-windows-1.md
 Task-Review: am Ende
 
 ### T8 — R-1583: Dienstnamen auf Windows ohne Groß-/Kleinschreibung  [~] (Kevin 2026-11-18: Agent unverändert, Monitoring vergleicht Dienstnamen case-insensitiv (R-0436, Kern 1))
