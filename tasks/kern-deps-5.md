@@ -113,6 +113,15 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_onl
 Doku: docs/developer/server.html DE+EN · changelog.d/kern-deps-5.md
 Task-Review: am Ende
 
+### T11 — R-1585: Stack-Test startet Prozesse von app über setpriv  [ ]
+Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Änderung: die vier `gosu`-Stellen (Schritt 13 Gegenprobe, Schritt 14c ping) auf `setpriv --reuid=app --regid=app
+--init-groups env …`, wie die Entrypoints; ohne `gosu` im Image fiele der integration-stack-Job der PR-CI rot
+(Harness-Pfad, eigene Task wegen belegtem Produktschaden: roter Produkttest).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Test)
+Abhängt von: T7
+
 ## Entscheidungen
 - T7: setpriv gibt die Capabilities erst mit seinem exec ab (util-linux: „does not change capabilities“);
   die Entrypoints starten die Shell darum über einen Zwischen-exec (`setpriv … env sh`). Test: die so gestartete
