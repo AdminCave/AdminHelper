@@ -39,8 +39,8 @@ from app.models import (
 from app.template_sync import (
     TEMPLATE_CHECK_FIELDS,
     SchedulerAction,
-    _read_overrides,
     apply_scheduler_actions,
+    read_overrides,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ def mark_module_overrides(
     manual checks are left to mark_overrides."""
     if check.module_id is None:
         return
-    fields = _read_overrides(check)
+    fields = read_overrides(check)
     if enabled is not None:
         if enabled:
             fields.discard("enabled")
@@ -461,7 +461,7 @@ def _update(
     and timeout stay (the only parts of a probe config besides rules the admin can edit,
     routers/checks.py), as do the row's name and switches; a central row keeps its
     interval and the partner the admin gave it."""
-    if "config" in _read_overrides(row):
+    if "config" in read_overrides(row):
         return "the admin changed the check's rules; they stay"
     if (row.check_type == "central") != check.central:
         return "the catalog moved the check between the agent and the monitoring service"
@@ -535,7 +535,7 @@ def _adopt(
             # A new instance is watched whole again (adopting "gone" switched its checks
             # off), except the checks the admin switched off; on a changed one, those stay
             # off too.
-            if finding.kind == "new" and "enabled" not in _read_overrides(row):
+            if finding.kind == "new" and "enabled" not in read_overrides(row):
                 row.enabled = True
             row.silent = False
             if row.enabled:

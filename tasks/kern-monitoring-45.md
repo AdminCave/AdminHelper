@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-45 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-45 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-45 · Review: pro Task
 Spec: docs/features/kern-monitoring-45.md (Roadmap R-1525, R-1565, R-1566, R-1567, R-1568, R-0518, R-1570, R-1571, R-1572, R-1573)
 Heavy: linux-full — `apps/agent` (SMART-Bericht) und der Server (Anfragegrenzen), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -141,8 +141,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py
 Doku: docs/developer/api-reference.html DE+EN
 Task-Review: am Ende
 
-### T13 — R-1566, R-1567: volle Monitoring-Suite der PR-CI  [ ]
+### T13 — R-1566, R-1567: volle Monitoring-Suite der PR-CI  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_pagination.py, apps/monitoring/tests/test_status_page_api.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @118986479 2026-11-18T13:45:45+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T13.verdict.json)
 Änderung: PR-CI #568 rot (3 Tests außerhalb der Task-Verifys): `module_sync` importiert `_read_overrides` über die
 Modulgrenze → in `template_sync` öffentlich als `read_overrides`; zwei Summary-Tests erwarten noch, dass Zustände
 ohne aktiven Check zählen (T2, R-1566) → sie legen aktive Checks an bzw. erwarten den abgeschalteten nicht mehr.
