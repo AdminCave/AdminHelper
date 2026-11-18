@@ -325,12 +325,13 @@ elif grep -q "\"name\": *\"adminhelper-runtime-$PREV\.tar\.gz\"" <<<"$REL_JSON";
             || bad "update.sh: runtime scripts missing after the swap"
         # --all is load-bearing: without it `ps` lists ONLY running containers, so
         # "nothing is in a non-running state" would be trivially true for a stack
-        # that is entirely dead. Name the services that must be up as well.
-        states="$( cd "$INST" && docker compose -p "$UPD_PROJECT" ps --all --format '{{.Service}} {{.State}}' 2>/dev/null )"
-        notrunning="$(printf '%s\n' "$states" | grep -v '^$' | grep -v ' running$' | paste -sd' ' -)"
+        # that is entirely dead. Name the services that must be up as well. db-init
+        # is a one-shot (since v0.47.0): it is healthy as `exited 0`, and only so.
+        states="$( cd "$INST" && docker compose -p "$UPD_PROJECT" ps --all --format '{{.Service}} {{.State}} {{.ExitCode}}' 2>/dev/null )"
+        notrunning="$(printf '%s\n' "$states" | grep -v '^$' | grep -v ' running [0-9]*$' | grep -vx 'db-init exited 0' | paste -sd' ' -)"
         missing=""
         for svc in postgres server gateway ca-issuer monitoring; do
-            grep -q "^$svc running$" <<<"$states" || missing="$missing $svc"
+            grep -q "^$svc running " <<<"$states" || missing="$missing $svc"
         done
         [ -z "$missing" ] && [ -z "$notrunning" ] \
             && ok "update.sh: the whole updated stack is up ($(printf '%s\n' "$states" | grep -c .) containers)" \

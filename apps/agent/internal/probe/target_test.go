@@ -67,6 +67,16 @@ func TestTargetOfTakesOnlyTheKindsOfTheSensorWithWhatTheyNeed(t *testing.T) {
 		{"vhost of a wildcard", []string{kindVhost}, &Target{Kind: kindVhost, Name: "*.example.org", PortHint: 443}, false},
 		{"vhost of an address", []string{kindVhost}, &Target{Kind: kindVhost, Name: "192.0.2.1", PortHint: 443}, false},
 		{"vhost localhost", []string{kindVhost}, &Target{Kind: kindVhost, Name: "localhost", PortHint: 443}, false},
+		{"share", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/pve/backup"}, true},
+		{"share with a blank", []string{kindShare}, &Target{Kind: kindShare, Name: "/srv/team share"}, true},
+		{"share root", []string{kindShare}, &Target{Kind: kindShare, Name: "/"}, false},
+		{"share relative", []string{kindShare}, &Target{Kind: kindShare, Name: "mnt/pve"}, false},
+		{"share climbing out", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/../etc"}, false},
+		{"share with a trailing slash", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/pve/"}, false},
+		{"share with a double slash", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt//pve"}, false},
+		{"share with a control character", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/a\nb"}, false},
+		{"share with a port", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/pve/backup", PortHint: 2049}, false},
+		{"share too long", []string{kindShare}, &Target{Kind: kindShare, Name: "/" + strings.Repeat("a", maxNameRunes)}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
