@@ -111,7 +111,7 @@ Beweis: Code-Lesung `routers/checks.py` `toggle_check`, `delete_check` · Dedup-
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_hub.py
 Doku: → T11
 
-### T10 — R-1572: gescheiterte Hub-Übergabe wird nachgeholt  [ ]
+### T10 — R-1572: gescheiterte Hub-Übergabe wird nachgeholt  [~] (verschoben in kern-monitoring-47: rot belegt, Nachholen braucht Kevins Wort (Zwischenlösung oder Outbox R-1561))
 Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter_hub.py
 Änderung: Zuerst ein Test: POST an den Hub scheitert → beim nächsten Lauf geht die Meldung erneut raus. Rot →
 `hub_status` wird bei gescheitertem POST zurückgesetzt, sodass der nächste Lauf nachholt; grün → `[~] nicht
@@ -161,3 +161,9 @@ Task-Review: am Ende
   `notified_status` bleibt ein fortbestehendes Problem still. Runde 2: Mit Rücksetzen meldet das Agent-Bündel
   (`alert_bundle._candidates`) den alten Status sofort neu. Das ist sichtbares Verhalten (Kevin), daher in den Zug
   `kern-monitoring-47` verschoben; der Stand von Runde 2 liegt als Patch außerhalb des Repos.
+- T10: Rot belegt (`test_a_failed_hub_post_is_caught_up_by_the_next_run`: Hub lehnt den Alarm ab, der nächste Lauf
+  mit unverändertem Problem schickt nichts; `1 failed`). Den Glocken-Platz gibt `_release_hub_slot` schon zurück; die
+  Engine entscheidet aber nur über `notified_status` und schickt keinen neuen Lauf. Nachholen hieße: jeder Lauf
+  jedes nachhängenden Checks versucht den POST erneut (bei Hub-Ausfall je Lauf ein 5-s-Timeout im Alarm-Pool), dazu
+  ein eigener Weg für das Agent-Bündel. Das ist der Kern der Outbox (R-1561) und berührt die Dienst-Last: verschoben
+  in `kern-monitoring-47` mit Frage an Kevin; der rote Test liegt als Patch außerhalb des Repos.
