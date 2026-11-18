@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p0 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p0 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p0 · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p0.md (Roadmap R-1558, R-1515)
 Heavy: none — Mockups nur im Vite-Dev-Server (nicht im Produktions-Build), Regel-Prototyp nur in Tests, ADR und Doku; kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -135,8 +135,10 @@ Doku: docs/adr/0004-monitoring-neuordnung.md
 Task-Review: am Ende
 Abhängt von: T12
 
-### T14 — PR-CI: Mockup nutzt nur deklarierte Tokens (R-1558)  [ ]
+### T14 — PR-CI: Mockup nutzt nur deklarierte Tokens (R-1558)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/views/ExceptionDialog.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @5194366fd 2026-11-18T16:26:06+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T14.verdict.json)
 Änderung: Die PR-CI von #573 (Lauf 44333287377, Job „Desktop-UI … vitest“) ist rot: `src/styles/tokens.test.ts`
 meldet `--surface-sunken` aus `ExceptionDialog.svelte` (`.preview`, seit T6) als nirgends unter `src/` deklariert. Die
 Vorschau nimmt `var(--surface-inset)`, das deklarierte Token für eingelassene Flächen; das `Verify:` von T6 lief nur

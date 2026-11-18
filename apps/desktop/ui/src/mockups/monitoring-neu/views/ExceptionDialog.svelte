@@ -475,7 +475,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     margin: 0;
     padding: var(--space-3);
     border-radius: var(--radius-md);
-    background: var(--surface-sunken, var(--surface));
+    background: var(--surface-inset);
   }
   .problem {
     margin: 0;
