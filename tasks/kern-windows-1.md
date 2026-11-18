@@ -31,8 +31,10 @@ Datenverzeichnis; die späteren Aufrufe entfallen, wo sie doppelt wären. Test: 
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (keine dokumentierte Wirkung)
 
-### T3 — R-1545, R-0708: frpc als Kindprozess des Agent-Dienstes  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/platform_windows.go, apps/agent/internal/frpc/supervisor_windows.go, apps/agent/internal/frpc/supervisor_windows_test.go, apps/agent/internal/frpc/frpcpin.go, apps/agent/cmd/adminhelper-agent/run_windows.go, tasks/kern-windows-1.md
+### T3 — R-1545, R-0708: frpc als Kindprozess des Agent-Dienstes  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/platform_windows.go, apps/agent/internal/frpc/supervisor_windows.go, apps/agent/internal/frpc/supervisor_windows_test.go, apps/agent/internal/frpc/frpcpin.go, apps/agent/cmd/adminhelper-agent/run_windows.go, tasks/kern-windows-1.md, apps/agent/internal/frpc/tcptable.go, apps/agent/internal/frpc/tcptable_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @96249132c 2026-11-18T15:16:46+01:00
+Review: approve (.ah-out/review/kern-windows-1/T3.verdict.json)
 Änderung: Supervisor im Dienstprozess: startet `frpc.exe -c <frpc.toml>` aus dem Programmordner nach Prüfung des
 gepinnten SHA-256 (`frpcpin.go`, SPDX), in einem Job-Objekt mit KILL_ON_JOB_CLOSE; Neustart mit Backoff, wenn frpc
 endet; Reload über die Admin-API wie Linux. Die Hooks (`enableFrpcService`, `restartFrpc`, `disableFrpc`,
@@ -107,3 +109,4 @@ Abhängt von: T1
 - T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
 - T6: enabled_inactive nimmt jeden gestoppten „enabled“-Dienst auf, auch einen sauber gestoppten (Admin-Stopp, wie systemctl stop unter Linux, Spec Ziel 5); gewollt endende Auto-Dienste nimmt die ignore-Liste der Monitoring-Regel aus. Auto-Start mit TriggerInfo zählt als „manual“. DelayedAutostart wird nicht gelesen (ändert enabled nicht, YAGNI). w32tm-Leap-Indikator wird über Position und Wert gelesen, nicht über das Label (nur englisch verifiziert).
 - T1 (Kevin 2026-11-18): Agent in eigenen Ordner `%ProgramFiles%\AdminHelper Agent`, weil `%ProgramFiles%\AdminHelper` der MSI-Ordner der Desktop-App ist; T4 zieht alte Installationen um. Program Files kommt aus `KnownFolderPath`, nicht aus der Umgebung.
+- T3: frpc.exe liegt neben dem Agent-Binary (`frpc.exe`, T4 legt sie dort ab); der Pin (`frpcpin.go`) ist der SHA-256 der entpackten frpc.exe aus dem Archiv, dessen Hash die Workflows pinnen (am 2026-11-18 gegen `FRP_SHA256_WINDOWS_AMD64` geprüft). Der Hash wird vor jedem Start und jedem `frpc reload` geprüft; zwischen Prüfung und Start schützt die DACL des Programmordners (T1). Das Kind tritt dem Job erst nach dem Start bei (Go startet nicht suspendiert); frpc startet keine eigenen Kinder. Die letzten 20 Ausgabezeilen gehen beim ungeplanten Ende ins Log, sonst wird die Ausgabe verworfen. Ein Start durch den Sync wartet nicht auf den Backoff. Der Besitz des Admin-Ports wird über `GetExtendedTcpTable` (PID des Kinds auf 127.0.0.1:port, kein fremder Prozess dort) geprüft, wie unter Linux über den Owner.
