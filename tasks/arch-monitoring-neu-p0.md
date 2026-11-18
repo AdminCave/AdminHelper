@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p0 — Task-Ledger
-Status: erledigt · Branch: feature/arch-monitoring-neu-p0 · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-neu-p0 · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p0.md (Roadmap R-1558, R-1515)
 Heavy: none — Mockups nur im Vite-Dev-Server (nicht im Produktions-Build), Regel-Prototyp nur in Tests, ADR und Doku; kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -134,6 +134,15 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/adr/0004-monitoring-neuordnung.md
 Task-Review: am Ende
 Abhängt von: T12
+
+### T14 — PR-CI: Mockup nutzt nur deklarierte Tokens (R-1558)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/views/ExceptionDialog.svelte
+Änderung: Die PR-CI von #573 (Lauf 44333287377, Job „Desktop-UI … vitest“) ist rot: `src/styles/tokens.test.ts`
+meldet `--surface-sunken` aus `ExceptionDialog.svelte` (`.preview`, seit T6) als nirgends unter `src/` deklariert. Die
+Vorschau nimmt `var(--surface-inset)`, das deklarierte Token für eingelassene Flächen; das `Verify:` von T6 lief nur
+über `src/mockups/monitoring-neu` und erfasste den Token-Test deshalb nicht.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
+Doku: keine (Mockup-Stil, kein dokumentiertes Verhalten)
 
 ## Entscheidungen
 - 2026-11-18 T1: Statusrang kritisch > Warnung > unbekannt > veraltet > Info > nicht erhoben > OK; ausgeblendet heißt Ausnahme mit Wirkung `skip` oder `no-rating`, `no-notify`/`mute-me` bleiben an ihrem Statusplatz — Konzept §3 „ausgeblendete grau am Ende mit Grund“, Stummschalten ändert die Bewertung nicht.
