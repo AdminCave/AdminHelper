@@ -195,6 +195,15 @@ class TestLimit:
         assert _test(test_client, person, "ntfy").status_code == 502
         assert _test(test_client, person, "ntfy").status_code == 429
 
+    def test_a_blocked_target_counts_too(self, test_client, person):
+        # The guard refuses after the window was counted: the 422 is a delivery attempt.
+        res = test_client.put(
+            PREFS, headers=person, json={"subscriptions": [], "ntfy_url": "http://127.0.0.1:9/t"}
+        )
+        assert res.status_code == 200, res.text
+        assert _test(test_client, person, "ntfy").status_code == 422
+        assert _test(test_client, person, "ntfy").status_code == 429
+
     def test_one_test_at_a_time_per_person(self, test_client, db_session, person, monkeypatch):
         # While a send of this person hangs, a test of another channel is refused at
         # once; another person still gets through, and the slot frees itself after.

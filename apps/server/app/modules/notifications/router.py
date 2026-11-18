@@ -588,7 +588,9 @@ def test_channel(
 
 
 def _send_test(channel: str, target: str) -> None:
-    """One test message; every error becomes a neutral HTTPException."""
+    """One test message. A target the SSRF guard refuses becomes the 422 the schema
+    declares (RequestValidationError, without the target); every other error a neutral
+    HTTPException 502. Either way the attempt counted against the test window."""
     try:
         if channel == "email":
             send_email(target, _TEST_TITLE, _TEST_BODY)

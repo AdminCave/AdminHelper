@@ -10,8 +10,10 @@ Heavy: linux-full — neue Server-API und Migrationen, internes Endpoint server�
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1527: _send_test-Docstring und API-Referenz zum gesperrten Ziel  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, tasks/kern-notify-6.md
+### T1 — R-1527: _send_test-Docstring und API-Referenz zum gesperrten Ziel  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, tasks/kern-notify-6.md, apps/server/tests/test_notification_prefs_test.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3757b7deb 2026-11-18T12:22:36+01:00
+Review: approve (.ah-out/review/kern-notify-6/T1.verdict.json)
 Änderung: Docstring von `_send_test` (`router.py:590`) nennt neben der neutralen HTTPException den 422
 (`RequestValidationError`) für ein von der SSRF-Sperre abgewiesenes Ziel. API-Referenz `:265` DE+EN sagt
 ausdrücklich, dass das gesperrte Ziel ein Versandversuch ist und gegen das 10-s-Limit zählt. Kein Verhalten neu.
