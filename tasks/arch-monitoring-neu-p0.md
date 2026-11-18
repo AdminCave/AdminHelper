@@ -119,7 +119,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
 Abhängt von: T10
 
-### T12 — Kevins Entscheidungen festhalten (R-1558, R-1515)  [?] (Kevin: Entscheidungen 1–11 der Spec „Offene Fragen“, Unterobjekte mit Namen je Familie, Form von R-1515)
+### T12 — Kevins Entscheidungen festhalten (R-1558, R-1515)  [~] (verschoben in arch-monitoring-neu-p0-abnahme: wartet auf Kevins Entscheidungen 1-11 (ADR 0004 §14))
 Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
 Änderung: Kevins Antworten wörtlich mit Datum im ADR (Abschnitt Entscheidungen) und unter `## Entscheidungen` dieses Ledgers; Folgen für P1–P5 im ADR nachziehen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
@@ -127,7 +127,7 @@ Doku: docs/adr/0004-monitoring-neuordnung.md
 Task-Review: am Ende
 Abhängt von: T11
 
-### T13 — Abnahme der Screens durch Kevin (R-1558)  [?] (Kevin: Abnahme der Mockups je Ansicht und Objektart)
+### T13 — Abnahme der Screens durch Kevin (R-1558)  [~] (verschoben in arch-monitoring-neu-p0-abnahme: wartet auf Kevins Abnahme der Screens (ADR 0004 §14, Frage 12))
 Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
 Änderung: Screenshots je Ansicht und Objektart (headless Chromium gegen den Vite-Dev-Server) an Kevin, dazu die Mockup-Seite als privates Artefakt mit fiktiven Daten; Kevins Abnahme und Änderungswünsche im ADR, Status „angenommen“. Änderungswünsche, die die Mockups betreffen, baut die Session vorher als Nachbesserung in T1–T6 (eigener Commit, Prüfer fortgesetzt).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
