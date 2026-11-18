@@ -67,6 +67,9 @@ _COLLECTOR_NUMBERS = ("duration_ms", "cpu_ms", "timeouts", "factor")
 # note its checks carry meanwhile.
 _LOAD_SHED_REASON = "load"
 _LOAD_SHED_NOTE = "skipped: load shedding"
+# How long from the gate's begin a check it holds back keeps its last status; after that it is
+# rated unknown until it is measured again (R-1400).
+_LOAD_SHED_KEEPS_AT_MOST = timedelta(minutes=15)
 
 
 def _require_own_server(auth_server_id: str, server_id: str) -> None:
@@ -113,6 +116,7 @@ def agent_report(
     )
     throttled = {name for name, entry in collectors.items() if entry.get("throttled") is True}
     shed = _shed_collectors(report, collectors)
+    shed_since = load_shed_since(report) if shed else None
     if lines:
         victoria.write(lines)
 
@@ -129,22 +133,27 @@ def agent_report(
     now = utcnow_naive()
     for check in _push_checks(db, server_id):
         # Before the throttle: a collector the load gate held back is throttled too.
-        try:
-            spared = _spared_by_load_shed(db, check, shed)
-        except Exception:
-            logger.exception("Load shedding note of check '%s' failed", check.name)
-            continue
-        if spared:
-            noted += 1
-            continue
-        if _spared_by_throttle(db, check, throttled, now):
+        unmeasured = None
+        if shed_since is not None and now - shed_since >= _LOAD_SHED_KEEPS_AT_MOST:
+            if _COLLECTOR_OF_CHECK.get(check.check_type) in shed:
+                unmeasured = f"Not measured: load shedding since {shed_since:%Y-%m-%d %H:%M} UTC"
+        else:
+            try:
+                spared = _spared_by_load_shed(db, check, shed)
+            except Exception:
+                logger.exception("Load shedding note of check '%s' failed", check.name)
+                continue
+            if spared:
+                noted += 1
+                continue
+        if unmeasured is None and _spared_by_throttle(db, check, throttled, now):
             continue
         # Isolate each check: a single broken check.config (or a checker raising)
         # must not abort the evaluation of all other checks for this server
         # (same isolation as the scheduler path in check_engine.execute_check).
         try:
             result_lines, transition, alert = _evaluate_push_check(
-                db, check, server_id, report, now
+                db, check, server_id, report, now, unmeasured
             )
         except Exception:
             logger.exception("Auswertung von Check '%s' fehlgeschlagen", check.name)
@@ -399,9 +408,15 @@ def _push_checks(db: Session, server_id: str) -> list[MonitorCheck]:
 
 
 def _evaluate_push_check(
-    db: Session, check: MonitorCheck, server_id: str, report: dict, now: datetime
+    db: Session,
+    check: MonitorCheck,
+    server_id: str,
+    report: dict,
+    now: datetime,
+    unmeasured: str | None = None,
 ) -> tuple[list[str], tuple[str, str, str, str] | None, tuple[str, str, str] | None]:
-    """Result lines, the transition to log and the alert to send of one check.
+    """Result lines, the transition to log and the alert to send of one check; with
+    `unmeasured` the check is rated unknown with that message instead of by its checker.
 
     The SAVEPOINT carries the isolation over to a database error (a deadlock, an
     abort at FOR UPDATE, a failed flush): it would otherwise leave the shared
@@ -421,7 +436,10 @@ def _evaluate_push_check(
         # so get_checker always resolves; each push checker implements evaluate().
         checker = get_checker(check.check_type)
         state = _locked_state(db, check.id)
-        result_status, message, metrics = checker.evaluate(config, report, _prev_details(state))
+        if unmeasured is None:
+            result_status, message, metrics = checker.evaluate(config, report, _prev_details(state))
+        else:
+            result_status, message, metrics = "unknown", unmeasured, {}
 
         # Extract structured details
         details = metrics.pop("_details", None) if metrics else None

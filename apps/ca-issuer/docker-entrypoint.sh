@@ -3,14 +3,17 @@ set -e
 
 # --- Drop to the non-root app user -----------------------------------------
 # Start as root only to fix ownership of the mounted volumes (a fresh named
-# volume is root-owned), then re-exec unprivileged via gosu. The gateway-certs
+# volume is root-owned), then re-exec unprivileged via setpriv. The gateway-certs
 # drop is only mounted when CA_GATEWAY_CERT_DIR is set, so chown it conditionally.
 if [ "$(id -u)" = "0" ]; then
     chown -R app:app /app/data
     [ -d /app/gateway-certs ] && chown -R app:app /app/gateway-certs
     [ -d /app/frps-certs ] && chown -R app:app /app/frps-certs
     [ -d /app/ca-trust ] && chown -R app:app /app/ca-trust
-    exec gosu app:app sh "$0" "$@"
+    # setpriv keeps the environment, HOME of root included; app's home is /app. It gives up
+    # the capabilities only with its own exec, so env, already without them, execs sh.
+    export HOME=/app
+    exec setpriv --reuid=app --regid=app --init-groups env sh "$0" "$@"
 fi
 
 # Arguments run instead of the service, as app after the chown above: that is how

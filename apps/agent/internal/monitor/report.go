@@ -59,8 +59,8 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 
 	var cpuNow *cpuSample
 	var resources map[string]any
-	m.core(ctx, "resources", func(context.Context) {
-		resources, cpuNow = collectResources(prev.CPU, now)
+	m.core(ctx, "resources", func(ctx context.Context) {
+		resources, cpuNow = collectResources(ctx, prev.CPU, now)
 		report["resources"] = resources
 		report["uptime_seconds"] = collectUptime()
 		report["host"] = collectHostFacts()
@@ -181,8 +181,9 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 }
 
 // collectResources is the report's resources block, the CPU share measured since prevCPU, and the CPU
-// counters now.
-func collectResources(prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
+// counters now. From topProcessesFrom CPU or memory it names the busiest processes; that runs outside
+// the load gate, since it is under load that they are asked for.
+func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
 	cpuPercent, cpuNow := collectCPUSince(prevCPU, now)
 	resources := map[string]any{
 		"cpu_percent": cpuPercent,
@@ -212,6 +213,11 @@ func collectResources(prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSa
 	}
 	if temps := collectTemperatures(); len(temps) > 0 {
 		resources["temperatures"] = temps
+	}
+	if underLoad(resources) {
+		if top := collectTopProcesses(ctx); top != nil {
+			resources["top_processes"] = top
+		}
 	}
 	return resources, cpuNow
 }
