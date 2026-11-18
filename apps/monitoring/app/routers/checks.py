@@ -49,7 +49,7 @@ from app.models import (
     MonitorServiceLog,
     MonitorState,
 )
-from app.module_sync import tombstone_module_check
+from app.module_sync import mark_module_overrides, tombstone_module_check
 from app.scheduler import add_check, interval_timedelta, remove_check
 from app.schemas import (
     VALID_INTERVALS,
@@ -474,6 +474,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         ):
             raise HTTPException(400, refused)
 
+    old_config = check.config
     for field in [
         "server_id",
         "name",
@@ -490,6 +491,11 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     if "config" in sent:
         check.config = json.dumps(data.config)
     mark_overrides(db, check, {field: getattr(data, field) for field in sent})
+    mark_module_overrides(
+        check,
+        enabled=data.enabled if "enabled" in sent else None,
+        old_config=old_config if "config" in sent else None,
+    )
 
     db.commit()
     db.refresh(check)
@@ -534,6 +540,7 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
 
     check.enabled = not check.enabled
     mark_overrides(db, check, {"enabled": check.enabled})
+    mark_module_overrides(check, enabled=check.enabled)
     db.commit()
 
     _schedule(check)

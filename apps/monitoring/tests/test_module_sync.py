@@ -40,6 +40,7 @@ from app.module_sync import (
     adopt_all,
     definition_hash,
     dismiss,
+    mark_module_overrides,
     probe_config,
     sync_catalog,
     tombstone_module_check,
@@ -534,6 +535,24 @@ def test_adopting_new_again_switches_the_whole_instance_on(db, actions):
 
     assert all(row.enabled for row in _checks(db, finding).values())
     assert len(result.enabled) == 2
+
+
+def test_adopting_new_leaves_off_a_check_the_admin_switched_off(db, actions):
+    # Only the checks "gone" switched off come back on; the admin's own switch stays (R-1573).
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    checks = _checks(db, finding)
+    checks["broker"].enabled = False
+    mark_module_overrides(checks["broker"], enabled=False)
+    _reopen(db, finding, "gone")
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    _reopen(db, finding, "new")
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert (checks["web"].enabled, checks["broker"].enabled) == (True, False)
+    assert result.enabled == [checks["web"].id]
 
 
 def test_adopting_a_module_the_catalog_lost_fails_and_changes_nothing(db, actions):
@@ -1465,3 +1484,69 @@ def test_a_check_the_catalog_moved_to_the_service_is_not_rewritten(db, actions):
         }
     ]
     assert resolves.config == before
+
+
+# --- the admin's own rules and switches (R-1567, R-1573) ----------------------------
+
+
+def test_a_catalog_update_keeps_the_rules_the_admin_changed(db, actions):
+    finding = _adopted(db, actions)
+    web = _checks(db, finding)["web"]
+    old = web.config
+    config = json.loads(old)
+    config["rules"] = [{"field": "status_code", "op": "ne", "value": 204, "level": "warning"}]
+    web.config = json.dumps(config)
+    mark_module_overrides(web, old_config=old)
+    db.commit()
+    before = web.config
+
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 1
+    result = adopt(db, finding.id, catalog=WEB_CHANGED, now=NOW)
+
+    assert result.updated == []
+    assert {"key": "web", "reason": "the admin changed the check's rules; they stay"} in (
+        result.skipped
+    )
+    assert web.config == before
+
+
+@pytest.mark.parametrize(
+    ("parts", "marked"),
+    [
+        pytest.param({"interval_s": 900, "timeout_s": 20}, [], id="interval-timeout"),
+        pytest.param({"rules": []}, ["config"], id="rules"),
+    ],
+)
+def test_only_a_change_the_update_would_lose_marks_the_config(db, actions, parts, marked):
+    web = _checks(db, _adopted(db, actions))["web"]
+    old = web.config
+    web.config = json.dumps({**json.loads(old), **parts})
+
+    mark_module_overrides(web, old_config=old)
+
+    assert json.loads(web.overridden_fields) == marked
+
+
+def test_switching_on_again_drops_the_mark(db, actions):
+    web = _checks(db, _adopted(db, actions))["web"]
+    mark_module_overrides(web, enabled=False)
+    assert json.loads(web.overridden_fields) == ["enabled"]
+    mark_module_overrides(web, enabled=True)
+    assert json.loads(web.overridden_fields) == []
+
+
+def test_the_api_marks_the_admins_switch_and_rules_on_a_module_check(client_db, actions):
+    client, factory = client_db
+    with factory() as db:
+        _inventory(db)
+        finding = _finding(db)
+        adopt(db, finding.id, catalog=V1, now=NOW)
+        web = _checks(db, finding)["web"]
+        web_id, config = web.id, json.loads(web.config)
+
+    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == ["enabled"]
+    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == []
+    r = client.put(f"/checks/{web_id}", json={"config": {**config, "interval_s": 900}})
+    assert r.json()["overriddenFields"] == []
+    r = client.put(f"/checks/{web_id}", json={"config": {**config, "rules": []}, "enabled": False})
+    assert r.json()["overriddenFields"] == ["config", "enabled"]

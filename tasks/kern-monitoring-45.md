@@ -48,8 +48,10 @@ Beweis: Code-Lesung `forecast.py` Zweig `last_pct >= 100` · Dedup-Key: bug:moni
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_forecast.py tests/test_check_engine_context.py
 Doku: → T11
 
-### T4 — R-1567, R-1573: Modul-Sync wahrt eigene Regeln und eigene Schalter  [ ]
+### T4 — R-1567, R-1573: Modul-Sync wahrt eigene Regeln und eigene Schalter  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/app/routers/checks.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2bd76febb 2026-11-18T12:45:30+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T4.verdict.json)
 Änderung: `_update` überspringt einen Check mit eigenen Regeln des Admins und meldet den Grund in `skipped`.
 `_adopt` schaltet bei `new` nur Checks ein, die der Admin nicht selbst abgeschaltet hat (`enabled` nicht in
 `overridden_fields`). Tests je Zeile, rot vorher: geänderte Schwelle bleibt nach Katalog-Update; selbst
@@ -123,3 +125,8 @@ Task-Review: am Ende
 - 2026-11-18 T3: Eine Platte mit mindestens `min_free_gb` frei alarmiert nicht, auch wenn sie schnell vollläuft (der
   Alarm kommt erst unter der Grenze), wie Spec und R-1565 verlangen. Sie trägt in `_details` die Notiz „enough free
   space“ statt `hours_left` und zählt nicht in `disk_forecast_min_hours`.
+- 2026-11-18 T4: Modul-Checks merken eigene Schalter und Regeln in `overridden_fields` (`enabled`, `config`), gesetzt
+  von `toggle_check` und `update_check` über `mark_module_overrides`; `config` nur, wenn sich mehr als
+  `interval_s`/`timeout_s`/`pair_check_id` ändert (das trägt `_update` ohnehin mit). Grenze: Änderungen vor diesem
+  Stand sind nicht markiert. Die API liefert `overriddenFields` damit auch für Modul-Checks; der Desktop zeigt die
+  Felder nur bei `templateId`.

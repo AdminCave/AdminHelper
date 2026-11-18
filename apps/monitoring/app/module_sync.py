@@ -36,7 +36,12 @@ from app.models import (
     MonitorModuleTombstone,
     MonitorState,
 )
-from app.template_sync import SchedulerAction, apply_scheduler_actions
+from app.template_sync import (
+    TEMPLATE_CHECK_FIELDS,
+    SchedulerAction,
+    _read_overrides,
+    apply_scheduler_actions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +122,42 @@ def tombstoned_keys(db: Session, finding: MonitorFinding) -> set[str]:
         MonitorModuleTombstone.instance_key == finding.instance_key,
     )
     return {key for (key,) in rows}
+
+
+# The parts of a module check's config that _update carries over from the row: the
+# admin may change them without making the definition their own.
+_KEPT_ON_UPDATE = ("interval_s", "timeout_s", "pair_check_id")
+
+
+def _own_config(config: str | None) -> dict | None:
+    try:
+        parsed = json.loads(config) if config else {}
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return {k: v for k, v in parsed.items() if k not in _KEPT_ON_UPDATE}
+
+
+def mark_module_overrides(
+    check: MonitorCheck, *, enabled: bool | None = None, old_config: str | None = None
+) -> None:
+    """Record in overridden_fields what the admin made their own on a module check:
+    switched it off ("enabled"), so a returning instance leaves it off (R-1573), or
+    changed its rules ("config"), so a catalog update does not overwrite them (R-1567).
+    Switching it on again drops the mark; changed rules stay the admin's. Template and
+    manual checks are left to mark_overrides."""
+    if check.module_id is None:
+        return
+    fields = _read_overrides(check)
+    if enabled is not None:
+        if enabled:
+            fields.discard("enabled")
+        else:
+            fields.add("enabled")
+    if old_config is not None and _own_config(old_config) != _own_config(check.config):
+        fields.add("config")
+    check.overridden_fields = json.dumps([f for f in TEMPLATE_CHECK_FIELDS if f in fields])
 
 
 def tombstone_module_check(db: Session, check: MonitorCheck) -> None:
@@ -420,6 +461,8 @@ def _update(
     and timeout stay (the only parts of a probe config besides rules the admin can edit,
     routers/checks.py), as do the row's name and switches; a central row keeps its
     interval and the partner the admin gave it."""
+    if "config" in _read_overrides(row):
+        return "the admin changed the check's rules; they stay"
     if (row.check_type == "central") != check.central:
         return "the catalog moved the check between the agent and the monitoring service"
     config, reason = _bound_config(module, check, key, summary, containers)
@@ -490,8 +533,9 @@ def _adopt(
                     # The old definition keeps running; the admin sees why.
                     result.skipped.append({"key": key, "reason": why})
             # A new instance is watched whole again (adopting "gone" switched its checks
-            # off); on a changed one, a check the admin switched off stays off.
-            if finding.kind == "new":
+            # off), except the checks the admin switched off; on a changed one, those stay
+            # off too.
+            if finding.kind == "new" and "enabled" not in _read_overrides(row):
                 row.enabled = True
             row.silent = False
             if row.enabled:
