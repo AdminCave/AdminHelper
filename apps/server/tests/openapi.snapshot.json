@@ -4863,6 +4863,185 @@
         "title": "NotifyChannelsOut",
         "type": "object"
       },
+      "NotifyTemplateIn": {
+        "description": "The template the panel keeps; an empty field is the default (no prefix, no\nsender name, no HTML part, the message text as the text part). 422 for a\nplaceholder the renderer does not know.",
+        "properties": {
+          "fromName": {
+            "default": "",
+            "maxLength": 100,
+            "pattern": "^[^\\r\\n]*$",
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Html",
+            "type": "string"
+          },
+          "subjectPrefix": {
+            "default": "",
+            "maxLength": 100,
+            "pattern": "^[^\\r\\n]*$",
+            "title": "Subjectprefix",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "NotifyTemplateIn",
+        "type": "object"
+      },
+      "NotifyTemplateLogoIn": {
+        "description": "The logo, base64; PNG or JPEG by its first bytes, at most 200 KB.",
+        "properties": {
+          "data": {
+            "maxLength": 273068,
+            "minLength": 4,
+            "title": "Data",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "NotifyTemplateLogoIn",
+        "type": "object"
+      },
+      "NotifyTemplateOut": {
+        "description": "The template of the panel; the logo only as whether one is stored.",
+        "properties": {
+          "fromName": {
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "logoSet": {
+            "title": "Logoset",
+            "type": "boolean"
+          },
+          "logoType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logotype"
+          },
+          "placeholders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Placeholders",
+            "type": "array"
+          },
+          "subjectPrefix": {
+            "title": "Subjectprefix",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedby"
+          }
+        },
+        "required": [
+          "subjectPrefix",
+          "fromName",
+          "html",
+          "text",
+          "logoSet",
+          "logoType",
+          "placeholders",
+          "updatedAt",
+          "updatedBy"
+        ],
+        "title": "NotifyTemplateOut",
+        "type": "object"
+      },
+      "NotifyTemplatePreviewOut": {
+        "description": "A template rendered with sample values; the logo in html as a data: URL.",
+        "properties": {
+          "fromName": {
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "fromName",
+          "text",
+          "html"
+        ],
+        "title": "NotifyTemplatePreviewOut",
+        "type": "object"
+      },
+      "NotifyTemplateTestRequest": {
+        "description": "A test mail in the stored template to the address given.",
+        "properties": {
+          "target": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "NotifyTemplateTestRequest",
+        "type": "object"
+      },
       "PlaybookContentOut": {
         "properties": {
           "content": {
@@ -6270,6 +6449,269 @@
           }
         ],
         "summary": "Test Channels",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template": {
+      "delete": {
+        "description": "Back to the default, logo included: the mails go as plain text as before.",
+        "operationId": "delete_template_api_admin_notify_template_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Template",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "get": {
+        "description": "The mail template of the panel; all fields empty is the default (plain text as\nbefore). 403 for non-admins.",
+        "operationId": "get_template_api_admin_notify_template_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Template",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Store the template; the logo stays. 422 for an unknown placeholder or a field\nover its size.",
+        "operationId": "put_template_api_admin_notify_template_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Template",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template/logo": {
+      "delete": {
+        "description": "Remove the logo; {{logo}} becomes empty.",
+        "operationId": "delete_logo_api_admin_notify_template_logo_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Logo",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Store the logo (base64, PNG or JPEG by its first bytes, at most 200 KB); the\nHTML part shows it where it names {{logo}}. 422 for anything else.",
+        "operationId": "put_logo_api_admin_notify_template_logo_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateLogoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Logo",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template/preview": {
+      "post": {
+        "description": "The template given, not stored, rendered with sample values and the stored\nlogo as a data: URL. 422 for an unknown placeholder.",
+        "operationId": "preview_template_api_admin_notify_template_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplatePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Template",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template/test": {
+      "post": {
+        "description": "A test mail in the stored template over the relay in effect. 409 without a\nrelay, 502 for a failed send, 429 as the channel test (they share the window).",
+        "operationId": "test_template_api_admin_notify_template_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Template",
         "tags": [
           "notifications"
         ]

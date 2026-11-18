@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import base64
+import binascii
 import re
 from datetime import datetime, timedelta, timezone
 from functools import cache
@@ -522,3 +524,102 @@ class NotifyChannelTestRequest(RequestModel):
         if self.channel == "telegram" and not re.fullmatch(r"^-?[0-9]{1,20}$", self.target):
             raise ValueError("target: a Telegram chat id")
         return self
+
+
+# --- Mail template (R-1533) ---------------------------------------------------
+
+LOGO_MAX_BYTES = 200 * 1024
+# Magic bytes -> MIME type; the declared type of an upload counts for nothing.
+_LOGO_MAGIC = {b"\x89PNG\r\n\x1a\n": "image/png", b"\xff\xd8\xff": "image/jpeg"}
+
+
+def logo_type(data: bytes) -> Optional[str]:
+    """image/png or image/jpeg by the first bytes, None for anything else."""
+    for magic, kind in _LOGO_MAGIC.items():
+        if data.startswith(magic):
+            return kind
+    return None
+
+
+class NotifyTemplateIn(RequestModel):
+    """The template the panel keeps; an empty field is the default (no prefix, no
+    sender name, no HTML part, the message text as the text part). 422 for a
+    placeholder the renderer does not know."""
+
+    subjectPrefix: str = Field("", max_length=100, pattern=_NO_LINE_BREAK)
+    fromName: str = Field("", max_length=100, pattern=_NO_LINE_BREAK)
+    html: str = Field("", max_length=100_000)
+    text: str = Field("", max_length=20_000)
+
+    @field_validator("html", "text")
+    @classmethod
+    def _check_placeholders(cls, v: str) -> str:
+        from app.modules.notifications.mail_template import PLACEHOLDERS, unknown
+
+        if names := unknown(v):
+            raise ValueError(
+                "unknown placeholder: "
+                + ", ".join("{{" + n + "}}" for n in names)
+                + "; known: "
+                + ", ".join("{{" + n + "}}" for n in PLACEHOLDERS)
+            )
+        return v
+
+
+class NotifyTemplateOut(BaseModel):
+    """The template of the panel; the logo only as whether one is stored."""
+
+    subjectPrefix: str
+    fromName: str
+    html: str
+    text: str
+    logoSet: bool
+    logoType: Optional[str]
+    placeholders: list[str]
+    updatedAt: Optional[str]
+    updatedBy: Optional[str]
+
+
+class NotifyTemplatePreviewOut(BaseModel):
+    """A template rendered with sample values; the logo in html as a data: URL."""
+
+    subject: str
+    fromName: str
+    text: str
+    html: Optional[str]
+
+
+class NotifyTemplateTestRequest(RequestModel):
+    """A test mail in the stored template to the address given."""
+
+    target: str = Field(min_length=1, max_length=255)
+
+    @field_validator("target")
+    @classmethod
+    def _check_target(cls, v: str) -> str:
+        if not re.fullmatch(_EMAIL_PATTERN, v):
+            raise ValueError("target: an e-mail address")
+        return v
+
+
+class NotifyTemplateLogoIn(RequestModel):
+    """The logo, base64; PNG or JPEG by its first bytes, at most 200 KB."""
+
+    # base64 of LOGO_MAX_BYTES, rounded up to whole groups of four.
+    data: str = Field(min_length=4, max_length=(LOGO_MAX_BYTES + 2) // 3 * 4)
+
+    @field_validator("data")
+    @classmethod
+    def _check_data(cls, v: str) -> str:
+        try:
+            raw = base64.b64decode(v, validate=True)
+        except binascii.Error:
+            raise ValueError("logo: base64") from None
+        if len(raw) > LOGO_MAX_BYTES:
+            raise ValueError(f"logo: at most {LOGO_MAX_BYTES // 1024} KB")
+        if logo_type(raw) is None:
+            raise ValueError("logo: a PNG or JPEG image")
+        return v
+
+    def raw(self) -> bytes:
+        return base64.b64decode(self.data, validate=True)

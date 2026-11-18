@@ -60,12 +60,14 @@ im Monitoring wiederverwendet.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_mail_template.py tests/test_notification_digest.py tests/test_notifications.py tests/test_migrations_smoke.py tests/test_outbox.py tests/test_notification_prefs_test.py tests/test_notification_channels.py tests/test_notify_admin_channels.py tests/test_email_sender.py
 Doku: → T10
 
-### T5 — R-1533: Admin-API für die Vorlage mit Vorschau, Logo und Test  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/admin_router.py, apps/server/app/modules/notifications/schemas.py, apps/server/tests/test_notify_admin_template.py, apps/server/tests/openapi.snapshot.json, tasks/kern-notify-6.md
+### T5 — R-1533: Admin-API für die Vorlage mit Vorschau, Logo und Test  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/admin_router.py, apps/server/app/modules/notifications/schemas.py, apps/server/tests/test_notify_admin_template.py, apps/server/tests/openapi.snapshot.json, tasks/kern-notify-6.md, apps/server/app/modules/notifications/sender.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @800ea4c2c 2026-11-18T13:25:34+01:00
+Review: approve (.ah-out/review/kern-notify-6/T5.verdict.json)
 Änderung: `GET/PUT/DELETE /api/admin/notify/template`, `POST …/template/preview` (ungespeicherte Vorlage,
 Beispieldaten, Logo als `data:`-URL), `POST …/template/test`, `PUT/DELETE …/template/logo` (PNG/JPEG per
 Magic-Bytes, ≤ 200 KB). Größengrenzen für HTML/Text, 422 bei unbekanntem Platzhalter, Audit. OpenAPI-Snapshot.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_admin_template.py tests/test_openapi_snapshot.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_admin_template.py tests/test_openapi_snapshot.py tests/test_notify_admin_channels.py tests/test_notify_mail_template.py
 Doku: → T10
 
 ### T6 — R-1531/R-1533: internes Endpoint für das Monitoring  [ ]
@@ -111,6 +113,7 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapsho
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-notify-6.md
 
 ## Entscheidungen
+- T5: Das Logo kommt als Base64 in JSON (`{data}`), weil der Web-Client nur JSON sendet; der Typ folgt allein aus den ersten Bytes (PNG/JPEG), `sender._mime` nimmt den MIME-Subtyp aus einer festen Tabelle. Admin-Kanaltest und Vorlagen-Test teilen Sperre und 10-s-Fenster (`_test_slot`) und senden beide in der gespeicherten Vorlage (Reviewer-Nit aus T4).
 - T4: `send_email` nimmt severity/category/Zeitpunkt als Keyword-Argumente für die Platzhalter; die Test-Stubs von `send_email` in fünf Testdateien nehmen dafür `**_k` an (Verify und Dateien erweitert). Ohne Vorlage bleibt die Mail byte-gleich aufgebaut wie vorher (multipart/alternative mit einem text/plain-Teil). Der Digest trägt als `{{severity}}` die schwerste seiner Meldungen.
 - 2026-11-18 Plan: Kevin — Geheimnisse verschlüsselt (Schlüssel aus SECRET_KEY), freie HTML-Vorlage, gilt für Hub- und Monitoring-Regel-Mails.
 - 2026-11-18 Plan: Platzhalter-Ersetzung statt Template-Engine — keine Code-Ausführung aus der Vorlage, keine neue Abhängigkeit.

@@ -96,6 +96,9 @@ def send_email(
         server.send_message(message)
 
 
+_IMAGE_SUBTYPE = {"image/png": "png", "image/jpeg": "jpeg"}
+
+
 def _mime(mail: mail_template.Mail) -> MIMEMultipart:
     """The body of the mail: without HTML one text part as before the template;
     with HTML multipart/alternative (text first, RFC 2046), with a logo wrapped in
@@ -109,7 +112,7 @@ def _mime(mail: mail_template.Mail) -> MIMEMultipart:
         return alternative
     related = MIMEMultipart("related")
     related.attach(alternative)
-    image = MIMEImage(mail.logo, _subtype=(mail.logo_type or "image/png").split("/")[1])
+    image = MIMEImage(mail.logo, _subtype=_IMAGE_SUBTYPE.get(mail.logo_type or "", "png"))
     image.add_header("Content-ID", f"<{mail_template.LOGO_CID}>")
     image.add_header("Content-Disposition", "inline")
     related.attach(image)
