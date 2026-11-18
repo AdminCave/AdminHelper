@@ -21,10 +21,10 @@ from email.mime.text import MIMEText
 
 import httpx
 
-from app.core import config
-from app.core.config import SMTP_CA_FILE, SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_USER
+from app.core.config import SMTP_CA_FILE
 from app.core.ssrf import UrlVerdict, check_target, pinned_client
 from app.core.time import iso_utc
+from app.modules.notifications.channel_config import current
 
 # As in the monitoring alerter (apps/monitoring/app/alerter.py, _SUBJECT_TO_SPACE): the
 # control characters, DEL, C1 and the line and paragraph separators become a space, one for
@@ -35,13 +35,15 @@ _SUBJECT_TO_SPACE = str.maketrans(
 
 
 def send_email(to: str, subject: str, body: str) -> None:
-    """Send one plaintext e-mail via the configured SMTP relay. Raises on failure."""
-    if not SMTP_HOST:
+    """Send one plaintext e-mail via the SMTP relay in effect (channel_config). Raises on
+    failure."""
+    relay = current()
+    if not relay.smtp_host:
         raise RuntimeError("SMTP nicht konfiguriert (SMTP_HOST fehlt)")
 
     message = MIMEMultipart("alternative")
     message["Subject"] = subject.translate(_SUBJECT_TO_SPACE)
-    message["From"] = SMTP_FROM
+    message["From"] = relay.smtp_from
     message["To"] = to
     message.attach(MIMEText(body, "plain"))
 
@@ -62,15 +64,15 @@ def send_email(to: str, subject: str, body: str) -> None:
             raise RuntimeError(
                 f"SMTP_CA_FILE {SMTP_CA_FILE} cannot be loaded: {type(exc).__name__}: {exc}"
             ) from exc
-    if SMTP_PORT == 465:
-        smtp_ctx = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10, context=ctx)
+    if relay.smtp_port == 465:
+        smtp_ctx = smtplib.SMTP_SSL(relay.smtp_host, relay.smtp_port, timeout=10, context=ctx)
     else:
-        smtp_ctx = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+        smtp_ctx = smtplib.SMTP(relay.smtp_host, relay.smtp_port, timeout=10)
     with smtp_ctx as server:
-        if SMTP_PORT != 465:
+        if relay.smtp_port != 465:
             server.starttls(context=ctx)
-        if SMTP_USER and SMTP_PASSWORD:
-            server.login(SMTP_USER, SMTP_PASSWORD)
+        if relay.smtp_user and relay.smtp_password:
+            server.login(relay.smtp_user, relay.smtp_password)
         server.send_message(message)
 
 
@@ -106,9 +108,9 @@ _ELLIPSIS = "\u2026"
 
 
 def _post(channel: str, url: str, **kwargs) -> None:
-    """POST to `url` through the SSRF guard (the networks of NOTIFY_PRIVATE_TARGETS
-    open) and a client pinned to the checked addresses, no redirect followed."""
-    target = check_target(url, allow_networks=config.NOTIFY_PRIVATE_TARGETS)
+    """POST to `url` through the SSRF guard (the private networks in effect open,
+    channel_config) and a client pinned to the checked addresses, no redirect followed."""
+    target = check_target(url, allow_networks=current().private_targets)
     if target.verdict is UrlVerdict.UNRESOLVED:
         # DNS can come back: an attempt, not a blocked target.
         raise DeliveryFailed(f"{channel}: target host could not be resolved")
@@ -214,12 +216,13 @@ def send_ntfy(url: str, title: str, body: str, level: str) -> None:
 
 def send_telegram(chat_id: str, title: str, body: str) -> None:
     """sendMessage to the chat, plain text (no parse_mode, so nothing needs escaping)."""
-    if not config.TELEGRAM_BOT_TOKEN:
+    token = current().telegram_token
+    if not token:
         raise DeliveryFailed("telegram: TELEGRAM_BOT_TOKEN is not set")
     text = f"{title}\n\n{body}" if body and body != title else title
     _post(
         "telegram",
-        f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
+        f"https://api.telegram.org/bot{token}/sendMessage",
         json={"chat_id": chat_id, "text": _cut_utf16(text, _TELEGRAM_TEXT_UNITS)},
     )
 

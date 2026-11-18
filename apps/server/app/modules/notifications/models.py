@@ -18,10 +18,12 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -310,3 +312,24 @@ class NotificationServerMute(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     server_id = Column(String, primary_key=True)
     until = Column(DateTime(timezone=True), nullable=False)
+
+
+class NotifyChannelConfig(Base):
+    """The delivery settings an admin keeps in the panel (R-1531): one row, id 1. A NULL
+    column is not set, and the variable of the same name in .env holds; the SMTP password
+    and the bot token are sealed (app.core.secretbox, purpose = column name)."""
+
+    __tablename__ = "notify_channel_config"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_notify_channel_config_single_row"),)
+
+    id = Column(Integer, primary_key=True, default=1)
+    smtp_host = Column(String(255), nullable=True)
+    smtp_port = Column(Integer, nullable=True)
+    smtp_user = Column(String(255), nullable=True)
+    smtp_password_enc = Column(LargeBinary, nullable=True)
+    smtp_from = Column(String(255), nullable=True)
+    telegram_token_enc = Column(LargeBinary, nullable=True)
+    # Comma-separated CIDR, as NOTIFY_PRIVATE_TARGETS.
+    private_targets = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_by = Column(String(255), nullable=True)

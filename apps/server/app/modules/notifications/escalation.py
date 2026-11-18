@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from app.core import config
+from app.modules.notifications.channel_config import resolve
 from app.modules.notifications.incidents import (
     _assigned,
     _incident_servers,
@@ -85,6 +85,7 @@ def escalate_due(db: Session, now: datetime) -> int:
         members.setdefault(incident_id, []).append(server_id)
     escalated: set[int] = set()
     sent = 0
+    telegram = bool(resolve(db).telegram_token)
     for row, incident, settings, user in due:
         if (row.user_id, row.source_id) in muted:
             continue
@@ -92,7 +93,7 @@ def escalate_due(db: Session, now: datetime) -> int:
         if _sight(user, _assigned(user), servers) is None:
             continue
         channel = settings.escalation_channel
-        address = _address(channel, settings, user)
+        address = _address(channel, settings, user, telegram)
         if not address or channel in json.loads(settings.disabled_channels):
             continue
         # A second scheduler process (there is none) would lose the race here.
@@ -128,13 +129,15 @@ def escalate_due(db: Session, now: datetime) -> int:
     return sent
 
 
-def _address(channel: str | None, settings: NotificationSettings, user: User) -> str | None:
+def _address(
+    channel: str | None, settings: NotificationSettings, user: User, telegram: bool
+) -> str | None:
     if channel == "email":
         return user.email
     if channel == "ntfy":
         return settings.ntfy_url
     if channel == "telegram":
-        return user.telegram_chat_id if config.TELEGRAM_BOT_TOKEN else None
+        return user.telegram_chat_id if telegram else None
     if channel == "webhook":
         return settings.webhook_url
     return None

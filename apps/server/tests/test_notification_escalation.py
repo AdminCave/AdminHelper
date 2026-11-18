@@ -27,6 +27,7 @@ from app.modules.notifications.models import (
     NotificationOutbox,
     NotificationServerMute,
     NotificationSettings,
+    NotifyChannelConfig,
 )
 
 from .test_notification_incidents import T0, _admin, _at, _check
@@ -299,6 +300,26 @@ class TestSkip:
         ingest(db_session, _check(), now=T0)
 
         assert escalate_due(db_session, _at(10)) == 0
+
+    def test_telegram_with_the_bot_token_only_in_the_panel(
+        self, db_session, web01, published, monkeypatch
+    ):
+        from app.core import config, secretbox
+
+        monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "")
+        db_session.add(
+            NotifyChannelConfig(
+                id=1, telegram_token_enc=secretbox.seal("999:panel", "telegram_token_enc")
+            )
+        )
+        user = _person(db_session, escalation_channel="telegram")
+        user.telegram_chat_id = "4711"
+        db_session.commit()
+        ingest(db_session, _check(), now=T0)
+
+        assert escalate_due(db_session, _at(10)) == 1
+        (entry,) = _escalations(db_session, user)
+        assert (entry.channel, entry.address) == ("telegram", "4711")
 
     def test_a_matrix_without_the_channel_escalates_anyway(self, db_session, web01, published):
         user = _person(

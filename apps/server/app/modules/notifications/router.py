@@ -25,7 +25,6 @@ from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.core import config as app_config
 from app.core.auth import get_current_user
 from app.core.bounds import BigIntPk, Offset
 from app.core.config import MONITOR_API_KEY
@@ -33,7 +32,8 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.core.time import iso_utc
-from app.modules.notifications import incidents, stream_hub
+from app.modules.notifications import channel_config, incidents, stream_hub
+from app.modules.notifications.channel_config import Channels
 from app.modules.notifications.models import (
     CHANNELS,
     MATRIX_ROWS,
@@ -390,7 +390,7 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
         "disabledChannels": json.loads(settings.disabled_channels) if settings else [],
         "mutedCategories": json.loads(settings.muted_categories) if settings else [],
         **_clock_response(settings or _default_settings(user)),
-        "available": _available(),
+        "available": _available(channel_config.resolve(db)),
         "subscriptions": [s.to_dict() for s in subs],
     }
 
@@ -435,12 +435,12 @@ def _clock_response(settings: NotificationSettings) -> dict[str, Any]:
     }
 
 
-def _available() -> dict[str, bool]:
+def _available(channels: Channels) -> dict[str, bool]:
     return {
         "desktop": True,
-        "email": bool(app_config.SMTP_HOST),
+        "email": bool(channels.smtp_host),
         "ntfy": True,
-        "telegram": bool(app_config.TELEGRAM_BOT_TOKEN),
+        "telegram": bool(channels.telegram_token),
         "webhook": True,
     }
 
@@ -556,7 +556,8 @@ def test_channel(
         "telegram": current_user.telegram_chat_id,
         "webhook": settings.webhook_url if settings else None,
     }[channel]
-    if not _available()[channel]:
+    channels = channel_config.resolve(db)
+    if not _available(channels)[channel]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"{channel}: not set up on this server",
@@ -580,7 +581,9 @@ def test_channel(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"{channel}: one test per {_TEST_WINDOW} seconds",
             )
-        _send_test(channel, target)
+        # The send takes the settings the availability above was judged by.
+        with channel_config.applied(channels):
+            _send_test(channel, target)
     finally:
         with _TESTS_LOCK:
             _TESTS_RUNNING.discard(current_user.id)

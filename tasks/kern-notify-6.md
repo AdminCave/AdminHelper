@@ -22,15 +22,17 @@ Dedup-Key: bug:server:notifications/router.py:_send_test
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notification_prefs_test.py
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html
 
-### T2 — R-1531: Kanal-Konfiguration in der DB, verschlüsselt, Panel vor .env  [ ]
-Komponente: server · Dateien: apps/server/app/core/secretbox.py, apps/server/app/modules/notifications/channel_config.py, apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/c4e8a1f2b3d5_notify_channel_config.py, apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/notifications/escalation.py, apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notify_channel_config.py, tasks/kern-notify-6.md
+### T2 — R-1531: Kanal-Konfiguration in der DB, verschlüsselt, Panel vor .env  [x]
+Komponente: server · Dateien: apps/server/app/core/secretbox.py, apps/server/app/modules/notifications/channel_config.py, apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/c4e8a1f2b3d5_notify_channel_config.py, apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/notifications/escalation.py, apps/server/app/modules/notifications/incidents.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notify_channel_config.py, tasks/kern-notify-6.md, apps/server/app/modules/notifications/digest.py, apps/server/tests/test_email_sender.py, apps/server/tests/test_notification_channels.py, apps/server/tests/test_notification_escalation.py, docs/features/kern-notify-6.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1f6886f04 2026-11-18T12:48:25+01:00
+Review: approve (.ah-out/review/kern-notify-6/T2.verdict.json)
 Änderung: `secretbox.py` (AES-GCM, Schlüssel per HKDF-SHA256 aus `SECRET_KEY`, Nonce ‖ Chiffrat; unlesbar →
 `None` + Log-Warnung). Tabelle `notify_channel_config` (eine Zeile, Spec „Datenmodell“) mit Migration samt
 `downgrade`. `channel_config.py` liefert die wirksamen Werte je Feld (Panel, wenn gesetzt, sonst `.env`) und ihre
-Quelle, kurz gecacht und beim Schreiben invalidiert. Alle Leser von `SMTP_*`, `TELEGRAM_BOT_TOKEN` und
+Quelle, ohne Cache; kommt der Relay-Host aus dem Panel, gelten User und Passwort nur aus dem Panel. Alle Leser von `SMTP_*`, `TELEGRAM_BOT_TOKEN` und
 `NOTIFY_PRIVATE_TARGETS` (sender, outbox, escalation, incidents, `router._available`) lesen über den Auflöser.
 Tests: Vorrang je Feld, Rückfall nach Schlüsselwechsel, Chiffrat ≠ Klartext in der DB, Migration hin und zurück.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_channel_config.py tests/test_notification_channels.py tests/test_notification_prefs_test.py tests/test_migrations_smoke.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_channel_config.py tests/test_notification_channels.py tests/test_notification_prefs_test.py tests/test_migrations_smoke.py tests/test_email_sender.py tests/test_outbox.py tests/test_notification_escalation.py tests/test_notification_digest.py tests/test_notifications.py tests/test_notification_settings.py
 Doku: → T10
 
 ### T3 — R-1531: Admin-API für die Kanäle mit Test-Versand  [ ]
@@ -108,3 +110,5 @@ Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitor
 - 2026-11-18 Plan: Kevin — Geheimnisse verschlüsselt (Schlüssel aus SECRET_KEY), freie HTML-Vorlage, gilt für Hub- und Monitoring-Regel-Mails.
 - 2026-11-18 Plan: Platzhalter-Ersetzung statt Template-Engine — keine Code-Ausführung aus der Vorlage, keine neue Abhängigkeit.
 - 2026-11-18 Plan: Monitoring holt die Konfiguration per internem GET (Cache 60 s) statt über den Hub zu versenden — Regel-Ergebnis im AlertLog und SMTP je Regel bleiben.
+- 2026-11-18 T2: Login gehört zum Relay — kommt `smtp_host` aus dem Panel, gelten `smtp_user`/`smtp_password` nur aus dem Panel (sonst kein Login), nie aus `.env`; Port, Absender, Netze fallen weiter je Feld zurück (security-Fund T2, Abweichung von „je Feld“ der Spec, Spec nachgezogen).
+- 2026-11-18 T2: Auflöser ohne Cache — eine Zeile per Primärschlüssel je Aufruf, immer aktuell; kein Invalidieren beim Schreiben nötig (T3).

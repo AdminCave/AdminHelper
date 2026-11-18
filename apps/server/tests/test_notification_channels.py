@@ -22,10 +22,15 @@ import pytest
 
 import app.core.config as app_config
 import app.core.ssrf as ssrf_mod
+from app.core import secretbox
 from app.core.ssrf import UrlVerdict
 from app.modules.notifications import outbox as outbox_mod
 from app.modules.notifications import sender as sender_mod
-from app.modules.notifications.models import NotificationOutbox, NotificationSettings
+from app.modules.notifications.models import (
+    NotificationOutbox,
+    NotificationSettings,
+    NotifyChannelConfig,
+)
 from app.modules.notifications.outbox import drain_outbox
 from app.modules.notifications.sender import (
     BlockedTarget,
@@ -560,6 +565,19 @@ def test_queue_skips_telegram_without_a_token_and_a_channel_without_target(db_se
     _settings(db_session, admin, webhook=HOOK_URL, channels=("ntfy", "telegram", "webhook"))
     assert ingest_event(db_session, _event(severity="critical")) == 1
     assert _queued(db_session, admin) == [("webhook", HOOK_URL, "critical")]
+
+
+def test_queue_takes_telegram_with_the_bot_token_only_in_the_panel(db_session, monkeypatch):
+    monkeypatch.setattr(app_config, "TELEGRAM_BOT_TOKEN", "")
+    db_session.add(
+        NotifyChannelConfig(id=1, telegram_token_enc=secretbox.seal(TOKEN, "telegram_token_enc"))
+    )
+    _server(db_session, "srv-1")
+    admin = _user(db_session, "boss", is_admin=True, telegram_chat_id="4711")
+    _sub(db_session, admin, scope_type="all")
+    _settings(db_session, admin, channels=("telegram",))
+    assert ingest_event(db_session, _event(severity="critical")) == 1
+    assert _queued(db_session, admin) == [("telegram", "4711", "critical")]
 
 
 # --- configuration --------------------------------------------------------------------

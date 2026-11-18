@@ -26,7 +26,8 @@ Zug: R-1527 (BUG), R-1531 (FEAT), R-1533 (FEAT).
 Ziel:
 1. Admins pflegen SMTP-Relay, Telegram-Token und private Ziel-Netze im Web-Admin. Passwort und Token sind
    **write-only** (die API meldet nur „gesetzt“), Test-Versand je Kanal. Gilt für server, scheduler und monitoring
-   ohne Neustart. **`.env` bleibt Rückfall:** je Feld gilt der Panel-Wert, wenn gesetzt, sonst die Variable.
+   ohne Neustart. **`.env` bleibt Rückfall:** je Feld gilt der Panel-Wert, wenn gesetzt, sonst die Variable; nur User und
+   Passwort gehören zum Relay: steht der Host im Panel, gelten sie nur aus dem Panel.
 2. Admins gestalten die Mails mit einer **freien Vorlage** (Kevin 2026-11-18): Betreff-Präfix, Absendername,
    HTML-Teil, Text-Alternative, optional ein Logo (inline eingebettet). Platzhalter, Vorschau, Test-Versand.
    Gilt für Hub-Mails (Outbox, Digest, Test) **und** die Mails der Monitoring-Alert-Regeln (Kevin 2026-11-18).
@@ -40,7 +41,7 @@ Desktop-UI (das Admin-Panel ist die Web-App).
 ## Betroffene Komponenten & Dateien
 
 - **Server** (`apps/server`): neu `app/core/secretbox.py` (AES-GCM, Schlüssel per HKDF aus `SECRET_KEY`), neu
-  `app/modules/notifications/channel_config.py` (Auflöser Panel vor `.env`, kurz gecacht), neu
+  `app/modules/notifications/channel_config.py` (Auflöser Panel vor `.env`, ohne Cache), neu
   `app/modules/notifications/mail_template.py` (Platzhalter-Renderer, Standardvorlage), neu
   `app/modules/notifications/admin_router.py` (Admin-Routen); geändert `models.py`, `schemas.py`, `sender.py`,
   `outbox.py`, `digest.py`, `escalation.py`, `incidents.py`, `router.py` (`_available`, `_send_test`, internes

@@ -19,6 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import NOTIFICATION_MAX_ATTEMPTS
+from app.modules.notifications.channel_config import using
 from app.modules.notifications.models import NotificationOutbox, NotificationSettings
 from app.modules.notifications.quiet import next_digest_at, zone
 from app.modules.notifications.sender import send_email
@@ -32,6 +33,11 @@ DIGEST_MAX_LINES = 200
 
 def send_digests(db: Session, now: datetime) -> tuple[int, int]:
     """Send the due digests. Returns (mails sent, entries failed for good)."""
+    with using(db):
+        return _send_due(db, now)
+
+
+def _send_due(db: Session, now: datetime) -> tuple[int, int]:
     waiting = (
         db.query(NotificationOutbox.user_id, func.min(NotificationOutbox.created_at))
         .filter(NotificationOutbox.status == "digest")
