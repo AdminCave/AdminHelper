@@ -33,3 +33,4 @@ Abhängt von: T1
 ## Entscheidungen
 - 2026-11-18 Gate: R-1578 fährt nicht mit (Notiz: nach kern-windows-1 und R-1575; R-1575 in ci-15) → `tasks/ops-10.md`.
 - 2026-11-18 Gate: Repo-Schlüssel steht im Skript statt Download + gepinnter SHA-256 (gleiche Vertrauenswurzel, ein Netzpfad weniger); der Test hält Skript, Schlüsseldatei und Doku-`PUBSHA` gleich.
+- 2026-11-18 Ops-9: Kevin: OPNsense-Lauf mit fremdem rotem Probe-Test (R-1610) gilt als grüner scenario-Lauf für den Selbst-Merge.
