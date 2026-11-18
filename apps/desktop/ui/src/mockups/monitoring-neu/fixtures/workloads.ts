@@ -4,12 +4,12 @@
 
 // Container fixtures (Konzept §4.4): the key is host + compose project/service/number, else host +
 // name; the container id is only an attribute. A compose project rates as its worst container that
-// is not hidden. Stopped one-off jobs carry a "nicht bewerten" exception and show grey.
+// is not hidden. The stopped one-off job is hidden by an exception in fixtures/exceptions.ts
+// and shows grey.
 
 import type {
   Attribute,
   Detail,
-  ExceptionInfo,
   HistoryEvent,
   LogLine,
   Metric,
@@ -20,7 +20,6 @@ import type {
 } from '../model';
 import { DAY, HOUR, ago } from './time';
 
-const ADMIN = 'admin';
 const RESTARTS: Threshold = { warn: 3, crit: 5 };
 
 function metric(
@@ -83,7 +82,6 @@ interface ContainerSpec {
   details?: Detail[];
   history?: HistoryEvent[];
   firing?: string[];
-  exception?: ExceptionInfo;
 }
 
 function container(s: ContainerSpec): MonObject {
@@ -128,7 +126,6 @@ function container(s: ContainerSpec): MonObject {
     details: s.details,
     history: s.history,
     rules: CONTAINER_RULES.map((r) => ({ ...r, firing: (s.firing ?? []).includes(r.key) })),
-    exception: s.exception,
     raw: JSON.stringify(
       {
         Id: s.id,
@@ -375,13 +372,6 @@ export const CONTAINERS: MonObject[] = [
     health: 'ohne Healthcheck',
     restarts: 0,
     policy: 'no',
-    exception: {
-      effect: 'no-rating',
-      scope: 'dieses Objekt',
-      reason: 'Einmal-Job, läuft nachts und beendet sich',
-      by: ADMIN,
-      at: ago(40 * DAY),
-    },
   }),
 ];
 

@@ -371,7 +371,7 @@ function usedPct(o: MonObject): number {
 const mounts: CrossView = {
   id: 'mounts',
   title: 'Mounts',
-  hint: 'Vollste zuerst; ob ein Mount zählt, entscheidet die Regel (freie GB), nicht der Prozentwert',
+  hint: 'Vollste zuerst; die Schwelle in Prozent zählt erst unter 20 GB frei',
   columns: [
     { key: 'server', title: 'Server' },
     { key: 'path', title: 'Pfad' },
@@ -383,13 +383,14 @@ const mounts: CrossView = {
     const shown = list.filter((o) => !isHidden(o)).sort((a, b) => usedPct(b) - usedPct(a));
     return [...shown, ...list.filter(isHidden)].map((o) => {
       const free = metric(o, 'free');
-      const used = mcell(o, 'used');
+      const used = mcell(o, 'used', true);
+      const freeText = free ? `${formatValue(free.value, free.unit)} frei` : undefined;
       return {
         object: o,
         cells: [
           { text: o.server },
           { text: o.name, mono: true, sub: o.identity[0] },
-          { ...used, sub: free ? `${formatValue(free.value, free.unit)} frei` : used.sub },
+          { ...used, sub: [freeText, used.sub].filter(Boolean).join(' · ') || undefined },
           mcell(o, 'forecast'),
         ],
       };

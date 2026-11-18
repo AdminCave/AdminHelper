@@ -409,13 +409,15 @@ const LATENCY_RULE = rule(
 );
 const DOWN_RULE = rule('endpoint.down', 'Antwortet nicht, zwei Versuche in Folge', 'critical');
 
-function latencyTrend(at: (i: number) => number): Detail {
+/** Hourly points of the last 24 h; an endpoint that went down has none after `downAt`. */
+function latencyTrend(at: (i: number) => number, downAt?: string): Detail {
+  const points = Array.from({ length: 24 }, (_, i) => ({ at: ago((23 - i) * HOUR), value: at(i) }));
   return {
     type: 'trend',
     title: 'Antwortzeit, 24 h',
     unit: 'ms',
     threshold: { warn: 500, crit: 2000 },
-    points: Array.from({ length: 24 }, (_, i) => ({ at: ago((23 - i) * HOUR), value: at(i) })),
+    points: downAt ? points.filter((p) => p.at < downAt) : points,
   };
 }
 
@@ -439,7 +441,7 @@ export const ENDPOINTS: MonObject[] = [
         note: 'bewertet am Zertifikat',
       }),
     ],
-    details: [latencyTrend((i) => 150 + ((i * 37) % 60))],
+    details: [latencyTrend((i) => 150 + ((i * 37) % 60), ago(43))],
     history: [{ at: ago(43), status: 'critical', text: 'zwei Versuche ohne Antwort' }],
     rules: withFiring([DOWN_RULE, LATENCY_RULE], ['endpoint.down']),
   },
@@ -502,6 +504,29 @@ export const ENDPOINTS: MonObject[] = [
     ],
     history: [{ at: ago(3 * HOUR), status: 'warning', text: 'Antwortzeit 620 ms, ab 500' }],
     rules: withFiring([DOWN_RULE, LATENCY_RULE], ['endpoint.latency']),
+  },
+  {
+    // R-1515: answers 503 while the AIO backup on app-03 stops the apache container; the exception
+    // e14 takes it out of the rating only as long as the module reports the backup running.
+    key: 'endpoint/https/cloud.example.net/status.php',
+    kind: 'endpoint',
+    name: 'https://cloud.example.net/status.php',
+    server: 'app-03',
+    identity: ['http', 'GET, erwartet 200', 'zentral alle 60 s'],
+    status: 'critical',
+    reason: 'Antwortet mit HTTP 503',
+    since: ago(25),
+    metrics: [
+      metric('code', 'Antwort', 'HTTP 503', null, { status: 'critical' }),
+      metric('latency', 'Antwortzeit', 12, { warn: 500, crit: 2000 }, { unit: 'ms' }),
+    ],
+    details: [latencyTrend((i) => 180 + ((i * 41) % 50), ago(25))],
+    history: [
+      { at: ago(25), status: 'critical', text: 'HTTP 503' },
+      { at: ago(DAY - 40), status: 'ok', text: 'HTTP 200' },
+      { at: ago(DAY + 25), status: 'critical', text: 'HTTP 503' },
+    ],
+    rules: withFiring([DOWN_RULE], ['endpoint.down']),
   },
 ];
 

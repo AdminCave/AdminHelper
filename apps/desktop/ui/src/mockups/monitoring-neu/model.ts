@@ -79,16 +79,31 @@ export interface RuleView {
 /** What an exception does to the objects it covers. */
 export type Effect = 'skip' | 'no-rating' | 'no-notify' | 'mute-me';
 
+/** The exception that applies to one object now, as exceptions.ts attaches it. */
 export interface ExceptionInfo {
+  /** Id of the exception in the list "Ausgeblendet". */
+  id?: string;
   effect: Effect;
   /** Where it applies, in words ("dieses Objekt", "Tag backup-test"). */
   scope: string;
   reason?: string;
   by: string;
-  at: string;
+  /** Missing for an exception migrated from a setting that never recorded it. */
+  at?: string;
   until?: string;
+  /** A recurring window in words; replaces "dauerhaft". */
+  window?: string;
+  /** R-1515: holds only while another check of the instance reports a value, in words. */
+  condition?: string;
   /** The exception is bound to this value and ends when it changes. */
   boundValue?: string;
+  /** Scope Regel: the one rule taken out; the object stays rated by its other rules. */
+  rule?: string;
+  /** Covers more than this object (check, check type, server, tag, cluster): changing it changes
+   * the others too, so the drawer also offers a narrower one for this object alone. */
+  wide?: boolean;
+  /** Why the exception no longer applies; the object reports again (Nachmeldung). */
+  ended?: string;
 }
 
 /** Acknowledgement of an open problem: it stays open and listed (Konzept §2). */

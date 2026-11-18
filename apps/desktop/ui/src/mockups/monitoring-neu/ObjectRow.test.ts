@@ -181,6 +181,6 @@ describe('ObjectDrawer', () => {
     await fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
     await fireEvent.click(getByText('Ausnahme anlegen …'));
-    expect(onException).toHaveBeenCalledWith(DISK.key);
+    expect(onException).toHaveBeenCalledWith(DISK.key, false);
   });
 });

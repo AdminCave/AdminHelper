@@ -69,9 +69,11 @@ export function statusRank(s: Status): number {
   return ORDER.indexOf(s);
 }
 
-/** Hidden objects are not rated: they show grey at the end of every list. */
+/** Hidden objects are not rated: they show grey at the end of every list. An exception for one
+ * rule leaves the object rated by its other rules, an ended one hides nothing any more. */
 export function isHidden(o: MonObject): boolean {
-  return o.exception?.effect === 'skip' || o.exception?.effect === 'no-rating';
+  const e = o.exception;
+  return !!e && !e.rule && !e.ended && (e.effect === 'skip' || e.effect === 'no-rating');
 }
 
 function byPlace(a: MonObject, b: MonObject): number {
@@ -137,10 +139,12 @@ export function dateText(iso: string): string {
 
 /** "prüfen, nicht bewerten · dieses Objekt · Grund: … · von kevin · dauerhaft · gilt nur bei 8 Sektoren" */
 export function exceptionText(e: ExceptionInfo): string {
-  const parts = [EFFECT_LABEL[e.effect], e.scope];
+  const parts = e.ended ? [`erloschen (${e.ended})`] : [];
+  parts.push(EFFECT_LABEL[e.effect], e.scope);
   if (e.reason) parts.push(`Grund: ${e.reason}`);
   parts.push(`von ${e.by}`);
-  parts.push(e.until ? `bis ${dateText(e.until)}` : 'dauerhaft');
+  parts.push(e.window ?? (e.until ? `bis ${dateText(e.until)}` : 'dauerhaft'));
+  if (e.condition) parts.push(e.condition);
   if (e.boundValue) parts.push(`gilt nur bei ${e.boundValue}`);
   return parts.join(' · ');
 }

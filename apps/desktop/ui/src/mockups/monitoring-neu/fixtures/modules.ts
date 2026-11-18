@@ -330,6 +330,33 @@ export const MODULE_OBJECTS: MonObject[] = [
       ],
     },
   }),
+  // R-1515: the backup stops the containers; status.php of the apache container answers 503 then,
+  // and the exception e14 in fixtures/exceptions.ts reads the field backup of this instance.
+  ...module({
+    family: 'Apps',
+    module: 'nextcloud-aio',
+    instance: 'nextcloud-aio-mastercontainer',
+    server: 'app-03',
+    status: 'ok',
+    reason: 'Backup läuft seit 25 min, die Container stehen dafür',
+    since: ago(25),
+    metrics: [
+      m('containers', 'Container', 6, null),
+      m('stopped', 'Gestoppt außerhalb des Backups', 0, { crit: 1 }),
+      m('backup', 'Backup läuft', 'ja', null),
+      m('backup_age', 'Backup läuft seit', 25, { warn: 360 }, { unit: 'min' }),
+    ],
+    rules: [
+      rule('nextcloud-aio.stopped', 'Ein Container steht außerhalb des Backups', 'critical'),
+      rule('nextcloud-aio.backup_age', 'Backup läuft länger als 6 h', 'warning'),
+    ],
+    history: [
+      { at: ago(25), status: 'ok', text: 'Backup gestartet, Container gestoppt' },
+      { at: ago(DAY - 40), status: 'ok', text: 'Backup fertig, Container laufen' },
+      { at: ago(DAY + 25), status: 'ok', text: 'Backup gestartet, Container gestoppt' },
+    ],
+    counts: 'Container',
+  }),
 
   // Datenbanken -----------------------------------------------------------------------------
   ...module({

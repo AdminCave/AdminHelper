@@ -7,7 +7,6 @@
 
 import type {
   Detail,
-  ExceptionInfo,
   HistoryEvent,
   Metric,
   MonObject,
@@ -41,8 +40,6 @@ function daily(days: number, value: (i: number) => number): TrendPoint[] {
     value: value(i),
   }));
 }
-
-const ADMIN = 'admin';
 
 // ---------------------------------------------------------------------------------------------
 // disk (§4.1)
@@ -287,7 +284,6 @@ interface DiskSpec {
   exitBits?: number[];
   details?: Detail[];
   history?: HistoryEvent[];
-  exception?: ExceptionInfo;
   raw?: string;
 }
 
@@ -333,7 +329,6 @@ function disk(s: DiskSpec): MonObject {
     details: [...details, ...(s.details ?? [])],
     history: s.history,
     rules: withFiring(DISK_RULES[s.cls], s.firing),
-    exception: s.exception,
     raw: s.raw,
   };
 }
@@ -438,14 +433,6 @@ const DISKS: MonObject[] = [
       { realloc: 3, pending: 0, hours: 38205, temp: 39 },
       { Reallocated_Sector_Ct: 'warning' },
     ),
-    exception: {
-      effect: 'no-rating',
-      scope: 'dieses Objekt',
-      reason: 'beobachtet, Tausch beim nächsten Wartungsfenster',
-      by: ADMIN,
-      at: ago(60 * DAY),
-      boundValue: '3 umgelagerte Sektoren',
-    },
   }),
   disk({
     server: 'pve-01',
@@ -747,13 +734,6 @@ const DISKS: MonObject[] = [
     reason: 'Nicht geprüft',
     since: ago(70 * DAY),
     metrics: [],
-    exception: {
-      effect: 'skip',
-      scope: 'dieses Objekt',
-      reason: 'USB-Sicherungsplatte, wird wöchentlich getauscht',
-      by: ADMIN,
-      at: ago(70 * DAY),
-    },
   }),
 ];
 
@@ -1098,7 +1078,6 @@ interface GuestSpec {
     verify: 'ok' | 'failed' | 'none';
     protected?: boolean;
   }[];
-  exception?: ExceptionInfo;
   details?: Detail[];
   history?: HistoryEvent[];
 }
@@ -1165,7 +1144,6 @@ function guest(s: GuestSpec): MonObject {
     ],
     history: s.history,
     rules: withFiring(BACKUP_RULES, s.firing),
-    exception: s.exception,
   };
 }
 
@@ -1312,13 +1290,6 @@ const GUESTS: MonObject[] = [
     verify: 'ok',
     job: 'täglich 02:00',
     firing: ['backup.age'],
-    exception: {
-      effect: 'no-rating',
-      scope: `gestoppte Gäste im Cluster ${CLUSTER}`,
-      reason: 'gestoppt',
-      by: ADMIN,
-      at: ago(30 * DAY),
-    },
   }),
   guest({
     vmid: 9000,
@@ -1329,13 +1300,6 @@ const GUESTS: MonObject[] = [
     reason: 'Nicht geprüft',
     since: ago(60 * DAY),
     ageHours: null,
-    exception: {
-      effect: 'skip',
-      scope: 'dieses Objekt',
-      reason: 'Vorlage, wird nicht gesichert',
-      by: ADMIN,
-      at: ago(60 * DAY),
-    },
   }),
 ];
 

@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // All fictitious objects of the mockup; each object kind adds its fixture module here.
+import { applyExceptions } from '../exceptions';
 import type { Ack, MonObject } from '../model';
+import { EXCEPTIONS, TOPOLOGY } from './exceptions';
 import { HOST_OBJECTS } from './host';
 import { MODULE_OBJECTS } from './modules';
 import { NETWORK_OBJECTS } from './network';
 import { STORAGE_OBJECTS } from './storage';
-import { DAY, ago } from './time';
+import { DAY, NOW, ago } from './time';
 import { WORKLOAD_OBJECTS } from './workloads';
 
 /** Acknowledged problems by object key: the problem stays open, the Lage shows who confirmed it. */
@@ -25,10 +27,14 @@ export const ACKS: Record<string, Ack> = {
   },
 };
 
-export const ALL_OBJECTS: MonObject[] = [
+/** The objects as the checks report them, before any exception. */
+export const BASE_OBJECTS: MonObject[] = [
   ...STORAGE_OBJECTS,
   ...HOST_OBJECTS,
   ...WORKLOAD_OBJECTS,
   ...NETWORK_OBJECTS,
   ...MODULE_OBJECTS,
 ].map((o) => (ACKS[o.key] ? { ...o, ack: ACKS[o.key] } : o));
+
+/** The objects as the server delivers them now, with the exceptions of fixtures/exceptions.ts. */
+export const ALL_OBJECTS: MonObject[] = applyExceptions(BASE_OBJECTS, EXCEPTIONS, NOW, TOPOLOGY);

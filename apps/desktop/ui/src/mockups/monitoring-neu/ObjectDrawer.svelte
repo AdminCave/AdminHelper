@@ -40,12 +40,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     object: MonObject;
     now: Date;
     onClose: () => void;
-    onException?: (key: string) => void;
+    /** edit: change the attached exception; else make a new one for this object. */
+    onException?: (key: string, edit: boolean) => void;
   }
 
   let { object, now, onClose, onException }: Props = $props();
 
   const hidden = $derived(isHidden(object));
+  // The rule an exception in force takes out of the rating; it shows as such in the rule table.
+  const exceptedRule = $derived(object.exception?.ended ? undefined : object.exception?.rule);
   const badSince = $derived(badSinceText(object, now));
 
   function onKey(e: KeyboardEvent): void {
@@ -160,7 +163,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 {r.text}
               </td>
               <td class="muted">{r.level === 'critical' ? 'kritisch' : 'Warnung'}</td>
-              <td class="muted">{r.source}{r.enabled ? '' : ' · aus'}</td>
+              <td class="muted">
+                {r.source}{r.enabled ? '' : ' · aus'}{r.key === exceptedRule
+                  ? ' · ausgenommen'
+                  : ''}
+              </td>
             </tr>
           {/each}
         </tbody>
@@ -172,15 +179,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <h3>Ausnahme</h3>
     {#if object.exception}
       <p class="note">{exceptionText(object.exception)}</p>
-      <p class="muted small">angelegt {dateText(object.exception.at)}</p>
+      <p class="muted small">
+        angelegt {object.exception.at ? dateText(object.exception.at) : 'unbekannt (migriert)'}
+      </p>
     {:else}
       <p class="muted small">Keine Ausnahme.</p>
     {/if}
     {#if onException}
       <div class="actions">
-        <Button size="sm" variant="secondary" onclick={() => onException?.(object.key)}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onclick={() => onException?.(object.key, !!object.exception)}
+        >
           {object.exception ? 'Ausnahme ändern …' : 'Ausnahme anlegen …'}
         </Button>
+        {#if object.exception?.wide}
+          <Button size="sm" variant="ghost" onclick={() => onException?.(object.key, false)}>
+            Nur für dieses Objekt …
+          </Button>
+        {/if}
       </div>
     {/if}
   </section>
