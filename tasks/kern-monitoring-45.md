@@ -60,8 +60,10 @@ Beweis: Code-Lesung `module_sync.py` `_update` und `_adopt` · Dedup-Key: bug:mo
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: → T11
 
-### T5 — R-0518: Agent lässt smart_passed ohne smart_status weg  [ ]
+### T5 — R-0518: Agent lässt smart_passed ohne smart_status weg  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @9d6f08207 2026-11-18T12:48:42+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T5.verdict.json)
 Änderung: `SmartDisk.Passed` wird `*bool` mit `omitempty`; ohne `smart_status` im JSON von smartctl fehlt das Feld.
 Test: smartctl-JSON ohne `smart_status` (SMART abgeschaltet, Exit-Bit 2) ergibt kein `smart_passed` (rot vorher).
 Beweis: Code-Lesung `smart.go` `querySmartDevice` (`Passed: raw.SmartStatus.Passed`) · Dedup-Key: bug:agent:smart.go:unknown-status-reads-failed
@@ -130,3 +132,6 @@ Task-Review: am Ende
   `interval_s`/`timeout_s`/`pair_check_id` ändert (das trägt `_update` ohnehin mit). Grenze: Änderungen vor diesem
   Stand sind nicht markiert. Die API liefert `overriddenFields` damit auch für Modul-Checks; der Desktop zeigt die
   Felder nur bei `templateId`.
+  Die `config`-Markierung bleibt dauerhaft (`reset_check` verlangt `template_id`, Löschen legt einen Tombstone an):
+  ein so geänderter Modul-Check bekommt kein Katalog-Update mehr; die Zwischenlösung der Spec, die Dauerlösung bringt
+  die Neuordnung.
