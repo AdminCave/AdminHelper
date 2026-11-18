@@ -124,8 +124,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html
 Task-Review: am Ende
 
-### T11 — Fake-frpc im Windows-Test endet nicht mehr am Deadlock (Fund der PR-CI)  [ ]
+### T11 — Fake-frpc im Windows-Test endet nicht mehr am Deadlock (Fund der PR-CI)  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/supervisor_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @03097a1e1 2026-11-18T16:59:48+01:00
+Review: approve (.ah-out/review/kern-windows-1/T11.verdict.json)
 Beweis: PR #574 CI-Lauf 44336869597, Job „Go Agent (test, Windows)“: `TestSupervisorStartsRestartsAndStopsFrpc` „restart: stop frpc: TerminateProcess: Access is denied“. `fakeFrpcMain` blockiert mit `select {}`; ohne weitere Goroutine bricht die Go-Laufzeit mit „all goroutines are asleep - deadlock!“ und Exit 2 ab (Probe unter Linux: exit status 2), der Fake stirbt also sofort, und `Kill` trifft einen endenden Prozess.
 Änderung: Der Fake wartet mit `time.Sleep` in einer Schleife statt `select {}`, bis der Supervisor ihn beendet.
 Verify: bash scripts/dev/verify.sh agent --strict

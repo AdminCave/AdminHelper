@@ -51,7 +51,10 @@ func fakeFrpcMain(args []string) int {
 		time.Sleep(life)
 		return 1
 	}
-	select {}
+	// Not select {}: with no other goroutine the runtime ends that as a deadlock (exit 2).
+	for {
+		time.Sleep(time.Hour)
+	}
 }
 
 // useFakeFrpc points the supervisor at the test binary as frpc.exe, pinned with its own hash,
