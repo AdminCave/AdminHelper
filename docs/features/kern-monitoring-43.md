@@ -56,7 +56,8 @@ Nur der Monitoring-Dienst (`apps/monitoring/`):
 ## Datenmodell / API / Migrationen
 Keine Migration: `monitor_checks` trägt `module_id`, `module_instance`, `module_check_key` und
 `module_check_hash` unabhängig vom `check_type`. Neu ist nur der Wert `central` an Modul-Zeilen. Die API ändert
-keine Form; `GET /catalog` nennt an zentralen Checks den Sensor wie bisher (dazu `central: true`). Kein Vertrag zu
+keine Form; `GET /catalog` nennt an zentralen Checks den Sensor wie bisher, ohne eigenes Feld `central`
+(Entscheidung T2). Kein Vertrag zu
 Web, Desktop oder Agent ändert sich; die Web-Oberfläche zeigt die Zeilen als zentrale Checks der Instanz.
 
 Katalog-Update: `web_domain` steigt auf Version 2. `sync_catalog` legt bei übernommenen Instanzen die zwei neuen

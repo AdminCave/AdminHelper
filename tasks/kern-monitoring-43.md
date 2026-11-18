@@ -1,5 +1,5 @@
 # Zentrale Domain-Checks für vHost-Domains — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-43 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-43 · Review: pro Task
 Spec: docs/features/kern-monitoring-43.md (Roadmap R-1501)
 Heavy: none — nur der Monitoring-Dienst (Sensor tls, Katalog, Modul-Bindung); kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,8 +41,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog_web
 Doku: → T4
 Abhängt von: T1, T2
 
-### T4 — Doku DE+EN und CHANGELOG (R-1501)  [ ]
-Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-43.md
+### T4 — Doku DE+EN und CHANGELOG (R-1501)  [x]
+Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-43.md, docs/features/kern-monitoring-43.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5a9f04652 2026-11-18T09:46:32+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt vHosts und Zeile `web_domain` (zentrale Checks dns und tls je Domain, ausgelassene interne
 Namen, Ablauf nur vom Agent-Check), Parameter `expiry` beim zentralen Sensor tls, Entwickler-Doku zum zentralen
 Katalog-Check; Changelog-Fragment ohne Umlaute.
