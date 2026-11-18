@@ -28,8 +28,10 @@ Review: approve (.ah-out/review/arch-monitoring-neu-p0/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring-neu
 Doku: → T11
 
-### T2 — Objektarten Speicher und Backup: disk, pool, guest-backup, backup-job (R-1558)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/fixtures/storage.ts, apps/desktop/ui/src/mockups/monitoring-neu/details/SmartAttributes.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/VdevTree.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/BackupList.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/TrendChart.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures.test.ts
+### T2 — Objektarten Speicher und Backup: disk, pool, guest-backup, backup-job (R-1558)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/fixtures/storage.ts, apps/desktop/ui/src/mockups/monitoring-neu/details/SmartAttributes.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/VdevTree.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/BackupList.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/TrendChart.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/details.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/model.ts, apps/desktop/ui/src/mockups/monitoring-neu/ObjectDrawer.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/index.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @176309e4a 2026-11-18T12:49:18+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T2.verdict.json)
 Änderung: Fixtures je Zustand nach Konzept §4.1–§4.3: Platte HDD/SATA-SSD/NVMe/SAS (gesund, umgelagert steigend bzw. unverändert, zu heiß mit Hysterese, Medienfehler, NVMe-Reserve, schläft, nicht lesbar, ausgeblendet mit wertgebundener Ausnahme), Pool (gesund, beeinträchtigt, fast voll, Scrub überfällig, angehalten), Gast-Backup (gesichert, veraltet, nie, Lauf fehlgeschlagen, kein Job, Verifizierung, gestoppt/Ausnahme), Backup-Job. Schubladen-Abschnitte: SMART-Attributtabelle mit Exit-Bits im Klartext, vdev-Baum, Backup-Liste, Trendkurve (SVG aus Tokens) mit Schwellenlinie. `fixtures.test.ts` prüft die Grammatik-Invarianten über alle Fixtures (wächst mit T3/T4).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring-neu
 Doku: → T11
@@ -121,3 +123,5 @@ Abhängt von: T12
 - 2026-11-18 T1: Mockup-Texte deutsch und ohne `t()`/i18n-Schlüssel — Wegwerf-Entwurf zur Abnahme, die Produkt-Übersetzung entsteht in P1+.
 - 2026-11-18 T1: `Detail` ist eine Union, die T2/T3 um Blöcke je Objektart erweitern (ObjectDrawer und model.ts per `set-files`) — die Ebene 3 wächst mit den Objektarten statt vorab generisch zu werden (YAGNI).
 - 2026-11-18 T1: Desktop-UI-Tests ohne jest-dom-Matcher (`toBeTruthy`, `classList`) — `vitest.setup.ts` liegt außerhalb des tsconfig-`include`, svelte-check kennt die Matcher-Typen nicht.
+- 2026-11-18 T2: Exit-Bits zeigen den Bitwert hex (`0x08`) plus Klartext, die Fixtures tragen nur gesetzte Bits — smartctl meldet eine Bitmaske; der Admin soll die Ursache lesen, nicht rechnen.
+- 2026-11-18 T2: Trendkurve als eigenes SVG ohne Diagramm-Bibliothek, Farben aus Tokens, je Schwelle eine gestrichelte Linie — ein Mockup-Abschnitt, keine neue Abhängigkeit; Trend und Historie einer Fixture beschreiben denselben Verlauf (Hysterese sichtbar).

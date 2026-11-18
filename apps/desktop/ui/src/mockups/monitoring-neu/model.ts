@@ -91,8 +91,80 @@ export interface ExceptionInfo {
   boundValue?: string;
 }
 
+/** One SMART attribute as smartctl reports it. */
+export interface SmartRow {
+  id?: number;
+  name: string;
+  raw: string;
+  normalized?: number;
+  threshold?: number;
+  /** smartctl `WHEN_FAILED` ("FAILING_NOW", "In_the_past"). */
+  whenFailed?: string;
+  status?: Status;
+}
+
+export interface SmartDetail {
+  type: 'smart';
+  title: string;
+  rows: SmartRow[];
+  /** Set bits of the smartctl exit status, in plain words. */
+  exitBits: { bit: number; text: string }[];
+}
+
+export interface VdevNode {
+  name: string;
+  /** ZFS state as zpool prints it (ONLINE, DEGRADED, FAULTED …). */
+  state: string;
+  status: Status;
+  read: number;
+  write: number;
+  cksum: number;
+  note?: string;
+  children?: VdevNode[];
+}
+
+export interface VdevDetail {
+  type: 'vdev';
+  title: string;
+  root: VdevNode;
+}
+
+export interface BackupEntry {
+  at: string;
+  size: string;
+  storage: string;
+  verify: 'ok' | 'failed' | 'none';
+  protected?: boolean;
+  status?: Status;
+}
+
+export interface BackupDetail {
+  type: 'backups';
+  title: string;
+  rows: BackupEntry[];
+  retention?: string;
+}
+
+export interface TrendPoint {
+  at: string;
+  value: number;
+}
+
+export interface TrendDetail {
+  type: 'trend';
+  title: string;
+  unit?: string;
+  points: TrendPoint[];
+  threshold?: Threshold;
+}
+
 /** Kind-specific blocks of level 3; later tasks add more. */
-export type Detail = { type: 'note'; title: string; text: string };
+export type Detail =
+  | { type: 'note'; title: string; text: string }
+  | SmartDetail
+  | VdevDetail
+  | BackupDetail
+  | TrendDetail;
 
 export interface MonObject {
   /** Stable key, unique across all objects. */

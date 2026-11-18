@@ -16,6 +16,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import MetaList from '../../components/ui/MetaList.svelte';
   import Pill from '../../components/ui/Pill.svelte';
   import type { MonObject } from './model';
+  import BackupList from './details/BackupList.svelte';
+  import SmartAttributes from './details/SmartAttributes.svelte';
+  import TrendChart from './details/TrendChart.svelte';
+  import VdevTree from './details/VdevTree.svelte';
   import {
     KIND_LABEL,
     STATUS_LABEL,
@@ -98,7 +102,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {#each object.details ?? [] as d, i (i)}
     <section>
       <h3>{d.title}</h3>
-      {#if d.type === 'note'}<p class="note">{d.text}</p>{/if}
+      {#if d.type === 'note'}
+        <p class="note">{d.text}</p>
+      {:else if d.type === 'smart'}
+        <SmartAttributes detail={d} />
+      {:else if d.type === 'vdev'}
+        <VdevTree detail={d} />
+      {:else if d.type === 'backups'}
+        <BackupList detail={d} />
+      {:else if d.type === 'trend'}
+        <TrendChart detail={d} />
+      {/if}
     </section>
   {/each}
 
