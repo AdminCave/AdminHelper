@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-44 — Top-5-Prozesse bei hoher Last — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-44 · Review: am Ende
+Status: erledigt · Branch: feature/kern-monitoring-44 · Review: am Ende
 Spec: docs/features/kern-monitoring-44.md (Roadmap R-1389)
 Heavy: linux-full — apps/agent (Bericht)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
