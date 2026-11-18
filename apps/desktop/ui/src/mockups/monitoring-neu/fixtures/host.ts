@@ -370,7 +370,7 @@ const RESOURCES: MonObject[] = [
         type: 'processes',
         title: 'Top-Prozesse',
         sortedBy: 'mem',
-        rows: DB_PROCESSES,
+        rows: [...DB_PROCESSES].sort((a, b) => b.memMb - a.memMb),
         newData: true,
       },
     ],
@@ -402,7 +402,7 @@ const RESOURCES: MonObject[] = [
     status: 'critical',
     reason: 'Voll: 0 GB frei',
     since: ago(11 * HOUR),
-    badSince: ago(17 * HOUR),
+    badSince: ago(27 * HOUR),
     metrics: [
       usedPct(100, DISK_LIMIT, { status: 'critical' }),
       metric('free', 'Frei', 0, null, { unit: 'GB' }),
@@ -422,7 +422,7 @@ const RESOURCES: MonObject[] = [
     history: [
       { at: ago(4 * HOUR), status: 'critical', text: 'voll' },
       { at: ago(11 * HOUR), status: 'critical', text: 'Prognose unter 8 h' },
-      { at: ago(17 * HOUR), status: 'warning', text: 'Prognose unter 24 h' },
+      { at: ago(27 * HOUR), status: 'warning', text: 'Prognose unter 24 h' },
     ],
   }),
   obj({

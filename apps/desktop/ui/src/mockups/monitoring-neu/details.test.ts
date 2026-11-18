@@ -244,6 +244,8 @@ describe('ProcessTable', () => {
       detail: { type: 'processes', title: 'Top-Prozesse', sortedBy: 'mem', rows, newData: true },
     });
     expect(container.querySelector('th.sorted')?.textContent).toBe('RAM');
-    expect(container.textContent).toContain('neue Agent-Daten');
+    expect(container.querySelector('p')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Sortiert nach RAM, Stand der letzten Meldung neue Agent-Daten',
+    );
   });
 });

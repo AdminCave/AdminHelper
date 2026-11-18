@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring
 Doku: → T11
 Abhängt von: T2
 
-### T4 — Objektarten Container, Netz und Katalog-Module (R-1558)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/fixtures/workloads.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/network.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/modules.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures.test.ts
+### T4 — Objektarten Container, Netz und Katalog-Module (R-1558)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/fixtures/workloads.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/network.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/modules.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/index.ts, apps/desktop/ui/src/mockups/monitoring-neu/details/ProcessTable.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/host.ts, apps/desktop/ui/src/mockups/monitoring-neu/details.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/model.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f80aeec8a 2026-11-18T13:36:08+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T4.verdict.json)
 Änderung: Container und Compose-Projekt (läuft seit, ungesund seit, abgestürzt mit Code, Speicher erschöpft, Neustart-Schleife, gestoppt grau, verschwunden), Zertifikat (eine Bewertung aus mehreren Quellen), Domain, Endpunkt mit optionaler Latenz-Regel; je Katalog-Familie (Web/Proxy, Apps, Datenbanken, Mail, Backup-Module, Windows-Rollen, Verzeichnis, Virtualisierung, Netz, Host-Hardware, Generisch) ein Beispiel mit Ebene 1 im Klartext statt `field = value (op soll)`, Kennzahlen mit Schwelle und je Familie die Variante mit und ohne benannte Unterobjekte (Spec, offene Frage 7).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring-neu
 Doku: → T11
@@ -131,3 +133,9 @@ Abhängt von: T12
 - 2026-11-18 T3: Paketlisten älter als 7 Tage machen `updates` „unbekannt“ statt „0 Updates, ok“ (Vorschlag, Grenze 7 Tage) — das ist eine Bewertung der Datenlage, keine Regel mit eigener Stufe; Kevins Abnahme (T13) entscheidet.
 - 2026-11-18 T3: Mount-Prognose als gestrichelte Fortsetzung der Trendkurve ab dem letzten Messpunkt; die Kurvenbeschriftung ist ein String, weil Svelte das führende Leerzeichen in `{#if}`-Blöcken abschneidet (behebt „58 %· Warnung“ aus T2).
 - 2026-11-18 T3: Schlüssel `<server>/<art>/<id>` wie in T2 (Mount-Pfad, Sensor `<chip>/<label>`, Dienst voller Unit-Name); die drei Prüfer-Nits aus T2 (sdd3-Zähler, zroot auf FreeBSD-Host, Seit von Gast 106) sind mitbehoben, der Leer-Guard der Trendkurve ebenso.
+- 2026-11-18 T4: Container-Schlüssel `<server>/container/<projekt>/<dienst>/<nummer>`, ohne Compose `<server>/container/<name>`; die Container-ID ist nur ein Attribut — ein neu erstellter Container ist dasselbe Objekt mit neuer ID (Konzept §4.4).
+- 2026-11-18 T4: Ein gestoppter Container ist nur über eine Ausnahme „prüfen, nicht bewerten“ grau (Einmal-Job), ein verschwundener ist Info; das Compose-Projekt bewertet sich als sein schlechtester nicht ausgeblendeter Container — ein Fehler soll nicht doppelt oben stehen, ein gewollt gestoppter Job das Projekt nicht rot färben.
+- 2026-11-18 T4: Zentrale Objekte (Zertifikat, Domain, Endpunkt) haben Schlüssel ohne Server (`certificate/<fingerprint>`, Rückfall `certificate/<host>:<port>`); `server` ist der zugeordnete Host für Gruppierung und Server-Ansicht — eine Bewertung aus allen Quellen statt eines Objekts je Quelle (Konzept §4.6).
+- 2026-11-18 T4: Zertifikate rechnen mit der Empfehlung zu offener Frage 6 (25 %/10 % der Laufzeit, Untergrenze 12 h) und zeigen die Rechnung im Attribut „Bewertung“ — Kevin sieht bei der Abnahme, wie eine 90- und eine 365-Tage-Laufzeit bewertet werden.
+- 2026-11-18 T4: Benannte Unterobjekte eines Moduls sind eigene Objekte mit Schlüssel `<instanz>/<name>`, Feld `parent` und `newData` an jeder Kennzahl; T5 gruppiert sie unter der Instanz. Web/Proxy und Netz (vhost-Namen, OPNsense) sagen im Hinweis, dass nur die Objektliste neu ist — offene Frage 7 bleibt Kevins Entscheidung je Familie (T12).
+- 2026-11-18 T4: Die drei Prüfer-Nits aus T3 sind mitbehoben (Leerzeichen vor „neue Agent-Daten“, RAM-Liste von db-01 nach RAM sortiert, „nicht ok seit“ von /var/log aus der Kurve); ein neuer Test hält jede Prozessliste in der Reihenfolge ihrer markierten Spalte.

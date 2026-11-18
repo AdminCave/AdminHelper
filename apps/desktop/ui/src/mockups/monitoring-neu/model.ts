@@ -227,4 +227,6 @@ export interface MonObject {
   exception?: ExceptionInfo;
   /** Catalog family of a module object. */
   family?: string;
+  /** Key of the module instance a named part belongs to (offene Frage 7). */
+  parent?: string;
 }

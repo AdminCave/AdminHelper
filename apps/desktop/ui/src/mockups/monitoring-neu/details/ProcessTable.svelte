@@ -40,9 +40,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </tbody>
 </table>
 <p class="muted">
-  Sortiert nach {detail.sortedBy === 'cpu' ? 'CPU' : 'RAM'}, Stand der letzten Meldung{#if detail.newData}
+  Sortiert nach {detail.sortedBy === 'cpu' ? 'CPU' : 'RAM'}, Stand der letzten Meldung
+  {#if detail.newData}
     <Pill tone="accent" title="Der Agent liefert die Prozessliste noch nicht">neue Agent-Daten</Pill
-    >{/if}
+    >
+  {/if}
 </p>
 
 <style>

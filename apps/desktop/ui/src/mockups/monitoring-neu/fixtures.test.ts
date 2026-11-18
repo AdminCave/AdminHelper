@@ -9,9 +9,10 @@ import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import ObjectDrawer from './ObjectDrawer.svelte';
 import ObjectRow from './ObjectRow.svelte';
-import { STATUS_LABEL, duplicateKeys, grammarViolations, isHidden } from './grammar';
+import { STATUS_LABEL, duplicateKeys, grammarViolations, isHidden, statusRank } from './grammar';
 import type { Kind, MonObject, Status } from './model';
 import { ALL_OBJECTS } from './fixtures';
+import { FAMILIES } from './fixtures/modules';
 import { NOW } from './fixtures/time';
 
 afterEach(cleanup);
@@ -111,6 +112,12 @@ describe('states per kind (Konzept §4.7–§4.12)', () => {
     );
     expect(oom?.status).toBe('warning');
     expect(detailTypes(oom!)).toEqual(expect.arrayContaining(['log', 'processes']));
+    // The table does not sort; every list comes in the order of its marked column.
+    for (const d of ALL_OBJECTS.flatMap((o) => o.details ?? [])) {
+      if (d.type !== 'processes') continue;
+      const col = d.rows.map((r) => (d.sortedBy === 'cpu' ? r.cpu : r.memMb));
+      expect(col).toEqual([...col].sort((a, b) => b - a));
+    }
   });
 
   it('mount: forecast with its line, the 20-GB rule in words, a full mount', () => {
@@ -161,6 +168,104 @@ describe('states per kind (Konzept §4.7–§4.12)', () => {
     );
     expect(services.some((o) => o.reason.startsWith('Neustart-Schleife'))).toBe(true);
     expect(services.some((o) => o.reason.startsWith('Entfernt'))).toBe(true);
+  });
+});
+
+describe('states per kind (Konzept §4.4–§4.6)', () => {
+  it('container: every state the concept names, the stopped one-off job grey', () => {
+    const containers = byKind('container');
+    const reasons = containers.map((o) => o.reason);
+    for (const start of [
+      'Läuft seit',
+      'Ungesund seit',
+      'Abgestürzt mit Code',
+      'Speicher erschöpft',
+      'Startet ständig neu',
+      'Verschwunden',
+    ])
+      expect(
+        reasons.some((r) => r.startsWith(start)),
+        start,
+      ).toBe(true);
+    const stopped = containers.find((o) => o.reason.startsWith('Gestoppt'));
+    expect(stopped && isHidden(stopped)).toBe(true);
+  });
+
+  it('compose project: rated as its worst container that is not hidden', () => {
+    const projects = byKind('compose-project');
+    expect(statuses(projects)).toEqual(new Set(['critical', 'warning', 'ok']));
+    for (const p of projects) {
+      const project = p.key.split('/').pop();
+      const members = byKind('container').filter(
+        (c) => c.key.startsWith(`${p.server}/container/${project}/`) && !isHidden(c),
+      );
+      expect(members.length, p.key).toBeGreaterThan(0);
+      const worst = Math.min(...members.map((c) => statusRank(c.status)));
+      expect(statusRank(p.status), p.key).toBe(worst);
+    }
+  });
+
+  it('certificate: one rating for all sources, chain and name cases, host:port fallback', () => {
+    const certs = byKind('certificate');
+    for (const s of ['critical', 'warning', 'ok'] as const)
+      expect(statuses(certs).has(s), s).toBe(true);
+    const sources = (o: MonObject) => Number(o.metrics.find((m) => m.key === 'sources')?.value);
+    expect(certs.filter((o) => sources(o) >= 2).length).toBeGreaterThan(certs.length / 2);
+    for (const o of certs)
+      expect(o.attributes?.filter((a) => a.key === 'Bewertung').length, o.key).toBe(1);
+    expect(certs.some((o) => o.reason.startsWith('Kette unvollständig'))).toBe(true);
+    expect(certs.some((o) => o.reason.startsWith('Name passt nicht'))).toBe(true);
+    expect(certs.some((o) => /^certificate\/[\w.-]+:\d+$/.test(o.key))).toBe(true);
+  });
+
+  it('domain: ok, expiring and on a blocklist', () => {
+    const domains = byKind('domain');
+    for (const s of ['critical', 'warning', 'ok'] as const)
+      expect(statuses(domains).has(s), s).toBe(true);
+    const listed = domains.find((o) => o.status === 'critical');
+    expect(listed?.metrics.find((m) => m.key === 'dnsbl')?.status).toBe('critical');
+  });
+
+  it('endpoint: the latency rule is optional', () => {
+    const latency = byKind('endpoint').map((o) => o.metrics.find((m) => m.key === 'latency'));
+    expect(latency.some((m) => m?.threshold)).toBe(true);
+    expect(latency.some((m) => m && typeof m.value === 'number' && !m.threshold)).toBe(true);
+  });
+});
+
+describe('catalog modules (Konzept §4.5, offene Frage 7)', () => {
+  const modules = byKind('module');
+  const instances = modules.filter((o) => !o.parent);
+  const parts = modules.filter((o) => o.parent);
+
+  it.each(FAMILIES.map((f) => [f]))('%s: an instance without and one with named parts', (f) => {
+    const own = instances.filter((o) => o.family === f);
+    const named = new Set(parts.filter((o) => o.family === f).map((o) => o.parent));
+    expect(own.some((o) => !named.has(o.key))).toBe(true);
+    expect(own.some((o) => named.has(o.key))).toBe(true);
+  });
+
+  it('every named part hangs under its instance and needs new agent data', () => {
+    const keys = new Map(instances.map((o) => [o.key, o]));
+    for (const p of parts) {
+      const parent = keys.get(p.parent!);
+      expect(parent, p.key).toBeTruthy();
+      expect(p.key.startsWith(`${p.parent}/`), p.key).toBe(true);
+      expect([p.family, p.server], p.key).toEqual([parent!.family, parent!.server]);
+      expect(
+        p.metrics.every((m) => m.newData),
+        p.key,
+      ).toBe(true);
+    }
+  });
+
+  it('every module states a threshold and its reason in plain words', () => {
+    expect(modules.filter((o) => !o.metrics.some((m) => m.threshold)).map((o) => o.key)).toEqual(
+      [],
+    );
+    expect(
+      modules.filter((o) => / = |\((gt|lt|ge|le|eq|ne) /.test(o.reason)).map((o) => o.key),
+    ).toEqual([]);
   });
 });
 
