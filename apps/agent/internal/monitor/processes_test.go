@@ -12,19 +12,26 @@ import (
 )
 
 // stubProcesses swaps the process readings for readings, one map per call in turn (the last again
-// once they run out), and the gap for one that passes gap at once, or ends the context when gap is 0.
-// It returns the number of readings taken.
+// once they run out), and the gap for one that passes at once, or ends the context when gap is 0. Each
+// reading moves the clock on by gap/2 and so does the wait: from the start of one reading to the start
+// of the next is gap. It returns the number of readings taken.
 func stubProcesses(t *testing.T, gap time.Duration, readings ...map[int32]processReading) *int {
 	t.Helper()
-	oldRead, oldWait := readProcesses, waitProcessGap
+	oldRead, oldWait, oldClock := readProcesses, waitProcessGap, processClock
+	clock := time.Unix(1_800_000_000, 0)
 	calls := 0
 	readProcesses = func(context.Context) map[int32]processReading {
 		r := readings[min(calls, len(readings)-1)]
 		calls++
+		clock = clock.Add(gap / 2)
 		return r
 	}
-	waitProcessGap = func(context.Context) (time.Duration, bool) { return gap, gap > 0 }
-	t.Cleanup(func() { readProcesses, waitProcessGap = oldRead, oldWait })
+	waitProcessGap = func(context.Context) bool {
+		clock = clock.Add(gap / 2)
+		return gap > 0
+	}
+	processClock = func() time.Time { return clock }
+	t.Cleanup(func() { readProcesses, waitProcessGap, processClock = oldRead, oldWait, oldClock })
 	return &calls
 }
 

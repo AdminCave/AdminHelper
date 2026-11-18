@@ -21,8 +21,9 @@ const (
 	topProcessesGap = time.Second
 )
 
-// processReading is what one reading tells of a process: its name (comm, never the command line), the
-// CPU seconds it used so far and its resident memory in bytes.
+// processReading is what one reading tells of a process: its name, the CPU seconds it used so far and
+// its resident memory in bytes. The name is gopsutil's: comm, or where comm is cut to 15 characters the
+// base of argv[0] if that starts with comm; never a path or an argument.
 type processReading struct {
 	name string
 	cpu  float64
@@ -58,34 +59,38 @@ var readProcesses = func(ctx context.Context) map[int32]processReading {
 	return out
 }
 
-// waitProcessGap waits topProcessesGap and returns the time that passed, false if ctx ended first; a
-// seam for the tests.
-var waitProcessGap = func(ctx context.Context) (time.Duration, bool) {
-	start := time.Now()
+// waitProcessGap waits topProcessesGap, false if ctx ended first; a seam for the tests.
+var waitProcessGap = func(ctx context.Context) bool {
 	t := time.NewTimer(topProcessesGap)
 	defer t.Stop()
 	select {
 	case <-t.C:
-		return time.Since(start), true
+		return true
 	case <-ctx.Done():
-		return 0, false
+		return false
 	}
 }
+
+// processClock is the clock the gap between the readings is measured with; a seam for the tests.
+var processClock = time.Now
 
 // collectTopProcesses is the resources block's top_processes: the topProcessesCount processes with
 // the highest CPU share over topProcessesGap and those with the most resident memory, each busiest
 // first. Only a process with a pid from 1 that both readings found under the same name counts. Nil
 // when neither list has an entry or ctx ends before the second reading.
 func collectTopProcesses(ctx context.Context) map[string]any {
+	// A reading takes time of its own, longest under load; a process is read about this far apart in
+	// both, so the shares divide by it and not by the gap alone.
+	start := processClock()
 	first := readProcesses(ctx)
-	if len(first) == 0 {
+	if len(first) == 0 || !waitProcessGap(ctx) {
 		return nil
 	}
-	elapsed, ok := waitProcessGap(ctx)
-	if !ok || elapsed <= 0 {
-		return nil
-	}
+	elapsed := processClock().Sub(start)
 	second := readProcesses(ctx)
+	if elapsed <= 0 {
+		return nil
+	}
 
 	type entry struct {
 		pid  int32
