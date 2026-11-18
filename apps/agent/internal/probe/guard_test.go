@@ -510,6 +510,63 @@ func TestGuardFailsClosedWhenItCannotTellTheListener(t *testing.T) {
 	}
 }
 
+// TestGuardJudgesAMulticallBinaryByItsApplet: busybox, toybox and dropbearmulti carry their own name
+// unless a link of the applet's name started them; the name rules judge the applet (R-1523).
+func TestGuardJudgesAMulticallBinaryByItsApplet(t *testing.T) {
+	stubHost(t, &fakeHost{
+		list: []listener{
+			lst("127.0.0.1", 8101, 300), lst("127.0.0.1", 8102, 301), lst("127.0.0.1", 8103, 302),
+			lst("127.0.0.1", 8104, 303), lst("127.0.0.1", 8105, 304), lst("127.0.0.1", 8106, 305),
+			lst("127.0.0.1", 8107, 306), lst("127.0.0.1", 8108, 307), lst("127.0.0.1", 8109, 308),
+			lst("127.0.0.1", 8110, 309), lst("127.0.0.1", 8111, 310),
+		},
+		names: map[int32]string{300: "busybox", 301: "dropbearmulti", 302: "busybox", 303: "busybox", 304: "busybox",
+			305: "toybox", 306: "busybox", 307: "busybox", 308: "tcpsvd", 309: "busybox.static", 310: "busybox"},
+		args: map[int32][]string{
+			300: {"busybox", "tcpsvd", "-vE", "0", "8101", "cat"},
+			301: {"/usr/bin/dropbearmulti", "dropbear", "-p", "8102"},
+			302: {"nc", "-lk", "-p", "8103"},
+			// 303: the arguments cannot be read.
+			304: {"busybox"},
+			305: {"toybox", "busybox", "nc"},
+			306: {"/bin/busybox", "httpd", "-f", "-p", "8107"},
+			307: {},
+			308: {"tcpsvd", "-vE", "0", "8109", "cat"},
+			// busybox runs argv[1] under any name of its own that starts with busybox.
+			309: {"/bin/busybox.static", "nc", "-lk", "-p", "8110"},
+			310: {"busybox-x", "nc", "-lk", "-p", "8111"},
+		},
+	})
+	g := NewGuard()
+
+	for _, c := range []struct{ address, want string }{
+		{"127.0.0.1:8101", "tcpsvd holds port 8101 for socket activation"},
+		{"127.0.0.1:8102", "port 8102 belongs to dropbear, which the agent never probes"},
+		{"127.0.0.1:8103", "belongs to nc, which forwards"},
+		{"127.0.0.1:8104", "the applet busybox runs cannot be read"},
+		{"127.0.0.1:8105", "the applet busybox runs cannot be told"},
+		{"127.0.0.1:8106", "the applet toybox runs cannot be told"},
+		{"127.0.0.1:8108", "the applet busybox runs cannot be told"},
+		// The link form, named after the applet by the kernel, as before.
+		{"127.0.0.1:8109", "tcpsvd holds port 8109 for socket activation"},
+		{"127.0.0.1:8110", "belongs to nc, which forwards"},
+		{"127.0.0.1:8111", "belongs to nc, which forwards"},
+	} {
+		if err := allowed(g, "tcp4", c.address); !errors.Is(err, ErrNotAllowed) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want ErrNotAllowed with %q", c.address, err, c.want)
+		}
+	}
+	if err := allowed(g, "tcp4", "127.0.0.1:8107"); err != nil {
+		t.Errorf("busybox httpd: %v, want it allowed", err)
+	}
+	if got := ProcessName(context.Background(), 300); got != "tcpsvd" {
+		t.Errorf("ProcessName(busybox tcpsvd) = %q, want tcpsvd", got)
+	}
+	if got := ProcessName(context.Background(), 303); got != "" {
+		t.Errorf("ProcessName(busybox, arguments unreadable) = %q, want none", got)
+	}
+}
+
 // TestGuardFailsClosedOnASocketSystemdHoldsAlone: a socket systemd or a super-server listens on for socket
 // activation tells nothing of the service behind it until that runs and holds the socket too.
 func TestGuardFailsClosedOnASocketSystemdHoldsAlone(t *testing.T) {

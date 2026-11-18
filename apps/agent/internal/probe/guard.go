@@ -151,6 +151,49 @@ func forwarder(name string) bool {
 	return false
 }
 
+// multicallBinaries run one of several programs (applets), chosen by the base of argv[0] or, where
+// that names the binary itself, by argv[1] (busybox tcpsvd …; dropbearmulti dropbear …). The kernel
+// names such a process after the binary unless a link of the applet's name started it.
+var multicallBinaries = []string{"busybox", "toybox", "dropbearmulti"}
+
+// isMulticall says whether name (processKey) is one of multicallBinaries. busybox counts as itself by
+// any name it starts with (busybox.static, busybox-x), as busybox does. toybox also follows a link
+// in argv[0] to the command it names; that is not told here.
+func isMulticall(name string) bool {
+	return strings.HasPrefix(name, "busybox") || slices.Contains(multicallBinaries, name)
+}
+
+// programName returns the name the name rules judge the process pid by: its name, or for one of
+// multicallBinaries the applet it runs. An applet that cannot be told is an error.
+func programName(ctx context.Context, pid int32) (string, error) {
+	name, err := processName(ctx, pid)
+	if err != nil {
+		return "", err
+	}
+	if !isMulticall(processKey(name)) {
+		return name, nil
+	}
+	args, err := processArgs(ctx, pid)
+	if err != nil {
+		return "", fmt.Errorf("the applet %s runs cannot be read: %v", name, err)
+	}
+	applet := ""
+	if len(args) > 0 {
+		// busybox drops the "-" of a login shell.
+		applet = strings.TrimPrefix(filepath.Base(args[0]), "-")
+	}
+	if isMulticall(processKey(applet)) {
+		applet = ""
+		if len(args) > 1 {
+			applet = filepath.Base(args[1])
+		}
+	}
+	if applet == "" || applet == "." || applet == "/" || isMulticall(processKey(applet)) {
+		return "", fmt.Errorf("the applet %s runs cannot be told", name)
+	}
+	return applet, nil
+}
+
 // neverProbed says whether name (processKey) is a process a probe never talks to.
 func neverProbed(name string) bool {
 	k := processKey(name)
@@ -589,7 +632,7 @@ func checkOwner(ctx context.Context, ip netip.Addr, port uint16, contained bool,
 		// systemd hands a socket it holds on to the service it starts, which accepts on it: an
 		// activator counts only on the very socket the target holds, and only a reader that names
 		// sockets can tell that; a socket of its own on the same address would take connections too.
-		if name, err := processName(ctx, l.pid); err == nil && l.sock != "" && activator(processKey(name)) {
+		if name, err := programName(ctx, l.pid); err == nil && l.sock != "" && activator(processKey(name)) {
 			held = append(held, l.sock)
 			continue
 		}
@@ -711,12 +754,12 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		if l.port != port || (l.addr != ip && !l.addr.IsUnspecified()) {
 			continue
 		}
-		name, err := processName(ctx, l.pid)
+		name, err := programName(ctx, l.pid)
 		if err != nil {
 			return fmt.Errorf("%w: the process listening on port %d cannot be read: %v", ErrNotAllowed, port, err)
 		}
 		if neverProbed(name) {
-			return fmt.Errorf("%w: port %d belongs to %s, which the agent never probes", ErrNotAllowed, port, name)
+			return fmt.Errorf("%w: port %d belongs to %.64s, which the agent never probes", ErrNotAllowed, port, name)
 		}
 		if pasta(name) {
 			if err := checkPasta(ctx, l.pid, name, ip, port); err != nil {
@@ -747,7 +790,7 @@ func judgeListener(ctx context.Context, ip netip.Addr, port uint16, contained bo
 		served = served || carries(l.addr, ip)
 	}
 	if holder != "" && !served {
-		return fmt.Errorf("%w: %s holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, holder, port)
+		return fmt.Errorf("%w: %.64s holds port %d for socket activation, the service behind it cannot be told", ErrNotAllowed, holder, port)
 	}
 	published, err := checkPublished(ctx, ip, port, maxAge)
 	if err != nil {
@@ -836,12 +879,12 @@ func checkInside(ctx context.Context, p publication, maxAge time.Duration) error
 	}
 	at := fmt.Sprintf("port %d of a container", p.to)
 	for _, pid := range pids {
-		name, err := processName(ctx, pid)
+		name, err := programName(ctx, pid)
 		if err != nil {
 			return fmt.Errorf("%w: the process listening on %s cannot be read: %v", ErrNotAllowed, at, err)
 		}
 		if neverProbed(name) {
-			return fmt.Errorf("%w: %s belongs to %s, which the agent never probes", ErrNotAllowed, at, name)
+			return fmt.Errorf("%w: %s belongs to %.64s, which the agent never probes", ErrNotAllowed, at, name)
 		}
 		if err := checkForwarder(ctx, pid, name, at); err != nil {
 			return err

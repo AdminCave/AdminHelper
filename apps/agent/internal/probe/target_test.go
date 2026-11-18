@@ -279,9 +279,10 @@ func TestResolveFindsWhereATargetListens(t *testing.T) {
 	h := &fakeHost{
 		list: []listener{
 			lst("0.0.0.0", 443, 7), lst("::", 443, 7), lst("127.0.0.1", 80, 8), lst("192.0.2.1", 8080, 9),
-			lst("0.0.0.0", 22, 0), lst("127.0.0.1", 9000, 10),
+			lst("0.0.0.0", 22, 0), lst("127.0.0.1", 9000, 10), lst("127.0.0.1", 8090, 11),
 		},
-		names: map[int32]string{7: "nginx", 8: "Nginx.EXE", 9: "java", 10: "php-fpm"},
+		names: map[int32]string{7: "nginx", 8: "Nginx.EXE", 9: "java", 10: "php-fpm", 11: "busybox"},
+		args:  map[int32][]string{11: {"busybox", "httpd", "-f", "-p", "8090"}},
 	}
 	stubHost(t, h)
 	ctx := context.Background()
@@ -300,6 +301,8 @@ func TestResolveFindsWhereATargetListens(t *testing.T) {
 		{"a process of several ports", Target{Kind: kindProcess, Name: "NGINX"}, "", ErrAmbiguousTarget},
 		{"a process of one port", Target{Kind: kindProcess, Name: "php-fpm", PortHint: 9001}, "127.0.0.1:9000", nil},
 		{"a process listening nowhere", Target{Kind: kindProcess, Name: "sshd"}, "", errNotListening},
+		{"an applet of busybox by its name", Target{Kind: kindProcess, Name: "httpd"}, "127.0.0.1:8090", nil},
+		{"busybox, which runs an applet", Target{Kind: kindProcess, Name: "busybox"}, "", errNotListening},
 		{"loopback", Target{Kind: kindLoopback, PortHint: 6379}, "127.0.0.1:6379", nil},
 	}
 	for _, c := range cases {
