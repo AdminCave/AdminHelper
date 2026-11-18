@@ -1,5 +1,5 @@
 # Agent-Installation: apt-CA lesbar für apt, smartmontools nur auf Blech — Task-Ledger
-Status: bereit · Branch: feature/ops-8 · Review: pro Task
+Status: aktiv · Branch: feature/ops-8 · Review: pro Task
 Spec: docs/features/ops-8.md (Roadmap R-0810, R-1541)
 Heavy: scenario --agents 1 — `scripts/agent-install.sh` und `box_agentbox.sh` im Diff: der Installer-Pfad über die :8445-Repo-Ebene samt CA-Flip und echtem `apt-get update` läuft nur auf einer Agent-Box (Kevin 2026-11-18: Bedingung für den Selbst-Merge).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,6 +32,14 @@ Beweis: wie T1; scripts/tests/box_agentbox.sh:159 greppt nur `CAInfo`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test multibox_test doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-8.md
 Abhängt von: T1
+
+### T4 — R-0810: Reparatur der Bestandshosts ohne erneuten Installer-Lauf beschreiben  [ ]
+Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-8.md, docs/features/ops-8.md
+Änderung: Fund der Abschlussprüfung: ein erneuter Lauf von `agent-install.sh` ohne `--server-id` endet vor dem CA-Flip (`scripts/agent-install.sh:352`) und schreibt `Verify-Peer "false"` neu. Doku DE+EN, Changelog und Spec nennen als Reparatur die zwei Handbefehle und sagen, dass nur ein Lauf mit `--server-id` und neuem Token pinnt.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-8.md
+Task-Review: am Ende
+Abhängt von: T3
 
 ## Entscheidungen
 - 2026-11-18: Ort der Kopie `/etc/apt/adminhelper-ca.crt` (Repro der Zeile), nicht Kevins Workaround-Pfad unter `/usr/local` (gehört dem Admin); Begründung in der Spec.
