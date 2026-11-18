@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-windows-1 — Windows-Agent: frpc-Tunnel, Installation als Update, Dienst-Monitoring — Task-Ledger
-Status: erledigt · Branch: feature/kern-windows-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-windows-1 · Review: pro Task
 Spec: docs/features/kern-windows-1.md (Roadmap R-1576, R-0577, R-1545, R-0708, R-1577, R-1583)
 Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Registry, w32tm) läuft nur im CI-Job agent-windows (go test auf windows-latest); lokal nur GOOS=windows Build/Vet; release.yml-Anteil im Tag-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -141,6 +141,13 @@ Beweis: PR #574 CI-Lauf 44336869597, Server-Shards 1/2: `test_the_lockstep_job_r
 Änderung: `frpcpin.go` in `_PINNED` aufnehmen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: keine (Testcode)
+
+### T13 — frpcpin.go im CI-Scope server (Fund der PR-CI)  [ ]
+Komponente: server · Dateien: .github/scripts/ci_changes.py
+Beweis: PR #574 CI-Lauf 44344584996, Server image lock 2/2: `test_every_path_a_python_suite_names_lies_in_the_scope_of_its_suite` rot; seit T12 nennt `apps/server/tests/test_release_images.py` `apps/agent/internal/frpc/frpcpin.go`, das außerhalb des Scopes `server` liegt: ein PR, der nur die Pin-Datei ändert, übersprünge die Server-Suite.
+Änderung: `apps/agent/internal/frpc/frpcpin.go` in `SCOPES["server"]` aufnehmen, mit Kommentar.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_changes.py tests/test_release_images.py
+Doku: keine (CI-Scope)
 
 ## Entscheidungen
 - T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
