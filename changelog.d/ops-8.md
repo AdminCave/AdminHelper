@@ -3,8 +3,9 @@
 - **Agent-Installation: `apt update` nach dem CA-Pinning:** `agent-install.sh` pinnte apt auf die CA unter
   `/etc/adminhelper/identity/`, die der apt-Benutzer `_apt` nicht lesen darf; danach scheiterte jedes `apt update`
   an der AdminHelper-Quelle. Der Installer legt jetzt eine lesbare Kopie `/etc/apt/adminhelper-ca.crt` an, der Agent
-  haelt sie bei jeder Erneuerung aktuell. Bestandshosts: `agent-install.sh` erneut laufen lassen (Doku
-  Agent-Rollout).
+  haelt sie bei jeder Erneuerung aktuell. Bestandshosts: die Kopie von Hand anlegen und `CAInfo` darauf
+  stellen (zwei Befehle, Doku Agent-Rollout); ein erneuter Lauf von `agent-install.sh` ohne `--server-id` pinnt
+  nicht.
 
 ### Changed
 

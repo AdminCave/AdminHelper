@@ -27,7 +27,8 @@ Ziel:
 
 Nicht-Ziele:
 - Keine Heilung kaputter Bestandshosts durch das Paket: ein Host mit kaputtem `apt update` bekommt das neue Paket
-  gar nicht erst; die Doku nennt die zwei Befehle bzw. den erneuten Lauf von `agent-install.sh`.
+  gar nicht erst; die Doku nennt die zwei Befehle (ein erneuter Lauf von `agent-install.sh` pinnt nur mit
+  `--server-id` und neuem Token, Fund der Abschlussprüfung).
 - Die Berechtigung von `/etc/adminhelper` bleibt 0700 (Schlüssel und Token liegen darunter).
 - „SMART-Check auf virtuellen Hosts nicht vorschlagen“ (Teil von R-1541) fährt nicht mit: der Check steckt in der
   Standardvorlage `linux-base` (`apps/monitoring/app/builtin_templates.py`, versionierte Vorlagen-Hashes) und gehört
@@ -56,8 +57,8 @@ Recommends) — vor T2 in der Doku von rpm/dnf nachlesen.
 ## Trade-offs & Alternativen
 - **Ort der Kopie:** `/etc/apt/adminhelper-ca.crt` (Empfehlung: Repro der Zeile, liegt bei der apt-Konfiguration,
   die sie nutzt) statt Kevins Workaround `/usr/local/share/adminhelper/repo-ca.crt` (`/usr/local` gehört dem Admin,
-  nicht einem Installer). Hosts mit dem Workaround stellt ein erneuter Lauf von `agent-install.sh` auf den neuen Pfad
-  um; die alte Kopie bleibt liegen (Doku).
+  nicht einem Installer). Hosts mit dem Workaround stellen die zwei Befehle der Doku auf den neuen Pfad um; die
+  alte Kopie bleibt liegen (Doku).
 - **Agent pflegt die Kopie nur, wenn sie existiert:** so bleibt er auf dnf- und Nicht-apt-Hosts unbeteiligt; der
   Installer legt sie an. Ein Fehler beim Nachziehen kostet die Erneuerung nicht (nur Warnung).
 - **Alternative 0711 auf `/etc/adminhelper`:** verworfen, weitere Dateien darunter würden für `_apt` erreichbar.
