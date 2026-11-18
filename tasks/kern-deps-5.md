@@ -113,8 +113,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_onl
 Doku: docs/developer/server.html DE+EN · changelog.d/kern-deps-5.md
 Task-Review: am Ende
 
-### T11 — R-1585: Stack-Test startet Prozesse von app über setpriv  [ ]
+### T11 — R-1585: Stack-Test startet Prozesse von app über setpriv  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6cca55f40 2026-11-18T15:08:29+01:00
+Review: approve (.ah-out/review/kern-deps-5/T11.verdict.json)
 Änderung: die vier `gosu`-Stellen (Schritt 13 Gegenprobe, Schritt 14c ping) auf `setpriv --reuid=app --regid=app
 --init-groups env …`, wie die Entrypoints; ohne `gosu` im Image fiele der integration-stack-Job der PR-CI rot
 (Harness-Pfad, eigene Task wegen belegtem Produktschaden: roter Produkttest).
