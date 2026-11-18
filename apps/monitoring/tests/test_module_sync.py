@@ -24,7 +24,7 @@ from app.catalog.modules.openldap import MODULE as LDAP_MODULE
 from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.catalog.modules.wordpress import MODULE as WP_MODULE
 from app.check_configs import ProbeConfig
-from app.discovery import apply_discovery
+from app.discovery import MAX_CONTAINER_PORTS, apply_discovery
 from app.models import (
     Base,
     MonitorCheck,
@@ -422,6 +422,25 @@ def test_a_container_without_the_hinted_port_binds_no_check(ports, reason):
 )  # fmt: skip
 def test_the_listening_ports_decide_before_the_exposed_ones(ports, listening, reason):
     web = {**CONTAINERS[0], "ports": ports, "listening": listening}
+
+    config, why = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, [web, *CONTAINERS[1:]])
+
+    assert why == reason
+    assert (config is None) == (reason is not None)
+
+
+@pytest.mark.parametrize(
+    ("count", "reason"),
+    [
+        # A full list may be cut (agent and server keep MAX_CONTAINER_PORTS, lowest first):
+        # 8000 may lie beyond the cut, so the agent decides.
+        pytest.param(MAX_CONTAINER_PORTS, None, id="full-list-unknown"),
+        pytest.param(MAX_CONTAINER_PORTS - 1, "container paperless-web-1 has no port 8000",
+                     id="shorter-list-is-whole"),
+    ],
+)  # fmt: skip
+def test_an_exposed_list_at_the_cap_counts_as_unknown(count, reason):
+    web = {**CONTAINERS[0], "ports": _tcp(*range(1, count + 1)), "listening": None}
 
     config, why = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, [web, *CONTAINERS[1:]])
 

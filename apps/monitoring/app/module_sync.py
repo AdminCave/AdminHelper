@@ -28,7 +28,7 @@ from app.catalog.loader import Catalog, get_catalog
 from app.catalog.model import Alternative, Check, Module
 from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
 from app.core.time import utcnow_naive
-from app.discovery import image_matches, image_repo, image_tag
+from app.discovery import MAX_CONTAINER_PORTS, image_matches, image_repo, image_tag
 from app.models import (
     MonitorCheck,
     MonitorDiscovery,
@@ -265,12 +265,17 @@ def _target_name(
 def _seen_ports(name: str, containers: list[dict]) -> tuple[set[int], bool]:
     """(the TCP ports the last scan saw at the container, whether they are the listening
     ones): those listening in its network if the scan saw them, else the exposed ones (the
-    docservice of the OnlyOffice image listens on 8000, the image exposes 80 and 443)."""
+    docservice of the OnlyOffice image listens on 8000, the image exposes 80 and 443).
+    A full exposed list counts as none seen."""
     for c in containers:
         if c["name"] == name:
             listening = c.get("listening")
             if listening is not None:
                 return set(listening), True
+            if len(c["ports"]) >= MAX_CONTAINER_PORTS:
+                # Agent and server cut the list there (lowest ports first): a port beyond
+                # the cut would pass for missing.
+                return set(), False
             return {p["private"] for p in c["ports"] if p["proto"] == "tcp"}, False
     return set(), False
 
