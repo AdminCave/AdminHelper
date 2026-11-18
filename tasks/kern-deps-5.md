@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (nur Begründungen in audit.toml)
 Abhängt von: T1
 
-### T3 — R-1552: Go-Stufe des frps-Images auf 1.27.4  [ ]
+### T3 — R-1552: Go-Stufe des frps-Images auf 1.27.4  [x]
 Komponente: server · Dateien: apps/frps/Dockerfile
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @ee858ad48 2026-11-18T13:30:02+01:00
+Review: approve (.ah-out/review/kern-deps-5/T3.verdict.json)
 Änderung: `golang:1.27.3-alpine@sha256:…` → `golang:1.27.4-alpine` mit dem Digest aus R-1552 (vor dem Schreiben
 mit `docker buildx imagetools inspect` gegenprüfen).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_policy_image.py tests/test_release_images.py
