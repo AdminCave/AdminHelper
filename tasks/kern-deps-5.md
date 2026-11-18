@@ -25,8 +25,10 @@ keine Änderung an `Cargo.toml`. Build, Clippy und Tests grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: → T10
 
-### T2 — R-1586: cargo-audit-Warnungen beheben oder begründen  [ ]
+### T2 — R-1586: cargo-audit-Warnungen beheben oder begründen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/.cargo/audit.toml, apps/desktop/src-tauri/Cargo.lock
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @87a622753 2026-11-18T13:51:00+01:00
+Review: approve (.ah-out/review/kern-deps-5/T2.verdict.json)
 Änderung: nach T1 `cargo audit` lesen; was ein kompatibles Update behebt, beheben; jede verbleibende Warnung mit
 Kommentar (Crate, Grund, über welche Abhängigkeit) in `audit.toml`. Die `ignore`-Liste bleibt unverändert
 (`license_gate.rs`).

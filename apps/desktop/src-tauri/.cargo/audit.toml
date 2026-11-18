@@ -5,6 +5,19 @@
 # Read by `cargo audit` from this directory (audit.yml, job "cargo audit (desktop)").
 # rdp_embedded/license_gate.rs keeps the ignore list at exactly the advisory below.
 
+# Allowed warnings (cargo audit reports them, the job does not fail on them). None has a
+# fixed release inside the semver ranges of Cargo.toml (checked 2026-11-18, R-1586):
+# - unsound RUSTSEC-2024-0429, glib 0.18 (VariantStrIter): via gtk 0.18 <- muda/tao <- tauri.
+#   Fixed in glib 0.20, which only a gtk-rs move in Tauri brings.
+# - unmaintained RUSTSEC-2024-0370, proc-macro-error: build-time macro of glib-macros 0.18.
+# - unmaintained RUSTSEC-2026-0370/0371/0372, zvariant, zbus_names, zvariant_derive 5: via
+#   zbus 5 <- secret-service (keyring), tauri-plugin-notification, tauri-plugin-single-instance.
+# - unmaintained RUSTSEC-2026-0543, chrono: direct dependency and via russh-sftp.
+# - unmaintained RUSTSEC-2023-0089, atomic-polyfill: via heapless 0.7 <- iso7816 <- winscard
+#   <- sspi (IronRDP).
+# - unmaintained RUSTSEC-2026-0441, pin-utils: via async-dnssd <- sspi (IronRDP).
+# Drop a line once its crate leaves the build graph.
+
 [advisories]
 # RUSTSEC-2023-0071, rsa (Marvin: timing side channel in private-key operations), no fixed
 # release. IronRDP pulls rsa in through picky, sspi and winscard. The embedded RDP session logs
