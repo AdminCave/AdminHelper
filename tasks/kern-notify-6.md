@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-notify-6 — Benachrichtigungs-Kanäle und Mail-Design im Admin-Panel — Task-Ledger
-Status: geplant · Branch: feature/kern-notify-6 · Review: pro Task
+Status: aktiv · Branch: feature/kern-notify-6 · Review: pro Task
 Spec: docs/features/kern-notify-6.md (Roadmap R-1527, R-1531, R-1533)
 Heavy: linux-full — neue Server-API und Migrationen, internes Endpoint server↔monitoring, Alerter-Mailweg; kein Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
