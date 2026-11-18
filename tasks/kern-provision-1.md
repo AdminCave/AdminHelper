@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/kern-provision-1/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_state.py tests/test_openapi_snapshot.py tests/test_response_shapes.py
 Doku: keine (interne Route)
 
-### T5 — R-1597/R-1594: GET /api/servers/{id}/provision/progress  [ ]
+### T5 — R-1597/R-1594: GET /api/servers/{id}/provision/progress  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/router.py, apps/server/app/modules/provisioning/schemas.py, apps/server/app/modules/provisioning/progress.py, apps/server/tests/test_provisioning_progress.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8dc9418a8 2026-11-18T18:15:35+01:00
+Review: approve (.ah-out/review/kern-provision-1/T5.verdict.json)
 Änderung: Neu `progress.py` (SPDX). Die Route liefert:
 - Token: neuester, `createdAt`/`usedAt`/`expiresAt`
 - Zertifikat: neuestes der Agent-Identität (`subject_id`=Server-ID, Scope agent), `issuedAt`

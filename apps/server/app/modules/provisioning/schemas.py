@@ -97,3 +97,42 @@ class ProvisionPlatformOut(BaseModel):
 
 class ProvisionPlatformsOut(BaseModel):
     platforms: list[ProvisionPlatformOut]
+
+
+# --- Provisioning progress (GET /api/servers/{id}/provision/progress) -------
+
+
+class ProgressTokenOut(BaseModel):
+    createdAt: Optional[str]
+    usedAt: Optional[str]
+    expiresAt: Optional[str]
+
+
+class ProgressCertificateOut(BaseModel):
+    issuedAt: Optional[str]
+
+
+class ProgressHostFactsOut(BaseModel):
+    os: Optional[str]
+    platform: Optional[str]
+    platformVersion: Optional[str]
+
+
+class ProgressReportOut(BaseModel):
+    lastReportAt: Optional[str]
+    hostFacts: Optional[ProgressHostFactsOut]
+
+
+class ProgressTunnelOut(BaseModel):
+    configured: bool
+    connected: Optional[bool]
+
+
+class ProvisionProgressOut(BaseModel):
+    token: Optional[ProgressTokenOut]
+    certificate: Optional[ProgressCertificateOut]
+    report: Optional[ProgressReportOut]
+    monitoringReachable: bool
+    tunnel: ProgressTunnelOut
+    reportedPlatform: Optional[Literal["linux", "windows", "freebsd", "opnsense", "other"]]
+    platformMismatch: bool

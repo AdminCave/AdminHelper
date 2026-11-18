@@ -7,6 +7,7 @@
 POST /api/servers/{server_id}/provision/token       — create token (admin)
 GET  /api/servers/{server_id}/provision/tokens      — list active tokens (admin)
 POST /api/servers/{server_id}/provision/activate    — redeem token (X-Provision-Token)
+GET  /api/servers/{server_id}/provision/progress    — provisioning progress (admin, progress.py)
 GET  /api/provisioning/platforms                    — platform catalog (admin, catalog.py)
 
 Activate response schema:
@@ -54,9 +55,11 @@ from app.modules.frp.policy import sync_policy
 from app.modules.provisioning.catalog import build_catalog
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
+from app.modules.provisioning.progress import build_progress
 from app.modules.provisioning.schemas import (
     ActivateOut,
     ProvisionPlatformsOut,
+    ProvisionProgressOut,
     ProvisionTokenCreatedOut,
     ProvisionTokenOut,
 )
@@ -78,6 +81,20 @@ def list_platforms(
         enroll_port=config.ENROLL_PORT,
         frp_port=config.FRP_BIND_PORT,
     )
+
+
+@router.get("/{server_id}/provision/progress", response_model=ProvisionProgressOut)
+def provision_progress(
+    server_id: str,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+    _scope=Depends(require_scope(SCOPE_ACCESS)),
+):
+    """How far the provisioning of a server got: token, certificate, first report, tunnel."""
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    return build_progress(db, server)
 
 
 @router.post("/{server_id}/provision/token", response_model=ProvisionTokenCreatedOut)
