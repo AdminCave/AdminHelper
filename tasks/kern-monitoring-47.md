@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-47 — Glocke: Vorfälle schließen und verlorene Meldungen nachholen — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-47 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-47 · Review: am Ende
 Spec: docs/features/kern-monitoring-47.md (Roadmap R-1571, R-1572)
 Heavy: none — nur Monitoring-Dienst (Router, Systemjob), kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
