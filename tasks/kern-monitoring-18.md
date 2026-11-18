@@ -56,14 +56,14 @@ Doku: → T7
 Abhängt von: T2
 
 ### T4 — R-1267: Netz-Freigaben in der Discovery, raus aus der Plattenliste  [ ]
-Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_linux.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_windows.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go
+Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_linux.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_windows.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/probe/mountinfo.go, apps/agent/internal/probe/mountinfo_test.go
 Änderung:
 - Neuer Abschnitt `Shares []Share json:"shares"` mit `{mountpoint, fstype}` und eigenem `complete`-Flag.
 - Er liest `/proc/self/mountinfo` (nfs, nfs4, cifs, smb3), nur unter Linux, und ruft dabei kein `statfs` auf.
 - Die Quelle (Gerät, Export) geht nicht ins Inventar. Kappung über `maxShares`.
 - `skipFSTypes` bekommt nfs, nfs4, cifs und smb3.
 - Tests: Parser mit Fixture (Quelle fehlt im Ergebnis); der Collector überspringt Netz-Typen.
-Verify: bash scripts/dev/verify.sh agent --strict -- -run TestShares|TestRun|TestCollectDisks|TestSkip
+Verify: bash scripts/dev/verify.sh agent --strict -- -run TestShare|TestNoShares|TestRun|TestAPart|TestTheInventory|TestSkip
 Doku: → T7
 Abhängt von: T2
 
