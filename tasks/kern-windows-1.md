@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-windows-1 — Windows-Agent: frpc-Tunnel, Installation als Update, Dienst-Monitoring — Task-Ledger
-Status: erledigt · Branch: feature/kern-windows-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-windows-1 · Review: pro Task
 Spec: docs/features/kern-windows-1.md (Roadmap R-1576, R-0577, R-1545, R-0708, R-1577, R-1583)
 Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Registry, w32tm) läuft nur im CI-Job agent-windows (go test auf windows-latest); lokal nur GOOS=windows Build/Vet; release.yml-Anteil im Tag-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -123,6 +123,20 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html
 Task-Review: am Ende
+
+### T11 — Fake-frpc im Windows-Test endet nicht mehr am Deadlock (Fund der PR-CI)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/frpc/supervisor_windows_test.go
+Beweis: PR #574 CI-Lauf 44336869597, Job „Go Agent (test, Windows)“: `TestSupervisorStartsRestartsAndStopsFrpc` „restart: stop frpc: TerminateProcess: Access is denied“. `fakeFrpcMain` blockiert mit `select {}`; ohne weitere Goroutine bricht die Go-Laufzeit mit „all goroutines are asleep - deadlock!“ und Exit 2 ab (Probe unter Linux: exit status 2), der Fake stirbt also sofort, und `Kill` trifft einen endenden Prozess.
+Änderung: Der Fake wartet mit `time.Sleep` in einer Schleife statt `select {}`, bis der Supervisor ihn beendet.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (Testcode)
+
+### T12 — Lockstep-Test kopiert frpcpin.go mit (Fund der PR-CI)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Beweis: PR #574 CI-Lauf 44336869597, Server-Shards 1/2: `test_the_lockstep_job_reads_the_frp_version_of_the_frps_image` rot; der Step „Compare the FRP_VERSION pins“ liest seit T3 `apps/agent/internal/frpc/frpcpin.go`, die Kopie in `_PINNED` hat die Datei nicht.
+Änderung: `frpcpin.go` in `_PINNED` aufnehmen.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
+Doku: keine (Testcode)
 
 ## Entscheidungen
 - T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
