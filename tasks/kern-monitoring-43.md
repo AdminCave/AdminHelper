@@ -17,15 +17,15 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_tls
 Doku: → T4
 
 ### T2 — Katalog: zentrale Checks in Modulen binden (R-1501)  [x]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/routers/findings.py, apps/monitoring/tests/test_catalog.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_checks_crud.py
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_catalog.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_checks_crud.py
 Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0c6a6a29b 2026-11-18T09:34:46+01:00
 Review: approve (.ah-out/review/kern-monitoring-43/T2.verdict.json)
 Änderung: Ein Katalog-`Check` mit `central: true` nennt einen Sensor aus `CENTRAL_SENSORS`, Ziel `vhost`, Params
 nach dessen Schema, ein Intervall nicht unter dem Sensor-Minimum, keine Felder, Regeln, Zugangsdaten. `module_sync`
 macht daraus eine Zeile `check_type="central"` mit `CentralConfig` (`host` = Instanzname, `port` = vHost-Port für
 `tls`); Special-Use-Namen (Spec) werden mit `not a public name` übersprungen; `_update` behält das Intervall der
-Zeile. `routers/checks.py`: eine zentrale Modul-Zeile behält Server, Sensor und Host. `GET /catalog` nennt
-`central`. Tests: Adopt legt zentrale Zeilen an, Catalog-Sync stumm, Grabstein, gone schaltet ab, interner Name
+Zeile. `routers/checks.py`: eine zentrale Modul-Zeile behält Server, Sensor und Host. `GET /catalog` bleibt
+ohne `central` (Entscheidungen). Tests: Adopt legt zentrale Zeilen an, Catalog-Sync stumm, Grabstein, gone schaltet ab, interner Name
 übersprungen, Plan des Agents ohne zentrale Zeilen, Umbiegen per PUT abgelehnt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py tests/test_module_sync.py tests/test_checks_crud.py
 Doku: → T4
