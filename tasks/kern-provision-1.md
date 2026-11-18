@@ -78,7 +78,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra
 Doku: → T10
 Abhängt von: T7
 
-### T9 — R-1596: Doku-Link im Fenster  [?] (Ziel des Doku-Links: GitHub-Quelltext der HTML-Datei oder eine gehostete Doku?)
+### T9 — R-1596: Doku-Link im Fenster  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/lib/provisioning/docs.ts
 Änderung: Der Link im Fenster setzt die Basis-URL aus Kevins Antwort vor `doc.<sprache>` des Katalogs und öffnet sie über den Shell-Opener.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/provisioning
@@ -98,3 +98,5 @@ Abhängt von: T3, T8
 - 2026-11-18 Plan: Windows ohne Installationsbefehl bis R-1578 (Notiz an R-1596).
 - 2026-11-18 Plan: Monitoring-Route in `agent.py`, nicht `checks.py` (offen auf feature/kern-monitoring-45).
 - 2026-11-18 T6 vor T3/T5: die Antwortformen stehen als Vertrag in der Spec („Antwortformen“); die Zuordnung der neuen Typen im Vertragstest `types.contract.test.ts` kommt mit T7, wenn der Server-Snapshot sie trägt.
+- 2026-11-18 T9: Kevin: Doku-Link als GitHub-blob-Link (`https://github.com/AdminCave/AdminHelper/blob/main/docs/…#anker`).
+- 2026-11-18 T3 (aus security T6): ein `powershell`-Befehlskopf ruft ein Skript oder lehnt Werte mit `"` ab — Windows PowerShell 5.1 reicht eingebettete `"` an native `.exe` kaputt weiter. T7 nutzt `ProvisionPlatformId`/`ProvisionAction` oder streicht sie und entfernt die Formen-Kopie im Tab (reviewer T6).
