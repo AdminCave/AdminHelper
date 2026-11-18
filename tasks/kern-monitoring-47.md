@@ -10,8 +10,8 @@ Heavy: none — nur Monitoring-Dienst (Router, Systemjob), kein Stack-, Gateway-
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Reihenfolge: T1 nach dem Merge von `feature/kern-monitoring-45` (#568, ändert `routers/checks.py`); T2 nach T1
-(der Job holt die Entwarnung eines gescheiterten Abschalt-POSTs nach); T3 zuletzt.
+Reihenfolge: T1 nach dem Merge von `feature/kern-monitoring-45` (#568, ändert `routers/checks.py`); T2 ist davon
+unabhängig und darf vorher laufen (die Regel für abgeschaltete Checks gilt unabhängig von T1); T3 zuletzt.
 
 ## Tasks
 
@@ -34,7 +34,6 @@ bei Fehlschlag zurückgeben; stumme Checks überspringen. Erst der rote Test (ge
 nach), dann Deckel, Wartung, abgeschalteter Check, laufende Reservierung.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py tests/test_alerter_hub.py
 Doku: → T3
-Abhängt von: T1
 
 ### T3 — Doku und CHANGELOG  [ ]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-47.md
