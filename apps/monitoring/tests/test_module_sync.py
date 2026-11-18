@@ -33,6 +33,7 @@ from app.models import (
     MonitorModuleTombstone,
     MonitorState,
 )
+from app.module_plan import build_plan
 from app.module_sync import (
     AdoptError,
     adopt,
@@ -1230,3 +1231,237 @@ def test_a_new_definition_that_does_not_bind_keeps_the_old_one(db, actions):
     assert why == "no container for this instance"
     assert (web.config, web.module_check_hash, web.enabled) == (before, old_hash, True)
     assert web.id in result.enabled
+
+
+# --- central checks of a vhost (R-1501) ---------------------------------------------
+
+SERVED = {
+    "key": "served",
+    "name": "Served",
+    "sensor": "app",
+    "target": {"kind": "vhost"},
+    "params": {"view": "web_vhost_cert"},
+    "interval": 3600,
+    "fields": ["served_days_left"],
+}
+RESOLVES = {
+    "key": "resolves",
+    "name": "Resolves",
+    "sensor": "dns",
+    "central": True,
+    "target": {"kind": "vhost"},
+    "interval": 900,
+}
+OUTSIDE = {
+    "key": "outside",
+    "name": "Outside",
+    "sensor": "tls",
+    "central": True,
+    "target": {"kind": "vhost"},
+    "params": {"expiry": False},
+    "interval": 3600,
+}
+
+
+def _site(*checks):
+    return (
+        "site",
+        {
+            "id": "site",
+            "name": "Site",
+            "version": 1,
+            "instance": "vhost",
+            "detect": {"vhost_tls": True},
+            "checks": list(checks),
+        },
+    )
+
+
+SITE_AGENT = load_catalog([_site(SERVED)])
+SITE = load_catalog([_site(SERVED, RESOLVES, OUTSIDE)])
+SITE_EXPECTED = load_catalog(
+    [_site(SERVED, {**RESOLVES, "params": {"expected": ["192.0.2.10"]}}, OUTSIDE)]
+)
+SITE_SUMMARY = {"server": "nginx", "port": 8443, "tls": True}
+
+
+def test_the_site_catalogs_are_valid():
+    assert [c.errors for c in (SITE_AGENT, SITE, SITE_EXPECTED)] == [(), (), ()]
+
+
+def _central(check_key, key="shop.example.org", summary=SITE_SUMMARY):
+    check = next(c for c in SITE.modules["site"].checks if c.key == check_key)
+    return module_sync.central_config(check, key, summary)
+
+
+def test_a_central_check_asks_the_vhosts_name_and_the_tls_one_its_port():
+    assert _central("resolves") == (
+        {"sensor": "dns", "host": "shop.example.org", "params": {}},
+        None,
+    )
+    assert _central("outside") == (
+        {"sensor": "tls", "host": "shop.example.org", "params": {"expiry": False}, "port": 8443},
+        None,
+    )
+    assert _central("outside", summary={}) == (None, "no port for this vhost")
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "localhost",
+        "app.localhost",
+        "shop.test",
+        "shop.example",
+        "shop.invalid",
+        "nas.local",
+        "nas.home.arpa",
+        "wiki.internal",
+        "wiki.lan",
+        "WIKI.HOME.",
+    ],
+)
+def test_a_name_no_public_resolver_answers_gets_no_central_check(key):
+    assert _central("resolves", key) == (None, "not a public name")
+    assert _central("outside", key) == (None, "not a public name")
+
+
+@pytest.mark.parametrize("key", ["lan.example.org", "home.example.net", "local-shop.de"])
+def test_a_special_word_inside_a_public_name_does_not_hide_it(key):
+    config, why = _central("resolves", key)
+    assert why is None and config["host"] == key
+
+
+def _site_finding(db, key="shop.example.org"):
+    return _finding(db, "site", key, summary=SITE_SUMMARY)
+
+
+def test_adopting_a_vhost_creates_its_central_checks(db, actions):
+    finding = _site_finding(db)
+
+    result = adopt(db, finding.id, catalog=SITE, now=NOW)
+
+    checks = _checks(db, finding)
+    assert {key: row.check_type for key, row in checks.items()} == {
+        "served": "probe",
+        "resolves": "central",
+        "outside": "central",
+    }
+    assert json.loads(checks["outside"].config) == {
+        "sensor": "tls",
+        "host": "shop.example.org",
+        "params": {"expiry": False},
+        "port": 8443,
+    }
+    assert (checks["resolves"].interval, checks["outside"].interval) == ("15m", "1h")
+    assert result.skipped == []
+    assert sorted(actions) == sorted(
+        [
+            ("add", checks["served"].id, "1h", "probe"),
+            ("add", checks["resolves"].id, "15m", "central"),
+            ("add", checks["outside"].id, "1h", "central"),
+        ]
+    )
+    # The agent's plan carries only its own probe.
+    plan = build_plan(db, "srv-1", catalog=SITE, now=NOW)
+    assert [p["id"] for p in plan["probes"]] == [checks["served"].id]
+
+
+def test_adopting_an_internal_name_skips_its_central_checks(db, actions):
+    finding = _site_finding(db, "wiki.lan")
+
+    result = adopt(db, finding.id, catalog=SITE, now=NOW)
+
+    assert set(_checks(db, finding)) == {"served"}
+    assert result.skipped == [
+        {"key": "resolves", "reason": "not a public name"},
+        {"key": "outside", "reason": "not a public name"},
+    ]
+
+
+def test_the_catalog_update_adds_the_central_checks_silent(db, actions):
+    finding = _site_finding(db)
+    adopt(db, finding.id, catalog=SITE_AGENT, now=NOW)
+    actions.clear()
+
+    assert sync_catalog(db, catalog=SITE) == 1
+
+    checks = _checks(db, finding)
+    assert [(checks[k].check_type, checks[k].silent) for k in ("resolves", "outside")] == [
+        ("central", True),
+        ("central", True),
+    ]
+    assert (finding.kind, finding.status) == ("changed", "open")
+    assert actions == []
+
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+
+    assert not any(row.silent for row in checks.values())
+
+
+def test_a_deleted_central_check_is_not_created_again(db, actions):
+    finding = _site_finding(db)
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+    resolves = _checks(db, finding)["resolves"]
+    tombstone_module_check(db, resolves)
+    db.delete(resolves)
+    db.commit()
+    _reopen(db, finding, "changed")
+
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+
+    assert set(_checks(db, finding)) == {"served", "outside"}
+
+
+def test_a_gone_vhost_switches_its_central_checks_off(db, actions):
+    finding = _site_finding(db)
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+    _reopen(db, finding, "gone")
+    actions.clear()
+
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+
+    assert not any(row.enabled for row in _checks(db, finding).values())
+    assert len(actions) == 3
+
+
+def test_a_central_check_takes_a_new_definition_and_keeps_interval_and_partner(db, actions):
+    finding = _site_finding(db)
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+    resolves = _checks(db, finding)["resolves"]
+    resolves.interval = "1h"
+    resolves.config = json.dumps({**json.loads(resolves.config), "pair_check_id": "pair-1"})
+    db.commit()
+    _reopen(db, finding, "changed")
+
+    result = adopt(db, finding.id, catalog=SITE_EXPECTED, now=NOW)
+
+    assert result.updated == [resolves.id]
+    assert resolves.interval == "1h"
+    assert json.loads(resolves.config) == {
+        "sensor": "dns",
+        "host": "shop.example.org",
+        "params": {"expected": ["192.0.2.10"]},
+        "pair_check_id": "pair-1",
+    }
+
+
+def test_a_check_the_catalog_moved_to_the_service_is_not_rewritten(db, actions):
+    finding = _site_finding(db)
+    adopt(db, finding.id, catalog=SITE, now=NOW)
+    resolves = _checks(db, finding)["resolves"]
+    resolves.check_type = "probe"
+    before = resolves.config
+    db.commit()
+    _reopen(db, finding, "changed")
+
+    result = adopt(db, finding.id, catalog=SITE_EXPECTED, now=NOW)
+
+    assert result.updated == []
+    assert result.skipped == [
+        {
+            "key": "resolves",
+            "reason": "the catalog moved the check between the agent and the monitoring service",
+        }
+    ]
+    assert resolves.config == before

@@ -5,7 +5,7 @@
 """Taking over what discovery found (R-1223, docs/features/arch-monitoring-module.md).
 
 Adopting a finding turns the catalog checks of its module into probe checks bound to
-the instance, or switches them on again; adopting a "gone" finding switches them off.
+the instance (central checks of its public name, R-1501), or switches them on again; adopting a "gone" finding switches them off.
 Nothing here deletes a check. At start-up, adopted instances follow a changed catalog:
 checks the update added start silent and the finding turns "changed", so the admin
 decides when they alert. A check whose catalog definition changed is offered as an
@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog.loader import Catalog, get_catalog
 from app.catalog.model import Alternative, Check, Module
-from app.check_configs import ProbeConfig
+from app.check_configs import CENTRAL_SENSORS, CentralConfig, ProbeConfig
 from app.core.time import utcnow_naive
 from app.discovery import image_matches, image_repo, image_tag
 from app.models import (
@@ -42,6 +42,19 @@ logger = logging.getLogger(__name__)
 
 # The catalog's probe intervals in the notation of a check row.
 _INTERVAL_TEXT = {300: "5m", 900: "15m", 3600: "1h", 86400: "24h"}
+# Names no public resolver answers (RFC 6761, RFC 6762, RFC 8375, .internal) and .lan and
+# .home by habit: a central check of them could only ever say "not public" (Kevin 2026-11-18).
+_PRIVATE_SUFFIXES = (
+    "localhost",
+    "test",
+    "example",
+    "invalid",
+    "local",
+    "home.arpa",
+    "internal",
+    "lan",
+    "home",
+)
 
 
 class AdoptError(Exception):
@@ -331,6 +344,38 @@ def probe_config(
     return config, None
 
 
+def _public_name(name: str) -> bool:
+    name = name.lower().rstrip(".")
+    return not any(name == s or name.endswith("." + s) for s in _PRIVATE_SUFFIXES)
+
+
+def central_config(check: Check, key: str, summary: dict) -> tuple[dict | None, str | None]:
+    """(the central config of the catalog check bound to the vhost named key, None) or
+    (None, why it cannot be bound)."""
+    if not _public_name(key):
+        return None, "not a public name"
+    config: dict = {"sensor": check.sensor, "host": key, "params": dict(check.params)}
+    if CENTRAL_SENSORS[check.sensor].default_port is not None:
+        # From outside on the port the vhost listens on, like the agent's own check.
+        if summary.get("port") is None:
+            return None, "no port for this vhost"
+        config["port"] = summary["port"]
+    try:
+        CentralConfig.model_validate(config)
+    except ValueError as exc:
+        logger.warning("Catalog check %s does not bind to %s: %s", check.key, key, exc)
+        return None, "the bound check does not hold"
+    return config, None
+
+
+def _bound_config(
+    module: Module, check: Check, key: str, summary: dict, containers: list[dict]
+) -> tuple[dict | None, str | None]:
+    if check.central:
+        return central_config(check, key, summary)
+    return probe_config(module, check, key, summary, containers)
+
+
 def _create(
     db: Session,
     finding: MonitorFinding,
@@ -341,14 +386,14 @@ def _create(
     *,
     silent: bool,
 ) -> tuple[MonitorCheck | None, str | None]:
-    config, reason = probe_config(module, check, finding.instance_key, summary, containers)
+    config, reason = _bound_config(module, check, finding.instance_key, summary, containers)
     if config is None:
         return None, reason
     row = MonitorCheck(
         id=str(uuid.uuid4()),
         server_id=finding.server_id,
         name=f"{module.name} ({finding.instance_key}): {check.name}",
-        check_type="probe",
+        check_type="central" if check.central else "probe",
         config=json.dumps(config),
         enabled=True,
         interval=_INTERVAL_TEXT[check.interval],
@@ -373,8 +418,11 @@ def _update(
 ) -> str | None:
     """Give the row the catalog's new definition; why not, or None. The admin's interval
     and timeout stay (the only parts of a probe config besides rules the admin can edit,
-    routers/checks.py), as do the row's name and switches."""
-    config, reason = probe_config(module, check, key, summary, containers)
+    routers/checks.py), as do the row's name and switches; a central row keeps its
+    interval and the partner the admin gave it."""
+    if (row.check_type == "central") != check.central:
+        return "the catalog moved the check between the agent and the monitoring service"
+    config, reason = _bound_config(module, check, key, summary, containers)
     if config is None:
         return reason
     try:
@@ -382,11 +430,11 @@ def _update(
     except (TypeError, ValueError):
         old = {}
     if isinstance(old, dict):
-        for part in ("interval_s", "timeout_s"):
+        for part in ("pair_check_id",) if check.central else ("interval_s", "timeout_s"):
             if part in old:
                 config[part] = old[part]
     try:
-        ProbeConfig.model_validate(config)
+        (CentralConfig if check.central else ProbeConfig).model_validate(config)
     except ValueError:
         return "the updated check does not hold"
     row.config = json.dumps(config)

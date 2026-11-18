@@ -17,15 +17,22 @@ finds them again at each run, and a key file it never opens.
 chain_ok is shown, not rated: an internal CA the host does not trust would warn for good.
 A vhost whose certificate file the agent cannot tell (a variable in the path) leaves the second
 check unknown. Not covered: vhosts of a web server in a container.
+
+Version 2 (R-1501) adds two central checks the monitoring service runs against the domain from
+outside: dns (resolution against its baseline, delegation and DNSSEC) and outside (the handshake
+on the vhost's port, CAA and ARI). The outside check leaves the expiry to the certificate check
+(Kevin 2026-11-18: one expiry alert per domain, with the agent's thresholds). A name that is
+never public (a special-use ending such as .lan or .home.arpa) gets no central checks.
 """
 
 MODULE = {
     "id": "web_domain",
     "name": "Web domain",
-    "version": 1,
+    "version": 2,
     "description": (
         "A domain a web server of this host serves with TLS: the lifetime and name of the "
-        "certificate it serves, and whether the server was reloaded after a renewal."
+        "certificate it serves, whether the server was reloaded after a renewal, and from "
+        "outside its resolution, delegation, DNSSEC, handshake and CAA."
     ),
     "detect": {"vhost_tls": True},
     "instance": "vhost",
@@ -55,6 +62,23 @@ MODULE = {
             "rules": [
                 {"field": "reload_missing", "op": "eq", "value": True, "level": "warning"},
             ],
+        },
+        {
+            "key": "dns",
+            "name": "Resolution from outside",
+            "sensor": "dns",
+            "central": True,
+            "target": {"kind": "vhost"},
+            "interval": 900,
+        },
+        {
+            "key": "outside",
+            "name": "Handshake from outside",
+            "sensor": "tls",
+            "central": True,
+            "target": {"kind": "vhost"},
+            "params": {"expiry": False},
+            "interval": 3600,
         },
     ],
     "card": [

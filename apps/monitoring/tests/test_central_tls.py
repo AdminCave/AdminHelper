@@ -179,10 +179,19 @@ class _Turns:
 
 
 def _probe(
-    server, pki, host=HOST, *, now=T0 + timedelta(days=50), store=None, addresses=("127.0.0.1",)
+    server,
+    pki,
+    host=HOST,
+    *,
+    now=T0 + timedelta(days=50),
+    store=None,
+    addresses=("127.0.0.1",),
+    expiry=True,
 ):
     store = store or Store([pki[0].cert])
-    return tls.probe(host, addresses, server.port, store=store, now=now, limits=_Turns())
+    return tls.probe(
+        host, addresses, server.port, store=store, now=now, limits=_Turns(), expiry=expiry
+    )
 
 
 # --- trust: chain and host name ---
@@ -359,6 +368,51 @@ def test_an_expired_certificate_is_critical_with_its_end(serve, pki):
     assert result.status == "critical"
     assert result.message == "certificate expired on 2026-04-11T00:00:00Z"
     assert result.metrics == {"days_left": -1.0, "lifetime_pct": 0.0}
+
+
+# --- without expiry: the lifetime is shown, the agent check rates it (R-1501) ---
+
+
+@pytest.mark.parametrize("days_in", [76, 91])
+def test_without_expiry_a_short_lifetime_stays_ok(serve, pki, days_in):
+    server = serve(_leaf(pki[1]), [pki[1].cert])
+
+    result = _probe(server, pki, now=T0 + timedelta(days=days_in), expiry=False)
+
+    assert result.status == "ok"
+    assert result.message.startswith("certificate valid until")
+    assert result.metrics["days_left"] == 100 - days_in
+
+
+def test_without_expiry_an_expired_certificate_is_ok_with_its_end(serve, pki):
+    server = serve(_leaf(pki[1]), [pki[1].cert])
+
+    result = _probe(server, pki, now=T0 + timedelta(days=101), expiry=False)
+
+    assert result.status == "ok"
+    assert result.message == "certificate expired on 2026-04-11T00:00:00Z"
+    assert result.metrics == {"days_left": -1.0, "lifetime_pct": 0.0}
+
+
+def test_without_expiry_an_expired_certificate_is_still_judged_for_its_name(serve, pki):
+    server = serve(_leaf(pki[1]), [pki[1].cert])
+
+    result = _probe(server, pki, "mail.example.test", now=T0 + timedelta(days=101), expiry=False)
+
+    assert result.status == "critical"
+    assert result.message.startswith("certificate not trusted for mail.example.test")
+
+
+def test_without_expiry_an_expired_certificate_of_an_unknown_root_stays_critical(serve, pki):
+    stranger = _issue("Stranger", None, ca=True, not_before=T0, not_after=T0 + timedelta(days=900))
+    server = serve(_leaf(pki[1]), [pki[1].cert])
+
+    result = _probe(
+        server, pki, now=T0 + timedelta(days=101), store=Store([stranger.cert]), expiry=False
+    )
+
+    assert result.status == "critical"
+    assert result.message.startswith(f"certificate not trusted for {HOST}: ")
 
 
 def test_a_certificate_not_yet_valid_is_critical(serve, pki):
@@ -597,6 +651,25 @@ def test_without_a_valid_certificate_neither_ca_nor_resolvers_are_asked(
 
 
 # --- through the dispatcher ---
+
+
+def test_the_central_checker_hands_expiry_to_the_sensor(serve, pki, monkeypatch):
+    now = datetime.now(timezone.utc)
+    # 5 of 90 days left: a critical with expiry, ok without.
+    server = serve(_leaf(pki[1], not_before=now - timedelta(days=85), days=90), [pki[1].cert])
+    monkeypatch.setattr(
+        resolve, "classify", lambda host: Classification(Reach.PUBLIC, ("127.0.0.1",))
+    )
+    monkeypatch.setattr(tls, "default_store", lambda: Store([pki[0].cert]))
+    monkeypatch.setattr(tls, "LIMITS", _Turns())
+    base = {"sensor": "tls", "host": HOST, "port": server.port}
+
+    rated, _, _ = CentralChecker().run_with_context(base, CheckContext())
+    shown, message, _ = CentralChecker().run_with_context(
+        {**base, "params": {"expiry": False}}, CheckContext()
+    )
+
+    assert (rated, shown) == ("critical", "ok"), message
 
 
 def test_the_central_checker_runs_the_sensor_on_the_public_addresses(serve, pki, monkeypatch):

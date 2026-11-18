@@ -435,3 +435,71 @@ def test_a_probe_stays_a_probe_and_on_its_server(client_db):
     assert r.status_code == 422, r.text
     assert "only through a module of the catalog" in r.text
     assert client.get(f"/checks/{plain}").json()["checkType"] == "ping"
+
+
+_CENTRAL = {"sensor": "dns", "host": "shop.example.org", "params": {}}
+
+
+def _add_module_central(factory):
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="central",
+                server_id="srv-1",
+                name="Web domain (shop.example.org): DNS",
+                check_type="central",
+                config=json.dumps(_CENTRAL),
+                enabled=True,
+                interval="15m",
+                severity="critical",
+                module_id="web_domain",
+                module_instance="shop.example.org",
+                module_check_key="dns",
+            )
+        )
+        db.commit()
+    return "central"
+
+
+def test_a_module_central_check_keeps_its_params_and_interval_editable(client_db):
+    client, factory = client_db
+    cid = _add_module_central(factory)
+    config = {**_CENTRAL, "params": {"expected": ["192.0.2.10"]}}
+
+    r = client.put(f"/checks/{cid}", json={"config": config, "interval": "1h"})
+
+    assert r.status_code == 200, r.text
+    got = client.get(f"/checks/{cid}").json()
+    assert (got["config"], got["interval"]) == (config, "1h")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({"config": {**_CENTRAL, "host": "other.example.org"}}, id="host"),
+        pytest.param({"config": {**_CENTRAL, "sensor": "rdap"}}, id="sensor"),
+        pytest.param({"server_id": "srv-2"}, id="server"),
+        pytest.param({"server_id": None}, id="no-server"),
+        pytest.param({"check_type": "ping", "config": {"target": "192.0.2.10"}}, id="type"),
+    ],
+)
+def test_a_module_central_check_stays_on_what_its_module_bound(client_db, body):
+    client, factory = client_db
+    cid = _add_module_central(factory)
+    before = client.get(f"/checks/{cid}").json()
+
+    r = client.put(f"/checks/{cid}", json=body)
+
+    assert r.status_code == 422, r.text
+    assert client.get(f"/checks/{cid}").json() == before
+
+
+def test_a_central_check_of_no_module_may_change_its_host(client_db):
+    client, _ = client_db
+    r = client.post("/checks", json=_payload(check_type="central", config=_CENTRAL, interval="15m"))
+    assert r.status_code in (200, 201), r.text
+    cid = r.json()["id"]
+
+    r = client.put(f"/checks/{cid}", json={"config": {**_CENTRAL, "host": "other.example.org"}})
+
+    assert r.status_code == 200, r.text
