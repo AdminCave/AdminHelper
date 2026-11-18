@@ -14,8 +14,10 @@ Reihenfolge: nach dem Merge von `feature/kern-agent-9` (ändert `module_sync.py`
 
 ## Tasks
 
-### T1 — R-1528: Check an genau einer Instanz, Port-Alternativen an Loopback- und Unit-Zielen  [ ]
+### T1 — R-1528: Check an genau einer Instanz, Port-Alternativen an Loopback- und Unit-Zielen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_catalog.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4bc3811d1 2026-11-18T23:56:57+01:00
+Review: am Ende (Branch-Review)
 Änderung: `Check.instance` (optional, aus dem Dump, wenn nicht gesetzt); die Anlage-Schleifen in `module_sync`
 überspringen einen Check mit fremder Instanz. `Target.alternatives` auch für `loopback` und `unit`; `probe_config`
 wählt dort nach den Sockets des Inventars (Unit: ihre Sockets; Loopback: außerhalb von Containern). Tests: Hash eines

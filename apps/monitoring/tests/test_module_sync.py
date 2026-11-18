@@ -1580,3 +1580,160 @@ def test_the_api_marks_the_admins_switch_and_rules_on_a_module_check(client_db, 
     assert r.json()["overriddenFields"] == []
     r = client.put(f"/checks/{web_id}", json={"config": {**config, "rules": []}, "enabled": False})
     assert r.json()["overriddenFields"] == ["config", "enabled"]
+
+
+# --- a check of one instance, ports chosen at the host (R-1528) ---------------------
+
+_PBX_WEB = {
+    "key": "web",
+    "name": "Web interface",
+    "sensor": "http",
+    "target": {
+        "kind": "loopback",
+        "alternatives": [
+            {"port_hint": 443, "scheme": "https"},
+            {"port_hint": 5001, "scheme": "https"},
+        ],
+    },
+    "params": {"path": "/"},
+    "interval": 300,
+    "fields": ["status_code"],
+    "instance": "pbx.service",
+}
+_PBX_SERVICE = {
+    "key": "service",
+    "name": "Service",
+    "sensor": "unit",
+    "target": {"kind": "unit"},
+    "params": {},
+    "interval": 300,
+    "fields": ["sub_state"],
+}
+
+
+def _pbx(web=_PBX_WEB):
+    raw = {
+        "id": "pbx",
+        "name": "PBX",
+        "version": 1,
+        "instance": "unit",
+        "detect": {"units": ["pbx.service", "pbx-mc01.service"]},
+        "checks": [web, _PBX_SERVICE],
+    }
+    catalog = load_catalog([("pbx", raw)])
+    assert catalog.errors == ()
+    return catalog
+
+
+PBX = _pbx()
+
+
+def _socket(port, *, container="", unit="", proto="tcp"):
+    return {
+        "proto": proto,
+        "addr": "0.0.0.0",
+        "port": port,
+        "process": "p",
+        "container": container,
+        "unit": unit,
+    }
+
+
+def _scanned(db, sockets, *, whole=True):
+    inventory = {"containers": [], "sockets": sockets, "complete": {"sockets": whole}}
+    db.add(MonitorDiscovery(server_id="srv-1", inventory=json.dumps(inventory)))
+    db.commit()
+
+
+def test_a_check_naming_an_instance_is_bound_there_only(db, actions):
+    _scanned(db, [_socket(443)])
+    main = _finding(db, "pbx", "pbx.service", summary={})
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+
+    adopt(db, main.id, catalog=PBX, now=NOW)
+    result = adopt(db, other.id, catalog=PBX, now=NOW)
+
+    assert set(_checks(db, main)) == {"web", "service"}
+    # The other instance skips the check without a reason: it is not its check.
+    assert set(_checks(db, other)) == {"service"}
+    assert result.skipped == []
+
+
+def test_a_resync_binds_a_check_naming_an_instance_there_only(db, actions):
+    _scanned(db, [_socket(443)])
+    main = _finding(db, "pbx", "pbx.service", summary={})
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+    without_web = _pbx(web={**_PBX_SERVICE, "key": "service2"})
+    adopt(db, main.id, catalog=without_web, now=NOW)
+    adopt(db, other.id, catalog=without_web, now=NOW)
+
+    sync_catalog(db, catalog=_pbx(web={**_PBX_WEB, "name": "Web"}))
+
+    assert "web" in _checks(db, main)
+    assert "web" not in _checks(db, other)
+
+
+@pytest.mark.parametrize(
+    ("kind", "sockets", "port", "reason"),
+    [
+        pytest.param("loopback", None, 443, None, id="loopback-unknown-first"),
+        pytest.param("loopback", [_socket(5001)], 5001, None, id="loopback-seen"),
+        pytest.param("loopback", [_socket(443), _socket(5001)], 443, None, id="loopback-order"),
+        pytest.param(
+            "loopback",
+            [_socket(443, container="web-1"), _socket(5001)],
+            5001,
+            None,
+            id="loopback-not-a-container",
+        ),
+        pytest.param(
+            "loopback",
+            [_socket(443, proto="udp")],
+            None,
+            "the host listens on none of the ports 443, 5001",
+            id="loopback-udp",
+        ),
+        pytest.param(
+            "loopback",
+            [],
+            None,
+            "the host listens on none of the ports 443, 5001",
+            id="loopback-none",
+        ),
+        pytest.param("unit", None, 443, None, id="unit-unknown-first"),
+        pytest.param("unit", [_socket(5001, unit="pbx.service")], 5001, None, id="unit-seen"),
+        pytest.param(
+            "unit",
+            [_socket(443, unit="other.service"), _socket(5001, unit="pbx.service")],
+            5001,
+            None,
+            id="unit-its-own",
+        ),
+        # An agent that does not tell the unit: the agent asks the first.
+        pytest.param("unit", [_socket(5001)], 443, None, id="unit-older-agent"),
+        pytest.param(
+            "unit",
+            [_socket(5001, unit="other.service")],
+            None,
+            "unit pbx.service listens on none of the ports 443, 5001",
+            id="unit-none",
+        ),
+    ],
+)
+def test_the_host_sockets_pick_the_alternative(kind, sockets, port, reason):
+    catalog = _pbx(web={**_PBX_WEB, "target": {**_PBX_WEB["target"], "kind": kind}})
+    module = catalog.modules["pbx"]
+    check = module.checks[0]
+    config, why = probe_config(module, check, "pbx.service", {}, [], sockets)
+    assert why == reason
+    assert (config["target"]["port_hint"] if config else None) == port
+
+
+@pytest.mark.parametrize(("whole", "port"), [(True, 5001), (False, 443)])
+def test_adopting_reads_the_sockets_only_when_the_scan_saw_them_whole(db, actions, whole, port):
+    _scanned(db, [_socket(5001)], whole=whole)
+    finding = _finding(db, "pbx", "pbx.service", summary={})
+
+    adopt(db, finding.id, catalog=PBX, now=NOW)
+
+    assert json.loads(_checks(db, finding)["web"].config)["target"]["port_hint"] == port

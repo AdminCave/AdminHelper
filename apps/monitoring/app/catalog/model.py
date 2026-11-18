@@ -127,8 +127,8 @@ class Target(_Model):
         if self.image_fallback and not self.service:
             raise ValueError("image_fallback needs a service")
         if self.alternatives is not None:
-            if self.kind != "container":
-                raise ValueError("alternatives need a container target")
+            if self.kind not in ("container", "loopback", "unit"):
+                raise ValueError("alternatives need a container, loopback or unit target")
             if self.port_hint is not None or self.scheme is not None:
                 raise ValueError("alternatives replace port_hint and scheme")
         return self
@@ -219,13 +219,18 @@ class Check(_Model):
     # Run by the monitoring service against the instance's public name with a sensor of
     # CENTRAL_SENSORS, never by the agent; it rates itself, so no fields or rules (R-1501).
     central: StrictBool = False
+    # Bound only at the instance with this key, at no other (R-1528): a check of the host
+    # in a module whose instances are its units (the web interface of 3CX).
+    instance: str | None = Field(None, min_length=1, max_length=255)
 
     @model_serializer(mode="wrap")
-    def _central_only_when_set(self, handler: Any) -> dict[str, Any]:
-        # Left out when false, so the agent checks keep their hash.
+    def _options_only_when_set(self, handler: Any) -> dict[str, Any]:
+        # Left out when unset, so the checks that do not use them keep their hash.
         data = handler(self)
         if not self.central:
             data.pop("central", None)
+        if self.instance is None:
+            data.pop("instance", None)
         return data
 
     @field_validator("interval")
@@ -423,6 +428,14 @@ class Module(_Model):
                 raise ValueError(f"check {check.key!r}: a central check needs instance 'vhost'")
             if check.target and check.target.kind == "share" and self.instance != "share":
                 raise ValueError(f"check {check.key!r}: target 'share' needs instance 'share'")
+            if (
+                check.instance is not None
+                and self.instance == "unit"
+                and check.instance not in self.detect.units
+            ):
+                raise ValueError(
+                    f"check {check.key!r}: instance {check.instance!r} is none of the module's units"
+                )
             if check.target and check.target.service and self.instance != "compose_project":
                 raise ValueError(
                     f"check {check.key!r}: target.service needs instance 'compose_project'"
