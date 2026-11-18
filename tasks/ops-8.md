@@ -1,5 +1,5 @@
 # Agent-Installation: apt-CA lesbar für apt, smartmontools nur auf Blech — Task-Ledger
-Status: bereit · Branch: feature/ops-8 · Review: pro Task
+Status: erledigt · Branch: feature/ops-8 · Review: pro Task
 Spec: docs/features/ops-8.md (Roadmap R-0810, R-1541)
 Heavy: scenario --agents 1 — `scripts/agent-install.sh` und `box_agentbox.sh` im Diff: der Installer-Pfad über die :8445-Repo-Ebene samt CA-Flip und echtem `apt-get update` läuft nur auf einer Agent-Box (Kevin 2026-11-18: Bedingung für den Selbst-Merge).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
