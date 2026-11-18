@@ -222,6 +222,27 @@ def _probe_change_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]
     return None
 
 
+def _module_central_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]) -> str | None:
+    """Why the update would move a module's central check off what its module bound it to,
+    or None: its server, sensor and host (the vhost's name) come from the module (R-1501)."""
+    if check.check_type != "central" or check.module_id is None:
+        return None
+    if "check_type" in sent and data.check_type != "central":
+        return "A central check of a module stays central"
+    if "server_id" in sent and data.server_id != check.server_id:
+        return "A central check of a module stays on the server of its module"
+    if "config" in sent:
+        try:
+            stored = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            stored = {}
+        new = data.config if isinstance(data.config, dict) else {}
+        stored = stored if isinstance(stored, dict) else {}
+        if any(new.get(part) != stored.get(part) for part in ("sensor", "host")):
+            return "The sensor and host of a module's central check come from its module"
+    return None
+
+
 router = APIRouter()
 
 # Type-specific metrics written to VictoriaMetrics.
@@ -398,7 +419,9 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         raise HTTPException(400, "Invalid interval")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Invalid severity")
-    if refused := _probe_change_refused(check, data, sent):
+    if refused := _probe_change_refused(check, data, sent) or _module_central_refused(
+        check, data, sent
+    ):
         raise HTTPException(422, refused)
 
     # Validate the effective (type, config) pair whenever either changes — a

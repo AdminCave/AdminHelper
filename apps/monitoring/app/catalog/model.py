@@ -206,7 +206,7 @@ class Check(_Model):
     params: dict[str, Any] = Field(default_factory=dict)
     interval: StrictInt
     timeout_s: int = Field(10, ge=1, le=30, strict=True)
-    fields: list[str] = Field(min_length=1, max_length=MAX_FIELDS)
+    fields: list[str] = Field(default_factory=list, max_length=MAX_FIELDS)
     rules: list[Rule] = Field(default_factory=list, max_length=MAX_FIELDS)
     credential: Credential | None = None
     # Makes the service do real work (a test mail, a test query): at most every 15 min.
@@ -214,13 +214,17 @@ class Check(_Model):
     # Binds only to a container whose image tag matches one of the globs (Wiki.js 2 has
     # /healthz, 3 not).
     image_tags: list[_TAG_GLOB] | None = Field(None, min_length=1, max_length=8)
+    # Run by the monitoring service against the instance's public name with a sensor of
+    # CENTRAL_SENSORS, never by the agent; it rates itself, so no fields or rules (R-1501).
+    central: StrictBool = False
 
-    @field_validator("sensor")
-    @classmethod
-    def _known_sensor(cls, v: str) -> str:
-        if v not in SENSORS:
-            raise ValueError(f"unknown sensor {v!r}")
-        return v
+    @model_serializer(mode="wrap")
+    def _central_only_when_set(self, handler: Any) -> dict[str, Any]:
+        # Left out when false, so the agent checks keep their hash.
+        data = handler(self)
+        if not self.central:
+            data.pop("central", None)
+        return data
 
     @field_validator("interval")
     @classmethod
@@ -244,12 +248,59 @@ class Check(_Model):
     def _params_of_sensor(cls, data: Any) -> Any:
         # Before, so the stored params carry the sensor's defaults and a foreign
         # key fails with the sensor's own message.
-        if isinstance(data, dict) and data.get("sensor") in SENSORS:
-            data = {**data, "params": validate_params(data["sensor"], data.get("params") or {})}
+        if not isinstance(data, dict):
+            return data
+        sensor = data.get("sensor")
+        if data.get("central") is True:
+            # Imported here: check_configs imports this module.
+            from app.check_configs import CENTRAL_SENSORS
+
+            if sensor in CENTRAL_SENSORS:
+                params = CENTRAL_SENSORS[sensor].params.model_validate(data.get("params") or {})
+                data = {**data, "params": params.model_dump(mode="json", exclude_unset=True)}
+        elif sensor in SENSORS:
+            data = {**data, "params": validate_params(sensor, data.get("params") or {})}
         return data
+
+    def _central_consistent(self) -> Check:
+        from app.check_configs import CENTRAL_SENSORS
+
+        sensor = CENTRAL_SENSORS.get(self.sensor)
+        if sensor is None:
+            raise ValueError(
+                f"unknown central sensor {self.sensor!r}, only {sorted(CENTRAL_SENSORS)}"
+            )
+        if self.target is None or self.target.kind != "vhost":
+            # The host of a central check is the instance's name; only a vhost is one.
+            raise ValueError("a central check targets the vhost")
+        if (
+            self.fields
+            or self.rules
+            or self.credential is not None
+            or self.test_object
+            or self.image_tags is not None
+        ):
+            raise ValueError(
+                "a central check rates itself: no fields, rules, credential, test_object "
+                "or image_tags"
+            )
+        unit = {"m": 60, "h": 3600}[sensor.min_interval[-1]]
+        shortest = int(sensor.min_interval[:-1]) * unit
+        if self.interval < shortest:
+            raise ValueError(
+                f"the central sensor {self.sensor!r} runs at most every {shortest} s, "
+                f"interval {self.interval} is shorter"
+            )
+        return self
 
     @model_validator(mode="after")
     def _consistent(self) -> Check:
+        if self.central:
+            return self._central_consistent()
+        if self.sensor not in SENSORS:
+            raise ValueError(f"unknown sensor {self.sensor!r}")
+        if not self.fields:
+            raise ValueError("a check needs at least one field")
         if self.test_object and self.interval < TEST_OBJECT_MIN_INTERVAL:
             raise ValueError(
                 f"a test object runs at most every {TEST_OBJECT_MIN_INTERVAL} s, "
@@ -360,6 +411,8 @@ class Module(_Model):
                     f"{check.credential.slot!r} but differ in sensor, use or target"
                 )
         for check in self.checks:
+            if check.central and self.instance != "vhost":
+                raise ValueError(f"check {check.key!r}: a central check needs instance 'vhost'")
             if check.target and check.target.service and self.instance != "compose_project":
                 raise ValueError(
                     f"check {check.key!r}: target.service needs instance 'compose_project'"

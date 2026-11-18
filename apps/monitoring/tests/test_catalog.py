@@ -544,3 +544,82 @@ def test_image_tags_are_checked(changes, error):
 def test_image_tags_load_in_order():
     module = _load(_module(checks=[_check(image_tags=["2", "2.*"])])).modules["example"]
     assert module.checks[0].image_tags == ["2", "2.*"]
+
+
+# --- central checks (R-1501) --------------------------------------------------------
+
+_CENTRAL = {
+    "key": "outside",
+    "name": "From outside",
+    "sensor": "tls",
+    "central": True,
+    "target": {"kind": "vhost"},
+    "params": {"expiry": False},
+    "interval": 3600,
+}
+_SERVED = {
+    "key": "served",
+    "name": "Served",
+    "sensor": "app",
+    "target": {"kind": "vhost"},
+    "params": {"view": "web_vhost_cert"},
+    "interval": 3600,
+    "fields": ["served_days_left"],
+}
+
+
+def _site(*checks, **changes):
+    raw = {
+        "id": "site",
+        "name": "Site",
+        "version": 1,
+        "detect": {"vhost_tls": True},
+        "instance": "vhost",
+        "checks": [copy.deepcopy(_SERVED), *checks],
+    }
+    raw.update(changes)
+    return raw
+
+
+def test_a_central_check_loads_with_its_sensors_params():
+    catalog = _load(_site(_CENTRAL, {**_CENTRAL, "key": "dns", "sensor": "dns", "params": {}}))
+    assert catalog.errors == ()
+    served, outside, dns = catalog.modules["site"].checks
+    assert (outside.central, outside.params, outside.fields) == (True, {"expiry": False}, [])
+    assert dns.params == {}
+    # Only a central check writes the switch: the agent checks keep their hash.
+    assert outside.model_dump()["central"] is True
+    assert "central" not in served.model_dump()
+
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        ({"sensor": "http"}, "unknown central sensor 'http'"),
+        ({"params": {"expiry": "no"}}, "expiry"),
+        ({"params": {"path": "/"}}, "path"),
+        ({"target": {"kind": "port", "port_hint": 443}}, "a central check targets the vhost"),
+        ({"target": None}, "a central check targets the vhost"),
+        ({"fields": ["days_left"]}, "a central check rates itself"),
+        (
+            {"rules": [{"field": "days_left", "op": "lt", "value": 3, "level": "critical"}]},
+            "a central check rates itself",
+        ),
+        ({"credential": {"use": "bearer"}}, "a central check rates itself"),
+        ({"interval": 300}, "runs at most every 900 s"),
+    ],
+)
+def test_a_central_check_is_checked(changes, error):
+    assert error in _only_error(_load(_site({**_CENTRAL, **changes})))
+
+
+def test_a_central_check_needs_a_vhost_instance():
+    module = _module(checks=[_check(), {**_CENTRAL, "target": {"kind": "vhost"}}], card=[])
+    assert "a central check needs instance 'vhost'" in _only_error(_load(module))
+
+
+def test_an_agent_check_still_needs_a_field_and_a_known_sensor():
+    assert "at least one field" in _only_error(
+        _load(_module(checks=[_check(fields=[], rules=[])], card=[]))
+    )
+    assert "unknown sensor 'rdap'" in _only_error(_load(_module(checks=[_check(sensor="rdap")])))

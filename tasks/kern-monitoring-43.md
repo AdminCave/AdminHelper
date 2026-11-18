@@ -16,8 +16,10 @@ ok, mit Default wie bisher; falscher Name bleibt critical; Schema lehnt Nicht-Bo
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_tls.py tests/test_central_config.py
 Doku: → T4
 
-### T2 — Katalog: zentrale Checks in Modulen binden (R-1501)  [ ]
+### T2 — Katalog: zentrale Checks in Modulen binden (R-1501)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/catalog/model.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/routers/findings.py, apps/monitoring/tests/test_catalog.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_checks_crud.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @0c6a6a29b 2026-11-18T09:34:46+01:00
+Review: approve (.ah-out/review/kern-monitoring-43/T2.verdict.json)
 Änderung: Ein Katalog-`Check` mit `central: true` nennt einen Sensor aus `CENTRAL_SENSORS`, Ziel `vhost`, Params
 nach dessen Schema, ein Intervall nicht unter dem Sensor-Minimum, keine Felder, Regeln, Zugangsdaten. `module_sync`
 macht daraus eine Zeile `check_type="central"` mit `CentralConfig` (`host` = Instanzname, `port` = vHost-Port für
@@ -51,3 +53,5 @@ Abhängt von: T3
 - 2026-11-18 Kevin: Ablauf meldet nur der Agent-Check `certificate`; der zentrale tls-Check des Moduls läuft mit `expiry: false`.
 - 2026-11-18 Kevin: Namen mit Special-Use-Endung bekommen statisch keine zentralen Checks.
 - 2026-11-18 Kevin: ohne RDAP; RDAP folgt mit R-1406 nach 0.47.0.
+- 2026-11-18 Session (T2): `GET /catalog` bleibt ohne Feld `central` — die Spec sagt „Die API ändert keine Form“; das Feld zöge OpenAPI-Snapshot und Web/Desktop-Typen mit, und die Oberfläche erkennt die Zeilen an `check_type`. `routers/findings.py` bleibt unverändert.
+- 2026-11-18 Session (T2): Eine neue Katalog-Definition überschreibt bei zentralen Zeilen die Params wie bei Agent-Checks die Regeln; Intervall der Zeile und `pair_check_id` bleiben. Wechselt ein Check zwischen Agent und Dienst, wird die Zeile nicht umgeschrieben (Grund im Übernehmen-Ergebnis).
