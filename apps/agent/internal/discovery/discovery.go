@@ -54,6 +54,7 @@ const (
 	maxMarkers        = 1000
 	maxPorts          = 1000
 	maxVhosts         = 500
+	maxShares         = 64
 	maxContainerPorts = 64
 	maxMounts         = 32
 	maxMarkerPaths    = 16
@@ -86,6 +87,7 @@ var (
 	recognizePort = probe.RecognizePort
 	listRCUnits   = probe.RCUnits
 	webVhosts     = probe.WebVhosts
+	netMounts     = probe.NetMounts
 	partTimeout   = 20 * time.Second
 )
 
@@ -102,8 +104,8 @@ type Inventory struct {
 	TS         int64 `json:"ts"`
 	DurationMS int64 `json:"duration_ms"`
 	Partial    bool  `json:"partial"`
-	// Complete tells per section (units, containers, sockets, markers, vhosts, ports) whether it
-	// is whole: the monitoring service lets a finding go only after a whole scan of its section.
+	// Complete tells per section (units, containers, sockets, markers, vhosts, shares, ports) whether
+	// it is whole: the monitoring service lets a finding go only after a whole scan of its section.
 	Complete   map[string]bool `json:"complete"`
 	Units      []Unit          `json:"units"`
 	Sockets    []Socket        `json:"sockets"`
@@ -111,6 +113,14 @@ type Inventory struct {
 	Markers    map[string]bool `json:"markers"`
 	Ports      []Port          `json:"ports"`
 	Vhosts     []Vhost         `json:"vhosts"`
+	Shares     []Share         `json:"shares"`
+}
+
+// Share is a network share mounted on this host (nfs, nfs4, cifs, smb3): its mount point and type
+// alone (Kevin 2026-11-18), the server and the export it comes from stay on the host.
+type Share struct {
+	Mountpoint string `json:"mountpoint"`
+	FSType     string `json:"fstype"`
 }
 
 // Vhost is a name a web server of this host serves (Kevin 2026-11-15: the names of the vhosts may go
@@ -201,6 +211,7 @@ func Run(ctx context.Context, markers []probe.Marker) Inventory {
 	part("sockets", func(ctx context.Context) (ok bool) { inv.Sockets, ok = collectSockets(ctx, inv.Containers); return })
 	part("markers", func(ctx context.Context) (ok bool) { inv.Markers, ok = checkMarkers(ctx, markers); return })
 	part("vhosts", func(ctx context.Context) (ok bool) { inv.Vhosts, ok = collectVhosts(ctx); return })
+	part("shares", func(context.Context) (ok bool) { inv.Shares, ok = collectShares(); return })
 	var portsWhole bool
 	inv.Ports, portsWhole = recognizePorts(ctx, inv.Sockets)
 	// The ports are those of the sockets: sockets cut short leave ports out as well.
@@ -228,6 +239,29 @@ func collectVhosts(ctx context.Context) ([]Vhost, bool) {
 		vhosts = append(vhosts, Vhost{Server: v.Server, Name: v.Name, Port: v.Port, TLS: v.TLS, App: v.App})
 	}
 	return vhosts, err == nil && len(found) <= maxVhosts
+}
+
+// collectShares lists the network shares mounted now, from the mount table alone (on Linux).
+func collectShares() ([]Share, bool) {
+	if !linuxHost {
+		return []Share{}, true
+	}
+	found, err := netMounts()
+	if err != nil {
+		logger.Warnf("discovery: the mount table cannot be read: %v", err)
+		return []Share{}, false
+	}
+	shares := make([]Share, 0, min(len(found), maxShares))
+	for _, m := range found {
+		if len(m.Mountpoint) > maxPathLen {
+			continue
+		}
+		if len(shares) == maxShares {
+			return shares, false
+		}
+		shares = append(shares, Share{Mountpoint: m.Mountpoint, FSType: m.FSType})
+	}
+	return shares, true
 }
 
 // collectUnits lists the service units systemd has loaded, in any state; on Windows the services the

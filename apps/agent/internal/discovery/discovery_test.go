@@ -69,6 +69,8 @@ type fakeHost struct {
 	recognized []uint16
 	vhosts     []probe.Vhost
 	vhostErr   error
+	shares     []probe.NetMount
+	shareErr   error
 }
 
 func stubHost(t *testing.T) *fakeHost {
@@ -84,10 +86,10 @@ func stubHost(t *testing.T) *fakeHost {
 	}
 	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening :=
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening
-	oldWindows, oldServices, oldVhosts := windowsHost, listServices, webVhosts
+	oldWindows, oldServices, oldVhosts, oldShares := windowsHost, listServices, webVhosts, netMounts
 	oldFreeBSD, oldRCUnits := freebsdHost, listRCUnits
 	t.Cleanup(func() {
-		webVhosts = oldVhosts
+		webVhosts, netMounts = oldVhosts, oldShares
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening =
 			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening
 		windowsHost, listServices = oldWindows, oldServices
@@ -126,6 +128,7 @@ func stubHost(t *testing.T) *fakeHost {
 	}
 	listSockets = func(context.Context) ([]probe.Listener, error) { return h.listeners, h.listenErr }
 	webVhosts = func(context.Context) ([]probe.Vhost, error) { return h.vhosts, h.vhostErr }
+	netMounts = func() ([]probe.NetMount, error) { return h.shares, h.shareErr }
 	processName = func(_ context.Context, pid int32) string { return h.processes[pid] }
 	cgroupsOf = func(pid int32) probe.Cgroups {
 		h.mu.Lock()
@@ -270,7 +273,7 @@ var wholeMarkers = []probe.Marker{
 
 // wholeSections is what Complete says of a discovery that read every section whole.
 func wholeSections() map[string]bool {
-	return map[string]bool{"units": true, "containers": true, "sockets": true, "markers": true, "vhosts": true, "ports": true}
+	return map[string]bool{"units": true, "containers": true, "sockets": true, "markers": true, "vhosts": true, "shares": true, "ports": true}
 }
 
 func TestRunDiscoversTheHost(t *testing.T) {
@@ -436,7 +439,7 @@ func TestTheInventoryHasTheContractsShape(t *testing.T) {
 		got  []string
 		want string
 	}{
-		{"inventory", keys(t, data), "complete containers duration_ms markers partial ports sockets ts units vhosts"},
+		{"inventory", keys(t, data), "complete containers duration_ms markers partial ports shares sockets ts units vhosts"},
 		{"unit", keys(t, inv.Units[0]), "name state sub"},
 		{"socket", keys(t, inv.Sockets[0]), "addr container port process proto unit"},
 		{"container", keys(t, inv.Containers[2]), "compose_project compose_service health id image listening mounts name ports state"},
@@ -1080,5 +1083,53 @@ func TestNoVhostsAreReadOffLinux(t *testing.T) {
 	inv := Run(context.Background(), nil)
 	if inv.Vhosts == nil || len(inv.Vhosts) != 0 {
 		t.Errorf("vhosts = %#v, want an empty list", inv.Vhosts)
+	}
+}
+
+func TestSharesGoIntoTheInventoryAsMountPointAndType(t *testing.T) {
+	h := stubHost(t)
+	h.shares = []probe.NetMount{{Mountpoint: "/mnt/pve/backup", FSType: "nfs4"}, {Mountpoint: "/srv/team", FSType: "cifs"}}
+	inv := Run(context.Background(), nil)
+	want := []Share{{"/mnt/pve/backup", "nfs4"}, {"/srv/team", "cifs"}}
+	if !reflect.DeepEqual(inv.Shares, want) || !inv.Complete["shares"] {
+		t.Errorf("shares = %+v, complete %v; want %+v and whole", inv.Shares, inv.Complete["shares"], want)
+	}
+	data, err := json.Marshal(inv.Shares[0])
+	if err != nil || string(data) != `{"mountpoint":"/mnt/pve/backup","fstype":"nfs4"}` {
+		t.Errorf("share JSON = %s, %v", data, err)
+	}
+}
+
+func TestSharesCutOrUnreadMakeTheirSectionPartialAlone(t *testing.T) {
+	h := stubHost(t)
+	for i := range maxShares + 1 {
+		h.shares = append(h.shares, probe.NetMount{Mountpoint: fmt.Sprintf("/mnt/s%d", i), FSType: "nfs"})
+	}
+	h.shares = append(h.shares, probe.NetMount{Mountpoint: "/" + strings.Repeat("a", maxPathLen), FSType: "nfs"})
+	inv := Run(context.Background(), nil)
+	if len(inv.Shares) != maxShares || inv.Complete["shares"] || !inv.Partial || !inv.Complete["vhosts"] {
+		t.Errorf("shares %d, complete %v; want %d, the shares section alone partial", len(inv.Shares), inv.Complete, maxShares)
+	}
+
+	h.shares = []probe.NetMount{{Mountpoint: "/" + strings.Repeat("a", maxPathLen), FSType: "nfs"}}
+	inv = Run(context.Background(), nil)
+	if len(inv.Shares) != 0 || !inv.Complete["shares"] {
+		t.Errorf("shares %+v, complete %v: a mount point too long is left out, the list stays whole", inv.Shares, inv.Complete["shares"])
+	}
+
+	h.shares, h.shareErr = nil, errors.New("no mountinfo")
+	inv = Run(context.Background(), nil)
+	if inv.Shares == nil || len(inv.Shares) != 0 || inv.Complete["shares"] {
+		t.Errorf("shares %#v, complete %v; want an empty list, partial", inv.Shares, inv.Complete["shares"])
+	}
+}
+
+func TestNoSharesAreReadOffLinux(t *testing.T) {
+	h := stubHost(t)
+	linuxHost, markerHost = false, false
+	h.shares = []probe.NetMount{{Mountpoint: "/mnt/x", FSType: "nfs"}}
+	inv := Run(context.Background(), nil)
+	if inv.Shares == nil || len(inv.Shares) != 0 || !inv.Complete["shares"] {
+		t.Errorf("shares = %#v, complete %v; want an empty, whole list", inv.Shares, inv.Complete["shares"])
 	}
 }

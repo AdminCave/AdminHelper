@@ -55,8 +55,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_m
 Doku: → T7
 Abhängt von: T2
 
-### T4 — R-1267: Netz-Freigaben in der Discovery, raus aus der Plattenliste  [ ]
+### T4 — R-1267: Netz-Freigaben in der Discovery, raus aus der Plattenliste  [x]
 Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_linux.go, apps/agent/internal/discovery/discovery_other.go, apps/agent/internal/discovery/discovery_windows.go, apps/agent/internal/discovery/discovery_test.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/probe/mountinfo.go, apps/agent/internal/probe/mountinfo_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @98ad03ad1 2026-11-18T11:36:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-18/T4.verdict.json)
 Änderung:
 - Neuer Abschnitt `Shares []Share json:"shares"` mit `{mountpoint, fstype}` und eigenem `complete`-Flag.
 - Er liest `/proc/self/mountinfo` (nfs, nfs4, cifs, smb3), nur unter Linux, und ruft dabei kein `statfs` auf.
@@ -107,3 +109,7 @@ Task-Review: am Ende
 ## Entscheidungen
 - 2026-11-18 Kevin: R-1267 als Katalog-Modul; Netz-Mounts raus aus der Plattenliste; Schwellen wie bei Platten
   (hängt/fehlt critical, 85/95 %); Mountpunkt und Typ dürfen an den Server, die Quelle nicht.
+- 2026-11-18 T4: Der mountinfo-Parser liegt in `internal/probe/mountinfo.go` (`NetMounts`, `NetFSTypes`), damit die
+  Zielart `share` in T5 dieselbe Tabelle liest. Netz-Mounts verlassen die Plattenliste nur unter Linux
+  (`skippedDisk`), nicht über `skipFSTypes`: FreeBSD und Windows haben keine Share-Prüfung (Nicht-Ziel), dort bleibt
+  eine Freigabe eine Platte, wie `TestSkipFSTypesFreeBSD` es für nfs festhält.
