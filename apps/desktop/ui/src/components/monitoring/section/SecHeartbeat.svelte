@@ -19,9 +19,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let worst = $derived(worstStatus(checks));
 
   function secondsOf(check: MonitorCheck): number | null {
+    // The checker words the age in minutes once the agent is gone and in seconds while
+    // it reports; the first number of any other message is not an age.
     const msg = check.state?.message || '';
-    const m = msg.match(/(\d+)/);
-    return m ? parseInt(m[1], 10) : null;
+    const min = msg.match(/unreachable for (\d+) min/);
+    if (min) return parseInt(min[1], 10) * 60;
+    const sec = msg.match(/last report (\d+)s ago/);
+    return sec ? parseInt(sec[1], 10) : null;
   }
 
   function display(secs: number | null): { value: string; unit: string } {
