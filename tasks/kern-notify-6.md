@@ -102,8 +102,10 @@ unlesbarem Geheimnis, Test-Versand je Kanal. Komponenten aus `components/ui`, DE
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Notifications.test.ts
 Doku: → T10
 
-### T9 — R-1533: Web-Abschnitt Mail-Design mit Vorschau  [ ]
-Komponente: web · Dateien: apps/web/src/pages/Notifications.svelte, apps/web/src/pages/Notifications.test.ts, apps/web/src/lib/api/notify.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/i18n/dictionaries.ts, tasks/kern-notify-6.md
+### T9 — R-1533: Web-Abschnitt Mail-Design mit Vorschau  [x]
+Komponente: web · Dateien: apps/web/src/pages/Notifications.svelte, apps/web/src/pages/Notifications.test.ts, apps/web/src/lib/api/notify.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/i18n/dictionaries.ts, tasks/kern-notify-6.md, apps/web/src/lib/api/types.contract.test.ts, apps/web/tests/e2e/mocks.ts, apps/web/src/lib/api/mocks.contract.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @f459979d4 2026-11-18T14:03:18+01:00
+Review: approve (.ah-out/review/kern-notify-6/T9.verdict.json)
 Änderung: Abschnitt Mail-Design: Betreff-Präfix, Absendername, HTML- und Text-Editor (Textarea), Platzhalter-Liste,
 Logo hoch/löschen, Vorschau in `<iframe sandbox>` (ohne `allow-scripts`) über das Preview-Endpoint, Test-Versand,
 Zurücksetzen auf Standard.

@@ -125,6 +125,19 @@ const NOTIFY_CHANNELS = {
   updatedBy: null,
 };
 
+// The default design: nothing stored, no logo (R-1533).
+const NOTIFY_TEMPLATE = {
+  subjectPrefix: '',
+  fromName: '',
+  html: '',
+  text: '',
+  logoSet: false,
+  logoType: null,
+  placeholders: ['title', 'body', 'severity', 'category', 'time', 'source', 'logo'],
+  updatedAt: null,
+  updatedBy: null,
+};
+
 const AUDIT_ROWS: Record<string, unknown>[] = [
   {
     id: 2,
@@ -332,6 +345,7 @@ export const MOCK_FIXTURES: MockFixture[] = [
   { method: 'GET', path: 'audit', status: 200, body: AUDIT_ROWS },
   { method: 'GET', path: 'enrollment/certificates', status: 200, body: CERTIFICATES },
   { method: 'GET', path: 'admin/notify/channels', status: 200, body: NOTIFY_CHANNELS },
+  { method: 'GET', path: 'admin/notify/template', status: 200, body: NOTIFY_TEMPLATE },
   { method: 'GET', path: 'frp/status', status: 200, body: { proxies: [], total: 0 } },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(false) },
   { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(true) },
@@ -496,6 +510,9 @@ export async function mockApi(page: Page): Promise<void> {
   );
   await page.route(api('admin/notify/channels'), async (route) =>
     route.fulfill(json({ body: NOTIFY_CHANNELS })),
+  );
+  await page.route(api('admin/notify/template'), async (route) =>
+    route.fulfill(json({ body: NOTIFY_TEMPLATE })),
   );
   await page.route(api('enrollment/token/for'), async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;

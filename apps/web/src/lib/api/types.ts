@@ -295,3 +295,38 @@ export interface NotifyChannelTest {
 export interface NotifyTestResult {
   channel: string;
 }
+
+// The mail template of the panel (R-1533); the logo only as whether one is stored.
+export interface NotifyTemplate {
+  subjectPrefix: string;
+  fromName: string;
+  html: string;
+  text: string;
+  logoSet: boolean;
+  logoType: string | null;
+  placeholders: string[];
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface NotifyTemplateInput {
+  subjectPrefix: string;
+  fromName: string;
+  html: string;
+  text: string;
+}
+
+export interface NotifyTemplatePreview {
+  subject: string;
+  fromName: string;
+  text: string;
+  html: string | null;
+}
+
+export interface NotifyTemplateTest {
+  target: string;
+}
+
+export interface NotifyTemplateLogo {
+  data: string;
+}
