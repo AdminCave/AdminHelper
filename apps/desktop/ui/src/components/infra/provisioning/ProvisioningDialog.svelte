@@ -14,13 +14,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     Server,
   } from '$lib/api/types';
   import { provisioningApi } from '$lib/api/provisioning';
-  import { pinnedCaFingerprint } from '$lib/bridge';
+  import { openDoc, pinnedCaFingerprint } from '$lib/bridge';
   import { session, settings } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
-  import { t } from '$lib/i18n';
+  import { language, t } from '$lib/i18n';
   import { errMsg } from '$lib/utils/errors';
   import { buildCommand, TOKEN_FORM } from '$lib/provisioning/command';
-  import { Copy, KeyRound } from '@lucide/svelte';
+  import { BookOpen, Copy, KeyRound } from '@lucide/svelte';
   import Button from '../../ui/Button.svelte';
   import Callout from '../../ui/Callout.svelte';
   import CodeBlock from '../../ui/CodeBlock.svelte';
@@ -146,6 +146,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  async function showDoc(path: string): Promise<void> {
+    try {
+      await openDoc(path);
+    } catch (err) {
+      reportError(errMsg(err));
+    }
+  }
+
   function portLabel(port: ProvisionPort): string {
     const text = `${port.port}: ${$t(`infra.prov.port.${port.purpose}`)}`;
     return port.tunnelOnly ? `${text} (${$t('infra.prov.tunnelOnly')})` : text;
@@ -187,6 +195,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </div>
 
       {#if platform}
+        {#if platform.doc}
+          {@const path = platform.doc[$language]}
+          <div>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconLeft={BookOpen}
+              data-action="prov-doc"
+              onclick={() => showDoc(path)}>{$t('infra.prov.docLink')}</Button
+            >
+          </div>
+        {/if}
         {#if !platform.available}
           <div data-testid="prov-unavailable">
             <Callout tone="warning"

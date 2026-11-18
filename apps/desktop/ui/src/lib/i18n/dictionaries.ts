@@ -121,6 +121,7 @@ export const translations: Translations = {
     'infra.prov.hint.platform':
       'Der Agent meldet die Plattform {reported}; gewählt ist eine andere.',
     'infra.prov.showMonitoring': 'Monitoring-Vorschläge ansehen',
+    'infra.prov.docLink': 'Anleitung für diese Plattform',
     'infra.prov.automation': 'Für Automatisierung',
     'infra.prov.automationWarn':
       'Der Token steht dann im Befehl und ist in Shell-Historie und Prozessliste sichtbar. Nur für Skripte und Konfigurationsmanagement.',
@@ -1727,6 +1728,7 @@ export const translations: Translations = {
       'The agent reports, but the FRP tunnel is not connected. Check the FRP port from the prerequisites and the frpc service log.',
     'infra.prov.hint.platform': 'The agent reports the platform {reported}; another one is chosen.',
     'infra.prov.showMonitoring': 'View monitoring suggestions',
+    'infra.prov.docLink': 'Guide for this platform',
     'infra.prov.automation': 'For automation',
     'infra.prov.automationWarn':
       'The token is then part of the command and visible in shell history and the process list. Only for scripts and configuration management.',

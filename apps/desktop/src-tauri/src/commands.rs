@@ -113,6 +113,14 @@ pub async fn pinned_ca_fingerprint() -> Result<Option<String>, AppError> {
     blocking(|| Ok(enrollment::pinned_ca_fingerprint())).await
 }
 
+/// Opens a page of the AdminHelper docs in the default browser; `path` names the page
+/// below `docs/` (the provisioning window's link, R-1596).
+#[tauri::command]
+pub async fn open_doc(path: String) -> Result<(), AppError> {
+    let url = crate::doc_link::doc_url(&path)?;
+    blocking(move || Ok(open::that(&url)?)).await
+}
+
 /// Name (CN) and expiry of this device's enrolled certificate, for the identity
 /// line in the settings. None until enrolled; an error when the stored
 /// certificate is unreadable — the UI then shows a fixed text, never the error.
@@ -3195,6 +3203,7 @@ mod tests {
             "reset_server_cert_pin",
             "reset_device_identity",
             "pinned_ca_fingerprint",
+            "open_doc",
             "device_identity",
             "is_device_enrolled",
             "load_settings",

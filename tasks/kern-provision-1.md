@@ -86,11 +86,13 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra s
 Doku: → T10
 Abhängt von: T7
 
-### T9 — R-1596: Doku-Link im Fenster  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/lib/provisioning/docs.ts
+### T9 — R-1596: Doku-Link im Fenster  [x]
+Komponente: desktop · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/lib/provisioning/docs.ts, apps/desktop/src-tauri/src/doc_link.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Infrastructure.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @47a78b49b 2026-11-18T19:23:27+01:00
+Review: approve (.ah-out/review/kern-provision-1/T9.verdict.json)
 Änderung: Der Link im Fenster setzt die Basis-URL aus Kevins Antwort vor `doc.<sprache>` des Katalogs und öffnet sie über den Shell-Opener.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/provisioning
-Doku: keine (Verhalten in T10)
+Verify: bash scripts/dev/verify.sh desktop --strict
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html (Befehlstabelle `open_doc`); Verhalten in T10
 Abhängt von: T7
 
 ### T10 — R-1596: Doku je Plattform, API, Changelog  [ ]
@@ -111,3 +113,5 @@ Abhängt von: T3, T8
 - 2026-11-18 T7 vor T2 (T2 wartet auf #569): die Vorauswahl nimmt `osType` nur, wenn es eine Katalog-ID ist, sonst die erste verfügbare Plattform; mit T2 trägt `osType` immer einen Plattformwert. Plattformen und Aktionen, für die der Desktop keine Beschriftung hat (`ProvisionPlatformId`/`ProvisionAction`), blendet das Fenster aus. Die Formen-Kopie `TOKEN_FORM`/`UUID_FORM` im Tab ist weg (der Tab baut keine Befehle mehr).
 - 2026-11-18 T7: Der eigene „Nur provisionieren“-Befehl des alten Tabs entfällt; „Neu registrieren“ aus dem Katalog ersetzt ihn (Linux: der Installer erneut, liest den Token verdeckt). Die E2E-Spec wählt Windows, weil es unabhängig vom Paket-Repo des Stacks einen Befehl mit Token trägt.
 - 2026-11-18 T8: Die Token-Bereinigung löscht eingelöste Tokens; „Token eingelöst“ gilt daher auch mit einem Agent-Zertifikat, und der 5-min-Hinweis rechnet ab `usedAt`, sonst ab `certificate.issuedAt`. Der Fortschritt läuft nur unter Installieren/Neu registrieren, fragt alle 5 s, bis alle Stufen erledigt sind, und endet mit dem Fenster. Ohne erreichbares Monitoring steht „Erster Bericht“ auf unbekannt, ohne Hinweis. „Monitoring-Vorschläge ansehen“ schließt das Fenster und wechselt in den Monitoring-Reiter des Servers (dort liegen die Vorlagen-Vorschläge). Die Server-Ansicht fragt den Fortschritt einmal je Server mit gewählter Plattform ab, nur für Admins, für den Abweichungs-Hinweis. Nach reviewer T8: alle Stufen hängen am neuesten Token (Zertifikat und Bericht zählen erst ab seinem `createdAt`), ein im Fenster erzeugter Token startet den Fortschritt neu.
+- 2026-11-18 T9: Der Desktop hatte keinen Weg, eine URL im Browser zu öffnen (das Shell-Plugin trägt keine `shell:allow-open`-Berechtigung). Statt einer offenen Opener-Berechtigung bekommt er den Befehl `open_doc(path)`: die Basis `https://github.com/AdminCave/AdminHelper/blob/main/docs/` steht fest in Rust, der Pfad aus dem Katalog nimmt nur Kleinbuchstaben, Ziffern, `-`, `_`, Segmente mit `/`, Endung `.html` und einen Anker. Die Task wird damit Komponente `desktop` (Rust + UI, neun Dateien).
+- 2026-11-18 T9: Das volle Desktop-Verify fand `pages/Infrastructure.test.ts` rot seit T8: der Seitentest mockte die Session ohne `session`-Store, `ServerDetail` liest ihn seit T8. Das T8-Verify war auf `components/infra` begrenzt; der Mock-Fix geht in T9 mit, dazu der Eintrag `open_doc` in der IPC-Befehlstabelle (DE+EN, `ipc.inventory.test.ts`).

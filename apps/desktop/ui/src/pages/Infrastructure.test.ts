@@ -22,8 +22,14 @@ vi.mock('$lib/api/servers', () => ({
   serversApi: { list: h.list, create: vi.fn(), update: vi.fn(), remove: vi.fn() },
 }));
 vi.mock('$lib/api/monitoring', () => ({ monitoringApi: { assignTemplate: vi.fn() } }));
-vi.mock('$lib/stores/session', () => ({
-  currentSession: () => ({ serverUrl: 'https://srv.example', username: 'a', isAdmin: true }),
+vi.mock('$lib/stores/session', async () => {
+  const { readable } = await import('svelte/store');
+  const s = { serverUrl: 'https://srv.example', username: 'a', isAdmin: true };
+  return { currentSession: () => s, session: readable(s) };
+});
+// The server overview asks for the provisioning progress of a server with a platform.
+vi.mock('$lib/api/provisioning', () => ({
+  provisioningApi: { progress: vi.fn(async () => ({ platformMismatch: false })) },
 }));
 vi.mock('$lib/stores/statusBar', () => ({ showStatus: vi.fn(), reportError: vi.fn() }));
 vi.mock('../components/infra/ServerModal.svelte', () => ({ default: vi.fn() }));

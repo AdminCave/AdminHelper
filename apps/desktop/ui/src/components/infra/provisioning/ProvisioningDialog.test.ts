@@ -82,6 +82,7 @@ const FUTURE = platform({ id: 'plan9' } as Partial<ProvisionPlatform>);
 
 const h = vi.hoisted(() => ({
   pinnedCaFingerprint: vi.fn(async (): Promise<string | null> => null),
+  openDoc: vi.fn(async (): Promise<void> => {}),
   createToken: vi.fn(async () => ({ token: 'adminhelper_prov_tok-123', id: 't1' })),
   platforms: vi.fn(async (): Promise<{ platforms: unknown[] }> => ({ platforms: [] })),
   progress: vi.fn(async () => ({
@@ -96,7 +97,10 @@ const h = vi.hoisted(() => ({
   serverUrl: { value: 'https://srm.example' },
 }));
 
-vi.mock('$lib/bridge', () => ({ pinnedCaFingerprint: h.pinnedCaFingerprint }));
+vi.mock('$lib/bridge', () => ({
+  pinnedCaFingerprint: h.pinnedCaFingerprint,
+  openDoc: h.openDoc,
+}));
 vi.mock('$lib/api/provisioning', () => ({
   provisioningApi: { createToken: h.createToken, platforms: h.platforms, progress: h.progress },
 }));
@@ -403,5 +407,37 @@ describe('ProvisioningDialog — progress', () => {
     expect(h.progress).toHaveBeenCalledTimes(1);
     await mint(doc);
     await waitFor(() => expect(h.progress).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('ProvisioningDialog — guide', () => {
+  it('opens the guide of the chosen platform in the UI language', async () => {
+    const { doc } = await open();
+    await fireEvent.click(doc.querySelector('[data-action="prov-doc"]') as HTMLElement);
+    expect(h.openDoc).toHaveBeenCalledWith('admin/agent-deployment.html#linux');
+
+    setLanguage('en');
+    try {
+      await waitFor(() =>
+        expect(doc.querySelector('[data-action="prov-doc"]')?.textContent).toContain(
+          tNow('infra.prov.docLink'),
+        ),
+      );
+      await fireEvent.click(doc.querySelector('[data-action="prov-doc"]') as HTMLElement);
+      expect(h.openDoc).toHaveBeenLastCalledWith('en/admin/agent-deployment.html#linux');
+    } finally {
+      setLanguage('de');
+    }
+  });
+
+  it('shows no guide link for a platform without one and reports a failed opener', async () => {
+    const first = await open(server, [{ ...LINUX, doc: null }]);
+    expect(first.doc.querySelector('[data-action="prov-doc"]')).toBeNull();
+    cleanup();
+
+    h.openDoc.mockRejectedValueOnce(new Error('no browser'));
+    const { doc } = await open();
+    await fireEvent.click(doc.querySelector('[data-action="prov-doc"]') as HTMLElement);
+    await waitFor(() => expect(reportError).toHaveBeenCalledWith('no browser'));
   });
 });
