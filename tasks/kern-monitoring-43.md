@@ -1,5 +1,5 @@
 # Zentrale Domain-Checks für vHost-Domains — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-43 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-43 · Review: pro Task
 Spec: docs/features/kern-monitoring-43.md (Roadmap R-1501)
 Heavy: none — nur der Monitoring-Dienst (Sensor tls, Katalog, Modul-Bindung); kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
