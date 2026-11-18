@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-18 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-18 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-18 · Review: pro Task
 Spec: docs/features/kern-monitoring-18.md (Roadmap R-1406, R-1302, R-1267)
 Heavy: linux-full — Inventar-Format, Discovery, Plattenliste und eine neue Ansicht im Agent (`apps/agent`), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
