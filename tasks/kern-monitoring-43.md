@@ -5,8 +5,10 @@ Heavy: none — nur der Monitoring-Dienst (Sensor tls, Katalog, Modul-Bindung); 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Sensor tls: Parameter expiry (R-1501)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/app/central/tls.py, apps/monitoring/tests/test_central_tls.py, apps/monitoring/tests/test_central_config.py
+### T1 — Sensor tls: Parameter expiry (R-1501)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/app/central/tls.py, apps/monitoring/tests/test_central_tls.py, apps/monitoring/tests/test_central_config.py, apps/monitoring/app/checkers/central.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7255feca1 2026-11-18T09:27:50+01:00
+Review: approve (.ah-out/review/kern-monitoring-43/T1.verdict.json)
 Änderung: `TlsParams` bekommt `expiry: bool = True`. Mit `false` gibt der Sensor tls aus Restlaufzeit und Ablauf
 keinen `warning`/`critical`; Name und Kette prüft er weiter (ein abgelaufenes Zertifikat zum letzten Zeitpunkt seiner
 Gültigkeit), CAA/ARI unverändert, die Messwerte bleiben. Tests: knappe und abgelaufene Laufzeit mit `expiry: false`

@@ -266,7 +266,10 @@ class ProbeConfig(_StrictConfig):
 
 
 class TlsParams(_StrictConfig):
-    """The tls sensor takes no params; extra=forbid refuses any key."""
+    """expiry false: the lifetime is shown, not rated (the agent check of a module rates
+    it, R-1501); extra=forbid refuses any other key."""
+
+    expiry: bool = Field(True, strict=True)
 
 
 class DnsParams(_StrictConfig):

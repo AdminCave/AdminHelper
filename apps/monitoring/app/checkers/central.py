@@ -36,7 +36,7 @@ Probe = Callable[[str, Classification, int | None, dict, dict], SensorResult]
 def _tls(
     host: str, rule: Classification, port: int | None, params: dict, prev: dict
 ) -> SensorResult:
-    return tls.probe(host, rule.addresses, port, prev)
+    return tls.probe(host, rule.addresses, port, prev, expiry=params.get("expiry", True))
 
 
 def _dns(
