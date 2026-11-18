@@ -10,7 +10,7 @@ Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Reg
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1576: Programmordner beim Dienst-Install mit festen Rechten  [ ]
+### T1 — R-1576: Programmordner beim Dienst-Install mit festen Rechten  [?] (Programmordner %ProgramFiles%\AdminHelper ist auch der MSI-Ordner der Desktop-App (productName adminhelper); geschützte DACL sperrte sie für Nicht-Admins. Empfehlung: Agent in eigenen Ordner %ProgramFiles%\AdminHelper Agent, T4 zieht alte Installationen um)
 Komponente: agent · Dateien: apps/agent/internal/service/service_windows.go, apps/agent/internal/service/service_windows_test.go, tasks/kern-windows-1.md
 Änderung: `Install()` legt `%ProgramFiles%\AdminHelper` mit `config.EnsureSecureDir` an (wie der Datenordner) statt
 `MkdirAll` und kopiert das Binary erst danach; ein vorhandener Ordner wird ebenso eingerichtet. Test auf Windows:
@@ -18,8 +18,10 @@ DACL geschützt, nur SYSTEM und Administratoren.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T2 — R-0577: Sync richtet das Datenverzeichnis vor dem Lesen ein  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_test.go, tasks/kern-windows-1.md
+### T2 — R-0577: Sync richtet das Datenverzeichnis vor dem Lesen ein  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, tasks/kern-windows-1.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @5ba5c5225 2026-11-18T14:42:57+01:00
+Review: approve (.ah-out/review/kern-windows-1/T2.verdict.json)
 Änderung: `Sync` ruft `secureFrpDir` vor `config.LoadFrpcConfig` und vor jedem weiteren Lesen aus dem FRP- bzw.
 Datenverzeichnis; die späteren Aufrufe entfallen, wo sie doppelt wären. Test: Reihenfolge über die Hook-Variablen
 (Sichern vor dem ersten Lesen), plattformneutral.
@@ -84,3 +86,4 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (nach Antwort)
 
 ## Entscheidungen
+- T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
