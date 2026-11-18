@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-8 — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-8 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-8 · Review: pro Task
 Spec: docs/features/kern-agent-8.md (Roadmap R-1523)
 Heavy: linux-full — `apps/agent` (Wächter); kein PKI-, Install- oder Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
