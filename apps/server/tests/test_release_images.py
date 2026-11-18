@@ -63,6 +63,7 @@ _PINNED = (
     _FRPS_DOCKERFILE,
     "scripts/vm/bootstrap_linux.sh",
     "scripts/tests/freebsd_box.sh",
+    "apps/agent/internal/frpc/frpcpin.go",
     # Not a pin: the step runs it for the tauri-cli pins.
     ".github/scripts/tauri_cli_pins.sh",
 )

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-windows-1 — Windows-Agent: frpc-Tunnel, Installation als Update, Dienst-Monitoring — Task-Ledger
-Status: aktiv · Branch: feature/kern-windows-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-windows-1 · Review: pro Task
 Spec: docs/features/kern-windows-1.md (Roadmap R-1576, R-0577, R-1545, R-0708, R-1577, R-1583)
 Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Registry, w32tm) läuft nur im CI-Job agent-windows (go test auf windows-latest); lokal nur GOOS=windows Build/Vet; release.yml-Anteil im Tag-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -133,8 +133,10 @@ Beweis: PR #574 CI-Lauf 44336869597, Job „Go Agent (test, Windows)“: `TestSu
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Testcode)
 
-### T12 — Lockstep-Test kopiert frpcpin.go mit (Fund der PR-CI)  [ ]
+### T12 — Lockstep-Test kopiert frpcpin.go mit (Fund der PR-CI)  [x]
 Komponente: server · Dateien: apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b584bfc1b 2026-11-18T17:00:59+01:00
+Review: approve (.ah-out/review/kern-windows-1/T12.verdict.json)
 Beweis: PR #574 CI-Lauf 44336869597, Server-Shards 1/2: `test_the_lockstep_job_reads_the_frp_version_of_the_frps_image` rot; der Step „Compare the FRP_VERSION pins“ liest seit T3 `apps/agent/internal/frpc/frpcpin.go`, die Kopie in `_PINNED` hat die Datei nicht.
 Änderung: `frpcpin.go` in `_PINNED` aufnehmen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
