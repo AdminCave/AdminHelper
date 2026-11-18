@@ -1,5 +1,5 @@
 # STCP-Tunnel mit Protokoll web: Schema und Pfad — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-8 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-8 · Review: pro Task
 Spec: docs/features/kern-frp-8.md (Roadmap R-1540)
 Heavy: linux-full — Server-API (`/api/frp/tunnels`) ändert sich; FRP-Konfiguration, Visitor-Bundle und Datenpfad bleiben, kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -39,6 +39,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-frp-8.md
 Task-Review: am Ende
 Abhängt von: T1, T2, T3
+
+### T5 — R-1540: Entwickler-Doku und README zur Auflösung nachziehen (Abschlussprüfung)  [ ]
+Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, README.md
+Änderung: „Tunnel-Auflösung“ (desktop.html DE+EN) und README nannten für Web über STCP noch `url = http://127.0.0.1:<port>`; jetzt: nur Host und Port der URL werden ersetzt, `http://127.0.0.1:<port>` nur ohne lesbare URL.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, README.md
+Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-18 Plan: Der Vertrauens-Schalter aus dem Titel der Zeile entfällt. Web-Verbindungen öffnen im Standard-Browser, `trust_cert` wirkt nur bei RDP (Spec, Nicht-Ziele).
