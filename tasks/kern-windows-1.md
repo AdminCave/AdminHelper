@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-windows-1 — Windows-Agent: frpc-Tunnel, Installation als Update, Dienst-Monitoring — Task-Ledger
-Status: aktiv · Branch: feature/kern-windows-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-windows-1 · Review: pro Task
 Spec: docs/features/kern-windows-1.md (Roadmap R-1576, R-0577, R-1545, R-0708, R-1577, R-1583)
 Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Registry, w32tm) läuft nur im CI-Job agent-windows (go test auf windows-latest); lokal nur GOOS=windows Build/Vet; release.yml-Anteil im Tag-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -85,8 +85,10 @@ Auto ohne Trigger → `enabled`, Demand → `manual`, Disabled → `disabled`; g
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
-### T7 — Doku: Windows-Abschnitt der Agent-Verteilung, Changelog  [ ]
+### T7 — Doku: Windows-Abschnitt der Agent-Verteilung, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-windows-1.md, tasks/kern-windows-1.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d86f359c4 2026-11-18T16:11:51+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Windows-Abschnitt DE+EN: Programmordner `%ProgramFiles%\AdminHelper Agent` (auch in monitoring.html und
 developer/agent.html), `frpc-windows-x86_64.exe` neben den Agent legen, Install = Update, `uninstall --purge`, Tunnel
 laufen jetzt auf Windows, Starttyp und `enabled_inactive` auf Windows (gewollt endende Auto-Dienste über die
