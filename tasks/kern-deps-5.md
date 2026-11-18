@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-5 — Task-Ledger
-Status: aktiv · Branch: feature/kern-deps-5 · Review: pro Task
+Status: bereit · Branch: feature/kern-deps-5 · Review: pro Task
 Spec: docs/features/kern-deps-5.md (Roadmap R-1552, R-1553, R-1555, R-1584, R-1585, R-1586, R-1587)
 Heavy: linux-full — eigene Images, Entrypoints (`docker-compose.yml`) und `apps/agent`; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -105,8 +105,10 @@ Review: approve (.ah-out/review/kern-deps-5/T9.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (Test-Abhängigkeit)
 
-### T10 — Doku und CHANGELOG  [ ]
+### T10 — Doku und CHANGELOG  [x]
 Komponente: server · Dateien: docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-deps-5.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @57901a6ae 2026-11-18T15:09:32+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `gosu`-Stellen auf `setpriv`, pip fehlt im Runtime-Image; Changelog-Fragment (neutral: aktualisierte
 Abhängigkeiten und Basis-Images, Images ohne pip und gosu).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py
