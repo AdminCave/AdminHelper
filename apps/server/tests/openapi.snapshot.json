@@ -4863,6 +4863,124 @@
         "title": "NotifyChannelsOut",
         "type": "object"
       },
+      "NotifyConfigOut": {
+        "description": "What the monitoring sends its rule mails with; template null = the default.",
+        "properties": {
+          "smtp": {
+            "$ref": "#/components/schemas/NotifyConfigSmtp"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotifyConfigTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "smtp",
+          "template"
+        ],
+        "title": "NotifyConfigOut",
+        "type": "object"
+      },
+      "NotifyConfigSmtp": {
+        "description": "The relay in effect, panel before .env, with its password: for the monitoring\nonly (X-Internal-Key).",
+        "properties": {
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "sender": {
+            "title": "Sender",
+            "type": "string"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "user",
+          "password",
+          "sender",
+          "sources"
+        ],
+        "title": "NotifyConfigSmtp",
+        "type": "object"
+      },
+      "NotifyConfigTemplate": {
+        "properties": {
+          "fromName": {
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo"
+          },
+          "logoType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logotype"
+          },
+          "subjectPrefix": {
+            "title": "Subjectprefix",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectPrefix",
+          "fromName",
+          "html",
+          "text",
+          "logo",
+          "logoType"
+        ],
+        "title": "NotifyConfigTemplate",
+        "type": "object"
+      },
       "NotifyTemplateIn": {
         "description": "The template the panel keeps; an empty field is the default (no prefix, no\nsender name, no HTML part, the message text as the text part). 422 for a\nplaceholder the renderer does not know.",
         "properties": {
@@ -9514,6 +9632,33 @@
           }
         ],
         "summary": "Ingest",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/internal/notify-config": {
+      "get": {
+        "description": "The relay and the mail template in effect, for the rule mails of the monitoring:\nthe only place the stored SMTP password leaves the server. 403 without the key.",
+        "operationId": "notify_config_api_internal_notify_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "InternalKey": []
+          }
+        ],
+        "summary": "Notify Config",
         "tags": [
           "notifications"
         ]

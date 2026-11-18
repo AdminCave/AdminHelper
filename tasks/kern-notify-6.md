@@ -70,8 +70,10 @@ Magic-Bytes, ≤ 200 KB). Größengrenzen für HTML/Text, 422 bei unbekanntem Pl
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_admin_template.py tests/test_openapi_snapshot.py tests/test_notify_admin_channels.py tests/test_notify_mail_template.py
 Doku: → T10
 
-### T6 — R-1531/R-1533: internes Endpoint für das Monitoring  [ ]
+### T6 — R-1531/R-1533: internes Endpoint für das Monitoring  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/app/modules/notifications/schemas.py, apps/server/tests/test_notify_internal_config.py, apps/server/tests/openapi.snapshot.json, tasks/kern-notify-6.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c456c653a 2026-11-18T13:30:30+01:00
+Review: approve (.ah-out/review/kern-notify-6/T6.verdict.json)
 Änderung: `GET /api/internal/notify-config` hinter `require_internal_key`: wirksame SMTP-Werte samt Passwort
 (nur hier entschlüsselt herausgegeben) und die Vorlage (Logo base64) oder `null` für den Standard. Tests: 403 ohne
 bzw. mit falschem Key, Inhalt bei Panel- und bei `.env`-Werten, kein Geheimnis in Logs.

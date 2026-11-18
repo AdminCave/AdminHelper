@@ -623,3 +623,33 @@ class NotifyTemplateLogoIn(RequestModel):
 
     def raw(self) -> bytes:
         return base64.b64decode(self.data, validate=True)
+
+
+class NotifyConfigSmtp(BaseModel):
+    """The relay in effect, panel before .env, with its password: for the monitoring
+    only (X-Internal-Key)."""
+
+    host: str
+    port: int
+    user: str
+    password: str
+    sender: str
+    # Field -> "panel" | "env" | "none".
+    sources: dict[str, str]
+
+
+class NotifyConfigTemplate(BaseModel):
+    subjectPrefix: str
+    fromName: str
+    html: str
+    text: str
+    # base64, null without a logo.
+    logo: Optional[str]
+    logoType: Optional[str]
+
+
+class NotifyConfigOut(BaseModel):
+    """What the monitoring sends its rule mails with; template null = the default."""
+
+    smtp: NotifyConfigSmtp
+    template: Optional[NotifyConfigTemplate]

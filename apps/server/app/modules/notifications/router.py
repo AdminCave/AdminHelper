@@ -12,6 +12,7 @@ Three surfaces:
   presents to monitoring in monitoring_proxy, here in the reverse direction).
 """
 
+import base64
 import json
 import secrets
 import threading
@@ -57,6 +58,7 @@ from app.modules.notifications.schemas import (
     NotificationPrefsUpdate,
     NotificationTestOut,
     NotificationTestRequest,
+    NotifyConfigOut,
     ServerMuteOut,
     UnreadCountOut,
 )
@@ -641,6 +643,34 @@ def require_internal_key(x_internal_key: str | None = Depends(_internal_key_sche
         (x_internal_key or "").encode(), MONITOR_API_KEY.encode()
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")
+
+
+@internal_router.get("/notify-config", response_model=NotifyConfigOut)
+def notify_config(db: Session = Depends(get_db), _internal: None = Depends(require_internal_key)):
+    """The relay and the mail template in effect, for the rule mails of the monitoring:
+    the only place the stored SMTP password leaves the server. 403 without the key."""
+    channels = channel_config.resolve(db)
+    template = mail_template.load(db)
+    return {
+        "smtp": {
+            "host": channels.smtp_host,
+            "port": channels.smtp_port,
+            "user": channels.smtp_user,
+            "password": channels.smtp_password,
+            "sender": channels.smtp_from,
+            "sources": {k: v for k, v in channels.sources.items() if k.startswith("smtp_")},
+        },
+        "template": None
+        if template == mail_template.DEFAULT
+        else {
+            "subjectPrefix": template.subject_prefix,
+            "fromName": template.from_name,
+            "html": template.html,
+            "text": template.text,
+            "logo": base64.b64encode(template.logo).decode() if template.logo else None,
+            "logoType": template.logo_type if template.logo else None,
+        },
+    }
 
 
 # The source types under which the server keeps notices of its own and by which it finds
