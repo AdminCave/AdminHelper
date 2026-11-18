@@ -81,8 +81,10 @@ Review: approve (.ah-out/review/arch-monitoring-neu-p0/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_rule_model_prototype.py
 Doku: → T9
 
-### T8 — Differenzial-Test: SMART, ZFS und Docker als Regeln gegen die heutigen Checker (R-1558)  [ ]
+### T8 — Differenzial-Test: SMART, ZFS und Docker als Regeln gegen die heutigen Checker (R-1558)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_rule_model_differential.py, apps/monitoring/tests/rule_model_prototype.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b03e82637 2026-11-18T15:18:53+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T8.verdict.json)
 Änderung: Die Bewertungen von `SmartHealthChecker` (`app/checkers/smart.py:239`), `ZfsHealthChecker` (`app/checkers/plugins.py:276`) und `_rate_container` (`app/checkers/plugins.py:401`) als Regelsätze des Prototyps je Objekt; parametrisierte Szenarien fahren beide Wege und vergleichen Stufe je Objekt und Gesamtstufe. Was die Regelform nicht ausdrücken kann (etwa Bitfelder, Zustandsautomaten, Vorwert über die Container-ID), steht als benanntes Szenario mit erwarteter Abweichung und Begründung; diese Liste geht in ADR 0004.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_rule_model_differential.py tests/test_rule_model_prototype.py
 Doku: → T9
@@ -165,3 +167,4 @@ Abhängt von: T12
 - 2026-11-18 T7: Fehlende oder veraltete Daten (`max_age`) einer Bedingung lassen eine Regel greifen und eine Ausnahme ruhen, beide Formen fallen also in Richtung melden. Eine Bedingung nennt einen Check-Schlüssel des Moduls und optional ein Objekt darunter, nie eine Instanz: aufgelöst wird immer in der Instanz, an die der Check gebunden ist. Eine wertgebundene Ausnahme bleibt erloschen (`ended_at`), auch wenn der Wert zurückkommt.
 - 2026-11-18 T7: Merge-Szenario über den echten `module_sync._update` mit einem Unit-Check (`last_run_age_s`, Feld des Sensors `unit`); heute verliert die Zeile die eigene Grenze, im Zielmodell bleibt sie als Override.
 - 2026-11-18 T7: Ein `clear`, über das ein Override oder ein Katalog-Update die Grenze schiebt, fällt weg (`effective` verwirft es, `merge` nennt es `clear_dropped`): sonst ruhte die feuernde Regel jenseits der Grenze (Prüfer T7). Eine wertgebundene Ausnahme endet auch, wenn der Wert fehlt (schlafende Platte: der Admin bestätigt neu), anders als eine Bedingung, die bei fehlenden Daten ruht; diese Abwägung nennt ADR 0004.
+- 2026-11-18 T8: Je Familie liest ein Sensor die Werte ohne Grenze (Typprüfung, Art der Platte, smartctl-Bits dekodiert, Exit-Code aus dem ps-Text, Vorwert des Restart-Zählers), der Regelsatz trägt jede Grenze und Stufe; fehlt ein Wert, den der Checker mit Vorgabe liest, gilt `if_absent: ok`. 118 Fälle stimmen überein; Szenarien nur mit einem Urteil aus `docs/` oder, wo die Doku schweigt, aus `test_smart_checker.py`. Benannte Abweichungen: Docker Exit 143/137 ohne OOM und Policy `unless-stopped` (je kritisch statt gestoppt: `unless` nimmt einen Wert, ein `not in` fehlt), unbekannter Zustand (ok statt Warnung: `not in`), ZFS-Scrub genau 35 Tage (ok statt Warnung: `max_age` zählt Sekunden strikt, der Checker ganze Tage). Eine Grenze auf den rohen smartctl-Status bewertet 0x20 kritisch: Bitfelder bleiben im Sensor. Gegenprobe: zwei verschobene Schwellen machen drei Fälle rot.
