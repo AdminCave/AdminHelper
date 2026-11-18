@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-frp-8/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_auto_connection.py tests/test_frp_tunnels.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html (neue Felder); Verhalten → T4
 
-### T2 — R-1540 A: Desktop ersetzt beim Auflösen nur Host und Port  [ ]
+### T2 — R-1540 A: Desktop ersetzt beim Auflösen nur Host und Port  [x]
 Komponente: desktop · Dateien: apps/desktop/src-tauri/src/tunnel.rs
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @6d1e6bdf2 2026-11-18T19:53:53+01:00
+Review: approve (.ah-out/review/kern-frp-8/T2.verdict.json)
 Änderung: `to_visitor` setzt bei einer Web-Verbindung mit parsebarer URL nur Host `127.0.0.1` und Port `<lokaler Port>` (`url::Url::set_host`/`set_port`); Schema, Pfad und Query bleiben. Ohne oder mit unlesbarer URL wie heute `http://127.0.0.1:<Port>`. Gilt für Mapping und Literal-Visitor. Tests im Modul: https mit Pfad und Query, http ohne URL, `localhost`-URL, unlesbare URL.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T4
