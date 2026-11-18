@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The agent's load gate (R-1268): a collector it held back leaves its checks as they were,
-with a note and without the throttle's time limit, as long as self.load_shed says the gate
-is active; agent_resources warns after 30 minutes of it, and the gate's state is a metric."""
+with a note and without the throttle's time limit, for 15 minutes from the gate's begin as
+long as self.load_shed says the gate is active, and unknown after that (R-1400);
+agent_resources warns from its begin, and the gate's state is a metric."""
 
 import json
 from datetime import timedelta
@@ -107,6 +108,66 @@ def test_a_shed_collector_spares_no_check_without_a_rating(client_db):
     assert _state(factory, "chk-docker") == ("unknown", "No Docker data in report")
 
 
+@pytest.mark.parametrize(
+    ("ago", "kept"),
+    [
+        pytest.param(timedelta(minutes=14, seconds=50), True, id="14-min"),
+        pytest.param(timedelta(minutes=15, seconds=5), False, id="15-min"),
+        pytest.param(timedelta(hours=26), False, id="26-h"),
+        pytest.param(-timedelta(hours=1), True, id="since-ahead"),
+    ],
+)
+def test_a_held_check_goes_unknown_15_minutes_into_the_shedding(client_db, ago, kept):
+    client, factory = client_db
+    _add_check(factory, "chk-docker", "docker_health")
+    _set_state(factory, "chk-docker", "ok", "All 3 containers healthy", RATED_LONG_AGO)
+    _add_check(factory, "chk-probe", "probe", {"module": "http"})
+    _set_state(factory, "chk-probe", "critical", "HTTP 503", RATED_LONG_AGO)
+    rated = _last_check(factory, "chk-docker")
+
+    gate = _gate(ago)
+    body = _post(client, _shed("docker", "probes", gate=gate))
+
+    if kept:
+        assert body["checksUpdated"] == 0
+        assert _state(factory, "chk-docker")[0] == "ok"
+        assert _last_check(factory, "chk-docker") == rated
+        return
+    begin = f"{gate['since'][:10]} {gate['since'][11:16]}"
+    unmeasured = f"Not measured: load shedding since {begin} UTC"
+    assert body["checksUpdated"] == 2
+    assert _state(factory, "chk-docker") == ("unknown", unmeasured)
+    assert _state(factory, "chk-probe") == ("unknown", unmeasured)
+    assert _last_check(factory, "chk-docker") > rated
+
+
+def test_an_unmeasured_check_is_rated_again_once_the_shedding_ends(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-docker", "docker_health")
+    _set_state(factory, "chk-docker", "ok", "All 3 containers healthy", RATED_LONG_AGO)
+
+    _post(client, _shed("docker", gate=_gate(timedelta(minutes=20))))
+    _post(client, _shed("docker", gate=_gate(timedelta(minutes=25))))
+    assert _state(factory, "chk-docker")[0] == "unknown"
+
+    running = {"self": {"collectors": {"docker": {"throttled": False}}}}
+    body = _post(client, running)
+
+    assert body["checksUpdated"] == 1
+    assert _state(factory, "chk-docker") == ("unknown", "No Docker data in report")
+
+
+def test_the_limit_leaves_the_checks_of_running_collectors_alone(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-zfs", "zfs_health")
+    _set_state(factory, "chk-zfs", "ok", "Pool healthy", RATED_LONG_AGO)
+
+    body = _post(client, _shed("docker", gate=_gate(timedelta(hours=1))))
+
+    assert body["checksUpdated"] == 1
+    assert _state(factory, "chk-zfs") == ("unknown", "No ZFS data in report")
+
+
 def test_shed_probes_spare_the_probe_checks(client_db):
     client, factory = client_db
     _add_check(factory, "chk-probe", "probe", {"module": "http"})
@@ -188,32 +249,45 @@ def test_a_report_without_the_block_writes_no_gate_metric(client_db, written):
 
 
 @pytest.mark.parametrize(
-    ("ago", "status"),
+    ("ago", "minutes"),
     [
-        pytest.param(timedelta(minutes=29, seconds=30), "ok", id="29-min"),
-        pytest.param(timedelta(minutes=30, seconds=5), "warning", id="30-min"),
-        pytest.param(timedelta(hours=26), "warning", id="26-h"),
-        pytest.param(-timedelta(hours=1), "ok", id="since-ahead"),
+        pytest.param(timedelta(seconds=20), 0, id="0-min"),
+        pytest.param(timedelta(minutes=30, seconds=5), 30, id="30-min"),
+        pytest.param(timedelta(hours=26), 26 * 60, id="26-h"),
+        pytest.param(-timedelta(hours=1), 0, id="since-ahead"),
     ],
 )
-def test_agent_resources_warns_after_30_minutes_of_shedding(client_db, ago, status):
+def test_agent_resources_warns_from_the_begin_of_shedding(client_db, ago, minutes):
     client, factory = client_db
     _add_check(factory, "chk-res", "agent_resources", {"cpu_warn": 80, "cpu_crit": 95})
 
     gate = _gate(ago)
     _post(client, _shed("docker", gate=gate))
 
+    begin = f"{gate['since'][:10]} {gate['since'][11:16]}"
+    assert _state(factory, "chk-res") == (
+        "warning",
+        f"Load shedding since {begin} UTC ({minutes} min)",
+    )
+    assert _details(factory, "chk-res").get("problems", {}) == {"load_shed": "warning"}
+
+
+def test_agent_resources_keeps_a_critical_status_while_shedding(client_db):
+    client, factory = client_db
+    _add_check(factory, "chk-res", "agent_resources", {"cpu_warn": 80, "cpu_crit": 95})
+
+    report = _shed("docker", gate=_gate())
+    report["resources"]["cpu_percent"] = 99.0
+    _post(client, report)
+
     rated, message = _state(factory, "chk-res")
-    problems = _details(factory, "chk-res").get("problems", {})
-    assert rated == status
-    if status == "warning":
-        minutes = int(ago.total_seconds() // 60)
-        begin = f"{gate['since'][:10]} {gate['since'][11:16]}"
-        assert message == f"Load shedding since {begin} UTC ({minutes} min) (>=30 min)"
-        assert problems == {"load_shed": "warning"}
-    else:
-        assert message == "CPU 10.0%"
-        assert problems == {}
+    assert rated == "critical"
+    assert message.startswith("CPU 99.0% (>=95%)")
+    assert "Load shedding since" in message
+    assert _details(factory, "chk-res")["problems"] == {
+        "cpu": "critical",
+        "load_shed": "warning",
+    }
 
 
 @pytest.mark.parametrize(

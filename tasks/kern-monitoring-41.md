@@ -14,8 +14,10 @@ Prüfung: `security` zusätzlich zum `reviewer` in der Abschlussprüfung.
 
 ## Tasks
 
-### T1 — R-1400: Warnung ab Beginn, gehaltene Checks nach 15 min unknown  [ ]
+### T1 — R-1400: Warnung ab Beginn, gehaltene Checks nach 15 min unknown  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_load_shed.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2eacff3ec 2026-11-18T19:46:48+01:00
+Review: am Ende (Branch-Review)
 Änderung: `_LOAD_SHED_WARN_MINUTES` auf 0; `_spared_by_load_shed` hält einen Check nur bis 15 min nach
 `load_shed_since`, danach bewertet die Report-Schleife ihn `unknown` („Not measured: load shedding since <Zeit> UTC“)
 über `apply_result` mit Übergang und Alarm. Tests: Warnung ab Minute 0, gehalten vor 15 min, `unknown` ab 15 min mit
