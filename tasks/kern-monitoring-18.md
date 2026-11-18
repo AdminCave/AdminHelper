@@ -33,7 +33,7 @@ Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/a
 Abschnitts (units, containers, sockets, markers, vhosts); `ports` aus `recognizePorts`. Ein abgelaufener Gesamtrahmen
 macht die Abschnitte unvollständig, die danach noch liefen. `Partial` bleibt wie heute. Test: ein Abschnitt, der
 scheitert, macht nur sein eigenes Flag falsch.
-Verify: bash scripts/dev/verify.sh agent --strict -- -run TestRun|TestInventory|TestComplete
+Verify: bash scripts/dev/verify.sh agent --strict -- -run TestRun|TestAPart|TestTheEnd|TestTheLists|TestTheInventory
 Doku: → T7
 
 ### T3 — R-1302: gone je Abschnitt  [ ]
