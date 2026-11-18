@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-46 — Katalog: Check an einer Instanz, Port-Alternativen am Host; einteilige vHost-Namen — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-46 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-46 · Review: am Ende
 Spec: docs/features/kern-monitoring-46.md (Roadmap R-1528, R-1548)
 Heavy: none — nur Monitoring-Katalog und Abgleich, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -53,6 +53,12 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: docs/developer/monitoring.html DE+EN · changelog.d/kern-monitoring-46.md
 Task-Review: am Ende
+
+### T5 — Prototyp-Test ruft _update mit sockets  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_rule_model_prototype.py
+Änderung: T2 gab `_update` den Parameter `sockets`; `test_today_a_catalog_update_overwrites_the_admins_rule_and_the_merge_keeps_it` rief es noch ohne ihn (TypeError, nur im ganzen Monitoring-Lauf sichtbar). Der Aufruf gibt `None` (keine vollständigen Sockets) mit.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_rule_model_prototype.py tests/test_module_sync.py
+Doku: keine (nur Test)
 
 ## Entscheidungen
 - Nit 1 der Abschlussprüfung (`_belongs` nur beim Anlegen) bleibt: noch kein Katalog-Check nutzt `instance`; Roadmap-Zeile.
