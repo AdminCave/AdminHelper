@@ -1,5 +1,5 @@
 # klein-nachlese-13 — Nachlese kern-monitoring-42/-43 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-13 · Review: am Ende
+Status: erledigt · Branch: feature/klein-nachlese-13 · Review: am Ende
 Spec: docs/features/klein-nachlese-13.md (Roadmap R-1530, R-1547)
 Heavy: none — nur Tests und ein Kommentar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
