@@ -35,8 +35,10 @@ Beweis: Code-Lesung `routers/checks.py` `get_status_summary` (kein Filter auf `e
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_info.py
 Doku: → T11
 
-### T3 — R-1565: Vorhersage bewertet volle Platten und folgt den Plattenregeln  [ ]
+### T3 — R-1565: Vorhersage bewertet volle Platten und folgt den Plattenregeln  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/forecast.py, apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_checker_forecast.py, apps/monitoring/app/checkers/context.py, apps/monitoring/tests/test_check_engine_context.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @bbfcaa55d 2026-11-18T12:42:38+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T3.verdict.json)
 Änderung: Eine Platte ≥ 100 % ist `critical` („voll“), `hours_left` 0. Die Engine hängt der Vorhersage die
 Plattenregeln der aktiven Ressourcen-Prüfung desselben Hosts an (`ignore_mounts`, `disk_overrides`,
 `disk_min_free_gb`) und `free_gb` je Mount aus deren letztem Ergebnis; die Vorhersage überspringt ignorierte Mounts
@@ -47,7 +49,7 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_for
 Doku: → T11
 
 ### T4 — R-1567, R-1573: Modul-Sync wahrt eigene Regeln und eigene Schalter  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/app/routers/checks.py
 Änderung: `_update` überspringt einen Check mit eigenen Regeln des Admins und meldet den Grund in `skipped`.
 `_adopt` schaltet bei `new` nur Checks ein, die der Admin nicht selbst abgeschaltet hat (`enabled` nicht in
 `overridden_fields`). Tests je Zeile, rot vorher: geänderte Schwelle bleibt nach Katalog-Update; selbst
@@ -118,3 +120,6 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-18 Kevin (SMART-Stufen, T5/T6): „nicht erhoben“ = `info`, „nicht lesbar“ = `unknown`.
+- 2026-11-18 T3: Eine Platte mit mindestens `min_free_gb` frei alarmiert nicht, auch wenn sie schnell vollläuft (der
+  Alarm kommt erst unter der Grenze), wie Spec und R-1565 verlangen. Sie trägt in `_details` die Notiz „enough free
+  space“ statt `hours_left` und zählt nicht in `disk_forecast_min_hours`.
