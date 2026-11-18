@@ -1,5 +1,5 @@
 # STCP-Tunnel mit Protokoll web: Schema und Pfad — Task-Ledger
-Status: erledigt · Branch: feature/kern-frp-8 · Review: pro Task
+Status: aktiv · Branch: feature/kern-frp-8 · Review: pro Task
 Spec: docs/features/kern-frp-8.md (Roadmap R-1540)
 Heavy: linux-full — Server-API (`/api/frp/tunnels`) ändert sich; FRP-Konfiguration, Visitor-Bundle und Datenpfad bleiben, kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -48,6 +48,12 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, README.md
 Task-Review: am Ende
+
+### T6 — R-1540: Alttest des gemeinsamen Auto-Verbindungs-Helfers auf die neue Signatur (PR-CI)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_frp_permissions.py
+Änderung: `test_attach_auto_connection_links_stcp_and_passes_tags` rief `_attach_auto_connection` noch mit dem Benutzernamen statt des Request-Objekts auf (PR-CI #578, Shard 2: `AttributeError: 'str' object has no attribute 'auto_connection_username'`); der Test übergibt jetzt ein `FrpTunnelCreate` mit `auto_connection_username="opsuser"`, die Zusicherungen bleiben.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions.py tests/test_frp_auto_connection.py
+Doku: keine (nur Test)
 
 ## Entscheidungen
 - 2026-11-18 Plan: Der Vertrauens-Schalter aus dem Titel der Zeile entfällt. Web-Verbindungen öffnen im Standard-Browser, `trust_cert` wirkt nur bei RDP (Spec, Nicht-Ziele).
