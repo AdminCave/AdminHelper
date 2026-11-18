@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-45 — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-45 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-45 · Review: pro Task
 Spec: docs/features/kern-monitoring-45.md (Roadmap R-1525, R-1565, R-1566, R-1567, R-1568, R-0518, R-1570, R-1571, R-1572, R-1573)
 Heavy: linux-full — `apps/agent` (SMART-Bericht) und der Server (Anfragegrenzen), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -120,8 +120,10 @@ Beweis: Code-Lesung `alerter.py` `_claim` · Dedup-Key: bug:monitoring:alerter.p
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_hub.py
 Doku: → T11
 
-### T11 — Doku DE+EN und CHANGELOG  [ ]
-Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-45.md
+### T11 — Doku DE+EN und CHANGELOG  [x]
+Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-monitoring-45.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fef4d6903 2026-11-18T13:16:02+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Vorhersage (volle Platte, Plattenregeln), SMART-Stufen, ZFS-Zustände und Scrub-Konfiguration,
 Status-Zusammenfassung, Modul-Sync (eigene Regeln, eigene Schalter), `smart_passed` optional; CHANGELOG-Fragment
 (T1 neutral unter Changed).
