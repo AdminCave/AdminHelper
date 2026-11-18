@@ -21,8 +21,10 @@ Review: approve (.ah-out/review/kern-frp-8/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T4
 
-### T3 — R-1540 A+B: Tunnel-Dialog fragt Schema und Pfad, Inspektor zeigt die aufgelöste Adresse  [ ]
+### T3 — R-1540 A+B: Tunnel-Dialog fragt Schema und Pfad, Inspektor zeigt die aufgelöste Adresse  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts, apps/desktop/ui/src/lib/models/frpTunnel.ts, apps/desktop/ui/src/lib/models/frpTunnel.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/connections/ConnectionInspector.svelte, apps/desktop/ui/src/components/connections/ConnectionInspector.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @cc77b6d18 2026-11-18T20:11:57+01:00
+Review: approve (.ah-out/review/kern-frp-8/T3.verdict.json)
 Änderung: Bei Protokoll `web` zeigt der Dialog statt des Benutzernamens Schema (`http|https`, Vorgabe `https` bei Zielport 443/8006/8443/9443, folgt dem Port, bis der Nutzer es selbst wählt) und optional einen Pfad; die Payload schickt `auto_connection_scheme`/`auto_connection_path`, bei anderen Protokollen nicht. Beim Protokollwechsel einer bestehenden Verbindung schickt der Dialog das Schema mit. Der Inspektor zeigt bei einer Verbindung mit Tunnel die aufgelöste Adresse (`bridge.resolveConnection`), nur wenn sie sich vom gespeicherten Ziel unterscheidet.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/TunnelModal.test.ts src/lib/models/frpTunnel.test.ts src/components/connections/ConnectionInspector.test.ts
 Doku: → T4
@@ -39,3 +41,5 @@ Abhängt von: T1, T2, T3
 ## Entscheidungen
 - 2026-11-18 Plan: Der Vertrauens-Schalter aus dem Titel der Zeile entfällt. Web-Verbindungen öffnen im Standard-Browser, `trust_cert` wirkt nur bei RDP (Spec, Nicht-Ziele).
 - 2026-11-18 Plan: `types.ts` und `dictionaries.ts` ändert auch `feature/kern-provision-1` (dieselbe Session, andere Stellen), dessen T10 auch `developer/api-reference.html` (andere Route). T3 baut erst nach dessen Merge oder mergt `origin/main` vorher hinein.
+- 2026-11-18 T3: Gebaut vor dem Merge von kern-provision-1 (wartet auf #569). Dessen Hunks in `types.ts` (ab Zeile 227) und `dictionaries.ts` (59–84, 1618–1643) liegen weit von denen dieser Task (187; 123/136/1421/1682/1695/2973); der spätere Merge löst sie textuell.
+- 2026-11-18 T3: Schema und Pfad fragt und schickt der Dialog nur, wenn der Server sie auswertet (neuer Tunnel oder geänderte Form, `asksWebTarget`); bei unveränderter Form ignoriert sie der Server. Die Pfadregel des Servers prüft der Dialog vorab.
