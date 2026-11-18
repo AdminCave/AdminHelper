@@ -5,7 +5,7 @@
 """Limits compose sets on every service of the shipped stack.
 
 No process in any container gains privileges on exec (no-new-privileges): setuid bits and file
-capabilities stay without effect. The entrypoints that drop to an unprivileged user (gosu,
+capabilities stay without effect. The entrypoints that drop to an unprivileged user (setpriv,
 su-exec, nginx's workers) do so from root through system calls and are not affected.
 
 Every service has a process limit (pids_limit), generous by the structure of the service, so
