@@ -1,0 +1,27 @@
+<!doctype html>
+<!--
+  Monitoring re-design mockup (R-1558, ADR 0004). Served by the Vite dev server only:
+  `vite build` builds index.html alone, so this page never ships.
+-->
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      try {
+        var stored = localStorage.getItem('ah-theme');
+        if (stored === 'light' || stored === 'dark') {
+          document.documentElement.dataset.theme = stored;
+        }
+      } catch (e) {
+        /* localStorage unavailable — stay on the dark default */
+      }
+    </script>
+    <title>AdminHelper — Mockup Monitoring</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/mockups/monitoring-neu/main.ts"></script>
+  </body>
+</html>
