@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-deps-5 — Task-Ledger
-Status: bereit · Branch: feature/kern-deps-5 · Review: pro Task
+Status: erledigt · Branch: feature/kern-deps-5 · Review: pro Task
 Spec: docs/features/kern-deps-5.md (Roadmap R-1552, R-1553, R-1555, R-1584, R-1585, R-1586, R-1587)
 Heavy: linux-full — eigene Images, Entrypoints (`docker-compose.yml`) und `apps/agent`; kein PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
