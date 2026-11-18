@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """SmartHealthChecker.evaluate — disk-health alerting. Focused on the bug-prone
-bits: missing SMART data is NOT an error (VMs), a failed/uncorrectable disk is
+bits: missing SMART data is NOT an error (VMs: info; a failed query or a disk without a
+verdict: unknown), a failed/uncorrectable disk is
 critical, the smartctl exit-code bit flags map to the right severity, the
 temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
@@ -26,6 +27,7 @@ def _disk(**kw):
         "model": "X",
         "protocol": "ATA",
         "kind": "HDD",
+        "smart_passed": True,
         "temp_c": 30,
         **kw,
     }
@@ -35,28 +37,29 @@ def _report(*disks):
     return {"smart": list(disks)}
 
 
-def test_no_smart_data_is_ok_not_an_error():
-    # A VM / a host without smartctl sends no "smart" key.
-    assert CHECKER.evaluate({}, {})[0] == "ok"
+def test_no_smart_data_is_info_not_an_error():
+    # A VM / a host without smartctl sends no "smart" key: not collected (Kevin 2026-11-18).
+    assert CHECKER.evaluate({}, {})[0] == "info"
 
 
 # The result of a report without smart and without a readable reason (agents before R-0419).
-_NO_DATA = ("ok", "No SMART data (VM or smartctl not available)", None)
+_NO_DATA = ("info", "No SMART data (VM or smartctl not available)", None)
 
 
 @pytest.mark.parametrize(
-    ("reason", "message"),
+    ("reason", "status", "message"),
     [
-        ("not_installed", "No SMART data: smartctl is not installed"),
-        # scan_failed also covers found devices of which none gave readable SMART data.
-        ("scan_failed", "No SMART data: the SMART query failed"),
-        ("no_devices", "No SMART data: no SMART-capable devices found"),
+        ("not_installed", "info", "No SMART data: smartctl is not installed"),
+        # scan_failed also covers found devices of which none gave readable SMART data:
+        # not readable, so unknown, not a healthy ok (R-1568).
+        ("scan_failed", "unknown", "No SMART data: the SMART query failed"),
+        ("no_devices", "info", "No SMART data: no SMART-capable devices found"),
     ],
 )
-def test_smart_absent_names_the_reason_and_stays_ok(reason, message):
+def test_smart_absent_names_the_reason_and_its_level(reason, status, message):
     # Agents since R-0419 send smart_absent instead of smart when there is no disk.
     report = {"smart_absent": {"reason": reason}}
-    assert CHECKER.evaluate({}, report) == ("ok", message, {"_details": {"absent": reason}})
+    assert CHECKER.evaluate({}, report) == (status, message, {"_details": {"absent": reason}})
 
 
 @pytest.mark.parametrize(
@@ -80,6 +83,39 @@ def test_clean_disk_is_ok():
 
 def test_smart_failed_is_critical():
     assert CHECKER.evaluate({}, _report(_disk(smart_passed=False)))[0] == "critical"
+
+
+@pytest.mark.parametrize("kind", ["ata", "nvme"])
+def test_a_disk_without_a_smart_verdict_is_not_readable_not_failed(kind):
+    # R-0518: without smart_status (SMART off) the agent leaves smart_passed out; that is no
+    # verdict, so unknown, never "SMART FAILED".
+    make_disk = _disk if kind == "ata" else _nvme
+    disk = {k: v for k, v in make_disk().items() if k != "smart_passed"}
+    status, msg, metrics = CHECKER.evaluate({}, _report(disk))
+    label = f"{disk['device']} ({disk['model']})"
+    assert (status, msg) == ("unknown", f"SMART not readable: {label}")
+    assert _row(metrics)["smart_passed"] is None
+    assert _row(metrics)["category"] == "unknown"
+    assert metrics["smart_disks_ok"] == 0
+
+
+def test_an_unreadable_disk_is_named_beside_a_warning_of_another():
+    unread = {k: v for k, v in _disk(device="/dev/sdb").items() if k != "smart_passed"}
+    status, msg, _ = CHECKER.evaluate({}, _report(_disk(smartctl_status=0x40), unread))
+    assert status == "warning"
+    assert msg == (
+        "SMART warnings: /dev/sda (X): error log entries (smartctl 0x40); "
+        "SMART not readable: /dev/sdb (X)"
+    )
+
+
+def test_a_rating_of_its_own_outranks_a_missing_verdict():
+    # Temperature and attributes still rate a disk without a verdict: hot is critical.
+    disk = {k: v for k, v in _disk(temp_c=62).items() if k != "smart_passed"}
+    status, msg, metrics = CHECKER.evaluate({}, _report(disk))
+    assert status == "critical"
+    assert msg == "SMART problems: /dev/sda (X): 62°C (>=60°C); SMART not readable: /dev/sda (X)"
+    assert _row(metrics)["category"] == "critical"
 
 
 def test_offline_uncorrectable_is_critical():
@@ -153,6 +189,7 @@ def _nvme(**kw):
         "model": "N",
         "protocol": "NVMe",
         "kind": "NVMe",
+        "smart_passed": True,
         "temp_c": 40,
         **kw,
     }
@@ -379,7 +416,7 @@ def test_the_ignore_list_compares_the_full_device():
     [
         pytest.param(True, True, id="true"),
         pytest.param(False, False, id="false"),
-        pytest.param(None, False, id="null"),
+        pytest.param(None, None, id="null"),
         pytest.param(0, False, id="zero"),
         pytest.param("", False, id="empty-str"),
         pytest.param([], False, id="empty-list"),
@@ -391,10 +428,12 @@ def test_the_ignore_list_compares_the_full_device():
 )
 @pytest.mark.parametrize("make_disk", _DISKS)
 def test_smart_passed_in_details_is_the_bool_the_rating_reads(make_disk, value, passed):
-    # The rating stays: a false value is "SMART FAILED", a true one rates like a missing field.
+    # A false value is "SMART FAILED", a true one rates like a passed disk, null like no verdict.
     result = _rate_with(make_disk(), "smart_passed", value)
     if passed:
         assert result == CHECKER.evaluate({}, _report(make_disk()))
+    elif passed is None:
+        assert result[0] == "unknown" and result[1].startswith("SMART not readable: ")
     else:
         assert result[0] == "critical" and result[1].endswith(": SMART FAILED")
     assert _row(result[2])["smart_passed"] is passed

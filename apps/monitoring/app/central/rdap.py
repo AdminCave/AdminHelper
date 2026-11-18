@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -47,6 +48,9 @@ MAX_TRIES = 3
 # RFC 7480 §5.2: a server may redirect a query to another one.
 REDIRECTS = frozenset({301, 302, 303, 307, 308})
 MAX_REDIRECTS = 3
+# One frame for a query with its redirects and the parent domains it tries: each request
+# has its own (fetch.DEADLINE_S), and together they would hold a check slot for minutes.
+QUERY_DEADLINE_S = 60.0
 MAX_STATUS = 16
 MAX_STATUS_TEXT = 64
 MAX_TEXT = 200
@@ -92,6 +96,7 @@ def probe(
     except fetch.FetchError as exc:
         return SensorResult("unknown", f"IANA RDAP bootstrap: {exc}"[:MAX_TEXT], False)
 
+    deadline = time.monotonic() + QUERY_DEADLINE_S
     for name in candidates:
         base = _server_for(name, servers)
         if base is None:
@@ -99,7 +104,7 @@ def probe(
             return SensorResult("unknown", f"no RDAP service for .{tld}", False)
         server = httpx.URL(base).host
         try:
-            answer = _get(f"{base}domain/{name}")
+            answer = _get(f"{base}domain/{name}", deadline)
         except fetch.FetchError as exc:
             return SensorResult("unknown", f"RDAP {server}: {exc}"[:MAX_TEXT], False)
         if answer.status == 404:
@@ -120,11 +125,14 @@ def probe(
     return SensorResult("unknown", message, False)
 
 
-def _get(url: str) -> fetch.HttpAnswer:
-    """The answer for `url` past at most MAX_REDIRECTS redirects, each to https only; every
-    target goes through fetch.get again, so its address passes the same rule."""
+def _get(url: str, deadline: float) -> fetch.HttpAnswer:
+    """The answer for `url` past at most MAX_REDIRECTS redirects, each to https only, before
+    `deadline` (time.monotonic()); every target goes through fetch.get again, so its address
+    passes the same rule."""
     for hop in range(MAX_REDIRECTS + 1):
-        answer = fetch.get(url, accept=ACCEPT)
+        if time.monotonic() >= deadline:
+            raise fetch.FetchError(f"no answer within {QUERY_DEADLINE_S:.0f} s", temporary=True)
+        answer = fetch.get(url, accept=ACCEPT, deadline=deadline)
         if answer.status not in REDIRECTS:
             return answer
         if hop == MAX_REDIRECTS:

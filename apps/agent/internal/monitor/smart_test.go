@@ -109,7 +109,7 @@ func TestParseATAHealthFixtureMetadata(t *testing.T) {
 	if raw.ModelName != "WDC WD40EFRX-68N32N0" {
 		t.Errorf("ModelName = %q", raw.ModelName)
 	}
-	if !raw.SmartStatus.Passed {
+	if raw.SmartStatus == nil || !raw.SmartStatus.Passed {
 		t.Error("SmartStatus.Passed = false, erwartet true")
 	}
 	if raw.Temperature.Current != 34 {
@@ -529,6 +529,35 @@ func TestCollectSmartOpenFailed(t *testing.T) {
 		disks, reason := collectSmart(context.Background())
 		assertSmartAbsent(t, disks, reason, "scan_failed")
 	})
+}
+
+func TestCollectSmartWithoutSmartStatusLeavesPassedOut(t *testing.T) {
+	// SMART disabled on the disk: smartctl sets exit bit 2 and prints no smart_status. That is no
+	// verdict on the disk's health, so smart_passed must be missing, not false (FAILED).
+	noStatus := strings.Replace(ataFixture, `"smart_status": {"passed": true},`, "", 1)
+	if noStatus == ataFixture {
+		t.Fatal("fixture: smart_status not found")
+	}
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {out: noStatus, err: smartctlExit(t, 4)},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	disks, _ := collectSmart(context.Background())
+	got := map[string]string{}
+	for _, d := range disks {
+		b, err := json.Marshal(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		got[d.Device] = fmt.Sprint(m["smart_passed"])
+	}
+	if want := map[string]string{"/dev/sda": "<nil>", "/dev/nvme0": "true"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("smart_passed per disk = %v, want %v", got, want)
+	}
 }
 
 func TestCollectSmartPassesScanType(t *testing.T) {

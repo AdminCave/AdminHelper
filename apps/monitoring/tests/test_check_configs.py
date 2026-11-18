@@ -1115,3 +1115,20 @@ class TestProbeConfig:
     def test_credential_uses_of_the_catalog_are_accepted(self, use):
         ref = "paperless/paperless/default"
         validate_check_config("probe", _probe(credential={"ref": ref, "use": use}))
+
+
+class TestZfsScrubDays:
+    """R-1570: the scrub age limits are whole days from 1, defaults 35/60."""
+
+    def test_defaults(self):
+        config = CONFIG_MODELS["zfs_health"]()
+        assert (config.scrub_warn_days, config.scrub_crit_days) == (35, 60)
+
+    def test_own_days_are_accepted(self):
+        validate_check_config("zfs_health", {"scrub_warn_days": 10, "scrub_crit_days": 20})
+
+    @pytest.mark.parametrize("value", [0, -1, 3651, 35.5, "35", True, None])
+    @pytest.mark.parametrize("key", ["scrub_warn_days", "scrub_crit_days"])
+    def test_other_values_are_rejected(self, key, value):
+        with pytest.raises(ValueError):
+            validate_check_config("zfs_health", {key: value})

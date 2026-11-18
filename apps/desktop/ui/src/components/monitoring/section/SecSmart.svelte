@@ -41,11 +41,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (temp >= warn) return 'warn';
     return 'ok';
   }
-  function categoryClass(cat: string): 'ok' | 'warn' | 'crit' {
+  // 'unknown': smartctl gave no SMART verdict for the disk (R-1568), which is no pass.
+  function categoryClass(cat: string): 'ok' | 'warn' | 'crit' | 'muted' {
     if (cat === 'critical') return 'crit';
     if (cat === 'warning') return 'warn';
+    if (cat === 'unknown') return 'muted';
     return 'ok';
   }
+  const CHIP_TEXT = { ok: 'OK', warn: 'WARN', crit: 'CRIT', muted: 'N/A' } as const;
   function smartSecondary(d: SmartDisk): string {
     const hours = num(d.power_on_hours);
     const hoursStr = hours > 0 ? `${hours.toLocaleString(currentLocale())} h` : null;
@@ -117,9 +120,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   ></div>
                 </div>
                 <span class="mon-hero-bar-pct">{temp}°C</span>
-                <span class="mon-chip chip-{cat}"
-                  >{cat === 'crit' ? 'CRIT' : cat === 'warn' ? 'WARN' : 'OK'}</span
-                >
+                <span class="mon-chip chip-{cat}">{CHIP_TEXT[cat]}</span>
                 {#if d.model}<span class="mon-hero-bar-sub">{d.model}</span>{/if}
                 {#if secondary}<span class="mon-hero-bar-sub">{secondary}</span>{/if}
                 {#if cwBits.length > 0}<span class="mon-hero-bar-sub mon-sub-crit"

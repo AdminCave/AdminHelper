@@ -8,7 +8,10 @@ set -e
 # everything below (alembic, uvicorn, hook subprocesses) runs as that user.
 if [ "$(id -u)" = "0" ]; then
     chown -R app:app /app/data /app/frp-config
-    exec gosu app:app sh "$0" "$@"
+    # setpriv keeps the environment, HOME of root included; app's home is /app. It gives up
+    # the capabilities only with its own exec, so env, already without them, execs sh.
+    export HOME=/app
+    exec setpriv --reuid=app --regid=app --init-groups env sh "$0" "$@"
 fi
 
 # --- Postgres-Wait + Alembic-Migration -------------------------------------
