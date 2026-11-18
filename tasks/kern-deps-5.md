@@ -93,8 +93,10 @@ Review: approve (.ah-out/review/kern-deps-5/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (Test-Abhängigkeit)
 
-### T9 — R-1587: jsdom 31 in der Desktop-UI  [ ]
+### T9 — R-1587: jsdom 31 in der Desktop-UI  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0e0f6886a 2026-11-18T14:12:40+01:00
+Review: approve (.ah-out/review/kern-deps-5/T9.verdict.json)
 Änderung: wie T8 für `apps/desktop/ui`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (Test-Abhängigkeit)
