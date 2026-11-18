@@ -85,8 +85,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_onl
 Doku: → T10
 Abhängt von: T5
 
-### T8 — R-1587: jsdom 31 im Web  [ ]
+### T8 — R-1587: jsdom 31 im Web  [x]
 Komponente: web · Dateien: apps/web/package.json, apps/web/package-lock.json
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @69d6eca60 2026-11-18T14:08:34+01:00
+Review: approve (.ah-out/review/kern-deps-5/T8.verdict.json)
 Änderung: `jsdom` ^30.1.3 → ^31; Unit-Tests grün, Anpassungen nur in Tests, falls nötig (`set-files`).
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (Test-Abhängigkeit)
