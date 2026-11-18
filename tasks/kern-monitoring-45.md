@@ -25,8 +25,10 @@ Ort und Fehlermeldung.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py tests/test_hooks_webhook_payload.py
 Doku: → T11
 
-### T2 — R-1566: Status-Zusammenfassung zählt nur aktive Checks  [ ]
+### T2 — R-1566: Status-Zusammenfassung zählt nur aktive Checks  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_status_info.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1ad575da2 2026-11-18T12:38:59+01:00
+Review: approve (.ah-out/review/kern-monitoring-45/T2.verdict.json)
 Änderung: `get_status_summary` zählt die Zustände über einen Join auf `MonitorCheck.enabled`. Test: ein
 abgeschalteter Check mit Status `critical` fehlt in `critical` und `total` (rot vorher).
 Beweis: Code-Lesung `routers/checks.py` `get_status_summary` (kein Filter auf `enabled`) · Dedup-Key: bug:monitoring:checks.py:summary-counts-disabled

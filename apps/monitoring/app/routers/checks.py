@@ -786,7 +786,16 @@ def get_status_summary(db: Session = Depends(get_db)):
     # Aggregate in SQL: a GROUP BY count avoids materializing every MonitorState row (incl. the
     # message/details JSON blobs) just to tally per status — thousands of rows with large text
     # columns per dashboard poll at scale (5.21).
-    rows = db.query(MonitorState.status, func.count()).group_by(MonitorState.status).all()
+    enabled = MonitorCheck.enabled == True  # noqa: E712
+    # Only enabled checks: a disabled one keeps its last state frozen, and a critical
+    # one would stay on the dashboard for good.
+    rows = (
+        db.query(MonitorState.status, func.count())
+        .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
+        .filter(enabled)
+        .group_by(MonitorState.status)
+        .all()
+    )
     summary = {
         "total": 0,
         "ok": 0,
@@ -800,7 +809,6 @@ def get_status_summary(db: Session = Depends(get_db)):
         if status_ in summary:
             summary[status_] = count
         summary["total"] += count
-    enabled = MonitorCheck.enabled == True  # noqa: E712
     last_result = (
         db.query(func.max(MonitorState.last_check))
         .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
