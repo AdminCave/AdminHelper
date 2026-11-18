@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-upgrade-1 — upgrade_path nach update.sh: Einmal-Dienst db-init — Task-Ledger
-Status: aktiv · Branch: feature/kern-upgrade-1 · Review: am Ende
+Status: bereit · Branch: feature/kern-upgrade-1 · Review: am Ende
 Spec: Roadmap R-1615
 Heavy: linux-full — Fix des roten Sammellauf-Schritts upgrade_path; Beweis vor dem Merge per `run.sh all --strict --step` über diesen Branch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — R-1615: der erfolgreich beendete Einmal-Dienst db-init zählt als gesund  [ ]
+### T1 — R-1615: der erfolgreich beendete Einmal-Dienst db-init zählt als gesund  [x]
 Komponente: scripts · Dateien: scripts/tests/upgrade_path_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @647fc9f0b 2026-11-18T19:00:13+01:00
+Review: am Ende (Branch-Review)
 Beweis: Sammellauf 2026-11-18-0130, `retry-upgrade_path__last_release_-__HEAD_-1.log:52` „FAIL update.sh: after the
 update — missing: none not running: db-init exited“; auf dem Basis-Commit ebenso (extern). v0.46.0 hatte kein
 `db-init`, v0.47.0 (erstes Release als `PREV`) hat es. Dedup-Key: bug:scripts:upgrade_path_test.sh:db-init-oneshot
