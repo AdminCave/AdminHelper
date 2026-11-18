@@ -90,8 +90,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_rule_model_
 Doku: → T9
 Abhängt von: T7
 
-### T9 — ADR 0004: Zielmodell, Schlüssel je Objektart, Regelmodell, Migrationsplan (R-1558, R-1515)  [ ]
-Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
+### T9 — ADR 0004: Zielmodell, Schlüssel je Objektart, Regelmodell, Migrationsplan (R-1558, R-1515)  [x]
+Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md, docs/features/arch-monitoring-neu-p0.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4e0117e41 2026-11-18T15:31:45+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Status „vorgeschlagen“. Zielmodell (Objekt, Regel, Ausnahme, Problem, Abdeckung) und Darstellungs-Grammatik; Tabelle stabiler Schlüssel je Objektart mit Rückfall und Instabilitäts-Markierung; Objektzustand (`monitor_object_state`, Statuswechsel-Log) und Problem-Schlüssel; Regelmodell mit Ergebnis aus T7/T8 (was Regel wird, was Code bleibt, Empfehlung zu R-1515); Migrationsplan je heutigem Mechanismus (Ignorierlisten, `enabled`, Wartung, Mutes, Alarmregeln, Tombstones, Messreihen nach Gerätename) mit Reihenfolge, Kompatibilität alter Desktops und Rückweg; Datenlücken im Agent; Phasen P1–P5.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/adr/0004-monitoring-neuordnung.md
@@ -168,3 +170,4 @@ Abhängt von: T12
 - 2026-11-18 T7: Merge-Szenario über den echten `module_sync._update` mit einem Unit-Check (`last_run_age_s`, Feld des Sensors `unit`); heute verliert die Zeile die eigene Grenze, im Zielmodell bleibt sie als Override.
 - 2026-11-18 T7: Ein `clear`, über das ein Override oder ein Katalog-Update die Grenze schiebt, fällt weg (`effective` verwirft es, `merge` nennt es `clear_dropped`): sonst ruhte die feuernde Regel jenseits der Grenze (Prüfer T7). Eine wertgebundene Ausnahme endet auch, wenn der Wert fehlt (schlafende Platte: der Admin bestätigt neu), anders als eine Bedingung, die bei fehlenden Daten ruht; diese Abwägung nennt ADR 0004.
 - 2026-11-18 T8: Je Familie liest ein Sensor die Werte ohne Grenze (Typprüfung, Art der Platte, smartctl-Bits dekodiert, Exit-Code aus dem ps-Text, Vorwert des Restart-Zählers), der Regelsatz trägt jede Grenze und Stufe; fehlt ein Wert, den der Checker mit Vorgabe liest, gilt `if_absent: ok`. 118 Fälle stimmen überein; Szenarien nur mit einem Urteil aus `docs/` oder, wo die Doku schweigt, aus `test_smart_checker.py`. Benannte Abweichungen: Docker Exit 143/137 ohne OOM und Policy `unless-stopped` (je kritisch statt gestoppt: `unless` nimmt einen Wert, ein `not in` fehlt), unbekannter Zustand (ok statt Warnung: `not in`), ZFS-Scrub genau 35 Tage (ok statt Warnung: `max_age` zählt Sekunden strikt, der Checker ganze Tage). Eine Grenze auf den rohen smartctl-Status bewertet 0x20 kritisch: Bitfelder bleiben im Sensor. Gegenprobe: zwei verschobene Schwellen machen drei Fälle rot.
+- 2026-11-18 T9: Die Bedingung hat zwei Reichweiten: `when` an einer Katalog-Regel liest nur in der eigenen Modul-Instanz (ein Modul kennt nur seine Checks), die Bedingung an einer Ausnahme jedes Objekt desselben Servers (Mockup T6). R-1515 selbst wird ein `when` im Modul `nextcloud-aio` (neuer `status.php`-Check, Bedingung auf `backup` des Checks `aio`); Kevin entscheidet in T12. Die Spec zählt jetzt 12 eingebaute Typen statt 14: `probe` und `central` bewerten deklarativ.

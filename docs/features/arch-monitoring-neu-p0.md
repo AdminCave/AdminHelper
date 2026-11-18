@@ -18,7 +18,7 @@ Das Monitoring ist über zwei Jahre um Einzelwünsche gewachsen. Heute:
 1. **Fünf Arten, etwas auszublenden** (Schalter `enabled`, `silent` des Katalog-Syncs, Ignorierlisten je Check-Typ,
    Wartungsfenster, Stummschalten je Person im Hub); keine trägt einen Grund, es gibt keine Gesamtliste, Ausgeblendetes
    verschwindet aus der Ansicht.
-2. **Zwei Welten von Checks:** 14 eingebaute Typen mit eigenem Ergebnisformat und eigener Ansicht gegen 125
+2. **Zwei Welten von Checks:** 12 eingebaute Typen mit eigenem Ergebnisformat und eigener Ansicht gegen 125
    Katalog-Module mit deklarativen Regeln und einer generischen Karte. Schwellen lassen sich nur bei den einen im
    Formular ändern, bei Modulen gar nicht (die API erlaubt es, die UI nicht).
 3. **Zwei Benachrichtigungswege:** Alarmregeln (Mail/Webhook direkt) und der Benachrichtigungs-Hub (Matrix je Person,
