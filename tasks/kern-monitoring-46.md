@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-46 — Katalog: Check an einer Instanz, Port-Alternativen am Host; einteilige vHost-Namen — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-46 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-46 · Review: am Ende
 Spec: docs/features/kern-monitoring-46.md (Roadmap R-1528, R-1548)
 Heavy: none — nur Monitoring-Katalog und Abgleich, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
