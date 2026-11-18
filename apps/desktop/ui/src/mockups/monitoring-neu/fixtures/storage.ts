@@ -820,6 +820,8 @@ interface PoolSpec {
   scrubDays: number;
   scrubErrors?: number;
   errors: number;
+  /** zpool list frag; absent where zpool prints "-" (the agent leaves it out). */
+  frag?: number;
   metricStatus?: Partial<Record<'used' | 'scrub' | 'errors', Status>>;
   errorsNote?: string;
   root: VdevNode;
@@ -866,6 +868,7 @@ function pool(s: PoolSpec): MonObject {
     attributes: [
       { key: 'Layout', value: s.layout },
       { key: 'Größe', value: s.size },
+      { key: 'Fragmentierung', value: s.frag === undefined ? 'unbekannt' : `${s.frag} %` },
       { key: 'Schlüssel', value: `${s.server}/${s.name} (später Pool-GUID)`, mono: true },
     ],
     details: [{ type: 'vdev', title: 'Aufbau', root: s.root }, ...(s.details ?? [])],
@@ -878,6 +881,7 @@ const POOLS: MonObject[] = [
   pool({
     server: 'nas-01',
     name: 'tank',
+    frag: 12,
     layout: 'raidz2, 6 Platten',
     size: '21,8 TB',
     status: 'ok',
@@ -909,6 +913,7 @@ const POOLS: MonObject[] = [
   pool({
     server: 'pve-01',
     name: 'rpool',
+    frag: 8,
     layout: 'mirror, 2 Platten',
     size: '1,8 TB',
     status: 'critical',
@@ -933,6 +938,7 @@ const POOLS: MonObject[] = [
   pool({
     server: 'nas-01',
     name: 'archive',
+    frag: 31,
     layout: 'mirror, 2 Platten',
     size: '7,3 TB',
     status: 'warning',
@@ -959,6 +965,7 @@ const POOLS: MonObject[] = [
   pool({
     server: 'pve-02',
     name: 'data',
+    frag: 19,
     layout: 'mirror, 2 Platten',
     size: '3,6 TB',
     status: 'critical',
@@ -1006,6 +1013,7 @@ const POOLS: MonObject[] = [
   pool({
     server: 'srv-01',
     name: 'zroot',
+    frag: 4,
     layout: 'einzelne Platte',
     size: '460 GB',
     status: 'critical',
@@ -1092,6 +1100,7 @@ interface GuestSpec {
   }[];
   exception?: ExceptionInfo;
   details?: Detail[];
+  history?: HistoryEvent[];
 }
 
 function guest(s: GuestSpec): MonObject {
@@ -1154,6 +1163,7 @@ function guest(s: GuestSpec): MonObject {
         : []),
       ...(s.details ?? []),
     ],
+    history: s.history,
     rules: withFiring(BACKUP_RULES, s.firing),
     exception: s.exception,
   };
@@ -1233,6 +1243,7 @@ const GUESTS: MonObject[] = [
     status: 'critical',
     reason: 'Letzter Lauf fehlgeschlagen: Zielspeicher voll',
     since: ago(7 * HOUR),
+    history: [{ at: ago(7 * HOUR), status: 'critical', text: 'Lauf 02:00: Zielspeicher voll' }],
     ageHours: 31,
     ageStatus: 'warning',
     last: 'gestern 02:00',

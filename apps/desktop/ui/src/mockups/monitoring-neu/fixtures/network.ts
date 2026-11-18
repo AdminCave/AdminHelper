@@ -178,7 +178,10 @@ export const CERTIFICATES: MonObject[] = [
     until: '24.11.2026',
     issuer: 'Beispiel-CA R3',
     nameMatch: 'passt (intranet.example.org)',
-    sources: ['zentral tls 198.51.100.30:443', 'Modul apache auf web-02'],
+    sources: [
+      'zentral tls 198.51.100.30:443',
+      'Modul nginx auf web-02 (vhost intranet.example.org)',
+    ],
     firing: ['cert.expiry'],
     history: [
       { at: ago(3 * DAY), status: 'critical', text: 'unter 9 Tagen' },
@@ -423,18 +426,22 @@ export const ENDPOINTS: MonObject[] = [
     name: 'https://shop.example.com/',
     server: 'web-01',
     identity: ['http', 'GET, erwartet 200', 'zentral alle 60 s'],
-    status: 'ok',
-    reason: 'Antwortet in 182 ms',
-    since: ago(6 * DAY),
+    status: 'critical',
+    reason: 'Antwortet nicht: Verbindung abgelehnt',
+    since: ago(43),
     metrics: [
-      metric('code', 'Antwort', 'HTTP 200', null),
-      metric('latency', 'Antwortzeit', 182, { warn: 500, crit: 2000 }, { unit: 'ms' }),
+      metric('code', 'Antwort', 'keine', null, {
+        status: 'critical',
+        note: 'Verbindung abgelehnt',
+      }),
+      metric('latency', 'Antwortzeit', '–', { warn: 500, crit: 2000 }, { unit: 'ms' }),
       metric('cert', 'Zertifikat', 'gültig noch 41 Tage', null, {
         note: 'bewertet am Zertifikat',
       }),
     ],
-    details: [latencyTrend((i) => (i === 23 ? 182 : 150 + ((i * 37) % 60)))],
-    rules: withFiring([DOWN_RULE, LATENCY_RULE]),
+    details: [latencyTrend((i) => 150 + ((i * 37) % 60))],
+    history: [{ at: ago(43), status: 'critical', text: 'zwei Versuche ohne Antwort' }],
+    rules: withFiring([DOWN_RULE, LATENCY_RULE], ['endpoint.down']),
   },
   {
     key: 'endpoint/tcp/192.0.2.25:25',

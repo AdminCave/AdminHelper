@@ -16,6 +16,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import MetaList from '../../components/ui/MetaList.svelte';
   import Pill from '../../components/ui/Pill.svelte';
   import type { MonObject } from './model';
+  import { ackText } from './views/lists';
   import BackupList from './details/BackupList.svelte';
   import LogLines from './details/LogLines.svelte';
   import ProcessTable from './details/ProcessTable.svelte';
@@ -74,6 +75,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           >{/if}</span
       >
     </p>
+    {#if object.ack}
+      <p class="ack" data-ack={object.key}>{ackText(object.ack)}</p>
+    {/if}
     <p class="key">Schlüssel <code>{object.key}</code></p>
   </header>
 
@@ -239,6 +243,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .reason {
     color: var(--text);
+  }
+  .ack {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
   }
   .tbl {
     width: 100%;

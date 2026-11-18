@@ -13,11 +13,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import ObjectDrawer from './ObjectDrawer.svelte';
   import { ALL_OBJECTS } from './fixtures';
   import { NOW } from './fixtures/time';
+  import CrossView from './views/CrossView.svelte';
   import KindsView from './views/KindsView.svelte';
+  import Lage from './views/Lage.svelte';
+  import ObjectsView from './views/ObjectsView.svelte';
+  import ServerView from './views/ServerView.svelte';
 
-  const VIEWS = [{ id: 'kinds', label: 'Objektarten' }];
+  const VIEWS = [
+    { id: 'lage', label: 'Lage' },
+    { id: 'server', label: 'Server' },
+    { id: 'objects', label: 'Objekte' },
+    { id: 'cross', label: 'Querschnitte' },
+    { id: 'kinds', label: 'Objektarten' },
+  ];
 
-  let view = $state('kinds');
+  let view = $state('lage');
   let selected = $state<string | undefined>(undefined);
   let theme = $state(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
 
@@ -54,7 +64,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </Callout>
   </div>
   <main class="content">
-    {#if view === 'kinds'}
+    {#if view === 'lage'}
+      <Lage objects={ALL_OBJECTS} now={NOW} {selected} onOpen={open} />
+    {:else if view === 'server'}
+      <ServerView objects={ALL_OBJECTS} now={NOW} {selected} onOpen={open} />
+    {:else if view === 'objects'}
+      <ObjectsView objects={ALL_OBJECTS} now={NOW} {selected} onOpen={open} />
+    {:else if view === 'cross'}
+      <CrossView objects={ALL_OBJECTS} now={NOW} {selected} onOpen={open} />
+    {:else}
       <KindsView objects={ALL_OBJECTS} now={NOW} {selected} onOpen={open} />
     {/if}
   </main>

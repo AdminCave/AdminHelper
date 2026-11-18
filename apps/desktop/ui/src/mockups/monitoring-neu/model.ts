@@ -91,6 +91,13 @@ export interface ExceptionInfo {
   boundValue?: string;
 }
 
+/** Acknowledgement of an open problem: it stays open and listed (Konzept §2). */
+export interface Ack {
+  by: string;
+  at: string;
+  note?: string;
+}
+
 /** One SMART attribute as smartctl reports it. */
 export interface SmartRow {
   id?: number;
@@ -225,6 +232,8 @@ export interface MonObject {
   rules?: RuleView[];
   raw?: string;
   exception?: ExceptionInfo;
+  /** Who acknowledged the open problem (Konzept §2: bestätigt von, Notiz). */
+  ack?: Ack;
   /** Catalog family of a module object. */
   family?: string;
   /** Key of the module instance a named part belongs to (offene Frage 7). */

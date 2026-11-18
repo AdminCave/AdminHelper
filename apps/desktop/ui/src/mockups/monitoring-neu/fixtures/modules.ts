@@ -92,7 +92,9 @@ interface ModuleSpec {
 
 function module(s: ModuleSpec): MonObject[] {
   const key = `${s.server}/module/${s.module}/${s.instance}`;
-  const name = s.instance === s.module ? s.module : `${s.module} ${s.instance}`;
+  // The unit or id of the module itself adds nothing: "nginx.service" under nginx reads "nginx".
+  const name =
+    s.instance.replace(/\.service$/, '') === s.module ? s.module : `${s.module} ${s.instance}`;
   const variant: Detail = s.parts
     ? {
         type: 'note',
@@ -154,15 +156,20 @@ export const MODULE_OBJECTS: MonObject[] = [
     instance: 'nginx.service',
     server: 'web-01',
     version: '1.26.3',
-    status: 'ok',
-    reason: 'Webserver läuft, Konfiguration lädt',
-    since: ago(12 * DAY),
+    status: 'critical',
+    reason: 'Webserver läuft nicht: nginx.service ist fehlgeschlagen',
+    since: ago(45),
     metrics: [
-      m('active', 'Aktive Verbindungen', 214, null),
+      m('active', 'Aktive Verbindungen', 0, null),
       m('dropped', 'Verworfen seit letztem Lauf', 0, { warn: 1 }),
-      m('config', 'Konfiguration', 'lädt (nginx -t)', null),
+      m('config', 'Konfiguration', 'nicht prüfbar', null, {
+        status: 'unknown',
+        note: 'nginx -t: kein Platz auf /var/log',
+      }),
       m('vhosts', 'vhosts', 5, null),
     ],
+    firing: ['nginx.running'],
+    history: [{ at: ago(45), status: 'critical', text: 'nginx.service fehlgeschlagen' }],
     rules: [
       rule('nginx.running', 'Webserver läuft nicht', 'critical'),
       rule('nginx.config', 'Konfiguration lädt nicht (nginx -t)', 'critical'),
@@ -651,8 +658,8 @@ export const MODULE_OBJECTS: MonObject[] = [
   // Windows-Rollen --------------------------------------------------------------------------
   ...module({
     family: 'Windows-Rollen',
-    module: 'windows_dhcp',
-    instance: 'windows_dhcp',
+    module: 'windows-dhcp',
+    instance: 'windows-dhcp',
     server: 'dc-01',
     status: 'warning',
     reason: '1 von 4 Bereichen zu 92 % belegt',
@@ -672,8 +679,8 @@ export const MODULE_OBJECTS: MonObject[] = [
   }),
   ...module({
     family: 'Windows-Rollen',
-    module: 'windows_dhcp',
-    instance: 'windows_dhcp',
+    module: 'windows-dhcp',
+    instance: 'windows-dhcp',
     server: 'dc-02',
     status: 'warning',
     reason: 'Bereich 192.0.2.0/24 zu 92 % belegt',
@@ -728,7 +735,7 @@ export const MODULE_OBJECTS: MonObject[] = [
   // Verzeichnis -----------------------------------------------------------------------------
   ...module({
     family: 'Verzeichnis',
-    module: 'samba_ad_dc',
+    module: 'samba-ad-dc',
     instance: 'samba-ad-dc.service',
     server: 'dc-03',
     version: '4.21.4',
@@ -758,7 +765,7 @@ export const MODULE_OBJECTS: MonObject[] = [
   }),
   ...module({
     family: 'Verzeichnis',
-    module: 'samba_ad_dc',
+    module: 'samba-ad-dc',
     instance: 'samba-ad-dc.service',
     server: 'dc-04',
     version: '4.21.4',
@@ -827,7 +834,7 @@ export const MODULE_OBJECTS: MonObject[] = [
   // Virtualisierung -------------------------------------------------------------------------
   ...module({
     family: 'Virtualisierung',
-    module: 'proxmox_ve',
+    module: 'proxmox-ve',
     instance: 'pve-cluster.service',
     server: 'pve-01',
     version: '9.1',
@@ -848,7 +855,7 @@ export const MODULE_OBJECTS: MonObject[] = [
   }),
   ...module({
     family: 'Virtualisierung',
-    module: 'proxmox_ve',
+    module: 'proxmox-ve',
     instance: 'pve-cluster.service',
     server: 'pve-02',
     version: '9.1',
