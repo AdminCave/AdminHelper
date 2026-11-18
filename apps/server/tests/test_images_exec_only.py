@@ -6,15 +6,16 @@
 with the same step: every program in the bin directories and below /usr/lib/postgresql (the
 PostgreSQL clients), an ELF file with an x bit, is for anyone but root, its owner, to execute
 only; scripts and symlinks stay as they are, and a directory of the list the image lacks is
-skipped. A process of app that gosu starts from such a program is not dumpable, so the entries
-in /proc/<pid> are root's. Scripts stay readable: only the program that runs counts, for a
-script its interpreter.
+skipped. A process of app that starts from such a program without the capabilities of the
+container is not dumpable, so the entries in /proc/<pid> are root's. Scripts stay readable:
+only the program that runs counts, for a script its interpreter.
 
 One test reads the Dockerfiles. The tests on a container run the step, as read from them, in a
 container of the base image all three pin, with the default capabilities, and start processes
-under the UID of app the way gosu does: the UID changes before the exec, so the program starts
-without the capabilities of the container. docker exec -u keeps them, and a program it starts
-stays dumpable even when its user cannot read it. They skip when Docker or the pinned base
+under the UID of app as the entrypoints do: setpriv changes the UID and execs env, which
+execs the program without the capabilities of the container. setpriv gives them up only with
+its own exec, and docker exec -u keeps them: a program either starts stays dumpable even when
+its user cannot read it. They skip when Docker or the pinned base
 image is not at hand.
 
 pip installs the requirements and then removes itself in the same RUN: the image runs no pip,
@@ -47,15 +48,21 @@ _ENTRYPOINTS = (
 )
 # The GID `groupadd -r app` gives app on the base image: its first system GID.
 _APP_GID = 999
+# The command that starts each entrypoint's shell anew as app.
+_DROP = "setpriv --reuid=app --regid=app --init-groups env"
+# Kills every process whose command line, joined by spaces, is one of sys.argv[1:].
+_KILL = """import os, signal, sys
+for pid in set(filter(str.isdigit, os.listdir("/proc"))) - {str(os.getpid())}:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            args = f.read().split(b"\\0")[:-1]
+    except OSError:
+        continue
+    if b" ".join(args).decode() in sys.argv[1:]:
+        os.kill(int(pid), signal.SIGKILL)
+"""
 _WAIT = 20
 
-# Starts sys.argv[3:] under the UID sys.argv[1] and the GID sys.argv[2], as gosu does.
-_STARTER = """import os, sys
-os.setgroups([])
-os.setgid(int(sys.argv[2]))
-os.setuid(int(sys.argv[1]))
-os.execvp(sys.argv[3], sys.argv[3:])
-"""
 # Every regular file with an x bit below the directories in sys.argv[1:], one JSON line each:
 # path, mode, owner and whether it is an ELF file.
 _PROGRAMS = """import json, os, stat, sys
@@ -154,7 +161,7 @@ def test_each_image_ends_its_last_stage_with_the_same_step_that_leaves_its_progr
         runs = [i for i, instruction in enumerate(stage) if _keyword(instruction) == "RUN"]
         # The step comes after every RUN that installs programs, and nothing comes into the
         # image after it.
-        install = re.compile(r"\b(apt-get|pip) install\b")
+        install = re.compile(r"\b(apt-get|pip) (?:install|upgrade)\b")
         installs = [(i, found[1]) for i in runs if (found := install.search(stage[i]))]
         assert {kind for _, kind in installs} == {"apt-get", "pip"}, (path, stage)
         assert installs[-1][0] < runs[-1], (path, stage)
@@ -180,9 +187,11 @@ class Box:
         return subprocess.run([*run, self.name, *args], input=stdin, capture_output=True, text=True)
 
     def as_app(self, *command: str, detach: bool = False):
-        """Runs command under the UID and GID of app through the starter."""
-        uid, gid = str(_app_uid()), str(_APP_GID)
-        return self.exec("python3", "-c", _STARTER, uid, gid, *command, detach=detach)
+        """Runs command under the UID and GID of app as the entrypoints start their shell:
+        setpriv execs env, env execs command. The box has no user app, so by number and
+        without supplementary groups."""
+        ids = [f"--reuid={_app_uid()}", f"--regid={_APP_GID}", "--clear-groups"]
+        return self.exec("setpriv", *ids, "env", *command, detach=detach)
 
     def programs(self) -> dict[str, tuple[int, int, bool]]:
         """Mode, owner and whether it is an ELF file of every file with an x bit in the bin
@@ -289,6 +298,35 @@ def test_after_the_step_a_process_of_app_is_not_dumpable(box):
     assert found == expected
 
 
+def test_the_shell_the_entrypoints_start_as_app_is_not_dumpable(box):
+    uid = _app_uid()
+    if box.exec("id", "-u", "app").returncode != 0:
+        add = f"groupadd -r app && useradd -r -g app -u {uid} -d /app app"
+        assert box.exec("sh", "-c", add).returncode == 0
+    # The `:` keeps dash from replacing itself with sleep. Without env, the counter-check: the
+    # shell setpriv execs itself stays dumpable.
+    without_env = _DROP.removesuffix(" env")
+    for drop, seconds in ((_DROP, 604), (without_env, 605)):
+        start = f"exec {drop} sh -c 'sleep {seconds}; :'"
+        assert box.exec("sh", "-c", start, detach=True).returncode == 0, start
+    expected = {
+        ("sh", "-c", "sleep 604; :"): "0:0",
+        ("sleep", "604"): "0:0",
+        ("sh", "-c", "sleep 605; :"): f"{uid}:{_APP_GID}",
+        ("sleep", "605"): "0:0",
+    }
+    try:
+        deadline = time.monotonic() + _WAIT
+        while not expected.keys() <= (found := box.processes(uid)).keys():
+            assert time.monotonic() < deadline, found
+            time.sleep(0.2)
+        assert {key: found[key] for key in expected} == expected
+    finally:
+        # The test on the processes of app counts them all: these must not outlive this one.
+        # Only the sleeps: their shells reap them and end, while the box's PID 1 reaps nothing.
+        box.exec("python3", "-c", _KILL, "sleep 604", "sleep 605")
+
+
 def _pip_runs(path: str) -> list[str]:
     """The RUNs of the last stage that name pip."""
     stage = _last_stage(path)
@@ -333,3 +371,22 @@ def test_no_entrypoint_runs_psql():
         lines = (_ROOT / path).read_text(encoding="utf-8").splitlines()
         code = [line for line in lines if not line.lstrip().startswith("#")]
         assert not [line for line in code if re.search(r"\bpsql\b", line)], path
+
+
+def test_each_entrypoint_drops_to_app_through_setpriv_with_the_home_of_app():
+    homes = set()
+    for path in _DOCKERFILES:
+        found = re.findall(r"\buseradd\b.* -d (\S+) app\b", (_ROOT / path).read_text())
+        assert len(found) == 1, path
+        homes.add(found[0])
+    assert len(homes) == 1, homes
+    (home,) = homes
+    for path in _ENTRYPOINTS:
+        code = (_ROOT / path).read_text(encoding="utf-8")
+        drop = f'    export HOME={home}\n    exec {_DROP} sh "$0" "$@"\n'
+        assert code.count(drop) == 1, path
+
+
+def test_no_image_installs_or_calls_gosu():
+    for path in (*_DOCKERFILES, *_ENTRYPOINTS):
+        assert not re.search(r"\bgosu\b", (_ROOT / path).read_text(encoding="utf-8")), path

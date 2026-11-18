@@ -78,12 +78,14 @@ Abhängt von: T5
 Test-Löschung: apps/server/tests/test_images_exec_only.py::test_after_the_step_pip_runs_as_app — pip fehlt
 gewollt; ersetzt durch einen Test, dass pip fehlt
 
-### T7 — R-1585: gosu durch setpriv ersetzen  [ ]
-Komponente: server · Dateien: Dockerfile, apps/monitoring/Dockerfile, apps/ca-issuer/Dockerfile, apps/server/docker-entrypoint.sh, apps/monitoring/docker-entrypoint.sh, apps/ca-issuer/docker-entrypoint.sh, apps/server/tests/test_images_exec_only.py
+### T7 — R-1585: gosu durch setpriv ersetzen  [x]
+Komponente: server · Dateien: Dockerfile, apps/monitoring/Dockerfile, apps/ca-issuer/Dockerfile, apps/server/docker-entrypoint.sh, apps/monitoring/docker-entrypoint.sh, apps/ca-issuer/docker-entrypoint.sh, apps/server/tests/test_images_exec_only.py, apps/server/tests/test_compose_frps.py, apps/server/tests/test_compose_hardening.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4ac557303 2026-11-18T14:45:56+01:00
+Review: approve (.ah-out/review/kern-deps-5/T7.verdict.json)
 Änderung: `exec gosu app:app …` → `exec setpriv --reuid=app --regid=app --init-groups …`; `gosu` aus den
 `apt-get install`-Zeilen. Der Test startet Prozesse wie der Entrypoint (setpriv) und prüft weiter, dass sie nicht
 dumpable sind; ein neuer Test, dass kein Entrypoint und kein Dockerfile `gosu` nennt.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py tests/test_compose_frps.py tests/test_compose_hardening.py
 Doku: → T10
 Abhängt von: T5
 
@@ -112,3 +114,8 @@ Doku: docs/developer/server.html DE+EN · changelog.d/kern-deps-5.md
 Task-Review: am Ende
 
 ## Entscheidungen
+- T7: setpriv gibt die Capabilities erst mit seinem exec ab (util-linux: „does not change capabilities“);
+  die Entrypoints starten die Shell darum über einen Zwischen-exec (`setpriv … env sh`). Test: die so gestartete
+  Shell gehört in /proc root, Gegenprobe ohne `env`.
+- T7: setpriv übernimmt die Umgebung, also `HOME=/root`; gosu setzte das Home von app. Die Entrypoints setzen
+  `HOME=/app` vor dem Wechsel (Test gegen `useradd -d`).

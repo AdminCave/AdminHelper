@@ -7,7 +7,7 @@ WORKDIR /app
 
 RUN apt-get update \
  && apt-get upgrade -y \
- && apt-get install -y --no-install-recommends iputils-ping tzdata postgresql-client gosu \
+ && apt-get install -y --no-install-recommends iputils-ping tzdata postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Hashed lockfile: requirements.in (intent) -> requirements.txt (pinned + hashed
@@ -24,14 +24,14 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 ENV DATA_DIR=/app/data
 
 # Non-root runtime user. The container starts as root so the entrypoint can
-# chown the data volume, then drops to this user via gosu (see entrypoint).
+# chown the data volume, then drops to this user via setpriv (see entrypoint).
 RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
  && mkdir -p /app/data \
  && chown -R app:app /app
 
 # Every program in the bin directories and below /usr/lib/postgresql (the PostgreSQL clients),
 # an ELF file with an x bit, is root's and for anyone else to execute only (go-r): a process of
-# app, started from one of them through gosu, is then not dumpable and the entries in
+# app, started from one of them through setpriv, is then not dumpable and the entries in
 # /proc/<pid> are root's, as in the frps image. Scripts stay readable; what counts is the
 # program that runs them. A directory of the list the image lacks is skipped. The PostgreSQL
 # clients cannot read their own program: pg_isready writes `invalid binary "...": Permission
