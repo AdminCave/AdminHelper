@@ -103,8 +103,10 @@ Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, tasks/kern
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (nach Antwort)
 
-### T9 — R-1576: Desktop zeigt den neuen Programmordner im Credential-Befehl  [ ]
+### T9 — R-1576: Desktop zeigt den neuen Programmordner im Credential-Befehl  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/card/CredentialDialog.svelte, apps/desktop/ui/src/components/monitoring/card/CredentialDialog.test.ts, tasks/kern-windows-1.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @63f78fdce 2026-11-18T16:04:52+01:00
+Review: approve (.ah-out/review/kern-windows-1/T9.verdict.json)
 Änderung: Der PowerShell-Befehl für Windows-Hosts ruft `C:\Program Files\AdminHelper Agent\adminhelper-agent.exe` (T1);
 Test erwartet den neuen Pfad.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/card/CredentialDialog.test.ts
