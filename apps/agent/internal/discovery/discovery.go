@@ -99,9 +99,12 @@ var (
 
 // Inventory is the report's discovery block.
 type Inventory struct {
-	TS         int64           `json:"ts"`
-	DurationMS int64           `json:"duration_ms"`
-	Partial    bool            `json:"partial"`
+	TS         int64 `json:"ts"`
+	DurationMS int64 `json:"duration_ms"`
+	Partial    bool  `json:"partial"`
+	// Complete tells per section (units, containers, sockets, markers, vhosts, ports) whether it
+	// is whole: the monitoring service lets a finding go only after a whole scan of its section.
+	Complete   map[string]bool `json:"complete"`
 	Units      []Unit          `json:"units"`
 	Sockets    []Socket        `json:"sockets"`
 	Containers []Container     `json:"containers"`
@@ -180,29 +183,32 @@ type Port struct {
 
 // Run discovers this host within ctx, in a frame of at most frame: the units, the containers, the
 // listening sockets, the markers, the vhosts, then the protocols of the ports beyond loopback. A part that a tool
-// failed or that the time cut short makes the inventory partial; a tool that is not installed does
+// failed or that the time cut short leaves its section incomplete and the inventory partial; a tool that is not installed does
 // not, its part is empty.
 func Run(ctx context.Context, markers []probe.Marker) Inventory {
 	began := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, frame)
 	defer cancel()
-	inv := Inventory{TS: began.Unix()}
-	whole := true
-	part := func(do func(context.Context) bool) {
+	inv := Inventory{TS: began.Unix(), Complete: map[string]bool{}}
+	part := func(section string, do func(context.Context) bool) {
 		ctx, cancel := context.WithTimeout(ctx, partTimeout)
 		defer cancel()
-		if !do(ctx) || ctx.Err() != nil {
-			whole = false
-		}
+		ok := do(ctx)
+		inv.Complete[section] = ok && ctx.Err() == nil
 	}
-	part(func(ctx context.Context) (ok bool) { inv.Units, ok = collectUnits(ctx); return })
-	part(func(ctx context.Context) (ok bool) { inv.Containers, ok = collectContainers(ctx); return })
-	part(func(ctx context.Context) (ok bool) { inv.Sockets, ok = collectSockets(ctx, inv.Containers); return })
-	part(func(ctx context.Context) (ok bool) { inv.Markers, ok = checkMarkers(ctx, markers); return })
-	part(func(ctx context.Context) (ok bool) { inv.Vhosts, ok = collectVhosts(ctx); return })
+	part("units", func(ctx context.Context) (ok bool) { inv.Units, ok = collectUnits(ctx); return })
+	part("containers", func(ctx context.Context) (ok bool) { inv.Containers, ok = collectContainers(ctx); return })
+	part("sockets", func(ctx context.Context) (ok bool) { inv.Sockets, ok = collectSockets(ctx, inv.Containers); return })
+	part("markers", func(ctx context.Context) (ok bool) { inv.Markers, ok = checkMarkers(ctx, markers); return })
+	part("vhosts", func(ctx context.Context) (ok bool) { inv.Vhosts, ok = collectVhosts(ctx); return })
 	var portsWhole bool
 	inv.Ports, portsWhole = recognizePorts(ctx, inv.Sockets)
-	inv.Partial = !whole || !portsWhole || ctx.Err() != nil
+	// The ports are those of the sockets: sockets cut short leave ports out as well.
+	inv.Complete["ports"] = portsWhole && inv.Complete["sockets"] && ctx.Err() == nil
+	inv.Partial = ctx.Err() != nil
+	for _, whole := range inv.Complete {
+		inv.Partial = inv.Partial || !whole
+	}
 	inv.DurationMS = time.Since(began).Milliseconds()
 	return inv
 }

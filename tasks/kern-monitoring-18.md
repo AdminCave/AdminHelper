@@ -27,8 +27,10 @@ der Gesamtfrist (Uhr gefälscht).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_fetch.py tests/test_central_rdap.py
 Doku: → T7
 
-### T2 — R-1302: Agent meldet die Vollständigkeit je Abschnitt  [ ]
+### T2 — R-1302: Agent meldet die Vollständigkeit je Abschnitt  [x]
 Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/discovery/discovery_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @84574fd0e 2026-11-18T11:28:50+01:00
+Review: approve (.ah-out/review/kern-monitoring-18/T2.verdict.json)
 Änderung: `Inventory` bekommt `Complete map[string]bool json:"complete"`. Jeder `part(...)` setzt das Flag seines
 Abschnitts (units, containers, sockets, markers, vhosts); `ports` aus `recognizePorts`. Ein abgelaufener Gesamtrahmen
 macht die Abschnitte unvollständig, die danach noch liefen. `Partial` bleibt wie heute. Test: ein Abschnitt, der
