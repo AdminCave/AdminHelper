@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-41 — Last-Schonung: Grenze für gehaltene Checks — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-41 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-41 · Review: am Ende
 Spec: docs/features/kern-monitoring-41.md (Roadmap R-1400)
 Heavy: none — nur Bewertung im Monitoring-Dienst (Router/Checker), kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -25,8 +25,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py
 Doku: → T2
 
-### T2 — Doku und CHANGELOG  [ ]
-Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-41.md
+### T2 — Doku und CHANGELOG  [x]
+Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-41.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1eb908557 2026-11-18T19:47:53+01:00
+Review: am Ende (Branch-Review)
 Änderung: „Schonung unter Last“ DE+EN: Warnung ab Beginn, `unknown` nach 15 min; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_shed.py
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-monitoring-41.md
