@@ -13,7 +13,8 @@ RUN apt-get update \
 # Hashed lockfile: requirements.in (intent) -> requirements.txt (pinned + hashed
 # via pip-compile --generate-hashes). --require-hashes enforces artifact integrity.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+ && pip uninstall -y pip
 
 COPY app/ ./app/
 COPY alembic.ini ./alembic.ini

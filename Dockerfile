@@ -30,7 +30,8 @@ RUN apt-get update \
 # (pinned + hashed via pip-compile --generate-hashes). --require-hashes fails the
 # build if any downloaded artifact's hash doesn't match — supply-chain integrity.
 COPY apps/server/requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+ && pip uninstall -y pip
 
 COPY apps/server/app/ ./app/
 COPY apps/server/alembic.ini ./alembic.ini

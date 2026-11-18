@@ -66,8 +66,10 @@ lesen). Die `postgres:18-alpine`-Nennung in Skripten ohne Digest bleibt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py tests/test_release_images.py tests/test_compose_hardening.py tests/test_compose_healthchecks.py tests/test_compose_startup_order.py
 Doku: → T10
 
-### T6 — R-1584: pip aus den Runtime-Images entfernen  [ ]
+### T6 — R-1584: pip aus den Runtime-Images entfernen  [x]
 Komponente: server · Dateien: Dockerfile, apps/monitoring/Dockerfile, apps/ca-issuer/Dockerfile, apps/server/tests/test_images_exec_only.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @88c10e97e 2026-11-18T14:21:07+01:00
+Review: approve (.ah-out/review/kern-deps-5/T6.verdict.json)
 Änderung: nach der Installation der Anforderungen `pip` (und setuptools/wheel, falls vorhanden) deinstallieren; der
 Test prüft statt „pip läuft als app“, dass `pip`/`pip3` im Image fehlt und die App-Pakete importierbar bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_images_exec_only.py

@@ -17,6 +17,9 @@ without the capabilities of the container. docker exec -u keeps them, and a prog
 stays dumpable even when its user cannot read it. They skip when Docker or the pinned base
 image is not at hand.
 
+pip installs the requirements and then removes itself in the same RUN: the image runs no pip,
+and the packages pip vendors do not ship. A container of the base image runs that uninstall.
+
 The PostgreSQL clients cannot read their own program: pg_isready warns on stderr and runs on,
 psql stops. So no entrypoint runs psql; the monitoring database comes from db-init
 (app.db_roles, through psycopg)."""
@@ -286,10 +289,43 @@ def test_after_the_step_a_process_of_app_is_not_dumpable(box):
     assert found == expected
 
 
-def test_after_the_step_pip_runs_as_app(box):
-    result = box.as_app("pip3", "--version")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.startswith("pip "), result.stdout
+def _pip_runs(path: str) -> list[str]:
+    """The RUNs of the last stage that name pip."""
+    stage = _last_stage(path)
+    return [i for i in stage if _keyword(i) == "RUN" and re.search(r"\bpip3?\b", i)]
+
+
+def test_each_image_removes_pip_in_the_run_that_installs_with_it():
+    for path in _DOCKERFILES:
+        runs = _pip_runs(path)
+        assert len(runs) == 1, (path, runs)
+        command = _command(runs[0])
+        assert re.match(r"pip install --no-cache-dir --require-hashes -r \S+ ", command), command
+        assert command.endswith(" && pip uninstall -y pip"), (path, command)
+
+
+def test_after_the_uninstall_the_base_image_has_no_pip():
+    base = _base()
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("docker is not available")
+    if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
+        pytest.skip(f"no docker daemon or {base} not present locally")
+    uninstall = _command(_pip_runs(_DOCKERFILES[0])[0]).split(" && ", 1)[1]
+    # Before it, pip is there: the checks after it can fail.
+    # ls, not command -v: dash remembers a path it has looked up once.
+    pips = "ls /usr/local/bin | grep pip; python3 -m pip --version 2>&1"
+    script = (
+        f"{pips} && {uninstall} >/dev/null 2>&1 && echo removed; {pips}; python3 -c 'print(1 + 1)'"
+    )
+    run = [docker, "run", "--rm", "--network", "none", base, "sh", "-c", script]
+    result = subprocess.run(run, capture_output=True, text=True)
+    lines = result.stdout.splitlines()
+    assert lines[:3] == ["pip", "pip3", "pip3.14"], result.stdout
+    assert lines[3].startswith("pip "), result.stdout
+    assert lines[4:] == ["removed", "/usr/local/bin/python3: No module named pip", "2"], (
+        result.stdout
+    )
 
 
 def test_no_entrypoint_runs_psql():
