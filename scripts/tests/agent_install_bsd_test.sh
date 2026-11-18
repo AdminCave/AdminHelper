@@ -141,9 +141,10 @@ first="$STUB_DIR/conf-at-update-0"
 { grep -q '^AdminHelper: {$' "$first" && grep -q 'priority: 5,' "$first" && grep -q NO_VERIFY_PEER "$first"; } \
     && ok "first file AdminHelper.conf, priority 5, unverified" || bad "first file: $(cat "$first" 2>/dev/null)"
 [ ! -e "$AH_PKG_ETC/repos/adminhelper.conf" ] && ok "no FreeBSD-named file" || bad "adminhelper.conf written on OPNsense"
-grep -q '^pkg install -y -r AdminHelper os-adminhelper adminhelper-agent$' "$STUB_LOG" \
-    && ok "installs plugin and agent" || bad "install call: $(grep install "$STUB_LOG")"
+grep -q '^pkg install -y -r AdminHelper os-adminhelper$' "$STUB_LOG" \
+    && ok "installs the plugin, which pulls in the agent" || bad "install call: $(grep install "$STUB_LOG")"
 grep -q '^pkg rquery -r AdminHelper %n os-adminhelper$' "$STUB_LOG" && ok "checks the plugin is visible" || bad "no rquery for the plugin"
+grep -q '^pkg rquery -r AdminHelper %n adminhelper-agent$' "$STUB_LOG" && ok "checks the agent is visible" || bad "no rquery for the agent"
 [ -e "$STUB_DIR/plugin-ran" ] && grep -q SSL_CA_CERT_FILE "$AH_PKG_ETC/repos/AdminHelper.conf" \
     && ok "plugin's repository script wrote the verified file" || bad "plugin script did not run"
 grep -q -- '--ca-fp' "$STUB_DIR/agent-argv" && bad "--ca-fp passed without being given" || ok "no --ca-fp without the option"

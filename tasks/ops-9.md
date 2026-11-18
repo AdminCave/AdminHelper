@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_bsd_test
 Doku: → T3
 
-### T2 — R-1598: Box-Tests fahren den Installer auf echtem FreeBSD und OPNsense  [ ]
-Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh, scripts/tests/box_opnsensebox.sh
+### T2 — R-1598: Box-Tests fahren den Installer auf echtem FreeBSD und OPNsense  [x]
+Komponente: scripts · Dateien: scripts/tests/box_freebsdbox.sh, scripts/tests/box_opnsensebox.sh, scripts/agent-install-bsd.sh, scripts/tests/agent_install_bsd_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e93012cf3 2026-11-18T17:36:00+01:00
+Review: am Ende (Branch-Review)
 Änderung: In Phase `pkg` installiert der Installer (ohne `--server-id`, `AH_REPO_BASE=file://` auf das signierte Wegwerf-Repo, `--pubkey` dessen Schlüssel) das Paket bzw. das Plugin; ein zweiter Lauf mit einer vorhandenen `identity/ca.crt` schreibt die geprüfte Repo-Datei, die das echte `pkg update` annimmt. Die bestehenden Prüfungen bleiben.
 Verify: bash scripts/dev/verify.sh scripts --strict -- box_scripts_guard_test
 Abhängt von: T1

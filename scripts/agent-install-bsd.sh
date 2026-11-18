@@ -144,10 +144,14 @@ if [ -x "$OPNSENSE_VERSION" ]; then
     # The name the plugin writes the file under later on, so it replaces this one.
     REPO=AdminHelper
     PKGS="os-adminhelper adminhelper-agent"
+    # The plugin pulls the agent in as a dependency, as on the manual path; pkg then removes the
+    # agent along with the plugin.
+    INSTALL="os-adminhelper"
 else
     PLATFORM=freebsd
     REPO=adminhelper
     PKGS="adminhelper-agent"
+    INSTALL="adminhelper-agent"
 fi
 REPO_CONF="$PKG_ETC/repos/$REPO.conf"
 PUBKEY="$PKG_ETC/keys/adminhelper-pkg.pub"
@@ -203,8 +207,7 @@ chmod 0644 "$PUBKEY.new"
 mv -f "$PUBKEY.new" "$PUBKEY"
 write_repo_conf
 repo_update
-# shellcheck disable=SC2086 # PKGS is a word list
-pkg install -y -r "$REPO" $PKGS || die "pkg install failed"
+pkg install -y -r "$REPO" "$INSTALL" || die "pkg install failed"
 log "installed: $(pkg query '%n-%v' adminhelper-agent 2>/dev/null || echo adminhelper-agent)"
 
 # ── 2) provision (optional) ──────────────────────────────────────────────────
