@@ -2,12 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Drawer sections of the storage kinds (R-1558 T2): SMART table with exit bits in words, vdev
-// tree, backup list and trend chart with its limit lines.
+// Drawer sections (R-1558): SMART table with exit bits in words, vdev tree, backup list and trend
+// chart with limit lines and forecast (T2, T3), journal excerpt and top processes (T3).
 
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import BackupList from './details/BackupList.svelte';
+import LogLines from './details/LogLines.svelte';
+import ProcessTable from './details/ProcessTable.svelte';
 import SmartAttributes from './details/SmartAttributes.svelte';
 import TrendChart from './details/TrendChart.svelte';
 import VdevTree from './details/VdevTree.svelte';
@@ -151,5 +153,97 @@ describe('TrendChart', () => {
       detail: { type: 'trend', title: 'Größe', unit: 'GB', points },
     });
     expect(container.querySelectorAll('[data-limit]')).toHaveLength(0);
+    expect(container.querySelector('polyline.forecast')).toBeNull();
+  });
+
+  it('continues the series dashed with the forecast, from the last measured point', () => {
+    const { container } = render(TrendChart, {
+      detail: {
+        type: 'trend',
+        title: 'Belegung',
+        unit: '%',
+        points,
+        threshold: { warn: 80, crit: 90 },
+        forecast: [{ at: '2026-11-27T09:00:00Z', value: 100 }],
+      },
+    });
+    const series = container.querySelector('polyline.series')?.getAttribute('points')?.split(' ');
+    const forecast = container
+      .querySelector('polyline.forecast')
+      ?.getAttribute('points')
+      ?.split(' ');
+    expect(forecast).toHaveLength(2);
+    expect(forecast?.[0]).toBe(series?.at(-1));
+    // The time axis reaches the forecast: the last measured point is no longer at the right edge.
+    expect(Number(series?.at(-1)?.split(',')[0])).toBeLessThan(Number(forecast?.[1].split(',')[0]));
+    expect(container.querySelector('.caption')?.textContent).toBe(
+      '16.11.2026, 09:00 bis 18.11.2026, 09:00 · zuletzt 58 % · Warnung ab 80, kritisch ab 90' +
+        ' · gestrichelt: Prognose, 100 % am 27.11.2026, 09:00',
+    );
+  });
+
+  it('says so instead of failing when there are no points yet', () => {
+    const { container } = render(TrendChart, {
+      detail: { type: 'trend', title: 'Belegung', unit: '%', points: [] },
+    });
+    expect(container.querySelector('svg')).toBeNull();
+    expect(container.querySelector('.caption')?.textContent).toBe('Noch keine Messwerte.');
+  });
+});
+
+describe('LogLines', () => {
+  it('shows time, source and text per line with the priority, and where the full log is', () => {
+    const { container } = render(LogLines, {
+      detail: {
+        type: 'log',
+        title: 'Journal',
+        lines: [
+          { at: '2026-11-18T08:14:05Z', source: 'nginx', priority: 'err', text: 'open() failed' },
+          { at: '2026-11-18T08:14:06Z', source: 'systemd', priority: 'info', text: 'Stopped.' },
+        ],
+        more: 'journalctl -u nginx.service',
+      },
+    });
+    const lines = [...container.querySelectorAll('li')].map((l) => [
+      l.getAttribute('data-priority'),
+      ...[...l.querySelectorAll('.at, .src, .text')].map((s) => s.textContent?.trim()),
+    ]);
+    expect(lines).toEqual([
+      ['err', '08:14:05', 'nginx', 'open() failed'],
+      ['info', '08:14:06', 'systemd', 'Stopped.'],
+    ]);
+    expect(container.querySelector('li[data-priority="err"] .dot')?.children).toHaveLength(1);
+    expect(container.querySelector('li[data-priority="info"] .dot')?.children).toHaveLength(0);
+    expect(container.querySelector('.more code')?.textContent).toBe('journalctl -u nginx.service');
+  });
+});
+
+describe('ProcessTable', () => {
+  const rows = [
+    { pid: 48211, name: 'postgres', user: 'postgres', cpu: 71.4, memMb: 9812 },
+    { pid: 1022, name: 'pgbouncer', user: 'postgres', cpu: 6.1, memMb: 18 },
+  ];
+
+  it('lists the processes with CPU and memory and marks the sort column', () => {
+    const { container } = render(ProcessTable, {
+      detail: { type: 'processes', title: 'Top-Prozesse', sortedBy: 'cpu', rows },
+    });
+    const cells = [...container.querySelectorAll('tbody tr')].map((r) =>
+      [...r.querySelectorAll('td')].map((td) => td.textContent?.trim()),
+    );
+    expect(cells).toEqual([
+      ['48211', 'postgres', 'postgres', '71,4 %', '9.812 MB'],
+      ['1022', 'pgbouncer', 'postgres', '6,1 %', '18 MB'],
+    ]);
+    expect(container.querySelector('th.sorted')?.textContent).toBe('CPU');
+    expect(container.textContent).not.toContain('neue Agent-Daten');
+  });
+
+  it('marks the list as new agent data', () => {
+    const { container } = render(ProcessTable, {
+      detail: { type: 'processes', title: 'Top-Prozesse', sortedBy: 'mem', rows, newData: true },
+    });
+    expect(container.querySelector('th.sorted')?.textContent).toBe('RAM');
+    expect(container.textContent).toContain('neue Agent-Daten');
   });
 });

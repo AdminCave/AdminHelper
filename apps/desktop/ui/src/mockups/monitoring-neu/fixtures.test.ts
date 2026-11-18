@@ -8,7 +8,8 @@
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import ObjectDrawer from './ObjectDrawer.svelte';
-import { duplicateKeys, grammarViolations, isHidden } from './grammar';
+import ObjectRow from './ObjectRow.svelte';
+import { STATUS_LABEL, duplicateKeys, grammarViolations, isHidden } from './grammar';
 import type { Kind, MonObject, Status } from './model';
 import { ALL_OBJECTS } from './fixtures';
 import { NOW } from './fixtures/time';
@@ -61,6 +62,105 @@ describe('states per kind (Konzept §4.1–§4.3)', () => {
     expect(guests.some((o) => o.details?.some((d) => d.type === 'backups'))).toBe(true);
     const jobs = byKind('backup-job');
     for (const s of ['critical', 'ok'] as const) expect(statuses(jobs).has(s), s).toBe(true);
+  });
+});
+
+describe('states per kind (Konzept §4.7–§4.12)', () => {
+  const detailTypes = (o: MonObject) => (o.details ?? []).map((d) => d.type);
+
+  it('host: reports, silent for 47 min, never reported, throttled', () => {
+    const hosts = byKind('host');
+    for (const s of ['critical', 'warning', 'unknown', 'ok'] as const)
+      expect(statuses(hosts).has(s), s).toBe(true);
+    expect(hosts.map((o) => o.reason)).toEqual(
+      expect.arrayContaining(['Meldet sich nicht seit 47 min', 'Noch nie gemeldet']),
+    );
+  });
+
+  it('every stale object belongs to a silent host', () => {
+    const stale = ALL_OBJECTS.filter((o) => o.status === 'stale');
+    expect(stale.length).toBeGreaterThan(0);
+    const silent = new Set(
+      byKind('host')
+        .filter((o) => o.status === 'critical')
+        .map((o) => o.server),
+    );
+    expect(stale.filter((o) => !silent.has(o.server)).map((o) => o.key)).toEqual([]);
+  });
+
+  it.each(['stale', 'not-collected'] as const)('%s looks different from ok', (s) => {
+    const o = ALL_OBJECTS.find((x) => x.status === s && !isHidden(x));
+    expect(o, s).toBeTruthy();
+    const { container } = render(ObjectRow, { object: o!, now: NOW });
+    const badge = container.querySelector('[class*="badge-"]');
+    expect(badge?.textContent?.trim()).toBe(STATUS_LABEL[s]);
+    expect(badge?.classList.contains('badge-success')).toBe(false);
+  });
+
+  it('cpu and memory: load, top processes and an OOM kill with its kernel log', () => {
+    expect(
+      byKind('cpu').some(
+        (o) =>
+          o.status === 'warning' &&
+          o.metrics.some((m) => m.key === 'load' && m.status === 'warning'),
+      ),
+    ).toBe(true);
+    expect(byKind('cpu').some((o) => detailTypes(o).includes('processes'))).toBe(true);
+    const oom = byKind('memory').find((o) =>
+      o.metrics.some((m) => m.key === 'oom' && m.value !== 0),
+    );
+    expect(oom?.status).toBe('warning');
+    expect(detailTypes(oom!)).toEqual(expect.arrayContaining(['log', 'processes']));
+  });
+
+  it('mount: forecast with its line, the 20-GB rule in words, a full mount', () => {
+    const mounts = byKind('mount');
+    for (const s of ['critical', 'warning', 'ok'] as const)
+      expect(statuses(mounts).has(s), s).toBe(true);
+    const withForecast = mounts.filter((o) =>
+      o.details?.some((d) => d.type === 'trend' && d.forecast?.length),
+    );
+    expect(withForecast.map((o) => o.status).sort()).toEqual(['critical', 'warning']);
+    const used = (o: MonObject) => o.metrics.find((m) => m.key === 'used');
+    const roomy = mounts.find((o) => o.status === 'ok' && Number(used(o)?.value) >= 90);
+    expect(used(roomy!)?.note).toContain('20 GB');
+    expect(mounts.some((o) => used(o)?.value === 100 && o.status === 'critical')).toBe(true);
+  });
+
+  it('sensor: the hardware limit next to the threshold', () => {
+    expect(
+      byKind('sensor').every((o) => o.metrics.some((m) => m.label === 'Hardware-Grenze')),
+    ).toBe(true);
+  });
+
+  it('reboot, updates and clock: never critical, one updates kind for every source', () => {
+    const sys = [...byKind('reboot'), ...byKind('updates'), ...byKind('clock')];
+    expect(sys.filter((o) => o.status === 'critical').map((o) => o.key)).toEqual([]);
+    expect(statuses(sys).has('not-collected')).toBe(true);
+    expect(byKind('reboot').some((o) => o.metrics.some((m) => m.label === 'Nötig seit'))).toBe(
+      true,
+    );
+    const lists = byKind('updates').find((o) =>
+      o.metrics.some((m) => m.key === 'lists' && m.status === 'unknown'),
+    );
+    expect(lists?.status).toBe('unknown');
+    const sources = byKind('updates').map((o) => o.identity.join(' '));
+    for (const src of ['Agent', 'windows-host', 'proxmox-ve', 'pkg audit'])
+      expect(
+        sources.some((s) => s.includes(src)),
+        src,
+      ).toBe(true);
+  });
+
+  it('service: failed with journal, restart loop, removed', () => {
+    const services = byKind('service');
+    for (const s of ['critical', 'warning', 'info', 'ok'] as const)
+      expect(statuses(services).has(s), s).toBe(true);
+    expect(services.some((o) => o.status === 'critical' && detailTypes(o).includes('log'))).toBe(
+      true,
+    );
+    expect(services.some((o) => o.reason.startsWith('Neustart-Schleife'))).toBe(true);
+    expect(services.some((o) => o.reason.startsWith('Entfernt'))).toBe(true);
   });
 });
 

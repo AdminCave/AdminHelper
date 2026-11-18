@@ -924,7 +924,7 @@ const POOLS: MonObject[] = [
       children: [
         {
           ...dev('mirror-0', 'critical', 'DEGRADED'),
-          children: [dev('sda3'), dev('sdd3', 'critical', 'FAULTED', 0, 'zu viele Fehler')],
+          children: [dev('sda3'), dev('sdd3', 'critical', 'FAULTED', 37, 'zu viele Fehler')],
         },
       ],
     },
@@ -1004,7 +1004,7 @@ const POOLS: MonObject[] = [
     },
   }),
   pool({
-    server: 'web-01',
+    server: 'srv-01',
     name: 'zroot',
     layout: 'einzelne Platte',
     size: '460 GB',
@@ -1272,7 +1272,7 @@ const GUESTS: MonObject[] = [
     node: 'pve-02',
     status: 'warning',
     reason: 'Verifizierung fehlgeschlagen',
-    since: ago(8 * HOUR),
+    since: ago(5 * HOUR),
     ageHours: 6,
     last: 'heute 03:00',
     size: '6,2 GB',

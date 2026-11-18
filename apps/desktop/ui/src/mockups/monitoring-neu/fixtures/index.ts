@@ -4,6 +4,7 @@
 
 // All fictitious objects of the mockup; each object kind adds its fixture module here.
 import type { MonObject } from '../model';
+import { HOST_OBJECTS } from './host';
 import { STORAGE_OBJECTS } from './storage';
 
-export const ALL_OBJECTS: MonObject[] = [...STORAGE_OBJECTS];
+export const ALL_OBJECTS: MonObject[] = [...STORAGE_OBJECTS, ...HOST_OBJECTS];

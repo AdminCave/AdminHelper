@@ -17,6 +17,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Pill from '../../components/ui/Pill.svelte';
   import type { MonObject } from './model';
   import BackupList from './details/BackupList.svelte';
+  import LogLines from './details/LogLines.svelte';
+  import ProcessTable from './details/ProcessTable.svelte';
   import SmartAttributes from './details/SmartAttributes.svelte';
   import TrendChart from './details/TrendChart.svelte';
   import VdevTree from './details/VdevTree.svelte';
@@ -112,6 +114,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <BackupList detail={d} />
       {:else if d.type === 'trend'}
         <TrendChart detail={d} />
+      {:else if d.type === 'log'}
+        <LogLines detail={d} />
+      {:else if d.type === 'processes'}
+        <ProcessTable detail={d} />
       {/if}
     </section>
   {/each}

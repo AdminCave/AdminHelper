@@ -37,8 +37,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring
 Doku: → T11
 Abhängt von: T1
 
-### T3 — Objektarten Host und Betriebssystem: host, cpu, memory, mount, sensor, reboot, updates, clock, service (R-1558)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/fixtures/host.ts, apps/desktop/ui/src/mockups/monitoring-neu/details/LogLines.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/ProcessTable.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures.test.ts
+### T3 — Objektarten Host und Betriebssystem: host, cpu, memory, mount, sensor, reboot, updates, clock, service (R-1558)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/fixtures/host.ts, apps/desktop/ui/src/mockups/monitoring-neu/details/LogLines.svelte, apps/desktop/ui/src/mockups/monitoring-neu/details/ProcessTable.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/model.ts, apps/desktop/ui/src/mockups/monitoring-neu/ObjectDrawer.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/index.ts, apps/desktop/ui/src/mockups/monitoring-neu/details.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/details/TrendChart.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/storage.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @4182a34f0 2026-11-18T13:06:11+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T3.verdict.json)
 Änderung: Fixtures nach Konzept §4.7–§4.12: Host (meldet sich, seit 47 min still, noch nie gemeldet, Lastschonung), CPU/RAM mit Load und OOM-Ereignis, Mount mit Prognose („voll in ~9 Tagen“, Warnung unter 24 h) und 20-GB-Regel im Klartext, Sensor mit Hardware-Grenze, Neustart nötig seit, Updates mit Paketlisten-Alter, Uhr, Dienst (fehlgeschlagen seit, Neustart-Schleife, entfernt); Zustände „nicht erhoben“ und „veraltet“ sichtbar anders als ok. Schublade mit Journal-Auszug und Top-Prozessen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring-neu
 Doku: → T11
@@ -125,3 +127,7 @@ Abhängt von: T12
 - 2026-11-18 T1: Desktop-UI-Tests ohne jest-dom-Matcher (`toBeTruthy`, `classList`) — `vitest.setup.ts` liegt außerhalb des tsconfig-`include`, svelte-check kennt die Matcher-Typen nicht.
 - 2026-11-18 T2: Exit-Bits zeigen den Bitwert hex (`0x08`) plus Klartext, die Fixtures tragen nur gesetzte Bits — smartctl meldet eine Bitmaske; der Admin soll die Ursache lesen, nicht rechnen.
 - 2026-11-18 T2: Trendkurve als eigenes SVG ohne Diagramm-Bibliothek, Farben aus Tokens, je Schwelle eine gestrichelte Linie — ein Mockup-Abschnitt, keine neue Abhängigkeit; Trend und Historie einer Fixture beschreiben denselben Verlauf (Hysterese sichtbar).
+- 2026-11-18 T3: Host-Fixtures rechnen mit den empfohlenen Vorlagen-Schwellen (offene Frage 5: CPU 90/95, RAM 90/98, Disk 80/90); Prognose, „seit“ und Historie folgen derselben Steigung der Kurve — die Abnahme soll eine stimmige Geschichte sehen, nicht zwei Zahlenwelten.
+- 2026-11-18 T3: Paketlisten älter als 7 Tage machen `updates` „unbekannt“ statt „0 Updates, ok“ (Vorschlag, Grenze 7 Tage) — das ist eine Bewertung der Datenlage, keine Regel mit eigener Stufe; Kevins Abnahme (T13) entscheidet.
+- 2026-11-18 T3: Mount-Prognose als gestrichelte Fortsetzung der Trendkurve ab dem letzten Messpunkt; die Kurvenbeschriftung ist ein String, weil Svelte das führende Leerzeichen in `{#if}`-Blöcken abschneidet (behebt „58 %· Warnung“ aus T2).
+- 2026-11-18 T3: Schlüssel `<server>/<art>/<id>` wie in T2 (Mount-Pfad, Sensor `<chip>/<label>`, Dienst voller Unit-Name); die drei Prüfer-Nits aus T2 (sdd3-Zähler, zroot auf FreeBSD-Host, Seit von Gast 106) sind mitbehoben, der Leer-Guard der Trendkurve ebenso.

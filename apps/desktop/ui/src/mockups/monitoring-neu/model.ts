@@ -156,6 +156,41 @@ export interface TrendDetail {
   unit?: string;
   points: TrendPoint[];
   threshold?: Threshold;
+  /** Projected values after the last point (mount forecast), drawn as a dashed line. */
+  forecast?: TrendPoint[];
+}
+
+export interface LogLine {
+  at: string;
+  /** systemd unit or kernel. */
+  source: string;
+  priority: 'err' | 'warning' | 'notice' | 'info';
+  text: string;
+}
+
+export interface LogDetail {
+  type: 'log';
+  title: string;
+  lines: LogLine[];
+  /** Where the full log is, e.g. the journalctl call. */
+  more?: string;
+}
+
+export interface ProcessRow {
+  pid: number;
+  name: string;
+  user: string;
+  cpu: number;
+  memMb: number;
+}
+
+export interface ProcessDetail {
+  type: 'processes';
+  title: string;
+  rows: ProcessRow[];
+  sortedBy: 'cpu' | 'mem';
+  /** The agent does not send the process list yet (R-1389). */
+  newData?: boolean;
 }
 
 /** Kind-specific blocks of level 3; later tasks add more. */
@@ -164,7 +199,9 @@ export type Detail =
   | SmartDetail
   | VdevDetail
   | BackupDetail
-  | TrendDetail;
+  | TrendDetail
+  | LogDetail
+  | ProcessDetail;
 
 export interface MonObject {
   /** Stable key, unique across all objects. */
