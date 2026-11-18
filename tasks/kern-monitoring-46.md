@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-46 — Katalog: Check an einer Instanz, Port-Alternativen am Host; einteilige vHost-Namen — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-46 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-46 · Review: am Ende
 Spec: docs/features/kern-monitoring-46.md (Roadmap R-1528, R-1548)
 Heavy: none — nur Monitoring-Katalog und Abgleich, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -45,8 +45,10 @@ Doku: docs/developer/monitoring.html DE+EN · changelog.d/kern-monitoring-46.md
 Task-Review: am Ende
 Abhängt von: T1, T2
 
-### T4 — Doku: Nits der Abschlussprüfung  [ ]
+### T4 — Doku: Nits der Abschlussprüfung  [x]
 Komponente: monitoring · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-46.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c3aa26617 2026-11-19T00:04:37+01:00
+Review: am Ende (Branch-Review)
 Änderung: „nennt sie nicht“/„does not name them“ (zwei Felder); Changelog ohne 3CX-Beispiel (kein 3CX-Modul, R-1443).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: docs/developer/monitoring.html DE+EN · changelog.d/kern-monitoring-46.md

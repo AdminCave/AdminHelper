@@ -1,7 +1,7 @@
 ### Changed
 
 - **Monitoring-Katalog: Checks einer Instanz und Port-Alternativen am Host:** ein Katalog-Check kann an genau eine
-  Instanz seines Moduls gebunden sein (etwa die Weboberflaeche der 3CX an deren Hauptdienst), und Checks auf
+  Instanz seines Moduls gebunden sein, und Checks auf
   Loopback- oder Unit-Ziele waehlen unter mehreren Ports den, auf dem der Host laut letztem Scan lauscht.
 
 ### Fixed
