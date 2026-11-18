@@ -55,8 +55,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T10
 Abhängt von: T3
 
-### T5 — R-1555: Basis-Images, Paket-Upgrade, VictoriaMetrics  [ ]
+### T5 — R-1555: Basis-Images, Paket-Upgrade, VictoriaMetrics  [x]
 Komponente: server · Dateien: Dockerfile, apps/monitoring/Dockerfile, apps/ca-issuer/Dockerfile, apps/gateway/Dockerfile, apps/frps/Dockerfile, docker-compose.yml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7ce051634 2026-11-18T14:07:33+01:00
+Review: approve (.ah-out/review/kern-deps-5/T5.verdict.json)
 Änderung: neue Digests für `python:3.14-slim`, `nginx:1.30.6-alpine`, `postgres:18-alpine`, `node:26-alpine`
 (vor dem Schreiben per `imagetools inspect` gegenprüfen); `apt-get upgrade -y` bzw. `apk upgrade --no-cache` im
 Paket-Schritt der Runtime-Stufen; VictoriaMetrics auf den neuesten v1.x-Patch mit Digest (Release-Notes vorher

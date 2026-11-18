@@ -28,7 +28,8 @@ FROM snowdreamtech/frps:0.72.0-alpine@sha256:bd1b1475d211f5349dfa496c82185ee3bf9
 # new proxy against the policy file the server writes, runs as the user frps-policy, a UID of
 # its own outside the group frps, so that it cannot read the copy with token and key; its
 # program gets the same mode.
-RUN rm -f /etc/frp/frps.toml \
+RUN apk upgrade --no-cache \
+    && rm -f /etc/frp/frps.toml \
     && find / -xdev -type f -perm /6000 -exec chmod u-s,g-s {} + \
     && chown root:root /usr/bin/frps /usr/bin/curl \
     && chmod 0711 /usr/bin/frps /usr/bin/curl \
