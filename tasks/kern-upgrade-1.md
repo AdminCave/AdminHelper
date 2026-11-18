@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-upgrade-1 — upgrade_path nach update.sh: Einmal-Dienst db-init — Task-Ledger
-Status: geplant · Branch: feature/kern-upgrade-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-upgrade-1 · Review: am Ende
 Spec: Roadmap R-1615
 Heavy: linux-full — Fix des roten Sammellauf-Schritts upgrade_path; Beweis vor dem Merge per `run.sh all --strict --step` über diesen Branch
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
