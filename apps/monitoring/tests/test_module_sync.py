@@ -1367,6 +1367,36 @@ def test_adopting_a_vhost_creates_its_central_checks(db, actions):
     assert [p["id"] for p in plan["probes"]] == [checks["served"].id]
 
 
+def test_adopting_the_real_web_domain_module_binds_its_central_checks(db, actions):
+    catalog = load_catalog()
+    finding = _finding(db, "web_domain", "shop.example.org", summary=SITE_SUMMARY)
+
+    result = adopt(db, finding.id, catalog=catalog, now=NOW)
+
+    checks = _checks(db, finding)
+    assert {key: row.check_type for key, row in checks.items()} == {
+        "certificate": "probe",
+        "reload": "probe",
+        "dns": "central",
+        "outside": "central",
+    }
+    assert json.loads(checks["dns"].config) == {
+        "sensor": "dns",
+        "host": "shop.example.org",
+        "params": {},
+    }
+    assert json.loads(checks["outside"].config) == {
+        "sensor": "tls",
+        "host": "shop.example.org",
+        "params": {"expiry": False},
+        "port": 8443,
+    }
+    assert result.skipped == []
+    # The agent's plan carries only its own probes.
+    plan = build_plan(db, "srv-1", catalog=catalog, now=NOW)
+    assert {p["id"] for p in plan["probes"]} == {checks["certificate"].id, checks["reload"].id}
+
+
 def test_adopting_an_internal_name_skips_its_central_checks(db, actions):
     finding = _site_finding(db, "wiki.lan")
 

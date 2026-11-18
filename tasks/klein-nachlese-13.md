@@ -1,5 +1,5 @@
 # klein-nachlese-13 — Nachlese kern-monitoring-42/-43 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-13 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-13 · Review: am Ende
 Spec: docs/features/klein-nachlese-13.md (Roadmap R-1530, R-1547)
 Heavy: none — nur Tests und ein Kommentar
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Tests)
 
-### T2 — Monitoring-Test: web_domain v2 ueber adopt() mit dem echten Modul  [ ]
+### T2 — Monitoring-Test: web_domain v2 ueber adopt() mit dem echten Modul  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c1dd1814a 2026-11-18T13:12:00+01:00
+Review: am Ende (Branch-Review)
 Änderung: R-1547. Neuer Test: ein vhost-Fund fuer `web_domain` (Katalog `load_catalog()`, Port 8443) wird mit `adopt()` uebernommen; es entstehen die vier Checks, `dns` und `outside` als `central` mit ihrer Konfig (host, params, Port nur bei `outside`), die Agent-Checks als `probe`; der Plan des Agenten traegt nur dessen Probes.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py tests/test_catalog_web.py
 Doku: keine (Test)
