@@ -201,7 +201,9 @@ def sent(monkeypatch):
     calls = []
 
     def record(name):
-        return lambda target, *_a: calls.append((name, target, channel_config.current().smtp_host))
+        return lambda target, *_a, **_k: calls.append(
+            (name, target, channel_config.current().smtp_host)
+        )
 
     monkeypatch.setattr(router_mod, "send_email", record("send_email"))
     monkeypatch.setattr(router_mod, "send_telegram", record("send_telegram"))
@@ -243,7 +245,7 @@ class TestSend:
         assert len(sent) == 1
 
     def test_a_failed_send_is_neutral(self, test_client, admin, monkeypatch):
-        def boom(*_a):
+        def boom(*_a, **_k):
             raise OSError(f"login failed for {PASSWORD}")
 
         monkeypatch.setattr(router_mod, "send_email", boom)

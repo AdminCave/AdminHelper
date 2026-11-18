@@ -32,7 +32,7 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.core.time import iso_utc
-from app.modules.notifications import channel_config, incidents, stream_hub
+from app.modules.notifications import channel_config, incidents, mail_template, stream_hub
 from app.modules.notifications.channel_config import Channels
 from app.modules.notifications.models import (
     CHANNELS,
@@ -582,7 +582,7 @@ def test_channel(
                 detail=f"{channel}: one test per {_TEST_WINDOW} seconds",
             )
         # The send takes the settings the availability above was judged by.
-        with channel_config.applied(channels):
+        with channel_config.applied(channels), mail_template.using(db):
             _send_test(channel, target)
     finally:
         with _TESTS_LOCK:
@@ -596,7 +596,7 @@ def _send_test(channel: str, target: str) -> None:
     HTTPException 502. Either way the attempt counted against the test window."""
     try:
         if channel == "email":
-            send_email(target, _TEST_TITLE, _TEST_BODY)
+            send_email(target, _TEST_TITLE, _TEST_BODY, category="test")
         elif channel == "ntfy":
             send_ntfy(target, _TEST_TITLE, _TEST_BODY, "info")
         elif channel == "telegram":

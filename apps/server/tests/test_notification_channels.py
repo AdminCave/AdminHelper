@@ -369,7 +369,7 @@ def test_a_stalled_person_waits_with_every_http_target(db_session, peer, monkeyp
     other = _outbox(
         db_session, _notif(db_session, bob), bob, channel="ntfy", address=f"{peer.url}/ok"
     )
-    monkeypatch.setattr(outbox_mod, "send_email", lambda *_a: None)
+    monkeypatch.setattr(outbox_mod, "send_email", lambda *_a, **_k: None)
     started = time.monotonic()
     assert drain_outbox(db_session) == (2, 0)
     assert time.monotonic() - started < 2, "a varied URL costs no second deadline"

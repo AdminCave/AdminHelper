@@ -333,3 +333,21 @@ class NotifyChannelConfig(Base):
     private_targets = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_by = Column(String(255), nullable=True)
+
+
+class NotifyMailTemplate(Base):
+    """The mail template an admin keeps in the panel (R-1533): one row, id 1. No row,
+    or an empty html/text, sends the mails as before (mail_template.DEFAULT)."""
+
+    __tablename__ = "notify_mail_template"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_notify_mail_template_single_row"),)
+
+    id = Column(Integer, primary_key=True, default=1)
+    subject_prefix = Column(String(100), nullable=True)
+    from_name = Column(String(100), nullable=True)
+    html = Column(Text, nullable=True)
+    text = Column(Text, nullable=True)
+    logo = Column(LargeBinary, nullable=True)
+    logo_type = Column(String(20), nullable=True)  # image/png | image/jpeg
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_by = Column(String(255), nullable=True)

@@ -28,7 +28,7 @@ def sent(monkeypatch):
     calls: list[tuple] = []
     for name in ("send_email", "send_ntfy", "send_telegram", "send_webhook"):
         monkeypatch.setattr(
-            router_mod, name, lambda *args, _name=name: calls.append((_name, *args))
+            router_mod, name, lambda *args, _name=name, **_k: calls.append((_name, *args))
         )
     return calls
 
@@ -158,7 +158,7 @@ class TestFailure:
     def test_any_other_error_is_502_with_its_type_only(
         self, test_client, person, monkeypatch, channel, sender, exc
     ):
-        def fail(*_):
+        def fail(*_a, **_k):
             raise exc
 
         monkeypatch.setattr(router_mod, sender, fail)

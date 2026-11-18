@@ -16,14 +16,17 @@ import smtplib
 import ssl
 import threading
 from datetime import datetime, timezone
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 
 import httpx
 
 from app.core.config import SMTP_CA_FILE
 from app.core.ssrf import UrlVerdict, check_target, pinned_client
 from app.core.time import iso_utc
+from app.modules.notifications import mail_template
 from app.modules.notifications.channel_config import current
 
 # As in the monitoring alerter (apps/monitoring/app/alerter.py, _SUBJECT_TO_SPACE): the
@@ -34,18 +37,35 @@ _SUBJECT_TO_SPACE = str.maketrans(
 )
 
 
-def send_email(to: str, subject: str, body: str) -> None:
-    """Send one plaintext e-mail via the SMTP relay in effect (channel_config). Raises on
-    failure."""
+def send_email(
+    to: str,
+    subject: str,
+    body: str,
+    *,
+    severity: str = "info",
+    category: str = "",
+    when: datetime | None = None,
+) -> None:
+    """Send one e-mail via the SMTP relay in effect (channel_config), in the mail
+    template in effect (mail_template): plain text without one, text and HTML with one,
+    the logo as an inline part. Raises on failure."""
     relay = current()
     if not relay.smtp_host:
         raise RuntimeError("SMTP nicht konfiguriert (SMTP_HOST fehlt)")
 
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject.translate(_SUBJECT_TO_SPACE)
-    message["From"] = relay.smtp_from
+    mail = mail_template.compose(
+        mail_template.current(),
+        title=subject,
+        body=body,
+        severity=severity,
+        category=category,
+        time=mail_template.format_time(when or datetime.now(timezone.utc)),
+    )
+    message = _mime(mail)
+    message["Subject"] = mail.subject.translate(_SUBJECT_TO_SPACE)
+    name = mail.from_name.translate(_SUBJECT_TO_SPACE).strip()
+    message["From"] = formataddr((name, relay.smtp_from)) if name else relay.smtp_from
     message["To"] = to
-    message.attach(MIMEText(body, "plain"))
 
     # Port 465 = implicit TLS (SMTPS): wrap from the start, otherwise login()
     # would run in clear text. Every other port (25, 2525, 587, ...) upgrades via
@@ -74,6 +94,26 @@ def send_email(to: str, subject: str, body: str) -> None:
         if relay.smtp_user and relay.smtp_password:
             server.login(relay.smtp_user, relay.smtp_password)
         server.send_message(message)
+
+
+def _mime(mail: mail_template.Mail) -> MIMEMultipart:
+    """The body of the mail: without HTML one text part as before the template;
+    with HTML multipart/alternative (text first, RFC 2046), with a logo wrapped in
+    multipart/related next to the image the HTML names as cid:logo (RFC 2387)."""
+    alternative = MIMEMultipart("alternative")
+    alternative.attach(MIMEText(mail.text, "plain"))
+    if mail.html is None:
+        return alternative
+    alternative.attach(MIMEText(mail.html, "html"))
+    if mail.logo is None:
+        return alternative
+    related = MIMEMultipart("related")
+    related.attach(alternative)
+    image = MIMEImage(mail.logo, _subtype=(mail.logo_type or "image/png").split("/")[1])
+    image.add_header("Content-ID", f"<{mail_template.LOGO_CID}>")
+    image.add_header("Content-Disposition", "inline")
+    related.attach(image)
+    return related
 
 
 class DeliveryFailed(Exception):

@@ -19,6 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import NOTIFICATION_MAX_ATTEMPTS
+from app.modules.notifications import mail_template
 from app.modules.notifications.channel_config import using
 from app.modules.notifications.models import NotificationOutbox, NotificationSettings
 from app.modules.notifications.quiet import next_digest_at, zone
@@ -31,9 +32,13 @@ logger = logging.getLogger("adminhelper.notifications")
 DIGEST_MAX_LINES = 200
 
 
+# The digest's {{severity}}: the gravest of its entries.
+_RANK = {"info": 0, "warning": 1, "critical": 2}
+
+
 def send_digests(db: Session, now: datetime) -> tuple[int, int]:
     """Send the due digests. Returns (mails sent, entries failed for good)."""
-    with using(db):
+    with using(db), mail_template.using(db):
         return _send_due(db, now)
 
 
@@ -87,7 +92,14 @@ def _send(
     subject = f"AdminHelper digest: {len(entries)} {noun}"
     try:
         # The newest entry carries the address the person had last.
-        send_email(entries[-1].address, subject, "\n".join(lines))
+        send_email(
+            entries[-1].address,
+            subject,
+            "\n".join(lines),
+            severity=max((e.severity or "info" for e in entries), key=lambda s: _RANK.get(s, 0)),
+            category="digest",
+            when=now,
+        )
     except Exception as exc:
         gone = 0
         for e in entries:

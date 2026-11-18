@@ -25,6 +25,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import NOTIFICATION_MAX_ATTEMPTS
+from app.modules.notifications import mail_template
 from app.modules.notifications.channel_config import Channels, using
 from app.modules.notifications.models import Notification, NotificationOutbox
 from app.modules.notifications.sender import (
@@ -51,7 +52,7 @@ def drain_outbox(
 ) -> tuple[int, int]:
     """Deliver due outbox entries. Returns (sent, permanently_failed). Entries waiting
     for the digest (status digest) stay; digest.send_digests sends them."""
-    with using(db) as settings:
+    with using(db) as settings, mail_template.using(db):
         return _drain(db, settings, batch_size, now)
 
 
@@ -145,7 +146,14 @@ def _deliver(
     entry.attempts += 1
     try:
         if entry.channel == "email":
-            send_email(entry.address, subject, body)
+            send_email(
+                entry.address,
+                subject,
+                body,
+                severity=level,
+                category=category,
+                when=entry.created_at,
+            )
         elif entry.channel == "ntfy":
             send_ntfy(entry.address, subject, body, level)
         elif entry.channel == "telegram":

@@ -47,15 +47,17 @@ Fehlern wie der persönliche Test. OpenAPI-Snapshot nachgezogen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_admin_channels.py tests/test_openapi_snapshot.py
 Doku: → T10
 
-### T4 — R-1533: Mail-Vorlage, Renderer und HTML-Versand im Hub  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/mail_template.py, apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/d7b2e4c6a8f0_notify_mail_template.py, apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/notifications/digest.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notify_mail_template.py, apps/server/tests/fixtures/mail_template_parity.json, tasks/kern-notify-6.md
+### T4 — R-1533: Mail-Vorlage, Renderer und HTML-Versand im Hub  [x]
+Komponente: server · Dateien: apps/server/app/modules/notifications/mail_template.py, apps/server/app/modules/notifications/models.py, apps/server/alembic/versions/d7b2e4c6a8f0_notify_mail_template.py, apps/server/app/modules/notifications/sender.py, apps/server/app/modules/notifications/outbox.py, apps/server/app/modules/notifications/digest.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_notify_mail_template.py, apps/server/tests/fixtures/mail_template_parity.json, tasks/kern-notify-6.md, apps/server/tests/test_notification_digest.py, apps/server/tests/test_notifications.py, apps/server/tests/test_outbox.py, apps/server/tests/test_notification_prefs_test.py, apps/server/tests/test_notification_channels.py, apps/server/tests/test_notify_admin_channels.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f313b6b0e 2026-11-18T13:14:23+01:00
+Review: approve (.ah-out/review/kern-notify-6/T4.verdict.json)
 Änderung: Tabelle `notify_mail_template` (eine Zeile) mit Migration. `mail_template.py`: Platzhalter-Ersetzung
 (Spec „Platzhalter“; HTML-escaped im HTML-Teil, roh im Text; unbekannter Platzhalter = Fehler), Standard ohne
 Zeile = heutiger Text und Betreff. `send_email` baut bei gesetzter Vorlage multipart/alternative (Text + HTML),
 mit Logo multipart/related mit `Content-ID: <logo>`; `From` mit Absendername; Betreff-Präfix. Outbox, Digest und
 persönlicher Test senden über die Vorlage. Paritäts-Fixtures (Eingaben → erwartete Ausgabe) als JSON, die T7
 im Monitoring wiederverwendet.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_mail_template.py tests/test_notification_digest.py tests/test_notifications.py tests/test_migrations_smoke.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_mail_template.py tests/test_notification_digest.py tests/test_notifications.py tests/test_migrations_smoke.py tests/test_outbox.py tests/test_notification_prefs_test.py tests/test_notification_channels.py tests/test_notify_admin_channels.py tests/test_email_sender.py
 Doku: → T10
 
 ### T5 — R-1533: Admin-API für die Vorlage mit Vorschau, Logo und Test  [ ]
@@ -109,6 +111,7 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapsho
 Doku: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-notify-6.md
 
 ## Entscheidungen
+- T4: `send_email` nimmt severity/category/Zeitpunkt als Keyword-Argumente für die Platzhalter; die Test-Stubs von `send_email` in fünf Testdateien nehmen dafür `**_k` an (Verify und Dateien erweitert). Ohne Vorlage bleibt die Mail byte-gleich aufgebaut wie vorher (multipart/alternative mit einem text/plain-Teil). Der Digest trägt als `{{severity}}` die schwerste seiner Meldungen.
 - 2026-11-18 Plan: Kevin — Geheimnisse verschlüsselt (Schlüssel aus SECRET_KEY), freie HTML-Vorlage, gilt für Hub- und Monitoring-Regel-Mails.
 - 2026-11-18 Plan: Platzhalter-Ersetzung statt Template-Engine — keine Code-Ausführung aus der Vorlage, keine neue Abhängigkeit.
 - 2026-11-18 Plan: Monitoring holt die Konfiguration per internem GET (Cache 60 s) statt über den Hub zu versenden — Regel-Ergebnis im AlertLog und SMTP je Regel bleiben.

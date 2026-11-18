@@ -52,12 +52,14 @@ def web01(db_session):
 def wire(monkeypatch):
     """What the drain and the digest sent, as (channel, address, subject, body)."""
     sent: list = []
-    monkeypatch.setattr(outbox_mod, "send_email", lambda to, s, b: sent.append(("email", to, s, b)))
+    monkeypatch.setattr(
+        outbox_mod, "send_email", lambda to, s, b, **_k: sent.append(("email", to, s, b))
+    )
     monkeypatch.setattr(
         outbox_mod, "send_ntfy", lambda url, s, b, level: sent.append(("ntfy", url, s, b))
     )
     monkeypatch.setattr(
-        digest_mod, "send_email", lambda to, s, b: sent.append(("digest", to, s, b))
+        digest_mod, "send_email", lambda to, s, b, **_k: sent.append(("digest", to, s, b))
     )
     return sent
 
@@ -263,7 +265,7 @@ class TestSendDigests:
         assert [w[0] for w in wire] == ["digest"]
 
     def test_a_failed_send_retries_up_to_the_cutoff(self, db_session, web01, monkeypatch):
-        def boom(*_):
+        def boom(*_a, **_k):
             raise RuntimeError("relay down")
 
         monkeypatch.setattr(digest_mod, "send_email", boom)
@@ -288,7 +290,7 @@ def test_a_digest_mail_lists_at_most_its_cap_and_counts_the_rest(monkeypatch):
     # R-1188: a long wait must not make one unbounded mail; every entry still counts
     # as sent, the bell lists them all.
     mails: list = []
-    monkeypatch.setattr(digest_mod, "send_email", lambda to, s, b: mails.append((to, s, b)))
+    monkeypatch.setattr(digest_mod, "send_email", lambda to, s, b, **_k: mails.append((to, s, b)))
     cap = digest_mod.DIGEST_MAX_LINES
     entries = [
         SimpleNamespace(
@@ -318,7 +320,7 @@ def test_a_digest_mail_lists_at_most_its_cap_and_counts_the_rest(monkeypatch):
 
 def test_a_digest_mail_at_its_cap_has_no_closing_line(monkeypatch):
     mails: list = []
-    monkeypatch.setattr(digest_mod, "send_email", lambda to, s, b: mails.append(b))
+    monkeypatch.setattr(digest_mod, "send_email", lambda to, s, b, **_k: mails.append(b))
     cap = digest_mod.DIGEST_MAX_LINES
     entries = [
         SimpleNamespace(
