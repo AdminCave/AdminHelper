@@ -1,5 +1,5 @@
 # Agent-Installation: apt-CA lesbar für apt, smartmontools nur auf Blech — Task-Ledger
-Status: aktiv · Branch: feature/ops-8 · Review: pro Task
+Status: bereit · Branch: feature/ops-8 · Review: pro Task
 Spec: docs/features/ops-8.md (Roadmap R-0810, R-1541)
 Heavy: scenario --agents 1 — `scripts/agent-install.sh` und `box_agentbox.sh` im Diff: der Installer-Pfad über die :8445-Repo-Ebene samt CA-Flip und echtem `apt-get update` läuft nur auf einer Agent-Box (Kevin 2026-11-18: Bedingung für den Selbst-Merge).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -23,8 +23,10 @@ Beweis: Kevin 2026-11-17 Agent-Rollout; main@db7eeb363 control:6, spec:18. Dedup
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html
 
-### T3 — R-0810, R-1541: Installer legt die CA-Kopie an, smartmontools nur auf Blech, Capstone fährt apt-get update  [ ]
+### T3 — R-0810, R-1541: Installer legt die CA-Kopie an, smartmontools nur auf Blech, Capstone fährt apt-get update  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, scripts/tests/box_agentbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-8.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8c67bbdb1 2026-11-18T16:55:21+01:00
+Review: approve (.ah-out/review/ops-8/T3.verdict.json)
 Änderung: Der CA-Flip (apt) kopiert `ca.crt` als 0644 nach `/etc/apt/adminhelper-ca.crt` (`AH_REPO_CA` im Test) und pinnt `CAInfo` darauf; nach dem Paket installiert der Installer `smartmontools` nur, wenn `systemd-detect-virt` `none` meldet (apt und dnf). Die Agent-Box fährt nach dem Flip `apt-get update` mit Marker `AGENT_APT_UPDATE_OK`, `multibox.sh` verlangt ihn. Tests: Kopie 0644 und CAInfo-Pfad, smartmontools bei `none` ja und bei `kvm`/`lxc` nein. Doku: manuelle Variante A auf die Kopie, Absatz Bestandshosts (Kopie, Konf, smartmontools entfernen), Changelog. Acht Dateien, eine Komponente: Installer, sein Test und der Beweis auf der Box gehören zusammen.
 Beweis: wie T1; scripts/tests/box_agentbox.sh:159 greppt nur `CAInfo`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test multibox_test doc_smoke_test
