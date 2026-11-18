@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0004 — Monitoring-Neuordnung: Objekt, Regel, Ausnahme, Problem, Abdeckung
 
-- **Status:** **vorgeschlagen** — Stand 2026-11-18. Offen sind Kevins Entscheidungen (§13) und die Abnahme der
+- **Status:** **vorgeschlagen** — Stand 2026-11-18. Offen sind Kevins Entscheidungen (§14) und die Abnahme der
   Mockups; erst danach baut P1 (R-1559).
 - **Betrifft:** `apps/monitoring` (Checker, Regeln, Zustand, Alerter), `apps/server` (Benachrichtigungs-Hub),
   `apps/desktop` (Monitoring-Ansicht), `apps/agent` (Datenlücken, §11), Doku.
@@ -110,9 +110,9 @@ Objekte ohne Server (`certificate/…`, `domain/…`, `endpoint/…`), Backup-Ob
 
 - **`monitor_object_state`** (P1): Primärschlüssel `check_id` (FK, `ON DELETE CASCADE`) + `object_key` (≤ 200
   Zeichen); `kind`, `name`, `status`, `reason`, `since` (letzter Statuswechsel), `bad_since` (seit wann nicht ok,
-  über Wechsel zwischen Warnung und kritisch hinweg), `gone_at`. Geschrieben wird nur bei Änderung; Messwerte bleiben
-  in VictoriaMetrics und `_details`. Verschwundene Objekte bleiben N Tage. `since` kommt vom Host, wo er es liefert
-  (systemd).
+  über Wechsel zwischen Warnung und kritisch hinweg), `gone_at`. Geschrieben wird nur bei Änderung (§12.4);
+  Messwerte bleiben in VictoriaMetrics und `_details`. Verschwundene Objekte bleiben N Tage. `since` kommt vom Host,
+  wo er es liefert (systemd).
 - **Statuswechsel-Log zuerst:** die Verlaufsmarken lesen heute `MonitorAlertLog`
   (`apps/monitoring/app/history.py:234`), das nur entsteht, wenn eine Alarmregel sendet. Ein eigenes Log je
   Objektwechsel (90 Tage) trennt Verlauf von Benachrichtigung.
@@ -333,13 +333,150 @@ Ansicht):
 
 Leistung: alles Neue rechnet der Server aus vorhandenen Reports; auf dem Host entsteht keine Zusatzlast. „Nicht
 prüfen“ spart Host-Arbeit nur bei Probes, eingebaute Collector laufen unabhängig. SMART ohne `-n standby` weckt
-vermutlich schlafende HDDs (nicht verifiziert, R-1569).
+vermutlich schlafende HDDs (nicht verifiziert, R-1569, Messweg §12.7).
 
-## 12. Phasen
+## 12. Experimente
+
+Lokal auf der Entwicklungsmaschine, 2026-11-18: Proben auf pytest-Ebene gegen den Code dieses Branches (Wegwerfdatei,
+nicht im Baum), Postgres 17.11 (Test-Datenbank, eigenes Wegwerf-Schema), VictoriaMetrics v1.155.0 (die Version aus
+`docker-compose.yml`) als Wegwerf-Container, Docker Compose v5.6.1. Die Zahlen sind Größenordnungen eines Laufs auf
+einer Maschine, keine Lastmessung.
+
+### 12.1 Hub-Fehler beim Melden
+
+- **Verfahren:** ein Check kritisch, zuletzt `ok` gemeldet; der erste Hub-POST scheitert mit einem
+  Verbindungsfehler; `dispatch_alert_bg` mit echten Sessions (SQLite), danach die nächste Bewertung und eine
+  Erholung.
+- **Messwert:** nach dem Fehlschlag steht `notified_status` auf `critical`, `hub_status` und `hub_sent_at` sind leer
+  (`_release_hub_slot`, `apps/monitoring/app/alerter.py:345`, gibt nur den Glocken-Platz zurück). Die nächste
+  Bewertung entscheidet `skip`. Die Erholung entscheidet `notify`, an den Hub geht trotzdem nichts, weil kein Platz
+  offen ist. Hub-POSTs insgesamt: einer, der gescheiterte.
+- **Folgerung:** Ein Hub-Ausfall verliert den Alarm ganz, er kommt nicht verspätet (R-1572, dort mit rotem Test
+  belegt). P3 trennt deshalb „Problem offen“ von „an den Hub übergeben“: eine Outbox im Monitoring wiederholt bis zur
+  Quittung des Hubs (§8).
+
+### 12.2 Deaktivieren eines kritischen Checks
+
+- **Verfahren:** zwei Checks über den TestClient der App, einer kritisch mit offenem Hub-Platz, einer ok;
+  `POST /checks/{id}/toggle`, Wiedereinschalten, `DELETE /checks/{id}`; Hub-POSTs gezählt, `GET /status/summary`
+  vorher und nachher.
+- **Messwert:** die Summary zählt vorher und nachher `critical: 1`, also den abgeschalteten Check weiter. Abschalten,
+  Wiedereinschalten und Löschen senden keinen Hub-POST. Der Zustand bleibt eingefroren auf
+  `critical`/`critical`/`critical` (Status, gemeldet, Hub).
+- **Folgerung:** R-1566 (`apps/monitoring/app/routers/checks.py:782`, in PR #568) und R-1571
+  (`checks.py:529`) sind bestätigt. Im Zielmodell ist Abschalten die Ausnahme „nicht prüfen“ (§7). Sie schließt das
+  offene Problem mit dem Grund „ausgenommen“, und das Objekt zeigt „nicht erhoben“ statt des eingefrorenen Status
+  (§3). Nach ihrem Ende entscheidet die nächste Bewertung (Frage 9), nicht der alte Zustand.
+
+### 12.3 Monitoring 20 Minuten gestoppt (`agent_ping`)
+
+- **Verfahren:** fünf Server, letzter Report 20 Minuten vor dem Neustart, beim Start aus `monitor_agent_liveness`
+  geladen (`hydrate_agent_liveness`, `apps/monitoring/app/checkers/agent.py:161`). Die Uhr ist gesteuert. Vier
+  Agents pushen in den ersten vier Minuten, einer zwei Sekunden nach dem ersten Lauf. `AgentPingChecker` mit der
+  Standardvorlage (`stale_minutes` 15).
+- **Messwert:** Der erste Lauf kommt fünf Minuten nach dem Start (`IntervalTrigger` ohne Startzeit,
+  `apps/monitoring/app/scheduler.py:104`). Ein Lauf direkt beim Start hätte alle fünf kritisch gemeldet
+  („unreachable for 20 min“). Beim ersten Lauf sind vier ok, der späte ist kritisch („unreachable for 25 min“). Beim
+  zweiten Lauf sind alle ok. Aus dem Code abgeleitet, nicht gemessen: mit `consecutive_fails` 1 der Vorlage und
+  `_alone_wait` (`apps/monitoring/app/alert_bundle.py:230`, vier Minuten bei `5m`) geht der Einzelalarm etwa eine
+  Minute vor der Entwarnung hinaus.
+- **Folgerung:** Das Alter des Heartbeats zählt die Stillstandszeit des Monitorings mit (`agent.py:236`). Einen Sturm
+  verhindert nur der Abstand von einer Periode bis zum ersten Lauf, und ein Push knapp danach löst einen Fehlalarm
+  aus (neue Zeile R-1607). Im Zielmodell zählt das Alter ab dem späteren von letztem Report und Start des
+  Monitorings. Ein Objekt, das seit dem Start noch nicht berichten konnte, steht auf „nicht erhoben“ statt auf
+  kritisch.
+
+### 12.4 400 Objekt-Upserts je Report
+
+- **Verfahren:** eine Tabelle in der Form von `monitor_object_state` (§5) in einem Wegwerf-Schema. Ein Server mit
+  20 Checks zu je 20 Objekten, 60 Reports, je Report wechseln vier Objekte den Status. Drei Varianten:
+  - **A:** jeder Report schreibt alle 400 Zeilen per Upsert, samt `last_seen`;
+  - **B:** alle 400 Zeilen per `ON CONFLICT … DO UPDATE … WHERE status/reason IS DISTINCT FROM`;
+  - **C:** den Bestand lesen und nur die geänderten Zeilen schreiben.
+
+  Die Transaktion bis zum Commit ist die Dauer der Zeilensperren.
+- **Messwert:**
+
+  | Variante | Transaktion p50 / p95 / max | Zeilen-Updates (60 Reports) | Tabelle danach |
+  |---|---|---|---|
+  | A | 33,0 / 51,1 / 127,4 ms | 24 000 (20 170 davon HOT) | 488 KiB |
+  | B | 28,6 / 47,0 / 54,7 ms | 240 | 112 KiB |
+  | C | 5,0 / 5,8 / 31,5 ms | 240 | 112 KiB |
+
+  Die Sperrprobe nutzt Variante B ohne jede Änderung, offen gehalten. Eine zweite Verbindung mit
+  `SELECT … FOR UPDATE NOWAIT` auf eine unveränderte Zeile scheitert am Sperrfehler: das Upsert sperrt auch die Zeilen,
+  die sein `WHERE` nicht ändert.
+- **Folgerung:** Variante C bestätigt „geschrieben wird nur bei Änderung“ (§5). Den Unterschied bildet die
+  Anwendung, und es gibt kein `last_seen` je Objekt: A erzeugt 400 Zeilenversionen je Report, bei 288 Reports am Tag
+  rund 115 000 je Server und Tag für den Autovacuum. „Zuletzt gesehen“ trägt der Check (`MonitorState.last_check`),
+  „verschwunden“ folgt aus der Differenz zwischen Report und Bestand.
+
+### 12.5 Sammelabruf über 50 Reihen
+
+- **Verfahren:** 50 Reihen `monitor_check_status_value{check_id, server_id}` mit je 10 080 Werten (sieben Tage, einer
+  je Minute) über `/api/v1/import/prometheus` (Format laut
+  [URL-Beispielen](https://docs.victoriametrics.com/victoriametrics/url-examples/)), danach `/internal/force_flush`
+  ([Single-Server-Doku](https://docs.victoriametrics.com/victoriametrics/single-server-victoriametrics/), dort als
+  Test-Hilfe beschrieben). Der Container läuft mit `-search.disableCache`. Verglichen werden 50 Einzelabrufe
+  `query_range` mit `check_id="…"` nacheinander und ein Abruf mit `check_id=~"a|b|…"`, je Median aus fünf Läufen,
+  lokal ohne Netz dazwischen.
+- **Messwert:**
+  - 24 Stunden mit Schritt 5 min: 50 Einzelabrufe zusammen 98,7 ms, der Sammelabruf 12,9 ms (50 Reihen, 14 450
+    Punkte);
+  - sieben Tage mit Schritt 1 h: 106,7 ms gegen 12,9 ms (8 450 Punkte);
+  - Import der 504 000 Werte: 1,4 s.
+- **Folgerung:** Ein Sammelabruf je Ansicht und Metrik ist schon ohne Netz etwa achtmal schneller. Über Desktop,
+  Server und Monitoring kommt je Einzelabruf eine Runde dazu (heute bis zu drei `query_range` je Check,
+  `GET /checks/{id}/metrics`). Die Objekt-Tabelle (P2) holt ihre Sparklines deshalb mit einem `=~`-Selektor je
+  Metrik. Mehr als 50 Reihen in einem Selektor sind nicht gemessen.
+
+### 12.6 Schlüssel bei neu angelegtem Container
+
+- **Verfahren:** ein Compose-Projekt mit einem Dienst. Nach jedem Schritt werden das Label
+  `com.docker.compose.container-number`, der Name und die Container-ID gelesen. Die Schritte: Neuanlage
+  (`up --force-recreate`), Hochskalieren auf drei, Löschen von Nummer 2 mit erneutem Hochskalieren, Herunterskalieren
+  auf eins, `down` mit neuem `up`.
+- **Messwert:**
+  - Neuanlage: neue IDs, Name und Nummer bleiben (1, 2).
+  - Hochskalieren auf drei: Nummer 3 kommt dazu.
+  - Nummer 2 gelöscht und wieder auf drei skaliert: der neue Container bekommt Nummer 4, die Lücke bleibt.
+  - Herunterskalieren auf eins: Nummer 1 bleibt.
+  - `down` und `up`: wieder 1 und 2, mit neuen IDs.
+- **Folgerung:** Der Schlüssel aus Host, Projekt, Dienst und Nummer (§4) übersteht Neuanlage und `down`/`up`, die ID
+  nicht. Bei einem skalierten Dienst kann ein ersetzter Container eine neue Nummer bekommen. Er gilt dann als neues
+  Objekt, und der alte verschwindet nach der Regel für Verschwundenes (§9). Der Agent liest heute Projekt und Dienst
+  (`apps/agent/internal/monitor/plugins.go:149`), die Nummer nicht (§11).
+
+### 12.7 `smartctl -n standby` (nicht verifiziert)
+
+- **Quelle:** smartctl(8) aus smartmontools 7.4, die lokale Manpage des Debian-Pakets; die Seite auf
+  smartmontools.org verweigerte den automatischen Abruf. Wörtlich zu `-n`: „[ATA, SCSI] Specifies if smartctl should
+  exit before performing any checks when the device is in a low-power mode.“ Weiter sagt sie:
+  - `standby` überspringt SLEEP und STANDBY;
+  - der Standard-Exit ist 2, also Bit 1, derselbe Wert wie „device open failed“; `-n standby,STATUS` setzt einen
+    eigenen Wert;
+  - ohne `-d` kann die Erkennung des Gerätetyps die Platte trotzdem wecken;
+  - `-n` wird ignoriert, wenn die Abfrage des Energiezustands nicht unterstützt wird.
+- **Heute:** Der Agent ruft `smartctl --all --json=c` ohne `-n` (`apps/agent/internal/monitor/smart.go:141`). Für
+  `/dev/sdX`, die der Scan `scsi` nennt, lässt er `-d` bewusst weg (`:142`). Bei Bit 0 oder 1 verwirft er die Platte
+  (`:160`).
+- **Folgerung:** P1 empfiehlt `-n standby,<eigener Wert>`, ausgewertet als „schläft, letzter Stand von …“
+  (Frage 8). Gibt es eine erste erfolgreiche Abfrage, geht ihr Gerätetyp als `-d` mit, damit die Typ-Erkennung nicht
+  weckt (R-1569).
+- **Messweg** für eine echte HDD, auf einem Host mit drehender Platte, nicht auf der Entwicklungsmaschine:
+  1. `hdparm -y /dev/sdX` schickt die Platte in den Standby;
+  2. `hdparm -C /dev/sdX` meldet „standby“;
+  3. `smartctl -n standby,7 --all --json=c -d sat /dev/sdX; echo $?` erwartet 7;
+  4. `hdparm -C` meldet weiter „standby“;
+  5. Gegenprobe ohne `-n`: danach meldet `hdparm -C` „active/idle“.
+
+  Dass `hdparm -C` selbst nicht weckt, ist nicht verifiziert.
+
+## 13. Phasen
 
 | Phase | Zeile | Inhalt | Abnahme |
 |---|---|---|---|
-| P0 | R-1558 (mit R-1515) | dieses ADR, Mockups, Regel-Prototyp, Experimente, Kevins Entscheidungen | Kevin nimmt Screens und Entscheidungen ab |
+| P0 | R-1558 (mit R-1515) | dieses ADR, Mockups, Regel-Prototyp, Experimente (§12), Kevins Entscheidungen | Kevin nimmt Screens und Entscheidungen ab |
 | P1 Fundament | R-1559 | Statuswechsel-Log, Objektergebnis und `monitor_object_state`, Ausnahme-Modell mit API und Migration, Status „nicht erhoben“, Regel-Schicht (`key`, Overrides, Merge, `rises`, `clear`, `when`, `not in`), Agent-Datenlücken | Migration an einer Kopie echter Daten mit Rückweg; alte Desktops laufen weiter |
 | P2 Eine Bedienung | R-1560 | Objekt-Tabelle, Schublade, Ausnahme-Dialog, neue Server-Seite, Querschnitte, Regel-Editor | Paritätsliste je alter Ansicht, Screenshots echter Zustände |
 | P3 Lage und Probleme | R-1561 | Problem-Schicht (Flattern, Dauer-unknown, Host-Abhängigkeit), Routen statt Alarmregeln, Lage-Ansicht, Zeitleiste | Diff-Bericht der Routen; Benachrichtigungen je Woche sinken |
@@ -351,7 +488,7 @@ alles kann; Verhalten und Migration entscheidet Kevin je Phase. Messbare Ziele: 
 Woche, „was ist kaputt und seit wann“ auf einen Blick, Ausblenden mit zwei Klicks und Spur, keine Zusatzlast auf
 Hosts.
 
-## 13. Entscheidungen
+## 14. Entscheidungen
 
 Offen, je mit Empfehlung; die Mockups zeigen die empfohlene Variante. Kevins Antworten folgen hier wörtlich mit Datum.
 
@@ -374,7 +511,7 @@ Offen, je mit Empfehlung; die Mockups zeigen die empfohlene Variante. Kevins Ant
 12. **Abnahme der Screens** (Lage, Server, Objekte, Querschnitte, Abdeckung, Ausnahme-Dialog, Schublade, jede
     Objektart).
 
-## 14. Bewusst nicht (YAGNI)
+## 15. Bewusst nicht (YAGNI)
 
 - Keine Außen- und keine LAN-Sonde: der Agent prüft nur Loopback, eigene Adressen und eigene Container; Öffentliches
   prüft der Server.
