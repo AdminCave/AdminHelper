@@ -84,12 +84,21 @@ const h = vi.hoisted(() => ({
   pinnedCaFingerprint: vi.fn(async (): Promise<string | null> => null),
   createToken: vi.fn(async () => ({ token: 'adminhelper_prov_tok-123', id: 't1' })),
   platforms: vi.fn(async (): Promise<{ platforms: unknown[] }> => ({ platforms: [] })),
+  progress: vi.fn(async () => ({
+    token: null,
+    certificate: { issuedAt: '2026-11-18T12:00:00Z' },
+    report: { lastReportAt: '2026-11-18T12:01:00Z', hostFacts: null },
+    monitoringReachable: true,
+    tunnel: { configured: false, connected: null },
+    reportedPlatform: 'linux',
+    platformMismatch: false,
+  })),
   serverUrl: { value: 'https://srm.example' },
 }));
 
 vi.mock('$lib/bridge', () => ({ pinnedCaFingerprint: h.pinnedCaFingerprint }));
 vi.mock('$lib/api/provisioning', () => ({
-  provisioningApi: { createToken: h.createToken, platforms: h.platforms },
+  provisioningApi: { createToken: h.createToken, platforms: h.platforms, progress: h.progress },
 }));
 vi.mock('$lib/stores/session', async () => {
   const { readable, writable } = await import('svelte/store');
@@ -123,13 +132,16 @@ afterEach(() => {
 async function open(srv: object = server, list: ProvisionPlatform[] = [LINUX, WINDOWS, FREEBSD]) {
   h.platforms.mockResolvedValue({ platforms: list });
   const onTokenCreated = vi.fn();
+  const onClose = vi.fn();
+  const onShowMonitoring = vi.fn();
   const view = render(ProvisioningDialog, {
     server: srv as never,
-    onClose: vi.fn(),
+    onClose,
     onTokenCreated,
+    onShowMonitoring,
   });
   await waitFor(() => expect(view.container.ownerDocument.querySelector('select')).not.toBeNull());
-  return { ...view, onTokenCreated, doc: view.container.ownerDocument };
+  return { ...view, onTokenCreated, onClose, onShowMonitoring, doc: view.container.ownerDocument };
 }
 
 function byTestId(doc: Document, id: string): HTMLElement | null {
@@ -358,5 +370,38 @@ describe('ProvisioningDialog — automation', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await waitFor(() => expect(byTestId(doc, 'provision-command')).toBeNull());
     expect(byTestId(doc, 'prov-need-token')).not.toBeNull();
+  });
+});
+
+describe('ProvisioningDialog — progress', () => {
+  it('follows an install or re-registration, not an update or removal', async () => {
+    const { doc } = await open();
+    await waitFor(() => expect(byTestId(doc, 'prov-progress')).not.toBeNull());
+    await tab(doc, tNow('infra.prov.action.reregister'));
+    expect(byTestId(doc, 'prov-progress')).not.toBeNull();
+    await tab(doc, tNow('infra.prov.action.update'));
+    expect(byTestId(doc, 'prov-progress')).toBeNull();
+    await tab(doc, tNow('infra.prov.action.remove'));
+    expect(byTestId(doc, 'prov-progress')).toBeNull();
+  });
+
+  it('closes itself and opens the monitoring once everything is done', async () => {
+    const { doc, onClose, onShowMonitoring } = await open();
+    await waitFor(() =>
+      expect(doc.querySelector('[data-action="prov-show-monitoring"]')).not.toBeNull(),
+    );
+    await fireEvent.click(doc.querySelector('[data-action="prov-show-monitoring"]') as HTMLElement);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onShowMonitoring).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows a token minted after the progress was complete', async () => {
+    const { doc } = await open();
+    await waitFor(() =>
+      expect(doc.querySelector('[data-action="prov-show-monitoring"]')).not.toBeNull(),
+    );
+    expect(h.progress).toHaveBeenCalledTimes(1);
+    await mint(doc);
+    await waitFor(() => expect(h.progress).toHaveBeenCalledTimes(2));
   });
 });

@@ -50,11 +50,14 @@ const DYNAMIC_PREFIXES = [
   'rdp.end.',
   'rdp.performance.',
   // The provisioning dialog (ProvisioningDialog.svelte): infra.prov.platform.${id},
-  // .reason.${reason}, .action.${action}, .port.${purpose} from the server's catalog.
+  // .reason.${reason}, .action.${action}, .port.${purpose} from the server's catalog;
+  // .stage.${id}, .stageState.${state} of its progress (ProvisioningProgress.svelte).
   'infra.prov.platform.',
   'infra.prov.reason.',
   'infra.prov.action.',
   'infra.prov.port.',
+  'infra.prov.stage.',
+  'infra.prov.stageState.',
 ];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {

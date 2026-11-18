@@ -25,6 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Callout from '../../ui/Callout.svelte';
   import CodeBlock from '../../ui/CodeBlock.svelte';
   import Modal from '../../ui/Modal.svelte';
+  import ProvisioningProgress from './ProvisioningProgress.svelte';
   import Select from '../../ui/Select.svelte';
   import Switch from '../../ui/Switch.svelte';
   import Tabs from '../../ui/Tabs.svelte';
@@ -34,8 +35,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     onClose: () => void;
     // A token now exists on the server: the tab reloads its list.
     onTokenCreated?: () => void;
+    onShowMonitoring?: () => void;
   }
-  let { server, onClose, onTokenCreated }: Props = $props();
+  let { server, onClose, onTokenCreated, onShowMonitoring }: Props = $props();
 
   // What this desktop can label; a platform or action the server adds later is left out
   // rather than shown under a raw ID.
@@ -48,6 +50,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let action = $state<string>('install');
   let automation = $state(false);
   let token = $state('');
+  // Counts the tokens minted here: each one starts the progress over (it stops once done).
+  let minted = $state(0);
   // The desktop's pinned CA fingerprint, handed to the agent as --ca-fp so its first contact
   // is verified instead of trust-on-first-use. Null while this device is not enrolled.
   let caFp = $state<string | null>(null);
@@ -123,6 +127,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         scheduleHide(60_000);
       }
       // The token exists on the server either way.
+      minted += 1;
       onTokenCreated?.();
     } catch (err) {
       reportError(errMsg(err));
@@ -261,6 +266,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <div data-testid="prov-no-command">
               <Callout tone="danger">{$t('infra.prov.noCommand')}</Callout>
             </div>
+          {/if}
+
+          {#if activeAction === 'install' || activeAction === 'reregister'}
+            {#key minted}
+              <ProvisioningProgress
+                serverId={server.id}
+                onShowMonitoring={onShowMonitoring
+                  ? () => {
+                      onClose();
+                      onShowMonitoring();
+                    }
+                  : undefined}
+              />
+            {/key}
           {/if}
 
           {#if token && needsToken && !automation}

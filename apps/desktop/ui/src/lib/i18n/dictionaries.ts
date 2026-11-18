@@ -86,6 +86,7 @@ export const translations: Translations = {
     'infra.prov.platform.windows': 'Windows',
     'infra.prov.platform.freebsd': 'FreeBSD',
     'infra.prov.platform.opnsense': 'OPNsense',
+    'infra.prov.platform.other': 'Andere',
     'infra.prov.unavailable': '{name} (nicht verfügbar)',
     'infra.prov.reason.noRepo':
       'Der Server liefert für diese Plattform kein Paket aus (kein Paket-Repo im Release oder update.sh noch nicht gelaufen).',
@@ -102,6 +103,24 @@ export const translations: Translations = {
     'infra.prov.port.repo': 'Paket-Repo',
     'infra.prov.port.tunnel': 'Tunnel',
     'infra.prov.tunnelOnly': 'nur mit FRP-Tunnel',
+    'infra.prov.progress': 'Fortschritt',
+    'infra.prov.progressError': 'Fortschritt nicht abrufbar.',
+    'infra.prov.stage.token': 'Token eingelöst',
+    'infra.prov.stage.certificate': 'Zertifikat ausgestellt',
+    'infra.prov.stage.report': 'Erster Bericht',
+    'infra.prov.stage.tunnel': 'Tunnel verbunden',
+    'infra.prov.stageState.done': 'erledigt',
+    'infra.prov.stageState.waiting': 'wartet',
+    'infra.prov.stageState.unknown': 'unbekannt',
+    'infra.prov.hint.expired':
+      'Der Token ist abgelaufen, ohne eingelöst zu werden. Erzeuge einen neuen und führe den Befehl erneut aus.',
+    'infra.prov.hint.noReport':
+      'Seit über 5 Minuten kein Bericht des Agenten. Prüfe die ausgehenden Ports 443 und 8444, die Uhrzeit des Servers und einen Proxy.',
+    'infra.prov.hint.tunnel':
+      'Der Agent berichtet, aber der FRP-Tunnel ist nicht verbunden. Prüfe den FRP-Port aus den Voraussetzungen und das Dienstprotokoll von frpc.',
+    'infra.prov.hint.platform':
+      'Der Agent meldet die Plattform {reported}; gewählt ist eine andere.',
+    'infra.prov.showMonitoring': 'Monitoring-Vorschläge ansehen',
     'infra.prov.automation': 'Für Automatisierung',
     'infra.prov.automationWarn':
       'Der Token steht dann im Befehl und ist in Shell-Historie und Prozessliste sichtbar. Nur für Skripte und Konfigurationsmanagement.',
@@ -1674,6 +1693,7 @@ export const translations: Translations = {
     'infra.prov.platform.windows': 'Windows',
     'infra.prov.platform.freebsd': 'FreeBSD',
     'infra.prov.platform.opnsense': 'OPNsense',
+    'infra.prov.platform.other': 'Other',
     'infra.prov.unavailable': '{name} (not available)',
     'infra.prov.reason.noRepo':
       'The server ships no package for this platform (no package repo in the release, or update.sh has not run yet).',
@@ -1690,6 +1710,23 @@ export const translations: Translations = {
     'infra.prov.port.repo': 'Package repo',
     'infra.prov.port.tunnel': 'Tunnel',
     'infra.prov.tunnelOnly': 'only with an FRP tunnel',
+    'infra.prov.progress': 'Progress',
+    'infra.prov.progressError': 'Progress unavailable.',
+    'infra.prov.stage.token': 'Token redeemed',
+    'infra.prov.stage.certificate': 'Certificate issued',
+    'infra.prov.stage.report': 'First report',
+    'infra.prov.stage.tunnel': 'Tunnel connected',
+    'infra.prov.stageState.done': 'done',
+    'infra.prov.stageState.waiting': 'waiting',
+    'infra.prov.stageState.unknown': 'unknown',
+    'infra.prov.hint.expired':
+      'The token expired without being redeemed. Create a new one and run the command again.',
+    'infra.prov.hint.noReport':
+      'No agent report for more than 5 minutes. Check the outgoing ports 443 and 8444, the server clock and any proxy.',
+    'infra.prov.hint.tunnel':
+      'The agent reports, but the FRP tunnel is not connected. Check the FRP port from the prerequisites and the frpc service log.',
+    'infra.prov.hint.platform': 'The agent reports the platform {reported}; another one is chosen.',
+    'infra.prov.showMonitoring': 'View monitoring suggestions',
     'infra.prov.automation': 'For automation',
     'infra.prov.automationWarn':
       'The token is then part of the command and visible in shell history and the process list. Only for scripts and configuration management.',

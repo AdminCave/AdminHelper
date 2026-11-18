@@ -6,10 +6,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { Info, Monitor, Pencil, Server as ServerIcon } from '@lucide/svelte';
+  import { onMount } from 'svelte';
   import type { Server } from '$lib/api/types';
+  import { provisioningApi } from '$lib/api/provisioning';
+  import { session } from '$lib/stores/session';
   import { openServerEditor } from '$lib/stores/infra';
   import { t } from '$lib/i18n';
   import Button from '../ui/Button.svelte';
+  import Callout from '../ui/Callout.svelte';
   import MetaList from '../ui/MetaList.svelte';
   import Panel from '../ui/Panel.svelte';
   import Tabs from '../ui/Tabs.svelte';
@@ -39,6 +43,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
     { key: $t('infra.field.tags'), value: (server.tags ?? []).join(', ') || '—' },
     { key: $t('infra.field.notes'), value: server.notes || '—', mono: false },
   ]);
+
+  // The platform the agent reported, when it differs from the chosen one (R-1594). Only a
+  // server with a chosen platform can differ; a failed lookup shows nothing. The page
+  // remounts this view per server ({#key} in Infrastructure.svelte).
+  let reportedPlatform = $state<string | null>(null);
+  onMount(() => {
+    const s = $session;
+    // The progress route is for admins only.
+    if (!s?.isAdmin || !server.osType) return;
+    provisioningApi
+      .progress(s, server.id)
+      .then((p) => {
+        if (p.platformMismatch) reportedPlatform = p.reportedPlatform ?? 'other';
+      })
+      .catch(() => {});
+  });
 </script>
 
 <div class="srv-detail">
@@ -70,6 +90,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <div class="srv-overview">
           <Panel title={$t('infra.overview.title')} icon={Info}>
             <MetaList {rows} />
+            {#if reportedPlatform}
+              <div class="srv-mismatch" data-testid="platform-mismatch">
+                <Callout tone="warning"
+                  >{$t('infra.prov.hint.platform', {
+                    reported: $t(`infra.prov.platform.${reportedPlatform}`),
+                  })}</Callout
+                >
+              </div>
+            {/if}
           </Panel>
         </div>
       {:else if active === 'connections'}
@@ -79,7 +108,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {:else if active === 'monitoring'}
         <MonitoringTab {server} />
       {:else if active === 'provisioning'}
-        <ProvisioningTab {server} />
+        <ProvisioningTab {server} onShowMonitoring={() => (active = 'monitoring')} />
       {/if}
     {/key}
   </div>
@@ -131,6 +160,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     color: var(--text-subtle);
     font-family: var(--font-mono);
     font-size: 12px;
+  }
+  .srv-mismatch {
+    margin-top: var(--sp-3);
   }
   .srv-tab-body {
     flex: 1;

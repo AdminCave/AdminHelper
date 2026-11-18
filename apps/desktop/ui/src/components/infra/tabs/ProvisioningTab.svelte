@@ -20,8 +20,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   interface Props {
     server: Server;
+    onShowMonitoring?: () => void;
   }
-  let { server }: Props = $props();
+  let { server, onShowMonitoring }: Props = $props();
 
   let tokens = $state<FrpProvisionToken[]>([]);
   let loading = $state(false);
@@ -111,6 +112,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {server}
     onClose={() => (dialogOpen = false)}
     onTokenCreated={() => void loadTokens()}
+    {onShowMonitoring}
   />
 {/if}
 
