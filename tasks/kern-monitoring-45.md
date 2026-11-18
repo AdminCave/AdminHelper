@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-45 — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-45 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-45 · Review: pro Task
 Spec: docs/features/kern-monitoring-45.md (Roadmap R-1525, R-1565, R-1566, R-1567, R-1568, R-0518, R-1570, R-1571, R-1572, R-1573)
 Heavy: linux-full — `apps/agent` (SMART-Bericht) und der Server (Anfragegrenzen), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -52,7 +52,7 @@ Beweis: Code-Lesung `module_sync.py` `_update` und `_adopt` · Dedup-Key: bug:mo
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: → T11
 
-### T5 — R-0518: Agent lässt smart_passed ohne smart_status weg  [?] (SMART-Stufen: nicht erhoben / nicht lesbar)
+### T5 — R-0518: Agent lässt smart_passed ohne smart_status weg  [ ]
 Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go
 Änderung: `SmartDisk.Passed` wird `*bool` mit `omitempty`; ohne `smart_status` im JSON von smartctl fehlt das Feld.
 Test: smartctl-JSON ohne `smart_status` (SMART abgeschaltet, Exit-Bit 2) ergibt kein `smart_passed` (rot vorher).
@@ -60,7 +60,7 @@ Beweis: Code-Lesung `smart.go` `querySmartDevice` (`Passed: raw.SmartStatus.Pass
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T11
 
-### T6 — R-1568: SMART-Prüfung dreiwertig  [?] (SMART-Stufen: nicht erhoben / nicht lesbar)
+### T6 — R-1568: SMART-Prüfung dreiwertig  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/tests/test_smart_checker.py
 Änderung: `_absent_result` und die Plattenbewertung unterscheiden „nicht erhoben“ und „nicht lesbar“ nach Kevins
 Stufen; eine Platte ohne `smart_passed` ist „nicht lesbar“, nicht „SMART FAILED“. Tests je Fall (rot vorher).
@@ -113,3 +113,4 @@ Doku: docs/admin/monitoring.html DE+EN · docs/developer/agent.html DE+EN · cha
 Task-Review: am Ende
 
 ## Entscheidungen
+- 2026-11-18 Kevin (SMART-Stufen, T5/T6): „nicht erhoben“ = `info`, „nicht lesbar“ = `unknown`.

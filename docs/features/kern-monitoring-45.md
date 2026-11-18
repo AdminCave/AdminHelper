@@ -89,7 +89,5 @@ erst den Beleg auf einer Testbox); es geht in den Zug `kern-monitoring-47`.
 
 ## Offene Fragen
 
-1. **SMART-Stufen (R-1568, R-0518):** Welchen Status bekommen „nicht erhoben“ (kein smartctl, keine Platte) und
-   „nicht lesbar“ (Abfrage gescheitert, Platte ohne `smart_status`)? Empfehlung: „nicht erhoben“ = `info` (sichtbar,
-   kein Alarm), „nicht lesbar“ = `unknown` (meldet wie heute jede unklare Prüfung). T5 und T6 stehen bis dahin auf
-   `[?]`.
+1. **SMART-Stufen (R-1568, R-0518):** entschieden, Kevin 2026-11-18: „nicht erhoben“ = `info`, „nicht lesbar“ =
+   `unknown`.
