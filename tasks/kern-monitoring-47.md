@@ -37,8 +37,10 @@ nach), dann Deckel, Wartung, abgeschalteter Check, laufende Reservierung.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py tests/test_alerter_hub.py
 Doku: → T3
 
-### T3 — Doku und CHANGELOG  [ ]
+### T3 — Doku und CHANGELOG  [x]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-47.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @17af83b4c 2026-11-18T20:04:40+01:00
+Review: am Ende (Branch-Review)
 Änderung: Admin-Doku „Vorfälle in der Glocke“: Abschalten/Löschen schließt den Vorfall, Einschalten startet bei
 `unknown`, nicht zugestellte Glocken-Meldungen holt der Dienst je Minute nach (höchstens 20). Entwickler-Doku beim
 Alerter (Glocke): Nachhol-Job, Regel, Rennen mit der Sammelmeldung. Changelog-Fragment.
