@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p0 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p0 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p0 · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p0.md (Roadmap R-1558, R-1515)
 Heavy: none — Mockups nur im Vite-Dev-Server (nicht im Produktions-Build), Regel-Prototyp nur in Tests, ADR und Doku; kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -110,8 +110,10 @@ Doku: docs/adr/0004-monitoring-neuordnung.md
 Task-Review: am Ende
 Abhängt von: T9
 
-### T11 — Entwickler-Doku: Mockup-Einstieg und Verweis auf ADR 0004 (R-1558)  [ ]
+### T11 — Entwickler-Doku: Mockup-Einstieg und Verweis auf ADR 0004 (R-1558)  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b05ffec2a 2026-11-18T15:57:20+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0/T11.verdict.json)
 Änderung: `DEVELOPMENT.md` nennt den Mockup-Einstieg (`npm --prefix apps/desktop/ui run dev`, dann `/mockup.html`; nicht im Build). Die Entwickler-Seite zum Monitoring-Stack DE+EN verweist auf ADR 0004 als vorgeschlagene Neuordnung.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: DEVELOPMENT.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
