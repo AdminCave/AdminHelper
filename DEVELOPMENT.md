@@ -973,6 +973,22 @@ touch apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
 
 Diese Binary wird im CI/CD durch die echte frpc-Binary ersetzt.
 
+### Mockup der Monitoring-Neuordnung (Desktop-UI)
+
+Zur vorgeschlagenen Neuordnung des Monitorings ([ADR 0004](docs/adr/0004-monitoring-neuordnung.md)) gibt es ein
+klickbares Mockup mit fiktiven Daten. Es braucht weder Tauri noch Server oder Monitoring-Dienst, der Vite-Dev-Server
+reicht:
+
+```bash
+npm --prefix apps/desktop/ui run dev
+# dann im Browser: http://localhost:1420/mockup.html
+```
+
+Einstieg ist `apps/desktop/ui/mockup.html`, der Code liegt unter `apps/desktop/ui/src/mockups/monitoring-neu/`.
+`vite build` baut nur `index.html`, das Mockup kommt also nicht in den Desktop-Build;
+`src/mockups/monitoring-neu/isolation.test.ts` haelt das fest (keine weitere Build-Eingabe, kein Import aus dem
+Produkt).
+
 ### Go Agent
 
 ```bash

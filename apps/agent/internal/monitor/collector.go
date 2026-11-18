@@ -18,6 +18,8 @@ import (
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 	gnet "github.com/shirou/gopsutil/v4/net"
+
+	"adminhelper-agent/internal/probe"
 )
 
 // Filesystem types to skip (Linux and FreeBSD; Windows ignores these). On FreeBSD the pseudo
@@ -266,6 +268,14 @@ func diskInfo(p disk.PartitionStat, usage *disk.UsageStat, goos string) DiskInfo
 	return d
 }
 
+// skippedDisk says whether a mount is no disk of the list: a pseudo file system, a system path, or on
+// Linux a network share. A share that hangs would hang statfs and with it the run; on Linux the share
+// check measures it in a process of its own (R-1267), elsewhere it stays a disk.
+func skippedDisk(p disk.PartitionStat, goos string) bool {
+	return skipFSTypes[p.Fstype] || (goos == "linux" && probe.NetFSTypes[p.Fstype]) ||
+		hasPrefix(p.Mountpoint, skipMountPrefixes)
+}
+
 func collectDisks() []DiskInfo {
 	parts, err := disk.Partitions(false)
 	if err != nil {
@@ -273,10 +283,7 @@ func collectDisks() []DiskInfo {
 	}
 	var disks []DiskInfo
 	for _, p := range parts {
-		if skipFSTypes[p.Fstype] {
-			continue
-		}
-		if hasPrefix(p.Mountpoint, skipMountPrefixes) {
+		if skippedDisk(p, resourceCalls.goos) {
 			continue
 		}
 		usage, err := disk.Usage(p.Mountpoint)
