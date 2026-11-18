@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-9 — Exponierte Container-Ports jenseits der Kappung — Task-Ledger
-Status: aktiv · Branch: feature/kern-agent-9 · Review: am Ende
+Status: bereit · Branch: feature/kern-agent-9 · Review: am Ende
 Spec: docs/features/kern-agent-9.md (Roadmap R-1524)
 Heavy: none — nur Monitoring-Abgleich (module_sync), kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -23,8 +23,10 @@ des Schnitts → bisher „has no port“), dann der Fix; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: changelog.d/kern-agent-9.md
 
-### T2 — Doku: volle exponierte Liste beim Rückfall  [ ]
+### T2 — Doku: volle exponierte Liste beim Rückfall  [x]
 Komponente: monitoring · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/features/kern-agent-9.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3f9797663 2026-11-18T23:52:09+01:00
+Review: am Ende (Branch-Review)
 Änderung: Entwickler-Doku (`_seen_ports`): eine exponierte Liste mit 64 Einträgen zählt als keine gesehenen Ports;
 Spec-Zeilenverweise und Doku-Impact nachgezogen (Fund der Abschlussprüfung).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py

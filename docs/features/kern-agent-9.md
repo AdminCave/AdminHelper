@@ -8,8 +8,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Problem / Motivation
 Der Agent meldet je Container höchstens 64 exponierte Ports (`maxContainerPorts`,
 `apps/agent/internal/discovery/discovery.go:521`, nach Port sortiert gekürzt); der Server kürzt ebenso
-(`MAX_CONTAINER_PORTS`, `apps/monitoring/app/discovery.py:52`). Fehlen die lauschenden Ports (`listening` null),
-fällt `_seen_ports` (`apps/monitoring/app/module_sync.py:211`) auf die exponierten zurück. Ist die Liste gekappt,
+(`MAX_CONTAINER_PORTS`, `apps/monitoring/app/discovery.py:54`). Fehlen die lauschenden Ports (`listening` null),
+fällt `_seen_ports` (`apps/monitoring/app/module_sync.py:265`) auf die exponierten zurück. Ist die Liste gekappt,
 gilt ein Port jenseits des Schnitts als fehlend: `_lacks_port` bindet den Check nicht („container … has no port …“),
 `_alternative` wählt die falsche Alternative oder keine.
 
@@ -35,7 +35,7 @@ Keine. Keine Vertragsänderung zwischen Agent und Server.
 Gering; ein Commit, revertierbar.
 
 ## Doku-Impact
-Keine Seite beschreibt die Kappung beim Rückfall; Changelog-Fragment.
+`docs/developer/monitoring.html` DE+EN (Rückfall auf die exponierten Ports, `_seen_ports`); Changelog-Fragment.
 
 ## Offene Fragen
 Keine.
