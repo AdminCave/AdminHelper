@@ -421,3 +421,104 @@ class EventsAcceptedOut(BaseModel):
     """How many recipients the event reached."""
 
     notified: int
+
+
+# --- Delivery settings in the panel (R-1531) ----------------------------------------
+
+# One line of the SMTP dialogue or a header: a CR or LF would start the next one.
+_NO_LINE_BREAK = r"^[^\r\n]*$"
+# A DNS name or an address literal, nothing a URL or a command would carry.
+_SMTP_HOST = r"^[A-Za-z0-9.:\[\]-]{1,255}$"
+# The form BotFather hands out: digits, colon, the secret.
+_BOT_TOKEN = r"^[0-9]{1,20}:[A-Za-z0-9_-]{20,100}$"
+
+
+class NotifyChannelsIn(RequestModel):
+    """The settings the panel keeps. A plain field null or "" falls back to .env; the
+    password and the token missing or null stay as stored, "" deletes them."""
+
+    smtpHost: Optional[str] = Field(None, max_length=255)
+    smtpPort: Optional[int] = Field(None, ge=1, le=65535)
+    smtpUser: Optional[str] = Field(None, max_length=255, pattern=_NO_LINE_BREAK)
+    smtpPassword: Optional[str] = Field(None, max_length=255, pattern=_NO_LINE_BREAK)
+    smtpFrom: Optional[str] = Field(None, max_length=255)
+    telegramToken: Optional[str] = Field(None, max_length=128)
+    # Comma-separated CIDR, as NOTIFY_PRIVATE_TARGETS.
+    privateTargets: Optional[str] = Field(None, max_length=2048)
+
+    @field_validator("smtpHost")
+    @classmethod
+    def _check_host(cls, v: Optional[str]) -> Optional[str]:
+        if v and not re.fullmatch(_SMTP_HOST, v):
+            raise ValueError("SMTP host: a host name or an address")
+        return v
+
+    @field_validator("smtpFrom")
+    @classmethod
+    def _check_from(cls, v: Optional[str]) -> Optional[str]:
+        if v and not re.fullmatch(_EMAIL_PATTERN, v):
+            raise ValueError("sender: an e-mail address")
+        return v
+
+    @field_validator("telegramToken")
+    @classmethod
+    def _check_token(cls, v: Optional[str]) -> Optional[str]:
+        if v and not re.fullmatch(_BOT_TOKEN, v):
+            raise ValueError("bot token: <bot id>:<secret> as BotFather hands it out")
+        return v
+
+    @field_validator("privateTargets")
+    @classmethod
+    def _check_targets(cls, v: Optional[str]) -> Optional[str]:
+        from app.core.config import _private_targets
+
+        # Its ValueError names the wrong entry. A list without a network is no list:
+        # .env holds, it does not close every network.
+        if v and not _private_targets(v):
+            return None
+        return v
+
+
+class NotifyChannelsEffective(BaseModel):
+    """What the server sends with now, panel before .env; no secret."""
+
+    smtpHost: str
+    smtpPort: int
+    smtpUser: str
+    smtpFrom: str
+    privateTargets: list[str]
+
+
+class NotifyChannelsOut(BaseModel):
+    """The panel row (null = not set there) and what is in effect. Password and token
+    leave the server never: only whether the panel holds one."""
+
+    smtpHost: Optional[str]
+    smtpPort: Optional[int]
+    smtpUser: Optional[str]
+    smtpFrom: Optional[str]
+    privateTargets: Optional[str]
+    passwordSet: bool
+    tokenSet: bool
+    # Field -> "panel" | "env" | "none".
+    sources: dict[str, str]
+    # Secrets of the panel that do not open with this SECRET_KEY: enter them again.
+    unreadable: list[str]
+    effective: NotifyChannelsEffective
+    updatedAt: Optional[str]
+    updatedBy: Optional[str]
+
+
+class NotifyChannelTestRequest(RequestModel):
+    """A test message to a target the admin names, over the settings in effect."""
+
+    channel: Literal["email", "telegram"]
+    target: str = Field(min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def _check_target(self) -> "NotifyChannelTestRequest":
+        if self.channel == "email" and not re.fullmatch(_EMAIL_PATTERN, self.target):
+            raise ValueError("target: an e-mail address")
+        if self.channel == "telegram" and not re.fullmatch(r"^-?[0-9]{1,20}$", self.target):
+            raise ValueError("target: a Telegram chat id")
+        return self

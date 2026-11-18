@@ -4584,6 +4584,285 @@
         "title": "NotificationTestRequest",
         "type": "object"
       },
+      "NotifyChannelTestRequest": {
+        "description": "A test message to a target the admin names, over the settings in effect.",
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "telegram"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "target"
+        ],
+        "title": "NotifyChannelTestRequest",
+        "type": "object"
+      },
+      "NotifyChannelsEffective": {
+        "description": "What the server sends with now, panel before .env; no secret.",
+        "properties": {
+          "privateTargets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Privatetargets",
+            "type": "array"
+          },
+          "smtpFrom": {
+            "title": "Smtpfrom",
+            "type": "string"
+          },
+          "smtpHost": {
+            "title": "Smtphost",
+            "type": "string"
+          },
+          "smtpPort": {
+            "title": "Smtpport",
+            "type": "integer"
+          },
+          "smtpUser": {
+            "title": "Smtpuser",
+            "type": "string"
+          }
+        },
+        "required": [
+          "smtpHost",
+          "smtpPort",
+          "smtpUser",
+          "smtpFrom",
+          "privateTargets"
+        ],
+        "title": "NotifyChannelsEffective",
+        "type": "object"
+      },
+      "NotifyChannelsIn": {
+        "description": "The settings the panel keeps. A plain field null or \"\" falls back to .env; the\npassword and the token missing or null stay as stored, \"\" deletes them.",
+        "properties": {
+          "privateTargets": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privatetargets"
+          },
+          "smtpFrom": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpfrom"
+          },
+          "smtpHost": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtphost"
+          },
+          "smtpPassword": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtppassword"
+          },
+          "smtpPort": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpport"
+          },
+          "smtpUser": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpuser"
+          },
+          "telegramToken": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegramtoken"
+          }
+        },
+        "title": "NotifyChannelsIn",
+        "type": "object"
+      },
+      "NotifyChannelsOut": {
+        "description": "The panel row (null = not set there) and what is in effect. Password and token\nleave the server never: only whether the panel holds one.",
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/NotifyChannelsEffective"
+          },
+          "passwordSet": {
+            "title": "Passwordset",
+            "type": "boolean"
+          },
+          "privateTargets": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privatetargets"
+          },
+          "smtpFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpfrom"
+          },
+          "smtpHost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtphost"
+          },
+          "smtpPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpport"
+          },
+          "smtpUser": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpuser"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "tokenSet": {
+            "title": "Tokenset",
+            "type": "boolean"
+          },
+          "unreadable": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable",
+            "type": "array"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedby"
+          }
+        },
+        "required": [
+          "smtpHost",
+          "smtpPort",
+          "smtpUser",
+          "smtpFrom",
+          "privateTargets",
+          "passwordSet",
+          "tokenSet",
+          "sources",
+          "unreadable",
+          "effective",
+          "updatedAt",
+          "updatedBy"
+        ],
+        "title": "NotifyChannelsOut",
+        "type": "object"
+      },
       "PlaybookContentOut": {
         "properties": {
           "content": {
@@ -5877,6 +6156,125 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/notify/channels": {
+      "get": {
+        "description": "The delivery settings of the panel and the ones in effect. 403 for non-admins.",
+        "operationId": "get_channels_api_admin_notify_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChannelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Channels",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Store the delivery settings. A plain field null or empty falls back to .env; the\npassword and the token missing or null stay, empty deletes them, and a new SMTP host\nwithout a password drops the stored one. 422 for a wrong host, sender, port, token\nor network.",
+        "operationId": "put_channels_api_admin_notify_channels_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyChannelsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChannelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Channels",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/channels/test": {
+      "post": {
+        "description": "Send a test message over the stored settings to the target given, at once. 409\nwhen the channel is not set up, 422 for a blocked target, 502 for a failed send,\n429 for a second test of the channel within ten seconds (shared with the personal\ntest).",
+        "operationId": "test_channels_api_admin_notify_channels_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyChannelTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Channels",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/ansible/playbooks": {
       "get": {
         "operationId": "list_playbooks_api_ansible_playbooks_get",

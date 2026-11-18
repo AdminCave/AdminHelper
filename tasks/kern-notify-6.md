@@ -35,8 +35,10 @@ Tests: Vorrang je Feld, Rückfall nach Schlüsselwechsel, Chiffrat ≠ Klartext 
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notify_channel_config.py tests/test_notification_channels.py tests/test_notification_prefs_test.py tests/test_migrations_smoke.py tests/test_email_sender.py tests/test_outbox.py tests/test_notification_escalation.py tests/test_notification_digest.py tests/test_notifications.py tests/test_notification_settings.py
 Doku: → T10
 
-### T3 — R-1531: Admin-API für die Kanäle mit Test-Versand  [ ]
+### T3 — R-1531: Admin-API für die Kanäle mit Test-Versand  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/admin_router.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/main.py, apps/server/tests/test_notify_admin_channels.py, apps/server/tests/openapi.snapshot.json, tasks/kern-notify-6.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0b2bbaeb6 2026-11-18T12:59:36+01:00
+Review: approve (.ah-out/review/kern-notify-6/T3.verdict.json)
 Änderung: `GET/PUT /api/admin/notify/channels` und `POST /api/admin/notify/channels/test` nur für Admins (Spec
 „Datenmodell / API“): Passwort und Token write-only (fehlt/`null` behalten, `""` löschen), Antwort mit
 `passwordSet`/`tokenSet` und Quelle je Feld, Warnung bei unlesbarem Chiffrat; CIDR-Prüfung wie beim Start; Port
