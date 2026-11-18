@@ -157,6 +157,7 @@ APP_VIEW_FIELDS: dict[str, frozenset[str]] = {
     ),
     "moodle_checks": frozenset({"state", "not_ok"}),
     "moodle_data": frozenset({"used_pct", "free_bytes", "inodes_used_pct"}),
+    "net_share_usage": frozenset({"mounted", "hung", "used_percent", "free_gb"}),
     "service_config": frozenset({"config_ok"}),
     "nginx_status": frozenset(
         {"active", "accepts", "handled", "requests", "reading", "writing", "waiting", "dropped"}
@@ -442,6 +443,7 @@ APP_VIEW_TARGETS: dict[str, frozenset[str]] = {
     "web_vhost_cert": frozenset({"vhost"}),
     "moodle_checks": frozenset({"vhost"}),
     "moodle_data": frozenset({"vhost"}),
+    "net_share_usage": frozenset({"share"}),
     "haproxy_certs": _UNIT,
 }
 
@@ -736,6 +738,7 @@ class AppParams(_Params):
         "web_vhost_cert",
         "moodle_checks",
         "moodle_data",
+        "net_share_usage",
         "service_config",
         "nginx_status",
         "apache_status",

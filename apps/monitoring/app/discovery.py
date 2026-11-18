@@ -55,6 +55,7 @@ MAX_CONTAINER_PORTS = 64
 MAX_MOUNTS = 32
 MAX_CREDENTIALS = 256
 MAX_VHOSTS = 500
+MAX_SHARES = 64
 
 SCAN_AFTER_MIN = timedelta(hours=24)
 SCAN_AFTER_MAX = timedelta(hours=48)
@@ -81,6 +82,11 @@ _VHOST_NAME = re.compile(
     r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 )
 _VHOST_SERVERS = frozenset({"nginx", "apache"})
+# A network share is reported by its mount point and type, never its source (Kevin 2026-11-18).
+# The mount point as the agent's share target takes it (probe validMountpoint), so a finding is
+# never a check that cannot run.
+NET_FSTYPES = frozenset({"nfs", "nfs4", "cifs", "smb3"})
+_MOUNTPOINT = re.compile(r"(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_., @+-]*)+")
 _TCP = ("tcp", "tcp6")
 
 
@@ -202,6 +208,21 @@ def _vhost(raw: object) -> dict | None:
     }
 
 
+def _share(raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    point, fstype = _text(raw.get("mountpoint"), 255), raw.get("fstype")
+    if not _MOUNTPOINT.fullmatch(point) or fstype not in NET_FSTYPES:
+        return None
+    return {"mountpoint": point, "fstype": fstype}
+
+
+def share_key(mountpoint: str) -> str:
+    """The instance key of a share: its mount point with ":" for "/", which no mount point
+    holds, so two mount points never share a key ("/" makes no key)."""
+    return mountpoint[1:].replace("/", ":")
+
+
 def _is_address(name: str) -> bool:
     try:
         ipaddress.ip_address(name)
@@ -210,7 +231,7 @@ def _is_address(name: str) -> bool:
     return True
 
 
-SECTIONS = ("units", "containers", "sockets", "markers", "vhosts", "ports")
+SECTIONS = ("units", "containers", "sockets", "markers", "vhosts", "ports", "shares")
 
 
 def clean_inventory(block: object) -> dict | None:
@@ -227,10 +248,14 @@ def clean_inventory(block: object) -> dict | None:
     containers, cut_containers = _cleaned(block.get("containers"), _container, MAX_CONTAINERS)
     ports, cut_ports = _cleaned(block.get("ports"), _recognised_port, MAX_PORTS)
     vhosts, cut_vhosts = _cleaned(block.get("vhosts"), _vhost, MAX_VHOSTS)
+    shares, cut_shares = _cleaned(block.get("shares"), _share, MAX_SHARES)
     # A name is one instance key: the first entry for it counts, as the agent sends it once.
     named: dict[str, dict] = {}
     for vhost in vhosts:
         named.setdefault(vhost["name"], vhost)
+    mounted: dict[str, dict] = {}
+    for share in shares:
+        mounted.setdefault(share["mountpoint"], share)
     raw_markers = block.get("markers")
     raw_markers = raw_markers if isinstance(raw_markers, dict) else {}
     markers = {
@@ -245,6 +270,7 @@ def clean_inventory(block: object) -> dict | None:
         "markers": len(raw_markers) > MAX_MARKERS,
         "vhosts": cut_vhosts,
         "ports": cut_ports,
+        "shares": cut_shares,
     }
     said = block.get("complete")
     if isinstance(said, dict):
@@ -264,6 +290,7 @@ def clean_inventory(block: object) -> dict | None:
         "markers": markers,
         "ports": ports,
         "vhosts": list(named.values()),
+        "shares": list(mounted.values()),
     }
 
 
@@ -465,6 +492,12 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
             for v in inv.get("vhosts", [])
             if (v["tls"] or not detect.vhost_tls)
             and (v["app"] in detect.vhost_apps or not detect.vhost_apps)
+        }
+    elif module.instance == "share":
+        # An inventory stored before the agent sent shares has none.
+        found = {
+            share_key(s["mountpoint"]): {"share": s["mountpoint"], "fstype": s["fstype"]}
+            for s in inv.get("shares", [])
         }
     if not found and (containers or units or processes or markers):
         # Every installed unit, running or not: a service stopped for a while must not
@@ -707,6 +740,7 @@ def _origin(row: MonitorFinding, module: Module) -> tuple[str, ...]:
         # A port finding needs the socket listening on it as well.
         "port": ("ports", "sockets"),
         "vhost": ("vhosts",),
+        "share": ("shares",),
     }[module.instance]
 
 

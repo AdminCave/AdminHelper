@@ -222,10 +222,10 @@ class ProbeConfig(_StrictConfig):
         target = self.target
         if (
             target is not None
-            and target.kind in ("container", "unit", "process", "vhost")
+            and target.kind in ("container", "unit", "process", "vhost", "share")
             and not target.name
         ):
-            # The agent asks exactly this container, unit, process or vhost; without a name it
+            # The agent asks exactly this container, unit, process, vhost or share; without a name it
             # would have to guess.
             raise ValueError(f"target.name is required for kind '{target.kind}'")
         if target is not None and target.kind == "vhost" and target.port_hint is None:

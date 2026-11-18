@@ -108,7 +108,9 @@ def test_discovery_block_is_stored_and_makes_findings(client_db):
 
 def test_discovery_complete_is_stored_with_a_whole_scan_per_section(client_db):
     client, factory = client_db
-    whole = dict.fromkeys(("units", "containers", "sockets", "markers", "vhosts", "ports"), True)
+    whole = dict.fromkeys(
+        ("units", "containers", "sockets", "markers", "vhosts", "ports", "shares"), True
+    )
     discovery = {**_discovery(), "partial": True, "complete": {**whole, "ports": False}}
 
     _post(client, {"report_version": 4, "discovery": discovery})

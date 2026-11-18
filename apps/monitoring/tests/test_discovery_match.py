@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import discovery
 from app.catalog.loader import load_catalog
+from app.catalog.modules.net_share import MODULE as SHARE_MODULE
 from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.discovery import (
     MAX_CONTAINERS,
@@ -91,6 +92,7 @@ CATALOG = load_catalog(
             markers=[{"id": "gitea.config", "paths": ["/etc/gitea"]}],
         ),
         ("port", PORT_MODULE),
+        ("net_share", SHARE_MODULE),
     ]
 )
 NO_PORT_MODULE = load_catalog([_module("postgres", "container", container_images=["postgres"])])
@@ -210,6 +212,7 @@ def test_inventory_keeps_only_the_contract_fields():
         "units",
         "sockets",
         "containers",
+        "shares",
         "markers",
         "ports",
         "vhosts",
@@ -268,7 +271,9 @@ def test_lists_beyond_the_contract_bounds_are_cut_and_make_the_scan_partial():
     assert cut_containers["complete"] == {**WHOLE, "containers": False}
 
 
-WHOLE = dict.fromkeys(("units", "containers", "sockets", "markers", "vhosts", "ports"), True)
+WHOLE = dict.fromkeys(
+    ("units", "containers", "sockets", "markers", "vhosts", "ports", "shares"), True
+)
 
 
 @pytest.mark.parametrize(
@@ -1100,6 +1105,23 @@ def test_a_section_cut_short_keeps_the_findings_it_is_the_origin_of(db):
     _scan(db, T0 + 4 * DAY, **no_sockets)
     assert _finding(db, "port", "tcp-8443") is not None
     assert _finding(db, "nginx", "nginx.service") is None
+
+
+def test_a_share_goes_only_after_whole_scans_of_the_shares(db):
+    share = {"mountpoint": "/mnt/nas", "fstype": "nfs4"}
+    _scan(db, T0, shares=[share])
+    assert _finding(db, "net_share", "mnt:nas") is not None
+
+    # The shares cut short: the share does not go.
+    cut = {"complete": {**WHOLE, "shares": False}, "partial": True}
+    _scan(db, T0 + DAY, **cut)
+    _scan(db, T0 + 2 * DAY, **cut)
+    assert _finding(db, "net_share", "mnt:nas") is not None
+    # The shares whole, the ports cut short: it goes.
+    cut_ports = {"complete": {**WHOLE, "ports": False}, "partial": True}
+    _scan(db, T0 + 3 * DAY, **cut_ports)
+    _scan(db, T0 + 4 * DAY, **cut_ports)
+    assert _finding(db, "net_share", "mnt:nas") is None
 
 
 def test_an_inventory_stored_before_the_sections_counts_its_full_scan_for_each(db):

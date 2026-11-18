@@ -84,8 +84,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestShare|TestNetShare
 Doku: → T7
 Abhängt von: T4
 
-### T6 — R-1267: Instanz `share` und Modul `net_share`  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/net_share.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_shares.py
+### T6 — R-1267: Instanz `share` und Modul `net_share`  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/catalog/sensors.py, apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/modules/net_share.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_catalog_sensors.py, apps/monitoring/tests/test_catalog_shares.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_agent_report_v4.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @cb6495314 2026-11-18T11:54:53+01:00
+Review: approve (.ah-out/review/kern-monitoring-18/T6.verdict.json)
 Änderung:
 - `clean_inventory` übernimmt `shares` (Mountpunkt geprüft, `fstype` aus der Liste).
 - Neu: Instanzart `share` mit `Detect.net_shares`, Zielart `share`, `APP_VIEW_TARGETS["net_share_usage"]`.
@@ -93,7 +95,7 @@ Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monito
   `hung` true; warning ab `used_percent` 85, critical ab 95.
 - Herkunft für gone: shares.
 - Tests: Fund, Übernahme, Regeln.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py tests/test_catalog_sensors.py tests/test_catalog_shares.py tests/test_catalog.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_discovery_match.py tests/test_catalog_sensors.py tests/test_catalog_shares.py tests/test_catalog.py tests/test_agent_report_v4.py
 Doku: → T7
 Abhängt von: T3, T4
 
@@ -115,3 +117,9 @@ Task-Review: am Ende
   Zielart `share` in T5 dieselbe Tabelle liest. Netz-Mounts verlassen die Plattenliste nur unter Linux
   (`skippedDisk`), nicht über `skipFSTypes`: FreeBSD und Windows haben keine Share-Prüfung (Nicht-Ziel), dort bleibt
   eine Freigabe eine Platte, wie `TestSkipFSTypesFreeBSD` es für nfs festhält.
+- 2026-11-18 T6: Instanzschlüssel einer Freigabe ist ihr Mountpunkt ohne führendes `/`, jedes weitere `/` als `:`
+  (`share_key`); `:` kommt in keinem zulässigen Mountpunkt vor, der Schlüssel ist also eindeutig. Ein Mountpunkt mit
+  Leerzeichen, `,` oder `+`, einem ersten Segment, das nicht mit Buchstabe oder Ziffer beginnt, oder über 120 Zeichen bleibt im Inventar, ergibt aber keinen Fund (`_INSTANCE_KEY`).
+  `clean_inventory` prüft den Mountpunkt nach derselben Regel wie die Zielart `share` im Agent. Das Modul setzt
+  `timeout_s` 20 über die 10 s von `stat -f`, damit eine hängende Freigabe als `hung` ankommt. `module_sync.py`
+  bleibt unverändert: der Zielname kommt aus `summary["share"]`.
