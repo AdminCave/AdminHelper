@@ -5,8 +5,10 @@ Heavy: none — reine Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Desktop-UI: Heartbeat liest Sekunden aus beiden Meldungsformen  [ ]
+### T1 — Desktop-UI: Heartbeat liest Sekunden aus beiden Meldungsformen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecHeartbeat.svelte, apps/desktop/ui/src/components/monitoring/section/SecHeartbeat.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @dda3a7bbf 2026-11-18T12:19:47+01:00
+Review: approve (.ah-out/review/klein-ui-desktop-5/T1.verdict.json)
 Beweis: Dedup-Key bug:desktop:SecHeartbeat.svelte:secondsOf · HEAD: 3aa2499f1 · neuer Test mit "Agent unreachable for 47 min (limit: 15 min)" ist rot (zeigt 47 s statt 47 min)
 Änderung: R-1564. `secondsOf` erkennt "unreachable for N min" (N×60) und "last report Ns ago"; sonst null (—). Neue Testdatei zuerst rot (SPDX-Header), deckt min, s, und unbekannte Meldung ab.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecHeartbeat.test.ts
