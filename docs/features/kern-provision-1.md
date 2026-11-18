@@ -93,6 +93,37 @@ einfacher“). R-1596 ersetzt R-1579.
   - intern `GET /agent/{id}/state` am Monitoring
   - Desktop-Typen ziehen nach; der Web-Client nutzt beides nicht.
 
+### Antwortformen (Vertrag zwischen T3/T5 und T6)
+```
+GET /api/provisioning/platforms
+{"platforms": [{
+  "id": "linux|windows|freebsd|opnsense",
+  "available": true, "reason": null,            // reason: "noRepo" | "notYet" (Windows-Install bis R-1578)
+  "versions": ["0.47.0"], "arch": ["amd64"], "abis": ["FreeBSD:15:amd64"],
+  "prerequisites": {"systems": ["Debian 12/13", …],
+                    "ports": [{"port": 443, "purpose": "api", "tunnelOnly": false}, …]},
+  "commands": [{"action": "install|update|reregister|remove",
+                "shell": "bash|sh|powershell",
+                "base": "<fester Befehlskopf>",
+                "args": [{"flag": "--server", "value": "serverUrl|serverId|caFp|token|flag|insecure",
+                          "optional": false, "mode": null | "interactive" | "automation"}]}],
+  "doc": {"de": "admin/agent-deployment.html#…", "en": "en/admin/agent-deployment.html#…"}}]}
+```
+`value`: `flag` = Schalter ohne Wert (`--token-stdin`); `insecure` = `--insecure` nur ohne CA-Fingerabdruck und mit der
+Desktop-Einstellung „selbstsignierte Zertifikate“ (Verhalten des heutigen Tabs). `mode`: `interactive` nur ohne,
+`automation` nur mit dem Umschalter „Für Automatisierung“.
+
+```
+GET /api/servers/{id}/provision/progress
+{"token": {"createdAt", "usedAt", "expiresAt"} | null,
+ "certificate": {"issuedAt"} | null,
+ "report": {"lastReportAt", "hostFacts": {"os", "platform", "platformVersion"} | null} | null,
+ "monitoringReachable": true,
+ "tunnel": {"configured": false, "connected": null},
+ "reportedPlatform": "linux|windows|freebsd|opnsense|other" | null,
+ "platformMismatch": false}
+```
+
 ## Externe Integrationen
 Keine neue. PowerShell-Zitierung nach der Sprachreferenz (`about_Quoting_Rules`: einfaches Anführungszeichen, `'`
 verdoppelt), vor T6 per WebFetch nachlesen.

@@ -51,7 +51,6 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/provisioning.ts, 
 Änderung: Client für `platforms()` und `progress()`. Neu `command.ts` (SPDX) baut aus einem Katalog-Befehl und den Werten den Text: bash/sh mit `shellQuote` und ` \`-Umbruch, PowerShell mit neuem `psQuote` (`'…'`, `'` verdoppelt, nach `about_Quoting_Rules`) und Backtick-Umbruch. Unbekannte Shell oder Wert-Art, oder ein Pflichtwert fehlt → kein Befehl. Den Token setzt `command.ts` nur im Automatisierungsmodus ein. Die Wertprüfungen (`TOKEN_FORM`, `UUID_FORM`) wandern aus dem Tab hierher. Tests mit feindlichen Werten (`'`, `$(…)`, Backtick, Zeilenumbruch).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning src/lib/utils/powershell.test.ts src/lib/api/provisioning.test.ts
 Doku: keine (intern; Verhalten dokumentiert T10)
-Abhängt von: T3, T5
 
 ### T7 — R-1596: Provisionieren-Fenster ersetzt den Linux-Tab  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js
@@ -96,3 +95,4 @@ Abhängt von: T3, T8
 - 2026-11-18 Plan: Katalog liest das eingebundene `./repo` statt einer Env-Liste; Befehle strukturiert, Zitieren im Desktop (R-1595).
 - 2026-11-18 Plan: Windows ohne Installationsbefehl bis R-1578 (Notiz an R-1596).
 - 2026-11-18 Plan: Monitoring-Route in `agent.py`, nicht `checks.py` (offen auf feature/kern-monitoring-45).
+- 2026-11-18 T6 vor T3/T5: die Antwortformen stehen als Vertrag in der Spec („Antwortformen“); die Zuordnung der neuen Typen im Vertragstest `types.contract.test.ts` kommt mit T7, wenn der Server-Snapshot sie trägt.
