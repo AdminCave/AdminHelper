@@ -106,6 +106,20 @@ def test_discovery_block_is_stored_and_makes_findings(client_db):
     assert findings == [("nginx", "nginx.service", "new"), ("port", "tcp-8443", "new")]
 
 
+def test_discovery_complete_is_stored_with_a_whole_scan_per_section(client_db):
+    client, factory = client_db
+    whole = dict.fromkeys(("units", "containers", "sockets", "markers", "vhosts", "ports"), True)
+    discovery = {**_discovery(), "partial": True, "complete": {**whole, "ports": False}}
+
+    _post(client, {"report_version": 4, "discovery": discovery})
+
+    inventory = _discovery_row(factory)["inventory"]
+    assert inventory["complete"] == {**whole, "ports": False}
+    stamps = inventory["section_full_scan_at"]
+    assert stamps["ports"] is None and stamps["units"] is not None
+    assert inventory["full_scan_at"] is None
+
+
 def test_credentials_block_stores_only_valid_references(client_db):
     client, factory = client_db
 

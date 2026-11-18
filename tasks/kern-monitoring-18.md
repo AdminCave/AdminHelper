@@ -38,8 +38,10 @@ scheitert, macht nur sein eigenes Flag falsch.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestRun|TestAPart|TestTheEnd|TestTheLists|TestTheInventory
 Doku: → T7
 
-### T3 — R-1302: gone je Abschnitt  [ ]
+### T3 — R-1302: gone je Abschnitt  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/discovery.py, apps/monitoring/tests/test_discovery_match.py, apps/monitoring/tests/test_agent_report_v4.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c0646c16e 2026-11-18T11:32:26+01:00
+Review: approve (.ah-out/review/kern-monitoring-18/T3.verdict.json)
 Beweis: `apps/monitoring/app/discovery.py` `apply_discovery` setzt `full_scan = not inventory["partial"]`, `_update_findings` meldet gone nur bei `full_scan`; Dedup-Key BUG:monitoring:discovery.py:gone-bei-stets-partial
 Änderung: `clean_inventory` übernimmt `complete`, und eine Kappung macht nur den gekappten Abschnitt unvollständig.
 Fehlt `complete`, gelten alle Abschnitte als `not partial`. `apply_discovery` führt `section_full_scan_at` je
