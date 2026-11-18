@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-8 — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-8 · Review: pro Task
+Status: aktiv · Branch: feature/kern-agent-8 · Review: pro Task
 Spec: docs/features/kern-agent-8.md (Roadmap R-1523)
 Heavy: linux-full — `apps/agent` (Wächter); kein PKI-, Install- oder Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -25,5 +25,14 @@ dropbear` nie geprüft, `busybox nc` als Weiterleiter (TCP und Unix-Socket), Lin
 weiter erlaubt, unlesbares argv abgewiesen.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
 Doku: docs/admin/monitoring.html DE+EN · changelog.d/kern-agent-8.md
+
+### T2 — R-1523: toybox wie busybox an jedem Namen mit seinem Präfix erkennen  [ ]
+Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
+Änderung: Fund der Abschlussprüfung: toybox nimmt wie busybox jeden Namen, der mit `toybox` beginnt, als sich selbst
+(`toy_find` in `main.c`; Release-Binaries `toybox-<arch>`); `isMulticall` erkennt bisher nur den exakten Namen. Dazu
+die Namen in den Fehlern von `programName` auf 64 Zeichen gekürzt wie die übrigen. Tests: `toybox-x86_64 nc` als
+Kernel-Name und als argv[0].
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe/
+Doku: keine (die Doku nennt toybox schon; die Regel folgt dem Binary)
 
 ## Entscheidungen
