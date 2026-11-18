@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-45 — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-45 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-45 · Review: pro Task
 Spec: docs/features/kern-monitoring-45.md (Roadmap R-1525, R-1565, R-1566, R-1567, R-1568, R-0518, R-1570, R-1571, R-1572, R-1573)
 Heavy: linux-full — `apps/agent` (SMART-Bericht) und der Server (Anfragegrenzen), kein Stack-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
