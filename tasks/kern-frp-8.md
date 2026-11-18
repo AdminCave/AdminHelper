@@ -1,5 +1,5 @@
 # STCP-Tunnel mit Protokoll web: Schema und Pfad — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-8 · Review: pro Task
+Status: erledigt · Branch: feature/kern-frp-8 · Review: pro Task
 Spec: docs/features/kern-frp-8.md (Roadmap R-1540)
 Heavy: linux-full — Server-API (`/api/frp/tunnels`) ändert sich; FRP-Konfiguration, Visitor-Bundle und Datenpfad bleiben, kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
