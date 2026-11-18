@@ -752,8 +752,8 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 ### Go Toolchain (Agent)
 
 ```bash
-# Go 1.27.3 oder neuer installieren (https://go.dev/dl/). go.mod verlangt 1.27 (toolchain
-# go1.27.3; ein aelteres lokales Go laedt sie per GOTOOLCHAIN=auto nach), CI und Release bauen
+# Go 1.27.4 oder neuer installieren (https://go.dev/dl/). go.mod verlangt 1.27 (toolchain
+# go1.27.4; ein aelteres lokales Go laedt sie per GOTOOLCHAIN=auto nach), CI und Release bauen
 # mit dem neuesten 1.27.x: ein aelterer Patch traegt stdlib-Luecken, die erst der neueste
 # schliesst. Das Debian-Paket golang-go ist dafuer zu alt (trixie: 1.24), also manuell
 # (Version von https://go.dev/dl/ einsetzen):

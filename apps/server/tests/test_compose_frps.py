@@ -217,7 +217,7 @@ def test_the_supervisor_runs_as_root_and_server_and_scheduler_as_their_app_user(
     assert user, dockerfile
     group, uid, name = user.groups()
     assert int(uid) != 0 and f"groupadd -r {group}" in dockerfile
-    assert f"exec gosu {name}:{group} " in entrypoint
+    assert f"exec setpriv --reuid={name} --regid={group} --init-groups " in entrypoint
     for reader in ("server", "scheduler"):
         assert "user" not in services[reader]
         assert services[reader]["image"] == services["server"]["image"]

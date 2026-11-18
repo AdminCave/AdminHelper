@@ -1,4 +1,7 @@
-FROM nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
+FROM nginx:1.30.6-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+
+# The digest alone leaves packages behind that Alpine has already fixed.
+RUN apk upgrade --no-cache
 
 # The single TLS/mTLS edge for the HTTP planes (ADR 0001 D11). Server leaf +
 # CA verification certs are provided at runtime under /etc/nginx/certs/ by the
