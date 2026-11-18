@@ -30,8 +30,10 @@ ohne `central` (Entscheidungen). Tests: Adopt legt zentrale Zeilen an, Catalog-S
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py tests/test_module_sync.py tests/test_checks_crud.py
 Doku: → T4
 
-### T3 — web_domain: dns und tls von außen je Domain (R-1501)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/web_domain.py, apps/monitoring/tests/test_catalog_web.py
+### T3 — web_domain: dns und tls von außen je Domain (R-1501)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/catalog/modules/web_domain.py, apps/monitoring/tests/test_catalog_web.py, apps/monitoring/app/catalog/model.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @84f51a77c 2026-11-18T09:45:46+01:00
+Review: approve (.ah-out/review/kern-monitoring-43/T3.verdict.json)
 Änderung: `web_domain` Version 2 mit zwei zentralen Checks: `dns` (Sensor dns, 15 min) und `outside` (Sensor tls,
 `expiry: false`, stündlich, Port des vHosts); Docstring ohne „Domain-Checks von außen“ als Lücke. Tests: Katalog lädt,
 Adopt einer vHost-Instanz ergibt vier Checks, zwei davon zentral mit der Domain als Host.

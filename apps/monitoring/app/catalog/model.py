@@ -300,7 +300,7 @@ class Check(_Model):
         if self.sensor not in SENSORS:
             raise ValueError(f"unknown sensor {self.sensor!r}")
         if not self.fields:
-            raise ValueError("a check needs at least one field")
+            raise ValueError("fields: a check needs at least one field")
         if self.test_object and self.interval < TEST_OBJECT_MIN_INTERVAL:
             raise ValueError(
                 f"a test object runs at most every {TEST_OBJECT_MIN_INTERVAL} s, "
