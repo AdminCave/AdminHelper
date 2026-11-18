@@ -51,7 +51,7 @@ var frpcExePath = func() (string, error) {
 }
 
 // frpcWantSHA256 is the pinned hash frpc.exe must have. A var only so tests can run a fake frpc.
-var frpcWantSHA256 = frpcExeSHA256
+var frpcWantSHA256 = ExeSHA256
 
 // Restart backoff after frpc ends: from restartMin, doubled up to restartMax; a run of at least
 // restartMax starts over at restartMin. Vars for tests.
@@ -126,7 +126,7 @@ func newKillOnCloseJob() (windows.Handle, error) {
 func verifyFrpcExe(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("frpc.exe: %w; put frpc %s beside the agent (service install)", err, frpcPinnedVersion)
+		return fmt.Errorf("frpc.exe: %w; put frpc %s beside the agent (service install)", err, PinnedVersion)
 	}
 	defer f.Close()
 	h := sha256.New()
@@ -134,7 +134,7 @@ func verifyFrpcExe(path string) error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != frpcWantSHA256 {
-		return fmt.Errorf("%s is not the pinned frpc %s (sha256 %s), frpc stays stopped", path, frpcPinnedVersion, got)
+		return fmt.Errorf("%s is not the pinned frpc %s (sha256 %s), frpc stays stopped", path, PinnedVersion, got)
 	}
 	return nil
 }
