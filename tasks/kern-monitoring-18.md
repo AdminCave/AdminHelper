@@ -16,8 +16,10 @@ braucht T3 und T4. T7 zuletzt.
 
 ## Tasks
 
-### T1 — R-1406: Gesamtfrist für eine RDAP-Abfrage  [ ]
+### T1 — R-1406: Gesamtfrist für eine RDAP-Abfrage  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/central/fetch.py, apps/monitoring/app/central/rdap.py, apps/monitoring/tests/test_central_fetch.py, apps/monitoring/tests/test_central_rdap.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @1d722dbdc 2026-11-18T11:26:16+01:00
+Review: approve (.ah-out/review/kern-monitoring-18/T1.verdict.json)
 Änderung: `fetch.get` nimmt optional eine Frist (Zeitpunkt), die der Watchdog statt `DEADLINE_S` benutzt, wenn sie
 früher endet. `rdap.probe` setzt eine Frist für die ganze Abfrage samt Weiterleitungen und Kandidaten und reicht sie
 an `_get` und jeden Sprung durch. Tests: eine Kette von Weiterleitungen und mehrere Kandidaten enden zusammen innerhalb
