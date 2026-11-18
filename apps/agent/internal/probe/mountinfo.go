@@ -15,8 +15,9 @@ import (
 // the discovery reports them, the share check measures them.
 var NetFSTypes = map[string]bool{"nfs": true, "nfs4": true, "cifs": true, "smb3": true}
 
-// NetMount is a network share mounted on this host. Where it comes from (the server, the export)
-// stays on the host (Kevin 2026-11-18): only the mount point and the type go to the server.
+// NetMount is a mount point of this host and the type of its file system; for a network share where
+// it comes from (the server, the export) stays on the host (Kevin 2026-11-18): only the mount point
+// and the type go to the server.
 type NetMount struct {
 	Mountpoint string
 	FSType     string
@@ -35,12 +36,34 @@ func NetMounts() ([]NetMount, error) {
 	return ParseNetMounts(data), nil
 }
 
-// ParseNetMounts reads the network shares of a mountinfo table (proc_pid_mountinfo(5)): the mount
-// point is field 5, the type the first field after the separator "-". A mount point mounted twice
-// counts once.
+// Mounts lists every mount point of the mount table with the type of the file system visible there.
+func Mounts() ([]NetMount, error) {
+	data, err := os.ReadFile(mountinfoPath)
+	if err != nil {
+		return nil, err
+	}
+	return parseMounts(data), nil
+}
+
+// ParseNetMounts reads the network shares of a mountinfo table: the mount points whose visible file
+// system is a network share.
 func ParseNetMounts(data []byte) []NetMount {
+	var shares []NetMount
+	for _, m := range parseMounts(data) {
+		if NetFSTypes[m.FSType] {
+			shares = append(shares, m)
+		}
+	}
+	return shares
+}
+
+// parseMounts reads a mountinfo table (proc_pid_mountinfo(5)): the mount point is field 5, the type
+// the first field after the separator "-". A mount point mounted twice counts once, in the place of
+// its first mount, with the type of its last: the table lists a mount after the one it covers, so
+// the last is the one visible.
+func parseMounts(data []byte) []NetMount {
 	var mounts []NetMount
-	seen := map[string]bool{}
+	at := map[string]int{}
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		fields := strings.Fields(string(line))
 		sep := -1
@@ -50,14 +73,18 @@ func ParseNetMounts(data []byte) []NetMount {
 				break
 			}
 		}
-		if sep < 0 || sep+1 >= len(fields) || !NetFSTypes[fields[sep+1]] {
+		if sep < 0 || sep+1 >= len(fields) {
 			continue
 		}
 		point := unescapeMount(fields[4])
-		if !strings.HasPrefix(point, "/") || seen[point] {
+		if !strings.HasPrefix(point, "/") {
 			continue
 		}
-		seen[point] = true
+		if i, ok := at[point]; ok {
+			mounts[i].FSType = fields[sep+1]
+			continue
+		}
+		at[point] = len(mounts)
 		mounts = append(mounts, NetMount{Mountpoint: point, FSType: fields[sep+1]})
 	}
 	return mounts

@@ -69,8 +69,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestShare|TestNoShares
 Doku: → T7
 Abhängt von: T2
 
-### T5 — R-1267: Zielart `share` und Ansicht `net_share_usage`  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/net_share.go, apps/agent/internal/probe/net_share_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T5 — R-1267: Zielart `share` und Ansicht `net_share_usage`  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/target_test.go, apps/agent/internal/probe/sensor_app.go, apps/agent/internal/probe/net_share.go, apps/agent/internal/probe/net_share_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/probe/mountinfo.go, apps/agent/internal/probe/mountinfo_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fabba3ed4 2026-11-18T11:41:13+01:00
+Review: approve (.ah-out/review/kern-monitoring-18/T5.verdict.json)
 Änderung:
 - Die Zielart `share` nimmt nur einen Mountpunkt, der laut mountinfo gerade ein Netz-Mount dieses Hosts ist; einen
   anderen weist sie ab.

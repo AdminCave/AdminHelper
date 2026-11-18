@@ -41,6 +41,20 @@ func TestShareMountsAreTheNetworkMountsWithoutTheirSource(t *testing.T) {
 	}
 }
 
+func TestShareMountsTakeTheTypeVisibleAtTheirMountPoint(t *testing.T) {
+	table := `120 22 0:52 / /mnt/a rw - nfs4 nas.example.org:/a rw
+121 22 0:53 / /mnt/b rw - nfs nas.example.org:/b rw
+130 120 253:2 / /mnt/a rw - ext4 /dev/sdb1 rw
+131 121 0:54 / /mnt/b rw - cifs //nas.example.org/b rw
+`
+	if got, want := ParseNetMounts([]byte(table)), []NetMount{{"/mnt/b", "cifs"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("shares = %+v, want %+v: a local file system over a share hides it", got, want)
+	}
+	if got, want := parseMounts([]byte(table)), []NetMount{{"/mnt/a", "ext4"}, {"/mnt/b", "cifs"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("mounts = %+v, want %+v", got, want)
+	}
+}
+
 func TestShareMountsAreReadFromTheMountTable(t *testing.T) {
 	old := mountinfoPath
 	t.Cleanup(func() { mountinfoPath = old })
@@ -54,5 +68,9 @@ func TestShareMountsAreReadFromTheMountTable(t *testing.T) {
 	got, err := NetMounts()
 	if err != nil || len(got) != 4 {
 		t.Errorf("mounts %+v, err %v: want the four shares", got, err)
+	}
+	all, err := Mounts()
+	if err != nil || len(all) != 6 || all[0] != (NetMount{"/", "ext4"}) {
+		t.Errorf("mounts %+v, err %v: want all six mount points", all, err)
 	}
 }

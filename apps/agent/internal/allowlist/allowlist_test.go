@@ -1083,3 +1083,32 @@ func TestAllowlistPackageState(t *testing.T) {
 		}
 	}
 }
+
+// TestAllowlistNetShareUsage: net_share_usage asks statfs of a mount point alone. The traps read a file,
+// climb out with "..", take an option for a path, or ask another format.
+func TestAllowlistNetShareUsage(t *testing.T) {
+	for _, call := range [][]string{
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/srv/team share"},
+		{"/usr/bin/stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/smb_3,x@y+z"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/../etc"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/.hidden"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "mnt/pve"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/ x"},
+		{"stat", "-f", "-c", "%S %b %f %a", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%n", "--", "/mnt/pve/backup"},
+		{"stat", "-c", "%S %b %f %a", "--", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/a", "/mnt/b"},
+		{"stat", "-L", "/etc/shadow"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
