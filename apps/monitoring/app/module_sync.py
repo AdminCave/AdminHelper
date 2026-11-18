@@ -425,6 +425,9 @@ def probe_config(
 
 def _public_name(name: str) -> bool:
     name = name.lower().rstrip(".")
+    # A single label resolves through the host's search domain, never publicly (R-1548).
+    if "." not in name:
+        return False
     return not any(name == s or name.endswith("." + s) for s in _PRIVATE_SUFFIXES)
 
 

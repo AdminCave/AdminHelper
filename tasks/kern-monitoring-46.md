@@ -26,8 +26,10 @@ keine Sockets bekannt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_catalog.py tests/test_module_sync.py
 Doku: → T3
 
-### T2 — R-1548: einteilige vHost-Namen sind nicht öffentlich  [ ]
+### T2 — R-1548: einteilige vHost-Namen sind nicht öffentlich  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @564242602 2026-11-18T23:57:58+01:00
+Review: am Ende (Branch-Review)
 Änderung: `_public_name` verlangt einen Punkt; Test: `intranet` bindet keinen zentralen Check (`not a public name`),
 `intranet.example.org` weiter.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py

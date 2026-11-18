@@ -1338,6 +1338,9 @@ def test_a_central_check_asks_the_vhosts_name_and_the_tls_one_its_port():
         "wiki.internal",
         "wiki.lan",
         "WIKI.HOME.",
+        # A single label (Kevin 2026-11-18, R-1548): the search domain makes it local.
+        "intranet",
+        "intranet.",
     ],
 )
 def test_a_name_no_public_resolver_answers_gets_no_central_check(key):
