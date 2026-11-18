@@ -10,10 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc/eventlog"
 
@@ -65,5 +69,108 @@ func TestEventSourceRegistrationAndRemovalAreRepeatable(t *testing.T) {
 		t.Errorf(`HKLM\%s is still there after the removal`, key)
 	} else if !errors.Is(err, registry.ErrNotExist) {
 		t.Errorf(`open HKLM\%s after the removal: %v`, key, err)
+	}
+}
+
+// The program directory gets the protected DACL of the data directory, also when it
+// already exists with the inherited rights of its parent: afterwards it grants only
+// SYSTEM and the Administrators, none of it inherited.
+func TestPrepareInstallDirProtectsAnExistingDirectory(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		dir := filepath.Join(t.TempDir(), "AdminHelper")
+		if existing {
+			if err := os.Mkdir(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := prepareInstallDir(dir); err != nil {
+			t.Fatalf("existing=%v: %v", existing, err)
+		}
+		sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertOwnedByAdministrators(t, sd, dir)
+		control, _, err := sd.Control()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if control&windows.SE_DACL_PROTECTED == 0 {
+			t.Fatalf("existing=%v: the DACL of %s is not protected: %s", existing, dir, sd)
+		}
+		dacl, _, err := sd.DACL()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sids []string
+		for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+			var ace *windows.ACCESS_ALLOWED_ACE
+			if err := windows.GetAce(dacl, i, &ace); err != nil {
+				t.Fatal(err)
+			}
+			if ace.Header.AceFlags&windows.INHERITED_ACE != 0 {
+				t.Fatalf("existing=%v: %s keeps an inherited ACE: %s", existing, dir, sd)
+			}
+			sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+			sids = append(sids, sid.String())
+		}
+		slices.Sort(sids)
+		sids = slices.Compact(sids)
+		if want := []string{"S-1-5-18", "S-1-5-32-544"}; !slices.Equal(sids, want) {
+			t.Fatalf("existing=%v: the DACL of %s grants %v, want %v: %s", existing, dir, sids, want, sd)
+		}
+	}
+}
+
+// The agent installs into its own folder under Program Files, never into "AdminHelper", the MSI
+// folder of the desktop app.
+func TestProgramDirIsTheAgentsOwnFolder(t *testing.T) {
+	dir, err := programDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pf, err := windows.KnownFolderPath(windows.FOLDERID_ProgramFiles, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.EqualFold(filepath.Dir(dir), pf) || filepath.Base(dir) != "AdminHelper Agent" {
+		t.Errorf("programDir = %q, want %q", dir, filepath.Join(pf, "AdminHelper Agent"))
+	}
+}
+
+// The copied binary belongs to the Administrators group, not to the installing user: its owner
+// could otherwise change the DACL of the file the service runs as LocalSystem.
+func TestInstallBinaryHandsTheCopyToTheAdministrators(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "agent.exe")
+	if err := os.WriteFile(src, []byte("binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "AdminHelper Agent")
+	if err := prepareInstallDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "adminhelper-agent.exe")
+	if err := installBinary(src, dest); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(dest); err != nil || string(data) != "binary" {
+		t.Fatalf("copy = %q, %v", data, err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(dest, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnedByAdministrators(t, sd, dest)
+}
+
+func assertOwnedByAdministrators(t *testing.T, sd *windows.SECURITY_DESCRIPTOR, path string) {
+	t.Helper()
+	owner, _, err := sd.Owner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := owner.String(); got != "S-1-5-32-544" {
+		t.Fatalf("owner of %s = %s, want S-1-5-32-544", path, got)
 	}
 }

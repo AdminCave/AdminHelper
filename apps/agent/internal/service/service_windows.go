@@ -14,14 +14,54 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc/eventlog"
 
+	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/logging"
 )
 
 const serviceName = "AdminHelper-Agent"
 const serviceDisplayName = "AdminHelper Agent — FRPC Sync + Monitoring"
+
+// prepareInstallDir creates the program directory, or takes over an existing one, with the
+// protected DACL of the data directory: the service runs its binaries from there as
+// LocalSystem, so only SYSTEM and the Administrators may write to it.
+func prepareInstallDir(dir string) error {
+	return config.EnsureSecureDir(dir)
+}
+
+// programDirName is the agent's own folder under Program Files. "AdminHelper" is the MSI folder of
+// the desktop app (its productName), which a protected DACL would close to its users.
+const programDirName = "AdminHelper Agent"
+
+// programDir returns the agent's program directory. The Program Files folder comes from the
+// known-folder API, not from %ProgramFiles%, which the calling environment can set.
+func programDir() (string, error) {
+	pf, err := windows.KnownFolderPath(windows.FOLDERID_ProgramFiles, 0)
+	if err != nil {
+		return "", fmt.Errorf("Program Files folder: %w", err)
+	}
+	return filepath.Join(pf, programDirName), nil
+}
+
+// installBinary copies src to dest and hands dest to the Administrators group: under the policy
+// "object creator" a file an elevated administrator writes belongs to that user, and the owner
+// may change the DACL of the binary the service runs as LocalSystem.
+func installBinary(src, dest string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("Binary lesen: %w", err)
+	}
+	if err := os.WriteFile(dest, data, 0755); err != nil {
+		return fmt.Errorf("Binary kopieren: %w", err)
+	}
+	if err := config.OwnByAdministrators(dest); err != nil {
+		return fmt.Errorf("owner of %s: %w", dest, err)
+	}
+	return nil
+}
 
 // Install registers the AdminHelper agent as a native Windows service.
 func Install() error {
@@ -30,21 +70,19 @@ func Install() error {
 		return fmt.Errorf("eigenen Pfad ermitteln: %w", err)
 	}
 
-	// Target directory: C:\Program Files\AdminHelper\
-	installDir := filepath.Join(os.Getenv("ProgramFiles"), "AdminHelper")
-	if err := os.MkdirAll(installDir, 0755); err != nil {
+	installDir, err := programDir()
+	if err != nil {
+		return err
+	}
+	if err := prepareInstallDir(installDir); err != nil {
 		return fmt.Errorf("Installationsverzeichnis anlegen: %w", err)
 	}
 
 	// Copy the binary into the installation directory if needed
 	destPath := filepath.Join(installDir, "adminhelper-agent.exe")
 	if !strings.EqualFold(exePath, destPath) {
-		data, err := os.ReadFile(exePath)
-		if err != nil {
-			return fmt.Errorf("Binary lesen: %w", err)
-		}
-		if err := os.WriteFile(destPath, data, 0755); err != nil {
-			return fmt.Errorf("Binary kopieren: %w", err)
+		if err := installBinary(exePath, destPath); err != nil {
+			return err
 		}
 	}
 

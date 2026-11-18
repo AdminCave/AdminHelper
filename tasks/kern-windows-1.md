@@ -10,11 +10,14 @@ Heavy: windows — Windows-Code des Agent (Dienst-Install, frpc-Kindprozess, Reg
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1576: Programmordner beim Dienst-Install mit festen Rechten  [?] (Programmordner %ProgramFiles%\AdminHelper ist auch der MSI-Ordner der Desktop-App (productName adminhelper); geschützte DACL sperrte sie für Nicht-Admins. Empfehlung: Agent in eigenen Ordner %ProgramFiles%\AdminHelper Agent, T4 zieht alte Installationen um)
+### T1 — R-1576: Programmordner beim Dienst-Install mit festen Rechten  [x]
 Komponente: agent · Dateien: apps/agent/internal/service/service_windows.go, apps/agent/internal/service/service_windows_test.go, tasks/kern-windows-1.md
-Änderung: `Install()` legt `%ProgramFiles%\AdminHelper` mit `config.EnsureSecureDir` an (wie der Datenordner) statt
-`MkdirAll` und kopiert das Binary erst danach; ein vorhandener Ordner wird ebenso eingerichtet. Test auf Windows:
-DACL geschützt, nur SYSTEM und Administratoren.
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @929bb7059 2026-11-18T15:03:10+01:00
+Review: approve (.ah-out/review/kern-windows-1/T1.verdict.json)
+Änderung: `Install()` legt den eigenen Programmordner `%ProgramFiles%\AdminHelper Agent` (Program Files über die
+Known-Folder-API) mit `config.EnsureSecureDir` an (wie der Datenordner) statt `MkdirAll` und kopiert das Binary erst
+danach; ein vorhandener Ordner wird ebenso eingerichtet. Test auf Windows: DACL geschützt, nur SYSTEM und
+Administratoren; Ordner ist der eigene.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
@@ -44,7 +47,9 @@ Abhängt von: T1, T2
 Komponente: agent · Dateien: apps/agent/internal/service/service_windows.go, apps/agent/internal/service/service_windows_test.go, apps/agent/cmd/adminhelper-agent/main.go, apps/agent/cmd/adminhelper-agent/main_test.go, tasks/kern-windows-1.md
 Änderung: `Install()` erkennt einen vorhandenen Dienst (SCM über `golang.org/x/sys/windows/svc/mgr`), stoppt ihn,
 tauscht Agent und `frpc.exe` (aus dem Ordner des laufenden Binarys, Hash wie T3 geprüft; fehlt sie: Warnung, Agent
-ohne Tunnel), zieht Konfiguration und Wiederanlauf nach und startet; sonst Neuanlage wie heute. `service uninstall
+ohne Tunnel), zieht Konfiguration und Wiederanlauf nach und startet; sonst Neuanlage wie heute. Eine alte Installation
+in `%ProgramFiles%\AdminHelper` (T1) zieht dabei in `%ProgramFiles%\AdminHelper Agent` um: Dienst auf den neuen Pfad,
+alte Agent-Dateien weg, der Ordner bleibt (er gehört der Desktop-App). `service uninstall
 --purge` entfernt zusätzlich Programm- und Datenordner. Tests: Befehlsfolge über Hooks plattformneutral, auf Windows
 Install zweimal hintereinander.
 Verify: bash scripts/dev/verify.sh agent --strict
@@ -74,9 +79,11 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: → T7
 
 ### T7 — Doku: Windows-Abschnitt der Agent-Verteilung, Changelog  [ ]
-Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-windows-1.md, tasks/kern-windows-1.md
-Änderung: Windows-Abschnitt DE+EN: `frpc-windows-x86_64.exe` neben den Agent legen, Install = Update, `uninstall
---purge`, Tunnel laufen jetzt auf Windows, Defender-Hinweis; Changelog-Fragment.
+Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/kern-windows-1.md, tasks/kern-windows-1.md
+Änderung: Windows-Abschnitt DE+EN: Programmordner `%ProgramFiles%\AdminHelper Agent` (auch in monitoring.html und
+developer/agent.html), `frpc-windows-x86_64.exe` neben den Agent legen, Install = Update, `uninstall --purge`, Tunnel
+laufen jetzt auf Windows, Starttyp und `enabled_inactive` auf Windows (gewollt endende Auto-Dienste über die
+Ausnahmen der Dienst-Regel), Defender-Hinweis; Changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-windows-1.md
 Task-Review: am Ende
@@ -87,6 +94,15 @@ Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, tasks/kern
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (nach Antwort)
 
+### T9 — R-1576: Desktop zeigt den neuen Programmordner im Credential-Befehl  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/card/CredentialDialog.svelte, apps/desktop/ui/src/components/monitoring/card/CredentialDialog.test.ts, tasks/kern-windows-1.md
+Änderung: Der PowerShell-Befehl für Windows-Hosts ruft `C:\Program Files\AdminHelper Agent\adminhelper-agent.exe` (T1);
+Test erwartet den neuen Pfad.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/card/CredentialDialog.test.ts
+Doku: → T7
+Abhängt von: T1
+
 ## Entscheidungen
 - T2: Sync sichert das FRP-Verzeichnis beim ersten Lauf je Prozess vor jedem Lesen (atomic.Bool `frpDirSecured`); spätere Läufe ohne Änderung gehen keinen Baum ab (wie bisher), Läufe mit Änderung sichern weiter vor dem Schreiben.
 - T6: enabled_inactive nimmt jeden gestoppten „enabled“-Dienst auf, auch einen sauber gestoppten (Admin-Stopp, wie systemctl stop unter Linux, Spec Ziel 5); gewollt endende Auto-Dienste nimmt die ignore-Liste der Monitoring-Regel aus. Auto-Start mit TriggerInfo zählt als „manual“. DelayedAutostart wird nicht gelesen (ändert enabled nicht, YAGNI). w32tm-Leap-Indikator wird über Position und Wert gelesen, nicht über das Label (nur englisch verifiziert).
+- T1 (Kevin 2026-11-18): Agent in eigenen Ordner `%ProgramFiles%\AdminHelper Agent`, weil `%ProgramFiles%\AdminHelper` der MSI-Ordner der Desktop-App ist; T4 zieht alte Installationen um. Program Files kommt aus `KnownFolderPath`, nicht aus der Umgebung.
