@@ -58,8 +58,10 @@ Review: approve (.ah-out/review/kern-provision-1/T6.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning src/lib/utils/powershell.test.ts src/lib/api/provisioning.test.ts
 Doku: keine (intern; Verhalten dokumentiert T10)
 
-### T7 — R-1596: Provisionieren-Fenster ersetzt den Linux-Tab  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts
+### T7 — R-1596: Provisionieren-Fenster ersetzt den Linux-Tab  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.svelte, apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js, apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts, apps/desktop/ui/src/lib/i18n/i18n.test.ts, apps/desktop/ui/src/lib/api/types.contract.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e92fa1847 2026-11-18T18:31:10+01:00
+Review: approve (.ah-out/review/kern-provision-1/T7.verdict.json)
 Änderung: Neu `ProvisioningDialog` (SPDX), im Tab geöffnet. Er zeigt:
 - Plattform-Auswahl aus dem Katalog, vorgewählt aus `osType`; nicht verfügbare Plattformen ausgegraut mit Grund
 - Voraussetzungen
@@ -71,7 +73,7 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisio
 Der Tab behält die Token-Liste und den Knopf, der das Fenster öffnet. Die Tests übernehmen die heutigen
 Tab-Prüfungen und ergänzen Plattformwechsel, Automatisierung und fehlenden Katalog. Die E2E-Spec bedient das Fenster.
 Test-Löschung: apps/desktop/ui/src/components/infra/tabs/ProvisioningTab.test.ts::* — die Befehlsprüfungen ziehen gleichwertig nach ProvisioningDialog.test.ts und command.test.ts
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra src/lib/provisioning src/lib/i18n src/lib/api/types.contract.test.ts src/styles/tokens.test.ts
 Doku: → T10
 Abhängt von: T2, T6
 
@@ -104,3 +106,5 @@ Abhängt von: T3, T8
 - 2026-11-18 T6 vor T3/T5: die Antwortformen stehen als Vertrag in der Spec („Antwortformen“); die Zuordnung der neuen Typen im Vertragstest `types.contract.test.ts` kommt mit T7, wenn der Server-Snapshot sie trägt.
 - 2026-11-18 T9: Kevin: Doku-Link als GitHub-blob-Link (`https://github.com/AdminCave/AdminHelper/blob/main/docs/…#anker`).
 - 2026-11-18 T3 (aus security T6): Windows PowerShell 5.1 reicht eingebettete `"` an native `.exe` kaputt weiter. Der Katalog (T3) ruft die `.exe` direkt auf; daher lehnt `buildCommand` in T7 bei `shell === 'powershell'` jeden Wert mit `"` ab (null), mit Test (reviewer T3: Pflicht T7 zugeordnet, `command.ts` in T7-Dateien). T7 nutzt `ProvisionPlatformId`/`ProvisionAction` oder streicht sie und entfernt die Formen-Kopie im Tab (reviewer T6).
+- 2026-11-18 T7 vor T2 (T2 wartet auf #569): die Vorauswahl nimmt `osType` nur, wenn es eine Katalog-ID ist, sonst die erste verfügbare Plattform; mit T2 trägt `osType` immer einen Plattformwert. Plattformen und Aktionen, für die der Desktop keine Beschriftung hat (`ProvisionPlatformId`/`ProvisionAction`), blendet das Fenster aus. Die Formen-Kopie `TOKEN_FORM`/`UUID_FORM` im Tab ist weg (der Tab baut keine Befehle mehr).
+- 2026-11-18 T7: Der eigene „Nur provisionieren“-Befehl des alten Tabs entfällt; „Neu registrieren“ aus dem Katalog ersetzt ihn (Linux: der Installer erneut, liest den Token verdeckt). Die E2E-Spec wählt Windows, weil es unabhängig vom Paket-Repo des Stacks einen Befehl mit Token trägt.

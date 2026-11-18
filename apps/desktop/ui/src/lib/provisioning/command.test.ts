@@ -126,13 +126,26 @@ describe('buildCommand', () => {
     const spec: ProvisionCommandSpec = {
       action: 'reregister',
       shell: 'powershell',
-      base: "& 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe' provision",
+      base: "& 'C:\\Program Files\\AdminHelper\\adminhelper-agent.exe' provision",
       args: [arg('--url', 'serverUrl'), arg('--server-id', 'serverId')],
     };
     expect(buildCommand(spec, { ...VALUES, serverUrl: "https://a'b$(x)`y" }, false)).toBe(
-      "& 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe' provision `\n" +
+      "& 'C:\\Program Files\\AdminHelper\\adminhelper-agent.exe' provision `\n" +
         "  --url 'https://a''b$(x)`y' `\n" +
         `  --server-id '${ID}'`,
     );
+  });
+
+  // Windows PowerShell 5.1 hands an embedded `"` to a native .exe broken; bash quotes it fine.
+  it('refuses a value with a double quote for PowerShell only', () => {
+    const ps: ProvisionCommandSpec = {
+      action: 'reregister',
+      shell: 'powershell',
+      base: "& 'C:\\Program Files\\AdminHelper\\adminhelper-agent.exe' provision",
+      args: [arg('--url', 'serverUrl'), arg('--server-id', 'serverId')],
+    };
+    const url = 'https://srm.example/a"b';
+    expect(buildCommand(ps, { ...VALUES, serverUrl: url }, false)).toBeNull();
+    expect(buildCommand(INSTALL, { ...VALUES, serverUrl: url }, false)).toContain(`'${url}'`);
   });
 });

@@ -85,6 +85,9 @@ export function buildCommand(
       return null;
     }
     if (CONTROL.test(value)) return null;
+    // Windows PowerShell 5.1 passes an embedded `"` to a native .exe broken (it does not escape
+    // it in the command line it builds), and the catalog calls the agent .exe directly.
+    if (spec.shell === 'powershell' && value.includes('"')) return null;
     parts.push(`${arg.flag} ${shell.quote(value)}`);
   }
   return parts.join(shell.join);

@@ -122,6 +122,43 @@ const MAPPINGS: Mapping[] = [
     schema: 'ProvisionTokenCreatedOut',
     direction: 'response',
   },
+  {
+    ts: 'ProvisionCommandArg',
+    snapshot: 'server',
+    schema: 'ProvisionCommandArgOut',
+    direction: 'response',
+  },
+  {
+    ts: 'ProvisionCommandSpec',
+    snapshot: 'server',
+    schema: 'ProvisionCommandOut',
+    direction: 'response',
+  },
+  { ts: 'ProvisionPort', snapshot: 'server', schema: 'ProvisionPortOut', direction: 'response' },
+  {
+    ts: 'ProvisionPlatform',
+    snapshot: 'server',
+    schema: 'ProvisionPlatformOut',
+    direction: 'response',
+  },
+  {
+    ts: 'ProvisionPlatformsResponse',
+    snapshot: 'server',
+    schema: 'ProvisionPlatformsOut',
+    direction: 'response',
+  },
+  {
+    ts: 'ProvisionHostFacts',
+    snapshot: 'server',
+    schema: 'ProgressHostFactsOut',
+    direction: 'response',
+  },
+  {
+    ts: 'ProvisionProgress',
+    snapshot: 'server',
+    schema: 'ProvisionProgressOut',
+    direction: 'response',
+  },
   { ts: 'NotificationItem', snapshot: 'server', schema: 'NotificationOut', direction: 'response' },
   { ts: 'IncidentEntry', snapshot: 'server', schema: 'IncidentEntryOut', direction: 'response' },
   { ts: 'IncidentServer', snapshot: 'server', schema: 'IncidentServerOut', direction: 'response' },
@@ -620,7 +657,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the OpenAPI snapshots', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(68);
+    expect(MAPPINGS.length).toBe(75);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap((m) => names(m).filter((n) => !SCHEMAS[m.snapshot][n]))).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);

@@ -56,11 +56,8 @@ export const translations: Translations = {
     'infra.status.serverDeleted': 'Server gelöscht',
     'infra.error.load': 'Server konnten nicht geladen werden: {message}',
     'infra.prov.hint':
-      'Erzeuge ein Einmal-Token und führe den Befehl auf dem Zielserver aus, um dessen Agenten zu registrieren.',
+      'Öffne das Fenster, wähle Plattform und Vorgang und führe den Befehl auf dem Zielserver aus.',
     'infra.prov.createToken': 'Token erzeugen',
-    'infra.prov.installScript':
-      'Install-Skript (empfohlen — richtet Paket-Repo ein, installiert und provisioniert):',
-    'infra.prov.runOnTarget': 'Nur provisionieren (Paket bereits installiert):',
     'infra.prov.caFp':
       'CA-Fingerprint für --ca-fp (verifizierter Erstkontakt; auch für den Out-of-band-Vergleich):',
     'infra.prov.noCaFp':
@@ -71,7 +68,7 @@ export const translations: Translations = {
     'infra.prov.created': 'Token erzeugt',
     'infra.prov.commandCopied': 'Befehl kopiert',
     'infra.prov.tokenPrompt':
-      'Token: Das Install-Skript fragt beim Ausführen danach, die Eingabe bleibt verdeckt. „Nur provisionieren“ liest ihn als erste Eingabezeile (einfügen, Enter).',
+      'Token: Der Befehl fragt beim Ausführen danach, die Eingabe bleibt verdeckt (einfügen, Enter).',
     'infra.prov.tokenCopied': 'Token kopiert',
     'infra.prov.copyError': 'Kopieren fehlgeschlagen',
     'infra.prov.colCreated': 'Erstellt',
@@ -82,6 +79,38 @@ export const translations: Translations = {
     'infra.prov.expired': 'Abgelaufen',
     'infra.prov.badResponse':
       'Token oder Server-ID haben nicht das erwartete Format — es wurde kein Befehl erzeugt.',
+    'infra.prov.open': 'Provisionieren …',
+    'infra.prov.dialogTitle': 'Agent provisionieren: {name}',
+    'infra.prov.platform': 'Plattform',
+    'infra.prov.platform.linux': 'Linux',
+    'infra.prov.platform.windows': 'Windows',
+    'infra.prov.platform.freebsd': 'FreeBSD',
+    'infra.prov.platform.opnsense': 'OPNsense',
+    'infra.prov.unavailable': '{name} (nicht verfügbar)',
+    'infra.prov.reason.noRepo':
+      'Der Server liefert für diese Plattform kein Paket aus (kein Paket-Repo im Release oder update.sh noch nicht gelaufen).',
+    'infra.prov.reason.notYet':
+      'Die Installation unter Windows folgt; bis dahin den Agent nach der Doku von Hand installieren. Neu registrieren und Entfernen gehen schon.',
+    'infra.prov.action.install': 'Installieren',
+    'infra.prov.action.update': 'Aktualisieren',
+    'infra.prov.action.reregister': 'Neu registrieren',
+    'infra.prov.action.remove': 'Entfernen',
+    'infra.prov.systems': 'Unterstützte Systeme',
+    'infra.prov.ports': 'Ausgehende Ports zum Server',
+    'infra.prov.port.api': 'API',
+    'infra.prov.port.enroll': 'Registrierung',
+    'infra.prov.port.repo': 'Paket-Repo',
+    'infra.prov.port.tunnel': 'Tunnel',
+    'infra.prov.tunnelOnly': 'nur mit FRP-Tunnel',
+    'infra.prov.automation': 'Für Automatisierung',
+    'infra.prov.automationWarn':
+      'Der Token steht dann im Befehl und ist in Shell-Historie und Prozessliste sichtbar. Nur für Skripte und Konfigurationsmanagement.',
+    'infra.prov.needToken':
+      'Erst einen Token erzeugen: Im Automatisierungsmodus steht er im Befehl.',
+    'infra.prov.noCommand':
+      'Für diese Auswahl lässt sich kein sicherer Befehl bauen (unbekanntes Format vom Server oder ein Wert mit unzulässigen Zeichen).',
+    'infra.prov.catalogError': 'Die Plattformliste konnte nicht geladen werden: {message}',
+    'infra.prov.command': 'Auf dem Zielhost ausführen:',
     'infra.conn.add': 'Verbindung',
     'infra.conn.empty': 'Keine Verbindungen für diesen Server',
     'infra.conn.new': 'Neue Verbindung',
@@ -1615,11 +1644,8 @@ export const translations: Translations = {
     'infra.status.serverDeleted': 'Server deleted',
     'infra.error.load': 'Could not load servers: {message}',
     'infra.prov.hint':
-      'Create a one-time token and run the command on the target server to enroll its agent.',
+      'Open the dialog, choose platform and action, and run the command on the target server.',
     'infra.prov.createToken': 'Create token',
-    'infra.prov.installScript':
-      'Install script (recommended — sets up the package repo, installs and provisions):',
-    'infra.prov.runOnTarget': 'Provision only (package already installed):',
     'infra.prov.caFp':
       'CA fingerprint for --ca-fp (verified first contact; also for out-of-band comparison):',
     'infra.prov.noCaFp':
@@ -1630,7 +1656,7 @@ export const translations: Translations = {
     'infra.prov.created': 'Token created',
     'infra.prov.commandCopied': 'Command copied',
     'infra.prov.tokenPrompt':
-      'Token: the install script asks for it when it runs; the input stays hidden. “Provision only” reads it as the first input line (paste, Enter).',
+      'Token: the command asks for it when it runs, with the input hidden (paste, Enter).',
     'infra.prov.tokenCopied': 'Token copied',
     'infra.prov.copyError': 'Copy failed',
     'infra.prov.colCreated': 'Created',
@@ -1641,6 +1667,37 @@ export const translations: Translations = {
     'infra.prov.expired': 'Expired',
     'infra.prov.badResponse':
       'The token or server ID is not in the expected format — no command was generated.',
+    'infra.prov.open': 'Provision …',
+    'infra.prov.dialogTitle': 'Provision agent: {name}',
+    'infra.prov.platform': 'Platform',
+    'infra.prov.platform.linux': 'Linux',
+    'infra.prov.platform.windows': 'Windows',
+    'infra.prov.platform.freebsd': 'FreeBSD',
+    'infra.prov.platform.opnsense': 'OPNsense',
+    'infra.prov.unavailable': '{name} (not available)',
+    'infra.prov.reason.noRepo':
+      'The server ships no package for this platform (no package repo in the release, or update.sh has not run yet).',
+    'infra.prov.reason.notYet':
+      'Installing on Windows comes later; until then install the agent by hand as the docs describe. Re-register and remove work already.',
+    'infra.prov.action.install': 'Install',
+    'infra.prov.action.update': 'Update',
+    'infra.prov.action.reregister': 'Re-register',
+    'infra.prov.action.remove': 'Remove',
+    'infra.prov.systems': 'Supported systems',
+    'infra.prov.ports': 'Outbound ports to the server',
+    'infra.prov.port.api': 'API',
+    'infra.prov.port.enroll': 'Enrollment',
+    'infra.prov.port.repo': 'Package repo',
+    'infra.prov.port.tunnel': 'Tunnel',
+    'infra.prov.tunnelOnly': 'only with an FRP tunnel',
+    'infra.prov.automation': 'For automation',
+    'infra.prov.automationWarn':
+      'The token is then part of the command and visible in shell history and the process list. Only for scripts and configuration management.',
+    'infra.prov.needToken': 'Create a token first: in automation mode it is part of the command.',
+    'infra.prov.noCommand':
+      'No safe command can be built for this choice (an unknown format from the server, or a value with characters that are not allowed).',
+    'infra.prov.catalogError': 'The platform list could not be loaded: {message}',
+    'infra.prov.command': 'Run on the target host:',
     'infra.conn.add': 'Connection',
     'infra.conn.empty': 'No connections for this server',
     'infra.conn.new': 'New connection',
