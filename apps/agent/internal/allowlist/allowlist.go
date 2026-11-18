@@ -57,6 +57,9 @@ var classes = map[string]string{
 	// An absolute directory, meant for the agent's state directory (config.MonitorDir) but not bound to
 	// it; no segment begins with '.', so no "..".
 	"statedir": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
+	// The mount point of a network share (probe's validMountpoint): absolute, no segment begins with
+	// '.', so no "..", a blank only inside a segment.
+	"mountpoint": `(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_., @+-]*)+`,
 	// A file or directory inside a container (docker cp): no segment begins with '.', so no "..".
 	"ctrpath": `(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_.,@+-]*)+`,
 	// A journal priority, 0 emerg … 7 debug.
@@ -232,6 +235,9 @@ var commands = map[string][][]string{
 		{"--all", "--json=c", "<device>"},
 		{"--all", "--json=c", "-d", "<devtype>", "<device>"},
 	},
+	// How full a network share is (net_share_usage): statfs of its mount point in a process of its own,
+	// which the timeout kills when the share hangs (R-1267).
+	"stat": {{"-f", "-c", "%S %b %f %a", "--", "<mountpoint>"}},
 	"systemctl": {
 		{"list-units", "--type=service", "--all", "--no-legend", "--plain", "--no-pager"},
 		{"list-units", "--type=service", "--all", "--full", "--no-legend", "--plain", "--no-pager"},

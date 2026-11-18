@@ -93,6 +93,8 @@ class Detect(_Model):
     # For a module with instance "vhost": only vhosts with TLS, only vhosts of these applications.
     vhost_tls: StrictBool = False
     vhost_apps: list[Literal[VHOST_APPS]] = Field(default_factory=list, max_length=len(VHOST_APPS))
+    # For a module with instance "share": every network share the agent finds mounted.
+    net_shares: StrictBool = False
 
     def is_empty(self) -> bool:
         return not (self.container_images or self.units or self.processes or self.markers)
@@ -107,7 +109,7 @@ class Alternative(_Model):
 
 
 class Target(_Model):
-    kind: Literal["loopback", "container", "process", "unit", "port", "vhost"]
+    kind: Literal["loopback", "container", "process", "unit", "port", "vhost", "share"]
     # Compose service of the instance's project whose container the check asks.
     service: str = Field("", max_length=255)
     # Without the service: the one container of the instance with the module's image that
@@ -367,7 +369,7 @@ class Module(_Model):
     version: int = Field(ge=1, strict=True)
     description: str = Field("", max_length=1000)
     detect: Detect = Field(default_factory=Detect)
-    instance: Literal["compose_project", "container", "unit", "process", "port", "vhost"]
+    instance: Literal["compose_project", "container", "unit", "process", "port", "vhost", "share"]
     checks: list[Check] = Field(min_length=1, max_length=50)
     card: list[CardItem] = Field(default_factory=list, max_length=6)
 
@@ -381,8 +383,14 @@ class Module(_Model):
                 raise ValueError(
                     "a module with instance 'vhost' detects by vhost_tls or vhost_apps only"
                 )
+        elif self.instance == "share":
+            # A share is found by its mount point alone, like a vhost by its name.
+            if not self.detect.net_shares or not self.detect.is_empty() or self.detect.by_vhost():
+                raise ValueError("a module with instance 'share' detects by net_shares only")
         elif self.detect.by_vhost():
             raise ValueError("vhost_tls and vhost_apps need instance 'vhost'")
+        elif self.detect.net_shares:
+            raise ValueError("net_shares needs instance 'share'")
         elif self.instance != "port" and self.detect.is_empty():
             raise ValueError("a module needs at least one detection criterion")
         for marker in self.detect.markers:
@@ -413,6 +421,8 @@ class Module(_Model):
         for check in self.checks:
             if check.central and self.instance != "vhost":
                 raise ValueError(f"check {check.key!r}: a central check needs instance 'vhost'")
+            if check.target and check.target.kind == "share" and self.instance != "share":
+                raise ValueError(f"check {check.key!r}: target 'share' needs instance 'share'")
             if check.target and check.target.service and self.instance != "compose_project":
                 raise ValueError(
                     f"check {check.key!r}: target.service needs instance 'compose_project'"

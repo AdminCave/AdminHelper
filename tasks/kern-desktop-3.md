@@ -11,7 +11,7 @@ DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku i
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 Für alle Tasks: Zeilenangaben `origin/main@2eac9b1d`, vor dem Schreiben neu greppen. Neue Code-Strings englisch,
-CHANGELOG umlautfrei und neutral in `changelog.d/kern-desktop-3.md`. `security` zusätzlich bei T1 und T2 (SEC) und wo
+CHANGELOG umlautfrei und neutral in `changelog.d/kern-desktop-3.md`. `security` zusätzlich bei T1 und T2 und wo
 `review.sh risk` es verlangt.
 
 ### T1 — Visitor-Bundle mit Lesegrenze (R-0962)  [x]
