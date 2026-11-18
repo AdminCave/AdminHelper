@@ -1,5 +1,5 @@
 # STCP-Tunnel mit Protokoll web: Schema und Pfad — Task-Ledger
-Status: aktiv · Branch: feature/kern-frp-8 · Review: pro Task
+Status: bereit · Branch: feature/kern-frp-8 · Review: pro Task
 Spec: docs/features/kern-frp-8.md (Roadmap R-1540)
 Heavy: linux-full — Server-API (`/api/frp/tunnels`) ändert sich; FRP-Konfiguration, Visitor-Bundle und Datenpfad bleiben, kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -30,8 +30,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/T
 Doku: → T4
 Abhängt von: T1
 
-### T4 — R-1540: Doku Tunnel-Verbindung mit Schema und Pfad  [ ]
+### T4 — R-1540: Doku Tunnel-Verbindung mit Schema und Pfad  [x]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-frp-8.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a7b0b6a30 2026-11-18T20:14:43+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt zum Visitor-Port und zur automatischen Verbindung: bei `web` Schema und Pfad statt Benutzername, Auflösung ersetzt nur Host und Port, Nachziehen beim Protokoll- oder Typwechsel, Hinweis auf die Zertifikatswarnung des Browsers bei `https`. CHANGELOG-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, changelog.d/kern-frp-8.md
