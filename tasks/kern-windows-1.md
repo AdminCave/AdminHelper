@@ -49,7 +49,8 @@ Komponente: agent · Dateien: apps/agent/internal/service/service_windows.go, ap
 tauscht Agent und `frpc.exe` (aus dem Ordner des laufenden Binarys, Hash wie T3 geprüft; fehlt sie: Warnung, Agent
 ohne Tunnel), zieht Konfiguration und Wiederanlauf nach und startet; sonst Neuanlage wie heute. Eine alte Installation
 in `%ProgramFiles%\AdminHelper` (T1) zieht dabei in `%ProgramFiles%\AdminHelper Agent` um: Dienst auf den neuen Pfad,
-alte Agent-Dateien weg, der Ordner bleibt (er gehört der Desktop-App). `service uninstall
+alte Agent-Dateien weg, der Ordner bleibt (er gehört der Desktop-App). Agent und `frpc.exe` entstehen gleich mit
+Owner Administratoren (Security-Descriptor beim Anlegen, kein Fenster mit dem installierenden Konto als Owner). `service uninstall
 --purge` entfernt zusätzlich Programm- und Datenordner. Tests: Befehlsfolge über Hooks plattformneutral, auf Windows
 Install zweimal hintereinander.
 Verify: bash scripts/dev/verify.sh agent --strict
@@ -88,7 +89,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-windows-1.md
 Task-Review: am Ende
 
-### T8 — R-1583: Dienstnamen auf Windows ohne Groß-/Kleinschreibung  [?] (Agent-Namen klein schreiben ändert Inventar und Regeln; Empfehlung: Agent unverändert, Monitoring vergleicht case-insensitiv, R-0436 neu aufnehmen)
+### T8 — R-1583: Dienstnamen auf Windows ohne Groß-/Kleinschreibung  [~] (Kevin 2026-11-18: Agent unverändert, Monitoring vergleicht Dienstnamen case-insensitiv (R-0436, Kern 1))
 Komponente: agent · Dateien: apps/agent/internal/monitor/scquery.go, tasks/kern-windows-1.md
 Änderung: nach Kevins Antwort.
 Verify: bash scripts/dev/verify.sh agent --strict
