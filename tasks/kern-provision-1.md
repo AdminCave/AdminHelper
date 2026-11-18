@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_pr
 Doku: → T10
 Abhängt von: T1, T4
 
-### T6 — R-1595: Desktop-Katalog-Client und Befehlsbau je Shell  [ ]
+### T6 — R-1595: Desktop-Katalog-Client und Befehlsbau je Shell  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/provisioning.ts, apps/desktop/ui/src/lib/api/provisioning.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts, apps/desktop/ui/src/lib/utils/powershell.ts, apps/desktop/ui/src/lib/utils/powershell.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @198758015 2026-11-18T18:00:01+01:00
+Review: approve (.ah-out/review/kern-provision-1/T6.verdict.json)
 Änderung: Client für `platforms()` und `progress()`. Neu `command.ts` (SPDX) baut aus einem Katalog-Befehl und den Werten den Text: bash/sh mit `shellQuote` und ` \`-Umbruch, PowerShell mit neuem `psQuote` (`'…'`, `'` verdoppelt, nach `about_Quoting_Rules`) und Backtick-Umbruch. Unbekannte Shell oder Wert-Art, oder ein Pflichtwert fehlt → kein Befehl. Den Token setzt `command.ts` nur im Automatisierungsmodus ein. Die Wertprüfungen (`TOKEN_FORM`, `UUID_FORM`) wandern aus dem Tab hierher. Tests mit feindlichen Werten (`'`, `$(…)`, Backtick, Zeilenumbruch).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning src/lib/utils/powershell.test.ts src/lib/api/provisioning.test.ts
 Doku: keine (intern; Verhalten dokumentiert T10)

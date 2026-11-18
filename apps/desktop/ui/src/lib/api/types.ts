@@ -224,6 +224,65 @@ export interface FrpProvisionTokenCreateResult {
   serverName: string;
 }
 
+// ── Provisioning catalog and progress (GET /api/provisioning/platforms,
+// GET /api/servers/:id/provision/progress) ───────────────────────────────
+export type ProvisionPlatformId = 'linux' | 'windows' | 'freebsd' | 'opnsense';
+export type ProvisionAction = 'install' | 'update' | 'reregister' | 'remove';
+
+// Kinds stay `string` on purpose: the server may name a shell or value kind this desktop does
+// not know, and command.ts then builds no command instead of guessing.
+export interface ProvisionCommandArg {
+  flag: string;
+  value: string;
+  optional: boolean;
+  mode: string | null;
+}
+
+export interface ProvisionCommandSpec {
+  action: string;
+  shell: string;
+  base: string;
+  args: ProvisionCommandArg[];
+}
+
+export interface ProvisionPort {
+  port: number;
+  purpose: string;
+  tunnelOnly: boolean;
+}
+
+export interface ProvisionPlatform {
+  id: string;
+  available: boolean;
+  reason: string | null;
+  versions: string[];
+  arch: string[];
+  abis: string[];
+  prerequisites: { systems: string[]; ports: ProvisionPort[] };
+  commands: ProvisionCommandSpec[];
+  doc: { de: string; en: string } | null;
+}
+
+export interface ProvisionPlatformsResponse {
+  platforms: ProvisionPlatform[];
+}
+
+export interface ProvisionHostFacts {
+  os: string | null;
+  platform: string | null;
+  platformVersion: string | null;
+}
+
+export interface ProvisionProgress {
+  token: { createdAt: string | null; usedAt: string | null; expiresAt: string | null } | null;
+  certificate: { issuedAt: string | null } | null;
+  report: { lastReportAt: string | null; hostFacts: ProvisionHostFacts | null } | null;
+  monitoringReachable: boolean;
+  tunnel: { configured: boolean; connected: boolean | null };
+  reportedPlatform: string | null;
+  platformMismatch: boolean;
+}
+
 // ── Monitoring (full payloads from the monitoring service) ──────────────
 export type MonitorCheckType =
   | 'ping'
