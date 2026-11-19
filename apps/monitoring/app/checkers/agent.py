@@ -46,9 +46,14 @@ _last_report: dict[str, datetime] = {}
 # Monotonic companion to _last_report, same key. Only the wall-clock value can be
 # persisted across processes, but comparing BOTH deltas reveals a clock jump:
 # wall time can leap (NTP step, VM suspend/resume), monotonic time cannot. Absent
-# for a server hydrated from the DB after a restart — then the wall clock alone
-# decides, exactly as before.
+# for a server hydrated from the DB after a restart — then the wall clock decides,
+# minus the downtime of this service (_down_from/_down_until).
 _last_report_mono: dict[str, float] = {}
+# The downtime of this service before the last start: from the last check run before
+# the stop to the hydration. No push could arrive meanwhile, so a hydrated stamp does
+# not age during it; the silence BEFORE the stop still counts (R-1607).
+_down_from: datetime | None = None
+_down_until: datetime | None = None
 
 # A wall/monotonic divergence above this counts as "the clock jumped", not as
 # elapsed time. Both clocks are read a few statements apart, so only measurement
@@ -173,15 +178,21 @@ def record_agent_report(server_id: str) -> None:
     _last_report_mono[server_id] = time.monotonic()
 
 
-def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
+def hydrate_agent_liveness(
+    entries: dict[str, datetime], stopped_at: datetime | None = None
+) -> None:
     """Seed _last_report from the persisted monitor_agent_liveness rows at
     startup. setdefault: a push that arrived before hydration must not be
-    overwritten by an older persisted value."""
+    overwritten by an older persisted value. stopped_at is the last check run
+    before the stop (None on a fresh database)."""
+    global _down_from, _down_until
+    _down_from, _down_until = stopped_at, utcnow_naive()
     for server_id, last_report_at in entries.items():
         _last_report.setdefault(server_id, last_report_at)
         # Deliberately NO monotonic companion: the persisted value predates this
         # process, so there is nothing to compare against. The guard stays off
-        # for that server until its next push (wall-clock behavior as before).
+        # for that server until its next push; AgentPingChecker takes the downtime
+        # of this service off its age instead.
 
 
 class AgentPingChecker:
@@ -238,13 +249,19 @@ class AgentPingChecker:
                 )
                 age_seconds = mono_age
                 _last_report[server_id] = now - timedelta(seconds=mono_age)
-        elif age_seconds < 0:
-            # No monotonic companion (hydrated from the DB after a restart) and
-            # the stored stamp lies in the future: the clock moved backwards
-            # before this process started. Treat it as "just seen" rather than
-            # reporting a negative age.
-            logger.info("Future heartbeat stamp for %s — clamped to 0s", server_id)
-            age_seconds = 0.0
+        else:
+            # No monotonic companion: hydrated from the DB after a restart. The
+            # downtime of this service after the stamp is no silence of the
+            # agent (R-1607).
+            if _down_from is not None and _down_until is not None:
+                down = (_down_until - max(last, _down_from)).total_seconds()
+                age_seconds -= max(down, 0.0)
+            if age_seconds < 0:
+                # The stored stamp lies in the future: the clock moved backwards
+                # before this process started. Treat it as "just seen" rather than
+                # reporting a negative age.
+                logger.info("Future heartbeat stamp for %s — clamped to 0s", server_id)
+                age_seconds = 0.0
 
         age_minutes = age_seconds / 60
 
@@ -1117,13 +1134,21 @@ class ServiceProcessChecker:
         if not isinstance(systemd, dict):
             systemd = {}
         error = systemd.get("error")
+        # The service control manager compares service names without case (CreateServiceW,
+        # lpServiceName), so on Windows "w32time" is "W32Time"; systemd units and rc.d scripts
+        # differ by case and stay exact (R-0436).
+        fold = _host_os(report) == "windows"
+
+        def key(name: str) -> str:
+            unit = self._unit_name(name)
+            return unit.casefold() if fold else unit
 
         # Lowest precedence first, so each later source overwrites what it knows.
         states: dict[str, str] = {}
         reasons: dict[str, str] = {}
         if "all_services" in systemd:
             inventory = {
-                self._unit_name(s["unit"]): s
+                key(s["unit"]): s
                 for s in self._capped(systemd["all_services"])
                 if isinstance(s, dict) and isinstance(s.get("unit"), str)
             }
@@ -1144,20 +1169,20 @@ class ServiceProcessChecker:
                     and isinstance(w.get("name"), str)
                     and w.get("state") in ("running", "down")
                 ):
-                    states[self._unit_name(w["name"])] = w["state"]
+                    states[key(w["name"])] = w["state"]
                     reason = cap_agent_text(w.get("reason"))
                     if reason:
-                        reasons[self._unit_name(w["name"])] = reason
+                        reasons[key(w["name"])] = reason
         for s in self._capped(report.get("services")):
             if isinstance(s, dict) and isinstance(s.get("name"), str):
-                states[self._unit_name(s["name"])] = "running" if s.get("running") else "down"
+                states[key(s["name"])] = "running" if s.get("running") else "down"
 
         watched = []
         for name in expected:
-            state = states.get(self._unit_name(name), "nodata")
+            state = states.get(key(name), "nodata")
             # running beside state: desktops before state read running alone (Kevin 2026-10-16).
             entry = {"name": name, "state": state, "running": state == "running"}
-            reason = reasons.get(self._unit_name(name))
+            reason = reasons.get(key(name))
             if state == "down" and reason:
                 entry["reason"] = reason
             watched.append(entry)

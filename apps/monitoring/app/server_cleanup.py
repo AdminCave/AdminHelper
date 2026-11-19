@@ -14,10 +14,11 @@ scheduler follows after the commit, like every template sync.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
-from app.bell_catch_up import deleted_all_clear, send_all_clears
+from app.bell_catch_up import AllClear, deleted_all_clear, send_all_clears
 from app.models import (
     MonitorAgentKey,
     MonitorAgentLiveness,
@@ -39,8 +40,14 @@ from app.template_sync import SchedulerAction, apply_scheduler_actions
 logger = logging.getLogger("monitor.server_cleanup")
 
 
-def cleanup_server(db: Session, server_id: str) -> dict:
-    """Deletes all monitoring data of a server (on server deletion)."""
+def cleanup_server(
+    db: Session,
+    server_id: str,
+    send_clears: Callable[[list[AllClear]], None] = send_all_clears,
+) -> dict:
+    """Deletes all monitoring data of a server (on server deletion). send_clears
+    gets the all-clears of the deleted checks; the route hands them to a
+    background task, so the hub calls do not hold up its answer (R-1622)."""
     actions: list[SchedulerAction] = []
     # Delete checks (incl. states via CASCADE)
     checks = db.query(MonitorCheck).filter(MonitorCheck.server_id == server_id).all()
@@ -90,7 +97,7 @@ def cleanup_server(db: Session, server_id: str) -> dict:
 
     db.commit()
     apply_scheduler_actions(actions)
-    send_all_clears(clears)
+    send_clears(clears)
     logger.info(
         "Server %s cleanup: %d checks, %d alerts deleted", server_id, len(checks), len(alerts)
     )

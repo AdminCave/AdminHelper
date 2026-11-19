@@ -26,6 +26,8 @@ def isolate_liveness_maps(monkeypatch):
     that only surfaced once the monotonic map was added."""
     monkeypatch.setattr(agent, "_last_report", {})
     monkeypatch.setattr(agent, "_last_report_mono", {})
+    monkeypatch.setattr(agent, "_down_from", None)
+    monkeypatch.setattr(agent, "_down_until", None)
 
 
 def test_missing_server_id_is_unknown():
@@ -103,6 +105,48 @@ def test_hydrated_entry_feeds_the_checker(monkeypatch):
     hydrate_agent_liveness({"srv-1": T0})
     monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=20))
     status, _msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+    assert status == "critical"
+
+
+def _restart(monkeypatch, stamp, stopped_at, started_at):
+    monkeypatch.setattr(agent, "utcnow_naive", lambda: started_at)
+    hydrate_agent_liveness({"srv-1": stamp}, stopped_at=stopped_at)
+
+
+def _run_at(monkeypatch, at):
+    monkeypatch.setattr(agent, "utcnow_naive", lambda: at)
+    return AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+
+def test_the_downtime_of_the_monitoring_service_does_not_count(monkeypatch):
+    # R-1607: the agent pushed at T0, the service stopped a minute later and stood
+    # still for 20 min; no push could arrive meanwhile. Five minutes after the start
+    # the agent is six minutes silent, not 25.
+    _restart(monkeypatch, T0, T0 + timedelta(minutes=1), T0 + timedelta(minutes=21))
+    status, _msg, metrics = _run_at(monkeypatch, T0 + timedelta(minutes=26))
+    assert status == "ok"
+    assert metrics["agent_last_seen_seconds"] == 6 * 60
+
+    # A dead agent is critical once its silence outside the downtime passes the limit.
+    status, msg, _metrics = _run_at(monkeypatch, T0 + timedelta(minutes=36))
+    assert status == "critical"
+    assert msg == "Agent unreachable for 16 min (limit: 15 min)"
+
+
+def test_an_agent_dead_before_the_stop_stays_critical(monkeypatch):
+    # The silence before the stop is real: an agent gone for hours must not turn
+    # ok for stale_minutes after every restart of the service (R-1607).
+    stamp = T0 - timedelta(hours=3)
+    _restart(monkeypatch, stamp, T0, T0 + timedelta(minutes=20))
+    status, msg, _metrics = _run_at(monkeypatch, T0 + timedelta(minutes=21))
+    assert status == "critical"
+    assert msg == "Agent unreachable for 181 min (limit: 15 min)"
+
+
+def test_a_fresh_database_takes_nothing_off(monkeypatch):
+    # No check ran before (stopped_at None): there is no downtime to take off.
+    _restart(monkeypatch, T0, None, T0 + timedelta(minutes=20))
+    status, _msg, _metrics = _run_at(monkeypatch, T0 + timedelta(minutes=20))
     assert status == "critical"
 
 
