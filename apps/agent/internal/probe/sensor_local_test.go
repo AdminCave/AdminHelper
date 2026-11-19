@@ -142,6 +142,37 @@ func TestProcessesNamedFindsThisProcess(t *testing.T) {
 	}
 }
 
+func TestNamedAsTellsAMulticallBinaryByItsApplet(t *testing.T) {
+	oldName, oldArgs := processName, processArgs
+	t.Cleanup(func() { processName, processArgs = oldName, oldArgs })
+	names := map[int32]string{1: "busybox", 2: "busybox", 3: "toybox"}
+	args := map[int32][]string{1: {"/bin/busybox", "crond", "-f"}, 3: {"toybox"}}
+	processName = func(_ context.Context, pid int32) (string, error) { return names[pid], nil }
+	processArgs = func(_ context.Context, pid int32) ([]string, error) {
+		if a, ok := args[pid]; ok {
+			return a, nil
+		}
+		return nil, errors.New("access is denied")
+	}
+	ctx := context.Background()
+	for _, c := range []struct {
+		pid        int32
+		name, want string
+		named      bool
+	}{
+		{1, "busybox", "crond", true},
+		{1, "busybox", "busybox", false},
+		{2, "busybox", "crond", false}, // its argv cannot be read
+		{3, "toybox", "toybox", false}, // no applet named
+		{9, "CronD", "crond", true},
+		{9, "crond", "httpd", false},
+	} {
+		if got := namedAs(ctx, c.pid, c.name, c.want); got != c.named {
+			t.Errorf("namedAs(%d, %s, %s) = %v, want %v", c.pid, c.name, c.want, got, c.named)
+		}
+	}
+}
+
 func TestContainerSensorReadsStateHealthAndRestarts(t *testing.T) {
 	ctx := context.Background()
 	p := Probe{Sensor: "container", Target: &Target{Kind: kindContainer, Name: "web"}}
