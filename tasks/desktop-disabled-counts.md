@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Monitoring: deaktivierte Checks nicht mitzählen — Task-Ledger
-Status: bereit · Branch: feature/desktop-disabled-counts · Review: am Ende
+Status: erledigt · Branch: feature/desktop-disabled-counts · Review: am Ende
 Spec: Roadmap R-1640
 Heavy: none — nur Desktop-UI-Modell (`lib/models/monitoring.ts`), kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad; keine API-Änderung
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
