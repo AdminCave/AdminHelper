@@ -1,5 +1,5 @@
 # Monitoring-Nachlese: Dienstnamen unter Windows, agent_ping nach Stillstand, Cleanup, Lastschonung — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-51 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-51 · Review: pro Task
 Spec: docs/features/kern-monitoring-51.md (Roadmap R-0436, R-1607, R-1622, R-1616)
 Heavy: none — nur Bewertung und eine Admin-Route im Monitoring-Dienst, kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
