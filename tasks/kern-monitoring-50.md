@@ -1,5 +1,5 @@
 # Dienst-Details Windows/FreeBSD: Fehlerzeilen und „Mehr Log“ — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-50 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-50 · Review: pro Task
 Spec: docs/features/kern-monitoring-50.md (Roadmap R-1391)
 Heavy: windows — Windows-Agent-Sammler; keine Windows-Box im Pool, die Windows-CI-Jobs (go test als Admin) sind der Plattform-Beleg; Linux-Pfad unverändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
