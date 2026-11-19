@@ -1,5 +1,5 @@
 # Windows-Einzeiler agent-install.ps1 — Task-Ledger
-Status: bereit · Branch: feature/ops-10 · Review: am Ende
+Status: erledigt · Branch: feature/ops-10 · Review: am Ende
 Spec: docs/features/ops-10.md (Roadmap R-1578)
 Heavy: windows — Installer-Pfad; Kevin 2026-11-19: der windows-latest-Job aus T2 zählt als scenario-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
