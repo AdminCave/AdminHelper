@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/arch-monitoring-neu-p0-abnahme/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
 Doku: keine (Mockup nur im Vite-Dev-Server; die Abnahme hält T7 im ADR fest)
 
-### T2 — Zusammenfassung je Server, Statusbalken und große Flotte (R-1558)  [ ]
+### T2 — Zusammenfassung je Server, Statusbalken und große Flotte (R-1558)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/views/servers.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/servers.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/StatusBar.svelte, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/scale.ts, apps/desktop/ui/src/mockups/monitoring-neu/fixtures/scale.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ac337fb3d 2026-11-19T05:59:32+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0-abnahme/T2.verdict.json)
 Änderung: Neu `views/servers.ts` (`serverSummaries`: je Server schlechtester Zustand, Zählungen, offene Probleme, schlechteste zuerst; `lageByServer`; `BAR_ORDER`), `views/StatusBar.svelte` (eine Zählung als gestapelter Balken mit Text für Screenreader) und `fixtures/scale.ts` (deterministische große Flotte, 292 Server, 10 510 Objekte, fiktive Namen). Alle neuen Dateien mit SPDX. Tests: Summen je Server gegen die Objektliste, Reihenfolge, Grammatik-Invarianten, eindeutige Schlüssel und Determinismus der großen Fixture.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
 Doku: keine (Mockup nur im Vite-Dev-Server)
