@@ -1,5 +1,5 @@
 # Gateway: interne Dienst-Routen nur im Compose-Netz — Task-Ledger
-Status: geplant · Branch: feature/kern-gateway-1 · Review: am Ende
+Status: aktiv · Branch: feature/kern-gateway-1 · Review: am Ende
 Spec: docs/features/kern-gateway-1.md (Roadmap R-1604)
 Heavy: linux-full — Gateway-Konfiguration (Sammellauf, Stack-Job der PR-CI)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
