@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="AdminHelper">
   <style>
-    /* Favicon has no CSS context (loaded via <link rel=icon>) so currentColor can't
+    /* Favicon has no CSS context (loaded as a favicon) so currentColor can't
        follow the app theme; adapt to the browser chrome instead. */
     path { fill: #16181c; }
     @media (prefers-color-scheme: dark) { path { fill: #ededee; } }
