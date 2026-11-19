@@ -14,6 +14,7 @@ tunnel from the proxy lists the frps supervisor writes.
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 import httpx
 from sqlalchemy.orm import Session
@@ -73,7 +74,12 @@ def _certificate(db: Session, server_id: str) -> dict | None:
     cert = (
         db.query(IssuedCertificate)
         .join(DeviceLine, IssuedCertificate.line_id == DeviceLine.id)
-        .filter(DeviceLine.subject_id == server_id, DeviceLine.scope == SCOPE_AGENT)
+        .filter(
+            DeviceLine.subject_id == server_id,
+            DeviceLine.scope == SCOPE_AGENT,
+            # A revoked line's certificate no longer lets the agent in: it is no progress.
+            DeviceLine.revoked_at.is_(None),
+        )
         .order_by(IssuedCertificate.created_at.desc())
         .first()
     )
@@ -84,7 +90,7 @@ def _monitor_state(server_id: str) -> tuple[dict | None, bool]:
     """(report, reachable). The monitoring service answers nulls for an unknown server."""
     if not config.MONITOR_API_KEY:
         return None, False
-    url = f"{config.MONITOR_SERVICE_URL.rstrip('/')}/agent/{server_id}/state"
+    url = f"{config.MONITOR_SERVICE_URL.rstrip('/')}/agent/{quote(server_id, safe='')}/state"
     try:
         resp = httpx.get(
             url,

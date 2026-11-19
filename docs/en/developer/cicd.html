@@ -455,7 +455,9 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           twenty-two of the platform as a choice: <code>os_type</code>/<code>osType</code> at
           <code>GET</code> and <code>POST /api/servers</code> and at <code>GET</code> and
           <code>PUT /api/servers/{server_id}</code> is only one of <code>linux</code>, <code>windows</code>,
-          <code>freebsd</code>, <code>opnsense</code> and <code>other</code> instead of free text (R-1594, Kevin 2026-11-19).</p>
+          <code>freebsd</code>, <code>opnsense</code> and <code>other</code> instead of free text (R-1594, Kevin 2026-11-19), and the one of the token over standard input: the new
+          value type <code>tokenStdin</code> of a command argument in the response of
+          <code>GET /api/provisioning/platforms</code> (R-1612, Kevin 2026-11-19).</p>
           <p><code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
           SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
           <code>go 1.26</code> and the workflows run with <code>GOTOOLCHAIN=local</code>, so a source build

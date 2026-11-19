@@ -49,3 +49,4 @@
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1612 provisioning token over stdin: GET /api/provisioning/platforms added the new `tokenStdin` enum value to the `platforms/items/commands/items/args/items/value` response property for the response status `200`

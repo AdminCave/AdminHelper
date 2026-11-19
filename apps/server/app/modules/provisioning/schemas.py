@@ -55,7 +55,7 @@ class ActivateOut(BaseModel):
 
 class ProvisionCommandArgOut(BaseModel):
     flag: str
-    value: Literal["serverUrl", "serverId", "caFp", "token", "flag", "insecure"]
+    value: Literal["serverUrl", "serverId", "caFp", "token", "tokenStdin", "flag", "insecure"]
     optional: bool
     mode: Optional[Literal["interactive", "automation"]]
 
