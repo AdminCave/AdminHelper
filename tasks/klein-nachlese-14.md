@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-14 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-14 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-14 · Review: pro Task
 Spec: docs/features/klein-nachlese-14.md (Roadmap R-1546, R-1549, R-1550, R-1551, R-1574, R-1590, R-1591, R-1593, R-1603)
 Heavy: none — Monitoring-, Agent-, Server- und Desktop-UI-Unit-Tests, Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -60,8 +60,10 @@ Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring
 Doku: → T6
 
-### T6 — R-1590/R-1591: Entwickler-Doku (_origin, Freigaben-Timeout) und Changelog  [ ]
+### T6 — R-1590/R-1591: Entwickler-Doku (_origin, Freigaben-Timeout) und Changelog  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, changelog.d/klein-nachlese-14.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @180445dfe 2026-11-20T00:04:01+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: reviewer branch kern-monitoring-18, 2026-11-18
 Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Änderung: `_origin`: Port aus `ports` und `sockets`; ein Fund ohne eigene Instanzart (Stand-in `matched_by`) aus `containers`, `units`, `sockets`, `markers` — gegen `discovery._origin` lesen. `net_share_usage`: der Satz, ein Timeout beende das hängende `stat -f`, wird auf das Belegte beschränkt (der Aufruf wartet höchstens 10 s, danach `hung`; ein Prozess im Kernel-Wartezustand wird nicht als beendet zugesichert). Changelog-Fragment (ASCII) für T2, T4, T5.
