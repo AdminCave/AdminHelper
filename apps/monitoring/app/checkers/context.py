@@ -30,9 +30,28 @@ class PartnerState:
 
 
 @dataclass(frozen=True)
+class DiskRules:
+    """The disk rules of the host's enabled agent_resources check, for disk_forecast.
+
+    `min_free_gb` is per mount (its disk_overrides entry, else disk_min_free_gb); `free_gb`
+    is per mount from that check's last result, empty for an agent that sends none.
+    """
+
+    ignore_mounts: frozenset[str]
+    min_free_gb: dict[str, float]
+    default_min_free_gb: float
+    free_gb: dict[str, float]
+
+    def min_free_for(self, mount: str) -> float:
+        return self.min_free_gb.get(mount, self.default_min_free_gb)
+
+
+@dataclass(frozen=True)
 class CheckContext:
     """What execute_check hands a checker with `wants_context`: its own previous
-    `_details` and, if a valid partner is configured, the partner's state."""
+    `_details`, if a valid partner is configured, the partner's state, and for
+    disk_forecast the disk rules of its host."""
 
     prev_details: dict | None = None
     partner: PartnerState | None = None
+    disk_rules: DiskRules | None = None

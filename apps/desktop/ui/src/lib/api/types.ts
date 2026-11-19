@@ -185,6 +185,9 @@ export interface FrpTunnelInput {
   visitor_port?: number | null;
   auto_create_connection: boolean;
   auto_connection_username?: string | null;
+  /** For a web tunnel's connection (R-1540); a server from before ignores them. */
+  auto_connection_scheme?: 'http' | 'https';
+  auto_connection_path?: string | null;
   tags: string[];
 }
 
@@ -510,6 +513,10 @@ export interface MonitorSmartDetails {
     reallocated_sectors?: number;
     pending_sectors?: number;
     critical_warning_bits?: string[];
+    // The agent left the disk asleep (R-1569): the values are its last read state, from read_at.
+    standby?: boolean;
+    // When the values were read (RFC 3339 UTC); missing on a sleeping disk never read.
+    read_at?: string;
   }[];
 }
 

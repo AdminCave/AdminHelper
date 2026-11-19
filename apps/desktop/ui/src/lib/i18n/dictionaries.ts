@@ -170,6 +170,8 @@ export const translations: Translations = {
     'infra.tun.customDomains': 'Custom-Domains',
     'infra.tun.autoConnection': 'Verbindung automatisch anlegen',
     'infra.tun.autoConnUser': 'Benutzer für Auto-Verbindung',
+    'infra.tun.autoConnScheme': 'Schema',
+    'infra.tun.autoConnPath': 'Pfad (optional)',
     'infra.tun.disabled': 'Deaktiviert',
     'infra.tun.created': 'Tunnel angelegt',
     'infra.tun.updated': 'Tunnel gespeichert',
@@ -183,6 +185,8 @@ export const translations: Translations = {
     'infra.tun.validation.configRequired': 'Bitte eine FRP-Konfiguration wählen',
     'infra.tun.validation.portRequired': 'Lokaler Port erforderlich',
     'infra.tun.validation.visitorPortRange': 'Visitor-Port muss zwischen 1 und 65535 liegen',
+    'infra.tun.validation.path':
+      'Der Pfad beginnt mit „/“, hat höchstens 255 Zeichen und keine Leer- oder Steuerzeichen und kein „#“',
 
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Speichern',
@@ -1211,6 +1215,8 @@ export const translations: Translations = {
     'monitoring.section.storage': 'Storage',
     'monitoring.section.smart': 'SMART',
     'monitoring.section.system': 'Systemzustand',
+    'monitoring.smart.asleepSince': 'schläft, letzter Stand von {time}',
+    'monitoring.smart.asleepNever': 'schläft, noch kein Stand',
     'monitoring.live.free': '{gb} GB frei',
     'monitoring.live.ignored': 'ignoriert',
     'monitoring.live.loadUnrated': 'im Container nicht bewertet',
@@ -1468,6 +1474,7 @@ export const translations: Translations = {
     'connections.insp.tunnel': 'Tunnel',
     'connections.insp.server': 'Server',
     'connections.insp.reach': 'Erreichbar',
+    'connections.insp.resolved': 'Über den Tunnel',
     'connections.insp.unknown': 'unbekannt',
     'connections.insp.last': 'Zuletzt',
     'connections.insp.command': 'Kommando-Vorschau',
@@ -1776,6 +1783,8 @@ export const translations: Translations = {
     'infra.tun.customDomains': 'Custom domains',
     'infra.tun.autoConnection': 'Auto-create connection',
     'infra.tun.autoConnUser': 'Username for auto-connection',
+    'infra.tun.autoConnScheme': 'Scheme',
+    'infra.tun.autoConnPath': 'Path (optional)',
     'infra.tun.disabled': 'Disabled',
     'infra.tun.created': 'Tunnel created',
     'infra.tun.updated': 'Tunnel saved',
@@ -1789,6 +1798,8 @@ export const translations: Translations = {
     'infra.tun.validation.configRequired': 'Please select an FRP configuration',
     'infra.tun.validation.portRequired': 'Local port is required',
     'infra.tun.validation.visitorPortRange': 'The visitor port must be between 1 and 65535',
+    'infra.tun.validation.path':
+      'The path starts with "/", has at most 255 characters and no whitespace, control character or "#"',
 
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Save',
@@ -2812,6 +2823,8 @@ export const translations: Translations = {
     'monitoring.section.storage': 'Storage',
     'monitoring.section.smart': 'SMART',
     'monitoring.section.system': 'System state',
+    'monitoring.smart.asleepSince': 'asleep, last state from {time}',
+    'monitoring.smart.asleepNever': 'asleep, no state yet',
     'monitoring.live.free': '{gb} GB free',
     'monitoring.live.ignored': 'ignored',
     'monitoring.live.loadUnrated': 'not rated in a container',
@@ -3067,6 +3080,7 @@ export const translations: Translations = {
     'connections.insp.tunnel': 'Tunnel',
     'connections.insp.server': 'Server',
     'connections.insp.reach': 'Reachable',
+    'connections.insp.resolved': 'Through the tunnel',
     'connections.insp.unknown': 'unknown',
     'connections.insp.last': 'Last used',
     'connections.insp.command': 'Command preview',

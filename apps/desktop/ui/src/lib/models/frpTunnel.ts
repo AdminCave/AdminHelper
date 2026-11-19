@@ -15,6 +15,14 @@ export { parseTags };
 export const TUNNEL_TYPES: FrpTunnelType[] = ['stcp', 'https'];
 export const TUNNEL_PROTOCOLS: FrpProtocol[] = ['ssh', 'rdp', 'web'];
 export const PROTOCOL_DEFAULT_PORT: Record<FrpProtocol, number> = { ...DEFAULT_PORTS, web: 8006 };
+export type WebScheme = 'http' | 'https';
+export const WEB_SCHEMES: WebScheme[] = ['http', 'https'];
+const HTTPS_PORTS = new Set([443, 8006, 8443, 9443]);
+
+/** The scheme a web target on this port most likely speaks (R-1540). */
+export function defaultWebScheme(port: number | null): WebScheme {
+  return port !== null && HTTPS_PORTS.has(port) ? 'https' : 'http';
+}
 
 export interface TunnelForm {
   id: string | null;
@@ -32,6 +40,11 @@ export interface TunnelForm {
   tags: string[];
   autoCreateConnection: boolean;
   autoConnectionUsername: string;
+  /** Picked by the user; null follows the target port (defaultWebScheme). */
+  autoConnectionScheme: WebScheme | null;
+  autoConnectionPath: string;
+  /** Protocol and type when the dialog opened; null for a new tunnel. */
+  initialShape: { protocol: FrpProtocol; tunnelType: FrpTunnelType } | null;
 }
 
 export function emptyTunnelForm(serverId: string, frpConfigId = ''): TunnelForm {
@@ -50,6 +63,9 @@ export function emptyTunnelForm(serverId: string, frpConfigId = ''): TunnelForm 
     tags: [],
     autoCreateConnection: false,
     autoConnectionUsername: '',
+    autoConnectionScheme: null,
+    autoConnectionPath: '',
+    initialShape: null,
   };
 }
 
@@ -70,6 +86,9 @@ export function tunnelToForm(t: FrpTunnel): TunnelForm {
     tags: [...(t.tags ?? [])],
     autoCreateConnection: !!t.connectionId,
     autoConnectionUsername: '',
+    autoConnectionScheme: null,
+    autoConnectionPath: '',
+    initialShape: { protocol: t.protocol, tunnelType: t.tunnelType },
   };
 }
 
@@ -79,9 +98,28 @@ export function tunnelToForm(t: FrpTunnel): TunnelForm {
  * `label`; `name` carries it as well, or "{server}-{protocol}" without one, which a
  * server from R-1210 on stores as no own text and an older one as the unique proxy
  * name it requires. */
+/** Whether the server builds a web URL from this save: a new tunnel, or one whose protocol or
+ * type changes (the server then takes the linked connection along). Otherwise it ignores
+ * scheme and path, so the dialog neither asks for nor sends them. */
+export function asksWebTarget(form: TunnelForm): boolean {
+  if (form.protocol !== 'web' || !form.autoCreateConnection) return false;
+  const was = form.initialShape;
+  return was === null || was.protocol !== form.protocol || was.tunnelType !== form.tunnelType;
+}
+
+export function effectiveScheme(form: TunnelForm): WebScheme {
+  return form.autoConnectionScheme ?? defaultWebScheme(form.localPort);
+}
+
 export function formToInput(form: TunnelForm, serverName = ''): FrpTunnelInput {
   const isStcp = form.tunnelType === 'stcp';
   const own = form.name.trim();
+  const web = asksWebTarget(form)
+    ? {
+        auto_connection_scheme: effectiveScheme(form),
+        auto_connection_path: form.autoConnectionPath.trim() || null,
+      }
+    : {};
   return {
     server_id: form.serverId,
     frp_config_id: form.frpConfigId,
@@ -95,10 +133,17 @@ export function formToInput(form: TunnelForm, serverName = ''): FrpTunnelInput {
     custom_domains: isStcp ? null : form.customDomains.trim() || null,
     visitor_port: isStcp ? (form.visitorPort ?? null) : null,
     auto_create_connection: form.autoCreateConnection,
-    auto_connection_username: form.autoConnectionUsername.trim() || null,
+    // A web connection has no user (R-1540).
+    auto_connection_username:
+      form.protocol === 'web' ? null : form.autoConnectionUsername.trim() || null,
+    ...web,
     tags: [...new Set(form.tags.map((t) => t.trim()).filter((t) => t.length > 0))],
   };
 }
+
+// Starts with "/", at most 255 characters, no whitespace, control character or "#".
+// eslint-disable-next-line no-control-regex
+const WEB_PATH = /^\/[^\s\x00-\x1f\x7f-\x9f#]{0,254}$/;
 
 export function validateTunnelForm(form: TunnelForm): ValidationResult {
   if (!form.frpConfigId) return { ok: false, message: tNow('infra.tun.validation.configRequired') };
@@ -113,6 +158,11 @@ export function validateTunnelForm(form: TunnelForm): ValidationResult {
     !(Number.isInteger(vp) && vp >= 1 && vp <= 65535)
   ) {
     return { ok: false, message: tNow('infra.tun.validation.visitorPortRange') };
+  }
+  // The server's rule (check_auto_path), so the user sees it before the 422.
+  const path = form.autoConnectionPath.trim();
+  if (asksWebTarget(form) && path && !WEB_PATH.test(path)) {
+    return { ok: false, message: tNow('infra.tun.validation.path') };
   }
   return { ok: true };
 }

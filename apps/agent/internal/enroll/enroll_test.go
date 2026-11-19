@@ -141,6 +141,110 @@ func TestStoreAndProvisioned(t *testing.T) {
 	}
 }
 
+// TestMain keeps every Store of the package off the host's real repo CA copy, which a run
+// as root on an enrolled apt host would otherwise overwrite with a test chain.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "enroll-repo-ca-")
+	if err != nil {
+		panic(err)
+	}
+	RepoCACopy = filepath.Join(dir, "adminhelper-ca.crt")
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// useRepoCACopy points RepoCACopy into a temp directory and sets the OS refreshRepoCA sees;
+// with old != "" the copy exists.
+func useRepoCACopy(t *testing.T, goos, old string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "adminhelper-ca.crt")
+	if old != "" {
+		if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	origPath, origOS := RepoCACopy, repoCAOS
+	RepoCACopy, repoCAOS = path, goos
+	t.Cleanup(func() { RepoCACopy, repoCAOS = origPath, origOS })
+	return path
+}
+
+// Outside Linux the agent never touches the path, even where it exists: on Windows it lies
+// on the system drive, where any user may create it, and the agent runs as SYSTEM.
+func TestStoreLeavesTheRepoCACopyAloneOutsideLinux(t *testing.T) {
+	for _, goos := range []string{"windows", "freebsd"} {
+		path := useRepoCACopy(t, goos, "old-chain")
+		key, _ := GenerateKey()
+		if err := Store(filepath.Join(t.TempDir(), "identity"), key, &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "new-chain"}); err != nil {
+			t.Fatalf("%s: Store: %v", goos, err)
+		}
+		if b, _ := os.ReadFile(path); string(b) != "old-chain" {
+			t.Fatalf("%s: repo CA copy = %q, want it untouched", goos, b)
+		}
+		if left, _ := filepath.Glob(path + ".*" + tmpSuffix); len(left) != 0 {
+			t.Fatalf("%s: staged copies written: %v", goos, left)
+		}
+	}
+}
+
+// R-0810: apt reads the CA it pins the repo to as _apt and cannot enter the 0700 data
+// directory, so it reads a public copy; a renewal with a new trust bundle must update it.
+func TestStoreRefreshesTheRepoCACopy(t *testing.T) {
+	path := useRepoCACopy(t, "linux", "old-chain")
+	key, _ := GenerateKey()
+	if err := Store(filepath.Join(t.TempDir(), "identity"), key, &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "new-chain"}); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "new-chain" {
+		t.Fatalf("repo CA copy = %q, want the stored chain", b)
+	}
+	if runtime.GOOS != "windows" {
+		info, _ := os.Stat(path)
+		if perm := info.Mode().Perm(); perm != 0o644 {
+			t.Fatalf("repo CA copy perm = %o, want 644 (apt reads it as _apt)", perm)
+		}
+	}
+	if left, _ := filepath.Glob(path + ".*" + tmpSuffix); len(left) != 0 {
+		t.Fatalf("staged copies left: %v", left)
+	}
+}
+
+// Without the copy (no apt pin, dnf) Store creates none.
+func TestStoreLeavesAMissingRepoCACopyAbsent(t *testing.T) {
+	path := useRepoCACopy(t, "linux", "")
+	key, _ := GenerateKey()
+	if err := Store(filepath.Join(t.TempDir(), "identity"), key, &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "chain"}); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("Store created the repo CA copy (stat err = %v)", err)
+	}
+}
+
+// A copy that cannot be refreshed costs the renewal nothing: the identity is stored.
+func TestStoreSucceedsWhenTheRepoCACopyCannotBeWritten(t *testing.T) {
+	path := useRepoCACopy(t, "linux", "old-chain")
+	created := failWriteOf(t, filepath.Base(path))
+	dir := filepath.Join(t.TempDir(), "identity")
+	key, _ := GenerateKey()
+	if err := Store(dir, key, &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "new-chain"}); err != nil {
+		t.Fatalf("Store must not fail on the repo CA copy: %v", err)
+	}
+	if b, _ := os.ReadFile(CAPath(dir)); string(b) != "new-chain" {
+		t.Fatalf("ca.crt = %q, want the new chain", b)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "old-chain" {
+		t.Fatalf("repo CA copy = %q, want it untouched after the failed write", b)
+	}
+	if len(*created) != 4 {
+		t.Fatalf("want the three identity temps and the copy's, created: %v", *created)
+	}
+	if _, err := os.Stat((*created)[3]); !os.IsNotExist(err) {
+		t.Fatalf("the failed copy's temp must be removed, stat err = %v", err)
+	}
+}
+
 // TestStoreStagesBeforeCommit reproduces the F5 lockout window: a renewal mints a
 // NEW key, so a crash between writing the key and the cert must NOT leave a new
 // key paired with the old cert (the mismatch breaks mTLS → silent lockout, ADR

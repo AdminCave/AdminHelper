@@ -1,4 +1,4 @@
-FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
 
 ARG VERSION=dev
 ENV APP_VERSION=$VERSION
@@ -6,13 +6,14 @@ ENV APP_VERSION=$VERSION
 WORKDIR /app
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends gosu \
+ && apt-get upgrade -y \
  && rm -rf /var/lib/apt/lists/*
 
 # Hashed lockfile: requirements.in (intent) -> requirements.txt (pinned + hashed
 # via pip-compile --generate-hashes). --require-hashes enforces artifact integrity.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+ && pip uninstall -y pip
 
 COPY app/ ./app/
 COPY docker-entrypoint.sh /docker-entrypoint.sh
@@ -20,14 +21,14 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 ENV CA_DATA_DIR=/app/data
 
 # Non-root runtime user. The container starts as root so the entrypoint can
-# chown the data volume, then drops to this user via gosu (see entrypoint).
+# chown the data volume, then drops to this user via setpriv (see entrypoint).
 RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
  && mkdir -p /app/data \
  && chown -R app:app /app
 
 # Every program in the bin directories and below /usr/lib/postgresql (the PostgreSQL clients),
 # an ELF file with an x bit, is root's and for anyone else to execute only (go-r): a process of
-# app, started from one of them through gosu, is then not dumpable and the entries in
+# app, started from one of them through setpriv, is then not dumpable and the entries in
 # /proc/<pid> are root's, as in the frps image. Scripts stay readable; what counts is the
 # program that runs them. A directory of the list the image lacks is skipped. The PostgreSQL
 # clients cannot read their own program: pg_isready writes `invalid binary "...": Permission

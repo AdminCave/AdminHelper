@@ -458,7 +458,7 @@ class TestBundleChannels:
     def test_every_channel_names_the_servers_of_the_bell(self, db_session, monkeypatch):
         sent = []
         monkeypatch.setattr(
-            outbox_mod, "send_email", lambda to, subj, body: sent.append((to, subj, body))
+            outbox_mod, "send_email", lambda to, subj, body, **_k: sent.append((to, subj, body))
         )
         monkeypatch.setattr(
             outbox_mod, "send_telegram", lambda to, subj, body: sent.append((to, subj, body))

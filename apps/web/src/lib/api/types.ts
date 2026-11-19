@@ -245,3 +245,88 @@ export interface AuditQuery {
   limit?: number;
   offset?: number;
 }
+
+// ── Notification channels (R-1531) ─────────────────────────────────────
+/** Where a delivery setting comes from: the panel, the .env, or nowhere. */
+export type NotifySource = 'panel' | 'env' | 'none';
+
+export interface NotifyChannelsEffective {
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpFrom: string;
+  privateTargets: string[];
+}
+
+/** The panel row (null = not set there) and what is in effect; secrets only as "set". */
+export interface NotifyChannels {
+  smtpHost: string | null;
+  smtpPort: number | null;
+  smtpUser: string | null;
+  smtpFrom: string | null;
+  privateTargets: string | null;
+  passwordSet: boolean;
+  tokenSet: boolean;
+  sources: Record<string, NotifySource>;
+  unreadable: string[];
+  effective: NotifyChannelsEffective;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+/** null on a plain field falls back to .env; on a secret it keeps the stored one, '' deletes it. */
+export interface NotifyChannelsInput {
+  smtpHost?: string | null;
+  smtpPort?: number | null;
+  smtpUser?: string | null;
+  smtpPassword?: string | null;
+  smtpFrom?: string | null;
+  telegramToken?: string | null;
+  privateTargets?: string | null;
+}
+
+export type NotifyChannel = 'email' | 'telegram';
+
+export interface NotifyChannelTest {
+  channel: NotifyChannel;
+  target: string;
+}
+
+export interface NotifyTestResult {
+  channel: string;
+}
+
+// The mail template of the panel (R-1533); the logo only as whether one is stored.
+export interface NotifyTemplate {
+  subjectPrefix: string;
+  fromName: string;
+  html: string;
+  text: string;
+  logoSet: boolean;
+  logoType: string | null;
+  placeholders: string[];
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface NotifyTemplateInput {
+  subjectPrefix: string;
+  fromName: string;
+  html: string;
+  text: string;
+}
+
+export interface NotifyTemplatePreview {
+  subject: string;
+  fromName: string;
+  text: string;
+  html: string | null;
+}
+
+export interface NotifyTemplateTest {
+  target: string;
+}
+
+export interface NotifyTemplateLogo {
+  data: string;
+}

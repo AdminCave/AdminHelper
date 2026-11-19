@@ -197,13 +197,24 @@ fn tunnel_id_at(tunnels: &[TunnelMapping], visitor: &VisitorBinding) -> String {
     )
 }
 
-/// Point `connection` at a visitor on `127.0.0.1`:`local_port`; a web one gets the URL too.
+/// Point `connection` at a visitor on `127.0.0.1`:`local_port`. A web one keeps scheme, path and
+/// query of its URL and gets only host and port replaced (R-1540); without a URL the browser can
+/// read, it gets `http://127.0.0.1:<local_port>`.
 fn to_visitor(connection: &mut Connection, local_port: u16, web: bool) {
     // `localhost` may resolve to `::1` first, where frpc does not listen.
     connection.host = Some("127.0.0.1".to_string());
     connection.port = Some(local_port);
     if web {
-        connection.url = Some(format!("http://127.0.0.1:{local_port}"));
+        let kept = connection
+            .url
+            .as_deref()
+            .and_then(|raw| Url::parse(&validate_web_url(raw).ok()?).ok())
+            .and_then(|mut url| {
+                url.set_host(Some("127.0.0.1")).ok()?;
+                url.set_port(Some(local_port)).ok()?;
+                Some(url.to_string())
+            });
+        connection.url = Some(kept.unwrap_or_else(|| format!("http://127.0.0.1:{local_port}")));
     }
 }
 
@@ -505,6 +516,57 @@ mod tests {
         assert_eq!(
             resolved.connection.url.as_deref(),
             Some("http://127.0.0.1:13389")
+        );
+    }
+
+    #[test]
+    fn stcp_web_keeps_scheme_path_and_query_of_the_url() {
+        let local = |url: Option<&str>| {
+            let mut conn = connection("c1");
+            conn.url = url.map(str::to_string);
+            let resolved = resolve_connection(&conn, &[tunnel("c1", "stcp", "web")], &same_ports());
+            resolved.connection.url
+        };
+        for (case, url, want) in [
+            (
+                "https with path and query",
+                Some("https://127.0.0.1:6000/ui/?lang=de"),
+                "https://127.0.0.1:13389/ui/?lang=de",
+            ),
+            ("no URL", None, "http://127.0.0.1:13389"),
+            (
+                "localhost and another port",
+                Some("https://localhost:8006/pve"),
+                "https://127.0.0.1:13389/pve",
+            ),
+            (
+                "the scheme's default port",
+                Some("https://pve.example.test/"),
+                "https://127.0.0.1:13389/",
+            ),
+            (
+                "an unreadable URL",
+                Some("http://[::1"),
+                "http://127.0.0.1:13389",
+            ),
+            (
+                "another scheme",
+                Some("ftp://host/x"),
+                "http://127.0.0.1:13389",
+            ),
+        ] {
+            assert_eq!(local(url).as_deref(), Some(want), "{case}");
+        }
+    }
+
+    #[test]
+    fn literal_web_visitor_keeps_the_path_too() {
+        let mut web = literal(ConnectionKind::Web, "localhost", 6000);
+        web.url = Some("https://localhost:6000/pve".to_string());
+        let resolved = resolve_connection(&web, &[], &moved_ports());
+        assert_eq!(
+            resolved.connection.url.as_deref(),
+            Some("https://127.0.0.1:23005/pve")
         );
     }
 

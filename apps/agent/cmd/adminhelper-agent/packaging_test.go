@@ -14,8 +14,9 @@ import (
 )
 
 // The SMART check needs smartctl, but the agent runs without it and the report then
-// names the reason (smart_absent). So both packages carry smartmontools as a weak
-// dependency, which apt and dnf install by default, and never as a hard one.
+// names the reason (smart_absent). So both packages only suggest smartmontools: apt and
+// dnf install Recommends by default, which put smartd on every VM and container (R-1541);
+// agent-install.sh adds it on bare metal.
 
 var (
 	// A control field; a line starting with a blank continues the previous field.
@@ -25,7 +26,7 @@ var (
 )
 
 // smartmontoolsProblems lists what is wrong with how a control file (deb) or a spec
-// names smartmontools: exactly one Recommends line, and no Depends/Requires line.
+// names smartmontools: exactly one Suggests line, no Recommends and no Depends/Requires line.
 // Field names are case-insensitive in both formats.
 func smartmontoolsProblems(content string, deb bool) []string {
 	type field struct {
@@ -48,7 +49,7 @@ func smartmontoolsProblems(content string, deb bool) []string {
 		}
 	}
 	var problems []string
-	recommends := 0
+	suggests := 0
 	for _, f := range fields {
 		// Entries split at commas, alternatives and blanks, so "(>= 7)" stays apart.
 		names := strings.FieldsFunc(f.value, func(r rune) bool { return strings.ContainsRune(", \t|", r) })
@@ -56,19 +57,21 @@ func smartmontoolsProblems(content string, deb bool) []string {
 			continue
 		}
 		switch {
+		case f.name == "suggests":
+			suggests++
 		case f.name == "recommends":
-			recommends++
+			problems = append(problems, fmt.Sprintf("line %d: smartmontools in recommends, installed by default", f.line))
 		case slices.Contains(hard, f.name):
 			problems = append(problems, fmt.Sprintf("line %d: smartmontools in %s, a hard dependency", f.line, f.name))
 		}
 	}
-	if recommends != 1 {
-		problems = append(problems, fmt.Sprintf("%d Recommends lines name smartmontools, want exactly 1", recommends))
+	if suggests != 1 {
+		problems = append(problems, fmt.Sprintf("%d Suggests lines name smartmontools, want exactly 1", suggests))
 	}
 	return problems
 }
 
-func TestPackagesRecommendSmartmontools(t *testing.T) {
+func TestPackagesSuggestSmartmontools(t *testing.T) {
 	for _, path := range []string{"../../deb/DEBIAN/control", "../../rpm/adminhelper-agent.spec"} {
 		t.Run(path, func(t *testing.T) {
 			data, err := os.ReadFile(path)
@@ -89,19 +92,22 @@ func TestPackagingCheckCatchesMisplacedSmartmontools(t *testing.T) {
 		deb           bool
 		want          int // number of problems
 	}{
-		{"deb recommends", "Depends: systemd\nRecommends: smartmontools\n", true, 0},
+		{"deb suggests", "Depends: systemd\nSuggests: smartmontools\n", true, 0},
+		{"deb recommends", "Depends: systemd\nRecommends: smartmontools\n", true, 2},
+		{"deb recommends and suggests", "Recommends: smartmontools\nSuggests: smartmontools\n", true, 1},
 		{"deb missing", "Depends: systemd\n", true, 1},
 		{"deb hard dependency", "Depends: systemd, smartmontools (>= 7)\n", true, 2},
-		{"deb continuation line", "Depends: systemd,\n smartmontools\nRecommends: smartmontools\n", true, 1},
-		{"deb pre-depends", "Pre-Depends: smartmontools\nRecommends: smartmontools\n", true, 1},
-		{"deb twice", "Recommends: smartmontools\nrecommends: foo, smartmontools\n", true, 1},
-		{"deb other package", "Recommends: smartmontools-extra\n", true, 1},
-		{"rpm recommends", "Requires:       systemd\nRecommends:     smartmontools\n", false, 0},
+		{"deb continuation line", "Depends: systemd,\n smartmontools\nSuggests: smartmontools\n", true, 1},
+		{"deb pre-depends", "Pre-Depends: smartmontools\nSuggests: smartmontools\n", true, 1},
+		{"deb twice", "Suggests: smartmontools\nsuggests: foo, smartmontools\n", true, 1},
+		{"deb other package", "Suggests: smartmontools-extra\n", true, 1},
+		{"rpm suggests", "Requires:       systemd\nSuggests:       smartmontools\n", false, 0},
+		{"rpm recommends", "Requires:       systemd\nRecommends:     smartmontools\n", false, 2},
 		{"rpm hard dependency", "Requires:       smartmontools\n", false, 2},
-		{"rpm qualified requires", "Requires(post): smartmontools\nRecommends: smartmontools\n", false, 1},
+		{"rpm qualified requires", "Requires(post): smartmontools\nSuggests: smartmontools\n", false, 1},
 		// A Windows checkout (core.autocrlf) hands the test CRLF files.
-		{"deb crlf", "Depends: systemd\r\nRecommends: smartmontools\r\n", true, 0},
-		{"rpm crlf", "Requires:       systemd\r\nRecommends:     smartmontools\r\n", false, 0},
+		{"deb crlf", "Depends: systemd\r\nSuggests: smartmontools\r\n", true, 0},
+		{"rpm crlf", "Requires:       systemd\r\nSuggests:       smartmontools\r\n", false, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := smartmontoolsProblems(tc.content, tc.deb); len(got) != tc.want {

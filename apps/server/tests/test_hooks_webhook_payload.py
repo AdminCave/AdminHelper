@@ -15,6 +15,7 @@ import json
 
 import pytest
 
+from app.core.bounds import MAX_DEPTH
 from app.core.rate_limit import reset_backend_for_tests
 from app.modules.hooks import router as hooks_router
 
@@ -154,3 +155,19 @@ def test_a_nan_body_the_script_would_echo_is_a_422_not_a_500(test_client, webhoo
     # The finding itself: the echo script returns the NaN, and the answer is a 422, not a 500.
     r = test_client.post(f"/api/hooks/trigger/{webhook}", content='{"x": NaN}', headers=_JSON)
     assert r.status_code == 422, r.text
+
+
+def test_a_payload_nested_past_the_limit_is_a_422_and_the_script_does_not_run(
+    test_client, webhook, script_runs
+):
+    body = "[]"
+    for _ in range(MAX_DEPTH + 1):
+        body = '{"a": ' + body + "}"
+    r = test_client.post(f"/api/hooks/trigger/{webhook}", content=body, headers=_JSON)
+    assert [(d["loc"], d["msg"]) for d in _detail(r)] == [
+        (
+            ["body", *["a"] * (MAX_DEPTH + 1)],
+            f"Value error, must not nest deeper than {MAX_DEPTH} levels",
+        )
+    ]
+    assert script_runs == []

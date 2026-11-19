@@ -18,6 +18,7 @@ import app.check_engine as ce
 import app.core.database as database_mod
 from app.central.limits import SKIPPED_BUSY_MESSAGE, SKIPPED_SPACING_MESSAGE, RunSkipped
 from app.checkers import CheckContext, PartnerState
+from app.checkers.context import DiskRules
 from app.models import Base, MonitorCheck, MonitorState
 
 SEEN = datetime.datetime(2026, 11, 12, 6, 0, 0)
@@ -426,3 +427,64 @@ def test_a_skip_before_the_first_result_leaves_no_state(monkeypatch):
     assert (written, alerted) == ([], [])
     with factory() as db:
         assert db.get(MonitorState, "c1") is None
+
+
+def _seed_forecast(factory, *, resources=True, enabled=True, server="s1"):
+    with factory() as db:
+        _add_check(db, "f1", check_type="disk_forecast", config={"server_id": "s1"})
+        if resources:
+            _add_check(
+                db,
+                "r1",
+                server_id=server,
+                check_type="agent_resources",
+                enabled=enabled,
+                config={
+                    "ignore_mounts": ["/boot/efi"],
+                    "disk_min_free_gb": 10,
+                    "disk_overrides": {"/data": {"min_free_gb": 500, "warn": None}, "/x": {}},
+                },
+            )
+            _add_state(
+                db,
+                "r1",
+                details=json.dumps(
+                    {
+                        "disks": [
+                            {"mount": "/", "free_gb": 12.5},
+                            {"mount": "/data", "free_gb": None},
+                        ]
+                    }
+                ),
+            )
+        db.commit()
+
+
+def test_disk_forecast_gets_the_disk_rules_of_its_host(monkeypatch):
+    factory = _factory()
+    _seed_forecast(factory)
+    checker = _ContextChecker()
+    _wire(monkeypatch, factory, checker)
+
+    ce.execute_check("f1")
+
+    assert checker.contexts[0].disk_rules == DiskRules(
+        ignore_mounts=frozenset({"/boot/efi"}),
+        min_free_gb={"/data": 500.0},
+        default_min_free_gb=10.0,
+        free_gb={"/": 12.5},
+    )
+
+
+@pytest.mark.parametrize("seed", [{"resources": False}, {"enabled": False}, {"server": "s2"}])
+def test_disk_forecast_without_an_enabled_resources_check_of_its_host_has_no_rules(
+    monkeypatch, seed
+):
+    factory = _factory()
+    _seed_forecast(factory, **seed)
+    checker = _ContextChecker()
+    _wire(monkeypatch, factory, checker)
+
+    ce.execute_check("f1")
+
+    assert checker.contexts[0].disk_rules is None

@@ -69,6 +69,8 @@ type fakeHost struct {
 	recognized []uint16
 	vhosts     []probe.Vhost
 	vhostErr   error
+	shares     []probe.NetMount
+	shareErr   error
 }
 
 func stubHost(t *testing.T) *fakeHost {
@@ -84,10 +86,10 @@ func stubHost(t *testing.T) *fakeHost {
 	}
 	oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening :=
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening
-	oldWindows, oldServices, oldVhosts := windowsHost, listServices, webVhosts
+	oldWindows, oldServices, oldVhosts, oldShares := windowsHost, listServices, webVhosts, netMounts
 	oldFreeBSD, oldRCUnits := freebsdHost, listRCUnits
 	t.Cleanup(func() {
-		webVhosts = oldVhosts
+		webVhosts, netMounts = oldVhosts, oldShares
 		linuxHost, markerHost, runTool, statPath, listSockets, processName, recognizePort, cgroupsOf, containerListening =
 			oldLinux, oldMarker, oldRun, oldStat, oldList, oldName, oldRecognize, oldCgroups, oldListening
 		windowsHost, listServices = oldWindows, oldServices
@@ -126,6 +128,7 @@ func stubHost(t *testing.T) *fakeHost {
 	}
 	listSockets = func(context.Context) ([]probe.Listener, error) { return h.listeners, h.listenErr }
 	webVhosts = func(context.Context) ([]probe.Vhost, error) { return h.vhosts, h.vhostErr }
+	netMounts = func() ([]probe.NetMount, error) { return h.shares, h.shareErr }
 	processName = func(_ context.Context, pid int32) string { return h.processes[pid] }
 	cgroupsOf = func(pid int32) probe.Cgroups {
 		h.mu.Lock()
@@ -268,13 +271,18 @@ var wholeMarkers = []probe.Marker{
 	{ID: "pkgonly", Packages: []string{"foo"}},
 }
 
+// wholeSections is what Complete says of a discovery that read every section whole.
+func wholeSections() map[string]bool {
+	return map[string]bool{"units": true, "containers": true, "sockets": true, "markers": true, "vhosts": true, "shares": true, "ports": true}
+}
+
 func TestRunDiscoversTheHost(t *testing.T) {
 	h := wholeHost(t)
 
 	inv := Run(context.Background(), wholeMarkers)
 
-	if inv.Partial {
-		t.Error("partial = true, want a whole discovery")
+	if inv.Partial || !reflect.DeepEqual(inv.Complete, wholeSections()) {
+		t.Errorf("partial %v, complete %v: want a whole discovery", inv.Partial, inv.Complete)
 	}
 	if inv.TS == 0 || inv.DurationMS < 0 {
 		t.Errorf("ts %d, duration_ms %d: want the start and the time it took", inv.TS, inv.DurationMS)
@@ -431,7 +439,7 @@ func TestTheInventoryHasTheContractsShape(t *testing.T) {
 		got  []string
 		want string
 	}{
-		{"inventory", keys(t, data), "containers duration_ms markers partial ports sockets ts units vhosts"},
+		{"inventory", keys(t, data), "complete containers duration_ms markers partial ports shares sockets ts units vhosts"},
 		{"unit", keys(t, inv.Units[0]), "name state sub"},
 		{"socket", keys(t, inv.Sockets[0]), "addr container port process proto unit"},
 		{"container", keys(t, inv.Containers[2]), "compose_project compose_service health id image listening mounts name ports state"},
@@ -595,25 +603,26 @@ func TestRCScriptsCutShortOrNotListedMakeTheUnitsPartial(t *testing.T) {
 
 func TestAPartTheDiscoveryCouldNotReadMakesItPartial(t *testing.T) {
 	cases := []struct {
-		name  string
-		spoil func(t *testing.T, h *fakeHost)
-		check func(t *testing.T, inv Inventory)
+		name       string
+		incomplete []string
+		spoil      func(t *testing.T, h *fakeHost)
+		check      func(t *testing.T, inv Inventory)
 	}{
-		{"systemctl fails", func(_ *testing.T, h *fakeHost) {
+		{"systemctl fails", []string{"units"}, func(_ *testing.T, h *fakeHost) {
 			h.answer("systemctl", "", errors.New("Failed to connect to bus"))
 		}, func(t *testing.T, inv Inventory) {
 			if len(inv.Units) != 0 {
 				t.Errorf("units = %+v, want none", inv.Units)
 			}
 		}},
-		{"docker daemon down", func(t *testing.T, h *fakeHost) {
+		{"docker daemon down", []string{"containers"}, func(t *testing.T, h *fakeHost) {
 			h.answer("docker", "", exitError(t, 1))
 		}, func(t *testing.T, inv Inventory) {
 			if len(inv.Containers) != 0 {
 				t.Errorf("containers = %+v, want none", inv.Containers)
 			}
 		}},
-		{"a container went away before inspect", func(t *testing.T, h *fakeHost) {
+		{"a container went away before inspect", []string{"containers"}, func(t *testing.T, h *fakeHost) {
 			gone := exitError(t, 1)
 			h.tools["docker"] = func(args []string) ([]byte, error) {
 				if args[0] == "ps" {
@@ -626,7 +635,7 @@ func TestAPartTheDiscoveryCouldNotReadMakesItPartial(t *testing.T) {
 				t.Errorf("containers = %+v, want the one inspect still printed", inv.Containers)
 			}
 		}},
-		{"inspect answers no JSON", func(_ *testing.T, h *fakeHost) {
+		{"inspect answers no JSON", []string{"containers"}, func(_ *testing.T, h *fakeHost) {
 			h.tools["docker"] = func(args []string) ([]byte, error) {
 				if args[0] == "ps" {
 					return []byte(idWeb + "\n"), nil
@@ -638,14 +647,14 @@ func TestAPartTheDiscoveryCouldNotReadMakesItPartial(t *testing.T) {
 				t.Errorf("containers = %+v, want none", inv.Containers)
 			}
 		}},
-		{"the listeners cannot be read", func(_ *testing.T, h *fakeHost) {
+		{"the listeners cannot be read", []string{"sockets", "ports"}, func(_ *testing.T, h *fakeHost) {
 			h.listenErr = errors.New("permission denied")
 		}, func(t *testing.T, inv Inventory) {
 			if len(inv.Sockets) != 0 || len(inv.Ports) != 0 {
 				t.Errorf("sockets %+v, ports %+v: want none", inv.Sockets, inv.Ports)
 			}
 		}},
-		{"dpkg-query fails", func(t *testing.T, h *fakeHost) {
+		{"dpkg-query fails", []string{"markers"}, func(t *testing.T, h *fakeHost) {
 			h.answer("dpkg-query", "", exitError(t, 2))
 		}, func(t *testing.T, inv Inventory) {
 			// nginx is there by its path; the others are undecided.
@@ -653,7 +662,7 @@ func TestAPartTheDiscoveryCouldNotReadMakesItPartial(t *testing.T) {
 				t.Errorf("markers = %v, want nginx alone", inv.Markers)
 			}
 		}},
-		{"rpm runs out of time", func(_ *testing.T, h *fakeHost) {
+		{"rpm runs out of time", []string{"markers"}, func(_ *testing.T, h *fakeHost) {
 			delete(h.tools, "dpkg-query")
 			h.answer("rpm", "", context.DeadlineExceeded)
 		}, func(t *testing.T, inv Inventory) {
@@ -671,6 +680,14 @@ func TestAPartTheDiscoveryCouldNotReadMakesItPartial(t *testing.T) {
 
 			if !inv.Partial {
 				t.Error("partial = false, want a discovery that could not read a part partial")
+			}
+			// Only the spoiled sections are incomplete: the others let their findings go.
+			want := wholeSections()
+			for _, section := range c.incomplete {
+				want[section] = false
+			}
+			if !reflect.DeepEqual(inv.Complete, want) {
+				t.Errorf("complete = %v, want %v", inv.Complete, want)
 			}
 			c.check(t, inv)
 		})
@@ -728,6 +745,10 @@ func TestTheEndOfTheFrameMakesTheDiscoveryPartial(t *testing.T) {
 
 	if !inv.Partial {
 		t.Error("partial = false, want a discovery the frame cut short partial")
+	}
+	// The sections whole before the frame ended stay complete.
+	if inv.Complete["ports"] || !inv.Complete["units"] {
+		t.Errorf("complete = %v, want the ports incomplete and the units whole", inv.Complete)
 	}
 	if took := time.Since(began); took > 5*time.Second {
 		t.Errorf("Run took %v, want it to end with its frame", took)
@@ -817,6 +838,9 @@ func TestTheListsAreCutAtTheContractsCaps(t *testing.T) {
 		inv := Run(context.Background(), nil)
 		if !inv.Partial || len(inv.Units) != maxUnits {
 			t.Errorf("partial %v, %d units: want %d, partial", inv.Partial, len(inv.Units), maxUnits)
+		}
+		if inv.Complete["units"] || !inv.Complete["containers"] {
+			t.Errorf("complete = %v, want the units alone incomplete", inv.Complete)
 		}
 	})
 	t.Run("containers", func(t *testing.T) {
@@ -1059,5 +1083,53 @@ func TestNoVhostsAreReadOffLinux(t *testing.T) {
 	inv := Run(context.Background(), nil)
 	if inv.Vhosts == nil || len(inv.Vhosts) != 0 {
 		t.Errorf("vhosts = %#v, want an empty list", inv.Vhosts)
+	}
+}
+
+func TestSharesGoIntoTheInventoryAsMountPointAndType(t *testing.T) {
+	h := stubHost(t)
+	h.shares = []probe.NetMount{{Mountpoint: "/mnt/pve/backup", FSType: "nfs4"}, {Mountpoint: "/srv/team", FSType: "cifs"}}
+	inv := Run(context.Background(), nil)
+	want := []Share{{"/mnt/pve/backup", "nfs4"}, {"/srv/team", "cifs"}}
+	if !reflect.DeepEqual(inv.Shares, want) || !inv.Complete["shares"] {
+		t.Errorf("shares = %+v, complete %v; want %+v and whole", inv.Shares, inv.Complete["shares"], want)
+	}
+	data, err := json.Marshal(inv.Shares[0])
+	if err != nil || string(data) != `{"mountpoint":"/mnt/pve/backup","fstype":"nfs4"}` {
+		t.Errorf("share JSON = %s, %v", data, err)
+	}
+}
+
+func TestSharesCutOrUnreadMakeTheirSectionPartialAlone(t *testing.T) {
+	h := stubHost(t)
+	for i := range maxShares + 1 {
+		h.shares = append(h.shares, probe.NetMount{Mountpoint: fmt.Sprintf("/mnt/s%d", i), FSType: "nfs"})
+	}
+	h.shares = append(h.shares, probe.NetMount{Mountpoint: "/" + strings.Repeat("a", maxPathLen), FSType: "nfs"})
+	inv := Run(context.Background(), nil)
+	if len(inv.Shares) != maxShares || inv.Complete["shares"] || !inv.Partial || !inv.Complete["vhosts"] {
+		t.Errorf("shares %d, complete %v; want %d, the shares section alone partial", len(inv.Shares), inv.Complete, maxShares)
+	}
+
+	h.shares = []probe.NetMount{{Mountpoint: "/" + strings.Repeat("a", maxPathLen), FSType: "nfs"}}
+	inv = Run(context.Background(), nil)
+	if len(inv.Shares) != 0 || !inv.Complete["shares"] {
+		t.Errorf("shares %+v, complete %v: a mount point too long is left out, the list stays whole", inv.Shares, inv.Complete["shares"])
+	}
+
+	h.shares, h.shareErr = nil, errors.New("no mountinfo")
+	inv = Run(context.Background(), nil)
+	if inv.Shares == nil || len(inv.Shares) != 0 || inv.Complete["shares"] {
+		t.Errorf("shares %#v, complete %v; want an empty list, partial", inv.Shares, inv.Complete["shares"])
+	}
+}
+
+func TestNoSharesAreReadOffLinux(t *testing.T) {
+	h := stubHost(t)
+	linuxHost, markerHost = false, false
+	h.shares = []probe.NetMount{{Mountpoint: "/mnt/x", FSType: "nfs"}}
+	inv := Run(context.Background(), nil)
+	if inv.Shares == nil || len(inv.Shares) != 0 || !inv.Complete["shares"] {
+		t.Errorf("shares = %#v, complete %v; want an empty, whole list", inv.Shares, inv.Complete["shares"])
 	}
 }

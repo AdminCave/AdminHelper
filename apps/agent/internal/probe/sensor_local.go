@@ -122,6 +122,7 @@ func unitSensor(ctx context.Context, p Probe, _ string) (map[string]any, error) 
 
 // proc is what the process sensor reads of one process.
 type proc struct {
+	pid     int32
 	rss     uint64
 	started time.Time
 }
@@ -157,8 +158,8 @@ func processSensor(ctx context.Context, p Probe, _ string) (map[string]any, erro
 	return values, nil
 }
 
-// processesNamed returns the processes of this host whose name is name (processKey). A process that
-// ends while it is read is left out.
+// processesNamed returns the processes of this host named name (processKey, by namedAs). A process
+// that ends while it is read is left out.
 func processesNamed(ctx context.Context, name string) ([]proc, error) {
 	all, err := process.ProcessesWithContext(ctx)
 	if err != nil {
@@ -168,7 +169,7 @@ func processesNamed(ctx context.Context, name string) ([]proc, error) {
 	var procs []proc
 	for _, p := range all {
 		n, err := p.NameWithContext(ctx)
-		if err != nil || processKey(n) != want {
+		if err != nil || !namedAs(ctx, p.Pid, n, want) {
 			continue
 		}
 		mem, err := p.MemoryInfoWithContext(ctx)
@@ -179,9 +180,19 @@ func processesNamed(ctx context.Context, name string) ([]proc, error) {
 		if err != nil {
 			continue
 		}
-		procs = append(procs, proc{rss: mem.RSS, started: time.UnixMilli(created)})
+		procs = append(procs, proc{pid: p.Pid, rss: mem.RSS, started: time.UnixMilli(created)})
 	}
 	return procs, ctx.Err()
+}
+
+// namedAs says whether the process pid, whose name is name, is named want (processKey) as ownedBy
+// sees it: one of multicallBinaries by the applet it runs, one whose applet cannot be told by none.
+func namedAs(ctx context.Context, pid int32, name, want string) bool {
+	if !isMulticall(processKey(name)) {
+		return processKey(name) == want
+	}
+	applet, err := programName(ctx, pid)
+	return err == nil && processKey(applet) == want
 }
 
 // socketSensor says whether the target listens on a TCP port, and on which (resolve).
@@ -375,7 +386,7 @@ func dockerdRuns(ctx context.Context) bool {
 		return true
 	}
 	for _, p := range all {
-		if n, err := p.NameWithContext(ctx); err == nil && processKey(n) == "dockerd" {
+		if n, err := p.NameWithContext(ctx); err == nil && namedAs(ctx, p.Pid, n, "dockerd") {
 			return true
 		}
 	}
