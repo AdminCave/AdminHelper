@@ -30,8 +30,10 @@ Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py tests/test_check_configs.py
 Doku: → T6
 
-### T3 — R-1551/R-1574/R-1591: Agent — Doc-Kommentar, SMART-Reihenfolge, Freigaben-Kommentar  [ ]
+### T3 — R-1551/R-1574/R-1591: Agent — Doc-Kommentar, SMART-Reihenfolge, Freigaben-Kommentar  [x]
 Komponente: agent · Dateien: apps/agent/internal/discovery/discovery.go, apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/probe/net_share.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @19361e8f5 2026-11-19T23:42:36+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T3.verdict.json)
 Beweis: reviewer branch (Nits), 2026-11-18
 Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Änderung: Doc-Kommentar von `Run` auf höchstens 100 Zeichen je Zeile umbrechen; die SMART-Platten nach `Device` sortieren, bevor `Collect` sie liefert (Test erst rot: mehrere Platten in umgekehrter Scan-Reihenfolge); der Kommentar an `netShareUsage` behauptet nicht mehr, dass der Timeout ein hängendes `statfs` beendet, sondern nennt, was belegt ist (der Agent wartet nicht länger als `shareTimeout`, `hung=true`).

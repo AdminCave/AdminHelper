@@ -192,9 +192,9 @@ type Port struct {
 }
 
 // Run discovers this host within ctx, in a frame of at most frame: the units, the containers, the
-// listening sockets, the markers, the vhosts, then the protocols of the ports beyond loopback. A part that a tool
-// failed or that the time cut short leaves its section incomplete and the inventory partial; a tool that is not installed does
-// not, its part is empty.
+// listening sockets, the markers, the vhosts, then the protocols of the ports beyond loopback.
+// A part that a tool failed or that the time cut short leaves its section incomplete and the
+// inventory partial; a tool that is not installed does not, its part is empty.
 func Run(ctx context.Context, markers []probe.Marker) Inventory {
 	began := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, frame)
