@@ -1,5 +1,5 @@
 # Nachlese Provisionieren — Task-Ledger
-Status: aktiv · Branch: feature/kern-provision-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-provision-2 · Review: pro Task
 Spec: docs/features/kern-provision-2.md (Roadmap R-1629, R-1612, R-1613, R-1614, R-1628)
 Heavy: linux-full — Server-API (Katalog, Fortschritt) und Desktop-Provisionieren
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -76,8 +76,10 @@ Abhängt von: T2
 - R-1612 Variante A (Wertetyp `tokenStdin`, Pipe): Token nie im argv; ein älterer Desktop baut den Windows-Automationsbefehl dann nicht (dokumentiertes Verhalten für Unbekanntes).
 - R-1612 oasdiff: `tokenStdin` ist ein neuer Antwort-Enum-Wert (1 ERR); Kevin 2026-11-19: eine Ausnahmezeile als eigene Task (T8).
 
-### T9 — R-1612, R-1628: API-Referenz nachziehen (Abschlussprüfung)  [ ]
+### T9 — R-1612, R-1628: API-Referenz nachziehen (Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/features/kern-provision-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @29e17e94e 2026-11-19T19:45:58+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Katalog: Wertname `tokenStdin` und was ein Client mit unbekanntem Wertnamen tut; Fortschritt: `certificate` nur aus einer nicht widerrufenen Linie (DE+EN). Spec-Zeile zu R-1614 an den Code angeglichen (Katalogwert in Klammern).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html

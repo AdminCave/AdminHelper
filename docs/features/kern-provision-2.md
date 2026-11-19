@@ -50,7 +50,7 @@ Windows-Box im Pool); Linux-Gegenstück ist der dokumentierte Weg von `agent-ins
 ## Trade-offs & Alternativen
 - R-1612: (A) neuer Wertetyp `tokenStdin` mit Pipe (empfohlen: Token nie im argv); (B) Automationsmodus für Windows
   streichen (weniger Funktion); (C) `$env:`-Variable (steht im Umfeld des Kindprozesses, nicht besser als stdin).
-- R-1614 Ersatzbeschriftung: generischer Text („unbekannt“) statt Schlüssel, der Rohwert bleibt nicht sichtbar.
+- R-1614 Ersatzbeschriftung: generischer Text („unbekannt“) statt Übersetzungsschlüssel; der Katalogwert steht dahinter in Klammern (nur Anzeige, Svelte escaped ihn).
 
 ## Risiken & Rollback
 Gering; jede Task einzeln per Revert zurücknehmbar. Desktop/Server-Gleichlauf: neuer Server + alter Desktop verliert
