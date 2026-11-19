@@ -1,9 +1,6 @@
-# kern-doku-3: Klassenkennung in zwei abgeschlossenen Ledgern entfernen
-
-Roadmap: R-1589 (REF). Triage Kevin 2026-11-18: neutralisieren, aktueller Stand; die Git-Historie bleibt.
-
-
 # kern-doku-4 — Klassenkennung aus weiteren öffentlichen Plan-Dateien
+
+Roadmap: R-1618 (Nachlese R-1589). Triage wie R-1589: neutralisieren, aktueller Stand; die Git-Historie bleibt.
 
 ## Problem / Motivation
 
