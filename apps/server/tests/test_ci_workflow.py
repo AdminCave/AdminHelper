@@ -390,6 +390,9 @@ def test_the_windows_job_proves_frpc_runs_as_a_child_of_the_service():
         '"ADMINHELPER_URL=https://127.0.0.1:8766"',
         # The child of the service process, not any frpc.exe on the runner.
         "$_.ParentProcessId -eq $Parent",
+        # A function returns one process unrolled; .Count only counts it inside @() at the caller.
+        "$kid = @(Get-FrpcOf $svcPid)",
+        "$now = @(Get-FrpcOf $svcPid)",
         # The same process three times: a frpc in the restart backoff does not pass.
         "$now[0].ProcessId -ne $frpcPid",
         'Restart-Service AdminHelper-Agent\nAssert-FrpcChild "after the restart"',

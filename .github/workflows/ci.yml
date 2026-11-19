@@ -903,8 +903,10 @@ jobs:
             "ADMINHELPER_URL=https://127.0.0.1:8766", "API_KEY=ci-key", "SERVER_ID=ci"
           )
           function Get-ServicePid { (Get-CimInstance Win32_Service -Filter "Name='AdminHelper-Agent'").ProcessId }
+          # A function's output unrolls a one-element array into the bare CimInstance, whose .Count
+          # is empty in Windows PowerShell 5.1: the callers wrap it in @() themselves.
           function Get-FrpcOf([int]$Parent) {
-            @(Get-CimInstance Win32_Process -Filter "Name='frpc.exe'" | Where-Object { $_.ParentProcessId -eq $Parent })
+            Get-CimInstance Win32_Process -Filter "Name='frpc.exe'" | Where-Object { $_.ParentProcessId -eq $Parent }
           }
           function Show-Log { Get-Content -Tail 40 (Join-Path $data "logs\agent.log") -ErrorAction SilentlyContinue }
           # A frpc that ends and comes back in the supervisor's backoff would pass a single look:
@@ -912,12 +914,12 @@ jobs:
           function Assert-FrpcChild([string]$When) {
             $svcPid = Get-ServicePid
             $kid = @()
-            foreach ($i in 1..60) { $kid = Get-FrpcOf $svcPid; if ($kid.Count -eq 1) { break }; Start-Sleep 2 }
+            foreach ($i in 1..60) { $kid = @(Get-FrpcOf $svcPid); if ($kid.Count -eq 1) { break }; Start-Sleep 2 }
             if ($kid.Count -ne 1) { Show-Log; throw "${When}: $($kid.Count) frpc.exe under the service (pid $svcPid), want 1" }
             $frpcPid = $kid[0].ProcessId
             foreach ($i in 1..3) {
               Start-Sleep 5
-              $now = Get-FrpcOf $svcPid
+              $now = @(Get-FrpcOf $svcPid)
               if ($now.Count -ne 1 -or $now[0].ProcessId -ne $frpcPid) { Show-Log; throw "${When}: frpc.exe $frpcPid did not stay up" }
             }
             Write-Host "${When}: frpc.exe $frpcPid runs under the service $svcPid"
