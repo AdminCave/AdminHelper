@@ -3,10 +3,13 @@ set -e
 
 # --- Drop to the non-root app user -----------------------------------------
 # Start as root only to fix ownership of the data volume (existing deployments
-# may hold root-owned files), then re-exec unprivileged via gosu.
+# may hold root-owned files), then re-exec unprivileged via setpriv.
 if [ "$(id -u)" = "0" ]; then
     chown -R app:app /app/data
-    exec gosu app:app sh "$0" "$@"
+    # setpriv keeps the environment, HOME of root included; app's home is /app. It gives up
+    # the capabilities only with its own exec, so env, already without them, execs sh.
+    export HOME=/app
+    exec setpriv --reuid=app --regid=app --init-groups env sh "$0" "$@"
 fi
 
 # --- Postgres-Wait + Alembic-Migration -------------------------------------

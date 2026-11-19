@@ -2199,6 +2199,33 @@
       },
       "FrpTunnelCreate": {
         "properties": {
+          "auto_connection_path": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Path"
+          },
+          "auto_connection_scheme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "http",
+                  "https"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Scheme"
+          },
           "auto_connection_username": {
             "anyOf": [
               {
@@ -2506,6 +2533,33 @@
       },
       "FrpTunnelUpdate": {
         "properties": {
+          "auto_connection_path": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Path"
+          },
+          "auto_connection_scheme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "http",
+                  "https"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Scheme"
+          },
           "auto_connection_username": {
             "anyOf": [
               {

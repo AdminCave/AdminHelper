@@ -199,6 +199,41 @@ func TestAllowlistOOMJournal(t *testing.T) {
 	}
 }
 
+// TestAllowlistServiceLogJournal: the error lines of a failed unit read its last ten entries as bare
+// messages. The traps bend it into another output, another count or the whole journal, a unit name
+// that is an option or a match, a follow, another file, or a second unit.
+func TestAllowlistServiceLogJournal(t *testing.T) {
+	call := func(unit string) []string {
+		return []string{"--no-pager", "--quiet", "--output=cat", "--unit=" + unit, "--lines=10"}
+	}
+	for _, unit := range []string{"nginx.service", "getty@tty1.service", "systemd-fsck@dev-disk-by\\x2duuid.service"} {
+		if !Allowed("journalctl", call(unit)) {
+			t.Errorf("refused: %q", call(unit))
+		}
+	}
+	for _, args := range [][]string{
+		{"--no-pager", "--quiet", "--output=json", "--unit=nginx.service", "--lines=10"},
+		{"--no-pager", "--quiet", "--output=verbose", "--unit=nginx.service", "--lines=10"},
+		{"--no-pager", "--quiet", "--output=cat", "--unit=nginx.service", "--lines=all"},
+		{"--no-pager", "--quiet", "--output=cat", "--unit=nginx.service", "--lines=100000"},
+		{"--no-pager", "--quiet", "--output=cat", "--unit=nginx.service"},
+		{"--no-pager", "--quiet", "--output=cat", "--lines=10"},
+		call("-a"),
+		call("--help"),
+		call("nginx.service _COMM=sshd"),
+		call("*"),
+		call(""),
+		append(call("nginx.service"), "--follow"),
+		append(call("nginx.service"), "--file=/etc/shadow"),
+		append(call("nginx.service"), "--unit=sshd.service"),
+		append(call("nginx.service"), "--", "_COMM=sshd"),
+	} {
+		if Allowed("journalctl", args) {
+			t.Errorf("allowed: journalctl %q", args)
+		}
+	}
+}
+
 // TestAllowlistProxmoxBackupDetails: the backup details read the vzdump jobs, the node's last failed
 // vzdump task and that task's log, by a UPID in the form PVE writes it. The traps bend them into
 // another task type or path, a UPID that leaves its path segment, another limit or filter, a single
@@ -1077,6 +1112,35 @@ func TestAllowlistPackageState(t *testing.T) {
 		{"dpkg", "--audit", "nginx"},
 		{"apt-mark", "hold", "nginx"},
 		{"apt-mark", "unhold", "nginx"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistNetShareUsage: net_share_usage asks statfs of a mount point alone. The traps read a file,
+// climb out with "..", take an option for a path, or ask another format.
+func TestAllowlistNetShareUsage(t *testing.T) {
+	for _, call := range [][]string{
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/srv/team share"},
+		{"/usr/bin/stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/smb_3,x@y+z"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/../etc"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/.hidden"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "mnt/pve"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/ x"},
+		{"stat", "-f", "-c", "%S %b %f %a", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%n", "--", "/mnt/pve/backup"},
+		{"stat", "-c", "%S %b %f %a", "--", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/a", "/mnt/b"},
+		{"stat", "-L", "/etc/shadow"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)

@@ -186,11 +186,29 @@ def test_the_status_metric_writes_info_as_4(status, value):
     assert lines[0].split(" ")[1] == f"value={value}i"
 
 
+def _check_with_state(db, check_id: str, status: str, enabled: bool = True) -> None:
+    db.add(
+        MonitorCheck(id=check_id, name=check_id, check_type="probe", config="{}", enabled=enabled)
+    )
+    db.add(MonitorState(check_id=check_id, status=status))
+
+
 def test_the_summary_counts_info_apart(client_db):
     client, factory = client_db
     with factory() as db:
         for i, st in enumerate(["ok", "info", "info", "warning"]):
-            db.add(MonitorState(check_id=f"c{i}", status=st))
+            _check_with_state(db, f"c{i}", st)
         db.commit()
     body = client.get("/status/summary").json()
     assert (body["total"], body["ok"], body["info"], body["warning"]) == (4, 1, 2, 1)
+
+
+def test_the_summary_counts_only_enabled_checks(client_db):
+    # A disabled check keeps its last state frozen; it must not stay on the dashboard as red.
+    client, factory = client_db
+    with factory() as db:
+        _check_with_state(db, "on", "ok")
+        _check_with_state(db, "off", "critical", enabled=False)
+        db.commit()
+    body = client.get("/status/summary").json()
+    assert (body["total"], body["ok"], body["critical"]) == (1, 1, 0)

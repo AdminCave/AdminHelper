@@ -57,6 +57,9 @@ var classes = map[string]string{
 	// An absolute directory, meant for the agent's state directory (config.MonitorDir) but not bound to
 	// it; no segment begins with '.', so no "..".
 	"statedir": `(?:/[A-Za-z0-9_,-][A-Za-z0-9_.,-]*)+`,
+	// The mount point of a network share (probe's validMountpoint): absolute, no segment begins with
+	// '.', so no "..", a blank only inside a segment.
+	"mountpoint": `(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_., @+-]*)+`,
 	// A file or directory inside a container (docker cp): no segment begins with '.', so no "..".
 	"ctrpath": `(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_.,@+-]*)+`,
 	// A journal priority, 0 emerg … 7 debug.
@@ -123,6 +126,10 @@ func journalVariants() [][]string {
 // messages of this boot, err and above, of the last seconds. Its own entry, apart from the log
 // sensor's calls: --dmesg and the priority are fixed.
 var oomJournalCall = []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-<seconds>s"}
+
+// The journalctl call of the error lines of a failed unit (monitor, readServiceLog): its last ten
+// entries, every priority, each bare message. Its own entry as well: unit and count are fixed.
+var serviceLogJournalCall = []string{"--no-pager", "--quiet", "--output=cat", "--unit=<unit>", "--lines=10"}
 
 // pilerCall is the one query of piler_status (probe, app_mail.go): the arrival of the newest archived
 // mail, over the local socket and without option files (the password comes in the environment). Kept
@@ -231,7 +238,14 @@ var commands = map[string][][]string{
 		{"--scan", "--json=c"},
 		{"--all", "--json=c", "<device>"},
 		{"--all", "--json=c", "-d", "<devtype>", "<device>"},
+		// An ATA or SCSI disk without waking it (querySmartDevice): in STANDBY or SLEEP smartctl ends
+		// before any check with exit status 3 (smartctl(8), -n POWERMODE,STATUS).
+		{"--all", "--json=c", "-n", "standby,3", "<device>"},
+		{"--all", "--json=c", "-n", "standby,3", "-d", "<devtype>", "<device>"},
 	},
+	// How full a network share is (net_share_usage): statfs of its mount point in a process of its own,
+	// which the timeout kills when the share hangs (R-1267).
+	"stat": {{"-f", "-c", "%S %b %f %a", "--", "<mountpoint>"}},
 	"systemctl": {
 		{"list-units", "--type=service", "--all", "--no-legend", "--plain", "--no-pager"},
 		{"list-units", "--type=service", "--all", "--full", "--no-legend", "--plain", "--no-pager"},
@@ -252,7 +266,7 @@ var commands = map[string][][]string{
 		// Where a backup unit keeps its repository (probe, app_repo.go): its environment, read in the agent.
 		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},
-	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
+	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall, serviceLogJournalCall}),
 	"mariadb":    append(slices.Clone(mariadbCalls), pilerCall),
 	"mysql":      append(slices.Clone(mariadbCalls), pilerCall),
 	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps;

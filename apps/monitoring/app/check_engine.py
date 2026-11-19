@@ -21,6 +21,7 @@ from app.alerter import alert_status, process_alert, resolve_notification
 from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import CheckContext, PartnerState, get_checker
+from app.checkers.context import DiskRules
 from app.core import database
 from app.core.bounds import storable
 from app.core.time import utcnow_naive
@@ -366,7 +367,62 @@ def _load_context(db: Session, check: MonitorCheck, config: dict) -> CheckContex
                 details=_json_object(pair_state.details) if pair_state else None,
                 last_check=pair_state.last_check if pair_state else None,
             )
-    return CheckContext(prev_details=prev_details, partner=partner)
+    disk_rules = None
+    if check.check_type == "disk_forecast":
+        disk_rules = _load_disk_rules(db, config.get("server_id"))
+    return CheckContext(prev_details=prev_details, partner=partner, disk_rules=disk_rules)
+
+
+def _number(value) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _load_disk_rules(db: Session, server_id) -> DiskRules | None:
+    """The disk rules of `server_id`'s enabled agent_resources check (the lowest id, as
+    history.server_thresholds picks it) and the free GB per mount from its last result.
+    None without such a check: the forecast then rates every mount as before."""
+    if not isinstance(server_id, str) or not server_id:
+        return None
+    resources = (
+        db.query(MonitorCheck)
+        .filter(
+            MonitorCheck.server_id == server_id,
+            MonitorCheck.check_type == "agent_resources",
+            MonitorCheck.enabled == True,  # noqa: E712
+        )
+        .order_by(MonitorCheck.id)
+        .first()
+    )
+    if resources is None:
+        return None
+    config = _json_object(resources.config) or {}
+    ignore = config.get("ignore_mounts")
+    overrides = config.get("disk_overrides")
+    default_min_free = _number(config.get("disk_min_free_gb"))
+    min_free = {}
+    for mount, override in (overrides if isinstance(overrides, dict) else {}).items():
+        value = _number(override.get("min_free_gb")) if isinstance(override, dict) else None
+        if value is not None:
+            min_free[mount] = value
+    row = db.query(MonitorState.details).filter(MonitorState.check_id == resources.id).first()
+    disks = (_json_object(row[0]) or {}).get("disks") if row else None
+    free_gb = {}
+    for disk in disks if isinstance(disks, list) else []:
+        if isinstance(disk, dict) and isinstance(disk.get("mount"), str):
+            value = _number(disk.get("free_gb"))
+            if value is not None:
+                free_gb[disk["mount"]] = value
+    return DiskRules(
+        ignore_mounts=frozenset(m for m in ignore if isinstance(m, str))
+        if isinstance(ignore, list)
+        else frozenset(),
+        min_free_gb=min_free,
+        # The default of AgentResourcesConfig.disk_min_free_gb.
+        default_min_free_gb=20.0 if default_min_free is None else default_min_free,
+        free_gb=free_gb,
+    )
 
 
 def with_skip_note(message: str | None, note: str) -> str:

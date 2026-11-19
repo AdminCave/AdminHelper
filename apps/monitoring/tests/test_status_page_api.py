@@ -305,7 +305,7 @@ class TestSummary:
             _add(db, "c", "http", None, server="s", interval="1h")
             # A value the scheduler does not take never runs: it sets no interval.
             _add(db, "d", "http", "ok", server="s", interval="2m", last_check=_NOW)
-            # Disabled: neither its newer result nor its shorter interval count.
+            # Disabled: neither its newer result, its shorter interval nor its status count.
             _add(
                 db,
                 "e",
@@ -324,7 +324,7 @@ class TestSummary:
         body = r.json()
         assert body["lastResultAt"] == "2026-10-20T13:00:00Z"
         assert body["minIntervalS"] == 300
-        assert (body["total"], body["critical"]) == (4, 1)
+        assert (body["total"], body["critical"]) == (3, 0)
 
     def test_only_disabled_checks(self, client_db):
         client, factory = client_db

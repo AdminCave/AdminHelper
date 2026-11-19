@@ -752,8 +752,8 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 ### Go Toolchain (Agent)
 
 ```bash
-# Go 1.27.3 oder neuer installieren (https://go.dev/dl/). go.mod verlangt 1.27 (toolchain
-# go1.27.3; ein aelteres lokales Go laedt sie per GOTOOLCHAIN=auto nach), CI und Release bauen
+# Go 1.27.4 oder neuer installieren (https://go.dev/dl/). go.mod verlangt 1.27 (toolchain
+# go1.27.4; ein aelteres lokales Go laedt sie per GOTOOLCHAIN=auto nach), CI und Release bauen
 # mit dem neuesten 1.27.x: ein aelterer Patch traegt stdlib-Luecken, die erst der neueste
 # schliesst. Das Debian-Paket golang-go ist dafuer zu alt (trixie: 1.24), also manuell
 # (Version von https://go.dev/dl/ einsetzen):
@@ -972,6 +972,22 @@ touch apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
 ```
 
 Diese Binary wird im CI/CD durch die echte frpc-Binary ersetzt.
+
+### Mockup der Monitoring-Neuordnung (Desktop-UI)
+
+Zur vorgeschlagenen Neuordnung des Monitorings ([ADR 0004](docs/adr/0004-monitoring-neuordnung.md)) gibt es ein
+klickbares Mockup mit fiktiven Daten. Es braucht weder Tauri noch Server oder Monitoring-Dienst, der Vite-Dev-Server
+reicht:
+
+```bash
+npm --prefix apps/desktop/ui run dev
+# dann im Browser: http://localhost:1420/mockup.html
+```
+
+Einstieg ist `apps/desktop/ui/mockup.html`, der Code liegt unter `apps/desktop/ui/src/mockups/monitoring-neu/`.
+`vite build` baut nur `index.html`, das Mockup kommt also nicht in den Desktop-Build;
+`src/mockups/monitoring-neu/isolation.test.ts` haelt das fest (keine weitere Build-Eingabe, kein Import aus dem
+Produkt).
 
 ### Go Agent
 

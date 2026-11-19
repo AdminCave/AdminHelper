@@ -517,6 +517,43 @@ def test_past_the_deadline_no_address_is_tried(rule, monkeypatch):
     assert sent == []
 
 
+def test_a_deadline_of_the_caller_before_the_own_one_ends_the_request_sooner(
+    rule, https_server, monkeypatch
+):
+    monkeypatch.setattr(fetch, "DEADLINE_S", 300.0)
+    rule["rule"] = Classification(Reach.PUBLIC, ("127.0.0.1",))
+    httpd = https_server(HOST, _drip(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n", b"{"))
+
+    started = time.monotonic()
+    with pytest.raises(FetchError, match="^127.0.0.1: no answer within 1 s$"):
+        fetch.get(f"https://{HOST}:{httpd.server_address[1]}/directory", deadline=started + 1.0)
+
+    assert time.monotonic() - started < DRIP_FOR_S / 2
+
+
+def test_a_deadline_of_the_caller_already_past_tries_no_address(rule, monkeypatch):
+    rule["rule"] = Classification(Reach.PUBLIC, ("127.0.0.1",))
+    sent = []
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", lambda _self, r: sent.append(r))
+
+    with pytest.raises(FetchError, match="^127.0.0.1: no answer within 0 s$"):
+        fetch.get(f"https://{HOST}/directory", deadline=time.monotonic() - 1.0)
+
+    assert sent == []
+
+
+def test_a_deadline_of_the_caller_after_the_own_one_does_not_extend_it(rule, monkeypatch):
+    monkeypatch.setattr(fetch, "DEADLINE_S", 0.0)
+    rule["rule"] = Classification(Reach.PUBLIC, ("127.0.0.1",))
+    sent = []
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", lambda _self, r: sent.append(r))
+
+    with pytest.raises(FetchError, match="^127.0.0.1: no answer within 0 s$"):
+        fetch.get(f"https://{HOST}/directory", deadline=time.monotonic() + 300.0)
+
+    assert sent == []
+
+
 def test_a_request_within_the_deadline_leaves_no_watchdog_running(rule, https_server, monkeypatch):
     # Far beyond the wait below: a timer still running then outlives it.
     monkeypatch.setattr(fetch, "DEADLINE_S", 300.0)
