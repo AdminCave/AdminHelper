@@ -1,5 +1,5 @@
 # TOFU-Warnung in agent-install.sh — Task-Ledger
-Status: bereit · Branch: feature/ops-11 · Review: am Ende
+Status: erledigt · Branch: feature/ops-11 · Review: am Ende
 Spec: docs/features/ops-11.md (Roadmap R-1634)
 Heavy: none — nur der Text einer Warnung, der Stub-Test in scripts deckt den Zweig
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
