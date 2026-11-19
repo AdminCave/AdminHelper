@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-48 — Fehlerzeilen vom Linux-Agent, SMART ohne Aufwecken — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-48 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-48 · Review: pro Task
 Spec: docs/features/kern-monitoring-48.md (Roadmap R-1413, R-1569)
 Heavy: linux-full — apps/agent (Sammler, Allowlist, smartctl-Aufruf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -90,8 +90,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: keine (nur Test)
 Abhängt von: T5
 
-### T8 — Abschluss-Nits: SMART-Doku nennt -n nur für ATA/SCSI, Beispielmeldung mit Modell  [ ]
+### T8 — Abschluss-Nits: SMART-Doku nennt -n nur für ATA/SCSI, Beispielmeldung mit Modell  [x]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @089a80833 2026-11-19T05:41:53+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Nits der Abschlussprüfung: `-n standby` gilt nur für ATA/SCSI-Platten (NVMe ohne), die Beispielmeldung
 lautet „/dev/sdb (<Modell>): warning when last read (asleep)“.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py
