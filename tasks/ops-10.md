@@ -1,5 +1,5 @@
 # Windows-Einzeiler agent-install.ps1 — Task-Ledger
-Status: bereit · Branch: feature/ops-10 · Review: am Ende
+Status: aktiv · Branch: feature/ops-10 · Review: am Ende
 Spec: docs/features/ops-10.md (Roadmap R-1578)
 Heavy: windows — Installer-Pfad; Kevin 2026-11-19: der windows-latest-Job aus T2 zählt als scenario-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -32,6 +32,20 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: keine (CI-Job)
 Abhängt von: T2
 
+### T4 — R-1578: ohne -CaFp TOFU wie agent-install.sh, -Version nur SemVer  [ ]
+Komponente: scripts · Dateien: scripts/agent-install.ps1, scripts/tests/agent_install_ps1_test.sh, changelog.d/ops-10.md, README.md
+Änderung: Abschlussprüfung (reviewer + security, wichtig): ohne `-CaFp` gab das Skript weder `--ca-fp` noch `--insecure` mit, der Agent prüfte nur gegen die System-Roots, entgegen Warnung und Doku. Jetzt `--insecure` wie `agent-install.sh:396` und `agent-install-bsd.sh` (TOFU, Warnung bleibt); `-Version` muss SemVer sein, bevor es in den Download-Pfad geht. Nits: Changelog umlautfrei, README nennt den Windows-Einzeiler.
+Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_ps1_test
+Doku: README.md · changelog.d/ops-10.md (agent-deployment DE+EN beschreibt TOFU schon)
+
+### T5 — R-1578: CI-Ablehnung am Grund prüfen, cicd-Doku nennt den Installer-Lauf  [ ]
+Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_workflow.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: `Assert-Refused` verlangt einen Ausschnitt der erwarteten Meldung, so ist „tampered SHA256SUMS“ nicht mehr bei einem Download-Fehler grün (reviewer nit); `docs/developer/cicd.html` DE+EN nennt den End-to-End-Lauf von `agent-install.ps1` im Job `agent-windows` (reviewer wichtig).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
+Doku: docs/developer/cicd.html · docs/en/developer/cicd.html
+Abhängt von: T4
+
 ## Entscheidungen
 - 2026-11-19 Kevin: Bootstrap nur HTTPS + SHA256SUMS (keine minisign-Prüfung unter Windows); der windows-latest-CI-Job zählt als scenario-Lauf für den Session-Merge.
 - 2026-11-19 Plan: baut erst nach dem Merge von ci-15 (ci.yml); #560 (ci-14) ändert ci.yml nur in einem Kommentar, vor dem Merge origin/main hineinmergen.
+- T4: ohne `-CaFp` TOFU (`--insecure`) statt Pflicht-`-CaFp` (security-Vorschlag): Gleichlauf mit `agent-install.sh`/`agent-install-bsd.sh` und dem geplanten Doku-Text; Pflicht wäre eine neue Verhaltensentscheidung.
