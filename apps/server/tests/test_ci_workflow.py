@@ -442,7 +442,8 @@ def _run_contexts(run: str) -> list[tuple[str, set[str]]]:
     found = []
     for expr in re.findall(r"\$\{\{(.*?)\}\}", run, re.DOTALL):
         code = re.sub(r"'(?:[^']|'')*'", "''", expr)
-        found.append((expr, set(re.findall(rf"(?<![\w.-])({_CONTEXTS})\s*[.\[]", code))))
+        names = re.findall(rf"(?<![\w.-])({_CONTEXTS})(?![\w-])", code, re.IGNORECASE)
+        found.append((expr, {n.lower() for n in names}))
     return found
 
 
@@ -453,6 +454,9 @@ def test_run_contexts_sees_every_context_of_an_expression():
         "echo ${{\n  github.base_ref\n}}\n"
         "echo ${{ format('matrix.{0}', env.X) }}\n"
         "echo ${{ 1 }}\n"
+        "echo ${{ matrix.os || toJSON(github) }}\n"
+        "echo ${{ (github).head_ref }}\n"
+        "echo ${{ matrix.os || GITHUB.head_ref }}\n"
     )
     assert [ctx for _, ctx in _run_contexts(run)] == [
         {"matrix"},
@@ -460,6 +464,9 @@ def test_run_contexts_sees_every_context_of_an_expression():
         {"github"},
         {"env"},
         set(),
+        {"matrix", "github"},
+        {"github"},
+        {"matrix", "github"},
     ]
 
 
