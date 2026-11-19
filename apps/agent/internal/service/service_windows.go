@@ -388,11 +388,6 @@ func Purge() error {
 	if err != nil {
 		return fmt.Errorf("ProgramData folder: %w", err)
 	}
-	for _, v := range []string{"ADMINHELPER_MONITOR_DIR", "ADMINHELPER_FRP_DIR", "ADMINHELPER_LOG_DIR"} {
-		if os.Getenv(v) != "" {
-			fmt.Printf("NOTE: %s is set; --purge removes only the default folders, not that one.\n", v)
-		}
-	}
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("path of the running binary: %w", err)
