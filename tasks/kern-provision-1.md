@@ -1,5 +1,5 @@
 # Provisionieren je Plattform — Task-Ledger
-Status: aktiv · Branch: feature/kern-provision-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-provision-1 · Review: pro Task
 Spec: docs/features/kern-provision-1.md (Roadmap R-1594, R-1595, R-1596, R-1597)
 Heavy: linux-full — Server-API, `docker-compose.yml` (Repo-Mount) und die Desktop-Journey `provisioning.live.js` ändern sich; kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -99,8 +99,10 @@ Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html (Befehlstabelle `open_doc`); Verhalten in T10
 Abhängt von: T7
 
-### T10 — R-1596: Doku je Plattform, API, Changelog  [ ]
+### T10 — R-1596: Doku je Plattform, API, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-provision-1.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1667325ab 2026-11-19T09:11:30+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: `agent-deployment` gliedert je Plattform (Linux, Windows, FreeBSD, OPNsense), je Abschnitt Installieren, Aktualisieren, Neu registrieren und Entfernen. Dazu das Provisionieren-Fenster mit Fortschritt, das Plattformfeld samt Migration (Freitext → Plattform) und die zwei neuen Routen in `developer/api-reference`. Erst nach dem Merge von ops-8, kern-windows-1 und ops-9, auf frischem `origin/main` (gleiche Datei). Anker der Katalog-`doc`-Einträge (T3) gegen die neue Gliederung prüfen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, changelog.d/kern-provision-1.md
