@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/kern-monitoring-50/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_inventory.py tests/test_service_inventory_api.py
 Doku: → T4
 
-### T3 — R-1391: „Mehr Log“ unter Windows und FreeBSD  [ ]
-Komponente: desktop-rs desktop-ui · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte, apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/lib/bridge/invoke.test.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts
+### T3 — R-1391: „Mehr Log“ unter Windows und FreeBSD  [x]
+Komponente: desktop · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte, apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/lib/bridge/invoke.test.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @88d5defb0 2026-11-19T11:37:47+01:00
+Review: approve (.ah-out/review/kern-monitoring-50/T3.verdict.json)
 Änderung: `terminal_open_ssh_journal` nimmt `platform`. Je Plattform läuft ein fester Remote-Aufruf:
 - **linux:** journalctl wie bisher.
 - **windows:** `powershell -NoProfile -NonInteractive -EncodedCommand <Base64 UTF-16LE>`. Darin liest `Get-WinEvent` System und Application der letzten 24 h, filtert auf den Dienst (Provider = Name, oder SCM mit `param1` = Name/Anzeigename) und zeigt die neuesten 200. Der Name steht nur in der Windows-Dienstklasse, in einfachen Anführungszeichen.
@@ -46,7 +48,7 @@ UI:
 - `other` zeigt keinen Knopf.
 
 Tests: argv je Plattform, Ablehnung außerhalb der Klasse, das dekodierte Skript, UI je Plattform.
-Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
+Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T4
 
 ### T4 — R-1391: Doku Dienst-Details je Plattform  [ ]

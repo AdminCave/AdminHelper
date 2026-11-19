@@ -15,7 +15,12 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // init calls matchMedia (missing in jsdom). SecServices never renders a chart
 // (showChart={false}) — stub the lib away, same as SecDocker.test.ts.
 vi.mock('uplot', () => ({ default: class {} }));
-const h = vi.hoisted(() => ({ fetch: vi.fn(), update: vi.fn(), confirm: vi.fn() }));
+const h = vi.hoisted(() => ({
+  fetch: vi.fn(),
+  update: vi.fn(),
+  confirm: vi.fn(),
+  servers: vi.fn(),
+}));
 vi.mock('$lib/api/monitoring', async (importOriginal) => {
   const orig = await importOriginal<typeof import('$lib/api/monitoring')>();
   return {
@@ -23,6 +28,7 @@ vi.mock('$lib/api/monitoring', async (importOriginal) => {
     monitoringApi: {
       ...orig.monitoringApi,
       fetchServerServices: h.fetch,
+      fetchServers: h.servers,
       updateCheckConfig: h.update,
     },
   };
@@ -37,7 +43,7 @@ import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import type { MonitorCheck, MonitorCheckState } from '$lib/api/types';
 import { setLanguage } from '$lib/i18n';
-import { monitoring, toggleExpanded } from '$lib/stores/monitoring';
+import { loadServers, monitoring, toggleExpanded } from '$lib/stores/monitoring';
 import SecServices from './SecServices.svelte';
 
 const ID = 'chk-services';
@@ -581,6 +587,33 @@ describe('SecServices full list', () => {
     expect(dialog?.textContent).toContain('Alle Dienste');
     expect(h.fetch).toHaveBeenCalledTimes(1);
     expect(h.fetch.mock.calls[0][1]).toBe('srv-1');
+  });
+
+  // R-1391: the list learns the server's platform, which picks the log of "Mehr Log".
+  it('tells the list the platform of its server', async () => {
+    h.servers.mockResolvedValue([
+      { id: 'srv-1', name: 'win01', hostname: 'win01.example', osType: 'windows' },
+    ]);
+    await loadServers();
+    h.fetch.mockResolvedValue({
+      serverId: 'srv-1',
+      reportedAt: null,
+      logLines: true,
+      services: [{ unit: 'Spooler', active_state: 'active' }],
+      logs: {},
+    });
+    render(SecServices, { props: { checks: [ok], serverId: 'srv-1' } });
+    await fireEvent.click(allButton() as HTMLElement);
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"] table')).not.toBeNull(), {
+      timeout: 30_000,
+    });
+    // A Windows service has a log: without an SSH connection the hint names the missing
+    // connection, not the platform (a server without a platform would).
+    const text = document.querySelector('[role="dialog"]')?.textContent ?? '';
+    expect(text).toContain('Für „Mehr Log“ braucht der Server eine SSH-Verbindung.');
+    expect(text).not.toContain('„Mehr Log“ gibt es für systemd-Dienste');
+    h.servers.mockResolvedValue([]);
+    await loadServers();
   });
 });
 

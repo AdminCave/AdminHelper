@@ -107,30 +107,146 @@ static JOURNAL_UNIT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!("^(?:{JOURNAL_UNIT_CLASS})$")).expect("journal unit pattern")
 });
 
-/// The argv of the `ssh` that shows the last 200 journal lines of `unit` on the host of
-/// `connection` with the rights of the admin's login (R-1226): the switches of the connection
-/// without its forwards and agent forwarding, a pseudo terminal (journalctl colours by priority
-/// on one), then the fixed remote action. The login shell of the host reads the words after the
-/// target as one line, so the unit passes only in the unit class and in single quotes, which no
-/// character of the class ends.
+/// The Windows service names "Mehr Log" takes: the agent's `winservice` class, whole, and at most
+/// the SCM's 256 characters. No character of it ends a PowerShell string in single quotes or
+/// starts a wildcard of `Get-Service -Name`.
+const WINDOWS_SERVICE_CLASS: &str = r"[A-Za-z0-9._$][A-Za-z0-9._$-]*";
+const WINDOWS_SERVICE_MAX: usize = 256;
+
+static WINDOWS_SERVICE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!("^(?:{WINDOWS_SERVICE_CLASS})$")).expect("windows service pattern")
+});
+
+/// The rc.d script names "Mehr Log" takes on FreeBSD: the agent's `rcscript` class, whole.
+const RC_SCRIPT_CLASS: &str = r"[A-Za-z0-9_][A-Za-z0-9._-]*";
+const RC_SCRIPT_MAX: usize = 255;
+
+static RC_SCRIPT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("^(?:{RC_SCRIPT_CLASS})$")).expect("rc script pattern"));
+
+/// The platform of the host whose service log "Mehr Log" shows (R-1391): it picks the remote
+/// action and the class of the service name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JournalPlatform {
+    Linux,
+    Windows,
+    Freebsd,
+}
+
+/// The PowerShell script of the Windows log: the events of the service in the System and
+/// Application logs of the last 24 hours, newest 200, oldest first, one line each. An event
+/// belongs to the service whose name is its source, or, from the Service Control Manager, whose
+/// service or display name is its first value (param1, as the agent reads it). `__UNIT__` takes
+/// the service name.
+const WINDOWS_LOG_SCRIPT: &str = "$n = '__UNIT__'\n\
+$d = (Get-Service -Name $n -ErrorAction SilentlyContinue).DisplayName\n\
+Get-WinEvent -FilterHashtable @{ LogName = 'System', 'Application'; StartTime = (Get-Date).AddDays(-1) } -ErrorAction SilentlyContinue |\n\
+  Where-Object { $_.ProviderName -eq $n -or ($_.ProviderName -eq 'Service Control Manager' -and $_.Properties.Count -gt 0 -and ($_.Properties[0].Value -eq $n -or ($d -and $_.Properties[0].Value -eq $d))) } |\n\
+  Sort-Object TimeCreated -Descending | Select-Object -First 200 | Sort-Object TimeCreated |\n\
+  ForEach-Object { '{0:s} {1} {2} {3}: {4}' -f $_.TimeCreated, $_.LevelDisplayName, $_.ProviderName, $_.Id, ($_.Message -replace '\\s+', ' ') }\n";
+
+/// Base64 (RFC 4648, with padding), for `powershell -EncodedCommand`.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The script of [`WINDOWS_LOG_SCRIPT`] for `service`, as `-EncodedCommand` takes it: Base64 of
+/// its UTF-16LE code units.
+fn windows_log_command(service: &str) -> String {
+    let script = WINDOWS_LOG_SCRIPT.replace("__UNIT__", service);
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    base64(&utf16)
+}
+
+/// The argv of the `ssh` that shows the last 200 log lines of the service `unit` on the host of
+/// `connection` with the rights of the admin's login (R-1226, R-1391): the switches of the
+/// connection without its forwards and agent forwarding, a pseudo terminal (journalctl colours by
+/// priority on one), then the fixed remote action of the platform:
+/// - Linux: the journal of the unit.
+/// - Windows: the event log (System and Application) through PowerShell. The script travels as
+///   Base64, which neither cmd nor PowerShell, the possible login shells, reads as anything but
+///   one word.
+/// - FreeBSD: the syslog lines that name the service, matched as a fixed string.
+///
+/// The login shell of the host reads the words after the target as one line, so the name passes
+/// only in the class of its platform and in single quotes, which no character of a class ends.
 pub(crate) fn build_journal_args(
     connection: &Connection,
     unit: &str,
+    platform: JournalPlatform,
 ) -> Result<Vec<String>, AppError> {
     // No unit name ends in `\`, and fish, a possible login shell, reads `\'` inside single
     // quotes as an escaped quote: the closing quote would not close.
-    if unit.len() > JOURNAL_UNIT_MAX || !JOURNAL_UNIT_RE.is_match(unit) || unit.ends_with('\\') {
-        return Err(AppError::Validation(format!(
-            "invalid unit name: letters, digits and _ . : @ \\ -, not starting with - nor \
-             ending with \\, at most {JOURNAL_UNIT_MAX} characters"
-        )));
+    let valid = match platform {
+        JournalPlatform::Linux => {
+            unit.len() <= JOURNAL_UNIT_MAX
+                && JOURNAL_UNIT_RE.is_match(unit)
+                && !unit.ends_with('\\')
+        }
+        JournalPlatform::Windows => {
+            unit.len() <= WINDOWS_SERVICE_MAX && WINDOWS_SERVICE_RE.is_match(unit)
+        }
+        JournalPlatform::Freebsd => unit.len() <= RC_SCRIPT_MAX && RC_SCRIPT_RE.is_match(unit),
+    };
+    if !valid {
+        return Err(AppError::Validation(match platform {
+            JournalPlatform::Linux => format!(
+                "invalid unit name: letters, digits and _ . : @ \\ -, not starting with - nor \
+                 ending with \\, at most {JOURNAL_UNIT_MAX} characters"
+            ),
+            JournalPlatform::Windows => format!(
+                "invalid service name: letters, digits and _ . $ -, not starting with -, at most \
+                 {WINDOWS_SERVICE_MAX} characters"
+            ),
+            JournalPlatform::Freebsd => format!(
+                "invalid service name: letters, digits and _ . -, not starting with - nor ., at \
+                 most {RC_SCRIPT_MAX} characters"
+            ),
+        }));
     }
     let (mut args, target) = base_args(connection, false)?;
     args.extend(["-t", "--"].map(String::from));
     args.push(target);
-    args.extend(["journalctl", "--no-pager"].map(String::from));
-    args.push(format!("--unit='{unit}'"));
-    args.push("--lines=200".to_string());
+    match platform {
+        JournalPlatform::Linux => {
+            args.extend(["journalctl", "--no-pager"].map(String::from));
+            args.push(format!("--unit='{unit}'"));
+            args.push("--lines=200".to_string());
+        }
+        JournalPlatform::Windows => {
+            args.extend(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-EncodedCommand",
+                ]
+                .map(String::from),
+            );
+            args.push(windows_log_command(unit));
+        }
+        JournalPlatform::Freebsd => {
+            args.extend(["grep", "-h", "-F", "-e"].map(String::from));
+            args.push(format!("'{unit}'"));
+            args.extend(["/var/log/messages", "|", "tail", "-n", "200"].map(String::from));
+        }
+    }
     Ok(args)
 }
 
@@ -687,7 +803,7 @@ mod tests {
             "authMethod": "key"
         }));
         assert_eq!(
-            build_journal_args(&c, "nginx.service").unwrap(),
+            build_journal_args(&c, "nginx.service", JournalPlatform::Linux).unwrap(),
             [
                 "-J",
                 "ops@bastion:2222",
@@ -708,7 +824,7 @@ mod tests {
         );
         let plain = conn(Some("h"), Some(2222), Some("u"), Some("/k/id"));
         assert_eq!(
-            build_journal_args(&plain, "cron.service").unwrap(),
+            build_journal_args(&plain, "cron.service", JournalPlatform::Linux).unwrap(),
             [
                 "-p",
                 "2222",
@@ -739,7 +855,7 @@ mod tests {
             "0",
             longest.as_str(),
         ] {
-            let args = build_journal_args(&c, good).unwrap();
+            let args = build_journal_args(&c, good, JournalPlatform::Linux).unwrap();
             assert_eq!(args[args.len() - 2], format!("--unit='{good}'"), "{good}");
         }
         let too_long = "a".repeat(256);
@@ -772,20 +888,206 @@ mod tests {
             too_long.as_str(),
         ] {
             assert!(
-                matches!(build_journal_args(&c, bad), Err(AppError::Validation(_))),
+                matches!(
+                    build_journal_args(&c, bad, JournalPlatform::Linux),
+                    Err(AppError::Validation(_))
+                ),
                 "{bad:?}"
             );
         }
     }
 
-    /// The same class as the agent's allowlist, whose inventory hands the unit names over.
+    /// The same classes as the agent's allowlist, whose inventory hands the names over.
     #[test]
     fn the_journal_unit_class_is_the_agents() {
         let allowlist = include_str!("../../../../agent/internal/allowlist/allowlist.go");
-        assert!(
-            allowlist.contains(&format!("\"unit\": `{JOURNAL_UNIT_CLASS}`,")),
-            "the agent's unit class changed"
+        for (name, class) in [
+            ("unit", JOURNAL_UNIT_CLASS),
+            ("winservice", WINDOWS_SERVICE_CLASS),
+            ("rcscript", RC_SCRIPT_CLASS),
+        ] {
+            assert!(
+                allowlist.contains(&format!("\"{name}\": `{class}`,")),
+                "the agent's {name} class changed"
+            );
+        }
+    }
+
+    #[test]
+    fn base64_follows_rfc_4648() {
+        // The test vectors of RFC 4648, section 10.
+        for (plain, encoded) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("fooba", "Zm9vYmE="),
+            ("foobar", "Zm9vYmFy"),
+        ] {
+            assert_eq!(base64(plain.as_bytes()), encoded, "{plain:?}");
+        }
+        assert_eq!(base64(&[0xfb, 0xff, 0xbf]), "+/+/");
+    }
+
+    /// The script `-EncodedCommand` carries, decoded as PowerShell does: Base64, then UTF-16LE.
+    fn decode_command(encoded: &str) -> String {
+        const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut bits = 0u32;
+        let mut held = 0;
+        let mut bytes = Vec::new();
+        for c in encoded.trim_end_matches('=').chars() {
+            bits = (bits << 6) | ALPHABET.find(c).expect("base64 character") as u32;
+            held += 6;
+            if held >= 8 {
+                held -= 8;
+                bytes.push((bits >> held) as u8);
+                bits &= (1 << held) - 1;
+            }
+        }
+        let units: Vec<u16> = bytes
+            .chunks(2)
+            .map(|p| u16::from_le_bytes([p[0], p[1]]))
+            .collect();
+        String::from_utf16(&units).expect("UTF-16LE")
+    }
+
+    #[test]
+    fn journal_args_on_windows_run_the_event_log_script_encoded() {
+        let c = conn(Some("h"), Some(2222), Some("u"), None);
+        let args = build_journal_args(&c, "MSSQL$SQLEXPRESS", JournalPlatform::Windows).unwrap();
+        assert_eq!(
+            args[..args.len() - 1],
+            [
+                "-p",
+                "2222",
+                "-t",
+                "--",
+                "u@h",
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+            ]
         );
+        let encoded = args.last().unwrap();
+        assert!(
+            encoded
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+/=".contains(c)),
+            "{encoded}"
+        );
+        let script = decode_command(encoded);
+        assert_eq!(
+            script,
+            WINDOWS_LOG_SCRIPT.replace("__UNIT__", "MSSQL$SQLEXPRESS")
+        );
+        assert!(script.starts_with("$n = 'MSSQL$SQLEXPRESS'\n"), "{script}");
+        assert_eq!(script.matches("__UNIT__").count(), 0);
+        assert_eq!(WINDOWS_LOG_SCRIPT.matches("__UNIT__").count(), 1);
+        for part in [
+            "LogName = 'System', 'Application'",
+            "(Get-Date).AddDays(-1)",
+            "'Service Control Manager'",
+            // Two logs come without a documented order: newest 200 of both, then oldest first.
+            "Sort-Object TimeCreated -Descending | Select-Object -First 200 | Sort-Object TimeCreated |",
+        ] {
+            assert!(script.contains(part), "{part}");
+        }
+    }
+
+    #[test]
+    fn journal_args_on_freebsd_grep_the_syslog() {
+        let c = conn(Some("h"), None, Some("u"), None);
+        assert_eq!(
+            build_journal_args(&c, "sshd", JournalPlatform::Freebsd).unwrap(),
+            [
+                "-t",
+                "--",
+                "u@h",
+                "grep",
+                "-h",
+                "-F",
+                "-e",
+                "'sshd'",
+                "/var/log/messages",
+                "|",
+                "tail",
+                "-n",
+                "200",
+            ]
+        );
+    }
+
+    /// Each platform takes the names of its class only: a name of another class, or one that
+    /// would end the single quotes, is refused.
+    #[test]
+    fn journal_args_take_the_service_names_of_the_platform_only() {
+        let c = conn(Some("h"), None, Some("u"), None);
+        let windows_longest = "a".repeat(256);
+        for good in [
+            "Spooler",
+            "MSSQL$SQLEXPRESS",
+            "wuauserv",
+            "a.b_c-d",
+            windows_longest.as_str(),
+        ] {
+            assert!(
+                build_journal_args(&c, good, JournalPlatform::Windows).is_ok(),
+                "{good}"
+            );
+        }
+        for good in ["sshd", "nginx", "php_fpm", "a.b-c", "0"] {
+            assert!(
+                build_journal_args(&c, good, JournalPlatform::Freebsd).is_ok(),
+                "{good}"
+            );
+        }
+        let windows_too_long = "a".repeat(257);
+        let rc_too_long = "a".repeat(256);
+        let shared_bad = [
+            "", " ", "a b", "a;id", "a&id", "a|id", "$(id)", "a`id`", "a'x", "a\"x", "a>x", "a*",
+            "a?", "a[b]", "-x", "a\n", "a/b", "a\\b", "ä", "a%x%", "a^b", "a@b", "a:b",
+        ];
+        for bad in shared_bad
+            .iter()
+            .copied()
+            .chain([windows_too_long.as_str()])
+        {
+            assert!(
+                matches!(
+                    build_journal_args(&c, bad, JournalPlatform::Windows),
+                    Err(AppError::Validation(_))
+                ),
+                "windows {bad:?}"
+            );
+        }
+        for bad in shared_bad
+            .iter()
+            .copied()
+            .chain([".x", "a$b", rc_too_long.as_str()])
+        {
+            assert!(
+                matches!(
+                    build_journal_args(&c, bad, JournalPlatform::Freebsd),
+                    Err(AppError::Validation(_))
+                ),
+                "freebsd {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn journal_platform_reads_the_names_the_ui_sends() {
+        for (name, platform) in [
+            ("linux", JournalPlatform::Linux),
+            ("windows", JournalPlatform::Windows),
+            ("freebsd", JournalPlatform::Freebsd),
+        ] {
+            let read: JournalPlatform = serde_json::from_value(serde_json::json!(name)).unwrap();
+            assert_eq!(read, platform);
+        }
+        assert!(serde_json::from_value::<JournalPlatform>(serde_json::json!("other")).is_err());
     }
 
     #[test]
