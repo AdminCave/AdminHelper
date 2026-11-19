@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: keine (CI-Job)
 Abhängt von: T2
 
-### T4 — R-1578: ohne -CaFp TOFU wie agent-install.sh, -Version nur SemVer  [ ]
+### T4 — R-1578: ohne -CaFp TOFU wie agent-install.sh, -Version nur SemVer  [x]
 Komponente: scripts · Dateien: scripts/agent-install.ps1, scripts/tests/agent_install_ps1_test.sh, changelog.d/ops-10.md, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fed9c0828 2026-11-19T13:15:46+01:00
+Review: am Ende (Branch-Review)
 Änderung: Abschlussprüfung (reviewer + security, wichtig): ohne `-CaFp` gab das Skript weder `--ca-fp` noch `--insecure` mit, der Agent prüfte nur gegen die System-Roots, entgegen Warnung und Doku. Jetzt `--insecure` wie `agent-install.sh:396` und `agent-install-bsd.sh` (TOFU, Warnung bleibt); `-Version` muss SemVer sein, bevor es in den Download-Pfad geht. Nits: Changelog umlautfrei, README nennt den Windows-Einzeiler.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_ps1_test
 Doku: README.md · changelog.d/ops-10.md (agent-deployment DE+EN beschreibt TOFU schon)

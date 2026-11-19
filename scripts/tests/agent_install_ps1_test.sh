@@ -72,6 +72,12 @@ n=$(grep -E '\$provArgs \+?=' "$SCRIPT" | grep -c '\$Token' || true)
 [ "$n" = 0 ] && ok "token never in the provision arguments" || bad "token in the provision arguments ($n)"
 grep -qF 'Invoke-Native $agent $provArgs $Token' "$SCRIPT" \
     && ok "token passed as stdin of provision" || bad "token not passed via stdin"
+# Without -CaFp the first contact is trust-on-first-use, as in agent-install.sh; without
+# --insecure the agent would check only the system roots and fail on the internal CA.
+n=$(grep -cF '$provArgs += "--insecure"' "$SCRIPT" || true)
+[ "$n" = 1 ] && ok "no -CaFp: provision with --insecure (TOFU)" || bad "no -CaFp: --insecure missing ($n)"
+grep -qF -- "-notmatch '^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\$') { throw" "$SCRIPT" \
+    && ok "-Version limited to X.Y.Z before it enters the URL" || bad "-Version not validated"
 grep -qF 'Read-Host -AsSecureString' "$SCRIPT" \
     && ok "token prompt is hidden" || bad "token prompt not -AsSecureString"
 

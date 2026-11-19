@@ -105,6 +105,8 @@ $apiBase = Resolve-Base $env:AH_API_BASE "https://api.github.com"
 $dlBase = Resolve-Base $env:AH_DL_BASE "https://github.com"
 
 if ($Version) {
+    # The version becomes part of the download URL: only X.Y.Z with an optional pre-release suffix.
+    if ($Version.TrimStart("v") -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$') { throw "-Version must look like X.Y.Z, not $Version" }
     $tag = "v" + $Version.TrimStart("v")
 } else {
     $tag = (Invoke-RestMethod -UseBasicParsing -Uri "$apiBase/repos/$Repo/releases/latest").tag_name
@@ -152,6 +154,9 @@ $provArgs = @("provision", "--url", $Server, "--server-id", $ServerId, "--token-
 if ($CaFp) {
     $provArgs += @("--ca-fp", $CaFp)
 } else {
+    # Without a fingerprint the first contact is trust-on-first-use, as in agent-install.sh:
+    # the agent pins the certificate the server presents.
+    $provArgs += "--insecure"
     Write-Warn "no -CaFp given - the agent pins the server certificate on first use;"
     Write-Warn "compare the fingerprint the agent prints against the desktop's provisioning tab!"
 }
