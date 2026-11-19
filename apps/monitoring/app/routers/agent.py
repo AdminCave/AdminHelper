@@ -462,8 +462,9 @@ def _evaluate_push_check(
         else:
             result_status, message, metrics = "unknown", unmeasured, {}
 
-        # Extract structured details
+        # Extract structured details and objects (not sent to VictoriaMetrics)
         details = metrics.pop("_details", None) if metrics else None
+        objects = metrics.pop("_objects", None) if metrics else None
 
         result_lines = _result_lines(check, server_id, result_status, metrics)
 
@@ -483,6 +484,7 @@ def _evaluate_push_check(
             details,
             now,
             keep_previous_details_when_absent=True,
+            objects=objects,
         )
 
     transition = None

@@ -140,6 +140,21 @@ def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]
     return [entry for entry in value[: min(limit, MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
 
 
+# The object status of something a rule leaves unrated (app.check_engine.NOT_COLLECTED);
+# imported from there, it would close an import cycle through the checker registry.
+NOT_COLLECTED = "not_collected"
+
+
+def whole_list(value: object) -> bool:
+    """Whether capped_objects(value) keeps every entry of a report list. Object results
+    (R-1559) built from a list it cut short are incomplete: what it left out is not gone."""
+    return (
+        isinstance(value, list)
+        and len(value) <= MAX_REPORT_ENTRIES
+        and all(isinstance(entry, dict) for entry in value)
+    )
+
+
 def entry_text(entry: dict, key: str, default: str) -> str:
     """A text field of a report entry; anything but a string counts as missing (R-0517)."""
     value = entry.get(key)
@@ -303,6 +318,9 @@ class _Grader:
         self.problems: list[str] = []
         self.status = "ok"
         self.problem_levels: dict[str, str] = {}
+        # Every crossing under its key, for the host objects (R-1559): two sensors may share
+        # a name, and problem_levels keeps only the last.
+        self.problem_marks: dict[str, list[tuple[str, str]]] = {}
 
     def grade(
         self,
@@ -322,6 +340,7 @@ class _Grader:
         )
         if level:
             self.problem_levels[key] = level
+            self.problem_marks.setdefault(key, []).append((level, self.problems[-1]))
 
 
 def _grade_usage(grader: _Grader, config: dict, resources: dict) -> tuple:
@@ -496,6 +515,69 @@ def _grade_load_shed(grader: _Grader, report: dict) -> None:
         grader.status = "warning"
 
 
+# The reason of a host object within its limits: fixed, so an ok object costs no write while
+# its values move. A problem names the value and the limit it crossed.
+_WITHIN_LIMITS = "Within limits"
+
+
+def _host_object(
+    grader: _Grader, kind: str, ident: str | None, name: str, keys: tuple[str, ...]
+) -> dict:
+    """One host object of agent_resources (R-1559), as bad as the worst measure in keys."""
+    marks = [mark for key in keys for mark in grader.problem_marks.get(key, [])]
+    levels = {level for level, _text in marks}
+    return {
+        "kind": kind,
+        "id": ident,
+        "name": name,
+        "status": "critical" if "critical" in levels else "warning" if levels else "ok",
+        "reason": "; ".join(text for _level, text in marks) or _WITHIN_LIMITS,
+    }
+
+
+def _resource_objects(
+    grader: _Grader,
+    resources: dict,
+    cpu: float | None,
+    mem: float | None,
+    disks: list[dict],
+    ignore_mounts: set,
+    temperatures: list[dict],
+) -> dict:
+    """The object result of agent_resources (R-1559): cpu with the load, memory with the swap,
+    a mount per rated path, a sensor per name. Load shedding is part of none: an object the
+    gate leaves unmeasured is never a problem (ADR 0004 §2).
+
+    Complete only with CPU, RAM and the whole disk list: the agent leaves the list out when
+    it cannot read the partitions, and a reading that is missing must not mark an object gone.
+    No sensor list is a host without sensors (every VM). A disk or sensor is keyed by the name
+    it is rated under, so ignore_mounts and the overrides name the same object."""
+    items = []
+    if cpu is not None:
+        items.append(_host_object(grader, "cpu", None, "CPU", ("cpu", "load")))
+    if mem is not None:
+        items.append(_host_object(grader, "memory", None, "Memory", ("memory", "swap")))
+    mounts: dict[str, dict] = {}
+    for disk in disks:
+        mount = entry_text(disk, "mount", NO_MOUNT)
+        if mount not in ignore_mounts:
+            keys = (f"disk:{mount}", f"inode:{mount}")
+            mounts[mount] = _host_object(grader, "mount", mount, mount, keys)
+    sensors: dict[str, dict] = {}
+    for sensor in temperatures:
+        name = entry_text(sensor, "sensor", "?")
+        sensors[name] = _host_object(grader, "sensor", name, name, (f"temp:{name}",))
+    # Anything but a list counts as no list, as for the rating (R-0517).
+    readings = resources.get("temperatures")
+    complete = (
+        cpu is not None
+        and mem is not None
+        and whole_list(resources.get("disks"))
+        and (not isinstance(readings, list) or whole_list(readings))
+    )
+    return {"complete": complete, "items": [*items, *mounts.values(), *sensors.values()]}
+
+
 def _resources_message(problems: list[str], cpu, mem) -> str:
     if problems:
         return join_capped(problems, "; ")
@@ -656,7 +738,14 @@ class AgentResourcesChecker:
             details["load_rated"] = False
 
         message = _resources_message(grader.problems, cpu, mem)
-        return grader.status, message, {"_details": details}
+        objects = _resource_objects(grader, resources, cpu, mem, disks, ignore_mounts, temperatures)
+        return grader.status, message, {"_details": details, "_objects": objects}
+
+
+def _host_os(report: dict) -> object:
+    """The OS the host facts of this push name; None without them (an agent before R-0421)."""
+    host = report.get("host")
+    return host.get("os") if isinstance(host, dict) else None
 
 
 class ServiceProcessChecker:
@@ -750,6 +839,65 @@ class ServiceProcessChecker:
         if name.endswith(ServiceProcessChecker._UNIT_TYPES):
             return name
         return f"{name}.service"
+
+    @staticmethod
+    def _service_id(unit: str, host_os: object) -> str:
+        """The id of a service object (ADR 0004 §4): the full unit name. Windows and FreeBSD
+        know no unit types, there it is the service's own name, on Windows lowercased: the
+        service control manager compares names without case."""
+        if host_os not in ("windows", "freebsd"):
+            return unit
+        name = unit.removesuffix(".service")
+        return name.lower() if host_os == "windows" else name
+
+    @classmethod
+    def _service_object(
+        cls, unit: str, name: str, host_os: object, status: str, reason: str
+    ) -> dict:
+        return {
+            "kind": "service",
+            "id": cls._service_id(unit, host_os),
+            "name": cap_agent_text(name) or "",
+            "status": status,
+            "reason": reason,
+        }
+
+    # The reason of a unit auto mode does not hear of: the agent sends every failed and
+    # every enabled but inactive unit, so a unit it leaves out has neither problem.
+    _NO_PROBLEM = "No problem reported"
+
+    def _auto_objects(
+        self,
+        systemd: dict,
+        failed: list[str],
+        enabled_inactive: list[str],
+        reasons: dict[str, str],
+        host_os: object,
+    ) -> dict:
+        """The object result of auto mode (R-1559): a service object per failed or enabled
+        but inactive unit, rated as in the message. The agent names no healthy unit, so the
+        result is incomplete; with both lists whole and no error it says the stored units it
+        does not name are ok (others_ok), so a unit that recovers turns ok. An ignored unit
+        is no object (P1b)."""
+        items = []
+        # An empty name, which _details keeps, is no key.
+        for unit in filter(None, failed):
+            status = "critical" if self._is_service(unit) else "warning"
+            reason = f"Failed ({reasons[unit]})" if unit in reasons else "Failed"
+            items.append(self._service_object(unit, unit, host_os, status, reason))
+        for unit in filter(None, enabled_inactive):
+            reason = "Inactive (autostart)"
+            items.append(self._service_object(unit, unit, host_os, "warning", reason))
+        objects: dict = {"complete": False, "items": items}
+        # A list cut at the cap may hide a bad unit, and after a failed list-units the empty
+        # lists prove nothing. An entry that is no name stands for no unit.
+        whole = all(
+            isinstance(systemd.get(key), list) and len(systemd[key]) <= MAX_REPORT_ENTRIES
+            for key in ("failed", "enabled_inactive")
+        )
+        if whole and not systemd.get("error"):
+            objects["others_ok"] = self._NO_PROBLEM
+        return objects
 
     @staticmethod
     def _capped(raw) -> list:
@@ -854,6 +1002,9 @@ class ServiceProcessChecker:
         failed_services = [u for u in failed if self._is_service(u)]
         failed_units = [u for u in failed if not self._is_service(u)]
         reasons = self._reasons(systemd.get("failed_details"))
+        metrics["_objects"] = self._auto_objects(
+            systemd, failed, enabled_inactive, reasons, _host_os(report)
+        )
 
         def named(units: list[str]) -> list[str]:
             return [f"{u} ({reasons[u]})" if u in reasons else u for u in units]
@@ -918,6 +1069,26 @@ class ServiceProcessChecker:
         parts = [result, cap_agent_text(entry.get("exit"))]
         return ", ".join(p for p in parts if p) or None
 
+    def _list_objects(self, watched: list[dict], error, host_os: object) -> dict:
+        """The object result of list mode (R-1559): a service object per configured name,
+        complete. Keyed by the name as configured, an alias not resolved: only the full
+        inventory knows its target, and a key that changed with the throttled pushes would
+        mark the object gone. A name without data was not collected (Kevin 2026-10-16: it is
+        not down)."""
+        items = []
+        for w in watched:
+            if w["state"] == "running":
+                status, reason = "ok", "Running"
+            elif w["state"] == "down":
+                status = "critical"
+                reason = f"Not active ({w['reason']})" if "reason" in w else "Not active"
+            else:
+                status = NOT_COLLECTED
+                reason = self._not_queryable(error) if error else "No data from the agent"
+            unit = self._unit_name(w["name"])
+            items.append(self._service_object(unit, w["name"], host_os, status, reason))
+        return {"complete": True, "items": items}
+
     def _evaluate_list(
         self, config: dict, report: dict, prev_details: dict | None
     ) -> tuple[str, str, dict | None]:
@@ -939,7 +1110,8 @@ class ServiceProcessChecker:
         """
         expected = config.get("services", [])
         if not expected:
-            return "ok", "No services configured", None
+            # Complete: the services taken off the list are gone.
+            return "ok", "No services configured", {"_objects": {"complete": True, "items": []}}
 
         systemd = report.get("systemd")
         if not isinstance(systemd, dict):
@@ -999,6 +1171,7 @@ class ServiceProcessChecker:
 
         metrics = {"services_down": len(down), "services_up": len(up)}
         metrics["_details"] = {"mode": "list", "watched": watched}
+        metrics["_objects"] = self._list_objects(watched, error, _host_os(report))
         no_data = f"; no data: {join_capped(nodata)}" if nodata else ""
 
         if down:

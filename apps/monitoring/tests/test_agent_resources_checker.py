@@ -17,6 +17,7 @@ import pytest
 from app.check_configs import AgentResourcesConfig
 from app.checkers import agent
 from app.checkers.agent import AgentResourcesChecker
+from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
 
@@ -42,8 +43,9 @@ def test_empty_resources_is_unknown():
 def test_all_below_warn_is_ok():
     status, _msg, metrics = CHECKER.evaluate(T, _report(cpu_percent=10, memory_percent=20))
     assert status == "ok"
-    # Graded, not written: the push handler writes CPU and RAM per server (R-0633).
-    assert set(metrics) == {"_details"}
+    # Graded, not written: the push handler writes CPU and RAM per server (R-0633); the
+    # objects are no metric either (R-1559).
+    assert set(metrics) == {"_details", "_objects"}
     assert (metrics["_details"]["cpu"], metrics["_details"]["memory"]) == (10, 20)
 
 
@@ -307,6 +309,15 @@ def test_a_report_without_the_new_fields_is_rated_as_before():
                 }
             ],
             "temperatures": [{"sensor": "cpu", "temp_c": 50, "high": 80, "critical": 95}],
+        },
+        "_objects": {
+            "complete": True,
+            "items": [
+                _object("cpu", None, "CPU"),
+                _object("memory", None, "Memory", "warning", "RAM 83% (>=80%)"),
+                _object("mount", "/", "/", "warning", "Disk / 91% (>=85%)"),
+                _object("sensor", "cpu", "cpu"),
+            ],
         },
     }
 
@@ -981,3 +992,200 @@ def test_unusable_top_processes_take_no_place_of_the_five():
     top = {"cpu": [*junk, *cpu], "memory": [*junk, *memory]}
     _, _, metrics = CHECKER.evaluate(T, _report(cpu_percent=99, top_processes=top))
     assert metrics["_details"]["top_processes"] == {"cpu": cpu[:5], "memory": memory[:5]}
+
+
+# --- host objects (R-1559): what GET /objects shows per host ---
+
+
+def _object(kind, ident, name, status="ok", reason="Within limits"):
+    return {"kind": kind, "id": ident, "name": name, "status": status, "reason": reason}
+
+
+def _object_result(metrics: dict) -> tuple[bool, list[dict]]:
+    """complete and the items of the object block; app.objects must take each item."""
+    block = metrics["_objects"]
+    assert len(read_objects(block, "srv-1")[1]) == len(block["items"]), block
+    return block["complete"], block["items"]
+
+
+def test_each_measure_within_its_limits_is_an_ok_object():
+    report = _report(
+        cpu_percent=10,
+        memory_percent=20,
+        disks=[{"mount": "/", "percent": 10}, {"mount": "/srv", "percent": 20}],
+        temperatures=[{"sensor": "coretemp_package_id_0", "temp_c": 40}, {"sensor": "nvme"}],
+    )
+    status, _, metrics = CHECKER.evaluate(T, report)
+    assert status == "ok"
+    # A fixed reason: an ok object costs no write while its values move.
+    assert _object_result(metrics) == (
+        True,
+        [
+            _object("cpu", None, "CPU"),
+            _object("memory", None, "Memory"),
+            _object("mount", "/", "/"),
+            _object("mount", "/srv", "/srv"),
+            _object("sensor", "coretemp_package_id_0", "coretemp_package_id_0"),
+            _object("sensor", "nvme", "nvme"),
+        ],
+    )
+
+
+def test_each_problem_lands_on_its_object_with_value_and_limit():
+    # CPU carries the load, memory the swap, a mount its inodes.
+    status, _, metrics = CHECKER.evaluate(T, {"resources": _resources()})
+    assert status == "warning"
+    assert _object_result(metrics) == (
+        True,
+        [
+            _object("cpu", None, "CPU", "warning", "CPU 90% (>=80%); Load 2.0/CPU (>=1.5/CPU)"),
+            _object("memory", None, "Memory", "warning", "RAM 85% (>=80%); Swap 85% (>=80%)"),
+            _object(
+                "mount",
+                "/",
+                "/",
+                "warning",
+                "Disk / 90%, 10 GB free (>=85%); Inodes / 85% (>=80%)",
+            ),
+            _object("sensor", "cpu", "cpu", "warning", "Temp cpu 85°C (>=80°C)"),
+        ],
+    )
+
+
+def test_an_object_is_as_bad_as_its_worst_measure():
+    resources = {**_with(("swap_percent",), 96), "memory_percent": 10}
+    _, _, metrics = CHECKER.evaluate(T, {"resources": resources})
+    memory = _object_result(metrics)[1][1]
+    assert memory == _object("memory", None, "Memory", "critical", "Swap 96% (>=95%)")
+
+
+def test_an_object_keeps_the_level_the_hysteresis_keeps():
+    prev = {"problems": {"cpu": "warning"}}
+    status, _, metrics = CHECKER.evaluate(T, _report(cpu_percent=75, memory_percent=10), prev)
+    assert status == "warning"
+    assert _object_result(metrics)[1][0] == _object(
+        "cpu", None, "CPU", "warning", "CPU 75% (>=80%)"
+    )
+
+
+def test_two_sensors_of_one_name_are_one_object_as_bad_as_the_worse():
+    # problem_levels keeps the last of a name; the object takes every crossing.
+    temperatures = [{"sensor": "cpu", "temp_c": 99}, {"sensor": "cpu", "temp_c": 85}]
+    report = _report(cpu_percent=10, memory_percent=10, disks=[], temperatures=temperatures)
+    _, _, metrics = CHECKER.evaluate(T, report)
+    assert _object_result(metrics) == (
+        True,
+        [
+            _object("cpu", None, "CPU"),
+            _object("memory", None, "Memory"),
+            _object(
+                "sensor", "cpu", "cpu", "critical", "Temp cpu 99°C (>=95°C); Temp cpu 85°C (>=80°C)"
+            ),
+        ],
+    )
+
+
+def test_the_load_of_a_container_leaves_the_cpu_object_ok():
+    resources = {**_HIGH_LOAD, "cpu_percent": 10, "memory_percent": 10, "disks": []}
+    _, _, metrics = CHECKER.evaluate(T, {"host": _host("lxc"), "resources": resources})
+    assert _object_result(metrics)[1][0] == _object("cpu", None, "CPU")
+    # Outside a container the load counts on the CPU.
+    _, _, metrics = CHECKER.evaluate(T, {"resources": resources})
+    assert _object_result(metrics)[1][0] == _object(
+        "cpu", None, "CPU", "critical", "Load 4.0/CPU (>=3.0/CPU)"
+    )
+
+
+def test_load_shedding_is_no_object():
+    # The gate leaves objects unmeasured; that is never a problem (ADR 0004 §2).
+    gate = {"active": True, "over": ["load"], "since": "2026-11-19T10:00:00Z"}
+    report = {
+        "resources": {"cpu_percent": 10, "memory_percent": 10, "disks": []},
+        "self": {"load_shed": gate},
+    }
+    status, message, metrics = CHECKER.evaluate(T, report)
+    assert status == "warning"
+    assert message.startswith("Load shedding since")
+    assert _object_result(metrics) == (
+        True,
+        [_object("cpu", None, "CPU"), _object("memory", None, "Memory")],
+    )
+
+
+def test_ignored_and_pseudo_mounts_stay_outside_and_the_result_whole():
+    disks = [
+        {"mount": "/", "percent": 10},
+        {"mount": "/boot", "percent": 99},
+        {"mount": "/run", "fstype": "tmpfs", "percent": 99},
+    ]
+    report = _report(cpu_percent=10, memory_percent=10, disks=disks)
+    status, _, metrics = CHECKER.evaluate({**T, "ignore_mounts": ["/boot"]}, report)
+    assert status == "ok"
+    assert _object_result(metrics) == (
+        True,
+        [
+            _object("cpu", None, "CPU"),
+            _object("memory", None, "Memory"),
+            _object("mount", "/", "/"),
+        ],
+    )
+
+
+def test_a_disk_or_sensor_without_a_name_is_the_object_it_is_rated_as():
+    # The rating's name: ignore_mounts and the overrides name the same object.
+    disks = [{"percent": 99}, {"mount": 5, "percent": 10}]
+    report = _report(cpu_percent=10, memory_percent=10, disks=disks, temperatures=[{"temp_c": 40}])
+    _, _, metrics = CHECKER.evaluate(T, report)
+    assert _object_result(metrics) == (
+        True,
+        [
+            _object("cpu", None, "CPU"),
+            _object("memory", None, "Memory"),
+            _object("mount", "?", "?", "critical", "Disk ? 99% (>=95%)"),
+            _object("sensor", "?", "?"),
+        ],
+    )
+    _, _, metrics = CHECKER.evaluate({**T, "ignore_mounts": ["?"]}, report)
+    assert [item["kind"] for item in _object_result(metrics)[1]] == ["cpu", "memory", "sensor"]
+
+
+def _mount(i):
+    return {"mount": f"/m{i}", "percent": 10}
+
+
+def _sensor(i):
+    return {"sensor": f"s{i}", "temp_c": 40}
+
+
+@pytest.mark.parametrize(
+    ("change", "complete"),
+    [
+        pytest.param({}, True, id="whole"),
+        pytest.param({"cpu_percent": None}, False, id="no-cpu"),
+        pytest.param({"memory_percent": None}, False, id="no-memory"),
+        pytest.param({"disks": None}, False, id="no-disks"),
+        pytest.param({"disks": "abc"}, False, id="disks-no-list"),
+        pytest.param({"disks": []}, True, id="disks-empty"),
+        pytest.param({"disks": [_mount(i) for i in range(500)]}, True, id="500-disks"),
+        pytest.param({"disks": [_mount(i) for i in range(501)]}, False, id="501-disks"),
+        pytest.param({"disks": ["x", _mount(1)]}, False, id="disk-no-object"),
+        # No sensors at all is a host without sensors (every VM), as for the rating.
+        pytest.param({"temperatures": None}, True, id="no-sensors"),
+        pytest.param({"temperatures": "abc"}, True, id="sensors-no-list"),
+        pytest.param({"temperatures": [_sensor(i) for i in range(500)]}, True, id="500-sensors"),
+        pytest.param({"temperatures": [_sensor(i) for i in range(501)]}, False, id="501-sensors"),
+        pytest.param({"temperatures": ["x", _sensor(1)]}, False, id="sensor-no-object"),
+    ],
+)
+def test_host_objects_are_complete_only_for_every_reading(change, complete):
+    # A reading the agent could not take must not mark its objects gone.
+    resources = {**_resources(), **change}
+    resources = {key: value for key, value in resources.items() if value is not None}
+    _, _, metrics = CHECKER.evaluate(T, {"resources": resources})
+    assert _object_result(metrics)[0] is complete
+
+
+def test_without_resource_data_names_no_objects():
+    # No resources say nothing about the host's objects: they keep their state.
+    for report in ({}, {"resources": {}}, {"resources": "abc"}):
+        assert CHECKER.evaluate(T, report) == ("unknown", "No resource data", None)

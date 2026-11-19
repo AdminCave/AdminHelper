@@ -10,7 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorMaintenance
+from app.models import (
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorMaintenance,
+    MonitorStatusChange,
+)
 
 NOW = 1_799_999_970  # 30 s before a minute: the grid ends at the full minute after
 END = 1_800_000_000
@@ -280,11 +286,9 @@ def _at(ts):
     return datetime.fromtimestamp(ts, timezone.utc).replace(tzinfo=None)
 
 
-def _seed_log(factory, rows):
-    """rows: (check_id, server_id, rule_id, sent_at unix, old, new)."""
+def _seed_log(factory, rows, origin="state"):
+    """rows: (check_id, server_id, at unix, old, new) of the status change log, check rows."""
     with factory() as db:
-        for rule in {r[2] for r in rows}:
-            db.add(MonitorAlertRule(id=rule, name=rule, channel="webhook", channel_config="{}"))
         for check in {(r[0], r[1]) for r in rows}:
             db.add(
                 MonitorCheck(
@@ -296,15 +300,14 @@ def _seed_log(factory, rows):
                 )
             )
         db.flush()
-        for check_id, _, rule_id, ts, old, new in rows:
+        for check_id, _, ts, old, new in rows:
             db.add(
-                MonitorAlertLog(
-                    alert_rule_id=rule_id,
+                MonitorStatusChange(
                     check_id=check_id,
                     old_status=old,
                     new_status=new,
-                    sent_at=_at(ts),
-                    success=True,
+                    at=_at(ts),
+                    origin=origin,
                 )
             )
         db.commit()
@@ -315,13 +318,14 @@ def test_events_are_the_status_changes_of_this_servers_checks(history):
     _seed_log(
         history.factory,
         [
-            ("ping-1", "srv-1", "r1", END - 600, "ok", "critical"),
-            ("ping-1", "srv-1", "r2", END - 599, "ok", "critical"),  # same change, 2nd rule
-            ("ping-1", "srv-1", "r1", END - 60, "critical", "ok"),
-            ("http-1", "srv-1", "r1", END - 1800, "ok", "warning"),
-            ("ping-2", "srv-2", "r1", END - 300, "ok", "critical"),  # other server
-            ("ping-1", "srv-1", "r1", start - 1, "warning", "ok"),  # before the range
+            ("ping-1", "srv-1", END - 600, "ok", "critical"),
+            ("ping-1", "srv-1", END - 599, "ok", "critical"),  # same change, 2nd rule
+            ("ping-1", "srv-1", END - 60, "critical", "ok"),
+            ("http-1", "srv-1", END - 1800, "ok", "warning"),
+            ("ping-2", "srv-2", END - 300, "ok", "critical"),  # other server
+            ("ping-1", "srv-1", start - 1, "warning", "ok"),  # before the range
         ],
+        origin="alert_log",  # taken over by the revision: one row per notified rule
     )
 
     body = history.get("/status/server/srv-1/history?period=1h").json()
@@ -337,8 +341,8 @@ def test_the_same_change_a_minute_later_is_a_new_event(history):
     _seed_log(
         history.factory,
         [
-            ("ping-1", "srv-1", "r1", END - 600, "ok", "critical"),
-            ("ping-1", "srv-1", "r1", END - 300, "ok", "critical"),
+            ("ping-1", "srv-1", END - 600, "ok", "critical"),
+            ("ping-1", "srv-1", END - 300, "ok", "critical"),
         ],
     )
 
@@ -350,13 +354,135 @@ def test_the_same_change_a_minute_later_is_a_new_event(history):
 def test_events_stop_at_the_limit(history):
     _seed_log(
         history.factory,
-        [("ping-1", "srv-1", "r1", END - 61 * i, "ok", "critical") for i in range(1, 260)],
+        [("ping-1", "srv-1", END - 61 * i, "ok", "critical") for i in range(1, 260)],
     )
 
     events = history.get("/status/server/srv-1/history?period=7d").json()["events"]
 
     assert len(events) == 200
     assert events[0]["at"] == END - 61
+
+
+def test_a_first_result_that_is_fine_and_object_changes_are_no_events(history):
+    _seed_log(
+        history.factory,
+        [
+            ("ping-1", "srv-1", END - 900, "pending", "ok"),
+            ("info-1", "srv-1", END - 800, "pending", "info"),
+            ("http-1", "srv-1", END - 700, "pending", "critical"),  # a first failure is one
+            ("info-1", "srv-1", END - 600, "info", "ok"),  # no alert rule ever sent these
+            ("ping-1", "srv-1", END - 500, "ok", "unknown"),
+        ],
+    )
+    with history.factory() as db:
+        db.add(
+            MonitorStatusChange(
+                check_id="ping-1",
+                object_key="srv-1/disk/a",
+                old_status="ok",
+                new_status="critical",
+                at=_at(END - 400),
+                origin="state",
+            )
+        )
+        db.commit()
+
+    events = history.get("/status/server/srv-1/history?period=1h").json()["events"]
+
+    assert [(e["checkId"], e["status"]) for e in events] == [
+        ("ping-1", "unknown"),
+        ("info-1", "ok"),
+        ("http-1", "critical"),
+    ]
+
+
+def test_the_pending_filter_leaves_the_limit_to_real_events(history):
+    # The fine first results are filtered in the query: EVENT_LIMIT * 5 of them, newer
+    # than the real change, do not push it out of the rows the query reads.
+    _seed_log(
+        history.factory,
+        [(f"new-{i}", "srv-1", END - 10 - i, "pending", "ok") for i in range(1000)]
+        + [("ping-1", "srv-1", END - 3000, "ok", "critical")],
+    )
+
+    events = history.get("/status/server/srv-1/history?period=1h").json()["events"]
+
+    assert [(e["checkId"], e["status"]) for e in events] == [("ping-1", "critical")]
+
+
+@pytest.fixture
+def engine_change(history, monkeypatch):
+    """Runs a ping check srv-1/c1 through execute_check from ok to critical, the alert
+    dispatch included (synchronously, no hub), and points the history's clock at 30 s
+    after the change. Returns the history and the change's unix time."""
+    import app.alerter as alerter
+    import app.check_engine as ce
+    from app.models import MonitorState
+    from app.routers import checks as checks_mod
+
+    with history.factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                server_id="srv-1",
+                name="Ping",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+                consecutive_oks=1,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="ok", notified_status="ok"))
+        db.commit()
+    monkeypatch.setattr(
+        ce, "get_checker", lambda _t: SimpleNamespace(run=lambda cfg: ("critical", "down", None))
+    )
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda fn, *a: fn(*a)))
+    monkeypatch.setattr(alerter, "SERVER_HUB_URL", "")
+
+    def run():
+        ce.execute_check("c1")
+        with history.factory() as db:
+            at = db.query(MonitorStatusChange).filter_by(check_id="c1").one().at
+            assert db.query(MonitorAlertLog).count() == 0  # nobody was notified
+        changed = int(at.replace(tzinfo=timezone.utc).timestamp())
+        monkeypatch.setattr(checks_mod, "time", SimpleNamespace(time=lambda: changed + 30))
+        return changed
+
+    return SimpleNamespace(history=history, run=run)
+
+
+def test_a_change_without_alert_rule_is_an_event(engine_change):
+    changed = engine_change.run()
+
+    events = engine_change.history.get("/status/server/srv-1/history?period=1h").json()["events"]
+
+    assert events == [{"at": changed, "checkId": "c1", "checkName": "Ping", "status": "critical"}]
+
+
+def test_a_change_in_maintenance_is_an_event(engine_change):
+    from app.core.time import utcnow_naive
+
+    now = utcnow_naive()
+    with engine_change.history.factory() as db:
+        db.add(MonitorAlertRule(id="r1", name="R", channel="webhook", channel_config="{}"))
+        db.add(
+            MonitorMaintenance(
+                id="m1",
+                server_id="srv-1",
+                kind="once",
+                starts_at=now - timedelta(hours=1),
+                ends_at=now + timedelta(hours=1),
+                enabled=True,
+            )
+        )
+        db.commit()
+    changed = engine_change.run()
+
+    events = engine_change.history.get("/status/server/srv-1/history?period=1h").json()["events"]
+
+    assert events == [{"at": changed, "checkId": "c1", "checkName": "Ping", "status": "critical"}]
 
 
 def test_maintenance_bands_cover_this_server_and_all_servers(history):

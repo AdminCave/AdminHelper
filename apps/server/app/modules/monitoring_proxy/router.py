@@ -85,6 +85,7 @@ _ALLOWED_PATH_PREFIXES = (
     "catalog",
     "discovery",
     "findings",
+    "objects",
 )
 
 # Raised before the request left this process: the monitoring received nothing.
