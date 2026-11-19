@@ -16,7 +16,7 @@ from app.core.events import fire_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.connections.models import Connection, own_text, shown_name
-from app.modules.frp._helpers import create_auto_connection, next_visitor_port
+from app.modules.frp._helpers import create_auto_connection, follow_tunnel, next_visitor_port
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.policy import domain_conflicts, sync_policy
 from app.modules.frp.schemas import (
@@ -162,11 +162,18 @@ def _reject_domain_conflict(db: Session, tunnel: FrpTunnel) -> None:
         )
 
 
-def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
+def _attach_auto_connection(
+    db: Session, tunnel: FrpTunnel, data: FrpTunnelCreate | FrpTunnelUpdate
+) -> None:
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
     the JSON-encoded tags — and the linking stay identical (2.47)."""
-    auto_conn = create_auto_connection(tunnel, username=username)
+    auto_conn = create_auto_connection(
+        tunnel,
+        username=data.auto_connection_username,
+        scheme=data.auto_connection_scheme,
+        path=data.auto_connection_path,
+    )
     if auto_conn:
         db.add(auto_conn)
         db.flush()
@@ -233,7 +240,7 @@ def create_tunnel(
         db.flush()
         _reject_domain_conflict(db, tunnel)
         if data.auto_create_connection:
-            _attach_auto_connection(db, tunnel, data.auto_connection_username)
+            _attach_auto_connection(db, tunnel, data)
         db.commit()
     except IntegrityError:
         # Lost a race against a concurrent create on the same STCP visitor_port (the
@@ -298,6 +305,7 @@ def update_tunnel(
         tunnel.name = _stored_name(data.label, data.name, tunnel.target_server, protocol, ends_type)
 
     was_stcp = tunnel.tunnel_type == "stcp"
+    old_shape = (tunnel.tunnel_type, tunnel.protocol)
     ends_stcp = (data.tunnel_type if "tunnel_type" in sent else tunnel.tunnel_type) == "stcp"
 
     if ends_stcp and "visitor_port" in sent and data.visitor_port:
@@ -356,8 +364,15 @@ def update_tunnel(
         if sent & {"custom_domains", "enabled", "tunnel_type", "extra_config"}:
             db.flush()
             _reject_domain_conflict(db, tunnel)
+        linked = (
+            db.get(Connection, tunnel.connection_id)
+            if (tunnel.tunnel_type, tunnel.protocol) != old_shape and tunnel.connection_id
+            else None
+        )
+        if linked:
+            follow_tunnel(linked, tunnel, data.auto_connection_scheme, data.auto_connection_path)
         if data.auto_create_connection and not tunnel.connection_id:
-            _attach_auto_connection(db, tunnel, data.auto_connection_username)
+            _attach_auto_connection(db, tunnel, data)
         db.commit()
     except IntegrityError:
         db.rollback()

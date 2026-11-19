@@ -25,15 +25,17 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
+import app.core.config as app_config
 import app.modules.notifications.sender as sender
 
 
 def _configure(monkeypatch, port):
-    monkeypatch.setattr(sender, "SMTP_HOST", "smtp.example.com")
-    monkeypatch.setattr(sender, "SMTP_PORT", port)
-    monkeypatch.setattr(sender, "SMTP_FROM", "from@example.com")
-    monkeypatch.setattr(sender, "SMTP_USER", "u")
-    monkeypatch.setattr(sender, "SMTP_PASSWORD", "p")
+    # Outside channel_config.using, send_email takes the relay from .env (app.core.config).
+    monkeypatch.setattr(app_config, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(app_config, "SMTP_PORT", port)
+    monkeypatch.setattr(app_config, "SMTP_FROM", "from@example.com")
+    monkeypatch.setattr(app_config, "SMTP_USER", "u")
+    monkeypatch.setattr(app_config, "SMTP_PASSWORD", "p")
     monkeypatch.setattr(sender, "SMTP_CA_FILE", "")
 
 

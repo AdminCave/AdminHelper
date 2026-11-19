@@ -220,12 +220,12 @@ func checkPeer(ctx context.Context, conn *net.UnixConn, path string, secret bool
 			return err
 		}
 	}
-	name, err := processName(ctx, cred.Pid)
+	name, err := programName(ctx, cred.Pid)
 	if err != nil {
 		return fmt.Errorf("%w: the process serving %s cannot be read: %v", ErrNotAllowed, path, err)
 	}
 	if neverProbed(name) || unixActivator(name) {
-		return fmt.Errorf("%w: %s belongs to %s, which the agent never probes", ErrNotAllowed, path, name)
+		return fmt.Errorf("%w: %s belongs to %.64s, which the agent never probes", ErrNotAllowed, path, name)
 	}
 	return checkForwarder(ctx, cred.Pid, name, path)
 }

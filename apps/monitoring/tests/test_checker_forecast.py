@@ -10,7 +10,8 @@ unknown), worst mount wins, and the query carries the escaped server_id."""
 import httpx
 import pytest
 
-from app.checkers import get_checker
+from app.checkers import CheckContext, get_checker
+from app.checkers.context import DiskRules
 from app.checkers.forecast import DiskForecastChecker, _slope_pp_per_hour
 
 H = 3600.0
@@ -153,3 +154,84 @@ def test_empty_history_from_a_reachable_store_stays_no_disk_history(monkeypatch)
         )
 
     assert run_against_store(monkeypatch, empty) == ("unknown", "No disk history yet", None)
+
+
+def rules(**over) -> CheckContext:
+    spec = {"ignore_mounts": frozenset(), "min_free_gb": {}, "default_min_free_gb": 20.0}
+    spec["free_gb"] = {}
+    spec.update(over)
+    return CheckContext(disk_rules=DiskRules(**spec))
+
+
+def test_a_full_disk_is_critical_not_stable(monkeypatch):
+    patch_query(monkeypatch, [series("/", [(i * H, 100.0) for i in range(25)])])
+    status, msg, metrics = DiskForecastChecker().run(CFG)
+    assert status == "critical"
+    assert msg == "/ full"
+    assert metrics["_details"]["mounts"][0]["hours_left"] == 0
+    assert metrics["disk_forecast_min_hours"] == 0
+
+
+def test_an_ignored_mount_is_not_forecast(monkeypatch):
+    patch_query(monkeypatch, [rising("/", 52.0, 1.0), rising("/boot/efi", 42.0, 2.0)])
+    status, msg, metrics = DiskForecastChecker().run_with_context(
+        CFG, rules(ignore_mounts=frozenset({"/boot/efi"}))
+    )
+    assert status == "warning"
+    assert "/boot/efi" not in msg
+    assert [m["mount"] for m in metrics["_details"]["mounts"]] == ["/"]
+
+
+@pytest.mark.parametrize(
+    ("free_gb", "expected"),
+    [(19.9, "critical"), (20.0, "ok"), (None, "critical")],
+)
+def test_enough_free_space_raises_no_alarm(monkeypatch, free_gb, expected):
+    # Like the resources check: at least min_free_gb free gates the alarm; without
+    # free_gb (older agent) the forecast counts as before.
+    patch_query(monkeypatch, [rising("/", 42.0, 2.0)])
+    free = {} if free_gb is None else {"/": free_gb}
+    status, _msg, _metrics = DiskForecastChecker().run_with_context(CFG, rules(free_gb=free))
+    assert status == expected
+
+
+def test_a_mount_with_enough_free_space_shows_no_time_to_full(monkeypatch):
+    # The desktop colours a mount by hours_left alone, and the chart follows
+    # disk_forecast_min_hours: a mount the gate holds must carry neither.
+    patch_query(monkeypatch, [rising("/", 42.0, 2.0), rising("/data", 42.0, 0.5)])
+    status, _msg, metrics = DiskForecastChecker().run_with_context(
+        CFG, rules(free_gb={"/": 100.0, "/data": 5.0})
+    )
+    by_mount = {m["mount"]: m for m in metrics["_details"]["mounts"]}
+    assert "hours_left" not in by_mount["/"]
+    assert by_mount["/"]["note"] == "enough free space"
+    assert metrics["disk_forecast_min_hours"] == pytest.approx(
+        by_mount["/data"]["hours_left"], abs=0.1
+    )
+    assert status == "ok"
+
+
+def test_a_mount_override_sets_its_own_free_space_limit(monkeypatch):
+    patch_query(monkeypatch, [rising("/", 42.0, 2.0), rising("/data", 42.0, 2.0)])
+    status, msg, _metrics = DiskForecastChecker().run_with_context(
+        CFG,
+        rules(min_free_gb={"/data": 500.0}, free_gb={"/": 100.0, "/data": 100.0}),
+    )
+    assert status == "critical"
+    assert "/data" in msg and "/ " not in msg.replace("/data", "")
+
+
+def test_a_zero_limit_turns_the_gate_off(monkeypatch):
+    patch_query(monkeypatch, [rising("/", 42.0, 2.0)])
+    status, _msg, _metrics = DiskForecastChecker().run_with_context(
+        CFG, rules(default_min_free_gb=0.0, free_gb={"/": 100.0})
+    )
+    assert status == "critical"
+
+
+def test_a_full_disk_stays_critical_whatever_the_free_space_limit(monkeypatch):
+    patch_query(monkeypatch, [series("/", [(i * H, 100.0) for i in range(25)])])
+    status, _msg, _metrics = DiskForecastChecker().run_with_context(
+        CFG, rules(default_min_free_gb=0.0, free_gb={"/": 0.0})
+    )
+    assert status == "critical"

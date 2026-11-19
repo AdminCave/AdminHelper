@@ -7,15 +7,18 @@
 Least-squares fill rate over the recent monitor_agent_disk_percent history per
 mount -> hours until 100 % (the Netdata/Checkmk prediction pattern). Warns
 long before the static disk_warn threshold fires; a shrinking or stable disk
-is simply ok. Insufficient history yields 'unknown' — which never notifies
-(unknown-policy), so a freshly assigned check stays quiet until enough data
-exists."""
+is simply ok, a full one critical. With an enabled agent_resources check on the
+host, its disk rules apply: ignore_mounts are left out, and a mount with at least
+min_free_gb free raises no alarm. Insufficient history yields 'unknown' — which
+never notifies (unknown-policy), so a freshly assigned check stays quiet until
+enough data exists."""
 
 from __future__ import annotations
 
 import logging
 
 from app.checkers.agent import join_capped
+from app.checkers.context import CheckContext
 from app.core.victoria import escape_label_value, victoria
 
 logger = logging.getLogger("monitor.forecast")
@@ -51,7 +54,14 @@ class DiskForecastChecker:
     }
     """
 
+    # The engine hands over the disk rules of the host's agent_resources check.
+    wants_context = True
+
     def run(self, config: dict) -> tuple[str, str, dict | None]:
+        return self.run_with_context(config, CheckContext())
+
+    def run_with_context(self, config: dict, context: CheckContext) -> tuple[str, str, dict | None]:
+        rules = context.disk_rules
         server_id = config.get("server_id", "")
         if not server_id:
             return "unknown", "No server_id configured", None
@@ -80,6 +90,8 @@ class DiskForecastChecker:
 
         for series in results:
             mount = (series.get("metric") or {}).get("mount", "?")
+            if rules is not None and mount in rules.ignore_mounts:
+                continue
             points: list[tuple[float, float]] = []
             for raw in series.get("values", []):
                 try:
@@ -103,10 +115,29 @@ class DiskForecastChecker:
                 "rate_pp_per_hour": round(rate, 3),
             }
 
-            if rate <= _MIN_RATE_PP_PER_HOUR or last_pct >= 100:
+            if last_pct >= 100:
+                entry["hours_left"] = 0.0
+                mounts.append(entry)
+                min_hours_left = 0.0
+                problems.append(f"{mount} full")
+                status = "critical"
+                continue
+            if rate <= _MIN_RATE_PP_PER_HOUR:
                 entry["hours_left"] = None
                 mounts.append(entry)
                 continue
+
+            # Like the resources check: at least min_free_gb free raises no alarm, 0 turns
+            # the gate off, and without free_gb (older agent) the forecast counts as before.
+            # Such a mount carries a note instead of hours_left, so neither the desktop's
+            # pill nor disk_forecast_min_hours shows a time to full the check does not rate.
+            if rules is not None:
+                min_free = rules.min_free_for(mount)
+                free = rules.free_gb.get(mount)
+                if min_free != 0 and free is not None and free >= min_free:
+                    entry["note"] = "enough free space"
+                    mounts.append(entry)
+                    continue
 
             hours_left = (100.0 - last_pct) / rate
             entry["hours_left"] = round(hours_left, 1)

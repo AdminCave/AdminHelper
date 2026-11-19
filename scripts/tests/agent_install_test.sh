@@ -63,6 +63,8 @@ mkdir -p "$BIN"
 cat > "$BIN/apt-get" <<EOF
 #!/usr/bin/env bash
 echo "\$@" >> "$WORK/apt-get.calls"
+# AH_STUB_SMART_FAIL=1: the smartmontools install fails (the warn-only path).
+[ -n "\${AH_STUB_SMART_FAIL:-}" ] && [[ " \$* " == *" smartmontools "* ]] && exit 100
 exit 0
 EOF
 # fuser stub for the apt-lock wait: reports "held" on the first call and free
@@ -75,6 +77,12 @@ echo \$((n + 1)) > "$WORK/fuser.count"
 echo "\$@" >> "$WORK/fuser.calls"
 [ "\$n" -lt 1 ] && exit 0   # 0 = lock IS held
 exit 1                      # 1 = nobody holds it
+EOF
+# systemd-detect-virt: prints AH_STUB_VIRT and, like the real one, exits 1 on "none".
+cat > "$BIN/systemd-detect-virt" <<EOF
+#!/usr/bin/env bash
+echo "\${AH_STUB_VIRT:-kvm}"
+[ "\${AH_STUB_VIRT:-kvm}" != none ]
 EOF
 cat > "$BIN/dnf" <<EOF
 #!/usr/bin/env bash
@@ -123,8 +131,9 @@ fresh_env() {
     export AH_YUM_REPO_DIR="$ROOT/yum.repos.d"
     export AH_RPM_KEY_DIR="$ROOT/rpm-gpg"
     export AH_IDENTITY_CA="$ROOT/identity/ca.crt"
+    export AH_REPO_CA="$ROOT/apt/adminhelper-ca.crt"
     rm -f "$WORK/provision.args" "$WORK/provision.stdin" "$WORK/apt-get.calls" "$WORK/dnf.calls"
-    unset AH_STUB_NO_CAFP AH_STUB_NO_TOKEN_STDIN AH_STUB_ENROLL 2>/dev/null || true
+    unset AH_STUB_NO_CAFP AH_STUB_NO_TOKEN_STDIN AH_STUB_ENROLL AH_STUB_VIRT AH_STUB_SMART_FAIL 2>/dev/null || true
 }
 
 run_script() { bash "$SCRIPT" "$@" 2>&1; }
@@ -140,8 +149,15 @@ grep -q "URIs: file://$REPODIR/apt" "$AH_APT_SOURCES_DIR/adminhelper.sources" 2>
     && ok "source points at the repo plane" || bad "URIs wrong"
 grep -q -- "--ca-fp" "$WORK/provision.args" 2>/dev/null \
     && ok "provision got --ca-fp (capable agent)" || bad "--ca-fp missing in provision args"
-grep -q "CAInfo \"$AH_IDENTITY_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
-    && ok "post-enroll flip pins the internal CA (apt CAInfo)" || bad "CA flip missing"
+grep -q "CAInfo \"$AH_REPO_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
+    && ok "post-enroll flip pins the public CA copy (apt CAInfo)" || bad "CA flip missing or not on the copy"
+[ "$(cat "$AH_REPO_CA" 2>/dev/null)" = test-ca ] && [ "$(stat -c %a "$AH_REPO_CA")" = 644 ] \
+    && ok "the CA copy holds ca.crt as 0644 (readable for _apt)" \
+    || bad "CA copy: '$(cat "$AH_REPO_CA" 2>/dev/null)' mode $(stat -c %a "$AH_REPO_CA" 2>/dev/null)"
+! grep -q "$AH_IDENTITY_CA" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
+    && ok "apt no longer points into the 0700 identity directory" || bad "CAInfo still names $AH_IDENTITY_CA"
+! grep -q "smartmontools" "$WORK/apt-get.calls" 2>/dev/null \
+    && ok "no smartmontools on a VM (kvm)" || bad "smartmontools installed on kvm"
 grep -qE "install -y .*adminhelper-agent" "$WORK/apt-get.calls" 2>/dev/null \
     && ok "apt-get install ran" || bad "apt-get install not called"
 grep -q -- "-o DPkg::Lock::Timeout=300" "$WORK/apt-get.calls" 2>/dev/null \
@@ -206,6 +222,29 @@ grep -q "repo_gpgcheck=1" "$AH_YUM_REPO_DIR/adminhelper.repo" && ok "repo_gpgche
 grep -q "sslcacert=$AH_IDENTITY_CA" "$AH_YUM_REPO_DIR/adminhelper.repo" \
     && ok "post-enroll flip to sslcacert" || bad "sslcacert flip missing"
 grep -q -- "--insecure" "$WORK/provision.args" && ok "no --ca-fp given -> TOFU" || bad "expected --insecure"
+[ ! -e "$AH_REPO_CA" ] && ok "dnf hosts get no apt CA copy" || bad "apt CA copy written on dnf"
+
+echo "── smartmontools only on bare metal (systemd-detect-virt) ──"
+fresh_env; export AH_PKG_MGR=apt AH_STUB_VIRT=none
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -qE "install -y .*smartmontools" "$WORK/apt-get.calls" 2>/dev/null \
+    && ok "apt, none: smartmontools installed" || bad "apt none: rc=$rc calls=$(tr '\n' ' ' < "$WORK/apt-get.calls" 2>/dev/null)"
+fresh_env; export AH_PKG_MGR=apt AH_STUB_VIRT=lxc
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ! grep -q "smartmontools" "$WORK/apt-get.calls" 2>/dev/null && grep -q "smartmontools not installed: lxc" <<<"$out" \
+    && ok "apt, lxc: smartmontools skipped with the reason" || bad "apt lxc: rc=$rc; $(echo "$out" | tail -2)"
+fresh_env; export AH_PKG_MGR=dnf AH_STUB_VIRT=none
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q "install -y smartmontools" "$WORK/dnf.calls" 2>/dev/null \
+    && ok "dnf, none: smartmontools installed" || bad "dnf none: rc=$rc calls=$(tr '\n' ' ' < "$WORK/dnf.calls" 2>/dev/null)"
+fresh_env; export AH_PKG_MGR=dnf AH_STUB_VIRT=kvm
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && ! grep -q "smartmontools" "$WORK/dnf.calls" 2>/dev/null \
+    && ok "dnf, kvm: smartmontools skipped" || bad "dnf kvm: rc=$rc"
+fresh_env; export AH_PKG_MGR=apt AH_STUB_VIRT=none AH_STUB_SMART_FAIL=1
+out=$(run_script --server https://srm.example.com --gpg-fp "$FP"); rc=$?
+[ $rc -eq 0 ] && grep -q "could not install smartmontools" <<<"$out" \
+    && ok "a failed smartmontools install only warns, the install goes on" || bad "smart fail: rc=$rc; $(echo "$out" | tail -2)"
 
 echo "── argument validation ──"
 fresh_env; export AH_PKG_MGR=apt

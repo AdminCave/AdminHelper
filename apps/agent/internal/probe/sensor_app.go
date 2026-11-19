@@ -53,12 +53,14 @@ func passwordEnv(c appCredential, name string) ([]string, error) {
 }
 
 // The kinds of target of the views: most read one application installed as a unit or running in a
-// container; the certificates of a reverse proxy are read in either, a web domain's at its vhost.
+// container; the certificates of a reverse proxy are read in either, a web domain's at its vhost, a
+// network share's fill at its mount point.
 var (
 	unitKinds      = []string{kindUnit}
 	containerKinds = []string{kindContainer}
 	eitherKinds    = []string{kindUnit, kindContainer}
 	vhostKinds     = []string{kindVhost}
+	shareKinds     = []string{kindShare}
 )
 
 // appViews are the views of the app sensor. Each reads the inside of one application on this host,
@@ -103,6 +105,7 @@ var appViews = map[string]appView{
 	"mailcow_watchdog":  {kinds: containerKinds, read: mailcowWatchdog},
 	"npm_certs":         {kinds: containerKinds, read: npmCerts},
 	"nextcloud_aio":     {kinds: containerKinds, read: nextcloudAIO},
+	"net_share_usage":   {kinds: shareKinds, read: netShareUsage},
 	"moodle_checks":     {kinds: vhostKinds, read: moodleChecks},
 	"moodle_data":       {kinds: vhostKinds, read: moodleDataUsage},
 	"mssql_events":      {kinds: unitKinds, read: mssqlEvents},

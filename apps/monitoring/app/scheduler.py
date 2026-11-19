@@ -20,6 +20,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.alert_bundle import FLUSH_SECONDS, flush_agent_alerts
+from app.bell_catch_up import CATCH_UP_SECONDS, catch_up_bell
 from app.check_engine import execute_check
 from app.check_types import PUSH_ONLY_TYPES
 from app.core.config import ALERT_LOG_RETENTION_DAYS
@@ -255,6 +256,22 @@ def schedule_agent_alert_bundle(seconds: int = FLUSH_SECONDS) -> None:
         flush_agent_alerts,
         trigger=IntervalTrigger(seconds=seconds),
         id=_AGENT_ALERT_BUNDLE_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+    )
+
+
+_BELL_CATCH_UP_JOB_ID = "system:bell-catch-up"
+
+
+def schedule_bell_catch_up(seconds: int = CATCH_UP_SECONDS) -> None:
+    """Register the bell catch-up (idempotent): it sends what a failed hub POST
+    left the bell behind (R-1572). max_instances=1: two runs at once would each
+    send the same lagging checks."""
+    scheduler.add_job(
+        catch_up_bell,
+        trigger=IntervalTrigger(seconds=seconds),
+        id=_BELL_CATCH_UP_JOB_ID,
         replace_existing=True,
         max_instances=1,
     )

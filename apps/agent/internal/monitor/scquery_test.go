@@ -68,7 +68,7 @@ func TestAliasAndWatchScQueryError(t *testing.T) {
 		"not executable": &fs.PathError{Op: "fork/exec", Path: `C:\Windows\System32\sc.exe`, Err: fs.ErrPermission},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := scServiceHealth([]byte(scFixture), err, nil)
+			got := scServiceHealth([]byte(scFixture), err, nil, nil)
 			if got["error"] != "sc query failed: sc did not start" {
 				t.Errorf("error = %q, want %q", got["error"], "sc query failed: sc did not start")
 			}
@@ -81,7 +81,7 @@ func TestAliasAndWatchScQueryError(t *testing.T) {
 		})
 	}
 	// sc answered: inventory and counts, no error.
-	got := scServiceHealth([]byte(scFixture), nil, nil)
+	got := scServiceHealth([]byte(scFixture), nil, nil, nil)
 	if _, ok := got["error"]; ok {
 		t.Errorf("error = %q, want none", got["error"])
 	}
@@ -106,7 +106,7 @@ func TestScServiceHealthTimedOut(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
 		t.Errorf("execTimed returned after %s, the timeout did not stop the hung call", elapsed)
 	}
-	got := scServiceHealth(out, err, nil)
+	got := scServiceHealth(out, err, nil, nil)
 	if want := "sc query failed: timed out after 100ms"; got["error"] != want {
 		t.Errorf("error = %q, want %q", got["error"], want)
 	}
@@ -179,7 +179,7 @@ func TestScServiceHealthExitAndCrashes(t *testing.T) {
 	got := scServiceHealth([]byte(scExitFixture), nil, func() ([]byte, error) {
 		calls++
 		return []byte(events), nil
-	})
+	}, nil)
 	want := []ServiceEntry{
 		{"unit": "Dnscache", "active_state": "active", "enabled_state": "unknown"},
 		{"unit": "Spooler", "active_state": "inactive", "enabled_state": "unknown",
@@ -218,7 +218,7 @@ func TestScServiceHealthReadsEventsOnlyForAnExit(t *testing.T) {
 		got := scServiceHealth([]byte(out), nil, func() ([]byte, error) {
 			t.Errorf("%s: crash events read without a stopped service with an exit", name)
 			return nil, nil
-		})
+		}, nil)
 		for _, svc := range got["all_services"].([]ServiceEntry) {
 			if svc["exit"] != "" || svc["result"] != "" {
 				t.Errorf("%s: %v carries exit or result", name, svc)
@@ -231,7 +231,7 @@ func TestScServiceHealthCrashEventsFail(t *testing.T) {
 	// A failed wevtutil leaves the exits from sc query and adds neither result, since nor an error.
 	got := scServiceHealth([]byte(scExitFixture), nil, func() ([]byte, error) {
 		return []byte(scmEventXML("7031", "2026-11-12T10:00:00Z", "Print Spooler")), errors.New("exit status 5")
-	})
+	}, nil)
 	if _, ok := got["error"]; ok {
 		t.Errorf("error = %q, want none", got["error"])
 	}
@@ -290,6 +290,69 @@ func TestScCode(t *testing.T) {
 	} {
 		if got := scCode(line); got != want {
 			t.Errorf("scCode(%q) = %q, want %q", line, got, want)
+		}
+	}
+}
+
+func TestWindowsEnabledState(t *testing.T) {
+	cases := []struct {
+		start     uint64
+		triggered bool
+		want      string
+	}{
+		{0, false, "enabled"}, {1, false, "enabled"}, {2, false, "enabled"},
+		{2, true, "manual"}, {3, false, "manual"}, {3, true, "manual"},
+		{4, false, "disabled"}, {4, true, "disabled"}, {5, false, "unknown"},
+	}
+	for _, c := range cases {
+		if got := windowsEnabledState(c.start, c.triggered); got != c.want {
+			t.Errorf("windowsEnabledState(%d, %v) = %q, want %q", c.start, c.triggered, got, c.want)
+		}
+	}
+}
+
+func TestScServiceHealthStartStates(t *testing.T) {
+	// Spooler (crashed), AppMgmt (never started since boot) and W32Time (stopped cleanly, as by an
+	// admin's net stop) are enabled and stopped: in enabled_inactive. MyAgent is manual, BadSvc
+	// disabled: not in it. wuauserv has no start state and keeps "unknown".
+	var asked []string
+	got := scServiceHealth([]byte(scExitFixture), nil, func() ([]byte, error) { return nil, errors.New("no events") },
+		func(names []string) map[string]string {
+			asked = names
+			return map[string]string{
+				"Dnscache": "enabled", "Spooler": "enabled", "AppMgmt": "enabled", "MyAgent": "manual",
+				"W32Time": "enabled", "BadSvc": "disabled",
+			}
+		})
+	wantAsked := []string{"Dnscache", "Spooler", "AppMgmt", "MyAgent", "W32Time", "BadSvc", "wuauserv"}
+	if !reflect.DeepEqual(asked, wantAsked) {
+		t.Errorf("start states asked for %v, want %v", asked, wantAsked)
+	}
+	if !reflect.DeepEqual(got["enabled_inactive"], []string{"AppMgmt", "Spooler", "W32Time"}) {
+		t.Errorf("enabled_inactive = %v, want [AppMgmt Spooler W32Time]", got["enabled_inactive"])
+	}
+	states := map[string]string{}
+	for _, svc := range got["all_services"].([]ServiceEntry) {
+		states[svc["unit"]] = svc["enabled_state"]
+	}
+	want := map[string]string{
+		"Dnscache": "enabled", "Spooler": "enabled", "AppMgmt": "enabled", "MyAgent": "manual",
+		"W32Time": "enabled", "BadSvc": "disabled", "wuauserv": "unknown",
+	}
+	if !reflect.DeepEqual(states, want) {
+		t.Errorf("enabled_state = %v, want %v", states, want)
+	}
+}
+
+func TestScServiceHealthWithoutStartStates(t *testing.T) {
+	// Without start states every service stays "unknown" and enabled_inactive empty, as before.
+	got := scServiceHealth([]byte(scExitFixture), nil, func() ([]byte, error) { return nil, errors.New("no events") }, nil)
+	if ei := got["enabled_inactive"].([]string); len(ei) != 0 {
+		t.Errorf("enabled_inactive = %v, want none", ei)
+	}
+	for _, svc := range got["all_services"].([]ServiceEntry) {
+		if svc["enabled_state"] != "unknown" {
+			t.Errorf("%s enabled_state = %q, want unknown", svc["unit"], svc["enabled_state"])
 		}
 	}
 }

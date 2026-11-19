@@ -5,6 +5,7 @@
 package monitor
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -17,7 +18,12 @@ import (
 // crashEvents runs the scmCrashArgs call, only when a stopped service carries an exit: its events
 // add result and since to those services (addScmCrashes). A failed call adds nothing, like the
 // facts batch on Linux.
-func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error)) map[string]any {
+//
+// startStates maps service names to their enabled_state (windowsEnabledState); a service it leaves
+// out keeps "unknown". enabled_inactive holds every stopped "enabled" service, an admin's stop as
+// much as a crash: trigger-started services are "manual" already, and an automatic service that
+// ends on its own by design is excluded by the ignore list of the monitoring rule.
+func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error), startStates func(names []string) map[string]string) map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
 		"enabled_inactive": []string{},
@@ -28,6 +34,24 @@ func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error)) 
 		return result
 	}
 	services, byName := parseScQuery(string(out))
+	if startStates != nil {
+		names := make([]string, len(services))
+		for i, svc := range services {
+			names[i] = svc["unit"]
+		}
+		states := startStates(names)
+		enabledInactive := []string{}
+		for _, svc := range services {
+			if state, ok := states[svc["unit"]]; ok {
+				svc["enabled_state"] = state
+			}
+			if svc["active_state"] == "inactive" && svc["enabled_state"] == "enabled" {
+				enabledInactive = append(enabledInactive, svc["unit"])
+			}
+		}
+		sort.Strings(enabledInactive)
+		result["enabled_inactive"] = enabledInactive
+	}
 	result["all_services"] = services
 	result["counts"] = serviceCounts(services)
 	for _, svc := range services {
@@ -47,9 +71,8 @@ func scServiceHealth(out []byte, err error, crashEvents func() ([]byte, error)) 
 // the Windows-only collector cannot run in the ubuntu CI, so the parser previously had no test and
 // was never even seen by go vet (6.20).
 //
-// STOPPED services are deliberately NOT classified as enabled_inactive: `sc query` does not expose
-// the start type, so "enabled but inactive" is unknowable here. The monitoring service derives the
-// same empty result from all_services (enabled_state is always "unknown" on Windows).
+// `sc query` does not expose the start type: every entry has enabled_state "unknown" here, and
+// scServiceHealth fills it in from the registry.
 //
 // byName maps every service name and display name, in lower case, to the service name; the SCM
 // keeps both unique across all services.
@@ -151,4 +174,26 @@ func mapWindowsService(name, state string) ServiceEntry {
 		"active_state":  activeState,
 		"enabled_state": "unknown",
 	}
+}
+
+// windowsEnabledState maps the Start value of a service's registry key
+// (HKLM\SYSTEM\CurrentControlSet\Services\<name>) to an enabled_state: boot, system and automatic
+// start are "enabled", demand start "manual", disabled "disabled". An automatic service with start
+// triggers (a TriggerInfo subkey) is "manual": the SCM starts it on an event and it may rest stopped
+// by design, as a trigger-started service on Linux (TriggeredBy=). Another value is "unknown".
+func windowsEnabledState(start uint64, triggered bool) string {
+	switch start {
+	case 0, 1:
+		return "enabled"
+	case 2:
+		if triggered {
+			return "manual"
+		}
+		return "enabled"
+	case 3:
+		return "manual"
+	case 4:
+		return "disabled"
+	}
+	return "unknown"
 }

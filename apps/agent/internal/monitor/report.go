@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strings"
 	"time"
 
 	"adminhelper-agent/internal/config"
@@ -31,13 +32,15 @@ func BuildReport(serviceNames []string) map[string]any {
 
 // probeWork is what the probe phase of a run works with: the plan's probes and the credentials stored
 // on this host (credentials.Load), or why they could not be read; and whether the plan asks for a
-// discovery of this host, with the markers it looks for.
+// discovery of this host, with the markers it looks for; and whether it asks for the error lines of
+// failed units.
 type probeWork struct {
-	probes   []probe.Probe
-	creds    map[string]credentials.Credential
-	credsErr error
-	scan     bool
-	markers  []probe.Marker
+	probes      []probe.Probe
+	creds       map[string]credentials.Credential
+	credsErr    error
+	scan        bool
+	markers     []probe.Marker
+	serviceLogs bool
 }
 
 // discoveryCollector is the discovery's name in the self-measurement and the throttle.
@@ -59,8 +62,8 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 
 	var cpuNow *cpuSample
 	var resources map[string]any
-	m.core(ctx, "resources", func(context.Context) {
-		resources, cpuNow = collectResources(prev.CPU, now)
+	m.core(ctx, "resources", func(ctx context.Context) {
+		resources, cpuNow = collectResources(ctx, prev.CPU, now)
 		report["resources"] = resources
 		report["uptime_seconds"] = collectUptime()
 		report["host"] = collectHostFacts()
@@ -124,6 +127,24 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 			report["smart_absent"] = map[string]string{"reason": absent}
 		}
 	})
+	// The error lines of a failed unit go out once per failure while the plan asks for them
+	// (servicelogs.go). The failures that ended are forgotten even in a run that reads no lines; with
+	// the switch off the state is empty, so lines go out anew once it is on again. Between two runs
+	// its throttle stays as it was.
+	if svc, _ := report["systemd"].(map[string]any); work != nil && work.serviceLogs && serviceLogsSupported && svc != nil {
+		failed, since := failedUnits(svc)
+		next.ServiceLogs = stillFailed(prev.ServiceLogs, failed, since)
+		m.optional(ctx, serviceLogsCollector, func(ctx context.Context) {
+			if logs := collectServiceLogs(ctx, failed, since, next.ServiceLogs); len(logs) > 0 {
+				svc["failed_logs"] = logs
+			}
+		})
+	} else {
+		next.ServiceLogs = nil
+		if t, ok := prev.Throttle[serviceLogsCollector]; ok {
+			m.next[serviceLogsCollector] = t
+		}
+	}
 
 	// The probes run in what is left of ctx. A probe that times out is its own result, not a hit: one
 	// hanging service would slow down the probes of every other. The phase's hit is a due probe the
@@ -181,8 +202,9 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 }
 
 // collectResources is the report's resources block, the CPU share measured since prevCPU, and the CPU
-// counters now.
-func collectResources(prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
+// counters now. From topProcessesFrom CPU or memory it names the busiest processes; that runs outside
+// the load gate, since it is under load that they are asked for.
+func collectResources(ctx context.Context, prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSample) {
 	cpuPercent, cpuNow := collectCPUSince(prevCPU, now)
 	resources := map[string]any{
 		"cpu_percent": cpuPercent,
@@ -212,6 +234,11 @@ func collectResources(prevCPU *cpuSample, now time.Time) (map[string]any, *cpuSa
 	}
 	if temps := collectTemperatures(); len(temps) > 0 {
 		resources["temperatures"] = temps
+	}
+	if underLoad(resources) {
+		if top := collectTopProcesses(ctx); top != nil {
+			resources["top_processes"] = top
+		}
 	}
 	return resources, cpuNow
 }
@@ -302,4 +329,94 @@ func pushOnce(ctx context.Context, client *http.Client, endpoint, apiKey string,
 		return fmt.Errorf("Push: %w", err)
 	}
 	return nil
+}
+
+// A report carries the error lines of at most maxLogUnits failed units, maxLogLines lines each; the
+// rest follow in the next report. The monitoring service keeps no more (MAX_LOG_UNITS,
+// MAX_LOG_LINES in service_inventory.py).
+const (
+	maxLogUnits = 20
+	maxLogLines = 10
+)
+
+// serviceLogsCollector is the error lines' name in the self-measurement and the throttle.
+const serviceLogsCollector = "service_logs"
+
+// serviceLogReader reads the error lines of one unit (readServiceLog); a seam for the tests.
+var serviceLogReader = readServiceLog
+
+// failedUnits are the failed units of the systemd block in its order, and the since of each from
+// failed_details ("" for a unit without one).
+func failedUnits(systemd map[string]any) ([]string, map[string]string) {
+	failed, _ := systemd["failed"].([]string)
+	since := map[string]string{}
+	details, _ := systemd["failed_details"].([]map[string]string)
+	for _, d := range details {
+		since[d["unit"]] = d["since"]
+	}
+	return failed, since
+}
+
+// stillFailed is sent without the failures that ended: a unit no longer failed, or failed anew
+// (another since), gets its lines again. A since that is not known on one side (no failed_details
+// in this run or when the lines went out: the batched systemctl show failed) counts as the same
+// failure, so a failed detail query sends nothing twice.
+func stillFailed(sent map[string]string, failed []string, since map[string]string) map[string]string {
+	kept := map[string]string{}
+	for _, unit := range failed {
+		s, ok := sent[unit]
+		if !ok || (s != since[unit] && s != "" && since[unit] != "") {
+			continue
+		}
+		if since[unit] != "" {
+			s = since[unit]
+		}
+		kept[unit] = s
+	}
+	return kept
+}
+
+// collectServiceLogs reads the error lines of every failed unit whose failure has not been sent,
+// at most maxLogUnits, and marks each read one in sent (unit → since). A unit whose lines could
+// not be read stays unmarked and is asked again in the next report. The result is the
+// systemd.failed_logs block: {unit: {since, lines}}, lines oldest first.
+func collectServiceLogs(ctx context.Context, failed []string, since, sent map[string]string) map[string]any {
+	logs := map[string]any{}
+	for _, unit := range failed {
+		if len(logs) == maxLogUnits {
+			break
+		}
+		if _, done := sent[unit]; done {
+			continue
+		}
+		lines, ok := serviceLogReader(ctx, unit)
+		if !ok {
+			continue
+		}
+		entry := map[string]any{"lines": lines}
+		if since[unit] != "" {
+			entry["since"] = since[unit]
+		}
+		logs[unit] = entry
+		sent[unit] = since[unit]
+	}
+	return logs
+}
+
+// serviceLogLines are the last maxLogLines non-empty lines of journalctl's output, each through
+// cleanLogLine. --lines counts entries, and one entry may span several lines.
+func serviceLogLines(out []byte) []string {
+	lines := []string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) > maxLogLines {
+		lines = lines[len(lines)-maxLogLines:]
+	}
+	for i, line := range lines {
+		lines[i] = cleanLogLine(line)
+	}
+	return lines
 }

@@ -13,7 +13,12 @@ import { setLanguage, tNow } from '$lib/i18n';
 
 const h = vi.hoisted(() => ({
   recent: vi.fn(async (..._a: unknown[]): Promise<ConnectionSession[]> => []),
+  // By default the tunnel changes nothing about the address.
+  unchanged: async (c: Connection) => ({ connection: c, viaTunnel: true }),
+  resolve: vi.fn(),
 }));
+vi.mock('$lib/bridge', () => ({ resolveConnection: h.resolve }));
+vi.mock('$lib/stores/tunnel', () => ({ getMappings: () => [] }));
 vi.mock('$lib/stores/connections', async () => {
   const { writable } = await import('svelte/store');
   const version = writable(0);
@@ -88,6 +93,7 @@ function field(label: string): string | null {
 }
 
 beforeAll(() => {
+  h.resolve.mockImplementation(h.unchanged);
   setLanguage('en');
 });
 
@@ -96,6 +102,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   h.recent.mockReset();
   h.recent.mockResolvedValue([]);
+  h.resolve.mockReset();
+  h.resolve.mockImplementation(h.unchanged);
 });
 
 describe('ConnectionInspector', () => {
@@ -226,5 +234,59 @@ describe('ConnectionInspector recent sessions', () => {
   it('loads nothing without a selection', () => {
     renderInsp({ conn: null });
     expect(h.recent).not.toHaveBeenCalled();
+  });
+});
+
+// Where a tunnel connection really leads (R-1540).
+describe('ConnectionInspector resolved address', () => {
+  const STCP_WEB: Connection = {
+    ...WEB,
+    id: 'w',
+    host: '127.0.0.1',
+    port: 6100,
+    url: 'https://u:pw@127.0.0.1:6100/ui/?lang=de',
+  };
+  const resolved = (c: Connection) => ({ connection: c, viaTunnel: true });
+
+  it('shows the address through the visitor without user and password', async () => {
+    h.resolve.mockResolvedValue(
+      resolved({ ...STCP_WEB, url: 'https://u:pw@127.0.0.1:16100/ui/?lang=de' }),
+    );
+    renderInsp({ conn: STCP_WEB, tunnel: 'pve-web' });
+    const dd = await screen.findByTestId('insp-resolved', {}, { timeout: 30_000 });
+    expect(dd.textContent).toBe('https://127.0.0.1:16100/ui/?lang=de');
+    expect(field(tNow('connections.insp.resolved'))).toBe('https://127.0.0.1:16100/ui/?lang=de');
+  });
+
+  it('shows host and port for ssh', async () => {
+    h.resolve.mockResolvedValue(resolved({ ...SSH, host: '127.0.0.1', port: 16022 }));
+    renderInsp({ tunnel: 'db-tunnel' });
+    expect((await screen.findByTestId('insp-resolved', {}, { timeout: 30_000 })).textContent).toBe(
+      '127.0.0.1:16022',
+    );
+  });
+
+  it('shows nothing where the address does not change or cannot be resolved', async () => {
+    h.resolve.mockResolvedValue(resolved(STCP_WEB));
+    renderInsp({ conn: STCP_WEB, tunnel: 'pve-web' });
+    await vi.waitFor(() => expect(h.resolve).toHaveBeenCalledTimes(1), {
+      timeout: 30_000,
+    });
+    await Promise.resolve();
+    expect(screen.queryByTestId('insp-resolved')).toBeNull();
+    cleanup();
+
+    h.resolve.mockRejectedValue(new Error('no visitor'));
+    renderInsp({ conn: STCP_WEB, tunnel: 'pve-web' });
+    await vi.waitFor(() => expect(h.resolve).toHaveBeenCalledTimes(2), {
+      timeout: 30_000,
+    });
+    await Promise.resolve();
+    expect(screen.queryByTestId('insp-resolved')).toBeNull();
+  });
+
+  it('does not ask without a tunnel', () => {
+    renderInsp({ conn: STCP_WEB });
+    expect(h.resolve).not.toHaveBeenCalled();
   });
 });

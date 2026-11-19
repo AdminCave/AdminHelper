@@ -47,6 +47,7 @@ from ._helpers import (
 )
 
 _NOW = datetime(2026, 10, 20, 12, 0)
+_EARLIER = _NOW - timedelta(hours=1)
 
 
 class TestHubSeverity:
@@ -856,7 +857,7 @@ class TestBellSlotAcrossDispatches:
         assert posted == [status]
         assert bell_record(bell_db, cid) == hub_before
 
-    # T6 review: one test per half of the release condition (_release_hub_slot), a
+    # T6 review: one test per half of the release condition (release_hub_slot), a
     # row that matches the failed reservation in the other half only.
 
     def test_a_failed_recovery_keeps_a_newer_one_with_the_same_status(self, bell_db, monkeypatch):
@@ -891,3 +892,150 @@ class TestBellSlotAcrossDispatches:
 
         assert posted == ["critical", "ok"]
         assert bell_record(bell_db, cid) == ("ok", _NOW)
+
+
+# --- R-1571: disabling or deleting a check closes the incident the bell showed ---
+@pytest.fixture()
+def bell_api(client_db, monkeypatch):
+    """(client, factory, posts): posts gets each payload the hub was sent."""
+    client, factory = client_db
+    posts: list[dict] = []
+
+    def post(payload, label):
+        posts.append(payload)
+        return True
+
+    monkeypatch.setattr("app.alerter.post_hub_event", post)
+    monkeypatch.setattr("app.routers.checks.remove_check", lambda *a, **k: None)
+    monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+    monkeypatch.setattr("app.routers.checks.utcnow_naive", lambda: _NOW)
+    return client, factory, posts
+
+
+def _state(factory, cid="chk-bell"):
+    from app.models import MonitorState
+
+    with factory() as db:
+        return db.query(MonitorState).filter_by(check_id=cid).one()
+
+
+def _cleared(posts, hub_status):
+    assert len(posts) == 1
+    payload = posts[0]
+    assert payload["incident_key"] == "check:chk-bell"
+    assert payload["new_status"] == "ok"
+    # The all-clear reaches the bell at the level its alarm did (bell_severity).
+    assert payload["severity"] == hub_status
+    assert payload["source_id"] == "srv-1"
+    return payload
+
+
+@pytest.mark.parametrize("hub_status", ["warning", "critical"])
+def test_disabling_a_check_closes_its_incident(bell_api, hub_status):
+    client, factory, posts = bell_api
+    seed_bell_check(
+        factory, status="critical", notified_status="critical", hub_status=hub_status,
+        hub_sent_at=_EARLIER,
+    )  # fmt: skip
+    assert client.post("/checks/chk-bell/toggle").json()["enabled"] is False
+    assert _cleared(posts, hub_status)["title"] == "[AdminHelper Monitor] bell: check disabled"
+    # The bell shows nothing of the check any more, and the all-clear counts as reported.
+    assert bell_record(factory, "chk-bell") == ("ok", _EARLIER)
+    assert _state(factory).notified_status == "ok"
+
+
+def test_enabling_a_check_starts_it_fresh(bell_api):
+    client, factory, posts = bell_api
+    seed_bell_check(factory, status="critical", notified_status="critical", hub_status="critical")
+    with factory() as db:
+        from app.models import MonitorState
+
+        db.query(MonitorState).update({"fail_count": 4, "ok_count": 2, "since": _EARLIER})
+        db.commit()
+    client.post("/checks/chk-bell/toggle")
+    posts.clear()
+
+    out = client.post("/checks/chk-bell/toggle").json()
+
+    assert out["enabled"] is True
+    state = _state(factory)
+    assert (state.status, state.fail_count, state.ok_count, state.since) == ("unknown", 0, 0, _NOW)
+    # The old status is not reported again.
+    assert posts == []
+
+
+def test_a_problem_that_outlasts_disable_and_enable_reaches_the_bell_again(bell_api):
+    client, factory, posts = bell_api
+    seed_bell_check(
+        factory, status="critical", notified_status="critical", hub_status="critical",
+        hub_sent_at=_EARLIER,
+    )  # fmt: skip
+    client.post("/checks/chk-bell/toggle")
+    assert client.post("/checks/chk-bell/toggle").json()["enabled"] is True
+    posts.clear()
+    # The first run after enabling still finds the same problem: a new alarm.
+    with factory() as db:
+        from app.models import MonitorState
+
+        db.query(MonitorState).update({"status": "critical", "fail_count": 1})
+        db.commit()
+    dispatch_alert_bg("chk-bell", "unknown", "critical")
+    assert [(p["new_status"], p["incident_key"]) for p in posts] == [("critical", "check:chk-bell")]
+
+
+@pytest.mark.parametrize("hub_status", ["warning", "critical"])
+def test_deleting_a_check_closes_its_incident(bell_api, hub_status):
+    client, factory, posts = bell_api
+    seed_bell_check(
+        factory, status="critical", notified_status="critical", hub_status=hub_status,
+        hub_sent_at=_EARLIER,
+    )  # fmt: skip
+    assert client.delete("/checks/chk-bell").status_code == 204
+    assert _cleared(posts, hub_status)["title"] == "[AdminHelper Monitor] bell: check deleted"
+
+
+@pytest.mark.parametrize("hub_status", [None, "ok", "info"])
+def test_a_check_the_bell_shows_no_problem_of_sends_nothing(bell_api, hub_status):
+    client, factory, posts = bell_api
+    seed_bell_check(factory, status="critical", notified_status="critical", hub_status=hub_status)
+    client.post("/checks/chk-bell/toggle")
+    client.delete("/checks/chk-bell")
+    assert posts == []
+
+
+def test_a_refused_all_clear_on_disable_is_caught_up(bell_api, monkeypatch):
+    from app.bell_catch_up import catch_up_bell
+
+    client, factory, posts = bell_api
+    answers = [False]
+
+    def post(payload, label):
+        posts.append(payload)
+        return answers.pop(0) if answers else True
+
+    monkeypatch.setattr("app.alerter.post_hub_event", post)
+    monkeypatch.setattr("app.bell_catch_up.utcnow_naive", lambda: _NOW)
+    seed_bell_check(
+        factory, status="critical", notified_status="critical", hub_status="critical",
+        hub_sent_at=_EARLIER,
+    )  # fmt: skip
+    assert client.post("/checks/chk-bell/toggle").json()["enabled"] is False
+    # The bell still shows the alarm; the all-clear counts as reported all the same.
+    assert bell_record(factory, "chk-bell") == ("critical", _EARLIER)
+    assert _state(factory).notified_status == "ok"
+
+    catch_up_bell()
+
+    assert [p["new_status"] for p in posts] == ["ok", "ok"]
+    assert bell_record(factory, "chk-bell") == ("ok", _EARLIER)
+
+
+def test_a_refused_all_clear_on_delete_is_logged(bell_api, monkeypatch, caplog):
+    client, factory, posts = bell_api
+    monkeypatch.setattr("app.alerter.post_hub_event", lambda payload, label: False)
+    seed_bell_check(factory, status="critical", notified_status="critical", hub_status="critical")
+
+    with caplog.at_level("WARNING", logger="app.routers.checks"):
+        assert client.delete("/checks/chk-bell").status_code == 204
+
+    assert any(r.levelname == "WARNING" and "chk-bell" in r.getMessage() for r in caplog.records)
