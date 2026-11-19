@@ -1,5 +1,5 @@
 # Monitoring-Nachlese: Dienstnamen unter Windows, agent_ping nach Stillstand, Cleanup, Lastschonung — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-51 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-51 · Review: pro Task
 Spec: docs/features/kern-monitoring-51.md (Roadmap R-0436, R-1607, R-1622, R-1616)
 Heavy: none — nur Bewertung und eine Admin-Route im Monitoring-Dienst, kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -25,8 +25,10 @@ Dedup-Key: bug:monitoring:agent.py:agent-ping-counts-monitoring-downtime
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_ping_checker.py tests/test_template_overrides.py
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html (agent_ping), changelog.d/kern-monitoring-51.md
 
-### T3 — R-1622: Cleanup schickt die Entwarnungen nach der Antwort  [ ]
+### T3 — R-1622: Cleanup schickt die Entwarnungen nach der Antwort  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/server_cleanup.py, apps/monitoring/app/routers/admin.py, apps/monitoring/tests/test_bell_removed_checks.py, changelog.d/kern-monitoring-51.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @882414aba 2026-11-19T20:35:25+01:00
+Review: approve (.ah-out/review/kern-monitoring-51/T3.verdict.json)
 Beweis: reviewer-Nit kern-monitoring-49 2026-11-19 (`send_all_clears` synchron in `cleanup_server`)
 Änderung: `cleanup_server` nimmt einen Absender für die Entwarnungen; die Route übergibt `background_tasks.add_task`, damit die Hub-Aufrufe nach der Antwort laufen. Test: die Route antwortet, bevor eine Entwarnung gesendet ist, und sendet sie danach.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_removed_checks.py tests/test_openapi_snapshot.py
