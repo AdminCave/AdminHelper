@@ -8,7 +8,7 @@
 // object the exception that applies now, and the views read only its result.
 
 import type { Effect, ExceptionInfo, Kind, MonObject } from './model';
-import { KIND_LABEL, STATUS_LABEL, dateText, formatValue, isHidden } from './grammar';
+import { STATUS_LABEL, dateText, formatValue, isHidden, objectLabel } from './grammar';
 
 export type ScopeKind = 'object' | 'rule' | 'check' | 'check-type' | 'server' | 'tag' | 'cluster';
 
@@ -244,7 +244,7 @@ export function durationText(d: Duration): string {
 }
 
 function placeOf(o: MonObject): string {
-  return `${KIND_LABEL[o.kind]} ${o.name} auf ${o.server}`;
+  return `${objectLabel(o)} auf ${o.server}`;
 }
 
 export function conditionText(c: Condition, objects: readonly MonObject[]): string {
