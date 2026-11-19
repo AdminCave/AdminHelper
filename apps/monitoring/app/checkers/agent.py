@@ -742,6 +742,12 @@ class AgentResourcesChecker:
         return grader.status, message, {"_details": details, "_objects": objects}
 
 
+def _host_os(report: dict) -> object:
+    """The OS the host facts of this push name; None without them (an agent before R-0421)."""
+    host = report.get("host")
+    return host.get("os") if isinstance(host, dict) else None
+
+
 class ServiceProcessChecker:
     """Checks whether services are running (based on agent push).
 
@@ -833,6 +839,65 @@ class ServiceProcessChecker:
         if name.endswith(ServiceProcessChecker._UNIT_TYPES):
             return name
         return f"{name}.service"
+
+    @staticmethod
+    def _service_id(unit: str, host_os: object) -> str:
+        """The id of a service object (ADR 0004 §4): the full unit name. Windows and FreeBSD
+        know no unit types, there it is the service's own name, on Windows lowercased: the
+        service control manager compares names without case."""
+        if host_os not in ("windows", "freebsd"):
+            return unit
+        name = unit.removesuffix(".service")
+        return name.lower() if host_os == "windows" else name
+
+    @classmethod
+    def _service_object(
+        cls, unit: str, name: str, host_os: object, status: str, reason: str
+    ) -> dict:
+        return {
+            "kind": "service",
+            "id": cls._service_id(unit, host_os),
+            "name": cap_agent_text(name) or "",
+            "status": status,
+            "reason": reason,
+        }
+
+    # The reason of a unit auto mode does not hear of: the agent sends every failed and
+    # every enabled but inactive unit, so a unit it leaves out has neither problem.
+    _NO_PROBLEM = "No problem reported"
+
+    def _auto_objects(
+        self,
+        systemd: dict,
+        failed: list[str],
+        enabled_inactive: list[str],
+        reasons: dict[str, str],
+        host_os: object,
+    ) -> dict:
+        """The object result of auto mode (R-1559): a service object per failed or enabled
+        but inactive unit, rated as in the message. The agent names no healthy unit, so the
+        result is incomplete; with both lists whole and no error it says the stored units it
+        does not name are ok (others_ok), so a unit that recovers turns ok. An ignored unit
+        is no object (P1b)."""
+        items = []
+        # An empty name, which _details keeps, is no key.
+        for unit in filter(None, failed):
+            status = "critical" if self._is_service(unit) else "warning"
+            reason = f"Failed ({reasons[unit]})" if unit in reasons else "Failed"
+            items.append(self._service_object(unit, unit, host_os, status, reason))
+        for unit in filter(None, enabled_inactive):
+            reason = "Inactive (autostart)"
+            items.append(self._service_object(unit, unit, host_os, "warning", reason))
+        objects: dict = {"complete": False, "items": items}
+        # A list cut at the cap may hide a bad unit, and after a failed list-units the empty
+        # lists prove nothing. An entry that is no name stands for no unit.
+        whole = all(
+            isinstance(systemd.get(key), list) and len(systemd[key]) <= MAX_REPORT_ENTRIES
+            for key in ("failed", "enabled_inactive")
+        )
+        if whole and not systemd.get("error"):
+            objects["others_ok"] = self._NO_PROBLEM
+        return objects
 
     @staticmethod
     def _capped(raw) -> list:
@@ -937,6 +1002,9 @@ class ServiceProcessChecker:
         failed_services = [u for u in failed if self._is_service(u)]
         failed_units = [u for u in failed if not self._is_service(u)]
         reasons = self._reasons(systemd.get("failed_details"))
+        metrics["_objects"] = self._auto_objects(
+            systemd, failed, enabled_inactive, reasons, _host_os(report)
+        )
 
         def named(units: list[str]) -> list[str]:
             return [f"{u} ({reasons[u]})" if u in reasons else u for u in units]
@@ -1001,6 +1069,26 @@ class ServiceProcessChecker:
         parts = [result, cap_agent_text(entry.get("exit"))]
         return ", ".join(p for p in parts if p) or None
 
+    def _list_objects(self, watched: list[dict], error, host_os: object) -> dict:
+        """The object result of list mode (R-1559): a service object per configured name,
+        complete. Keyed by the name as configured, an alias not resolved: only the full
+        inventory knows its target, and a key that changed with the throttled pushes would
+        mark the object gone. A name without data was not collected (Kevin 2026-10-16: it is
+        not down)."""
+        items = []
+        for w in watched:
+            if w["state"] == "running":
+                status, reason = "ok", "Running"
+            elif w["state"] == "down":
+                status = "critical"
+                reason = f"Not active ({w['reason']})" if "reason" in w else "Not active"
+            else:
+                status = NOT_COLLECTED
+                reason = self._not_queryable(error) if error else "No data from the agent"
+            unit = self._unit_name(w["name"])
+            items.append(self._service_object(unit, w["name"], host_os, status, reason))
+        return {"complete": True, "items": items}
+
     def _evaluate_list(
         self, config: dict, report: dict, prev_details: dict | None
     ) -> tuple[str, str, dict | None]:
@@ -1022,7 +1110,8 @@ class ServiceProcessChecker:
         """
         expected = config.get("services", [])
         if not expected:
-            return "ok", "No services configured", None
+            # Complete: the services taken off the list are gone.
+            return "ok", "No services configured", {"_objects": {"complete": True, "items": []}}
 
         systemd = report.get("systemd")
         if not isinstance(systemd, dict):
@@ -1082,6 +1171,7 @@ class ServiceProcessChecker:
 
         metrics = {"services_down": len(down), "services_up": len(up)}
         metrics["_details"] = {"mode": "list", "watched": watched}
+        metrics["_objects"] = self._list_objects(watched, error, _host_os(report))
         no_data = f"; no data: {join_capped(nodata)}" if nodata else ""
 
         if down:

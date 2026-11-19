@@ -6,9 +6,14 @@
 
 A checker hands its objects to the engine next to `_details`, as
 ``metrics["_objects"] = {"complete": bool, "items": [{"kind", "id", "name", "status",
-"reason", "stable"?}]}``; the callers take it out of the metrics before they go to
-VictoriaMetrics. apply_result calls apply_objects under the check's locked MonitorState
-row, so both result paths write here in the same transaction and nothing else locks.
+"reason", "stable"?}], "others_ok"?: str}``; the callers take it out of the metrics before
+they go to VictoriaMetrics. apply_result calls apply_objects under the check's locked
+MonitorState row, so both result paths write here in the same transaction and nothing else
+locks.
+
+``others_ok`` is for a check that hears only of its bad objects (service_process in auto
+mode): an incomplete result with it says that every stored object it does not name is ok,
+for that reason.
 
 Rows are written only when they change (ADR §12.4, variant C): there is no "last seen"
 per object, that is the check's MonitorState.last_check.
@@ -73,21 +78,28 @@ def read_objects(raw: object, server_id: str | None) -> tuple[bool, dict[str, di
     """(complete, the items by object key) of one object result, its texts capped. An
     item this module does not take is left out and makes the result incomplete, so the
     object it stood for is not marked gone."""
+    whole, by_key = _read(raw, server_id)
+    return whole and raw.get("complete") is True, by_key
+
+
+def _read(raw: object, server_id: str | None) -> tuple[bool, dict[str, dict]]:
+    """(whole, the items by object key): whole when this module took every item of the
+    result, so what it does not name, the checker did not name either."""
     if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
         return False, {}
     items = raw["items"]
-    complete = raw.get("complete") is True and len(items) <= MAX_OBJECTS
+    whole = len(items) <= MAX_OBJECTS
     by_key: dict[str, dict] = {}
     for item in items[:MAX_OBJECTS]:
         entry = _entry(item)
         if entry is None:
-            complete = False
+            whole = False
             continue
         key = object_key(server_id, entry["kind"], entry.pop("id"))
         held = by_key.get(key)
         if held is None or _rank(entry["status"]) < _rank(held["status"]):
             by_key[key] = entry
-    return complete, by_key
+    return whole, by_key
 
 
 def _entry(item: object) -> dict | None:
@@ -147,8 +159,13 @@ def apply_objects(
 
     One read of the rows that can change, then only what changed. A complete result
     marks the objects it no longer names gone; an incomplete one leaves them as they
-    are. The fallback object stands for the check while it has no object of its own."""
-    complete, items = read_objects(raw, check.server_id)
+    are, or with `others_ok` turns them ok. The fallback object stands for the check
+    while it has no object of its own."""
+    whole, items = _read(raw, check.server_id)
+    complete = whole and raw.get("complete") is True
+    # Only from a result whose every item was taken: an item left out may be a bad object
+    # the checker named, and it would be turned ok.
+    others_ok = raw.get("others_ok") if whole and not complete else None
     # Not gone, or named again: the gone rows stay 30 days and are not read with every
     # result.
     can_change = MonitorObjectState.gone_at.is_(None)
@@ -183,6 +200,19 @@ def apply_objects(
                 del items[key]
     for key, item in items.items():
         _apply_item(db, check, stored.pop(key, None), key, item, now)
+    if isinstance(others_ok, str) and others_ok:
+        # Through _apply_item like a named object: damped, logged, and a row that is ok
+        # already is not written.
+        reason = _cut(storable(others_ok), MAX_MESSAGE)
+        for key, row in stored.items():
+            item = {
+                "kind": row.kind,
+                "name": row.name,
+                "status": "ok",
+                "reason": reason,
+                "stable": row.stable,
+            }
+            _apply_item(db, check, row, key, item, now)
     if complete:
         for row in stored.values():
             if row.gone_at is None:

@@ -409,6 +409,147 @@ def test_item_texts_are_capped_and_storable(factory):
     assert (cpu.kind, cpu.name, cpu.reason, cpu.stable) == ("cpu", "cpu", "", False)
 
 
+# --- others_ok ------------------------------------------------------------------
+
+
+def _partial(*items, others_ok="No problem reported"):
+    """An incomplete result that says the stored objects it does not name are ok."""
+    return {"complete": False, "items": list(items), "others_ok": others_ok}
+
+
+def test_others_ok_turns_what_an_incomplete_result_does_not_name_ok(factory):
+    _seed_check(factory)
+    first = {**_item("sda", "critical", "Failed"), "name": "Disk A", "stable": False}
+    _apply(factory, _result(first, _item("sdb", "warning", "Hot"), complete=False), T0)
+
+    # Paired: without others_ok an incomplete result leaves sda as it is.
+    _apply(factory, _result(_item("sdb", "warning", "Hot"), complete=False), T0 + MIN)
+    assert _objects(factory)[SDA].status == "critical"
+
+    _apply(factory, _partial(_item("sdb", "warning", "Hot")), T0 + 2 * MIN)
+
+    objs = _objects(factory)
+    sda = objs[SDA]
+    # Kind, name and stable stay as the checker last named them.
+    assert (sda.kind, sda.name, sda.stable, sda.status, sda.reason) == (
+        "disk",
+        "Disk A",
+        False,
+        "ok",
+        "No problem reported",
+    )
+    assert (sda.since, sda.bad_since, sda.fail_count, sda.gone_at) == (T0 + 2 * MIN, None, 0, None)
+    assert (objs[SDB].status, objs[SDB].reason) == ("warning", "Hot")
+    assert _object_changes(factory)[2:] == [(SDA, "critical", "ok", T0 + 2 * MIN)]
+
+
+def test_others_ok_resets_the_failure_count_like_a_named_ok(factory):
+    _seed_check(factory, consecutive_fails=2)
+    _apply(factory, _result(_item("sda"), complete=False), T0)
+    _apply(factory, _result(_item("sda", "critical", "Failed"), complete=False), T0 + MIN)
+    assert _objects(factory)[SDA].fail_count == 1
+
+    _apply(factory, _partial(), T0 + 2 * MIN)
+    sda = _objects(factory)[SDA]
+    assert (sda.status, sda.reason, sda.fail_count) == ("ok", "No problem reported", 0)
+
+    _apply(factory, _result(_item("sda", "critical", "Failed"), complete=False), T0 + 3 * MIN)
+    assert _objects(factory)[SDA].status == "ok"
+    # Paired: a second failure in a row counts.
+    _apply(factory, _result(_item("sda", "critical", "Failed"), complete=False), T0 + 4 * MIN)
+    assert _objects(factory)[SDA].status == "critical"
+
+
+def test_others_ok_writes_an_ok_object_once(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda"), _item("sdb", "warning"), complete=False), T0)
+
+    engine = factory.kw["bind"]
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        _apply(factory, _partial(_item("sdb", "warning")), T0 + MIN)
+        first = [s.split()[0] for s in statements if "monitor_object_state" in s]
+        statements.clear()
+        _apply(factory, _partial(_item("sdb", "warning")), T0 + 2 * MIN)
+        second = [s.split()[0] for s in statements if "monitor_object_state" in s]
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    # sda takes the reason of others_ok once, then costs no write.
+    assert first == ["SELECT", "UPDATE"]
+    assert second == ["SELECT"]
+    sda = _objects(factory)[SDA]
+    assert (sda.status, sda.reason, sda.since) == ("ok", "No problem reported", T0)
+    # ok to ok is no change of the status.
+    assert [change[0] for change in _object_changes(factory)] == [SDA, SDB]
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        _partial(_item("sdb"), "sdc"),
+        _partial(_item("sdb"), _item("sdc"), _item("sdd")),
+        _partial(_item("sdb"), others_ok=True),
+        _partial(_item("sdb"), others_ok=""),
+        _result(_item("sdb"), complete=False),
+    ],
+    ids=["item-left-out", "cut-at-max-objects", "not-text", "empty", "absent"],
+)
+def test_others_ok_counts_only_in_a_result_whose_every_item_was_taken(factory, monkeypatch, result):
+    # An item left out may be a bad object the checker named; it must not turn ok.
+    monkeypatch.setattr(objects_mod, "MAX_OBJECTS", 2)
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda", "critical", "Failed"), complete=False), T0)
+
+    _apply(factory, result, T0 + MIN)
+    sda = _objects(factory)[SDA]
+    assert (sda.status, sda.reason, sda.gone_at) == ("critical", "Failed", None)
+
+    # Paired: the same items, whole, with others_ok.
+    _apply(factory, _partial(_item("sdb"), _item("sdc")), T0 + 2 * MIN)
+    assert _objects(factory)[SDA].status == "ok"
+
+
+def test_complete_result_marks_gone_and_turns_nothing_ok(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda", "critical", "Failed"), _item("sdb")), T0)
+
+    _apply(factory, {**_result(_item("sdb")), "others_ok": "No problem reported"}, T0 + MIN)
+
+    sda = _objects(factory)[SDA]
+    assert (sda.status, sda.reason, sda.gone_at) == ("critical", "Failed", T0 + MIN)
+
+
+def test_others_ok_leaves_gone_objects_gone(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda", "critical", "Failed"), _item("sdb", "warning")), T0)
+    _apply(factory, _result(_item("sdb", "warning")), T0 + MIN)  # sda goes
+
+    _apply(factory, _partial(), T0 + 2 * MIN)
+
+    objs = _objects(factory)
+    assert (objs[SDA].status, objs[SDA].gone_at) == ("critical", T0 + MIN)
+    # Paired: sdb, not gone, turns ok; held by the check, it keeps the fallback away.
+    assert (objs[SDB].status, objs[SDB].gone_at) == ("ok", None)
+    assert FALLBACK not in objs
+
+
+def test_others_ok_reason_is_capped_and_storable(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda", "critical"), complete=False), T0)
+
+    _apply(factory, _partial(others_ok="r\x00" * MAX_MESSAGE), T0 + MIN)
+
+    sda = _objects(factory)[SDA]
+    assert sda.status == "ok"
+    assert len(sda.reason) == MAX_MESSAGE and "\x00" not in sda.reason
+
+
 # --- the fallback object --------------------------------------------------------
 
 

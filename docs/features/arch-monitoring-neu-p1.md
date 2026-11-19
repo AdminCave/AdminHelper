@@ -124,7 +124,10 @@ oder nach `info`: das ist der Zweck (ADR §5).
 Hash-Suffix), liest den Bestand des Checks mit einer Abfrage, dämpft je Objekt (`next_fail_count`,
 `effective_status`; `not_collected` gilt wie `ok` als gesund) und schreibt nur geänderte Zeilen. Ein vollständiges
 Ergebnis setzt `gone_at` für fehlende Objekte und löscht es bei Rückkehr; ein unvollständiges (Auto-Modus der
-Dienste, fehlender Block im Report) lässt fehlende Objekte unverändert. Fehlt `_objects`, entsteht ein Rückfall-Objekt
+Dienste, fehlender Block im Report) lässt fehlende Objekte unverändert. Ein unvollständiges Ergebnis mit
+`"others_ok": "<Grund>"`, dessen Einträge alle übernommen wurden, setzt die nicht genannten, nicht verschwundenen
+Objekte gedämpft auf `ok` mit diesem Grund: der Auto-Modus der Dienste nennt nur gestörte Units, und eine Unit, die
+sich erholt, fehlt dann einfach (nur mit beiden Listen ganz und ohne `error`). Fehlt `_objects`, entsteht ein Rückfall-Objekt
 `<server>/check/<check_id>` (Art `check`) mit dem gedämpften Check-Status. Übersprungene Läufe (`RunSkipped`,
 Lastabwurf) berühren keine Objekte. Verschwundene Objekte löscht der Tagesjob nach 30 Tagen (Kevin 2026-11-19).
 
@@ -139,7 +142,7 @@ Schlüssel je Art (ADR §4; Lücken schließt P1e):
 | `cpu`, `memory` | agent_resources | — (Art allein) | — |
 | `mount` | agent_resources | Pfad | — |
 | `sensor` | agent_resources | Chip/Label | — |
-| `service` | service_process | voller Unit-Name | — |
+| `service` | service_process | voller Unit-Name; Windows: Dienstname klein, FreeBSD: rc-Name; Listen-Modus: der konfigurierte Name ohne Alias-Auflösung (das Inventar kommt gedrosselt) | — |
 | `reboot`, `updates`, `clock` | system_state | — (Art allein) | — |
 
 Eine schlafende Platte meldet weder Modell noch Seriennummer (R-1569); mit früherer Messung fehlt sie im Ergebnis, das dann unvollständig ist, und ihr Objekt behält den letzten Stand.
