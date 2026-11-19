@@ -8,7 +8,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // "Alle Server", the start (Konzept §3.14, Kevin 2026-11-18: by server, not across; clearer at a
   // glance): one figure for the open problems and a bar of every rated object by state, whose
   // legend filters the page; the Lagekarte of every server by kind beside the newest problems;
-  // then the problems per server, worst first. Compact (the start, Kevin 2026-11-18) shows each
+  // then the problems per server, worst first (or the newest problem first, or by name; the choice
+  // holds for the session, sorting.ts). Compact (the start, Kevin 2026-11-18) shows each
   // server as a card with its worst problems; with metrics, each server lists its problems with
   // level 2. A silent host carries its stale objects, a module instance its parts.
   import { flip } from 'svelte/animate';
@@ -24,7 +25,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Lagekarte from './Lagekarte.svelte';
   import { isProblem, lageOf, type LageEntry } from './lists';
   import StatusBar from './StatusBar.svelte';
-  import { lageByServer, type ServerLage } from './servers';
+  import { lageByServer, orderBoard, type ServerLage } from './servers';
+  import { type BoardOrder, sorting } from './sorting';
 
   interface Props {
     objects: MonObject[];
@@ -53,6 +55,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const compact = $derived(density === 'compact');
   let filter = $state<Status | ''>('');
   let more = $state(0);
+  let order = $state<BoardOrder>(sorting.board);
   // Hovering a legend entry previews its filter on the Lagekarte.
   let preview = $state<Status | ''>('');
 
@@ -92,15 +95,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // The filter narrows each server to the entries in that state; stale keeps the stale values.
   const attention = $derived(
-    filter === ''
-      ? grouped.attention
-      : grouped.attention
-          .map((g) =>
-            filter === 'stale'
-              ? { ...g, entries: g.entries.filter((e) => e.stale.length > 0) }
-              : { ...g, entries: g.entries.filter((e) => matches(e, filter as Status)), stale: [] },
-          )
-          .filter((g) => g.entries.length > 0 || g.stale.length > 0),
+    orderBoard(
+      filter === ''
+        ? grouped.attention
+        : grouped.attention
+            .map((g) =>
+              filter === 'stale'
+                ? { ...g, entries: g.entries.filter((e) => e.stale.length > 0) }
+                : {
+                    ...g,
+                    entries: g.entries.filter((e) => matches(e, filter as Status)),
+                    stale: [],
+                  },
+            )
+            .filter((g) => g.entries.length > 0 || g.stale.length > 0),
+      order,
+    ),
   );
   const step = $derived(compact ? CARDS : BOXES);
   const limit = $derived(
@@ -248,6 +258,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </p>
     {/if}
     <span class="spacer"></span>
+    <Segmented
+      options={[
+        { value: 'state', label: 'Zustand' },
+        { value: 'newest', label: 'Neueste' },
+        { value: 'name', label: 'Name' },
+      ]}
+      value={order}
+      label="Reihenfolge der Server"
+      onChange={(v) => {
+        order = v as BoardOrder;
+        sorting.board = order;
+        more = 0;
+      }}
+    />
     <Segmented
       options={[
         { value: 'compact', label: 'Kompakt' },

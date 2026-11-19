@@ -10,6 +10,7 @@
 import type { MonObject, Status } from '../model';
 import { isHidden, statusRank } from '../grammar';
 import { isProblem, lageOf, type LageEntry } from './lists';
+import { type BoardOrder, type NavOrder, sortBy } from './sorting';
 
 /** Order of the segments in a server's status bar, worst first. */
 export const BAR_ORDER: Status[] = [
@@ -112,4 +113,36 @@ export function lageByServer(all: readonly MonObject[]): {
     else quiet.push(summary);
   }
   return { attention, quiet };
+}
+
+/** A server that wants a look: open problems or stale values. It lists under "Mit Problemen". */
+export function needsLook(s: ServerSummary): boolean {
+  return s.problems > 0 || s.worst === 'stale';
+}
+
+function byServer(a: { server: string }, b: { server: string }): number {
+  return a.server.localeCompare(b.server, 'de');
+}
+
+/** The server list in the chosen order: worst first as delivered, or by name. */
+export function orderServers(list: readonly ServerSummary[], order: NavOrder): ServerSummary[] {
+  return order === 'name' ? sortBy(list, (s) => s.server, 'asc') : [...list];
+}
+
+/** When the newest open problem of a server began (ISO); a server with only stale values counts
+ * from its newest stale value. */
+export function newestSince(g: ServerLage): string {
+  let newest = '';
+  for (const o of [...g.entries.flatMap((e) => [e.object, ...e.parts]), ...g.stale])
+    if (o.since > newest) newest = o.since;
+  return newest;
+}
+
+/** The board of "Alle Server" in the chosen order: worst first as delivered, the server with the
+ * newest problem first, or by name. */
+export function orderBoard(list: readonly ServerLage[], order: BoardOrder): ServerLage[] {
+  if (order === 'name') return sortBy(list, (g) => g.summary.server, 'asc');
+  if (order === 'newest')
+    return sortBy(list, newestSince, 'desc', { tie: (a, b) => byServer(a.summary, b.summary) });
+  return [...list];
 }

@@ -9,12 +9,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // then every server worst first, one line each with its open problems, so two dozen servers fit
   // without scrolling. The selection glides to the chosen server. Arrow keys move through the list
   // like the list of today's monitoring; "/" jumps to the search. With many servers the quiet ones
-  // fold into one line (Kevin 2026-11-19: hundreds of servers must still read well).
+  // fold into one line (Kevin 2026-11-19: hundreds of servers must still read well). Both groups
+  // can list by name instead (the choice holds for the session, sorting.ts).
   import Dot from '../../../components/ui/Dot.svelte';
   import Pill from '../../../components/ui/Pill.svelte';
   import SearchField from '../../../components/ui/SearchField.svelte';
+  import Segmented from '../../../components/ui/Segmented.svelte';
   import { STATUS_LABEL } from '../grammar';
-  import type { ServerSummary } from './servers';
+  import { type ServerSummary, needsLook, orderServers } from './servers';
+  import { type NavOrder, sorting } from './sorting';
 
   interface Props {
     summaries: ServerSummary[];
@@ -29,6 +32,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const QUIET_OPEN = 24;
 
   let query = $state('');
+  let order = $state<NavOrder>(sorting.nav);
   let search = $state<HTMLInputElement | undefined>(undefined);
   let list = $state<HTMLElement | undefined>(undefined);
   // The selection marker: where the selected item sits; it glides only after the first placement.
@@ -40,8 +44,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       s.server.toLocaleLowerCase('de').includes(query.toLocaleLowerCase('de')),
     ),
   );
-  const troubled = $derived(shown.filter((s) => s.problems > 0 || s.worst === 'stale'));
-  const quiet = $derived(shown.filter((s) => !troubled.includes(s)));
+  const troubled = $derived(orderServers(shown.filter(needsLook), order));
+  const quiet = $derived(
+    orderServers(
+      shown.filter((s) => !needsLook(s)),
+      order,
+    ),
+  );
   let showQuiet = $state(false);
   // A search or a quiet selected server always lists them.
   const quietOpen = $derived(
@@ -53,13 +62,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const totals = $derived({
     critical: summaries.reduce((n, s) => n + s.counts.critical, 0),
     warning: summaries.reduce((n, s) => n + s.counts.warning, 0),
-    troubled: summaries.filter((s) => s.problems > 0).length,
+    troubled: summaries.filter(needsLook).length,
   });
 
   $effect(() => {
     void server;
     void query;
     void quietOpen;
+    void order;
     const el = list?.querySelector<HTMLElement>('.item.selected');
     markY = el?.offsetTop ?? 0;
     markH = el?.offsetHeight ?? 0;
@@ -120,6 +130,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
       label="Server suchen"
       shortcut="/"
     />
+    <div class="order">
+      <Segmented
+        options={[
+          { value: 'state', label: 'Zustand' },
+          { value: 'name', label: 'Name' },
+        ]}
+        value={order}
+        label="Reihenfolge der Server"
+        onChange={(v) => {
+          order = v as NavOrder;
+          sorting.nav = order;
+        }}
+      />
+    </div>
   </div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="items" bind:this={list} onkeydown={move}>
@@ -183,6 +207,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .search {
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-faint);
+  }
+  .order {
+    margin-top: var(--space-2);
   }
   .items {
     position: relative;

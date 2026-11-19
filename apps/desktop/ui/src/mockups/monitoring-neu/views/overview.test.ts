@@ -113,9 +113,7 @@ describe('server list', () => {
       `Ohne Probleme ${quiet.length}`,
     ]);
     const all = container.querySelector('button.item.all');
-    expect(text(all)).toContain(
-      `${s.filter((x) => x.problems > 0).length} von ${s.length} mit Problemen`,
-    );
+    expect(text(all)).toContain(`${troubled.length} von ${s.length} mit Problemen`);
     expect(all?.getAttribute('aria-current')).toBe('true');
   });
 

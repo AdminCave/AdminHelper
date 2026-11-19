@@ -480,7 +480,12 @@ describe('cross views', () => {
         view: id,
         onOpen: () => {},
       });
-      const th = [...container.querySelectorAll('thead th')].map((e) => e.textContent?.trim());
+      // The title a screen reader hears: the sort arrow beside it is decoration (aria-hidden).
+      const th = [...container.querySelectorAll('thead th')].map((e) => {
+        const c = e.cloneNode(true) as Element;
+        c.querySelectorAll('[aria-hidden="true"]').forEach((x) => x.remove());
+        return c.textContent?.trim();
+      });
       expect(th).toHaveLength(TH[id]);
       expect(th[0]).toBe('Zustand');
       const rows = view.rows(ALL_OBJECTS);

@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   // Every object over all servers as one table, with filters (kind, status, server, hidden) and a
-  // search over name, server, reason, key and identity. Thousands of objects draw a page at a time.
+  // search over name, server, reason, key and identity. Thousands of objects draw a page at a time;
+  // a click on a column head sorts by it (the choice holds for the session, sorting.ts).
   import Badge from '../../../components/ui/Badge.svelte';
   import EmptyState from '../../../components/ui/EmptyState.svelte';
   import SearchField from '../../../components/ui/SearchField.svelte';
@@ -22,6 +23,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     sinceText,
   } from '../grammar';
   import { type ObjectFilter, NO_FILTER, filterObjects, serversOf } from './lists';
+  import SortButton from './SortButton.svelte';
+  import { OBJECT_COLUMNS, type Sort, ariaSort, orderObjects, sorting } from './sorting';
 
   interface Props {
     objects: MonObject[];
@@ -45,7 +48,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     value: s,
     label: STATUS_LABEL[s],
   }));
-  const list = $derived(filterObjects(objects, filter));
+  let sort = $state<Sort>(sorting.objects);
+  const list = $derived(orderObjects(filterObjects(objects, filter), sort));
   let pages = $state(1);
   const limit = $derived(PAGE * pages);
   // A new filter starts at the first page again.
@@ -55,8 +59,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     void filter.server;
     void filter.query;
     void filter.showHidden;
+    void sort;
     pages = 1;
   });
+
+  function setSort(s: Sort): void {
+    sort = s;
+    sorting.objects = s;
+  }
 </script>
 
 <div class="filters">
@@ -112,11 +122,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <table class="tbl">
       <thead>
         <tr>
-          <th>Zustand</th>
-          <th>Objekt</th>
-          <th>Art</th>
-          <th>Server</th>
-          <th>Seit</th>
+          {#each OBJECT_COLUMNS as c (c.col)}
+            <th aria-sort={ariaSort(sort, c.col)}
+              ><SortButton
+                title={c.title}
+                col={c.col}
+                {sort}
+                first={c.first}
+                onSort={setSort}
+              /></th
+            >
+          {/each}
         </tr>
       </thead>
       <tbody>

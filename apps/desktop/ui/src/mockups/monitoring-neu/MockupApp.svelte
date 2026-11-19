@@ -38,7 +38,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import ObjectsView from './views/ObjectsView.svelte';
   import ServerNav from './views/ServerNav.svelte';
   import ServerView from './views/ServerView.svelte';
-  import { serverSummaries } from './views/servers';
+  import { needsLook, serverSummaries } from './views/servers';
   import type { Kind } from './model';
 
   const VIEWS = [
@@ -73,7 +73,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const objects = $derived(applyExceptions(base, exceptions, NOW, TOPOLOGY));
   const object = $derived(objects.find((o) => o.key === selected));
   const summaries = $derived(serverSummaries(objects));
-  const troubledServers = $derived(summaries.filter((s) => s.problems > 0).length);
+  const troubledServers = $derived(summaries.filter(needsLook).length);
   const anchor = $derived(base.find((o) => o.key === dialog?.anchor));
   const editing = $derived(exceptions.find((e) => e.id === dialog?.id));
 

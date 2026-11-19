@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   // The cross views (Konzept §5): one table per question over all servers. The first column is
   // always Zustand with reason and since; a hidden object stays grey with its exception. Rows come
-  // worst first and a page at a time, so a fleet of hundreds stays quick.
+  // worst first and a page at a time, so a fleet of hundreds stays quick; a click on a column head
+  // sorts by it (the choice per view holds for the session, sorting.ts).
   import Badge from '../../../components/ui/Badge.svelte';
   import Dot from '../../../components/ui/Dot.svelte';
   import EmptyState from '../../../components/ui/EmptyState.svelte';
@@ -15,7 +16,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Segmented from '../../../components/ui/Segmented.svelte';
   import type { MonObject } from '../model';
   import { STATUS_LABEL, STATUS_TONE, exceptionText, isHidden, sinceText } from '../grammar';
-  import { CROSS_VIEWS } from './cross';
+  import { CROSS_VIEWS, defaultSort, orderRows } from './cross';
+  import SortButton from './SortButton.svelte';
+  import { type Sort, ariaSort, sorting } from './sorting';
 
   interface Props {
     objects: MonObject[];
@@ -28,10 +31,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let { objects, now, selected, view = $bindable(CROSS_VIEWS[0].id), onOpen }: Props = $props();
 
   const current = $derived(CROSS_VIEWS.find((v) => v.id === view) ?? CROSS_VIEWS[0]);
-  const rows = $derived(current.rows(objects));
+  let chosen = $state<Record<string, Sort>>({ ...sorting.cross });
+  const sort = $derived(chosen[current.id] ?? defaultSort(current));
+  const rows = $derived(orderRows(current, current.rows(objects), sort));
   const PAGE = 150;
   let pages = $state(1);
   const limit = $derived(PAGE * pages);
+
+  function setSort(s: Sort): void {
+    chosen[current.id] = s;
+    sorting.cross = { ...sorting.cross, [current.id]: s };
+    pages = 1;
+  }
 </script>
 
 <div class="pick">
@@ -55,9 +66,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <table class="tbl" data-view={current.id}>
       <thead>
         <tr>
-          <th>Zustand</th>
+          <th aria-sort={ariaSort(sort, 'state')}
+            ><SortButton title="Zustand" col="state" {sort} onSort={setSort} /></th
+          >
           {#each current.columns as c (c.key)}
-            <th data-col={c.key}>{c.title}</th>
+            <th data-col={c.key} aria-sort={ariaSort(sort, c.key)}
+              ><SortButton
+                title={c.title}
+                col={c.key}
+                {sort}
+                first={c.first}
+                onSort={setSort}
+              /></th
+            >
           {/each}
         </tr>
       </thead>

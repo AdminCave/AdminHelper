@@ -76,7 +76,8 @@ export function isHidden(o: MonObject): boolean {
   return !!e && !e.rule && !e.ended && (e.effect === 'skip' || e.effect === 'no-rating');
 }
 
-function byPlace(a: MonObject, b: MonObject): number {
+/** Server, then name: the order of a tie. */
+export function byPlace(a: MonObject, b: MonObject): number {
   return a.server.localeCompare(b.server, 'de') || a.name.localeCompare(b.name, 'de');
 }
 
