@@ -8,12 +8,13 @@ import ssl
 import time
 import zlib
 from collections.abc import Callable, Iterator
+from typing import NamedTuple
 
 import httpx
 
-from app.core.ssrf import UrlVerdict, check_target, pinned_client
+from app.core.ssrf import Target, UrlVerdict, check_target, pinned_client
 
-# Redirects are followed manually (see run) so every hop is re-checked against the
+# Redirects are followed manually (see _fetch) so every hop is re-checked against the
 # SSRF guard; cap the chain length like a browser would.
 _MAX_REDIRECTS = 5
 # As urllib3 (MultiDecoder): each layer holds a decompressor, httpx sets no limit.
@@ -23,6 +24,17 @@ _MAX_ENCODINGS = 5
 _MAX_BODY_BYTES = 1_048_576
 # The deadline's clock; a module name of its own so tests can move it.
 _now = time.monotonic
+
+
+class _Fetched(NamedTuple):
+    """What the request hands to the rating: the last response's status code, the part of
+    its body read for search_string, the first https hop's certificate and the time taken."""
+
+    status_code: int
+    body: str
+    truncated: bool
+    cert: dict | None
+    duration_ms: float
 
 
 class HttpChecker:
@@ -56,109 +68,134 @@ class HttpChecker:
             )
 
         try:
-            start = _now()
-            # One deadline for the whole check (R-0616): an httpx timeout holds per phase
-            # and per request, so it would start over on every redirect hop and every
-            # chunk of a body that trickles in. Each request gets what is left of it.
-            deadline = start + timeout
-            hop_url, hop_target = url, target
-            redirects = 0
-            body, truncated = "", False
-            # The certificate of the first https hop, the one the check's address leads to.
-            cert: dict | None = None
-            https_seen = False
-            while True:
-                remaining = deadline - _now()
-                if remaining <= 0:
-                    return "critical", f"Timeout after {timeout}s", None
-                # pinned_client connects to an address check_target checked, not to whatever
-                # a second lookup answers. check_target has read the URL with httpx already;
-                # the client sits in the try because building it can fail on an unusable
-                # proxy setting from the environment (HTTPS_PROXY=ftp://..., NO_PROXY=host:abc).
-                # A client of its own per hop: it connects only to the hop's checked host.
-                # stream() reads no body by itself: a redirect's body is never read.
-                with (
-                    pinned_client(hop_url, hop_target, verify=verify_ssl) as client,
-                    client.stream(
-                        method, hop_url, timeout=remaining, follow_redirects=False
-                    ) as resp,
-                ):
-                    if not https_seen and resp.url.scheme == "https":
-                        https_seen = True
-                        # Without verification ssl hands out no fields, only the DER bytes.
-                        cert = _peer_cert(resp) if verify_ssl else None
-                    if not resp.is_redirect:
-                        if search_string and resp.status_code == expected_status:
-                            head = _read_head(resp, deadline)
-                            if head is None:
-                                return "critical", f"Timeout after {timeout}s", None
-                            body, truncated = head
-                        break
-                    location = resp.headers.get("location", "")
-                # Follow redirects manually and re-check the SSRF guard on every hop.
-                # follow_redirects=True would let a public URL 302 into the internal
-                # network (VictoriaMetrics, other services, cloud metadata) unchecked.
-                # The method is kept across hops (uptime checks are GET and send no
-                # body), so no browser-style 303 POST->GET rewrite is needed.
-                if not location:
-                    return "critical", "Redirect without Location header", None
-                if redirects == _MAX_REDIRECTS:
-                    return "critical", f"Too many redirects (>{_MAX_REDIRECTS})", None
-                next_url = str(resp.url.join(location))
-                hop = check_target(next_url)
-                if hop.verdict is UrlVerdict.UNRESOLVED:
-                    return (
-                        "critical",
-                        "Redirect target could not be resolved (DNS error or timeout), "
-                        "rejected by the SSRF guard",
-                        None,
-                    )
-                if hop.verdict is not UrlVerdict.ALLOWED:
-                    return (
-                        "critical",
-                        "Redirect to a private/reserved address, rejected by the SSRF guard",
-                        None,
-                    )
-                hop_url, hop_target = next_url, hop
-                redirects += 1
-            # Up to what the check rates: the headers, with search_string the part read.
-            duration_ms = round((_now() - start) * 1000, 2)
-            # A check that reached the endpoint with cert verification off must say so
-            # in its result: an "ok" here validated the status code, NOT the TLS cert,
-            # so a MITM / expired cert would otherwise pass unnoticed (3.72).
-            tls_note = "" if verify_ssl else " [TLS verification disabled]"
-
-            metrics = {
-                "http_response_ms": duration_ms,
-                "http_status_code": resp.status_code,
-            }
-            if cert is not None:
-                # Popped by the check engine into the state's details; not a metric.
-                metrics["_details"] = {"cert": cert}
-
-            if resp.status_code != expected_status:
-                return (
-                    "critical",
-                    f"Status {resp.status_code} (expected {expected_status}){tls_note}",
-                    metrics,
-                )
-
-            if search_string and search_string not in body:
-                where = "the first 1 MiB of the response" if truncated else "response"
-                return (
-                    "critical",
-                    f"Text '{search_string}' not found in {where}{tls_note}",
-                    metrics,
-                )
-
-            return "ok", f"HTTP {resp.status_code} ({duration_ms:.0f} ms){tls_note}", metrics
-
+            fetched = _fetch(
+                url,
+                target,
+                method=method,
+                timeout=timeout,
+                verify_ssl=verify_ssl,
+                read_body=bool(search_string),
+                expected_status=expected_status,
+            )
+            if isinstance(fetched, str):
+                return "critical", fetched, None
+            return _rate(fetched, expected_status, search_string, verify_ssl)
         except httpx.TimeoutException:
             return "critical", f"Timeout after {timeout}s", None
         except httpx.ConnectError as exc:
             return "critical", f"Connection failed: {exc}", None
         except Exception as exc:
             return "unknown", f"Error: {exc}", None
+
+
+def _fetch(
+    url: str,
+    target: Target,
+    *,
+    method: str,
+    timeout: float,
+    verify_ssl: bool,
+    read_body: bool,
+    expected_status: int,
+) -> _Fetched | str:
+    """Requests url and follows its redirects, each hop checked by the SSRF guard; with
+    read_body the body of a final response with expected_status is read for the rating.
+    A str is why the check failed before there was a response to rate (critical)."""
+    start = _now()
+    # One deadline for the whole check (R-0616): an httpx timeout holds per phase
+    # and per request, so it would start over on every redirect hop and every
+    # chunk of a body that trickles in. Each request gets what is left of it.
+    deadline = start + timeout
+    hop_url, hop_target = url, target
+    redirects = 0
+    body, truncated = "", False
+    # The certificate of the first https hop, the one the check's address leads to.
+    cert: dict | None = None
+    https_seen = False
+    while True:
+        remaining = deadline - _now()
+        if remaining <= 0:
+            return f"Timeout after {timeout}s"
+        # pinned_client connects to an address check_target checked, not to whatever
+        # a second lookup answers. check_target has read the URL with httpx already;
+        # the client sits in run's try because building it can fail on an unusable
+        # proxy setting from the environment (HTTPS_PROXY=ftp://..., NO_PROXY=host:abc).
+        # A client of its own per hop: it connects only to the hop's checked host.
+        # stream() reads no body by itself: a redirect's body is never read.
+        with (
+            pinned_client(hop_url, hop_target, verify=verify_ssl) as client,
+            client.stream(method, hop_url, timeout=remaining, follow_redirects=False) as resp,
+        ):
+            if not https_seen and resp.url.scheme == "https":
+                https_seen = True
+                # Without verification ssl hands out no fields, only the DER bytes.
+                cert = _peer_cert(resp) if verify_ssl else None
+            if not resp.is_redirect:
+                if read_body and resp.status_code == expected_status:
+                    head = _read_head(resp, deadline)
+                    if head is None:
+                        return f"Timeout after {timeout}s"
+                    body, truncated = head
+                break
+            location = resp.headers.get("location", "")
+        # Follow redirects manually and re-check the SSRF guard on every hop.
+        # follow_redirects=True would let a public URL 302 into the internal
+        # network (VictoriaMetrics, other services, cloud metadata) unchecked.
+        # The method is kept across hops (uptime checks are GET and send no
+        # body), so no browser-style 303 POST->GET rewrite is needed.
+        if not location:
+            return "Redirect without Location header"
+        if redirects == _MAX_REDIRECTS:
+            return f"Too many redirects (>{_MAX_REDIRECTS})"
+        next_url = str(resp.url.join(location))
+        hop = check_target(next_url)
+        if hop.verdict is UrlVerdict.UNRESOLVED:
+            return (
+                "Redirect target could not be resolved (DNS error or timeout), "
+                "rejected by the SSRF guard"
+            )
+        if hop.verdict is not UrlVerdict.ALLOWED:
+            return "Redirect to a private/reserved address, rejected by the SSRF guard"
+        hop_url, hop_target = next_url, hop
+        redirects += 1
+    # Up to what the check rates: the headers, with search_string the part read.
+    duration_ms = round((_now() - start) * 1000, 2)
+    return _Fetched(resp.status_code, body, truncated, cert, duration_ms)
+
+
+def _rate(
+    fetched: _Fetched, expected_status: int, search_string: str, verify_ssl: bool
+) -> tuple[str, str, dict]:
+    """The check's result for the response: its status code, then search_string."""
+    # A check that reached the endpoint with cert verification off must say so
+    # in its result: an "ok" here validated the status code, NOT the TLS cert,
+    # so a MITM / expired cert would otherwise pass unnoticed (3.72).
+    tls_note = "" if verify_ssl else " [TLS verification disabled]"
+
+    metrics = {
+        "http_response_ms": fetched.duration_ms,
+        "http_status_code": fetched.status_code,
+    }
+    if fetched.cert is not None:
+        # Popped by the check engine into the state's details; not a metric.
+        metrics["_details"] = {"cert": fetched.cert}
+
+    if fetched.status_code != expected_status:
+        return (
+            "critical",
+            f"Status {fetched.status_code} (expected {expected_status}){tls_note}",
+            metrics,
+        )
+
+    if search_string and search_string not in fetched.body:
+        where = "the first 1 MiB of the response" if fetched.truncated else "response"
+        return (
+            "critical",
+            f"Text '{search_string}' not found in {where}{tls_note}",
+            metrics,
+        )
+
+    return "ok", f"HTTP {fetched.status_code} ({fetched.duration_ms:.0f} ms){tls_note}", metrics
 
 
 def _peer_cert(resp: httpx.Response) -> dict | None:

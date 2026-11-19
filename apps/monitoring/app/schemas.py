@@ -318,6 +318,23 @@ class MonitorStateOut(BaseModel):
     notifiedStatus: str | None
 
 
+class MonitorObjectOut(BaseModel):
+    checkId: str
+    checkName: str
+    serverId: str | None
+    key: str
+    kind: str
+    name: str
+    # The object vocabulary (app.objects.SEVERITY), with not_collected.
+    status: str
+    reason: str
+    since: str
+    badSince: str | None
+    stable: bool
+    goneAt: str | None
+    lastCheck: str | None
+
+
 class MonitorCheckOut(BaseModel):
     id: str
     serverId: str | None
