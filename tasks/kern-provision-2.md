@@ -14,7 +14,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning/c
 Doku: → T6
 
 ### T2 — R-1612: Katalog: Windows-Token über stdin, Test für unlesbares ABI-Verzeichnis  [ ]
-Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, apps/server/tests/test_provisioning_catalog.py
+Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, apps/server/tests/test_provisioning_catalog.py, apps/server/app/modules/provisioning/schemas.py, apps/server/tests/openapi.snapshot.json
 Änderung: Windows `reregister` im Automationsmodus `--token-stdin` mit Wert `tokenStdin` statt `--token`/`token`; Test dafür und für ein `<ABI>/All`, dessen Auflistung scheitert (das ABI fällt weg, die übrigen bleiben).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py tests/test_openapi_snapshot.py
 Doku: → T6
@@ -28,8 +28,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning/c
 Abhängt von: T1
 Doku: → T6
 
-### T4 — R-1613/R-1628: Fortschritt: URL-Quoting, widerrufene Linie, kein Request ohne Key; Migrations-Docstring  [ ]
+### T4 — R-1613/R-1628: Fortschritt: URL-Quoting, widerrufene Linie, kein Request ohne Key; Migrations-Docstring  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/progress.py, apps/server/tests/test_provisioning_progress.py, apps/server/alembic/versions/6a4e9feea1c5_server_os_type_platform.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @8dcafe2d6 2026-11-19T19:18:10+01:00
+Review: approve (.ah-out/review/kern-provision-2/T4.verdict.json)
 Änderung: `quote(server_id, safe='')` in der Monitoring-URL; `_certificate` nur aus nicht widerrufenen Linien; Test ohne Monitoring-Key prüft per `httpx_mock`, dass kein Request rausgeht; `downgrade()` begründet das bewusste Nichtstun im Docstring.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_progress.py
 Doku: keine (internes Verhalten)
@@ -55,5 +57,13 @@ Komponente: scripts · Dateien: scripts/tests/openapi_breaking_test.sh
 Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: keine (Testfall)
 
+### T8 — R-1612: oasdiff-Ausnahme für den Wertetyp `tokenStdin` (Harness, Kevin 2026-11-19)  [ ]
+Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh
+Änderung: Eine Ausnahmezeile für den einen ERR aus T2 (`response-property-enum-value-added`, GET /api/provisioning/platforms, Wert `tokenStdin`); ein Fall gegen das echte oasdiff: mit der Datei grün, ein weiterer Wert an derselben Stelle bleibt ERR.
+Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
+Doku: → T6 (cicd.html nennt die Ausnahmen)
+Abhängt von: T2
+
 ## Entscheidungen
 - R-1612 Variante A (Wertetyp `tokenStdin`, Pipe): Token nie im argv; ein älterer Desktop baut den Windows-Automationsbefehl dann nicht (dokumentiertes Verhalten für Unbekanntes).
+- R-1612 oasdiff: `tokenStdin` ist ein neuer Antwort-Enum-Wert (1 ERR); Kevin 2026-11-19: eine Ausnahmezeile als eigene Task (T8).
