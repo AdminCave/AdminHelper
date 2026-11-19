@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p0-abnahme — Task-Ledger
-Status: geplant · Branch: feature/arch-monitoring-neu-p0-abnahme · Review: pro Task
+Status: aktiv · Branch: feature/arch-monitoring-neu-p0-abnahme · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p0-abnahme.md (Roadmap R-1558, R-1515)
 Heavy: none — nur das Mockup im Vite-Dev-Server (nicht im Desktop-Build, `isolation.test.ts`) und ADR 0004; kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
