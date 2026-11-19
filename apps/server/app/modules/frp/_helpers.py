@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import uuid
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import VISITOR_PORT_END, VISITOR_PORT_START
 from app.modules.connections.models import Connection
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.schemas import check_auto_path
 from app.modules.users.models import User, user_server_assoc
 
 
@@ -28,36 +30,84 @@ def get_frp_config(db: Session, config_id: str | None = None) -> FrpServerConfig
     return q.order_by(FrpServerConfig.created_at, FrpServerConfig.id).first()
 
 
-def create_auto_connection(tunnel: FrpTunnel, username: str | None = None) -> Connection | None:
-    """Create an auto-connection for a tunnel (STCP or HTTPS). It stores no name: its display
-    name derives from the server's (R-1210)."""
+def connection_kind(protocol: str) -> str:
+    """The kind of the connection a tunnel of `protocol` leads to."""
+    return "ssh" if protocol == "ssh" else "rdp" if protocol == "rdp" else "web"
+
+
+def _first_domain(tunnel: FrpTunnel) -> str:
+    return (tunnel.custom_domains or "").split(",")[0].strip()
+
+
+def tunnel_url(tunnel: FrpTunnel, scheme: str | None, path: str | None) -> str | None:
+    """The URL of a web connection through `tunnel`. An STCP one names the visitor port; the
+    desktop replaces only host and port with those of its visitor and keeps scheme and path
+    (R-1540)."""
     if tunnel.tunnel_type == "stcp" and tunnel.visitor_port:
-        conn_kind = (
-            "ssh" if tunnel.protocol == "ssh" else "rdp" if tunnel.protocol == "rdp" else "web"
-        )
+        return f"{scheme or 'http'}://127.0.0.1:{tunnel.visitor_port}{path or ''}"
+    if tunnel.tunnel_type == "https" and _first_domain(tunnel):
+        return f"https://{_first_domain(tunnel)}{path or ''}"
+    return None
+
+
+def create_auto_connection(
+    tunnel: FrpTunnel,
+    username: str | None = None,
+    scheme: str | None = None,
+    path: str | None = None,
+) -> Connection | None:
+    """Create an auto-connection for a tunnel (STCP or HTTPS). It stores no name: its display
+    name derives from the server's (R-1210). An STCP web one has no user (R-1540)."""
+    if tunnel.tunnel_type == "stcp" and tunnel.visitor_port:
+        conn_kind = connection_kind(tunnel.protocol)
+        web = conn_kind == "web"
         return Connection(
             id=str(uuid.uuid4()),
             name="",
             kind=conn_kind,
             host="127.0.0.1",
             port=tunnel.visitor_port,
+            url=tunnel_url(tunnel, scheme, path) if web else "",
+            server_id=tunnel.server_id,
+            tags=tunnel.tags,
+            username="" if web else username or "",
+        )
+    if tunnel.tunnel_type == "https" and _first_domain(tunnel):
+        return Connection(
+            id=str(uuid.uuid4()),
+            name="",
+            kind="web",
+            url=tunnel_url(tunnel, "https", path),
             server_id=tunnel.server_id,
             tags=tunnel.tags,
             username=username or "",
         )
-    if tunnel.tunnel_type == "https" and tunnel.custom_domains:
-        domain = tunnel.custom_domains.split(",")[0].strip()
-        if domain:
-            return Connection(
-                id=str(uuid.uuid4()),
-                name="",
-                kind="web",
-                url=f"https://{domain}",
-                server_id=tunnel.server_id,
-                tags=tunnel.tags,
-                username=username or "",
-            )
     return None
+
+
+def follow_tunnel(
+    connection: Connection, tunnel: FrpTunnel, scheme: str | None, path: str | None
+) -> None:
+    """Point the connection linked to `tunnel` at it again after its protocol or type changed
+    (R-1540), a hand-linked one too. A scheme or path not given comes from the connection's own
+    web URL, else http and none. A path the request would refuse is not taken: it could move the
+    host of the new URL."""
+    old = urlsplit(connection.url or "") if connection.kind == "web" else None
+    if old is None or old.scheme not in ("http", "https"):
+        old = None
+    if old is not None and scheme is None:
+        scheme = old.scheme
+    if old is not None and path is None and old.path:
+        try:
+            path = check_auto_path(old.path + (f"?{old.query}" if old.query else ""))
+        except ValueError:
+            path = None
+    connection.kind = connection_kind(tunnel.protocol)
+    if tunnel.tunnel_type == "stcp":
+        connection.host = "127.0.0.1"
+        connection.port = tunnel.visitor_port
+    web_url = tunnel_url(tunnel, scheme, path) if connection.kind == "web" else None
+    connection.url = web_url or ""
 
 
 def next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int:

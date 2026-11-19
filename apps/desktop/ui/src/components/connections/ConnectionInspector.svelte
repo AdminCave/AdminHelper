@@ -16,6 +16,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { commandPreview, type Reach } from '$lib/models/connectionList';
   import { DEFAULT_PORTS, toCardMeta } from '$lib/models/connection';
   import { recentSessions, sessionsVersion } from '$lib/stores/connections';
+  import { getMappings } from '$lib/stores/tunnel';
+  import * as bridge from '$lib/bridge';
   import { timeAgo } from '$lib/utils/timeAgo';
   import { t } from '$lib/i18n';
   import CodeBlock from '../ui/CodeBlock.svelte';
@@ -79,6 +81,37 @@ SPDX-License-Identifier: GPL-3.0-or-later
       stale = true;
     };
   });
+
+  // Where a tunnel connection really leads (R-1540): the desktop swaps host and port for its
+  // visitor and keeps scheme, path and query. Shown only where it differs from the stored target.
+  let resolved = $state<string | null>(null);
+  $effect(() => {
+    const c = conn;
+    resolved = null;
+    if (!c || !tunnel) return;
+    let stale = false;
+    bridge.resolveConnection(c, getMappings()).then(
+      (r) => {
+        const shown = target(r.connection);
+        if (!stale && shown !== target(c)) resolved = shown;
+      },
+      () => {},
+    );
+    return () => {
+      stale = true;
+    };
+  });
+
+  // A URL is shown without user and password (a stored URL may carry them).
+  function target(c: Connection): string {
+    if (c.kind !== 'web') return `${c.host ?? ''}:${c.port ?? DEFAULT_PORTS[c.kind]}`;
+    try {
+      const u = new URL(c.url ?? '');
+      return `${u.protocol}//${u.host}${u.pathname}${u.search}${u.hash}`;
+    } catch {
+      return c.url ?? '';
+    }
+  }
 
   function duration(s: ConnectionSession): string {
     if (!s.endedAt) return '—';
@@ -145,6 +178,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {#if tunnel}
         <dt>{$t('connections.insp.tunnel')}</dt>
         <dd><Dot st="info" size={7} /> {tunnel}</dd>
+      {/if}
+      {#if resolved}
+        <dt>{$t('connections.insp.resolved')}</dt>
+        <dd class="mono" data-testid="insp-resolved">{resolved}</dd>
       {/if}
       {#if server}
         <dt>{$t('connections.insp.server')}</dt>

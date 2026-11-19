@@ -24,6 +24,17 @@ from app.modules.frp.extra_config import ALLOWED_KEYS, value_allowed
 _TOML_BREAKERS = set('"\\\n\r')
 
 
+def check_auto_path(v: Optional[str]) -> Optional[str]:
+    """The path the auto-connection of a web tunnel opens (R-1540); empty means none."""
+    if not v:
+        return None
+    if not v.startswith("/"):
+        raise ValueError("must start with '/'")
+    if any(c.isspace() or ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F or c == "#" for c in v):
+        raise ValueError("must not contain whitespace, control characters or '#'")
+    return v
+
+
 def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
     if v is None:
         return v
@@ -333,6 +344,9 @@ class FrpTunnelCreate(RequestModel):
     tags: list[str] = []
     auto_create_connection: bool = False  # automatically create a matching connection
     auto_connection_username: Optional[str] = None  # username for the auto-created connection
+    # A web tunnel's auto-connection: <scheme>://127.0.0.1:<visitor port><path> (R-1540).
+    auto_connection_scheme: Optional[Literal["http", "https"]] = None
+    auto_connection_path: Optional[str] = Field(None, max_length=255)
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
     _v_str = field_validator(
@@ -340,6 +354,7 @@ class FrpTunnelCreate(RequestModel):
     )(_reject_toml_breakers)
     _v_secret = field_validator("secret_key")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
+    _v_path = field_validator("auto_connection_path")(check_auto_path)
 
 
 class FrpTunnelUpdate(RequestModel):
@@ -359,6 +374,9 @@ class FrpTunnelUpdate(RequestModel):
     tags: Optional[list[str]] = None
     auto_create_connection: bool = False
     auto_connection_username: Optional[str] = None
+    # Also for the linked connection when protocol or type change.
+    auto_connection_scheme: Optional[Literal["http", "https"]] = None
+    auto_connection_path: Optional[str] = Field(None, max_length=255)
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
     _v_str = field_validator(
@@ -366,6 +384,7 @@ class FrpTunnelUpdate(RequestModel):
     )(_reject_toml_breakers)
     _v_secret = field_validator("secret_key")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_tunnel_extra_config)
+    _v_path = field_validator("auto_connection_path")(check_auto_path)
 
 
 # --- Responses ---
