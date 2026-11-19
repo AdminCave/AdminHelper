@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   // Every object over all servers as one table, with filters (kind, status, server, hidden) and a
-  // search over name, server, reason, key and identity.
+  // search over name, server, reason, key and identity. Thousands of objects draw a page at a time.
   import Badge from '../../../components/ui/Badge.svelte';
   import EmptyState from '../../../components/ui/EmptyState.svelte';
   import SearchField from '../../../components/ui/SearchField.svelte';
@@ -34,6 +34,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // Select shows a disabled placeholder for an empty value, so "all" needs a value of its own.
   const ALL = 'all';
+  const PAGE = 200;
 
   let filter = $state<ObjectFilter>({ ...NO_FILTER });
 
@@ -45,6 +46,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     label: STATUS_LABEL[s],
   }));
   const list = $derived(filterObjects(objects, filter));
+  let pages = $state(1);
+  const limit = $derived(PAGE * pages);
+  // A new filter starts at the first page again.
+  $effect(() => {
+    void filter.kind;
+    void filter.status;
+    void filter.server;
+    void filter.query;
+    void filter.showHidden;
+    pages = 1;
+  });
 </script>
 
 <div class="filters">
@@ -89,50 +101,62 @@ SPDX-License-Identifier: GPL-3.0-or-later
   />
 </div>
 
-<p class="count" data-testid="objects-count">{list.length} von {objects.length} Objekten</p>
+<p class="count" data-testid="objects-count">
+  {list.length} von {objects.length} Objekten{#if list.length > limit}, die ersten {limit} gezeigt{/if}
+</p>
 
 {#if list.length === 0}
   <EmptyState title="Keine Treffer" description="Kein Objekt passt zu Filter und Suche." />
 {:else}
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th>Zustand</th>
-        <th>Objekt</th>
-        <th>Art</th>
-        <th>Server</th>
-        <th>Seit</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each list as o (o.key)}
-        {@const hidden = isHidden(o)}
-        <tr
-          data-key={o.key}
-          data-status={o.status}
-          class:hidden
-          class:selected={selected === o.key}
-        >
-          <td class="st">
-            {#if hidden}
-              <Badge>Ausgeblendet</Badge>
-            {:else}
-              <Badge tone={STATUS_TONE[o.status]} dot>{STATUS_LABEL[o.status]}</Badge>
-            {/if}
-          </td>
-          <td>
-            <button type="button" class="open" onclick={() => onOpen(o.key)}>{o.name}</button>
-            <span class="reason">
-              {hidden && o.exception ? exceptionText(o.exception) : o.reason}
-            </span>
-          </td>
-          <td>{KIND_LABEL[o.kind]}</td>
-          <td>{o.server}</td>
-          <td class="since">{sinceText(o.since, now)}</td>
+  <div class="wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Zustand</th>
+          <th>Objekt</th>
+          <th>Art</th>
+          <th>Server</th>
+          <th>Seit</th>
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each list.slice(0, limit) as o (o.key)}
+          {@const hidden = isHidden(o)}
+          <tr
+            data-key={o.key}
+            data-status={o.status}
+            class:is-hidden={hidden}
+            class:selected={selected === o.key}
+          >
+            <td class="st">
+              {#if hidden}
+                <Badge>Ausgeblendet</Badge>
+              {:else}
+                <Badge tone={STATUS_TONE[o.status]} dot>{STATUS_LABEL[o.status]}</Badge>
+              {/if}
+            </td>
+            <td>
+              <button type="button" class="open" onclick={() => onOpen(o.key)}>{o.name}</button>
+              <span class="reason">
+                {hidden && o.exception ? exceptionText(o.exception) : o.reason}
+              </span>
+            </td>
+            <td>{KIND_LABEL[o.kind]}</td>
+            <td>{o.server}</td>
+            <td class="since">{sinceText(o.since, now)}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+  {#if list.length > limit}
+    <p class="page">
+      <button type="button" class="page-btn" onclick={() => (pages += 1)}
+        >{Math.min(PAGE, list.length - limit)} weitere anzeigen</button
+      >
+      <span>noch {list.length - limit}</span>
+    </p>
+  {/if}
 {/if}
 
 <style>
@@ -180,7 +204,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   tr.selected {
     background: var(--surface-active);
   }
-  tr.hidden {
+  tr.is-hidden {
     opacity: 0.6;
   }
   .st {
@@ -203,5 +227,45 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .since {
     color: var(--text-subtle);
     white-space: nowrap;
+  }
+  .wrap {
+    overflow-x: auto;
+  }
+  .page {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-sm);
+    color: var(--text-subtle);
+  }
+  .page-btn {
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--text-strong);
+    font: inherit;
+    cursor: pointer;
+  }
+  .page-btn:hover {
+    background: var(--surface-hover);
+  }
+  /* Phone: the kind goes, the rest wraps inside the cells. */
+  @media (max-width: 760px) {
+    .filters {
+      gap: var(--space-2) var(--space-3);
+    }
+    th:nth-child(3),
+    td:nth-child(3) {
+      display: none;
+    }
+    th,
+    td {
+      padding: var(--space-2);
+    }
+    .st {
+      width: auto;
+    }
   }
 </style>

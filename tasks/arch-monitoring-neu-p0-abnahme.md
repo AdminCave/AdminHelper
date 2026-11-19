@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test
 Doku: keine (Mockup nur im Vite-Dev-Server)
 Abhängt von: T1
 
-### T3 — Objektart-Gruppen, Objekte, Querschnitte, Abdeckung: Seiten, faule Zeilen, Handy (R-1558)  [ ]
+### T3 — Objektart-Gruppen, Objekte, Querschnitte, Abdeckung: Seiten, faule Zeilen, Handy (R-1558)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/views/KindGroups.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/KindsView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/ObjectsView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/CrossView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/CoverageView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/limits.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/views.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/ExceptionDialog.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @69fc38424 2026-11-19T06:20:26+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0-abnahme/T3.verdict.json)
 Änderung: Neu `views/KindGroups.svelte` (SPDX): Gruppen je Objektart, schlechteste zuerst; Zeilen entstehen erst beim Öffnen und kommen in Seiten zu 60, ab 42 Objekten Statusbalken statt Punkten; `KindsView` nutzt sie. `ObjectsView` (200 je Seite) und `CrossView` (150 je Seite) blättern, Tabellen scrollen auf dem Handy in ihrem Kasten, ausgeblendete Zeilen heißen `is-hidden`; `CoverageView` legt ihre Tabellen in einen Scroll-Kasten. Neu `views/limits.test.ts` (SPDX) prüft die Grenzen mit der großen Flotte (geschlossene Gruppe ohne Zeilen, offene mit 60, „weitere“, Objekte 200, Querschnitte 150).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
 Doku: keine (Mockup nur im Vite-Dev-Server)

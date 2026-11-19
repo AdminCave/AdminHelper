@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   // The cross views (Konzept §5): one table per question over all servers. The first column is
-  // always Zustand with reason and since; a hidden object stays grey with its exception.
+  // always Zustand with reason and since; a hidden object stays grey with its exception. Rows come
+  // worst first and a page at a time, so a fleet of hundreds stays quick.
   import Badge from '../../../components/ui/Badge.svelte';
   import Dot from '../../../components/ui/Dot.svelte';
   import EmptyState from '../../../components/ui/EmptyState.svelte';
@@ -28,14 +29,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   const current = $derived(CROSS_VIEWS.find((v) => v.id === view) ?? CROSS_VIEWS[0]);
   const rows = $derived(current.rows(objects));
+  const PAGE = 150;
+  let pages = $state(1);
+  const limit = $derived(PAGE * pages);
 </script>
 
-<Segmented
-  options={CROSS_VIEWS.map((v) => ({ value: v.id, label: v.title }))}
-  value={current.id}
-  label="Querschnitt"
-  onChange={(v) => (view = v)}
-/>
+<div class="pick">
+  <Segmented
+    options={CROSS_VIEWS.map((v) => ({ value: v.id, label: v.title }))}
+    value={current.id}
+    label="Querschnitt"
+    onChange={(v) => {
+      view = v;
+      pages = 1;
+    }}
+  />
+</div>
 
 <p class="hint">{current.hint}</p>
 
@@ -53,12 +62,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </tr>
       </thead>
       <tbody>
-        {#each rows as r (r.object.key)}
+        {#each rows.slice(0, limit) as r (r.object.key)}
           {@const hidden = isHidden(r.object)}
           <tr
             data-key={r.object.key}
             data-status={r.object.status}
-            class:hidden
+            class:is-hidden={hidden}
             class:selected={selected === r.object.key}
           >
             <td class="state">
@@ -94,6 +103,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </tbody>
     </table>
   </div>
+  {#if rows.length > limit}
+    <p class="page">
+      <button type="button" class="page-btn" onclick={() => (pages += 1)}
+        >{Math.min(PAGE, rows.length - limit)} weitere anzeigen</button
+      >
+      <span>{limit} von {rows.length} gezeigt</span>
+    </p>
+  {/if}
 {/if}
 
 <style>
@@ -131,7 +148,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   tr.selected {
     background: var(--surface-active);
   }
-  tr.hidden {
+  tr.is-hidden {
     opacity: 0.6;
   }
   .state {
@@ -161,5 +178,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .mono {
     font-family: var(--font-mono);
+  }
+  .pick {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .page {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-sm);
+    color: var(--text-subtle);
+  }
+  .page-btn {
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--text-strong);
+    font: inherit;
+    cursor: pointer;
+  }
+  .page-btn:hover {
+    background: var(--surface-hover);
+  }
+  @media (max-width: 760px) {
+    .state {
+      min-width: 180px;
+    }
+    th,
+    td {
+      padding: var(--space-2);
+    }
   }
 </style>

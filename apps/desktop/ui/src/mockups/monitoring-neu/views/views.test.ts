@@ -7,6 +7,22 @@
 // by status, every cross view has its columns filled, and a click opens the same drawer.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// jsdom has no matchMedia; svelte/motion (object-kind groups) reads it at import.
+vi.hoisted(() => {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+});
+
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import MockupApp from '../MockupApp.svelte';
 import ObjectDrawer from '../ObjectDrawer.svelte';
@@ -310,7 +326,7 @@ describe('cross views', () => {
       view: view?.id,
       onOpen: () => {},
     });
-    const tr = container.querySelector('tbody tr.hidden');
+    const tr = container.querySelector('tbody tr.is-hidden');
     expect(tr?.textContent).toContain('Ausgeblendet');
   });
 });
@@ -330,6 +346,12 @@ describe('every view opens the same drawer', () => {
     async (label) => {
       const { container, getByRole } = render(MockupApp);
       await fireEvent.click(getByRole('tab', { name: label }));
+      if (label === 'Objektarten') {
+        // Object-kind groups start closed; open the first one.
+        const group = container.querySelector('main details.group') as HTMLDetailsElement;
+        group.open = true;
+        await fireEvent(group, new Event('toggle'));
+      }
       const target = container.querySelector(
         'main button.row[data-key], main button.open',
       ) as HTMLElement;
