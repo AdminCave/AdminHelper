@@ -1,5 +1,5 @@
 # Nachlese Provisionieren — Task-Ledger
-Status: geplant · Branch: feature/kern-provision-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-provision-2 · Review: pro Task
 Spec: docs/features/kern-provision-2.md (Roadmap R-1629, R-1612, R-1613, R-1614, R-1628)
 Heavy: linux-full — Server-API (Katalog, Fortschritt) und Desktop-Provisionieren
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
