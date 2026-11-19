@@ -6,7 +6,7 @@ DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku i
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 ### T1 — Vorgabe-Pfade aus KnownFolderPath (R-1605)  [x]
-Komponente: agent · Dateien: apps/agent/internal/config/paths_windows.go apps/agent/internal/config/paths_windows_test.go docs/admin/agent-deployment.html docs/en/admin/agent-deployment.html changelog.d/kern-windows-2.md
+Komponente: agent · Dateien: apps/agent/internal/config/paths_windows.go, apps/agent/internal/config/paths_windows_test.go, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-windows-2.md
 Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @37c3f819d 2026-11-19T17:06:05+01:00
 Review: approve (.ah-out/review/kern-windows-2/T1.verdict.json)
 Änderung: `programData()` bestimmt den Ordner einmal über `windows.KnownFolderPath(FOLDERID_ProgramData)`, bei einem Fehler über die feste Vorgabe `C:\ProgramData`. `MonitorDir`, `FrpDir` und `LogDir` bauen darauf auf. Ein Windows-Test setzt `ProgramData` auf ein TempDir und zeigt, dass die Pfade davon unberührt bleiben. Die neue Testdatei bekommt einen SPDX-Header.
