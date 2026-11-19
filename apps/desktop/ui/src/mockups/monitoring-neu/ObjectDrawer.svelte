@@ -227,6 +227,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     flex-direction: column;
     gap: var(--space-5);
     z-index: 10;
+    animation: drawer-in 320ms var(--ease-out);
+  }
+  @keyframes drawer-in {
+    from {
+      opacity: 0.4;
+      transform: translateX(48px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .drawer {
+      animation: none;
+    }
   }
   .head p {
     margin: var(--space-1) 0 0;

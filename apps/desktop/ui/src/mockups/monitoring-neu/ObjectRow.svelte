@@ -5,10 +5,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  // One object in a list: level 1 (badge, reason, since) and level 2 (at most four metrics).
+  // One object in a list: level 1 (badge, reason, since) and level 2 (at most four metrics). The
+  // columns sit at the same place in every row, so a list reads like a table; the stripe on the
+  // left carries the state for the eye, the badge for the reader.
   import Badge from '../../components/ui/Badge.svelte';
   import Dot from '../../components/ui/Dot.svelte';
   import Pill from '../../components/ui/Pill.svelte';
+  import Meter from './Meter.svelte';
   import type { MonObject } from './model';
   import {
     MAX_METRICS,
@@ -21,6 +24,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     sinceText,
     thresholdText,
   } from './grammar';
+  import { ackText } from './views/lists';
 
   interface Props {
     object: MonObject;
@@ -28,10 +32,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
     /** Shows the server in the identity line (lists across servers). */
     showServer?: boolean;
     selected?: boolean;
+    /** 1 for a module part under its instance. */
+    depth?: number;
+    /** Level 1 only: no identity, no metrics (the overview of all servers). */
+    compact?: boolean;
     onOpen?: (key: string) => void;
   }
 
-  let { object, now, showServer = false, selected = false, onOpen }: Props = $props();
+  let {
+    object,
+    now,
+    showServer = false,
+    selected = false,
+    depth = 0,
+    compact = false,
+    onOpen,
+  }: Props = $props();
 
   const hidden = $derived(isHidden(object));
   const identity = $derived(
@@ -46,33 +62,36 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <button
   type="button"
   class="row"
-  class:hidden
+  class:is-hidden={hidden}
   class:selected
+  class:part={depth > 0}
+  class:compact
   data-key={object.key}
-  data-status={object.status}
+  data-status={hidden ? 'hidden' : object.status}
   onclick={() => onOpen?.(object.key)}
 >
-  <span class="l1">
-    <span class="badge">
-      {#if hidden}
-        <Badge>Ausgeblendet</Badge>
-      {:else}
-        <Badge tone={STATUS_TONE[object.status]} dot>{STATUS_LABEL[object.status]}</Badge>
-      {/if}
-    </span>
-    <span class="name">{object.name}</span>
-    <span class="reason">{object.reason}</span>
-    <span class="since"
-      >{sinceText(object.since, now)}{#if badSince}<span class="bad-since">{` · ${badSince}`}</span
-        >{/if}</span
-    >
+  <span class="badge">
+    {#if hidden}
+      <Badge>Ausgeblendet</Badge>
+    {:else}
+      <Badge tone={STATUS_TONE[object.status]} dot>{STATUS_LABEL[object.status]}</Badge>
+    {/if}
   </span>
-  <span class="identity">{identity.join(' · ')}</span>
-  {#if object.metrics.length > 0}
+  <span class="name" title={object.name}>{object.name}</span>
+  <span class="reason">{object.reason}</span>
+  <span class="since"
+    >{sinceText(object.since, now)}{#if badSince}<span class="bad-since">{` · ${badSince}`}</span
+      >{/if}</span
+  >
+  {#if !compact}
+    <span class="identity" title={identity.join(' · ')}>{identity.join(' · ')}</span>
+  {/if}
+  {#if !compact && object.metrics.length > 0}
     <span class="metrics">
       {#each object.metrics.slice(0, MAX_METRICS) as m (m.key)}
         <span class="metric" data-metric={m.key}>
           <span class="m-label">{m.label}</span>
+          <Meter metric={m} />
           <span class="m-value">
             {#if m.status && m.status !== 'ok'}<Dot st={m.status} size={6} />{/if}
             {formatValue(m.value, m.unit)}
@@ -87,24 +106,41 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </span>
   {/if}
   {#if exc}
-    <span class="exception">{hidden ? '' : 'Ausnahme: '}{exceptionText(exc)}</span>
+    <span class="note exception">{hidden ? '' : 'Ausnahme: '}{exceptionText(exc)}</span>
+  {/if}
+  {#if object.ack}
+    <span class="note ack" data-ack={object.key}>{ackText(object.ack)}</span>
   {/if}
 </button>
 
 <style>
   .row {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+    --stripe: transparent;
+    display: grid;
+    grid-template-columns: 104px minmax(140px, 220px) minmax(0, 1fr) auto;
+    column-gap: var(--space-4);
+    row-gap: 2px;
+    align-items: baseline;
     width: 100%;
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-4);
     border: 0;
     border-bottom: 1px solid var(--border-faint);
     background: transparent;
+    box-shadow: inset 3px 0 0 var(--stripe);
     color: var(--text);
     font: inherit;
     text-align: left;
     cursor: pointer;
+  }
+  .row[data-status='critical'] {
+    --stripe: var(--danger);
+  }
+  .row[data-status='warning'] {
+    --stripe: var(--warning);
+  }
+  .row[data-status='unknown'],
+  .row[data-status='stale'] {
+    --stripe: var(--border-strong);
   }
   .row:hover {
     background: var(--surface-hover);
@@ -112,55 +148,66 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .row.selected {
     background: var(--surface-active);
   }
-  .row.hidden {
+  .row.is-hidden {
     opacity: 0.6;
   }
-  .l1 {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-3);
-    min-width: 0;
-  }
   .badge {
-    flex: none;
-    width: 112px;
+    grid-column: 1;
   }
   .name {
-    flex: none;
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-weight: 600;
     color: var(--text-strong);
   }
   .reason {
-    flex: 1;
+    grid-column: 3;
     min-width: 0;
-    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text);
   }
   .since {
-    flex: none;
+    grid-column: 4;
     color: var(--text-subtle);
     font-size: var(--text-sm);
-  }
-  .identity,
-  .metrics,
-  .exception {
-    padding-left: calc(112px + var(--space-3));
-    font-size: var(--text-sm);
+    white-space: nowrap;
+    text-align: right;
   }
   .identity {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    color: var(--text-subtle);
+  }
+  .part .name,
+  .part .identity {
+    padding-left: var(--space-5);
+  }
+  .part .name::before {
+    content: '↳';
+    margin: 0 var(--space-2) 0 calc(-1 * var(--space-5));
+    font-weight: 400;
     color: var(--text-subtle);
   }
   .metrics {
+    grid-column: 3 / 5;
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-2) var(--space-5);
+    gap: 2px var(--space-5);
+    font-size: var(--text-sm);
   }
   .metric {
     display: inline-flex;
-    align-items: baseline;
-    gap: var(--space-1);
+    align-items: center;
+    gap: var(--space-2);
   }
   .m-label {
     color: var(--text-subtle);
@@ -170,14 +217,57 @@ SPDX-License-Identifier: GPL-3.0-or-later
     align-items: center;
     gap: var(--space-1);
     font-family: var(--font-mono);
-    color: var(--text);
+    color: var(--text-strong);
   }
   .m-threshold,
   .m-note {
+    font-size: var(--text-xs);
     color: var(--text-subtle);
   }
+  .note {
+    grid-column: 3 / 5;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
   .exception {
-    color: var(--text-subtle);
     font-style: italic;
+  }
+  /* Phone: state and age on top, then name, reason and the rest under each other. */
+  @media (max-width: 760px) {
+    .row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      padding: var(--space-2) var(--space-3);
+    }
+    .badge {
+      grid-column: 1;
+      grid-row: 1;
+    }
+    .since {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .name,
+    .reason,
+    .identity,
+    .metrics,
+    .note {
+      grid-column: 1 / -1;
+    }
+    .reason {
+      white-space: normal;
+    }
+    /* One metric per line; its threshold and note wrap below as a whole, never word by word. */
+    .metrics {
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric {
+      flex-wrap: wrap;
+      row-gap: 0;
+    }
+    .m-threshold,
+    .m-note {
+      white-space: nowrap;
+    }
   }
 </style>

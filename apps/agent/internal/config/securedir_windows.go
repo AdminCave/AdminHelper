@@ -812,3 +812,66 @@ func ownByAdministrators(path string) error {
 	}
 	return nil
 }
+
+// administratorsOwnerSDDL makes the Administrators the owner of a new file and gives it no DACL of
+// its own, so that it takes the inheritable ACEs of its directory.
+const administratorsOwnerSDDL = "O:BA"
+
+// WriteFileOwnedByAdministrators writes data to path through a new file that belongs to the
+// Administrators from its creation, then moves it over path: no moment exists in which the
+// installing account owns the file, and with it the right to change its DACL. The file takes the
+// ACL its directory passes on. It runs with the privileges of EnsureSecureDir, which allow the
+// Administrators as owner whatever their attributes in the token.
+func WriteFileOwnedByAdministrators(path string, data []byte) error {
+	sd, err := windows.SecurityDescriptorFromString(administratorsOwnerSDDL)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".new"
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	err = withPrivileges(func() error { return createWithDescriptor(tmp, sd, data) })
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	from, err := windows.UTF16PtrFromString(tmp)
+	if err != nil {
+		return err
+	}
+	to, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	if err := windows.MoveFileEx(from, to, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH); err != nil {
+		os.Remove(tmp)
+		return &os.LinkError{Op: "rename", Old: tmp, New: path, Err: err}
+	}
+	return nil
+}
+
+// createWithDescriptor creates the new file path with the descriptor sd and writes data to it.
+func createWithDescriptor(path string, sd *windows.SECURITY_DESCRIPTOR, data []byte) error {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	sa := windows.SecurityAttributes{SecurityDescriptor: sd}
+	sa.Length = uint32(unsafe.Sizeof(sa))
+	h, err := windows.CreateFile(name, windows.GENERIC_WRITE, 0, &sa, windows.CREATE_NEW,
+		windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return &os.PathError{Op: "create", Path: path, Err: err}
+	}
+	f := os.NewFile(uintptr(h), path)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}

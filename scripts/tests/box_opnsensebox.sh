@@ -37,6 +37,7 @@ done_phase() {
 # `adminhelper-agent` word in these scripts as a call of the agent.
 PKG=adminhelper-agent
 PLUGIN=os-adminhelper
+INSTALLER_REPO=AdminHelper
 ETC=/usr/local/etc/adminhelper
 RCVAR_FILE=/etc/rc.conf.d/adminhelper_frpc
 CRON=/usr/local/etc/cron.d/adminhelper
@@ -274,6 +275,30 @@ switch_to() {
     && ok "switch $word: configctl adminhelper reconfigure $word OK" || bad "switch $word: reconfigure $word failed"
 }
 
+# installer_runs <log> — scripts/agent-install-bsd.sh without --server-id against the box's signed
+# repo, then once more as an enrolled host would: with an identity/ca.crt the repo file checks TLS
+# against it, and the real pkg must still take that file.
+installer_runs() {
+  conf=/usr/local/etc/pkg/repos/$INSTALLER_REPO.conf
+  if AH_REPO_BASE="file://$WORK/out" sh scripts/agent-install-bsd.sh --server https://192.0.2.1 \
+       --pubkey "$WORK/repo.pub" >"$1" 2>&1 \
+     && grep -q 'SSL_NO_VERIFY_PEER' "$conf" && grep -q "pubkey: \"/usr/local/etc/pkg/keys/adminhelper-pkg.pub\"" "$conf" \
+     && cmp -s "$WORK/repo.pub" /usr/local/etc/pkg/keys/adminhelper-pkg.pub; then
+    ok "installer without --server-id: $conf unverified before enrolment, the --pubkey key in place"
+    grep -q 'priority: 5,' "$conf" && ok "$conf: priority 5, below the OPNsense repo" || bad "$conf: no priority 5"
+  else
+    bad "agent-install-bsd.sh"; tail -n 30 "$1" | sed 's/^/      /'; sed 's/^/      /' "$conf" 2>/dev/null; return 1
+  fi
+  mkdir -p "$WORK/agent-etc/identity" && cp "$WORK/repo.pub" "$WORK/agent-etc/identity/ca.crt"
+  if AH_AGENT_ETC="$WORK/agent-etc" AH_REPO_BASE="file://$WORK/out" sh scripts/agent-install-bsd.sh \
+       --server https://192.0.2.1 --pubkey "$WORK/repo.pub" >"$1.2" 2>&1 \
+     && grep -q "SSL_CA_CERT_FILE: \"$WORK/agent-etc/identity/ca.crt\"" "$conf" && ! grep -q NO_VERIFY "$conf"; then
+    ok "installer on an enrolled host: $conf checks TLS against identity/ca.crt, pkg update takes it"
+  else
+    bad "agent-install-bsd.sh with identity/ca.crt"; tail -n 30 "$1.2" | sed 's/^/      /'; sed 's/^/      /' "$conf" 2>/dev/null; return 1
+  fi
+}
+
 phase_pkg() {
   [ "$(id -u)" = 0 ] || { bad "the pkg phase runs as root"; return; }
   WORK="$(mktemp -d /var/tmp/opnsbox.XXXXXX)" || { bad "mktemp"; return; }
@@ -322,7 +347,7 @@ phase_pkg() {
     bad "pkg delete bash"; tail -n 20 "$WORK/bash-delete.log" | sed 's/^/      /'
   fi
 
-  echo "[opnsbox] pkg install $PLUGIN from the signed repo pulls in the agent"
+  echo "[opnsbox] agent-install-bsd.sh installs $PLUGIN from the signed repo, which pulls in the agent"
   repo_conf "$WORK/repos" ahbox "$WORK/repo.pub"
   if pkg -R "$WORK/repos" update -f -r ahbox >"$WORK/update.log" 2>&1 \
      && found="$(pkg -R "$WORK/repos" rquery -r ahbox %n-%v "$PLUGIN" 2>>"$WORK/update.log")" \
@@ -331,11 +356,8 @@ phase_pkg() {
   else
     bad "pkg update/rquery from the signed repo"; tail -n 30 "$WORK/update.log" | sed 's/^/      /'; return
   fi
-  if pkg -R "$WORK/repos" install -y -r ahbox "$PLUGIN" >"$WORK/install.log" 2>&1; then
-    ok "pkg install $PLUGIN ($(pkg query %n-%v "$PLUGIN"))"
-  else
-    bad "pkg install $PLUGIN"; tail -n 30 "$WORK/install.log" | sed 's/^/      /'; return
-  fi
+  installer_runs "$WORK/install.log" || return
+  ok "pkg install $PLUGIN by the installer ($(pkg query %n-%v "$PLUGIN"))"
   # %a: installed as a dependency, not asked for.
   agent="$(pkg query '%n-%v %a' "$PKG" 2>/dev/null)"
   [ "$agent" = "$PKG-0.0.1 1" ] && ok "the agent came along as a dependency ($agent)" \

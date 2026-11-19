@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"adminhelper-agent/internal/config"
@@ -43,6 +44,15 @@ const localPreamble = "loginFailExit = false\n"
 // Sync checks for config changes and updates frpc (port of do_sync). Its requests to the server
 // end with ctx.
 func Sync(ctx context.Context) error {
+	// What the sync reads below (adminhelper.conf, the hash, the identity) comes from the data
+	// directory by path: the first run of a process secures it before it reads anything, since
+	// the service keeps running when its start could not secure the data root. Once secured, only
+	// SYSTEM and the Administrators can add to it, so later runs without a change walk no tree.
+	if !frpDirSecured.Load() {
+		if err := secureFrpDir(); err != nil {
+			return err
+		}
+	}
 	cfg, err := config.LoadFrpcConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -185,14 +195,18 @@ func Sync(ctx context.Context) error {
 // secureFrpDir secures the FRP directory, on Windows the data root first, before Sync changes
 // a file in it. Sync writes and removes there by path, so it does that only in a directory it
 // secured in the same run: the Windows service keeps running when its start could not secure
-// the data root. Sync does not call it on a run without a change, which so walks no tree.
+// the data root. Sync calls it on a run without a change only as the first run of its process.
 func secureFrpDir() error {
 	dir := config.FrpDir()
 	if err := ensureDataDir(dir); err != nil {
 		return fmt.Errorf("secure the FRP directory %s: %w; frpc and its files stay as they are", dir, err)
 	}
+	frpDirSecured.Store(true)
 	return nil
 }
+
+// frpDirSecured is whether this process has secured the FRP directory (secureFrpDir) at least once.
+var frpDirSecured atomic.Bool
 
 // frpcLockWait is how long a change to frpc's state waits for the frpc lock before it gives
 // up. The sync and the provisioning hold the lock for a few service calls, on Linux of 15 s at

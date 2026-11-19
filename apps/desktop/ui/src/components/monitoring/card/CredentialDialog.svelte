@@ -47,7 +47,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   const command = $derived(
     windows
-      ? `& 'C:\\Program Files\\AdminHelper\\adminhelper-agent.exe' monitor credential set ${credentialRef}`
+      ? `& 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe' monitor credential set ${credentialRef}`
       : `sudo adminhelper-agent monitor credential set ${credentialRef}`,
   );
   const usable = $derived(windows ? [] : connections);
