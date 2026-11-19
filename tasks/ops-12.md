@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ops-12 — Task-Ledger
-Status: geplant · Branch: feature/ops-12 · Review: am Ende
+Status: aktiv · Branch: feature/ops-12 · Review: am Ende
 Spec: docs/features/ops-12.md (Roadmap R-1646)
 Heavy: none — nur Harness-Skripte und ihre Bash-Tests, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
