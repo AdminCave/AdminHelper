@@ -30,7 +30,7 @@ Beweis: reviewer-Nit kern-monitoring-49 2026-11-19 (`send_all_clears` synchron i
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_removed_checks.py tests/test_openapi_snapshot.py
 Doku: changelog.d/kern-monitoring-51.md
 
-### T4 — R-1616: since in der Zukunft gilt als jetzt  [ ]
+### T4 — R-1616: since in der Zukunft gilt als jetzt  [~] (verschoben in kern-monitoring-52: Kappung auf now wirkt nicht, since wird je Push neu gelesen (Test since-ahead hält schon); echter Fix braucht serverseitig gemerkten Beginn, Frage an Kevin)
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_load_shed.py
 Beweis: km41 Abschlussprüfung 2026-11-18, PR #577 (Nit `routers/agent.py` `now - shed_since`)
 Dedup-Key: ref:monitoring:agent.py:since-future
