@@ -1,5 +1,5 @@
 # Agent-Einzeiler für FreeBSD und OPNsense — Task-Ledger
-Status: bereit · Branch: feature/ops-9 · Review: am Ende
+Status: erledigt · Branch: feature/ops-9 · Review: am Ende
 Spec: docs/features/ops-9.md (Roadmap R-1598)
 Heavy: scenario --box freebsd,opnsense — neues Installer-Skript; `scripts/tests/freebsd_box.sh` und `scripts/tests/opnsense_box.sh` fahren es mit echtem sh und pkg auf den Vorlagen base-freebsd und base-opnsense (Kevin 2026-11-18: grüner VM-Lauf ist Bedingung für den Selbst-Merge).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
