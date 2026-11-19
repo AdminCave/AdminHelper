@@ -7,6 +7,7 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -16,9 +17,12 @@ import (
 
 // SmartDisk holds the SMART health data of a disk.
 type SmartDisk struct {
-	Device   string `json:"device"`
-	Model    string `json:"model"`
-	Serial   string `json:"serial"`
+	Device string `json:"device"`
+	Model  string `json:"model"`
+	Serial string `json:"serial"`
+	// WWN in the form lsblk shows; left out when smartctl reports none. The monitoring service
+	// keys the disk by it (ADR 0004 §4) and falls back to model + serial without it.
+	WWN      string `json:"wwn,omitempty"`
 	Protocol string `json:"protocol"` // "ATA" or "NVMe"
 	Kind     string `json:"kind"`     // "HDD", "SATA-SSD" or "NVMe"
 	// Standby: the disk slept (STANDBY or SLEEP) and was not queried, so every other field is empty;
@@ -194,6 +198,7 @@ func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol s
 		Device:         device,
 		Model:          raw.ModelName,
 		Serial:         raw.SerialNumber,
+		WWN:            smartWWN(&raw),
 		Passed:         passed,
 		TempC:          raw.Temperature.Current,
 		PowerOnH:       raw.PowerOnTime.Hours,
@@ -267,8 +272,23 @@ type smartctlJSON struct {
 	} `json:"device"`
 	ModelName    string `json:"model_name"`
 	SerialNumber string `json:"serial_number"`
-	RotationRate int    `json:"rotation_rate"`
-	SmartStatus  *struct {
+	// ATA world wide name, split as smartmontools ata_get_wwn: 4-bit NAA, 24-bit OUI, 36-bit ID.
+	WWN *struct {
+		NAA uint64 `json:"naa"`
+		OUI uint64 `json:"oui"`
+		ID  uint64 `json:"id"`
+	} `json:"wwn"`
+	// NVMe: smartctl prints eui64 per namespace only when it is not zero.
+	NVMeNamespaces []struct {
+		EUI64 *struct {
+			OUI   uint64 `json:"oui"`
+			ExtID uint64 `json:"ext_id"`
+		} `json:"eui64"`
+	} `json:"nvme_namespaces"`
+	// SCSI/SAS: the logical unit id from VPD page 0x83, already as text.
+	LogicalUnitID string `json:"logical_unit_id"`
+	RotationRate  int    `json:"rotation_rate"`
+	SmartStatus   *struct {
 		Passed bool `json:"passed"`
 	} `json:"smart_status"`
 	Temperature struct {
@@ -295,4 +315,38 @@ type smartctlJSON struct {
 		MediaErrors     int `json:"media_and_data_integrity_errors"`
 		CriticalWarning int `json:"critical_warning"`
 	} `json:"nvme_smart_health_information_log"`
+}
+
+// maxWWNLen caps the SCSI logical unit id; the longest NAA form (IEEE Registered Extended) is
+// 0x plus 32 hex digits.
+const maxWWNLen = 64
+
+// smartWWN renders the disk's world wide name the way lsblk -o WWN does: 0x plus 16 hex digits
+// for ATA, eui. plus 16 hex digits for NVMe, the SCSI logical unit id as smartctl prints it.
+// Empty when smartctl reports no id, an all-zero one or an implausible SCSI text.
+func smartWWN(raw *smartctlJSON) string {
+	if w := raw.WWN; w != nil {
+		v := (w.NAA&0xf)<<60 | (w.OUI&0xffffff)<<36 | w.ID&0xfffffffff
+		if v != 0 {
+			return fmt.Sprintf("0x%016x", v)
+		}
+	}
+	if len(raw.NVMeNamespaces) > 0 {
+		if e := raw.NVMeNamespaces[0].EUI64; e != nil {
+			v := (e.OUI&0xffffff)<<40 | e.ExtID&0xffffffffff
+			if v != 0 {
+				return fmt.Sprintf("eui.%016x", v)
+			}
+		}
+	}
+	lu := strings.TrimSpace(raw.LogicalUnitID)
+	if lu == "" || len(lu) > maxWWNLen {
+		return ""
+	}
+	for _, r := range lu {
+		if r <= ' ' || r > '~' {
+			return ""
+		}
+	}
+	return lu
 }
