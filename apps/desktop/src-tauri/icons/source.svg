@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="AdminHelper">
+  <!-- App icon source: the AdminCave mark (ui/public/logo.svg) redrawn from basic shapes (ImageMagick renders arcs coarsely) with a fixed dark tile and light glyph, so it stays readable on any taskbar. -->
+  <rect width="100" height="100" rx="28" fill="#16181c"/>
+  <polygon points="24.5,52 50,26.51 75.5,52 67.02,60.48 50,43.49 32.98,60.48" fill="#ededee"/>
+  <circle cx="28.74" cy="56.24" r="6" fill="#ededee"/>
+  <circle cx="71.26" cy="56.24" r="6" fill="#ededee"/>
+  <rect x="25" y="66" width="50" height="12" rx="6" fill="#ededee"/>
+</svg>

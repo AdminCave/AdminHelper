@@ -14,18 +14,18 @@ als die App selbst. Kevin hat am Gate entschieden (2026-11-19): die AdminCave-Ma
 
 ## Ziel & Nicht-Ziele
 Ziel: Taskleiste, Fenster, Installer und Docs-Logo zeigen die AdminCave-Marke. Nicht-Ziele: die Marke selbst
-ändern, Web-Favicon (zeigt sie schon), Android-/iOS-Zielgrößen neu erfinden (der Generator erzeugt sie mit).
+ändern, Web-Favicon (zeigt sie schon), die Mobile-Icons (`icons/android`, `icons/ios`; kein Mobile-Build im Repo).
 
 ## Betroffene Komponenten & Dateien
-`apps/desktop/src-tauri/icons/*` (png, ico, icns, android, ios, Square*Logo), neue Quelle
+`apps/desktop/src-tauri/icons/*` (png, ico, icns, Square*Logo), neue Quelle
 `apps/desktop/src-tauri/icons/source.svg`, `docs/assets/logo.svg`. Kein Produktcode.
 
 ## Datenmodell / API / Migrationen
 Keine.
 
 ## Externe Integrationen
-`tauri icon` (Tauri-CLI 2.x, https://v2.tauri.app/reference/cli/#icon): erzeugt alle Plattform-Icons aus einer
-Quelle. Nicht verifiziert bis zum Lauf: ob die CLI die SVG direkt annimmt, sonst PNG 1024 aus der SVG.
+Keine. Die Icons entstehen lokal mit ImageMagick aus `source.svg` (4096-px-Master, Lanczos): ein echtes
+`icon.icns` (ic07–ic10) und ein `icon.ico` mit 16–256 px. Die Tauri-CLI (`tauri icon`) ist keine Voraussetzung.
 
 ## Trade-offs & Alternativen
 Das Marken-SVG hat ein transparentes Glyph in einem Rundquadrat, das auf dunkler Taskleiste unsichtbar wird.
