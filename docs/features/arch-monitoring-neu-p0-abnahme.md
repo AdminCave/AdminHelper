@@ -26,6 +26,10 @@ Experimente gemergt. Offen blieben zwei Punkte des ADR, §14:
 Der Entwurf aus den Runden liegt nur in der Wegwerf-Kopie. Der Mockup-Baum im Repo zeigt noch den Stand von PR #573,
 mit Reiter „Lage“, Server-Auswahl per Select und ohne Handy- und Mengenverhalten.
 
+Bei der Abnahme hat Kevin zwei Punkte nachgelegt (2026-11-19): Auch mit sehr vielen Hosts und Checks muss die
+Ansicht übersichtlich bleiben, ob mit Seiten, war offen. Und wo es Sinn ergibt, soll sich die Sortierung umstellen
+lassen. Beides hat er am selben Tag per Ask entschieden (Ziel, Trade-offs).
+
 ## Ziel & Nicht-Ziele
 
 **Ziel**
@@ -39,9 +43,21 @@ mit Reiter „Lage“, Server-Auswahl per Select und ohne Handy- und Mengenverha
     - Karten-Board mit 24 Karten, davon 8 mit Kennzahlen, dazu „weitere Server zeigen“.
     - Offene Probleme als Liste.
   - **Server-Seite:** folgt der Auswahl in der Serverliste, mit Vitalwerten und Objektart-Gruppen.
-  - **Objektart-Gruppen:** Zeilen erst beim Öffnen, Seiten zu je 60. Ab 42 Objekten zeigt eine Gruppe einen
-    Statusbalken statt Punkten.
-  - **Seitengrößen:** Objekte 200 je Seite, Querschnitte 150 je Seite.
+  - **Objektart-Gruppen:** Zeilen erst beim Öffnen, Seiten zu je 60. Bei mehr als 42 Objekten zeigt eine
+    Gruppe einen Statusbalken statt Punkten.
+  - **Seitengrößen:** Objekte 200 je Seite, Querschnitte 150 je Seite. Lange Listen zeigen den ersten Teil und
+    darunter „N weitere anzeigen“, keine Seitenzahlen (Kevin 2026-11-19).
+  - **Sortierung umstellbar** (Kevin 2026-11-19, per Ask):
+    - Objekte und Querschnitte: Ein Klick auf den Spaltenkopf sortiert, ein zweiter dreht die Richtung
+      (`aria-sort`). Danach beginnt die Liste wieder bei der ersten Seite.
+    - Serverliste: Zustand oder Name. Die Trennung in „Mit Problemen“ und „Ohne Probleme“ bleibt.
+    - Karten-Board von „Alle Server“: Zustand, Neueste (der Server mit dem jüngsten offenen Problem zuerst)
+      oder Name.
+    - Fest bleiben Lagekarte, „Neueste Probleme“, Objektart-Gruppen, „Ausgeblendet“ und „Abdeckung“.
+    - Standard ist überall „schlimmste zuerst“. Ausgeblendete Objekte bleiben am Ende, leere Werte stehen in
+      beiden Richtungen hinten.
+    - Die Wahl gilt für die Sitzung: Reiter-, Server- und Datenwechsel behalten sie, ein Neuladen beginnt
+      wieder beim Standard.
   - **Kennzahl-Balken** mit Warn- und Kritisch-Marke.
   - **Handy (≤ 760 px):**
     - Serverliste als Schublade, Escape schließt sie.
@@ -49,7 +65,8 @@ mit Reiter „Lage“, Server-Auswahl per Select und ohne Handy- und Mengenverha
     - Ein Reiterwechsel beginnt oben.
   - **Datenumschalter** „Normal“ / „Groß“: 292 Server mit 10 510 Objekten, deterministisch erzeugt.
   - **Animationen** nur mit `prefers-reduced-motion`-Abschaltung.
-- ADR 0004 hält Kevins Antworten 1–11 wörtlich mit Datum fest, dazu die Abnahme mit den Runden und den Grenzen.
+- ADR 0004 hält Kevins Antworten 1–11 wörtlich mit Datum fest, dazu die Abnahme mit den Runden, den Grenzen,
+  den Seiten und der Sortierung.
   Status „angenommen“. Die Folgen für P2/P3 sind nachgezogen: Serverliste und „Alle Server“ statt einer eigenen
   Lage-Ansicht.
 
@@ -87,10 +104,16 @@ Nur `desktop-ui`, nur unter `apps/desktop/ui/src/mockups/monitoring-neu/`, dazu 
   - `MockupApp.svelte`: Serverliste, Reiter ohne „Lage“, Handy-Schublade, Datenumschalter, Scroll-Reset.
   - `views/ServerView.svelte`: kein eigenes Select mehr.
   - `views/Lage.svelte` entfällt, „Alle Server“ ersetzt sie.
+- **Sortierung:**
+  - `views/sorting.ts` (neu): Ordnungen und die Wahl je Ansicht für die Sitzung, ohne Speicher.
+  - `views/ObjectsView.svelte`, `views/CrossView.svelte`, `views/cross.ts` (Sortwert je Zelle): Spaltenköpfe.
+  - `views/ServerNav.svelte`, `views/AllServers.svelte`, `views/servers.ts` (jüngstes Problem je Server):
+    Umschalter.
 - **Tests:**
   - `views/views.test.ts`, `ObjectRow.test.ts`, `views/ExceptionDialog.test.ts` (Klasse `is-hidden`, neuer
     Rahmen).
-  - Neu: `grammar.test.ts`-Fälle, `views/servers.test.ts`, `views/limits.test.ts`, `views/overview.test.ts`.
+  - Neu: `grammar.test.ts`-Fälle, `views/servers.test.ts`, `views/limits.test.ts`, `views/overview.test.ts`,
+    `views/sorting.test.ts`.
   - `src/styles/tokens.test.ts` läuft in jedem `Verify:` mit: jedes `var(--x)` muss deklariert sein.
 - **Doku:** `docs/adr/0004-monitoring-neuordnung.md` (§1 Status, §13, §14).
 
@@ -122,6 +145,15 @@ gehören zu Svelte 5.57 im Lockfile.
     die Produktansicht mit eigenen E2E.
 - **Querschnitte 150, Objekte 200 je Seite.** So stehen sie im Mockup, das Kevin mit „Wie im Mockup“ angenommen hat.
   Die Ask-Beschreibung nannte „Objektlisten 200“, das ADR nennt beide Werte.
+- **„N weitere anzeigen“ statt Seitenzahlen oder Endlos-Scrollen** (Kevin 2026-11-19, empfohlen):
+  - Die Position bleibt, die Browsersuche findet alles Gezeigte, der Zähler nennt etwa „200 von 3 412“.
+  - Mit Sortierung steht das Gesuchte im ersten Teil. Seitenzahlen sagen bei sortierten Listen wenig.
+  - Endlos-Scrollen erreicht das Seitenende nie und hält tausende Zeilen im Browser.
+- **Sortierung für die Sitzung** (Kevin 2026-11-19, empfohlen) statt dauerhaft je Ansicht: Ein frischer Blick
+  beginnt immer bei den schlimmsten, ein Problem rutscht nie durch eine alte Wahl nach unten. Im Mockup hält ein
+  Modul die Wahl im Speicher der Seite.
+- **Lagekarte ohne Umschalter:** Ab 40 Servern zeigt sie 20 Zeilen. Nach Name wären das nicht mehr die
+  schlimmsten. Kevin hat sie nicht gewählt.
 - **Task-Zuschnitt nach Abhängigkeit:** Bausteine → Zusammenfassung → Listen → Übersicht → Rahmen. Jede Task ist
   für sich grün, weil neue Ansichten erst T5 im Rahmen verdrahtet.
 
@@ -142,4 +174,4 @@ P0.
 
 ## Offene Fragen
 
-Keine. Fragen 1–12 hat Kevin beantwortet, die Grenzen „Wie im Mockup“.
+Keine. Fragen 1–12 hat Kevin beantwortet, die Grenzen „Wie im Mockup“, Seiten und Sortierung am 2026-11-19.

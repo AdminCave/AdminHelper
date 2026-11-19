@@ -53,6 +53,13 @@ Doku: keine (Mockup nur im Vite-Dev-Server; die Abnahme hält T7 im ADR fest)
 Test-Löschung: apps/desktop/ui/src/mockups/monitoring-neu/views/views.test.ts::Lage: a click opens the drawer of that object — der Reiter „Lage“ entfällt (Runde 1, Kevin 2026-11-18: Serverliste wie heute, „Alle Server“ ersetzt ihn); derselbe Fall läuft im selben `it.each` als „Alle Server“
 Abhängt von: T4
 
+### T8 — Sortierung umstellbar: Tabellen per Spaltenkopf, Serverliste, Karten-Board (R-1558)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/views/sorting.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/sorting.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/ObjectsView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/CrossView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/cross.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/ServerNav.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/AllServers.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/servers.ts
+Änderung: Kevin 2026-11-19 per Ask: „Tabellen per Spaltenkopf“, „Serverliste: Zustand | Name“, „Alle Server: Zustand | Neueste | Name“, „Für die Sitzung“, Seiten bleiben „weitere anzeigen“. Neu (SPDX) `views/sorting.ts`: die Ordnungen und die Wahl je Ansicht als Modul-Zustand (überlebt Reiter-, Server- und Datenwechsel, ein Neuladen beginnt beim Standard), dazu ein Reset für Tests. Objekte (Zustand, Objekt, Art, Server, Seit) und Querschnitte (Zustand und jede Spalte, Kennzahlen nach Wert über einen Sortwert je Zelle in `cross.ts`) sortieren per Klick auf den Spaltenkopf, ein zweiter dreht die Richtung, `aria-sort` am Kopf, danach Seite 1. Die Serverliste schaltet Zustand | Name, die Trennung mit/ohne Probleme und das Falten bleiben. Das Karten-Board schaltet Zustand | Neueste | Name („Neueste“: jüngstes offenes Problem je Server aus `servers.ts`). Standard „schlimmste zuerst“, Ausgeblendete am Ende, leere Werte in beiden Richtungen hinten, Gleichstand nach Name. Lagekarte, „Neueste Probleme“, Objektart-Gruppen, „Ausgeblendet“ und „Abdeckung“ bleiben fest. Acht Dateien, weil Ordnung, Zustand und alle vier Ansichten zusammen getestet werden. Tests in `views/sorting.test.ts` (SPDX): jede Ordnung in beiden Richtungen, Ausgeblendete und leere Werte hinten, Seite 1 nach Sortwechsel, die Wahl überlebt ein Neu-Mounten, Standard nach Reset; Mutationsprobe im Commit-Body.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
+Doku: keine (Mockup nur im Vite-Dev-Server; die Entscheidung hält T7 im ADR fest)
+Abhängt von: T5
+
 ### T6 — ADR 0004 §14: Kevins Antworten 1–11 (R-1558, R-1515)  [ ]
 Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
 Änderung: Kevins Antworten auf die Fragen 1–11 wörtlich mit Datum (2026-11-18, per Ask: alle nach Empfehlung; Frage 11 mit R-1515 als `when` im Katalog-Modul `nextcloud-aio`) unter §14; aus „Offen, je mit Empfehlung“ wird „Entschieden“. Übernommen aus `arch-monitoring-neu-p0` T12.
@@ -63,10 +70,12 @@ Abhängt von: T5
 
 ### T7 — ADR 0004: Abnahme der Screens, Status „angenommen“ (R-1558)  [ ]
 Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
-Änderung: Frage 12 mit Kevins Worten je Runde (1–5) und der Abnahme vom 2026-11-19 samt Grenzen; ein kurzer Abschnitt nennt die abgenommene Struktur (Serverliste, „Alle Server“ mit Lagekarte und Karten, Server-Seite, Reiter, Handy, Mengenverhalten). §13 zieht P2/P3 nach („Lage-Ansicht“ wird „Alle Server“), der Kopf wechselt auf „angenommen“ mit Datum. Übernommen aus `arch-monitoring-neu-p0` T13.
+Änderung: Frage 12 mit Kevins Worten je Runde (1–5) und der Abnahme vom 2026-11-19 samt Grenzen; ein kurzer Abschnitt nennt die abgenommene Struktur (Serverliste, „Alle Server“ mit Lagekarte und Karten, Server-Seite, Reiter, Handy, Mengenverhalten). §13 zieht P2/P3 nach („Lage-Ansicht“ wird „Alle Server“), der Kopf wechselt auf „angenommen“ mit Datum. Dazu Kevins Entscheidungen vom 2026-11-19 zu Seiten („weitere anzeigen“ statt Seitenzahlen oder Endlos-Scrollen) und Sortierung (wo, Standard, für die Sitzung); die Grenze der Objektart-Gruppen heißt „mehr als 42 Objekte“. Übernommen aus `arch-monitoring-neu-p0` T13.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/adr/0004-monitoring-neuordnung.md
 Task-Review: am Ende
 Abhängt von: T6
 
 ## Entscheidungen
+- 2026-11-19 T3: Statusbalken einer Objektart-Gruppe erst bei mehr als 42 Objekten, wie im abgenommenen Entwurf — Prüfer-Nit T3; Spec und T7 nennen es so.
+- 2026-11-19 T8: Sortierung als eigene Task nach T5 statt in T3/T4 — T3/T4 übernehmen den abgenommenen Entwurf unverändert, T8 baut Kevins Nachtrag darauf.
