@@ -377,6 +377,11 @@ def test_the_windows_job_proves_frpc_runs_as_a_child_of_the_service():
     # The hash the agent checks the delivered text against.
     assert '"$(sha256sum frpc.toml | cut -c1-64)"' in prep
     assert "subjectAltName=IP:127.0.0.1" in prep
+    # The agent takes the sync server's leaf only from the access intermediate (verifyGatewayIssuer),
+    # and the server, like the gateway, wants the agent's client certificate.
+    assert 'issue access "AdminHelper Access Intermediate ci" root' in prep
+    assert "issue server server access" in prep
+    assert "ctx.verify_mode = ssl.CERT_REQUIRED" in prep
     step = steps[check]
     run = step["run"]
     assert step["shell"] == "powershell"
