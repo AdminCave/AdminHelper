@@ -720,3 +720,53 @@ func TestCollectSmartStandbyStatusIsNotAnNVMeStatus(t *testing.T) {
 		t.Errorf("collectSmart() = %+v, %q; want only the read /dev/sda", disks, reason)
 	}
 }
+
+func TestSmartWWNPerProtocol(t *testing.T) {
+	cases := []struct {
+		name, patch, want string
+	}{
+		// smartctl -i prints "LU WWN Device Id: 5 0014ee 2b6f1c2d3" for this disk; lsblk shows 0x50014ee2b6f1c2d3.
+		{"ata", `"wwn": {"naa": 5, "oui": 5358, "id": 11659231955},`, "0x50014ee2b6f1c2d3"},
+		{"nvme", `"nvme_namespaces": [{"id": 1, "eui64": {"oui": 9528, "ext_id": 326597664323}}],`, "eui.0025384c0abcde43"},
+		{"scsi", `"logical_unit_id": "0x5000c500a1b2c3d4",`, "0x5000c500a1b2c3d4"},
+		{"none", ``, ""},
+		{"ata zero", `"wwn": {"naa": 0, "oui": 0, "id": 0},`, ""},
+		{"nvme without eui64", `"nvme_namespaces": [{"id": 1}],`, ""},
+		{"scsi with space", `"logical_unit_id": "0x5000 c500",`, ""},
+		{"scsi too long", `"logical_unit_id": "` + strings.Repeat("a", maxWWNLen+1) + `",`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fixture := strings.Replace(ataFixture, `"rotation_rate": 5400,`, c.patch+`"rotation_rate": 5400,`, 1)
+			if got := smartWWN(mustUnmarshalSmart(t, fixture)); got != c.want {
+				t.Errorf("smartWWN = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestCollectSmartReportsWWN(t *testing.T) {
+	withWWN := strings.Replace(ataFixture, `"rotation_rate": 5400,`,
+		`"wwn": {"naa": 5, "oui": 5358, "id": 11659231955}, "rotation_rate": 5400,`, 1)
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {out: withWWN},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	disks, _ := collectSmart(context.Background())
+	got := map[string]string{}
+	for _, d := range disks {
+		b, err := json.Marshal(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		got[d.Device] = fmt.Sprint(m["wwn"])
+	}
+	// The NVMe fixture carries no namespace id: the field is left out, not sent empty.
+	if want := map[string]string{"/dev/sda": "0x50014ee2b6f1c2d3", "/dev/nvme0": "<nil>"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("wwn per disk = %v, want %v", got, want)
+	}
+}
