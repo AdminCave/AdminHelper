@@ -1,5 +1,5 @@
 # Nachlese Provisionieren — Task-Ledger
-Status: bereit · Branch: feature/kern-provision-2 · Review: pro Task
+Status: erledigt · Branch: feature/kern-provision-2 · Review: pro Task
 Spec: docs/features/kern-provision-2.md (Roadmap R-1629, R-1612, R-1613, R-1614, R-1628)
 Heavy: linux-full — Server-API (Katalog, Fortschritt) und Desktop-Provisionieren
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -72,10 +72,6 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: → T6 (cicd.html nennt die Ausnahmen)
 Abhängt von: T2
 
-## Entscheidungen
-- R-1612 Variante A (Wertetyp `tokenStdin`, Pipe): Token nie im argv; ein älterer Desktop baut den Windows-Automationsbefehl dann nicht (dokumentiertes Verhalten für Unbekanntes).
-- R-1612 oasdiff: `tokenStdin` ist ein neuer Antwort-Enum-Wert (1 ERR); Kevin 2026-11-19: eine Ausnahmezeile als eigene Task (T8).
-
 ### T9 — R-1612, R-1628: API-Referenz nachziehen (Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/features/kern-provision-2.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @29e17e94e 2026-11-19T19:45:58+01:00
@@ -92,3 +88,7 @@ Review: approve (.ah-out/review/kern-provision-2/T10.verdict.json)
 Änderung: Die PR-CI fiel in `TestDocsCallTheAgentCLIAsItIs`: die Windows-Form aus T6 (`'<token>' | & '…\adminhelper-agent.exe' provision … --token-stdin`) liest der Prüfer nicht, weil `quotedExeRE` den Aufrufoperator `&` nur am Zeilenanfang nimmt. Er nimmt ihn nun auch hinter `|` und `;`; die Fixture in `TestDocsCLICheckCanFail` bekommt die Form.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/adminhelper-agent/
 Doku: keine (Testprüfer; die Doku-Zeile steht schon)
+
+## Entscheidungen
+- R-1612 Variante A (Wertetyp `tokenStdin`, Pipe): Token nie im argv; ein älterer Desktop baut den Windows-Automationsbefehl dann nicht (dokumentiertes Verhalten für Unbekanntes).
+- R-1612 oasdiff: `tokenStdin` ist ein neuer Antwort-Enum-Wert (1 ERR); Kevin 2026-11-19: eine Ausnahmezeile als eigene Task (T8).
