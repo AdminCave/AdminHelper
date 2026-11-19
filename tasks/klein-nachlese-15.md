@@ -37,8 +37,10 @@ Semantik: keine Stelle in docs/ — interner Schlüsselname
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n
 Doku: keine (interner Schlüssel)
 
-### T4 — R-1620: monitoring.html „Was der Hub nicht annimmt“ (DE+EN)  [ ]
+### T4 — R-1620: monitoring.html „Was der Hub nicht annimmt“ (DE+EN)  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2421bdf0a 2026-11-19T21:32:15+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: branch-review kern-monitoring-47 2026-11-18 · Dedup-Key: ref:monitoring:checks.py:nachlese-km47
 Semantik: docs/developer/monitoring.html: „Was die Glocke verwirft, holt der Nachhol-Job nach“ — gemeint ist, was der Hub nicht annimmt
 Änderung: DE „Was der Hub nicht annimmt, holt der Nachhol-Job nach“, EN „What the hub does not accept, the catch-up job sends“. Der Hub-POST in `toggle_check`/`delete_check` bleibt synchron (Entscheidungen).
