@@ -1,5 +1,5 @@
 # Unix-Socket-Tests des Agents unter FreeBSD ohne Rennen — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-12 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-12 · Review: am Ende
 Spec: docs/features/kern-agent-12.md (Roadmap R-1610)
 Heavy: scenario --box opnsense — scripts/tests/opnsense_box.sh; der Test ist //go:build freebsd und läuft nur auf der Box (Box-User und root); dazu der Dauerlauf 50x auf der Box (Wackler-Regel)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
