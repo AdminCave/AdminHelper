@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import discovery
 from app.catalog.loader import load_catalog
+from app.catalog.modules.net_share import MODULE as SHARE_MODULE
 from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.discovery import (
     MAX_CONTAINERS,
@@ -91,6 +92,7 @@ CATALOG = load_catalog(
             markers=[{"id": "gitea.config", "paths": ["/etc/gitea"]}],
         ),
         ("port", PORT_MODULE),
+        ("net_share", SHARE_MODULE),
     ]
 )
 NO_PORT_MODULE = load_catalog([_module("postgres", "container", container_images=["postgres"])])
@@ -206,9 +208,11 @@ def test_inventory_keeps_only_the_contract_fields():
         "ts",
         "duration_ms",
         "partial",
+        "complete",
         "units",
         "sockets",
         "containers",
+        "shares",
         "markers",
         "ports",
         "vhosts",
@@ -262,6 +266,32 @@ def test_lists_beyond_the_contract_bounds_are_cut_and_make_the_scan_partial():
     assert clean_inventory(_block(units=units[:MAX_UNITS]))["partial"] is False
     assert clean_inventory(_block(partial=True))["partial"] is True
     assert clean_inventory(_block(partial="yes"))["partial"] is False
+    # A cut list makes its own section incomplete, not the others.
+    assert cut_units["complete"] == {**WHOLE, "units": False}
+    assert cut_containers["complete"] == {**WHOLE, "containers": False}
+
+
+WHOLE = dict.fromkeys(
+    ("units", "containers", "sockets", "markers", "vhosts", "ports", "shares"), True
+)
+
+
+@pytest.mark.parametrize(
+    ("parts", "complete", "partial"),
+    [
+        # An agent before R-1302 sends no complete: every section is as whole as the scan.
+        ({}, WHOLE, False),
+        ({"partial": True}, dict.fromkeys(WHOLE, False), True),
+        # As the agent said; a section it does not name, or names with no true, is not whole.
+        ({"complete": {**WHOLE, "ports": False}, "partial": True}, {**WHOLE, "ports": False}, True),
+        ({"complete": {"units": True}}, {**dict.fromkeys(WHOLE, False), "units": True}, True),
+        ({"complete": {**WHOLE, "units": "yes"}}, {**WHOLE, "units": False}, True),
+        ({"complete": "all"}, WHOLE, False),
+    ],
+)
+def test_complete_says_per_section_whether_it_is_whole(parts, complete, partial):
+    inv = clean_inventory(_block(**parts))
+    assert (inv["complete"], inv["partial"]) == (complete, partial)
 
 
 def _vhost(name="cloud.example.org", port=443, tls=True, server="nginx", app=""):
@@ -1023,7 +1053,18 @@ def test_a_stopped_unit_alone_makes_no_stand_in():
     assert match_inventory(inv, CATALOG) == {}
 
 
-def test_a_cut_list_makes_the_scan_partial_too(db):
+def test_a_cut_list_makes_its_section_partial_too(db):
+    _scan(db, T0, **_paperless("web"))
+    _decide(db, "adopted")
+    _watch(db)
+
+    too_many = [_container(f"c{i}", "nginx:1") for i in range(MAX_CONTAINERS + 1)]
+    _scan(db, T0 + DAY, containers=too_many)
+    _scan(db, T0 + 2 * DAY, containers=too_many)
+    assert (_finding(db).kind, _finding(db).status) == ("new", "adopted")
+
+
+def test_a_list_cut_on_every_scan_lets_the_other_sections_go(db):
     _scan(db, T0, **_paperless("web"))
     _decide(db, "adopted")
     _watch(db)
@@ -1031,7 +1072,72 @@ def test_a_cut_list_makes_the_scan_partial_too(db):
     too_many = [_unit(f"u{i}.service") for i in range(MAX_UNITS + 1)]
     _scan(db, T0 + DAY, units=too_many)
     _scan(db, T0 + 2 * DAY, units=too_many)
+    assert (_finding(db).kind, _finding(db).status) == ("gone", "open")
+
+
+def test_ports_cut_short_on_every_scan_let_a_vanished_container_go(db):
+    _scan(db, T0, **_paperless("web"))
+    _decide(db, "adopted")
+    _watch(db)
+
+    cut_ports = {"complete": {**WHOLE, "ports": False}, "partial": True}
+    _scan(db, T0 + DAY, **cut_ports)
     assert (_finding(db).kind, _finding(db).status) == ("new", "adopted")
+    _scan(db, T0 + 2 * DAY, **cut_ports)
+    assert (_finding(db).kind, _finding(db).status) == ("gone", "open")
+
+
+def test_a_section_cut_short_keeps_the_findings_it_is_the_origin_of(db):
+    found = {"units": [_unit("nginx.service")], "sockets": [_socket(8443, "java")]}
+    _scan(db, T0, ports=[_recognised(8443)], **found)
+    assert _finding(db, "nginx", "nginx.service") is not None
+    assert _finding(db, "port", "tcp-8443") is not None
+
+    # Units and ports cut short: neither the unit nor the port finding goes.
+    no_units_no_ports = {"complete": {**WHOLE, "units": False, "ports": False}, "partial": True}
+    _scan(db, T0 + DAY, **no_units_no_ports)
+    _scan(db, T0 + 2 * DAY, **no_units_no_ports)
+    assert _finding(db, "nginx", "nginx.service") is not None
+    assert _finding(db, "port", "tcp-8443") is not None
+    # A port finding needs whole sockets as well; the unit finding does not.
+    no_sockets = {"complete": {**WHOLE, "sockets": False}, "partial": True}
+    _scan(db, T0 + 3 * DAY, **no_sockets)
+    _scan(db, T0 + 4 * DAY, **no_sockets)
+    assert _finding(db, "port", "tcp-8443") is not None
+    assert _finding(db, "nginx", "nginx.service") is None
+
+
+def test_a_share_goes_only_after_whole_scans_of_the_shares(db):
+    share = {"mountpoint": "/mnt/nas", "fstype": "nfs4"}
+    _scan(db, T0, shares=[share])
+    assert _finding(db, "net_share", "mnt:nas") is not None
+
+    # The shares cut short: the share does not go.
+    cut = {"complete": {**WHOLE, "shares": False}, "partial": True}
+    _scan(db, T0 + DAY, **cut)
+    _scan(db, T0 + 2 * DAY, **cut)
+    assert _finding(db, "net_share", "mnt:nas") is not None
+    # The shares whole, the ports cut short: it goes.
+    cut_ports = {"complete": {**WHOLE, "ports": False}, "partial": True}
+    _scan(db, T0 + 3 * DAY, **cut_ports)
+    _scan(db, T0 + 4 * DAY, **cut_ports)
+    assert _finding(db, "net_share", "mnt:nas") is None
+
+
+def test_an_inventory_stored_before_the_sections_counts_its_full_scan_for_each(db):
+    _scan(db, T0, **_paperless("web"))
+    _decide(db, "adopted")
+    _watch(db)
+    _scan(db, T0 + DAY)
+    # As stored before R-1302: one stamp for the whole scan.
+    row = db.get(MonitorDiscovery, "srv-1")
+    stored = json.loads(row.inventory)
+    del stored["section_full_scan_at"], stored["complete"]
+    row.inventory = json.dumps(stored)
+    db.commit()
+
+    _scan(db, T0 + 2 * DAY)
+    assert (_finding(db).kind, _finding(db).status) == ("gone", "open")
 
 
 @pytest.mark.parametrize("status", ["open", "dismissed", "adopted"])

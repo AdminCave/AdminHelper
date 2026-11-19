@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -28,6 +29,7 @@ const (
 	kindUnit      = "unit"
 	kindContainer = "container"
 	kindVhost     = "vhost"
+	kindShare     = "share"
 )
 
 // maxNameRunes caps the name of a target, as the monitoring service does.
@@ -79,11 +81,22 @@ func targetOf(p Probe, kinds ...string) (Target, error) {
 		ok = containerPattern.MatchString(t.Name)
 	case kindVhost:
 		ok = t.PortHint > 0 && t.Name != "" && vhostName(t.Name) == t.Name
+	case kindShare:
+		ok = t.PortHint == 0 && validMountpoint(t.Name)
 	}
 	if !ok {
 		return Target{}, fmt.Errorf("%w: %s target %q", ErrInvalid, t.Kind, t.Name)
 	}
 	return t, nil
+}
+
+// mountpointPattern is the mount point of a share, as the allowlist's class mountpoint takes it.
+var mountpointPattern = regexp.MustCompile(`^(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_., @+-]*)+$`)
+
+// validMountpoint says whether name can be the mount point of a share: absolute and clean, without
+// "..", no longer than a target name.
+func validMountpoint(name string) bool {
+	return len([]rune(name)) <= maxNameRunes && path.Clean(name) == name && mountpointPattern.MatchString(name)
 }
 
 // noTarget returns an error wrapping ErrInvalid if p names a target: its sensor names its object in
@@ -190,7 +203,7 @@ func ownedBy(ctx context.Context, name string) func(listener) bool {
 	return func(l listener) bool {
 		got, ok := names[l.pid]
 		if !ok {
-			n, err := processName(ctx, l.pid)
+			n, err := programName(ctx, l.pid)
 			if err == nil {
 				got = processKey(n)
 			}

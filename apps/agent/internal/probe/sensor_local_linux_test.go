@@ -588,6 +588,9 @@ func TestUnixSocketSensorNeverConnectsToAForwarder(t *testing.T) {
 		{"sslh-select", nil, "belongs to sslh-select, which forwards"},
 		{"exe", []string{"/usr/libexec/podman/rootlessport"}, "belongs to rootlessport, which forwards"},
 		{"exe", nil, "the process exe serving " + path + " cannot be told"},
+		{"busybox", []string{"busybox", "nc", "-lk", "local:" + path}, "belongs to nc, which forwards"},
+		{"dropbearmulti", []string{"dropbearmulti", "dropbear"}, "belongs to dropbear, which the agent never probes"},
+		{"busybox", nil, "the applet busybox runs cannot be read"},
 	} {
 		h.names[pid] = c.name
 		delete(h.args, pid)
@@ -601,6 +604,10 @@ func TestUnixSocketSensorNeverConnectsToAForwarder(t *testing.T) {
 	h.names[pid], h.args[pid] = "exe", []string{"/usr/bin/caddy", "run"}
 	if got, err := probe(); err != nil || got["connected"] != true {
 		t.Errorf("served by a reexec of caddy = %v, %v; want it connected", got, err)
+	}
+	h.names[pid], h.args[pid] = "busybox", []string{"busybox", "httpd", "-f"}
+	if got, err := probe(); err != nil || got["connected"] != true {
+		t.Errorf("served by busybox httpd = %v, %v; want it connected", got, err)
 	}
 }
 
@@ -677,4 +684,37 @@ func TestDialUnixFollowsTheSocketNotItsName(t *testing.T) {
 	t.Chdir(dir)
 	listenCounting(t, "r.sock")
 	refused(filepath.Join(dir, "r.sock"), "bound no absolute path")
+}
+
+// The metrics of a process target find a busybox applet by its name, as the port and socket sensors do
+// (ownedBy); the kernel names such a process busybox (R-1606).
+func TestProcessesNamedFindsABusyboxApplet(t *testing.T) {
+	bin, err := exec.LookPath("busybox")
+	if err != nil {
+		t.Skip("no busybox on this host")
+	}
+	cmd := exec.Command(bin, "sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pid := int32(cmd.Process.Pid)
+	ctx := context.Background()
+	found := func(name string) bool {
+		procs, err := processesNamed(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(procs, func(p proc) bool { return p.pid == pid })
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for !found("sleep") {
+		if time.Now().After(deadline) {
+			t.Fatal("processesNamed(sleep) does not find busybox sleep")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if found("busybox") {
+		t.Error("processesNamed(busybox) finds the applet sleep")
+	}
 }

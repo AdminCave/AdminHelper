@@ -38,7 +38,7 @@ func Listeners(ctx context.Context) ([]Listener, error) {
 // ProcessName returns the name of the process pid in the form the guard compares names in, "" if
 // it cannot be read.
 func ProcessName(ctx context.Context, pid int32) string {
-	name, err := processName(ctx, pid)
+	name, err := programName(ctx, pid)
 	if err != nil {
 		return ""
 	}

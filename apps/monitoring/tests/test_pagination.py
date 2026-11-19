@@ -198,10 +198,21 @@ def test_offset_bound_holds_at_both_edges(path, client_db):
 
 def test_status_summary_counts_per_status(client_db):
     # 5.21: the GROUP BY aggregation returns the same per-status tally as the old full row scan,
-    # including statuses not present (0) and the total across all rows.
+    # including statuses not present (0) and the total across all rows. Only states of enabled
+    # checks count, so each state gets its check.
     client, factory = client_db
     with factory() as db:
         for i, st in enumerate(["ok", "ok", "warning", "critical", "critical", "critical"]):
+            db.add(
+                MonitorCheck(
+                    id=f"c{i}",
+                    server_id="srv-1",
+                    name=f"c{i}",
+                    check_type="ping",
+                    config="{}",
+                    enabled=True,
+                )
+            )
             db.add(MonitorState(check_id=f"c{i}", status=st))
         db.commit()
     r = client.get("/status/summary")
@@ -215,7 +226,7 @@ def test_status_summary_counts_per_status(client_db):
         "pending": 0,
         "info": 0,
         "lastResultAt": None,
-        "minIntervalS": None,
+        "minIntervalS": 300,
     }
 
 

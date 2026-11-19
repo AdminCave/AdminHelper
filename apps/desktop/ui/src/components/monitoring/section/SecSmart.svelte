@@ -41,10 +41,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (temp >= warn) return 'warn';
     return 'ok';
   }
-  function categoryClass(cat: string): 'ok' | 'warn' | 'crit' {
+  // 'unknown': smartctl gave no SMART verdict for the disk (R-1568), which is no pass.
+  function categoryClass(cat: string): 'ok' | 'warn' | 'crit' | 'muted' {
     if (cat === 'critical') return 'crit';
     if (cat === 'warning') return 'warn';
+    if (cat === 'unknown') return 'muted';
     return 'ok';
+  }
+  const CHIP_TEXT = { ok: 'OK', warn: 'WARN', crit: 'CRIT', muted: 'N/A' } as const;
+  // A disk the agent left asleep keeps its last read values (R-1569); this line says from when.
+  function asleepText(d: SmartDisk): string | null {
+    if (!d.standby) return null;
+    const read = d.read_at ? new Date(d.read_at) : null;
+    if (!read || Number.isNaN(read.getTime())) return $t('monitoring.smart.asleepNever');
+    const time = read.toLocaleString(currentLocale(), { dateStyle: 'short', timeStyle: 'short' });
+    return $t('monitoring.smart.asleepSince', { time });
   }
   function smartSecondary(d: SmartDisk): string {
     const hours = num(d.power_on_hours);
@@ -105,6 +116,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 ? (d.critical_warning_bits as string[])
                 : []}
               {@const secondary = smartSecondary(d)}
+              {@const asleep = asleepText(d)}
               <div class="mon-hero-bar-row">
                 <span class="mon-hero-bar-label"
                   >{d.device}
@@ -117,11 +129,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   ></div>
                 </div>
                 <span class="mon-hero-bar-pct">{temp}°C</span>
-                <span class="mon-chip chip-{cat}"
-                  >{cat === 'crit' ? 'CRIT' : cat === 'warn' ? 'WARN' : 'OK'}</span
-                >
+                <span class="mon-chip chip-{cat}">{CHIP_TEXT[cat]}</span>
                 {#if d.model}<span class="mon-hero-bar-sub">{d.model}</span>{/if}
                 {#if secondary}<span class="mon-hero-bar-sub">{secondary}</span>{/if}
+                {#if asleep}<span class="mon-hero-bar-sub mon-sub-asleep">{asleep}</span>{/if}
                 {#if cwBits.length > 0}<span class="mon-hero-bar-sub mon-sub-crit"
                     >{cwBits.join(', ')}</span
                   >{/if}

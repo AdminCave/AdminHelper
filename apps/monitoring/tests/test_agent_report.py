@@ -714,7 +714,13 @@ def test_smart_series_still_come_from_the_smart_health_check(client_db, monkeypa
 
     report = {
         "smart": [
-            {"device": "/dev/sda", "temp_c": 38, "reallocated_sectors": 0, "pending_sectors": 0}
+            {
+                "device": "/dev/sda",
+                "smart_passed": True,
+                "temp_c": 38,
+                "reallocated_sectors": 0,
+                "pending_sectors": 0,
+            }
         ]
     }
     r = client.post("/agent/srv-1/report", json=report)

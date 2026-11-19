@@ -11,7 +11,7 @@ DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku i
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 Für alle Tasks: Zeilenangaben `origin/main@76f331f0`, vor dem Schreiben neu greppen. Neue Code-Strings englisch,
-CHANGELOG umlautfrei und neutral in `changelog.d/ops-2.md`. `security` zusätzlich bei T1, T2 und T3 (SEC).
+CHANGELOG umlautfrei und neutral in `changelog.d/ops-2.md`. `security` zusätzlich bei T1, T2 und T3.
 Einzelheiten der Fälle in der privaten Spec.
 
 ### T1 — diagnostics.sh liest .env-Zeilen wie compose (R-0908)  [x]

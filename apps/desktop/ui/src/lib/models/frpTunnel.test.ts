@@ -11,7 +11,9 @@ import {
   parseTags,
   formToInput,
   validateTunnelForm,
+  defaultWebScheme,
   PROTOCOL_DEFAULT_PORT,
+  type TunnelForm,
 } from './frpTunnel';
 
 describe('emptyTunnelForm', () => {
@@ -161,5 +163,99 @@ describe('own text of a tunnel (R-1210)', () => {
       name: 'web01-rdp',
       label: '',
     });
+  });
+});
+
+// A web tunnel's connection gets scheme and path instead of a user (R-1540).
+describe('web auto-connection', () => {
+  const web = (over: Partial<TunnelForm> = {}): TunnelForm => ({
+    ...emptyTunnelForm('s', 'c'),
+    protocol: 'web',
+    localPort: 8006,
+    autoCreateConnection: true,
+    autoConnectionUsername: 'root',
+    ...over,
+  });
+  const edited = (over: Partial<TunnelForm> = {}): TunnelForm =>
+    web({ initialShape: { protocol: 'web', tunnelType: 'stcp' }, ...over });
+
+  it('guesses https for the usual TLS ports and http otherwise', () => {
+    for (const p of [443, 8006, 8443, 9443]) expect(defaultWebScheme(p)).toBe('https');
+    for (const p of [80, 8080, 3000]) expect(defaultWebScheme(p)).toBe('http');
+    expect(defaultWebScheme(null)).toBe('http');
+  });
+
+  it('sends scheme and path for a new web tunnel and no user', () => {
+    expect(formToInput(web({ autoConnectionPath: ' /ui/?a=1 ' }))).toMatchObject({
+      auto_connection_scheme: 'https',
+      auto_connection_path: '/ui/?a=1',
+      auto_connection_username: null,
+    });
+  });
+
+  it('follows the port until the user picks a scheme', () => {
+    expect(formToInput(web({ localPort: 8080 })).auto_connection_scheme).toBe('http');
+    expect(
+      formToInput(web({ localPort: 8006, autoConnectionScheme: 'http' })).auto_connection_scheme,
+    ).toBe('http');
+    expect(formToInput(web()).auto_connection_path).toBeNull();
+  });
+
+  it('sends neither for another protocol, which keeps its user', () => {
+    const input = formToInput(web({ protocol: 'ssh', localPort: 22 }));
+    expect(input.auto_connection_username).toBe('root');
+    expect('auto_connection_scheme' in input).toBe(false);
+    expect('auto_connection_path' in input).toBe(false);
+  });
+
+  it('sends neither without an auto-connection', () => {
+    const input = formToInput(web({ autoCreateConnection: false }));
+    expect('auto_connection_scheme' in input).toBe(false);
+  });
+
+  it('sends the scheme when an existing tunnel changes protocol or type, not otherwise', () => {
+    expect('auto_connection_scheme' in formToInput(edited())).toBe(false);
+    expect(
+      formToInput(edited({ initialShape: { protocol: 'ssh', tunnelType: 'stcp' } }))
+        .auto_connection_scheme,
+    ).toBe('https');
+    expect(
+      formToInput(edited({ initialShape: { protocol: 'web', tunnelType: 'https' } }))
+        .auto_connection_scheme,
+    ).toBe('https');
+  });
+
+  it('opens an existing tunnel with its shape and a scheme that follows the port', () => {
+    const f = tunnelToForm({
+      id: 't',
+      serverId: 's',
+      frpConfigId: 'c',
+      name: 'n',
+      tunnelType: 'https',
+      protocol: 'web',
+      localIp: '127.0.0.1',
+      localPort: 443,
+      enabled: true,
+      connectionId: 'conn',
+    });
+    expect(f.initialShape).toEqual({ protocol: 'web', tunnelType: 'https' });
+    expect(f.autoConnectionScheme).toBeNull();
+    expect(f.autoConnectionPath).toBe('');
+  });
+
+  it.each(['ui', '/a b', '/a#b', '/a\nb', '/a\u0080b', '/' + 'a'.repeat(255)])(
+    'rejects the path %j like the server',
+    (path) => {
+      const r = validateTunnelForm(web({ autoConnectionPath: path }));
+      expect(r).toEqual({ ok: false, message: tNow('infra.tun.validation.path') });
+    },
+  );
+
+  it('accepts a path the server takes and ignores one it would not send', () => {
+    expect(validateTunnelForm(web({ autoConnectionPath: '/' + 'a'.repeat(254) }))).toEqual({
+      ok: true,
+    });
+    expect(validateTunnelForm(web({ autoConnectionPath: '/pve/?x=1&y=%20' })).ok).toBe(true);
+    expect(validateTunnelForm(edited({ autoConnectionPath: 'stale' })).ok).toBe(true);
   });
 });
