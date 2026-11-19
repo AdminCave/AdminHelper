@@ -378,11 +378,15 @@ export async function connectCredential(
 
 /**
  * Opens the SSH connection `connection` in a tab of the embedded terminal that shows only the
- * last lines of the journal of the systemd unit `unit` on the host, with the rights of the login
- * (arch-monitoring-ui-3). A session like any embedded start.
+ * last log lines of the service `unit` on the host, from the log of `platform`, with the rights of
+ * the login (arch-monitoring-ui-3, R-1391). A session like any embedded start.
  */
-export async function connectServiceLog(connection: Connection, unit: string): Promise<void> {
-  await connectAction(connection, { journal: { unit } });
+export async function connectServiceLog(
+  connection: Connection,
+  unit: string,
+  platform: bridge.JournalPlatform,
+): Promise<void> {
+  await connectAction(connection, { journal: { unit, platform } });
 }
 
 // An SSH tab that runs `action`, whatever console the settings name: the action exists only there.

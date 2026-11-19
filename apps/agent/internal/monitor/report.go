@@ -128,11 +128,15 @@ func buildReportWithState(ctx context.Context, serviceNames []string, work *prob
 		}
 	})
 	// The error lines of a failed unit go out once per failure while the plan asks for them
-	// (servicelogs.go). The failures that ended are forgotten even in a run that reads no lines; with
+	// (servicelogs.go); on Windows those of a stopped automatic service with an exit, which the block
+	// names in log_units. The failures that ended are forgotten even in a run that reads no lines; with
 	// the switch off the state is empty, so lines go out anew once it is on again. Between two runs
 	// its throttle stays as it was.
 	if svc, _ := report["systemd"].(map[string]any); work != nil && work.serviceLogs && serviceLogsSupported && svc != nil {
-		failed, since := failedUnits(svc)
+		failed, since := serviceLogUnits(svc)
+		if serviceLogUnitsListed {
+			svc["log_units"] = failed
+		}
 		next.ServiceLogs = stillFailed(prev.ServiceLogs, failed, since)
 		m.optional(ctx, serviceLogsCollector, func(ctx context.Context) {
 			if logs := collectServiceLogs(ctx, failed, since, next.ServiceLogs); len(logs) > 0 {
@@ -342,8 +346,9 @@ const (
 // serviceLogsCollector is the error lines' name in the self-measurement and the throttle.
 const serviceLogsCollector = "service_logs"
 
-// serviceLogReader reads the error lines of one unit (readServiceLog); a seam for the tests.
-var serviceLogReader = readServiceLog
+// serviceLogReader opens one run's reader of the error lines of a unit (newServiceLogReader); a seam
+// for the tests.
+var serviceLogReader = newServiceLogReader
 
 // failedUnits are the failed units of the systemd block in its order, and the since of each from
 // failed_details ("" for a unit without one).
@@ -382,6 +387,7 @@ func stillFailed(sent map[string]string, failed []string, since map[string]strin
 // systemd.failed_logs block: {unit: {since, lines}}, lines oldest first.
 func collectServiceLogs(ctx context.Context, failed []string, since, sent map[string]string) map[string]any {
 	logs := map[string]any{}
+	read := serviceLogReader()
 	for _, unit := range failed {
 		if len(logs) == maxLogUnits {
 			break
@@ -389,7 +395,7 @@ func collectServiceLogs(ctx context.Context, failed []string, since, sent map[st
 		if _, done := sent[unit]; done {
 			continue
 		}
-		lines, ok := serviceLogReader(ctx, unit)
+		lines, ok := read(ctx, unit)
 		if !ok {
 			continue
 		}

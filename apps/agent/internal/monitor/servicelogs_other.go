@@ -2,15 +2,21 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//go:build !linux
+//go:build !linux && !windows
 
 package monitor
 
 import "context"
 
-// serviceLogsSupported: outside Linux no error lines are sent yet (R-1391).
+// serviceLogsSupported: FreeBSD sends no error lines; the admin reads the syslog (R-1391).
 const serviceLogsSupported = false
 
-func readServiceLog(context.Context, string) ([]string, bool) {
-	return nil, false
+const serviceLogUnitsListed = false
+
+func serviceLogUnits(systemd map[string]any) ([]string, map[string]string) {
+	return failedUnits(systemd)
+}
+
+func newServiceLogReader() func(context.Context, string) ([]string, bool) {
+	return func(context.Context, string) ([]string, bool) { return nil, false }
 }

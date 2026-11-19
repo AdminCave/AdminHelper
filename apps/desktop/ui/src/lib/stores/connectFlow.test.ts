@@ -947,10 +947,10 @@ describe('SSH console (R-1069)', () => {
     const resolved: Connection = { ...sshConn, port: 23001 };
     vi.mocked(resolveConnection).mockResolvedValueOnce({ connection: resolved, viaTunnel: true });
 
-    await connectServiceLog(sshConn, 'nginx.service');
+    await connectServiceLog(sshConn, 'sshd', 'freebsd');
 
     expect(openTerminal).toHaveBeenCalledExactlyOnceWith(sshConn, resolved, expect.any(Function), {
-      journal: { unit: 'nginx.service' },
+      journal: { unit: 'sshd', platform: 'freebsd' },
     });
     expect(openConnection).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
@@ -961,9 +961,9 @@ describe('SSH console (R-1069)', () => {
 
   it('opens no journal for a refused resolution or an invalid connection', async () => {
     vi.mocked(resolveConnection).mockRejectedValueOnce(new Error(FOREIGN_PORT));
-    await connectServiceLog(sshConn, 'nginx.service');
+    await connectServiceLog(sshConn, 'nginx.service', 'linux');
     vi.mocked(validateConnection).mockReturnValueOnce({ ok: false, message: 'bad host' });
-    await connectServiceLog(sshConn, 'nginx.service');
+    await connectServiceLog(sshConn, 'nginx.service', 'linux');
 
     expect(openTerminal).not.toHaveBeenCalled();
     expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);

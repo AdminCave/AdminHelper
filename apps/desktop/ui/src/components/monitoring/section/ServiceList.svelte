@@ -5,7 +5,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script module lang="ts">
-  import type { MonitorServiceEntry, MonitorServiceLog } from '$lib/api/types';
+  import type { MonitorServiceEntry, MonitorServiceLog, ServerPlatform } from '$lib/api/types';
+  import type { JournalPlatform } from '$lib/bridge';
+
+  /**
+   * The log "Mehr Log" reads for the service `unit` of a server of `platform` (R-1391): the
+   * journal of a systemd service on Linux, the event log on Windows, the syslog on FreeBSD and
+   * OPNsense; null for a platform without one. A server without a platform is read as before by
+   * its names: a systemd service has a journal.
+   */
+  export function journalPlatform(
+    platform: ServerPlatform | null | undefined,
+    unit: string,
+  ): JournalPlatform | null {
+    switch (platform) {
+      case 'windows':
+        return 'windows';
+      case 'freebsd':
+      case 'opnsense':
+        return 'freebsd';
+      case 'other':
+        return null;
+      default:
+        return unit.endsWith('.service') ? 'linux' : null;
+    }
+  }
 
   export type ServiceState = 'failed' | 'active' | 'inactive';
   export type ServiceFilter = 'all' | ServiceState;
@@ -126,11 +150,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   interface Props {
     serverId: string;
+    /** The server's platform, which picks the log of "Mehr Log"; null when none is stored. */
+    platform?: ServerPlatform | null;
     /** Heard once "Mehr Log" opens a terminal tab: the list makes way for it. */
     onJournal?: () => void;
   }
 
-  let { serverId, onJournal }: Props = $props();
+  let { serverId, platform = null, onJournal }: Props = $props();
 
   // undefined while the answer for this server is out.
   let inventory = $state<MonitorServiceInventory | undefined>(undefined);
@@ -172,19 +198,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const rows = $derived(inventory ? serviceRows(inventory.services, inventory.logs) : []);
   const shown = $derived(filterRows(rows, filter));
 
-  // "Mehr Log" runs journalctl over an SSH connection of the admin to this server.
+  // "Mehr Log" reads the service's log over an SSH connection of the admin to this server.
   const sshConnections = $derived(
     $connections.filter((c) => c.kind === 'ssh' && c.serverId === serverId),
   );
   let chosen = $state('');
   // The first connection until the admin picks another.
   const sshConnection = $derived(sshConnections.find((c) => c.id === chosen) ?? sshConnections[0]);
-  // A journal is systemd's: Windows and FreeBSD report their names without the suffix.
-  const hasJournal = (r: ServiceRow): boolean => r.unit.endsWith('.service');
+  const hasJournal = (r: ServiceRow): boolean => journalPlatform(platform, r.unit) !== null;
   const anyJournal = $derived(rows.some(hasJournal));
 
-  function openJournal(connection: Connection, unit: string): void {
-    void connectServiceLog(connection, unit);
+  function openJournal(connection: Connection, unit: string, log: JournalPlatform): void {
+    void connectServiceLog(connection, unit, log);
     onJournal?.();
   }
 
@@ -293,13 +318,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >{$t('monitoring.services.list.aliases', { names: r.aliases.join(', ') })}</span
     >
   {/if}
-  {#if sshConnection && hasJournal(r)}
+  {@const log = journalPlatform(platform, r.unit)}
+  {#if sshConnection && log}
     {@const connection = sshConnection}
     <Button
       size="sm"
       variant="ghost"
       aria-label={$t('monitoring.services.journal.openFor', { unit: r.unit })}
-      onclick={() => openJournal(connection, r.unit)}
+      onclick={() => openJournal(connection, r.unit, log)}
       >{$t('monitoring.services.journal.open')}</Button
     >
   {/if}

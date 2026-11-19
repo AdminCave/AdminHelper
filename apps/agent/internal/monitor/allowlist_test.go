@@ -175,6 +175,8 @@ func TestAllowlistTakesEveryCollectorCall(t *testing.T) {
 		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-15.1", "FreeBSD-kernel-15.1"},
 		{"/usr/local/sbin/pkg", "audit", "-q", "FreeBSD-14.3_12", "FreeBSD-kernel-14.3_11"},
 		append([]string{"wevtutil"}, scmCrashArgs...),
+		append([]string{"wevtutil"}, scmLogArgs...),
+		append([]string{"wevtutil"}, appLogArgs...),
 	}
 	for _, call := range calls {
 		if !commandAllowed(call[0], call[1:]) {
@@ -277,6 +279,13 @@ func TestAllowlistRefusesTheTraps(t *testing.T) {
 		{"wevtutil", "qe", "System", "/q:*", "/c:50", "/rd:true", "/f:xml"},
 		{"wevtutil", "qe", "System", "/q:" + scmCrashQuery, "/c:5000", "/rd:true", "/f:xml"},
 		{"wevtutil", "qe", "System", "/q:" + scmCrashQuery, "/c:50", "/rd:true", "/f:xml", "/lf:true"},
+		{"wevtutil", "qe", "Security", "/q:" + appLogQuery, "/c:200", "/rd:true", "/f:RenderedXml"},
+		{"wevtutil", "qe", "Application", "/q:" + scmLogQuery, "/c:200", "/rd:true", "/f:RenderedXml"},
+		{"wevtutil", "qe", "Application", "/q:*", "/c:200", "/rd:true", "/f:RenderedXml"},
+		{"wevtutil", "qe", "Application", "/q:" + appLogQuery, "/c:20000", "/rd:true", "/f:RenderedXml"},
+		{"wevtutil", "qe", "System", "/q:" + scmLogQuery, "/c:200", "/rd:true", "/f:RenderedXml", "/e:x"},
+		{"wevtutil", "qe", "System", "/q:*[System[Provider[@Name='Service Control Manager'] and EventData[Data='Spooler']]]",
+			"/c:200", "/rd:true", "/f:RenderedXml"},
 	}
 	for _, call := range calls {
 		if commandAllowed(call[0], call[1:]) {

@@ -16,7 +16,7 @@
 import { get, readable, writable, type Readable } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
-import type { TerminalMessage } from '$lib/bridge';
+import type { JournalPlatform, TerminalMessage } from '$lib/bridge';
 import type {
   AnsibleTarget,
   Connection,
@@ -62,12 +62,12 @@ export interface TerminalSession {
    */
   credential?: { ref: string };
   /**
-   * Shows only the last lines of the journal of the systemd unit `unit` on the host, with the
-   * rights of the login (arch-monitoring-ui-3): no shell, no snippets, no files. Its `connection`
-   * carries the unit after the name, so the tab says whose journal it shows. Reconnected the same
-   * way, and not kept for the next run.
+   * Shows only the last log lines of the service `unit` on the host, from the log of `platform`,
+   * with the rights of the login (arch-monitoring-ui-3, R-1391): no shell, no snippets, no files.
+   * Its `connection` carries the unit after the name, so the tab says whose log it shows.
+   * Reconnected the same way, and not kept for the next run.
    */
-  journal?: { unit: string };
+  journal?: { unit: string; platform: JournalPlatform };
   /** An embedded RDP session (R-1098) instead of a program of a terminal. */
   rdp?: RdpView;
 }
@@ -317,10 +317,17 @@ function sshLaunch(session: TerminalSession, resolved: Connection): Launch {
     return (cols, rows, onMessage) =>
       bridge.terminalOpenSshCredential(resolved, ref, cols, rows, onMessage);
   }
-  const unit = session.journal?.unit;
-  if (unit !== undefined) {
+  const journal = session.journal;
+  if (journal !== undefined) {
     return (cols, rows, onMessage) =>
-      bridge.terminalOpenSshJournal(resolved, unit, cols, rows, onMessage);
+      bridge.terminalOpenSshJournal(
+        resolved,
+        journal.unit,
+        journal.platform,
+        cols,
+        rows,
+        onMessage,
+      );
   }
   return (cols, rows, onMessage) => bridge.terminalOpenSsh(resolved, cols, rows, onMessage);
 }

@@ -774,7 +774,9 @@ describe('SshTerminal prompting for a monitoring credential (arch-monitoring-ui)
 describe('SshTerminal showing the journal of a service (arch-monitoring-ui-3)', () => {
   it('names its host but takes no snippets nor files and does not warn of a broadcast', async () => {
     snippetBroadcast.set(true);
-    await mount(session({ status: 'connected', journal: { unit: 'nginx.service' } }));
+    await mount(
+      session({ status: 'connected', journal: { unit: 'nginx.service', platform: 'linux' } }),
+    );
     expect(screen.getByText('ops@db.example:2222')).toBeTruthy();
     expect(screen.queryByRole('button', { name: tNow('terminal.snippets') })).toBeNull();
     expect(screen.queryByRole('button', { name: tNow('terminal.files') })).toBeNull();
