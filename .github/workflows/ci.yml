@@ -712,7 +712,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.agent-windows != 'false' }}
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -733,6 +733,66 @@ jobs:
       - name: Smoke the built binary
         working-directory: apps/agent
         run: .\adminhelper-agent.exe version
+      # scripts/agent-install.ps1 end to end (R-1578; Kevin 2026-11-19: this job is the
+      # scenario run of the installer): a release built here, served on the loopback address
+      # the script accepts plain http on, installed as a real service by Windows PowerShell 5.1.
+      - name: Release for agent-install.ps1
+        shell: bash
+        run: |
+          rel="$RUNNER_TEMP/rel"
+          dl="$rel/AdminCave/AdminHelper/releases/download/v0.0.0-ci"
+          mkdir -p "$dl" "$rel/repos/AdminCave/AdminHelper/releases"
+          printf '{"tag_name":"v0.0.0-ci"}' > "$rel/repos/AdminCave/AdminHelper/releases/latest"
+          cp apps/agent/adminhelper-agent.exe "$dl/adminhelper-agent-windows-x86_64.exe"
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o "$RUNNER_TEMP/frpc.zip" \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
+          echo "${FRP_SHA256_WINDOWS_AMD64}  $RUNNER_TEMP/frpc.zip" | sha256sum -c -
+          unzip -p "$RUNNER_TEMP/frpc.zip" "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > "$dl/frpc-windows-x86_64.exe"
+          (cd "$dl" && sha256sum adminhelper-agent-windows-x86_64.exe frpc-windows-x86_64.exe > SHA256SUMS)
+          cp "$dl/SHA256SUMS" "$RUNNER_TEMP/SHA256SUMS.good"
+      - name: agent-install.ps1 (refuse, install, update, uninstall)
+        shell: powershell
+        run: |
+          $rel = Join-Path $env:RUNNER_TEMP "rel"
+          $dl = Join-Path $rel "AdminCave\AdminHelper\releases\download\v0.0.0-ci"
+          # The API answer has no extension; serve it as JSON so Invoke-RestMethod parses it.
+          $srv = Join-Path $env:RUNNER_TEMP "serve.py"
+          Set-Content -Encoding ascii $srv @(
+            "import http.server as h",
+            "H = h.SimpleHTTPRequestHandler",
+            "H.extensions_map = {**H.extensions_map, '': 'application/json'}",
+            "h.ThreadingHTTPServer(('127.0.0.1', 8765), H).serve_forever()"
+          )
+          Start-Process python -ArgumentList $srv -WorkingDirectory $rel -WindowStyle Hidden
+          foreach ($i in 1..30) { try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/ | Out-Null; break } catch { Start-Sleep 1 } }
+          $env:AH_API_BASE = "http://127.0.0.1:8765"
+          $env:AH_DL_BASE = "http://127.0.0.1:8765"
+          $install = [scriptblock]::Create((Get-Content -Raw scripts\agent-install.ps1))
+          $prog = Join-Path $env:ProgramFiles "AdminHelper Agent"
+          function Assert-Refused([string]$Why, [scriptblock]$Run) {
+            $threw = $false
+            try { & $Run } catch { $threw = $true; Write-Host "refused as expected: $_" }
+            if (-not $threw) { throw "agent-install.ps1 did not refuse: $Why" }
+            if (Get-Service AdminHelper-Agent -ErrorAction SilentlyContinue) { throw "$Why left a service behind" }
+            if (Test-Path $prog) { throw "$Why left $prog behind" }
+          }
+          Assert-Refused "-ServerId without -Server" { & $install -ServerId 1 }
+          Assert-Refused "-Server over http" { & $install -Server http://192.0.2.1 -ServerId 1 }
+          # A SHA256SUMS that does not match the agent: refused before anything changes.
+          (Get-Content (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good")) -replace '^[0-9a-f]{64}(?=  adminhelper-agent)', ('0' * 64) |
+            Set-Content -Encoding ascii (Join-Path $dl "SHA256SUMS")
+          Assert-Refused "tampered SHA256SUMS" { & $install }
+          Copy-Item -Force (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good") (Join-Path $dl "SHA256SUMS")
+          & $install
+          if ((Get-Service AdminHelper-Agent).Status -ne "Running") { throw "service not running after install" }
+          foreach ($f in "adminhelper-agent.exe", "frpc.exe") {
+            if (-not (Test-Path (Join-Path $prog $f))) { throw "$f missing in $prog" }
+          }
+          & $install -Version 0.0.0-ci
+          if ((Get-Service AdminHelper-Agent).Status -ne "Running") { throw "service not running after the update" }
+          & (Join-Path $prog "adminhelper-agent.exe") service uninstall --purge
+          if ($LASTEXITCODE -ne 0) { throw "service uninstall --purge failed ($LASTEXITCODE)" }
+          if (Get-Service AdminHelper-Agent -ErrorAction SilentlyContinue) { throw "service still there after uninstall" }
 
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
