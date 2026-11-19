@@ -11,7 +11,7 @@ DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku i
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 Zeilenangaben `origin/main@5cd3f8f3`, vor dem Schreiben neu greppen. CHANGELOG umlautfrei in `changelog.d/ops-1.md`.
-`security` zusätzlich bei T1. Einzelheiten der SEC-Zeile privat.
+`security` zusätzlich bei T1. Einzelheiten privat.
 
 ### T1 — install.sh: Admin-Passwort ohne Export-Attribut (R-0858)  [x]
 Komponente: scripts · Dateien: scripts/install.sh, scripts/tests/install_test.sh, changelog.d/ops-1.md
