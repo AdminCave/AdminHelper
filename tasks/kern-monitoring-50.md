@@ -1,5 +1,5 @@
 # Dienst-Details Windows/FreeBSD: Fehlerzeilen und „Mehr Log“ — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-50 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-50 · Review: pro Task
 Spec: docs/features/kern-monitoring-50.md (Roadmap R-1391)
 Heavy: windows — Windows-Agent-Sammler; keine Windows-Box im Pool, die Windows-CI-Jobs (go test als Admin) sind der Plattform-Beleg; Linux-Pfad unverändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -41,7 +41,7 @@ Review: approve (.ah-out/review/kern-monitoring-50/T3.verdict.json)
 Änderung: `terminal_open_ssh_journal` nimmt `platform`. Je Plattform läuft ein fester Remote-Aufruf:
 - **linux:** journalctl wie bisher.
 - **windows:** `powershell -NoProfile -NonInteractive -EncodedCommand <Base64 UTF-16LE>`. Darin liest `Get-WinEvent` System und Application der letzten 24 h, filtert auf den Dienst (Provider = Name, oder SCM mit `param1` = Name/Anzeigename) und zeigt die neuesten 200. Der Name steht nur in der Windows-Dienstklasse, in einfachen Anführungszeichen.
-- **freebsd:** `grep -h -e '<name>' /var/log/messages | tail -n 200`, der Name nur in der rc-Klasse.
+- **freebsd:** `grep -h -F -e '<name>' /var/log/messages | tail -n 200`, der Name nur in der `rcscript`-Klasse der Agent-Allowlist.
 
 UI:
 - `ServiceList` erhält die Plattform des Servers (os_type) von `SecServices` und zeigt „Mehr Log“ unter linux, windows und freebsd/opnsense.
@@ -66,5 +66,14 @@ Task-Review: am Ende
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-50.md
 Abhängt von: T1, T2, T3
 
+### T5 — R-1391: Entwickler-Doku Fehlerzeilen und „Mehr Log“ je Plattform  [ ]
+Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/features/kern-monitoring-50.md
+Änderung: Abschlussprüfung (Funde wichtig, Doku): `monitoring.html` nennt `systemd.log_units` (Report-Beispiel, Fehlerzeilen nach `log_units` sonst `failed`); `agent.html` nennt den Windows-Weg von `collectServiceLogs` und `scmLogArgs`/`appLogArgs` in der Allowlist; `desktop.html` nennt `platform` von `terminal_open_ssh_journal` und die Befehle je Plattform. Spec Stufe 3 FreeBSD auf `grep -F` und die `rcscript`-Klasse (Nit).
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Task-Review: am Ende
+Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+Abhängt von: T4
+
 ## Entscheidungen
 - 2026-11-19 Plan: `log_units` statt `failed ∪ enabled_inactive`, damit Linux nach `reset-failed` unverändert Zeilen verliert; Windows-Stufe 2 mit zwei festen `wevtutil`-Aufrufen und Auswahl in Go, kein Dienstname im Aufruf; Stufe 3 Windows über `-EncodedCommand`, weil `wevtutil`-XPath sich für cmd und PowerShell als Login-Shell nicht gleich quoten lässt.
+- 2026-11-19 T3: `Komponente: desktop` statt `desktop-rs desktop-ui`, weil `task-close.sh` das Feld ohne Leerzeichen vergleicht; `verify.sh desktop` fährt beide.
