@@ -24,6 +24,7 @@ from app.checkers.agent import (
     entry_number,
     entry_text,
     join_capped,
+    whole_list,
 )
 from app.core.time import iso_utc
 from app.core.victoria import safe_metric_part
@@ -226,6 +227,35 @@ def _asleep_detail(device: str, prev: dict | None) -> tuple[str, list[str], list
     return category, crit, warn, detail
 
 
+# app.check_engine.NOT_COLLECTED; imported, it would close an import cycle through the
+# checker registry.
+_NOT_COLLECTED = "not_collected"
+
+
+def _disk_object(disk: dict, device: str, category: str, problems: list[str]) -> dict:
+    """The object of a disk that was read (R-1559): keyed by its WWN, else by model and
+    serial; by the device path, which a reboot may change, only without them."""
+    shown = cap_agent_text(device) or "?"
+    model = cap_agent_text(disk.get("model"))
+    serial = cap_agent_text(disk.get("serial"))
+    ident, stable = cap_agent_text(disk.get("wwn")), True
+    if ident is None:
+        ident, stable = (f"{model}/{serial}", True) if model and serial else (shown, False)
+    label = f"{shown} ({model or '?'})"
+    if problems:
+        reason = problems[0].removeprefix(f"{label}: ")
+    else:
+        reason = "SMART not readable" if category == "unknown" else "SMART OK"
+    return {
+        "kind": "disk",
+        "id": ident,
+        "name": label,
+        "status": category,
+        "reason": reason,
+        "stable": stable,
+    }
+
+
 class SmartHealthChecker:
     """Checks the SMART health of all disks.
 
@@ -270,6 +300,8 @@ class SmartHealthChecker:
         unreadable = []
         ok_count = 0
         disk_details = []
+        objects = []
+        complete = whole_list(report["smart"])
 
         for disk in smart:
             device = entry_text(disk, "device", "?")
@@ -278,12 +310,29 @@ class SmartHealthChecker:
             if disk.get("standby") is True:
                 asleep += 1
                 shown = cap_agent_text(device) or "?"
-                category, crit, warn, detail = _asleep_detail(device, prev_disks.get(shown))
+                prev = prev_disks.get(shown)
+                category, crit, warn, detail = _asleep_detail(device, prev)
+                if prev is not None and "smart_passed" in prev:
+                    # Asleep it sends no model or serial to key its object by: the object
+                    # keeps its last read state, and the result marks nothing gone.
+                    complete = False
+                else:
+                    objects.append(
+                        {
+                            "kind": "disk",
+                            "id": shown,
+                            "name": shown,
+                            "status": _NOT_COLLECTED,
+                            "reason": "Asleep, not read yet",
+                            "stable": False,
+                        }
+                    )
             else:
                 category, crit, warn, detail = self._grade_disk(
                     disk, device, thresholds, temp_thresholds
                 )
                 detail["read_at"] = read_at
+                objects.append(_disk_object(disk, device, category, crit + warn))
             critical_problems.extend(crit)
             warning_problems.extend(warn)
             # A sleeping disk last read without a verdict stays not readable; one never read has
@@ -304,6 +353,7 @@ class SmartHealthChecker:
         metrics.update(_disk_metrics(smart, ignore))
 
         metrics["_details"] = {"disks": disk_details}
+        metrics["_objects"] = {"complete": complete, "items": objects}
         return _smart_result(
             critical_problems, warning_problems, unreadable, ok_count, metrics, asleep
         )

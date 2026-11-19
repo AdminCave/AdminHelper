@@ -140,6 +140,16 @@ def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]
     return [entry for entry in value[: min(limit, MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
 
 
+def whole_list(value: object) -> bool:
+    """Whether capped_objects(value) keeps every entry of a report list. Object results
+    (R-1559) built from a list it cut short are incomplete: what it left out is not gone."""
+    return (
+        isinstance(value, list)
+        and len(value) <= MAX_REPORT_ENTRIES
+        and all(isinstance(entry, dict) for entry in value)
+    )
+
+
 def entry_text(entry: dict, key: str, default: str) -> str:
     """A text field of a report entry; anything but a string counts as missing (R-0517)."""
     value = entry.get(key)

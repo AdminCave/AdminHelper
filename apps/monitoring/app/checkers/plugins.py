@@ -15,7 +15,13 @@ from __future__ import annotations
 import re
 import time
 
-from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
+from app.checkers.agent import (
+    agent_number,
+    cap_agent_text,
+    capped_objects,
+    join_capped,
+    whole_list,
+)
 
 # The codes the agent sends for a block it could not read (dockerUnavailable,
 # zfsUnavailable and proxmoxUnavailable in apps/agent/internal/monitor/plugins.go).
@@ -226,6 +232,7 @@ _SCRUB_WARN_DAYS = 35
 _SCRUB_CRIT_DAYS = 60
 # Pool states of zpoolprops(7) health that mean lost redundancy or lost data access.
 _BAD_POOL_HEALTH = ("FAULTED", "OFFLINE", "UNAVAIL", "DEGRADED", "SUSPENDED", "REMOVED")
+_POOL_STATUS = ("ok", "warning", "critical")
 
 
 def _counter(value: object) -> int | None:
@@ -300,7 +307,10 @@ class ZfsHealthChecker:
             return (
                 "ok",
                 "No ZFS pools found",
-                {"_details": {"available": True, "error": None, "pools": []}},
+                {
+                    "_details": {"available": True, "error": None, "pools": []},
+                    "_objects": {"complete": whole_list(zfs.get("pools")), "items": []},
+                },
             )
 
         cap_warn = config.get("capacity_warn", 80)
@@ -312,6 +322,7 @@ class ZfsHealthChecker:
         status = "ok"
         problems = []
         metrics = {}
+        objects = []
 
         for pool in pools:
             name = pool.get("name", "?")
@@ -319,18 +330,20 @@ class ZfsHealthChecker:
             health = pool.get("health", "UNKNOWN")
             cap = _pool_capacity(pool)
             metrics[f"zfs_capacity_{name}"] = cap
+            pool_status = "ok"
+            first_problem = len(problems)
 
             if health in _BAD_POOL_HEALTH:
                 problems.append(f"{shown_name}: {health}")
-                status = "critical"
+                pool_status = "critical"
 
             if cap >= cap_crit:
                 problems.append(f"{shown_name}: {cap}% full (>={cap_crit}%)")
-                status = "critical"
+                pool_status = "critical"
             elif cap >= cap_warn:
                 problems.append(f"{shown_name}: {cap}% full (>={cap_warn}%)")
-                if status != "critical":
-                    status = "warning"
+                if pool_status != "critical":
+                    pool_status = "warning"
 
             # Rated from the details as the desktop shows them, so a field it leaves out is not
             # rated either. Only a finished scrub has an age: a running or paused one, a canceled
@@ -341,20 +354,35 @@ class ZfsHealthChecker:
                 days = int((now - scrub["end"]) // 86400)
                 if days >= scrub_crit:
                     problems.append(f"{shown_name}: last scrub {days} days ago (>={scrub_crit})")
-                    status = "critical"
+                    pool_status = "critical"
                 elif days >= scrub_warn:
                     problems.append(f"{shown_name}: last scrub {days} days ago (>={scrub_warn})")
-                    if status != "critical":
-                        status = "warning"
+                    if pool_status != "critical":
+                        pool_status = "warning"
             if scrub.get("errors", 0) > 0:
                 problems.append(f"{shown_name}: scrub found {scrub['errors']} error(s)")
-                if status != "critical":
-                    status = "warning"
+                if pool_status != "critical":
+                    pool_status = "warning"
             faulty = [v for v in details.get("vdevErrors", []) if any(v[k] for k in _VDEV_COUNTERS)]
             if faulty:
                 problems.append(f"{shown_name}: errors on {len(faulty)} vdev(s)")
-                if status != "critical":
-                    status = "warning"
+                if pool_status != "critical":
+                    pool_status = "warning"
+
+            status = max(status, pool_status, key=_POOL_STATUS.index)
+            if len(problems) > first_problem:
+                reason = problems[first_problem].removeprefix(f"{shown_name}: ")
+            else:
+                reason = cap_agent_text(health) or "UNKNOWN"
+            objects.append(
+                {
+                    "kind": "pool",
+                    "id": shown_name,
+                    "name": shown_name,
+                    "status": pool_status,
+                    "reason": reason,
+                }
+            )
 
         metrics["_details"] = {
             "available": True,
@@ -370,6 +398,7 @@ class ZfsHealthChecker:
                 for p in pools
             ],
         }
+        metrics["_objects"] = {"complete": whole_list(zfs.get("pools")), "items": objects}
 
         if problems:
             return status, join_capped(problems, "; "), metrics

@@ -17,13 +17,17 @@ per object, that is the check's MonitorState.last_check.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime
 
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.check_engine import MAX_MESSAGE, NOT_COLLECTED, damp_object
 from app.core.bounds import storable
 from app.models import MonitorCheck, MonitorObjectState, MonitorState, MonitorStatusChange
+
+logger = logging.getLogger("monitor.objects")
 
 # The width of monitor_object_state.object_key; a longer key keeps its start and ends
 # in a hash of the whole, so two long keys with the same start stay apart.
@@ -32,7 +36,12 @@ _HASH_CHARS = 16
 # Objects one result may name, as many as discovery takes units (MAX_UNITS). A result
 # cut here is incomplete: what fell off must not be marked gone.
 MAX_OBJECTS = 1000
+# Rows one check may hold, gone ones included (they stay 30 days): the ids come from
+# agent reports, and a check whose ids keep changing would add rows and log rows with
+# every report. A result creates no row above it and is then incomplete.
+MAX_ROWS = 2 * MAX_OBJECTS
 MAX_NAME = 200
+_KIND_MAX = 40
 # The kind of the object a check without an object result stands for.
 FALLBACK_KIND = "check"
 # Worst first (ADR §3), the order of GET /objects; of two items under one key the
@@ -60,30 +69,53 @@ def _rank(status: str) -> int:
     return SEVERITY.index(status) if status in SEVERITY else 0
 
 
-def read_objects(raw: dict, server_id: str | None) -> tuple[bool, dict[str, dict]]:
-    """(complete, the items by object key) of one object result, its texts capped."""
-    # The ids and names come from the agent report or a target; a key is encoded for
-    # its hash, a name stored. Nothing of it may hold what the database cannot take.
-    raw = storable(raw)
-    items = raw.get("items") or []
+def read_objects(raw: object, server_id: str | None) -> tuple[bool, dict[str, dict]]:
+    """(complete, the items by object key) of one object result, its texts capped. An
+    item this module does not take is left out and makes the result incomplete, so the
+    object it stood for is not marked gone."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+        return False, {}
+    items = raw["items"]
     complete = raw.get("complete") is True and len(items) <= MAX_OBJECTS
     by_key: dict[str, dict] = {}
     for item in items[:MAX_OBJECTS]:
-        kind = str(item["kind"])
-        ident = item.get("id")
-        ident = None if ident is None else str(ident)
-        entry = {
-            "kind": kind,
-            "name": _cut(str(item.get("name") or ident or kind), MAX_NAME),
-            "status": item["status"],
-            "reason": _cut(str(item.get("reason") or ""), MAX_MESSAGE),
-            "stable": item.get("stable", True) is not False,
-        }
-        key = object_key(server_id, kind, ident)
+        entry = _entry(item)
+        if entry is None:
+            complete = False
+            continue
+        key = object_key(server_id, entry["kind"], entry.pop("id"))
         held = by_key.get(key)
         if held is None or _rank(entry["status"]) < _rank(held["status"]):
             by_key[key] = entry
     return complete, by_key
+
+
+def _entry(item: object) -> dict | None:
+    """One item as apply_objects writes it; None for anything but an object with a kind
+    and a known status."""
+    if not isinstance(item, dict):
+        return None
+    # The ids, names and reasons come from the agent report or a target; a key is
+    # encoded for its hash, a name stored. Nothing of it may hold what the database
+    # cannot take.
+    item = storable(item)
+    kind, ident, status = item.get("kind"), item.get("id"), item.get("status")
+    # FALLBACK_KIND is the check's own object: an item under it would be deleted and
+    # created again with every result.
+    if not isinstance(kind, str) or not 0 < len(kind) <= _KIND_MAX or kind == FALLBACK_KIND:
+        return None
+    if status not in SEVERITY or (ident is not None and not isinstance(ident, str)):
+        return None
+    ident = ident or None
+    name, reason = item.get("name"), item.get("reason")
+    return {
+        "kind": kind,
+        "id": ident,
+        "name": _cut(name if isinstance(name, str) and name else ident or kind, MAX_NAME),
+        "status": status,
+        "reason": _cut(reason if isinstance(reason, str) else "", MAX_MESSAGE),
+        "stable": item.get("stable", True) is not False,
+    }
 
 
 def _set(row: MonitorObjectState, values: dict) -> None:
@@ -113,13 +145,42 @@ def apply_objects(
     """Write the objects of one result, damped like the check; `state` is the check's
     MonitorState as apply_result has just written it, `raw` the result's `_objects`.
 
-    One read of the check's rows, then only what changed. A complete result marks the
-    objects it no longer names gone; an incomplete one leaves them as they are. The
-    fallback object stands for the check while it has no object of its own."""
-    rows = db.query(MonitorObjectState).filter(MonitorObjectState.check_id == check.id).all()
+    One read of the rows that can change, then only what changed. A complete result
+    marks the objects it no longer names gone; an incomplete one leaves them as they
+    are. The fallback object stands for the check while it has no object of its own."""
+    complete, items = read_objects(raw, check.server_id)
+    # Not gone, or named again: the gone rows stay 30 days and are not read with every
+    # result.
+    can_change = MonitorObjectState.gone_at.is_(None)
+    if items:
+        can_change = or_(can_change, MonitorObjectState.object_key.in_(list(items)))
+    rows = (
+        db.query(MonitorObjectState)
+        .filter(MonitorObjectState.check_id == check.id, can_change)
+        .all()
+    )
     stored = {row.object_key: row for row in rows if row.kind != FALLBACK_KIND}
     fallbacks = [row for row in rows if row.kind == FALLBACK_KIND]
-    complete, items = read_objects(raw, check.server_id) if raw is not None else (False, {})
+    new = [key for key in items if key not in stored]
+    if new:
+        held = (
+            db.query(func.count())
+            .select_from(MonitorObjectState)
+            .filter(MonitorObjectState.check_id == check.id)
+            .scalar()
+        )
+        room = max(MAX_ROWS - held, 0)
+        if len(new) > room:
+            logger.warning(
+                "Check %s: %d new objects not created, the check holds %d of %d rows",
+                check.id,
+                len(new) - room,
+                held,
+                MAX_ROWS,
+            )
+            complete = False
+            for key in new[room:]:
+                del items[key]
     for key, item in items.items():
         _apply_item(db, check, stored.pop(key, None), key, item, now)
     if complete:
@@ -200,7 +261,9 @@ def _apply_fallback(
         "kind": FALLBACK_KIND,
         "name": _cut(check.name, MAX_NAME),
         "status": state.status,
-        "reason": state.message or "",
+        # Not the message of an ok check: a ping or http check names its latency there,
+        # and the row would be written with every run.
+        "reason": "" if state.status == "ok" else state.message or "",
         "since": state.since,
         # The check's since: a check that stood critical before the update did not
         # turn bad on it.

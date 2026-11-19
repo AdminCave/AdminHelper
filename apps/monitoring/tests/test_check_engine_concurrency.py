@@ -251,7 +251,7 @@ def test_two_writers_damp_an_object_once_each(pg_sessionmaker, monkeypatch):
     the check's transaction, after its state row is locked; two writers must not both
     read the same fail_count of an object.
 
-    The delay sits in read_objects, between the SELECT of the object rows and the commit.
+    The delay sits in _apply_item, between the SELECT of the object rows and the commit.
     Two guards close that window, each enough on its own (verified by mutation): the FOR
     UPDATE in _apply_locked, and behind it the UPDATE of the state row that the object
     SELECT autoflushes and that waits on the first writer's row lock. Only with both gone
@@ -271,13 +271,13 @@ def test_two_writers_damp_an_object_once_each(pg_sessionmaker, monkeypatch):
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
     monkeypatch.setattr(check_engine, "_alert_pool", _InlinePool())
 
-    real_read_objects = objects_mod.read_objects
+    real_apply_item = objects_mod._apply_item
 
-    def _slow_read_objects(*args, **kwargs):
+    def _slow_apply_item(*args, **kwargs):
         time.sleep(0.5)
-        return real_read_objects(*args, **kwargs)
+        return real_apply_item(*args, **kwargs)
 
-    monkeypatch.setattr(objects_mod, "read_objects", _slow_read_objects)
+    monkeypatch.setattr(objects_mod, "_apply_item", _slow_apply_item)
 
     # consecutive_fails 3: two failures stay damped, so the count is what tells them apart.
     check_id = _seed_failing_check(pg_sessionmaker, fail_count=0)

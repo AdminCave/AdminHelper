@@ -14,8 +14,11 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.check_engine import NOT_COLLECTED
 from app.checkers import smart
+from app.checkers.agent import MAX_REPORT_ENTRIES
 from app.checkers.smart import SmartHealthChecker
+from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
 
@@ -415,6 +418,8 @@ def test_the_ignore_list_compares_the_full_device():
             "smart_disks_warning": 0,
             "smart_disks_critical": 0,
             "_details": {"disks": []},
+            # An ignored disk is no object, and the result is complete.
+            "_objects": {"complete": True, "items": []},
         },
     )
 
@@ -557,3 +562,110 @@ def test_a_disk_last_read_without_a_verdict_stays_not_readable_asleep():
     )
     assert status == "unknown"
     assert message == read_msg + ", 1 asleep"
+
+
+# R-1559: each disk is an object of its own, as GET /objects shows it.
+
+
+def _objects(metrics: dict) -> tuple[bool, list[dict]]:
+    """complete and the items of the object block; app.objects must take each item."""
+    block = metrics["_objects"]
+    assert len(read_objects(block, "srv-1")[1]) == len(block["items"]), block
+    return block["complete"], block["items"]
+
+
+def _object(ident, name, status, reason, stable=True):
+    return {
+        "kind": "disk",
+        "id": ident,
+        "name": name,
+        "status": status,
+        "reason": reason,
+        "stable": stable,
+    }
+
+
+def test_each_read_disk_is_an_object_with_its_first_problem():
+    _, _, metrics = CHECKER.evaluate(
+        {},
+        _report(
+            _disk(serial="S1"),
+            _disk(device="/dev/sdb", serial="S2", reallocated_sectors=3, pending_sectors=1),
+            _disk(device="/dev/sdc", serial="S3", smart_passed=None),
+            _disk(device="/dev/sdd", serial="S4", smart_passed=False, temp_c=58),
+        ),
+    )
+    assert _objects(metrics) == (
+        True,
+        [
+            _object("X/S1", "/dev/sda (X)", "ok", "SMART OK"),
+            _object("X/S2", "/dev/sdb (X)", "warning", "3 reallocated sectors"),
+            _object("X/S3", "/dev/sdc (X)", "unknown", "SMART not readable"),
+            # A critical problem comes before a warning.
+            _object("X/S4", "/dev/sdd (X)", "critical", "SMART FAILED"),
+        ],
+    )
+
+
+def test_a_disk_is_keyed_by_its_wwn_else_model_and_serial_else_its_device():
+    _, _, metrics = CHECKER.evaluate(
+        {},
+        _report(
+            _disk(serial="S1", wwn="5000c500a1b2c3d4"),
+            _disk(device="/dev/sdb", serial="S2"),
+            _disk(device="/dev/sdc"),
+            _disk(device="/dev/sdd", model=None, serial="S4"),
+        ),
+    )
+    _, items = _objects(metrics)
+    assert [(item["id"], item["stable"]) for item in items] == [
+        ("5000c500a1b2c3d4", True),
+        ("X/S2", True),
+        # The device path may change on a reboot.
+        ("/dev/sdc", False),
+        ("/dev/sdd", False),
+    ]
+    assert items[3]["name"] == "/dev/sdd (?)"
+
+
+def test_a_sleeping_disk_read_before_keeps_its_object_and_the_result_is_incomplete():
+    _, _, first = CHECKER.evaluate(
+        {}, _report(_disk(serial="S1"), _disk(device="/dev/sdb", serial="S2"))
+    )
+    assert _objects(first)[0] is True
+
+    _, _, metrics = CHECKER.evaluate(
+        {}, _report(_asleep(), _disk(device="/dev/sdb", serial="S2")), first["_details"]
+    )
+    complete, items = _objects(metrics)
+    # Asleep it sent no serial: no item, and its object must not be marked gone.
+    assert (complete, [item["id"] for item in items]) == (False, ["X/S2"])
+
+
+def test_a_disk_asleep_since_it_was_first_seen_is_not_collected():
+    report = _report(_asleep(), _disk(device="/dev/sdb", serial="S2"))
+    _, _, metrics = CHECKER.evaluate({}, report)
+    complete, items = _objects(metrics)
+    assert complete is True
+    assert items[0] == _object(
+        "/dev/sda", "/dev/sda", NOT_COLLECTED, "Asleep, not read yet", stable=False
+    )
+
+    # Asleep on the next report too: its last state was never read.
+    _, _, again = CHECKER.evaluate({}, report, metrics["_details"])
+    assert _objects(again) == (True, items)
+
+
+def test_a_disk_list_cut_at_the_report_limit_is_incomplete():
+    disks = [_disk(device=f"/dev/sd{i}", serial=f"S{i}") for i in range(MAX_REPORT_ENTRIES + 1)]
+    complete, items = _objects(CHECKER.evaluate({}, _report(*disks))[2])
+    assert (complete, len(items)) == (False, MAX_REPORT_ENTRIES)
+    # Paired: at the limit the list is whole.
+    complete, items = _objects(CHECKER.evaluate({}, _report(*disks[:-1]))[2])
+    assert (complete, len(items)) == (True, MAX_REPORT_ENTRIES)
+
+
+def test_a_disk_entry_that_is_no_object_makes_the_result_incomplete():
+    # The checker skips it, and the disk it stood for must not be marked gone.
+    complete, items = _objects(CHECKER.evaluate({}, _report(_disk(), "sdb"))[2])
+    assert (complete, len(items)) == (False, 1)

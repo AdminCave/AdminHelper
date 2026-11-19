@@ -12,6 +12,7 @@ import time
 import pytest
 
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
+from app.objects import read_objects
 
 from ._helpers import assert_every_reader_reads
 
@@ -118,7 +119,11 @@ def test_zfs_block_missing_is_unknown_and_clears_pools():
 def test_zfs_zero_pools_is_ok_with_empty_list():
     status, _, metrics = ZfsHealthChecker().evaluate({}, _zfs())
     assert status == "ok"
-    assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
+    assert metrics == {
+        "_details": {"available": True, "error": None, "pools": []},
+        # No pool left: every pool object is gone.
+        "_objects": {"complete": True, "items": []},
+    }
 
 
 def test_zfs_caps_the_pool_list():
@@ -137,7 +142,11 @@ def test_zfs_caps_the_pool_list():
 def test_zfs_pools_that_are_no_list_count_as_empty(pools):
     status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(pools=pools))
     assert (status, msg) == ("ok", "No ZFS pools found")
-    assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
+    assert metrics == {
+        "_details": {"available": True, "error": None, "pools": []},
+        # Not an empty list: no pool object is marked gone.
+        "_objects": {"complete": False, "items": []},
+    }
 
 
 def test_zfs_pool_that_is_no_object_is_skipped():
@@ -153,6 +162,66 @@ def test_zfs_pool_without_name_is_named_by_a_question_mark():
     del pool["name"]
     status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(pool))
     assert (status, msg) == ("ok", "All pools ONLINE: ? 20%")
+
+
+# R-1559: each pool is an object of its own, as GET /objects shows it.
+
+
+def _zfs_objects(metrics: dict) -> tuple[bool, list[dict]]:
+    """complete and the items of the object block; app.objects must take each item."""
+    block = metrics["_objects"]
+    assert len(read_objects(block, "srv-1")[1]) == len(block["items"]), block
+    return block["complete"], block["items"]
+
+
+def _pool_object(name, status, reason):
+    return {"kind": "pool", "id": name, "name": name, "status": status, "reason": reason}
+
+
+def test_zfs_each_pool_is_an_object_with_its_own_status_and_first_problem():
+    report = _zfs(
+        _pool(),
+        _pool("backup", health="DEGRADED", capacity_percent=95),
+        _pool("data", capacity_percent=85),
+    )
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, report)
+    # The check keeps its worst status and its message.
+    assert status == "critical"
+    assert msg == "backup: DEGRADED; backup: 95% full (>=90%); data: 85% full (>=80%)"
+    assert _zfs_objects(metrics) == (
+        True,
+        [
+            _pool_object("tank", "ok", "ONLINE"),
+            _pool_object("backup", "critical", "DEGRADED"),
+            _pool_object("data", "warning", "85% full (>=80%)"),
+        ],
+    )
+
+
+def test_zfs_a_warning_pool_after_a_critical_one_stays_a_warning():
+    # The status of one pool is its own, not the worst so far.
+    report = _zfs(_pool("backup", health="FAULTED"), _pool("data", capacity_percent=85))
+    _, _, metrics = ZfsHealthChecker().evaluate({}, report)
+    assert [item["status"] for item in _zfs_objects(metrics)[1]] == ["critical", "warning"]
+
+
+@pytest.mark.parametrize(
+    ("pools", "complete"),
+    [
+        pytest.param([_pool(name=f"p{i}") for i in range(500)], True, id="500"),
+        pytest.param([_pool(name=f"p{i}") for i in range(501)], False, id="501"),
+        pytest.param(["x", _pool()], False, id="no-object"),
+    ],
+)
+def test_zfs_pool_objects_are_complete_only_for_the_whole_list(pools, complete):
+    _, _, metrics = ZfsHealthChecker().evaluate({}, _zfs(*pools))
+    assert _zfs_objects(metrics)[0] is complete
+
+
+def test_zfs_without_pool_data_names_no_objects():
+    # No block or an outage says nothing about the pools: they keep their state.
+    for report in ({"resources": {}}, _zfs(available=False, error="timeout")):
+        assert "_objects" not in ZfsHealthChecker().evaluate({}, report)[2]
 
 
 # --- ProxmoxBackupChecker ---

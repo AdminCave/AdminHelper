@@ -26,7 +26,7 @@ from app.central.limits import RunSkipped
 from app.check_engine import MAX_MESSAGE
 from app.core.time import utcnow_naive
 from app.models import Base, MonitorCheck, MonitorObjectState, MonitorState, MonitorStatusChange
-from app.objects import KEY_MAX, MAX_NAME, object_key
+from app.objects import KEY_MAX, MAX_NAME, object_key, read_objects
 
 T0 = datetime(2026, 11, 19, 12, 0, 0)
 MIN = timedelta(minutes=1)
@@ -283,6 +283,93 @@ def test_result_cut_at_max_objects_is_incomplete(factory, monkeypatch):
     assert _objects(factory)["srv-1/disk/a"].gone_at == T0 + 2 * MIN
 
 
+def test_gone_objects_are_not_read_until_named_again(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda"), _item("sdb")), T0)
+    _apply(factory, _result(_item("sda")), T0 + MIN)  # sdb goes
+
+    loaded: list[str] = []
+
+    def record(target, _context):
+        loaded.append(target.object_key)
+
+    event.listen(MonitorObjectState, "load", record)
+    try:
+        _apply(factory, _result(_item("sda")), T0 + 2 * MIN)
+        while_gone = sorted(loaded)
+        loaded.clear()
+        _apply(factory, _result(_item("sda"), _item("sdb")), T0 + 3 * MIN)
+        named_again = sorted(loaded)
+    finally:
+        event.remove(MonitorObjectState, "load", record)
+
+    assert while_gone == [SDA]
+    # Paired: named again, it is read and comes back as it went.
+    assert named_again == [SDA, SDB]
+    sdb = _objects(factory)[SDB]
+    assert (sdb.since, sdb.gone_at) == (T0, None)
+
+
+def test_rows_of_a_check_stop_at_max_rows(factory, monkeypatch):
+    monkeypatch.setattr(objects_mod, "MAX_ROWS", 5)
+    _seed_check(factory)
+    # Ids that change with every report: each result marks the ones before gone.
+    _apply(factory, _result(_item("a"), _item("b")), T0)
+    _apply(factory, _result(_item("c"), _item("d")), T0 + MIN)
+    _apply(factory, _result(_item("e"), _item("f")), T0 + 2 * MIN)
+
+    objs = _objects(factory)
+    assert sorted(objs) == [f"srv-1/disk/{x}" for x in "abcde"]
+    # Cut at the limit, the result is incomplete: c and d are not marked gone.
+    assert [objs[f"srv-1/disk/{x}"].gone_at for x in "cd"] == [None, None]
+    assert len(_object_changes(factory)) == 5
+
+    _apply(factory, _result(_item("g")), T0 + 3 * MIN)
+    assert "srv-1/disk/g" not in _objects(factory)
+    # Paired: an object the check holds is still written at the limit.
+    _apply(factory, _result(_item("c", "warning"), _item("d"), _item("e")), T0 + 4 * MIN)
+    objs = _objects(factory)
+    assert objs["srv-1/disk/c"].status == "warning"
+    assert objs["srv-1/disk/a"].gone_at == T0 + MIN
+
+
+def test_item_of_the_fallback_kind_is_left_out(factory):
+    _seed_check(factory)
+    _apply(factory, _result(_item("sda")), T0)
+
+    # Its key is the fallback's: the row would be deleted and created with every result.
+    _apply(factory, _result(_item("sdb"), _item("c1", kind="check")), T0 + MIN)
+    objs = _objects(factory)
+    assert sorted(objs) == [SDA, SDB]
+    assert objs[SDA].gone_at is None
+
+    # Paired: the same result without it is complete.
+    _apply(factory, _result(_item("sdb")), T0 + 2 * MIN)
+    assert _objects(factory)[SDA].gone_at == T0 + 2 * MIN
+
+
+def test_what_is_no_item_is_left_out_and_makes_the_result_incomplete():
+    good = _item("sda")
+    for bad in (
+        None,
+        "sdb",
+        {"kind": "disk", "id": "sdb"},
+        {"kind": "disk", "id": "sdb", "status": "broken"},
+        {"kind": "disk", "id": "sdb", "status": ["ok"]},
+        {"kind": 5, "id": "sdb", "status": "ok"},
+        {"kind": "", "id": "sdb", "status": "ok"},
+        {"kind": "k" * (objects_mod._KIND_MAX + 1), "id": "sdb", "status": "ok"},
+        {"kind": "disk", "id": ["sdb"], "status": "ok"},
+    ):
+        complete, items = read_objects(_result(good, bad), "srv-1")
+        assert (complete, list(items)) == (False, [SDA]), bad
+    # Paired: the good item alone is complete, a kind at the limit is taken.
+    longest = {"kind": "k" * objects_mod._KIND_MAX, "id": "sdb", "status": "ok"}
+    assert read_objects(_result(good, longest), "srv-1")[0] is True
+    for raw in (None, [], {"complete": True}, {"complete": True, "items": "sda"}):
+        assert read_objects(raw, "srv-1") == (False, {})
+
+
 def test_two_items_under_one_key_keep_the_worse(factory):
     _seed_check(factory)
     _apply(
@@ -348,13 +435,36 @@ def test_check_without_objects_stands_as_its_own_object(factory):
     fallback = _objects(factory)[FALLBACK]
     assert (fallback.status, fallback.reason, fallback.since, fallback.bad_since) == (
         "ok",
-        "up",
+        "",
         _state(factory).since,
         None,
     )
     assert _state(factory).since == T0 + MIN
     # Its changes are the check's rows of the log.
     assert _object_changes(factory) == []
+
+
+def test_ok_fallback_is_not_written_for_a_new_message(factory):
+    # A ping or http check names its latency in the message of every run.
+    _seed_check(factory)
+    _apply(factory, None, T0, message="12 ms")
+
+    engine = factory.kw["bind"]
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        _apply(factory, None, T0 + MIN, message="13 ms")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert [s.split()[0] for s in statements if "monitor_object_state" in s] == ["SELECT"]
+    # Paired: a failing check's message is its reason.
+    _apply(factory, None, T0 + 2 * MIN, status="critical", message="timeout")
+    assert _objects(factory)[FALLBACK].reason == "timeout"
 
 
 def test_objects_replace_the_fallback_and_an_empty_complete_result_brings_it_back(factory):
@@ -500,6 +610,38 @@ def test_push_path_writes_the_objects_and_keeps_them_from_victoria(factory, push
 
     assert list(_objects(factory)) == ["srv-1/cpu"]
     assert extra == [{"cpu_percent": 5}]
+
+
+def test_smart_report_writes_an_object_per_disk(factory, push_path, monkeypatch):
+    # The real checker on the report path (T5): each disk under its serial, a removed one
+    # gone, one asleep after a read kept as it was.
+    from app.checkers import get_checker
+    from app.routers import agent as agent_router
+
+    client, _, extra = push_path
+    monkeypatch.setattr(agent_router, "get_checker", get_checker)
+    _seed_check(factory, check_type="smart_health")
+    disk = {"model": "X", "protocol": "ATA", "kind": "HDD", "smart_passed": True, "temp_c": 30}
+    sda = {**disk, "device": "/dev/sda", "serial": "S1"}
+    sdb = {**disk, "device": "/dev/sdb", "serial": "S2", "smart_passed": False}
+
+    def report(*disks):
+        assert client.post("/agent/srv-1/report", json={"smart": list(disks)}).status_code == 200
+        return _objects(factory)
+
+    objs = report(sda, sdb)
+    assert {key: (row.name, row.status) for key, row in objs.items()} == {
+        "srv-1/disk/X/S1": ("/dev/sda (X)", "ok"),
+        "srv-1/disk/X/S2": ("/dev/sdb (X)", "critical"),
+    }
+    assert not any("_objects" in metrics for metrics in extra if metrics)
+
+    assert report(sda)["srv-1/disk/X/S2"].gone_at is not None
+    objs = report({"device": "/dev/sda", "standby": True})
+    assert {key: (row.status, row.gone_at is None) for key, row in objs.items()} == {
+        "srv-1/disk/X/S1": ("ok", True),
+        "srv-1/disk/X/S2": ("critical", False),
+    }
 
 
 def test_unmeasured_push_keeps_the_objects_as_they_were(factory, push_path):
