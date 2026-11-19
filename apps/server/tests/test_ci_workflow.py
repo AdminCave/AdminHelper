@@ -330,7 +330,7 @@ def test_the_windows_job_installs_with_agent_install_ps1_and_proves_each_path():
     # Kevin 2026-11-19: this job is the scenario run of the Windows installer (R-1578).
     job = _workflow()["jobs"]["agent-windows"]
     steps = {step.get("name"): step for step in job["steps"]}
-    step = steps["agent-install.ps1 (refuse, install, update, uninstall)"]
+    step = steps["agent-install.ps1 (refuse, install, update)"]
     run = step["run"]
     # Windows PowerShell 5.1, what an administrator has, not pwsh; red is red.
     assert step["shell"] == "powershell"
@@ -346,12 +346,62 @@ def test_the_windows_job_installs_with_agent_install_ps1_and_proves_each_path():
         'throw "the tampered SHA256SUMS equals the real one"',
         "& $install\n",
         "& $install -Version 0.0.0-ci",
-        "service uninstall --purge",
     ):
         assert proof in run, proof
     # The release it serves carries the frpc the agent pins, checked against the pin.
     release = steps["Release for agent-install.ps1"]["run"]
     assert 'echo "${FRP_SHA256_WINDOWS_AMD64}  $RUNNER_TEMP/frpc.zip" | sha256sum -c -' in release
+
+
+def test_the_windows_job_proves_frpc_runs_as_a_child_of_the_service():
+    # R-1580: the installed service syncs a config with one tunnel and starts frpc.exe itself.
+    job = _workflow()["jobs"]["agent-windows"]
+    names = [step.get("name") for step in job["steps"]]
+    steps = {step.get("name"): step for step in job["steps"]}
+    install = "agent-install.ps1 (refuse, install, update)"
+    setup = "Identity and frpc config for the sync"
+    check = "frpc under the service (restart, stop, start, uninstall)"
+    # It works on the service the installer left; the uninstall comes only after it.
+    assert names.index(install) < names.index(setup) < names.index(check)
+    assert "service uninstall" not in steps[install]["run"]
+    prep = steps[setup]["run"]
+    # The generator's form, or checkServerConfig refuses it; a tunnel, or the sync stops frpc.
+    for line in (
+        "'[transport.tls]' 'enable = true'",
+        "'trustedCaFile = \"/etc/adminhelper/identity/ca.crt\"'",
+        "'certFile = \"/etc/adminhelper/identity/agent.crt\"'",
+        "'keyFile = \"/etc/adminhelper/identity/agent.key\"'",
+        "'[[proxies]]'",
+    ):
+        assert line in prep, line
+    # The hash the agent checks the delivered text against.
+    assert '"$(sha256sum frpc.toml | cut -c1-64)"' in prep
+    assert "subjectAltName=IP:127.0.0.1" in prep
+    # The agent takes the sync server's leaf only from the access intermediate (verifyGatewayIssuer),
+    # and the server, like the gateway, wants the agent's client certificate.
+    assert 'issue access "AdminHelper Access Intermediate ci" root' in prep
+    assert "issue server server access" in prep
+    assert "ctx.verify_mode = ssl.CERT_REQUIRED" in prep
+    step = steps[check]
+    run = step["run"]
+    assert step["shell"] == "powershell"
+    assert "continue-on-error" not in step and "continue-on-error" not in job
+    for proof in (
+        '"ADMINHELPER_URL=https://127.0.0.1:8766"',
+        # The child of the service process, not any frpc.exe on the runner.
+        "$_.ParentProcessId -eq $Parent",
+        # A function returns one process unrolled; .Count only counts it inside @() at the caller.
+        "$kid = @(Get-FrpcOf $svcPid)",
+        "$now = @(Get-FrpcOf $svcPid)",
+        # The same process three times: a frpc in the restart backoff does not pass.
+        "$now[0].ProcessId -ne $frpcPid",
+        'Restart-Service AdminHelper-Agent\nAssert-FrpcChild "after the restart"',
+        'Stop-Service AdminHelper-Agent\nAssert-NoFrpc "after Stop-Service"',
+        'Start-Service AdminHelper-Agent\nAssert-FrpcChild "after Start-Service"',
+        "service uninstall --purge",
+        'Assert-NoFrpc "after the uninstall"',
+    ):
+        assert proof in run, proof
 
 
 # Hardening after zizmor 1.32 (R-1556), over every workflow of the repo.

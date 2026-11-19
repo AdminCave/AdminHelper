@@ -774,7 +774,7 @@ jobs:
           unzip -p "$RUNNER_TEMP/frpc.zip" "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > "$dl/frpc-windows-x86_64.exe"
           (cd "$dl" && sha256sum adminhelper-agent-windows-x86_64.exe frpc-windows-x86_64.exe > SHA256SUMS)
           cp "$dl/SHA256SUMS" "$RUNNER_TEMP/SHA256SUMS.good"
-      - name: agent-install.ps1 (refuse, install, update, uninstall)
+      - name: agent-install.ps1 (refuse, install, update)
         shell: powershell
         run: |
           $rel = Join-Path $env:RUNNER_TEMP "rel"
@@ -822,9 +822,126 @@ jobs:
           }
           & $install -Version 0.0.0-ci
           if ((Get-Service AdminHelper-Agent).Status -ne "Running") { throw "service not running after the update" }
+      # frpc under the installed service (R-1580): the service's own sync gets a config with one
+      # tunnel from two endpoints served here and starts frpc.exe as its child. No frps listens;
+      # the agent puts loginFailExit = false in front, so frpc keeps trying and stays up.
+      - name: Identity and frpc config for the sync
+        shell: bash
+        env:
+          # Git Bash would turn -subj "/CN=…" into a Windows path.
+          MSYS_NO_PATHCONV: "1"
+        run: |
+          d="$RUNNER_TEMP/frpsrv"
+          mkdir -p "$d" && cd "$d"
+          # The PKI's shape: a root, under it the access intermediate, which issues the gateway's
+          # leaf and the agent's; ca.crt holds both CAs. The agent takes a server leaf only from an
+          # issuer named like the access intermediate (verifyGatewayIssuer).
+          openssl ecparam -name prime256v1 -genkey -noout -out root.key
+          openssl req -x509 -new -key root.key -subj "/CN=ci test root" -days 2 \
+            -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -out root.crt
+          printf 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n' > access.ext
+          printf 'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > server.ext
+          printf 'extendedKeyUsage=clientAuth\n' > agent.ext
+          issue() { # name, CN, issuer
+            openssl ecparam -name prime256v1 -genkey -noout -out "$1.key"
+            openssl req -new -key "$1.key" -subj "/CN=$2" -out "$1.csr"
+            openssl x509 -req -in "$1.csr" -CA "$3.crt" -CAkey "$3.key" -CAcreateserial -days 2 -extfile "$1.ext" -out "$1.crt"
+          }
+          issue access "AdminHelper Access Intermediate ci" root
+          issue server server access
+          issue agent agent access
+          cat access.crt root.crt > ca.crt
+          # The form generate_frpc_toml writes; checkServerConfig refuses any other.
+          printf '%s\n' 'serverAddr = "127.0.0.1"' 'serverPort = 7000' '' '[transport.tls]' 'enable = true' \
+            'trustedCaFile = "/etc/adminhelper/identity/ca.crt"' \
+            'certFile = "/etc/adminhelper/identity/agent.crt"' \
+            'keyFile = "/etc/adminhelper/identity/agent.key"' '' \
+            '[[proxies]]' 'name = "ci-ssh"' 'type = "stcp"' 'secretKey = "ci"' 'localIP = "127.0.0.1"' 'localPort = 22' > frpc.toml
+          printf '{"hash": "%s"}' "$(sha256sum frpc.toml | cut -c1-64)" > hash.json
+          cat > serve.py <<'PY'
+          import http.server as h
+          import ssl
+
+          FILES = {"/api/frp/provision/ci/config-hash": "hash.json", "/api/frp/provision/ci/config": "frpc.toml"}
+
+          class H(h.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  name = FILES.get(self.path)
+                  if self.headers.get("X-API-Key") != "ci-key" or name is None:
+                      self.send_error(404)
+                      return
+                  body = open(name, "rb").read()
+                  self.send_response(200)
+                  self.send_header("Content-Length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+          srv = h.ThreadingHTTPServer(("127.0.0.1", 8766), H)
+          ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          ctx.load_cert_chain("server.crt", "server.key")
+          # Like the gateway: no request without the agent's client certificate.
+          ctx.verify_mode = ssl.CERT_REQUIRED
+          ctx.load_verify_locations("ca.crt")
+          srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+          srv.serve_forever()
+          PY
+      - name: frpc under the service (restart, stop, start, uninstall)
+        shell: powershell
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP "frpsrv"
+          $prog = Join-Path $env:ProgramFiles "AdminHelper Agent"
+          $data = Join-Path $env:ProgramData "AdminHelper"
+          Start-Process python -ArgumentList serve.py -WorkingDirectory $d -WindowStyle Hidden
+          foreach ($i in 1..30) { try { (New-Object Net.Sockets.TcpClient "127.0.0.1", 8766).Close(); break } catch { Start-Sleep 1 } }
+          # What a provisioning leaves: the enrolled identity (the sync then talks mTLS and takes the
+          # server only with a leaf of the access intermediate under ca.crt) and adminhelper.conf.
+          $id = Join-Path $data "identity"
+          New-Item -ItemType Directory -Force $id | Out-Null
+          foreach ($f in "ca.crt", "agent.crt", "agent.key") { Copy-Item -Force (Join-Path $d $f) (Join-Path $id $f) }
+          New-Item -ItemType Directory -Force (Join-Path $data "frp") | Out-Null
+          Set-Content -Encoding ascii (Join-Path $data "frp\adminhelper.conf") @(
+            "ADMINHELPER_URL=https://127.0.0.1:8766", "API_KEY=ci-key", "SERVER_ID=ci"
+          )
+          function Get-ServicePid { (Get-CimInstance Win32_Service -Filter "Name='AdminHelper-Agent'").ProcessId }
+          # A function's output unrolls a one-element array into the bare CimInstance, whose .Count
+          # is empty in Windows PowerShell 5.1: the callers wrap it in @() themselves.
+          function Get-FrpcOf([int]$Parent) {
+            Get-CimInstance Win32_Process -Filter "Name='frpc.exe'" | Where-Object { $_.ParentProcessId -eq $Parent }
+          }
+          function Show-Log { Get-Content -Tail 40 (Join-Path $data "logs\agent.log") -ErrorAction SilentlyContinue }
+          # A frpc that ends and comes back in the supervisor's backoff would pass a single look:
+          # the same process must still run three times later.
+          function Assert-FrpcChild([string]$When) {
+            $svcPid = Get-ServicePid
+            $kid = @()
+            foreach ($i in 1..60) { $kid = @(Get-FrpcOf $svcPid); if ($kid.Count -eq 1) { break }; Start-Sleep 2 }
+            if ($kid.Count -ne 1) { Show-Log; throw "${When}: $($kid.Count) frpc.exe under the service (pid $svcPid), want 1" }
+            $frpcPid = $kid[0].ProcessId
+            foreach ($i in 1..3) {
+              Start-Sleep 5
+              $now = @(Get-FrpcOf $svcPid)
+              if ($now.Count -ne 1 -or $now[0].ProcessId -ne $frpcPid) { Show-Log; throw "${When}: frpc.exe $frpcPid did not stay up" }
+            }
+            Write-Host "${When}: frpc.exe $frpcPid runs under the service $svcPid"
+          }
+          function Assert-NoFrpc([string]$When) {
+            foreach ($i in 1..30) {
+              if (-not (Get-Process frpc -ErrorAction SilentlyContinue)) { Write-Host "${When}: no frpc.exe left"; return }
+              Start-Sleep 1
+            }
+            throw "${When}: frpc.exe still runs"
+          }
+          # The restart runs a cycle at once; the next would come only after five minutes.
+          Restart-Service AdminHelper-Agent
+          Assert-FrpcChild "after the restart"
+          Stop-Service AdminHelper-Agent
+          Assert-NoFrpc "after Stop-Service"
+          Start-Service AdminHelper-Agent
+          Assert-FrpcChild "after Start-Service"
           & (Join-Path $prog "adminhelper-agent.exe") service uninstall --purge
           if ($LASTEXITCODE -ne 0) { throw "service uninstall --purge failed ($LASTEXITCODE)" }
           if (Get-Service AdminHelper-Agent -ErrorAction SilentlyContinue) { throw "service still there after uninstall" }
+          Assert-NoFrpc "after the uninstall"
 
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
