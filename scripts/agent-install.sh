@@ -388,7 +388,9 @@ if [ -n "$CA_FP" ]; then
         # An agent that predates --ca-fp: fall back to TOFU rather than failing
         # the rollout.
         warn "installed agent predates --ca-fp — falling back to trust-on-first-use."
-        warn "compare the fingerprint the agent prints against the desktop's provisioning tab!"
+        # The desktop shows the CA fingerprint, which never equals the pinned server certificate.
+        warn "compare the fingerprint the agent prints with the server certificate, as its notice says;"
+        warn "or update the agent and run this script again to verify the first contact with --ca-fp."
         PROV_ARGS+=(--insecure)
     fi
 else
