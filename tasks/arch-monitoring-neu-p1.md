@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_log.
 Doku: → T9
 Abhängt von: T1
 
-### T3 — Verlaufsmarken aus dem Statuswechsel-Log (R-1559)  [ ]
+### T3 — Verlaufsmarken aus dem Statuswechsel-Log (R-1559)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/history.py, apps/monitoring/tests/test_status_history.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @cf486269e 2026-11-19T15:05:38+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1/T3.verdict.json)
 Änderung: `server_events` (`history.py:230`) liest die Check-Zeilen (`object_key IS NULL`) von `monitor_status_log` statt `MonitorAlertLog`; Antwortform, `EVENT_LIMIT` und `_SAME_EVENT` bleiben, ein Erstergebnis `ok`/`info` aus `pending` ist kein Ereignis. Die Ereignis-Tests legen ihre Zeilen künftig im Log an (Quelle gewechselt, Erwartungen gleich); neu: ein Wechsel ohne Alarmregel und einer in der Wartung erscheinen, übernommene Alarm-Log-Zeilen mehrerer Regeln zählen einmal.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_history.py tests/test_status_log.py
 Doku: → T9
