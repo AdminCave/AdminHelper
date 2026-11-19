@@ -1,5 +1,5 @@
 # Provisionieren je Plattform — Task-Ledger
-Status: erledigt · Branch: feature/kern-provision-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-provision-1 · Review: pro Task
 Spec: docs/features/kern-provision-1.md (Roadmap R-1594, R-1595, R-1596, R-1597)
 Heavy: linux-full — Server-API, `docker-compose.yml` (Repo-Mount) und die Desktop-Journey `provisioning.live.js` ändern sich; kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -126,6 +126,12 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra s
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
 Abhängt von: T11
 
+### T13 — R-1594: oasdiff-Ausnahmen für den Plattform-Enum (PR-CI)  [ ]
+Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Die PR-CI (`openapi-compat`) meldet die gewollte Umstellung von `os_type` auf den Enum als 22 ERR an GET/POST `/api/servers` und GET/PUT `/api/servers/{server_id}`. Kevin 2026-11-19: je Fund eine Zeile in `oasdiff-err-ignore.txt`, Text wörtlich aus `openapi-breaking.sh`; die geschlossene Liste im Test und der Absatz in `cicd.html` ziehen mit.
+Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
+Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
+
 ## Entscheidungen
 - 2026-11-18 Plan: Katalog liest das eingebundene `./repo` statt einer Env-Liste; Befehle strukturiert, Zitieren im Desktop (R-1595).
 - 2026-11-18 Plan: Windows ohne Installationsbefehl bis R-1578 (Notiz an R-1596).
@@ -139,3 +145,4 @@ Abhängt von: T11
 - 2026-11-18 T9: Der Desktop hatte keinen Weg, eine URL im Browser zu öffnen (das Shell-Plugin trägt keine `shell:allow-open`-Berechtigung). Statt einer offenen Opener-Berechtigung bekommt er den Befehl `open_doc(path)`: die Basis `https://github.com/AdminCave/AdminHelper/blob/main/docs/` steht fest in Rust, der Pfad aus dem Katalog nimmt nur Kleinbuchstaben, Ziffern, `-`, `_`, Segmente mit `/`, Endung `.html` und einen Anker. Die Task wird damit Komponente `desktop` (Rust + UI, neun Dateien).
 - 2026-11-18 T9: Das volle Desktop-Verify fand `pages/Infrastructure.test.ts` rot seit T8: der Seitentest mockte die Session ohne `session`-Store, `ServerDetail` liest ihn seit T8. Das T8-Verify war auf `components/infra` begrenzt; der Mock-Fix geht in T9 mit, dazu der Eintrag `open_doc` in der IPC-Befehlstabelle (DE+EN, `ipc.inventory.test.ts`).
 - 2026-11-19 Abschlussprüfung reviewer: Blocker Windows-Pfad (T11), wichtig E2E-Fristen und zwei Nits (T12); T9 `Dateien:` ohne die nie angelegte `docs.ts`.
+- 2026-11-19 PR #588: `openapi-compat` rot durch den gewollten `os_type`-Enum (22 ERR); Kevin: 22 Zeilen in `oasdiff-err-ignore.txt` (T13), statt `x-extensible-enum` oder Freitext im Request.
