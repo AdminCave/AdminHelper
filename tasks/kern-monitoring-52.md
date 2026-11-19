@@ -23,8 +23,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-monitoring-52.md
 Task-Review: am Ende
 
-### T3 — UI-Hinweis „Mehr Log“ nennt den OPNsense-Pfad (R-1630)  [ ]
+### T3 — UI-Hinweis „Mehr Log“ nennt den OPNsense-Pfad (R-1630)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c84bb2afc 2026-11-19T23:15:27+01:00
+Review: am Ende (Branch-Review)
 Änderung: `monitoring.services.journal.hint` DE+EN nennt neben `FreeBSD: /var/log/messages` auch `OPNsense: /var/log/system` (nach dem Merge von klein-nachlese-15, #613). Reiner Text ohne neue Logik; die i18n-Tests prüfen Schlüsselgleichheit DE/EN.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n src/components/monitoring/section/ServiceList.test.ts
 Doku: keine (Doku-Seiten in T1/T2)
