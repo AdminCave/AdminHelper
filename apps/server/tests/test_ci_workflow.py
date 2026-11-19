@@ -326,6 +326,34 @@ def test_the_nightly_restore_runs_the_round_trip_where_a_skip_is_red():
     }
 
 
+def test_the_windows_job_installs_with_agent_install_ps1_and_proves_each_path():
+    # Kevin 2026-11-19: this job is the scenario run of the Windows installer (R-1578).
+    job = _workflow()["jobs"]["agent-windows"]
+    steps = {step.get("name"): step for step in job["steps"]}
+    step = steps["agent-install.ps1 (refuse, install, update, uninstall)"]
+    run = step["run"]
+    # Windows PowerShell 5.1, what an administrator has, not pwsh; red is red.
+    assert step["shell"] == "powershell"
+    assert "continue-on-error" not in step and "continue-on-error" not in job
+    assert "Get-Content -Raw scripts\\agent-install.ps1" in run
+    # Plain http only on the loopback address the script accepts it on.
+    assert '$env:AH_DL_BASE = "http://127.0.0.1:8765"' in run
+    for proof in (
+        'Assert-Refused "tampered SHA256SUMS" "does not match SHA256SUMS"',
+        # The reason is checked, so a download error does not pass for a refusal.
+        'if (-not "$_".Contains($Expect)) { throw',
+        # Run 44517506477: a tamper that changed nothing passed for a refusal test.
+        'throw "the tampered SHA256SUMS equals the real one"',
+        "& $install\n",
+        "& $install -Version 0.0.0-ci",
+        "service uninstall --purge",
+    ):
+        assert proof in run, proof
+    # The release it serves carries the frpc the agent pins, checked against the pin.
+    release = steps["Release for agent-install.ps1"]["run"]
+    assert 'echo "${FRP_SHA256_WINDOWS_AMD64}  $RUNNER_TEMP/frpc.zip" | sha256sum -c -' in release
+
+
 # Hardening after zizmor 1.32 (R-1556), over every workflow of the repo.
 _WORKFLOWS = sorted(_CI.parent.glob("*.yml"))
 

@@ -362,7 +362,7 @@ curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/
   --server-id <SERVER-ID> --ca-fp <SHA256-FROM-THE-TAB>
 ```
 
-FreeBSD and OPNsense have their own one-liner, `scripts/agent-install-bsd.sh` (POSIX `sh`, see the agent deployment guide).
+FreeBSD and OPNsense have their own one-liner, `scripts/agent-install-bsd.sh` (POSIX `sh`), Windows has `scripts/agent-install.ps1` (PowerShell as Administrator); see the agent deployment guide.
 
 Manual alternative (package from the [GitHub release](https://github.com/AdminCave/AdminHelper/releases) assets):
 
