@@ -71,7 +71,8 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         hydrate_agent_liveness(
-            {row.server_id: row.last_report_at for row in db.query(MonitorAgentLiveness).all()}
+            {row.server_id: row.last_report_at for row in db.query(MonitorAgentLiveness).all()},
+            stopped_at=db.query(func.max(MonitorState.last_check)).scalar(),
         )
         try:
             seed_builtin_templates(db)

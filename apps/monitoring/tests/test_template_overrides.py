@@ -527,7 +527,7 @@ def start(client, monkeypatch):
     loaded: list[bool] = []
     jobs: list[str] = []
     monkeypatch.setattr("app.core.database.SessionLocal", factory)
-    monkeypatch.setattr("app.checkers.agent.hydrate_agent_liveness", lambda entries: None)
+    monkeypatch.setattr("app.checkers.agent.hydrate_agent_liveness", lambda entries, **_kw: None)
     monkeypatch.setattr(scheduler_mod, "load_all_checks", lambda: loaded.append(True))
     for job in (
         "alert_log_cleanup",

@@ -9,9 +9,10 @@ from __future__ import annotations
 import secrets
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
+from app.bell_catch_up import send_all_clears
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import MonitorAgentKey
@@ -69,7 +70,11 @@ def delete_agent_key(server_id: str, db: Session = Depends(get_db)):
     response_model=ServerCleanupOut,
     dependencies=[Depends(require_internal)],
 )
-def server_cleanup(server_id: str, db: Session = Depends(get_db)):
+def server_cleanup(
+    server_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
     """Cleans up all monitoring data of a server."""
-    result = cleanup_server(db, server_id)
+    result = cleanup_server(
+        db, server_id, lambda clears: background_tasks.add_task(send_all_clears, clears)
+    )
     return result
