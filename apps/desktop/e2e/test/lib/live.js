@@ -120,37 +120,34 @@ export async function login() {
 }
 
 // Inject one event into the hub from the test runner (Node context, not the
-// webview — the webview can't reach the self-signed gateway). Runs curl with -k;
-// MONITOR_API_KEY comes from the env the orchestration script exports. Returns
-// the parsed { notified: N } so a spec can assert the admin was a recipient.
+// webview). The gateway answers /api/internal itself with 404 (R-1604), so the
+// event goes in on the compose network: `docker compose exec` runs Python in the
+// server container against its own uvicorn. The key is read from the container's
+// environment there, never passed through argv or this process (3.19); the event
+// travels on stdin. AH_E2E_COMPOSE is the wrapper the orchestration script writes.
+// Returns the parsed { notified: N } so a spec can assert the admin was a recipient.
 // `extra` adds or overrides fields of the event, e.g. incident_key and new_status:
 // events of one key fold into one incident, new_status "ok" resolves it (R-1079).
+const INJECT_PY = [
+  "import os, sys, urllib.request",
+  "req = urllib.request.Request('http://127.0.0.1:8080/api/internal/events', data=sys.stdin.buffer.read(), method='POST',",
+  "    headers={'X-Internal-Key': os.environ['MONITOR_API_KEY'], 'Content-Type': 'application/json'})",
+  "sys.stdout.write(urllib.request.urlopen(req, timeout=30).read().decode())",
+].join("\n");
+
 export function injectEvent(title, severity = "critical", extra = {}) {
-  // Pass the secret header via stdin (curl `-H @-`), not argv, so it can't leak
-  // into the test log through a curl/execFileSync error message (3.19).
   const out = execFileSync(
-    "curl",
-    [
-      "-sk",
-      "-X",
-      "POST",
-      `${SERVER_URL}/api/internal/events`,
-      "-H",
-      "@-",
-      "-H",
-      "Content-Type: application/json",
-      "-d",
-      JSON.stringify({
+    process.env.AH_E2E_COMPOSE,
+    ["exec", "-T", "server", "python", "-c", INJECT_PY],
+    {
+      encoding: "utf8",
+      input: JSON.stringify({
         event_type: "e2e.sse.push",
         severity,
         category: "monitoring",
         title,
         ...extra,
       }),
-    ],
-    {
-      encoding: "utf8",
-      input: `X-Internal-Key: ${process.env.MONITOR_API_KEY}`,
     },
   );
   try {

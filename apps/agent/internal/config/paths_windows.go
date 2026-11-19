@@ -7,10 +7,8 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 	"sync"
-	"testing"
 
 	"golang.org/x/sys/windows"
 )
@@ -27,18 +25,6 @@ var programData = sync.OnceValue(func() string {
 	}
 	return defaultProgramData
 })
-
-// overridesAllowed gates the ADMINHELPER_*_DIR overrides to test binaries: they exist so the
-// orchestration flows run against a t.TempDir() (6.96), and an elevated console inherits the
-// caller's variables, which must not move an administrator's data (R-1645).
-var overridesAllowed = testing.Testing
-
-func override(name string) string {
-	if !overridesAllowed() {
-		return ""
-	}
-	return os.Getenv(name)
-}
 
 func FrpDir() string {
 	if d := override("ADMINHELPER_FRP_DIR"); d != "" {

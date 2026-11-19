@@ -62,7 +62,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   const activeAction = $derived(actions.includes(action as ProvisionAction) ? action : actions[0]);
   const spec = $derived(platform?.commands.find((c) => c.action === activeAction) ?? null);
-  const needsToken = $derived(spec?.args.some((a) => a.value === 'token') ?? false);
+  const needsToken = $derived(
+    spec?.args.some((a) => a.value === 'token' || a.value === 'tokenStdin') ?? false,
+  );
   const command = $derived(
     spec && $session
       ? buildCommand(
@@ -154,8 +156,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  // A catalog value this desktop does not know yet (a newer server) is named, not shown as
+  // the raw translation key.
+  function known(prefix: string, value: string, fallback: string): string {
+    const key = `${prefix}${value}`;
+    const text = $t(key);
+    return text === key ? $t(fallback, { value }) : text;
+  }
+
   function portLabel(port: ProvisionPort): string {
-    const text = `${port.port}: ${$t(`infra.prov.port.${port.purpose}`)}`;
+    const text = `${port.port}: ${known('infra.prov.port.', port.purpose, 'infra.prov.unknownPurpose')}`;
     return port.tunnelOnly ? `${text} (${$t('infra.prov.tunnelOnly')})` : text;
   }
 
@@ -210,12 +220,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {#if !platform.available}
           <div data-testid="prov-unavailable">
             <Callout tone="warning"
-              >{$t(`infra.prov.reason.${platform.reason ?? 'noRepo'}`)}</Callout
+              >{known(
+                'infra.prov.reason.',
+                platform.reason ?? 'noRepo',
+                'infra.prov.unknownReason',
+              )}</Callout
             >
           </div>
         {:else}
           {#if platform.reason}
-            <Callout tone="info">{$t(`infra.prov.reason.${platform.reason}`)}</Callout>
+            <Callout tone="info"
+              >{known('infra.prov.reason.', platform.reason, 'infra.prov.unknownReason')}</Callout
+            >
           {/if}
 
           <div class="prereq" data-testid="prov-prereq">

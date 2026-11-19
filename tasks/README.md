@@ -40,7 +40,7 @@ Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask
 Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.
 
 **Task-Felder:** `Komponente:` (der Name aus `verify.sh`, etwa `server`, kein Pfad), `Dateien:` (die
-Pfade, die `task-close.sh --stage` stagt, durch Komma getrennt), `Verify:` (Flag-Form ohne Env-Präfix:
+Pfade, die `task-close.sh --stage` stagt, durch Komma getrennt, Notizen in Klammern), `Verify:` (Flag-Form ohne Env-Präfix:
 `bash scripts/dev/verify.sh <komp> --strict [-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten) und
 `Task-Review: am Ende` (eine reine Doku-Task: `task-close.sh` verlangt dann kein Task-Urteil, solange sie nur
 Markdown oder HTML unter `docs/` stagt, keinen Symlink und keinen Harness-Text — `CLAUDE.md`, `.claude/` in jeder
