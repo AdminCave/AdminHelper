@@ -287,10 +287,20 @@ var commands = map[string][][]string{
 		{"queryex", "<winservice>"},
 	},
 	// Windows: the Service Control Manager's crash events 7031/7034 of the last 24 hours
-	// (monitor.scmCrashArgs).
-	"wevtutil": {{"qe", "System",
-		"/q:*[System[Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034) and TimeCreated[timediff(@SystemTime) <= 86400000]]]",
-		"/c:50", "/rd:true", "/f:xml"}},
+	// (monitor.scmCrashArgs), and the two queries of a stopped service's error lines: the SCM's
+	// events and the Application log's errors and warnings of the last 24 hours, rendered
+	// (monitor.scmLogArgs, monitor.appLogArgs). No service name enters a call.
+	"wevtutil": {
+		{"qe", "System",
+			"/q:*[System[Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034) and TimeCreated[timediff(@SystemTime) <= 86400000]]]",
+			"/c:50", "/rd:true", "/f:xml"},
+		{"qe", "System",
+			"/q:*[System[Provider[@Name='Service Control Manager'] and TimeCreated[timediff(@SystemTime) <= 86400000]]]",
+			"/c:200", "/rd:true", "/f:RenderedXml"},
+		{"qe", "Application",
+			"/q:*[System[(Level=1 or Level=2 or Level=3) and TimeCreated[timediff(@SystemTime) <= 86400000]]]",
+			"/c:200", "/rd:true", "/f:RenderedXml"},
+	},
 	"needs-restarting": {{"-r"}},
 	"timedatectl":      {{"show"}},
 	"apt-get":          {{"-s", "dist-upgrade"}},

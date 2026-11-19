@@ -5,8 +5,10 @@ Heavy: windows — Windows-Agent-Sammler; keine Windows-Box im Pool, die Windows
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1391: Windows-Agent sendet Fehlerzeilen gestoppter Auto-Start-Dienste  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/winevents.go, apps/agent/internal/monitor/winevents_test.go, apps/agent/internal/monitor/servicelogs_windows.go, apps/agent/internal/monitor/servicelogs_other.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T1 — R-1391: Windows-Agent sendet Fehlerzeilen gestoppter Auto-Start-Dienste  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/winevents.go, apps/agent/internal/monitor/winevents_test.go, apps/agent/internal/monitor/servicelogs_windows.go, apps/agent/internal/monitor/servicelogs_other.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/winevents_windows_test.go, apps/agent/internal/monitor/servicelogs_linux.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/allowlist_test.go, apps/agent/internal/monitor/servicelogs_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e38207850 2026-11-19T11:10:22+01:00
+Review: approve (.ah-out/review/kern-monitoring-50/T1.verdict.json)
 Änderung:
 - `winevents.go` (neu, SPDX, ohne Build-Tag) parst die RenderedXml zweier fester `wevtutil`-Aufrufe:
   - System: SCM-Ereignisse der letzten 24 h

@@ -51,12 +51,14 @@ func stubServiceLogReader(t *testing.T, broken map[string]bool) *[]string {
 	old := serviceLogReader
 	t.Cleanup(func() { serviceLogReader = old })
 	var read []string
-	serviceLogReader = func(_ context.Context, unit string) ([]string, bool) {
-		read = append(read, unit)
-		if broken[unit] {
-			return nil, false
+	serviceLogReader = func() func(context.Context, string) ([]string, bool) {
+		return func(_ context.Context, unit string) ([]string, bool) {
+			read = append(read, unit)
+			if broken[unit] {
+				return nil, false
+			}
+			return []string{"error of " + unit}, true
 		}
-		return []string{"error of " + unit}, true
 	}
 	return &read
 }
@@ -96,6 +98,11 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	}
 	if st, ok := selfStats(t, run())[serviceLogsCollector]; !ok || st.Throttled {
 		t.Errorf("service_logs stat = %+v (%v), want a run", st, ok)
+	}
+
+	// The failed units are the ones with lines: the block names no log_units (a Windows block does).
+	if svc, _ := run()["systemd"].(map[string]any); svc["log_units"] != nil {
+		t.Errorf("log_units = %#v, want none on Linux", svc["log_units"])
 	}
 
 	// Same failures: nothing read, nothing sent.
