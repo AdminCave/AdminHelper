@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-48 — Fehlerzeilen vom Linux-Agent, SMART ohne Aufwecken — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-48 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-48 · Review: pro Task
 Spec: docs/features/kern-monitoring-48.md (Roadmap R-1413, R-1569)
 Heavy: linux-full — apps/agent (Sammler, Allowlist, smartctl-Aufruf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -69,8 +69,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/ ./inter
 Doku: → T6
 Abhängt von: T4
 
-### T6 — Doku und Changelog  [ ]
+### T6 — Doku und Changelog  [x]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-48.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d803ccb84 2026-11-19T05:22:54+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Fehlerzeilen kommen vom Linux-Agent (letzte 10 Einträge, einmal je Ausfall, Last-Tor); SMART: schlafende
 Platten werden nicht geweckt, „letzter Stand“; Agent: Sammler und Allowlist-Aufrufe; Monitoring: `standby`/`read_at`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py
