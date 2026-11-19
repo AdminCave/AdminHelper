@@ -10,6 +10,7 @@ from app.routers.alerts import router as alerts_router
 from app.routers.checks import router as checks_router
 from app.routers.findings import router as findings_router
 from app.routers.maintenance import router as maintenance_router
+from app.routers.objects import router as objects_router
 from app.routers.templates import router as templates_router
 
 all_routers = [
@@ -20,4 +21,5 @@ all_routers = [
     maintenance_router,
     admin_router,
     findings_router,
+    objects_router,
 ]

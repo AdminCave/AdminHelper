@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1 · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1.md (Roadmap R-1559, R-0805)
 Heavy: linux-full — Server-Proxy-Freigabeliste (`monitoring_proxy`) und zwei Monitoring-Migrationen; kein Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -92,8 +92,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_pro
 Doku: → T9
 Abhängt von: T7
 
-### T9 — Objekt-API `GET /objects`, Proxy-Präfix `objects`, Doku DE+EN (R-1559)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/objects.py, apps/monitoring/app/routers/__init__.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_objects_api.py, apps/monitoring/tests/openapi.snapshot.json, apps/server/app/modules/monitoring_proxy/router.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-neu-p1.md
+### T9 — Objekt-API `GET /objects`, Proxy-Präfix `objects`, Doku DE+EN (R-1559)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/objects.py, apps/monitoring/app/routers/__init__.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_objects_api.py, apps/monitoring/tests/openapi.snapshot.json, apps/server/app/modules/monitoring_proxy/router.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-neu-p1.md, apps/server/tests/test_monitoring_proxy_allowlist.py, apps/monitoring/tests/test_status_log.py
+Evidenz: run.sh[quick] monitoring server: 5 passed, 0 failed, 13 skipped @1d4d44eaa 2026-11-19T18:42:13+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1/T9.verdict.json)
 Änderung: Neuer Router `routers/objects.py` (SPDX) mit `GET /objects` (Filter `server_id`, `check_id`, `kind`, `include_gone`; `limit`/`offset`, `X-Total-Count`; schlechteste zuerst, dann Name; `lastCheck` aus `MonitorState`), Schema `MonitorObjectOut`, Eintrag in `all_routers`, OpenAPI-Snapshot. Das Präfix `objects` kommt in `_ALLOWED_PATH_PREFIXES` (`monitoring_proxy/router.py:78`): der Server-Test `test_monitoring_proxy_allowlist.py` liest die Monitoring-Router und die vier Präfix-Listen der Entwickler-Doku, deshalb landen Route, Freigabe und Doku in einem Commit, und das Verify fährt beide Suiten. Dazu die übrige Doku: Statuswechsel-Log, Objektzustand und Objektergebnis, Tagesjob und Quelle der Verlaufsmarken (developer/monitoring DE+EN), `GET /objects` (api-reference DE+EN), Verlaufsmarken (admin/monitoring DE+EN), Changelog-Fragment. 13 Dateien: Route und Freigabe müssen zusammen landen, die Doku nennt beide.
 Verify: bash scripts/dev/verify.sh monitoring server --strict
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-neu-p1.md
@@ -140,3 +142,6 @@ Abhängt von: T3, T4
 - 2026-11-19 T8: Listen-Modus vollständig: running ok `Running`, down critical `Not active (<Grund>)`, ohne Daten `not_collected` (Kevin 2026-10-16: nodata ist nicht down) mit `Services not queryable: …` bzw. `No data from the agent`. `No services configured` liefert ein leeres vollständiges Ergebnis, damit abgewählte Dienste gone werden.
 - 2026-11-19 T8: Vorbefund: der Linux-Agent verschluckt einen gescheiterten `list-units --state=failed` (kein `error`), Meldung und `others_ok` sagen dann ok; wird vor dem PR eine `neu`-Zeile.
 - 2026-11-19 T8: Gegenproben: 26 Mutationen in `objects.py`/`agent.py` (others_ok übergangen, im vollständigen Ergebnis, ohne Ganzheit, jeder wahre Wert, Grund ungekappt, `stable` zurückgesetzt, verschwundene Zeilen gelesen; Auto-Modus ohne Objekte, ignorierte benannt, others_ok trotz Fehler/Kappung, Deckel um eins, Nicht-Liste ganz, jede Unit critical, Grund verloren, leerer Name, Windows-Groß/klein, FreeBSD-Suffix, OS übergangen, Name ungekappt; Listen-Modus nodata down, Fehler- und Down-Grund verloren, unvollständig, keine Dienste ohne Ergebnis, Alias aufgelöst) alle rot; unmutiert 193 passed, Dateien hash-identisch.
+- 2026-11-19 T9: `GET /objects` ordnet nach `SEVERITY` per `CASE` (unbekannter Status = schlechtester, wie `_rank`), dann Name, Check, Schlüssel; `server_id` filtert den Server des Checks (ein zentraler Check hat keinen), `lastCheck` per Outer Join aus `MonitorState` (kein Schreiben je Lauf). Ohne `limit` die ganze Liste wie die übrigen Monitoring-Listen.
+- 2026-11-19 T9: Nachtrag zu T7: `test_status_log.py::test_push_path_logs_each_change_of_the_damped_status` (T2) war seit T7 rot (das Verify von T7 fuhr ihn nicht): der Push-Pfad von `agent_resources` schreibt nun auch die Zeilen des CPU-Objekts. Die Erwartung nennt sie jetzt (strenger, nicht gefiltert); erst das volle Verify von T9 fand es. Gefixt in T9 (Datei per `set-files`).
+- 2026-11-19 T9: R-1644 (`neu`) für den verschluckten `list-units --state=failed` (Vorbefund T8).

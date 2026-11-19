@@ -247,9 +247,12 @@ def test_push_path_logs_each_change_of_the_damped_status(push_path):
         report = {"resources": {"cpu_percent": cpu}}
         assert client.post("/agent/srv-1/report", json=report).status_code == 200
 
+    # The CPU object of agent_resources changes with the check, each after the check's row.
     assert _changes(factory) == [
         ("c1", None, "pending", "critical", "state"),
+        ("c1", "srv-1/cpu", "pending", "critical", "state"),
         ("c1", None, "critical", "ok", "state"),
+        ("c1", "srv-1/cpu", "critical", "ok", "state"),
     ]
 
 
