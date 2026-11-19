@@ -70,8 +70,10 @@ Semantik: keine Stelle in docs/ — Tests und Kommentare; .claude/rules/testing.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py tests/test_check_engine_concurrency.py tests/test_module_sync.py tests/test_template_sync.py tests/test_plugin_checkers.py
 Doku: keine (Tests, Kommentare)
 
-### T7 — R-1624: Agent busybox: Changelog, programName, Test-Skip  [ ]
-Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/sensor_local_linux_test.go, changelog.d/kern-agent-10.md
+### T7 — R-1624: Agent busybox: Changelog, programName, Test-Skip  [x]
+Komponente: agent · Dateien: apps/agent/internal/probe/target.go, apps/agent/internal/probe/sensor_local_linux_test.go, changelog.d/kern-agent-10.md, apps/agent/internal/probe/guard.go, apps/agent/internal/probe/sensor_local.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @98029daff 2026-11-19T22:01:40+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T7.verdict.json)
 Beweis: kern-agent-10 Abschlussprüfung 2026-11-19 (Nits aus der Roadmap-Zeile)
 Semantik: keine Stelle in docs/ — Changelog-Text, Lesepfad und Testvoraussetzung
 Änderung: Fragment nennt, dass ein Prozess-Ziel busybox/toybox jetzt `count 0` meldet; `programName` liest den Multicall-Namen einmal; der busybox-Linux-Test sagt im Skip-Text, dass der CI-Runner busybox hat oder nicht (Befund aus der CI-Ausgabe, sonst „nicht verifiziert“). Verhalten bleibt.
