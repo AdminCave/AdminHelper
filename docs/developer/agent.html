@@ -236,7 +236,7 @@
               <tr>
                 <td><code>service.Uninstall()</code><br /><code>service_*.go</code></td>
                 <td><code>systemctl stop</code>/<code>disable</code> f&uuml;r Timer und Service, l&ouml;scht die Unit-Dateien, <code>daemon-reload</code>.</td>
-                <td>Stoppt und l&ouml;scht <code>AdminHelper-Agent</code> &uuml;ber den Dienstmanager und entfernt die Ereignisquelle; ein nicht registrierter Dienst ist kein Fehler. <code>--purge</code> (<code>Purge()</code>, nur Windows) l&ouml;scht danach Programm- und Datenordner, beide aus <code>KnownFolderPath</code>; nur absolute Pfade unterhalb einer Laufwerks- oder Freigabewurzel (<code>purgeable</code>) mit Owner Administratoren oder SYSTEM, das laufende Binary und sein Ordner per <code>MOVEFILE_DELAY_UNTIL_REBOOT</code>. Gesetzte <code>ADMINHELPER_*_DIR</code> nennt es nur.</td>
+                <td>Stoppt und l&ouml;scht <code>AdminHelper-Agent</code> &uuml;ber den Dienstmanager und entfernt die Ereignisquelle; ein nicht registrierter Dienst ist kein Fehler. <code>--purge</code> (<code>Purge()</code>, nur Windows) l&ouml;scht danach Programm- und Datenordner, beide aus <code>KnownFolderPath</code>; nur absolute Pfade unterhalb einer Laufwerks- oder Freigabewurzel (<code>purgeable</code>) mit Owner Administratoren oder SYSTEM, das laufende Binary und sein Ordner per <code>MOVEFILE_DELAY_UNTIL_REBOOT</code>.</td>
                 <td>L&ouml;scht den cron-Eintrag.</td>
               </tr>
               <tr>

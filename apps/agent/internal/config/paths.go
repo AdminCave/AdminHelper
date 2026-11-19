@@ -10,7 +10,24 @@ package config
 //   MonitorDir() — base directory for monitor configuration
 //   LogDir()     — directory for the rotating agent log file
 
-import "path/filepath"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// overridesAllowed gates the ADMINHELPER_*_DIR overrides to test binaries: they exist so the
+// orchestration flows run against a t.TempDir() (6.96), and a root or elevated run that keeps
+// the caller's environment (sudo -E, an elevated console) must not move the agent's data
+// (R-1645, R-1655).
+var overridesAllowed = testing.Testing
+
+func override(name string) string {
+	if !overridesAllowed() {
+		return ""
+	}
+	return os.Getenv(name)
+}
 
 // Derived paths (platform-independent)
 
