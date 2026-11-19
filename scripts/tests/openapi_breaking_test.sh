@@ -216,7 +216,7 @@ fi
 # the line's first field starting with "/" (checker/ignore.go,
 # api_change.go:131 @v1.32.0). So this holds two things. The file, byte for byte,
 # is the list below — date, roadmap id, reason and finding text of all
-# fifty-one lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07, 2026-11-19); a further
+# fifty-two lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07, 2026-11-19); a further
 # exception is Kevin's call and
 # changes the list. And every line, the next one too, has the form <date> <R-id>
 # <reason>: <METHOD> <path> <text>, its reason only letters, digits, blanks and
@@ -282,13 +282,14 @@ if [ -r "$IGNORE" ]; then
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1612 provisioning token over stdin: GET /api/provisioning/platforms added the new `tokenStdin` enum value to the `platforms/items/commands/items/args/items/value` response property for the response status `200`
 EXPECTED_EXCEPTIONS
 )
   # diff against the file itself, not a $(…) copy of it: that would drop
   # trailing blank lines, and the comparison must see every byte. Its exit code
   # decides, not an empty output: a diff that could not run prints nothing too.
   DRIFT_RC=0; DRIFT=$(diff <(printf '%s\n' "$EXPECTED_IGNORE") "$IGNORE" 2>&1) || DRIFT_RC=$?
-  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the fifty-one expected lines, reasons included" \
+  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the fifty-two expected lines, reasons included" \
     || bad "the exception file drifted from the expected lines (diff rc=$DRIFT_RC): $DRIFT"
   # oasdiff checks no path for a component or a security change: a line with the
   # word "components" or "security" could match one of those by its text alone.
@@ -385,6 +386,17 @@ platform() { printf '{"anyOf":[{"type":"string"%s},{"type":"null"}]}' "${1:+,\"e
 PLATFORMS='["linux","windows","freebsd","opnsense","other"]'
 SERVERS_BASE=$(servers_spec "$(platform '')" ",\"osFamily\":$(platform '')")
 
+# provisioning_spec <value enum> <more properties of an argument> — the route of
+# the R-1612 finding: the value type of a command argument in the catalog.
+provisioning_spec() {
+  local arg
+  arg=$(printf '{"type":"object","properties":{"value":{"type":"string","enum":%s}%s}}' "$1" "$2")
+  printf '{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{'
+  printf '"/api/provisioning/platforms":{"get":%s}}}\n' "$(ok200 "$(printf '{"type":"object","properties":{"platforms":{"type":"array","items":{"type":"object","properties":{"commands":{"type":"array","items":{"type":"object","properties":{"args":{"type":"array","items":%s}}}}}}}}}' "$arg")")"
+}
+ARG_VALUES='"serverUrl","serverId","caFp","token","flag","insecure"'
+PROVISIONING_BASE=$(provisioning_spec "[$ARG_VALUES]" ',"kind":{"type":"string","enum":["a"]}')
+
 # frp_fixture <dir> <head-spec> — fixture() with the FRP base and this head
 # (bash locals are visible to the functions this one calls)
 frp_fixture() { local SNAP_BASE="$FRP_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
@@ -392,6 +404,8 @@ frp_fixture() { local SNAP_BASE="$FRP_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
 notify_fixture() { local SNAP_BASE="$NOTIFY_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
 # servers_fixture <dir> <head-spec> — the same with the R-1594 base
 servers_fixture() { local SNAP_BASE="$SERVERS_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
+# provisioning_fixture <dir> <head-spec> — the same with the R-1612 base
+provisioning_fixture() { local SNAP_BASE="$PROVISIONING_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
 
 # The ERR findings of a gate run, one per line: "in API <METHOD> <path> | <text>".
 errs_of() {
@@ -489,6 +503,27 @@ if [ -n "$REAL_OASDIFF" ]; then
   REPO="$WORK/s3"
   servers_fixture "$REPO" "$(servers_spec "$(platform "$PLATFORMS")" ",\"osFamily\":$(platform "$PLATFORMS")")"
   real_case "the platform values on another field stay ERR" 1 5 "in API GET /api/servers/{server_id} | added the new" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # The token over stdin of R-1612: the value type tokenStdin joins the
+  # arguments of a catalog command. The same text as in the server snapshot.
+  REPO="$WORK/p1"
+  provisioning_fixture "$REPO" "$(provisioning_spec "[$ARG_VALUES,\"tokenStdin\"]" ',"kind":{"type":"string","enum":["a"]}')"
+  real_case "no exception file: the one of R-1612 is ERR" 1 1 "added the new \`tokenStdin\` enum value" \
+    -- "$NOIGN/openapi-breaking.sh" server --base HEAD --root "$REPO"
+  real_case "with the file: the one of R-1612 passes" 0 0 "" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # A further value type is a new change and stays ERR.
+  REPO="$WORK/p2"
+  provisioning_fixture "$REPO" "$(provisioning_spec "[$ARG_VALUES,\"tokenStdin\",\"tokenFile\"]" ',"kind":{"type":"string","enum":["a"]}')"
+  real_case "a further value type stays ERR" 1 1 "added the new \`tokenFile\` enum value" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # tokenStdin on another field of the argument: the field name binds.
+  REPO="$WORK/p3"
+  provisioning_fixture "$REPO" "$(provisioning_spec "[$ARG_VALUES]" ',"kind":{"type":"string","enum":["a","tokenStdin"]}')"
+  real_case "tokenStdin on another field stays ERR" 1 1 "added the new \`tokenStdin\` enum value to the \`platforms/items/commands/items/args/items/kind\`" \
     -- "$CHECK" server --base HEAD --root "$REPO"
 else
   echo "  SKIP: oasdiff not installed — the exceptions are not checked against its matcher"

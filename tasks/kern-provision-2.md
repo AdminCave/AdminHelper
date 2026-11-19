@@ -47,7 +47,7 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/p
 Doku: keine (Ersatztext für Fehlerfall)
 
 ### T6 — R-1612: Doku und Changelog  [ ]
-Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-provision-2.md
+Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-provision-2.md, docs/developer/cicd.html, docs/en/developer/cicd.html, docs/features/kern-provision-2.md
 Änderung: Windows-Abschnitt: der Automationsbefehl des Desktops gibt den Token über stdin; Changelog-Eintrag (neutral für T1).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
@@ -61,8 +61,10 @@ Review: approve (.ah-out/review/kern-provision-2/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: keine (Testfall)
 
-### T8 — R-1612: oasdiff-Ausnahme für den Wertetyp `tokenStdin` (Harness, Kevin 2026-11-19)  [ ]
+### T8 — R-1612: oasdiff-Ausnahme für den Wertetyp `tokenStdin` (Harness, Kevin 2026-11-19)  [x]
 Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @785f6b178 2026-11-19T19:28:45+01:00
+Review: approve (.ah-out/review/kern-provision-2/T8.verdict.json)
 Änderung: Eine Ausnahmezeile für den einen ERR aus T2 (`response-property-enum-value-added`, GET /api/provisioning/platforms, Wert `tokenStdin`); ein Fall gegen das echte oasdiff: mit der Datei grün, ein weiterer Wert an derselben Stelle bleibt ERR.
 Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: → T6 (cicd.html nennt die Ausnahmen)
