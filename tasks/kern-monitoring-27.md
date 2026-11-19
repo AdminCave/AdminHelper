@@ -49,7 +49,7 @@ Doku: keine (interne Prüfung, kein dokumentiertes Verhalten)
 ## Entscheidungen
 - Gate 2026-11-14: R-1406 (nach 0.47.0) in `tasks/kern-monitoring-21.md`, R-1400 (Abhilfe ist Kevins Wahl) in
   `tasks/kern-monitoring-34.md`.
-- `Review: pro Task` trotz drei Tasks: SEC-Zeile, `security` je Task.
+- `Review: pro Task` trotz drei Tasks: `security` je Task.
 - T2: der Sperr-Test prüft das für postgresql kompilierte SQL (`FOR UPDATE`), weil sqlite die Klausel verwirft;
   ein Server ohne Inventarzeile hat nichts zu sperren, dort verbirgt `_services_out` die Zeilen bei ausgeschaltetem
   Schalter. Der Laufzeit-Test (Faktor < 24 bei 8-facher Länge) fiel in der Gegenprobe mit `[a-z]*authorization` (Faktor ~62).

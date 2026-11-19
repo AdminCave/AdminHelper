@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # kern-agent-2 — Agent: Tunnel-Abbau, Konfig-Prüfung, Eingaben über stdin, Temp-Reste
 
-Zug der Kern-Session (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385). Details zu den SEC-Zeilen stehen nur in
+Zug der Kern-Session (Roadmap R-0963, R-0964, R-0983, R-0965, R-0385). Einzelheiten stehen nur in
 `tasks/private/`.
 
 ## Problem
