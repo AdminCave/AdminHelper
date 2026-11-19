@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-provision-2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning/command.test.ts
 Doku: → T6
 
-### T2 — R-1612: Katalog: Windows-Token über stdin, Test für unlesbares ABI-Verzeichnis  [ ]
+### T2 — R-1612: Katalog: Windows-Token über stdin, Test für unlesbares ABI-Verzeichnis  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, apps/server/tests/test_provisioning_catalog.py, apps/server/app/modules/provisioning/schemas.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b3f428876 2026-11-19T19:18:52+01:00
+Review: approve (.ah-out/review/kern-provision-2/T2.verdict.json)
 Änderung: Windows `reregister` im Automationsmodus `--token-stdin` mit Wert `tokenStdin` statt `--token`/`token`; Test dafür und für ein `<ABI>/All`, dessen Auflistung scheitert (das ABI fällt weg, die übrigen bleiben).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py tests/test_openapi_snapshot.py
 Doku: → T6

@@ -100,6 +100,22 @@ def test_an_unreadable_repo_part_reads_as_empty(tmp_path, monkeypatch):
     assert platforms["freebsd"]["available"] is False
 
 
+def test_an_unreadable_abi_package_folder_drops_only_that_abi(tmp_path, monkeypatch):
+    _bsd(tmp_path, "FreeBSD:14:amd64", "adminhelper-agent-0.46.0.pkg")
+    _bsd(tmp_path, "FreeBSD:15:amd64", "adminhelper-agent-0.47.0.pkg")
+    iterdir = Path.iterdir
+
+    def _refuse_one(self):
+        if self == tmp_path / "freebsd/FreeBSD:14:amd64/All":
+            raise PermissionError(self)
+        return iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", _refuse_one)
+    freebsd = _by_id(build_catalog(tmp_path, **PORTS))["freebsd"]
+    assert freebsd["abis"] == ["FreeBSD:15:amd64"]
+    assert freebsd["versions"] == ["0.47.0"]
+
+
 def test_freebsd_and_opnsense_come_from_their_own_packages(tmp_path):
     _bsd(tmp_path, "FreeBSD:14:amd64", "adminhelper-agent-0.47.0.pkg")
     _bsd(tmp_path, "FreeBSD:15:amd64", "adminhelper-agent-0.47.0.pkg", "os-adminhelper-0.47.0.pkg")
@@ -122,11 +138,12 @@ def test_install_args_are_named_values_never_text(tmp_path):
                     "serverId",
                     "caFp",
                     "token",
+                    "tokenStdin",
                     "flag",
                     "insecure",
                 }
             # The token is only ever a parameter in automation mode; otherwise it is read hidden.
-            token_args = [a for a in cmd["args"] if a["value"] == "token"]
+            token_args = [a for a in cmd["args"] if a["value"] in ("token", "tokenStdin")]
             assert all(a["mode"] == "automation" for a in token_args)
     linux = _by_id(build_catalog(tmp_path, **PORTS))["linux"]
     install = next(c for c in linux["commands"] if c["action"] == "install")
@@ -152,8 +169,13 @@ def test_windows_reregister_reads_the_token_hidden_unless_automated(tmp_path):
     win = _by_id(build_catalog(tmp_path, **PORTS))["windows"]
     rereg = next(c for c in win["commands"] if c["action"] == "reregister")
     assert rereg["shell"] == "powershell"
-    modes = {a["flag"]: a["mode"] for a in rereg["args"]}
-    assert modes["--token-stdin"] == "interactive" and modes["--token"] == "automation"
+    token = [(a["flag"], a["value"], a["mode"]) for a in rereg["args"] if "token" in a["flag"]]
+    # Automated too, the token goes to the agent on stdin: as --token it would sit in the
+    # process list while the provisioning runs.
+    assert token == [
+        ("--token-stdin", "flag", "interactive"),
+        ("--token-stdin", "tokenStdin", "automation"),
+    ]
     assert win["doc"] == {
         "de": "admin/agent-deployment.html#windows",
         "en": "en/admin/agent-deployment.html#windows",
