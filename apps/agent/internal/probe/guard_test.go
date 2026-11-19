@@ -1880,8 +1880,9 @@ func TestGuardChecksTheOwnersOfThePortAfterTheConnect(t *testing.T) {
 					t.Errorf("owners asked = %v, want %v", asked, c.wantAsked)
 				}
 				// FreeBSD fails the accept of a connection reset before it with ECONNABORTED, which Go
-				// skips: there only ownersCalls tells that the guard judged after the connect.
-				if !c.want && runtime.GOOS == "freebsd" {
+				// skips; Windows may drop it the same way (R-1625, not reproduced locally): there only
+				// ownersCalls tells that the guard judged after the connect.
+				if !c.want && (runtime.GOOS == "freebsd" || runtime.GOOS == "windows") {
 					return
 				}
 				select {
