@@ -360,6 +360,7 @@ def update_tunnel(
     if "tags" in sent:
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
+    followed = None
     try:
         if sent & {"custom_domains", "enabled", "tunnel_type", "extra_config"}:
             db.flush()
@@ -371,6 +372,7 @@ def update_tunnel(
         )
         if linked:
             follow_tunnel(linked, tunnel, data.auto_connection_scheme, data.auto_connection_path)
+            followed = (linked.id, linked.display_name())
         if data.auto_create_connection and not tunnel.connection_id:
             _attach_auto_connection(db, tunnel, data)
         db.commit()
@@ -388,6 +390,16 @@ def update_tunnel(
         object_id=tunnel.id,
         object_label=tunnel.display_name(),
     )
+    if followed:
+        audit.record(
+            db,
+            "connection.updated",
+            actor=actor_from_request(request),
+            object_type="connection",
+            object_id=followed[0],
+            object_label=followed[1],
+            detail=f"follows frp tunnel {tunnel.id}",
+        )
     return tunnel.to_dict(mask_secrets=True)
 
 
