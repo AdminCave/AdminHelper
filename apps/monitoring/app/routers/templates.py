@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.bell_catch_up import deleted_all_clear, send_all_clears
 from app.builtin_templates import (
     apply_builtin_update,
     builtin_edited,
@@ -358,6 +359,7 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 
     checks = db.query(MonitorCheck).filter(MonitorCheck.template_id == template_id).all()
     check_ids = [check.id for check in checks]
+    clears = [clear for check in checks if (clear := deleted_all_clear(db, check))]
     for check in checks:
         db.delete(check)
 
@@ -368,6 +370,7 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
     # Only now: if the commit fails, the checks stay and their jobs must keep running.
     for check_id in check_ids:
         remove_check(check_id)
+    send_all_clears(clears)
 
 
 # ---------------------------------------------------------------------------

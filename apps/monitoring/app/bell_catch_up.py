@@ -16,6 +16,8 @@ CATCH_UP_MAX checks per run, oldest first; the outbox (R-1561) replaces it later
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
+from typing import NamedTuple
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -44,6 +46,37 @@ def closed_message(check: MonitorCheck, what: str) -> dict:
         "text": f"Check: {check.name} ({check.check_type})\n"
         f"The check was {what}; its alarm is closed.",
     }
+
+
+class AllClear(NamedTuple):
+    """What the all-clear of a deleted check needs once its row is gone."""
+
+    check: SimpleNamespace
+    shown: str
+    msg: dict
+
+
+def deleted_all_clear(db: Session, check: MonitorCheck) -> AllClear | None:
+    """The all-clear of a check about to be deleted, taken before its row goes;
+    None when the bell shows no problem of it. Sent by send_all_clears after the
+    commit, as delete_check does (R-1571, R-1601)."""
+    state = db.get(MonitorState, check.id)
+    if state is None or state.hub_status not in _PROBLEMS:
+        return None
+    gone = SimpleNamespace(id=check.id, name=check.name, server_id=check.server_id)
+    return AllClear(gone, state.hub_status, closed_message(check, "deleted"))
+
+
+def send_all_clears(clears: list[AllClear]) -> None:
+    """Send the all-clears of deleted checks, at the level their alarm reached the
+    bell with. Nothing repeats a refused one: the row is gone (until the outbox
+    R-1561)."""
+    for clear in clears:
+        if not alerter.emit_to_hub(clear.check, clear.shown, "ok", clear.msg, severity=clear.shown):
+            logger.warning(
+                "Check %s deleted: the hub did not take its all-clear, the incident stays open",
+                clear.check.id,
+            )
 
 
 def lag_target(check: MonitorCheck, state: MonitorState) -> str | None:

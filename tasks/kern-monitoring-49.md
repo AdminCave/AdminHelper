@@ -24,14 +24,16 @@ senden nichts; eine Herabstufung critical→warning wird weiter nachgeholt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py
 Doku: → T3
 
-### T2 — R-1601: Entwarnung für Checks, die Template, Zuweisung, Sync oder Server-Löschen entfernt  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/bell_catch_up.py, apps/monitoring/app/routers/templates.py, apps/monitoring/app/template_sync.py, apps/monitoring/app/server_cleanup.py, apps/monitoring/tests/test_bell_removed_checks.py
+### T2 — R-1601: Entwarnung für Checks, die Template, Zuweisung, Sync oder Server-Löschen entfernt  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/bell_catch_up.py, apps/monitoring/app/routers/templates.py, apps/monitoring/app/template_sync.py, apps/monitoring/app/server_cleanup.py, apps/monitoring/tests/test_bell_removed_checks.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @dd211ce54 2026-11-19T04:55:24+01:00
+Review: am Ende (Branch-Review)
 Beweis: kern-monitoring-45 T9 2026-11-18, Code-Lesung routers/templates.py delete_template, module_sync.py gone · Dedup-Key: bug:monitoring:templates.py:delete-leaves-incident
 Änderung: Ein Helfer nimmt vor dem Löschen je Check mit Problem in der Glocke, was die Entwarnung braucht (wie
 `delete_check`), und sendet sie nach dem Commit; `delete_template`, `remove_template`, der Wegfall im
 Template-Sync und `cleanup_server` nutzen ihn. Neue Testdatei (SPDX): erst rot je Weg, dazu „gone“ → der Nachholjob
 sendet die Entwarnung.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_removed_checks.py tests/test_bell_catch_up.py tests/test_template_sync.py tests/test_templates_router.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_removed_checks.py tests/test_bell_catch_up.py tests/test_template_sync.py tests/test_templates_router.py tests/test_module_sync.py tests/test_template_overrides.py
 Doku: → T3
 
 ### T3 — Doku und Changelog  [ ]

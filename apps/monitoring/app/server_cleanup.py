@@ -17,6 +17,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.bell_catch_up import deleted_all_clear, send_all_clears
 from app.models import (
     MonitorAgentKey,
     MonitorAgentLiveness,
@@ -43,6 +44,7 @@ def cleanup_server(db: Session, server_id: str) -> dict:
     actions: list[SchedulerAction] = []
     # Delete checks (incl. states via CASCADE)
     checks = db.query(MonitorCheck).filter(MonitorCheck.server_id == server_id).all()
+    clears = [clear for check in checks if (clear := deleted_all_clear(db, check))]
     for check in checks:
         actions.append(("remove", check.id, None, None))
         db.delete(check)
@@ -88,6 +90,7 @@ def cleanup_server(db: Session, server_id: str) -> dict:
 
     db.commit()
     apply_scheduler_actions(actions)
+    send_all_clears(clears)
     logger.info(
         "Server %s cleanup: %d checks, %d alerts deleted", server_id, len(checks), len(alerts)
     )
