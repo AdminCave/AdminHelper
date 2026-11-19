@@ -10,7 +10,7 @@ Heavy: linux-full — Wächter und Fühler des Agents (`apps/agent`); kein Stack
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Jede Task mit SEC- oder Wächter-Bezug (T1–T4, T7): `security` parallel zum `reviewer`.
+Jede Task mit Wächter- oder Risikobezug (T1–T4, T7): `security` parallel zum `reviewer`.
 
 ### T1 — R-1438: Namenslisten des Wächters vervollständigen  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
