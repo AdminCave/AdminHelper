@@ -37,16 +37,28 @@ cleanup_extra() {
     [ -n "$FRP_VOL" ] && docker volume rm "$FRP_VOL" >/dev/null 2>&1
     [ -n "$ID_VOL" ] && docker volume rm "$ID_VOL" >/dev/null 2>&1
 }
-wait_log() { for _ in $(seq 1 "$3"); do docker logs "$1" 2>&1 | grep -qE "$2" && return 0; sleep 1; done; return 1; }
+# In a variable first: under pipefail "grep -q" stopping at its match would SIGPIPE docker logs
+# and the pipeline would report failure although the line is there (R-1522).
+wait_log() {  # container pattern timeout
+    local log
+    for _ in $(seq 1 "$3"); do
+        log=$(docker logs "$1" 2>&1)
+        grep -qE "$2" <<<"$log" && return 0
+        sleep 1
+    done
+    return 1
+}
 
 # The RDP client is spawned by the app and connects a moment AFTER the GUI spec
 # returns — a one-shot grep races it (SSH/web land earlier and were never
 # flaky). Poll the container log instead of asserting once.
 wait_rdp_log() {  # container timeout
+    local log
     for _ in $(seq 1 "$2"); do
-        docker exec "$1" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
-            | grep -qiE "connect|incoming|login|session|TLS" && return 0
-        docker logs "$1" 2>&1 | grep -qiE "connect|incoming" && return 0
+        log=$(docker exec "$1" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null)
+        grep -qiE "connect|incoming|login|session|TLS" <<<"$log" && return 0
+        log=$(docker logs "$1" 2>&1)
+        grep -qiE "connect|incoming" <<<"$log" && return 0
         sleep 1
     done
     return 1
@@ -144,7 +156,11 @@ docker run -d --name "$FRPC_C" --network host -v "$FRP_VOL:/etc/frp" -v "$ID_VOL
     "$FRPC_IMAGE" >/dev/null || { echo "[e2e] frpc container ($FRPC_C) failed to start (4.126)" >&2; exit 1; }
 # Poll for the frps registration instead of a fixed sleep — it can lag on a loaded box (6.137).
 frps_ok=0
-for _ in $(seq 1 15); do e2e_dc logs frps 2>/dev/null | grep -qiE "new proxy|start proxy success|stcp" && { frps_ok=1; break; }; sleep 1; done
+for _ in $(seq 1 15); do
+    frps_log=$(e2e_dc logs frps 2>/dev/null)
+    grep -qiE "new proxy|start proxy success|stcp" <<<"$frps_log" && { frps_ok=1; break; }
+    sleep 1
+done
 if [ "$frps_ok" = 1 ]; then
     ok "agent frpc registered the STCP server with frps"
 else
@@ -173,14 +189,19 @@ dbus-run-session -- bash -c '
 # Verify at each target that the connection traversed its tunnel.
 # Poll for the sshd log line instead of a fixed sleep — it can lag on a loaded box (6.137).
 ssh_ok=0
-for _ in $(seq 1 10); do docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "127\.|172\.|10\.|192\.168\." && { ssh_ok=1; break; }; sleep 1; done
+for _ in $(seq 1 10); do
+    ssh_log=$(docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted")
+    grep -qE "127\.|172\.|10\.|192\.168\." <<<"$ssh_log" && { ssh_ok=1; break; }
+    sleep 1
+done
 if [ "$ssh_ok" = 1 ]; then
     ok "sshd logged the SSH connection over the tunnel"
 else
     bad "sshd saw no tunneled connection"; docker logs --tail 25 "$SSH_C"
 fi
 
-if docker logs "$WEB_C" 2>&1 | grep -qE "\"GET / HTTP"; then
+web_log=$(docker logs "$WEB_C" 2>&1)
+if grep -qE "\"GET / HTTP" <<<"$web_log"; then
     ok "nginx logged the Web fetch over the tunnel"
 else
     bad "nginx saw no tunneled fetch"

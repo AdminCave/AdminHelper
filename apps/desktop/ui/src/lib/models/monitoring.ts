@@ -25,9 +25,14 @@ export const STATUS_PRIORITY: Record<MonStatus, number> = {
   info: 0,
 };
 
-export function worstStatus(checks: Array<{ state?: { status?: MonStatus } | null }>): MonStatus {
+/** What the status helpers read of a check. A disabled one keeps its last state frozen,
+ *  so they skip it (like GET /status/summary): it must not hold a card or server red. */
+type StatusCheck = { enabled?: boolean | null; state?: { status?: MonStatus } | null };
+
+export function worstStatus(checks: StatusCheck[]): MonStatus {
   let worst: MonStatus = 'ok';
   for (const c of checks) {
+    if (c.enabled === false) continue;
     const s: MonStatus = (c.state?.status ?? 'pending') as MonStatus;
     if ((STATUS_PRIORITY[s] ?? 0) > (STATUS_PRIORITY[worst] ?? 0)) {
       worst = s;
@@ -38,9 +43,11 @@ export function worstStatus(checks: Array<{ state?: { status?: MonStatus } | nul
 
 /** The status of a card: the worst of its checks, but info when that is ok and a check
  *  carries a hint, so the card shows the blue info tone while the host light stays green. */
-export function cardStatus(checks: Array<{ state?: { status?: MonStatus } | null }>): MonStatus {
+export function cardStatus(checks: StatusCheck[]): MonStatus {
   const worst = worstStatus(checks);
-  return worst === 'ok' && checks.some((c) => c.state?.status === 'info') ? 'info' : worst;
+  return worst === 'ok' && checks.some((c) => c.enabled !== false && c.state?.status === 'info')
+    ? 'info'
+    : worst;
 }
 
 export interface ServerGroup {
@@ -226,6 +233,7 @@ export function computeSummary(checks: MonCheckSummary[] | MonitorCheck[]): Moni
     info: 0,
   };
   for (const c of checks) {
+    if ('enabled' in c && c.enabled === false) continue;
     s.total += 1;
     const st = (c.state?.status ?? 'pending') as keyof MonitoringSummary;
     if (st in s && st !== 'total') s[st] += 1;

@@ -774,7 +774,7 @@ jobs:
           unzip -p "$RUNNER_TEMP/frpc.zip" "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > "$dl/frpc-windows-x86_64.exe"
           (cd "$dl" && sha256sum adminhelper-agent-windows-x86_64.exe frpc-windows-x86_64.exe > SHA256SUMS)
           cp "$dl/SHA256SUMS" "$RUNNER_TEMP/SHA256SUMS.good"
-      - name: agent-install.ps1 (refuse, install, update, uninstall)
+      - name: agent-install.ps1 (refuse, install, update)
         shell: powershell
         run: |
           $rel = Join-Path $env:RUNNER_TEMP "rel"
@@ -822,9 +822,126 @@ jobs:
           }
           & $install -Version 0.0.0-ci
           if ((Get-Service AdminHelper-Agent).Status -ne "Running") { throw "service not running after the update" }
+      # frpc under the installed service (R-1580): the service's own sync gets a config with one
+      # tunnel from two endpoints served here and starts frpc.exe as its child. No frps listens;
+      # the agent puts loginFailExit = false in front, so frpc keeps trying and stays up.
+      - name: Identity and frpc config for the sync
+        shell: bash
+        env:
+          # Git Bash would turn -subj "/CN=…" into a Windows path.
+          MSYS_NO_PATHCONV: "1"
+        run: |
+          d="$RUNNER_TEMP/frpsrv"
+          mkdir -p "$d" && cd "$d"
+          # The PKI's shape: a root, under it the access intermediate, which issues the gateway's
+          # leaf and the agent's; ca.crt holds both CAs. The agent takes a server leaf only from an
+          # issuer named like the access intermediate (verifyGatewayIssuer).
+          openssl ecparam -name prime256v1 -genkey -noout -out root.key
+          openssl req -x509 -new -key root.key -subj "/CN=ci test root" -days 2 \
+            -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -out root.crt
+          printf 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n' > access.ext
+          printf 'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > server.ext
+          printf 'extendedKeyUsage=clientAuth\n' > agent.ext
+          issue() { # name, CN, issuer
+            openssl ecparam -name prime256v1 -genkey -noout -out "$1.key"
+            openssl req -new -key "$1.key" -subj "/CN=$2" -out "$1.csr"
+            openssl x509 -req -in "$1.csr" -CA "$3.crt" -CAkey "$3.key" -CAcreateserial -days 2 -extfile "$1.ext" -out "$1.crt"
+          }
+          issue access "AdminHelper Access Intermediate ci" root
+          issue server server access
+          issue agent agent access
+          cat access.crt root.crt > ca.crt
+          # The form generate_frpc_toml writes; checkServerConfig refuses any other.
+          printf '%s\n' 'serverAddr = "127.0.0.1"' 'serverPort = 7000' '' '[transport.tls]' 'enable = true' \
+            'trustedCaFile = "/etc/adminhelper/identity/ca.crt"' \
+            'certFile = "/etc/adminhelper/identity/agent.crt"' \
+            'keyFile = "/etc/adminhelper/identity/agent.key"' '' \
+            '[[proxies]]' 'name = "ci-ssh"' 'type = "stcp"' 'secretKey = "ci"' 'localIP = "127.0.0.1"' 'localPort = 22' > frpc.toml
+          printf '{"hash": "%s"}' "$(sha256sum frpc.toml | cut -c1-64)" > hash.json
+          cat > serve.py <<'PY'
+          import http.server as h
+          import ssl
+
+          FILES = {"/api/frp/provision/ci/config-hash": "hash.json", "/api/frp/provision/ci/config": "frpc.toml"}
+
+          class H(h.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  name = FILES.get(self.path)
+                  if self.headers.get("X-API-Key") != "ci-key" or name is None:
+                      self.send_error(404)
+                      return
+                  body = open(name, "rb").read()
+                  self.send_response(200)
+                  self.send_header("Content-Length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+          srv = h.ThreadingHTTPServer(("127.0.0.1", 8766), H)
+          ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          ctx.load_cert_chain("server.crt", "server.key")
+          # Like the gateway: no request without the agent's client certificate.
+          ctx.verify_mode = ssl.CERT_REQUIRED
+          ctx.load_verify_locations("ca.crt")
+          srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+          srv.serve_forever()
+          PY
+      - name: frpc under the service (restart, stop, start, uninstall)
+        shell: powershell
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP "frpsrv"
+          $prog = Join-Path $env:ProgramFiles "AdminHelper Agent"
+          $data = Join-Path $env:ProgramData "AdminHelper"
+          Start-Process python -ArgumentList serve.py -WorkingDirectory $d -WindowStyle Hidden
+          foreach ($i in 1..30) { try { (New-Object Net.Sockets.TcpClient "127.0.0.1", 8766).Close(); break } catch { Start-Sleep 1 } }
+          # What a provisioning leaves: the enrolled identity (the sync then talks mTLS and takes the
+          # server only with a leaf of the access intermediate under ca.crt) and adminhelper.conf.
+          $id = Join-Path $data "identity"
+          New-Item -ItemType Directory -Force $id | Out-Null
+          foreach ($f in "ca.crt", "agent.crt", "agent.key") { Copy-Item -Force (Join-Path $d $f) (Join-Path $id $f) }
+          New-Item -ItemType Directory -Force (Join-Path $data "frp") | Out-Null
+          Set-Content -Encoding ascii (Join-Path $data "frp\adminhelper.conf") @(
+            "ADMINHELPER_URL=https://127.0.0.1:8766", "API_KEY=ci-key", "SERVER_ID=ci"
+          )
+          function Get-ServicePid { (Get-CimInstance Win32_Service -Filter "Name='AdminHelper-Agent'").ProcessId }
+          # A function's output unrolls a one-element array into the bare CimInstance, whose .Count
+          # is empty in Windows PowerShell 5.1: the callers wrap it in @() themselves.
+          function Get-FrpcOf([int]$Parent) {
+            Get-CimInstance Win32_Process -Filter "Name='frpc.exe'" | Where-Object { $_.ParentProcessId -eq $Parent }
+          }
+          function Show-Log { Get-Content -Tail 40 (Join-Path $data "logs\agent.log") -ErrorAction SilentlyContinue }
+          # A frpc that ends and comes back in the supervisor's backoff would pass a single look:
+          # the same process must still run three times later.
+          function Assert-FrpcChild([string]$When) {
+            $svcPid = Get-ServicePid
+            $kid = @()
+            foreach ($i in 1..60) { $kid = @(Get-FrpcOf $svcPid); if ($kid.Count -eq 1) { break }; Start-Sleep 2 }
+            if ($kid.Count -ne 1) { Show-Log; throw "${When}: $($kid.Count) frpc.exe under the service (pid $svcPid), want 1" }
+            $frpcPid = $kid[0].ProcessId
+            foreach ($i in 1..3) {
+              Start-Sleep 5
+              $now = @(Get-FrpcOf $svcPid)
+              if ($now.Count -ne 1 -or $now[0].ProcessId -ne $frpcPid) { Show-Log; throw "${When}: frpc.exe $frpcPid did not stay up" }
+            }
+            Write-Host "${When}: frpc.exe $frpcPid runs under the service $svcPid"
+          }
+          function Assert-NoFrpc([string]$When) {
+            foreach ($i in 1..30) {
+              if (-not (Get-Process frpc -ErrorAction SilentlyContinue)) { Write-Host "${When}: no frpc.exe left"; return }
+              Start-Sleep 1
+            }
+            throw "${When}: frpc.exe still runs"
+          }
+          # The restart runs a cycle at once; the next would come only after five minutes.
+          Restart-Service AdminHelper-Agent
+          Assert-FrpcChild "after the restart"
+          Stop-Service AdminHelper-Agent
+          Assert-NoFrpc "after Stop-Service"
+          Start-Service AdminHelper-Agent
+          Assert-FrpcChild "after Start-Service"
           & (Join-Path $prog "adminhelper-agent.exe") service uninstall --purge
           if ($LASTEXITCODE -ne 0) { throw "service uninstall --purge failed ($LASTEXITCODE)" }
           if (Get-Service AdminHelper-Agent -ErrorAction SilentlyContinue) { throw "service still there after uninstall" }
+          Assert-NoFrpc "after the uninstall"
 
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
@@ -949,42 +1066,48 @@ jobs:
     name: Desktop-Backend (fmt + clippy + test)
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    env:
+      APT_PKGS: libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # A slow apt mirror held this step in tauri-build-smoke until that job's limit
-      # (run 39776102278), and in this job until the step's (run 41888786175). The downloads
-      # get three attempts of three minutes (retry.sh); a kill there leaves dpkg untouched,
-      # and the install afterwards reads the downloaded packages only. A mirror that crawls
-      # rather than stalls (11 MB in three minutes, PR #446 run 42775105227) outlasts any
-      # attempt, so the archives stay in a cache from one run to the next, and only the
-      # packages that changed since come from the mirror. The key rolls weekly: a hit is
-      # never saved again, and a fixed key would freeze the cache at its first save
-      # (autoclean drops the superseded archives). apt takes a cached archive whose size
-      # matches the index without hashing it, so apt_archives_verify.sh keeps only those
-      # whose SHA256 the signed index names.
-      - id: apt-week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # (run 39776102278), and in this job until the step's (run 41888786175). A mirror that
+      # crawls (~55 kB/s, R-1602) outlasts any attempt, so the archives stay in a cache from
+      # one run to the next (apt_cache.sh). Its key is a hash over the archives the package set
+      # needs, so a hit holds them all; a miss restores the newest entry of the prefix and is
+      # saved under its own key, and a failed download saves what it fetched under
+      # <key>-partial-<run>-<attempt>, so the next run fetches only the rest. apt takes a cached
+      # archive whose size matches the index without hashing it, so apt_archives_verify.sh
+      # keeps only those whose SHA256 the signed index names.
+      - id: apt-key
+        name: apt cache key
+        timeout-minutes: 10
+        run: |
+          key=$(bash .github/scripts/apt_cache.sh key ~/apt-archives apt-tauri-ubuntu-26.04-v3 $APT_PKGS)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - id: apt-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-tauri-ubuntu-26.04-v2-${{ steps.apt-week.outputs.week }}
-          restore-keys: apt-tauri-ubuntu-26.04-v2-
-      - name: Tauri system dependencies
-        timeout-minutes: 12
-        run: |
-          mkdir -p ~/apt-archives/partial
-          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
-          pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
-            libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file"
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update
-          bash .github/scripts/apt_archives_verify.sh ~/apt-archives
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs
-          sudo apt-get $apt_opts install -y --no-install-recommends $pkgs
-          sudo apt-get $apt_opts autoclean
-          # The archives belong to root; the cache saves them as the runner.
-          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-tauri-ubuntu-26.04-v3-
+      - id: apt-install
+        name: Tauri system dependencies
+        timeout-minutes: 16
+        run: bash .github/scripts/apt_cache.sh install ~/apt-archives $APT_PKGS
+      # The archives belong to root; the cache saves them as the runner, also what a failed
+      # or killed download left behind.
+      - name: apt archives to the runner
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' }}
+        run: sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+      - name: apt cache save
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' && steps.apt-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         run: |
           curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o frpc.tar.gz \
@@ -1054,6 +1177,8 @@ jobs:
     # The runner of release.yml desktop-linux: the smoke builds what the release ships.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      APT_PKGS: libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1061,27 +1186,33 @@ jobs:
       # A slow apt mirror held this step until the job's 45-minute limit
       # (run 39776102278). The downloads get three attempts of three minutes (retry.sh) and
       # a cache of the archives, as in the job rust.
-      - id: apt-week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: apt-key
+        name: apt cache key
+        timeout-minutes: 10
+        run: |
+          key=$(bash .github/scripts/apt_cache.sh key ~/apt-archives apt-tauri-ubuntu-24.04-v3 $APT_PKGS)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - id: apt-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-tauri-ubuntu-24.04-v2-${{ steps.apt-week.outputs.week }}
-          restore-keys: apt-tauri-ubuntu-24.04-v2-
-      - name: Tauri system dependencies
-        timeout-minutes: 12
-        run: |
-          mkdir -p ~/apt-archives/partial
-          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
-          pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
-            libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file"
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update
-          bash .github/scripts/apt_archives_verify.sh ~/apt-archives
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs
-          sudo apt-get $apt_opts install -y --no-install-recommends $pkgs
-          sudo apt-get $apt_opts autoclean
-          # The archives belong to root; the cache saves them as the runner.
-          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-tauri-ubuntu-24.04-v3-
+      - id: apt-install
+        name: Tauri system dependencies
+        timeout-minutes: 16
+        run: bash .github/scripts/apt_cache.sh install ~/apt-archives $APT_PKGS
+      # The archives belong to root; the cache saves them as the runner, also what a failed
+      # or killed download left behind.
+      - name: apt archives to the runner
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' }}
+        run: sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+      - name: apt cache save
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' && steps.apt-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -1121,33 +1252,41 @@ jobs:
     name: Desktop (embedded RDP vs xrdp)
     runs-on: ubuntu-26.04
     timeout-minutes: 45
+    env:
+      APT_PKGS: libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # As in the job rust: three attempts of three minutes per download (retry.sh) and a
       # cache of the archives, the same as the job rust's.
-      - id: apt-week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: apt-key
+        name: apt cache key
+        timeout-minutes: 10
+        run: |
+          key=$(bash .github/scripts/apt_cache.sh key ~/apt-archives apt-tauri-ubuntu-26.04-v3 $APT_PKGS)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - id: apt-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: apt-tauri-ubuntu-26.04-v2-${{ steps.apt-week.outputs.week }}
-          restore-keys: apt-tauri-ubuntu-26.04-v2-
-      - name: Tauri system dependencies
-        timeout-minutes: 12
-        run: |
-          mkdir -p ~/apt-archives/partial
-          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
-          pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
-            libayatana-appindicator3-dev libssl-dev libasound2-dev patchelf file"
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update
-          bash .github/scripts/apt_archives_verify.sh ~/apt-archives
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs
-          sudo apt-get $apt_opts install -y --no-install-recommends $pkgs
-          sudo apt-get $apt_opts autoclean
-          # The archives belong to root; the cache saves them as the runner.
-          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-tauri-ubuntu-26.04-v3-
+      - id: apt-install
+        name: Tauri system dependencies
+        timeout-minutes: 16
+        run: bash .github/scripts/apt_cache.sh install ~/apt-archives $APT_PKGS
+      # The archives belong to root; the cache saves them as the runner, also what a failed
+      # or killed download left behind.
+      - name: apt archives to the runner
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' }}
+        run: sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+      - name: apt cache save
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' && steps.apt-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
       - name: frpc sidecar (externalBin must resolve for tauri-build)
         run: |
           curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o frpc.tar.gz \
@@ -1414,6 +1553,8 @@ jobs:
     name: Ops scripts (shellcheck + update test)
     runs-on: ubuntu-26.04
     timeout-minutes: 15
+    env:
+      APT_PKGS: minisign gnome-keyring
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1428,22 +1569,36 @@ jobs:
       # verification path end-to-end with a throwaway key. Without it those tests
       # exit 75 = SKIP, and --strict below turns that into a failure — which is
       # the point: this job must not go green on a signature path that never ran.
-      - name: Install minisign
-        run: |
-          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts update -qq
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y -qq --download-only minisign
-          sudo apt-get $apt_opts install -y -qq minisign
       # gnome-keyring lets lib_e2e_stack_test.sh run its keyring cases against a
-      # real daemon in a D-Bus session of the test's own. Without it the test exits
-      # 75 = SKIP, and --strict below turns that into a failure. The runner has
-      # dbus-run-session, dbus-send, python3 and pgrep already; the package lists
-      # come from the apt-get update of the step above.
-      - name: Install gnome-keyring
+      # real daemon in a D-Bus session of the test's own; without it, the same SKIP.
+      # Both come through the apt archive cache of the job rust (apt_cache.sh).
+      - id: apt-key
+        name: apt cache key
+        timeout-minutes: 10
         run: |
-          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
-          bash .github/scripts/retry.sh 3 180 sudo apt-get $apt_opts install -y -qq --no-install-recommends --download-only gnome-keyring
-          sudo apt-get $apt_opts install -y -qq --no-install-recommends gnome-keyring
+          key=$(bash .github/scripts/apt_cache.sh key ~/apt-archives apt-ops-ubuntu-26.04-v1 $APT_PKGS)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - id: apt-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-ops-ubuntu-26.04-v1-
+      - id: apt-install
+        name: Install minisign and gnome-keyring
+        timeout-minutes: 16
+        run: bash .github/scripts/apt_cache.sh install ~/apt-archives $APT_PKGS
+      # The archives belong to root; the cache saves them as the runner, also what a failed
+      # or killed download left behind.
+      - name: apt archives to the runner
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' }}
+        run: sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+      - name: apt cache save
+        if: ${{ !cancelled() && steps.apt-key.outputs.key != '' && steps.apt-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
       # The unit layer's `vm-pytest` step runs scripts/vm/tests here. Without
       # pytest the step SKIPs, and --strict turns that into a failure — which is
       # the point: this job must not go green on a suite that never ran.

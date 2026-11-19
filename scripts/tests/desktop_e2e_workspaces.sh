@@ -58,7 +58,17 @@ cleanup_extra() {
     for c in "${CONTAINERS[@]:-}"; do [ -n "$c" ] && docker rm -f "$c" >/dev/null 2>&1; done
     for v in "${VOLUMES[@]:-}"; do [ -n "$v" ] && docker volume rm "$v" >/dev/null 2>&1; done
 }
-wait_log() { for _ in $(seq 1 "$3"); do docker logs "$1" 2>&1 | grep -qE "$2" && return 0; sleep 1; done; return 1; }
+# In a variable first: under pipefail "grep -q" stopping at its match would SIGPIPE docker logs
+# and the pipeline would report failure although the line is there (R-1522).
+wait_log() {  # container pattern timeout
+    local log
+    for _ in $(seq 1 "$3"); do
+        log=$(docker logs "$1" 2>&1)
+        grep -qE "$2" <<<"$log" && return 0
+        sleep 1
+    done
+    return 1
+}
 
 # ssh_clients <container> — how many SSH clients the target saw: the client ends (address and
 # port) on the lines sshd logs once a client spoke SSH, all tagged [preauth] before a sign-in.
@@ -138,7 +148,8 @@ setup_stack() {
         "$FRPC_IMAGE" >/dev/null || { bad "[$key] frpc container ($frpc_c) failed to start"; return 1; }
     frps_ok=0
     for _ in $(seq 1 15); do
-        e2e_dc logs frps 2>/dev/null | grep -qiE "new proxy|start proxy success|stcp" && { frps_ok=1; break; }
+        frps_log=$(e2e_dc logs frps 2>/dev/null)
+        grep -qiE "new proxy|start proxy success|stcp" <<<"$frps_log" && { frps_ok=1; break; }
         sleep 1
     done
     if [ "$frps_ok" = 1 ]; then

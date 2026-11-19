@@ -14,6 +14,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -988,6 +989,8 @@ func stubPvesh(t *testing.T, replies map[string]dockerReply) *[][]string {
 	old := pveshCLI
 	t.Cleanup(func() { pveshCLI = old })
 	var calls [][]string
+	// No corosync.conf: a node in no cluster, so no test reads the host's.
+	pveshCLI.corosyncConf = filepath.Join(t.TempDir(), "corosync.conf")
 	pveshCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	pveshCLI.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, args)
@@ -1914,6 +1917,108 @@ func TestCollectProxmoxBackupDetailsOfASavedIndex(t *testing.T) {
 		}
 		if len(*calls) != 3 {
 			t.Errorf("calls = %v, want status, storages and guests only", *calls)
+		}
+	})
+}
+
+func TestCollectDockerComposeNumber(t *testing.T) {
+	cases := []struct {
+		label string
+		want  any
+	}{{"2", float64(2)}, {"1", float64(1)}, {"0", nil}, {"-1", nil}, {"x", nil}, {"", nil}, {" 3", nil}}
+	for _, c := range cases {
+		entry := map[string]any{}
+		var in dockerInspect
+		in.Config.Labels = map[string]string{"com.docker.compose.container-number": c.label}
+		putDockerDetails(entry, in)
+		got := dockerWire(t, entry)["compose_number"]
+		if got != c.want {
+			t.Errorf("label %q: compose_number = %v, want %v", c.label, got, c.want)
+		}
+	}
+	entry := map[string]any{}
+	putDockerDetails(entry, dockerInspect{})
+	if v, ok := entry["compose_number"]; ok {
+		t.Errorf("without the label compose_number = %v, want it left out", v)
+	}
+}
+
+// corosyncConfFixture is /etc/pve/corosync.conf of a two-node cluster, as pvecm writes it.
+const corosyncConfFixture = `logging {
+  debug: off
+  to_syslog: yes
+}
+
+nodelist {
+  node {
+    name: pve1
+    nodeid: 1
+    quorum_votes: 1
+    ring0_addr: 192.0.2.11
+  }
+  node {
+    name: pve2
+    nodeid: 2
+    quorum_votes: 1
+    ring0_addr: 192.0.2.12
+  }
+}
+
+quorum {
+  provider: corosync_votequorum
+}
+
+totem {
+  cluster_name: testcluster
+  config_version: 3
+  interface {
+    linknumber: 0
+  }
+  ip_version: ipv4-6
+  secauth: on
+  version: 2
+}
+`
+
+func TestCollectProxmoxClusterName(t *testing.T) {
+	cases := []struct{ name, conf, want string }{
+		{"cluster", corosyncConfFixture, "testcluster"},
+		{"no key", strings.Replace(corosyncConfFixture, "  cluster_name: testcluster\n", "", 1), ""},
+		{"key in another section", "quorum {\n  cluster_name: wrong\n}\ntotem {\n  version: 2\n}\n", ""},
+		{"key in a nested section", "totem {\n  interface {\n    cluster_name: wrong\n  }\n}\n", ""},
+		{"key after a nested section", "totem {\n  interface {\n  }\n  cluster_name: late\n}\n", "late"},
+		{"commented out", "totem {\n  # cluster_name: old\n}\n", ""},
+		{"control character", "totem {\n  cluster_name: a\x1bb\n}\n", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "corosync.conf")
+			if err := os.WriteFile(path, []byte(c.conf), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := corosyncClusterName(path); got != c.want {
+				t.Errorf("corosyncClusterName = %q, want %q", got, c.want)
+			}
+		})
+	}
+	if got := corosyncClusterName(filepath.Join(t.TempDir(), "missing")); got != "" {
+		t.Errorf("without the file = %q, want \"\"", got)
+	}
+
+	t.Run("in the block", func(t *testing.T) {
+		stubPvesh(t, withReplies(noBackupDetails(t), map[string]dockerReply{
+			pveshNodeStatus(t): {out: pveshNodeStatusFixture},
+			pveshStorages:      {out: "[]"},
+			pveshVMs:           {out: "[]"},
+		}))
+		if err := os.WriteFile(pveshCLI.corosyncConf, []byte(corosyncConfFixture), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := dockerWire(t, proxmoxBlock(t))
+		want := wantDockerWire(t, `{"available": true, "error": null, "vms": [], "cluster_name": "testcluster",
+			"node": {"name": "`+strings.TrimPrefix(pveshNode(t), "/nodes/")+`", "cpu": 5, "memory_percent": 25}}`)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("block =\n%v\nwant\n%v", got, want)
 		}
 	})
 }

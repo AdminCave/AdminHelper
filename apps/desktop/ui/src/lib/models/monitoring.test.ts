@@ -11,6 +11,7 @@ import {
   filterChecks,
   statusClass,
   computeSummary,
+  groupChecksByServerWithSummary,
   checkTypeUnit,
   isPercentCheck,
   buildAlignedData,
@@ -172,6 +173,33 @@ describe('computeSummary', () => {
       chk('3', null, 'ping', { status: 'info' }),
     ]);
     expect([s.total, s.ok, s.info]).toEqual([3, 1, 2]);
+  });
+});
+
+// A disabled check keeps its last state frozen: it must not hold a count, card or server
+// red after it was switched off (R-1640, like GET /status/summary).
+describe('disabled checks (R-1640)', () => {
+  const off = (c: MonitorCheck): MonitorCheck => ({ ...c, enabled: false });
+  const checks = [
+    off(chk('1', 's1', 'ping', { status: 'critical' })),
+    off(chk('2', 's1', 'ping', { status: 'info' })),
+    chk('3', 's1', 'ping', { status: 'ok' }),
+  ];
+  it('computeSummary skips them', () => {
+    const s = computeSummary(checks);
+    expect([s.total, s.ok, s.critical, s.info]).toEqual([1, 1, 0, 0]);
+  });
+  it('worstStatus and cardStatus skip them', () => {
+    expect(worstStatus(checks)).toBe('ok');
+    expect(cardStatus(checks)).toBe('ok');
+  });
+  it('a card with only disabled checks is not red', () => {
+    expect(worstStatus([checks[0]])).toBe('ok');
+  });
+  it('the server group neither counts nor ranks them', () => {
+    const [g] = groupChecksByServerWithSummary(checks, [{ id: 's1', name: 's1' } as Server]);
+    expect(g.worst).toBe('ok');
+    expect([g.summary.total, g.summary.critical]).toEqual([1, 0]);
   });
 });
 
