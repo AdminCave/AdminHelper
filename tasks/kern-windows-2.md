@@ -1,5 +1,5 @@
 # Agent Windows: Datenpfade aus der Known-Folder-API — Task-Ledger
-Status: geplant · Branch: feature/kern-windows-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-windows-2 · Review: pro Task
 Spec: docs/features/kern-windows-2.md (Roadmap R-1605)
 Heavy: windows — Windows-Pfadcode, Beweis über die Windows-Jobs der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
