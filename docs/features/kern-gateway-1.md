@@ -36,9 +36,10 @@ Schrägstriche zusammengefasst bei `merge_slashes on`, Standard); `^~` beendet d
 - **Allow-Liste statt Sperrpfad** (nur bekannte Präfixe durchreichen): größer, bricht jede neue Route; nicht jetzt.
 
 ## Risiken & Rollback
-Ein Verbraucher, der die Routen doch über den Gateway ruft, bekäme 404. Gesucht: Monitoring, Agent, Desktop, Web
-nutzen den Weg nicht (Monitoring direkt, die übrigen kennen den Schlüssel nicht). Rollback: die Location
-entfernen.
+Ein Verbraucher, der die Routen doch über den Gateway ruft, bekäme 404. Monitoring, Agent, Desktop und Web nutzen
+den Weg nicht (Monitoring direkt, die übrigen kennen den Schlüssel nicht). Die Desktop-GUI-E2E
+(`notification-push.live.js`, `injectEvent`) speiste ihre Events bisher über den Gateway ein; sie geht jetzt über
+`docker compose exec` in den Server-Container (T2). Rollback: die Location entfernen.
 
 ## Doku-Impact
 `docs/developer/server.html` (DE+EN), Zeile `/api/internal` der Routentabelle: nur im Compose-Netz erreichbar.

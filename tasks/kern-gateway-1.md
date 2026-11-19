@@ -1,5 +1,5 @@
 # Gateway: interne Dienst-Routen nur im Compose-Netz — Task-Ledger
-Status: aktiv · Branch: feature/kern-gateway-1 · Review: am Ende
+Status: bereit · Branch: feature/kern-gateway-1 · Review: am Ende
 Spec: docs/features/kern-gateway-1.md (Roadmap R-1604)
 Heavy: linux-full — Gateway-Konfiguration (Sammellauf, Stack-Job der PR-CI)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -13,8 +13,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_gateway_container.py
 Doku: docs/developer/server.html, docs/en/developer/server.html, changelog.d/kern-gateway-1.md
 
-### T2 — R-1604: Desktop-E2E speist Events im Compose-Netz ein  [ ]
-Komponente: desktop-e2e scripts · Dateien: apps/desktop/e2e/test/lib/live.js, scripts/tests/desktop_e2e_sse_push.sh, docs/features/kern-gateway-1.md
+### T2 — R-1604: Desktop-E2E speist Events im Compose-Netz ein  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, scripts/tests/desktop_e2e_sse_push.sh, docs/features/kern-gateway-1.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @7559400ad 2026-11-19T20:01:49+01:00
+Review: am Ende (Branch-Review)
 Änderung: Fund der security-Abschlussprüfung: `injectEvent` (notification-push.live.js) postete über den Gateway an `/api/internal/events` und bekäme nach T1 404. Jetzt `docker compose exec -T server python` gegen den eigenen uvicorn; der Schlüssel bleibt in der Container-Umgebung, das Event kommt über stdin; die Orchestrierung schreibt einen Compose-Wrapper statt den Schlüssel zu exportieren. Spec-Abschnitt Risiken korrigiert.
-Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test-Harness der GUI-E2E; Spec nachgezogen)

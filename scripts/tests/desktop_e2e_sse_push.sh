@@ -42,9 +42,18 @@ curl -sk -X PUT "$E2E_SERVER_URL/api/users/me/notification-prefs" \
     -d '{"email":null,"telegram_chat_id":null,"subscriptions":[{"scope_type":"all","min_severity":"info","enabled":true}]}' \
     >/dev/null && ok "seeded scope=all subscription" || { bad "seed subscription"; exit 1; }
 
-# The spec injects the event itself (Node context); hand it the internal key.
-MONITOR_API_KEY=$(grep '^MONITOR_API_KEY=' "$E2E_WORK/.env" | cut -d= -f2-)
-export MONITOR_API_KEY
+# The spec injects the event itself, on the compose network (the gateway answers
+# /api/internal with 404, R-1604): it gets this run's `docker compose` as a wrapper
+# and never the internal key, which stays in the server container.
+AH_E2E_COMPOSE="$E2E_WORK/compose"
+{
+    echo '#!/usr/bin/env bash'
+    printf 'exec docker compose -p %q' "$E2E_PROJECT"
+    printf ' %q' "${_E2E_COMPOSE[@]}" --env-file "$E2E_WORK/.env"
+    echo ' "$@"'
+} > "$AH_E2E_COMPOSE"
+chmod 700 "$AH_E2E_COMPOSE"
+export AH_E2E_COMPOSE
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
