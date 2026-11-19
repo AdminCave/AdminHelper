@@ -109,8 +109,10 @@ Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, doc
 Task-Review: am Ende
 Abhängt von: T3, T8
 
-### T11 — R-1595: Windows-Programmpfad im Katalog (Abschlussprüfung)  [ ]
+### T11 — R-1595: Windows-Programmpfad im Katalog (Abschlussprüfung)  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, apps/server/tests/test_provisioning_catalog.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @0de861680 2026-11-19T09:24:09+01:00
+Review: approve (.ah-out/review/kern-provision-1/T11.verdict.json)
 Änderung: `WINDOWS_EXE` zeigt auf `C:\Program Files\AdminHelper Agent\adminhelper-agent.exe` (seit 180479cd3 der Agent-Ordner, `service_windows.go` `programDirName`; `AdminHelper` ist der Ordner der Desktop-App). Test nagelt den Pfad in Neu registrieren und Entfernen fest.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py
 Doku: keine (Doku nennt den Ordner schon richtig)

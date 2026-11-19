@@ -160,6 +160,16 @@ def test_windows_reregister_reads_the_token_hidden_unless_automated(tmp_path):
     }
 
 
+def test_windows_commands_call_the_agent_in_its_own_program_folder(tmp_path):
+    # "AdminHelper" under Program Files is the desktop app's MSI folder; the agent
+    # installs itself into "AdminHelper Agent" (service_windows.go, programDirName).
+    win = _by_id(build_catalog(tmp_path, **PORTS))["windows"]
+    exe = r"& 'C:\Program Files\AdminHelper Agent\adminhelper-agent.exe'"
+    bases = {c["action"]: c["base"] for c in win["commands"]}
+    assert bases["reregister"] == f"{exe} provision"
+    assert bases["remove"] == f"{exe} service uninstall --purge"
+
+
 # --- route ----------------------------------------------------------------------
 
 

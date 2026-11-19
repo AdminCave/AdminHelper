@@ -23,7 +23,7 @@ from pathlib import Path
 
 INSTALLER_BASE = "https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts"
 DEFAULT_REPO_PORT = 8445
-WINDOWS_EXE = r"& 'C:\Program Files\AdminHelper\adminhelper-agent.exe'"
+WINDOWS_EXE = r"& 'C:\Program Files\AdminHelper Agent\adminhelper-agent.exe'"
 # A Packages index bigger than this is not ours; the catalog then reports no apt versions.
 _MAX_INDEX = 8 << 20
 _VERSION = r"[0-9][0-9A-Za-z.+~]*"
