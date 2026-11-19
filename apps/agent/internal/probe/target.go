@@ -203,7 +203,7 @@ func ownedBy(ctx context.Context, name string) func(listener) bool {
 	return func(l listener) bool {
 		got, ok := names[l.pid]
 		if !ok {
-			n, err := processName(ctx, l.pid)
+			n, err := programName(ctx, l.pid)
 			if err == nil {
 				got = processKey(n)
 			}

@@ -196,6 +196,19 @@ describe('SecZfs pool details', () => {
     vi.useRealTimers();
   });
 
+  // R-1570: the check rates DEGRADED critical, the chip and the pill say the same.
+  it('shows a degraded pool as critical like the check', async () => {
+    const el = await shown();
+    const health = Array.from(el.querySelectorAll<HTMLElement>('.mon-hero-bar-row')).map(
+      (r) =>
+        `${r.querySelector('.mon-hero-bar-label')?.textContent?.trim()}|${/chip-(\w+)/.exec(r.querySelector('.mon-chip')?.className ?? '')?.[1]}`,
+    );
+    expect(health).toContain('backup|crit');
+    expect(health).toContain('tank|ok');
+    const pill = pills(el).find((p) => p.textContent?.includes('backup'));
+    expect(pill?.className).toMatch(/\bpill-crit\b/);
+  });
+
   it('names the finished scrub with its age and the fragmentation', async () => {
     const el = await shown();
     expect(chips(el, 'tank')).toEqual([

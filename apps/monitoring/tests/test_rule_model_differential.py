@@ -90,11 +90,13 @@ def smart_values(disk: dict) -> dict:
     its raw value; one that is no string selects neither, as in the checker."""
     protocol = disk.get("protocol", "ATA")
     status = int(agent_number(disk.get("smartctl_status")) or 0)
+    passed = disk.get("smart_passed")
     return {
         "protocol": protocol if isinstance(protocol, str) else "",
         "kind": entry_text(disk, "kind", "") or ("NVMe" if protocol == "NVMe" else "HDD"),
-        # The documented truthiness: false, null, 0, "", [] and {} are FAILED.
-        "smart_passed": bool(disk.get("smart_passed", True)),
+        # The documented truthiness: false, 0, "", [] and {} are FAILED; missing and null are
+        # no verdict (R-0518), absent here.
+        "smart_passed": None if passed is None else bool(passed),
         **{name: bool(status & bit) for bit, name in SMARTCTL_BITS.items()},
         **{key: agent_number(disk.get(key)) for key in SMART_NUMBERS},
     }
@@ -108,7 +110,8 @@ NVME = Condition(field="protocol", op="eq", value="NVMe")
 TEMP_LIMITS = {"HDD": (55, 60), "SATA-SSD": (60, 70), "NVMe": (65, 75)}
 
 SMART_RULES = [
-    _r("smart_passed", "eq", False, "critical"),
+    # No if_absent: a disk without a verdict is not readable, unknown unless a rule holds worse.
+    Rule(field="smart_passed", op="eq", value=False, level="critical"),
     _r("reported_uncorrect", "gt", 0, "critical"),
     _r("uncorrectable", "gt", 0, "critical"),
     _r("prefail_below_threshold", "eq", True, "critical"),
@@ -148,9 +151,12 @@ def smart_place(i: int, entry: dict) -> dict:
     return {"device": f"/dev/disk{i}", "model": "X", **entry}
 
 
-HDD = {"protocol": "ATA", "kind": "HDD", "temp_c": 30}
-SSD = {"protocol": "ATA", "kind": "SATA-SSD", "temp_c": 30}
-NVM = {"protocol": "NVMe", "kind": "NVMe", "temp_c": 40, "available_spare_pct": 100}
+HDD = {"protocol": "ATA", "kind": "HDD", "temp_c": 30, "smart_passed": True}
+SSD = {"protocol": "ATA", "kind": "SATA-SSD", "temp_c": 30, "smart_passed": True}
+NVM = {
+    "protocol": "NVMe", "kind": "NVMe", "temp_c": 40, "available_spare_pct": 100,
+    "smart_passed": True,
+}  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -166,7 +172,13 @@ SMART_SCENARIOS = [
     # docs/developer/monitoring.html (smart.py): smart_passed and the defaults.
     Scenario("hdd-clean", HDD, "ok"),
     Scenario("passed-false", {**HDD, "smart_passed": False}, "critical"),
-    Scenario("passed-null", {**HDD, "smart_passed": None}, "critical"),
+    Scenario("passed-null", {**HDD, "smart_passed": None}, "unknown"),
+    Scenario("passed-missing", {"protocol": "ATA", "kind": "HDD", "temp_c": 30}, "unknown"),
+    Scenario(
+        "passed-missing-and-reallocated",
+        {"protocol": "ATA", "kind": "HDD", "reallocated_sectors": 1},
+        "warning",
+    ),
     Scenario("passed-zero", {**HDD, "smart_passed": 0}, "critical"),
     Scenario("passed-true", {**HDD, "smart_passed": True}, "ok"),
     Scenario("counter-as-string", {**HDD, "reallocated_sectors": "16"}, "ok"),
@@ -195,7 +207,7 @@ SMART_SCENARIOS = [
     Scenario("nvme-spare-19", {**NVM, "available_spare_pct": 19}, "warning"),
     Scenario("nvme-spare-10", {**NVM, "available_spare_pct": 10}, "warning"),
     Scenario("nvme-spare-9", {**NVM, "available_spare_pct": 9}, "critical"),
-    Scenario("nvme-spare-missing", {"protocol": "NVMe", "kind": "NVMe"}, "ok"),
+    Scenario("nvme-spare-missing", {"protocol": "NVMe", "kind": "NVMe", "smart_passed": 1}, "ok"),
     Scenario("nvme-used-89", {**NVM, "percentage_used": 89}, "ok"),
     Scenario("nvme-used-90", {**NVM, "percentage_used": 90}, "warning"),
     Scenario("nvme-used-100", {**NVM, "percentage_used": 100}, "critical"),

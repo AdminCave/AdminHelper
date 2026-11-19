@@ -24,7 +24,7 @@ from app.catalog.modules.openldap import MODULE as LDAP_MODULE
 from app.catalog.modules.port import MODULE as PORT_MODULE
 from app.catalog.modules.wordpress import MODULE as WP_MODULE
 from app.check_configs import ProbeConfig
-from app.discovery import apply_discovery
+from app.discovery import MAX_CONTAINER_PORTS, apply_discovery
 from app.models import (
     Base,
     MonitorCheck,
@@ -40,6 +40,7 @@ from app.module_sync import (
     adopt_all,
     definition_hash,
     dismiss,
+    mark_module_overrides,
     probe_config,
     sync_catalog,
     tombstone_module_check,
@@ -428,6 +429,25 @@ def test_the_listening_ports_decide_before_the_exposed_ones(ports, listening, re
     assert (config is None) == (reason is not None)
 
 
+@pytest.mark.parametrize(
+    ("count", "reason"),
+    [
+        # A full list may be cut (agent and server keep MAX_CONTAINER_PORTS, lowest first):
+        # 8000 may lie beyond the cut, so the agent decides.
+        pytest.param(MAX_CONTAINER_PORTS, None, id="full-list-unknown"),
+        pytest.param(MAX_CONTAINER_PORTS - 1, "container paperless-web-1 has no port 8000",
+                     id="shorter-list-is-whole"),
+    ],
+)  # fmt: skip
+def test_an_exposed_list_at_the_cap_counts_as_unknown(count, reason):
+    web = {**CONTAINERS[0], "ports": _tcp(*range(1, count + 1)), "listening": None}
+
+    config, why = _bind("paperless", "paperless", "web", PROJECT_SUMMARY, [web, *CONTAINERS[1:]])
+
+    assert why == reason
+    assert (config is None) == (reason is not None)
+
+
 def test_a_port_takes_the_found_port():
     config, _ = _bind("port", "tcp-8443", "answers", {"port": 8443, "protocol": "https"})
 
@@ -534,6 +554,24 @@ def test_adopting_new_again_switches_the_whole_instance_on(db, actions):
 
     assert all(row.enabled for row in _checks(db, finding).values())
     assert len(result.enabled) == 2
+
+
+def test_adopting_new_leaves_off_a_check_the_admin_switched_off(db, actions):
+    # Only the checks "gone" switched off come back on; the admin's own switch stays (R-1573).
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    checks = _checks(db, finding)
+    checks["broker"].enabled = False
+    mark_module_overrides(checks["broker"], enabled=False)
+    _reopen(db, finding, "gone")
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    _reopen(db, finding, "new")
+
+    result = adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert (checks["web"].enabled, checks["broker"].enabled) == (True, False)
+    assert result.enabled == [checks["web"].id]
 
 
 def test_adopting_a_module_the_catalog_lost_fails_and_changes_nothing(db, actions):
@@ -1319,6 +1357,9 @@ def test_a_central_check_asks_the_vhosts_name_and_the_tls_one_its_port():
         "wiki.internal",
         "wiki.lan",
         "WIKI.HOME.",
+        # A single label (Kevin 2026-11-18, R-1548): the search domain makes it local.
+        "intranet",
+        "intranet.",
     ],
 )
 def test_a_name_no_public_resolver_answers_gets_no_central_check(key):
@@ -1495,3 +1536,226 @@ def test_a_check_the_catalog_moved_to_the_service_is_not_rewritten(db, actions):
         }
     ]
     assert resolves.config == before
+
+
+# --- the admin's own rules and switches (R-1567, R-1573) ----------------------------
+
+
+def test_a_catalog_update_keeps_the_rules_the_admin_changed(db, actions):
+    finding = _adopted(db, actions)
+    web = _checks(db, finding)["web"]
+    old = web.config
+    config = json.loads(old)
+    config["rules"] = [{"field": "status_code", "op": "ne", "value": 204, "level": "warning"}]
+    web.config = json.dumps(config)
+    mark_module_overrides(web, old_config=old)
+    db.commit()
+    before = web.config
+
+    assert sync_catalog(db, catalog=WEB_CHANGED) == 1
+    result = adopt(db, finding.id, catalog=WEB_CHANGED, now=NOW)
+
+    assert result.updated == []
+    assert {"key": "web", "reason": "the admin changed the check's rules; they stay"} in (
+        result.skipped
+    )
+    assert web.config == before
+
+
+@pytest.mark.parametrize(
+    ("parts", "marked"),
+    [
+        pytest.param({"interval_s": 900, "timeout_s": 20}, [], id="interval-timeout"),
+        pytest.param({"rules": []}, ["config"], id="rules"),
+    ],
+)
+def test_only_a_change_the_update_would_lose_marks_the_config(db, actions, parts, marked):
+    web = _checks(db, _adopted(db, actions))["web"]
+    old = web.config
+    web.config = json.dumps({**json.loads(old), **parts})
+
+    mark_module_overrides(web, old_config=old)
+
+    assert json.loads(web.overridden_fields) == marked
+
+
+def test_switching_on_again_drops_the_mark(db, actions):
+    web = _checks(db, _adopted(db, actions))["web"]
+    mark_module_overrides(web, enabled=False)
+    assert json.loads(web.overridden_fields) == ["enabled"]
+    mark_module_overrides(web, enabled=True)
+    assert json.loads(web.overridden_fields) == []
+
+
+def test_the_api_marks_the_admins_switch_and_rules_on_a_module_check(client_db, actions):
+    client, factory = client_db
+    with factory() as db:
+        _inventory(db)
+        finding = _finding(db)
+        adopt(db, finding.id, catalog=V1, now=NOW)
+        web = _checks(db, finding)["web"]
+        web_id, config = web.id, json.loads(web.config)
+
+    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == ["enabled"]
+    assert client.post(f"/checks/{web_id}/toggle").json()["overriddenFields"] == []
+    r = client.put(f"/checks/{web_id}", json={"config": {**config, "interval_s": 900}})
+    assert r.json()["overriddenFields"] == []
+    r = client.put(f"/checks/{web_id}", json={"config": {**config, "rules": []}, "enabled": False})
+    assert r.json()["overriddenFields"] == ["config", "enabled"]
+
+
+# --- a check of one instance, ports chosen at the host (R-1528) ---------------------
+
+_PBX_WEB = {
+    "key": "web",
+    "name": "Web interface",
+    "sensor": "http",
+    "target": {
+        "kind": "loopback",
+        "alternatives": [
+            {"port_hint": 443, "scheme": "https"},
+            {"port_hint": 5001, "scheme": "https"},
+        ],
+    },
+    "params": {"path": "/"},
+    "interval": 300,
+    "fields": ["status_code"],
+    "instance": "pbx.service",
+}
+_PBX_SERVICE = {
+    "key": "service",
+    "name": "Service",
+    "sensor": "unit",
+    "target": {"kind": "unit"},
+    "params": {},
+    "interval": 300,
+    "fields": ["sub_state"],
+}
+
+
+def _pbx(web=_PBX_WEB):
+    raw = {
+        "id": "pbx",
+        "name": "PBX",
+        "version": 1,
+        "instance": "unit",
+        "detect": {"units": ["pbx.service", "pbx-mc01.service"]},
+        "checks": [web, _PBX_SERVICE],
+    }
+    catalog = load_catalog([("pbx", raw)])
+    assert catalog.errors == ()
+    return catalog
+
+
+PBX = _pbx()
+
+
+def _socket(port, *, container="", unit="", proto="tcp"):
+    return {
+        "proto": proto,
+        "addr": "0.0.0.0",
+        "port": port,
+        "process": "p",
+        "container": container,
+        "unit": unit,
+    }
+
+
+def _scanned(db, sockets, *, whole=True):
+    inventory = {"containers": [], "sockets": sockets, "complete": {"sockets": whole}}
+    db.add(MonitorDiscovery(server_id="srv-1", inventory=json.dumps(inventory)))
+    db.commit()
+
+
+def test_a_check_naming_an_instance_is_bound_there_only(db, actions):
+    _scanned(db, [_socket(443)])
+    main = _finding(db, "pbx", "pbx.service", summary={})
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+
+    adopt(db, main.id, catalog=PBX, now=NOW)
+    result = adopt(db, other.id, catalog=PBX, now=NOW)
+
+    assert set(_checks(db, main)) == {"web", "service"}
+    # The other instance skips the check without a reason: it is not its check.
+    assert set(_checks(db, other)) == {"service"}
+    assert result.skipped == []
+
+
+def test_a_resync_binds_a_check_naming_an_instance_there_only(db, actions):
+    _scanned(db, [_socket(443)])
+    main = _finding(db, "pbx", "pbx.service", summary={})
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+    without_web = _pbx(web={**_PBX_SERVICE, "key": "service2"})
+    adopt(db, main.id, catalog=without_web, now=NOW)
+    adopt(db, other.id, catalog=without_web, now=NOW)
+
+    sync_catalog(db, catalog=_pbx(web={**_PBX_WEB, "name": "Web"}))
+
+    assert "web" in _checks(db, main)
+    assert "web" not in _checks(db, other)
+
+
+@pytest.mark.parametrize(
+    ("kind", "sockets", "port", "reason"),
+    [
+        pytest.param("loopback", None, 443, None, id="loopback-unknown-first"),
+        pytest.param("loopback", [_socket(5001)], 5001, None, id="loopback-seen"),
+        pytest.param("loopback", [_socket(443), _socket(5001)], 443, None, id="loopback-order"),
+        pytest.param(
+            "loopback",
+            [_socket(443, container="web-1"), _socket(5001)],
+            5001,
+            None,
+            id="loopback-not-a-container",
+        ),
+        pytest.param(
+            "loopback",
+            [_socket(443, proto="udp")],
+            None,
+            "the host listens on none of the ports 443, 5001",
+            id="loopback-udp",
+        ),
+        pytest.param(
+            "loopback",
+            [],
+            None,
+            "the host listens on none of the ports 443, 5001",
+            id="loopback-none",
+        ),
+        pytest.param("unit", None, 443, None, id="unit-unknown-first"),
+        pytest.param("unit", [_socket(5001, unit="pbx.service")], 5001, None, id="unit-seen"),
+        pytest.param(
+            "unit",
+            [_socket(443, unit="other.service"), _socket(5001, unit="pbx.service")],
+            5001,
+            None,
+            id="unit-its-own",
+        ),
+        # An agent that does not tell the unit: the agent asks the first.
+        pytest.param("unit", [_socket(5001)], 443, None, id="unit-older-agent"),
+        pytest.param(
+            "unit",
+            [_socket(5001, unit="other.service")],
+            None,
+            "unit pbx.service listens on none of the ports 443, 5001",
+            id="unit-none",
+        ),
+    ],
+)
+def test_the_host_sockets_pick_the_alternative(kind, sockets, port, reason):
+    catalog = _pbx(web={**_PBX_WEB, "target": {**_PBX_WEB["target"], "kind": kind}})
+    module = catalog.modules["pbx"]
+    check = module.checks[0]
+    config, why = probe_config(module, check, "pbx.service", {}, [], sockets)
+    assert why == reason
+    assert (config["target"]["port_hint"] if config else None) == port
+
+
+@pytest.mark.parametrize(("whole", "port"), [(True, 5001), (False, 443)])
+def test_adopting_reads_the_sockets_only_when_the_scan_saw_them_whole(db, actions, whole, port):
+    _scanned(db, [_socket(5001)], whole=whole)
+    finding = _finding(db, "pbx", "pbx.service", summary={})
+
+    adopt(db, finding.id, catalog=PBX, now=NOW)
+
+    assert json.loads(_checks(db, finding)["web"].config)["target"]["port_hint"] == port

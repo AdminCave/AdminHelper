@@ -12,7 +12,10 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // calls matchMedia (missing in jsdom); same stub as SecZfs.test.ts.
 vi.mock('uplot', () => ({ default: class {} }));
 import { render, cleanup } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { get } from 'svelte/store';
 import type { MonitorCheck, MonitorCheckState } from '$lib/api/types';
+import { monitoring, toggleExpanded } from '$lib/stores/monitoring';
 import SecSmart from './SecSmart.svelte';
 
 function check(state: MonitorCheckState): MonitorCheck {
@@ -34,7 +37,10 @@ function texts(el: HTMLElement, selector: string): string[] {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  if (get(monitoring).expandedCheckId === 'chk-smart') toggleExpanded('chk-smart');
+});
 
 describe('SecSmart', () => {
   it('shows the hottest disk and the disk count', () => {
@@ -62,5 +68,24 @@ describe('SecSmart', () => {
     });
     expect(texts(el, '.mon-line-pill')).toEqual(['—']);
     expect(texts(el, '.mon-line-num')).toEqual([]);
+  });
+
+  // R-1568: a disk without a SMART verdict is rated unknown, which is not a pass.
+  it('shows a disk without a SMART verdict with a neutral chip, not as OK', async () => {
+    const disks = [
+      { device: '/dev/sda', kind: 'HDD', category: 'ok', temp_c: 38 },
+      { device: '/dev/sdb', kind: 'HDD', category: 'unknown', temp_c: 40 },
+      { device: '/dev/sdc', kind: 'HDD', category: 'warning', temp_c: 41 },
+      { device: '/dev/sdd', kind: 'HDD', category: 'critical', temp_c: 42 },
+    ];
+    const { container: el } = render(SecSmart, {
+      props: { checks: [check({ status: 'unknown', details: { disks } })] },
+    });
+    toggleExpanded('chk-smart');
+    await tick();
+    const chips = Array.from(el.querySelectorAll<HTMLElement>('.mon-hero-bar-row .mon-chip')).map(
+      (c) => `${c.textContent?.trim()}|${/chip-(\w+)/.exec(c.className)?.[1]}`,
+    );
+    expect(chips).toEqual(['OK|ok', 'N/A|muted', 'WARN|warn', 'CRIT|crit']);
   });
 });
