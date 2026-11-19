@@ -242,9 +242,14 @@ pub(crate) fn build_journal_args(
             args.push(windows_log_command(unit));
         }
         JournalPlatform::Freebsd => {
-            args.extend(["grep", "-h", "-F", "-e"].map(String::from));
-            args.push(format!("'{unit}'"));
-            args.extend(["/var/log/messages", "|", "tail", "-n", "200"].map(String::from));
+            // OPNsense writes no /var/log/messages: its syslog-ng puts the lines no service file
+            // takes into /var/log/system/system_YYYYMMDD.log (R-1630). Under sh, because the login
+            // shell may be csh, where 2>/dev/null and a glob without a match both fail.
+            args.extend(["sh", "-c"].map(String::from));
+            args.push(format!(
+                "'grep -h -F -e \"{unit}\" /var/log/messages /var/log/system/system_*.log \
+                 2>/dev/null | tail -n 200'"
+            ));
         }
     }
     Ok(args)
@@ -1005,16 +1010,10 @@ mod tests {
                 "-t",
                 "--",
                 "u@h",
-                "grep",
-                "-h",
-                "-F",
-                "-e",
-                "'sshd'",
-                "/var/log/messages",
-                "|",
-                "tail",
-                "-n",
-                "200",
+                "sh",
+                "-c",
+                "'grep -h -F -e \"sshd\" /var/log/messages /var/log/system/system_*.log \
+                 2>/dev/null | tail -n 200'",
             ]
         );
     }
