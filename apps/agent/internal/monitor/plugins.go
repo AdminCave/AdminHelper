@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/netip"
@@ -143,7 +144,7 @@ const maxDockerPorts = 64
 // maxComposeLabel is the longest compose project or service name sent, the discovery's limit.
 const maxComposeLabel = 255
 
-// putDockerDetails sets the compose project and service, the published ports and the start time of
+// putDockerDetails sets the compose project, service and container number, the published ports and the start time of
 // the inspected container in entry, each only when inspect has it.
 func putDockerDetails(entry map[string]any, in dockerInspect) {
 	if project := composeLabel(in.Config.Labels, "com.docker.compose.project"); project != "" {
@@ -151,6 +152,10 @@ func putDockerDetails(entry map[string]any, in dockerInspect) {
 	}
 	if service := composeLabel(in.Config.Labels, "com.docker.compose.service"); service != "" {
 		entry["compose_service"] = service
+	}
+	// The replica number keys the container across recreation (ADR 0004 §12.6); compose numbers from 1.
+	if n, err := strconv.Atoi(in.Config.Labels["com.docker.compose.container-number"]); err == nil && n > 0 {
+		entry["compose_number"] = n
 	}
 	if ports := publishedPorts(in.NetworkSettings.Ports); len(ports) > 0 {
 		entry["ports"] = ports
@@ -309,13 +314,15 @@ type dockerPortBinding struct {
 	HostPort string
 }
 
-// pveshCLI indirects collectProxmox's pvesh lookup and calls, and the hostname its node name comes
-// from, so tests can drive every path without pvesh (same reason as dockerCLI).
+// pveshCLI indirects collectProxmox's pvesh lookup and calls, the hostname its node name comes
+// from and the corosync config its cluster name comes from, so tests can drive every path without
+// pvesh (same reason as dockerCLI).
 var pveshCLI = struct {
-	lookPath func(file string) (string, error)
-	run      func(ctx context.Context, args ...string) ([]byte, error)
-	hostname func() (string, error)
-}{exec.LookPath, runPvesh, os.Hostname}
+	lookPath     func(file string) (string, error)
+	run          func(ctx context.Context, args ...string) ([]byte, error)
+	hostname     func() (string, error)
+	corosyncConf string
+}{exec.LookPath, runPvesh, os.Hostname, "/etc/pve/corosync.conf"}
 
 // runPvesh runs one pvesh call under pluginTimeout (runWithTimeout).
 func runPvesh(ctx context.Context, args ...string) ([]byte, error) {
@@ -408,7 +415,48 @@ func collectProxmox(ctx context.Context, saved *backupIndexCheck, now time.Time)
 		check.putBackupDetails(entry, vmid, guestNode, pool)
 		vmList = append(vmList, entry)
 	}
-	return map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}, check
+	block := map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}
+	if name := corosyncClusterName(pveshCLI.corosyncConf); name != "" {
+		block["cluster_name"] = name
+	}
+	return block, check
+}
+
+// maxCorosyncConf caps how much of corosync.conf is read; a real one is a few KiB.
+const maxCorosyncConf = 1 << 20
+
+// corosyncClusterName is totem.cluster_name from the corosync config at path, "" without the file
+// (a node in no cluster: pvecm deletes it on leaving), without the key or with a name labelText
+// rejects. A file read instead of `pvesh get /cluster/status`: no extra process per report (ADR 0004
+// §11). Only that key in the top-level totem section counts, nothing from another section.
+func corosyncClusterName(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, maxCorosyncConf))
+	if err != nil {
+		return ""
+	}
+	var sections []string
+	for line := range strings.Lines(string(raw)) {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "" || strings.HasPrefix(line, "#"):
+		case strings.HasSuffix(line, "{"):
+			sections = append(sections, strings.TrimSpace(strings.TrimSuffix(line, "{")))
+		case line == "}":
+			if len(sections) > 0 {
+				sections = sections[:len(sections)-1]
+			}
+		case len(sections) == 1 && sections[0] == "totem":
+			if key, value, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(key) == "cluster_name" {
+				return labelText(strings.TrimSpace(value))
+			}
+		}
+	}
+	return ""
 }
 
 // proxmoxUnavailable is the block for an installed pvesh whose node could not be read. code is what
