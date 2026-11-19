@@ -40,8 +40,10 @@ Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/discovery/... ./internal/monitor/... ./internal/probe/...
 Doku: → T6
 
-### T4 — R-1593: Webhook-Body mit zu tiefer Verschachtelung ablehnen  [ ]
+### T4 — R-1593: Webhook-Body mit zu tiefer Verschachtelung ablehnen  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/tests/test_hooks_webhook_payload.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fc868aa37 2026-11-19T23:45:36+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T4.verdict.json)
 Beweis: security-Nit kern-monitoring-45 T1, 2026-11-18
 Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Änderung: In `_do_trigger` fängt `except Exception` einen `RecursionError` von `request.json()` ab und setzt `{}`. Ein Body, an dem das Parsen mit `RecursionError` scheitert, wird wie ein Body ab 33 Ebenen mit 422 abgelehnt; ein Body, der kein JSON ist, bleibt `{}`. Erst ein roter Test mit einem tief verschachtelten Body (Skript läuft nicht, 422).
