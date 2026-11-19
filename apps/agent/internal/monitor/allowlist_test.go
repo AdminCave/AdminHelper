@@ -158,6 +158,8 @@ func TestAllowlistTakesEveryCollectorCall(t *testing.T) {
 	calls := [][]string{
 		{smartctl, "--scan", "--json=c"},
 		{smartctl, "--all", "--json=c", "-d", "nvme", "/dev/nvme0"},
+		{smartctl, "--all", "--json=c", "-n", "standby,3", "/dev/sda"},
+		{smartctl, "--all", "--json=c", "-n", "standby,3", "-d", "megaraid,0", "/dev/bus/0"},
 		{"pvesh", "get", "/nodes/pve-01/storage/local/content", "--content", "backup", "--output-format", "json"},
 		{"pvesh", "get", "/nodes/pve1/storage/pbs_back.up-2/content", "--content", "backup", "--output-format", "json"},
 		{"smartctl", "--all", "--json=c", "-d", "sat,12", "/dev/bsg/sssraid0"},
@@ -234,6 +236,9 @@ func TestAllowlistRefusesTheTraps(t *testing.T) {
 		{"smartctl", "--all", "--json=c", "/etc/passwd"},
 		{"smartctl", "--all", "--json=c", "-d", "-x", "/dev/sda"},
 		{"smartctl", "--all", "--json=c"},
+		{"smartctl", "--all", "--json=c", "-n", "never", "/dev/sda"},
+		{"smartctl", "--all", "--json=c", "-n", "standby,0", "/dev/sda"},
+		{"smartctl", "--all", "--json=c", "-n", "standby,3", "-s", "on", "/dev/sda"},
 		{"./smartctl", "--scan", "--json=c"},
 		{"systemctl", "restart", "nginx"},
 		{"systemctl", "show", "-p", "Id,Names", "--"},

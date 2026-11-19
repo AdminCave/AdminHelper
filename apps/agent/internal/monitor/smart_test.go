@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -587,10 +588,10 @@ func TestCollectSmartPassesScanType(t *testing.T) {
 	}
 	sort.Strings(queries)
 	want := []string{
-		"--all --json=c -d megaraid,0 /dev/bus/0",
-		"--all --json=c -d megaraid,1 /dev/bus/0",
 		"--all --json=c -d nvme /dev/nvme0",
-		"--all --json=c /dev/sda",
+		"--all --json=c -n standby,3 -d megaraid,0 /dev/bus/0",
+		"--all --json=c -n standby,3 -d megaraid,1 /dev/bus/0",
+		"--all --json=c -n standby,3 /dev/sda",
 	}
 	if !reflect.DeepEqual(queries, want) {
 		t.Errorf("queries = %q, want %q", queries, want)
@@ -641,11 +642,11 @@ func TestCollectSmartControllerDiskIDs(t *testing.T) {
 	}
 	sort.Strings(queries)
 	wantQueries := []string{
-		"--all --json=c -d megaraid,0 /dev/bus/0",
-		"--all --json=c -d megaraid,1 /dev/bus/0",
 		"--all --json=c -d nvme /dev/nvme0",
-		"--all --json=c -d sat /dev/sda",
-		"--all --json=c -d sssraid,0,1 /dev/bsg/sssraid0",
+		"--all --json=c -n standby,3 -d megaraid,0 /dev/bus/0",
+		"--all --json=c -n standby,3 -d megaraid,1 /dev/bus/0",
+		"--all --json=c -n standby,3 -d sat /dev/sda",
+		"--all --json=c -n standby,3 -d sssraid,0,1 /dev/bsg/sssraid0",
 	}
 	if !reflect.DeepEqual(queries, wantQueries) {
 		t.Errorf("queries = %q, want %q", queries, wantQueries)
@@ -661,4 +662,61 @@ func TestCollectSmartControllerDiskIDs(t *testing.T) {
 			t.Errorf("collectSmart() = %v, %q; want only /dev/bus/0 and no reason", disks, reason)
 		}
 	})
+}
+
+func TestCollectSmartLeavesASleepingDiskAsleep(t *testing.T) {
+	// smartctl -n standby,3 (smartctl(8)): an ATA or SCSI disk in STANDBY or SLEEP is not queried,
+	// smartctl ends with status 3 and prints nothing usable. The disk comes as standby without values,
+	// so the service keeps its last state (R-1569). NVMe knows no -n and is queried as before.
+	calls := stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {out: "", err: smartctlExit(t, 3)},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	disks, reason := collectSmart(context.Background())
+	got := map[string]SmartDisk{}
+	for _, d := range disks {
+		got[d.Device] = d
+	}
+	if reason != "" || len(disks) != 2 {
+		t.Fatalf("collectSmart() = %v, %q; want two disks and no reason", disks, reason)
+	}
+	if want := (SmartDisk{Device: "/dev/sda", Standby: true}); !reflect.DeepEqual(got["/dev/sda"], want) {
+		t.Errorf("sleeping disk = %+v, want %+v", got["/dev/sda"], want)
+	}
+	if nvme := got["/dev/nvme0"]; nvme.Standby || nvme.Model == "" {
+		t.Errorf("nvme = %+v, want a read disk", nvme)
+	}
+	b, err := json.Marshal(got["/dev/sda"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["standby"] != true || m["smart_passed"] != nil {
+		t.Errorf("sleeping disk JSON = %s, want standby true and no smart_passed", b)
+	}
+	b, _ = json.Marshal(got["/dev/nvme0"])
+	if strings.Contains(string(b), "standby") {
+		t.Errorf("read disk JSON = %s, want no standby key", b)
+	}
+	for _, c := range *calls {
+		if c.args[len(c.args)-1] == "/dev/nvme0" && slices.Contains(c.args, "-n") {
+			t.Errorf("nvme query %q carries -n", c.args)
+		}
+	}
+}
+
+func TestCollectSmartStandbyStatusIsNotAnNVMeStatus(t *testing.T) {
+	// Without -n, status 3 cannot come from the power mode check: an NVMe disk with it is no sleeping
+	// disk but one smartctl could not open (bit 1), and drops out as before.
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {out: ataFixture},
+		"/dev/nvme0": {out: smartOpenFailedFixture, err: smartctlExit(t, 3)},
+	})
+	disks, reason := collectSmart(context.Background())
+	if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/sda" || disks[0].Standby {
+		t.Errorf("collectSmart() = %+v, %q; want only the read /dev/sda", disks, reason)
+	}
 }

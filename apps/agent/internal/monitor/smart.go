@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,9 @@ type SmartDisk struct {
 	Serial   string `json:"serial"`
 	Protocol string `json:"protocol"` // "ATA" or "NVMe"
 	Kind     string `json:"kind"`     // "HDD", "SATA-SSD" or "NVMe"
+	// Standby: the disk slept (STANDBY or SLEEP) and was not queried, so every other field is empty;
+	// the service keeps its last state (R-1569).
+	Standby bool `json:"standby,omitempty"`
 	// Nil when smartctl reported no smart_status (SMART disabled or unsupported): the
 	// field is left out, so the service reads the health as unknown, not as failed.
 	Passed   *bool `json:"smart_passed,omitempty"`
@@ -134,6 +138,10 @@ func smartDiskID(name, infoName, devType string) string {
 	return name
 }
 
+// smartStandbyStatus is the exit status smartctl ends with for a disk in STANDBY or SLEEP (-n
+// standby,3). Odd and above 1, so no status of a query: bit 0 (the command line did not parse) comes alone.
+const smartStandbyStatus = 3
+
 func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol string) *SmartDisk {
 	// The scan type goes along as -d: some types only the scan knows (megaraid,N on /dev/bus/N, which
 	// a query without -d cannot detect), the others it detects from the name as the query would. Not
@@ -141,6 +149,11 @@ func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol s
 	// too, and -d scsi switches off the SAT detection on open (smartmontools os_linux.cpp,
 	// linux_scsi_device::autodetect_open), so the disk would come without its ATA attributes.
 	args := []string{"--all", "--json=c"}
+	nvme := strings.EqualFold(protocol, "NVMe") || devType == "nvme"
+	if !nvme {
+		// A query wakes a sleeping HDD (every report, R-1569); -n is for ATA and SCSI only (smartctl(8)).
+		args = append(args, "-n", "standby,"+strconv.Itoa(smartStandbyStatus))
+	}
 	if devType != "" && devType != "scsi" {
 		args = append(args, "-d", devType)
 	}
@@ -151,6 +164,10 @@ func querySmartDevice(ctx context.Context, smartctl, device, devType, protocol s
 	exitCode := 0
 	if err != nil {
 		exitErr, ok := err.(*exec.ExitError)
+		if ok && !nvme && exitErr.ExitCode() == smartStandbyStatus {
+			// Only -n ends with this status: bit 0 (command line) never comes with another bit.
+			return &SmartDisk{Device: device, Standby: true}
+		}
 		if !ok || len(out) == 0 {
 			return nil // no usable JSON
 		}
