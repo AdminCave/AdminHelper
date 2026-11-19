@@ -1,5 +1,5 @@
 # „Mehr Log“ unter OPNsense: Systemlog lesen — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-52 · Review: am Ende
+Status: erledigt · Branch: feature/kern-monitoring-52 · Review: am Ende
 Spec: docs/features/kern-monitoring-52.md (Roadmap R-1630)
 Heavy: none — fester SSH-Befehl, als Argumentliste im Unit-Test geprüft; keine Journey, kein Stack-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
