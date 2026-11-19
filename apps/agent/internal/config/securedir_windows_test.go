@@ -1054,3 +1054,28 @@ func TestEnsureDataDirSecuresTheRootFirst(t *testing.T) {
 		})
 	}
 }
+
+// A file written for the service belongs to the Administrators and carries only the ACL its
+// protected directory passes on, also when it replaces a file of another owner; no temporary
+// file is left.
+func TestWriteFileOwnedByAdministrators(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "program")
+	if err := EnsureSecureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "agent.exe")
+	writeFile(t, path, "old")
+	setOwner(t, path, currentUser(t))
+
+	for _, content := range []string{"first", "second"} {
+		if err := WriteFileOwnedByAdministrators(path, []byte(content)); err != nil {
+			t.Fatalf("write %q: %v", content, err)
+		}
+		if data, err := os.ReadFile(path); err != nil || string(data) != content {
+			t.Fatalf("%s = %q, %v, want %q", path, data, err, content)
+		}
+		requireOwner(t, path, administratorsSID)
+		requireInheritedOnly(t, path)
+		requireGone(t, path+".new")
+	}
+}

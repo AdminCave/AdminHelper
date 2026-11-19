@@ -160,8 +160,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     );
   });
 
-  // Concept §3.14: problems first (worst first, else in the fixed order), then what was
-  // newly found, then the quiet cards in the fixed order.
+  // What was newly found comes first (R-1542), then the problems (worst first, else in
+  // the fixed order), then the quiet cards in the fixed order.
   let cards = $derived.by(() => {
     const fixed: Card[] = [
       { kind: 'system' as const, checks: systemCardChecks },
@@ -403,9 +403,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#if serverChecks.length === 0 && !showFindings}
       <div class="mon-panel-empty-inline">{$t('monitoring.panel.noChecks')}</div>
     {:else}
-      {#each cards.problems as card (card.key)}
-        {@render cardView(card)}
-      {/each}
       {#if showFindings}
         <MonCard
           title={$t('monitoring.card.findings', { count: findings.length })}
@@ -422,6 +419,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {/if}
         </MonCard>
       {/if}
+      {#each cards.problems as card (card.key)}
+        {@render cardView(card)}
+      {/each}
       {#each cards.rest as card (card.key)}
         {@render cardView(card)}
       {/each}

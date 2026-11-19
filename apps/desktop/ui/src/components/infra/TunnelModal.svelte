@@ -10,6 +10,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import {
     TUNNEL_TYPES,
     TUNNEL_PROTOCOLS,
+    WEB_SCHEMES,
+    asksWebTarget,
+    effectiveScheme,
+    type WebScheme,
     PROTOCOL_DEFAULT_PORT,
     emptyTunnelForm,
     tunnelToForm,
@@ -277,7 +281,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span>{$t('infra.tun.autoConnection')}</span>
         </label>
 
-        {#if form.autoCreateConnection}
+        {#if asksWebTarget(form)}
+          <!-- An HTTPS tunnel's connection is always https://<domain>; only STCP asks. -->
+          {#if isStcp}
+            <label class="field">
+              <span class="field-label">{$t('infra.tun.autoConnScheme')}</span>
+              <select
+                value={effectiveScheme(form)}
+                onchange={(e) =>
+                  (form = {
+                    ...form,
+                    autoConnectionScheme: (e.currentTarget as HTMLSelectElement).value as WebScheme,
+                  })}
+              >
+                {#each WEB_SCHEMES as scheme (scheme)}
+                  <option value={scheme}>{scheme}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+          <label class="field">
+            <span class="field-label">{$t('infra.tun.autoConnPath')}</span>
+            <input type="text" bind:value={form.autoConnectionPath} placeholder="/" />
+          </label>
+        {:else if form.autoCreateConnection && form.protocol !== 'web'}
           <label class="field span2">
             <span class="field-label">{$t('infra.tun.autoConnUser')}</span>
             <input type="text" bind:value={form.autoConnectionUsername} />

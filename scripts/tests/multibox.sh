@@ -241,8 +241,9 @@ for a in "${AGENT_VMS[@]:-}"; do
     || bad "agent $a: run --once failed (AGENT_RUN_OK missing, see output above)"
   if [ -n "$REPO_FP" ]; then
     printf '%s' "$AOUT" | grep -q AGENT_REPO_OK && printf '%s' "$AOUT" | grep -q AGENT_CAFLIP_OK \
-      && ok "agent $a: installed from the :8445 repo via agent-install.sh, CA-pinned steady state" \
-      || bad "agent $a: user-path markers missing (AGENT_REPO_OK/AGENT_CAFLIP_OK)"
+      && printf '%s' "$AOUT" | grep -q AGENT_APT_UPDATE_OK \
+      && ok "agent $a: installed from the :8445 repo via agent-install.sh, CA-pinned steady state, apt-get update green" \
+      || bad "agent $a: user-path markers missing (AGENT_REPO_OK/AGENT_CAFLIP_OK/AGENT_APT_UPDATE_OK)"
   else
     skipped "agent $a: user install path (no MB_REPO_GPG_FP) — the :8445 repo and the CA-pin flip are unverified"
   fi

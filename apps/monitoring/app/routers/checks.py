@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import time
 import uuid
+from types import SimpleNamespace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -17,7 +19,8 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.alerter import muted_reasons
+from app.alerter import bell_record, emit_to_hub, muted_reasons, release_hub_slot
+from app.bell_catch_up import closed_message
 from app.check_configs import (
     CENTRAL_PAIR_SENSORS,
     CENTRAL_SENSORS,
@@ -49,7 +52,7 @@ from app.models import (
     MonitorServiceLog,
     MonitorState,
 )
-from app.module_sync import tombstone_module_check
+from app.module_sync import mark_module_overrides, tombstone_module_check
 from app.scheduler import add_check, interval_timedelta, remove_check
 from app.schemas import (
     VALID_INTERVALS,
@@ -222,7 +225,32 @@ def _probe_change_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]
     return None
 
 
+def _module_central_refused(check: MonitorCheck, data: CheckUpdate, sent: set[str]) -> str | None:
+    """Why the update would move a module's central check off what its module bound it to,
+    or None: its server, sensor and host (the vhost's name) come from the module (R-1501)."""
+    if check.check_type != "central" or check.module_id is None:
+        return None
+    if "check_type" in sent and data.check_type != "central":
+        return "A central check of a module stays central"
+    if "server_id" in sent and data.server_id != check.server_id:
+        return "A central check of a module stays on the server of its module"
+    if "config" in sent:
+        try:
+            stored = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            stored = {}
+        new = data.config if isinstance(data.config, dict) else {}
+        stored = stored if isinstance(stored, dict) else {}
+        if any(new.get(part) != stored.get(part) for part in ("sensor", "host")):
+            return "The sensor and host of a module's central check come from its module"
+    return None
+
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# What hub_status records of an alarm the bell shows.
+_BELL_PROBLEMS = ("warning", "critical")
 
 # Type-specific metrics written to VictoriaMetrics.
 # VictoriaMetrics appends '_value' to InfluxDB line protocol metrics
@@ -398,7 +426,9 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         raise HTTPException(400, "Invalid interval")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Invalid severity")
-    if refused := _probe_change_refused(check, data, sent):
+    if refused := _probe_change_refused(check, data, sent) or _module_central_refused(
+        check, data, sent
+    ):
         raise HTTPException(422, refused)
 
     # Validate the effective (type, config) pair whenever either changes — a
@@ -451,6 +481,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         ):
             raise HTTPException(400, refused)
 
+    old_config = check.config
     for field in [
         "server_id",
         "name",
@@ -467,6 +498,11 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     if "config" in sent:
         check.config = json.dumps(data.config)
     mark_overrides(db, check, {field: getattr(data, field) for field in sent})
+    mark_module_overrides(
+        check,
+        enabled=data.enabled if "enabled" in sent else None,
+        old_config=old_config if "config" in sent else None,
+    )
 
     db.commit()
     db.refresh(check)
@@ -488,6 +524,11 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     if not check:
         raise HTTPException(404, "Check not found")
 
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    shown = state.hub_status if state is not None and state.hub_status in _BELL_PROBLEMS else None
+    # The row is gone after the commit: what the all-clear needs is taken now.
+    gone = SimpleNamespace(id=check.id, name=check.name, server_id=check.server_id)
+    msg = closed_message(check, "deleted")
     tombstone_check(db, check)
     # A module check stays deleted on the next adopt and catalog sync, too.
     tombstone_module_check(db, check)
@@ -495,6 +536,13 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     db.commit()
     # Only now: if the commit fails, the check stays and its job must keep running.
     remove_check(check_id)
+    # No later run sends the all-clear of the alarm the bell shows (R-1571). The
+    # catch-up job cannot repeat it either: the row is gone (until the outbox R-1561).
+    if shown is not None and not emit_to_hub(gone, shown, "ok", msg, severity=shown):
+        logger.warning(
+            "Check %s deleted: the hub did not take its all-clear, the incident stays open",
+            check_id,
+        )
 
 
 @router.post(
@@ -511,11 +559,36 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
 
     check.enabled = not check.enabled
     mark_overrides(db, check, {"enabled": check.enabled})
+    mark_module_overrides(check, enabled=check.enabled)
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    closing = None
+    if state is not None and check.enabled:
+        # Enabled again, the check starts fresh: the old status is not reported again,
+        # a problem the first run finds is a new one (R-1571).
+        state.status, state.fail_count, state.ok_count = "unknown", 0, 0
+        state.since = utcnow_naive()
+    elif state is not None and state.hub_status in _BELL_PROBLEMS:
+        # Disabled while the bell shows its alarm: no later run sends the all-clear,
+        # so this does. The slot is reserved in the same commit, as process_alert
+        # does, so the catch-up job does not send it a second time meanwhile; the
+        # all-clear counts as reported.
+        before = (state.hub_status, state.hub_sent_at)
+        reserved = bell_record("ok", check.severity, state.hub_sent_at, utcnow_naive())
+        state.hub_status, state.hub_sent_at = reserved
+        state.notified_status = "ok"
+        closing = (before, reserved)
     db.commit()
 
     _schedule(check)
 
-    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    if closing is not None:
+        before, reserved = closing
+        msg = closed_message(check, "disabled")
+        if not emit_to_hub(check, before[0], "ok", msg, severity=before[0]):
+            # The catch-up job sends it on a later run (lag_target of a disabled check).
+            release_hub_slot(db, check_id, reserved, before)
+            db.commit()
+        db.refresh(state)
     return check.to_dict(state=state)
 
 
@@ -763,7 +836,16 @@ def get_status_summary(db: Session = Depends(get_db)):
     # Aggregate in SQL: a GROUP BY count avoids materializing every MonitorState row (incl. the
     # message/details JSON blobs) just to tally per status — thousands of rows with large text
     # columns per dashboard poll at scale (5.21).
-    rows = db.query(MonitorState.status, func.count()).group_by(MonitorState.status).all()
+    enabled = MonitorCheck.enabled == True  # noqa: E712
+    # Only enabled checks: a disabled one keeps its last state frozen, and a critical
+    # one would stay on the dashboard for good.
+    rows = (
+        db.query(MonitorState.status, func.count())
+        .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
+        .filter(enabled)
+        .group_by(MonitorState.status)
+        .all()
+    )
     summary = {
         "total": 0,
         "ok": 0,
@@ -777,7 +859,6 @@ def get_status_summary(db: Session = Depends(get_db)):
         if status_ in summary:
             summary[status_] = count
         summary["total"] += count
-    enabled = MonitorCheck.enabled == True  # noqa: E712
     last_result = (
         db.query(func.max(MonitorState.last_check))
         .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)

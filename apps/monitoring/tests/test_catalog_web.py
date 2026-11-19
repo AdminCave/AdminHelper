@@ -12,10 +12,10 @@ from datetime import UTC, datetime
 import pytest
 
 from app.catalog.loader import load_catalog
-from app.check_configs import ProbeConfig
+from app.check_configs import CentralConfig, ProbeConfig
 from app.checkers.probe import ProbeChecker
 from app.discovery import clean_inventory, match_inventory
-from app.module_sync import probe_config
+from app.module_sync import central_config, probe_config
 
 CATALOG = load_catalog()
 # Far from the test machine's clock, so only the report's own time makes a result fresh.
@@ -588,3 +588,54 @@ def test_the_moodledata_asks_its_view_every_15_minutes():
 def test_the_moodledata_rates_like_a_disk(used, inodes, want):
     values = {"used_pct": used, "free_bytes": 1 << 30, "inodes_used_pct": inodes}
     assert _status("moodle_native", "data", **values) == want
+
+
+# --- web_domain from outside (R-1501) -----------------------------------------------
+
+
+def test_the_web_domain_asks_its_domain_from_outside_too():
+    module = CATALOG.modules["web_domain"]
+    assert module.version == 2
+    assert [(c.key, c.central) for c in module.checks] == [
+        ("certificate", False),
+        ("reload", False),
+        ("dns", True),
+        ("outside", True),
+    ]
+    dns, outside = _check("web_domain", "dns"), _check("web_domain", "outside")
+    assert (dns.sensor, dns.interval, dns.params) == ("dns", 900, {})
+    # The expiry stays with the certificate check: one alert per domain.
+    assert (outside.sensor, outside.interval, outside.params) == ("tls", 3600, {"expiry": False})
+
+
+def test_adopting_a_web_domain_binds_its_central_checks_to_the_domain():
+    module = CATALOG.modules["web_domain"]
+    configs = {
+        c.key: central_config(c, "shop.example.org", VHOST_SUMMARY)
+        for c in module.checks
+        if c.central
+    }
+    assert configs == {
+        "dns": ({"sensor": "dns", "host": "shop.example.org", "params": {}}, None),
+        "outside": (
+            {
+                "sensor": "tls",
+                "host": "shop.example.org",
+                "params": {"expiry": False},
+                "port": 8443,
+            },
+            None,
+        ),
+    }
+    for config, _ in configs.values():
+        CentralConfig.model_validate(config)
+
+
+def test_an_internal_web_domain_keeps_only_its_agent_checks():
+    module = CATALOG.modules["web_domain"]
+    for check in (c for c in module.checks if c.central):
+        assert central_config(check, "wiki.home.arpa", VHOST_SUMMARY) == (None, "not a public name")
+    config, why = probe_config(
+        module, _check("web_domain", "certificate"), "wiki.home.arpa", VHOST_SUMMARY, []
+    )
+    assert why is None and config["target"]["name"] == "wiki.home.arpa"

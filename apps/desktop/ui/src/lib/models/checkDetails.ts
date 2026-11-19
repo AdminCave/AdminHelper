@@ -308,6 +308,8 @@ export const smartDetails = details(
           reallocated_sectors: num,
           pending_sectors: num,
           critical_warning_bits: listOf(str),
+          standby: bool,
+          read_at: str,
         },
         ['device'],
       ),

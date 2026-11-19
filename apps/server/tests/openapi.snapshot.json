@@ -2199,6 +2199,33 @@
       },
       "FrpTunnelCreate": {
         "properties": {
+          "auto_connection_path": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Path"
+          },
+          "auto_connection_scheme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "http",
+                  "https"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Scheme"
+          },
           "auto_connection_username": {
             "anyOf": [
               {
@@ -2506,6 +2533,33 @@
       },
       "FrpTunnelUpdate": {
         "properties": {
+          "auto_connection_path": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Path"
+          },
+          "auto_connection_scheme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "http",
+                  "https"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Connection Scheme"
+          },
           "auto_connection_username": {
             "anyOf": [
               {
@@ -4584,6 +4638,582 @@
         "title": "NotificationTestRequest",
         "type": "object"
       },
+      "NotifyChannelTestRequest": {
+        "description": "A test message to a target the admin names, over the settings in effect.",
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "telegram"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "target"
+        ],
+        "title": "NotifyChannelTestRequest",
+        "type": "object"
+      },
+      "NotifyChannelsEffective": {
+        "description": "What the server sends with now, panel before .env; no secret.",
+        "properties": {
+          "privateTargets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Privatetargets",
+            "type": "array"
+          },
+          "smtpFrom": {
+            "title": "Smtpfrom",
+            "type": "string"
+          },
+          "smtpHost": {
+            "title": "Smtphost",
+            "type": "string"
+          },
+          "smtpPort": {
+            "title": "Smtpport",
+            "type": "integer"
+          },
+          "smtpUser": {
+            "title": "Smtpuser",
+            "type": "string"
+          }
+        },
+        "required": [
+          "smtpHost",
+          "smtpPort",
+          "smtpUser",
+          "smtpFrom",
+          "privateTargets"
+        ],
+        "title": "NotifyChannelsEffective",
+        "type": "object"
+      },
+      "NotifyChannelsIn": {
+        "description": "The settings the panel keeps. A plain field null or \"\" falls back to .env; the\npassword and the token missing or null stay as stored, \"\" deletes them.",
+        "properties": {
+          "privateTargets": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privatetargets"
+          },
+          "smtpFrom": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpfrom"
+          },
+          "smtpHost": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtphost"
+          },
+          "smtpPassword": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtppassword"
+          },
+          "smtpPort": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpport"
+          },
+          "smtpUser": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpuser"
+          },
+          "telegramToken": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegramtoken"
+          }
+        },
+        "title": "NotifyChannelsIn",
+        "type": "object"
+      },
+      "NotifyChannelsOut": {
+        "description": "The panel row (null = not set there) and what is in effect. Password and token\nleave the server never: only whether the panel holds one.",
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/NotifyChannelsEffective"
+          },
+          "passwordSet": {
+            "title": "Passwordset",
+            "type": "boolean"
+          },
+          "privateTargets": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privatetargets"
+          },
+          "smtpFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpfrom"
+          },
+          "smtpHost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtphost"
+          },
+          "smtpPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpport"
+          },
+          "smtpUser": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtpuser"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "tokenSet": {
+            "title": "Tokenset",
+            "type": "boolean"
+          },
+          "unreadable": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable",
+            "type": "array"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedby"
+          }
+        },
+        "required": [
+          "smtpHost",
+          "smtpPort",
+          "smtpUser",
+          "smtpFrom",
+          "privateTargets",
+          "passwordSet",
+          "tokenSet",
+          "sources",
+          "unreadable",
+          "effective",
+          "updatedAt",
+          "updatedBy"
+        ],
+        "title": "NotifyChannelsOut",
+        "type": "object"
+      },
+      "NotifyConfigOut": {
+        "description": "What the monitoring sends its rule mails with; template null = the default.",
+        "properties": {
+          "smtp": {
+            "$ref": "#/components/schemas/NotifyConfigSmtp"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotifyConfigTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "smtp",
+          "template"
+        ],
+        "title": "NotifyConfigOut",
+        "type": "object"
+      },
+      "NotifyConfigSmtp": {
+        "description": "The relay in effect, panel before .env, with its password: for the monitoring\nonly (X-Internal-Key).",
+        "properties": {
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "sender": {
+            "title": "Sender",
+            "type": "string"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "user",
+          "password",
+          "sender",
+          "sources"
+        ],
+        "title": "NotifyConfigSmtp",
+        "type": "object"
+      },
+      "NotifyConfigTemplate": {
+        "properties": {
+          "fromName": {
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo"
+          },
+          "logoType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logotype"
+          },
+          "subjectPrefix": {
+            "title": "Subjectprefix",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectPrefix",
+          "fromName",
+          "html",
+          "text",
+          "logo",
+          "logoType"
+        ],
+        "title": "NotifyConfigTemplate",
+        "type": "object"
+      },
+      "NotifyTemplateIn": {
+        "description": "The template the panel keeps; an empty field is the default (no prefix, no\nsender name, no HTML part, the message text as the text part). 422 for a\nplaceholder the renderer does not know.",
+        "properties": {
+          "fromName": {
+            "default": "",
+            "maxLength": 100,
+            "pattern": "^[^\\r\\n]*$",
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Html",
+            "type": "string"
+          },
+          "subjectPrefix": {
+            "default": "",
+            "maxLength": 100,
+            "pattern": "^[^\\r\\n]*$",
+            "title": "Subjectprefix",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "NotifyTemplateIn",
+        "type": "object"
+      },
+      "NotifyTemplateLogoIn": {
+        "description": "The logo, base64; PNG or JPEG by its first bytes, at most 200 KB.",
+        "properties": {
+          "data": {
+            "maxLength": 273068,
+            "minLength": 4,
+            "title": "Data",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "NotifyTemplateLogoIn",
+        "type": "object"
+      },
+      "NotifyTemplateOut": {
+        "description": "The template of the panel; the logo only as whether one is stored.",
+        "properties": {
+          "fromName": {
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "logoSet": {
+            "title": "Logoset",
+            "type": "boolean"
+          },
+          "logoType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logotype"
+          },
+          "placeholders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Placeholders",
+            "type": "array"
+          },
+          "subjectPrefix": {
+            "title": "Subjectprefix",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedby"
+          }
+        },
+        "required": [
+          "subjectPrefix",
+          "fromName",
+          "html",
+          "text",
+          "logoSet",
+          "logoType",
+          "placeholders",
+          "updatedAt",
+          "updatedBy"
+        ],
+        "title": "NotifyTemplateOut",
+        "type": "object"
+      },
+      "NotifyTemplatePreviewOut": {
+        "description": "A template rendered with sample values; the logo in html as a data: URL.",
+        "properties": {
+          "fromName": {
+            "title": "Fromname",
+            "type": "string"
+          },
+          "html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "fromName",
+          "text",
+          "html"
+        ],
+        "title": "NotifyTemplatePreviewOut",
+        "type": "object"
+      },
+      "NotifyTemplateTestRequest": {
+        "description": "A test mail in the stored template to the address given.",
+        "properties": {
+          "target": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "NotifyTemplateTestRequest",
+        "type": "object"
+      },
       "PlaybookContentOut": {
         "properties": {
           "content": {
@@ -5877,6 +6507,388 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/notify/channels": {
+      "get": {
+        "description": "The delivery settings of the panel and the ones in effect. 403 for non-admins.",
+        "operationId": "get_channels_api_admin_notify_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChannelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Channels",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Store the delivery settings. A plain field null or empty falls back to .env; the\npassword and the token missing or null stay, empty deletes them, and a new SMTP host\nwithout a password drops the stored one. 422 for a wrong host, sender, port, token\nor network.",
+        "operationId": "put_channels_api_admin_notify_channels_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyChannelsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChannelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Channels",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/channels/test": {
+      "post": {
+        "description": "Send a test message over the stored settings to the target given, at once. 409\nwhen the channel is not set up, 422 for a blocked target, 502 for a failed send,\n429 for a second test of the channel within ten seconds (shared with the personal\ntest).",
+        "operationId": "test_channels_api_admin_notify_channels_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyChannelTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Channels",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template": {
+      "delete": {
+        "description": "Back to the default, logo included: the mails go as plain text as before.",
+        "operationId": "delete_template_api_admin_notify_template_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Template",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "get": {
+        "description": "The mail template of the panel; all fields empty is the default (plain text as\nbefore). 403 for non-admins.",
+        "operationId": "get_template_api_admin_notify_template_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Template",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Store the template; the logo stays. 422 for an unknown placeholder or a field\nover its size.",
+        "operationId": "put_template_api_admin_notify_template_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Template",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template/logo": {
+      "delete": {
+        "description": "Remove the logo; {{logo}} becomes empty.",
+        "operationId": "delete_logo_api_admin_notify_template_logo_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Logo",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Store the logo (base64, PNG or JPEG by its first bytes, at most 200 KB); the\nHTML part shows it where it names {{logo}}. 422 for anything else.",
+        "operationId": "put_logo_api_admin_notify_template_logo_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateLogoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Logo",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template/preview": {
+      "post": {
+        "description": "The template given, not stored, rendered with sample values and the stored\nlogo as a data: URL. 422 for an unknown placeholder.",
+        "operationId": "preview_template_api_admin_notify_template_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTemplatePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Template",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/admin/notify/template/test": {
+      "post": {
+        "description": "A test mail in the stored template over the relay in effect. 409 without a\nrelay, 502 for a failed send, 429 as the channel test (they share the window).",
+        "operationId": "test_template_api_admin_notify_template_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyTemplateTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Template",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/ansible/playbooks": {
       "get": {
         "operationId": "list_playbooks_api_ansible_playbooks_get",
@@ -8674,6 +9686,33 @@
           }
         ],
         "summary": "Ingest",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/internal/notify-config": {
+      "get": {
+        "description": "The relay and the mail template in effect, for the rule mails of the monitoring:\nthe only place the stored SMTP password leaves the server. 403 without the key.",
+        "operationId": "notify_config_api_internal_notify_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "InternalKey": []
+          }
+        ],
+        "summary": "Notify Config",
         "tags": [
           "notifications"
         ]

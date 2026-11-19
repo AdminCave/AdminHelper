@@ -146,6 +146,9 @@ class ProxmoxBackupConfig(_StrictConfig):
 class ZfsHealthConfig(_StrictConfig):
     capacity_warn: float = Field(80, ge=0, le=100, strict=True)
     capacity_crit: float = Field(90, ge=0, le=100, strict=True)
+    # Whole days, as the checker's message prints them (R-1570).
+    scrub_warn_days: int = Field(35, ge=1, le=3650, strict=True)
+    scrub_crit_days: int = Field(60, ge=1, le=3650, strict=True)
     # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
     # checker and the desktop checkbox as values each reads differently.
     alert_on_unavailable: StrictBool = True
@@ -222,10 +225,10 @@ class ProbeConfig(_StrictConfig):
         target = self.target
         if (
             target is not None
-            and target.kind in ("container", "unit", "process", "vhost")
+            and target.kind in ("container", "unit", "process", "vhost", "share")
             and not target.name
         ):
-            # The agent asks exactly this container, unit, process or vhost; without a name it
+            # The agent asks exactly this container, unit, process, vhost or share; without a name it
             # would have to guess.
             raise ValueError(f"target.name is required for kind '{target.kind}'")
         if target is not None and target.kind == "vhost" and target.port_hint is None:
@@ -266,7 +269,10 @@ class ProbeConfig(_StrictConfig):
 
 
 class TlsParams(_StrictConfig):
-    """The tls sensor takes no params; extra=forbid refuses any key."""
+    """expiry false: the lifetime is shown, not rated (the agent check of a module rates
+    it, R-1501); extra=forbid refuses any other key."""
+
+    expiry: bool = Field(True, strict=True)
 
 
 class DnsParams(_StrictConfig):

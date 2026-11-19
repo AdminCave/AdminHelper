@@ -924,8 +924,8 @@ modules=$(e2e_dc exec -T redis redis-cli MODULE LIST 2>&1 | awk 'prev == "name" 
 # ── 13. Processes of app in server, scheduler, ca-issuer and monitoring are not dumpable ──
 # Their images leave every ELF program in the bin directories and below /usr/lib/postgresql for
 # anyone but root to execute only (the last RUN of each Dockerfile). A process the entrypoint
-# starts as app through gosu runs from a program its user cannot read, so it is not dumpable and
-# the entries in /proc/<pid> are root's.
+# starts as app through setpriv and env runs from a program its user cannot read, so it is not
+# dumpable and the entries in /proc/<pid> are root's.
 # Checked from inside each container, as root, once PID 1 runs the service as app: before
 # that the entrypoint is still at work, and a look at /proc would catch whichever helper it
 # runs at that moment. A readable copy of sleep, started the same way, shows the check can fail.
@@ -1025,13 +1025,13 @@ app_not_dumpable() {
     gid=$(e2e_dc exec -T server id -g app 2>/dev/null | tr -d '\r\n')
     # shellcheck disable=SC2016 # expanded by the container's sh
     if ! e2e_dc exec -T server sh -c 'cp /usr/bin/sleep "$1" && chmod 0755 "$1"' _ "$copy" >/dev/null 2>&1 \
-        || ! e2e_dc exec -d -T server gosu app:app "$copy" 120 >/dev/null 2>&1; then
+        || ! e2e_dc exec -d -T server setpriv --reuid=app --regid=app --init-groups env "$copy" 120 >/dev/null 2>&1; then
         bad "server: could not start a readable copy of sleep as app"; return
     fi
     if ! until_ok 10 copy_seen; then
         bad "server: the readable copy of sleep did not show up as a process of app"
     elif [ "${LAST#* }" = "$APP_UID:$gid sleep-readable" ]; then
-        ok "counter-check: a readable copy of sleep started through gosu keeps /proc/<pid>/status as $APP_UID:$gid"
+        ok "counter-check: a readable copy of sleep started through setpriv keeps /proc/<pid>/status as $APP_UID:$gid"
     else
         bad "counter-check: the readable copy of sleep has '${LAST#* }', expected $APP_UID:$gid" \
             "— the check could not fail"
@@ -1182,7 +1182,7 @@ compose_limits() {
 
     # c. monitoring: ping as app under no-new-privileges, over the ICMP datagram socket the
     #    service's ping_group_range allows.
-    e2e_dc exec -T monitoring gosu app:app ping -c1 -W2 127.0.0.1 >/dev/null 2>&1 \
+    e2e_dc exec -T monitoring setpriv --reuid=app --regid=app --init-groups env ping -c1 -W2 127.0.0.1 >/dev/null 2>&1 \
         && ok "monitoring: ping as app reaches 127.0.0.1 under no-new-privileges" \
         || bad "monitoring: ping as app failed under no-new-privileges"
 

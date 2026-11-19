@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -386,12 +387,32 @@ func serviceInstallCmd() *cobra.Command {
 	}
 }
 
+// The service calls of service uninstall; vars for tests, which must not touch the host's service.
+var (
+	purgeSupported   = service.PurgeSupported
+	serviceUninstall = service.Uninstall
+	servicePurge     = service.Purge
+)
+
 func serviceUninstallCmd() *cobra.Command {
-	return &cobra.Command{
+	var purge bool
+	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Service deregistrieren",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return service.Uninstall()
+			if purge && !purgeSupported {
+				return errors.New("--purge is for Windows; on Linux and FreeBSD remove the package with its package manager")
+			}
+			if err := serviceUninstall(); err != nil {
+				return err
+			}
+			if purge {
+				return servicePurge()
+			}
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&purge, "purge", false,
+		"also remove the program directory and the data directories (Windows)")
+	return cmd
 }

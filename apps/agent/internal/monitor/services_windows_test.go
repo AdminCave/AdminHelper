@@ -24,3 +24,15 @@ func TestReWinServiceNameRejectsOptionLikeNames(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceStartStatesReadsTheRegistry(t *testing.T) {
+	// EventLog starts automatically on every Windows without a trigger; a service that does not
+	// exist and a name with a path separator are left out.
+	got := serviceStartStates([]string{"EventLog", "NoSuchService-AdminHelper", `EventLog\..\x`})
+	if got["EventLog"] != "enabled" {
+		t.Errorf("EventLog = %q, want enabled", got["EventLog"])
+	}
+	if len(got) != 1 {
+		t.Errorf("start states = %v, want only EventLog", got)
+	}
+}

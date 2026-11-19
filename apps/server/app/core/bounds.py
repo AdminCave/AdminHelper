@@ -60,9 +60,18 @@ def _unstorable(text: str) -> str | None:
     return None
 
 
-def _find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
+# How deep a request body may nest, counted from the body: a dict or list whose
+# location has more segments is refused. Far beyond any body the clients send,
+# far below what the encoders of a stored value and of a response carry. The same
+# limit as the monitoring service's copy of this file.
+MAX_DEPTH = 32
+_TOO_DEEP = f"must not nest deeper than {MAX_DEPTH} levels"
+
+
+def _find_unstorable(data: dict) -> tuple[tuple, str | None, str] | None:
     """Location, value and reason of a string in `data` that _unstorable refuses,
-    if any.
+    or of a dict or list nested deeper than MAX_DEPTH, if any. For the latter the
+    value is None: a refusal echoes its input, and the input is the deep subtree.
 
     Walks with an explicit stack rather than recursion: the body is whatever the
     client nested, and a RecursionError here would be the 500 this exists to
@@ -70,6 +79,8 @@ def _find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
     stack: list[tuple[tuple, Any]] = [((), data)]
     while stack:
         loc, value = stack.pop()
+        if isinstance(value, dict | list) and len(loc) > MAX_DEPTH:
+            return loc, None, _TOO_DEEP
         if isinstance(value, str):
             if reason := _unstorable(value):
                 return loc, value, reason
@@ -85,7 +96,8 @@ def _find_unstorable(data: dict) -> tuple[tuple, str, str] | None:
 
 class RequestModel(BaseModel):
     """Base of every schema that describes a request body: no string anywhere in
-    it may carry a NUL byte or a lone surrogate.
+    it may carry a NUL byte or a lone surrogate, and nothing in it may nest deeper
+    than MAX_DEPTH.
 
     Postgres stores no 0x00 in a text value: psycopg raises DataError while
     binding the parameter, before the query runs, so the route never produced a

@@ -6,52 +6,97 @@
 
 package frpc
 
-import "context"
+import (
+	"bytes"
+	"context"
+	"fmt"
 
-// FRP-on-Windows is not provisioned as a standalone service: only the
-// AdminHelper-Agent service is registered (internal/service/service_windows.go),
-// there is no `sc create frpc`. Firing `sc start frpc` / `sc stop frpc` at a
-// non-existent service made every config change abort the whole FRP sync
-// (sync.go treats a restart error as a hard return). Until frpc is integrated
-// with the Windows Service Manager, these hooks skip cleanly (warn + nil) so the
-// rest of the sync (config + hash already written to disk) is not lost.
+	"adminhelper-agent/internal/config"
+)
 
-// enableFrpcService is a no-op on Windows: no frpc service is registered.
+// The hooks go to the supervisor of the agent service (supervisor_windows.go). Outside the
+// service process they fail with errNotSupervised: frpc then does not run, and the sync must not
+// report that it does (R-0708).
+
+// enableFrpcService starts frpc unless it runs already.
 func enableFrpcService(context.Context) error {
-	logger.Warnf("frpc-Dienst wird unter Windows nicht verwaltet — Aktivierung uebersprungen")
-	return nil
+	s := current.Load()
+	if s == nil {
+		return errNotSupervised
+	}
+	return s.enable()
 }
 
-// restartFrpc is a no-op on Windows: no frpc service is registered.
+// restartFrpc stops frpc and starts it again on frpc.toml.
 func restartFrpc(context.Context) error {
-	logger.Warnf("frpc-Dienst wird unter Windows nicht verwaltet — Neustart uebersprungen")
-	return nil
+	s := current.Load()
+	if s == nil {
+		return errNotSupervised
+	}
+	return s.restart()
 }
 
-// disableFrpc is a no-op on Windows: no frpc service is registered.
+// disableFrpc stops frpc until the next enable.
 func disableFrpc(context.Context) error {
-	logger.Warnf("frpc service is not managed on Windows, skipping the stop")
-	return nil
+	s := current.Load()
+	if s == nil {
+		return errNotSupervised
+	}
+	return s.disable()
 }
 
-// frpcActive is always false on Windows: no frpc service is registered that could run.
+// frpcActive reports whether the supervisor runs frpc.
 func frpcActive(context.Context) (bool, error) {
-	return false, nil
+	s := current.Load()
+	if s == nil {
+		return false, errNotSupervised
+	}
+	return s.pid() != 0, nil
 }
 
-// frpcDown is always false on Windows: no frpc service is registered that the sync could start.
-func frpcDown(context.Context) (bool, error) {
-	return false, nil
+// frpcDown reports whether frpc does not run, also while the supervisor waits to restart it.
+func frpcDown(ctx context.Context) (bool, error) {
+	active, err := frpcActive(ctx)
+	if err != nil {
+		return false, err
+	}
+	return !active, nil
 }
 
-// frpcOwnsAdminPort is always false on Windows: no frpc service is registered that the sync
-// could reload.
-func frpcOwnsAdminPort(int) bool {
-	return false
+// frpcOwnsAdminPort reports whether the frpc the supervisor runs listens on 127.0.0.1:port, and
+// no other process there: the reload carries the admin password.
+func frpcOwnsAdminPort(port int) bool {
+	s := current.Load()
+	if s == nil {
+		return false
+	}
+	pid := s.pid()
+	if pid == 0 {
+		return false
+	}
+	table, err := tcpListeners()
+	if err != nil {
+		logger.Warnf("read the TCP listeners: %v", err)
+		return false
+	}
+	return listenerOwnedBy(table, port, pid)
 }
 
-// reloadFrpc is a no-op on Windows: no frpc service is registered.
-func reloadFrpc(context.Context) error {
-	logger.Warnf("frpc service is not managed on Windows, skipping the reload")
+// reloadFrpc has the running frpc take the proxies from frpc.toml again, over its admin API on
+// loopback: `frpc reload` reads port, user and password from the same file.
+func reloadFrpc(ctx context.Context) error {
+	s := current.Load()
+	if s == nil {
+		return errNotSupervised
+	}
+	if err := verifyFrpcExe(s.exe); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, reloadTimeout)
+	defer cancel()
+	out, err := frpcCommand(ctx, s.exe, "reload", "-c", config.FrpConfigFile()).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("frpc reload: %w: %s", err, bytes.TrimSpace(out))
+	}
 	return nil
 }

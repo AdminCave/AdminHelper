@@ -152,6 +152,7 @@ def test_attach_auto_connection_links_stcp_and_passes_tags(db_session):
     tunnel's JSON-encoded tags through unchanged (the subtle create/update tag
     difference the refactor unified)."""
     from app.modules.connections.models import Connection
+    from app.modules.frp.schemas import FrpTunnelCreate
     from app.modules.frp.tunnel_router import _attach_auto_connection
 
     cfg = _make_config(db_session)
@@ -171,7 +172,15 @@ def test_attach_auto_connection_links_stcp_and_passes_tags(db_session):
     db_session.add(tunnel)
     db_session.flush()
 
-    _attach_auto_connection(db_session, tunnel, "opsuser")
+    data = FrpTunnelCreate(
+        server_id=srv.id,
+        frp_config_id=cfg.id,
+        tunnel_type="stcp",
+        protocol="ssh",
+        local_port=22,
+        auto_connection_username="opsuser",
+    )
+    _attach_auto_connection(db_session, tunnel, data)
 
     conn = db_session.query(Connection).filter(Connection.id == tunnel.connection_id).one()
     assert conn.kind == "ssh"

@@ -1146,8 +1146,27 @@ jobs:
           sha_bsd_box=$(grep -m1 '^FRP_SHA256_FREEBSD_AMD64=' scripts/tests/freebsd_box.sh | grep -o '[0-9a-f]\{64\}')
           test -n "$sha_bsd_rel" && test "$sha_bsd_rel" = "$sha_bsd_box" || {
             echo "::error::FRP_SHA256_FREEBSD_AMD64 differs between release.yml and scripts/tests/freebsd_box.sh"; exit 1; }
+          # The Windows agent pins the frpc.exe it starts (apps/agent/internal/frpc/frpcpin.go, R-1545):
+          # a FRP_VERSION bump that misses it makes `service install` reject the shipped frpc.exe.
+          go_ver=$(grep -m1 'PinnedVersion *=' apps/agent/internal/frpc/frpcpin.go | grep -o '[0-9][0-9.]*')
+          test "$go_ver" = "$ci" || {
+            echo "::error::PinnedVersion in frpcpin.go ($go_ver) differs from FRP_VERSION ($ci)"; exit 1; }
           # tauri-cli pins (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
           bash .github/scripts/tauri_cli_pins.sh .github/workflows/ci.yml .github/workflows/release.yml
+      - name: frpc.exe matches the agent's ExeSHA256
+        run: |
+          set -euo pipefail
+          ver=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
+          zsha=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
+          want=$(grep -m1 'ExeSHA256 *=' apps/agent/internal/frpc/frpcpin.go | grep -o '[0-9a-f]\{64\}')
+          test -n "$want" || { echo "::error::no ExeSHA256 in apps/agent/internal/frpc/frpcpin.go"; exit 1; }
+          tmp=$(mktemp -d)
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o "$tmp/frpc.zip" \
+            "https://github.com/fatedier/frp/releases/download/v${ver}/frp_${ver}_windows_amd64.zip"
+          echo "${zsha}  $tmp/frpc.zip" | sha256sum -c -
+          unzip -p "$tmp/frpc.zip" "frp_${ver}_windows_amd64/frpc.exe" > "$tmp/frpc.exe"
+          echo "${want}  $tmp/frpc.exe" | sha256sum -c - || {
+            echo "::error::frpc.exe of v${ver} does not match ExeSHA256 in apps/agent/internal/frpc/frpcpin.go"; exit 1; }
       - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff, oasdiff)
         # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
         # pin only compiles while x/vuln's own `go` directive stays at or below the

@@ -46,7 +46,7 @@
             <a href="../developer/cicd.html">CI/CD &amp; Release</a>
           </div>
         </nav>
-        <div class="sidebar-footer"><span>v0.46.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.47.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -139,7 +139,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
           <div class="callout"><div class="callout-title">Lücke: Lokal- und Sync-Workspaces</div><p>Die Nutzung einer Verbindung meldet nur ein Server-Workspace des Desktop-Clients an den Server. Was in einem Lokal- oder Sync-Workspace geöffnet wird, erreicht den Server nicht und erscheint daher nicht im Audit-Trail.</p></div>
 
           <h2>E-Mail-Benachrichtigungen (SMTP)</h2>
-          <p>Der <strong>Notification-Hub</strong> kann Benachrichtigungen zusätzlich zur In-App-Glocke per E-Mail zustellen. Dafür einen externen SMTP-Relay über Environment-Variablen konfigurieren (kein lokaler Mailserver nötig):</p>
+          <p>Der <strong>Notification-Hub</strong> kann Benachrichtigungen zusätzlich zur In-App-Glocke per E-Mail zustellen. Dafür einen externen SMTP-Relay eintragen (kein lokaler Mailserver nötig): im Web-Admin unter <strong>Benachrichtigungen</strong> (siehe <a href="#notify-panel">Kanäle im Admin-Panel</a>) oder über Environment-Variablen. Ein Wert im Panel geht der Variablen vor; die Variablen bleiben der Rückfall:</p>
           <table>
             <thead><tr><th>Variable</th><th>Bedeutung</th></tr></thead>
             <tbody>
@@ -152,10 +152,10 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             </tbody>
           </table>
           <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln und seine Matrix (siehe <a href="./monitoring.html#kanaele">Monitoring → Kanäle und Matrix</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
-          <p>Die <code>SMTP_*</code>-Variablen nutzt auch der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
+          <p>Denselben Relay, aus dem Panel oder den <code>SMTP_*</code>-Variablen, nutzt auch der E-Mail-Kanal der Alert-Regeln im Monitoring (siehe <a href="./monitoring.html">Monitoring → Benachrichtigungen &amp; Alerting</a>); eine Regel kann dort einen eigenen Relay mit eigenen Zugangsdaten setzen.</p>
 
           <h3 id="notify-kanaele">Kanäle ntfy, Telegram und Webhook</h3>
-          <p>Neben E-Mail stellt der Notification-Hub über ntfy, Telegram und Webhooks zu; die Ziele hinterlegt jede Person selbst. Für den Betrieb zählen zwei Variablen in der <code>.env</code> (Compose gibt sie an <code>server</code> und <code>scheduler</code>):</p>
+          <p>Neben E-Mail stellt der Notification-Hub über ntfy, Telegram und Webhooks zu; die Ziele hinterlegt jede Person selbst. Für den Betrieb zählen zwei Einstellungen, im Panel oder als Variable in der <code>.env</code> (Compose gibt sie an <code>server</code> und <code>scheduler</code>):</p>
           <table>
             <thead><tr><th>Variable</th><th>Bedeutung</th></tr></thead>
             <tbody>
@@ -168,6 +168,33 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div><div class="callout-title">Genau das Netz der Ziele nennen</div><p>Nicht den ganzen privaten Block freigeben (<code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>): die Docker-Netze der Container liegen meist darin, und jede Person mit einem Konto könnte dann die Dienste neben dem Server ansprechen. Enthält ein genanntes Netz eine Adresse des Servers selbst, warnt der Start im Log.</p></div>
           </div>
+
+          <h3 id="notify-panel">Kanäle im Admin-Panel</h3>
+          <p>Admins pflegen Relay (Host, Port, Benutzer, Passwort, Absender), Telegram-Bot-Token und die privaten Ziel-Netze im Web-Admin unter <strong>Benachrichtigungen</strong>. Die Werte gelten ohne Neustart für <code>server</code> und <code>scheduler</code>; das Monitoring übernimmt sie binnen einer Minute.</p>
+          <ul>
+            <li><strong>Vorrang je Feld:</strong> Ein im Panel gesetztes Feld gilt, ein leeres nimmt die Variable gleichen Namens aus der <code>.env</code>. Die Seite zeigt je Feld die Quelle (Panel, <code>.env</code> oder keine) und den wirksamen Wert. Ausnahme Anmeldung: Steht der Host im Panel, gelten Benutzer und Passwort nur aus dem Panel, nie die aus der <code>.env</code>; so geht deren Passwort nie an einen anderen Relay. Wer den Host ändert, ohne ein Passwort einzugeben, löscht das gespeicherte.</li>
+            <li><strong>Geheimnisse:</strong> Passwort und Token lassen sich nur schreiben; die Seite zeigt nur, ob einer gesetzt ist. Ein leeres Feld behält den gespeicherten Wert, „Gespeicherten Wert löschen“ entfernt ihn. Die Datenbank speichert beide verschlüsselt (AES-GCM, Schlüssel abgeleitet aus <code>SECRET_KEY</code>), das Audit-Log nennt nur die geänderten Felder.</li>
+            <li><strong><code>SECRET_KEY</code> gewechselt:</strong> Gespeicherte Geheimnisse lassen sich dann nicht mehr öffnen. Sie zählen als nicht gesetzt, es gilt die <code>.env</code>, die Seite warnt „nicht lesbar“, und das Log des Servers nennt das Feld. Passwort und Token im Panel neu eintragen.</li>
+            <li><strong>Private Ziel-Netze:</strong> Dieselbe CIDR-Prüfung wie beim Start; ein ungültiger Eintrag wird mit einer Meldung abgelehnt. Eine leere Liste im Panel heißt „die <code>.env</code> gilt“, nicht „alles zu“; alle privaten Ziele zu heißt <code>NOTIFY_PRIVATE_TARGETS</code> aus der <code>.env</code> entfernen.</li>
+            <li><strong>Test:</strong> Je Kanal schickt „Test senden“ eine Nachricht über die gespeicherten Einstellungen an das angegebene Ziel, im gespeicherten Mail-Design. Ein Test je Kanal und Admin binnen zehn Sekunden, gemeinsam mit dem persönlichen Test.</li>
+          </ul>
+
+          <h3 id="mail-design">Mail-Design</h3>
+          <p>Unter <strong>Benachrichtigungen → Mail-Design</strong> gestalten Admins die Mails des Notification-Hubs (Outbox, Zusammenfassung, Test) und die Mails der Alert-Regeln im Monitoring: Betreff-Präfix, Absendername, HTML-Teil, Text-Teil und ein Logo. Ohne gespeichertes Design bleibt alles wie bisher: reiner Text, Betreff ohne Präfix im Hub, <code>[AdminHelper Monitor] …</code> im Monitoring. Mit Design ersetzt das Präfix des Panels im Monitoring <code>[AdminHelper Monitor]</code>.</p>
+          <table>
+            <thead><tr><th>Platzhalter</th><th>Wert</th></tr></thead>
+            <tbody>
+              <tr><td><code>{{title}}</code></td><td>Titel der Meldung (im Monitoring der Betreff ohne Präfix, etwa <code>CRITICAL: disk /</code>)</td></tr>
+              <tr><td><code>{{body}}</code></td><td>Text der Meldung; im HTML-Teil mit <code>&lt;br&gt;</code> je Zeilenumbruch</td></tr>
+              <tr><td><code>{{severity}}</code></td><td><code>critical</code>, <code>warning</code>, <code>info</code> oder <code>ok</code> (Entwarnung)</td></tr>
+              <tr><td><code>{{category}}</code></td><td>Kategorie der Meldung, im Monitoring <code>monitoring</code></td></tr>
+              <tr><td><code>{{time}}</code></td><td>Zeitpunkt in UTC auf die Minute, etwa <code>2026-11-18 14:05 UTC</code></td></tr>
+              <tr><td><code>{{source}}</code></td><td><code>AdminHelper</code> im Hub, <code>AdminHelper Monitor</code> im Monitoring</td></tr>
+              <tr><td><code>{{logo}}</code></td><td>Nur im HTML-Teil, als <code>src</code> eines <code>&lt;img&gt;</code>: das eingebettete Logo (<code>cid:logo</code>), ohne Logo leer</td></tr>
+            </tbody>
+          </table>
+          <p>Die Vorlage ist reine Ersetzung: keine Bedingungen, Schleifen oder Filter, es läuft kein Code aus ihr. Ein unbekannter Platzhalter wird beim Speichern mit einer Meldung abgelehnt. Im HTML-Teil sind die Werte HTML-escaped, denn Meldungstexte können von Agents stammen; im Text-Teil stehen sie roh. Ist der HTML-Teil leer, geht die Mail als reiner Text; ist der Text-Teil leer, trägt die Text-Alternative den Text der Meldung. Das Logo (PNG oder JPEG, höchstens 200&nbsp;KB) hängt eingebettet an der Mail, so zeigen Mail-Programme es ohne Nachladen.</p>
+          <p><strong>Vorschau:</strong> Sie rendert die ungespeicherten Eingaben mit Beispieldaten in einem abgeschotteten Rahmen ohne Skripte. Externe Bilder und Schriften lädt sie nicht (die Sicherheitsrichtlinie der Seite gilt auch dort); in der Mail lädt sie das Mail-Programm des Empfängers, sofern es das erlaubt. „Test senden“ im Mail-Design verschickt das <em>gespeicherte</em> Design über den wirksamen Relay; „Auf Standard zurücksetzen“ löscht Design und Logo.</p>
 
           <h3 id="smtp-ca">Relay mit eigener CA</h3>
           <p>Weist sich der Relay mit einem Zertifikat aus, dem die Container nicht vertrauen (selbstsigniert oder von einer Firmen-CA), die CA als PEM-Datei <code>smtp-ca.pem</code> neben die <code>docker-compose.yml</code> ins Install-Verzeichnis legen und mit einer <code>docker-compose.override.yml</code> daneben in die Dienste <code>server</code>, <code>scheduler</code> und <code>monitoring</code> einhängen, denen Compose auch die übrigen <code>SMTP_*</code>-Variablen gibt; eine bestehende <code>docker-compose.override.yml</code> (etwa mit <code>FRPS_DASHBOARD_URL</code>, siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>) um diese Einträge ergänzen, nicht ersetzen:</p>

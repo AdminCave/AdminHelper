@@ -14,8 +14,10 @@ finding, keyed by a name the agent reported, so the same instance keeps its find
 from scan to scan.
 
 Nothing here deletes a check. An instance that disappears becomes a finding "gone" only
-after two full scans without it, so a partial scan (the agent ran out of time) and a
-service restarting during one scan make nothing disappear.
+after two whole scans of its section (units, containers, sockets, markers, vhosts, ports)
+without it, so a section the agent did not read whole (it ran out of time, a tool failed,
+the list was cut) and a service restarting during one scan make nothing disappear; a
+section cut short on every scan keeps only its own findings from going (R-1302).
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ MAX_CONTAINER_PORTS = 64
 MAX_MOUNTS = 32
 MAX_CREDENTIALS = 256
 MAX_VHOSTS = 500
+MAX_SHARES = 64
 
 SCAN_AFTER_MIN = timedelta(hours=24)
 SCAN_AFTER_MAX = timedelta(hours=48)
@@ -79,6 +82,11 @@ _VHOST_NAME = re.compile(
     r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 )
 _VHOST_SERVERS = frozenset({"nginx", "apache"})
+# A network share is reported by its mount point and type, never its source (Kevin 2026-11-18).
+# The mount point as the agent's share target takes it (probe validMountpoint), so a finding is
+# never a check that cannot run.
+NET_FSTYPES = frozenset({"nfs", "nfs4", "cifs", "smb3"})
+_MOUNTPOINT = re.compile(r"(?:/[A-Za-z0-9_,@+-][A-Za-z0-9_., @+-]*)+")
 _TCP = ("tcp", "tcp6")
 
 
@@ -200,6 +208,21 @@ def _vhost(raw: object) -> dict | None:
     }
 
 
+def _share(raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    point, fstype = _text(raw.get("mountpoint"), 255), raw.get("fstype")
+    if not _MOUNTPOINT.fullmatch(point) or fstype not in NET_FSTYPES:
+        return None
+    return {"mountpoint": point, "fstype": fstype}
+
+
+def share_key(mountpoint: str) -> str:
+    """The instance key of a share: its mount point with ":" for "/", which no mount point
+    holds, so two mount points never share a key ("/" makes no key)."""
+    return mountpoint[1:].replace("/", ":")
+
+
 def _is_address(name: str) -> bool:
     try:
         ipaddress.ip_address(name)
@@ -208,9 +231,16 @@ def _is_address(name: str) -> bool:
     return True
 
 
+SECTIONS = ("units", "containers", "sockets", "markers", "vhosts", "ports", "shares")
+
+
 def clean_inventory(block: object) -> dict | None:
     """The discovery block cut to the contract; None if it is no object. Entries that
-    break the contract are dropped one by one, fields outside it are never kept."""
+    break the contract are dropped one by one, fields outside it are never kept.
+
+    `complete` tells per section whether it is whole: as the agent said and not cut here.
+    An agent that sends no `complete` (before R-1302) has every section as whole as the
+    scan (`partial`)."""
     if not isinstance(block, dict):
         return None
     units, cut_units = _cleaned(block.get("units"), _unit, MAX_UNITS)
@@ -218,10 +248,14 @@ def clean_inventory(block: object) -> dict | None:
     containers, cut_containers = _cleaned(block.get("containers"), _container, MAX_CONTAINERS)
     ports, cut_ports = _cleaned(block.get("ports"), _recognised_port, MAX_PORTS)
     vhosts, cut_vhosts = _cleaned(block.get("vhosts"), _vhost, MAX_VHOSTS)
+    shares, cut_shares = _cleaned(block.get("shares"), _share, MAX_SHARES)
     # A name is one instance key: the first entry for it counts, as the agent sends it once.
     named: dict[str, dict] = {}
     for vhost in vhosts:
         named.setdefault(vhost["name"], vhost)
+    mounted: dict[str, dict] = {}
+    for share in shares:
+        mounted.setdefault(share["mountpoint"], share)
     raw_markers = block.get("markers")
     raw_markers = raw_markers if isinstance(raw_markers, dict) else {}
     markers = {
@@ -229,25 +263,34 @@ def clean_inventory(block: object) -> dict | None:
         for key, value in islice(raw_markers.items(), MAX_MARKERS)
         if isinstance(key, str) and _MARKER_ID.fullmatch(key) and isinstance(value, bool)
     }
-    cut = (
-        cut_units
-        or cut_sockets
-        or cut_containers
-        or cut_ports
-        or cut_vhosts
-        or len(raw_markers) > MAX_MARKERS
-    )
+    cut = {
+        "units": cut_units,
+        "containers": cut_containers,
+        "sockets": cut_sockets,
+        "markers": len(raw_markers) > MAX_MARKERS,
+        "vhosts": cut_vhosts,
+        "ports": cut_ports,
+        "shares": cut_shares,
+    }
+    said = block.get("complete")
+    if isinstance(said, dict):
+        whole = {section: said.get(section) is True for section in SECTIONS}
+    else:
+        whole = dict.fromkeys(SECTIONS, block.get("partial") is not True)
+    complete = {section: whole[section] and not cut[section] for section in SECTIONS}
     duration = agent_number(block.get("duration_ms"))
     return {
         "ts": agent_number(block.get("ts")),
         "duration_ms": duration if duration is not None and duration >= 0 else None,
-        "partial": block.get("partial") is True or cut,
+        "partial": block.get("partial") is True or not all(complete.values()),
+        "complete": complete,
         "units": units,
         "sockets": sockets,
         "containers": containers,
         "markers": markers,
         "ports": ports,
         "vhosts": list(named.values()),
+        "shares": list(mounted.values()),
     }
 
 
@@ -329,10 +372,14 @@ def _unit_name(name: str) -> str:
 
 def _listed_unit_wanted(name: str, wanted: set[str]) -> bool:
     # A Windows service and a FreeBSD rc.d script (R-1448) have no suffix: NTDS is wanted as
-    # NTDS.service, by its exact name only (the patterns and templates are systemd's), and its
-    # instance keeps the name the agent asks the service manager by.
+    # NTDS.service, by its exact name, or by a pattern with "$" (MSSQL$?*, a named SQL Server
+    # instance; no systemd unit carries a "$"). The other patterns and the templates are
+    # systemd's: postgresql-* must not take the Windows service postgresql-x64-16.
     if "." not in name:
-        return name + ".service" in wanted
+        unit = name + ".service"
+        return unit in wanted or any(
+            "$" in t and "*" in t and fnmatch.fnmatchcase(unit, t) for t in wanted
+        )
     return _unit_wanted(name, wanted)
 
 
@@ -432,7 +479,9 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
             if tagged:
                 found[c["name"]]["tag_checks"] = _tag_checks(module, [c])
     elif module.instance == "unit":
-        found = {name: {"unit": name} for name in units}
+        # "$" makes no instance key: a named SQL Server instance MSSQL$SHOP becomes MSSQL-SHOP
+        # (Kevin 2026-11-17); its checks ask the service by the name in the summary.
+        found = {name.replace("$", "-"): {"unit": name} for name in units}
         claimed_units = set(units)
     elif module.instance == "process":
         found = {name: {"process": name} for name in processes}
@@ -443,6 +492,12 @@ def _instances(module: Module, inv: dict) -> tuple[dict[str, dict], list[dict], 
             for v in inv.get("vhosts", [])
             if (v["tls"] or not detect.vhost_tls)
             and (v["app"] in detect.vhost_apps or not detect.vhost_apps)
+        }
+    elif module.instance == "share":
+        # An inventory stored before the agent sent shares has none.
+        found = {
+            share_key(s["mountpoint"]): {"share": s["mountpoint"], "fstype": s["fstype"]}
+            for s in inv.get("shares", [])
         }
     if not found and (containers or units or processes or markers):
         # Every installed unit, running or not: a service stopped for a while must not
@@ -612,8 +667,8 @@ def _update_findings(
     seen: dict[tuple[str, str], dict],
     catalog: Catalog,
     now: datetime,
-    full_scan: bool,
-    previous_full_scan: datetime | None,
+    complete: dict[str, bool],
+    previous_full_scans: dict[str, datetime | None],
 ) -> None:
     rows = {
         (row.module_id, row.instance_key): row
@@ -655,18 +710,38 @@ def _update_findings(
         in_step = row.catalog_version == catalog.version and key not in silent
         _seen_again(row, summary, key in watched, in_step)
 
-    if not full_scan or previous_full_scan is None:
-        return
     for key, row in rows.items():
         if key in seen or row.kind == "gone" or row.module_id not in catalog.modules:
             continue
-        if row.last_seen >= previous_full_scan:
-            continue  # seen in or after the previous full scan: one miss is no loss yet
+        sections = _origin(row, catalog.modules[row.module_id])
+        if not all(complete[section] for section in sections):
+            continue  # a section it comes from was not read whole
+        previous = [previous_full_scans[section] for section in sections]
+        if None in previous or row.last_seen >= min(previous):
+            continue  # seen in or after the previous whole scan: one miss is no loss yet
         if key in watched:
             row.kind, row.status, row.decided_at = "gone", "open", None
         else:
             # Nothing watches it, so there is nothing to switch off: the entry is moot.
             db.delete(row)
+
+
+def _origin(row: MonitorFinding, module: Module) -> tuple[str, ...]:
+    """The sections an instance is found in: only their whole scans tell it is gone."""
+    summary = _summary(row)
+    if isinstance(summary, dict) and "matched_by" in summary:
+        # A stand-in: the module is installed by any of its images, units, processes, markers.
+        return ("containers", "units", "sockets", "markers")
+    return {
+        "compose_project": ("containers",),
+        "container": ("containers",),
+        "unit": ("units",),
+        "process": ("sockets",),
+        # A port finding needs the socket listening on it as well.
+        "port": ("ports", "sockets"),
+        "vhost": ("vhosts",),
+        "share": ("shares",),
+    }[module.instance]
 
 
 def _stored(inventory: str | None) -> dict:
@@ -683,6 +758,21 @@ def _full_scan_at(stored: dict) -> datetime | None:
         return datetime.fromisoformat(stamp) if isinstance(stamp, str) else None
     except ValueError:
         return None
+
+
+def _section_full_scans(stored: dict) -> dict[str, datetime | None]:
+    """The time of the last whole scan of each section; an inventory stored before R-1302
+    has the last whole scan of all of them."""
+    stamps = stored.get("section_full_scan_at")
+    stamps = stamps if isinstance(stamps, dict) else {}
+    fallback = _full_scan_at(stored)
+    found = {}
+    for section in SECTIONS:
+        if section in stamps:
+            found[section] = _full_scan_at({"full_scan_at": stamps[section]})
+        else:
+            found[section] = fallback
+    return found
 
 
 def _partial_scans(stored: dict) -> int:
@@ -716,9 +806,19 @@ def apply_discovery(
                 db.add(row)
             stored = _stored(row.inventory)
             previous_full_scan = _full_scan_at(stored)
+            previous_full_scans = _section_full_scans(stored)
+            complete = inventory["complete"]
             full_scan = not inventory["partial"]
             last_full = now if full_scan else previous_full_scan
             inventory["full_scan_at"] = last_full.isoformat() if last_full else None
+            section_full = {
+                section: now if complete[section] else previous_full_scans[section]
+                for section in SECTIONS
+            }
+            inventory["section_full_scan_at"] = {
+                section: stamp.isoformat() if stamp else None
+                for section, stamp in section_full.items()
+            }
             inventory["partial_scans"] = 0 if full_scan else _partial_scans(stored) + 1
             row.inventory = _dump(inventory)
             row.scanned_at = now
@@ -727,7 +827,7 @@ def apply_discovery(
             row.scan_requested_at = None
             row.updated_at = now
             seen = match_inventory(inventory, catalog)
-            _update_findings(db, server_id, seen, catalog, now, full_scan, previous_full_scan)
+            _update_findings(db, server_id, seen, catalog, now, complete, previous_full_scans)
     except Exception as exc:
         # No traceback: an agent can trigger this on every scan.
         logger.error("Storing the discovery failed (%s): %s", server_id, type(exc).__name__)

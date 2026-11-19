@@ -12,6 +12,8 @@ against an iPAddress SAN). Thresholds are relative to the certificate's whole
 lifetime, so a 90-day and a 6-day certificate are warned about alike. A trusted,
 unexpired certificate also gets the periodic looks of ari and caa: what its CA says
 about renewing it, and whether the domain still lets that CA issue the next one.
+With expiry off, the lifetime is shown but rated by someone else (the agent check of
+a module, R-1501): the chain and name are judged at the last moment of validity.
 """
 
 from __future__ import annotations
@@ -82,6 +84,7 @@ def probe(
     store: Store | None = None,
     now: datetime | None = None,
     limits: Limits | None = None,
+    expiry: bool = True,
 ) -> SensorResult:
     """Connects to the first of `addresses` that answers and checks its certificate for `host`.
 
@@ -102,7 +105,9 @@ def probe(
             failures.append(f"{address}: {_reason(exc)}")
             continue
         with sock:
-            result, leaf = _check(sock, host, address, port, store or default_store(), now)
+            result, leaf = _check(
+                sock, host, address, port, store or default_store(), now, expiry=expiry
+            )
         return _daily(result, leaf, host, prev or {}, now)
     return SensorResult(
         "critical",
@@ -129,6 +134,8 @@ def _check(
     port: int,
     store: Store,
     now: datetime,
+    *,
+    expiry: bool = True,
 ) -> tuple[SensorResult, x509.Certificate | None]:
     """The verdict and, when the certificate is trusted and not expired, its leaf."""
     details: dict = {"host": host, "address": address, "port": port}
@@ -139,14 +146,21 @@ def _check(
     except OSError as exc:  # ssl.SSLError and timeouts included
         message = f"TLS handshake failed: {_reason(exc)}"
         return SensorResult("critical", message, True, {}, details), None
-    return judge(chain, host, details, store, now)
+    return judge(chain, host, details, store, now, expiry=expiry)
 
 
 def judge(
-    chain: list[bytes], host: str, details: dict, store: Store, now: datetime
+    chain: list[bytes],
+    host: str,
+    details: dict,
+    store: Store,
+    now: datetime,
+    *,
+    expiry: bool = True,
 ) -> tuple[SensorResult, x509.Certificate | None]:
     """The verdict on the chain a server presented for `host`; the result's details are
-    `details` plus the certificate's. The leaf when it is trusted and not expired."""
+    `details` plus the certificate's. The leaf when it is trusted and not expired. Without
+    `expiry` the lifetime yields no warning or critical."""
     details = dict(details)
     if not chain:
         return SensorResult("critical", "the server sent no certificate", True, {}, details), None
@@ -165,13 +179,17 @@ def judge(
     # Compared unrounded: 9.96 % is below the 10 % threshold, though shown as 10.0.
     pct = max(0.0, left / total * 100) if total > timedelta(0) else 0.0
     metrics = {"days_left": round(left.total_seconds() / 86400, 2), "lifetime_pct": round(pct, 1)}
-    if left <= timedelta(0):
+    expired = left <= timedelta(0)
+    if expired and expiry:
         message = f"certificate expired on {iso_utc(not_after)}"
         return SensorResult("critical", message, True, metrics, details), None
 
     literal = _literal(host)
     subject = x509.IPAddress(literal) if literal else x509.DNSName(host)
-    verifier = PolicyBuilder().store(store).time(now).build_server_verifier(subject)
+    # An expired leaf would fail verification for its time alone; without expiry the
+    # chain and name are what is judged, so at the last second the leaf was valid.
+    at = min(now, not_after - timedelta(seconds=1)) if expired else now
+    verifier = PolicyBuilder().store(store).time(at).build_server_verifier(subject)
     try:
         verifier.verify(leaf, certs[1:])
     except VerificationError as exc:
@@ -182,7 +200,13 @@ def judge(
         f"valid until {iso_utc(not_after)} ({metrics['days_left']} days, "
         f"{metrics['lifetime_pct']} % of lifetime left)"
     )
-    if left < CRIT_LEFT or pct < CRIT_PCT:
+    if expired:
+        return SensorResult(
+            "ok", f"certificate expired on {iso_utc(not_after)}", True, metrics, details
+        ), None
+    if not expiry:
+        status, message = "ok", f"certificate {summary}"
+    elif left < CRIT_LEFT or pct < CRIT_PCT:
         status, message = "critical", f"certificate expires soon: {summary}"
     elif pct < WARN_PCT:
         status, message = "warning", f"certificate due for renewal: {summary}"

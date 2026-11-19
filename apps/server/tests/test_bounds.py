@@ -4,10 +4,12 @@
 
 """The bounded scalar types hold at both edges (input-boundary-validation, T1)."""
 
+from typing import Any
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from app.core.bounds import BigIntPk, IntPk, Offset
+from app.core.bounds import MAX_DEPTH, BigIntPk, IntPk, Offset, RequestModel
 
 INT_MAX = 2147483647
 BIGINT_MAX = 9223372036854775807
@@ -77,3 +79,37 @@ def test_the_bigint_bound_is_published_exactly():
     text = TestClient(app).get(app.openapi_url).text
     assert "9223372036854775807" in text
     assert "9.223372036854776e+18" not in text
+
+
+def _nest(levels: int, leaf: Any = None) -> dict:
+    """{"a": {"a": … leaf}}: `leaf` (default {}) sits `levels` keys below the dict."""
+    value: Any = {} if leaf is None else leaf
+    for _ in range(levels):
+        value = {"a": value}
+    return value
+
+
+class _Body(RequestModel):
+    data: dict[str, Any]
+
+
+def test_a_body_may_nest_up_to_the_limit():
+    # "data" is one level, so the innermost dict sits MAX_DEPTH keys below the body.
+    body = {"data": _nest(MAX_DEPTH - 1)}
+    assert _Body.model_validate(body).data == body["data"]
+
+
+@pytest.mark.parametrize("leaf", [{}, []], ids=["dict", "list"])
+def test_one_level_past_the_limit_is_refused_at_its_place(leaf):
+    with pytest.raises(ValidationError) as excinfo:
+        _Body.model_validate({"data": _nest(MAX_DEPTH, leaf)})
+    [error] = excinfo.value.errors()
+    assert error["loc"] == ("data", *("a",) * MAX_DEPTH)
+    assert error["msg"] == f"Value error, must not nest deeper than {MAX_DEPTH} levels"
+    # The refusal does not echo the deep subtree back.
+    assert error["input"] is None
+
+
+def test_a_body_far_past_the_limit_is_refused_not_a_recursion_error():
+    with pytest.raises(ValidationError):
+        _Body.model_validate({"data": _nest(100_000)})

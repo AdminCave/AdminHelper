@@ -38,7 +38,8 @@ const SUGGEST_BOX = '.tpl-suggest input[type="checkbox"]';
 const LINUX_BASE_BOX = `${SUGGEST_BOX}[value="${LINUX_BASE}"]`;
 const CHECK_NAMES = ".mon-row .mon-name";
 // desktop_e2e_monitoring.sh seeds it; its agent pushes once before the specs run.
-const SERVER_NAME = "e2e-server";
+// The capstone seeds other names (box_serverbox.sh) and names its own via the env.
+const SERVER_NAME = process.env.AH_E2E_SERVER_NAME || "e2e-server";
 const HISTORY = ".history-panel";
 // The System card's title, the same in every language of the app.
 const SYSTEM_TITLE = "System";

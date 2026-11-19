@@ -346,7 +346,7 @@ def test_target_service_needs_a_compose_project():
     [
         (
             {"kind": "port", "alternatives": [{"port_hint": 80, "scheme": "http"}]},
-            "alternatives need a container target",
+            "alternatives need a container, loopback or unit target",
         ),
         (
             {
@@ -381,6 +381,38 @@ def test_target_alternatives_load_in_order():
     target = {"kind": "container", "service": "web", "alternatives": alternatives}
     module = _load(_module(checks=[_check(target=target)])).modules["example"]
     assert [a.model_dump() for a in module.checks[0].target.alternatives] == alternatives
+
+
+@pytest.mark.parametrize("kind", ["loopback", "unit"])
+def test_target_alternatives_load_at_the_host(kind):
+    # R-1528: the web interface of a 3CX listens on 443 or on 5001, whichever the setup chose.
+    alternatives = [{"port_hint": 443, "scheme": "https"}, {"port_hint": 5001, "scheme": "https"}]
+    target = {"kind": kind, "alternatives": alternatives}
+    raw = _module(instance="unit", detect={"units": ["app.service"]}, card=[])
+    raw["checks"] = [_check(target=target, credential=None)]
+    module = _load(raw).modules["example"]
+    assert [a.model_dump() for a in module.checks[0].target.alternatives] == alternatives
+
+
+def _unit_module(**check):
+    raw = _module(instance="unit", detect={"units": ["app.service", "app-mc01.service"]}, card=[])
+    target = {"kind": "loopback", "port_hint": 8000, "scheme": "http"}
+    raw["checks"] = [_check(target=target, credential=None, **check)]
+    return raw
+
+
+def test_a_check_names_the_instance_it_belongs_to():
+    module = _load(_unit_module(instance="app.service")).modules["example"]
+    assert module.checks[0].instance == "app.service"
+    assert module.checks[0].model_dump()["instance"] == "app.service"
+    # Unset, the field stays out of the dump: the other checks keep their hash.
+    plain = _load(_unit_module()).modules["example"].checks[0]
+    assert "instance" not in plain.model_dump()
+
+
+def test_a_checks_instance_must_be_one_of_the_modules_units():
+    error = _only_error(_load(_unit_module(instance="other.service")))
+    assert "instance 'other.service' is none of the module's units" in error
 
 
 def test_image_fallback_needs_a_service():
@@ -544,3 +576,82 @@ def test_image_tags_are_checked(changes, error):
 def test_image_tags_load_in_order():
     module = _load(_module(checks=[_check(image_tags=["2", "2.*"])])).modules["example"]
     assert module.checks[0].image_tags == ["2", "2.*"]
+
+
+# --- central checks (R-1501) --------------------------------------------------------
+
+_CENTRAL = {
+    "key": "outside",
+    "name": "From outside",
+    "sensor": "tls",
+    "central": True,
+    "target": {"kind": "vhost"},
+    "params": {"expiry": False},
+    "interval": 3600,
+}
+_SERVED = {
+    "key": "served",
+    "name": "Served",
+    "sensor": "app",
+    "target": {"kind": "vhost"},
+    "params": {"view": "web_vhost_cert"},
+    "interval": 3600,
+    "fields": ["served_days_left"],
+}
+
+
+def _site(*checks, **changes):
+    raw = {
+        "id": "site",
+        "name": "Site",
+        "version": 1,
+        "detect": {"vhost_tls": True},
+        "instance": "vhost",
+        "checks": [copy.deepcopy(_SERVED), *checks],
+    }
+    raw.update(changes)
+    return raw
+
+
+def test_a_central_check_loads_with_its_sensors_params():
+    catalog = _load(_site(_CENTRAL, {**_CENTRAL, "key": "dns", "sensor": "dns", "params": {}}))
+    assert catalog.errors == ()
+    served, outside, dns = catalog.modules["site"].checks
+    assert (outside.central, outside.params, outside.fields) == (True, {"expiry": False}, [])
+    assert dns.params == {}
+    # Only a central check writes the switch: the agent checks keep their hash.
+    assert outside.model_dump()["central"] is True
+    assert "central" not in served.model_dump()
+
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        ({"sensor": "http"}, "unknown central sensor 'http'"),
+        ({"params": {"expiry": "no"}}, "expiry"),
+        ({"params": {"path": "/"}}, "path"),
+        ({"target": {"kind": "port", "port_hint": 443}}, "a central check targets the vhost"),
+        ({"target": None}, "a central check targets the vhost"),
+        ({"fields": ["days_left"]}, "a central check rates itself"),
+        (
+            {"rules": [{"field": "days_left", "op": "lt", "value": 3, "level": "critical"}]},
+            "a central check rates itself",
+        ),
+        ({"credential": {"use": "bearer"}}, "a central check rates itself"),
+        ({"interval": 300}, "runs at most every 900 s"),
+    ],
+)
+def test_a_central_check_is_checked(changes, error):
+    assert error in _only_error(_load(_site({**_CENTRAL, **changes})))
+
+
+def test_a_central_check_needs_a_vhost_instance():
+    module = _module(checks=[_check(), {**_CENTRAL, "target": {"kind": "vhost"}}], card=[])
+    assert "a central check needs instance 'vhost'" in _only_error(_load(module))
+
+
+def test_an_agent_check_still_needs_a_field_and_a_known_sensor():
+    assert "at least one field" in _only_error(
+        _load(_module(checks=[_check(fields=[], rules=[])], card=[]))
+    )
+    assert "unknown sensor 'rdap'" in _only_error(_load(_module(checks=[_check(sensor="rdap")])))

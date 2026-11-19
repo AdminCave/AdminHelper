@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"adminhelper-agent/internal/config"
@@ -153,7 +154,43 @@ func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
 	if err != nil {
 		return err
 	}
-	return commit()
+	if err := commit(); err != nil {
+		return err
+	}
+	refreshRepoCA([]byte(resp.Chain))
+	return nil
+}
+
+// RepoCACopy is the public copy of ca.crt that apt pins the AdminHelper repo to:
+// agent-install.sh lays it down with the CAInfo line. apt reads the CA as _apt, which
+// cannot enter the 0700 data directory (R-0810).
+var RepoCACopy = "/etc/apt/adminhelper-ca.crt"
+
+// repoCAOS is runtime.GOOS; tests set it to run both sides on every platform.
+var repoCAOS = runtime.GOOS
+
+// refreshRepoCA replaces the public copy with the stored trust bundle, so that a new
+// trust generation does not break the next apt update. Only where the installer laid
+// the copy down; a failure only warns, because the identity is already stored.
+func refreshRepoCA(chain []byte) {
+	// Linux only: on Windows the path resolves to \etc\apt on the system drive, whose
+	// root lets any user create folders, and the agent writes there as SYSTEM.
+	if repoCAOS != "linux" {
+		return
+	}
+	if _, err := os.Lstat(RepoCACopy); err != nil {
+		return
+	}
+	dir := filepath.Dir(RepoCACopy)
+	tmp, err := writeTemp(dir, filepath.Base(RepoCACopy), chain, 0644)
+	if err == nil {
+		if err = os.Rename(tmp, RepoCACopy); err != nil {
+			_ = os.Remove(tmp)
+		}
+	}
+	if err != nil {
+		logger.Warnf("refresh the repo CA copy %s for apt: %v", RepoCACopy, err)
+	}
 }
 
 // storableProbe is what CheckStorable writes per file: more than Store writes (a key

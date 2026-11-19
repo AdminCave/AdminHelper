@@ -93,6 +93,8 @@ class Detect(_Model):
     # For a module with instance "vhost": only vhosts with TLS, only vhosts of these applications.
     vhost_tls: StrictBool = False
     vhost_apps: list[Literal[VHOST_APPS]] = Field(default_factory=list, max_length=len(VHOST_APPS))
+    # For a module with instance "share": every network share the agent finds mounted.
+    net_shares: StrictBool = False
 
     def is_empty(self) -> bool:
         return not (self.container_images or self.units or self.processes or self.markers)
@@ -107,7 +109,7 @@ class Alternative(_Model):
 
 
 class Target(_Model):
-    kind: Literal["loopback", "container", "process", "unit", "port", "vhost"]
+    kind: Literal["loopback", "container", "process", "unit", "port", "vhost", "share"]
     # Compose service of the instance's project whose container the check asks.
     service: str = Field("", max_length=255)
     # Without the service: the one container of the instance with the module's image that
@@ -125,8 +127,8 @@ class Target(_Model):
         if self.image_fallback and not self.service:
             raise ValueError("image_fallback needs a service")
         if self.alternatives is not None:
-            if self.kind != "container":
-                raise ValueError("alternatives need a container target")
+            if self.kind not in ("container", "loopback", "unit"):
+                raise ValueError("alternatives need a container, loopback or unit target")
             if self.port_hint is not None or self.scheme is not None:
                 raise ValueError("alternatives replace port_hint and scheme")
         return self
@@ -206,7 +208,7 @@ class Check(_Model):
     params: dict[str, Any] = Field(default_factory=dict)
     interval: StrictInt
     timeout_s: int = Field(10, ge=1, le=30, strict=True)
-    fields: list[str] = Field(min_length=1, max_length=MAX_FIELDS)
+    fields: list[str] = Field(default_factory=list, max_length=MAX_FIELDS)
     rules: list[Rule] = Field(default_factory=list, max_length=MAX_FIELDS)
     credential: Credential | None = None
     # Makes the service do real work (a test mail, a test query): at most every 15 min.
@@ -214,13 +216,22 @@ class Check(_Model):
     # Binds only to a container whose image tag matches one of the globs (Wiki.js 2 has
     # /healthz, 3 not).
     image_tags: list[_TAG_GLOB] | None = Field(None, min_length=1, max_length=8)
+    # Run by the monitoring service against the instance's public name with a sensor of
+    # CENTRAL_SENSORS, never by the agent; it rates itself, so no fields or rules (R-1501).
+    central: StrictBool = False
+    # Bound only at the instance with this key, at no other (R-1528): a check of the host
+    # in a module whose instances are its units (the web interface of 3CX).
+    instance: str | None = Field(None, min_length=1, max_length=255)
 
-    @field_validator("sensor")
-    @classmethod
-    def _known_sensor(cls, v: str) -> str:
-        if v not in SENSORS:
-            raise ValueError(f"unknown sensor {v!r}")
-        return v
+    @model_serializer(mode="wrap")
+    def _options_only_when_set(self, handler: Any) -> dict[str, Any]:
+        # Left out when unset, so the checks that do not use them keep their hash.
+        data = handler(self)
+        if not self.central:
+            data.pop("central", None)
+        if self.instance is None:
+            data.pop("instance", None)
+        return data
 
     @field_validator("interval")
     @classmethod
@@ -244,12 +255,59 @@ class Check(_Model):
     def _params_of_sensor(cls, data: Any) -> Any:
         # Before, so the stored params carry the sensor's defaults and a foreign
         # key fails with the sensor's own message.
-        if isinstance(data, dict) and data.get("sensor") in SENSORS:
-            data = {**data, "params": validate_params(data["sensor"], data.get("params") or {})}
+        if not isinstance(data, dict):
+            return data
+        sensor = data.get("sensor")
+        if data.get("central") is True:
+            # Imported here: check_configs imports this module.
+            from app.check_configs import CENTRAL_SENSORS
+
+            if sensor in CENTRAL_SENSORS:
+                params = CENTRAL_SENSORS[sensor].params.model_validate(data.get("params") or {})
+                data = {**data, "params": params.model_dump(mode="json", exclude_unset=True)}
+        elif sensor in SENSORS:
+            data = {**data, "params": validate_params(sensor, data.get("params") or {})}
         return data
+
+    def _central_consistent(self) -> Check:
+        from app.check_configs import CENTRAL_SENSORS
+
+        sensor = CENTRAL_SENSORS.get(self.sensor)
+        if sensor is None:
+            raise ValueError(
+                f"unknown central sensor {self.sensor!r}, only {sorted(CENTRAL_SENSORS)}"
+            )
+        if self.target is None or self.target.kind != "vhost":
+            # The host of a central check is the instance's name; only a vhost is one.
+            raise ValueError("a central check targets the vhost")
+        if (
+            self.fields
+            or self.rules
+            or self.credential is not None
+            or self.test_object
+            or self.image_tags is not None
+        ):
+            raise ValueError(
+                "a central check rates itself: no fields, rules, credential, test_object "
+                "or image_tags"
+            )
+        unit = {"m": 60, "h": 3600}[sensor.min_interval[-1]]
+        shortest = int(sensor.min_interval[:-1]) * unit
+        if self.interval < shortest:
+            raise ValueError(
+                f"the central sensor {self.sensor!r} runs at most every {shortest} s, "
+                f"interval {self.interval} is shorter"
+            )
+        return self
 
     @model_validator(mode="after")
     def _consistent(self) -> Check:
+        if self.central:
+            return self._central_consistent()
+        if self.sensor not in SENSORS:
+            raise ValueError(f"unknown sensor {self.sensor!r}")
+        if not self.fields:
+            raise ValueError("fields: a check needs at least one field")
         if self.test_object and self.interval < TEST_OBJECT_MIN_INTERVAL:
             raise ValueError(
                 f"a test object runs at most every {TEST_OBJECT_MIN_INTERVAL} s, "
@@ -316,7 +374,7 @@ class Module(_Model):
     version: int = Field(ge=1, strict=True)
     description: str = Field("", max_length=1000)
     detect: Detect = Field(default_factory=Detect)
-    instance: Literal["compose_project", "container", "unit", "process", "port", "vhost"]
+    instance: Literal["compose_project", "container", "unit", "process", "port", "vhost", "share"]
     checks: list[Check] = Field(min_length=1, max_length=50)
     card: list[CardItem] = Field(default_factory=list, max_length=6)
 
@@ -330,8 +388,14 @@ class Module(_Model):
                 raise ValueError(
                     "a module with instance 'vhost' detects by vhost_tls or vhost_apps only"
                 )
+        elif self.instance == "share":
+            # A share is found by its mount point alone, like a vhost by its name.
+            if not self.detect.net_shares or not self.detect.is_empty() or self.detect.by_vhost():
+                raise ValueError("a module with instance 'share' detects by net_shares only")
         elif self.detect.by_vhost():
             raise ValueError("vhost_tls and vhost_apps need instance 'vhost'")
+        elif self.detect.net_shares:
+            raise ValueError("net_shares needs instance 'share'")
         elif self.instance != "port" and self.detect.is_empty():
             raise ValueError("a module needs at least one detection criterion")
         for marker in self.detect.markers:
@@ -360,6 +424,18 @@ class Module(_Model):
                     f"{check.credential.slot!r} but differ in sensor, use or target"
                 )
         for check in self.checks:
+            if check.central and self.instance != "vhost":
+                raise ValueError(f"check {check.key!r}: a central check needs instance 'vhost'")
+            if check.target and check.target.kind == "share" and self.instance != "share":
+                raise ValueError(f"check {check.key!r}: target 'share' needs instance 'share'")
+            if (
+                check.instance is not None
+                and self.instance == "unit"
+                and check.instance not in self.detect.units
+            ):
+                raise ValueError(
+                    f"check {check.key!r}: instance {check.instance!r} is none of the module's units"
+                )
             if check.target and check.target.service and self.instance != "compose_project":
                 raise ValueError(
                     f"check {check.key!r}: target.service needs instance 'compose_project'"

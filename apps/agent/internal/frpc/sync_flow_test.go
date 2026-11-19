@@ -40,6 +40,8 @@ func setupSyncTest(t *testing.T, srvURL string) *seamCalls {
 	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir()) // no PKI here -> legacy client
 	pointSyncAt(t, srvURL)
+	frpDirSecured.Store(false)
+	t.Cleanup(func() { frpDirSecured.Store(false) })
 	calls := &seamCalls{}
 	origRestart, origDisable, origEnable, origActive := restartService, disableService, enableService, isActive
 	origReload, origDown, origOwns := reloadService, isDown, ownsAdminPort
@@ -1058,6 +1060,9 @@ func TestSyncChangesNothingWhenTheFrpDirCannotBeSecured(t *testing.T) {
 			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
 			pointSyncAt(t, srv.URL)
 			files, actions := frpFiles(t), *calls
+			// The process has secured the FRP directory before (its first run, which
+			// TestSyncSecuresTheFrpDirBeforeItReads covers): this is the securing before a change.
+			frpDirSecured.Store(true)
 			notSecured := errors.New("an entry in the data root cannot be removed")
 			secured := stubEnsureDataDir(t, notSecured)
 
@@ -1078,9 +1083,10 @@ func TestSyncChangesNothingWhenTheFrpDirCannotBeSecured(t *testing.T) {
 	}
 }
 
-// A run without a change secures nothing, so that the common run does not walk the data root
-// (on Windows with its tree): the hash is the same and frpc runs on a frpc.toml with a tunnel,
-// or the server has no FRP config and neither frpc.toml nor the hash is left.
+// A run without a change secures nothing once the process has secured the FRP directory, so that
+// the common run does not walk the data root (on Windows with its tree): the hash is the same and
+// frpc runs on a frpc.toml with a tunnel, or the server has no FRP config and neither frpc.toml
+// nor the hash is left.
 func TestSyncSecuresNothingWithoutAChange(t *testing.T) {
 	t.Run("same hash, frpc runs on a tunnel", func(t *testing.T) {
 		setupSyncTest(t, "https://unused.example")
@@ -1100,6 +1106,9 @@ func TestSyncSecuresNothingWithoutAChange(t *testing.T) {
 	t.Run("null hash, nothing left", func(t *testing.T) {
 		srv, _ := hashServer(t, `{"hash": null}`, nil)
 		setupSyncTest(t, srv.URL)
+		if err := Sync(context.Background()); err != nil {
+			t.Fatalf("first Sync of the process with a null hash: %v", err)
+		}
 		secured := stubEnsureDataDir(t, errors.New("not secured"))
 
 		if err := Sync(context.Background()); err != nil {
@@ -1536,5 +1545,41 @@ func TestSyncSetsTheFrpsTLSNameInTheWrittenConfig(t *testing.T) {
 	}
 	if *fetches != 1 {
 		t.Errorf("config fetches = %d, want 1", *fetches)
+	}
+}
+
+// The first run of a process secures the FRP directory before it reads adminhelper.conf or asks
+// the server anything: when that fails, the sync fails naming the directory and sends no
+// request, also for a host whose FRP directory holds a complete adminhelper.conf.
+func TestSyncSecuresTheFrpDirBeforeItReads(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"hash": null}`))
+	}))
+	t.Cleanup(srv.Close)
+	setupSyncTest(t, srv.URL)
+	notSecured := errors.New("an entry in the data root cannot be removed")
+	secured := stubEnsureDataDir(t, notSecured)
+
+	err := Sync(context.Background())
+	if !errors.Is(err, notSecured) || !strings.Contains(err.Error(), config.FrpDir()) {
+		t.Fatalf("Sync = %v, want the failure to secure %s, naming it", err, config.FrpDir())
+	}
+	if !slices.Equal(*secured, []string{config.FrpDir()}) {
+		t.Errorf("secured %q, want the FRP directory %s once", *secured, config.FrpDir())
+	}
+	if requests != 0 {
+		t.Errorf("the sync sent %d requests, want none before the FRP directory is secured", requests)
+	}
+
+	// A securing that succeeds later lets the next run read and sync.
+	*secured = nil
+	ensureDataDir = func(dir string) error { *secured = append(*secured, dir); return nil }
+	if err := Sync(context.Background()); err != nil {
+		t.Fatalf("Sync after the securing succeeded: %v", err)
+	}
+	if requests == 0 {
+		t.Error("the sync sent no request after the FRP directory was secured")
 	}
 }

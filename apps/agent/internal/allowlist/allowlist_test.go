@@ -42,6 +42,9 @@ func TestAllowlistTakesEveryProbeAndDiscoveryCall(t *testing.T) {
 		{"systemctl", "show", "-p", "Id,Triggers", "--", "apt-daily.timer", "fstrim.timer"},
 		{"systemctl", "show", "-p", "Id,Result", "--", "apt-daily.service", `systemd-tmpfiles-clean.service`},
 		{"docker", "ps", "--all", "--quiet", "--no-trunc"},
+		{"docker", "cp", "--", "0123456789ab:/etc/nginx/nginx.conf", "-"},
+		{"docker", "cp", "--", strings.Repeat("f", 64) + ":/usr/local/apache2/conf/extra", "-"},
+		{"docker", "cp", "--", "0123456789ab:/etc/nginx/conf.d/my_site-1.conf", "-"},
 		{"docker", "inspect", "--type", "container", strings.Repeat("a", 64), strings.Repeat("0", 64)},
 		{"dpkg-query", "--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "nginx", "libc6", "g++-12"},
 		{"rpm", "--query", `--queryformat=%{NAME}\n`, "nginx", "postgresql16-server"},
@@ -103,6 +106,19 @@ func TestAllowlistRefusesTheProbeAndDiscoveryTraps(t *testing.T) {
 		{"docker", "inspect", "--type", "container", "--", "../x"},
 		{"docker", "inspect", "--type", "container", "web"},
 		{"docker", "ps", "--all", "--quiet"},
+		// docker cp reads one path of a container to stdout: never into the container, never a
+		// relative or dotted path, never -L, never by name.
+		{"docker", "cp", "--", "0123456789ab:/etc/../root/.ssh/id_rsa", "-"},
+		{"docker", "cp", "--", "0123456789ab:/etc/nginx/.htpasswd", "-"},
+		{"docker", "cp", "--", "0123456789ab:etc/nginx/nginx.conf", "-"},
+		{"docker", "cp", "--", "0123456789ab:/", "-"},
+		{"docker", "cp", "--", "0123456789ab:/etc/nginx/nginx.conf", "/tmp/x"},
+		{"docker", "cp", "--", "-", "0123456789ab:/etc/nginx/nginx.conf"},
+		{"docker", "cp", "-L", "--", "0123456789ab:/etc/nginx/nginx.conf", "-"},
+		{"docker", "cp", "0123456789ab:/etc/nginx/nginx.conf", "-"},
+		{"docker", "cp", "--", "web:/etc/nginx/nginx.conf", "-"},
+		{"docker", "cp", "--", "0123456789a:/etc/nginx/nginx.conf", "-"},
+		{"docker", "cp", "--", "0123456789ab:/etc/nginx/*.conf", "-"},
 		{"dpkg-query", "--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--"},
 		{"dpkg-query", "--show", `--showformat=${Conffiles}\n`, "--", "nginx"},
 		{"dpkg-query", "--show", `--showformat=${Package}\t${db:Status-Abbrev}\n`, "--", "-x"},
@@ -176,6 +192,41 @@ func TestAllowlistOOMJournal(t *testing.T) {
 		{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--after-cursor=" + cursor},
 		{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--output-fields=PRIORITY", "--show-cursor", "--priority=3", "--since=-60s"},
 		{"--no-pager", "--quiet", "--output=cat", "--output-fields=PRIORITY", "--show-cursor", "--priority=3", "--since=-60s", "--dmesg"},
+	} {
+		if Allowed("journalctl", args) {
+			t.Errorf("allowed: journalctl %q", args)
+		}
+	}
+}
+
+// TestAllowlistServiceLogJournal: the error lines of a failed unit read its last ten entries as bare
+// messages. The traps bend it into another output, another count or the whole journal, a unit name
+// that is an option or a match, a follow, another file, or a second unit.
+func TestAllowlistServiceLogJournal(t *testing.T) {
+	call := func(unit string) []string {
+		return []string{"--no-pager", "--quiet", "--output=cat", "--unit=" + unit, "--lines=10"}
+	}
+	for _, unit := range []string{"nginx.service", "getty@tty1.service", "systemd-fsck@dev-disk-by\\x2duuid.service"} {
+		if !Allowed("journalctl", call(unit)) {
+			t.Errorf("refused: %q", call(unit))
+		}
+	}
+	for _, args := range [][]string{
+		{"--no-pager", "--quiet", "--output=json", "--unit=nginx.service", "--lines=10"},
+		{"--no-pager", "--quiet", "--output=verbose", "--unit=nginx.service", "--lines=10"},
+		{"--no-pager", "--quiet", "--output=cat", "--unit=nginx.service", "--lines=all"},
+		{"--no-pager", "--quiet", "--output=cat", "--unit=nginx.service", "--lines=100000"},
+		{"--no-pager", "--quiet", "--output=cat", "--unit=nginx.service"},
+		{"--no-pager", "--quiet", "--output=cat", "--lines=10"},
+		call("-a"),
+		call("--help"),
+		call("nginx.service _COMM=sshd"),
+		call("*"),
+		call(""),
+		append(call("nginx.service"), "--follow"),
+		append(call("nginx.service"), "--file=/etc/shadow"),
+		append(call("nginx.service"), "--unit=sshd.service"),
+		append(call("nginx.service"), "--", "_COMM=sshd"),
 	} {
 		if Allowed("journalctl", args) {
 			t.Errorf("allowed: journalctl %q", args)
@@ -1061,6 +1112,35 @@ func TestAllowlistPackageState(t *testing.T) {
 		{"dpkg", "--audit", "nginx"},
 		{"apt-mark", "hold", "nginx"},
 		{"apt-mark", "unhold", "nginx"},
+	} {
+		if Allowed(call[0], call[1:]) {
+			t.Errorf("allowed: %q", call)
+		}
+	}
+}
+
+// TestAllowlistNetShareUsage: net_share_usage asks statfs of a mount point alone. The traps read a file,
+// climb out with "..", take an option for a path, or ask another format.
+func TestAllowlistNetShareUsage(t *testing.T) {
+	for _, call := range [][]string{
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/srv/team share"},
+		{"/usr/bin/stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/smb_3,x@y+z"},
+	} {
+		if !Allowed(call[0], call[1:]) {
+			t.Errorf("refused: %q", call)
+		}
+	}
+	for _, call := range [][]string{
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/../etc"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/.hidden"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "mnt/pve"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/ x"},
+		{"stat", "-f", "-c", "%S %b %f %a", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%n", "--", "/mnt/pve/backup"},
+		{"stat", "-c", "%S %b %f %a", "--", "/mnt/pve/backup"},
+		{"stat", "-f", "-c", "%S %b %f %a", "--", "/mnt/a", "/mnt/b"},
+		{"stat", "-L", "/etc/shadow"},
 	} {
 		if Allowed(call[0], call[1:]) {
 			t.Errorf("allowed: %q", call)

@@ -37,6 +37,8 @@ def _config(**over):
         _config(host="localhost"),  # a name; the rule public/internal decides at run time
         _config(pair_check_id="p1"),
         _config(params={}),
+        _config(params={"expiry": False}),
+        _config(params={"expiry": True}),
         _config(sensor="dns"),
         _config(sensor="dns", params={"expected": ["192.0.2.10", "2001:db8::10"]}),
         _config(sensor="dns", params={"expected": None}),
@@ -102,7 +104,9 @@ def test_valid_configs_pass(config):
         (_config(sensor="dns", params={"expected": ["192.0.2.10"] * 33}), "params.expected"),
         (_config(sensor="dns", params={"expected": [10]}), "params.expected"),
         (_config(sensor="dns", params={"other": 1}), "params"),
-        (_config(params={"expected": ["192.0.2.10"]}), "params"),  # tls takes none
+        (_config(params={"expected": ["192.0.2.10"]}), "params"),  # tls takes expiry only
+        (_config(params={"expiry": "false"}), "params.expiry"),
+        (_config(params={"expiry": 0}), "params.expiry"),
         (_config(sensor="rdap", port=443), "the sensor rdap takes no port"),
         (_config(sensor="rdap", host="192.0.2.10"), "the sensor rdap needs a host name"),
         (_config(sensor="rdap", params={"warn_days": 7, "crit_days": 7}), "below warn_days"),

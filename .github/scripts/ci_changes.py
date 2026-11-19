@@ -63,6 +63,8 @@ SCOPES = {
         *_FRPS_CONTEXT,
         # the frpc configuration the agent expects, which the config generator must produce
         "apps/agent/internal/frpc/testdata/**",
+        # the frpc pin the frp-consistency step compares; test_release_images.py copies it
+        "apps/agent/internal/frpc/frpcpin.go",
         "apps/ca-issuer/**",
         "!apps/ca-issuer/tests/**",
         "apps/monitoring/**",

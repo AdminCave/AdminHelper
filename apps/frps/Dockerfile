@@ -6,7 +6,7 @@
 # supervisor and the Go sources of the plugin). The plugin lives in the Go module of the agent
 # and imports the standard library alone, so its build needs no download: GOPROXY=off makes a
 # new dependency fail here rather than fetch, and GOTOOLCHAIN=local keeps the Go of this image.
-FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS plugin
+FROM golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS plugin
 WORKDIR /src
 COPY apps/agent/go.mod apps/agent/go.sum ./
 COPY apps/agent/cmd/frps-policy ./cmd/frps-policy
@@ -28,7 +28,8 @@ FROM snowdreamtech/frps:0.72.0-alpine@sha256:bd1b1475d211f5349dfa496c82185ee3bf9
 # new proxy against the policy file the server writes, runs as the user frps-policy, a UID of
 # its own outside the group frps, so that it cannot read the copy with token and key; its
 # program gets the same mode.
-RUN rm -f /etc/frp/frps.toml \
+RUN apk upgrade --no-cache \
+    && rm -f /etc/frp/frps.toml \
     && find / -xdev -type f -perm /6000 -exec chmod u-s,g-s {} + \
     && chown root:root /usr/bin/frps /usr/bin/curl \
     && chmod 0711 /usr/bin/frps /usr/bin/curl \

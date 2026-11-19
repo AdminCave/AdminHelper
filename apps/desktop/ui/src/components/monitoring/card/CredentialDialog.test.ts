@@ -89,7 +89,7 @@ describe('CredentialDialog', () => {
     const { queryByRole } = show([ssh('c1', 'Box')], true);
     expect(queryByRole('button', { name: 'Open terminal' })).toBeNull();
     expect(document.body.textContent).toContain(
-      `& 'C:\\Program Files\\AdminHelper\\adminhelper-agent.exe' monitor credential set ${REF}`,
+      `& 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe' monitor credential set ${REF}`,
     );
     expect(document.body.textContent).not.toContain('sudo');
   });
