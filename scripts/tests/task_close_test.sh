@@ -103,6 +103,14 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Komponente: scripts · Dateien: .env.example, docs/app.js, apps/x/CLAUDE.md, docs/moved.md, CLAUDE.md, docs/link.md
 Task-Review: am Ende
 Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T15 — Pfade mit Leerzeichen statt Komma getrennt  [ ]
+Komponente: scripts · Dateien: scripts/dev/tool.sh scripts/dev/other.sh
+Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T16 — Dateien: eine Notiz in Klammern  [ ]
+Komponente: scripts · Dateien: scripts/dev/tool.sh (neu, mit Notiz), scripts/dev/other.sh
+Verify: bash scripts/dev/verify.sh scripts --strict
 MD
 sed 's/^Status: aktiv · Branch: feature\/fixture · Review: pro Task$/Status: aktiv · Review: am Ende/' "$FIX/tasks/fix.md" \
   | sed -n '1,7p' > "$FIX/tasks/late.md"
@@ -176,6 +184,13 @@ edit scripts/dev/other.sh; git -C "$FIX" add scripts/dev/other.sh; edit scripts/
 [ $rc -eq 2 ] && grep -q 'not (fully) staged: scripts/dev/tool.sh' <<<"$OUT" && ok "a declared file left unstaged -> 2" || bad "unstaged: rc=$rc $OUT"
 git -C "$FIX" add scripts/dev/tool.sh; edit scripts/dev/tool.sh; c fix T1 -m "test: x"
 [ $rc -eq 2 ] && grep -q 'half staged' <<<"$OUT" && ok "a half staged file -> 2" || bad "half: rc=$rc $OUT"
+# R-1646: a list split by spaces staged only its first path and committed without the rest.
+reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T15 approve; c fix T15 --stage -m "test: x"
+[ $rc -eq 2 ] && grep -q 'separate paths with commas' <<<"$OUT" && [ "$(heads)" = 1 ] \
+  && ok "a Dateien: element with a space -> 2, no commit" || bad "T15: rc=$rc $OUT"
+reset_repo; edit scripts/dev/tool.sh; edit scripts/dev/other.sh; verdict fix T16 approve; c fix T16 --stage -m "test: x"
+[ $rc -eq 0 ] && [ "$(git -C "$FIX" diff --name-only HEAD~1 HEAD -- scripts/dev | wc -l)" = 2 ] \
+  && ok "a note in parentheses and Dateien: in the title stay allowed, both paths commit" || bad "T16: rc=$rc $OUT"
 
 echo "── test files ──"
 reset_repo; rm "$FIX/scripts/tests/keep_test.sh"; verdict fix T5 approve; c fix T5 --stage -m "test: x"

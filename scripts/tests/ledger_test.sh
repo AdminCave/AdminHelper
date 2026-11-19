@@ -238,6 +238,17 @@ sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/v
 l lint fixture
 [ $rc -eq 0 ] && grep -q "ok$" <<<"$OUT" && ok "a clean ledger lints green" || bad "clean lint: rc=$rc out=$OUT"
 
+# R-1646: task-close.sh stages the first word of each element only; a list split
+# by spaces would commit without the rest. A note in parentheses stays allowed.
+sed -i 's|^Komponente: scripts · Dateien: scripts/dev/a.sh, scripts/tests/a_test.sh$|Komponente: scripts · Dateien: scripts/dev/a.sh scripts/tests/a_test.sh|' "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "T1: Dateien: element 'scripts/dev/a.sh scripts/tests/a_test.sh'.*separate paths with commas" <<<"$OUT" \
+  && ok "a Dateien: element with a space is an error" || bad "lint spaces: rc=$rc out=$OUT"
+sed -i 's|^Komponente: scripts · Dateien: scripts/dev/a.sh scripts/tests/a_test.sh$|Komponente: scripts · Dateien: scripts/dev/a.sh (neu, mit Notiz), scripts/tests/a_test.sh|' "$FIX"
+sed -i 's|^\(### T1 — \)|\1Dateien: im Titel |' "$FIX"
+l lint fixture
+[ $rc -eq 0 ] && grep -q "ok$" <<<"$OUT" && ok "a note in parentheses and Dateien: in a title lint clean" || bad "lint note: rc=$rc out=$OUT"
+
 # A remnant of a tool call (R-0165). The tags are put together at run time: no file
 # of this repo may carry one, and lint runs over every real ledger.
 TAG_CLOSE="</""invoke>" TAG_NS="</""ns:content>" TAG_OPEN="<""parameter name=\"x\">"
