@@ -6,26 +6,24 @@
 
 package config
 
-import "os"
-
 // FreeBSD keeps the configuration of third-party software under /usr/local/etc (hier(7)); the
-// ADMINHELPER_*_DIR overrides are the same test seam as on Linux (paths_linux.go).
+// ADMINHELPER_*_DIR overrides are the same test seam as on Linux (override in paths.go).
 func FrpDir() string {
-	if d := os.Getenv("ADMINHELPER_FRP_DIR"); d != "" {
+	if d := override("ADMINHELPER_FRP_DIR"); d != "" {
 		return d
 	}
 	return "/usr/local/etc/adminhelper/frp"
 }
 
 func MonitorDir() string {
-	if d := os.Getenv("ADMINHELPER_MONITOR_DIR"); d != "" {
+	if d := override("ADMINHELPER_MONITOR_DIR"); d != "" {
 		return d
 	}
 	return "/usr/local/etc/adminhelper"
 }
 
 func LogDir() string {
-	if d := os.Getenv("ADMINHELPER_LOG_DIR"); d != "" {
+	if d := override("ADMINHELPER_LOG_DIR"); d != "" {
 		return d
 	}
 	return "/var/log/adminhelper"

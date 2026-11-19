@@ -120,11 +120,15 @@ fi
 # ── 3. staging ───────────────────────────────────────────────────────────────
 # The files the task declares, without the notes in parentheses. This list
 # decides what a commit CONTAINS, so a line it cannot read fully stops the run.
-FILES_RAW="$(sed -n 's/.*Dateien:[[:space:]]*//p' <<<"$TASK" | head -n1 | sed 's/([^)]*)//g')"
+# Only the field line, like ledger.sh start: a title may name "Dateien:" too.
+FILES_RAW="$(grep -E '^(Komponente:.*)?Dateien:' <<<"$TASK" | head -n1 | sed 's/.*Dateien:[[:space:]]*//; s/([^)]*)//g')"
 case "$FILES_RAW" in
   *" · "*|*" + "*) die "the Dateien: line of $ID separates paths with '·' or '+' — use commas" ;;
 esac
-TASK_FILES="$(printf '%s' "$FILES_RAW" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]].*//' | grep -v '^$')"
+# Each element is one path: staging the first word of "a.sh b.sh" would commit without b.sh (R-1646).
+SPACED="$(printf '%s' "$FILES_RAW" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep '[[:space:]]' | head -n1)"
+[ -z "$SPACED" ] || die "the Dateien: line of $ID has '$SPACED' — separate paths with commas, notes go in parentheses"
+TASK_FILES="$(printf '%s' "$FILES_RAW" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')"
 HINT="bash scripts/dev/ledger.sh set-files $LEDGER $ID <paths>"
 if [ "$STAGE" = 1 ]; then
   [ -n "$TASK_FILES" ] || die "--stage needs a Dateien: line on task $ID ($HINT)"

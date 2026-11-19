@@ -7,7 +7,6 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -27,24 +26,22 @@ var programData = sync.OnceValue(func() string {
 	return defaultProgramData
 })
 
-// ADMINHELPER_*_DIR overrides mirror paths_linux.go so the orchestration flows are unit-testable
-// against a t.TempDir() on either platform (6.96).
 func FrpDir() string {
-	if d := os.Getenv("ADMINHELPER_FRP_DIR"); d != "" {
+	if d := override("ADMINHELPER_FRP_DIR"); d != "" {
 		return d
 	}
 	return filepath.Join(programData(), "AdminHelper", "frp")
 }
 
 func MonitorDir() string {
-	if d := os.Getenv("ADMINHELPER_MONITOR_DIR"); d != "" {
+	if d := override("ADMINHELPER_MONITOR_DIR"); d != "" {
 		return d
 	}
 	return filepath.Join(programData(), "AdminHelper")
 }
 
 func LogDir() string {
-	if d := os.Getenv("ADMINHELPER_LOG_DIR"); d != "" {
+	if d := override("ADMINHELPER_LOG_DIR"); d != "" {
 		return d
 	}
 	return filepath.Join(programData(), "AdminHelper", "logs")

@@ -236,7 +236,7 @@
               <tr>
                 <td><code>service.Uninstall()</code><br /><code>service_*.go</code></td>
                 <td><code>systemctl stop</code>/<code>disable</code> for timer and service, removes the unit files, <code>daemon-reload</code>.</td>
-                <td>Stops and deletes <code>AdminHelper-Agent</code> through the service manager and removes the event source; a service that is not registered is no error. <code>--purge</code> (<code>Purge()</code>, Windows only) then deletes the program and data folders, both from <code>KnownFolderPath</code>; only absolute paths below a drive or share root (<code>purgeable</code>) owned by Administrators or SYSTEM, the running binary and its folder through <code>MOVEFILE_DELAY_UNTIL_REBOOT</code>. Set <code>ADMINHELPER_*_DIR</code> overrides it only names.</td>
+                <td>Stops and deletes <code>AdminHelper-Agent</code> through the service manager and removes the event source; a service that is not registered is no error. <code>--purge</code> (<code>Purge()</code>, Windows only) then deletes the program and data folders, both from <code>KnownFolderPath</code>; only absolute paths below a drive or share root (<code>purgeable</code>) owned by Administrators or SYSTEM, the running binary and its folder through <code>MOVEFILE_DELAY_UNTIL_REBOOT</code>.</td>
                 <td>Deletes the cron entry.</td>
               </tr>
               <tr>
