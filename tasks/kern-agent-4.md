@@ -10,7 +10,7 @@ Heavy: linux-full — Wächter und Fühler des Agents (`apps/agent`), Docker-Por
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Jede Task: `security` parallel zum `reviewer` (SEC-Zug).
+Jede Task: `security` parallel zum `reviewer`.
 
 ### T1 — R-1426: weitere Weiterleiter und Super-Server im Wächter  [x]
 Komponente: agent · Dateien: apps/agent/internal/probe/guard.go, apps/agent/internal/probe/guard_test.go
