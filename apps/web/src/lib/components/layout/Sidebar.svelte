@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { Component } from 'svelte';
+  import Bell from '@lucide/svelte/icons/bell';
   import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Link from '@lucide/svelte/icons/link';
@@ -34,6 +35,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     { page: 'apikeys', label: 'nav.apikeys', group: 'mid', icon: KeyRound },
     { page: 'hooks', label: 'nav.hooks', group: 'mid', icon: Zap },
     { page: 'frp', label: 'nav.frp', group: 'mid', icon: Link },
+    { page: 'notifications', label: 'nav.notifications', group: 'mid', icon: Bell },
     { page: 'certificates', label: 'nav.certificates', group: 'bot', icon: ShieldCheck },
     { page: 'audit', label: 'nav.audit', group: 'bot', icon: ClipboardCheck },
   ];

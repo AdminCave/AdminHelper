@@ -98,7 +98,7 @@
           <div class="callout"><div class="callout-title">Gap: local and sync workspaces</div><p>Only a server workspace of the desktop client reports the use of a connection to the server. What is opened in a local or sync workspace never reaches the server and therefore does not appear in the audit trail.</p></div>
 
           <h2>E-mail notifications (SMTP)</h2>
-          <p>The <strong>notification hub</strong> can deliver notifications by e-mail in addition to the in-app bell. Configure an external SMTP relay via environment variables (no local mail server needed):</p>
+          <p>The <strong>notification hub</strong> can deliver notifications by e-mail in addition to the in-app bell. Enter an external SMTP relay (no local mail server needed): in the web admin under <strong>Notifications</strong> (see <a href="#notify-panel">Channels in the admin panel</a>) or via environment variables. A value in the panel takes precedence over the variable; the variables remain the fallback:</p>
           <table>
             <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
             <tbody>
@@ -111,10 +111,10 @@
             </tbody>
           </table>
           <p>Who receives which e-mails is controlled by each user via their notification rules and their matrix (see <a href="./monitoring.html#channels">Monitoring → Channels and matrix</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
-          <p>The e-mail channel of the alert rules in monitoring uses the <code>SMTP_*</code> variables as well (see <a href="./monitoring.html">Monitoring → Notifications &amp; alerting</a>); a rule can set its own relay with its own credentials there.</p>
+          <p>The e-mail channel of the alert rules in monitoring uses the same relay, from the panel or the <code>SMTP_*</code> variables, as well (see <a href="./monitoring.html">Monitoring → Notifications &amp; alerting</a>); a rule can set its own relay with its own credentials there.</p>
 
           <h3 id="notify-channels">Channels ntfy, Telegram and webhook</h3>
-          <p>Besides e-mail the notification hub delivers via ntfy, Telegram and webhooks; each person sets their own targets. Operation needs two variables in the <code>.env</code> (Compose passes them to <code>server</code> and <code>scheduler</code>):</p>
+          <p>Besides e-mail the notification hub delivers via ntfy, Telegram and webhooks; each person sets their own targets. Operation needs two settings, in the panel or as a variable in the <code>.env</code> (Compose passes them to <code>server</code> and <code>scheduler</code>):</p>
           <table>
             <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
             <tbody>
@@ -127,6 +127,33 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div><div class="callout-title">Name exactly the network of the targets</div><p>Do not open the whole private block (<code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>): the containers' Docker networks are usually inside it, and anyone with an account could then reach the services next to the server. When a listed network holds an address of the server itself, the start logs a warning.</p></div>
           </div>
+
+          <h3 id="notify-panel">Channels in the admin panel</h3>
+          <p>Admins keep the relay (host, port, user, password, sender), the Telegram bot token and the private target networks in the web admin under <strong>Notifications</strong>. The values apply to <code>server</code> and <code>scheduler</code> without a restart; monitoring picks them up within a minute.</p>
+          <ul>
+            <li><strong>Precedence per field:</strong> A field set in the panel applies, an empty one takes the variable of the same name from the <code>.env</code>. The page shows the source of each field (panel, <code>.env</code> or none) and the value in effect. Exception, the login: with the host in the panel, user and password apply only from the panel, never those from the <code>.env</code>; so that password never goes to another relay. Changing the host without entering a password deletes the stored one.</li>
+            <li><strong>Secrets:</strong> Password and token are write-only; the page only shows whether one is set. An empty field keeps the stored value, "Delete the stored value" removes it. The database stores both encrypted (AES-GCM, key derived from <code>SECRET_KEY</code>); the audit log names only the changed fields.</li>
+            <li><strong><code>SECRET_KEY</code> changed:</strong> Stored secrets no longer open. They count as not set, the <code>.env</code> applies, the page warns "unreadable", and the server log names the field. Enter password and token in the panel again.</li>
+            <li><strong>Private target networks:</strong> The same CIDR check as at startup; an invalid entry is refused with a message. An empty list in the panel means "the <code>.env</code> applies", not "all closed"; closing all private targets means removing <code>NOTIFY_PRIVATE_TARGETS</code> from the <code>.env</code>.</li>
+            <li><strong>Test:</strong> Per channel, "Send test" sends a message over the stored settings to the target given, in the stored mail design. One test per channel and admin within ten seconds, shared with the personal test.</li>
+          </ul>
+
+          <h3 id="mail-design">Mail design</h3>
+          <p>Under <strong>Notifications → Mail design</strong> admins design the mails of the notification hub (outbox, digest, test) and the mails of the alert rules in monitoring: subject prefix, sender name, HTML part, text part and a logo. Without a stored design everything stays as before: plain text, the subject without a prefix in the hub, <code>[AdminHelper Monitor] …</code> in monitoring. With a design, the panel's prefix replaces <code>[AdminHelper Monitor]</code> in monitoring.</p>
+          <table>
+            <thead><tr><th>Placeholder</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td><code>{{title}}</code></td><td>Title of the message (in monitoring the subject without the prefix, e.g. <code>CRITICAL: disk /</code>)</td></tr>
+              <tr><td><code>{{body}}</code></td><td>Text of the message; in the HTML part with a <code>&lt;br&gt;</code> per line break</td></tr>
+              <tr><td><code>{{severity}}</code></td><td><code>critical</code>, <code>warning</code>, <code>info</code> or <code>ok</code> (recovery)</td></tr>
+              <tr><td><code>{{category}}</code></td><td>Category of the message, <code>monitoring</code> in monitoring</td></tr>
+              <tr><td><code>{{time}}</code></td><td>Time in UTC to the minute, e.g. <code>2026-11-18 14:05 UTC</code></td></tr>
+              <tr><td><code>{{source}}</code></td><td><code>AdminHelper</code> in the hub, <code>AdminHelper Monitor</code> in monitoring</td></tr>
+              <tr><td><code>{{logo}}</code></td><td>Only in the HTML part, as the <code>src</code> of an <code>&lt;img&gt;</code>: the embedded logo (<code>cid:logo</code>), empty without a logo</td></tr>
+            </tbody>
+          </table>
+          <p>The template is plain substitution: no conditions, loops or filters, no code runs from it. An unknown placeholder is refused with a message on save. In the HTML part the values are HTML-escaped, since message texts can come from agents; in the text part they stand raw. With an empty HTML part the mail goes as plain text; with an empty text part the text alternative carries the text of the message. The logo (PNG or JPEG, at most 200&nbsp;KB) is embedded in the mail, so mail programs show it without loading anything.</p>
+          <p><strong>Preview:</strong> It renders the unsaved input with sample data in an isolated frame without scripts. It does not load external images or fonts (the page's security policy applies there too); in the mail, the recipient's mail program loads them if it allows that. "Send test" in the mail design sends the <em>stored</em> design over the relay in effect; "Reset to default" deletes design and logo.</p>
 
           <h3 id="smtp-ca">Relay with its own CA</h3>
           <p>If the relay presents a certificate the containers do not trust (self-signed or issued by a company CA), put the CA as the PEM file <code>smtp-ca.pem</code> next to <code>docker-compose.yml</code> in the install directory and mount it, with a <code>docker-compose.override.yml</code> next to it, into the services <code>server</code>, <code>scheduler</code> and <code>monitoring</code>, which Compose also gives the other <code>SMTP_*</code> variables; add these entries to an existing <code>docker-compose.override.yml</code> (for instance one with <code>FRPS_DASHBOARD_URL</code>, see <a href="./frp-tunnel.html">FRP Tunnel</a>) instead of replacing it:</p>

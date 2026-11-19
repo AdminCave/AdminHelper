@@ -95,7 +95,7 @@ describe('Sidebar', () => {
     await signIn(true);
     const view = render(Sidebar);
     await view.findByText('alice');
-    expect(view.container.querySelectorAll('nav a')).toHaveLength(6);
+    expect(view.container.querySelectorAll('nav a')).toHaveLength(7);
   });
 
   it('signs out from the user row', async () => {

@@ -158,6 +158,19 @@ if [ -n "$REPO_FP" ]; then
     && echo "AGENT_REPO_OK" || echo "AGENT_REPO_MISSING"
   grep -q "CAInfo" /etc/apt/apt.conf.d/99adminhelper-ca 2>/dev/null \
     && echo "AGENT_CAFLIP_OK" || echo "AGENT_CAFLIP_MISSING"
+  # The pin only counts if apt can read it: apt loads CAInfo as _apt, and a CA in
+  # the 0700 /etc/adminhelper broke every update after the flip (R-0810). Only the
+  # AdminHelper source, so a foreign mirror cannot fail the step; three tries,
+  # because apt has no timeout for the lists lock that apt-daily may hold.
+  APT_UPD=fail
+  for try in 1 2 3; do
+    if sudo apt-get update -o APT::Update::Error-Mode=any \
+         -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/adminhelper.sources -o Dir::Etc::sourceparts=-; then
+      APT_UPD=ok; break
+    fi
+    [ "$try" -lt 3 ] && sleep 15
+  done
+  [ "$APT_UPD" = ok ] && echo "AGENT_APT_UPDATE_OK" || echo "AGENT_APT_UPDATE_FAIL"
 else
   echo "[agentbox] no repo fingerprint from the server box — legacy local .deb path"
   echo "[agentbox] build the Go agent + .deb from the repo root"

@@ -26,7 +26,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app import alerter
+from app import alerter, mail_template
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core import ssrf as ssrf_mod
 from app.core.logging_config import configure_logging
@@ -1301,3 +1301,146 @@ class TestSilentModuleCheck:
 
         assert (dispatched, emitted) == (["mod"], ["mod"])
         assert db.get(MonitorState, "mod").notified_status == "critical"
+
+
+class TestCentralRelayAndTemplate:
+    """R-1531/R-1533: a rule mail takes the hub's relay in effect (app.notify_config)
+    unless the rule names its own, and the panel's template for every rule; without
+    the hub's answer the .env and the plain mail stay as before."""
+
+    PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+
+    class _SMTP:
+        seen: list = []
+
+        def __init__(self, host, port, timeout, context=None):
+            self.call = {"host": host, "port": port, "login": None, "message": None}
+            TestCentralRelayAndTemplate._SMTP.seen.append(self.call)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, user, password):
+            self.call["login"] = (user, password)
+
+        def send_message(self, message):
+            self.call["message"] = message
+
+    @pytest.fixture(autouse=True)
+    def smtp(self, monkeypatch):
+        monkeypatch.setattr(self._SMTP, "seen", [])
+        monkeypatch.setattr(alerter.smtplib, "SMTP", self._SMTP)
+        monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", self._SMTP)
+        monkeypatch.setattr(alerter, "SMTP_CA_FILE", "")
+        monkeypatch.setattr(alerter, "SMTP_HOST", "env-relay.example")
+        monkeypatch.setattr(alerter, "SMTP_PORT", 587)
+        monkeypatch.setattr(alerter, "SMTP_USER", "env-user")
+        monkeypatch.setattr(alerter, "SMTP_PASSWORD", "env-password")
+        monkeypatch.setattr(alerter, "SMTP_FROM", "env@monitor.example")
+        return self._SMTP.seen
+
+    def _central(self, monkeypatch, template=None):
+        from app import notify_config
+
+        config = notify_config.NotifyConfig(
+            notify_config.Relay(
+                "hub-relay.example", 465, "hub-user", "hub-password", "hub@monitor.example"
+            ),
+            template,
+        )
+        monkeypatch.setattr(alerter.notify_config, "get", lambda: config)
+
+    def _send(self, config=None, new_status="critical"):
+        check = make_check(name="web01 disk", check_type="disk", severity="critical")
+        old = "critical" if new_status == "ok" else "ok"
+        msg = alerter.build_message(_CapturingDb([]), check, old, new_status)
+        config = {"recipients": ["ops@monitor.example"], **(config or {})}
+        return alerter._send_email(config, make_rule(channel="email"), check, msg)
+
+    def test_without_the_hub_the_env_and_the_plain_mail(self, monkeypatch, smtp):
+        monkeypatch.setattr(alerter.notify_config, "get", lambda: None)
+        assert self._send() == (True, None)
+        [call] = smtp
+        assert (call["host"], call["port"], call["login"]) == (
+            "env-relay.example",
+            587,
+            ("env-user", "env-password"),
+        )
+        message = call["message"]
+        assert message["Subject"] == "[AdminHelper Monitor] CRITICAL: web01 disk"
+        assert message["From"] == "env@monitor.example"
+        assert [p.get_content_type() for p in message.walk()] == [
+            "multipart/alternative",
+            "text/plain",
+        ]
+
+    def test_a_rule_without_a_host_takes_the_central_relay(self, monkeypatch, smtp):
+        self._central(monkeypatch)
+        assert self._send() == (True, None)
+        [call] = smtp
+        assert (call["host"], call["port"], call["login"]) == (
+            "hub-relay.example",
+            465,
+            ("hub-user", "hub-password"),
+        )
+        assert call["message"]["From"] == "hub@monitor.example"
+        assert call["message"]["Subject"] == "[AdminHelper Monitor] CRITICAL: web01 disk"
+
+    def test_a_rule_with_its_own_host_never_gets_the_central_password(self, monkeypatch, smtp):
+        self._central(monkeypatch)
+        assert self._send({"smtp_host": "own-relay.example", "smtp_port": 587}) == (True, None)
+        [call] = smtp
+        assert (call["host"], call["login"]) == ("own-relay.example", None)
+
+    def test_the_template_shapes_the_rule_mail(self, monkeypatch, smtp):
+        self._central(
+            monkeypatch,
+            mail_template.Template(
+                subject_prefix="[Ops]",
+                from_name="Ops Desk",
+                html='<img src="{{logo}}"><p>{{severity}}: {{title}}</p><p>{{body}}</p>',
+                text="{{source}} / {{category}}: {{title}}",
+                logo=self.PNG,
+                logo_type="image/png",
+            ),
+        )
+        assert self._send() == (True, None)
+        message = smtp[0]["message"]
+        assert message["Subject"] == "[Ops] CRITICAL: web01 disk"
+        assert message["From"] == "Ops Desk <hub@monitor.example>"
+        assert [p.get_content_type() for p in message.walk()] == [
+            "multipart/related",
+            "multipart/alternative",
+            "text/plain",
+            "text/html",
+            "image/png",
+        ]
+        text, html_part, image = [p for p in message.walk() if not p.is_multipart()]
+        assert text.get_payload(decode=True).decode() == (
+            "AdminHelper Monitor / monitoring: CRITICAL: web01 disk"
+        )
+        html = html_part.get_payload(decode=True).decode()
+        assert html.startswith('<img src="cid:logo"><p>critical: CRITICAL: web01 disk</p>')
+        assert "<br>\nCheck: web01 disk (disk)" in html
+        assert image["Content-ID"] == "<logo>"
+        assert image.get_payload(decode=True) == self.PNG
+
+    def test_a_recovery_reads_ok(self, monkeypatch, smtp):
+        self._central(monkeypatch, mail_template.Template(text="{{severity}} {{title}}"))
+        assert self._send(new_status="ok") == (True, None)
+        message = smtp[0]["message"]
+        assert message["Subject"] == "RECOVERY: web01 disk"
+        assert message.get_payload()[0].get_payload(decode=True).decode() == (
+            "ok RECOVERY: web01 disk"
+        )
+
+    def test_a_rules_own_sender_stays_as_written(self, monkeypatch, smtp):
+        self._central(monkeypatch, mail_template.Template(from_name="Ops Desk"))
+        assert self._send({"from": "Team <team@monitor.example>"}) == (True, None)
+        assert smtp[0]["message"]["From"] == "Team <team@monitor.example>"
