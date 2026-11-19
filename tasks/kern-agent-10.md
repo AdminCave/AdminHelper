@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-agent-10 — Prozess-Metriken finden busybox-Applets — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-10 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-10 · Review: am Ende
 Spec: docs/features/kern-agent-10.md (Roadmap R-1606)
 Heavy: linux-full — apps/agent (Prozess-Sensor)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
