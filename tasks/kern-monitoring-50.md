@@ -26,14 +26,16 @@ Tests:
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/ ./internal/allowlist/
 Doku: → T4
 
-### T2 — R-1391: Monitoring speichert Zeilen für log_units  [ ]
+### T2 — R-1391: Monitoring speichert Zeilen für log_units  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/service_inventory.py, apps/monitoring/tests/test_service_inventory.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @068dc7a53 2026-11-19T11:11:34+01:00
+Review: approve (.ah-out/review/kern-monitoring-50/T2.verdict.json)
 Änderung: `store_service_report` nimmt als Liste der Dienste mit Zeilen `log_units`, wenn der Block sie als Liste trägt (gekappt wie `failed`), sonst `failed`. Gespeichert, behalten und gelöscht wird nach dieser Liste. Tests: Windows-Block mit `log_units` speichert und löscht; Linux-Block ohne `log_units` wie bisher; `log_units` keine Liste → `failed`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_inventory.py tests/test_service_inventory_api.py
 Doku: → T4
 
 ### T3 — R-1391: „Mehr Log“ unter Windows und FreeBSD  [ ]
-Komponente: desktop-rs desktop-ui · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte, apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte
+Komponente: desktop-rs desktop-ui · Dateien: apps/desktop/src-tauri/src/connection/ssh.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte, apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/lib/bridge/invoke.test.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, apps/desktop/ui/src/lib/stores/terminals.ts, apps/desktop/ui/src/lib/stores/terminals.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/terminal/SshTerminal.test.ts
 Änderung: `terminal_open_ssh_journal` nimmt `platform`. Je Plattform läuft ein fester Remote-Aufruf:
 - **linux:** journalctl wie bisher.
 - **windows:** `powershell -NoProfile -NonInteractive -EncodedCommand <Base64 UTF-16LE>`. Darin liest `Get-WinEvent` System und Application der letzten 24 h, filtert auf den Dienst (Provider = Name, oder SCM mit `param1` = Name/Anzeigename) und zeigt die neuesten 200. Der Name steht nur in der Windows-Dienstklasse, in einfachen Anführungszeichen.

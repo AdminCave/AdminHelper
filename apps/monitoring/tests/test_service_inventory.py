@@ -393,3 +393,41 @@ def test_a_report_locks_the_inventory_it_reads(db):
     store_service_report(db, "srv-1", _failed(["a.service"], ["boom"]))
 
     assert seen and "FOR UPDATE" in seen[0], seen
+
+
+def _windows(units, lines=None):
+    """A Windows block: no failed units, the services with lines in log_units."""
+    block = _failed(units, lines)
+    block["failed"] = []
+    block["log_units"] = list(units)
+    return block
+
+
+def test_a_windows_block_keeps_the_lines_of_its_log_units(db):
+    store_service_report(db, "srv-1", _windows(["Spooler", "MSSQLSERVER"], ["boom"]))
+    assert _logs(db) == {"Spooler": ["boom"], "MSSQLSERVER": ["boom"]}
+
+    # Spooler runs again: its lines go, MSSQLSERVER's stay without new lines.
+    store_service_report(db, "srv-1", {"failed": [], "log_units": ["MSSQLSERVER"]})
+    assert _logs(db) == {"MSSQLSERVER": ["boom"]}
+
+    store_service_report(db, "srv-1", {"failed": [], "log_units": []})
+    assert _logs(db) == {}
+
+
+def test_lines_of_a_service_not_in_log_units_are_not_stored(db):
+    block = _windows(["Spooler"], ["boom"])
+    block["failed_logs"]["Other"] = {"lines": ["other"]}
+    store_service_report(db, "srv-1", block)
+    assert _logs(db) == {"Spooler": ["boom"]}
+
+
+def test_log_units_that_are_no_list_fall_back_to_failed(db):
+    block = _failed(["a.service"], ["boom"])
+    block["log_units"] = "a.service"
+    store_service_report(db, "srv-1", block)
+    assert _logs(db) == {"a.service": ["boom"]}
+
+    # A block without log_units (Linux) keeps the lines of failed as before.
+    store_service_report(db, "srv-1", {"failed": []})
+    assert _logs(db) == {}
