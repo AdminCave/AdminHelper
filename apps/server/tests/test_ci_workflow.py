@@ -434,12 +434,48 @@ def test_no_checkout_leaves_the_token_in_the_git_config():
         assert (step.get("with") or {}).get("persist-credentials") is False, where
 
 
+_CONTEXTS = "github|env|vars|job|jobs|steps|runner|secrets|strategy|matrix|needs|inputs"
+
+
+def _run_contexts(run: str) -> list[tuple[str, set[str]]]:
+    """Each ${{ }} in a run: script with the contexts it reads; string literals do not count."""
+    found = []
+    for expr in re.findall(r"\$\{\{(.*?)\}\}", run, re.DOTALL):
+        code = re.sub(r"'(?:[^']|'')*'", "''", expr)
+        names = re.findall(rf"(?<![\w.-])({_CONTEXTS})(?![\w-])", code, re.IGNORECASE)
+        found.append((expr, {n.lower() for n in names}))
+    return found
+
+
+def test_run_contexts_sees_every_context_of_an_expression():
+    run = (
+        "echo ${{ matrix.os }}\n"
+        "echo ${{ matrix.x || github.head_ref }}\n"
+        "echo ${{\n  github.base_ref\n}}\n"
+        "echo ${{ format('matrix.{0}', env.X) }}\n"
+        "echo ${{ 1 }}\n"
+        "echo ${{ matrix.os || toJSON(github) }}\n"
+        "echo ${{ (github).head_ref }}\n"
+        "echo ${{ matrix.os || GITHUB.head_ref }}\n"
+    )
+    assert [ctx for _, ctx in _run_contexts(run)] == [
+        {"matrix"},
+        {"matrix", "github"},
+        {"github"},
+        {"env"},
+        set(),
+        {"matrix", "github"},
+        {"github"},
+        {"matrix", "github"},
+    ]
+
+
 def test_no_run_block_expands_a_context_other_than_the_matrix():
     # A template in run: is pasted into the script before the shell sees it; a branch name
     # (github.base_ref, github.head_ref) could carry shell code. Such values go through env:.
     for where, step in _steps():
-        for expr in re.findall(r"\$\{\{(.*?)\}\}", step.get("run", "")):
-            assert expr.strip().startswith("matrix."), (where, expr)
+        for expr, contexts in _run_contexts(step.get("run", "")):
+            assert contexts == {"matrix"}, (where, expr)
 
 
 def test_docker_grants_package_and_oidc_writes_only_to_the_jobs_that_need_them():
