@@ -248,6 +248,25 @@ case "$CMD" in
       RC=1
     done < <(grep -E '^Verify:([[:space:]]+|.*(&&|;)[[:space:]]*)([A-Z_][A-Z0-9_]*=|source |\. )|^Verify:.*[[:space:]]env[[:space:]]+[A-Z_]+=' "$LEDGER")
 
+    # task-close.sh stages one path per comma element, read like it reads them
+    # (the first Komponente:/Dateien: field line of a task, notes in parentheses dropped): an
+    # element with a space would commit its first path without the rest (R-1646).
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      /^###[ \t]/ { id = $2; seen = 0; next }
+      /^## / { id = "" }
+      id != "" && !seen && /^(Komponente:.*)?Dateien:/ {
+        seen = 1; line = $0
+        sub(/.*Dateien:[ \t]*/, "", line); gsub(/\([^)]*\)/, "", line)
+        n = split(line, el, ",")
+        for (i = 1; i <= n; i++) {
+          e = el[i]; gsub(/^[ \t]+|[ \t]+$/, "", e)
+          if (e ~ /[ \t]/) print id ": Dateien: element \x27" e "\x27 has a space - separate paths with commas, notes go in parentheses"
+        }
+      }' "$LEDGER")
+
     # A ticked box whose run left no summary line is exactly the claim this
     # stage stopped accepting.
     while IFS= read -r warn; do
