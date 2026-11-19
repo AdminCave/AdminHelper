@@ -27,7 +27,7 @@ from app.core import database
 from app.core.bounds import storable
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
-from app.models import MonitorCheck, MonitorState
+from app.models import MonitorCheck, MonitorState, MonitorStatusChange
 
 logger = logging.getLogger("monitor.engine")
 
@@ -200,8 +200,9 @@ def apply_result(
 
     The read-modify-write both result paths share: damping (next_fail_count /
     effective_status), the recovery hold (next_ok_count / holds_recovery) and the
-    sent-state decision; the transition's log line is the caller's, after its commit
-    (log_transition). It used to exist twice — here for the scheduler and as a hand-kept copy in
+    sent-state decision. A change of the damped status also adds a row to the status
+    change log (monitor_status_log), in the caller's transaction; the transition's log
+    line is the caller's, after its commit (log_transition). It used to exist twice — here for the scheduler and as a hand-kept copy in
     routers/agent.py — which is exactly the duplicate truth that drifts (B3).
 
     The caller passes the already-locked `state` (None before the first result),
@@ -236,6 +237,16 @@ def apply_result(
         details,
         keep_previous_details_when_absent,
     )
+    if eff_status != old_status:
+        db.add(
+            MonitorStatusChange(
+                check_id=check.id,
+                old_status=old_status,
+                new_status=eff_status,
+                at=now,
+                origin="state",
+            )
+        )
 
     # Alerting on a DISCREPANCY to the last reported status, not on the raw
     # transition (sent-state, alert-sent-state T4): once a suppression

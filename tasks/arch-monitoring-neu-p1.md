@@ -29,8 +29,10 @@ Review: approve (.ah-out/review/arch-monitoring-neu-p1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (interne Zerlegung, Verhalten unverändert)
 
-### T2 — Statuswechsel-Log: Tabelle, Übernahme aus dem Alarm-Log, Schreiben, Aufbewahrung (R-1559)  [ ]
+### T2 — Statuswechsel-Log: Tabelle, Übernahme aus dem Alarm-Log, Schreiben, Aufbewahrung (R-1559)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/models.py, apps/monitoring/alembic/versions/d2f4a6c8e0b1_status_change_log.py, apps/monitoring/app/check_engine.py, apps/monitoring/app/scheduler.py, apps/monitoring/app/main.py, apps/monitoring/tests/test_status_log.py, apps/monitoring/tests/test_migrations_smoke.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2cb20485d 2026-11-19T15:01:18+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1/T2.verdict.json)
 Änderung: Modell `MonitorStatusChange` (`monitor_status_log`: `check_id` FK `ON DELETE CASCADE`, `object_key` NULL, `old_status`, `new_status`, `at`, `origin`; Indizes `(check_id, at)`, `(at)`) und Revision nach `a7c9e1f3b5d7`, die jede `monitor_alert_log`-Zeile als `origin = alert_log` übernimmt (Downgrade löscht nur die neue Tabelle). `apply_result` schreibt eine Check-Zeile, wenn der gedämpfte Status wechselt — damit beide Wege (Scheduler, Push). Tagesjob `system:history-cleanup` löscht Zeilen älter als 90 Tage. Tests: Zeile bei Wechsel auf beiden Wegen, keine ohne Wechsel und keine bei übersprungenem Lauf, Wechsel ohne Alarmregel und in der Wartung, Aufbewahrung, Upgrade mit Übernahme und Downgrade (Postgres).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_status_log.py tests/test_migrations_smoke.py tests/test_alembic_builtin.py tests/test_models_timestamps.py tests/test_execute_check.py tests/test_agent_report.py tests/test_scheduler.py tests/test_retention.py
 Doku: → T9

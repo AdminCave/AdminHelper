@@ -308,3 +308,97 @@ def test_module_tombstones_upgrade_and_downgrade(monkeypatch):
         # downgrade dropped only what the migration added.
         assert {"module_id", "module_check_key"} <= check_cols
         assert "monitor_check_tombstones" in insp.get_table_names()
+
+
+def test_status_log_takes_over_the_alert_log_and_downgrades(monkeypatch):
+    # arch-monitoring-neu-p1 T2: every alert-log row becomes a check row of the status
+    # change log (origin alert_log, at = sent_at), so the history does not go blank on
+    # the update; the log follows its check; the downgrade drops only the new table.
+    from datetime import datetime
+
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    with scratch_db(monkeypatch, "statuslog") as (cfg, engine):
+        command.upgrade(cfg, "a7c9e1f3b5d7")  # just before the status change log
+        with engine.begin() as conn:
+            for cid in ("c1", "c2"):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks"
+                        " (id, name, check_type, config, interval, severity)"
+                        " VALUES (:id, 'C', 'ping', '{}', '5m', 'critical')"
+                    ),
+                    {"id": cid},
+                )
+            for rid in ("r1", "r2"):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_alert_rules (id, name, channel, channel_config)"
+                        " VALUES (:id, 'R', 'webhook', '{}')"
+                    ),
+                    {"id": rid},
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_alert_log"
+                    " (alert_rule_id, check_id, old_status, new_status, sent_at, success)"
+                    " VALUES (:rule, :check, :old, :new, :at, :ok)"
+                ),
+                [
+                    {
+                        "rule": "r1",
+                        "check": "c1",
+                        "old": "ok",
+                        "new": "critical",
+                        "at": "2026-11-01 10:00:00",
+                        "ok": True,
+                    },
+                    {
+                        "rule": "r2",
+                        "check": "c1",
+                        "old": "ok",
+                        "new": "critical",
+                        "at": "2026-11-01 10:00:01",
+                        "ok": False,
+                    },
+                    {
+                        "rule": "r1",
+                        "check": "c2",
+                        "old": "critical",
+                        "new": "ok",
+                        "at": "2026-11-02 08:30:00",
+                        "ok": True,
+                    },
+                ],
+            )
+
+        command.upgrade(cfg, "d2f4a6c8e0b1")
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT check_id, object_key, old_status, new_status, at, origin"
+                    " FROM monitor_status_log ORDER BY at"
+                )
+            ).all()
+        assert [tuple(r) for r in rows] == [
+            ("c1", None, "ok", "critical", datetime(2026, 11, 1, 10, 0, 0), "alert_log"),
+            ("c1", None, "ok", "critical", datetime(2026, 11, 1, 10, 0, 1), "alert_log"),
+            ("c2", None, "critical", "ok", datetime(2026, 11, 2, 8, 30, 0), "alert_log"),
+        ]
+
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM monitor_checks WHERE id = 'c2'"))
+        with engine.connect() as conn:
+            left = conn.execute(text("SELECT check_id FROM monitor_status_log")).scalars().all()
+        assert sorted(left) == ["c1", "c1"]
+
+        command.downgrade(cfg, "a7c9e1f3b5d7")
+        insp = inspect(engine)
+        assert "monitor_status_log" not in insp.get_table_names()
+        # Paired with the negative: the inspector reads the schema, and the alert log
+        # keeps its rows (c2's went with its check).
+        assert "monitor_alert_log" in insp.get_table_names()
+        with engine.connect() as conn:
+            kept = conn.execute(text("SELECT count(*) FROM monitor_alert_log")).scalar()
+        assert kept == 2

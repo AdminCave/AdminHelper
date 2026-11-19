@@ -207,6 +207,50 @@ def schedule_alert_log_cleanup(hours: int = 24) -> None:
     )
 
 
+_HISTORY_CLEANUP_JOB_ID = "system:history-cleanup"
+# The status change log keeps 90 days whatever ALERT_LOG_RETENTION_DAYS says (ADR 0004 §5).
+STATUS_LOG_RETENTION_DAYS = 90
+
+
+def _run_history_cleanup() -> None:
+    """Delete status changes older than STATUS_LOG_RETENTION_DAYS."""
+    from app.core.database import SessionLocal
+    from app.models import MonitorStatusChange
+
+    cutoff = utcnow_naive() - timedelta(days=STATUS_LOG_RETENTION_DAYS)
+    db = SessionLocal()
+    try:
+        removed = (
+            db.query(MonitorStatusChange)
+            .filter(MonitorStatusChange.at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if removed:
+            logger.info(
+                "History cleanup: removed %d status changes older than %d days",
+                removed,
+                STATUS_LOG_RETENTION_DAYS,
+            )
+    except Exception:
+        db.rollback()
+        logger.exception("History cleanup failed")
+    finally:
+        db.close()
+
+
+def schedule_history_cleanup(hours: int = 24) -> None:
+    """Register the periodic history cleanup (idempotent). Runs once
+    immediately at start and then every `hours` hours."""
+    scheduler.add_job(
+        _run_history_cleanup,
+        trigger=IntervalTrigger(hours=hours),
+        id=_HISTORY_CLEANUP_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )
+
+
 _TAG_SYNC_JOB_ID = "system:tag-sync"
 
 

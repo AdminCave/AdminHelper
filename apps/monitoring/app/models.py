@@ -292,6 +292,30 @@ class MonitorAlertLog(Base):
         }
 
 
+class MonitorStatusChange(Base):
+    """One change of a damped status, whatever the alert rules say (ADR 0004 §5).
+
+    object_key NULL is the check itself, any other value one of its objects. origin
+    'state' was written when the status changed; 'alert_log' was taken over from
+    monitor_alert_log once, by the revision that added the table, one row per rule
+    that was notified."""
+
+    __tablename__ = "monitor_status_log"
+    # The server's events read a time range of its checks, the daily cleanup deletes by time.
+    __table_args__ = (
+        Index("ix_status_log_check_at", "check_id", "at"),
+        Index("ix_status_log_at", "at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    check_id = Column(String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), nullable=False)
+    object_key = Column(String(200), nullable=True)
+    old_status = Column(String, nullable=False)
+    new_status = Column(String, nullable=False)
+    at = Column(DateTime, nullable=False)
+    origin = Column(String, nullable=False)
+
+
 class MonitorTemplate(Base):
     __tablename__ = "monitor_templates"
 
