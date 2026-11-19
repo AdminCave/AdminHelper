@@ -336,7 +336,11 @@ function withoutRule(o: MonObject, info: ExceptionInfo): MonObject {
   if (!rule?.firing) return { ...o, rules, exception: info };
   const left = rules?.filter((r) => r.enabled && r.firing) ?? [];
   const worst = left.find((r) => r.level === 'critical') ?? left[0];
-  if (worst?.level === o.status) return { ...o, rules, exception: info };
+  if (worst?.level === o.status) {
+    // Another rule of the level fires on: the reason moves to it when it named the excepted one.
+    const reason = o.reason === rule.text ? worst.text : o.reason;
+    return { ...o, rules, exception: info, reason };
+  }
   if (worst) return { ...o, rules, exception: info, status: worst.level, reason: worst.text };
   return {
     ...o,

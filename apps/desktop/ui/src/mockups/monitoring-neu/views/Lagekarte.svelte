@@ -19,7 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { Kind, MonObject, Status } from '../model';
   import { KIND_LABEL, STATUS_LABEL, isHidden, sortObjects } from '../grammar';
   import { isProblem } from './lists';
-  import { serverSummaries, type ServerSummary } from './servers';
+  import { needsLook, serverSummaries, type ServerSummary } from './servers';
 
   interface Props {
     objects: MonObject[];
@@ -71,10 +71,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const fleet = $derived(summaries.length >= FLEET_MIN);
   let all = $state(false);
   const rows = $derived(fleet && !all ? summaries.slice(0, ROW_CAP) : summaries);
-  const troubled = $derived(summaries.filter((s) => s.problems > 0 || s.worst === 'stale'));
-  const restTroubled = $derived(
-    troubled.length - rows.filter((s) => s.problems > 0 || s.worst === 'stale').length,
-  );
+  const troubled = $derived(summaries.filter(needsLook));
+  const restTroubled = $derived(troubled.length - rows.filter(needsLook).length);
   const restQuiet = $derived(summaries.length - rows.length - restTroubled);
   // The carpet names the server under the pointer instead of a tooltip per square.
   let peek = $state<ServerSummary | undefined>(undefined);

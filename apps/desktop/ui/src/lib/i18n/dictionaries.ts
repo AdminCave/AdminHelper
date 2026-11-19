@@ -1275,8 +1275,8 @@ export const translations: Translations = {
     'monitoring.services.journal.hint':
       '„Mehr Log“ öffnet ein Terminal über SSH, das nur die letzten 200 Log-Zeilen des Dienstes zeigt (Linux: Journal, Windows: Ereignisprotokoll, FreeBSD: /var/log/messages), mit den Rechten des Logins. Gespeichert wird nichts.',
     'monitoring.services.journal.noSsh': 'Für „Mehr Log“ braucht der Server eine SSH-Verbindung.',
-    'monitoring.services.journal.notLinux':
-      '„Mehr Log“ gibt es für systemd-Dienste unter Linux und für Windows- und FreeBSD-Server.',
+    'monitoring.services.journal.unsupported':
+      '„Mehr Log“ gibt es für systemd-Dienste unter Linux und für Windows-, FreeBSD- und OPNsense-Server.',
     'monitoring.docker.allOk': 'Alle {count} Container laufen',
     'monitoring.docker.allOkHint': 'Alle {count} Container laufen',
     'monitoring.docker.okRunning': '{running} von {total} laufen',
@@ -2887,8 +2887,8 @@ export const translations: Translations = {
     'monitoring.services.journal.hint':
       '“More log” opens a terminal over SSH that shows only the last 200 log lines of the service (Linux: journal, Windows: event log, FreeBSD: /var/log/messages), with the rights of the login. Nothing is stored.',
     'monitoring.services.journal.noSsh': '“More log” needs an SSH connection to the server.',
-    'monitoring.services.journal.notLinux':
-      '“More log” exists for systemd services on Linux and for Windows and FreeBSD servers.',
+    'monitoring.services.journal.unsupported':
+      '“More log” exists for systemd services on Linux and for Windows, FreeBSD and OPNsense servers.',
     'monitoring.docker.allOk': 'All {count} containers running',
     'monitoring.docker.allOkHint': 'All {count} containers running',
     'monitoring.docker.okRunning': '{running} of {total} running',

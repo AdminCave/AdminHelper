@@ -694,6 +694,32 @@ def test_a_probe_check_keeps_its_config_when_new_server_values_break_it(db):
     assert check.name == "Web web01"
 
 
+def test_sync_assignment_sends_the_all_clear_of_a_check_the_template_dropped(db, monkeypatch):
+    from app import alerter
+
+    posts = []
+    monkeypatch.setattr(
+        alerter,
+        "post_hub_event",
+        lambda payload, label: posts.append(payload["new_status"]) or True,
+    )
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "web01")
+    db.commit()
+    check = db.query(MonitorCheck).filter_by(template_def_id="ping").one()
+    state = db.get(MonitorState, check.id) or MonitorState(check_id=check.id, status="critical")
+    state.hub_status = "critical"
+    db.merge(state)
+    tpl.check_definitions = json.dumps([])
+    db.commit()
+    assignment = db.query(MonitorTemplateAssignment).one()
+
+    sync_assignment(db, tpl, assignment)
+
+    assert db.query(MonitorCheck).filter_by(template_def_id="ping").count() == 0
+    assert posts == ["ok"]
+
+
 def test_a_probe_def_that_holds_is_created_with_the_server_values(db):
     tpl = _template(db, [PROBE_DEF])
 
