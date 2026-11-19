@@ -18,6 +18,7 @@ const ROUTES: RouteCase[] = [
   { hash: '#/frp', name: 'frp', expectSelector: '.page-title' },
   { hash: '#/audit', name: 'audit', expectSelector: '.page-title' },
   { hash: '#/certificates', name: 'certificates', expectSelector: '.page-title' },
+  { hash: '#/notifications', name: 'notifications', expectSelector: '.page-title' },
 ];
 
 async function gotoAuthenticated(page: Page, hash: string): Promise<void> {

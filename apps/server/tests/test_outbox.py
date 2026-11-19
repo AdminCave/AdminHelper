@@ -49,7 +49,7 @@ def _outbox(db, notif, user, **kw):
 class TestDrain:
     def test_leaves_entries_waiting_for_the_digest(self, db_session, monkeypatch):
         calls = []
-        monkeypatch.setattr(outbox_mod, "send_email", lambda *a: calls.append(a))
+        monkeypatch.setattr(outbox_mod, "send_email", lambda *a, **_k: calls.append(a))
         user = _user(db_session, "alice", email="alice@example.com")
         entry = _outbox(db_session, _notif(db_session, user), user, status="digest")
 
@@ -61,7 +61,7 @@ class TestDrain:
     def test_sends_pending_email_with_notification_content(self, db_session, monkeypatch):
         calls = []
         monkeypatch.setattr(
-            outbox_mod, "send_email", lambda to, subj, body: calls.append((to, subj, body))
+            outbox_mod, "send_email", lambda to, subj, body, **_k: calls.append((to, subj, body))
         )
         user = _user(db_session, "alice", email="alice@example.com")
         notif = _notif(db_session, user)

@@ -12,6 +12,7 @@ Three surfaces:
   presents to monitoring in monitoring_proxy, here in the reverse direction).
 """
 
+import base64
 import json
 import secrets
 import threading
@@ -25,7 +26,6 @@ from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.core import config as app_config
 from app.core.auth import get_current_user
 from app.core.bounds import BigIntPk, Offset
 from app.core.config import MONITOR_API_KEY
@@ -33,7 +33,8 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.core.time import iso_utc
-from app.modules.notifications import incidents, stream_hub
+from app.modules.notifications import channel_config, incidents, mail_template, stream_hub
+from app.modules.notifications.channel_config import Channels
 from app.modules.notifications.models import (
     CHANNELS,
     MATRIX_ROWS,
@@ -57,6 +58,7 @@ from app.modules.notifications.schemas import (
     NotificationPrefsUpdate,
     NotificationTestOut,
     NotificationTestRequest,
+    NotifyConfigOut,
     ServerMuteOut,
     UnreadCountOut,
 )
@@ -390,7 +392,7 @@ def _prefs_response(db: Session, user: User) -> dict[str, Any]:
         "disabledChannels": json.loads(settings.disabled_channels) if settings else [],
         "mutedCategories": json.loads(settings.muted_categories) if settings else [],
         **_clock_response(settings or _default_settings(user)),
-        "available": _available(),
+        "available": _available(channel_config.resolve(db)),
         "subscriptions": [s.to_dict() for s in subs],
     }
 
@@ -435,12 +437,12 @@ def _clock_response(settings: NotificationSettings) -> dict[str, Any]:
     }
 
 
-def _available() -> dict[str, bool]:
+def _available(channels: Channels) -> dict[str, bool]:
     return {
         "desktop": True,
-        "email": bool(app_config.SMTP_HOST),
+        "email": bool(channels.smtp_host),
         "ntfy": True,
-        "telegram": bool(app_config.TELEGRAM_BOT_TOKEN),
+        "telegram": bool(channels.telegram_token),
         "webhook": True,
     }
 
@@ -556,7 +558,8 @@ def test_channel(
         "telegram": current_user.telegram_chat_id,
         "webhook": settings.webhook_url if settings else None,
     }[channel]
-    if not _available()[channel]:
+    channels = channel_config.resolve(db)
+    if not _available(channels)[channel]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"{channel}: not set up on this server",
@@ -580,7 +583,9 @@ def test_channel(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"{channel}: one test per {_TEST_WINDOW} seconds",
             )
-        _send_test(channel, target)
+        # The send takes the settings the availability above was judged by.
+        with channel_config.applied(channels), mail_template.using(db):
+            _send_test(channel, target)
     finally:
         with _TESTS_LOCK:
             _TESTS_RUNNING.discard(current_user.id)
@@ -588,10 +593,12 @@ def test_channel(
 
 
 def _send_test(channel: str, target: str) -> None:
-    """One test message; every error becomes a neutral HTTPException."""
+    """One test message. A target the SSRF guard refuses becomes the 422 the schema
+    declares (RequestValidationError, without the target); every other error a neutral
+    HTTPException 502. Either way the attempt counted against the test window."""
     try:
         if channel == "email":
-            send_email(target, _TEST_TITLE, _TEST_BODY)
+            send_email(target, _TEST_TITLE, _TEST_BODY, category="test")
         elif channel == "ntfy":
             send_ntfy(target, _TEST_TITLE, _TEST_BODY, "info")
         elif channel == "telegram":
@@ -636,6 +643,34 @@ def require_internal_key(x_internal_key: str | None = Depends(_internal_key_sche
         (x_internal_key or "").encode(), MONITOR_API_KEY.encode()
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ungültiger Internal-Key")
+
+
+@internal_router.get("/notify-config", response_model=NotifyConfigOut)
+def notify_config(db: Session = Depends(get_db), _internal: None = Depends(require_internal_key)):
+    """The relay and the mail template in effect, for the rule mails of the monitoring:
+    the only place the stored SMTP password leaves the server. 403 without the key."""
+    channels = channel_config.resolve(db)
+    template = mail_template.load(db)
+    return {
+        "smtp": {
+            "host": channels.smtp_host,
+            "port": channels.smtp_port,
+            "user": channels.smtp_user,
+            "password": channels.smtp_password,
+            "sender": channels.smtp_from,
+            "sources": {k: v for k, v in channels.sources.items() if k.startswith("smtp_")},
+        },
+        "template": None
+        if template == mail_template.DEFAULT
+        else {
+            "subjectPrefix": template.subject_prefix,
+            "fromName": template.from_name,
+            "html": template.html,
+            "text": template.text,
+            "logo": base64.b64encode(template.logo).decode() if template.logo else None,
+            "logoType": template.logo_type if template.logo else None,
+        },
+    }
 
 
 # The source types under which the server keeps notices of its own and by which it finds
