@@ -402,3 +402,56 @@ def test_status_log_takes_over_the_alert_log_and_downgrades(monkeypatch):
         with engine.connect() as conn:
             kept = conn.execute(text("SELECT count(*) FROM monitor_alert_log")).scalar()
         assert kept == 2
+
+
+def test_object_state_upgrades_and_downgrades(monkeypatch):
+    # arch-monitoring-neu-p1 T4: the object state starts empty, takes a key of the full
+    # 200 characters and follows its check; the downgrade drops only the new table.
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    with scratch_db(monkeypatch, "objstate") as (cfg, engine):
+        command.upgrade(cfg, "d2f4a6c8e0b1")  # just before the object state
+        with engine.begin() as conn:
+            for cid in ("c1", "c2"):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks"
+                        " (id, name, check_type, config, interval, severity)"
+                        " VALUES (:id, 'C', 'ping', '{}', '5m', 'critical')"
+                    ),
+                    {"id": cid},
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_status_log (check_id, old_status, new_status, at, origin)"
+                    " VALUES ('c1', 'ok', 'critical', '2026-11-01 10:00:00', 'state')"
+                )
+            )
+
+        command.upgrade(cfg, "e3a5c7e9f1b2")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM monitor_object_state")).scalar() == 0
+
+        long_key = "srv-1/disk/" + "a" * (200 - len("srv-1/disk/"))
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_object_state"
+                    " (check_id, object_key, kind, name, status, reason, since, fail_count,"
+                    " stable) VALUES (:check, :key, 'disk', 'n', 'ok', '',"
+                    " '2026-11-19 12:00:00', 0, true)"
+                ),
+                [{"check": "c1", "key": long_key}, {"check": "c2", "key": "srv-1/disk/sdb"}],
+            )
+            conn.execute(text("DELETE FROM monitor_checks WHERE id = 'c2'"))
+        with engine.connect() as conn:
+            left = conn.execute(text("SELECT check_id, object_key FROM monitor_object_state")).all()
+        assert [tuple(r) for r in left] == [("c1", long_key)]
+
+        command.downgrade(cfg, "d2f4a6c8e0b1")
+        insp = inspect(engine)
+        assert "monitor_object_state" not in insp.get_table_names()
+        # Paired with the negative: the status change log keeps its row.
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM monitor_status_log")).scalar() == 1

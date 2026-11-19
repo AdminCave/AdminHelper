@@ -246,6 +246,87 @@ def test_two_writers_do_not_lose_an_increment_or_double_alert(pg_sessionmaker, m
     )
 
 
+def test_two_writers_damp_an_object_once_each(pg_sessionmaker, monkeypatch):
+    """arch-monitoring-neu-p1 T4: apply_objects reads and writes the object rows inside
+    the check's transaction, after its state row is locked; two writers must not both
+    read the same fail_count of an object.
+
+    The delay sits in read_objects, between the SELECT of the object rows and the commit.
+    Two guards close that window, each enough on its own (verified by mutation): the FOR
+    UPDATE in _apply_locked, and behind it the UPDATE of the state row that the object
+    SELECT autoflushes and that waits on the first writer's row lock. Only with both gone
+    (the FOR UPDATE removed and the object SELECT under no_autoflush) does the object stay
+    at 1."""
+    from app import check_engine
+    from app import objects as objects_mod
+    from app.core import victoria as victoria_mod
+    from app.models import MonitorObjectState
+
+    class _DiskFailing:
+        def run(self, config):
+            item = {"kind": "disk", "id": "sda", "status": "critical", "reason": "SMART"}
+            return "critical", "down", {"_objects": {"complete": True, "items": [item]}}
+
+    monkeypatch.setattr(check_engine, "get_checker", lambda check_type: _DiskFailing())
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(check_engine, "_alert_pool", _InlinePool())
+
+    real_read_objects = objects_mod.read_objects
+
+    def _slow_read_objects(*args, **kwargs):
+        time.sleep(0.5)
+        return real_read_objects(*args, **kwargs)
+
+    monkeypatch.setattr(objects_mod, "read_objects", _slow_read_objects)
+
+    # consecutive_fails 3: two failures stay damped, so the count is what tells them apart.
+    check_id = _seed_failing_check(pg_sessionmaker, fail_count=0)
+    session = pg_sessionmaker()
+    session.add(
+        MonitorObjectState(
+            check_id=check_id,
+            object_key="srv-1/disk/sda",
+            kind="disk",
+            name="sda",
+            status="ok",
+            reason="",
+            since=datetime(2026, 11, 19, 12, 0, 0),
+            fail_count=0,
+            stable=True,
+        )
+    )
+    session.commit()
+    session.close()
+
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def _run():
+        try:
+            barrier.wait(timeout=10)
+            check_engine.execute_check(check_id)
+        except BaseException as exc:  # noqa: BLE001 - reported below, not swallowed
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_run, name=f"writer-{i}") for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+        assert not t.is_alive(), "a writer never finished — the row lock deadlocked"
+    assert not errors, errors
+
+    session = pg_sessionmaker()
+    sda = session.query(MonitorObjectState).filter(MonitorObjectState.check_id == check_id).one()
+    fail_count, status, reason = sda.fail_count, sda.status, sda.reason
+    session.close()
+
+    assert fail_count == 2, (
+        f"the object's fail_count is {fail_count}, expected 2 — one failure was lost"
+    )
+    assert (status, reason) == ("ok", "SMART (failure 2/3)")
+
+
 def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypatch):
     """Two BG dispatches for one check, overlapping inside the claim window.
 

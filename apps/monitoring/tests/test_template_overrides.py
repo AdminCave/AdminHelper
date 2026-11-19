@@ -529,7 +529,13 @@ def start(client, monkeypatch):
     monkeypatch.setattr("app.core.database.SessionLocal", factory)
     monkeypatch.setattr("app.checkers.agent.hydrate_agent_liveness", lambda entries: None)
     monkeypatch.setattr(scheduler_mod, "load_all_checks", lambda: loaded.append(True))
-    for job in ("alert_log_cleanup", "tag_sync", "agent_alert_bundle", "bell_catch_up"):
+    for job in (
+        "alert_log_cleanup",
+        "history_cleanup",
+        "tag_sync",
+        "agent_alert_bundle",
+        "bell_catch_up",
+    ):
         monkeypatch.setattr(scheduler_mod, f"schedule_{job}", lambda job=job: jobs.append(job))
     monkeypatch.setattr(
         scheduler_mod,
@@ -553,7 +559,13 @@ def test_start_registers_the_system_jobs(start):
     # execute_check leaves every heartbeat alert to the agent alert bundle: a
     # start that did not register it would lose them all without a sound.
     assert start()
-    assert start.jobs == ["alert_log_cleanup", "tag_sync", "agent_alert_bundle", "bell_catch_up"]
+    assert start.jobs == [
+        "alert_log_cleanup",
+        "history_cleanup",
+        "tag_sync",
+        "agent_alert_bundle",
+        "bell_catch_up",
+    ]
 
 
 def _ship_linux_base_v2(monkeypatch) -> int:

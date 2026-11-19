@@ -51,6 +51,11 @@ _SKIP_NOTE = re.compile(r" \(skipped: [^()]*\)\Z")
 # info is a hint without an alarm (R-1280): it counts like ok for damping and the recovery hold.
 _HEALTHY = ("ok", "info")
 
+# "Not collected": an object nothing was measured of (app.objects). It exists only in the
+# object state; the check's own status keeps the vocabulary MonitorStateOut has always had
+# (Kevin 2026-11-19), so a check result of it is stored as ok.
+NOT_COLLECTED = "not_collected"
+
 
 def dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
     """Dispatch one alert (webhook/SMTP) with its own session.
@@ -126,6 +131,30 @@ def effective_status(
     return result_status
 
 
+def damp_object(
+    result_status: str,
+    prev_fail_count: int,
+    consecutive_fails: int,
+    old_status: str,
+    reason: str,
+) -> tuple[str, int, str]:
+    """(effective status, fail count, reason with its damping suffix) of one object of a
+    result (app.objects), damped like its check; `old_status` is "pending" for a new one.
+
+    Without the recovery hold: that needs a reported status per object, which comes with
+    the notification per object (ADR 0004 P3). The count is capped at consecutive_fails:
+    past it it decides nothing, and a count that kept rising would rewrite a failing
+    object on every result. not_collected counts as healthy: nothing was measured that
+    could have failed."""
+    if result_status == NOT_COLLECTED:
+        return NOT_COLLECTED, 0, reason
+    fail_count = min(next_fail_count(result_status, prev_fail_count), consecutive_fails)
+    eff_status = effective_status(result_status, fail_count, consecutive_fails, old_status)
+    if is_suppressed(result_status, fail_count, consecutive_fails):
+        reason = f"{reason} (failure {fail_count}/{consecutive_fails})"
+    return eff_status, fail_count, reason
+
+
 def next_ok_count(result_status: str, prev_ok_count: int) -> int:
     """Counts consecutive 'ok' (and 'info') results — the counterpart of
     next_fail_count. Any other status resets to 0."""
@@ -195,15 +224,19 @@ def apply_result(
     now: datetime,
     *,
     keep_previous_details_when_absent: bool = False,
+    objects: dict | None = None,
 ) -> tuple[str, str, str]:
     """Write one check result into its MonitorState and decide on notification.
 
     The read-modify-write both result paths share: damping (next_fail_count /
     effective_status), the recovery hold (next_ok_count / holds_recovery) and the
     sent-state decision. A change of the damped status also adds a row to the status
-    change log (monitor_status_log), in the caller's transaction; the transition's log
-    line is the caller's, after its commit (log_transition). It used to exist twice — here for the scheduler and as a hand-kept copy in
-    routers/agent.py — which is exactly the duplicate truth that drifts (B3).
+    change log (monitor_status_log), and the result's `objects` (the checker's
+    `_objects`, None without) go into the object state (app.objects.apply_objects),
+    both in the caller's transaction; the transition's log line is the caller's, after
+    its commit (log_transition). It used to exist twice — here for the scheduler and as
+    a hand-kept copy in routers/agent.py — which is exactly the duplicate truth that
+    drifts (B3).
 
     The caller passes the already-locked `state` (None before the first result),
     then commits and dispatches: the scheduler off its own alert pool, the push
@@ -219,6 +252,11 @@ def apply_result(
 
     Returns (old_status, effective status, notification decision).
     """
+    # app.objects imports the damping from here.
+    from app.objects import apply_objects
+
+    if result_status == NOT_COLLECTED:
+        result_status = "ok"
     message = storable(message)
     details = storable(details)
     old_status = state.status if state else "pending"
@@ -247,6 +285,7 @@ def apply_result(
                 origin="state",
             )
         )
+    apply_objects(db, check, state, objects, now)
 
     # Alerting on a DISCREPANCY to the last reported status, not on the raw
     # transition (sent-state, alert-sent-state T4): once a suppression
@@ -555,6 +594,7 @@ def _apply_locked(
     message: str,
     details: dict | None,
     now: datetime,
+    objects: dict | None = None,
 ) -> tuple[str, str, str] | None:
     """Applies one result to the locked state row and commits; apply_result's (old status,
     effective status, decision), or None when the check was deleted during its run."""
@@ -575,7 +615,7 @@ def _apply_locked(
     had_state = state is not None
     check_name = check.name
     old_status, eff_status, decision = apply_result(
-        db, check, state, result_status, message, details, now
+        db, check, state, result_status, message, details, now, objects=objects
     )
     # The message as stored (capped, with the damping suffix), read before the commit
     # expires the row.
@@ -609,8 +649,9 @@ def execute_check(check_id: str) -> None:
             _note_skip(db, check_id, str(skip))
             return
 
-        # Extract structured details (not sent to VictoriaMetrics)
+        # Extract structured details and objects (not sent to VictoriaMetrics)
         details = metrics.pop("_details", None) if metrics else None
+        objects = metrics.pop("_objects", None) if metrics else None
 
         now = utcnow_naive()
 
@@ -624,7 +665,7 @@ def execute_check(check_id: str) -> None:
             extra_metrics=metrics,
         )
 
-        applied = _apply_locked(db, check_id, result_status, message, details, now)
+        applied = _apply_locked(db, check_id, result_status, message, details, now, objects)
         if applied is None:
             return
         old_status, eff_status, decision = applied

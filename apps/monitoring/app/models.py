@@ -316,6 +316,30 @@ class MonitorStatusChange(Base):
     origin = Column(String, nullable=False)
 
 
+class MonitorObjectState(Base):
+    """The damped state of one object a check names (ADR 0004 §5), written only when it
+    changes (ADR §12.4): the time it was last seen is the check's last_check.
+
+    object_key is `<server>/<kind>/<id>` (app.objects.object_key); stable False marks a
+    key built from a fallback that can change under the object (a device path, a
+    container name). bad_since holds while the status stays among warning, critical and
+    unknown; gone_at is set when a complete result no longer named the object."""
+
+    __tablename__ = "monitor_object_state"
+
+    check_id = Column(String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), primary_key=True)
+    object_key = Column(String(200), primary_key=True)
+    kind = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    reason = Column(String, nullable=False)
+    since = Column(DateTime, nullable=False)
+    bad_since = Column(DateTime, nullable=True)
+    fail_count = Column(Integer, nullable=False)
+    stable = Column(Boolean, nullable=False)
+    gone_at = Column(DateTime, nullable=True)
+
+
 class MonitorTemplate(Base):
     __tablename__ = "monitor_templates"
 

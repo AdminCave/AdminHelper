@@ -208,21 +208,29 @@ def schedule_alert_log_cleanup(hours: int = 24) -> None:
 
 
 _HISTORY_CLEANUP_JOB_ID = "system:history-cleanup"
-# The status change log keeps 90 days whatever ALERT_LOG_RETENTION_DAYS says (ADR 0004 §5).
+# The status change log keeps 90 days whatever ALERT_LOG_RETENTION_DAYS says (ADR 0004 §5);
+# an object that has been gone for 30 days is deleted (Kevin 2026-11-19).
 STATUS_LOG_RETENTION_DAYS = 90
+OBJECT_GONE_RETENTION_DAYS = 30
 
 
 def _run_history_cleanup() -> None:
-    """Delete status changes older than STATUS_LOG_RETENTION_DAYS."""
+    """Delete status changes older than STATUS_LOG_RETENTION_DAYS and objects gone for
+    longer than OBJECT_GONE_RETENTION_DAYS."""
     from app.core.database import SessionLocal
-    from app.models import MonitorStatusChange
+    from app.models import MonitorObjectState, MonitorStatusChange
 
-    cutoff = utcnow_naive() - timedelta(days=STATUS_LOG_RETENTION_DAYS)
+    now = utcnow_naive()
     db = SessionLocal()
     try:
         removed = (
             db.query(MonitorStatusChange)
-            .filter(MonitorStatusChange.at < cutoff)
+            .filter(MonitorStatusChange.at < now - timedelta(days=STATUS_LOG_RETENTION_DAYS))
+            .delete(synchronize_session=False)
+        )
+        gone = (
+            db.query(MonitorObjectState)
+            .filter(MonitorObjectState.gone_at < now - timedelta(days=OBJECT_GONE_RETENTION_DAYS))
             .delete(synchronize_session=False)
         )
         db.commit()
@@ -231,6 +239,12 @@ def _run_history_cleanup() -> None:
                 "History cleanup: removed %d status changes older than %d days",
                 removed,
                 STATUS_LOG_RETENTION_DAYS,
+            )
+        if gone:
+            logger.info(
+                "History cleanup: removed %d objects gone for more than %d days",
+                gone,
+                OBJECT_GONE_RETENTION_DAYS,
             )
     except Exception:
         db.rollback()

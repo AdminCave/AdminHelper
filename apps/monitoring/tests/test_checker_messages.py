@@ -1066,10 +1066,20 @@ def test_docker_name_and_state_in_details_are_one_line():
 
 
 class _AddOnlyDb:
-    """apply_result only calls db.add() on the create path."""
+    """apply_result calls db.add() on the create path and reads the check's stored
+    objects (app.objects.apply_objects), of which there are none here."""
 
     def add(self, obj):
         pass
+
+    def query(self, _model):
+        return self
+
+    def filter(self, *_criteria):
+        return self
+
+    def all(self):
+        return []
 
 
 def test_damping_suffix_is_english():
