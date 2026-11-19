@@ -216,7 +216,7 @@ fi
 # the line's first field starting with "/" (checker/ignore.go,
 # api_change.go:131 @v1.32.0). So this holds two things. The file, byte for byte,
 # is the list below — date, roadmap id, reason and finding text of all
-# twenty-nine lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07); a further
+# fifty-one lines (Kevin 2026-10-17, 2026-10-21, 2026-11-07, 2026-11-19); a further
 # exception is Kevin's call and
 # changes the list. And every line, the next one too, has the form <date> <R-id>
 # <reason>: <METHOD> <path> <text>, its reason only letters, digits, blanks and
@@ -260,13 +260,35 @@ if [ -r "$IGNORE" ]; then
 2026-11-07 R-1080 channel matrix replaces the subscription flags: GET /api/users/me/notification-prefs removed the required property `subscriptions/items/channelTelegram` from the response with the `200` status
 2026-11-07 R-1080 channel matrix replaces the subscription flags: PUT /api/users/me/notification-prefs removed the required property `subscriptions/items/channelEmail` from the response with the `200` status
 2026-11-07 R-1080 channel matrix replaces the subscription flags: PUT /api/users/me/notification-prefs removed the required property `subscriptions/items/channelTelegram` from the response with the `200` status
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `freebsd` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `linux` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `opnsense` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `other` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `windows` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers request property `os_type/anyOf[subschema #1]/` was restricted to a list of enum values
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `freebsd` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `linux` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `freebsd` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `linux` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} request property `os_type/anyOf[subschema #1]/` was restricted to a list of enum values
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `freebsd` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `linux` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
 EXPECTED_EXCEPTIONS
 )
   # diff against the file itself, not a $(…) copy of it: that would drop
   # trailing blank lines, and the comparison must see every byte. Its exit code
   # decides, not an empty output: a diff that could not run prints nothing too.
   DRIFT_RC=0; DRIFT=$(diff <(printf '%s\n' "$EXPECTED_IGNORE") "$IGNORE" 2>&1) || DRIFT_RC=$?
-  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the twenty-nine expected lines, reasons included" \
+  [ "$DRIFT_RC" = 0 ] && ok "the file is exactly the fifty-one expected lines, reasons included" \
     || bad "the exception file drifted from the expected lines (diff rc=$DRIFT_RC): $DRIFT"
   # oasdiff checks no path for a component or a security change: a line with the
   # word "components" or "security" could match one of those by its text alone.

@@ -450,7 +450,11 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           Kanalvertrags: <code>ntfy</code> und <code>webhook</code> in <code>channels</code> der vier
           Vorfall-Routen unter <code>/api/notifications/incidents/{incident_id}</code>, und
           <code>channelEmail</code>/<code>channelTelegram</code> fehlen in der Antwort von
-          <code>GET</code> und <code>PUT /api/users/me/notification-prefs</code> (R-1080, Kevin 2026-11-07).</p>
+          <code>GET</code> und <code>PUT /api/users/me/notification-prefs</code> (R-1080, Kevin 2026-11-07), dazu die
+          zweiundzwanzig der Plattform als Auswahl: <code>os_type</code>/<code>osType</code> ist an
+          <code>GET</code> und <code>POST /api/servers</code> sowie <code>GET</code> und
+          <code>PUT /api/servers/{server_id}</code> nur noch einer der Werte <code>linux</code>, <code>windows</code>,
+          <code>freebsd</code>, <code>opnsense</code> und <code>other</code>, statt Freitext (R-1594, Kevin 2026-11-19).</p>
           <p><code>oasdiff</code> kommt als <strong>Release-Tarball
           v1.32.0 mit gepinnter SHA-256</strong>, nicht per <code>go install</code>: jede Version ab v1.24.0
           verlangt <code>go 1.26</code>, und die Workflows laufen mit <code>GOTOOLCHAIN=local</code> &ndash; ein

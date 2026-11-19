@@ -1,5 +1,5 @@
 # Provisionieren je Plattform — Task-Ledger
-Status: aktiv · Branch: feature/kern-provision-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-provision-1 · Review: pro Task
 Spec: docs/features/kern-provision-1.md (Roadmap R-1594, R-1595, R-1596, R-1597)
 Heavy: linux-full — Server-API, `docker-compose.yml` (Repo-Mount) und die Desktop-Journey `provisioning.live.js` ändern sich; kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -126,8 +126,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra s
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
 Abhängt von: T11
 
-### T13 — R-1594: oasdiff-Ausnahmen für den Plattform-Enum (PR-CI)  [ ]
+### T13 — R-1594: oasdiff-Ausnahmen für den Plattform-Enum (PR-CI)  [x]
 Komponente: scripts · Dateien: scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b0f873973 2026-11-19T10:10:55+01:00
+Review: approve (.ah-out/review/kern-provision-1/T13.verdict.json)
 Änderung: Die PR-CI (`openapi-compat`) meldet die gewollte Umstellung von `os_type` auf den Enum als 22 ERR an GET/POST `/api/servers` und GET/PUT `/api/servers/{server_id}`. Kevin 2026-11-19: je Fund eine Zeile in `oasdiff-err-ignore.txt`, Text wörtlich aus `openapi-breaking.sh`; die geschlossene Liste im Test und der Absatz in `cicd.html` ziehen mit.
 Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: docs/developer/cicd.html, docs/en/developer/cicd.html
