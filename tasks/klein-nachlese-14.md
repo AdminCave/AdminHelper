@@ -20,8 +20,10 @@ Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_fetch.py tests/test_central_rdap.py tests/test_module_sync.py tests/test_catalog.py
 Doku: → T6
 
-### T2 — R-1574: SMART-Zähler je Platte, check_restarts-Kommentar  [ ]
+### T2 — R-1574: SMART-Zähler je Platte, check_restarts-Kommentar  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_smart_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @49d863a76 2026-11-19T23:33:46+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T2.verdict.json)
 Beweis: reviewer branch (Nits), 2026-11-18
 Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Änderung: `smart_disks_warning/critical` zählen Platten, nicht Meldungen (eine Platte mit zwei Meldungen zählt einmal); der Kommentar an `check_restarts` sagt, dass das Formular den Schlüssel nicht mehr schreibt und das Schema ihn für gespeicherte Konfigurationen duldet. Erst ein roter Test mit einer Platte, die zwei Meldungen trägt.

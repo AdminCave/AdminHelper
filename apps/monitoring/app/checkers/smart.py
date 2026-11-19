@@ -295,6 +295,8 @@ class SmartHealthChecker:
         warning_problems = []
         unreadable = []
         ok_count = 0
+        # Disks by category: a disk with several messages counts once.
+        category_counts = {"warning": 0, "critical": 0}
         disk_details = []
         objects = []
         complete = whole_list(report["smart"])
@@ -337,12 +339,14 @@ class SmartHealthChecker:
                 unreadable.append(f"{detail['device']} ({detail['model']})")
             if category == "ok":
                 ok_count += 1
+            elif category in category_counts:
+                category_counts[category] += 1
             disk_details.append(detail)
 
         metrics = {
             "smart_disks_ok": ok_count,
-            "smart_disks_warning": len(warning_problems),
-            "smart_disks_critical": len(critical_problems),
+            "smart_disks_warning": category_counts["warning"],
+            "smart_disks_critical": category_counts["critical"],
         }
 
         # Per-disk metrics
