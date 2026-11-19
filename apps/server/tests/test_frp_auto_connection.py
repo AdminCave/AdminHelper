@@ -207,7 +207,9 @@ def test_taking_the_connection_along_is_audited_as_its_change(test_client, db_se
     rows = _connection_updates(db_session, conn.id)
     assert len(rows) == 1
     row = rows[0]
-    assert (row.object_type, row.object_label, row.status) == ("connection", conn.name, "success")
+    db_session.refresh(conn)
+    assert row.object_label == conn.display_name() == "serverA · Web (FRP)"
+    assert (row.object_type, row.status) == ("connection", "success")
     assert row.actor_type == "user" and row.actor_label == "admin"
     assert t["id"] in (row.detail or "")
 

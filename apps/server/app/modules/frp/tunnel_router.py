@@ -372,7 +372,7 @@ def update_tunnel(
         )
         if linked:
             follow_tunnel(linked, tunnel, data.auto_connection_scheme, data.auto_connection_path)
-            followed = (linked.id, linked.name)
+            followed = (linked.id, linked.display_name())
         if data.auto_create_connection and not tunnel.connection_id:
             _attach_auto_connection(db, tunnel, data)
         db.commit()
