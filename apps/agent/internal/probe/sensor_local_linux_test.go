@@ -685,3 +685,36 @@ func TestDialUnixFollowsTheSocketNotItsName(t *testing.T) {
 	listenCounting(t, "r.sock")
 	refused(filepath.Join(dir, "r.sock"), "bound no absolute path")
 }
+
+// The metrics of a process target find a busybox applet by its name, as the port and socket sensors do
+// (ownedBy); the kernel names such a process busybox (R-1606).
+func TestProcessesNamedFindsABusyboxApplet(t *testing.T) {
+	bin, err := exec.LookPath("busybox")
+	if err != nil {
+		t.Skip("no busybox on this host")
+	}
+	cmd := exec.Command(bin, "sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pid := int32(cmd.Process.Pid)
+	ctx := context.Background()
+	found := func(name string) bool {
+		procs, err := processesNamed(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(procs, func(p proc) bool { return p.pid == pid })
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for !found("sleep") {
+		if time.Now().After(deadline) {
+			t.Fatal("processesNamed(sleep) does not find busybox sleep")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if found("busybox") {
+		t.Error("processesNamed(busybox) finds the applet sleep")
+	}
+}
