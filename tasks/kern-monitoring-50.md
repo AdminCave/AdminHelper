@@ -1,5 +1,5 @@
 # Dienst-Details Windows/FreeBSD: Fehlerzeilen und „Mehr Log“ — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-50 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-50 · Review: pro Task
 Spec: docs/features/kern-monitoring-50.md (Roadmap R-1391)
 Heavy: windows — Windows-Agent-Sammler; keine Windows-Box im Pool, die Windows-CI-Jobs (go test als Admin) sind der Plattform-Beleg; Linux-Pfad unverändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -66,8 +66,10 @@ Task-Review: am Ende
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-50.md
 Abhängt von: T1, T2, T3
 
-### T5 — R-1391: Entwickler-Doku Fehlerzeilen und „Mehr Log“ je Plattform  [ ]
+### T5 — R-1391: Entwickler-Doku Fehlerzeilen und „Mehr Log“ je Plattform  [x]
 Komponente: scripts · Dateien: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/features/kern-monitoring-50.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @14fe85ff8 2026-11-19T11:51:30+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschlussprüfung (Funde wichtig, Doku): `monitoring.html` nennt `systemd.log_units` (Report-Beispiel, Fehlerzeilen nach `log_units` sonst `failed`); `agent.html` nennt den Windows-Weg von `collectServiceLogs` und `scmLogArgs`/`appLogArgs` in der Allowlist; `desktop.html` nennt `platform` von `terminal_open_ssh_journal` und die Befehle je Plattform. Spec Stufe 3 FreeBSD auf `grep -F` und die `rcscript`-Klasse (Nit).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Task-Review: am Ende

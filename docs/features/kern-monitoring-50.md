@@ -37,8 +37,8 @@ unter Windows bleibt ohne Zeilen. „Mehr Log“ blendet die Liste unter Windows
     Skript.
   - `wevtutil` mit einer XPath-Abfrage ließe sich nicht für beide Shells gleich quoten. `$` würde in PowerShell
     expandieren, `'` würde PowerShell entfernen.
-- **Stufe 3 FreeBSD:** „Mehr Log“ öffnet `grep -h -e '<dienst>' /var/log/messages | tail -n 200`. Der Name steht nur
-  in der rc-Klasse (`[A-Za-z0-9_]`).
+- **Stufe 3 FreeBSD:** „Mehr Log“ öffnet `grep -h -F -e '<dienst>' /var/log/messages | tail -n 200`. Der Name steht
+  nur in der `rcscript`-Klasse der Agent-Allowlist.
 - **Nicht-Ziele:**
   - Kein neuer `failed`-Begriff unter Windows oder FreeBSD (Kevin 2026-11-13); `log_units` steuert nur die Zeilen.
   - Keine Stufe 2 für FreeBSD.
