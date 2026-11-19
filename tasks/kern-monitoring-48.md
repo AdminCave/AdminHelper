@@ -55,8 +55,10 @@ Steuerzeichen → Leerzeichen, Regeln aus `_RULES` und `_BASE64_RUN` in RE2, 300
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: → T6
 
-### T5 — R-1413: Sammler service_logs: journalctl je Ausfall, Schalter aus dem Plan, Last-Tor  [ ]
+### T5 — R-1413: Sammler service_logs: journalctl je Ausfall, Schalter aus dem Plan, Last-Tor  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/servicelogs_linux.go, apps/agent/internal/monitor/servicelogs_other.go, apps/agent/internal/monitor/servicelogs_linux_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/probe/probe.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8a3ddcfe9 2026-11-19T05:22:40+01:00
+Review: approve (.ah-out/review/kern-monitoring-48/T5.verdict.json)
 Änderung: `probe.Plan.ServiceLogs` (`service_logs`), weiter über `probeWork`. Nach dem Last-Tor ein optionaler
 Sammler `service_logs`: Linux, Schalter an, je Unit aus `systemd.failed` (Unit-Klasse) ohne gemerkten Ausfall
 (Unit + `since` aus `failed_details`) `journalctl --no-pager --quiet --output=cat --unit=<unit> --lines=10`,
@@ -81,3 +83,4 @@ Abhängt von: T1, T2, T3, T5
 - 2026-11-19 T1: `-n standby,3` nur für ATA/SCSI, nicht für NVMe (Scan-Protokoll `NVMe` oder Typ `nvme`): smartctl(8) führt `-n` nur unter `[ATA, SCSI]`. Die NVMe-Formen der Allowlist bleiben deshalb, die neuen kommen dazu; Status 3 ohne `-n` (NVMe) bleibt ein Öffnungsfehler.
 - 2026-11-19 T2: Die Probleme einer schlafenden Platte stehen nicht in den Details; sie zählt mit ihrer letzten Kategorie als ein Problem „<Gerät> (<Modell>): <Kategorie> when last read (asleep)“. Keine Metrik-Serien für sie (keine Werte statt Nullen). `read_at` in ganzen Sekunden (`_now`, in den Tests eingefroren: Gleichheitstests vergleichen zwei Auswertungen).
 - 2026-11-19 T4: `cleanLogLine` zählt Zeichen als Runen wie Python und macht ungültiges UTF-8 vorher zu U+FFFD (journalctl kann rohe Bytes liefern). RE2 `(?i)` faltet Unicode (etwa das Kelvin-Zeichen auf `k`): der Agent schwärzt dort höchstens mehr als der Server, nie weniger; der Server wendet die Regeln ohnehin erneut an.
+- 2026-11-19 T5: Ein Ausfall gilt als gesendet je Unit und since aus failed_details. Fehlt since auf einer Seite (die gebündelte Detailabfrage scheiterte), gilt er als derselbe Ausfall, damit nichts doppelt geht. Scheitert `list-units --state=failed` selbst, ist failed leer und der Zustand vergessen: die Zeilen gehen beim nächsten Ausfallbefund einmal erneut, was der Server als Überschreiben derselben Unit nimmt. Eine Unit, deren Zeilen nicht lesbar waren, zählt nicht gegen die 20 und wird im nächsten Bericht erneut gefragt. Bei Push-Fehler bleibt `ServiceLogs` auf dem Stand des letzten erfolgreichen Push (`kept` übernimmt es nicht).

@@ -127,6 +127,10 @@ func journalVariants() [][]string {
 // sensor's calls: --dmesg and the priority are fixed.
 var oomJournalCall = []string{"--no-pager", "--quiet", "--dmesg", "--output=cat", "--priority=3", "--since=-<seconds>s"}
 
+// The journalctl call of the error lines of a failed unit (monitor, readServiceLog): its last ten
+// entries, every priority, each bare message. Its own entry as well: unit and count are fixed.
+var serviceLogJournalCall = []string{"--no-pager", "--quiet", "--output=cat", "--unit=<unit>", "--lines=10"}
+
 // pilerCall is the one query of piler_status (probe, app_mail.go): the arrival of the newest archived
 // mail, over the local socket and without option files (the password comes in the environment). Kept
 // out: any other query, a client without --no-defaults or with --host.
@@ -262,7 +266,7 @@ var commands = map[string][][]string{
 		// Where a backup unit keeps its repository (probe, app_repo.go): its environment, read in the agent.
 		{"show", "-p", "LoadState,Environment,EnvironmentFiles", "--", "<unitarg>"},
 	},
-	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall}),
+	"journalctl": slices.Concat(journalCalls, [][]string{oomJournalCall, serviceLogJournalCall}),
 	"mariadb":    append(slices.Clone(mariadbCalls), pilerCall),
 	"mysql":      append(slices.Clone(mariadbCalls), pilerCall),
 	// psql as postgres; pm2 jlist as the user of a unit pm2-<user>, which only lists its apps;
