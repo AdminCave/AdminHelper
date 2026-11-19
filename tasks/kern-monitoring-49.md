@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — R-1619: Nachholjob wertet nur die Richtung, nicht den Schweregrad  [ ]
+### T1 — R-1619: Nachholjob wertet nur die Richtung, nicht den Schweregrad  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/bell_catch_up.py, apps/monitoring/tests/test_bell_catch_up.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @69362e19f 2026-11-19T04:47:57+01:00
+Review: am Ende (Branch-Review)
 Beweis: branch-review kern-monitoring-47 2026-11-18, feature/kern-monitoring-47@049adff44 bell_catch_up.py:61 · Dedup-Key: bug:monitoring:bell_catch_up.py:lag_target-severity
 Änderung: `lag_target` eines eingeschalteten Checks: Rückstand nur, wenn `hub_status` Problem/ok anders zeigt als
 `notified_status`, oder `hub_status` critical und `notified_status` warning ist (Kevin 2026-11-19, A). Erst rote

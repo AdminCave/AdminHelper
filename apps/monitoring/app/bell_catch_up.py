@@ -50,7 +50,8 @@ def lag_target(check: MonitorCheck, state: MonitorState) -> str | None:
     """The status the bell still has to get of the check, None when it shows what
     it should. An enabled check: the status last reported, when the normal dispatch
     has nothing open (``status`` reports as ``notified_status``), the bell would
-    show it and does not yet. A disabled one: ok while the bell shows a problem."""
+    show it and shows a problem where none was reported or none where one was, or
+    critical where warning was. A disabled one: ok while the bell shows a problem."""
     if not check.enabled:
         return "ok" if state.hub_status in _PROBLEMS else None
     notified = state.notified_status
@@ -58,8 +59,13 @@ def lag_target(check: MonitorCheck, state: MonitorState) -> str | None:
         return None
     if alerter.hub_decision(state.hub_status, notified, check.severity) != "emit":
         return None
-    shown = alerter.bell_record(notified, check.severity, state.hub_sent_at, utcnow_naive())[0]
-    return None if shown == state.hub_status else notified
+    if (state.hub_status in _PROBLEMS) != (notified in _PROBLEMS):
+        return notified
+    # Both problems. hub_status is capped at the severity of its time, never above
+    # the status it was recorded from: critical shown of a warning is a step down.
+    # Warning shown of a critical may be a raised severity as well as a refused
+    # escalation; the two are not told apart, so a severity change never pings (R-1619).
+    return notified if (state.hub_status, notified) == ("critical", "warning") else None
 
 
 def _candidates(db: Session) -> list[str]:
