@@ -108,16 +108,42 @@ def test_a_failed_recovery_is_caught_up_at_the_level_of_its_alarm(bell_db, hub):
     assert bell_record(bell_db, cid) == ("ok", _EARLIER)
 
 
-def test_an_escalation_the_hub_refused_is_caught_up(bell_db, hub):
+@pytest.mark.parametrize(
+    ("notified", "hub_status", "severity"),
+    [
+        # Raised from warning while the alarm is open; reads the same as an
+        # escalation the hub refused, which is therefore not caught up (R-1619).
+        ("critical", "warning", "critical"),
+        # Lowered while the alarm is open.
+        ("critical", "critical", "warning"),
+    ],
+)
+def test_a_changed_severity_of_an_open_alarm_is_not_caught_up(
+    bell_db, hub, notified, hub_status, severity
+):
     cid = seed(
-        bell_db, 0, status="critical", notified="critical", hub_status="warning",
+        bell_db, 0, status=notified, notified=notified, hub_status=hub_status,
+        hub_sent_at=_EARLIER, severity=severity,
+    )  # fmt: skip
+
+    catch_up_bell()
+
+    assert hub.posts == []
+    assert bell_record(bell_db, cid) == (hub_status, _EARLIER)
+
+
+def test_a_step_down_the_hub_refused_is_caught_up(bell_db, hub):
+    """The bell shows critical, warning was reported: hub_status is never above the
+    status it was recorded from, so the status went down."""
+    cid = seed(
+        bell_db, 0, status="warning", notified="warning", hub_status="critical",
         hub_sent_at=_EARLIER,
     )  # fmt: skip
 
     catch_up_bell()
 
-    assert [p[:2] for p in hub.posts] == [("critical", "critical")]
-    assert bell_record(bell_db, cid) == ("critical", _NOW)
+    assert [p[0] for p in hub.posts] == ["warning"]
+    assert bell_record(bell_db, cid) == ("warning", _NOW)
 
 
 @pytest.mark.parametrize(

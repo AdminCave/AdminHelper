@@ -185,6 +185,9 @@ export interface FrpTunnelInput {
   visitor_port?: number | null;
   auto_create_connection: boolean;
   auto_connection_username?: string | null;
+  /** For a web tunnel's connection (R-1540); a server from before ignores them. */
+  auto_connection_scheme?: 'http' | 'https';
+  auto_connection_path?: string | null;
   tags: string[];
 }
 

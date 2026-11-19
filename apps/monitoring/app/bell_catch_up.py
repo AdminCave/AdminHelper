@@ -16,6 +16,8 @@ CATCH_UP_MAX checks per run, oldest first; the outbox (R-1561) replaces it later
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
+from typing import NamedTuple
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -46,11 +48,43 @@ def closed_message(check: MonitorCheck, what: str) -> dict:
     }
 
 
+class AllClear(NamedTuple):
+    """What the all-clear of a deleted check needs once its row is gone."""
+
+    check: SimpleNamespace
+    shown: str
+    msg: dict
+
+
+def deleted_all_clear(db: Session, check: MonitorCheck) -> AllClear | None:
+    """The all-clear of a check about to be deleted, taken before its row goes;
+    None when the bell shows no problem of it. Sent by send_all_clears after the
+    commit, as delete_check does (R-1571, R-1601)."""
+    state = db.get(MonitorState, check.id)
+    if state is None or state.hub_status not in _PROBLEMS:
+        return None
+    gone = SimpleNamespace(id=check.id, name=check.name, server_id=check.server_id)
+    return AllClear(gone, state.hub_status, closed_message(check, "deleted"))
+
+
+def send_all_clears(clears: list[AllClear]) -> None:
+    """Send the all-clears of deleted checks, at the level their alarm reached the
+    bell with. Nothing repeats a refused one: the row is gone (until the outbox
+    R-1561)."""
+    for clear in clears:
+        if not alerter.emit_to_hub(clear.check, clear.shown, "ok", clear.msg, severity=clear.shown):
+            logger.warning(
+                "Check %s deleted: the hub did not take its all-clear, the incident stays open",
+                clear.check.id,
+            )
+
+
 def lag_target(check: MonitorCheck, state: MonitorState) -> str | None:
     """The status the bell still has to get of the check, None when it shows what
     it should. An enabled check: the status last reported, when the normal dispatch
     has nothing open (``status`` reports as ``notified_status``), the bell would
-    show it and does not yet. A disabled one: ok while the bell shows a problem."""
+    show it and shows a problem where none was reported or none where one was, or
+    critical where warning was. A disabled one: ok while the bell shows a problem."""
     if not check.enabled:
         return "ok" if state.hub_status in _PROBLEMS else None
     notified = state.notified_status
@@ -58,8 +92,13 @@ def lag_target(check: MonitorCheck, state: MonitorState) -> str | None:
         return None
     if alerter.hub_decision(state.hub_status, notified, check.severity) != "emit":
         return None
-    shown = alerter.bell_record(notified, check.severity, state.hub_sent_at, utcnow_naive())[0]
-    return None if shown == state.hub_status else notified
+    if (state.hub_status in _PROBLEMS) != (notified in _PROBLEMS):
+        return notified
+    # Both problems. hub_status is capped at the severity of its time, never above
+    # the status it was recorded from: critical shown of a warning is a step down.
+    # Warning shown of a critical may be a raised severity as well as a refused
+    # escalation; the two are not told apart, so a severity change never pings (R-1619).
+    return notified if (state.hub_status, notified) == ("critical", "warning") else None
 
 
 def _candidates(db: Session) -> list[str]:
