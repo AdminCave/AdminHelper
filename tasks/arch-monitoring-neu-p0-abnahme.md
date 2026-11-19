@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p0-abnahme — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p0-abnahme · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p0-abnahme · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p0-abnahme.md (Roadmap R-1558, R-1515)
 Heavy: none — nur das Mockup im Vite-Dev-Server (nicht im Desktop-Build, `isolation.test.ts`) und ADR 0004; kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -76,11 +76,13 @@ Doku: docs/adr/0004-monitoring-neuordnung.md
 Task-Review: am Ende
 Abhängt von: T5
 
-### T7 — ADR 0004: Abnahme der Screens, Status „angenommen“ (R-1558)  [ ]
-Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
+### T7 — ADR 0004: Abnahme der Screens, Status „angenommen“ (R-1558)  [x]
+Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md, DEVELOPMENT.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @98579a2e2 2026-11-19T08:04:23+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Frage 12 mit Kevins Worten je Runde (1–5) und der Abnahme vom 2026-11-19 samt Grenzen; ein kurzer Abschnitt nennt die abgenommene Struktur (Serverliste, „Alle Server“ mit Lagekarte und Karten, Server-Seite, Reiter, Handy, Mengenverhalten). §13 zieht P2/P3 nach („Lage-Ansicht“ wird „Alle Server“), der Kopf wechselt auf „angenommen“ mit Datum. Dazu Kevins Entscheidungen vom 2026-11-19 zu Seiten („weitere anzeigen“ statt Seitenzahlen oder Endlos-Scrollen) und Sortierung (wo, Standard, für die Sitzung); die Grenze der Objektart-Gruppen heißt „mehr als 42 Objekte“. Übernommen aus `arch-monitoring-neu-p0` T13.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
-Doku: docs/adr/0004-monitoring-neuordnung.md
+Doku: docs/adr/0004-monitoring-neuordnung.md · DEVELOPMENT.md · docs/developer/monitoring.html DE+EN (Status „angenommen“)
 Task-Review: am Ende
 Abhängt von: T6
 
@@ -93,3 +95,6 @@ Abhängt von: T6
 - 2026-11-19 T8: Gleichstand nach Server, dann Name (`byPlace` aus grammar.ts, dafür exportiert) — dieselbe Ordnung wie der Standard; die Wahl gilt je Querschnitt, nicht für alle.
 - 2026-11-19 T8: „Seit“ und Kennzahlen, bei denen mehr schlimmer ist (Temperatur, Fehler, Alter, Belegung …), beginnen beim ersten Klick absteigend; der Standard der Mounts bleibt „Belegt“ absteigend, Prognose aufsteigend heißt „voll zuerst“, „gleichbleibend“ zählt als leer.
 - 2026-11-19 T8: Die Zählung „N von M mit Problemen“ in Serverliste und Handy-Knopf zählt wie die Gruppe „Mit Problemen“ (`needsLook`: Probleme oder veraltete Werte) — Prüfer-Nit aus T4; die Erwartung in overview.test.ts zieht mit.
+- 2026-11-19 T8: Die Pfeile der sortierbaren Köpfe machen die Platten-Tabelle 39 px breiter — sie scrollte schon vorher in ihrem Kasten (T3); keine Tabelle, die vorher passte, wird breiter (Layout-Probe 390 und 1440 px).
+- 2026-11-19 T7: Die abgenommene Oberfläche steht als ADR §3.1 bei der Darstellungs-Grammatik, §14 Frage 12 hält Kevins Worte je Runde und verweist darauf. §13 legt Serverliste, Sortierung und „weitere anzeigen“ in P2 und „Alle Server“ (Lagekarte, Karten-Board, neueste Probleme) in P3, wo bisher die Lage-Ansicht stand; der Phasenzuschnitt bleibt.
+- 2026-11-19 T7: Die Callouts in `docs/developer/monitoring.html` (DE+EN) und `DEVELOPMENT.md` nannten ADR 0004 „vorgeschlagen“ und wären mit „angenommen“ falsch; T7 zieht sie mit (der Doku-Impact der Spec hatte `DEVELOPMENT.md` für gültig gehalten). Ein `changelog.d`-Fragment entfällt wie in der Spec: Mockup und ADR sind nicht im Build.

@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0004 — Monitoring-Neuordnung: Objekt, Regel, Ausnahme, Problem, Abdeckung
 
-- **Status:** **vorgeschlagen** — Stand 2026-11-18. Kevins Entscheidungen 1–11 stehen in §14; offen ist die
-  Abnahme der Mockups (Frage 12), erst danach baut P1 (R-1559).
+- **Status:** **angenommen** — 2026-11-19. Kevin hat die Fragen 1–11 am 2026-11-18 entschieden und die Screens am
+  2026-11-19 abgenommen (§14, Frage 12; das Ergebnis in §3.1); als Nächstes baut P1 (R-1559).
 - **Betrifft:** `apps/monitoring` (Checker, Regeln, Zustand, Alerter), `apps/server` (Benachrichtigungs-Hub),
   `apps/desktop` (Monitoring-Ansicht), `apps/agent` (Datenlücken, §11), Doku.
 - **Basis:** Spec [`docs/features/arch-monitoring-neu-p0.md`](../features/arch-monitoring-neu-p0.md) (R-1558 mit
@@ -72,12 +72,43 @@ Jede Objektart folgt derselben Grammatik; die Mockups zeigen sie für jede Art:
 - **Ebene 2, Kennzahlen:** höchstens vier Werte, jeder mit seiner Schwelle („41 °C (Warnung ab 55)“).
 - **Ebene 3, Schublade:** alle Attribute, Verlauf, Regeln und Schwellen, Ausnahmen, Rohdaten.
 - **Identitätszeile:** Name, Modell oder Typ, Ort (Server, Pfad, Pool).
-- **Reihenfolge:** schlechteste zuerst; Ausgeblendetes grau am Ende, mit Grund.
+- **Reihenfolge:** schlechteste zuerst; Ausgeblendetes grau am Ende, mit Grund. Wo eine andere Ordnung hilft, lässt
+  sie sich umstellen (§3.1).
 
 Statusrang, schlechtester zuerst: kritisch > Warnung > unbekannt > veraltet > Info > nicht erhoben > OK. „Unbekannt“
 steht über Info, damit ein Hinweis eine Regel ohne Wert nicht verdeckt (wie heute
 `apps/monitoring/app/checkers/probe.py:194`). „Veraltet“ und „nicht erhoben“ sind neu: der eine sagt, dass Daten zu
 alt sind, der andere, dass sie gewollt nicht erhoben werden (Ausnahme „nicht prüfen“, Lastabwurf, eine VM ohne SMART).
+
+### 3.1 Abgenommene Oberfläche
+
+Kevin hat den Entwurf am 2026-11-19 abgenommen, die Mengen-Grenzen „wie im Mockup“ (§14, Frage 12). Die Mockups unter
+`apps/desktop/ui/src/mockups/monitoring-neu/` zeigen ihn mit fiktiven Daten; P2 und P3 bauen ihn mit echten (§13).
+
+- **Serverliste links**, wie im heutigen Monitoring: „Mit Problemen“ und „Ohne Probleme“, schlechteste zuerst, Suche
+  mit „/“, Pfeiltasten. Ab 25 ruhigen Servern klappen diese in eine Zeile ein.
+- **„Alle Server“** ist der Start und ersetzt eine eigene Lage-Ansicht: eine Lagekarte mit den 20 schlimmsten Servern
+  und „alle zeigen“, ab 40 Servern ein Flotten-Teppich, ein Karten-Board mit 24 Karten (8 davon mit Kennzahlen) und
+  „weitere Server zeigen“, dazu „Neueste Probleme“.
+- **Server-Seite:** folgt der Auswahl in der Serverliste, mit Zustandsbalken, den wichtigsten Objekten als Kacheln,
+  offenen Problemen und Objektart-Gruppen. Eine Gruppe zeichnet ihre Zeilen erst beim Öffnen, in Seiten zu je 60; bei
+  mehr als 42 Objekten zeigt sie einen Statusbalken statt Punkten.
+- **Reiter:** Server, Objekte, Querschnitte, Objektarten, Ausgeblendet, Abdeckung; „Lage“ ist kein Reiter mehr.
+- **Lange Listen** zeigen den ersten Teil und darunter „N weitere anzeigen“, keine Seitenzahlen und kein
+  Endlos-Scrollen: Objekte in Schritten zu 200, Querschnitte zu 150.
+- **Sortierung:** Standard ist überall „schlechteste zuerst“. Objekte und Querschnitte sortieren per Klick auf den
+  Spaltenkopf, ein zweiter Klick dreht die Richtung (`aria-sort`), danach beginnt die Liste wieder vorn. Die
+  Serverliste ordnet nach Zustand oder Name (die beiden Gruppen bleiben), das Karten-Board nach Zustand, Neueste (der
+  Server mit dem jüngsten offenen Problem zuerst) oder Name. Fest bleiben Lagekarte, „Neueste Probleme“,
+  Objektart-Gruppen, „Ausgeblendet“ und „Abdeckung“. Ausgeblendetes bleibt am Ende, leere Werte stehen in beiden
+  Richtungen hinten. Die Wahl gilt für die Sitzung: Reiter-, Server- und Datenwechsel behalten sie, ein Neuladen
+  beginnt beim Standard.
+- **Handy (bis 760 px):** die Serverliste wird eine Schublade, Escape schließt sie; eine Spalte ohne seitliches
+  Überstehen, breite Tabellen scrollen in ihrem Kasten, ein Reiterwechsel beginnt oben.
+- **Kennzahl-Balken** tragen die Warn- und die Kritisch-Marke; Animationen schalten sich mit `prefers-reduced-motion`
+  ab.
+- **Menge:** Der Datenumschalter „Groß“ des Mockups erzeugt 292 Server mit 10 510 Objekten; an ihnen sind die Grenzen
+  oben geprüft.
 
 ## 4. Objekte und stabile Schlüssel
 
@@ -479,8 +510,8 @@ einer Maschine, keine Lastmessung.
 |---|---|---|---|
 | P0 | R-1558 (mit R-1515) | dieses ADR, Mockups, Regel-Prototyp, Experimente (§12), Kevins Entscheidungen | Kevin nimmt Screens und Entscheidungen ab |
 | P1 Fundament | R-1559 | Statuswechsel-Log, Objektergebnis und `monitor_object_state`, Ausnahme-Modell mit API und Migration, Status „nicht erhoben“, Regel-Schicht (`key`, Overrides, Merge, `rises`, `clear`, `when`, `not in`), Agent-Datenlücken | Migration an einer Kopie echter Daten mit Rückweg; alte Desktops laufen weiter |
-| P2 Eine Bedienung | R-1560 | Objekt-Tabelle, Schublade, Ausnahme-Dialog, neue Server-Seite, Querschnitte, Regel-Editor | Paritätsliste je alter Ansicht, Screenshots echter Zustände |
-| P3 Lage und Probleme | R-1561 | Problem-Schicht (Flattern, Dauer-unknown, Host-Abhängigkeit), Routen statt Alarmregeln, Lage-Ansicht, Zeitleiste | Diff-Bericht der Routen; Benachrichtigungen je Woche sinken |
+| P2 Eine Bedienung | R-1560 | Serverliste und neue Server-Seite (§3.1), Objekt-Tabelle, Schublade, Ausnahme-Dialog, Querschnitte, Regel-Editor, Sortierung und „weitere anzeigen“ | Paritätsliste je alter Ansicht, Screenshots echter Zustände |
+| P3 Lage und Probleme | R-1561 | Problem-Schicht (Flattern, Dauer-unknown, Host-Abhängigkeit), Routen statt Alarmregeln, „Alle Server“ mit Lagekarte, Karten-Board und neuesten Problemen (§3.1), Zeitleiste | Diff-Bericht der Routen; Benachrichtigungen je Woche sinken |
 | P4 Abdeckung | R-1562 | Profile an Tags mit Fund-Politik, Hinweis bei neuen Funden, Massen-Aktionen, Abdeckungsansicht | „Ist alles überwacht?“ je Server beantwortet |
 | P5 Feinschliff | R-1563 | Befehlspalette, gespeicherte Ansichten, Sparklines | — |
 
@@ -493,7 +524,7 @@ Hosts.
 
 Die Fragen 1–11 sind entschieden: Kevin hat sie am 2026-11-18 per Rückfrage in der Session beantwortet, jede nach
 der Empfehlung. Je Frage stehen die Empfehlung und Kevins Antwort wörtlich (die gewählte Option); die Mockups zeigen
-die gewählte Variante. Frage 12 folgt mit der Abnahme.
+die gewählte Variante. Frage 12 hat Kevin nach fünf Runden am 2026-11-19 abgenommen.
 
 1. **Wo lebt das Problem?** Lebenszyklus im Monitoring; Bestätigen, Notiz und Routen im Hub; Schlüssel 1:1.
    Kevin 2026-11-18: „Monitoring + Hub (Empfohlen)“.
@@ -517,7 +548,28 @@ die gewählte Variante. Frage 12 folgt mit der Abnahme.
 11. **R-1515:** beide Formen der Bedingung (§6.4), R-1515 selbst als `when` im Katalog-Modul `nextcloud-aio`.
     Kevin 2026-11-18: „Beide, R-1515 als when (Empfohlen)“.
 12. **Abnahme der Screens** (Lage, Server, Objekte, Querschnitte, Abdeckung, Ausnahme-Dialog, Schublade, jede
-    Objektart).
+    Objektart). Empfehlung: erst Screens zeigen. Kevin 2026-11-18: „Erst Screens zeigen (Empfohlen)“. Gezeigt wurden
+    sie in fünf Runden als privates Artefakt; Kevins Worte je Runde:
+    - **Runde 1** (2026-11-18): „Ich hätte lieber also ne weiterhin so ne Serverzuordnung statt also das ist ja jetzt
+      alles querbeet oder nicht“; dann „Serverliste wie heute (Empfohlen)“ und „Überleg noch mal, wie du es
+      vielleicht übersichtlicher und cooler machen könntest“.
+    - **Runde 2** (2026-11-18): „Noch eine Runde“ und „Kompakt (Empfohlen)“; dann „Mache alles übersichtlicher und
+      cooler“.
+    - **Runde 3** (2026-11-18): „Die Screenshots sind schon gut, aber das ist mir nicht übersichtlich genug. Und denkt
+      ihr auch mal wirklich ein paar richtig coole Animationen und aus und so weiter und so fort.“
+    - **Runde 4** (2026-11-19): „Noch eine Runde“; dann „Mobilansicht und bedenke, wenn es sehr viele Checks sehr
+      viele Server und so gibt es das vielleicht trotzdem dann gut Aussie [aussieht]“.
+    - **Runde 5** (2026-11-19): „Annehmen, umbauen (Empfohlen)“ und für die Grenzen „Wie im Mockup (Empfohlen)“.
+    - **Nachtrag** (2026-11-19): „Es sollte auch so sein, dass es noch übersichtlich bleibt und bedenke, dass es sehr
+      viele Hosts und Checks gibt, die vielleicht, keine Ahnung, sehr, sehr viele sind. Das muss ja dann trotzdem gut
+      aussehen und passen alles. Vielleicht Seiten? Keine Ahnung, ich weiß nicht, ob Seiten cool sind.“ und „Ja, du
+      darfst das alles so machen, aber bau zusätzlich noch ein, dass sich vielleicht Sortierungen von Ansichten ändern
+      kann. Also bei gewissen Dingen macht es ja keinen Sinn, aber bei manchen vielleicht schon. Überleg mal.“ Seine
+      Antworten auf die Rückfragen dazu: „Tabellen per Spaltenkopf (Empfohlen)“, „Serverliste: Zustand | Name
+      (Empfohlen)“, „Alle Server: Zustand | Neueste | Name (Empfohlen)“, „„weitere anzeigen“ (Empfohlen)“ und „Für die
+      Sitzung (Empfohlen)“.
+
+    Abgenommen ist Runde 5 mit dem Nachtrag; das Ergebnis mit seinen Grenzen steht in §3.1.
 
 ## 15. Bewusst nicht (YAGNI)
 
