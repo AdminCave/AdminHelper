@@ -1,5 +1,5 @@
 # Audit für das Nachziehen der verknüpften Verbindung — Task-Ledger
-Status: bereit · Branch: feature/kern-frp-9 · Review: am Ende
+Status: erledigt · Branch: feature/kern-frp-9 · Review: am Ende
 Spec: docs/features/kern-frp-9.md (Roadmap R-1617)
 Heavy: linux-full — Server-Route `/api/frp/tunnels` (Audit-Nebenwirkung); kein Cross-Host-, PKI-, FRP-Konfigurations- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
