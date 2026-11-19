@@ -53,8 +53,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T7 — R-1628: oasdiff-Fall für die R-1594-Ausnahmen (Harness, Kevin 2026-11-19)  [ ]
+### T7 — R-1628: oasdiff-Fall für die R-1594-Ausnahmen (Harness, Kevin 2026-11-19)  [x]
 Komponente: scripts · Dateien: scripts/tests/openapi_breaking_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @30f90769c 2026-11-19T19:21:38+01:00
+Review: approve (.ah-out/review/kern-provision-2/T7.verdict.json)
 Änderung: Ein Fall gegen das echte oasdiff mit Fixture-Specs für den Plattform-Enum: mit Ausnahmedatei grün, ein weiterer Enum-Wert an anderem Feld bleibt ERR.
 Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
 Doku: keine (Testfall)

@@ -365,11 +365,33 @@ NOTIFY_BASE=$(notify_spec '["email","telegram"]' '["severity","channelEmail","ch
   '{"severity":{"type":"string"},"channelEmail":{"type":"boolean"},"channelTelegram":{"type":"boolean"}}')
 NOTIFY_HEAD=$(notify_spec '["email","telegram","ntfy","webhook"]' "$PREFS_HEAD_REQUIRED" "$PREFS_HEAD_PROPS")
 
+# servers_spec <osType schema> <more properties of GET /api/servers/{server_id}>
+# — the routes of the R-1594 findings: osType in the responses of the list, the
+# create, the read and the update, os_type in the bodies of create and update.
+SRV_ID='"parameters":[{"name":"server_id","in":"path","required":true,"schema":{"type":"string"}}]'
+srv_req()  { printf '"requestBody":{"content":{"application/json":{"schema":{"type":"object","properties":{"os_type":%s}}}}}' "$1"; }
+srv_resp() { printf '"responses":{"%s":{"description":"ok","content":{"application/json":{"schema":%s}}}}' "$1" "$2"; }
+servers_spec() {
+  local one many read
+  one=$(printf '{"type":"object","properties":{"osType":%s}}' "$1")
+  read=$(printf '{"type":"object","properties":{"osType":%s%s}}' "$1" "$2")
+  many=$(printf '{"type":"array","items":%s}' "$one")
+  printf '{"openapi":"3.1.0","info":{"title":"t","version":"1"},"paths":{'
+  printf '"/api/servers":{"get":{%s},"post":{%s,%s}},' "$(srv_resp 200 "$many")" "$(srv_req "$1")" "$(srv_resp 201 "$one")"
+  printf '"/api/servers/{server_id}":{%s,"get":{%s},"put":{%s,%s}}}}\n' "$SRV_ID" "$(srv_resp 200 "$read")" "$(srv_req "$1")" "$(srv_resp 200 "$one")"
+}
+# platform <enum JSON or empty> — a nullable string, with the values when given
+platform() { printf '{"anyOf":[{"type":"string"%s},{"type":"null"}]}' "${1:+,\"enum\":$1}"; }
+PLATFORMS='["linux","windows","freebsd","opnsense","other"]'
+SERVERS_BASE=$(servers_spec "$(platform '')" ",\"osFamily\":$(platform '')")
+
 # frp_fixture <dir> <head-spec> — fixture() with the FRP base and this head
 # (bash locals are visible to the functions this one calls)
 frp_fixture() { local SNAP_BASE="$FRP_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
 # notify_fixture <dir> <head-spec> — the same with the R-1080 base
 notify_fixture() { local SNAP_BASE="$NOTIFY_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
+# servers_fixture <dir> <head-spec> — the same with the R-1594 base
+servers_fixture() { local SNAP_BASE="$SERVERS_BASE" SNAP_HEAD="$2"; fixture "$1" yes; }
 
 # The ERR findings of a gate run, one per line: "in API <METHOD> <path> | <text>".
 errs_of() {
@@ -446,6 +468,27 @@ if [ -n "$REAL_OASDIFF" ]; then
   REPO="$WORK/n2"
   notify_fixture "$REPO" "$(notify_spec '["email","telegram","ntfy","webhook","sms"]' "$PREFS_HEAD_REQUIRED" "$PREFS_HEAD_PROPS")"
   real_case "a further channel value stays ERR" 1 4 "added the new \`sms\` enum value" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # The platform field of R-1594: os_type takes only the five platforms, and
+  # osType answers with them, at four routes. The same twenty-two texts.
+  REPO="$WORK/s1"
+  servers_fixture "$REPO" "$(servers_spec "$(platform "$PLATFORMS")" ",\"osFamily\":$(platform '')")"
+  real_case "no exception file: the twenty-two of R-1594 are ERR" 1 22 "/api/servers" \
+    -- "$NOIGN/openapi-breaking.sh" server --base HEAD --root "$REPO"
+  real_case "with the file: the twenty-two of R-1594 pass" 0 0 "" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # A sixth platform is a new change: its value stays ERR at every response.
+  REPO="$WORK/s2"
+  servers_fixture "$REPO" "$(servers_spec "$(platform '["linux","windows","freebsd","opnsense","other","plan9"]')" ",\"osFamily\":$(platform '')")"
+  real_case "a further platform value stays ERR" 1 4 "added the new \`plan9\` enum value" \
+    -- "$CHECK" server --base HEAD --root "$REPO"
+
+  # The same values on another field of the same route: the field name binds.
+  REPO="$WORK/s3"
+  servers_fixture "$REPO" "$(servers_spec "$(platform "$PLATFORMS")" ",\"osFamily\":$(platform "$PLATFORMS")")"
+  real_case "the platform values on another field stay ERR" 1 5 "in API GET /api/servers/{server_id} | added the new" \
     -- "$CHECK" server --base HEAD --root "$REPO"
 else
   echo "  SKIP: oasdiff not installed — the exceptions are not checked against its matcher"
