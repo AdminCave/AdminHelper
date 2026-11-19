@@ -9,6 +9,7 @@ package probe
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestDialUnixNamesTheProcessServingTheSocket(t *testing.T) {
 			if err != nil {
 				return
 			}
-			_ = c.Close()
+			go holdUntilClosed(c)
 		}
 	}()
 	ctx := context.Background()
@@ -105,6 +106,14 @@ func TestDialUnixNamesTheProcessServingTheSocket(t *testing.T) {
 	}
 }
 
+// holdUntilClosed keeps a served connection open until the client closes it. FreeBSD disconnects
+// both ends when the server closes (unp_disconnect), and getpeername on the client then names no
+// path: checkPeer would refuse the socket before the guard is asked, depending on the scheduler.
+func holdUntilClosed(c net.Conn) {
+	_, _ = io.Copy(io.Discard, c)
+	_ = c.Close()
+}
+
 // shortTempDir returns a new directory with its links resolved, short enough for a unix socket path
 // (104 bytes on FreeBSD; t.TempDir carries the test's name).
 func shortTempDir(t *testing.T) string {
@@ -134,7 +143,7 @@ func TestDialUnixNeverConnectsToASocketOfAControlService(t *testing.T) {
 			if err != nil {
 				return
 			}
-			_ = c.Close()
+			go holdUntilClosed(c)
 		}
 	}()
 	stubHost(t, &fakeHost{names: map[int32]string{int32(os.Getpid()): "nginx"}})
@@ -190,7 +199,7 @@ func TestDialUnixFollowsTheSocketNotItsName(t *testing.T) {
 				if err != nil {
 					return
 				}
-				_ = c.Close()
+				go holdUntilClosed(c)
 			}
 		}()
 	}
