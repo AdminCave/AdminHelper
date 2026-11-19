@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-desktop-8 — Task-Ledger
-Status: bereit · Branch: feature/klein-tests-desktop-8 · Review: am Ende
+Status: erledigt · Branch: feature/klein-tests-desktop-8 · Review: am Ende
 Spec: docs/features/klein-tests-desktop-8.md (Roadmap R-1522)
 Heavy: none — Live-Skripte brauchen Docker und Desktop-Box; Verhalten bleibt bis zum nächsten Heavy-Lauf nicht verifiziert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
