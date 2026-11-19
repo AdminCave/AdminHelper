@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 _ROOT = Path(__file__).resolve().parents[3]
 _SCRIPT = _ROOT / ".github" / "scripts" / "apt_cache.sh"
@@ -145,3 +146,60 @@ def test_a_wrong_call_is_exit_2(stub, args):
     proc, calls = stub(*args)
     assert proc.returncode == 2
     assert calls == []
+
+
+_JOBS = {
+    "rust": "apt-tauri-ubuntu-26.04-v3",
+    "tauri-build-smoke": "apt-tauri-ubuntu-24.04-v3",
+    "rdp-embedded": "apt-tauri-ubuntu-26.04-v3",
+    "ops-scripts": "apt-ops-ubuntu-26.04-v1",
+}
+
+
+def _steps(job):
+    ci = yaml.safe_load((_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    return ci["jobs"][job]
+
+
+@pytest.mark.parametrize(("job", "prefix"), _JOBS.items())
+def test_each_job_restores_installs_and_saves_by_the_package_set(job, prefix):
+    spec = _steps(job)
+    steps = {s.get("id") or s.get("name"): s for s in spec["steps"]}
+    order = [s.get("id") or s.get("name") for s in spec["steps"]]
+    chain = [
+        "apt-key",
+        "apt-restore",
+        "apt-install",
+        "apt archives to the runner",
+        "apt cache save",
+    ]
+    at = [order.index(n) for n in chain]
+    assert at == sorted(at) and at[-1] - at[0] == len(chain) - 1
+    assert spec["env"]["APT_PKGS"]
+    assert f"apt_cache.sh key ~/apt-archives {prefix} $APT_PKGS" in steps["apt-key"]["run"]
+    assert (
+        steps["apt-install"]["run"]
+        == "bash .github/scripts/apt_cache.sh install ~/apt-archives $APT_PKGS"
+    )
+    restore = steps["apt-restore"]
+    assert restore["uses"].startswith("actions/cache/restore@")
+    assert restore["with"]["key"] == "${{ steps.apt-key.outputs.key }}"
+    assert restore["with"]["restore-keys"] == f"{prefix}-"
+    own = steps["apt archives to the runner"]
+    assert own["if"].startswith("${{ !cancelled() && steps.apt-key.outputs.key != ''")
+    save = steps["apt cache save"]
+    assert save["uses"].startswith("actions/cache/save@")
+    # Saved also after a failed install (the partial download), but not over an exact hit.
+    assert "!cancelled()" in save["if"]
+    assert "steps.apt-restore.outputs.cache-hit != 'true'" in save["if"]
+    assert save["with"]["key"] == (
+        "${{ steps.apt-key.outputs.key }}${{ steps.apt-install.outcome != 'success' && "
+        "format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}"
+    )
+    assert save["with"]["path"] == restore["with"]["path"] == "~/apt-archives"
+
+
+def test_no_job_keeps_the_weekly_apt_key():
+    text = (_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "apt-week" not in text
+    assert "--download-only" not in text
