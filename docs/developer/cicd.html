@@ -77,6 +77,16 @@
           &uuml;ber einen Release-Branch geschnitten statt an der Regel vorbei. <code>ci.yml</code> l&auml;uft
           auch auf <code>merge_group</code>; eine Merge Queue schaltet erst das Ruleset ein.</p>
 
+          <p><strong>Workflow-H&auml;rtung.</strong> Jeder <code>actions/checkout</code> l&auml;uft mit
+          <code>persist-credentials: false</code>: kein Schritt pusht oder holt mit dem Token, und so liegt es
+          nicht in <code>.git/config</code>, wo ein sp&auml;terer Schritt oder ein Artefakt es mitnehmen k&ouml;nnte.
+          Ein <code>run:</code>-Block setzt kein <code>${{ &hellip; }}</code> au&szlig;er <code>matrix.</code> ein;
+          Werte wie <code>github.base_ref</code> gehen &uuml;ber <code>env:</code>, damit ein Branch-Name kein
+          Shell-Code werden kann. Schreibrechte stehen am Job, der sie braucht (<code>docker.yml</code>:
+          <code>packages</code> und <code>id-token</code> nur an <code>build</code>), auf Workflow-Ebene nur
+          <code>contents: read</code>. <code>apps/server/tests/test_ci_workflow.py</code> h&auml;lt das fest;
+          gepr&uuml;ft mit <code>zizmor --offline --min-severity medium .github/workflows</code> ohne Befund.</p>
+
           <h2>Trigger-Matrix</h2>
           <table>
             <thead><tr><th>Event</th><th>Was läuft</th></tr></thead>
