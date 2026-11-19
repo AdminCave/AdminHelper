@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-49 — Glocke: Entwarnung gelöschter Checks, Schweregrad im Nachholjob — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-49 · Review: am Ende
+Status: bereit · Branch: feature/kern-monitoring-49 · Review: am Ende
 Spec: docs/features/kern-monitoring-49.md (Roadmap R-1601, R-1619)
 Heavy: none — nur apps/monitoring-Logik, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -36,8 +36,10 @@ sendet die Entwarnung.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_removed_checks.py tests/test_bell_catch_up.py tests/test_template_sync.py tests/test_templates_router.py tests/test_module_sync.py tests/test_template_overrides.py
 Doku: → T3
 
-### T3 — Doku und Changelog  [ ]
+### T3 — Doku und Changelog  [x]
 Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/kern-monitoring-49.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @81fd57748 2026-11-19T04:56:55+01:00
+Review: am Ende (Branch-Review)
 Änderung: Admin: Löschen über Template, Zuweisung, Sync und Server schließt den Vorfall; Schweregrad-Wechsel bei
 offenem Alarm ändert die Glocke nicht. Entwickler: Nachhol-Regel (Richtung) und die Lösch-Wege.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py
