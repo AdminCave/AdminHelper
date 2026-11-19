@@ -163,6 +163,7 @@ class _Monitoring:
         ("POST", "discovery/srv-1/scan"),
         ("GET", "findings"),
         ("POST", "findings/f-1/adopt"),
+        ("GET", "objects"),
     ],
 )
 def test_the_module_prefixes_are_forwarded(
@@ -185,6 +186,7 @@ def test_the_module_prefixes_are_forwarded(
     [
         # A prefix of the first segment is not the segment.
         "findingsX",
+        "objectsX",
         "catalog-x",
         "discoveryfoo/srv-1",
         "checksum",

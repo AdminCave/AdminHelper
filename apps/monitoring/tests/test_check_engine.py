@@ -435,13 +435,23 @@ def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
 
 
 class _DummyDb:
-    """apply_result only ever calls db.add() on the create path."""
+    """apply_result calls db.add() on the create path and reads the check's stored
+    objects (app.objects.apply_objects), of which there are none here."""
 
     def __init__(self):
         self.added = []
 
     def add(self, obj):
         self.added.append(obj)
+
+    def query(self, _model):
+        return self
+
+    def filter(self, *_criteria):
+        return self
+
+    def all(self):
+        return []
 
 
 def _details_case(details, *, keep=None):

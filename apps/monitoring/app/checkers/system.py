@@ -12,7 +12,13 @@ report. The agent sends each field only when it could determine it.
 
 from __future__ import annotations
 
-from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
+from app.checkers.agent import (
+    NOT_COLLECTED,
+    agent_number,
+    cap_agent_text,
+    capped_objects,
+    join_capped,
+)
 
 # The NTP client needs a while after boot until the kernel reports the clock as
 # synchronized; rating it earlier would turn every reboot into a short alert
@@ -81,6 +87,59 @@ def _named(block: dict) -> dict:
     return {key: value for key, value in named.items() if value is not None}
 
 
+# The reason of a point the check's config turns off: the host has it, the check does not rate
+# it (a rule, ADR 0004 §10).
+_TURNED_OFF = "Not rated, turned off in the check"
+
+
+def _system_objects(config: dict, reboot, synced, updates, problems: list[str]) -> dict:
+    """The object result of system_state (R-1559): reboot, updates and clock, each only when
+    the agent read it, bad as the rating's problems say; the OOM count is an event, no object.
+    Complete only with all three: the agent leaves a field out when it cannot read it, which
+    must not mark the object gone."""
+    points = (
+        (
+            "reboot",
+            "Reboot",
+            "check_reboot",
+            "reboot",
+            reboot,
+            "Reboot required",
+            "No reboot required",
+        ),
+        (
+            "updates",
+            "Security updates",
+            "check_security_updates",
+            "security_updates",
+            updates,
+            f"{updates} security updates pending",
+            "No security updates pending",
+        ),
+        (
+            "clock",
+            "Clock",
+            "check_time_sync",
+            "time_sync",
+            synced,
+            "Clock not synchronized",
+            "Synchronized" if synced else "Not synchronized yet after boot",
+        ),
+    )
+    items = []
+    for kind, name, switch, rated, value, problem, fine in points:
+        if value is None:
+            continue
+        if not _on(config, switch):
+            status, reason = NOT_COLLECTED, _TURNED_OFF
+        elif rated in problems:
+            status, reason = "warning", problem
+        else:
+            status, reason = "ok", fine
+        items.append({"kind": kind, "id": None, "name": name, "status": status, "reason": reason})
+    return {"complete": len(items) == len(points), "items": items}
+
+
 class SystemStateChecker:
     """Checks the system state the agent reports. Never critical: each point is a
     maintenance task, not an outage.
@@ -121,7 +180,9 @@ class SystemStateChecker:
                 "oom_kills": None,
                 "problems": [],
             }
-            return "ok", "Not evaluated: no system state in report", {"_details": details}
+            # Unread, not gone: the objects keep their state.
+            metrics = {"_details": details, "_objects": {"complete": False, "items": []}}
+            return "ok", "Not evaluated: no system state in report", metrics
 
         uptime = agent_number(report.get("uptime_seconds"))
 
@@ -152,6 +213,10 @@ class SystemStateChecker:
             "problems": problems,
             **_named(block),
         }
+        metrics = {
+            "_details": details,
+            "_objects": _system_objects(config, reboot, synced, updates, problems),
+        }
         if problems:
-            return "warning", join_capped(messages, "; "), {"_details": details}
-        return "ok", "System state OK", {"_details": details}
+            return "warning", join_capped(messages, "; "), metrics
+        return "ok", "System state OK", metrics

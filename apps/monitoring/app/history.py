@@ -15,14 +15,15 @@ import json
 import math
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import and_, not_
 from sqlalchemy.orm import Session
 
 from app.core.victoria import escape_label_value
 from app.maintenance import maintenance_intervals
-from app.models import MonitorAlertLog, MonitorCheck, MonitorMaintenance
+from app.models import MonitorCheck, MonitorMaintenance, MonitorStatusChange
 
 EVENT_LIMIT = 200
-# One status change of a check is logged once per matching alert rule; rows of the same
+# A change taken over from the alert log has one row per notified rule; rows of the same
 # change lie within one dispatch, so a minute apart is a different change.
 _SAME_EVENT = timedelta(seconds=60)
 
@@ -228,34 +229,38 @@ def _epoch(value: datetime) -> int:
 
 
 def server_events(db: Session, server_id: str, start: int, end: int) -> list[dict]:
-    """Status changes of the server's checks from the alert log in start..end, newest
-    first, at most EVENT_LIMIT; the rows several alert rules wrote for one change count once."""
+    """Status changes of the server's checks from the status change log in start..end,
+    newest first, at most EVENT_LIMIT. A first result that is fine (pending -> ok/info) is
+    no event; the rows taken over from the alert log once per notified rule count once."""
+    log = MonitorStatusChange
     rows = (
-        db.query(MonitorAlertLog, MonitorCheck.name)
-        .join(MonitorCheck, MonitorCheck.id == MonitorAlertLog.check_id)
+        db.query(log, MonitorCheck.name)
+        .join(MonitorCheck, MonitorCheck.id == log.check_id)
         .filter(
             MonitorCheck.server_id == server_id,
-            MonitorAlertLog.sent_at >= _naive_utc(start),
-            MonitorAlertLog.sent_at <= _naive_utc(end),
+            log.object_key.is_(None),
+            log.at >= _naive_utc(start),
+            log.at <= _naive_utc(end),
+            not_(and_(log.old_status == "pending", log.new_status.in_(("ok", "info")))),
         )
-        .order_by(MonitorAlertLog.sent_at.desc(), MonitorAlertLog.id.desc())
+        .order_by(log.at.desc(), log.id.desc())
         .limit(EVENT_LIMIT * 5)
         .all()
     )
     events: list[dict] = []
     last_seen: dict[tuple, datetime] = {}
-    for log, check_name in rows:
-        key = (log.check_id, log.old_status, log.new_status)
+    for change, check_name in rows:
+        key = (change.check_id, change.old_status, change.new_status)
         seen = last_seen.get(key)
-        if seen is not None and seen - log.sent_at < _SAME_EVENT:
+        if seen is not None and seen - change.at < _SAME_EVENT:
             continue
-        last_seen[key] = log.sent_at
+        last_seen[key] = change.at
         events.append(
             {
-                "at": _epoch(log.sent_at),
-                "checkId": log.check_id,
+                "at": _epoch(change.at),
+                "checkId": change.check_id,
                 "checkName": check_name,
-                "status": log.new_status,
+                "status": change.new_status,
             }
         )
         if len(events) == EVENT_LIMIT:
