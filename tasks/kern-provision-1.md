@@ -13,8 +13,10 @@ Review: approve (.ah-out/review/kern-provision-1/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_server_platform_migration.py tests/test_servers_platform.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
 Doku: → T10
 
-### T2 — R-1594: Desktop-Auswahlfeld Plattform  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerModal.svelte, apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/components/monitoring/card/ModuleCard.svelte, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/infra.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Infrastructure.test.ts, apps/desktop/ui/src/lib/models/infra.test.ts
+### T2 — R-1594: Desktop-Auswahlfeld Plattform  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/ServerDetail.svelte, apps/desktop/ui/src/components/infra/ServerModal.svelte, apps/desktop/ui/src/components/infra/ServerModal.test.ts, apps/desktop/ui/src/components/monitoring/card/ModuleCard.svelte, apps/desktop/ui/src/components/monitoring/card/ModuleCard.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/infra.test.ts, apps/desktop/ui/src/lib/models/infra.ts, apps/desktop/ui/src/pages/Infrastructure.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a7bac90e9 2026-11-19T07:47:41+01:00
+Review: approve (.ah-out/review/kern-provision-1/T2.verdict.json)
 Änderung: `osType` wird der Union-Typ. `ServerModal` zeigt ein Auswahlfeld mit übersetzten Namen, `ServerDetail` den übersetzten Namen. `ServerDetail` und `ModuleCard` prüfen `=== 'windows'` statt `includes`. Die Testdaten nehmen Plattformwerte.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/pages/Infrastructure.test.ts src/lib/models/infra.test.ts src/components/infra src/components/monitoring/card
 Doku: → T10

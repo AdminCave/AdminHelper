@@ -73,10 +73,14 @@ describe('ServerModal monitoring-template opt-in', () => {
   it('passes the selected template id and lists built-ins first', async () => {
     const { container, getByText } = await mountAndFill();
     await waitFor(() => {
-      const select = container.querySelector('.field select') as HTMLSelectElement;
+      const select = container.querySelector(
+        'select[name="monitoringTemplate"]',
+      ) as HTMLSelectElement;
       expect(select.options.length).toBe(3);
     });
-    const select = container.querySelector('.field select') as HTMLSelectElement;
+    const select = container.querySelector(
+      'select[name="monitoringTemplate"]',
+    ) as HTMLSelectElement;
     // Built-in sorted before the custom template, empty option first.
     expect(Array.from(select.options).map((o) => o.value)).toEqual(['', 'tpl-linux', 'tpl-custom']);
     await fireEvent.change(select, { target: { value: 'tpl-linux' } });
@@ -123,7 +127,57 @@ describe('ServerModal monitoring-template opt-in', () => {
     mocks.editorState.target = { id: 'srv-1', name: 'web01', hostname: 'web01.example' };
     const { container } = render(ServerModal);
     await tick();
-    expect(container.querySelector('.field select')).toBeNull();
+    expect(container.querySelector('select[name="monitoringTemplate"]')).toBeNull();
+    mocks.editorState.target = null;
+  });
+});
+
+describe('ServerModal platform (R-1594)', () => {
+  it('offers the platforms with their names and saves the chosen value', async () => {
+    const { container, getByText } = await mountAndFill();
+    const select = container.querySelector('select[name="osType"]') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => [o.value, o.text])).toEqual([
+      ['', 'Nicht gewählt'],
+      ['linux', 'Linux'],
+      ['windows', 'Windows'],
+      ['freebsd', 'FreeBSD'],
+      ['opnsense', 'OPNsense'],
+      ['other', 'Andere'],
+    ]);
+    await fireEvent.change(select, { target: { value: 'opnsense' } });
+    await fireEvent.click(getByText('Speichern'));
+    await waitFor(() =>
+      expect(mocks.saveServer).toHaveBeenCalledWith(
+        expect.objectContaining({ os_type: 'opnsense' }),
+        null,
+        null,
+      ),
+    );
+  });
+
+  it('saves null while no platform is chosen', async () => {
+    const { getByText } = await mountAndFill();
+    await fireEvent.click(getByText('Speichern'));
+    await waitFor(() =>
+      expect(mocks.saveServer).toHaveBeenCalledWith(
+        expect.objectContaining({ os_type: null }),
+        null,
+        null,
+      ),
+    );
+  });
+
+  it('editing preselects the stored platform', async () => {
+    mocks.editorState.target = {
+      id: 'srv-1',
+      name: 'web01',
+      hostname: 'web01.example',
+      osType: 'freebsd',
+    };
+    const { container } = render(ServerModal);
+    await tick();
+    const select = container.querySelector('select[name="osType"]') as HTMLSelectElement;
+    expect(select.value).toBe('freebsd');
     mocks.editorState.target = null;
   });
 });

@@ -63,6 +63,9 @@ export interface ConnectionOptions {
   rdp?: RdpConnectionOptions | null;
 }
 
+/** The platform a server runs (R-1594); null: not chosen. */
+export type ServerPlatform = 'linux' | 'windows' | 'freebsd' | 'opnsense' | 'other';
+
 export interface Server {
   id: string;
   name: string;
@@ -70,7 +73,7 @@ export interface Server {
   hostname: string;
   /** True when an own hostname is stored, false when the address follows the name. */
   customHostname?: boolean;
-  osType?: string | null;
+  osType?: ServerPlatform | null;
   tags?: string[];
   notes?: string | null;
   connections?: Connection[];
@@ -81,7 +84,7 @@ export interface Server {
 export interface ServerInput {
   name: string;
   hostname: string;
-  os_type: string | null;
+  os_type: ServerPlatform | null;
   tags: string[];
   notes: string;
 }

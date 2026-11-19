@@ -36,10 +36,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   ]);
   let active = $state('overview');
 
-  const windows = $derived((server.osType ?? '').toLowerCase().includes('windows'));
+  const windows = $derived(server.osType === 'windows');
   const rows = $derived([
     { key: $t('infra.field.hostname'), value: server.hostname },
-    { key: $t('infra.field.osType'), value: server.osType || '—', mono: false },
+    {
+      key: $t('infra.field.osType'),
+      value: server.osType ? $t(`infra.prov.platform.${server.osType}`) : '—',
+      mono: false,
+    },
     { key: $t('infra.field.tags'), value: (server.tags ?? []).join(', ') || '—' },
     { key: $t('infra.field.notes'), value: server.notes || '—', mono: false },
   ]);
