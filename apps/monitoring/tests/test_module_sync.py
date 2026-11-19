@@ -542,6 +542,28 @@ def test_adopting_gone_switches_off_and_deletes_nothing(db, actions):
     assert finding.status == "adopted"
 
 
+def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions):
+    # A switched-off check whose alarm the bell shows lags: the job sends the
+    # all-clear (R-1601), as for a check switched off by hand.
+    from app.bell_catch_up import lag_target
+    from app.models import MonitorState
+
+    _inventory(db)
+    finding = _finding(db)
+    adopt(db, finding.id, catalog=V1, now=NOW)
+    web = _checks(db, finding)["web"]
+    state = db.get(MonitorState, web.id) or MonitorState(check_id=web.id, status="critical")
+    state.notified_status = state.hub_status = "critical"
+    db.merge(state)
+    db.commit()
+    _reopen(db, finding, "gone")
+
+    adopt(db, finding.id, catalog=V1, now=NOW)
+
+    assert not web.enabled
+    assert lag_target(web, db.get(MonitorState, web.id)) == "ok"
+
+
 def test_adopting_new_again_switches_the_whole_instance_on(db, actions):
     _inventory(db)
     finding = _finding(db)

@@ -24,6 +24,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.bell_catch_up import AllClear, deleted_all_clear, send_all_clears
 from app.check_configs import validate_check_config
 from app.models import (
     MonitorAlertRule,
@@ -376,11 +377,12 @@ def sync_template(db: Session, template: MonitorTemplate) -> dict:
     total_updated = 0
     total_deleted = 0
     actions: list[SchedulerAction] = []
+    clears: list[AllClear] = []
 
     for assignment in assignments:
         variables = _build_variables(assignment)
         c, u, d = _sync_checks_for_server(
-            db, template.id, assignment.server_id, check_defs, variables, actions
+            db, template.id, assignment.server_id, check_defs, variables, actions, clears
         )
         total_created += c
         total_updated += u
@@ -395,6 +397,7 @@ def sync_template(db: Session, template: MonitorTemplate) -> dict:
 
     db.commit()
     apply_scheduler_actions(actions)
+    send_all_clears(clears)
 
     logger.info(
         "Template '%s' sync: %d erstellt, %d aktualisiert, %d geloescht (ueber %d Server)",
@@ -423,10 +426,14 @@ def sync_assignment(
     alert_defs = json.loads(template.alert_definitions) if template.alert_definitions else []
     variables = _build_variables(assignment)
     actions: list[SchedulerAction] = []
-    _sync_checks_for_server(db, template.id, assignment.server_id, check_defs, variables, actions)
+    clears: list[AllClear] = []
+    _sync_checks_for_server(
+        db, template.id, assignment.server_id, check_defs, variables, actions, clears
+    )
     _sync_alerts_for_server(db, template.id, assignment.server_id, alert_defs, variables)
     db.commit()
     apply_scheduler_actions(actions)
+    send_all_clears(clears)
 
 
 def _sync_checks_for_server(
@@ -436,9 +443,11 @@ def _sync_checks_for_server(
     check_defs: list[dict],
     variables: dict,
     actions: list[SchedulerAction],
+    clears: list[AllClear],
 ) -> tuple[int, int, int]:
     """Syncs check definitions for a single server. Scheduler mutations are
-    appended to `actions` (applied by the caller after commit), not run here."""
+    appended to `actions` and the all-clears of deleted checks to `clears`
+    (both applied by the caller after commit), not run here."""
     existing = (
         db.query(MonitorCheck)
         .filter(MonitorCheck.template_id == template_id, MonitorCheck.server_id == server_id)
@@ -512,6 +521,8 @@ def _sync_checks_for_server(
     for def_id, check in existing_by_def_id.items():
         if def_id not in target_def_ids:
             actions.append(("remove", check.id, None, None))
+            if (clear := deleted_all_clear(db, check)) is not None:
+                clears.append(clear)
             db.delete(check)
             deleted += 1
 
@@ -650,6 +661,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
         .filter(MonitorCheck.template_id == template_id, MonitorCheck.server_id == server_id)
         .all()
     )
+    clears = [clear for check in checks if (clear := deleted_all_clear(db, check))]
     for check in checks:
         actions.append(("remove", check.id, None, None))
         db.delete(check)
@@ -678,6 +690,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
 
     db.commit()
     apply_scheduler_actions(actions)
+    send_all_clears(clears)
     logger.info(
         "Template %s removed from server %s: %d checks, %d alerts deleted",
         template_id,
