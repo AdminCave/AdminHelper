@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-doku-4 — Task-Ledger
-Status: bereit · Branch: feature/kern-doku-4 · Review: am Ende
+Status: erledigt · Branch: feature/kern-doku-4 · Review: am Ende
 Spec: docs/features/kern-doku-4.md (Roadmap R-1618)
 Heavy: none — nur fünf Zeilen in abgeschlossenen Plan-Dateien, kein Code
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
