@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.checkers.agent import (
+    NOT_COLLECTED,
     agent_number,
     cap_agent_text,
     capped_objects,
@@ -227,11 +228,6 @@ def _asleep_detail(device: str, prev: dict | None) -> tuple[str, list[str], list
     return category, crit, warn, detail
 
 
-# app.check_engine.NOT_COLLECTED; imported, it would close an import cycle through the
-# checker registry.
-_NOT_COLLECTED = "not_collected"
-
-
 def _disk_object(disk: dict, device: str, category: str, problems: list[str]) -> dict:
     """The object of a disk that was read (R-1559): keyed by its WWN, else by model and
     serial; by the device path, which a reboot may change, only without them."""
@@ -322,7 +318,7 @@ class SmartHealthChecker:
                             "kind": "disk",
                             "id": shown,
                             "name": shown,
-                            "status": _NOT_COLLECTED,
+                            "status": NOT_COLLECTED,
                             "reason": "Asleep, not read yet",
                             "stable": False,
                         }

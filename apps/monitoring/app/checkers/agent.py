@@ -140,6 +140,11 @@ def capped_objects(value: object, limit: int = MAX_REPORT_ENTRIES) -> list[dict]
     return [entry for entry in value[: min(limit, MAX_REPORT_ENTRIES)] if isinstance(entry, dict)]
 
 
+# The object status of something a rule leaves unrated (app.check_engine.NOT_COLLECTED);
+# imported from there, it would close an import cycle through the checker registry.
+NOT_COLLECTED = "not_collected"
+
+
 def whole_list(value: object) -> bool:
     """Whether capped_objects(value) keeps every entry of a report list. Object results
     (R-1559) built from a list it cut short are incomplete: what it left out is not gone."""

@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+from app.check_engine import NOT_COLLECTED
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.objects import read_objects
 
@@ -164,10 +165,11 @@ def test_zfs_pool_without_name_is_named_by_a_question_mark():
     assert (status, msg) == ("ok", "All pools ONLINE: ? 20%")
 
 
-# R-1559: each pool is an object of its own, as GET /objects shows it.
+# R-1559: each pool, guest backup and container is an object of its own, as GET /objects
+# shows it.
 
 
-def _zfs_objects(metrics: dict) -> tuple[bool, list[dict]]:
+def _object_result(metrics: dict) -> tuple[bool, list[dict]]:
     """complete and the items of the object block; app.objects must take each item."""
     block = metrics["_objects"]
     assert len(read_objects(block, "srv-1")[1]) == len(block["items"]), block
@@ -188,7 +190,7 @@ def test_zfs_each_pool_is_an_object_with_its_own_status_and_first_problem():
     # The check keeps its worst status and its message.
     assert status == "critical"
     assert msg == "backup: DEGRADED; backup: 95% full (>=90%); data: 85% full (>=80%)"
-    assert _zfs_objects(metrics) == (
+    assert _object_result(metrics) == (
         True,
         [
             _pool_object("tank", "ok", "ONLINE"),
@@ -202,7 +204,7 @@ def test_zfs_a_warning_pool_after_a_critical_one_stays_a_warning():
     # The status of one pool is its own, not the worst so far.
     report = _zfs(_pool("backup", health="FAULTED"), _pool("data", capacity_percent=85))
     _, _, metrics = ZfsHealthChecker().evaluate({}, report)
-    assert [item["status"] for item in _zfs_objects(metrics)[1]] == ["critical", "warning"]
+    assert [item["status"] for item in _object_result(metrics)[1]] == ["critical", "warning"]
 
 
 @pytest.mark.parametrize(
@@ -215,7 +217,7 @@ def test_zfs_a_warning_pool_after_a_critical_one_stays_a_warning():
 )
 def test_zfs_pool_objects_are_complete_only_for_the_whole_list(pools, complete):
     _, _, metrics = ZfsHealthChecker().evaluate({}, _zfs(*pools))
-    assert _zfs_objects(metrics)[0] is complete
+    assert _object_result(metrics)[0] is complete
 
 
 def test_zfs_without_pool_data_names_no_objects():
@@ -285,7 +287,11 @@ def test_proxmox_vms_that_are_no_list_count_as_empty(vms):
     assert result == (
         "ok",
         "No VMs/CTs found",
-        {"_details": {"available": True, "error": None, "vms": []}},
+        {
+            "_details": {"available": True, "error": None, "vms": []},
+            # Not the agent's list: what it held is not gone (R-1559).
+            "_objects": {"complete": False, "items": []},
+        },
     )
 
 
@@ -353,7 +359,104 @@ def test_proxmox_block_missing_is_unknown_and_clears_vms():
 def test_proxmox_zero_vms_is_ok_with_empty_list():
     status, msg, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox())
     assert (status, msg) == ("ok", "No VMs/CTs found")
-    assert metrics == {"_details": {"available": True, "error": None, "vms": []}}
+    assert metrics == {
+        "_details": {"available": True, "error": None, "vms": []},
+        "_objects": {"complete": True, "items": []},
+    }
+
+
+def _guest_object(vmid, label, status, reason):
+    return {
+        "kind": "guest-backup",
+        "id": str(vmid),
+        "name": label,
+        "status": status,
+        "reason": reason,
+        "stable": False,
+    }
+
+
+_NOT_RATED = "Not running, backup not rated"
+
+
+def test_proxmox_each_guest_is_a_backup_object(monkeypatch):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: 1_000_000.0)
+    report = _proxmox(
+        {"vmid": 100, "name": "web", "status": "running", "last_backup_ts": 1_000_000.0},
+        {"vmid": 101, "type": "lxc", "status": "running", "last_backup_ts": None},
+        {"vmid": 102, "name": "db", "status": "running", "last_backup_ts": 1_000_000.0 - 30 * 3600},
+    )
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, report)
+    # The check keeps its worst status and its message.
+    assert (status, msg) == ("critical", "No backup: LXC 101 (?); Outdated: VM 102 (db): 30h old")
+    assert _object_result(metrics) == (
+        True,
+        [
+            _guest_object(100, "VM 100 (web)", "ok", "Backup up to date"),
+            _guest_object(101, "LXC 101 (?)", "critical", "No backup"),
+            _guest_object(102, "VM 102 (db)", "warning", "30h old"),
+        ],
+    )
+
+
+def test_proxmox_a_guest_exclude_stopped_leaves_unrated_is_not_collected():
+    report = _proxmox(
+        {"vmid": 100, "name": "web", "status": "stopped", "last_backup_ts": None},
+        {"vmid": 999, "status": "stopped", "last_backup_ts": None},
+    )
+    status, _, metrics = ProxmoxBackupChecker().evaluate({"exclude_vmids": [999]}, report)
+    # The check and its details stay as they were: the stopped guest is not rated.
+    assert status == "ok"
+    assert metrics["_details"]["vms"] == []
+    assert metrics["proxmox_backup_missing"] == 0
+    # exclude_stopped is a rule, the guest is there; exclude_vmids stays outside (P1b).
+    assert _object_result(metrics) == (
+        True,
+        [_guest_object(100, "VM 100 (web)", NOT_COLLECTED, _NOT_RATED)],
+    )
+    # Without the rule both stopped guests are rated.
+    _, _, metrics = ProxmoxBackupChecker().evaluate({"exclude_stopped": False}, report)
+    assert [(item["id"], item["status"]) for item in _object_result(metrics)[1]] == [
+        ("100", "critical"),
+        ("999", "critical"),
+    ]
+
+
+@pytest.mark.parametrize("vm_status", ["running", "stopped"])
+def test_proxmox_a_guest_without_vmid_has_no_object_and_the_result_is_incomplete(vm_status):
+    report = _proxmox(
+        {"vmid": "100", "status": vm_status, "last_backup_ts": None},
+        {"vmid": 101, "status": "stopped"},
+    )
+    _, _, metrics = ProxmoxBackupChecker().evaluate({}, report)
+    # Rated as before; without a key it names no object, and what it stood for is not gone.
+    assert _object_result(metrics) == (
+        False,
+        [_guest_object(101, "VM 101 (?)", NOT_COLLECTED, _NOT_RATED)],
+    )
+
+
+def _guest(vmid):
+    return {"vmid": vmid, "status": "running", "last_backup_ts": None}
+
+
+@pytest.mark.parametrize(
+    ("vms", "complete"),
+    [
+        pytest.param([_guest(i) for i in range(500)], True, id="500"),
+        pytest.param([_guest(i) for i in range(501)], False, id="501"),
+        pytest.param(["x", _guest(1)], False, id="no-object"),
+    ],
+)
+def test_proxmox_guest_objects_are_complete_only_for_the_whole_list(vms, complete):
+    _, _, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox(*vms))
+    assert _object_result(metrics)[0] is complete
+
+
+def test_proxmox_without_vm_data_names_no_objects():
+    # No block or an outage says nothing about the guests: they keep their state.
+    for report in ({"resources": {}}, _proxmox(available=False, error="timeout")):
+        assert "_objects" not in ProxmoxBackupChecker().evaluate({}, report)[2]
 
 
 # --- DockerHealthChecker ---
@@ -744,6 +847,7 @@ def test_docker_zero_containers_is_ok_with_empty_list():
     status, _, metrics = DockerHealthChecker().evaluate({}, _docker())
     assert status == "ok"
     assert metrics["_details"] == {"available": True, "error": None, "containers": []}
+    assert metrics["_objects"] == {"complete": True, "items": []}
 
 
 def test_docker_caps_the_container_list():
@@ -764,6 +868,8 @@ def test_docker_containers_that_are_no_list_count_as_empty(containers):
     status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(containers=containers))
     assert (status, msg) == ("ok", "No containers found")
     assert metrics["_details"] == {"available": True, "error": None, "containers": []}
+    # Not the agent's list: what it held is not gone (R-1559).
+    assert metrics["_objects"] == {"complete": False, "items": []}
 
 
 def test_docker_container_that_is_no_object_is_skipped():
@@ -885,6 +991,83 @@ def test_docker_ignored_container_is_skipped():
     status, _, metrics = DockerHealthChecker().evaluate({"ignore_containers": ["watchtower"]}, r)
     assert status == "ok"  # the only problem container is ignored
     assert _rows(metrics) == []
+
+
+def _container_object(name, status, reason):
+    return {
+        "kind": "container",
+        "id": name,
+        "name": name,
+        "status": status,
+        "reason": reason,
+        "stable": False,
+    }
+
+
+def test_docker_each_container_is_an_object_named_by_its_name():
+    report = _docker(
+        _ctr(),
+        _ctr(id="c2", name="stopped-by-hand", state="exited", exit_code=143),
+        _ctr(id="c3", name="never-started", state="created"),
+        _ctr(id="c4", name="crashed", state="exited", exit_code=1),
+        _ctr(id="c5", name="oom", state="exited", exit_code=137, oom_killed=True),
+        _ctr(id="c6", name="sick", health="unhealthy"),
+    )
+    status, _, metrics = DockerHealthChecker().evaluate({}, report)
+    assert status == "critical"
+    # A container stopped on purpose is ok (ADR 0004 §6.3); a problem is the message's text.
+    assert _object_result(metrics) == (
+        True,
+        [
+            _container_object("web", "ok", "Running"),
+            _container_object("stopped-by-hand", "ok", "Stopped"),
+            _container_object("never-started", "ok", "Not started"),
+            _container_object("crashed", "critical", "exited with code 1"),
+            _container_object("oom", "critical", "OOM-killed"),
+            _container_object("sick", "warning", "unhealthy"),
+        ],
+    )
+
+
+def test_docker_a_restarted_container_is_a_warning_object():
+    prev = {"containers": [{"id": "abc123def456", "restart_count": 1}]}
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(restart_count=2)), prev)
+    assert _object_result(metrics)[1] == [_container_object("web", "warning", "restarted")]
+
+
+def test_docker_ignored_containers_name_no_object():
+    report = _docker(_ctr(), _ctr(id="c2", name="watchtower"))
+    _, _, metrics = DockerHealthChecker().evaluate({"ignore_containers": ["watchtower"]}, report)
+    # The ignore list stays outside (P1c): the result is whole without the container.
+    assert _object_result(metrics) == (True, [_container_object("web", "ok", "Running")])
+
+
+def test_docker_container_with_an_empty_name_is_an_object_named_by_a_question_mark():
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(name="")))
+    assert _object_result(metrics)[1] == [_container_object("?", "ok", "Running")]
+
+
+def _numbered(i):
+    return _ctr(id=f"{i:012x}", name=f"c{i}")
+
+
+@pytest.mark.parametrize(
+    ("containers", "complete"),
+    [
+        pytest.param([_numbered(i) for i in range(500)], True, id="500"),
+        pytest.param([_numbered(i) for i in range(501)], False, id="501"),
+        pytest.param(["x", _ctr()], False, id="no-object"),
+    ],
+)
+def test_docker_container_objects_are_complete_only_for_the_whole_list(containers, complete):
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(*containers))
+    assert _object_result(metrics)[0] is complete
+
+
+def test_docker_without_container_data_names_no_objects():
+    # No block or an outage says nothing about the containers: they keep their state.
+    for report in ({"resources": {}}, _docker(available=False, error="timeout")):
+        assert "_objects" not in DockerHealthChecker().evaluate({}, report)[2]
 
 
 # --- Outage branch of the ZFS and Docker (R-0472) and the Proxmox checker (R-0492) ---

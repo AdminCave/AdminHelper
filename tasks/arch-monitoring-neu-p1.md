@@ -65,10 +65,12 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_check
 Doku: → T9
 Abhängt von: T4
 
-### T6 — Container- und Backup-Objekte: docker_health, proxmox_backup (R-1559, Objekt-Teil von R-1534)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py
+### T6 — Container- und Backup-Objekte: docker_health, proxmox_backup (R-1559, Objekt-Teil von R-1534)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py, apps/monitoring/app/checkers/agent.py, apps/monitoring/app/checkers/smart.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @425f0a4df 2026-11-19T16:00:27+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1/T6.verdict.json)
 Änderung: `DockerHealthChecker.evaluate` (`plugins.py:499`) je Container ein Objekt `container` (Schlüssel Compose-Projekt/Dienst/Nummer, solange der Agent keine Nummer sendet der Containername mit `stable = false`); vollständig. `ProxmoxBackupChecker.evaluate` (`plugins.py:106`) je VM ein Objekt `guest-backup` (VMID, `stable = false` bis zur Cluster-ID, R-0519); eine gestoppte VM unter `exclude_stopped` erscheint als `not_collected` mit Grund statt zu fehlen, `exclude_vmids` bleibt außen vor (P1b); vollständig. `_details` unverändert.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py tests/test_smart_checker.py
 Doku: → T9
 Abhängt von: T5
 
@@ -117,3 +119,8 @@ Abhängt von: T3, T4
 - 2026-11-19 T5: `whole_list` (`checkers/agent.py`, für T5–T8): vollständig nur, wenn `capped_objects` jeden Eintrag behält (Liste, ≤ `MAX_REPORT_ENTRIES`, nur Objekte). Der Agent sendet `pools` immer als Liste (`parseZpoolList`), eine leere ist vollständig.
 - 2026-11-19 T5: Schlechte Platten und Pools tragen Messwerte im Grund (Temperatur, Füllstand): ein UPDATE je Wertwechsel, nur solange das Objekt schlecht ist.
 - 2026-11-19 T5: Gegenproben: zwölf Mutationen (Lesefilter, Deckel, Art `check`, Rückfall-Grund, Schlaf-, Schlüssel-, Grund- und Vollständigkeitslogik) je mit dem erwarteten roten Test; Lock-Probe auf Postgres mit der Verzögerung in `_apply_item`: ohne Lock und Autoflush rot, ohne Lock allein fängt der Autoflush ab (wie T4).
+- 2026-11-19 T6: Container = Containername mit `stable = false` (Rückfall nach ADR §4: der Agent sendet keine Compose-Nummer, §12.6, P1e), leerer Name `?`. Status wie die Bewertung des Checks; ein von Hand gestoppter oder nie gestarteter Container ist ok (ADR §6.3) mit Grund `Stopped` bzw. `Not started`, ein laufender `Running`; ein schlechter trägt den Text der Meldung ohne Namen (`_problem_reason`, von `_problem_text` abgespalten). Ignorierte Container bleiben außen vor, das Ergebnis bleibt vollständig.
+- 2026-11-19 T6: Gast-Backup = VMID als Text mit `stable = false` (R-0519), Name das Label der Meldung (`VM 100 (web)`); ok `Backup up to date`, ohne Backup critical `No backup`, veraltet warning `<n>h old` (ein UPDATE je Stunde, nur solange veraltet). Ein Gast, den `exclude_stopped` nicht bewertet, wird `not_collected` mit `Not running, backup not rated`; `_details`, Zählwerte und Meldung bleiben unverändert, `exclude_vmids` bleibt außen vor. Ein Gast ohne lesbare VMID wird wie bisher bewertet, hat aber keinen Schlüssel: kein Objekt, das Ergebnis ist unvollständig.
+- 2026-11-19 T6: Ausfall oder fehlender Block bei Docker und Proxmox liefern kein `_objects` (wie T5); eine leere Liste ist vollständig, ein Wert, der keine Liste ist, nicht.
+- 2026-11-19 T6: `NOT_COLLECTED` zieht von `smart.py` nach `checkers/agent.py` (zweiter Nutzer; der Import aus `app.check_engine` schlösse den Zyklus wie in T5). Die Tests vergleichen gegen `app.check_engine.NOT_COLLECTED`, eine Abweichung wird rot. Verify um `tests/test_smart_checker.py` ergänzt.
+- 2026-11-19 T6: Gegenproben: zwölf Mutationen in `plugins.py` (gestoppter Gast fehlt, `exclude_vmids` benannt, Gast ohne VMID vollständig, Grund mit Label, Gast stabil, leere VM-Liste immer vollständig, gestoppter Container mit eigenem Status, Container stabil, Container-Liste immer vollständig, leerer Name, ignorierter Container benannt, Grund mit Namen) je mit dem erwarteten roten Test; ohne Mutation 417 passed, Datei hash-identisch.
