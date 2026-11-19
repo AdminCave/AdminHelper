@@ -8,15 +8,20 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"adminhelper-agent/internal/allowlist"
+	"adminhelper-agent/internal/config"
 )
 
 // stubFailedUnits makes the systemd block report units as failed, each with its since from since
@@ -124,6 +129,80 @@ func TestBuildReportSendsTheErrorLinesOncePerFailure(t *testing.T) {
 	}
 	if !reflect.DeepEqual(state.ServiceLogs, map[string]string{"a.service": since["a.service"], "b.service": since["b.service"]}) {
 		t.Errorf("state = %v, want both failures with their since", state.ServiceLogs)
+	}
+}
+
+// The plan's switch reaches the pushed report, and a lost push sends the lines again.
+func TestPushSendsTheErrorLinesThePlanAsksForAndAgainAfterALostPush(t *testing.T) {
+	stubReportHost(t)
+	shortenRetryDelay(t)
+	s := stubCPU(t)
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	failed := []string{"a.service"}
+	details := true
+	stubFailedUnits(t, &failed, map[string]string{"a.service": "2026-11-19T04:00:00Z"}, &details)
+	stubServiceLogReader(t, nil)
+
+	const plan = `{"plan_version": 1, "catalog_version": "c1", "scan": false, "discovery": {"markers": []},
+	"probes": [], "service_logs": true}`
+	var reportStatus atomic.Int32
+	type sent struct {
+		Systemd struct {
+			FailedLogs map[string]struct {
+				Since string   `json:"since"`
+				Lines []string `json:"lines"`
+			} `json:"failed_logs"`
+		} `json:"systemd"`
+	}
+	received := make(chan sent, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(plan))
+			return
+		}
+		var body sent
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("report body: %v", err)
+		}
+		received <- body
+		w.WriteHeader(int(reportStatus.Load()))
+	}))
+	defer srv.Close()
+	if err := config.WriteKeyValue(config.MonitorConfFile(), []config.KeyValue{
+		{Key: "MONITOR_URL", Value: srv.URL},
+		{Key: "API_KEY", Value: "key"},
+		{Key: "SERVER_ID", Value: "srv-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	busy := 100.0
+	push := func(status int) (sent, error) {
+		t.Helper()
+		reportStatus.Store(int32(status))
+		busy += 100
+		s.times = cpuTimes(busy, busy*4)
+		err := Push(context.Background())
+		var last sent
+		for len(received) > 0 {
+			last = <-received
+		}
+		return last, err
+	}
+
+	got, err := push(http.StatusBadGateway)
+	if err == nil {
+		t.Fatal("push against 502: want an error")
+	}
+	if l := got.Systemd.FailedLogs["a.service"]; l.Since != "2026-11-19T04:00:00Z" || !reflect.DeepEqual(l.Lines, []string{"error of a.service"}) {
+		t.Fatalf("lost push: failed_logs %+v, want a.service with its lines", got.Systemd.FailedLogs)
+	}
+	got, err = push(http.StatusOK)
+	if err != nil || got.Systemd.FailedLogs["a.service"].Lines == nil {
+		t.Fatalf("push after the lost one: err %v, failed_logs %+v; want a.service again", err, got.Systemd.FailedLogs)
+	}
+	got, err = push(http.StatusOK)
+	if err != nil || got.Systemd.FailedLogs != nil {
+		t.Fatalf("push after a delivered one: err %v, failed_logs %+v; want none", err, got.Systemd.FailedLogs)
 	}
 }
 

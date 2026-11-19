@@ -80,8 +80,10 @@ Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T5
 
-### T7 — Abschluss-Fund: Push-Test für die Fehlerzeilen vom Plan bis zum Bericht  [ ]
+### T7 — Abschluss-Fund: Push-Test für die Fehlerzeilen vom Plan bis zum Bericht  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/servicelogs_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a4315e038 2026-11-19T05:41:44+01:00
+Review: approve (.ah-out/review/kern-monitoring-48/T7.verdict.json)
 Änderung: Fund `wichtig` der Abschlussprüfung: ein Test über `Push`: der Plan trägt `service_logs`, der erste
 Bericht (verloren, 502) trägt `systemd.failed_logs`, der nächste (200) trägt sie erneut, der danach nicht mehr.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
