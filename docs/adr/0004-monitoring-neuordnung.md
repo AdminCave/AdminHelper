@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0004 — Monitoring-Neuordnung: Objekt, Regel, Ausnahme, Problem, Abdeckung
 
-- **Status:** **vorgeschlagen** — Stand 2026-11-18. Offen sind Kevins Entscheidungen (§14) und die Abnahme der
-  Mockups; erst danach baut P1 (R-1559).
+- **Status:** **vorgeschlagen** — Stand 2026-11-18. Kevins Entscheidungen 1–11 stehen in §14; offen ist die
+  Abnahme der Mockups (Frage 12), erst danach baut P1 (R-1559).
 - **Betrifft:** `apps/monitoring` (Checker, Regeln, Zustand, Alerter), `apps/server` (Benachrichtigungs-Hub),
   `apps/desktop` (Monitoring-Ansicht), `apps/agent` (Datenlücken, §11), Doku.
 - **Basis:** Spec [`docs/features/arch-monitoring-neu-p0.md`](../features/arch-monitoring-neu-p0.md) (R-1558 mit
@@ -234,7 +234,8 @@ kein Feld eines anderen Checks lesen kann (`apps/monitoring/app/catalog/modules/
 `when` auf dieses Feld. Die Schublade nennt die ruhende Regel mit ihrer Bedingung. Abhängigkeiten,
 die nur eine Installation kennt, drückt der Admin als Ausnahme mit Bedingung aus; sie steht in der Liste
 „Ausgeblendet“ mit Grund, wer und wann. Die Spec empfahl zuerst nur die Ausnahme-Form; der Prototyp zeigt, dass `when`
-das heutige `unless` verallgemeinert und deshalb im Katalog kaum Neues braucht.
+das heutige `unless` verallgemeinert und deshalb im Katalog kaum Neues braucht. Kevin hat am 2026-11-18 so
+entschieden (§14, Frage 11).
 
 ### 6.5 Wertgebundene Ausnahme
 
@@ -490,24 +491,31 @@ Hosts.
 
 ## 14. Entscheidungen
 
-Offen, je mit Empfehlung; die Mockups zeigen die empfohlene Variante. Kevins Antworten folgen hier wörtlich mit Datum.
+Die Fragen 1–11 sind entschieden: Kevin hat sie am 2026-11-18 per Rückfrage in der Session beantwortet, jede nach
+der Empfehlung. Je Frage stehen die Empfehlung und Kevins Antwort wörtlich (die gewählte Option); die Mockups zeigen
+die gewählte Variante. Frage 12 folgt mit der Abnahme.
 
 1. **Wo lebt das Problem?** Lebenszyklus im Monitoring; Bestätigen, Notiz und Routen im Hub; Schlüssel 1:1.
+   Kevin 2026-11-18: „Monitoring + Hub (Empfohlen)“.
 2. **Ein Ausnahme-Modell** ersetzt `enabled` als Nutzerschalter, Ignorierlisten, Wartungsfenster und Mutes, mit
-   Migration (§10). Empfehlung: ja.
+   Migration (§10). Empfehlung: ja. Kevin 2026-11-18: „Ja, mit Migration (Empfohlen)“.
 3. **Alarmregeln werden Routen im Hub**, mit Diff-Bericht, `/alerts`-Fassade und Kanal „altes Webhook-Format“.
-   Empfehlung: ja.
-4. **Fund-Politik je Profil:** vorschlagen (Standard) oder still übernehmen. Empfehlung: ja.
+   Empfehlung: ja. Kevin 2026-11-18: „Ja, Routen im Hub (Empfohlen)“.
+4. **Fund-Politik je Profil:** vorschlagen (Standard) oder still übernehmen. Empfehlung: ja. Kevin 2026-11-18:
+   „Je Profil wählbar (Empfohlen)“.
 5. **Standard-Schwellen** CPU/RAM/Disk: die Vorlagen-Werte (CPU 90/95, RAM 90/98, Disk 80/90), weil sie heute auf den
-   Servern aktiv sind; Checker, Schema und Doku ziehen nach.
+   Servern aktiv sind; Checker, Schema und Doku ziehen nach. Kevin 2026-11-18: „Vorlagen-Werte (Empfohlen)“.
 6. **Zertifikatsfristen** mit einer Bewertung für alle Quellen: relativ zur Laufzeit (25 %/10 %) mit absoluter
-   Untergrenze.
+   Untergrenze. Kevin 2026-11-18: „Relativ + Untergrenze (Empfohlen)“.
 7. **Unterobjekte mit Namen** (einzelne Datenbanken, Backup-Clients, Zertifikat je vhost) gegen „kein Name verlässt
-   den Agent“: Entscheidung je Familie.
+   den Agent“: Entscheidung je Familie. Kevin 2026-11-18: „Je Familie entscheiden (Empfohlen)“.
 8. **SMART weckt schlafende Platten nicht** (`-n standby`), Anzeige „schläft, letzter Stand von …“. Empfehlung: ja.
-9. **Ende einer Ausnahme meldet nach.** Empfehlung: ja.
+   Kevin 2026-11-18: „Ja, nicht wecken (Empfohlen)“.
+9. **Ende einer Ausnahme meldet nach.** Empfehlung: ja. Kevin 2026-11-18: „Ja, nachmelden (Empfohlen)“.
 10. **Cluster-Geltung:** bis der Report die Cluster-ID liefert, gilt ein Tag als Ersatz. Empfehlung: ja.
-11. **R-1515:** beide Formen der Bedingung (§6.4), R-1515 selbst als `when` im Katalog-Modul.
+    Kevin 2026-11-18: „Ja, Tag als Ersatz (Empfohlen)“.
+11. **R-1515:** beide Formen der Bedingung (§6.4), R-1515 selbst als `when` im Katalog-Modul `nextcloud-aio`.
+    Kevin 2026-11-18: „Beide, R-1515 als when (Empfohlen)“.
 12. **Abnahme der Screens** (Lage, Server, Objekte, Querschnitte, Abdeckung, Ausnahme-Dialog, Schublade, jede
     Objektart).
 

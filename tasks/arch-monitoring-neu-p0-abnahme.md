@@ -66,8 +66,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test
 Doku: keine (Mockup nur im Vite-Dev-Server; die Entscheidung hält T7 im ADR fest)
 Abhängt von: T5
 
-### T6 — ADR 0004 §14: Kevins Antworten 1–11 (R-1558, R-1515)  [ ]
+### T6 — ADR 0004 §14: Kevins Antworten 1–11 (R-1558, R-1515)  [x]
 Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @96b28d3dc 2026-11-19T07:56:39+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Kevins Antworten auf die Fragen 1–11 wörtlich mit Datum (2026-11-18, per Ask: alle nach Empfehlung; Frage 11 mit R-1515 als `when` im Katalog-Modul `nextcloud-aio`) unter §14; aus „Offen, je mit Empfehlung“ wird „Entschieden“. Übernommen aus `arch-monitoring-neu-p0` T12.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/adr/0004-monitoring-neuordnung.md
