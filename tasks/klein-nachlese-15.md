@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-15 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-15 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-15 · Review: pro Task
 Spec: docs/features/klein-nachlese-15.md (Roadmap R-1608, R-1620, R-1621, R-1623, R-1624, R-1627, R-1632, R-1635, R-1652)
 Heavy: none — Doku, Mockup-UI, Monitoring-Unit-Tests, Agent-Unit-Tests, Ledger-Köpfe
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,8 +21,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 Task-Review: am Ende
 
-### T2 — R-1608/R-1627: Mockup monitoring-neu (Grund-Satz, Auswahlmarke, Lagekarte, Filter)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/exceptions.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/ServerNav.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/Lagekarte.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/AllServers.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/sorting.test.ts
+### T2 — R-1608/R-1627: Mockup monitoring-neu (Grund-Satz, Auswahlmarke, Lagekarte, Filter)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/exceptions.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/ServerNav.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/Lagekarte.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/AllServers.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/sorting.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/exceptions.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6228ae7b0 2026-11-19T22:20:51+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T2.verdict.json)
 Beweis: reviewer branch arch-monitoring-neu-p0 2026-11-18 (exceptions.ts withoutRule) und arch-monitoring-neu-p0-abnahme 2026-11-19 (ServerNav :70, Lagekarte :74/:76, AllServers :257)
 Semantik: keine Stelle in docs/ — Mockup (Spec docs/features/arch-monitoring-neu-p0-abnahme.md)
 Änderung: (1) `withoutRule`: der Grund-Satz nennt nie die ausgenommene Regel, wenn eine andere der Stufe feuert. (2) Auswahlmarke der Serverliste folgt einer neuen Reihenfolge (Effekt hängt an `order`/der Liste). (3) Lagekarte zählt mit `needsLook` statt eigener Bedingung. (4) „Filter aufheben“ setzt `more` zurück. Je Punkt erst ein roter Test.

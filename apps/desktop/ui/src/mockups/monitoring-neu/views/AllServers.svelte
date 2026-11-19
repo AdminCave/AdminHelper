@@ -254,7 +254,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#if filter}
       <p class="filter-note">
         <span>Nur <strong>{STATUS_LABEL[filter]}</strong></span>
-        <button type="button" class="link" onclick={() => (filter = '')}>Filter aufheben</button>
+        <button type="button" class="link" onclick={() => toggle(filter as Status)}>
+          Filter aufheben
+        </button>
       </p>
     {/if}
     <span class="spacer"></span>
