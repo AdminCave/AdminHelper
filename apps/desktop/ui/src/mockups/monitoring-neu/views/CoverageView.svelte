@@ -50,83 +50,87 @@ SPDX-License-Identifier: GPL-3.0-or-later
       Ein Profil bindet Check-Typen an Tags. „automatisch“ übernimmt neue Funde still, „vorschlagen“
       legt sie hier zur Entscheidung vor.
     </p>
-    <table class="tbl">
-      <thead>
-        <tr><th>Profil</th><th>Tags</th><th>Check-Typen</th><th>Neue Funde</th></tr>
-      </thead>
-      <tbody>
-        {#each profiles as p (p.name)}
-          <tr data-profile={p.name}>
-            <td>{p.name}</td>
-            <td>{p.tags.join(', ')}</td>
-            <td class="mono">{p.checkTypes.join(', ')}</td>
-            <td>
-              <Segmented
-                size="sm"
-                label="Neue Funde für {p.name}"
-                options={[
-                  { value: 'vorschlagen', label: 'vorschlagen' },
-                  { value: 'automatisch', label: 'automatisch' },
-                ]}
-                value={p.policy}
-                onChange={(v) => onPolicy(p.name, v as Policy)}
-              />
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <div class="cv-wrap">
+      <table class="tbl">
+        <thead>
+          <tr><th>Profil</th><th>Tags</th><th>Check-Typen</th><th>Neue Funde</th></tr>
+        </thead>
+        <tbody>
+          {#each profiles as p (p.name)}
+            <tr data-profile={p.name}>
+              <td>{p.name}</td>
+              <td>{p.tags.join(', ')}</td>
+              <td class="mono">{p.checkTypes.join(', ')}</td>
+              <td>
+                <Segmented
+                  size="sm"
+                  label="Neue Funde für {p.name}"
+                  options={[
+                    { value: 'vorschlagen', label: 'vorschlagen' },
+                    { value: 'automatisch', label: 'automatisch' },
+                  ]}
+                  value={p.policy}
+                  onChange={(v) => onPolicy(p.name, v as Policy)}
+                />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section aria-label="Server">
     <h2>Server <span class="count">{open} {open === 1 ? 'Fund wartet' : 'Funde warten'}</span></h2>
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th>Server</th>
-          <th>Tags · Profile</th>
-          <th>überwacht</th>
-          <th>nicht erhoben</th>
-          <th>ausgeblendet</th>
-          <th>Neue Funde</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each rows as r (r.server)}
-          <tr data-server={r.server}>
-            <td>{r.server}</td>
-            <td class="muted">
-              {r.tags.join(', ') || 'keine Tags'} · {r.profiles.join(', ') || 'kein Profil'}
-            </td>
-            <td class="num">{r.watched}</td>
-            <td class="num">{r.notCollected}</td>
-            <td class="num">{r.hidden}</td>
-            <td>
-              {#each r.open as f (f.id)}
-                <div class="finding" data-finding={f.id}>
-                  <span
-                    >{f.what}
-                    <span class="muted">({f.checkType}, {sinceText(f.foundAt, now)})</span></span
-                  >
-                  <Button size="sm" variant="secondary" onclick={() => onDecide(f.id, 'taken')}>
-                    Übernehmen
-                  </Button>
-                  <Button size="sm" variant="ghost" onclick={() => onDecide(f.id, 'declined')}>
-                    Ablehnen
-                  </Button>
-                </div>
-              {/each}
-              {#each r.auto as f (f.id)}
-                <div class="finding" data-finding={f.id}>
-                  <Badge tone="info">automatisch übernommen</Badge>
-                  <span>{f.what}</span>
-                </div>
-              {/each}
-            </td>
+    <div class="cv-wrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Server</th>
+            <th>Tags · Profile</th>
+            <th>überwacht</th>
+            <th>nicht erhoben</th>
+            <th>ausgeblendet</th>
+            <th>Neue Funde</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each rows as r (r.server)}
+            <tr data-server={r.server}>
+              <td>{r.server}</td>
+              <td class="muted">
+                {r.tags.join(', ') || 'keine Tags'} · {r.profiles.join(', ') || 'kein Profil'}
+              </td>
+              <td class="num">{r.watched}</td>
+              <td class="num">{r.notCollected}</td>
+              <td class="num">{r.hidden}</td>
+              <td>
+                {#each r.open as f (f.id)}
+                  <div class="finding" data-finding={f.id}>
+                    <span
+                      >{f.what}
+                      <span class="muted">({f.checkType}, {sinceText(f.foundAt, now)})</span></span
+                    >
+                    <Button size="sm" variant="secondary" onclick={() => onDecide(f.id, 'taken')}>
+                      Übernehmen
+                    </Button>
+                    <Button size="sm" variant="ghost" onclick={() => onDecide(f.id, 'declined')}>
+                      Ablehnen
+                    </Button>
+                  </div>
+                {/each}
+                {#each r.auto as f (f.id)}
+                  <div class="finding" data-finding={f.id}>
+                    <Badge tone="info">automatisch übernommen</Badge>
+                    <span>{f.what}</span>
+                  </div>
+                {/each}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   </section>
 
   {#if taken.length || declined.length}
@@ -199,5 +203,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     margin: 0;
     padding-left: var(--space-5);
     font-size: var(--text-sm);
+  }
+  .cv-wrap {
+    overflow-x: auto;
   }
 </style>

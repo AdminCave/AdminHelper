@@ -7,7 +7,18 @@
 // here only pick values the objects already carry, they never rate anything.
 
 import type { Metric, MonObject, Status } from '../model';
-import { formatValue, isHidden, metricText, sortObjects, statusRank } from '../grammar';
+import { byPlace, formatValue, isHidden, metricText, sortObjects, statusRank } from '../grammar';
+import {
+  BY_STATE,
+  type Dir,
+  type Sort,
+  type SortValue,
+  forecastValue,
+  percentValue,
+  sameSort,
+  sizeValue,
+  sortBy,
+} from './sorting';
 
 export interface Cell {
   text: string;
@@ -16,11 +27,15 @@ export interface Cell {
   mono?: boolean;
   /** The agent does not deliver this value yet. */
   newData?: boolean;
+  /** What the column sorts by, where the text alone would sort wrong (a number, a size). */
+  sort?: SortValue;
 }
 
 export interface Column {
   key: string;
   title: string;
+  /** The direction of the first click: numbers where more is worse start with the largest. */
+  first?: Dir;
 }
 
 export interface CrossRow {
@@ -36,6 +51,8 @@ export interface CrossView {
   hint: string;
   columns: Column[];
   rows: (all: readonly MonObject[]) => CrossRow[];
+  /** The order `rows` delivers, when it is not worst first. */
+  defaultSort?: Sort;
 }
 
 export const NONE: Cell = { text: '–' };
@@ -57,6 +74,7 @@ function mcell(o: MonObject, key: string, withThreshold = false): Cell {
     sub: m.note,
     status: m.status,
     newData: m.newData,
+    sort: typeof m.value === 'number' ? m.value : sizeValue(m.value),
   };
 }
 
@@ -82,6 +100,28 @@ function sortRows(rows: CrossRow[]): CrossRow[] {
   return [...rows].sort((a, b) => order.get(a.object.key)! - order.get(b.object.key)!);
 }
 
+/** The value a column sorts by: the cell's own sort value, else its text. */
+export function cellValue(c: Cell): SortValue {
+  return 'sort' in c ? c.sort : c.text;
+}
+
+export function defaultSort(v: CrossView): Sort {
+  return v.defaultSort ?? BY_STATE;
+}
+
+/** The rows of a view in the chosen order; the view's default keeps the order `rows` delivers.
+ * The Zustand column sorts by status, every other one by its cells. */
+export function orderRows(v: CrossView, rows: CrossRow[], sort: Sort): CrossRow[] {
+  if (sameSort(sort, defaultSort(v))) return rows;
+  const i = v.columns.findIndex((c) => c.key === sort.col);
+  return sortBy(
+    rows,
+    (r) => (i < 0 ? statusRank(r.object.status) : cellValue(r.cells[i])),
+    sort.dir,
+    { hidden: (r) => isHidden(r.object), tie: (a, b) => byPlace(a.object, b.object) },
+  );
+}
+
 function rowsOf(
   all: readonly MonObject[],
   pick: (o: MonObject) => boolean,
@@ -101,11 +141,11 @@ const disks: CrossView = {
     { key: 'model', title: 'Modell' },
     { key: 'serial', title: 'Seriennummer' },
     { key: 'class', title: 'Klasse' },
-    { key: 'capacity', title: 'Kapazität' },
-    { key: 'temp', title: 'Temperatur' },
-    { key: 'wear', title: 'Verschleiß' },
-    { key: 'defects', title: 'Defektzähler' },
-    { key: 'age', title: 'Betriebsalter' },
+    { key: 'capacity', title: 'Kapazität', first: 'desc' },
+    { key: 'temp', title: 'Temperatur', first: 'desc' },
+    { key: 'wear', title: 'Verschleiß', first: 'desc' },
+    { key: 'defects', title: 'Defektzähler', first: 'desc' },
+    { key: 'age', title: 'Betriebsalter', first: 'desc' },
   ],
   rows: (all) =>
     rowsOf(
@@ -124,7 +164,9 @@ const disks: CrossView = {
           acell(o, 'Modell'),
           acell(o, 'Seriennummer', true),
           acell(o, 'Klasse'),
-          acell(o, 'Kapazität'),
+          attr(o, 'Kapazität')
+            ? { ...acell(o, 'Kapazität'), sort: sizeValue(attr(o, 'Kapazität')) }
+            : NONE,
           mcell(o, 'temp', true),
           metric(o, 'wear')
             ? {
@@ -137,12 +179,14 @@ const disks: CrossView = {
                 text: defects.map((m) => `${m.label} ${formatValue(m.value, m.unit)}`).join(' · '),
                 sub: defects.find((m) => m.note)?.note,
                 status: worst(defects.map((m) => m.status)),
+                sort: defects.reduce((n, m) => n + (typeof m.value === 'number' ? m.value : 0), 0),
               }
             : NONE,
           hours
             ? {
                 text: hours.note ?? formatValue(hours.value, hours.unit),
                 sub: formatValue(hours.value, hours.unit),
+                sort: hours.value,
               }
             : NONE,
         ];
@@ -163,7 +207,10 @@ function backupCells(o: MonObject): Cell[] {
     return [
       { text: `${attr(o, 'Cluster')} / ${attr(o, 'Node')}` },
       { text: o.name, sub: o.identity[0] },
-      mcell(o, 'age', true),
+      // Never backed up is the oldest backup there is.
+      metric(o, 'age')?.value === 'nie'
+        ? { ...mcell(o, 'age', true), sort: Infinity }
+        : mcell(o, 'age', true),
       mcell(o, 'size'),
       { text: storage ? formatValue(storage.value) : '–' },
       mcell(o, 'job'),
@@ -209,8 +256,8 @@ const backups: CrossView = {
   columns: [
     { key: 'place', title: 'Cluster / Node' },
     { key: 'what', title: 'Gast bzw. Job' },
-    { key: 'last', title: 'Letztes Backup' },
-    { key: 'size', title: 'Größe + Trend' },
+    { key: 'last', title: 'Letztes Backup', first: 'desc' },
+    { key: 'size', title: 'Größe + Trend', first: 'desc' },
     { key: 'storage', title: 'Ablage' },
     { key: 'schedule', title: 'Zeitplan' },
     { key: 'verify', title: 'Verifizierung' },
@@ -231,11 +278,11 @@ const pools: CrossView = {
   columns: [
     { key: 'server', title: 'Server' },
     { key: 'pool', title: 'Pool' },
-    { key: 'used', title: 'Belegung' },
-    { key: 'scrub', title: 'Letzter Scrub' },
-    { key: 'errors', title: 'Gerätefehler' },
+    { key: 'used', title: 'Belegung', first: 'desc' },
+    { key: 'scrub', title: 'Letzter Scrub', first: 'desc' },
+    { key: 'errors', title: 'Gerätefehler', first: 'desc' },
     { key: 'layout', title: 'Layout' },
-    { key: 'frag', title: 'Fragmentierung' },
+    { key: 'frag', title: 'Fragmentierung', first: 'desc' },
   ],
   rows: (all) =>
     rowsOf(
@@ -248,7 +295,7 @@ const pools: CrossView = {
         mcell(o, 'scrub', true),
         mcell(o, 'errors'),
         acell(o, 'Layout'),
-        acell(o, 'Fragmentierung'),
+        { ...acell(o, 'Fragmentierung'), sort: percentValue(attr(o, 'Fragmentierung')) },
       ],
     ),
 };
@@ -262,7 +309,7 @@ const containers: CrossView = {
     { key: 'project', title: 'Projekt / Dienst' },
     { key: 'image', title: 'Image' },
     { key: 'health', title: 'Health' },
-    { key: 'restarts', title: 'Neustarts 24 h' },
+    { key: 'restarts', title: 'Neustarts 24 h', first: 'desc' },
     { key: 'ports', title: 'Ports' },
   ],
   rows: (all) =>
@@ -317,10 +364,10 @@ function updateRow(server: string, objects: MonObject[], host?: MonObject): Cros
   const security = updates ? metric(updates, 'security') : undefined;
   const pending = updates ? metric(updates, 'pending') : undefined;
   let rebootCell: Cell = NONE;
-  if (reboot?.status === 'not-collected') rebootCell = { text: 'nicht erhoben' };
+  if (reboot?.status === 'not-collected') rebootCell = { text: 'nicht erhoben', sort: undefined };
   else if (reboot && metric(reboot, 'since'))
     rebootCell = { ...mcell(reboot, 'since'), text: `seit ${mcell(reboot, 'since').text}` };
-  else if (reboot) rebootCell = { text: 'nicht nötig' };
+  else if (reboot) rebootCell = { text: 'nicht nötig', sort: 0 };
   const uptimeOf = [reboot, host].find((o) => o && metric(o, 'uptime'));
   return {
     object: sortObjects(objects)[0],
@@ -331,6 +378,7 @@ function updateRow(server: string, objects: MonObject[], host?: MonObject): Cros
             text: formatValue(security.value, security.unit),
             sub: pending ? `${formatValue(pending.value)} ausstehend gesamt` : security.label,
             status: security.status,
+            sort: security.value,
           }
         : NONE,
       updates ? mcell(updates, 'lists') : NONE,
@@ -346,10 +394,10 @@ const updates: CrossView = {
   hint: 'Eine Zeile je Server; Quellen Agent, windows-host, proxmox-ve und pkg audit',
   columns: [
     { key: 'server', title: 'Server' },
-    { key: 'security', title: 'Sicherheitsupdates' },
-    { key: 'lists', title: 'Paketlisten-Alter' },
-    { key: 'reboot', title: 'Neustart nötig seit' },
-    { key: 'uptime', title: 'Uptime' },
+    { key: 'security', title: 'Sicherheitsupdates', first: 'desc' },
+    { key: 'lists', title: 'Paketlisten-Alter', first: 'desc' },
+    { key: 'reboot', title: 'Neustart nötig seit', first: 'desc' },
+    { key: 'uptime', title: 'Uptime', first: 'desc' },
   ],
   rows: (all) => {
     const byServer = new Map<string, MonObject[]>();
@@ -375,9 +423,10 @@ const mounts: CrossView = {
   columns: [
     { key: 'server', title: 'Server' },
     { key: 'path', title: 'Pfad' },
-    { key: 'used', title: 'Belegt / frei' },
+    { key: 'used', title: 'Belegt / frei', first: 'desc' },
     { key: 'forecast', title: 'Prognose' },
   ],
+  defaultSort: { col: 'used', dir: 'desc' },
   rows: (all) => {
     const list = all.filter((o) => o.kind === 'mount');
     const shown = list.filter((o) => !isHidden(o)).sort((a, b) => usedPct(b) - usedPct(a));
@@ -391,7 +440,7 @@ const mounts: CrossView = {
           { text: o.server },
           { text: o.name, mono: true, sub: o.identity[0] },
           { ...used, sub: [freeText, used.sub].filter(Boolean).join(' · ') || undefined },
-          mcell(o, 'forecast'),
+          { ...mcell(o, 'forecast'), sort: forecastValue(metric(o, 'forecast')?.value as string) },
         ],
       };
     });
@@ -405,7 +454,7 @@ const services: CrossView = {
   columns: [
     { key: 'server', title: 'Server' },
     { key: 'service', title: 'Dienst' },
-    { key: 'restarts', title: 'Neustarts' },
+    { key: 'restarts', title: 'Neustarts', first: 'desc' },
   ],
   rows: (all) =>
     rowsOf(

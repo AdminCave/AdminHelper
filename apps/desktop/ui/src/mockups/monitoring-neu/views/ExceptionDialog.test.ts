@@ -8,6 +8,24 @@
 // mockup applies every change to the objects again.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// jsdom has no matchMedia, which svelte/motion (object-kind groups) reads at import, and no
+// scrollTo, which the mockup calls on every change of tab.
+vi.hoisted(() => {
+  Element.prototype.scrollTo = () => {};
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+});
+
 import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import MockupApp from '../MockupApp.svelte';
 import type { MonObject } from '../model';
@@ -329,7 +347,7 @@ describe('mockup: every change is applied again', () => {
     const tr = () => container.querySelector(`main tr[data-key="${key}"]`) as HTMLElement;
     const note = () => container.querySelector('aside.drawer .note')?.textContent ?? '';
     // e6 is bound to 5 reallocated sectors, the disk reports 8: ended, the disk reports again.
-    expect(tr().classList.contains('hidden')).toBe(false);
+    expect(tr().classList.contains('is-hidden')).toBe(false);
     await fireEvent.click(tr().querySelector('button.open') as HTMLElement);
     expect(note()).toMatch(/^erloschen \(Umgelagert jetzt 8, gebunden an 5\)/);
     const drawer = within(container.querySelector('aside.drawer') as HTMLElement);
@@ -346,14 +364,14 @@ describe('mockup: every change is applied again', () => {
     expect(note()).toMatch(
       /^prüfen, nicht bewerten · .* · von admin · dauerhaft · gilt nur bei Umgelagert 8$/,
     );
-    expect(tr().classList.contains('hidden')).toBe(true);
+    expect(tr().classList.contains('is-hidden')).toBe(true);
 
     await fireEvent.click(drawer.getByRole('button', { name: 'Ausnahme ändern …' }));
     await fireEvent.click(getByRole('button', { name: 'Aufheben' }));
     expect(queryAllByRole('dialog').length).toBe(0);
     expect(note()).toBe('');
     expect(drawer.getByRole('button', { name: 'Ausnahme anlegen …' })).toBeTruthy();
-    expect(tr().classList.contains('hidden')).toBe(false);
+    expect(tr().classList.contains('is-hidden')).toBe(false);
   });
 
   it('a server-wide exception stays; the drawer adds a narrower one for this object alone', async () => {

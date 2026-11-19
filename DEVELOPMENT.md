@@ -975,7 +975,7 @@ Diese Binary wird im CI/CD durch die echte frpc-Binary ersetzt.
 
 ### Mockup der Monitoring-Neuordnung (Desktop-UI)
 
-Zur vorgeschlagenen Neuordnung des Monitorings ([ADR 0004](docs/adr/0004-monitoring-neuordnung.md)) gibt es ein
+Zur angenommenen Neuordnung des Monitorings ([ADR 0004](docs/adr/0004-monitoring-neuordnung.md)) gibt es ein
 klickbares Mockup mit fiktiven Daten. Es braucht weder Tauri noch Server oder Monitoring-Dienst, der Vite-Dev-Server
 reicht:
 

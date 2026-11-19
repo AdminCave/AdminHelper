@@ -5,23 +5,80 @@
 // arch-monitoring-neu-p0 T5 (R-1558): Lage, Server, Objekte and the cross views all derive from
 // the one object list. The Lage lists only open problems, the filter never finds a hidden object
 // by status, every cross view has its columns filled, and a click opens the same drawer.
+// arch-monitoring-neu-p0-abnahme T5: the Lage shows on "Alle Server", the start of the server
+// tab; the frame keeps the server list on the left, a drawer on a phone, starts every change of
+// tab or server at the top and switches between the normal and the large fleet.
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// jsdom has no matchMedia, which svelte/motion and the phone layout read; `phone.on` makes the
+// query for at most 760 px match. It has no Web Animations either, which the cards and the scrim
+// fade with (every animation ends in a microtask here), and no scrolling: `scrolled` records
+// each element told to scroll.
+const { phone, scrolled } = vi.hoisted(() => {
+  const phone = { on: false };
+  const scrolled: Element[] = [];
+  window.matchMedia = (query: string) =>
+    ({
+      get matches() {
+        return phone.on && query.includes('max-width: 760px');
+      },
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+  Element.prototype.scrollTo = function (this: Element) {
+    scrolled.push(this);
+  } as Element['scrollTo'];
+  Element.prototype.scrollIntoView = () => {};
+  Element.prototype.getAnimations = () => [];
+  Element.prototype.animate = function () {
+    let cancelled = false;
+    let done = () => {};
+    return {
+      playState: 'finished',
+      effect: null,
+      cancel: () => {
+        cancelled = true;
+      },
+      get onfinish() {
+        return done;
+      },
+      set onfinish(fn: () => void) {
+        done = fn;
+        queueMicrotask(() => {
+          if (!cancelled && done === fn) fn();
+        });
+      },
+    } as unknown as Animation;
+  };
+  return { phone, scrolled };
+});
+
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import MockupApp from '../MockupApp.svelte';
 import ObjectDrawer from '../ObjectDrawer.svelte';
 import type { MonObject, Status } from '../model';
 import { isHidden, statusRank } from '../grammar';
 import { ACKS, ALL_OBJECTS } from '../fixtures';
 import { NOW } from '../fixtures/time';
+import { SCALE_OBJECTS } from '../fixtures/scale';
+import AllServers from './AllServers.svelte';
 import CrossView from './CrossView.svelte';
-import Lage from './Lage.svelte';
 import ObjectsView from './ObjectsView.svelte';
 import ServerView from './ServerView.svelte';
 import { CROSS_VIEWS, NONE } from './cross';
 import { NO_FILTER, filterObjects, isProblem, lageOf, nestParts, serversOf } from './lists';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  phone.on = false;
+  document.body.innerHTML = '';
+});
 
 const PROBLEM: Status[] = ['critical', 'warning', 'unknown'];
 const byKey = new Map(ALL_OBJECTS.map((o) => [o.key, o]));
@@ -45,10 +102,25 @@ function rowKeys(root: Element, selector: string): string[] {
   return [...root.querySelectorAll(selector)].map((e) => e.getAttribute('data-key') ?? '');
 }
 
+/** "Alle Server" with metrics and every server shown: each problem as a row under its server. */
+async function lageInFull(objects: MonObject[]): Promise<HTMLElement> {
+  const { container, getByRole } = render(AllServers, {
+    objects,
+    now: NOW,
+    onOpen: () => {},
+    onServer: () => {},
+  });
+  await fireEvent.click(getByRole('radio', { name: 'Mit Kennzahlen' }));
+  // By class: a role query for a named button weighs every button of the board (over a second).
+  const more = () => container.querySelector<HTMLButtonElement>('button.more-btn');
+  for (let b = more(); b; b = more()) await fireEvent.click(b);
+  return container;
+}
+
 describe('Lage', () => {
-  it('lists only open problems, never an ok, info or stale object as a row', () => {
-    const { container } = render(Lage, { objects: ALL_OBJECTS, now: NOW, onOpen: () => {} });
-    const keys = rowKeys(container, 'button.row[data-key]');
+  it('lists only open problems, never an ok, info or stale object as a row', async () => {
+    const container = await lageInFull(ALL_OBJECTS);
+    const keys = rowKeys(container, '.wide-card button.row[data-key]');
     expect(keys.length).toBeGreaterThan(0);
     for (const k of keys) {
       const o = byKey.get(k);
@@ -73,7 +145,7 @@ describe('Lage', () => {
     }
   });
 
-  it('keeps stale values without a host problem in their own section', () => {
+  it('keeps stale values without a host problem in their own section', async () => {
     const objects = [
       obj('srv-01/host', { kind: 'host', name: 'srv-01' }),
       obj('srv-01/cpu', { kind: 'cpu', name: 'CPU', status: 'stale' }),
@@ -81,8 +153,10 @@ describe('Lage', () => {
     const lage = lageOf(objects);
     expect(lage.problems).toEqual([]);
     expect(lage.staleLeft).toEqual([{ server: 'srv-01', objects: [objects[1]] }]);
-    const { container } = render(Lage, { objects, now: NOW, onOpen: () => {} });
-    expect(container.querySelector('[data-stale-key="srv-01/cpu"]')).not.toBeNull();
+    const container = await lageInFull(objects);
+    expect(
+      container.querySelector('[data-stale-server="srv-01"] [data-stale-key="srv-01/cpu"]'),
+    ).not.toBeNull();
     expect(container.querySelector('button.row')).toBeNull();
   });
 
@@ -108,7 +182,7 @@ describe('Lage', () => {
     expect(lage.servers).toBe(serversOf(ALL_OBJECTS).length);
   });
 
-  it('shows who acknowledged a problem; the problem stays open', () => {
+  it('shows who acknowledged a problem; the problem stays open', async () => {
     expect(Object.keys(ACKS).length).toBeGreaterThan(0);
     for (const key of Object.keys(ACKS)) {
       const o = byKey.get(key);
@@ -116,7 +190,7 @@ describe('Lage', () => {
       expect(o?.ack).toEqual(ACKS[key]);
       expect(isProblem(o as MonObject), key).toBe(true);
     }
-    const { container } = render(Lage, { objects: ALL_OBJECTS, now: NOW, onOpen: () => {} });
+    const container = await lageInFull(ALL_OBJECTS);
     for (const key of Object.keys(ACKS)) {
       const line = container.querySelector(`[data-ack="${key}"]`);
       expect(line?.textContent, key).toContain(`Bestätigt von ${ACKS[key].by}`);
@@ -217,20 +291,166 @@ describe('nested parts', () => {
 
 describe('server view', () => {
   it('shows identity, problems and a coverage line that adds up', async () => {
-    const { container, getByTestId } = render(ServerView, {
+    const { container, getByTestId, getByRole } = render(ServerView, {
       objects: ALL_OBJECTS,
       now: NOW,
+      server: 'nas-01',
       onOpen: () => {},
     });
-    const select = container.querySelector('select') as HTMLSelectElement;
-    select.value = 'nas-01';
-    await fireEvent.change(select);
-    expect(container.querySelector('[data-server="nas-01"]')).not.toBeNull();
+    expect(container.querySelector('header[data-server="nas-01"] h2')?.textContent).toBe('nas-01');
     const own = ALL_OBJECTS.filter((o) => o.server === 'nas-01');
     const nums = (getByTestId('coverage').textContent ?? '').match(/\d+/g)?.map(Number) ?? [];
     expect(nums.reduce((a, b) => a + b, 0)).toBe(own.length);
-    const listed = rowKeys(container, 'section[data-kind] button.row[data-key]');
+    expect(
+      rowKeys(container, 'section[aria-label="Probleme"] button.row[data-key]').sort(),
+    ).toEqual(
+      own
+        .filter(isProblem)
+        .map((o) => o.key)
+        .sort(),
+    );
+    // The object-kind groups start closed; opened, every object of the server is a row.
+    expect(container.querySelector('details[data-kind] button.row')).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'Alle aufklappen' }));
+    const listed = rowKeys(container, 'details[data-kind] button.row[data-key]');
     expect(listed.sort()).toEqual(own.map((o) => o.key).sort());
+  });
+});
+
+// Drawing the large fleet takes jsdom up to about 3.5 s here; 5 s leaves a slower runner too little.
+describe('frame', { timeout: 20_000 }, () => {
+  const TABS = ['Server', 'Objekte', 'Querschnitte', 'Objektarten', 'Ausgeblendet', 'Abdeckung'];
+
+  function app() {
+    const r = render(MockupApp);
+    const main = r.container.querySelector('main') as HTMLElement;
+    const nav = (name: string) =>
+      r.container.querySelector(`#server-nav button.item[data-server="${name}"]`) as HTMLElement;
+    const heading = () => r.container.querySelector('main h2')?.textContent ?? '';
+    return { ...r, main, nav, heading };
+  }
+
+  beforeEach(() => {
+    scrolled.length = 0;
+  });
+
+  it('starts on "Alle Server" beside the server list; the tab "Lage" is gone', () => {
+    const { getAllByRole, heading, nav } = app();
+    expect(getAllByRole('tab').map((t) => t.textContent?.trim())).toEqual(TABS);
+    expect(getAllByRole('tab', { selected: true }).map((t) => t.textContent?.trim())).toEqual([
+      'Server',
+    ]);
+    expect(heading()).toBe('Alle Server');
+    expect(nav('').getAttribute('aria-current')).toBe('true');
+    expect(nav('nas-01')).not.toBeNull();
+  });
+
+  it('the server list picks the server page and leads back to "Alle Server"', async () => {
+    const { container, heading, nav } = app();
+    await fireEvent.click(nav('nas-01'));
+    expect(heading()).toBe('nas-01');
+    expect(container.querySelector('main header[data-server="nas-01"]')).not.toBeNull();
+    expect(nav('nas-01').getAttribute('aria-current')).toBe('true');
+    expect(container.querySelector('.m-label')?.textContent).toBe('nas-01');
+    await fireEvent.click(nav(''));
+    expect(heading()).toBe('Alle Server');
+    expect(container.querySelector('.m-label')?.textContent).toBe('Alle Server');
+  });
+
+  it('a server card and a Lagekarte cell open the server page', async () => {
+    const { container, heading, nav } = app();
+    const card = container.querySelector('.board-card') as HTMLElement;
+    const name = card.dataset.server ?? '';
+    await fireEvent.click(card.querySelector('button.server') as HTMLElement);
+    expect(heading()).toBe(name);
+    await fireEvent.click(nav(''));
+    // A cell with several objects opens their server and the group of that kind.
+    const several = new Map<string, number>();
+    for (const o of ALL_OBJECTS) {
+      several.set(`${o.server}|${o.kind}`, (several.get(`${o.server}|${o.kind}`) ?? 0) + 1);
+    }
+    const cell = [...container.querySelectorAll<HTMLElement>('button.lk-cell')].find(
+      (c) => (several.get(`${c.dataset.server}|${c.dataset.kind}`) ?? 0) > 1,
+    ) as HTMLElement;
+    expect(cell).toBeDefined();
+    await fireEvent.click(cell);
+    expect(heading()).toBe(cell.dataset.server);
+    const group = container.querySelector(
+      `details[data-kind="${cell.dataset.kind}"]`,
+    ) as HTMLDetailsElement;
+    expect(group.open).toBe(true);
+  });
+
+  it('every change of tab or server starts at the top', async () => {
+    const { getByRole, main, nav } = app();
+    await fireEvent.click(getByRole('tab', { name: 'Objekte' }));
+    expect(scrolled).toEqual([main]);
+    await fireEvent.click(getByRole('tab', { name: 'Server' }));
+    await fireEvent.click(nav('nas-01'));
+    expect(scrolled).toEqual([main, main, main]);
+  });
+
+  it('switches to the large fleet and back, starting again at "Alle Server" at the top', async () => {
+    const big = new Set(SCALE_OBJECTS.map((o) => o.server)).size;
+    const { container, getByRole, heading, main, nav } = app();
+    await fireEvent.click(nav('nas-01'));
+    expect(scrolled).toEqual([main]);
+    await fireEvent.click(getByRole('radio', { name: `Groß · ${big} Server` }));
+    expect(scrolled).toEqual([main, main]);
+    expect(heading()).toBe('Alle Server');
+    expect(container.querySelector('[data-testid="lage-summary"]')?.textContent).toMatch(
+      new RegExp(`von ${big} Servern$`),
+    );
+    expect(container.querySelector('.m-hint')?.textContent).toMatch(new RegExp(`von ${big} mit`));
+    await fireEvent.click(getByRole('radio', { name: 'Normal' }));
+    expect(scrolled).toEqual([main, main, main]);
+    const normal = new Set(ALL_OBJECTS.map((o) => o.server)).size;
+    expect(container.querySelector('[data-testid="lage-summary"]')?.textContent).toMatch(
+      new RegExp(`von ${normal} Servern$`),
+    );
+  });
+
+  it(
+    'on a phone the server list is a drawer: the button, Escape and a pick close it',
+    { timeout: 40_000 },
+    async () => {
+      phone.on = true;
+      const { container, heading, nav } = app();
+      const slot = container.querySelector('#server-nav') as HTMLElement;
+      const toggle = container.querySelector('button.m-pick') as HTMLElement;
+      expect(toggle.getAttribute('aria-controls')).toBe('server-nav');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(slot.inert).toBe(true);
+
+      await fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(slot.inert).toBe(false);
+      expect(slot.classList.contains('open')).toBe(true);
+      await fireEvent.keyDown(window, { key: 'Escape' });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(slot.inert).toBe(true);
+
+      await fireEvent.click(toggle);
+      await fireEvent.click(
+        container.querySelector('button[aria-label="Serverliste schließen"]') as HTMLElement,
+      );
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      await waitFor(() => expect(container.querySelector('.scrim')).toBeNull(), {
+        timeout: 30_000,
+      });
+
+      await fireEvent.click(toggle);
+      await fireEvent.click(nav('nas-01'));
+      expect(heading()).toBe('nas-01');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(slot.inert).toBe(true);
+    },
+  );
+
+  it('on a wide screen the server list stays open and reachable', () => {
+    const { container } = app();
+    const slot = container.querySelector('#server-nav') as HTMLElement;
+    expect(slot.inert).toBe(false);
   });
 });
 
@@ -260,7 +480,12 @@ describe('cross views', () => {
         view: id,
         onOpen: () => {},
       });
-      const th = [...container.querySelectorAll('thead th')].map((e) => e.textContent?.trim());
+      // The title a screen reader hears: the sort arrow beside it is decoration (aria-hidden).
+      const th = [...container.querySelectorAll('thead th')].map((e) => {
+        const c = e.cloneNode(true) as Element;
+        c.querySelectorAll('[aria-hidden="true"]').forEach((x) => x.remove());
+        return c.textContent?.trim();
+      });
       expect(th).toHaveLength(TH[id]);
       expect(th[0]).toBe('Zustand');
       const rows = view.rows(ALL_OBJECTS);
@@ -310,7 +535,7 @@ describe('cross views', () => {
       view: view?.id,
       onOpen: () => {},
     });
-    const tr = container.querySelector('tbody tr.hidden');
+    const tr = container.querySelector('tbody tr.is-hidden');
     expect(tr?.textContent).toContain('Ausgeblendet');
   });
 });
@@ -325,19 +550,32 @@ describe('every view opens the same drawer', () => {
     expect(onOpen).toHaveBeenCalledWith(tr.getAttribute('data-key'));
   });
 
-  it.each(['Lage', 'Server', 'Objekte', 'Querschnitte', 'Objektarten'])(
-    '%s: a click opens the drawer of that object',
-    async (label) => {
-      const { container, getByRole } = render(MockupApp);
-      await fireEvent.click(getByRole('tab', { name: label }));
-      const target = container.querySelector(
-        'main button.row[data-key], main button.open',
-      ) as HTMLElement;
-      expect(target, label).not.toBeNull();
-      const key =
-        target.getAttribute('data-key') ?? target.closest('tr')?.getAttribute('data-key') ?? '';
-      await fireEvent.click(target);
-      expect(container.querySelector('aside.drawer')?.getAttribute('data-key')).toBe(key);
-    },
-  );
+  // [case, tab, what opens the drawer there]; "Server" is the page of one server.
+  it.each([
+    ['Alle Server', 'Server', 'main button.p-line[data-key]'],
+    ['Server', 'Server', 'main section[aria-label="Probleme"] button.row[data-key]'],
+    ['Objekte', 'Objekte', 'main tr[data-key] button.open'],
+    ['Querschnitte', 'Querschnitte', 'main tr[data-key] button.open'],
+    ['Objektarten', 'Objektarten', 'main button.row[data-key]'],
+  ])('%s: a click opens the drawer of that object', async (label, tab, selector) => {
+    const { container, getByRole } = render(MockupApp);
+    await fireEvent.click(getByRole('tab', { name: tab }));
+    if (label === 'Server') {
+      await fireEvent.click(
+        container.querySelector('#server-nav button.item[data-server="nas-01"]') as HTMLElement,
+      );
+    }
+    if (label === 'Objektarten') {
+      // Object-kind groups start closed; open the first one.
+      const group = container.querySelector('main details.group') as HTMLDetailsElement;
+      group.open = true;
+      await fireEvent(group, new Event('toggle'));
+    }
+    const target = container.querySelector(selector) as HTMLElement;
+    expect(target, label).not.toBeNull();
+    const key =
+      target.getAttribute('data-key') ?? target.closest('tr')?.getAttribute('data-key') ?? '';
+    await fireEvent.click(target);
+    expect(container.querySelector('aside.drawer')?.getAttribute('data-key')).toBe(key);
+  });
 });
