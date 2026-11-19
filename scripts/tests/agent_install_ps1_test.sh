@@ -76,6 +76,9 @@ grep -qF 'Invoke-Native $agent $provArgs $Token' "$SCRIPT" \
 # --insecure the agent would check only the system roots and fail on the internal CA.
 n=$(grep -cF '$provArgs += "--insecure"' "$SCRIPT" || true)
 [ "$n" = 1 ] && ok "no -CaFp: provision with --insecure (TOFU)" || bad "no -CaFp: --insecure missing ($n)"
+# The desktop tab shows the CA fingerprint, never the pinned server certificate's.
+n=$(grep -i 'Write-Warn' "$SCRIPT" | grep -ciE 'fingerprint.*(tab|desktop)' || true)
+[ "$n" = 0 ] && ok "TOFU warning does not send the admin to the desktop tab" || bad "TOFU warning compares with the desktop tab ($n)"
 grep -qF -- "-notmatch '^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\$') { throw" "$SCRIPT" \
     && ok "-Version limited to X.Y.Z before it enters the URL" || bad "-Version not validated"
 grep -qF 'Read-Host -AsSecureString' "$SCRIPT" \

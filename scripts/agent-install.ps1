@@ -158,7 +158,9 @@ if ($CaFp) {
     # the agent pins the certificate the server presents.
     $provArgs += "--insecure"
     Write-Warn "no -CaFp given - the agent pins the server certificate on first use;"
-    Write-Warn "compare the fingerprint the agent prints against the desktop's provisioning tab!"
+    # The desktop shows the CA fingerprint, which never equals the pinned server certificate.
+    Write-Warn "compare the fingerprint the agent prints with the server certificate, as its notice says;"
+    Write-Warn "or pass -CaFp (from the desktop's provisioning window) to verify the first contact."
 }
 # The token goes through stdin, never as a program argument visible in the process list.
 Invoke-Native $agent $provArgs $Token

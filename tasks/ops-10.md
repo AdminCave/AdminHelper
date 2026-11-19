@@ -1,5 +1,5 @@
 # Windows-Einzeiler agent-install.ps1 — Task-Ledger
-Status: aktiv · Branch: feature/ops-10 · Review: am Ende
+Status: bereit · Branch: feature/ops-10 · Review: am Ende
 Spec: docs/features/ops-10.md (Roadmap R-1578)
 Heavy: windows — Installer-Pfad; Kevin 2026-11-19: der windows-latest-Job aus T2 zählt als scenario-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: docs/developer/cicd.html · docs/en/developer/cicd.html
 Abhängt von: T4
 
-### T6 — R-1578: TOFU-Warnung verweist nicht auf den CA-Fingerprint des Desktops  [ ]
+### T6 — R-1578: TOFU-Warnung verweist nicht auf den CA-Fingerprint des Desktops  [x]
 Komponente: scripts · Dateien: scripts/agent-install.ps1, scripts/tests/agent_install_ps1_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0e439be8e 2026-11-19T13:26:36+01:00
+Review: am Ende (Branch-Review)
 Änderung: security Runde 2 (wichtig): die Warnung ohne `-CaFp` hieß den Admin den vom Agent gedruckten Fingerprint mit dem Provisionierungs-Tab vergleichen; der Tab zeigt den CA-Fingerprint, der dem gepinnten Server-Zertifikat nie gleicht (`insecureFingerprintNotice`, `apps/agent/internal/provision/provision.go`). Die Warnung verweist jetzt auf den Hinweis des Agents (Vergleich mit dem Server-Zertifikat) und auf `-CaFp`; der Test verbietet den Tab-Bezug.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_ps1_test
 Doku: keine (agent-deployment DE+EN beschreibt den Vergleich schon richtig)
