@@ -74,12 +74,12 @@ describe('parseTags', () => {
 });
 
 describe('normalizeServerInput', () => {
-  it('trims fields, dedups tags and maps blank osType to null', () => {
+  it('trims fields and dedups tags', () => {
     expect(
       normalizeServerInput({
         name: '  web  ',
         hostname: '  web.lan ',
-        os_type: '   ',
+        os_type: null,
         tags: [' a ', 'a', ' b '],
         notes: '  hi  ',
       }),

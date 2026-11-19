@@ -5395,6 +5395,500 @@
         "title": "PlaybookUpdate",
         "type": "object"
       },
+      "ProgressCertificateOut": {
+        "properties": {
+          "issuedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuedat"
+          }
+        },
+        "required": [
+          "issuedAt"
+        ],
+        "title": "ProgressCertificateOut",
+        "type": "object"
+      },
+      "ProgressHostFactsOut": {
+        "properties": {
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "platformVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platformversion"
+          }
+        },
+        "required": [
+          "os",
+          "platform",
+          "platformVersion"
+        ],
+        "title": "ProgressHostFactsOut",
+        "type": "object"
+      },
+      "ProgressReportOut": {
+        "properties": {
+          "hostFacts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressHostFactsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastReportAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastreportat"
+          }
+        },
+        "required": [
+          "lastReportAt",
+          "hostFacts"
+        ],
+        "title": "ProgressReportOut",
+        "type": "object"
+      },
+      "ProgressTokenOut": {
+        "properties": {
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "usedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usedat"
+          }
+        },
+        "required": [
+          "createdAt",
+          "usedAt",
+          "expiresAt"
+        ],
+        "title": "ProgressTokenOut",
+        "type": "object"
+      },
+      "ProgressTunnelOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "connected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected"
+          }
+        },
+        "required": [
+          "configured",
+          "connected"
+        ],
+        "title": "ProgressTunnelOut",
+        "type": "object"
+      },
+      "ProvisionCommandArgOut": {
+        "properties": {
+          "flag": {
+            "title": "Flag",
+            "type": "string"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "interactive",
+                  "automation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "optional": {
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "value": {
+            "enum": [
+              "serverUrl",
+              "serverId",
+              "caFp",
+              "token",
+              "flag",
+              "insecure"
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flag",
+          "value",
+          "optional",
+          "mode"
+        ],
+        "title": "ProvisionCommandArgOut",
+        "type": "object"
+      },
+      "ProvisionCommandOut": {
+        "properties": {
+          "action": {
+            "enum": [
+              "install",
+              "update",
+              "reregister",
+              "remove"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "args": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionCommandArgOut"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "base": {
+            "title": "Base",
+            "type": "string"
+          },
+          "shell": {
+            "enum": [
+              "bash",
+              "sh",
+              "powershell"
+            ],
+            "title": "Shell",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "shell",
+          "base",
+          "args"
+        ],
+        "title": "ProvisionCommandOut",
+        "type": "object"
+      },
+      "ProvisionDocOut": {
+        "properties": {
+          "de": {
+            "title": "De",
+            "type": "string"
+          },
+          "en": {
+            "title": "En",
+            "type": "string"
+          }
+        },
+        "required": [
+          "de",
+          "en"
+        ],
+        "title": "ProvisionDocOut",
+        "type": "object"
+      },
+      "ProvisionPlatformOut": {
+        "properties": {
+          "abis": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Abis",
+            "type": "array"
+          },
+          "arch": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Arch",
+            "type": "array"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionCommandOut"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "doc": {
+            "$ref": "#/components/schemas/ProvisionDocOut"
+          },
+          "id": {
+            "enum": [
+              "linux",
+              "windows",
+              "freebsd",
+              "opnsense"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "prerequisites": {
+            "$ref": "#/components/schemas/ProvisionPrerequisitesOut"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "noRepo",
+                  "notYet"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "available",
+          "reason",
+          "versions",
+          "arch",
+          "abis",
+          "prerequisites",
+          "commands",
+          "doc"
+        ],
+        "title": "ProvisionPlatformOut",
+        "type": "object"
+      },
+      "ProvisionPlatformsOut": {
+        "properties": {
+          "platforms": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionPlatformOut"
+            },
+            "title": "Platforms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "platforms"
+        ],
+        "title": "ProvisionPlatformsOut",
+        "type": "object"
+      },
+      "ProvisionPortOut": {
+        "properties": {
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "purpose": {
+            "enum": [
+              "api",
+              "enroll",
+              "repo",
+              "tunnel"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "tunnelOnly": {
+            "title": "Tunnelonly",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "port",
+          "purpose",
+          "tunnelOnly"
+        ],
+        "title": "ProvisionPortOut",
+        "type": "object"
+      },
+      "ProvisionPrerequisitesOut": {
+        "properties": {
+          "ports": {
+            "items": {
+              "$ref": "#/components/schemas/ProvisionPortOut"
+            },
+            "title": "Ports",
+            "type": "array"
+          },
+          "systems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Systems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "systems",
+          "ports"
+        ],
+        "title": "ProvisionPrerequisitesOut",
+        "type": "object"
+      },
+      "ProvisionProgressOut": {
+        "properties": {
+          "certificate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressCertificateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "monitoringReachable": {
+            "title": "Monitoringreachable",
+            "type": "boolean"
+          },
+          "platformMismatch": {
+            "title": "Platformmismatch",
+            "type": "boolean"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressReportOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reportedPlatform": {
+            "anyOf": [
+              {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportedplatform"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressTokenOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tunnel": {
+            "$ref": "#/components/schemas/ProgressTunnelOut"
+          }
+        },
+        "required": [
+          "token",
+          "certificate",
+          "report",
+          "monitoringReachable",
+          "tunnel",
+          "reportedPlatform",
+          "platformMismatch"
+        ],
+        "title": "ProvisionProgressOut",
+        "type": "object"
+      },
       "ProvisionTokenCreatedOut": {
         "description": "A new provision token; token is the raw value, handed out only here.",
         "properties": {
@@ -5728,6 +6222,13 @@
           "os_type": {
             "anyOf": [
               {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -5819,6 +6320,13 @@
           "osType": {
             "anyOf": [
               {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -5912,6 +6420,13 @@
           "os_type": {
             "anyOf": [
               {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -10772,6 +11287,33 @@
         ]
       }
     },
+    "/api/provisioning/platforms": {
+      "get": {
+        "description": "Platforms an agent can be provisioned on, with their commands.",
+        "operationId": "list_platforms_api_provisioning_platforms_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionPlatformsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Platforms",
+        "tags": [
+          "provisioning"
+        ]
+      }
+    },
     "/api/servers": {
       "get": {
         "operationId": "list_servers_api_servers_get",
@@ -11144,6 +11686,54 @@
           }
         },
         "summary": "Activate Provision",
+        "tags": [
+          "provisioning"
+        ]
+      }
+    },
+    "/api/servers/{server_id}/provision/progress": {
+      "get": {
+        "description": "How far the provisioning of a server got: token, certificate, first report, tunnel.",
+        "operationId": "provision_progress_api_servers__server_id__provision_progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Provision Progress",
         "tags": [
           "provisioning"
         ]

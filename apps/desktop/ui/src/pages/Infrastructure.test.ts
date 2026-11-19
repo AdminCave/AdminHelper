@@ -22,8 +22,14 @@ vi.mock('$lib/api/servers', () => ({
   serversApi: { list: h.list, create: vi.fn(), update: vi.fn(), remove: vi.fn() },
 }));
 vi.mock('$lib/api/monitoring', () => ({ monitoringApi: { assignTemplate: vi.fn() } }));
-vi.mock('$lib/stores/session', () => ({
-  currentSession: () => ({ serverUrl: 'https://srv.example', username: 'a', isAdmin: true }),
+vi.mock('$lib/stores/session', async () => {
+  const { readable } = await import('svelte/store');
+  const s = { serverUrl: 'https://srv.example', username: 'a', isAdmin: true };
+  return { currentSession: () => s, session: readable(s) };
+});
+// The server overview asks for the provisioning progress of a server with a platform.
+vi.mock('$lib/api/provisioning', () => ({
+  provisioningApi: { progress: vi.fn(async () => ({ platformMismatch: false })) },
 }));
 vi.mock('$lib/stores/statusBar', () => ({ showStatus: vi.fn(), reportError: vi.fn() }));
 vi.mock('../components/infra/ServerModal.svelte', () => ({ default: vi.fn() }));
@@ -48,11 +54,11 @@ const servers: Server[] = [
     id: 's2',
     name: 'web-01',
     hostname: 'web-01.example',
-    osType: 'Debian 13',
+    osType: 'linux',
     tags: ['prod', 'web'],
     notes: 'Frontend',
   },
-  { id: 's1', name: 'db-01', hostname: 'db-01.example', osType: 'Windows Server 2025' },
+  { id: 's1', name: 'db-01', hostname: 'db-01.example', osType: 'windows' },
 ];
 
 function names(): string[] {
@@ -91,7 +97,7 @@ describe('Infrastructure', () => {
     );
     expect(screen.getByText('Stammdaten')).toBeTruthy();
     const dd = Array.from(document.querySelectorAll('.srv-overview dd')).map((n) => n.textContent);
-    expect(dd).toEqual(['db-01.example', 'Windows Server 2025', '—', '—']);
+    expect(dd).toEqual(['db-01.example', 'Windows', '—', '—']);
   });
 
   it('shows host and tags in the rail and the tags in the overview', async () => {
@@ -105,7 +111,7 @@ describe('Infrastructure', () => {
     expect(web.classList.contains('active')).toBe(true);
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('web-01');
     const dd = Array.from(document.querySelectorAll('.srv-overview dd')).map((n) => n.textContent);
-    expect(dd).toEqual(['web-01.example', 'Debian 13', 'prod, web', 'Frontend']);
+    expect(dd).toEqual(['web-01.example', 'Linux', 'prod, web', 'Frontend']);
   });
 
   it('filters the rail by the search and clears it again', async () => {

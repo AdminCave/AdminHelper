@@ -296,9 +296,7 @@ describe('ModuleCard', () => {
 
     it('shows the PowerShell command for a Windows server', async () => {
       connectionList.set([BOX]);
-      serverList.set([
-        { id: 'srv-1', name: 'win', hostname: 'win.example', osType: 'Windows Server 2022' },
-      ]);
+      serverList.set([{ id: 'srv-1', name: 'win', hostname: 'win.example', osType: 'windows' }]);
       const { getByRole, queryByRole } = card([needing('no_credential')]);
       await fireEvent.click(getByRole('button', { name: 'Zugangsdaten hinterlegen' }));
       expect(document.body.textContent).toContain('adminhelper-agent.exe');

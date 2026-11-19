@@ -623,6 +623,17 @@ class PlanProbeOut(BaseModel):
     credential: PlanCredentialOut | None
 
 
+class AgentHostFactsOut(BaseModel):
+    os: str | None = None
+    platform: str | None = None
+    platformVersion: str | None = None
+
+
+class AgentStateOut(BaseModel):
+    lastReportAt: str | None = None
+    hostFacts: AgentHostFactsOut | None = None
+
+
 class AgentPlanOut(BaseModel):
     plan_version: int
     catalog_version: str

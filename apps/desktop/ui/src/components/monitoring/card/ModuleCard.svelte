@@ -54,11 +54,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   const sshConnections = $derived(
     serverId ? $connections.filter((c) => c.kind === 'ssh' && c.serverId === serverId) : [],
   );
-  const windows = $derived(
-    ($monitoringServers.find((s) => s.id === serverId)?.osType ?? '')
-      .toLowerCase()
-      .includes('windows'),
-  );
+  const windows = $derived($monitoringServers.find((s) => s.id === serverId)?.osType === 'windows');
   let credential: { name: string; ref: string } | null = $state(null);
 
   // The row around the button opens and closes on click and Enter.

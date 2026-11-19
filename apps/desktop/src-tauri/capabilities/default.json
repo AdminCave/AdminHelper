@@ -39,6 +39,7 @@
     "allow-is-device-enrolled",
     "allow-device-identity",
     "allow-pinned-ca-fingerprint",
+    "allow-open-doc",
     "allow-reset-device-identity",
     "allow-enroll-with-token",
     "allow-export-browser-p12",

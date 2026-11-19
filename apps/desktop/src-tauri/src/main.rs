@@ -9,6 +9,7 @@ mod capabilities;
 mod commands;
 mod connection;
 mod diagnostics;
+mod doc_link;
 mod enrollment;
 mod error;
 mod frpc;
@@ -42,7 +43,7 @@ use commands::{
     device_name, end_session, enroll_with_token, export_browser_p12, fetch_connections_jwt,
     fetch_tunnels, generate_diagnostics, is_device_enrolled, list_sessions, list_workspaces,
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
-    open_launcher, open_workspace, password_state, pinned_ca_fingerprint, probe_targets,
+    open_doc, open_launcher, open_workspace, password_state, pinned_ca_fingerprint, probe_targets,
     refresh_tunnel, reset_device_identity, reset_server_cert_pin, resolve_connection,
     save_connections, save_password, save_settings, save_workspace, sftp_download, sftp_list,
     sftp_mkdir, sftp_upload, sftp_upload_dropped, start_notification_stream, start_session,
@@ -277,6 +278,7 @@ fn main() {
             is_device_enrolled,
             device_identity,
             pinned_ca_fingerprint,
+            open_doc,
             reset_device_identity,
             enroll_with_token,
             export_browser_p12,

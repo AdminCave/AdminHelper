@@ -29,4 +29,13 @@ describe('provisioningApi', () => {
     await provisioningApi.createToken(session, 's1');
     expect(proxy).toHaveBeenCalledWith('POST', '/api/servers/s1/provision/token', undefined);
   });
+  it('platforms → GET /api/provisioning/platforms', async () => {
+    await provisioningApi.platforms(session);
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/provisioning/platforms', undefined);
+  });
+
+  it('progress → GET /api/servers/:id/provision/progress, id encoded', async () => {
+    await provisioningApi.progress(session, 'a/b');
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/servers/a%2Fb/provision/progress', undefined);
+  });
 });

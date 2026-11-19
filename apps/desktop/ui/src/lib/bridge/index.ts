@@ -179,6 +179,12 @@ export function pinnedCaFingerprint(): Promise<string | null> {
   return invoke<string | null>('pinned_ca_fingerprint');
 }
 
+// Opens a page of the AdminHelper docs in the default browser; `path` is the page below
+// docs/ as the provisioning catalog names it (the desktop side fixes the base).
+export function openDoc(path: string): Promise<void> {
+  return invoke<void>('open_doc', { path });
+}
+
 // Name (CN) and expiry of this device's enrolled certificate — the identity line in
 // the settings. Null until enrolled; rejects when the stored certificate is unreadable.
 export function deviceIdentity(): Promise<DeviceIdentity | null> {

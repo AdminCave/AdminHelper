@@ -9,7 +9,12 @@
 
 import { apiRequest } from '$lib/api/request';
 import type { AuthSession } from '$lib/bridge/types';
-import type { FrpProvisionToken, FrpProvisionTokenCreateResult } from '$lib/api/types';
+import type {
+  FrpProvisionToken,
+  FrpProvisionTokenCreateResult,
+  ProvisionPlatformsResponse,
+  ProvisionProgress,
+} from '$lib/api/types';
 
 export const provisioningApi = {
   listTokens(session: AuthSession, serverId: string): Promise<FrpProvisionToken[]> {
@@ -24,6 +29,16 @@ export const provisioningApi = {
       session,
       'POST',
       `/api/servers/${encodeURIComponent(serverId)}/provision/token`,
+    );
+  },
+  platforms(session: AuthSession): Promise<ProvisionPlatformsResponse> {
+    return apiRequest<ProvisionPlatformsResponse>(session, 'GET', '/api/provisioning/platforms');
+  },
+  progress(session: AuthSession, serverId: string): Promise<ProvisionProgress> {
+    return apiRequest<ProvisionProgress>(
+      session,
+      'GET',
+      `/api/servers/${encodeURIComponent(serverId)}/provision/progress`,
     );
   },
 };

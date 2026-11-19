@@ -2,13 +2,16 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
 from app.core.bounds import RequestModel
 from app.modules.connections.schemas import ConnectionOut
 from app.modules.frp.schemas import FrpTunnelOut, _reject_toml_breakers, _validate_tags
+
+# The platform a server runs (R-1594); None: not chosen.
+Platform = Literal["linux", "windows", "freebsd", "opnsense", "other"]
 
 
 def _validate_server_name(v: Optional[str]) -> Optional[str]:
@@ -65,7 +68,7 @@ class ServerCreate(RequestModel):
     name: str
     # None or blank: the address follows the name.
     hostname: Optional[str] = None
-    os_type: Optional[str] = None
+    os_type: Optional[Platform] = None
     tags: list[str] = []
     notes: Optional[str] = ""
 
@@ -76,7 +79,7 @@ class ServerCreate(RequestModel):
 class ServerUpdate(RequestModel):
     name: Optional[str] = None
     hostname: Optional[str] = None
-    os_type: Optional[str] = None
+    os_type: Optional[Platform] = None
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
 
@@ -99,7 +102,7 @@ class ServerOut(BaseModel):
     hostname: str
     # True when an own hostname is stored, False when the address follows the name.
     customHostname: bool
-    osType: Optional[str]
+    osType: Optional[Platform]
     tags: list[str]
     notes: str
     createdAt: Optional[str]
