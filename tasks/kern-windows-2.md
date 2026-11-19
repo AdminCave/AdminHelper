@@ -14,7 +14,7 @@ Beweis: security kern-windows-1 T4 2026-11-18 · feature/kern-windows-1@16eccd1c
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/config/...
 Doku: docs/admin/agent-deployment.html docs/en/admin/agent-deployment.html changelog.d/kern-windows-2.md
 
-### T2 — Overrides ADMINHELPER_*_DIR unter Windows  [?] (Sollen ADMINHELPER_*_DIR unter Windows nur noch in Testläufen gelten (Empfehlung) oder weiter dokumentiert bleiben?)
+### T2 — Overrides ADMINHELPER_*_DIR unter Windows  [~] (verschoben in kern-windows-3 (R-1645): wartet auf Kevins Antwort)
 Komponente: agent · Dateien: apps/agent/internal/config/paths_windows.go
 Änderung: nach Kevins Antwort (Frage unter Entscheidungen).
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/config/...
