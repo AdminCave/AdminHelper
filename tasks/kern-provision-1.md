@@ -1,5 +1,5 @@
 # Provisionieren je Plattform — Task-Ledger
-Status: bereit · Branch: feature/kern-provision-1 · Review: pro Task
+Status: aktiv · Branch: feature/kern-provision-1 · Review: pro Task
 Spec: docs/features/kern-provision-1.md (Roadmap R-1594, R-1595, R-1596, R-1597)
 Heavy: linux-full — Server-API, `docker-compose.yml` (Repo-Mount) und die Desktop-Journey `provisioning.live.js` ändern sich; kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -91,7 +91,7 @@ Doku: → T10
 Abhängt von: T7
 
 ### T9 — R-1596: Doku-Link im Fenster  [x]
-Komponente: desktop · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/lib/provisioning/docs.ts, apps/desktop/src-tauri/src/doc_link.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Infrastructure.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+Komponente: desktop · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/src-tauri/src/doc_link.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/capabilities/default.json, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/pages/Infrastructure.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
 Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @47a78b49b 2026-11-18T19:23:27+01:00
 Review: approve (.ah-out/review/kern-provision-1/T9.verdict.json)
 Änderung: Der Link im Fenster setzt die Basis-URL aus Kevins Antwort vor `doc.<sprache>` des Katalogs und öffnet sie über den Shell-Opener.
@@ -109,6 +109,19 @@ Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, doc
 Task-Review: am Ende
 Abhängt von: T3, T8
 
+### T11 — R-1595: Windows-Programmpfad im Katalog (Abschlussprüfung)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, apps/server/tests/test_provisioning_catalog.py
+Änderung: `WINDOWS_EXE` zeigt auf `C:\Program Files\AdminHelper Agent\adminhelper-agent.exe` (seit 180479cd3 der Agent-Ordner, `service_windows.go` `programDirName`; `AdminHelper` ist der Ordner der Desktop-App). Test nagelt den Pfad in Neu registrieren und Entfernen fest.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py
+Doku: keine (Doku nennt den Ordner schon richtig)
+
+### T12 — R-1594/R-1596: Desktop-Fixtures, Aktions-Label, E2E-Fristen, Entfernen-Hinweis (Abschlussprüfung)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/provisioning/command.test.ts, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Änderung: Fixtures auf den Agent-Ordner `AdminHelper Agent`; die Aktions-Tabs bekommen ein eigenes Label `infra.prov.actionLabel` (Vorgang/Action) statt „Plattform“; die drei E2E-Wartezeiten des Dialogs auf 30 s (`testing.md`: der Dialog lädt erst den Katalog); Windows-Abschnitt nennt, dass Entfernen im Fenster `service uninstall --purge` nimmt.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra src/lib/provisioning src/lib/i18n
+Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Abhängt von: T11
+
 ## Entscheidungen
 - 2026-11-18 Plan: Katalog liest das eingebundene `./repo` statt einer Env-Liste; Befehle strukturiert, Zitieren im Desktop (R-1595).
 - 2026-11-18 Plan: Windows ohne Installationsbefehl bis R-1578 (Notiz an R-1596).
@@ -121,3 +134,4 @@ Abhängt von: T3, T8
 - 2026-11-18 T8: Die Token-Bereinigung löscht eingelöste Tokens; „Token eingelöst“ gilt daher auch mit einem Agent-Zertifikat, und der 5-min-Hinweis rechnet ab `usedAt`, sonst ab `certificate.issuedAt`. Der Fortschritt läuft nur unter Installieren/Neu registrieren, fragt alle 5 s, bis alle Stufen erledigt sind, und endet mit dem Fenster. Ohne erreichbares Monitoring steht „Erster Bericht“ auf unbekannt, ohne Hinweis. „Monitoring-Vorschläge ansehen“ schließt das Fenster und wechselt in den Monitoring-Reiter des Servers (dort liegen die Vorlagen-Vorschläge). Die Server-Ansicht fragt den Fortschritt einmal je Server mit gewählter Plattform ab, nur für Admins, für den Abweichungs-Hinweis. Nach reviewer T8: alle Stufen hängen am neuesten Token (Zertifikat und Bericht zählen erst ab seinem `createdAt`), ein im Fenster erzeugter Token startet den Fortschritt neu.
 - 2026-11-18 T9: Der Desktop hatte keinen Weg, eine URL im Browser zu öffnen (das Shell-Plugin trägt keine `shell:allow-open`-Berechtigung). Statt einer offenen Opener-Berechtigung bekommt er den Befehl `open_doc(path)`: die Basis `https://github.com/AdminCave/AdminHelper/blob/main/docs/` steht fest in Rust, der Pfad aus dem Katalog nimmt nur Kleinbuchstaben, Ziffern, `-`, `_`, Segmente mit `/`, Endung `.html` und einen Anker. Die Task wird damit Komponente `desktop` (Rust + UI, neun Dateien).
 - 2026-11-18 T9: Das volle Desktop-Verify fand `pages/Infrastructure.test.ts` rot seit T8: der Seitentest mockte die Session ohne `session`-Store, `ServerDetail` liest ihn seit T8. Das T8-Verify war auf `components/infra` begrenzt; der Mock-Fix geht in T9 mit, dazu der Eintrag `open_doc` in der IPC-Befehlstabelle (DE+EN, `ipc.inventory.test.ts`).
+- 2026-11-19 Abschlussprüfung reviewer: Blocker Windows-Pfad (T11), wichtig E2E-Fristen und zwei Nits (T12); T9 `Dateien:` ohne die nie angelegte `docs.ts`.
