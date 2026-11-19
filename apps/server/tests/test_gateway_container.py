@@ -28,6 +28,9 @@ closed.
 The gateway's healthcheck asks a listener of its own on 127.0.0.1 that answers only /healthz
 without TLS: from nginx.conf and docker-compose.yml, and in the container, where the compose
 command succeeds, a wrong port fails and the listener is out of reach from the network.
+
+On the access plane :443 the gateway answers the service-to-service routes under /api/internal
+itself with 404 (R-1604), in every spelling nginx normalizes to them; other paths go to the server.
 """
 
 import contextlib
@@ -352,6 +355,16 @@ def gateway_setup(tmp_path_factory):
         subprocess.run([docker, "image", "rm", "-f", setup.tag], capture_output=True)
 
 
+def test_the_access_plane_answers_the_internal_routes_itself_with_404():
+    # R-1604: /api/internal is service-to-service (X-Internal-Key); the monitoring service
+    # reaches it at server:8080, so the gateway never forwards it. ^~ keeps any regex
+    # location from taking the path back.
+    access = _locations(_servers()["443"])
+    internal = access[("^~", "/api/internal")]
+    assert [(d.name, d.args) for d in internal] == [("return", ["404"])]
+    assert _args(access[("/",)], "proxy_pass") == [["http://app"]]
+
+
 class Gateway:
     """A container of the gateway image in the module's network."""
 
@@ -385,10 +398,10 @@ class Gateway:
         assert result.returncode == 0 and result.stdout.strip(), result.stderr
         return result.stdout.strip()
 
-    def fetch(self, path: str = PROBE) -> str:
-        """HTTP status of path on the repo plane as the client container gets it, the path sent
-        as is (dot segments included); 000 for no answer."""
-        url = f"https://{self.name}:8445{path}"
+    def fetch(self, path: str = PROBE, port: int = 8445) -> str:
+        """HTTP status of path on a plane (the repo plane by default) as the client container
+        gets it, the path sent as is (dot segments included); 000 for no answer."""
+        url = f"https://{self.name}:{port}{path}"
         curl = ["curl", "-sk", "--path-as-is", "--max-time", "2", "-o", "/dev/null"]
         curl += ["-w", "%{http_code}", url]
         result = subprocess.run(
@@ -487,6 +500,27 @@ def test_the_repo_plane_serves_the_freebsd_repo_and_nothing_else_of_its_root(gat
         refused = {path: box.fetch(path) for path in traps}
         assert served == dict.fromkeys(FREEBSD, "200"), box.logs()
         assert refused == dict.fromkeys(traps, "404"), box.logs()
+
+
+def test_on_the_access_plane_internal_routes_get_404_while_the_rest_goes_to_the_server(
+    gateway_setup,
+):
+    # No server runs in the module's network: a path the gateway forwards gets 502, one it
+    # answers itself 404. nginx matches the normalized URI, so the spellings below are one.
+    internal = [
+        "/api/internal",
+        "/api/internal/servers",
+        "/api/%69nternal/servers",
+        "/api/internal%2Fservers",
+        "/api//internal/servers",
+        "/api/./internal/servers",
+        "/api/x/../internal/servers",
+    ]
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        refused = {path: box.fetch(path, port=443) for path in internal}
+        assert refused == dict.fromkeys(internal, "404"), box.logs()
+        assert box.fetch("/api/servers", port=443) == "502", box.logs()
 
 
 def test_on_the_repo_plane_one_address_gets_429_beyond_its_cap_while_its_downloads_go_on(
