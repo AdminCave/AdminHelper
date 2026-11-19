@@ -35,7 +35,8 @@ Wertetyp hinaus.
 ## Datenmodell / API / Migrationen
 - Katalog (`GET /api/provisioning/platforms`): der Windows-Befehl `reregister` ersetzt im Automationsmodus das Argument
   `{"flag":"--token","value":"token"}` durch `{"flag":"--token-stdin","value":"tokenStdin","mode":"automation"}`. Das
-  Feld `value` ist im Schema `string` (bewusst offen, `types.ts`); kein Schema-Bruch, kein OpenAPI-Snapshot-Wechsel.
+  Feld `value` ist im Server-Schema ein `Literal`: `tokenStdin` kommt dazu, der OpenAPI-Snapshot wechselt, und oasdiff
+  meldet einen ERR (neuer Antwort-Enum-Wert); Kevin 2026-11-19: eine Ausnahmezeile (T8).
   Der Desktop setzt für `tokenStdin` den gequoteten Token als Pipe vor den Kopf: `'<token>' | & '…exe' provision …
   --token-stdin`. Ein älterer Desktop kennt den Wert nicht und baut im Windows-Automationsmodus keinen Befehl (sein
   dokumentiertes Verhalten für Unbekanntes), der interaktive Modus bleibt.

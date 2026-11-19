@@ -1,5 +1,5 @@
 # Nachlese Provisionieren — Task-Ledger
-Status: aktiv · Branch: feature/kern-provision-2 · Review: pro Task
+Status: bereit · Branch: feature/kern-provision-2 · Review: pro Task
 Spec: docs/features/kern-provision-2.md (Roadmap R-1629, R-1612, R-1613, R-1614, R-1628)
 Heavy: linux-full — Server-API (Katalog, Fortschritt) und Desktop-Provisionieren
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -46,8 +46,10 @@ Review: approve (.ah-out/review/kern-provision-2/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/provisioning src/lib/i18n
 Doku: keine (Ersatztext für Fehlerfall)
 
-### T6 — R-1612: Doku und Changelog  [ ]
+### T6 — R-1612: Doku und Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/kern-provision-2.md, docs/developer/cicd.html, docs/en/developer/cicd.html, docs/features/kern-provision-2.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2cb5542a1 2026-11-19T19:30:56+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Windows-Abschnitt: der Automationsbefehl des Desktops gibt den Token über stdin; Changelog-Eintrag (neutral für T1).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
