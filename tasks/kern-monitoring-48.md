@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-48 — Fehlerzeilen vom Linux-Agent, SMART ohne Aufwecken — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-48 · Review: pro Task
+Status: erledigt · Branch: feature/kern-monitoring-48 · Review: pro Task
 Spec: docs/features/kern-monitoring-48.md (Roadmap R-1413, R-1569)
 Heavy: linux-full — apps/agent (Sammler, Allowlist, smartctl-Aufruf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
