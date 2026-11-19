@@ -72,8 +72,10 @@ Semantik: keine Stelle in docs/ — Changelog-Text, Lesepfad und Testvoraussetzu
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/probe
 Doku: changelog.d/kern-agent-10.md (der Eintrag selbst)
 
-### T8 — R-1635: drei Ledger-Köpfe auf erledigt  [ ]
+### T8 — R-1635: drei Ledger-Köpfe auf erledigt  [x]
 Komponente: scripts · Dateien: tasks/desktop-blocking.md, tasks/host-uid-guard.md, tasks/kern-server-7.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @daa173943 2026-11-19T21:37:13+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T8.verdict.json)
 Beweis: Statuspruefung 2026-11-19 · origin/main@aab20ed34 · Dedup-Key: REF:tasks:ledger-status:stale-bereit
 Semantik: tasks/README.md: ein gemergtes Ledger steht auf `erledigt`
 Änderung: `Status:` der drei Ledger auf `erledigt` (die Zeile heißt „abgeschlossen“, das Ledger-Format kennt `erledigt`); Ursache des fehlenden Abschluss-Commits in `## Entscheidungen` festhalten.
@@ -83,3 +85,4 @@ Task-Review: am Ende
 
 ## Entscheidungen
 - 2026-11-19 R-1620: Der Hub-POST in `toggle_check`/`delete_check` bleibt synchron. Ihn in den Hintergrund zu legen braucht eine eigene Sitzung für `release_hub_slot`/`refresh`, ändert die Antwort des Endpunkts und ist mehr als eine Nachlese; der Teil wird eine eigene Zeile.
+- 2026-11-19 R-1635: Ursache der stehengebliebenen Köpfe: `desktop-blocking` und `host-uid-guard` bekamen den Abschluss-Commit `erledigt` nie; bei `kern-server-7` setzte `task-close.sh` mit der später nachgezogenen T4 den Kopf wieder auf `bereit` (die letzte Task schaltet `aktiv` → `bereit`), danach kam kein `erledigt` mehr. Die Köpfe stehen jetzt auf `erledigt`; der Prozess bleibt (Abschluss §4.6) und ist kein Harness-Eingriff dieses Zugs.
