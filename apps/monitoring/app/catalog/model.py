@@ -271,6 +271,7 @@ class Check(_Model):
 
     def _central_consistent(self) -> Check:
         from app.check_configs import CENTRAL_SENSORS
+        from app.scheduler import interval_timedelta
 
         sensor = CENTRAL_SENSORS.get(self.sensor)
         if sensor is None:
@@ -291,8 +292,7 @@ class Check(_Model):
                 "a central check rates itself: no fields, rules, credential, test_object "
                 "or image_tags"
             )
-        unit = {"m": 60, "h": 3600}[sensor.min_interval[-1]]
-        shortest = int(sensor.min_interval[:-1]) * unit
+        shortest = int(interval_timedelta(sensor.min_interval).total_seconds())
         if self.interval < shortest:
             raise ValueError(
                 f"the central sensor {self.sensor!r} runs at most every {shortest} s, "

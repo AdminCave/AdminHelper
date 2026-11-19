@@ -10,12 +10,14 @@ Heavy: none — Monitoring-, Agent-, Server- und Desktop-UI-Unit-Tests, Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1546/R-1549/R-1550: Monitoring-Katalog und Central-Fetch  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/central/fetch.py, apps/monitoring/app/central/rdap.py, apps/monitoring/tests/test_central_rdap.py
+### T1 — R-1546/R-1549/R-1550: Monitoring-Katalog und Central-Fetch  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/app/catalog/model.py, apps/monitoring/app/central/fetch.py, apps/monitoring/app/central/rdap.py, apps/monitoring/tests/test_central_rdap.py, apps/monitoring/tests/test_central_fetch.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2a61ee7c8 2026-11-19T23:30:50+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T1.verdict.json)
 Beweis: reviewer branch (Nits), 2026-11-18
 Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Änderung: Docstring von `module_sync.py` auf höchstens 100 Zeichen je Zeile; `Check._central_consistent` nimmt `interval_timedelta(sensor.min_interval)` statt eigenem Parser; `_deadline` nennt den Rahmen (`seconds` des Aufrufers), nicht die Restzeit; der Kommentar an `QUERY_DEADLINE_S` sagt, dass die DNS-Klassifizierung vor dem Watchdog läuft und die Frist um deren Zeit überschreiten kann. Der Test für die `_deadline`-Meldung zuerst rot.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_rdap.py tests/test_module_sync.py tests/test_catalog.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_central_fetch.py tests/test_central_rdap.py tests/test_module_sync.py tests/test_catalog.py
 Doku: → T6
 
 ### T2 — R-1574: SMART-Zähler je Platte, check_restarts-Kommentar  [ ]

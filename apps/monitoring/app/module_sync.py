@@ -5,7 +5,8 @@
 """Taking over what discovery found (R-1223, docs/features/arch-monitoring-module.md).
 
 Adopting a finding turns the catalog checks of its module into probe checks bound to
-the instance (central checks of its public name, R-1501), or switches them on again; adopting a "gone" finding switches them off.
+the instance (central checks of its public name, R-1501), or switches them on again;
+adopting a "gone" finding switches them off.
 Nothing here deletes a check. At start-up, adopted instances follow a changed catalog:
 checks the update added start silent and the finding turns "changed", so the admin
 decides when they alert. A check whose catalog definition changed is offered as an

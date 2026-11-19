@@ -69,9 +69,11 @@ class _Watchdog:
 
     _EVENTS = frozenset({"connection.connect_tcp.complete", "connection.start_tls.complete"})
 
-    def __init__(self, seconds: float) -> None:
+    def __init__(self, seconds: float, *, by_caller: bool = False) -> None:
         self.expired = False
         self.seconds = seconds
+        # The caller's deadline, not DEADLINE_S, set the limit: the seconds left are no frame.
+        self.by_caller = by_caller
         self._end = time.monotonic() + seconds
         self._lock = threading.Lock()
         self._sock: socket.socket | None = None
@@ -154,9 +156,10 @@ def get(
     }
     last: FetchError | None = None
     seconds = DEADLINE_S
+    by_caller = deadline is not None and deadline - time.monotonic() < DEADLINE_S
     if deadline is not None:
         seconds = max(min(seconds, deadline - time.monotonic()), 0.0)
-    watchdog = _Watchdog(seconds)
+    watchdog = _Watchdog(seconds, by_caller=by_caller)
     with httpx.Client(
         verify=_context(), trust_env=False, follow_redirects=False, timeout=TIMEOUT_S
     ) as client:
@@ -164,7 +167,7 @@ def get(
             for address in rule.addresses[:MAX_ADDRESSES]:
                 remaining = watchdog.remaining()
                 if remaining <= 0:
-                    raise _deadline(address, seconds)
+                    raise _deadline(address, watchdog)
                 request = client.build_request(
                     "GET",
                     parsed.copy_with(host=address),
@@ -181,7 +184,7 @@ def get(
                     return _read(client, request, watchdog, max_body)
                 except httpx.HTTPError as exc:
                     if watchdog.expired:
-                        raise _deadline(address, seconds) from None
+                        raise _deadline(address, watchdog) from None
                     if not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
                         temporary = isinstance(exc, httpx.TimeoutException)
                         raise FetchError(
@@ -217,7 +220,7 @@ def _read(
     if watchdog.expired:
         # Where TLS lets an unexpected EOF pass, the shut down socket reads as the
         # end of a body that runs until the close.
-        raise _deadline(str(request.url.host), watchdog.seconds)
+        raise _deadline(str(request.url.host), watchdog)
     return HttpAnswer(
         response.status_code,
         response.headers.get("retry-after"),
@@ -227,8 +230,10 @@ def _read(
     )
 
 
-def _deadline(address: str, seconds: float) -> FetchError:
-    return FetchError(f"{address}: no answer within {seconds:.0f} s", temporary=True)
+def _deadline(address: str, watchdog: _Watchdog) -> FetchError:
+    if watchdog.by_caller:
+        return FetchError(f"{address}: no answer before the deadline of the caller", temporary=True)
+    return FetchError(f"{address}: no answer within {watchdog.seconds:.0f} s", temporary=True)
 
 
 def _reason(exc: BaseException) -> str:

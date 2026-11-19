@@ -50,6 +50,8 @@ REDIRECTS = frozenset({301, 302, 303, 307, 308})
 MAX_REDIRECTS = 3
 # One frame for a query with its redirects and the parent domains it tries: each request
 # has its own (fetch.DEADLINE_S), and together they would hold a check slot for minutes.
+# The DNS classification of each request runs before its watchdog starts and counts only
+# once it is done, so a query may overrun the frame by the time of one lookup.
 QUERY_DEADLINE_S = 60.0
 MAX_STATUS = 16
 MAX_STATUS_TEXT = 64
