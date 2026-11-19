@@ -343,6 +343,23 @@ describe('what an exception does to the object', () => {
     expect(svc.exception?.rule).toBe('a');
   });
 
+  it('rule: the reason never names the excepted rule while another of the level fires', () => {
+    const two = {
+      ...SERVICE,
+      status: 'critical' as const,
+      reason: 'A',
+      badSince: ago(DAY),
+      rules: [
+        { key: 'a', text: 'A', level: 'critical', source: 'Katalog', enabled: true, firing: true },
+        { key: 'b', text: 'B', level: 'critical', source: 'Katalog', enabled: true, firing: true },
+      ],
+    } satisfies MonObject;
+    const e = exc({ scope: { kind: 'rule', value: SERVICE.key, rule: 'a' } });
+    const [svc] = applyExceptions([two], [e], NOW, TOPO);
+    expect(svc.status).toBe('critical');
+    expect(svc.reason).toBe('B');
+  });
+
   it('rule: taking out the critical rule leaves the warning still firing', () => {
     const two = {
       ...SERVICE,

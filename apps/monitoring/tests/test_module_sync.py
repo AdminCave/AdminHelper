@@ -542,11 +542,21 @@ def test_adopting_gone_switches_off_and_deletes_nothing(db, actions):
     assert finding.status == "adopted"
 
 
-def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions):
+def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, monkeypatch):
     # A switched-off check whose alarm the bell shows lags: the job sends the
     # all-clear (R-1601), as for a check switched off by hand.
-    from app.bell_catch_up import lag_target
+    import app.core.database as database_mod
+    from app import alerter
+    from app.bell_catch_up import catch_up_bell, lag_target
     from app.models import MonitorState
+
+    posts = []
+    monkeypatch.setattr(
+        alerter,
+        "post_hub_event",
+        lambda payload, label: posts.append(payload["new_status"]) or True,
+    )
+    monkeypatch.setattr(database_mod, "SessionLocal", sessionmaker(bind=db.get_bind()))
 
     _inventory(db)
     finding = _finding(db)
@@ -562,6 +572,8 @@ def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions):
 
     assert not web.enabled
     assert lag_target(web, db.get(MonitorState, web.id)) == "ok"
+    catch_up_bell()
+    assert posts == ["ok"]
 
 
 def test_adopting_new_again_switches_the_whole_instance_on(db, actions):
@@ -1715,6 +1727,46 @@ def test_a_resync_binds_a_check_naming_an_instance_there_only(db, actions):
 
     assert "web" in _checks(db, main)
     assert "web" not in _checks(db, other)
+
+
+def test_a_row_of_another_instance_is_not_rebound_when_the_check_names_one(db, actions):
+    _scanned(db, [_socket(443)])
+    main = _finding(db, "pbx", "pbx.service", summary={})
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+    unnamed = _pbx(web={k: v for k, v in _PBX_WEB.items() if k != "instance"})
+    adopt(db, main.id, catalog=unnamed, now=NOW)
+    adopt(db, other.id, catalog=unnamed, now=NOW)
+    before = _checks(db, other)["web"].config
+
+    # The catalog now names pbx.service for the web check: the row at the other instance
+    # stays as it was, without an update and without a reason.
+    result = adopt(db, other.id, catalog=PBX, now=NOW)
+    sync_catalog(db, catalog=PBX)
+
+    assert result.updated == []
+    assert result.skipped == []
+    assert _checks(db, other)["web"].config == before
+    assert _checks(db, other)["web"].module_check_hash == definition_hash(
+        unnamed.modules["pbx"].checks[0]
+    )
+
+
+def test_a_row_of_another_instance_stays_off_when_the_instance_comes_back(db, actions):
+    _scanned(db, [_socket(443)])
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+    unnamed = _pbx(web={k: v for k, v in _PBX_WEB.items() if k != "instance"})
+    adopt(db, other.id, catalog=unnamed, now=NOW)
+    other.kind, other.status = "gone", "open"
+    adopt(db, other.id, catalog=unnamed, now=NOW)
+    assert not _checks(db, other)["web"].enabled
+
+    # The catalog now names pbx.service for the web check; the row at the returning
+    # instance is no longer this check's and is not switched on again.
+    other.kind, other.status = "new", "open"
+    result = adopt(db, other.id, catalog=PBX, now=NOW)
+
+    assert not _checks(db, other)["web"].enabled
+    assert _checks(db, other)["web"].id not in result.enabled
 
 
 @pytest.mark.parametrize(

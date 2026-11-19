@@ -8,16 +8,19 @@ the catch-up job sends their all-clear."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import alerter, template_sync
 from app.models import Base, MonitorCheck, MonitorSeedState, MonitorState, MonitorTemplate
+from app.routers import admin as admin_router
 from app.routers import templates as templates_router
 from app.server_cleanup import cleanup_server
 from app.template_sync import apply_template, remove_template, sync_template
@@ -125,6 +128,21 @@ def test_deleting_the_server_closes_the_incident(db, hub):
 
     cleanup_server(db, "srv-1")
 
+    assert _closed(hub) == [("ok", "critical", True)]
+
+
+def test_the_cleanup_route_sends_the_all_clears_after_its_answer(db, hub):
+    # R-1622: the server waits for the cleanup answer while it deletes a server, so
+    # the hub calls (one per open incident) must not hold it up; they run as a
+    # background task once the answer is out.
+    _assigned(db, PING, HTTP)
+    tasks = BackgroundTasks()
+
+    result = admin_router.server_cleanup("srv-1", tasks, db)
+
+    assert result["checksDeleted"] == 2
+    assert hub.posts == []
+    asyncio.run(tasks())
     assert _closed(hub) == [("ok", "critical", True)]
 
 

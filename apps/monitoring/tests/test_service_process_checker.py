@@ -575,6 +575,56 @@ def test_auto_mode_reads_the_reasons_only_up_to_the_cap():
     assert message == "Failed: nginx.service"
 
 
+def _windows(report: dict) -> dict:
+    return {**report, "host": {"os": "windows"}}
+
+
+def _windows_inventory_report() -> dict:
+    """Full push of a Windows agent: the service inventory in the agent's own case."""
+    entries = [
+        {"unit": "W32Time", "active_state": "active", "enabled_state": "enabled"},
+        {"unit": "Spooler", "active_state": "inactive", "enabled_state": "enabled"},
+    ]
+    return _windows({"systemd": {"failed": [], "enabled_inactive": [], "all_services": entries}})
+
+
+def test_list_mode_finds_a_windows_service_whatever_its_case():
+    # Windows compares service names case-insensitively (CreateServiceW, lpServiceName);
+    # a check listing "w32time" must find the service the agent reports as "W32Time" (R-0436).
+    status, _message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["w32time", "SPOOLER"]}, _windows_inventory_report()
+    )
+    assert status == "critical"
+    assert _watched(metrics) == {"w32time": "running", "SPOOLER": "down"}
+
+    report = _windows({"services": [{"name": "W32Time", "running": True}]})
+    status, _message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["w32time"]}, report
+    )
+    assert status == "ok"
+    assert _watched(metrics) == {"w32time": "running"}
+
+
+def test_list_mode_carries_windows_details_over_whatever_their_case():
+    # A throttled push has no inventory: the last states come from prev_details, whose names
+    # are spelled as the check listed them before the user changed the case.
+    prev = {"watched": [{"name": "W32Time", "state": "running", "running": True}]}
+    _status, _message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["w32time"]}, _windows({"systemd": {}}), prev
+    )
+    assert _watched(metrics) == {"w32time": "running"}
+
+
+def test_list_mode_stays_case_sensitive_off_windows():
+    # systemd units and rc.d scripts differ by case; without the Windows host fact the
+    # comparison stays exact (also for an agent before R-0421 without host facts).
+    for report in (_inventory_report(), {**_inventory_report(), "host": {"os": "linux"}}):
+        _status, _message, metrics = ServiceProcessChecker().evaluate(
+            {"mode": "list", "services": ["NGINX"]}, report
+        )
+        assert _watched(metrics) == {"NGINX": "nodata"}
+
+
 def test_list_mode_unaffected_by_throttling():
     # Watched services are always sent; list mode must work without all_services.
     status, message, _ = ServiceProcessChecker().evaluate(

@@ -191,7 +191,7 @@ func namedAs(ctx context.Context, pid int32, name, want string) bool {
 	if !isMulticall(processKey(name)) {
 		return processKey(name) == want
 	}
-	applet, err := programName(ctx, pid)
+	applet, err := programNameOf(ctx, pid, name)
 	return err == nil && processKey(applet) == want
 }
 

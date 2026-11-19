@@ -691,6 +691,7 @@ func TestDialUnixFollowsTheSocketNotItsName(t *testing.T) {
 func TestProcessesNamedFindsABusyboxApplet(t *testing.T) {
 	bin, err := exec.LookPath("busybox")
 	if err != nil {
+		// The CI Linux job runs go test without -v: whether its runner has busybox is not verified.
 		t.Skip("no busybox on this host")
 	}
 	cmd := exec.Command(bin, "sleep", "60")

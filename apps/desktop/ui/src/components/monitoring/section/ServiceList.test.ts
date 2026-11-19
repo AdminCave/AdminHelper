@@ -721,7 +721,7 @@ describe('"Mehr Log" of a service', () => {
     expect(names(container).sort()).toEqual(['Spooler', 'sshd']);
     expect(journalButtons(container)).toEqual([]);
     expect(container.textContent).toContain(
-      '„Mehr Log“ gibt es für systemd-Dienste unter Linux und für Windows- und FreeBSD-Server.',
+      '„Mehr Log“ gibt es für systemd-Dienste unter Linux und für Windows-, FreeBSD- und OPNsense-Server.',
     );
     expect(container.textContent).not.toContain('nur die letzten 200 Log-Zeilen');
   });

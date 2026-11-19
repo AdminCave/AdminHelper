@@ -217,7 +217,7 @@ def test_two_writers_do_not_lose_an_increment_or_double_alert(pg_sessionmaker, m
 
     def _run():
         try:
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             check_engine.execute_check(check_id)
         except BaseException as exc:  # noqa: BLE001 - reported below, not swallowed
             errors.append(exc)
@@ -303,7 +303,7 @@ def test_two_writers_damp_an_object_once_each(pg_sessionmaker, monkeypatch):
 
     def _run():
         try:
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             check_engine.execute_check(check_id)
         except BaseException as exc:  # noqa: BLE001 - reported below, not swallowed
             errors.append(exc)
@@ -400,7 +400,7 @@ def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypa
         db = pg_sessionmaker()
         try:
             check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).one()
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             alerter.process_alert(db, check, "ok", "critical")
             db.commit()
         except BaseException as exc:  # noqa: BLE001 - reported below

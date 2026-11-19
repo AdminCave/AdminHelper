@@ -382,7 +382,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </p>
       {/if}
       {#if rows.length > 0 && !anyJournal}
-        <p class="svc-muted">{$t('monitoring.services.journal.notLinux')}</p>
+        <p class="svc-muted">{$t('monitoring.services.journal.unsupported')}</p>
       {:else if rows.length > 0 && !sshConnection}
         <p class="svc-muted">{$t('monitoring.services.journal.noSsh')}</p>
       {:else if rows.length > 0 && sshConnection}

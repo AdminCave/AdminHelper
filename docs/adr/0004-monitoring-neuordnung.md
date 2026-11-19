@@ -87,8 +87,8 @@ Kevin hat den Entwurf am 2026-11-19 abgenommen, die Mengen-Grenzen „wie im Moc
 
 - **Serverliste links**, wie im heutigen Monitoring: „Mit Problemen“ und „Ohne Probleme“, schlechteste zuerst, Suche
   mit „/“, Pfeiltasten. Ab 25 ruhigen Servern klappen diese in eine Zeile ein.
-- **„Alle Server“** ist der Start und ersetzt eine eigene Lage-Ansicht: eine Lagekarte mit den 20 schlimmsten Servern
-  und „alle zeigen“, ab 40 Servern ein Flotten-Teppich, ein Karten-Board mit 24 Karten (8 davon mit Kennzahlen) und
+- **„Alle Server“** ist der Start und ersetzt eine eigene Lage-Ansicht: eine Lagekarte, die erst ab 40 Servern auf die 20
+  schlimmsten kappt (darunter zeigt sie alle) und dann „alle zeigen“ anbietet, ab 40 Servern ein Flotten-Teppich, ein Karten-Board mit 24 Karten (8 davon mit Kennzahlen) und
   „weitere Server zeigen“, dazu „Neueste Probleme“.
 - **Server-Seite:** folgt der Auswahl in der Serverliste, mit Zustandsbalken, den wichtigsten Objekten als Kacheln,
   offenen Problemen und Objektart-Gruppen. Eine Gruppe zeichnet ihre Zeilen erst beim Öffnen, in Seiten zu je 60; bei
@@ -200,7 +200,8 @@ die Katalogwerte gelten. Die Richtung ist Melden. Wer Stufen verschieben will, g
 ### 6.3 Was Regel wird und was Code bleibt
 
 Der Differenzial-Test (`test_rule_model_differential.py`) bildet die SMART-Kaskade, die ZFS-Zustände und die
-Docker-Bewertung als Regelsätze nach und fährt 118 Fälle gegen die echten Checker. Jede Familie zerfällt in einen
+Docker-Bewertung als Regelsätze nach und fährt 120 Tests gegen die echten Checker: 103 Szenarien, 4 benannte Abweichungen, dazu der Zusammenhalt der drei
+Regelsätze, 9 Proben „der Check ist sein schlechtestes Objekt“ und ein Bitfeld-Test. Jede Familie zerfällt in einen
 **Sensor**, der Werte ohne Grenze liest, und einen **Regelsatz**, der jede Grenze und Stufe trägt. Szenarien tragen nur
 Urteile, die `docs/` festschreibt oder, wo die Doku schweigt, der Test des Checkers. Eine Gegenprobe mit zwei
 verschobenen Schwellen macht drei Fälle rot.

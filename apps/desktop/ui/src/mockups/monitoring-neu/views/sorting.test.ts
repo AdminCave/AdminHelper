@@ -501,6 +501,17 @@ describe('Alle Server board', { timeout: 20_000 }, () => {
     expect(cards(container)).toHaveLength(24);
   });
 
+  it('lifting a status filter starts with the first cards again', async () => {
+    const { container, getByRole } = show(SCALE_OBJECTS);
+    await fireEvent.click(container.querySelector('.more-btn')!);
+    expect(cards(container)).toHaveLength(48);
+    const tile = container.querySelector<HTMLButtonElement>('button.lg-item:not(:disabled)')!;
+    await fireEvent.click(tile);
+    await fireEvent.click(container.querySelector('.more-btn')!);
+    await fireEvent.click(getByRole('button', { name: 'Filter aufheben' }));
+    expect(cards(container)).toHaveLength(24);
+  });
+
   it('newest: the server whose problem began last comes first', () => {
     const old = new Date(NOW.getTime() - 86_400_000);
     const { attention } = lageByServer([

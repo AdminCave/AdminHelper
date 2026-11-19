@@ -171,6 +171,11 @@ func programName(ctx context.Context, pid int32) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return programNameOf(ctx, pid, name)
+}
+
+// programNameOf is programName of a process whose name the caller has read already.
+func programNameOf(ctx context.Context, pid int32, name string) (string, error) {
 	if !isMulticall(processKey(name)) {
 		return name, nil
 	}

@@ -97,7 +97,8 @@ def _backup_details(vm: dict) -> dict:
 
 def _guest_object(vmid: int | None, label: str, status: str, reason: str) -> dict | None:
     """The object of a guest's backup (R-1559); None for a guest without a VMID, which has no
-    key. A VMID is unique only within its cluster: unstable until the cluster ID (R-0519)."""
+    key. A VMID is unique only within its cluster: the key stays the VMID until the agent's
+    cluster name is taken into it (P1e)."""
     if vmid is None:
         return None
     return {
@@ -526,7 +527,8 @@ def _problem_reason(reason: str, state: str) -> str:
 
 def _container_object(name: str, category: str, reason: str | None, state: str) -> dict:
     """The object of a rated container (R-1559). Its key would be compose project, service and
-    number; the agent sends no number, so it is the name, which a recreated container may change.
+    number; the key is still the name, which a recreated container may change, until the
+    agent's number is taken into it (P1e).
     A container stopped on purpose is ok (ADR 0004 §6.3); an ok reason stays fixed."""
     if category in ("critical", "warning"):
         status, text = category, _problem_reason(reason or "", state)

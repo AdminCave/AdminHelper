@@ -135,7 +135,8 @@ Keine. Phase 0 entwirft sie für P1 im ADR:
 ## Risiken & Rollback
 
 - **Produktions-Build zieht Mockups an:** nur, wenn `main.ts` oder `vite.config.ts` sie einbinden; T1 belegt mit
-  einem Build-Test (`dist/` enthält nach `vite build` kein `mockup.html`), dass das nicht passiert.
+  `isolation.test.ts` (kein Build-Eingang außer `index.html`, `index.html` lädt den Produkt-Einstieg, kein Produktcode
+  importiert aus `src/mockups`), dass das nicht passiert; ein Build über `dist/` gibt es nicht.
 - **Token-/i18n-Tests über `src/`:** `src/styles/tokens.test.ts` prüft jedes `var(--…)` unter `src/`;
   `src/lib/i18n/i18n.test.ts` prüft benutzte Schlüssel. Mockups nutzen nur bestehende Tokens und kein `t()`.
 - **Differenzial-Test bindet an heutige Checker:** ändert ein Parallel-Vorhaben einen Checker (etwa die SMART- oder
