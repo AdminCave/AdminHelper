@@ -182,9 +182,9 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
             <li><strong>Interne CA:</strong> Nach der Registrierung stellt es die TLS-Prüfung des Repos auf die interne CA um (<code>/usr/local/etc/adminhelper/identity/ca.crt</code>); auf OPNsense überlässt es das dem Repo-Skript des Plugins und prüft das Ergebnis. Bis dahin bleibt TLS zur Repo-Plane ungeprüft, und die Signatur trägt die Echtheit.</li>
             <li><strong>Ohne <code>--server-id</code></strong> richtet es nur Repo und Paket ein, installiert oder aktualisiert also nur.</li>
           </ul>
-          <p>Weitere Schalter: <code>--repo-port</code> (Standard <code>8445</code>). Wer das Skript nicht aus dem Netz in eine Shell leiten will, richtet von Hand ein wie unten.</p>
+          <p>Weitere Schalter: <code>--repo-port</code> (Standard <code>8445</code>; auf OPNsense gilt er nur bis zur Registrierung, danach schreibt das Plugin den Port <code>8445</code>). Wer das Skript nicht aus dem Netz in eine Shell leiten will, richtet von Hand ein wie unten.</p>
           <h3 id="freebsd-von-hand">Von Hand</h3>
-          <p>Der Handweg macht dieselben Schritte einzeln.
+          <p>Der Handweg macht dieselben Schritte einzeln.</p>
           <p><strong>Vertrauenswurzel ist der öffentliche RSA-Schlüssel des Repos</strong>, nicht der Transport: pkg nimmt nur einen Katalog an, dessen Signatur zu diesem Schlüssel passt. Prüfe die SHA-256 der Schlüsseldatei gegen den unter <a href="../developer/cicd.html">CI/CD &amp; Release</a> veröffentlichten Wert, bevor du fortfährst. Passt die Signatur eines Katalogs nicht, meldet <code>pkg update</code> „Invalid signature, removing repository“ und endet trotzdem mit Exit&nbsp;0; aus dem Repo installiert pkg dann nichts.</p>
           <div class="code-header"><span>sh</span></div>
 <pre><code>SERVER=srm.example.com                 # dein AdminHelper-Server

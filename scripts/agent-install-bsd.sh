@@ -232,6 +232,9 @@ if [ -n "$CA_FP" ]; then
     set -- "$@" --ca-fp "$CA_FP"
 else
     warn "no --ca-fp given — first contact is trust-on-first-use; compare the printed fingerprint out-of-band."
+    # Without a pin the agent would check the internal CA against the system roots and fail;
+    # --insecure is its trust-on-first-use mode, as in agent-install.sh.
+    set -- "$@" --insecure
 fi
 printf '%s\n' "$TOKEN" | adminhelper-agent provision "$@" || die "provisioning failed"
 TOKEN=""

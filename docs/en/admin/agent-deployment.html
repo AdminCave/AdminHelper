@@ -182,9 +182,9 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
             <li><strong>Internal CA:</strong> after registering it switches the repo's TLS check to the internal CA (<code>/usr/local/etc/adminhelper/identity/ca.crt</code>); on OPNsense it leaves that to the plugin's repo script and checks the result. Until then TLS to the repo plane stays unverified, and the signature carries the authenticity.</li>
             <li><strong>Without <code>--server-id</code></strong> it only sets up the repo and the package, so it only installs or updates.</li>
           </ul>
-          <p>Further switches: <code>--repo-port</code> (default <code>8445</code>). If you do not want to pipe the script from the network into a shell, set up by hand as below.</p>
+          <p>Further switches: <code>--repo-port</code> (default <code>8445</code>; on OPNsense it only applies until the registration, after which the plugin writes port <code>8445</code>). If you do not want to pipe the script from the network into a shell, set up by hand as below.</p>
           <h3 id="freebsd-by-hand">By hand</h3>
-          <p>The manual path takes the same steps one by one.
+          <p>The manual path takes the same steps one by one.</p>
           <p><strong>The trust root is the repo's public RSA key</strong>, not the transport: pkg accepts only a catalogue whose signature matches this key. Check the SHA-256 of the key file against the value published under <a href="../developer/cicd.html">CI/CD &amp; Release</a> before you go on. If a catalogue's signature does not match, <code>pkg update</code> reports &ldquo;Invalid signature, removing repository&rdquo; and still exits with 0; pkg then installs nothing from that repo.</p>
           <div class="code-header"><span>sh</span></div>
 <pre><code>SERVER=srm.example.com                 # your AdminHelper server

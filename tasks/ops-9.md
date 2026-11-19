@@ -32,7 +32,17 @@ Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, cha
 Task-Review: am Ende
 Abhängt von: T1
 
+### T4 — R-1598: Abschlussprüfung: TOFU ohne --ca-fp, Doku-Nits  [x]
+Komponente: scripts · Dateien: scripts/agent-install-bsd.sh, scripts/tests/agent_install_bsd_test.sh, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @590f14de8 2026-11-19T08:21:42+01:00
+Review: am Ende (Branch-Review)
+Änderung: Ohne `--ca-fp` ruft das Skript `provision` mit `--insecure` (TOFU wie agent-install.sh; sonst prüft der Agent gegen die System-Roots und scheitert an der internen CA), Test prüft das; fehlendes `</p>`, `--repo-port` auf OPNsense nur bis zur Registrierung, README-Verweis auf den BSD-Einzeiler.
+Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_bsd_test
+Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, README.md
+Abhängt von: T3
+
 ## Entscheidungen
 - 2026-11-18 Gate: R-1578 fährt nicht mit (Notiz: nach kern-windows-1 und R-1575; R-1575 in ci-15) → `tasks/ops-10.md`.
 - 2026-11-18 Gate: Repo-Schlüssel steht im Skript statt Download + gepinnter SHA-256 (gleiche Vertrauenswurzel, ein Netzpfad weniger); der Test hält Skript, Schlüsseldatei und Doku-`PUBSHA` gleich.
 - 2026-11-18 Ops-9: Kevin: OPNsense-Lauf mit fremdem rotem Probe-Test (R-1610) gilt als grüner scenario-Lauf für den Selbst-Merge.
+- 2026-11-19 T1: Das Skript ruft das Repo-Skript des Plugins direkt statt `configctl firmware reload` (gleiche Wirkung, ohne configd-Abhängigkeit im Installer); Branch-Review-Nit.

@@ -148,6 +148,7 @@ grep -q '^pkg rquery -r AdminHelper %n adminhelper-agent$' "$STUB_LOG" && ok "ch
 [ -e "$STUB_DIR/plugin-ran" ] && grep -q SSL_CA_CERT_FILE "$AH_PKG_ETC/repos/AdminHelper.conf" \
     && ok "plugin's repository script wrote the verified file" || bad "plugin script did not run"
 grep -q -- '--ca-fp' "$STUB_DIR/agent-argv" && bad "--ca-fp passed without being given" || ok "no --ca-fp without the option"
+grep -q -- '--insecure' "$STUB_DIR/agent-argv" && ok "trust-on-first-use via --insecure" || bad "no --insecure without --ca-fp: $(cat "$STUB_DIR/agent-argv")"
 grep -q 'trust-on-first-use' "$S/out" && ok "warns about TOFU" || bad "no TOFU warning"
 
 echo "── a repo pkg dropped (bad signature) stops the install"
