@@ -113,6 +113,14 @@ pub async fn pinned_ca_fingerprint() -> Result<Option<String>, AppError> {
     blocking(|| Ok(enrollment::pinned_ca_fingerprint())).await
 }
 
+/// Opens a page of the AdminHelper docs in the default browser; `path` names the page
+/// below `docs/` (the provisioning window's link, R-1596).
+#[tauri::command]
+pub async fn open_doc(path: String) -> Result<(), AppError> {
+    let url = crate::doc_link::doc_url(&path)?;
+    blocking(move || Ok(open::that(&url)?)).await
+}
+
 /// Name (CN) and expiry of this device's enrolled certificate, for the identity
 /// line in the settings. None until enrolled; an error when the stored
 /// certificate is unreadable — the UI then shows a fixed text, never the error.
@@ -741,12 +749,13 @@ fn ssh_credential_spawn(
 fn ssh_journal_spawn(
     connection: &Connection,
     unit: &str,
+    platform: connection::ssh::JournalPlatform,
     ssh: Option<PathBuf>,
     home: Option<PathBuf>,
 ) -> Result<pty::Spawn, AppError> {
     let spawn = ssh_spawn(connection, ssh, home)?;
     Ok(pty::Spawn {
-        args: connection::ssh::build_journal_args(connection, unit)?,
+        args: connection::ssh::build_journal_args(connection, unit, platform)?,
         broadcast: false,
         ..spawn
     })
@@ -877,9 +886,10 @@ pub async fn terminal_open_ssh_credential(
 }
 
 /// Opens the embedded terminal on the host of `connection`, resolved as for `terminal_open_ssh`,
-/// with one fixed action: the last journal lines of the service `unit`, read with the rights of
-/// the admin's login, stored nowhere (R-1226, "Mehr Log"). The UI hands over the unit name only,
-/// never a command; the session ends with the action. Main only, as the capability of a
+/// with one fixed action: the last log lines of the service `unit` on the host's `platform`
+/// (journal, event log or syslog), read with the rights of the admin's login, stored nowhere
+/// (R-1226, R-1391, "Mehr Log"). The UI hands over the service name and the platform only, never
+/// a command; the session ends with the action. Main only, as the capability of a
 /// detached window lacks it.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -889,6 +899,7 @@ pub async fn terminal_open_ssh_journal(
     session: State<'_, SessionState>,
     connection: Connection,
     unit: String,
+    platform: connection::ssh::JournalPlatform,
     cols: u16,
     rows: u16,
     output: Channel<InvokeResponseBody>,
@@ -906,6 +917,7 @@ pub async fn terminal_open_ssh_journal(
     let spawn = ssh_journal_spawn(
         &connection,
         &unit,
+        platform,
         crate::terminal::which("ssh"),
         app.path().home_dir().ok(),
     )?;
@@ -1601,6 +1613,9 @@ mod tests {
         sign_in_target, ssh_credential_spawn, ssh_journal_spawn, ssh_spawn, sync_source,
         with_control_master, with_sftp,
     };
+
+    const LINUX: crate::connection::ssh::JournalPlatform =
+        crate::connection::ssh::JournalPlatform::Linux;
     use crate::ansible::{AnsibleTarget, Playbook};
     use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
@@ -3122,6 +3137,7 @@ mod tests {
         let spawn = ssh_journal_spawn(
             &connection,
             "nginx.service",
+            LINUX,
             Some(ssh.clone()),
             Some(home.clone()),
         )
@@ -3159,7 +3175,8 @@ mod tests {
             let mut connection = loopback(3389);
             connection.kind = kind;
             assert_refused(
-                ssh_journal_spawn(&connection, "nginx.service", ssh.clone(), None).map(|_| ()),
+                ssh_journal_spawn(&connection, "nginx.service", LINUX, ssh.clone(), None)
+                    .map(|_| ()),
                 "SSH connections only",
                 "not ssh",
             );
@@ -3167,17 +3184,18 @@ mod tests {
         let mut connection = loopback(22);
         connection.host = Some("-oProxyCommand=x".to_string());
         assert!(matches!(
-            ssh_journal_spawn(&connection, "nginx.service", ssh.clone(), None),
+            ssh_journal_spawn(&connection, "nginx.service", LINUX, ssh.clone(), None),
             Err(AppError::Validation(_))
         ));
         for bad in ["a;id", "$(id)", "a'x", "-x", "a b", ""] {
             assert_refused(
-                ssh_journal_spawn(&loopback(22), bad, ssh.clone(), None).map(|_| ()),
+                ssh_journal_spawn(&loopback(22), bad, LINUX, ssh.clone(), None).map(|_| ()),
                 "invalid unit name",
                 bad,
             );
         }
-        let refused = ssh_journal_spawn(&loopback(22), "nginx.service", None, None).map(|_| ());
+        let refused =
+            ssh_journal_spawn(&loopback(22), "nginx.service", LINUX, None, None).map(|_| ());
         assert!(
             matches!(&refused, Err(AppError::Connection(msg)) if msg == "ssh was not found in PATH"),
             "{refused:?}"
@@ -3195,6 +3213,7 @@ mod tests {
             "reset_server_cert_pin",
             "reset_device_identity",
             "pinned_ca_fingerprint",
+            "open_doc",
             "device_identity",
             "is_device_enrolled",
             "load_settings",

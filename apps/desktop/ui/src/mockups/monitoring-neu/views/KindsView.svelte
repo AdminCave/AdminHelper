@@ -5,11 +5,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  // Every object kind with all its fixture states, worst first: the catalogue Kevin signs off.
+  // Every object kind with all its fixture states, kinds with problems first: the catalogue Kevin
+  // signs off. The kinds start closed, so the whole catalogue fits on one screen.
   import EmptyState from '../../../components/ui/EmptyState.svelte';
-  import ObjectRow from '../ObjectRow.svelte';
-  import type { Kind, MonObject } from '../model';
-  import { KIND_LABEL, sortObjects } from '../grammar';
+  import type { MonObject } from '../model';
+  import KindGroups from './KindGroups.svelte';
 
   interface Props {
     objects: MonObject[];
@@ -20,46 +20,47 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { objects, now, selected, onOpen }: Props = $props();
 
-  const groups = $derived(
-    [...new Set<Kind>(objects.map((o) => o.kind))].map((kind) => ({
-      kind,
-      list: sortObjects(objects.filter((o) => o.kind === kind)),
-    })),
-  );
+  let allOpen = $state(false);
+  const kinds = $derived(new Set(objects.map((o) => o.kind)).size);
 </script>
 
 {#if objects.length === 0}
   <EmptyState title="Noch keine Objekte" description="Die Fixtures je Objektart folgen." />
 {:else}
-  {#each groups as g (g.kind)}
-    <section class="group" aria-label={KIND_LABEL[g.kind]} data-kind={g.kind}>
-      <h2>{KIND_LABEL[g.kind]} <span class="count">{g.list.length}</span></h2>
-      <div class="list">
-        {#each g.list as o (o.key)}
-          <ObjectRow object={o} {now} showServer selected={selected === o.key} {onOpen} />
-        {/each}
-      </div>
-    </section>
-  {/each}
+  <header class="head">
+    <h2>Objektarten <span class="count">{kinds} Arten · {objects.length} Objekte</span></h2>
+    <button type="button" class="toggle" onclick={() => (allOpen = !allOpen)}
+      >{allOpen ? 'Alle zuklappen' : 'Alle aufklappen'}</button
+    >
+  </header>
+  <KindGroups {objects} {now} {selected} open={allOpen} showServer {onOpen} />
 {/if}
 
 <style>
-  .group {
-    margin-bottom: var(--space-6);
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--space-3);
   }
   h2 {
-    margin: 0 0 var(--space-2);
-    font-size: var(--text-base);
+    margin: 0;
+    font-size: var(--text-xl);
     color: var(--text-strong);
   }
   .count {
-    color: var(--text-subtle);
+    margin-left: var(--space-2);
+    font-size: var(--text-sm);
     font-weight: 400;
+    color: var(--text-subtle);
   }
-  .list {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    overflow: hidden;
+  .toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--accent);
+    cursor: pointer;
   }
 </style>

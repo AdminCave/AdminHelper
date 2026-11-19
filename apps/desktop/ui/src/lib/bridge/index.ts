@@ -179,6 +179,12 @@ export function pinnedCaFingerprint(): Promise<string | null> {
   return invoke<string | null>('pinned_ca_fingerprint');
 }
 
+// Opens a page of the AdminHelper docs in the default browser; `path` is the page below
+// docs/ as the provisioning catalog names it (the desktop side fixes the base).
+export function openDoc(path: string): Promise<void> {
+  return invoke<void>('open_doc', { path });
+}
+
 // Name (CN) and expiry of this device's enrolled certificate — the identity line in
 // the settings. Null until enrolled; rejects when the stored certificate is unreadable.
 export function deviceIdentity(): Promise<DeviceIdentity | null> {
@@ -327,18 +333,29 @@ export function terminalOpenSshCredential(
   });
 }
 
-// Opens `connection` as terminalOpenSsh, but shows only the last lines of the journal of the
-// systemd unit `unit` there, with the rights of the login (arch-monitoring-ui-3). Main window
-// only; Rust builds the command and refuses a unit name the agent would not report.
+/** The platform whose log "Mehr Log" reads: the journal, the event log or the syslog (R-1391). */
+export type JournalPlatform = 'linux' | 'windows' | 'freebsd';
+
+// Opens `connection` as terminalOpenSsh, but shows only the last log lines of the service `unit`
+// there, from the log of `platform`, with the rights of the login (arch-monitoring-ui-3, R-1391).
+// Main window only; Rust builds the command and refuses a name the agent would not report.
 export function terminalOpenSshJournal(
   connection: Connection,
   unit: string,
+  platform: JournalPlatform,
   cols: number,
   rows: number,
   onMessage: (message: TerminalMessage) => void,
 ): Promise<number> {
   const output = new Channel<TerminalMessage>(onMessage);
-  return invoke<number>('terminal_open_ssh_journal', { connection, unit, cols, rows, output });
+  return invoke<number>('terminal_open_ssh_journal', {
+    connection,
+    unit,
+    platform,
+    cols,
+    rows,
+    output,
+  });
 }
 
 // The bytes as typed. Two writes in flight for one session may reach the program in either

@@ -8,13 +8,14 @@
 // "—" for fields a platform does not send, and the empty, no-agent, error and late states.
 // T8: the error lines of a failed service fold out as text, never as HTML, and the switch
 // per server saves, goes back when saving fails and drops a late answer.
-// T10: "Mehr Log" opens the journal of a systemd unit over an SSH connection of the server.
+// T10: "Mehr Log" opens the journal of a systemd unit over an SSH connection of the server;
+// R-1391: on a Windows server the event log, on FreeBSD and OPNsense the syslog, of every service.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Writable } from 'svelte/store';
-import type { MonitorServiceEntry, MonitorServiceInventory } from '$lib/api/types';
+import type { MonitorServiceEntry, MonitorServiceInventory, ServerPlatform } from '$lib/api/types';
 import type { Connection } from '$lib/bridge/types';
 import { IpcError } from '$lib/utils/errors';
 
@@ -42,7 +43,13 @@ vi.mock('$lib/stores/connections', async () => {
 
 import { setLanguage } from '$lib/i18n';
 import * as connectionStore from '$lib/stores/connections';
-import ServiceList, { filterRows, reasonOf, serviceRows, stateOf } from './ServiceList.svelte';
+import ServiceList, {
+  filterRows,
+  journalPlatform,
+  reasonOf,
+  serviceRows,
+  stateOf,
+} from './ServiceList.svelte';
 
 const connectionList = connectionStore.connections as unknown as Writable<Connection[]>;
 
@@ -136,9 +143,12 @@ function sortButton(container: HTMLElement, label: string): HTMLElement {
   return th.querySelector('button') as HTMLElement;
 }
 
-async function shown(over: Partial<MonitorServiceInventory> = {}): Promise<HTMLElement> {
+async function shown(
+  over: Partial<MonitorServiceInventory> = {},
+  platform: ServerPlatform | null = null,
+): Promise<HTMLElement> {
   h.fetch.mockResolvedValue(inventory(over));
-  const { container } = render(ServiceList, { serverId: 'srv-1' });
+  const { container } = render(ServiceList, { serverId: 'srv-1', platform });
   await waitFor(() => expect(container.querySelector('table')).not.toBeNull(), WAIT);
   return container;
 }
@@ -653,7 +663,7 @@ describe('"Mehr Log" of a service', () => {
       'Mehr Log von ssh.service im Terminal öffnen',
     ]);
     expect(container.querySelector('select')).toBeNull();
-    expect(container.textContent).toContain('nur die letzten 200 Journal-Zeilen');
+    expect(container.textContent).toContain('nur die letzten 200 Log-Zeilen');
 
     const nginx = container.querySelector<HTMLElement>(
       'button[aria-label="Mehr Log von nginx.service im Terminal öffnen"]',
@@ -662,6 +672,7 @@ describe('"Mehr Log" of a service', () => {
     expect(h.connectServiceLog).toHaveBeenCalledExactlyOnceWith(
       ssh('web', 'srv-1'),
       'nginx.service',
+      'linux',
     );
     expect(onJournal).toHaveBeenCalledOnce();
   });
@@ -679,7 +690,11 @@ describe('"Mehr Log" of a service', () => {
         'button[aria-label="Mehr Log von ssh.service im Terminal öffnen"]',
       ) as HTMLElement,
     );
-    expect(h.connectServiceLog).toHaveBeenCalledExactlyOnceWith(ssh('b', 'srv-1'), 'ssh.service');
+    expect(h.connectServiceLog).toHaveBeenCalledExactlyOnceWith(
+      ssh('b', 'srv-1'),
+      'ssh.service',
+      'linux',
+    );
   });
 
   it('offers no journal without an SSH connection of this server and says why', async () => {
@@ -692,20 +707,66 @@ describe('"Mehr Log" of a service', () => {
     expect(h.connectServiceLog).not.toHaveBeenCalled();
   });
 
-  it('offers no journal on a server without systemd services and says why', async () => {
+  // Windows and FreeBSD report service names without the systemd suffix.
+  const plain: Partial<MonitorServiceInventory> = {
+    services: [
+      { unit: 'Spooler', active_state: 'inactive', enabled_state: 'enabled', exit: '1067' },
+      { unit: 'sshd', active_state: 'active' },
+    ],
+  };
+
+  it('offers no log for names without a journal on a server without a platform, and says why', async () => {
     connectionList.set([ssh('web', 'srv-1')]);
-    // Windows and FreeBSD report service names without the systemd suffix.
-    const container = await shown({
-      services: [
-        { unit: 'Spooler', active_state: 'failed', exit: 'win32=1067' },
-        { unit: 'sshd', active_state: 'active' },
-      ],
-    });
+    const container = await shown(plain);
     expect(names(container).sort()).toEqual(['Spooler', 'sshd']);
     expect(journalButtons(container)).toEqual([]);
     expect(container.textContent).toContain(
-      '„Mehr Log“ gibt es nur für systemd-Dienste unter Linux.',
+      '„Mehr Log“ gibt es für systemd-Dienste unter Linux und für Windows- und FreeBSD-Server.',
     );
-    expect(container.textContent).not.toContain('nur die letzten 200 Journal-Zeilen');
+    expect(container.textContent).not.toContain('nur die letzten 200 Log-Zeilen');
+  });
+
+  // R-1391: the event log of a Windows server, the syslog of a FreeBSD or OPNsense one, for every
+  // service of the list; a server of another platform has none.
+  it.each([
+    ['windows', 'windows'],
+    ['freebsd', 'freebsd'],
+    ['opnsense', 'freebsd'],
+  ] as const)('opens the log of every service on a %s server as %s', async (platform, log) => {
+    connectionList.set([ssh('web', 'srv-1')]);
+    const container = await shown(plain, platform);
+    expect(journalButtons(container).sort()).toEqual([
+      'Mehr Log von Spooler im Terminal öffnen',
+      'Mehr Log von sshd im Terminal öffnen',
+    ]);
+    expect(container.textContent).toContain('nur die letzten 200 Log-Zeilen');
+    await fireEvent.click(
+      container.querySelector(
+        'button[aria-label="Mehr Log von Spooler im Terminal öffnen"]',
+      ) as HTMLElement,
+    );
+    expect(h.connectServiceLog).toHaveBeenCalledExactlyOnceWith(
+      ssh('web', 'srv-1'),
+      'Spooler',
+      log,
+    );
+  });
+
+  it('offers no log on a server of another platform, not even for a systemd name', async () => {
+    connectionList.set([ssh('web', 'srv-1')]);
+    const container = await shown({}, 'other');
+    expect(journalButtons(container)).toEqual([]);
+    expect(container.textContent).toContain('„Mehr Log“ gibt es für systemd-Dienste unter Linux');
+  });
+
+  it('picks the log by the platform, else by the systemd suffix', () => {
+    expect(journalPlatform('linux', 'nginx.service')).toBe('linux');
+    expect(journalPlatform('linux', 'tmp.mount')).toBeNull();
+    expect(journalPlatform(null, 'nginx.service')).toBe('linux');
+    expect(journalPlatform(undefined, 'Spooler')).toBeNull();
+    expect(journalPlatform('windows', 'Spooler')).toBe('windows');
+    expect(journalPlatform('freebsd', 'sshd')).toBe('freebsd');
+    expect(journalPlatform('opnsense', 'configd')).toBe('freebsd');
+    expect(journalPlatform('other', 'nginx.service')).toBeNull();
   });
 });

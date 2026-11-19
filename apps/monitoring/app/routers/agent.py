@@ -30,15 +30,15 @@ from app.checkers.agent import (
     load_shed_since,
     record_agent_report,
 )
-from app.core.auth import require_agent
+from app.core.auth import require_agent, require_internal
 from app.core.bounds import find_unstorable
 from app.core.database import get_db
-from app.core.time import utcnow_naive
+from app.core.time import iso_utc, utcnow_naive
 from app.core.victoria import format_line, victoria
 from app.discovery import apply_credentials, apply_discovery
-from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
+from app.models import MonitorAgentLiveness, MonitorCheck, MonitorHostFacts, MonitorState
 from app.module_plan import build_plan
-from app.schemas import AgentPlanOut
+from app.schemas import AgentPlanOut, AgentStateOut
 from app.service_inventory import store_service_report
 from app.template_suggestions import store_host_facts
 
@@ -88,6 +88,27 @@ def agent_plan(
     """The agent's next run: its probe checks, the markers to look for and whether to scan."""
     _require_own_server(auth_server_id, server_id)
     return build_plan(db, server_id)
+
+
+@router.get(
+    "/agent/{server_id}/state",
+    response_model=AgentStateOut,
+    dependencies=[Depends(require_internal)],
+)
+def agent_state(server_id: str, db: Session = Depends(get_db)):
+    """The agent's last report and the host facts it carried, for the provisioning progress
+    of the server. A server without a report answers with nulls rather than 404: the
+    caller cannot tell an unknown server from one whose agent has not reported yet."""
+    liveness = db.get(MonitorAgentLiveness, server_id)
+    facts = db.get(MonitorHostFacts, server_id)
+    return {
+        "lastReportAt": iso_utc(liveness.last_report_at) if liveness else None,
+        "hostFacts": (
+            {"os": facts.os, "platform": facts.platform, "platformVersion": facts.platform_version}
+            if facts
+            else None
+        ),
+    }
 
 
 @router.post("/agent/{server_id}/report")

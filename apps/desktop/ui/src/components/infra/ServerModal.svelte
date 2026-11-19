@@ -5,13 +5,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitoringTemplateFull, ServerInput } from '$lib/api/types';
+  import type { MonitoringTemplateFull, ServerInput, ServerPlatform } from '$lib/api/types';
   import {
     emptyServerInput,
     serverToInput,
     parseTags,
     normalizeServerInput,
     validateServerInput,
+    SERVER_PLATFORMS,
   } from '$lib/models/infra';
   import { monitoringApi } from '$lib/api/monitoring';
   import { currentSession } from '$lib/stores/session';
@@ -142,16 +143,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         <label class="field">
           <span class="field-label">{$t('infra.field.osType')}</span>
-          <input
-            type="text"
+          <select
             name="osType"
             value={form.os_type ?? ''}
-            oninput={(e) => {
-              const v = (e.currentTarget as HTMLInputElement).value;
-              form = { ...form, os_type: v === '' ? null : v };
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              form = { ...form, os_type: v === '' ? null : (v as ServerPlatform) };
             }}
-            placeholder={$t('infra.field.osType.placeholder')}
-          />
+          >
+            <option value="">{$t('infra.field.osType.none')}</option>
+            {#each SERVER_PLATFORMS as p (p)}
+              <option value={p}>{$t(`infra.prov.platform.${p}`)}</option>
+            {/each}
+          </select>
         </label>
 
         <label class="field">
@@ -167,7 +171,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {#if isNew}
           <label class="field">
             <span class="field-label">{$t('infra.field.monitoringTemplate')}</span>
-            <select bind:value={monitoringTemplateId}>
+            <select name="monitoringTemplate" bind:value={monitoringTemplateId}>
               <option value="">{$t('infra.field.monitoringTemplate.none')}</option>
               {#each templateOptions as tpl (tpl.id)}
                 <option value={tpl.id}>{tpl.name}</option>

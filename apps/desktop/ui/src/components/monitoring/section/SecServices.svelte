@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { MonitorCheck } from '$lib/api/types';
   import { serviceDetails } from '$lib/models/checkDetails';
   import { worstStatus } from '$lib/models/monitoring';
-  import { ignoreService } from '$lib/stores/monitoring';
+  import { ignoreService, monitoringServers } from '$lib/stores/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
   import ServiceList from './ServiceList.svelte';
@@ -23,6 +23,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     serverId?: string | null;
   }
   let { checks, serverId = null }: Props = $props();
+
+  // The platform picks the log of "Mehr Log" (R-1391).
+  const platform = $derived($monitoringServers.find((s) => s.id === serverId)?.osType ?? null);
 
   let worst = $derived(worstStatus(checks));
   // The list loads when the dialog opens: the dashboard asks for nothing more.
@@ -232,6 +235,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     width="1040px"
     onClose={() => (listOpen = false)}
   >
-    <ServiceList {serverId} onJournal={() => (listOpen = false)} />
+    <ServiceList {serverId} {platform} onJournal={() => (listOpen = false)} />
   </Modal>
 {/if}

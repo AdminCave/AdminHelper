@@ -3,13 +3,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import type { MonObject } from './model';
+import type { Metric, MonObject } from './model';
 import {
   badSinceText,
   duplicateKeys,
   exceptionText,
   grammarViolations,
+  meterOf,
   metricText,
+  objectLabel,
   sinceText,
   sortObjects,
   thresholdText,
@@ -227,5 +229,59 @@ describe('duplicateKeys and exceptionText', () => {
     ).toBe(
       'prüfen, nicht bewerten · dieses Objekt · Grund: alte Platte, beobachtet · von kevin · dauerhaft · gilt nur bei 8 umgelagerte Sektoren',
     );
+  });
+});
+
+// arch-monitoring-neu-p0-abnahme T1 (R-1558): the label of an object does not repeat its kind, and
+// the bar of a metric places value and limits on one scale.
+describe('objectLabel', () => {
+  it('names kind and name, but the kind only once when the name is the kind', () => {
+    expect(objectLabel({ kind: 'disk', name: 'sda' })).toBe('Platte sda');
+    expect(objectLabel({ kind: 'cpu', name: 'CPU' })).toBe('CPU');
+    expect(objectLabel({ kind: 'memory', name: 'arbeitsspeicher' })).toBe('Arbeitsspeicher');
+    expect(objectLabel({ kind: 'service', name: 'Dienst-Monitor' })).toBe('Dienst Dienst-Monitor');
+  });
+});
+
+describe('meterOf', () => {
+  const m = (value: Metric['value'], threshold: Metric['threshold'], unit?: string): Metric => ({
+    key: 'k',
+    label: 'k',
+    value,
+    unit,
+    threshold,
+  });
+
+  it('runs a percentage to 100', () => {
+    expect(meterOf(m(45, { warn: 90, crit: 95 }, '%'))).toEqual({ fill: 45, warn: 90, crit: 95 });
+  });
+
+  it('runs anything else a quarter past the largest of value and limits', () => {
+    // max = 10 × 1.25 = 12.5
+    expect(meterOf(m(8, { warn: 1, crit: 10 }))).toEqual({ fill: 64, warn: 8, crit: 80 });
+    // The value beyond both limits sets the scale: max = 40 × 1.25 = 50.
+    expect(meterOf(m(40, { warn: 20 }, 'GB'))).toEqual({ fill: 80, warn: 40, crit: undefined });
+  });
+
+  it('places limits that count downwards on the same scale', () => {
+    // Free space: warning below 20, critical below 10; max = 20 × 1.25 = 25.
+    expect(meterOf(m(15, { warn: 20, crit: 10, below: true }, 'GB'))).toEqual({
+      fill: 60,
+      warn: 80,
+      crit: 40,
+    });
+  });
+
+  it('keeps value and limits inside the bar', () => {
+    expect(meterOf(m(130, { warn: 90, crit: 95 }, '%'))?.fill).toBe(100);
+    expect(meterOf(m(-5, { warn: 90 }, '%'))?.fill).toBe(0);
+    expect(meterOf(m(0, { warn: 0, crit: 0 }, '%'))).toEqual({ fill: 0, warn: 0, crit: 0 });
+  });
+
+  it('has no bar without a number, without a limit or with an empty scale', () => {
+    expect(meterOf(m('aktiv', { warn: 1 }))).toBeNull();
+    expect(meterOf(m(5, null))).toBeNull();
+    expect(meterOf(m(5, { below: true }))).toBeNull();
+    expect(meterOf(m(0, { warn: 0 }))).toBeNull();
   });
 });

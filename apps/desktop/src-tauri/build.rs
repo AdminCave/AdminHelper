@@ -37,6 +37,7 @@ const COMMANDS: &[&str] = &[
     "is_device_enrolled",
     "device_identity",
     "pinned_ca_fingerprint",
+    "open_doc",
     "reset_device_identity",
     "enroll_with_token",
     "export_browser_p12",

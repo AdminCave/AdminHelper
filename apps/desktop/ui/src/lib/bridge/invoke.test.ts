@@ -157,18 +157,32 @@ describe('bridge terminal', () => {
     expect(seen).toEqual([end]);
   });
 
-  // arch-monitoring-ui-3 T10: the unit goes as data, never as command text; Rust builds the call.
-  it('opens the journal action with the connection and the unit only', async () => {
+  // arch-monitoring-ui-3 T10, R-1391: the unit and the platform go as data, never as command
+  // text; Rust builds the call.
+  it('opens the journal action with the connection, the unit and the platform only', async () => {
     h.invoke.mockResolvedValueOnce(11);
     const seen: unknown[] = [];
     await expect(
-      terminalOpenSshJournal(connection, 'nginx.service', 100, 30, (m) => seen.push(m)),
+      terminalOpenSshJournal(connection, 'Spooler', 'windows', 100, 30, (m) => seen.push(m)),
     ).resolves.toBe(11);
     expect(h.invoke).toHaveBeenCalledTimes(1);
     const [cmd, args] = h.invoke.mock.calls[0] as [string, Record<string, unknown>];
     expect(cmd).toBe('terminal_open_ssh_journal');
-    expect(Object.keys(args).sort()).toEqual(['cols', 'connection', 'output', 'rows', 'unit']);
-    expect(args).toMatchObject({ connection, unit: 'nginx.service', cols: 100, rows: 30 });
+    expect(Object.keys(args).sort()).toEqual([
+      'cols',
+      'connection',
+      'output',
+      'platform',
+      'rows',
+      'unit',
+    ]);
+    expect(args).toMatchObject({
+      connection,
+      unit: 'Spooler',
+      platform: 'windows',
+      cols: 100,
+      rows: 30,
+    });
     const output = args.output as { onmessage: (message: unknown) => void };
     const end: TerminalExit = { exitCode: 0 };
     output.onmessage(end);

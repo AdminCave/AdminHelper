@@ -27,3 +27,25 @@
 2026-11-07 R-1080 channel matrix replaces the subscription flags: GET /api/users/me/notification-prefs removed the required property `subscriptions/items/channelTelegram` from the response with the `200` status
 2026-11-07 R-1080 channel matrix replaces the subscription flags: PUT /api/users/me/notification-prefs removed the required property `subscriptions/items/channelEmail` from the response with the `200` status
 2026-11-07 R-1080 channel matrix replaces the subscription flags: PUT /api/users/me/notification-prefs removed the required property `subscriptions/items/channelTelegram` from the response with the `200` status
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `freebsd` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `linux` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `opnsense` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `other` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers added the new `windows` enum value to the `items/osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers request property `os_type/anyOf[subschema #1]/` was restricted to a list of enum values
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `freebsd` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `linux` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: POST /api/servers added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `201`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `freebsd` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `linux` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: GET /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} request property `os_type/anyOf[subschema #1]/` was restricted to a list of enum values
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `freebsd` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `linux` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `opnsense` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `other` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`
+2026-11-19 R-1594 platform field replaces free text OS type: PUT /api/servers/{server_id} added the new `windows` enum value to the `osType/anyOf[subschema #1]/` response property for the response status `200`

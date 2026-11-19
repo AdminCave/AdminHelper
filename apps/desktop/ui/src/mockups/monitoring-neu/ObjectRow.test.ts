@@ -142,7 +142,7 @@ describe('ObjectRow', () => {
       },
     };
     const { container, getByText, queryByText } = render(ObjectRow, { object, now: NOW });
-    expect(container.querySelector('.row')?.classList.contains('hidden')).toBe(true);
+    expect(container.querySelector('.row')?.classList.contains('is-hidden')).toBe(true);
     expect(getByText('Ausgeblendet')).toBeTruthy();
     expect(queryByText('Warnung')).toBeNull();
     expect(container.querySelector('.exception')?.textContent).toContain(
@@ -155,6 +155,55 @@ describe('ObjectRow', () => {
     const { container } = render(ObjectRow, { object: DISK, now: NOW, onOpen });
     await fireEvent.click(container.querySelector('.row')!);
     expect(onOpen).toHaveBeenCalledWith(DISK.key);
+  });
+
+  // arch-monitoring-neu-p0-abnahme T1 (R-1558): a bar beside each metric with a limit, a compact
+  // row for the overview of all servers, and who acknowledged an open problem.
+  it('draws a bar for each shown metric with a limit, coloured only when breached', () => {
+    const { container } = render(ObjectRow, { object: DISK, now: NOW });
+    const bars = [...container.querySelectorAll('[data-metric] .meter')].map((e) => [
+      e.closest('[data-metric]')?.getAttribute('data-metric'),
+      e.getAttribute('data-status'),
+    ]);
+    expect(bars).toEqual([
+      ['temp', 'ok'],
+      ['realloc', 'warning'],
+      ['pending', 'ok'],
+    ]);
+    const ticks = container.querySelectorAll('[data-metric="realloc"] .tick');
+    expect([...ticks].map((t) => t.className.replace(/\s*svelte-\S+/g, ''))).toEqual([
+      'tick warn',
+      'tick crit',
+    ]);
+  });
+
+  it('shows only level 1 in compact form and indents a module part', () => {
+    const { container, getByText } = render(ObjectRow, {
+      object: DISK,
+      now: NOW,
+      compact: true,
+      depth: 1,
+    });
+    expect(getByText('Umgelagerte Sektoren sind seit gestern um 2 gestiegen.')).toBeTruthy();
+    expect(container.querySelector('.identity')).toBeNull();
+    expect(container.querySelector('[data-metric]')).toBeNull();
+    const row = container.querySelector('.row');
+    expect(row?.classList.contains('compact')).toBe(true);
+    expect(row?.classList.contains('part')).toBe(true);
+  });
+
+  it('names who acknowledged the problem, with the note', () => {
+    const object: MonObject = {
+      ...DISK,
+      ack: { by: 'anna', at: '2026-11-18T07:30:00Z', note: 'Platte ist bestellt' },
+    };
+    const { container } = render(ObjectRow, { object, now: NOW });
+    expect(container.querySelector(`[data-ack="${DISK.key}"]`)?.textContent).toBe(
+      'Bestätigt von anna, 18.11.2026, 07:30 — Platte ist bestellt',
+    );
+    cleanup();
+    const plain = render(ObjectRow, { object: DISK, now: NOW });
+    expect(plain.container.querySelector('[data-ack]')).toBeNull();
   });
 });
 

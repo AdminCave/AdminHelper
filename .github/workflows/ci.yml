@@ -57,6 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The base of the pull request has to exist locally.
           fetch-depth: 0
       - name: Map the changed paths to the suites
@@ -119,6 +120,8 @@ jobs:
       PYTEST_SHARD: ${{ matrix.shard }}/2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -261,6 +264,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -302,6 +307,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -341,6 +348,8 @@ jobs:
       AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -410,6 +419,8 @@ jobs:
       PYTEST_SHARD: ${{ matrix.shard }}/2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -514,6 +525,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -556,6 +569,8 @@ jobs:
       AH_TEST_DB: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -612,6 +627,8 @@ jobs:
       AH_VENV: /tmp/ci-venv
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -636,6 +653,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
@@ -693,6 +712,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install the build dependencies of pkg
         run: |
           sudo apt-get update -qq
@@ -713,9 +734,11 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.agent-windows != 'false' }}
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
@@ -734,6 +757,74 @@ jobs:
       - name: Smoke the built binary
         working-directory: apps/agent
         run: .\adminhelper-agent.exe version
+      # scripts/agent-install.ps1 end to end (R-1578; Kevin 2026-11-19: this job is the
+      # scenario run of the installer): a release built here, served on the loopback address
+      # the script accepts plain http on, installed as a real service by Windows PowerShell 5.1.
+      - name: Release for agent-install.ps1
+        shell: bash
+        run: |
+          rel="$RUNNER_TEMP/rel"
+          dl="$rel/AdminCave/AdminHelper/releases/download/v0.0.0-ci"
+          mkdir -p "$dl" "$rel/repos/AdminCave/AdminHelper/releases"
+          printf '{"tag_name":"v0.0.0-ci"}' > "$rel/repos/AdminCave/AdminHelper/releases/latest"
+          cp apps/agent/adminhelper-agent.exe "$dl/adminhelper-agent-windows-x86_64.exe"
+          curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 -o "$RUNNER_TEMP/frpc.zip" \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
+          echo "${FRP_SHA256_WINDOWS_AMD64}  $RUNNER_TEMP/frpc.zip" | sha256sum -c -
+          unzip -p "$RUNNER_TEMP/frpc.zip" "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > "$dl/frpc-windows-x86_64.exe"
+          (cd "$dl" && sha256sum adminhelper-agent-windows-x86_64.exe frpc-windows-x86_64.exe > SHA256SUMS)
+          cp "$dl/SHA256SUMS" "$RUNNER_TEMP/SHA256SUMS.good"
+      - name: agent-install.ps1 (refuse, install, update, uninstall)
+        shell: powershell
+        run: |
+          $rel = Join-Path $env:RUNNER_TEMP "rel"
+          $dl = Join-Path $rel "AdminCave\AdminHelper\releases\download\v0.0.0-ci"
+          # The API answer has no extension; serve it as JSON so Invoke-RestMethod parses it.
+          $srv = Join-Path $env:RUNNER_TEMP "serve.py"
+          Set-Content -Encoding ascii $srv @(
+            "import http.server as h",
+            "H = h.SimpleHTTPRequestHandler",
+            "H.extensions_map = {**H.extensions_map, '': 'application/json'}",
+            "h.ThreadingHTTPServer(('127.0.0.1', 8765), H).serve_forever()"
+          )
+          Start-Process python -ArgumentList $srv -WorkingDirectory $rel -WindowStyle Hidden
+          foreach ($i in 1..30) { try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/ | Out-Null; break } catch { Start-Sleep 1 } }
+          $env:AH_API_BASE = "http://127.0.0.1:8765"
+          $env:AH_DL_BASE = "http://127.0.0.1:8765"
+          $install = [scriptblock]::Create((Get-Content -Raw scripts\agent-install.ps1))
+          $prog = Join-Path $env:ProgramFiles "AdminHelper Agent"
+          # $Expect pins the reason: a download error must not pass for a refused tamper.
+          function Assert-Refused([string]$Why, [string]$Expect, [scriptblock]$Run) {
+            $threw = $false
+            try { & $Run } catch {
+              $threw = $true
+              if (-not "$_".Contains($Expect)) { throw "$Why refused for the wrong reason: $_" }
+              Write-Host "refused as expected: $_"
+            }
+            if (-not $threw) { throw "agent-install.ps1 did not refuse: $Why" }
+            if (Get-Service AdminHelper-Agent -ErrorAction SilentlyContinue) { throw "$Why left a service behind" }
+            if (Test-Path $prog) { throw "$Why left $prog behind" }
+          }
+          Assert-Refused "-ServerId without -Server" "-ServerId requires -Server" { & $install -ServerId 1 }
+          Assert-Refused "-Server over http" "-Server must be an https:// URL" { & $install -Server http://192.0.2.1 -ServerId 1 }
+          # A SHA256SUMS that does not match the agent: refused before anything changes.
+          # sha256sum of Git Bash writes "<hash> *<name>" (binary mode), so the separator varies.
+          $good = Get-Content (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good")
+          $bad = $good -replace '^[0-9a-f]{64}(?=\s+\*?adminhelper-agent)', ('0' * 64)
+          if (($bad -join "`n") -eq ($good -join "`n")) { throw "the tampered SHA256SUMS equals the real one" }
+          Set-Content -Encoding ascii (Join-Path $dl "SHA256SUMS") $bad
+          Assert-Refused "tampered SHA256SUMS" "does not match SHA256SUMS" { & $install }
+          Copy-Item -Force (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good") (Join-Path $dl "SHA256SUMS")
+          & $install
+          if ((Get-Service AdminHelper-Agent).Status -ne "Running") { throw "service not running after install" }
+          foreach ($f in "adminhelper-agent.exe", "frpc.exe") {
+            if (-not (Test-Path (Join-Path $prog $f))) { throw "$f missing in $prog" }
+          }
+          & $install -Version 0.0.0-ci
+          if ((Get-Service AdminHelper-Agent).Status -ne "Running") { throw "service not running after the update" }
+          & (Join-Path $prog "adminhelper-agent.exe") service uninstall --purge
+          if ($LASTEXITCODE -ne 0) { throw "service uninstall --purge failed ($LASTEXITCODE)" }
+          if (Get-Service AdminHelper-Agent -ErrorAction SilentlyContinue) { throw "service still there after uninstall" }
 
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
@@ -741,6 +832,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The three types both api/types.ts files describe (FrpConfig, FrpStatus,
       # FrpStatusProxy) are maintained twice. Every line the web file
       # declares has to exist in the desktop one — the desktop may carry more,
@@ -780,6 +873,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
@@ -805,6 +900,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
@@ -854,6 +951,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # A slow apt mirror held this step in tauri-build-smoke until that job's limit
       # (run 39776102278), and in this job until the step's (run 41888786175). The downloads
       # get three attempts of three minutes (retry.sh); a kill there leaves dpkg untouched,
@@ -925,6 +1024,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -955,6 +1056,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # A slow apt mirror held this step until the job's 45-minute limit
       # (run 39776102278). The downloads get three attempts of three minutes (retry.sh) and
       # a cache of the archives, as in the job rust.
@@ -1020,6 +1123,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # As in the job rust: three attempts of three minutes per download (retry.sh) and a
       # cache of the archives, the same as the job rust's.
       - id: apt-week
@@ -1093,6 +1198,8 @@ jobs:
             dockerfile: apps/frps/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build (no push)
@@ -1114,6 +1221,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Compare the FRP_VERSION pins
         run: |
           ci=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
@@ -1191,6 +1300,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The gate diffs this branch's snapshot against the base branch's, so the
           # base ref has to exist locally. The default shallow clone has only this
           # commit — and openapi-breaking.sh refuses an unresolvable ref rather than
@@ -1220,9 +1330,13 @@ jobs:
           tar xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP/bin" oasdiff
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Server API stays compatible with the base branch
-        run: bash scripts/dev/openapi-breaking.sh server --base "origin/${{ github.base_ref || 'main' }}"
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: bash scripts/dev/openapi-breaking.sh server --base "origin/${BASE_REF}"
       - name: Monitoring API stays compatible with the base branch
-        run: bash scripts/dev/openapi-breaking.sh monitoring --base "origin/${{ github.base_ref || 'main' }}"
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: bash scripts/dev/openapi-breaking.sh monitoring --base "origin/${BASE_REF}"
 
   # What must never become public (R-0123): the private roadmap, the security
   # ledgers, a security finding's Dedup-Key, the files that carry credentials, a
@@ -1243,6 +1357,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Every commit of the span is read, and the base has to exist locally.
           fetch-depth: 0
       - name: review.sh sec over the commits this change brings
@@ -1301,6 +1416,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: shellcheck
         # The frps supervisor runs under the busybox sh of its image, so it is checked as
         # POSIX sh, not as bash.
@@ -1358,6 +1475,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Syntax-check the single public TLS edge on every PR: the integration-stack
       # job below skips PRs and docker.yml only builds on releases, so a broken
       # nginx.conf (bad directive, missing snippet include) would otherwise merge and
@@ -1395,6 +1514,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: From-outside mTLS integration test
         run: bash scripts/tests/integration_stack_test.sh
 

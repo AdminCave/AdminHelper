@@ -11,8 +11,22 @@ import (
 	"os/exec"
 )
 
-// serviceLogsSupported: the error lines come from the journal, so only Linux sends them.
+// serviceLogsSupported: the error lines come from the journal.
 const serviceLogsSupported = true
+
+// serviceLogUnitsListed: the failed units are the ones with error lines, so the block needs no
+// log_units.
+const serviceLogUnitsListed = false
+
+// serviceLogUnits are the units whose error lines are sent: the failed ones (failedUnits).
+func serviceLogUnits(systemd map[string]any) ([]string, map[string]string) {
+	return failedUnits(systemd)
+}
+
+// newServiceLogReader opens one run's reader: a journalctl call per unit (readServiceLog).
+func newServiceLogReader() func(context.Context, string) ([]string, bool) {
+	return readServiceLog
+}
 
 // journalCLI indirects the journalctl lookup and call of readServiceLog so tests can drive it without
 // a journal (same reason as systemCLI). run runs one call under pluginTimeout and ctx.

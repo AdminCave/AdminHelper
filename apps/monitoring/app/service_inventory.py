@@ -160,26 +160,31 @@ def _since(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _failed_units(systemd: dict) -> list[str] | None:
-    """The failed units of the report in order, without duplicates; None when failed is no
-    list (the report says nothing about them)."""
-    failed = systemd.get("failed")
-    if not isinstance(failed, list):
+def _log_units(systemd: dict) -> list[str] | None:
+    """The units whose lines the report keeps, in order, without duplicates: log_units when
+    the block lists them (Windows: stopped automatic services with an exit code, which are
+    never failed), else failed. None when neither is a list (the report says nothing about
+    them)."""
+    units = systemd.get("log_units")
+    if not isinstance(units, list):
+        units = systemd.get("failed")
+    if not isinstance(units, list):
         return None
-    return list(dict.fromkeys(u for u in failed[:MAX_REPORT_ENTRIES] if isinstance(u, str)))
+    return list(dict.fromkeys(u for u in units[:MAX_REPORT_ENTRIES] if isinstance(u, str)))
 
 
 def store_service_report(db: Session, server_id: str, systemd: object) -> None:
     """Keep what the report's systemd block says about the services, and commit.
 
     - all_services replaces the inventory; a throttled report without it keeps the last one.
-    - failed_logs is stored per unit of failed while the server's switch is on, redacted
-      (clean_log_line), the last MAX_LOG_LINES lines, for the first MAX_LOG_UNITS units
-      that bring lines; with the switch off nothing is stored and the stored lines go.
-    - A unit no longer in failed loses its lines.
+    - failed_logs is stored per unit of failed (of log_units, when the block lists them)
+      while the server's switch is on, redacted (clean_log_line), the last MAX_LOG_LINES
+      lines, for the first MAX_LOG_UNITS units that bring lines; with the switch off nothing
+      is stored and the stored lines go.
+    - A unit no longer in that list loses its lines.
 
     A report whose listing failed (error) replaces and drops nothing: its lists prove
-    nothing. It may still bring lines of a unit in failed."""
+    nothing. It may still bring lines of a unit in the list."""
     if not isinstance(systemd, dict):
         return
     now = utcnow_naive()
@@ -198,7 +203,7 @@ def store_service_report(db: Session, server_id: str, systemd: object) -> None:
 
     # A row added just now has no value yet: the column default is on.
     lines_on = row is None or row.log_lines is not False
-    failed = _failed_units(systemd)
+    failed = _log_units(systemd)
     logs = db.query(MonitorServiceLog).filter(MonitorServiceLog.server_id == server_id)
     if not lines_on:
         logs.delete(synchronize_session=False)

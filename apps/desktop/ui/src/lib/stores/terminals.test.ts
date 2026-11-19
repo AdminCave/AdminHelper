@@ -1036,11 +1036,12 @@ describe('a credential prompt in a tab', () => {
 // arch-monitoring-ui-3 T10: "Mehr Log", the journal of a unit on the host, over SSH.
 describe('the journal of a unit in a tab', () => {
   const UNIT = 'nginx.service';
+  const JOURNAL = { unit: UNIT, platform: 'linux' } as const;
 
   it('opens in a tab in front named for its unit and shows the journal, not a shell', async () => {
-    expect(await openTerminal(CONN, RESOLVED, undefined, { journal: { unit: UNIT } })).toBe(true);
+    expect(await openTerminal(CONN, RESOLVED, undefined, { journal: JOURNAL })).toBe(true);
     const s = only();
-    expect(s).toMatchObject({ resolved: RESOLVED, journal: { unit: UNIT } });
+    expect(s).toMatchObject({ resolved: RESOLVED, journal: JOURNAL });
     // The tab, the title and a detached window name the connection and the unit; the id stays.
     expect(s.connection).toEqual({ ...CONN, name: 'db · nginx.service' });
     expect(s.backendId).toBe(78);
@@ -1048,6 +1049,7 @@ describe('the journal of a unit in a tab', () => {
     expect(h.terminalOpenSshJournal).toHaveBeenCalledExactlyOnceWith(
       RESOLVED,
       UNIT,
+      'linux',
       80,
       24,
       expect.any(Function),
@@ -1056,14 +1058,17 @@ describe('the journal of a unit in a tab', () => {
     expect(h.terminalOpenSshCredential).not.toHaveBeenCalled();
   });
 
-  it('reconnects to the journal again and is not kept for the next run', async () => {
-    await openTerminal(CONN, RESOLVED, undefined, { journal: { unit: UNIT } });
+  it('reconnects to the log of the same platform again and is not kept for the next run', async () => {
+    await openTerminal(CONN, RESOLVED, undefined, {
+      journal: { unit: 'Spooler', platform: 'windows' },
+    });
     const s = only();
     h.resolveConnection.mockResolvedValueOnce({ connection: MOVED });
     expect(await reconnectTerminal(s.key)).toBe(true);
     expect(h.terminalOpenSshJournal).toHaveBeenLastCalledWith(
       MOVED,
-      UNIT,
+      'Spooler',
+      'windows',
       80,
       24,
       expect.any(Function),

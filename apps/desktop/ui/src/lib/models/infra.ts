@@ -7,10 +7,19 @@
 // unit-testable. Mirrors the shape the server API expects (ServerInput) and
 // returns (Server).
 
-import type { Server, ServerInput } from '$lib/api/types';
+import type { Server, ServerInput, ServerPlatform } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
 import { parseTags, type ValidationResult } from './shared';
 export { parseTags };
+
+/** The choices of the platform field, in this order. */
+export const SERVER_PLATFORMS: readonly ServerPlatform[] = [
+  'linux',
+  'windows',
+  'freebsd',
+  'opnsense',
+  'other',
+];
 
 export function emptyServerInput(): ServerInput {
   return { name: '', hostname: '', os_type: null, tags: [], notes: '' };
@@ -28,13 +37,12 @@ export function serverToInput(s: Server): ServerInput {
 }
 
 export function normalizeServerInput(input: ServerInput): ServerInput {
-  const os = (input.os_type ?? '').trim();
   return {
     name: input.name.trim(),
     // No own address: the name is the address. A server from R-1210 on stores that as
     // "follows the name", one from before as the hostname it requires.
     hostname: input.hostname.trim() || input.name.trim(),
-    os_type: os || null,
+    os_type: input.os_type ?? null,
     tags: [...new Set((input.tags ?? []).map((t) => t.trim()).filter((t) => t.length > 0))],
     notes: (input.notes ?? '').trim(),
   };

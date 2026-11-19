@@ -324,3 +324,79 @@ def test_the_nightly_restore_runs_the_round_trip_where_a_skip_is_red():
         "name": "Backup, total loss, restore",
         "run": "bash scripts/tests/backup_restore_test.sh",
     }
+
+
+def test_the_windows_job_installs_with_agent_install_ps1_and_proves_each_path():
+    # Kevin 2026-11-19: this job is the scenario run of the Windows installer (R-1578).
+    job = _workflow()["jobs"]["agent-windows"]
+    steps = {step.get("name"): step for step in job["steps"]}
+    step = steps["agent-install.ps1 (refuse, install, update, uninstall)"]
+    run = step["run"]
+    # Windows PowerShell 5.1, what an administrator has, not pwsh; red is red.
+    assert step["shell"] == "powershell"
+    assert "continue-on-error" not in step and "continue-on-error" not in job
+    assert "Get-Content -Raw scripts\\agent-install.ps1" in run
+    # Plain http only on the loopback address the script accepts it on.
+    assert '$env:AH_DL_BASE = "http://127.0.0.1:8765"' in run
+    for proof in (
+        'Assert-Refused "tampered SHA256SUMS" "does not match SHA256SUMS"',
+        # The reason is checked, so a download error does not pass for a refusal.
+        'if (-not "$_".Contains($Expect)) { throw',
+        # Run 44517506477: a tamper that changed nothing passed for a refusal test.
+        'throw "the tampered SHA256SUMS equals the real one"',
+        "& $install\n",
+        "& $install -Version 0.0.0-ci",
+        "service uninstall --purge",
+    ):
+        assert proof in run, proof
+    # The release it serves carries the frpc the agent pins, checked against the pin.
+    release = steps["Release for agent-install.ps1"]["run"]
+    assert 'echo "${FRP_SHA256_WINDOWS_AMD64}  $RUNNER_TEMP/frpc.zip" | sha256sum -c -' in release
+
+
+# Hardening after zizmor 1.32 (R-1556), over every workflow of the repo.
+_WORKFLOWS = sorted(_CI.parent.glob("*.yml"))
+
+
+def _steps():
+    for path in _WORKFLOWS:
+        for job_name, job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].items():
+            for step in job.get("steps", []):
+                yield f"{path.name}:{job_name}", step
+
+
+def test_every_workflow_is_seen():
+    assert {p.name for p in _WORKFLOWS} >= {
+        "ci.yml",
+        "audit.yml",
+        "docker.yml",
+        "nightly.yml",
+        "release.yml",
+    }
+
+
+def test_no_checkout_leaves_the_token_in_the_git_config():
+    checkouts = [
+        (where, s) for where, s in _steps() if s.get("uses", "").startswith("actions/checkout@")
+    ]
+    assert checkouts
+    for where, step in checkouts:
+        assert (step.get("with") or {}).get("persist-credentials") is False, where
+
+
+def test_no_run_block_expands_a_context_other_than_the_matrix():
+    # A template in run: is pasted into the script before the shell sees it; a branch name
+    # (github.base_ref, github.head_ref) could carry shell code. Such values go through env:.
+    for where, step in _steps():
+        for expr in re.findall(r"\$\{\{(.*?)\}\}", step.get("run", "")):
+            assert expr.strip().startswith("matrix."), (where, expr)
+
+
+def test_docker_grants_package_and_oidc_writes_only_to_the_jobs_that_need_them():
+    docker = yaml.safe_load(_CI.with_name("docker.yml").read_text(encoding="utf-8"))
+    assert docker["permissions"] == {"contents": "read"}
+    assert docker["jobs"]["build"]["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+    }
