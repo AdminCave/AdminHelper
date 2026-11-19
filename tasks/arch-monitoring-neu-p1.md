@@ -21,8 +21,10 @@ Test-DB des Worktrees und nennen die Summary-Zeile im Commit-Body, die PR-CI fä
 (`check_engine.py`, `routers/agent.py`, `schemas.py`, `alembic/versions/*`, `monitoring_proxy/*`): `security` je Task
 dazu. Belegte Fehler außerhalb des Auftrags werden Roadmap-Zeilen (`roadmap.py add`).
 
-### T1 — `execute_check` und `HttpChecker.run` in benannte Schritte zerlegen (R-0805)  [ ]
+### T1 — `execute_check` und `HttpChecker.run` in benannte Schritte zerlegen (R-0805)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/app/checkers/http.py
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped @7e98c031a 2026-11-19T14:53:51+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1/T1.verdict.json)
 Änderung: Reines Refactoring ohne Verhaltensänderung: `execute_check` (`check_engine.py:459`) in Laden, Ausführen (samt `RunSkipped`), Metriken schreiben, Zustand sperren und anwenden, Melden; `HttpChecker.run` (`checkers/http.py:31`) in Anfrage, Bewertung, Ergebnis. Die Monitoring-Suite ist vorher und nachher grün (Summary-Zeile vorher im Commit-Body).
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (interne Zerlegung, Verhalten unverändert)

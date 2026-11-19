@@ -14,13 +14,14 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import NamedTuple
 
 from sqlalchemy.orm import Session
 
 from app.alerter import alert_status, process_alert, resolve_notification
 from app.central.limits import RunSkipped
 from app.check_types import PUSH_ONLY_TYPES
-from app.checkers import CheckContext, PartnerState, get_checker
+from app.checkers import CheckContext, Checker, PartnerState, get_checker
 from app.checkers.context import DiskRules
 from app.core import database
 from app.core.bounds import storable
@@ -456,120 +457,166 @@ def _note_skip(db: Session, check_id: str, note: str) -> None:
     logger.info("Check %s %s", check_id, note)
 
 
+class _Run(NamedTuple):
+    """What execute_check takes from the check before it ends the read transaction."""
+
+    check_type: str
+    server_id: str | None
+    name: str
+    config: dict | None
+    checker: Checker | None
+    context: CheckContext | None
+
+
+def _load_run(db: Session, check_id: str) -> _Run | None:
+    """The enabled check with its config, checker and context; None when the scheduler
+    has nothing to run (the check is gone, disabled or push-only)."""
+    check = (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.id == check_id, MonitorCheck.enabled == True)  # noqa: E712
+        .first()
+    )
+    if not check:
+        return None
+
+    try:
+        config = json.loads(check.config) if check.config else {}
+    except (json.JSONDecodeError, TypeError):
+        config = None
+    # A stored list or number is as corrupt as broken JSON: every checker reads a mapping.
+    if not isinstance(config, dict):
+        config = None
+
+    # Do not run push-only checks from the scheduler
+    if check.check_type in PUSH_ONLY_TYPES:
+        return None
+
+    check_type, server_id, name = check.check_type, check.server_id, check.name
+    config = resolve_config_server_id(config, check_type, server_id)
+
+    checker = None
+    context = None
+    if config is not None:
+        try:
+            checker = get_checker(check_type)
+        except ValueError as exc:
+            logger.warning("Check %s: %s", name, exc)
+        # Read in this transaction, before execute_check's rollback ends it.
+        if getattr(checker, "wants_context", False) is True:
+            context = _load_context(db, check, config)
+    return _Run(check_type, server_id, name, config, checker, context)
+
+
+def _run_checker(run: _Run) -> tuple[str, str, dict | None, int]:
+    """Status, message, metrics and duration in ms of one run. RunSkipped passes through:
+    the run did not happen."""
+    # A corrupt config or an unknown check type must surface as unknown so the normal alert
+    # chain fires — not silently freeze the state on its last value (a "dead" check that still
+    # looks healthy, with no alert and no dashboard hint) (4.109).
+    start = time.monotonic()
+    if run.config is None:
+        result_status, message, metrics = "unknown", "Invalid check configuration", None
+    elif run.checker is None:
+        result_status, message, metrics = "unknown", "Unknown check type", None
+    else:
+        try:
+            if run.context is not None:
+                result_status, message, metrics = run.checker.run_with_context(
+                    run.config, run.context
+                )
+            else:
+                result_status, message, metrics = run.checker.run(run.config)
+        except RunSkipped:
+            raise
+        except Exception as exc:
+            result_status = "unknown"
+            message = f"Unexpected error: {exc}"
+            metrics = None
+            logger.exception("Check %s fehlgeschlagen", run.name)
+    duration_ms = int((time.monotonic() - start) * 1000)
+    return result_status, message, metrics, duration_ms
+
+
+def _apply_locked(
+    db: Session,
+    check_id: str,
+    result_status: str,
+    message: str,
+    details: dict | None,
+    now: datetime,
+) -> tuple[str, str, str] | None:
+    """Applies one result to the locked state row and commits; apply_result's (old status,
+    effective status, decision), or None when the check was deleted during its run."""
+    # Lock the row for the read-modify-write (fail_count, status): the scheduler's
+    # max_instances=1 isn't the only writer — POST /checks/{id}/run runs the same check
+    # synchronously on the request thread, and the agent push path can fire two
+    # near-simultaneous reports for one server. Without the lock both could read fail_count=2
+    # and write 3 instead of 4, or both see the same transition and double-alert (4.46).
+    # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
+    state = (
+        db.query(MonitorState).filter(MonitorState.check_id == check_id).with_for_update().first()
+    )
+    # Read again: the check may have been changed or deleted during the run.
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if check is None:
+        logger.debug("Check %s was deleted during its run, result dropped", check_id)
+        return None
+    had_state = state is not None
+    check_name = check.name
+    old_status, eff_status, decision = apply_result(
+        db, check, state, result_status, message, details, now
+    )
+    # The message as stored (capped, with the damping suffix), read before the commit
+    # expires the row.
+    stored_message = state.message if had_state else message
+    db.commit()
+    if had_state and eff_status != old_status:
+        log_transition(check_name, old_status, eff_status, stored_message)
+    return old_status, eff_status, decision
+
+
 def execute_check(check_id: str) -> None:
-    """Called by the scheduler for each check interval."""
+    """Called by the scheduler for each check interval: load, run, write the metrics,
+    apply the result, notify."""
     db = database.SessionLocal()
     try:
-        check = (
-            db.query(MonitorCheck)
-            .filter(MonitorCheck.id == check_id, MonitorCheck.enabled == True)  # noqa: E712
-            .first()
-        )
-        if not check:
+        run = _load_run(db, check_id)
+        if run is None:
             return
-
-        try:
-            config = json.loads(check.config) if check.config else {}
-        except (json.JSONDecodeError, TypeError):
-            config = None
-        # A stored list or number is as corrupt as broken JSON: every checker reads a mapping.
-        if not isinstance(config, dict):
-            config = None
-
-        # Do not run push-only checks from the scheduler
-        if check.check_type in PUSH_ONLY_TYPES:
-            return
-
-        check_type, server_id, name = check.check_type, check.server_id, check.name
-        config = resolve_config_server_id(config, check_type, server_id)
-
-        checker = None
-        context = None
-        if config is not None:
-            try:
-                checker = get_checker(check_type)
-            except ValueError as exc:
-                logger.warning("Check %s: %s", name, exc)
-            # Read in this transaction, before the rollback below ends it.
-            if getattr(checker, "wants_context", False) is True:
-                context = _load_context(db, check, config)
 
         # End the read transaction before the run: the checker takes up to its configured
         # timeout (at most 300 s) and the metric write follows. Held over both, the 30
         # scheduler workers (scheduler.py) could take all 30 pool connections
         # (core/database.py) whenever a target or VictoriaMetrics hangs, and agent reports
-        # and API requests would fail (R-0615). The rollback expires `check`; until it is
-        # read again below, only the values taken above are used.
+        # and API requests would fail (R-0615). The rollback expires the check; until
+        # _apply_locked reads it again, only the values in `run` are used.
         db.rollback()
 
-        # A corrupt config or an unknown check type must surface as unknown so the normal alert
-        # chain fires — not silently freeze the state on its last value (a "dead" check that still
-        # looks healthy, with no alert and no dashboard hint) (4.109).
-        start = time.monotonic()
-        if config is None:
-            result_status, message, metrics = "unknown", "Invalid check configuration", None
-        elif checker is None:
-            result_status, message, metrics = "unknown", "Unknown check type", None
-        else:
-            try:
-                if context is not None:
-                    result_status, message, metrics = checker.run_with_context(config, context)
-                else:
-                    result_status, message, metrics = checker.run(config)
-            except RunSkipped as skip:
-                _note_skip(db, check_id, str(skip))
-                return
-            except Exception as exc:
-                result_status = "unknown"
-                message = f"Unexpected error: {exc}"
-                metrics = None
-                logger.exception("Check %s fehlgeschlagen", name)
-        duration_ms = int((time.monotonic() - start) * 1000)
+        try:
+            result_status, message, metrics, duration_ms = _run_checker(run)
+        except RunSkipped as skip:
+            _note_skip(db, check_id, str(skip))
+            return
 
         # Extract structured details (not sent to VictoriaMetrics)
         details = metrics.pop("_details", None) if metrics else None
 
         now = utcnow_naive()
 
-        # Send metrics to VictoriaMetrics
         victoria.write_check_result(
             check_id=check_id,
-            check_type=check_type,
-            server_id=server_id,
-            name=name,
+            check_type=run.check_type,
+            server_id=run.server_id,
+            name=run.name,
             status=result_status,
             duration_ms=duration_ms,
             extra_metrics=metrics,
         )
 
-        # Update state. Lock the row for the read-modify-write (fail_count, status): the
-        # scheduler's max_instances=1 isn't the only writer — POST /checks/{id}/run runs the same
-        # check synchronously on the request thread, and the agent push path can fire two
-        # near-simultaneous reports for one server. Without the lock both could read fail_count=2
-        # and write 3 instead of 4, or both see the same transition and double-alert (4.46).
-        # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
-        state = (
-            db.query(MonitorState)
-            .filter(MonitorState.check_id == check_id)
-            .with_for_update()
-            .first()
-        )
-        # Read again: the check may have been changed or deleted during the run.
-        check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
-        if check is None:
-            logger.debug("Check %s was deleted during its run, result dropped", check_id)
+        applied = _apply_locked(db, check_id, result_status, message, details, now)
+        if applied is None:
             return
-        had_state = state is not None
-        check_name = check.name
-        old_status, eff_status, decision = apply_result(
-            db, check, state, result_status, message, details, now
-        )
-        # The message as stored (capped, with the damping suffix), read before the commit
-        # expires the row.
-        stored_message = state.message if had_state else message
-        db.commit()
-        if had_state and eff_status != old_status:
-            log_transition(check_name, old_status, eff_status, stored_message)
+        old_status, eff_status, decision = applied
 
         # Dispatch OFF the check-worker thread (see _alert_pool /
         # dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
@@ -578,7 +625,7 @@ def execute_check(check_id: str) -> None:
         # A heartbeat's discrepancy stays open for the agent alert bundle
         # (alert_bundle.flush_agent_alerts), which reports agents that go silent
         # or come back together in one message.
-        if decision == "notify" and check_type != "agent_ping":
+        if decision == "notify" and run.check_type != "agent_ping":
             _alert_pool.submit(dispatch_alert_bg, check_id, old_status, eff_status)
 
     except Exception:
