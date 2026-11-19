@@ -10,8 +10,10 @@ Heavy: none — Doku, Mockup-UI, Monitoring-Unit-Tests, Agent-Unit-Tests, Ledger
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1608/R-1627: ADR 0004 und Feature-Spec nachziehen  [ ]
+### T1 — R-1608/R-1627: ADR 0004 und Feature-Spec nachziehen  [x]
 Komponente: scripts · Dateien: docs/adr/0004-monitoring-neuordnung.md, docs/features/arch-monitoring-neu-p0.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @067edd4e8 2026-11-19T21:30:13+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Beweis: reviewer branch arch-monitoring-neu-p0 2026-11-18 (ADR :172 Fallzahl, Spec :138 Build-Test) und arch-monitoring-neu-p0-abnahme 2026-11-19 (ADR 3.1: Lagekarte kappt erst ab 40 Servern auf 20)
 Semantik: keine Stelle in docs/ — die Texte selbst sind der Fund
 Änderung: ADR: „118 Fälle“ aufschlüsseln (101 Szenarien, 4 benannte Abweichungen, der Rest wie die Tests zählen); Abschnitt 3.1: Lagekarte kappt erst ab 40 Servern auf 20. Spec: statt Build-Test über `dist/` den gebauten `isolation.test.ts` nennen. Zahlen vorher gegen die Tests zählen.
