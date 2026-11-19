@@ -1,5 +1,5 @@
 # TOFU-Warnung in agent-install.sh — Task-Ledger
-Status: aktiv · Branch: feature/ops-11 · Review: am Ende
+Status: bereit · Branch: feature/ops-11 · Review: am Ende
 Spec: docs/features/ops-11.md (Roadmap R-1634)
 Heavy: none — nur der Text einer Warnung, der Stub-Test in scripts deckt den Zweig
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -15,8 +15,10 @@ Dedup-Key: bug:scripts:agent-install.sh:tofu-warning
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: keine (agent-deployment.html beschreibt den Vergleich mit dem Server-Zertifikat schon)
 
-### T2 — Warnung nennt Befehl und wirksamen Weg (Fund Abschlussprüfung)  [ ]
+### T2 — Warnung nennt Befehl und wirksamen Weg (Fund Abschlussprüfung)  [x]
 Komponente: scripts · Dateien: scripts/agent-install.sh, scripts/tests/agent_install_test.sh, changelog.d/ops-11.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @731449def 2026-11-19T17:26:35+01:00
+Review: am Ende (Branch-Review)
 Änderung: Die Warnung verweist nicht auf den Hinweis alter Agents (der den Wert nicht nennt), sondern nennt den openssl-Befehl für das Gateway-Zertifikat; als wirksamen Weg ein Update des AdminHelper-Servers (er liefert den Agent) und eine neue Provisionierung mit neuem Token und --ca-fp. Dazu das changelog-Fragment.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_test
 Doku: changelog.d/ops-11.md
