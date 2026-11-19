@@ -157,6 +157,20 @@ jobs:
           tar xzf frpc.tar.gz
           cp "frp_${FRP_VERSION}_linux_amd64/frpc" ./frpc
           chmod +x frpc
+      # `service install` on Windows places frpc.exe beside the agent and starts only the one whose
+      # SHA-256 frpcpin.go pins; ship exactly that file next to the agent so it lands in SHA256SUMS
+      # and under the minisign signature (R-1545).
+      - name: Download frpc.exe (Windows release asset)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o frpc-windows.zip \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
+          echo "${FRP_SHA256_WINDOWS_AMD64}  frpc-windows.zip" | sha256sum -c -
+          unzip -p frpc-windows.zip "frp_${FRP_VERSION}_windows_amd64/frpc.exe" > frpc-windows-x86_64.exe
+          want="$(grep -m1 'ExeSHA256 *=' apps/agent/internal/frpc/frpcpin.go | grep -o '[0-9a-f]\{64\}')"
+          test -n "$want" || { echo "::error::no ExeSHA256 in apps/agent/internal/frpc/frpcpin.go"; exit 1; }
+          echo "${want}  frpc-windows-x86_64.exe" | sha256sum -c - || {
+            echo "::error::frpc.exe of v${FRP_VERSION} does not match ExeSHA256 in frpcpin.go; the agent would refuse it"; exit 1; }
       - name: Build .deb
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -178,6 +192,7 @@ jobs:
           cp adminhelper-agent-*.rpm dist/
           cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
           cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
+          cp frpc-windows-x86_64.exe dist/frpc-windows-x86_64.exe
           cp apps/agent/bin/adminhelper-agent-freebsd dist/adminhelper-agent-freebsd-x86_64
           # The FreeBSD package carries this binary; FreeBSD has no glibc, but a dynamic
           # binary would still need the build host's loader, so assert static here too.

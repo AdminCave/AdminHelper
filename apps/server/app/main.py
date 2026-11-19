@@ -53,6 +53,7 @@ from app.modules.frp.schemas import dashboard_port_refused
 from app.modules.hooks.router import router as hooks_router
 from app.modules.hooks.router import trigger_router as hooks_trigger_router
 from app.modules.monitoring_proxy.router import router as monitoring_proxy_router
+from app.modules.notifications.admin_router import router as notifications_admin_router
 from app.modules.notifications.models import Notification
 from app.modules.notifications.router import feed_router as notifications_feed_router
 from app.modules.notifications.router import internal_router as notifications_internal_router
@@ -547,6 +548,7 @@ app.include_router(monitoring_proxy_router)
 # the event ingress is service-to-service (X-Internal-Key, no router-level scope).
 app.include_router(notifications_feed_router, dependencies=_access)
 app.include_router(notifications_prefs_router, dependencies=_access)
+app.include_router(notifications_admin_router, dependencies=_access)
 # The stream checks the access scope itself on a short session: a router dependency would
 # hold its get_db session open for as long as the stream runs.
 app.include_router(notifications_stream_router)

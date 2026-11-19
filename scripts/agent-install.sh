@@ -28,8 +28,9 @@
 #     out-of-band check.
 #   * Steady state: after a successful mTLS enrollment the repo TLS config is
 #     flipped from "unverified transport" to pinning the enrolled internal CA
-#     (/etc/adminhelper/identity/ca.crt) — future `apt upgrade` / `dnf upgrade`
-#     verify both the transport AND the signature.
+#     (/etc/adminhelper/identity/ca.crt; apt gets a public 0644 copy in
+#     /etc/apt/adminhelper-ca.crt, the agent keeps it current) — future
+#     `apt upgrade` / `dnf upgrade` verify both the transport AND the signature.
 #
 # Options:
 #   --server URL      AdminHelper server URL (required, https)
@@ -67,6 +68,9 @@ APT_CONF_DIR="${AH_APT_CONF_DIR:-/etc/apt/apt.conf.d}"
 YUM_REPO_DIR="${AH_YUM_REPO_DIR:-/etc/yum.repos.d}"
 RPM_KEY_DIR="${AH_RPM_KEY_DIR:-/etc/pki/rpm-gpg}"
 IDENTITY_CA="${AH_IDENTITY_CA:-/etc/adminhelper/identity/ca.crt}"
+# apt reads CAInfo as the unprivileged _apt user, which cannot enter the 0700
+# /etc/adminhelper; the agent rewrites this copy on every identity store (R-0810).
+REPO_CA="${AH_REPO_CA:-/etc/apt/adminhelper-ca.crt}"
 
 SERVER_URL=""
 TOKEN=""
@@ -316,6 +320,23 @@ install_from_github() {
     apt-get install -y $APT_LOCK_OPTS "$_TMPROOT/$deb" || die "package install failed"
 }
 
+# install_smartmontools — the package only suggests it (R-1541): SMART needs
+# physical disks, so only bare metal gets it. systemd-detect-virt prints "none"
+# there (and exits 1); a missing tool or any other answer skips the install.
+install_smartmontools() {
+    local virt
+    virt=$(systemd-detect-virt 2>/dev/null) || true
+    if [ "$virt" != none ]; then
+        log "smartmontools not installed: ${virt:-virtualization unknown} (the SMART check needs physical disks)."
+        return 0
+    fi
+    # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+    case "$PKG_MGR" in
+        apt) wait_apt_lock; apt-get install -y $APT_LOCK_OPTS smartmontools >/dev/null ;;
+        dnf) dnf install -y smartmontools >/dev/null ;;
+    esac || warn "could not install smartmontools — the SMART check reports it as not installed."
+}
+
 # ── 1) package ────────────────────────────────────────────────────────────────
 if [ "$FROM_GITHUB" = 1 ]; then
     install_from_github
@@ -326,6 +347,7 @@ else
     esac
 fi
 log "adminhelper-agent installed: $(adminhelper-agent version 2>/dev/null || echo unknown)"
+install_smartmontools
 
 # ── 2) provision (optional) ──────────────────────────────────────────────────
 if [ -z "$SERVER_ID" ]; then
@@ -384,8 +406,9 @@ fi
 if [ -f "$IDENTITY_CA" ]; then
     case "$PKG_MGR" in
         apt)
+            install -D -m 0644 "$IDENTITY_CA" "$REPO_CA" || die "could not copy the internal CA to ${REPO_CA} for apt"
             cat > "${APT_CONF_DIR}/99adminhelper-ca" <<EOF
-Acquire::https::${HOST}::CAInfo "${IDENTITY_CA}";
+Acquire::https::${HOST}::CAInfo "${REPO_CA}";
 EOF
             ;;
         dnf)

@@ -109,7 +109,7 @@ case "${1:-}" in
         [ "$step" = start ] && echo "AGENT_DOCKER_ENGINE=29.8.1 AGENT_DOCKER_IMAGE=busybox"
         [ "$v" = NONE ] || echo "AGENT_DOCKER_STEP=$v" ;;
       *box_agentbox.sh*)
-        echo "${FAKE_AGENT_PROVISION:-AGENT_PROVISION_OK} ${FAKE_AGENT_RUN:-AGENT_RUN_OK} AGENT_CERT_OK AGENT_REPO_OK AGENT_CAFLIP_OK" ;;
+        echo "${FAKE_AGENT_PROVISION:-AGENT_PROVISION_OK} ${FAKE_AGENT_RUN:-AGENT_RUN_OK} AGENT_CERT_OK AGENT_REPO_OK AGENT_CAFLIP_OK ${FAKE_AGENT_APT_UPDATE:-AGENT_APT_UPDATE_OK}" ;;
       *box_moncheckbox.sh*start*) echo "MC_MAILHOG_UP=1 MC_CA_B64=Y2E=" ;;
       *box_moncheckbox.sh*assert*) echo "MC_MAIL_COUNT=1 MC_ALERT_RECEIVED=1" ;;
       # Two: the capstone expects a report from the .deb and from the rpm agent.
@@ -689,6 +689,16 @@ reset_state
 OUT=$(FAKE_AGENT_RUN=AGENT_RUN_FAIL bash "$MB" --agents 1 2>&1); rc=$?
 [ $rc -ne 0 ] && grep -q '^  FAIL agent 3002: run --once failed' <<<"$OUT" \
   && ok "a failed agent run fails the run" || bad "agent run failed: rc=$rc; $(grep -a 'agent 3002' <<<"$OUT")"
+
+echo "── the user install path proves apt can read the pinned CA ──"
+reset_state
+OUT=$(bash "$MB" --agents 1 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^  ok   agent 3002: installed from the :8445 repo .*apt-get update green' <<<"$OUT" \
+  && ok "apt-get update after the CA flip is part of the user-path ok" || bad "user path ok: rc=$rc; $(grep -a 'agent 3002' <<<"$OUT")"
+reset_state
+OUT=$(FAKE_AGENT_APT_UPDATE=AGENT_APT_UPDATE_FAIL bash "$MB" --agents 1 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q '^  FAIL agent 3002: user-path markers missing' <<<"$OUT" \
+  && ok "a failed apt-get update after the flip fails the run" || bad "apt update fail: rc=$rc; $(grep -a 'agent 3002' <<<"$OUT")"
 
 echo "── --docker: real Docker on the agent box, three states of the Docker Host check ──"
 # The docker steps in the order the run asked for them: the API calls on the server box and

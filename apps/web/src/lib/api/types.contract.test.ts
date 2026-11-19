@@ -92,12 +92,22 @@ const MAPPINGS: Mapping[] = [
   { ts: 'InfraCertificate', schema: 'InfraCertificateOut', direction: 'response' },
   { ts: 'AgentCertificate', schema: 'AgentCertificateOut', direction: 'response' },
   { ts: 'CertificateOverview', schema: 'CertificateOverviewOut', direction: 'response' },
+  { ts: 'NotifyChannelsEffective', schema: 'NotifyChannelsEffective', direction: 'response' },
+  { ts: 'NotifyChannels', schema: 'NotifyChannelsOut', direction: 'response' },
+  { ts: 'NotifyTestResult', schema: 'NotificationTestOut', direction: 'response' },
+  { ts: 'NotifyTemplate', schema: 'NotifyTemplateOut', direction: 'response' },
+  { ts: 'NotifyTemplatePreview', schema: 'NotifyTemplatePreviewOut', direction: 'response' },
   { ts: 'UserCreate', schema: 'UserCreate', direction: 'request' },
   { ts: 'UserUpdate', schema: 'UserUpdate', direction: 'request' },
   { ts: 'ApiKeyCreate', schema: 'ApiKeyCreate', direction: 'request' },
   { ts: 'HookCreate', schema: 'HookCreate', direction: 'request' },
   { ts: 'HookUpdate', schema: 'HookUpdate', direction: 'request' },
   { ts: 'FrpConfigInput', schema: 'FrpServerConfigCreate', direction: 'request' },
+  { ts: 'NotifyChannelsInput', schema: 'NotifyChannelsIn', direction: 'request' },
+  { ts: 'NotifyChannelTest', schema: 'NotifyChannelTestRequest', direction: 'request' },
+  { ts: 'NotifyTemplateInput', schema: 'NotifyTemplateIn', direction: 'request' },
+  { ts: 'NotifyTemplateTest', schema: 'NotifyTemplateTestRequest', direction: 'request' },
+  { ts: 'NotifyTemplateLogo', schema: 'NotifyTemplateLogoIn', direction: 'request' },
 ];
 
 // Interfaces of types.ts that describe no server schema.
@@ -332,7 +342,7 @@ const names = (m: Mapping) => (Array.isArray(m.schema) ? m.schema : [m.schema]);
 describe('types.ts vs. the server OpenAPI snapshot', () => {
   it('maps every interface, and every mapping names what exists', () => {
     // Pinned at the real number: a mapping quietly dropped is a failure, not a smaller green.
-    expect(MAPPINGS.length).toBe(24);
+    expect(MAPPINGS.length).toBe(34);
     expect(MAPPINGS.filter((m) => !INTERFACES.has(m.ts)).map((m) => m.ts)).toEqual([]);
     expect(MAPPINGS.flatMap(names).filter((n) => !SCHEMAS[n])).toEqual([]);
     const classified = new Set([...MAPPINGS.map((m) => m.ts), ...Object.keys(EXEMPT)]);

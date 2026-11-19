@@ -33,9 +33,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, func, not_, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.core import config
 from app.core.time import iso_utc
 from app.modules.notifications import stream_hub
+from app.modules.notifications.channel_config import resolve
 from app.modules.notifications.models import (
     Notification,
     NotificationIncident,
@@ -555,7 +555,12 @@ def _queue(
     targets = (
         ("email", user.email),
         ("ntfy", settings.ntfy_url if settings else None),
-        ("telegram", user.telegram_chat_id if config.TELEGRAM_BOT_TOKEN else None),
+        (
+            "telegram",
+            user.telegram_chat_id
+            if "telegram" in picked and user.telegram_chat_id and resolve(db).telegram_token
+            else None,
+        ),
         ("webhook", settings.webhook_url if settings else None),
     )
     for channel, address in targets:

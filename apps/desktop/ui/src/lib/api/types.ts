@@ -454,6 +454,10 @@ export interface MonitorSmartDetails {
     reallocated_sectors?: number;
     pending_sectors?: number;
     critical_warning_bits?: string[];
+    // The agent left the disk asleep (R-1569): the values are its last read state, from read_at.
+    standby?: boolean;
+    // When the values were read (RFC 3339 UTC); missing on a sleeping disk never read.
+    read_at?: string;
   }[];
 }
 
