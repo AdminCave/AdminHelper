@@ -779,8 +779,11 @@ jobs:
           Assert-Refused "-ServerId without -Server" { & $install -ServerId 1 }
           Assert-Refused "-Server over http" { & $install -Server http://192.0.2.1 -ServerId 1 }
           # A SHA256SUMS that does not match the agent: refused before anything changes.
-          (Get-Content (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good")) -replace '^[0-9a-f]{64}(?=  adminhelper-agent)', ('0' * 64) |
-            Set-Content -Encoding ascii (Join-Path $dl "SHA256SUMS")
+          # sha256sum of Git Bash writes "<hash> *<name>" (binary mode), so the separator varies.
+          $good = Get-Content (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good")
+          $bad = $good -replace '^[0-9a-f]{64}(?=\s+\*?adminhelper-agent)', ('0' * 64)
+          if (($bad -join "`n") -eq ($good -join "`n")) { throw "the tampered SHA256SUMS equals the real one" }
+          Set-Content -Encoding ascii (Join-Path $dl "SHA256SUMS") $bad
           Assert-Refused "tampered SHA256SUMS" { & $install }
           Copy-Item -Force (Join-Path $env:RUNNER_TEMP "SHA256SUMS.good") (Join-Path $dl "SHA256SUMS")
           & $install

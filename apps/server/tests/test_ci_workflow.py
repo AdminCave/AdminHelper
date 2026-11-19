@@ -340,6 +340,8 @@ def test_the_windows_job_installs_with_agent_install_ps1_and_proves_each_path():
     assert '$env:AH_DL_BASE = "http://127.0.0.1:8765"' in run
     for proof in (
         'Assert-Refused "tampered SHA256SUMS"',
+        # Run 44517506477: a tamper that changed nothing passed for a refusal test.
+        'throw "the tampered SHA256SUMS equals the real one"',
         "& $install\n",
         "& $install -Version 0.0.0-ci",
         "service uninstall --purge",
