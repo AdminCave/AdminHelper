@@ -8,6 +8,7 @@ marks what a complete result no longer names gone, and lets a fallback object st
 a check without objects of its own; the daily history cleanup deletes objects gone for
 30 days."""
 
+import logging
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -638,6 +639,72 @@ def test_fallback_follows_its_check_to_another_server(factory):
             db.commit()
         _apply(factory, None, T0 + MIN)
         assert list(_objects(factory)) == [key]
+
+
+# --- the log's daily budget -----------------------------------------------------
+
+
+@pytest.mark.parametrize("budget", [5, 6], ids=["runs-out-within-a-result", "runs-out-with-one"])
+def test_flapping_objects_are_logged_up_to_the_daily_budget(factory, monkeypatch, caplog, budget):
+    monkeypatch.setattr(objects_mod, "OBJECT_LOG_PER_DAY", budget)
+    caplog.set_level(logging.WARNING, logger="monitor.objects")
+    _seed_check(factory, consecutive_fails=2)
+    _apply(factory, _result(_item("sda"), _item("sdb")), T0)
+    # Past its failure count the damping holds nothing: warning and critical in turn.
+    statuses = ("warning", "warning", "critical", "warning", "critical", "warning")
+    for minute, status in enumerate(statuses, start=1):
+        _apply(factory, _result(_item("sda", status), _item("sdb", status)), T0 + minute * MIN)
+
+    unbounded = [
+        (SDA, "pending", "ok", T0),
+        (SDB, "pending", "ok", T0),
+        (SDA, "ok", "warning", T0 + 2 * MIN),
+        (SDB, "ok", "warning", T0 + 2 * MIN),
+        (SDA, "warning", "critical", T0 + 3 * MIN),
+        (SDB, "warning", "critical", T0 + 3 * MIN),
+        (SDA, "critical", "warning", T0 + 4 * MIN),
+    ]
+    assert _object_changes(factory) == unbounded[:budget]
+    # Once a day: the result that uses up the budget.
+    warnings = [r.getMessage() for r in caplog.records if r.name == "monitor.objects"]
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Check c1: ")
+    # The log is what is left out, not the state: each object follows its last result.
+    objs = _objects(factory)
+    assert [(objs[key].status, objs[key].since) for key in (SDA, SDB)] == [
+        ("warning", T0 + 6 * MIN)
+    ] * 2
+
+
+def test_the_budget_is_per_utc_day(factory, monkeypatch):
+    monkeypatch.setattr(objects_mod, "OBJECT_LOG_PER_DAY", 2)
+    _seed_check(factory)
+    late = datetime(2026, 11, 19, 23, 58)
+    _apply(factory, _result(_item("sda"), _item("sdb")), late)
+    _apply(factory, _result(_item("sda", "critical"), _item("sdb")), late + MIN)
+    # Paired: midnight UTC starts a new budget.
+    _apply(factory, _result(_item("sda"), _item("sdb")), late + 2 * MIN)
+
+    assert _object_changes(factory) == [
+        (SDA, "pending", "ok", late),
+        (SDB, "pending", "ok", late),
+        (SDA, "critical", "ok", late + 2 * MIN),
+    ]
+
+
+def test_check_rows_neither_count_nor_are_held(factory, monkeypatch):
+    monkeypatch.setattr(objects_mod, "OBJECT_LOG_PER_DAY", 1)
+    _seed_check(factory)
+    for minute, status in enumerate(("critical", "ok", "critical")):
+        _apply(factory, _result(_item("sda", status)), T0 + minute * MIN, status=status)
+
+    with factory() as db:
+        check_rows = (
+            db.query(MonitorStatusChange).filter(MonitorStatusChange.object_key.is_(None)).count()
+        )
+    assert check_rows == 3
+    # The check's row of the same result came first, and the object's still fit.
+    assert _object_changes(factory) == [(SDA, "pending", "critical", T0)]
 
 
 # --- result paths ---------------------------------------------------------------

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # arch-monitoring-neu-p1 — Task-Ledger
-Status: aktiv · Branch: feature/arch-monitoring-neu-p1 · Review: pro Task
+Status: bereit · Branch: feature/arch-monitoring-neu-p1 · Review: pro Task
 Spec: docs/features/arch-monitoring-neu-p1.md (Roadmap R-1559, R-0805)
 Heavy: linux-full — Server-Proxy-Freigabeliste (`monitoring_proxy`) und zwei Monitoring-Migrationen; kein Gateway-, PKI-, Agent-, FRP- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -101,8 +101,10 @@ Verify: bash scripts/dev/verify.sh monitoring server --strict
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/arch-monitoring-neu-p1.md
 Abhängt von: T3, T4
 
-### T10 — Statuswechsel-Log: Objekt-Zeilen je Check und Tag begrenzen (R-1559)  [ ]
+### T10 — Statuswechsel-Log: Objekt-Zeilen je Check und Tag begrenzen (R-1559)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/objects.py, apps/monitoring/app/models.py, apps/monitoring/alembic/versions/d2f4a6c8e0b1_status_change_log.py, apps/monitoring/tests/test_object_state.py, apps/monitoring/tests/test_status_log.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-neu-p1.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9ad000d81 2026-11-19T19:02:25+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p1/T10.verdict.json)
 Änderung: Aus der Abschlussprüfung (`security`, Branch): `apply_objects` schreibt je Check und UTC-Tag höchstens `OBJECT_LOG_PER_DAY` (= `MAX_ROWS`) Objekt-Zeilen ins Statuswechsel-Log. Darüber ändert sich der Objektzustand weiter, nur die Log-Zeile entfällt; eine WARNING von `monitor.objects` nennt es einmal am Tag. Check-Zeilen (`object_key` NULL, höchstens eine je Ergebnis) zählen nicht mit. Teilindex `ix_status_log_object_at` (`check_id, at`, nur `object_key IS NOT NULL`) in Modell und Revision `d2f4a6c8e0b1` (nur auf diesem Branch), damit das Zählen keine Check-Zeilen liest.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_object_state.py tests/test_status_log.py tests/test_migrations_smoke.py
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, changelog.d/arch-monitoring-neu-p1.md
@@ -153,3 +155,4 @@ Abhängt von: T4, T9
 - 2026-11-19 T9: Nachtrag zu T7: `test_status_log.py::test_push_path_logs_each_change_of_the_damped_status` (T2) war seit T7 rot (das Verify von T7 fuhr ihn nicht): der Push-Pfad von `agent_resources` schreibt nun auch die Zeilen des CPU-Objekts. Die Erwartung nennt sie jetzt (strenger, nicht gefiltert); erst das volle Verify von T9 fand es. Gefixt in T9 (Datei per `set-files`).
 - 2026-11-19 T9: R-1644 (`neu`) für den verschluckten `list-units --state=failed` (Vorbefund T8).
 - 2026-11-19 T10: Abschlussprüfung `security` (Branch) `request_changes`, Einzelheiten nur in `tasks/private/`; die Objekt-Zeilen des Statuswechsel-Logs bekommen ein Tagesbudget je Check (`OBJECT_LOG_PER_DAY` = `MAX_ROWS`: ein Check mit `MAX_OBJECTS` Objekten kann anlaufen und jedes einmal wechseln). Statt eines Budgets je Ergebnis oder je Objekt: die Tagessumme ist die Größe, die das Log begrenzen soll. Hingenommen: an einem Tag über dem Budget fehlen die weiteren Objektwechsel im Verlauf, der Objektzustand und die Check-Zeilen bleiben richtig. Index als Teilindex in derselben Revision, weil `d2f4a6c8e0b1` nur auf diesem Branch liegt.
+- 2026-11-19 T10: Gegenproben in einer Kopie von `apps/monitoring` (je eine Mutation von `_log_changes`, `test_object_state.py` + `test_status_log.py`): ohne Grenze 5 rot, Check-Zeilen mitgezählt 5 rot, ohne Tagesfilter 1 rot, gleitendes Fenster statt UTC-Tag 1 rot, keine WARNING beim genauen Aufbrauchen 1 rot, WARNING bei jedem Ergebnis 2 rot, letzte statt erste Wechsel behalten 1 rot; unverändert 50 passed. Postgres (`DATABASE_URL` = Test-DB): `test_migrations_smoke.py`, `test_status_log.py`, `test_object_state.py` 57 passed, der Teilindex hält `test_migration_chain_matches_models` grün.

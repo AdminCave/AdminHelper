@@ -12,7 +12,8 @@ R-1559 (docs/features/arch-monitoring-neu-p1.md, ADR 0004 §5):
 
 - ``monitor_status_log``: one row per change of the damped status of a check
   (``object_key`` NULL) or of one of its objects, written whatever the alert
-  rules say and kept 90 days.
+  rules say and kept 90 days. The partial index on the object rows lets
+  apply_objects count a check's rows of the day.
 - Every ``monitor_alert_log`` row is taken over as a check row
   (``origin = 'alert_log'``, ``at = sent_at``), so the history the alert log
   held does not go blank on the update. A change several rules were notified
@@ -50,6 +51,13 @@ def upgrade() -> None:
         "ix_status_log_check_at", "monitor_status_log", ["check_id", "at"], unique=False
     )
     op.create_index("ix_status_log_at", "monitor_status_log", ["at"], unique=False)
+    op.create_index(
+        "ix_status_log_object_at",
+        "monitor_status_log",
+        ["check_id", "at"],
+        unique=False,
+        postgresql_where=sa.text("object_key IS NOT NULL"),
+    )
     op.execute(
         "INSERT INTO monitor_status_log (check_id, object_key, old_status, new_status, at, origin) "
         "SELECT check_id, NULL, old_status, new_status, sent_at, 'alert_log' "
@@ -58,6 +66,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_status_log_object_at", table_name="monitor_status_log")
     op.drop_index("ix_status_log_at", table_name="monitor_status_log")
     op.drop_index("ix_status_log_check_at", table_name="monitor_status_log")
     op.drop_table("monitor_status_log")

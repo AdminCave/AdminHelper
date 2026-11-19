@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    text,
     true,
 )
 from sqlalchemy.orm import validates
@@ -301,10 +302,17 @@ class MonitorStatusChange(Base):
     that was notified."""
 
     __tablename__ = "monitor_status_log"
-    # The server's events read a time range of its checks, the daily cleanup deletes by time.
+    # The server's events read a time range of its checks, the daily cleanup deletes by time;
+    # apply_objects counts a check's object rows of the day, without reading its own rows.
     __table_args__ = (
         Index("ix_status_log_check_at", "check_id", "at"),
         Index("ix_status_log_at", "at"),
+        Index(
+            "ix_status_log_object_at",
+            "check_id",
+            "at",
+            postgresql_where=text("object_key IS NOT NULL"),
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)

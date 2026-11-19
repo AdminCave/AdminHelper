@@ -8,7 +8,7 @@ whatever the alert rules and maintenance windows say; the daily history cleanup 
 90 days."""
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +21,8 @@ from sqlalchemy.pool import StaticPool
 import app.alerter as alerter
 import app.check_engine as ce
 import app.core.database as database_mod
+import app.objects as objects_mod
+import app.routers.agent as agent_router
 from app import scheduler as sched
 from app.central.limits import RunSkipped
 from app.core.time import utcnow_naive
@@ -253,6 +255,35 @@ def test_push_path_logs_each_change_of_the_damped_status(push_path):
         ("c1", "srv-1/cpu", "pending", "critical", "state"),
         ("c1", None, "critical", "ok", "state"),
         ("c1", "srv-1/cpu", "critical", "ok", "state"),
+    ]
+
+
+def test_push_path_logs_object_rows_up_to_the_daily_budget(push_path, monkeypatch):
+    client, factory = push_path
+    monkeypatch.setattr(objects_mod, "OBJECT_LOG_PER_DAY", 2)
+    # One instant for every report: the budget's day cannot turn during the test.
+    monkeypatch.setattr(agent_router, "utcnow_naive", lambda: datetime(2026, 11, 19, 12, 0))
+    _seed_check(
+        factory,
+        check_type="agent_resources",
+        config=json.dumps({"cpu_warn": 80, "cpu_crit": 95, "hysteresis_pp": 0}),
+    )
+
+    for cpu in (85, 99, 85, 99):
+        report = {"resources": {"cpu_percent": cpu}}
+        assert client.post("/agent/srv-1/report", json=report).status_code == 200
+
+    changes = _changes(factory)
+    # The check's own rows are not held back.
+    assert [c for c in changes if c[1] is None] == [
+        ("c1", None, "pending", "warning", "state"),
+        ("c1", None, "warning", "critical", "state"),
+        ("c1", None, "critical", "warning", "state"),
+        ("c1", None, "warning", "critical", "state"),
+    ]
+    assert [c for c in changes if c[1] is not None] == [
+        ("c1", "srv-1/cpu", "pending", "warning", "state"),
+        ("c1", "srv-1/cpu", "warning", "critical", "state"),
     ]
 
 

@@ -8,7 +8,8 @@
   Filtern nach Server, Check und Art, verschwundene auf Wunsch, mit `limit`/`offset`; der Status kennt dort zusaetzlich
   `not_collected` (nicht erhoben).
 - **Monitoring: Statuswechsel-Log:** Jeder gedaempfte Statuswechsel eines Checks und eines Objekts wird protokolliert,
-  unabhaengig von den Alert-Regeln, und 90 Tage aufbewahrt; das Update uebernimmt den bisherigen Alert-Log einmal.
+  unabhaengig von den Alert-Regeln, und 90 Tage aufbewahrt, Objektwechsel hoechstens 2000 je Check und Tag; das
+  Update uebernimmt den bisherigen Alert-Log einmal.
 
 ### Changed
 

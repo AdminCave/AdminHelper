@@ -45,6 +45,12 @@ MAX_OBJECTS = 1000
 # agent reports, and a check whose ids keep changing would add rows and log rows with
 # every report. A result creates no row above it and is then incomplete.
 MAX_ROWS = 2 * MAX_OBJECTS
+# Object rows one check may add to the status change log per UTC day; its own rows do not
+# count. Damping stops nothing past the failure count, so objects whose status flips with
+# every report would add rows each time, and the log keeps 90 days. This lets a check with
+# MAX_OBJECTS objects come up and change each of them once; above it only the log row is
+# left out, the object state still changes.
+OBJECT_LOG_PER_DAY = MAX_ROWS
 MAX_NAME = 200
 _KIND_MAX = 40
 # The kind of the object a check without an object result stands for.
@@ -198,8 +204,9 @@ def apply_objects(
             complete = False
             for key in new[room:]:
                 del items[key]
+    changes: list[MonitorStatusChange] = []
     for key, item in items.items():
-        _apply_item(db, check, stored.pop(key, None), key, item, now)
+        _apply_item(db, check, stored.pop(key, None), key, item, now, changes)
     if isinstance(others_ok, str) and others_ok:
         # Through _apply_item like a named object: damped, logged, and a row that is ok
         # already is not written.
@@ -212,7 +219,8 @@ def apply_objects(
                 "reason": reason,
                 "stable": row.stable,
             }
-            _apply_item(db, check, row, key, item, now)
+            _apply_item(db, check, row, key, item, now, changes)
+    _log_changes(db, check, changes, now)
     if complete:
         for row in stored.values():
             if row.gone_at is None:
@@ -233,7 +241,9 @@ def _apply_item(
     key: str,
     item: dict,
     now: datetime,
+    changes: list[MonitorStatusChange],
 ) -> None:
+    """Damp and write one object; a change of its status goes to `changes`."""
     old_status = row.status if row is not None else "pending"
     eff_status, fail_count, reason = damp_object(
         item["status"],
@@ -259,7 +269,7 @@ def _apply_item(
             values["since"] = now
         _set(row, values)
     if eff_status != old_status:
-        db.add(
+        changes.append(
             MonitorStatusChange(
                 check_id=check.id,
                 object_key=key,
@@ -269,6 +279,38 @@ def _apply_item(
                 origin="state",
             )
         )
+
+
+def _log_changes(
+    db: Session, check: MonitorCheck, changes: list[MonitorStatusChange], now: datetime
+) -> None:
+    """Add the object changes of one result to the status change log, as many as the
+    check's budget for the UTC day of `now` still holds (OBJECT_LOG_PER_DAY)."""
+    if not changes:
+        return
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    logged = (
+        db.query(func.count())
+        .select_from(MonitorStatusChange)
+        .filter(
+            MonitorStatusChange.check_id == check.id,
+            MonitorStatusChange.object_key.isnot(None),
+            MonitorStatusChange.at >= day,
+        )
+        .scalar()
+    )
+    room = max(OBJECT_LOG_PER_DAY - logged, 0)
+    if room and len(changes) >= room:
+        # Once a day: the result that uses up the budget, even when it just fits.
+        logger.warning(
+            "Check %s: %d object status changes logged today, the daily limit; %d of the "
+            "%d of this result and all further ones are not logged until midnight UTC",
+            check.id,
+            OBJECT_LOG_PER_DAY,
+            len(changes) - room,
+            len(changes),
+        )
+    db.add_all(changes[:room])
 
 
 def _apply_fallback(
