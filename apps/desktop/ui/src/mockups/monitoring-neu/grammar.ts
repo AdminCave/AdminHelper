@@ -192,3 +192,35 @@ export function duplicateKeys(list: readonly MonObject[]): string[] {
   for (const o of list) (seen.has(o.key) ? dup : seen).add(o.key);
   return [...dup];
 }
+
+/** Kind and name, without saying the kind twice when the name is the kind ("CPU", not "CPU CPU"). */
+export function objectLabel(o: Pick<MonObject, 'kind' | 'name'>): string {
+  const kind = KIND_LABEL[o.kind];
+  return o.name.toLocaleLowerCase('de') === kind.toLocaleLowerCase('de')
+    ? kind
+    : `${kind} ${o.name}`;
+}
+
+export interface MeterScale {
+  /** Positions in percent of the bar: the value, and where warning and critical start. */
+  fill: number;
+  warn?: number;
+  crit?: number;
+}
+
+/** Where a numeric metric sits against its threshold; null for values a bar cannot show. A
+ * percentage runs to 100, anything else a quarter past the larger of value and threshold. */
+export function meterOf(m: Metric): MeterScale | null {
+  const t = m.threshold;
+  if (typeof m.value !== 'number' || !t || (t.warn === undefined && t.crit === undefined)) {
+    return null;
+  }
+  const max = m.unit === '%' ? 100 : Math.max(m.value, t.warn ?? 0, t.crit ?? 0) * 1.25;
+  if (max <= 0) return null;
+  const at = (v: number): number => Math.min(100, Math.max(0, (v / max) * 100));
+  return {
+    fill: at(m.value),
+    warn: t.warn === undefined ? undefined : at(t.warn),
+    crit: t.crit === undefined ? undefined : at(t.crit),
+  };
+}
