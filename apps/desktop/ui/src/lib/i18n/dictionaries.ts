@@ -92,6 +92,7 @@ export const translations: Translations = {
       'Der Server liefert für diese Plattform kein Paket aus (kein Paket-Repo im Release oder update.sh noch nicht gelaufen).',
     'infra.prov.reason.notYet':
       'Die Installation unter Windows folgt; bis dahin den Agent nach der Doku von Hand installieren. Neu registrieren und Entfernen gehen schon.',
+    'infra.prov.actionLabel': 'Vorgang',
     'infra.prov.action.install': 'Installieren',
     'infra.prov.action.update': 'Aktualisieren',
     'infra.prov.action.reregister': 'Neu registrieren',
@@ -1707,6 +1708,7 @@ export const translations: Translations = {
       'The server ships no package for this platform (no package repo in the release, or update.sh has not run yet).',
     'infra.prov.reason.notYet':
       'Installing on Windows comes later; until then install the agent by hand as the docs describe. Re-register and remove work already.',
+    'infra.prov.actionLabel': 'Action',
     'infra.prov.action.install': 'Install',
     'infra.prov.action.update': 'Update',
     'infra.prov.action.reregister': 'Re-register',

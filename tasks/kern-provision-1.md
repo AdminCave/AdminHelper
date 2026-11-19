@@ -1,5 +1,5 @@
 # Provisionieren je Plattform — Task-Ledger
-Status: aktiv · Branch: feature/kern-provision-1 · Review: pro Task
+Status: bereit · Branch: feature/kern-provision-1 · Review: pro Task
 Spec: docs/features/kern-provision-1.md (Roadmap R-1594, R-1595, R-1596, R-1597)
 Heavy: linux-full — Server-API, `docker-compose.yml` (Repo-Mount) und die Desktop-Journey `provisioning.live.js` ändern sich; kein Cross-Host-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -117,8 +117,10 @@ Review: approve (.ah-out/review/kern-provision-1/T11.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py
 Doku: keine (Doku nennt den Ordner schon richtig)
 
-### T12 — R-1594/R-1596: Desktop-Fixtures, Aktions-Label, E2E-Fristen, Entfernen-Hinweis (Abschlussprüfung)  [ ]
+### T12 — R-1594/R-1596: Desktop-Fixtures, Aktions-Label, E2E-Fristen, Entfernen-Hinweis (Abschlussprüfung)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/provisioning/command.test.ts, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/e2e/test/specs/provisioning.live.js, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a212afa9a 2026-11-19T09:29:26+01:00
+Review: approve (.ah-out/review/kern-provision-1/T12.verdict.json)
 Änderung: Fixtures auf den Agent-Ordner `AdminHelper Agent`; die Aktions-Tabs bekommen ein eigenes Label `infra.prov.actionLabel` (Vorgang/Action) statt „Plattform“; die drei E2E-Wartezeiten des Dialogs auf 30 s (`testing.md`: der Dialog lädt erst den Katalog); Windows-Abschnitt nennt, dass Entfernen im Fenster `service uninstall --purge` nimmt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra src/lib/provisioning src/lib/i18n
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html

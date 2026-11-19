@@ -16,7 +16,7 @@ const FP = 'ab'.repeat(32);
 const SERVER_ID = '3f2b8c1e-5d4a-4b6f-9e2d-7a1c0b9e8f42';
 const TOKEN = 'adminhelper_prov_tok-123';
 const INSTALL = 'curl -fsSL https://example/agent-install.sh | sudo bash -s --';
-const WIN_EXE = "& 'C:\\Program Files\\AdminHelper\\adminhelper-agent.exe'";
+const WIN_EXE = "& 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe'";
 
 const REGISTER = [
   { flag: '--server', value: 'serverUrl', optional: false, mode: null },

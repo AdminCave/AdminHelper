@@ -20,17 +20,17 @@ describe('Provisioning token via the GUI', () => {
     // Windows is in the catalog whether or not the stack ships a package repo, and its
     // re-register command takes a token: the one platform that always offers the button.
     const platform = await $('#prov-platform');
-    await platform.waitForExist({ timeout: 15000 });
+    await platform.waitForExist({ timeout: 30000 });
     await platform.selectByAttribute('value', 'windows');
 
     await $('[data-action="prov-mint"]').click();
 
     // the command and the freshly minted token are shown...
-    await $('[data-testid="provision-command"]').waitForExist({ timeout: 15000 });
-    await $('[data-testid="prov-token"]').waitForExist({ timeout: 15000 });
+    await $('[data-testid="provision-command"]').waitForExist({ timeout: 30000 });
+    await $('[data-testid="prov-token"]').waitForExist({ timeout: 30000 });
     // ...and the token appears in the existing-tokens table (server round-trip)
     await browser.waitUntil(async () => (await $$('.prov-table tbody tr')).length >= 1, {
-      timeout: 15000,
+      timeout: 30000,
       timeoutMsg: 'minted token never appeared in the table',
     });
   });

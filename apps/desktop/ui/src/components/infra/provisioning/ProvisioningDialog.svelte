@@ -247,7 +247,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <Tabs
             tabs={actions.map((a) => ({ id: a, label: $t(`infra.prov.action.${a}`) }))}
             value={activeAction}
-            label={$t('infra.prov.platform')}
+            label={$t('infra.prov.actionLabel')}
             onChange={(id) => (action = id)}
           />
 
