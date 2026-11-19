@@ -245,7 +245,9 @@ def _windows(ports: list[dict]) -> dict:
                     _arg("--ca-fp", "caFp", optional=True),
                     _arg("--insecure", "insecure", optional=True),
                     _arg("--token-stdin", "flag", mode="interactive"),
-                    _arg("--token", "token", mode="automation"),
+                    # The desktop pipes the token in: as --token it would sit in the
+                    # process list while the provisioning runs (R-1612).
+                    _arg("--token-stdin", "tokenStdin", mode="automation"),
                 ],
             },
             {

@@ -18,8 +18,10 @@ import pytest
 from app.core import config
 from app.core.auth import create_access_token
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT
+from app.core.time import iso_utc
 from app.modules.enrollment.models import DeviceLine, IssuedCertificate
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.provisioning import progress
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.provisioning.progress import platform_mismatch, reported_platform
 from app.modules.servers.models import Server
@@ -68,8 +70,17 @@ def _token(db, *, created: datetime.datetime, used: datetime.datetime | None = N
     db.commit()
 
 
-def _cert(db, *, subject: str, scope: str, created: datetime.datetime) -> None:
-    line = DeviceLine(id=str(uuid.uuid4()), subject_id=subject, scope=scope, kind="agent")
+def _cert(
+    db,
+    *,
+    subject: str,
+    scope: str,
+    created: datetime.datetime,
+    revoked: datetime.datetime | None = None,
+) -> None:
+    line = DeviceLine(
+        id=str(uuid.uuid4()), subject_id=subject, scope=scope, kind="agent", revoked_at=revoked
+    )
     db.add(line)
     db.flush()
     db.add(
@@ -223,16 +234,42 @@ def test_an_unreachable_monitoring_gives_no_report(
 
 
 def test_without_a_monitoring_key_no_request_goes_out(
-    test_client, admin_user, db_session, monkeypatch
+    test_client, admin_user, db_session, monitor, httpx_mock, monkeypatch
 ):
-    """httpx_mock is not requested: a request would go to the real network and fail."""
     monkeypatch.setattr(config, "MONITOR_API_KEY", "")
     _server(db_session)
 
     body = _get(test_client).json()
 
+    assert httpx_mock.get_requests() == []
     assert body["report"] is None
     assert body["monitoringReachable"] is False
+
+
+def test_a_revoked_line_certificate_is_no_progress(
+    test_client, admin_user, db_session, monitor, httpx_mock
+):
+    _server(db_session)
+    earlier = NOW - datetime.timedelta(days=30)
+    _cert(db_session, subject=SID, scope=SCOPE_AGENT, created=earlier)
+    _cert(
+        db_session,
+        subject=SID,
+        scope=SCOPE_AGENT,
+        created=NOW,
+        revoked=NOW + datetime.timedelta(minutes=5),
+    )
+    httpx_mock.add_response(url=_STATE_URL, json={})
+
+    body = _get(test_client).json()
+
+    assert body["certificate"] == {"issuedAt": iso_utc(earlier)}
+
+
+def test_the_server_id_is_quoted_into_the_monitoring_url(monitor, httpx_mock):
+    httpx_mock.add_response(url="http://monitor.test/agent/a%2F..%2Fb%3Fc/state", json={})
+
+    assert progress._monitor_state("a/../b?c") == (None, True)
 
 
 def test_tunnel_connected_when_its_proxy_is_online(

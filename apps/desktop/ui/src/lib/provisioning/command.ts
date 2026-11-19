@@ -18,10 +18,12 @@ export const TOKEN_FORM = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
 export const UUID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // A flag from the catalog goes into the command unquoted, so it must be a plain long option.
 const FLAG_FORM = /^--[a-z][a-z0-9-]*$/;
-// A pasted command must never carry a line break or control character inside a value: the
-// quoting would keep it literal, but the reader of the copied text could not see it.
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+// A pasted command must never carry a character its reader cannot see as what it is, in the
+// head or in a value: control and format characters (Cc, Cf), every other character Unicode
+// says to render invisibly, line and paragraph separators, a space other than U+0020 (it
+// looks like a word break in the head but is none), and a lone surrogate. The quoting would
+// keep them literal, but the shown text would lie.
+const CONTROL = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]|(?! )\p{Zs}/u;
 
 export interface ProvisionValues {
   serverUrl: string;
@@ -33,10 +35,22 @@ export interface ProvisionValues {
   allowInsecure: boolean;
 }
 
-const SHELLS: Record<string, { quote: (v: string) => string; join: string }> = {
-  bash: { quote: shellQuote, join: ' \\\n  ' },
-  sh: { quote: shellQuote, join: ' \\\n  ' },
-  powershell: { quote: psQuote, join: ' `\n  ' },
+interface Shell {
+  quote: (v: string) => string;
+  join: string;
+  // Feeds a quoted value to the head's stdin.
+  pipe: (quoted: string) => string;
+}
+
+const POSIX: Shell = {
+  quote: shellQuote,
+  join: ' \\\n  ',
+  pipe: (q) => `printf '%s\\n' ${q} | `,
+};
+const SHELLS: Record<string, Shell> = {
+  bash: POSIX,
+  sh: POSIX,
+  powershell: { quote: psQuote, join: ' `\n  ', pipe: (q) => `${q} | ` },
 };
 
 /** The command text, or null when it cannot be built safely. */
@@ -49,6 +63,7 @@ export function buildCommand(
   if (!shell || !spec.base || CONTROL.test(spec.base)) return null;
   if (!UUID_FORM.test(values.serverId)) return null;
   const parts = [spec.base];
+  let stdin = '';
   for (const arg of spec.args) {
     if (!FLAG_FORM.test(arg.flag)) return null;
     if (arg.mode === 'interactive' && automation) continue;
@@ -77,6 +92,14 @@ export function buildCommand(
         if (!automation) return null;
         value = values.token !== null && TOKEN_FORM.test(values.token) ? values.token : null;
         break;
+      case 'tokenStdin':
+        // Piped in rather than passed: an argument would sit in the host's process list
+        // while the provisioning runs.
+        if (!automation || values.token === null || !TOKEN_FORM.test(values.token)) return null;
+        if (stdin) return null;
+        stdin = shell.pipe(shell.quote(values.token));
+        parts.push(arg.flag);
+        continue;
       default:
         return null;
     }
@@ -90,5 +113,5 @@ export function buildCommand(
     if (spec.shell === 'powershell' && value.includes('"')) return null;
     parts.push(`${arg.flag} ${shell.quote(value)}`);
   }
-  return parts.join(shell.join);
+  return stdin + parts.join(shell.join);
 }

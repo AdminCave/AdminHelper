@@ -104,6 +104,9 @@ export const translations: Translations = {
     'infra.prov.port.repo': 'Paket-Repo',
     'infra.prov.port.tunnel': 'Tunnel',
     'infra.prov.tunnelOnly': 'nur mit FRP-Tunnel',
+    'infra.prov.unknownPurpose': 'anderer Zweck ({value})',
+    'infra.prov.unknownReason':
+      'Der Server meldet einen Hinweis, den diese Desktop-Version nicht kennt ({value}); die Doku der Plattform nennt den Stand.',
     'infra.prov.progress': 'Fortschritt',
     'infra.prov.progressError': 'Fortschritt nicht abrufbar.',
     'infra.prov.stage.token': 'Token eingelöst',
@@ -1720,6 +1723,9 @@ export const translations: Translations = {
     'infra.prov.port.repo': 'Package repo',
     'infra.prov.port.tunnel': 'Tunnel',
     'infra.prov.tunnelOnly': 'only with an FRP tunnel',
+    'infra.prov.unknownPurpose': 'other purpose ({value})',
+    'infra.prov.unknownReason':
+      'The server reports a note this desktop version does not know ({value}); the platform docs give the current state.',
     'infra.prov.progress': 'Progress',
     'infra.prov.progressError': 'Progress unavailable.',
     'infra.prov.stage.token': 'Token redeemed',

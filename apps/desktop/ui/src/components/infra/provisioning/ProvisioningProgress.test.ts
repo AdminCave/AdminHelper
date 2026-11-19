@@ -131,6 +131,27 @@ describe('ProvisioningProgress', () => {
     expect(states(view.container).token).toBe('waiting');
   });
 
+  it('keeps the stages of an earlier answer through a failed request, without an error', async () => {
+    h.progress
+      .mockResolvedValueOnce(ISSUED)
+      .mockRejectedValueOnce(new Error('bad gateway'))
+      .mockResolvedValue(DONE);
+    const view = render(ProvisioningProgress, { serverId: SERVER_ID });
+    await waitFor(() => expect(states(view.container).token).toBe('waiting'));
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await waitFor(() => expect(h.progress).toHaveBeenCalledTimes(2));
+    expect(states(view.container)).toEqual({
+      token: 'waiting',
+      certificate: 'waiting',
+      report: 'waiting',
+    });
+    expect(view.container.querySelector('[data-testid="prov-progress-error"]')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await waitFor(() => expect(states(view.container).report).toBe('done'));
+  });
+
   it('counts an agent certificate as redeemed once the used token is gone', async () => {
     // The token cleanup deletes redeemed tokens: only the certificate is left.
     h.progress.mockResolvedValue(progress({ certificate: { issuedAt: at(-MIN) } }));

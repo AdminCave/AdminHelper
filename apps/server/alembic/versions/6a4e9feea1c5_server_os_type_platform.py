@@ -90,4 +90,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    pass
+    """Leave the platform values in place on purpose.
+
+    The free text the upgrade mapped is not kept anywhere, so it cannot come back; and the
+    platform values are valid free text for the older schema, which took any string.
+    """
