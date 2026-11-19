@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
         schedule_agent_alert_bundle,
         schedule_alert_log_cleanup,
         schedule_bell_catch_up,
+        schedule_history_cleanup,
         schedule_tag_sync,
         scheduler,
     )
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
 
     load_all_checks()
     schedule_alert_log_cleanup()
+    schedule_history_cleanup()
     schedule_tag_sync()
     schedule_agent_alert_bundle()
     schedule_bell_catch_up()

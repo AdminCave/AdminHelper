@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    text,
     true,
 )
 from sqlalchemy.orm import validates
@@ -290,6 +291,61 @@ class MonitorAlertLog(Base):
             "success": self.success,
             "error": self.error,
         }
+
+
+class MonitorStatusChange(Base):
+    """One change of a damped status, whatever the alert rules say (ADR 0004 §5).
+
+    object_key NULL is the check itself, any other value one of its objects. origin
+    'state' was written when the status changed; 'alert_log' was taken over from
+    monitor_alert_log once, by the revision that added the table, one row per rule
+    that was notified."""
+
+    __tablename__ = "monitor_status_log"
+    # The server's events read a time range of its checks, the daily cleanup deletes by time;
+    # apply_objects counts a check's object rows of the day, without reading its own rows.
+    __table_args__ = (
+        Index("ix_status_log_check_at", "check_id", "at"),
+        Index("ix_status_log_at", "at"),
+        Index(
+            "ix_status_log_object_at",
+            "check_id",
+            "at",
+            postgresql_where=text("object_key IS NOT NULL"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    check_id = Column(String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), nullable=False)
+    object_key = Column(String(200), nullable=True)
+    old_status = Column(String, nullable=False)
+    new_status = Column(String, nullable=False)
+    at = Column(DateTime, nullable=False)
+    origin = Column(String, nullable=False)
+
+
+class MonitorObjectState(Base):
+    """The damped state of one object a check names (ADR 0004 §5), written only when it
+    changes (ADR §12.4): the time it was last seen is the check's last_check.
+
+    object_key is `<server>/<kind>/<id>` (app.objects.object_key); stable False marks a
+    key built from a fallback that can change under the object (a device path, a
+    container name). bad_since holds while the status stays among warning, critical and
+    unknown; gone_at is set when a complete result no longer named the object."""
+
+    __tablename__ = "monitor_object_state"
+
+    check_id = Column(String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), primary_key=True)
+    object_key = Column(String(200), primary_key=True)
+    kind = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    reason = Column(String, nullable=False)
+    since = Column(DateTime, nullable=False)
+    bad_since = Column(DateTime, nullable=True)
+    fail_count = Column(Integer, nullable=False)
+    stable = Column(Boolean, nullable=False)
+    gone_at = Column(DateTime, nullable=True)
 
 
 class MonitorTemplate(Base):
