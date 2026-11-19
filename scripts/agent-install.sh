@@ -388,7 +388,12 @@ if [ -n "$CA_FP" ]; then
         # An agent that predates --ca-fp: fall back to TOFU rather than failing
         # the rollout.
         warn "installed agent predates --ca-fp — falling back to trust-on-first-use."
-        warn "compare the fingerprint the agent prints against the desktop's provisioning tab!"
+        # The desktop shows the CA fingerprint, which never equals the pinned server certificate,
+        # and the notice of an agent this old names no value to compare with. The agent comes from
+        # the server's repo: running this script again installs the same one.
+        warn "compare the fingerprint the agent prints with the SHA-256 of the gateway certificate (not the CA),"
+        warn "on the server: openssl x509 -noout -fingerprint -sha256 -in <gateway certificate>;"
+        warn "or update the AdminHelper server, which ships the agent, and provision again with a new token."
         PROV_ARGS+=(--insecure)
     fi
 else

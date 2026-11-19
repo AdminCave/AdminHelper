@@ -185,6 +185,14 @@ out=$(run_script --server https://srm.example.com --token t --server-id s \
 grep -q -- "--insecure" "$WORK/provision.args" && ! grep -q -- "--ca-fp" "$WORK/provision.args" \
     && ok "fell back to --insecure" || bad "fallback args wrong: $(cat "$WORK/provision.args" 2>/dev/null)"
 grep -qi "predates --ca-fp" <<<"$out" && ok "warns about the version skew" || bad "no skew warning"
+# The desktop tab shows the CA fingerprint, never the pinned server certificate's.
+grep -iE 'fingerprint.*(tab|desktop)' <<<"$out" >/dev/null \
+    && bad "TOFU warning compares with the desktop tab" || ok "TOFU warning does not send the admin to the desktop tab"
+grep -qF "openssl x509 -noout -fingerprint -sha256" <<<"$out" \
+    && ok "TOFU warning names the command for the gateway certificate" || bad "TOFU warning names no command"
+# The agent comes from the server's repo: rerunning the script would install the same old one.
+grep -qi "update the AdminHelper server" <<<"$out" && ! grep -qi "update the agent" <<<"$out" \
+    && ok "TOFU warning names the server update as the way out" || bad "TOFU warning sends the admin in a circle"
 
 echo "── token over stdin: the agent reads it from stdin, never as an argument ──"
 fresh_env; export AH_PKG_MGR=apt
