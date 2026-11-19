@@ -93,6 +93,17 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: keine (Ledger)
 Task-Review: am Ende
 
+### T9 — R-1621: module_sync schaltet eine Zeile einer anderen Instanz nicht wieder ein  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @189f9f691 2026-11-19T22:36:02+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T9.verdict.json)
+Beweis: Abschlussprüfung klein-nachlese-15 2026-11-19 (Fund wichtig zu T5)
+Semantik: apps/monitoring/app/module_sync.py:471 `_belongs`: „a check that names one instance (R-1528) at that one only“
+Änderung: `_adopt` behandelt eine Zeile, deren Katalog-Check eine andere Instanz nennt, wie eine aus dem Katalog gefallene: in `kept`, kein `_update`, kein Aktivieren, kein `result.enabled`. Roter Test: gone-Adopt schaltet die Zeile aus, der Adopt als `new` mit dem benannten Katalog lässt sie aus.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
+Doku: keine (Verhalten steht im Fragment der T5)
+
 ## Entscheidungen
 - 2026-11-19 R-1620: Der Hub-POST in `toggle_check`/`delete_check` bleibt synchron. Ihn in den Hintergrund zu legen braucht eine eigene Sitzung für `release_hub_slot`/`refresh`, ändert die Antwort des Endpunkts und ist mehr als eine Nachlese; der Teil wird eine eigene Zeile.
 - 2026-11-19 R-1635: Ursache der stehengebliebenen Köpfe: `desktop-blocking` und `host-uid-guard` bekamen den Abschluss-Commit `erledigt` nie; bei `kern-server-7` setzte `task-close.sh` mit der später nachgezogenen T4 den Kopf wieder auf `bereit` (die letzte Task schaltet `aktiv` → `bereit`), danach kam kein `erledigt` mehr. Die Köpfe stehen jetzt auf `erledigt`; der Prozess bleibt (Abschluss §4.6) und ist kein Harness-Eingriff dieses Zugs.
+- 2026-11-19 R-1627: Punkt 2 von T2 (Auswahlmarke folgt der Reihenfolge) galt auf main schon (`void order` in `ServerNav.svelte`); die Task ändert dort nichts und hat dafür keinen roten Test.

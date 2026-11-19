@@ -1751,6 +1751,24 @@ def test_a_row_of_another_instance_is_not_rebound_when_the_check_names_one(db, a
     )
 
 
+def test_a_row_of_another_instance_stays_off_when_the_instance_comes_back(db, actions):
+    _scanned(db, [_socket(443)])
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+    unnamed = _pbx(web={k: v for k, v in _PBX_WEB.items() if k != "instance"})
+    adopt(db, other.id, catalog=unnamed, now=NOW)
+    other.kind, other.status = "gone", "open"
+    adopt(db, other.id, catalog=unnamed, now=NOW)
+    assert not _checks(db, other)["web"].enabled
+
+    # The catalog now names pbx.service for the web check; the row at the returning
+    # instance is no longer this check's and is not switched on again.
+    other.kind, other.status = "new", "open"
+    result = adopt(db, other.id, catalog=PBX, now=NOW)
+
+    assert not _checks(db, other)["web"].enabled
+    assert _checks(db, other)["web"].id not in result.enabled
+
+
 @pytest.mark.parametrize(
     ("kind", "sockets", "port", "reason"),
     [

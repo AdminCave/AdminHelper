@@ -578,6 +578,9 @@ def _adopt(
             if row.module_check_key not in keys:
                 kept.append(row)
                 continue  # dropped from the catalog: stays as the admin left it
+            if by_key[row.module_check_key].instance not in (None, finding.instance_key):
+                kept.append(row)
+                continue  # the check names another instance now: stays as it is
             if row.module_check_key in tagged and fitting is not None:
                 if row.module_check_key not in fitting:
                     # The image moved to a tag the check does not fit (Wiki.js 2 -> 3). Deleted
