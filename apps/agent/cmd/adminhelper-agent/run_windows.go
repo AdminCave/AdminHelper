@@ -11,6 +11,8 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
+
+	"adminhelper-agent/internal/frpc"
 )
 
 // windowsServiceName must match the name `sc create` registers in
@@ -43,6 +45,14 @@ func (s *agentService) Execute(_ []string, r <-chan svc.ChangeRequest, changes c
 	// Execute, and must not end in the middle of a cycle.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// frpc runs as a child of this process. Without its supervisor the sync reports frpc as not
+	// running instead of starting it; the agent itself keeps running.
+	if stopFrpc, err := frpc.Supervise(ctx); err != nil {
+		logger.Warnf("frpc cannot run: %v", err)
+	} else {
+		defer stopFrpc()
+	}
 
 	// serve runs on its own goroutine so the SCM control loop below stays
 	// responsive while a cycle runs.
