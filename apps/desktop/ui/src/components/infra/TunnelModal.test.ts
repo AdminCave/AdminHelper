@@ -318,3 +318,102 @@ describe('TunnelModal names (R-1210)', () => {
     });
   });
 });
+
+// A web tunnel's connection asks for scheme and path instead of a user (R-1540).
+describe('TunnelModal web auto-connection', () => {
+  const protocolSelect = (c: HTMLElement) =>
+    within(c).getByLabelText('Protokoll') as HTMLSelectElement;
+  const autoBox = (c: HTMLElement) =>
+    within(c).getByLabelText('Verbindung automatisch anlegen') as HTMLInputElement;
+  const schemeSelect = (c: HTMLElement) =>
+    within(c).queryByLabelText('Schema') as HTMLSelectElement | null;
+  const pathInput = (c: HTMLElement) =>
+    within(c).queryByLabelText('Pfad (optional)') as HTMLInputElement | null;
+  const userInput = (c: HTMLElement) => within(c).queryByLabelText('Benutzer für Auto-Verbindung');
+
+  it('asks scheme (https on 8006, following the port) and path, and sends them', async () => {
+    const { container } = openModal();
+    await tick();
+    await fireEvent.change(protocolSelect(container), { target: { value: 'web' } });
+    await fireEvent.click(autoBox(container));
+    await tick();
+
+    expect(userInput(container)).toBeNull();
+    expect(schemeSelect(container)?.value).toBe('https');
+    await fireEvent.input(numberInputs(container)[0], { target: { value: '8080' } });
+    await tick();
+    expect(schemeSelect(container)?.value).toBe('http');
+    await fireEvent.change(schemeSelect(container)!, { target: { value: 'https' } });
+    await fireEvent.input(numberInputs(container)[0], { target: { value: '80' } });
+    await fireEvent.input(pathInput(container)!, { target: { value: '/ui/' } });
+    await tick();
+    expect(schemeSelect(container)?.value).toBe('https');
+
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(vi.mocked(frpApi.createTunnel).mock.calls[0][1]).toMatchObject({
+      protocol: 'web',
+      local_port: 80,
+      auto_create_connection: true,
+      auto_connection_username: null,
+      auto_connection_scheme: 'https',
+      auto_connection_path: '/ui/',
+    });
+  });
+
+  it('blocks a path the server would refuse', async () => {
+    const { container } = openModal();
+    await tick();
+    await fireEvent.change(protocolSelect(container), { target: { value: 'web' } });
+    await fireEvent.click(autoBox(container));
+    await tick();
+    await fireEvent.input(pathInput(container)!, { target: { value: 'ui' } });
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(frpApi.createTunnel).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the user field for ssh and sends the scheme when a linked tunnel turns web', async () => {
+    const { container } = openModal({ editing: { ...stored, connectionId: 'conn-1' } });
+    await tick();
+    expect(userInput(container)).not.toBeNull();
+    expect(schemeSelect(container)).toBeNull();
+
+    await fireEvent.change(protocolSelect(container), { target: { value: 'web' } });
+    await fireEvent.input(numberInputs(container)[0], { target: { value: '443' } });
+    await tick();
+    expect(schemeSelect(container)?.value).toBe('https');
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(vi.mocked(frpApi.updateTunnel).mock.calls[0][2]).toMatchObject({
+      protocol: 'web',
+      auto_connection_scheme: 'https',
+      auto_connection_path: null,
+    });
+  });
+
+  it('neither asks nor sends a scheme for an unchanged web tunnel', async () => {
+    const { container } = openModal({
+      editing: { ...stored, protocol: 'web', localPort: 8006, connectionId: 'conn-1' },
+    });
+    await tick();
+    expect(schemeSelect(container)).toBeNull();
+    await fireEvent.click(saveBtn(container));
+    await tick();
+    expect(vi.mocked(frpApi.updateTunnel).mock.calls[0][2]).not.toHaveProperty(
+      'auto_connection_scheme',
+    );
+  });
+
+  it('asks only the path for an HTTPS tunnel, whose connection is always https', async () => {
+    const { container } = openModal();
+    await tick();
+    await fireEvent.change(protocolSelect(container), { target: { value: 'web' } });
+    await fireEvent.change(typeSelect(container), { target: { value: 'https' } });
+    await fireEvent.click(autoBox(container));
+    await tick();
+    expect(schemeSelect(container)).toBeNull();
+    expect(pathInput(container)).not.toBeNull();
+  });
+});
