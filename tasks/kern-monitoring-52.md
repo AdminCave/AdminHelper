@@ -14,5 +14,14 @@ Beweis: kern-monitoring-50 T4 2026-11-19; opnsense/core master syslog-ng-local.c
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- journal_args
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-52.md
 
+### T2 — Entwickler-Doku und Changelog zum neuen Befehl (R-1630, Abschlussprüfung)  [x]
+Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-monitoring-52.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4b941b2c0 2026-11-19T22:43:18+01:00
+Review: am Ende (Branch-Review)
+Änderung: `terminal_open_ssh_journal` nennt für `freebsd` den Befehl aus T1; der Changelog-Satz trennt die Zeiten.
+Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
+Doku: docs/developer/desktop.html, docs/en/developer/desktop.html, changelog.d/kern-monitoring-52.md
+Task-Review: am Ende
+
 ## Entscheidungen
 - `dictionaries.ts` bleibt aus dem Zug: klein-nachlese-15 T3 plant dieselbe Stelle (overlap.sh 2026-11-19); die Klein-Session bekommt den Pfad als Hinweis.
