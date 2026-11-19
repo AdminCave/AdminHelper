@@ -1,4 +1,4 @@
-Status: bereit · Branch: feature/kern-windows-3 · Review: am Ende
+Status: erledigt · Branch: feature/kern-windows-3 · Review: am Ende
 Spec: docs/features/kern-windows-3.md (Roadmap R-1645)
 Heavy: windows — Windows-Pfadcode, Beweis über die Windows-Jobs der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
