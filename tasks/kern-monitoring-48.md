@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-48 — Fehlerzeilen vom Linux-Agent, SMART ohne Aufwecken — Task-Ledger
-Status: bereit · Branch: feature/kern-monitoring-48 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-48 · Review: pro Task
 Spec: docs/features/kern-monitoring-48.md (Roadmap R-1413, R-1569)
 Heavy: linux-full — apps/agent (Sammler, Allowlist, smartctl-Aufruf)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -79,6 +79,23 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_check
 Doku: diese Task
 Task-Review: am Ende
 Abhängt von: T1, T2, T3, T5
+
+### T7 — Abschluss-Fund: Push-Test für die Fehlerzeilen vom Plan bis zum Bericht  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/servicelogs_linux_test.go
+Änderung: Fund `wichtig` der Abschlussprüfung: ein Test über `Push`: der Plan trägt `service_logs`, der erste
+Bericht (verloren, 502) trägt `systemd.failed_logs`, der nächste (200) trägt sie erneut, der danach nicht mehr.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
+Doku: keine (nur Test)
+Abhängt von: T5
+
+### T8 — Abschluss-Nits: SMART-Doku nennt -n nur für ATA/SCSI, Beispielmeldung mit Modell  [ ]
+Komponente: monitoring · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html
+Änderung: Nits der Abschlussprüfung: `-n standby` gilt nur für ATA/SCSI-Platten (NVMe ohne), die Beispielmeldung
+lautet „/dev/sdb (<Modell>): warning when last read (asleep)“.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py
+Doku: diese Task
+Task-Review: am Ende
+Abhängt von: T6
 
 ## Entscheidungen
 - 2026-11-19 Übergabe: Kern 1 hat Plan und Kopf `aktiv` angelegt (0b30649c8, 8427db994); Kern 2 baut ab T1 (Kevin 2026-11-18: km48 gehört Kern 2).
