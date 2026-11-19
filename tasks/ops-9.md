@@ -1,5 +1,5 @@
 # Agent-Einzeiler für FreeBSD und OPNsense — Task-Ledger
-Status: aktiv · Branch: feature/ops-9 · Review: am Ende
+Status: bereit · Branch: feature/ops-9 · Review: am Ende
 Spec: docs/features/ops-9.md (Roadmap R-1598)
 Heavy: scenario --box freebsd,opnsense — neues Installer-Skript; `scripts/tests/freebsd_box.sh` und `scripts/tests/opnsense_box.sh` fahren es mit echtem sh und pkg auf den Vorlagen base-freebsd und base-opnsense (Kevin 2026-11-18: grüner VM-Lauf ist Bedingung für den Selbst-Merge).
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -22,8 +22,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- box_scripts_guard_test
 Abhängt von: T1
 Doku: keine (Testharness)
 
-### T3 — R-1598: Doku FreeBSD und OPNsense, Changelog  [ ]
+### T3 — R-1598: Doku FreeBSD und OPNsense, Changelog  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-9.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @40c60d95a 2026-11-19T08:00:15+01:00
+Review: am Ende (Branch-Review)
 Änderung: Abschnitte FreeBSD und OPNsense nennen den Einzeiler zuerst (was er tut, `--pubkey`, ohne `--server-id` nur Paket), der Handweg bleibt darunter; Umstellung auf die interne CA nur noch für den Handweg. Erst nach dem Merge von ops-8 und kern-windows-1 auf frischem `origin/main` (gleiche Datei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-9.md
