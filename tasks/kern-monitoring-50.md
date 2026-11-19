@@ -1,5 +1,5 @@
 # Dienst-Details Windows/FreeBSD: Fehlerzeilen und „Mehr Log“ — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-50 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-50 · Review: pro Task
 Spec: docs/features/kern-monitoring-50.md (Roadmap R-1391)
 Heavy: windows — Windows-Agent-Sammler; keine Windows-Box im Pool, die Windows-CI-Jobs (go test als Admin) sind der Plattform-Beleg; Linux-Pfad unverändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -51,8 +51,10 @@ Tests: argv je Plattform, Ablehnung außerhalb der Klasse, das dekodierte Skript
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: → T4
 
-### T4 — R-1391: Doku Dienst-Details je Plattform  [ ]
+### T4 — R-1391: Doku Dienst-Details je Plattform  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-50.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0d1e18f9d 2026-11-19T11:39:52+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Abschnitt Dienst-Details (DE+EN):
 - Windows: Fehlerzeilen bei gestopptem Auto-Start-Dienst mit Exit-Code, aus System- und Application-Log.
 - „Mehr Log“ je Plattform: journalctl, Ereignisprotokoll über PowerShell, syslog.
