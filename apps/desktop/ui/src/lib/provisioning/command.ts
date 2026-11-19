@@ -18,10 +18,12 @@ export const TOKEN_FORM = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
 export const UUID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // A flag from the catalog goes into the command unquoted, so it must be a plain long option.
 const FLAG_FORM = /^--[a-z][a-z0-9-]*$/;
-// A pasted command must never carry a line break or control character inside a value: the
-// quoting would keep it literal, but the reader of the copied text could not see it.
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+// A pasted command must never carry a character its reader cannot see as what it is, in the
+// head or in a value: control and format characters (Cc, Cf), every other character Unicode
+// says to render invisibly, line and paragraph separators, a space other than U+0020 (it
+// looks like a word break in the head but is none), and a lone surrogate. The quoting would
+// keep them literal, but the shown text would lie.
+const CONTROL = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]|(?! )\p{Zs}/u;
 
 export interface ProvisionValues {
   serverUrl: string;

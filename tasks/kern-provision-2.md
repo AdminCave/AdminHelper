@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API (Katalog, Fortschritt) und Desktop-Provisionier
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1629: Zeichenprüfung im Befehlsbau  [ ]
+### T1 — R-1629: Zeichenprüfung im Befehlsbau  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @353284a5d 2026-11-19T17:12:44+01:00
+Review: approve (.ah-out/review/kern-provision-2/T1.verdict.json)
 Änderung: Die Zeichenprüfung für Kopf und Werte vereinheitlichen und erweitern (Einzelheiten tasks/private); je Klasse ein Testfall für Kopf und Wert, der keinen Befehl ergibt. `security` prüft mit.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning/command.test.ts
 Doku: → T6
