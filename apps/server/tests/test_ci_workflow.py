@@ -339,7 +339,9 @@ def test_the_windows_job_installs_with_agent_install_ps1_and_proves_each_path():
     # Plain http only on the loopback address the script accepts it on.
     assert '$env:AH_DL_BASE = "http://127.0.0.1:8765"' in run
     for proof in (
-        'Assert-Refused "tampered SHA256SUMS"',
+        'Assert-Refused "tampered SHA256SUMS" "does not match SHA256SUMS"',
+        # The reason is checked, so a download error does not pass for a refusal.
+        'if (-not "$_".Contains($Expect)) { throw',
         # Run 44517506477: a tamper that changed nothing passed for a refusal test.
         'throw "the tampered SHA256SUMS equals the real one"',
         "& $install\n",

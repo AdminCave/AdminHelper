@@ -1,5 +1,5 @@
 # Windows-Einzeiler agent-install.ps1 — Task-Ledger
-Status: aktiv · Branch: feature/ops-10 · Review: am Ende
+Status: bereit · Branch: feature/ops-10 · Review: am Ende
 Spec: docs/features/ops-10.md (Roadmap R-1578)
 Heavy: windows — Installer-Pfad; Kevin 2026-11-19: der windows-latest-Job aus T2 zählt als scenario-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -40,8 +40,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_ps1_test
 Doku: README.md · changelog.d/ops-10.md (agent-deployment DE+EN beschreibt TOFU schon)
 
-### T5 — R-1578: CI-Ablehnung am Grund prüfen, cicd-Doku nennt den Installer-Lauf  [ ]
+### T5 — R-1578: CI-Ablehnung am Grund prüfen, cicd-Doku nennt den Installer-Lauf  [x]
 Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_workflow.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @375d3433a 2026-11-19T13:16:53+01:00
+Review: am Ende (Branch-Review)
 Änderung: `Assert-Refused` verlangt einen Ausschnitt der erwarteten Meldung, so ist „tampered SHA256SUMS“ nicht mehr bei einem Download-Fehler grün (reviewer nit); `docs/developer/cicd.html` DE+EN nennt den End-to-End-Lauf von `agent-install.ps1` im Job `agent-windows` (reviewer wichtig).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: docs/developer/cicd.html · docs/en/developer/cicd.html
