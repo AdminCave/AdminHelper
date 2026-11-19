@@ -5,8 +5,10 @@ Heavy: linux-full — Server-API, `docker-compose.yml` (Repo-Mount) und die Desk
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1594: os_type als Plattform-Enum mit Migration  [ ]
-Komponente: server · Dateien: apps/server/app/modules/servers/schemas.py, apps/server/app/modules/servers/models.py, apps/server/alembic/versions/, apps/server/tests/test_server_platform_migration.py, apps/server/tests/test_servers_platform.py, apps/server/tests/openapi.snapshot.json
+### T1 — R-1594: os_type als Plattform-Enum mit Migration  [x]
+Komponente: server · Dateien: apps/server/app/modules/servers/schemas.py, apps/server/tests/test_server_platform_migration.py, apps/server/tests/test_servers_platform.py, apps/server/tests/openapi.snapshot.json, apps/server/alembic/versions/6a4e9feea1c5_server_os_type_platform.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d9e182985 2026-11-19T07:37:14+01:00
+Review: approve (.ah-out/review/kern-provision-1/T1.verdict.json)
 Änderung: `os_type` nimmt nur `linux|windows|freebsd|opnsense|other|null` (Literal in `ServerCreate`/`ServerUpdate`/`ServerOut`, 422 sonst). Die Migration ordnet die Freitexte nach der Spec zu (Linux-Distributionsnamen, `win`, `freebsd`, `opnsense`, sonst `other`; leer → `null`). Ihr Test fährt `upgrade` über Beispielzeilen und `downgrade`. Sie baut erst auf dem Alembic-Kopf nach dem Merge von #569 (kern-notify-6, zwei Migrationen).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_server_platform_migration.py tests/test_servers_platform.py tests/test_openapi_snapshot.py tests/test_migrations_smoke.py
 Doku: → T10

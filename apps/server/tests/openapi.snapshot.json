@@ -6222,6 +6222,13 @@
           "os_type": {
             "anyOf": [
               {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -6313,6 +6320,13 @@
           "osType": {
             "anyOf": [
               {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
                 "type": "string"
               },
               {
@@ -6406,6 +6420,13 @@
           "os_type": {
             "anyOf": [
               {
+                "enum": [
+                  "linux",
+                  "windows",
+                  "freebsd",
+                  "opnsense",
+                  "other"
+                ],
                 "type": "string"
               },
               {
