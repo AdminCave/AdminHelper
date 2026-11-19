@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # kern-monitoring-49 — Glocke: Entwarnung gelöschter Checks, Schweregrad im Nachholjob — Task-Ledger
-Status: geplant · Branch: feature/kern-monitoring-49 · Review: am Ende
+Status: aktiv · Branch: feature/kern-monitoring-49 · Review: am Ende
 Spec: docs/features/kern-monitoring-49.md (Roadmap R-1601, R-1619)
 Heavy: none — nur apps/monitoring-Logik, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
