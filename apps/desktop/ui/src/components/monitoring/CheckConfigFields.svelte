@@ -491,6 +491,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setNum('capacity_crit', e.currentTarget.value)}
     />
   </label>
+  <label class="field">
+    <span class="field-label">{$t('monitoring.checkCfg.scrubWarnDays')}</span>
+    <input
+      type="number"
+      min="1"
+      max="3650"
+      value={numVal('scrub_warn_days')}
+      oninput={(e) => setNum('scrub_warn_days', e.currentTarget.value)}
+    />
+  </label>
+  <label class="field">
+    <span class="field-label">{$t('monitoring.checkCfg.scrubCritDays')}</span>
+    <input
+      type="number"
+      min="1"
+      max="3650"
+      value={numVal('scrub_crit_days')}
+      oninput={(e) => setNum('scrub_crit_days', e.currentTarget.value)}
+    />
+  </label>
   {@render outageField()}
 {:else if checkType === 'docker_health'}
   <label class="field" style="grid-column: span 2;">

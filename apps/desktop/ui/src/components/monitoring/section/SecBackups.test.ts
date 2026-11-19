@@ -362,3 +362,21 @@ describe('SecBackups backup details', () => {
     expect(lineText(el, 102)).toContain('verification: none Last error: ERROR');
   });
 });
+
+describe('SecBackups order', () => {
+  it('lists the missing guests first, then the outdated ones, then the rest', async () => {
+    const c = check({
+      status: 'critical',
+      details: {
+        vms: [vm(1, 'ok'), vm(2, 'outdated'), vm(3, 'missing'), vm(4, 'ok'), vm(5, 'missing')],
+      },
+    });
+    const { container: el } = render(SecBackups, { props: { checks: [c] } });
+    toggleExpanded(ID);
+    await tick();
+    const names = Array.from(el.querySelectorAll<HTMLElement>('.mon-expand-row')).map(
+      (r) => r.querySelector('.mon-expand-name')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    );
+    expect(names.map((n) => /vm-(\d+)/.exec(n)?.[1])).toEqual(['3', '5', '2', '1', '4']);
+  });
+});

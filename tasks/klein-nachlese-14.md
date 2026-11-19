@@ -50,8 +50,10 @@ Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_webhook_payload.py tests/test_openapi_snapshot.py
 Doku: → T6
 
-### T5 — R-1574/R-1603: Desktop-UI — Backups-Sortierung, ZFS-Anzeige, Scrub-Felder  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecBackups.svelte, apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/components/monitoring/section/SecZfs.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T5 — R-1574/R-1603: Desktop-UI — Backups-Sortierung, ZFS-Anzeige, Scrub-Felder  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecBackups.svelte, apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/components/monitoring/section/SecBackups.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @182d9227f 2026-11-19T23:59:20+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T5.verdict.json)
 Beweis: reviewer kern-monitoring-45 branch, 2026-11-18
 Semantik: keine Stelle in docs/ — die Texte und Zähler selbst sind der Fund
 Änderung: `SecBackups`: die Sortierfunktion nimmt zwei Argumente und vergleicht beide Ränge. `SecZfs`: der Kommentar an `scrubChip` und der tote `warn`-Zweig von `healthClass` (der Rückgabetyp nennt `warn`, kein Pfad liefert es) stimmen mit der Bewertung überein. `CheckConfigFields`: das `zfs_health`-Formular bietet `scrub_warn_days` und `scrub_crit_days` an (Zahlenfelder, 1–3650, Standard 35/60 wie im Schema), Beschriftungen in `dictionaries.ts` DE+EN. Je Punkt erst ein roter Test.
