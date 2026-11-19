@@ -200,7 +200,8 @@ describe('pages of the long lists', () => {
   });
 });
 
-describe('overview with the large fleet', () => {
+// Drawing 292 Lagekarte rows takes jsdom over 4 s here; 5 s leaves a slower runner too little.
+describe('overview with the large fleet', { timeout: 20_000 }, () => {
   const summaries = serverSummaries(SCALE_OBJECTS);
   const troubled = summaries.filter((s) => s.problems > 0 || s.worst === 'stale');
   const quiet = summaries.length - troubled.length;

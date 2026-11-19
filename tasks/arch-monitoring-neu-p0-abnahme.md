@@ -47,8 +47,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test
 Doku: keine (Mockup nur im Vite-Dev-Server)
 Abhängt von: T3
 
-### T5 — Rahmen: Serverliste, Server-Seite, Handy-Schublade, Datenumschalter; Reiter „Lage“ entfällt (R-1558)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/MockupApp.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/ServerView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/Lage.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/views.test.ts
+### T5 — Rahmen: Serverliste, Server-Seite, Handy-Schublade, Datenumschalter; Reiter „Lage“ entfällt (R-1558)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/MockupApp.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/ServerView.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/Lage.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/views.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/limits.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/ExceptionDialog.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7230fdc49 2026-11-19T07:14:53+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0-abnahme/T5.verdict.json)
 Änderung: `MockupApp` setzt die Serverliste links und „Alle Server“ als Start ein, die Reiter verlieren „Lage“; auf dem Handy (≤ 760 px) ist die Serverliste eine Schublade (Knopf, Escape, Auswahl schließt), jeder Reiter- und Serverwechsel beginnt oben, ein Umschalter wählt „Normal“ oder „Groß“. `ServerView` folgt der Auswahl der Serverliste statt eines eigenen Selects, mit Vitalwerten und Objektart-Gruppen. `views/Lage.svelte` entfällt; ihre Render-Tests in `views.test.ts` laufen mit denselben Aussagen gegen „Alle Server“, der Server-Test gegen die neue Server-Seite. Layout-Beweis (390 px ohne seitliches Überstehen, eine Spalte, Reiterwechsel mit großer Flotte) per headless Chromium gegen den Worktree, Summary im Commit-Body.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
 Doku: keine (Mockup nur im Vite-Dev-Server; die Abnahme hält T7 im ADR fest)
@@ -81,3 +83,5 @@ Abhängt von: T6
 ## Entscheidungen
 - 2026-11-19 T3: Statusbalken einer Objektart-Gruppe erst bei mehr als 42 Objekten, wie im abgenommenen Entwurf — Prüfer-Nit T3; Spec und T7 nennen es so.
 - 2026-11-19 T8: Sortierung als eigene Task nach T5 statt in T3/T4 — T3/T4 übernehmen den abgenommenen Entwurf unverändert, T8 baut Kevins Nachtrag darauf.
+- 2026-11-19 T5: Die Tests mit großer Flotte (`frame` in views.test.ts, `overview with the large fleet` in limits.test.ts) laufen mit 20 s Timeout je describe — jsdom zeichnet die 292 Lagekarte-Zeilen hier in gut 4 s, die 5-s-Grenze ließe einem langsameren Runner zu wenig; die Lage-Tests suchen „weitere Server zeigen“ per Klasse, weil eine Rollenabfrage nach einem benannten Knopf jeden Knopf des Boards wiegt (über 1 s je Abfrage).
+- 2026-11-19 T5: ExceptionDialog.test.ts bekommt einen `scrollTo`-Stub — MockupApp scrollt jetzt bei jedem Reiterwechsel nach oben, jsdom kennt `scrollTo` nicht (4 unbehandelte Fehler ohne Stub).

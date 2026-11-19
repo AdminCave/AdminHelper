@@ -9,8 +9,10 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// jsdom has no matchMedia; svelte/motion (object-kind groups) reads it at import.
+// jsdom has no matchMedia, which svelte/motion (object-kind groups) reads at import, and no
+// scrollTo, which the mockup calls on every change of tab.
 vi.hoisted(() => {
+  Element.prototype.scrollTo = () => {};
   window.matchMedia = (query: string) =>
     ({
       matches: false,
