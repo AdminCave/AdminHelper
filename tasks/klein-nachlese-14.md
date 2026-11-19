@@ -71,6 +71,16 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 Task-Review: am Ende
 
+### T7 — R-1603: scrubChip-Kommentar nennt die Bewertung der Prüfung genau  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @60531a302 2026-11-20T00:19:21+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T7.verdict.json)
+Beweis: Abschlussprüfung klein-nachlese-14, 2026-11-20 (plugins.py:394-402: Scrub-Fehler und vdev-Fehler bewerten warning)
+Semantik: keine Stelle in docs/ — der Kommentar selbst ist der Fund
+Änderung: Der Kommentar an `scrubChip` sagt, die Prüfung bewerte Gesundheit, Scrub-Alter (`scrub_warn_days`, `scrub_crit_days`), Scrub-Fehler und vdev-Fehler; der Chip zeigt nur an. Nur Kommentar, kein Verhalten.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring
+Doku: keine (Kommentar)
+
 ## Entscheidungen
 - R-1591 wird nicht an einer echten hängenden Freigabe geprüft (keine Infrastruktur); Kommentar und Doku werden eingeschränkt.
 - `check_restarts` bleibt im Schema, weil gespeicherte Konfigurationen sonst 422 liefern.

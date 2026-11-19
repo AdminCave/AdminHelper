@@ -48,8 +48,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (s.errors > 0) parts.push($t('monitoring.zfs.scrubErrors', { count: s.errors }));
     return parts.join(' · ');
   }
-  // Display only: the pool's health and the scrub's age rate the check (scrub_warn_days,
-  // scrub_crit_days); the errors of the last scrub are a hint, not a rating.
+  // Display only: the check rates the pool's health, the scrub's age (scrub_warn_days,
+  // scrub_crit_days), the errors of the last scrub and the vdev errors; the chip only shows.
   function scrubChip(s: ZfsScrub): string {
     if (s.errors > 0) return 'chip-warn';
     return s.state === 'FINISHED' ? 'chip-ok' : 'chip-muted';
