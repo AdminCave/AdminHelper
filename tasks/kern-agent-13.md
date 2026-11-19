@@ -1,5 +1,5 @@
 # Agent Linux/FreeBSD: Ordner-Overrides nur in Testläufen — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-13 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-13 · Review: am Ende
 Spec: docs/features/kern-agent-13.md (Roadmap R-1655, R-1656)
 Heavy: linux-full — Pfade des Agents auf Linux/FreeBSD (apps/agent)
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
