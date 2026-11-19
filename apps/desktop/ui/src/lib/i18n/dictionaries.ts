@@ -1273,7 +1273,7 @@ export const translations: Translations = {
     'monitoring.services.journal.openFor': 'Mehr Log von {unit} im Terminal öffnen',
     'monitoring.services.journal.connection': 'Verbindung für „Mehr Log“',
     'monitoring.services.journal.hint':
-      '„Mehr Log“ öffnet ein Terminal über SSH, das nur die letzten 200 Log-Zeilen des Dienstes zeigt (Linux: Journal, Windows: Ereignisprotokoll, FreeBSD: /var/log/messages), mit den Rechten des Logins. Gespeichert wird nichts.',
+      '„Mehr Log“ öffnet ein Terminal über SSH, das nur die letzten 200 Log-Zeilen des Dienstes zeigt (Linux: Journal, Windows: Ereignisprotokoll, FreeBSD: /var/log/messages, OPNsense: /var/log/system), mit den Rechten des Logins. Gespeichert wird nichts.',
     'monitoring.services.journal.noSsh': 'Für „Mehr Log“ braucht der Server eine SSH-Verbindung.',
     'monitoring.services.journal.unsupported':
       '„Mehr Log“ gibt es für systemd-Dienste unter Linux und für Windows-, FreeBSD- und OPNsense-Server.',
@@ -2885,7 +2885,7 @@ export const translations: Translations = {
     'monitoring.services.journal.openFor': 'Open more log of {unit} in the terminal',
     'monitoring.services.journal.connection': 'Connection for “More log”',
     'monitoring.services.journal.hint':
-      '“More log” opens a terminal over SSH that shows only the last 200 log lines of the service (Linux: journal, Windows: event log, FreeBSD: /var/log/messages), with the rights of the login. Nothing is stored.',
+      '“More log” opens a terminal over SSH that shows only the last 200 log lines of the service (Linux: journal, Windows: event log, FreeBSD: /var/log/messages, OPNsense: /var/log/system), with the rights of the login. Nothing is stored.',
     'monitoring.services.journal.noSsh': '“More log” needs an SSH connection to the server.',
     'monitoring.services.journal.unsupported':
       '“More log” exists for systemd services on Linux and for Windows, FreeBSD and OPNsense servers.',
