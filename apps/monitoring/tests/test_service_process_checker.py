@@ -19,10 +19,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.checkers.agent import MAX_AGENT_TEXT, ServiceProcessChecker, cap_agent_text
+from app.checkers.agent import (
+    MAX_AGENT_TEXT,
+    MAX_REPORT_ENTRIES,
+    NOT_COLLECTED,
+    ServiceProcessChecker,
+    cap_agent_text,
+)
 from app.core.auth import require_agent
 from app.core.database import get_db
-from app.models import Base, MonitorCheck, MonitorState
+from app.models import Base, MonitorCheck, MonitorObjectState, MonitorState
 
 from ._helpers import assert_every_reader_reads
 
@@ -1112,3 +1118,239 @@ def test_list_mode_push_hands_the_stored_state_to_the_checker(client_db):
         state = db.query(MonitorState).filter_by(check_id="chk-list").one()
         assert state.status == "ok"
         assert json.loads(state.details)["watched"] == expected
+
+
+# --- objects (R-1559) -----------------------------------------------------------
+
+
+def _service(ident: str, status: str, reason: str, name: str | None = None) -> dict:
+    return {
+        "kind": "service",
+        "id": ident,
+        "name": ident if name is None else name,
+        "status": status,
+        "reason": reason,
+    }
+
+
+def test_auto_mode_names_each_bad_unit_as_a_service_object():
+    report = _with_details(
+        ["nginx.service", "data.mount", "", "cron.service"],
+        [{"unit": "nginx.service", "result": "exit-code", "exit": "status=1"}],
+    )
+    report["systemd"]["enabled_inactive"] = ["backup.timer"]
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert metrics["_objects"] == {
+        "complete": False,
+        "items": [
+            # Rated as in the message: only a failed service is critical. The empty name,
+            # which _details keeps, is no object.
+            _service("nginx.service", "critical", "Failed (exit-code, status=1)"),
+            _service("data.mount", "warning", "Failed"),
+            _service("cron.service", "critical", "Failed"),
+            _service("backup.timer", "warning", "Inactive (autostart)"),
+        ],
+        "others_ok": "No problem reported",
+    }
+
+
+def test_auto_mode_leaves_an_ignored_unit_out_of_the_objects():
+    report = {"systemd": {"failed": ["nginx.service", "snapd.service"], "enabled_inactive": []}}
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto", "ignore": ["snapd*"]}, report)
+    assert [item["id"] for item in metrics["_objects"]["items"]] == ["nginx.service"]
+    # Paired: without the ignore list it is named.
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert [item["id"] for item in metrics["_objects"]["items"]] == [
+        "nginx.service",
+        "snapd.service",
+    ]
+
+
+def test_auto_mode_object_name_is_capped_and_its_id_is_the_full_unit():
+    unit = "x" * 600 + ".service"
+    report = {"systemd": {"failed": [], "enabled_inactive": [unit, "a\nb.service"]}}
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    long, multiline = metrics["_objects"]["items"]
+    assert (long["id"], long["name"]) == (unit, cap_agent_text(unit))
+    assert len(long["name"]) == MAX_AGENT_TEXT
+    assert (multiline["id"], multiline["name"]) == ("a\nb.service", cap_agent_text("a\nb.service"))
+    assert "\n" not in multiline["name"]
+
+
+@pytest.mark.parametrize(
+    "systemd",
+    [
+        {"failed": ["x.service"] * (MAX_REPORT_ENTRIES + 1), "enabled_inactive": []},
+        {"failed": [], "enabled_inactive": ["x.service"] * (MAX_REPORT_ENTRIES + 1)},
+        {"failed": [], "enabled_inactive": [], "error": "systemctl list-units failed"},
+        {"failed": [], "enabled_inactive": "cron.service"},
+        {"enabled_inactive": []},
+        {"failed": []},
+    ],
+    ids=["failed-cut", "inactive-cut", "error", "not-a-list", "no-failed", "no-inactive"],
+)
+def test_auto_mode_says_others_ok_only_from_whole_lists_without_error(systemd):
+    # A cut list may hide a bad unit; after a failed listing the empty lists prove nothing.
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert metrics["_objects"]["complete"] is False
+    assert "others_ok" not in metrics["_objects"]
+
+
+def test_auto_mode_lists_at_the_cap_are_whole():
+    units = [f"u{i}.timer" for i in range(MAX_REPORT_ENTRIES)]
+    report = {"systemd": {"failed": units, "enabled_inactive": units, "error": ""}}
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert metrics["_objects"]["others_ok"] == "No problem reported"
+    assert len(metrics["_objects"]["items"]) == 2 * MAX_REPORT_ENTRIES
+
+
+def test_auto_mode_an_entry_that_is_no_name_keeps_the_lists_whole():
+    report = {"systemd": {"failed": [5, None], "enabled_inactive": [["cron.service"]]}}
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert metrics["_objects"] == {
+        "complete": False,
+        "items": [],
+        "others_ok": "No problem reported",
+    }
+
+
+@pytest.mark.parametrize(
+    "host, unit, ident",
+    [
+        ({"os": "windows"}, "Spooler", "spooler"),
+        ({"os": "windows"}, "MSSQL$SQLEXPRESS", "mssql$sqlexpress"),
+        ({"os": "freebsd"}, "Sshd", "Sshd"),
+        ({"os": "freebsd"}, "nginx.service", "nginx"),
+        ({"os": "linux"}, "Cron.service", "Cron.service"),
+        (None, "Cron.service", "Cron.service"),
+        ("windows", "Cron.service", "Cron.service"),
+    ],
+    ids=[
+        "windows",
+        "windows-instance",
+        "freebsd",
+        "freebsd-suffix",
+        "linux",
+        "no-host",
+        "bad-host",
+    ],
+)
+def test_auto_mode_service_id_follows_the_host_os(host, unit, ident):
+    report = {"systemd": {"failed": [], "enabled_inactive": [unit]}}
+    if host is not None:
+        report["host"] = host
+    _, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert metrics["_objects"]["items"] == [
+        _service(ident, "warning", "Inactive (autostart)", name=unit)
+    ]
+
+
+@pytest.mark.parametrize(
+    "host_os, unit, configured",
+    [
+        ("linux", "nginx.service", "nginx"),
+        ("linux", "nginx.service", "nginx.service"),
+        ("windows", "Spooler", "spooler"),
+        ("freebsd", "nginx", "nginx"),
+    ],
+)
+def test_both_modes_key_a_service_alike(host_os, unit, configured):
+    # A check switched between the modes keeps its objects.
+    checker = ServiceProcessChecker()
+    auto = {"host": {"os": host_os}, "systemd": {"failed": [], "enabled_inactive": [unit]}}
+    listed = {"host": {"os": host_os}, "services": [{"name": unit, "running": False}]}
+    _, _, from_auto = checker.evaluate({"mode": "auto"}, auto)
+    _, _, from_list = checker.evaluate({"mode": "list", "services": [configured]}, listed)
+    assert from_auto["_objects"]["items"][0]["id"] == from_list["_objects"]["items"][0]["id"]
+
+
+def test_list_mode_names_each_configured_service_as_an_object():
+    config = {"mode": "list", "services": ["nginx", "sshd", "cron", "nginxx"]}
+    _, _, metrics = ServiceProcessChecker().evaluate(config, _inventory_report())
+    assert metrics["_objects"] == {
+        "complete": True,
+        "items": [
+            _service("nginx.service", "ok", "Running", name="nginx"),
+            # Keyed by the name as configured: the alias is not resolved to ssh.service.
+            _service("sshd.service", "ok", "Running", name="sshd"),
+            _service("cron.service", "critical", "Not active", name="cron"),
+            # Kevin 2026-10-16: a name without data is not down.
+            _service("nginxx.service", NOT_COLLECTED, "No data from the agent", name="nginxx"),
+        ],
+    }
+
+
+def test_list_mode_object_names_the_reason_of_a_down_service():
+    _, _, metrics = _reason_message(_reason_report())
+    assert metrics["_objects"]["items"] == [
+        _service("nginx.service", "critical", "Not active (exit-code, status=1)", name="nginx"),
+        _service("cron.service", "critical", "Not active", name="cron"),
+        _service("sshd.service", "critical", "Not active (signal, signal=SIGKILL)", name="sshd"),
+    ]
+
+
+def test_list_mode_object_without_data_names_the_failed_query():
+    error = "systemctl list-units failed: exit status 1"
+    _, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx"]}, _inventory_report(error=error)
+    )
+    assert metrics["_objects"]["items"] == [
+        _service("nginx.service", NOT_COLLECTED, f"Services not queryable: {error}", name="nginx")
+    ]
+
+
+def test_list_mode_windows_object_is_the_lowercased_service():
+    report = {
+        "host": {"os": "windows"},
+        "systemd": {
+            "failed": [],
+            "enabled_inactive": [],
+            "all_services": [
+                {"unit": "W32Time", "active_state": "active", "enabled_state": "unknown"},
+            ],
+        },
+    }
+    _, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["W32Time"]}, report
+    )
+    assert metrics["_objects"]["items"] == [_service("w32time", "ok", "Running", name="W32Time")]
+
+
+def test_list_mode_without_services_is_complete_and_names_no_object():
+    # Complete, so the services taken off the list are gone.
+    result = ServiceProcessChecker().evaluate({"mode": "list", "services": []}, _inventory_report())
+    assert result == ("ok", "No services configured", {"_objects": {"complete": True, "items": []}})
+
+
+def test_push_turns_a_recovered_unit_ok_while_the_check_holds_its_recovery(client_db):
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-svc",
+                server_id="srv-1",
+                name="Services",
+                check_type="service_process",
+                config=json.dumps({"mode": "auto"}),
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.commit()
+
+    def objects() -> list[tuple]:
+        with factory() as db:
+            rows = db.query(MonitorObjectState).filter_by(check_id="chk-svc").all()
+            return [(r.object_key, r.status, r.reason, r.gone_at) for r in rows]
+
+    report = {"systemd": {"failed": ["nginx.service"], "enabled_inactive": []}}
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    assert objects() == [("srv-1/service/nginx.service", "critical", "Failed", None)]
+
+    report = {"systemd": {"failed": [], "enabled_inactive": []}}
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    assert objects() == [("srv-1/service/nginx.service", "ok", "No problem reported", None)]
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-svc").one()
+        # The object has no recovery hold (ADR 0004 P3), the check keeps its own.
+        assert (state.status, state.message) == ("critical", "All services OK (recovery 1/2)")

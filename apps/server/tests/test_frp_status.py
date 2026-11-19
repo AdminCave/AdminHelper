@@ -500,14 +500,27 @@ def test_status_with_dashboard_url_reports_a_dashboard_that_rejects_the_request(
     assert resp.json() == {"proxies": [], "total": 0, "error": "frps-Dashboard: HTTP 401"}
 
 
+def _fds_on(path):
+    # Only the fds that point at `path`: other threads and fixtures open and close their own fds
+    # while the test runs (R-1626), so the process-wide count flaps.
+    held, want = 0, os.path.realpath(path)
+    for name in os.listdir("/proc/self/fd"):
+        try:
+            if os.readlink(f"/proc/self/fd/{name}") == want:
+                held += 1
+        except OSError:
+            continue  # the fd of the listing itself, or one closed meanwhile
+    return held
+
+
 @pytest.mark.parametrize("kind", ["a directory", "a FIFO"])
 def test_reading_a_list_that_is_no_regular_file_leaves_no_fd_open(tmp_path, kind):
     # open() on the fd of a directory raises without closing that fd.
     path = tmp_path / "proxy-stcp.json"
     path.mkdir() if kind == "a directory" else os.mkfifo(path)
-    before = len(os.listdir("/proc/self/fd"))
+    before = _fds_on(path)
 
     for _ in range(20):
         assert read_proxy_list(tmp_path, "stcp") is None
 
-    assert len(os.listdir("/proc/self/fd")) == before
+    assert _fds_on(path) == before

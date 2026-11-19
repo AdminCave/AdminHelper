@@ -15,7 +15,14 @@ from __future__ import annotations
 import re
 import time
 
-from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
+from app.checkers.agent import (
+    NOT_COLLECTED,
+    agent_number,
+    cap_agent_text,
+    capped_objects,
+    join_capped,
+    whole_list,
+)
 
 # The codes the agent sends for a block it could not read (dockerUnavailable,
 # zfsUnavailable and proxmoxUnavailable in apps/agent/internal/monitor/plugins.go).
@@ -88,6 +95,21 @@ def _backup_details(vm: dict) -> dict:
     return details
 
 
+def _guest_object(vmid: int | None, label: str, status: str, reason: str) -> dict | None:
+    """The object of a guest's backup (R-1559); None for a guest without a VMID, which has no
+    key. A VMID is unique only within its cluster: unstable until the cluster ID (R-0519)."""
+    if vmid is None:
+        return None
+    return {
+        "kind": "guest-backup",
+        "id": str(vmid),
+        "name": label,
+        "status": status,
+        "reason": reason,
+        "stable": False,
+    }
+
+
 class ProxmoxBackupChecker:
     """Checks whether VMs/CTs have up-to-date backups.
 
@@ -125,7 +147,10 @@ class ProxmoxBackupChecker:
             return (
                 "ok",
                 "No VMs/CTs found",
-                {"_details": {"available": True, "error": None, "vms": []}},
+                {
+                    "_details": {"available": True, "error": None, "vms": []},
+                    "_objects": {"complete": whole_list(proxmox.get("vms")), "items": []},
+                },
             )
 
         max_age_hours = config.get("max_backup_age_hours", 26)
@@ -140,6 +165,7 @@ class ProxmoxBackupChecker:
         outdated = []
         ok_count = 0
         vm_details = []
+        guests: list[dict | None] = []
 
         # One pass classifies each VM and builds the UI detail row, so the
         # exclude filters and age calculation live in a single place.
@@ -149,14 +175,19 @@ class ProxmoxBackupChecker:
             vmid = _whole_number(vm.get("vmid"))
             if vmid in exclude_vmids:
                 continue
-            if exclude_stopped and vm.get("status") != "running":
-                continue
 
             # Type and name go into the message and into _details, which the desktop reads with
             # every other check in one answer: only a string, capped and on one line.
             vm_type = cap_agent_text(vm.get("type")) or "vm"
             name = cap_agent_text(vm.get("name")) or "?"
             label = f"{vm_type.upper()} {vmid} ({name})"
+            if exclude_stopped and vm.get("status") != "running":
+                # A rule, not an exception (ADR 0004 §10): the guest is there, its backup is
+                # not rated.
+                reason = "Not running, backup not rated"
+                guests.append(_guest_object(vmid, label, NOT_COLLECTED, reason))
+                continue
+
             last_ts = agent_number(vm.get("last_backup_ts"))
             vm_status = "ok"
             age_hours = None
@@ -164,12 +195,15 @@ class ProxmoxBackupChecker:
             if last_ts is None:
                 vm_status = "missing"
                 no_backup.append(label)
+                guests.append(_guest_object(vmid, label, "critical", "No backup"))
             elif (now - last_ts) > max_age_seconds:
                 vm_status = "outdated"
                 age_hours = round((now - last_ts) / 3600)
                 outdated.append(f"{label}: {age_hours}h old")
+                guests.append(_guest_object(vmid, label, "warning", f"{age_hours}h old"))
             else:
                 ok_count += 1
+                guests.append(_guest_object(vmid, label, "ok", "Backup up to date"))
 
             vm_details.append(
                 {
@@ -187,6 +221,10 @@ class ProxmoxBackupChecker:
             "proxmox_backup_missing": len(no_backup),
             "proxmox_backup_outdated": len(outdated),
             "_details": {"available": True, "error": None, "vms": vm_details},
+            "_objects": {
+                "complete": whole_list(proxmox.get("vms")) and None not in guests,
+                "items": [guest for guest in guests if guest is not None],
+            },
         }
 
         if no_backup:
@@ -226,6 +264,7 @@ _SCRUB_WARN_DAYS = 35
 _SCRUB_CRIT_DAYS = 60
 # Pool states of zpoolprops(7) health that mean lost redundancy or lost data access.
 _BAD_POOL_HEALTH = ("FAULTED", "OFFLINE", "UNAVAIL", "DEGRADED", "SUSPENDED", "REMOVED")
+_POOL_STATUS = ("ok", "warning", "critical")
 
 
 def _counter(value: object) -> int | None:
@@ -300,7 +339,10 @@ class ZfsHealthChecker:
             return (
                 "ok",
                 "No ZFS pools found",
-                {"_details": {"available": True, "error": None, "pools": []}},
+                {
+                    "_details": {"available": True, "error": None, "pools": []},
+                    "_objects": {"complete": whole_list(zfs.get("pools")), "items": []},
+                },
             )
 
         cap_warn = config.get("capacity_warn", 80)
@@ -312,6 +354,7 @@ class ZfsHealthChecker:
         status = "ok"
         problems = []
         metrics = {}
+        objects = []
 
         for pool in pools:
             name = pool.get("name", "?")
@@ -319,18 +362,20 @@ class ZfsHealthChecker:
             health = pool.get("health", "UNKNOWN")
             cap = _pool_capacity(pool)
             metrics[f"zfs_capacity_{name}"] = cap
+            pool_status = "ok"
+            first_problem = len(problems)
 
             if health in _BAD_POOL_HEALTH:
                 problems.append(f"{shown_name}: {health}")
-                status = "critical"
+                pool_status = "critical"
 
             if cap >= cap_crit:
                 problems.append(f"{shown_name}: {cap}% full (>={cap_crit}%)")
-                status = "critical"
+                pool_status = "critical"
             elif cap >= cap_warn:
                 problems.append(f"{shown_name}: {cap}% full (>={cap_warn}%)")
-                if status != "critical":
-                    status = "warning"
+                if pool_status != "critical":
+                    pool_status = "warning"
 
             # Rated from the details as the desktop shows them, so a field it leaves out is not
             # rated either. Only a finished scrub has an age: a running or paused one, a canceled
@@ -341,20 +386,35 @@ class ZfsHealthChecker:
                 days = int((now - scrub["end"]) // 86400)
                 if days >= scrub_crit:
                     problems.append(f"{shown_name}: last scrub {days} days ago (>={scrub_crit})")
-                    status = "critical"
+                    pool_status = "critical"
                 elif days >= scrub_warn:
                     problems.append(f"{shown_name}: last scrub {days} days ago (>={scrub_warn})")
-                    if status != "critical":
-                        status = "warning"
+                    if pool_status != "critical":
+                        pool_status = "warning"
             if scrub.get("errors", 0) > 0:
                 problems.append(f"{shown_name}: scrub found {scrub['errors']} error(s)")
-                if status != "critical":
-                    status = "warning"
+                if pool_status != "critical":
+                    pool_status = "warning"
             faulty = [v for v in details.get("vdevErrors", []) if any(v[k] for k in _VDEV_COUNTERS)]
             if faulty:
                 problems.append(f"{shown_name}: errors on {len(faulty)} vdev(s)")
-                if status != "critical":
-                    status = "warning"
+                if pool_status != "critical":
+                    pool_status = "warning"
+
+            status = max(status, pool_status, key=_POOL_STATUS.index)
+            if len(problems) > first_problem:
+                reason = problems[first_problem].removeprefix(f"{shown_name}: ")
+            else:
+                reason = cap_agent_text(health) or "UNKNOWN"
+            objects.append(
+                {
+                    "kind": "pool",
+                    "id": shown_name,
+                    "name": shown_name,
+                    "status": pool_status,
+                    "reason": reason,
+                }
+            )
 
         metrics["_details"] = {
             "available": True,
@@ -370,6 +430,7 @@ class ZfsHealthChecker:
                 for p in pools
             ],
         }
+        metrics["_objects"] = {"complete": whole_list(zfs.get("pools")), "items": objects}
 
         if problems:
             return status, join_capped(problems, "; "), metrics
@@ -448,15 +509,39 @@ def _rate_container(c: dict, state: str, prev_restart_count: int | None) -> tupl
 
 
 def _problem_text(name: str, reason: str, state: str) -> str:
+    return f"{name}: {_problem_reason(reason, state)}"
+
+
+def _problem_reason(reason: str, state: str) -> str:
     if reason.startswith("exit:"):
-        return f"{name}: exited with code {reason[5:]}"
+        return f"exited with code {reason[5:]}"
     if reason == "oom":
-        return f"{name}: OOM-killed"
+        return "OOM-killed"
     if reason == "start_failed":
-        return f"{name}: failed to start"
+        return "failed to start"
     if reason == "unknown_state":
-        return f"{name}: unknown state {state!r}"
-    return f"{name}: {reason}"
+        return f"unknown state {state!r}"
+    return reason
+
+
+def _container_object(name: str, category: str, reason: str | None, state: str) -> dict:
+    """The object of a rated container (R-1559). Its key would be compose project, service and
+    number; the agent sends no number, so it is the name, which a recreated container may change.
+    A container stopped on purpose is ok (ADR 0004 §6.3); an ok reason stays fixed."""
+    if category in ("critical", "warning"):
+        status, text = category, _problem_reason(reason or "", state)
+    elif category == "stopped":
+        status, text = "ok", "Not started" if reason == "created" else "Stopped"
+    else:
+        status, text = "ok", "Running"
+    return {
+        "kind": "container",
+        "id": name,
+        "name": name,
+        "status": status,
+        "reason": text,
+        "stable": False,
+    }
 
 
 # The agent's limit on the published ports per container (maxDockerPorts).
@@ -520,7 +605,10 @@ class DockerHealthChecker:
             return (
                 "ok",
                 "No containers found",
-                {"_details": {"available": True, "error": None, "containers": []}},
+                {
+                    "_details": {"available": True, "error": None, "containers": []},
+                    "_objects": {"complete": whole_list(docker.get("containers")), "items": []},
+                },
             )
 
         ignore = set(config.get("ignore_containers", []))
@@ -539,6 +627,7 @@ class DockerHealthChecker:
         running = 0
         stopped = 0
         container_details = []
+        objects = []
 
         for c in containers:
             cid = c.get("id")
@@ -585,6 +674,7 @@ class DockerHealthChecker:
                     **_docker_details(c),
                 }
             )
+            objects.append(_container_object(shown_name or "?", category, reason, shown_state))
 
         metrics = {
             "docker_ok": ok_count,
@@ -592,6 +682,7 @@ class DockerHealthChecker:
             "docker_warning": len(warning_problems),
         }
         metrics["_details"] = {"available": True, "error": None, "containers": container_details}
+        metrics["_objects"] = {"complete": whole_list(docker.get("containers")), "items": objects}
 
         counts = f"{running} running, {stopped} stopped"
         if critical_problems:
