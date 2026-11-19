@@ -15,12 +15,14 @@ Dedup-Key: bug:monitoring:checkers/agent.py:service_name_case
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html (Modus list), changelog.d/kern-monitoring-51.md
 
-### T2 — R-1607: agent_ping zählt nach einem Neustart höchstens ab dem Start  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_ping_checker.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-51.md
+### T2 — R-1607: agent_ping zählt die Stillstandszeit des Dienstes nicht mit  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_ping_checker.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-51.md, apps/monitoring/app/main.py, apps/monitoring/tests/test_template_overrides.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @63e13fe38 2026-11-19T20:32:52+01:00
+Review: approve (.ah-out/review/kern-monitoring-51/T2.verdict.json)
 Beweis: arch-monitoring-neu-p0 T10 Experiment 2026-11-18 (20 min Stillstand, Push 2 s nach dem ersten Lauf → critical „unreachable for 25 min“)
 Dedup-Key: bug:monitoring:agent.py:agent-ping-counts-monitoring-downtime
-Änderung: `hydrate_agent_liveness` merkt den Startzeitpunkt; ein Zeitstempel ohne monotonen Partner zählt in `AgentPingChecker.run` höchstens ab diesem Zeitpunkt. Roter Test mit dem Ablauf aus dem Beweis; der bestehende Test `test_hydrated_server_without_monotonic_behaves_as_before` bleibt mit einem Start vor dem Stempel.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_ping_checker.py
+Änderung: `hydrate_agent_liveness` bekommt aus dem Lifespan (`main.py`) den letzten Check-Lauf vor dem Stopp (`max(MonitorState.last_check)`) und merkt sich mit dem Start den Stillstand; ein Zeitstempel ohne monotonen Partner verliert in `AgentPingChecker.run` den Teil des Stillstands nach dem Stempel. Roter Test mit dem Ablauf aus dem Beweis, dazu ein schon vor dem Stopp toter Agent bleibt critical.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_ping_checker.py tests/test_template_overrides.py
 Doku: docs/admin/monitoring.html, docs/en/admin/monitoring.html (agent_ping), changelog.d/kern-monitoring-51.md
 
 ### T3 — R-1622: Cleanup schickt die Entwarnungen nach der Antwort  [ ]
@@ -39,3 +41,4 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_load_
 Doku: keine (Randfall einer fehlerhaften Agent-Uhr, Verhalten wie dokumentiert)
 
 ## Entscheidungen
+- T2: Stillstand statt Kappung auf den Start (Prüfer-Fund T2: die Kappung machte einen schon vor dem Stopp toten Agent nach jedem Neustart stale_minutes lang ok); Stoppzeitpunkt = max(MonitorState.last_check), ohne neue Spalte.
