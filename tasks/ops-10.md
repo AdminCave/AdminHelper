@@ -1,5 +1,5 @@
 # Windows-Einzeiler agent-install.ps1 — Task-Ledger
-Status: bereit · Branch: feature/ops-10 · Review: am Ende
+Status: aktiv · Branch: feature/ops-10 · Review: am Ende
 Spec: docs/features/ops-10.md (Roadmap R-1578)
 Heavy: windows — Installer-Pfad; Kevin 2026-11-19: der windows-latest-Job aus T2 zählt als scenario-Lauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -21,6 +21,14 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
 Doku: keine (CI-Job; docs/developer/cicd.html nennt die Windows-Jobs nicht einzeln)
 Abhängt von: T1
+
+
+### T3 — R-1578: CI-Fälschung von SHA256SUMS unabhängig vom Trennzeichen  [ ]
+Komponente: server · Dateien: .github/workflows/ci.yml, apps/server/tests/test_ci_workflow.py
+Änderung: Lauf 44517506477: Git-Bash schreibt `SHA256SUMS` unter Windows als `<hash> *<name>`, der Regex der Fälschung erwartete zwei Leerzeichen und änderte nichts, das Skript nahm die echte Datei zu Recht an. Fälschung matcht `\s+\*?`, der Job bricht ab, wenn die gefälschte Datei der echten gleicht; der Strukturtest verlangt diese Gegenprobe.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ci_workflow.py
+Doku: keine (CI-Job)
+Abhängt von: T2
 
 ## Entscheidungen
 - 2026-11-19 Kevin: Bootstrap nur HTTPS + SHA256SUMS (keine minisign-Prüfung unter Windows); der windows-latest-CI-Job zählt als scenario-Lauf für den Session-Merge.
