@@ -273,7 +273,10 @@ def test_today_a_catalog_update_overwrites_the_admins_rule_and_the_merge_keeps_i
     config["rules"][1]["value"] = 259200
     row = MonitorCheck(check_type="probe", config=json.dumps(config))
 
-    assert module_sync._update(row, new_module, new_check, "backupjob.service", summary, []) is None
+    assert (
+        module_sync._update(row, new_module, new_check, "backupjob.service", summary, [], None)
+        is None
+    )
 
     # Today: the update writes the catalog's rules over the admin's, the three days are gone.
     assert [r["value"] for r in json.loads(row.config)["rules"]] == [93600, 172800, 0]

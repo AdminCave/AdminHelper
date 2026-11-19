@@ -195,11 +195,15 @@ def _summary(finding: MonitorFinding) -> dict:
     return summary if isinstance(summary, dict) else {}
 
 
-def _containers(db: Session, server_id: str) -> list[dict]:
+def _scan(db: Session, server_id: str) -> tuple[list[dict], list[dict] | None]:
+    """(the containers, the listening sockets) of the host's last scan; the sockets are
+    None when the scan did not see them whole (cut, an older agent, no scan yet)."""
     row = db.get(MonitorDiscovery, server_id)
     if row is None:
-        return []
-    return json.loads(row.inventory).get("containers", [])
+        return [], None
+    inventory = json.loads(row.inventory)
+    whole = inventory.get("complete", {}).get("sockets") is True
+    return inventory.get("containers", []), inventory.get("sockets") if whole else None
 
 
 def _target_name(
@@ -317,8 +321,37 @@ def _alternative(
     return seen[0], None
 
 
+def _host_alternative(
+    kind: str, name: str, alternatives: list[Alternative], sockets: list[dict] | None
+) -> tuple[Alternative | None, str | None]:
+    """(the first alternative whose port the last scan saw listening at the host, None) or
+    (None, why none is picked): for a unit target the sockets of its processes, for a
+    loopback one those outside any container. Without the sockets (cut, an agent that
+    does not tell the unit) the first: the agent asks it."""
+    if kind == "unit":
+        if sockets is None or not any(s["unit"] for s in sockets):
+            return alternatives[0], None
+        ports = {s["port"] for s in sockets if s["unit"] == name and s["proto"].startswith("tcp")}
+        where = f"unit {name}"
+    else:
+        if sockets is None:
+            return alternatives[0], None
+        ports = {s["port"] for s in sockets if not s["container"] and s["proto"].startswith("tcp")}
+        where = "the host"
+    for alternative in alternatives:
+        if alternative.port_hint in ports:
+            return alternative, None
+    hints = ", ".join(str(a.port_hint) for a in alternatives)
+    return None, f"{where} listens on none of the ports {hints}"
+
+
 def probe_config(
-    module: Module, check: Check, key: str, summary: dict, containers: list[dict]
+    module: Module,
+    check: Check,
+    key: str,
+    summary: dict,
+    containers: list[dict],
+    sockets: list[dict] | None = None,
 ) -> tuple[dict | None, str | None]:
     """(the probe config of the catalog check bound to the instance, None) or
     (None, why it cannot be bound)."""
@@ -357,11 +390,16 @@ def probe_config(
                 why = _tag_mismatch(name, check, containers)
                 if why:
                     return None, why
-            if t.alternatives:
+            if t.alternatives and t.kind == "container":
                 picked, why = _alternative(name, t.alternatives, containers)
                 if picked is None:
                     return None, why
                 port_hint, scheme = picked.port_hint, picked.scheme
+        if t.alternatives and t.kind in ("loopback", "unit"):
+            picked, why = _host_alternative(t.kind, name, t.alternatives, sockets)
+            if picked is None:
+                return None, why
+            port_hint, scheme = picked.port_hint, picked.scheme
         target = {"kind": t.kind, "name": name, "port_hint": port_hint, "scheme": scheme}
     config = {
         "sensor": check.sensor,
@@ -392,6 +430,9 @@ def probe_config(
 
 def _public_name(name: str) -> bool:
     name = name.lower().rstrip(".")
+    # A single label resolves through the host's search domain, never publicly (R-1548).
+    if "." not in name:
+        return False
     return not any(name == s or name.endswith("." + s) for s in _PRIVATE_SUFFIXES)
 
 
@@ -415,11 +456,22 @@ def central_config(check: Check, key: str, summary: dict) -> tuple[dict | None, 
 
 
 def _bound_config(
-    module: Module, check: Check, key: str, summary: dict, containers: list[dict]
+    module: Module,
+    check: Check,
+    key: str,
+    summary: dict,
+    containers: list[dict],
+    sockets: list[dict] | None,
 ) -> tuple[dict | None, str | None]:
     if check.central:
         return central_config(check, key, summary)
-    return probe_config(module, check, key, summary, containers)
+    return probe_config(module, check, key, summary, containers, sockets)
+
+
+def _belongs(check: Check, finding: MonitorFinding) -> bool:
+    """Whether the check is bound at the finding's instance: a check that names one
+    instance (R-1528) at that one only, the others skip it without a reason."""
+    return check.instance is None or check.instance == finding.instance_key
 
 
 def _create(
@@ -429,10 +481,13 @@ def _create(
     check: Check,
     summary: dict,
     containers: list[dict],
+    sockets: list[dict] | None,
     *,
     silent: bool,
 ) -> tuple[MonitorCheck | None, str | None]:
-    config, reason = _bound_config(module, check, finding.instance_key, summary, containers)
+    config, reason = _bound_config(
+        module, check, finding.instance_key, summary, containers, sockets
+    )
     if config is None:
         return None, reason
     row = MonitorCheck(
@@ -461,6 +516,7 @@ def _update(
     key: str,
     summary: dict,
     containers: list[dict],
+    sockets: list[dict] | None,
 ) -> str | None:
     """Give the row the catalog's new definition; why not, or None. The admin's interval
     and timeout stay (the only parts of a probe config besides rules the admin can edit,
@@ -470,7 +526,7 @@ def _update(
         return "the admin changed the check's rules; they stay"
     if (row.check_type == "central") != check.central:
         return "the catalog moved the check between the agent and the monitoring service"
-    config, reason = _bound_config(module, check, key, summary, containers)
+    config, reason = _bound_config(module, check, key, summary, containers, sockets)
     if config is None:
         return reason
     try:
@@ -510,7 +566,7 @@ def _adopt(
         tagged = {check.key for check in module.checks if check.image_tags}
         summary = _summary(finding)
         fitting = summary.get("tag_checks")
-        containers = _containers(db, finding.server_id)
+        containers, sockets = _scan(db, finding.server_id)
         by_key = {check.key: check for check in module.checks}
         updatable = {row.id for row in updatable_checks(checks, module)}
         kept: list[MonitorCheck] = []
@@ -531,7 +587,9 @@ def _adopt(
             kept.append(row)
             if row.id in updatable:
                 key = row.module_check_key
-                why = _update(row, module, by_key[key], finding.instance_key, summary, containers)
+                why = _update(
+                    row, module, by_key[key], finding.instance_key, summary, containers, sockets
+                )
                 if why is None:
                     result.updated.append(row.id)
                 else:
@@ -548,9 +606,11 @@ def _adopt(
                 actions.append(("add", row.id, row.interval, row.check_type))
         have = {row.module_check_key for row in kept} | tombstoned_keys(db, finding)
         for check in module.checks:
-            if check.key in have:
+            if check.key in have or not _belongs(check, finding):
                 continue
-            row, reason = _create(db, finding, module, check, summary, containers, silent=False)
+            row, reason = _create(
+                db, finding, module, check, summary, containers, sockets, silent=False
+            )
             if row is None:
                 result.skipped.append({"key": check.key, "reason": reason})
                 continue
@@ -661,12 +721,12 @@ def sync_catalog(db: Session, *, catalog: Catalog | None = None) -> int:
         dropped = any(row.enabled and row.module_check_key not in keys for row in checks)
         changed = any(row.enabled for row in updatable_checks(checks, module))
         summary = _summary(finding)
-        containers = _containers(db, finding.server_id)
+        containers, sockets = _scan(db, finding.server_id)
         created = False
         for check in module.checks:
-            if check.key in have:
+            if check.key in have or not _belongs(check, finding):
                 continue
-            row, _ = _create(db, finding, module, check, summary, containers, silent=True)
+            row, _ = _create(db, finding, module, check, summary, containers, sockets, silent=True)
             created = created or row is not None
         if created or dropped or changed:
             finding.kind, finding.status, finding.decided_at = "changed", "open", None
