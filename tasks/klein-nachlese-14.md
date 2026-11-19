@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-14 — Task-Ledger
-Status: erledigt · Branch: feature/klein-nachlese-14 · Review: pro Task
+Status: bereit · Branch: feature/klein-nachlese-14 · Review: pro Task
 Spec: docs/features/klein-nachlese-14.md (Roadmap R-1546, R-1549, R-1550, R-1551, R-1574, R-1590, R-1591, R-1593, R-1603)
 Heavy: none — Monitoring-, Agent-, Server- und Desktop-UI-Unit-Tests, Doku
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -80,6 +80,16 @@ Semantik: keine Stelle in docs/ — der Kommentar selbst ist der Fund
 Änderung: Der Kommentar an `scrubChip` sagt, die Prüfung bewerte Gesundheit, Scrub-Alter (`scrub_warn_days`, `scrub_crit_days`), Scrub-Fehler und vdev-Fehler; der Chip zeigt nur an. Nur Kommentar, kein Verhalten.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring
 Doku: keine (Kommentar)
+
+### T8 — R-1574: Webhook-Test unabhängig von der Stack-Größe  [x]
+Komponente: server · Dateien: apps/server/tests/test_hooks_webhook_payload.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c7f7e22f8 2026-11-20T00:43:10+01:00
+Review: approve (.ah-out/review/klein-nachlese-14/T8.verdict.json)
+Beweis: CI-Lauf 44636743934 (py3.14 shard 2/2): `assert (200, 'application/json') == (422, …)`; ein Body mit 100000 Ebenen lief dort nicht in den RecursionError, sondern in einen JSONDecodeError
+Semantik: keine Stelle in docs/ — der Test selbst ist der Fund
+Änderung: `test_a_body_too_deep_to_parse_is_a_422_not_an_empty_payload` lässt `json.loads` für genau diesen Body einen RecursionError werfen, statt auf die Stack-Größe der Maschine zu bauen. Nur Test, kein Produktcode.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_webhook_payload.py
+Doku: keine (Test)
 
 ## Entscheidungen
 - R-1591 wird nicht an einer echten hängenden Freigabe geprüft (keine Infrastruktur); Kommentar und Doku werden eingeschränkt.

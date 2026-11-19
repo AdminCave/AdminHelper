@@ -173,10 +173,22 @@ def test_a_payload_nested_past_the_limit_is_a_422_and_the_script_does_not_run(
     assert script_runs == []
 
 
-def test_a_body_too_deep_to_parse_is_a_422_not_an_empty_payload(test_client, webhook, script_runs):
-    # json.loads gives up with a RecursionError far below any body size limit; the trigger
-    # used to read that as "not JSON" and ran the script with an empty payload.
-    body = "[" * 100_000
+def test_a_body_too_deep_to_parse_is_a_422_not_an_empty_payload(
+    test_client, webhook, script_runs, monkeypatch
+):
+    # json.loads gives up with a RecursionError on a deep enough body; the trigger used to
+    # read that as "not JSON" and ran the script with an empty payload. Where it gives up
+    # depends on the stack of the machine (a CI runner parsed 100k levels to a JSONDecodeError),
+    # so the parser is made to give up on this body.
+    body = "[" * 100
+    real_loads = json.loads
+
+    def loads(data, *args, **kwargs):
+        if data == body.encode():
+            raise RecursionError("maximum recursion depth exceeded while decoding a JSON array")
+        return real_loads(data, *args, **kwargs)
+
+    monkeypatch.setattr("starlette.requests.json.loads", loads)
     r = test_client.post(f"/api/hooks/trigger/{webhook}", content=body, headers=_JSON)
     assert [(d["loc"], d["msg"]) for d in _detail(r)] == [
         (["body"], f"Value error, must not nest deeper than {MAX_DEPTH} levels")
