@@ -15,6 +15,8 @@ without a SMART verdict) is unknown; neither is an error.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.checkers.agent import (
     agent_number,
     cap_agent_text,
@@ -23,6 +25,7 @@ from app.checkers.agent import (
     entry_text,
     join_capped,
 )
+from app.core.time import iso_utc
 from app.core.victoria import safe_metric_part
 
 # NVMe critical_warning Bit-Feld laut NVMe Base Spec 1.4, Figure 94.
@@ -150,7 +153,8 @@ def _disk_metrics(smart: list[dict], ignore: set) -> dict:
     metrics = {}
     for disk in smart:
         device = entry_text(disk, "device", "?")
-        if device in ignore:
+        # A sleeping disk sent no values: no series rather than zeros.
+        if device in ignore or disk.get("standby") is True:
             continue
         safe_dev = safe_metric_part(device)
         temp_c = entry_number(disk, "temp_c", 0)
@@ -167,23 +171,59 @@ def _smart_result(
     unreadable: list[str],
     ok_count: int,
     metrics: dict,
+    asleep: int = 0,
 ) -> tuple[str, str, dict]:
     # A disk without a SMART verdict is named after the problems, never hidden by them.
     unread = "SMART not readable: " + join_capped(unreadable) if unreadable else ""
+    sleeping = f", {asleep} asleep" if asleep else ""
     if critical_problems:
         msg = "SMART problems: " + join_capped(critical_problems)
         if warning_problems:
             msg += "; warnings: " + join_capped(warning_problems)
-        return "critical", msg + (f"; {unread}" if unread else ""), metrics
+        return "critical", msg + (f"; {unread}" if unread else "") + sleeping, metrics
 
     if warning_problems:
         msg = "SMART warnings: " + join_capped(warning_problems)
-        return "warning", msg + (f"; {unread}" if unread else ""), metrics
+        return "warning", msg + (f"; {unread}" if unread else "") + sleeping, metrics
 
     if unreadable:
-        return "unknown", unread, metrics
+        return "unknown", unread + sleeping, metrics
 
-    return "ok", f"All {ok_count} disks SMART OK", metrics
+    return "ok", f"All {ok_count} disks SMART OK{sleeping}", metrics
+
+
+def _now() -> datetime:
+    """When the values of this report were read; whole seconds, as the desktop shows them."""
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
+def _prev_disks(prev_details: dict | None) -> dict[str, dict]:
+    """The last _details entry of each disk, by its shown device name."""
+    disks = prev_details.get("disks") if isinstance(prev_details, dict) else None
+    if not isinstance(disks, list):
+        return {}
+    return {
+        d["device"]: d for d in disks if isinstance(d, dict) and isinstance(d.get("device"), str)
+    }
+
+
+def _asleep_detail(device: str, prev: dict | None) -> tuple[str, list[str], list[str], dict]:
+    """(category, critical, warning, _details entry) of a disk the agent left asleep (R-1569):
+    its last read state with the time it was read; its problems go on counting until it is
+    read again. Without one: ok, not unreadable, since sleeping is no failed query."""
+    shown = cap_agent_text(device) or "?"
+    if prev is None:
+        return "ok", [], [], {"device": shown, "category": "ok", "standby": True}
+    detail = {**prev, "standby": True}
+    category = prev.get("category")
+    if category not in _SEVERITY_RANK:
+        category = "ok"
+        detail["category"] = category
+    label = f"{shown} ({cap_agent_text(prev.get('model')) or '?'})"
+    problem = f"{label}: {category} when last read (asleep)"
+    crit = [problem] if category == "critical" else []
+    warn = [problem] if category == "warning" else []
+    return category, crit, warn, detail
 
 
 class SmartHealthChecker:
@@ -221,6 +261,9 @@ class SmartHealthChecker:
 
         ignore = set(config.get("ignore_devices", []))
         thresholds, temp_thresholds = _smart_thresholds(config)
+        prev_disks = _prev_disks(prev_details)
+        read_at = iso_utc(_now())
+        asleep = 0
 
         critical_problems = []
         warning_problems = []
@@ -232,12 +275,20 @@ class SmartHealthChecker:
             device = entry_text(disk, "device", "?")
             if device in ignore:
                 continue
-            category, crit, warn, detail = self._grade_disk(
-                disk, device, thresholds, temp_thresholds
-            )
+            if disk.get("standby") is True:
+                asleep += 1
+                shown = cap_agent_text(device) or "?"
+                category, crit, warn, detail = _asleep_detail(device, prev_disks.get(shown))
+            else:
+                category, crit, warn, detail = self._grade_disk(
+                    disk, device, thresholds, temp_thresholds
+                )
+                detail["read_at"] = read_at
             critical_problems.extend(crit)
             warning_problems.extend(warn)
-            if detail["smart_passed"] is None:
+            # A sleeping disk last read without a verdict stays not readable; one never read has
+            # no smart_passed and is no failed query.
+            if detail.get("smart_passed", False) is None:
                 unreadable.append(f"{detail['device']} ({detail['model']})")
             if category == "ok":
                 ok_count += 1
@@ -253,7 +304,9 @@ class SmartHealthChecker:
         metrics.update(_disk_metrics(smart, ignore))
 
         metrics["_details"] = {"disks": disk_details}
-        return _smart_result(critical_problems, warning_problems, unreadable, ok_count, metrics)
+        return _smart_result(
+            critical_problems, warning_problems, unreadable, ok_count, metrics, asleep
+        )
 
     def _grade_disk(
         self, disk: dict, device: str, thresholds: dict, temp_thresholds: dict

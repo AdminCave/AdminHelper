@@ -10,14 +10,22 @@ temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
 
 import math
+from datetime import datetime, timezone
 
 import pytest
 
+from app.checkers import smart
 from app.checkers.smart import SmartHealthChecker
 
 from ._helpers import assert_every_reader_reads
 
 CHECKER = SmartHealthChecker()
+
+
+@pytest.fixture(autouse=True)
+def _fixed_clock(monkeypatch):
+    # read_at is the evaluation time: two evaluations compared here read at the same moment.
+    monkeypatch.setattr(smart, "_now", lambda: datetime(2026, 11, 19, 4, 0, 0, tzinfo=timezone.utc))
 
 
 def _disk(**kw):
@@ -464,3 +472,88 @@ def test_text_fields_of_a_regular_report():
         },
     ]
     assert_every_reader_reads(metrics["_details"])
+
+
+# R-1569: a disk the agent left asleep (smartctl -n standby,3) keeps its last read state.
+
+
+def _asleep(device="/dev/sda"):
+    return {"device": device, "standby": True}
+
+
+def test_a_read_disk_carries_the_time_it_was_read():
+    _, _, metrics = CHECKER.evaluate({}, _report(_disk()))
+    disk = metrics["_details"]["disks"][0]
+    assert disk["read_at"] == "2026-11-19T04:00:00Z"
+    assert "standby" not in disk
+
+
+def test_a_sleeping_disk_keeps_its_last_state_and_its_problems():
+    _, _, first = CHECKER.evaluate(
+        {}, _report(_disk(reallocated_sectors=3), _disk(device="/dev/sdb"))
+    )
+    prev = first["_details"]
+    status, message, metrics = CHECKER.evaluate(
+        {}, _report(_asleep(), _disk(device="/dev/sdb")), prev
+    )
+    sda = metrics["_details"]["disks"][0]
+    assert status == "warning"
+    assert message == "SMART warnings: /dev/sda (X): warning when last read (asleep), 1 asleep"
+    assert sda == {**prev["disks"][0], "standby": True}
+    assert sda["reallocated_sectors"] == 3 and sda["read_at"] == prev["disks"][0]["read_at"]
+    # No values came: no series for the sleeping disk, the read one has its own.
+    assert not any(k.endswith("dev_sda") for k in metrics if k.startswith("smart_"))
+    assert "smart_reallocated_dev_sdb" in metrics
+
+
+def test_a_sleeping_disk_without_a_last_state_is_ok_not_unreadable():
+    status, message, metrics = CHECKER.evaluate({}, _report(_asleep(), _disk(device="/dev/sdb")))
+    assert (status, message) == ("ok", "All 2 disks SMART OK, 1 asleep")
+    assert metrics["_details"]["disks"][0] == {
+        "device": "/dev/sda",
+        "category": "ok",
+        "standby": True,
+    }
+
+
+def test_a_disk_asleep_twice_keeps_the_first_read(monkeypatch):
+    _, _, first = CHECKER.evaluate({}, _report(_disk(smart_passed=False)))
+    monkeypatch.setattr(smart, "_now", lambda: datetime(2026, 11, 19, 5, 0, 0, tzinfo=timezone.utc))
+    _, _, second = CHECKER.evaluate({}, _report(_asleep()), first["_details"])
+    status, _, third = CHECKER.evaluate({}, _report(_asleep()), second["_details"])
+    assert status == "critical"
+    assert third["_details"]["disks"][0]["read_at"] == "2026-11-19T04:00:00Z"
+
+
+@pytest.mark.parametrize(
+    "prev",
+    [
+        None,
+        {},
+        {"disks": "x"},
+        {"disks": [1, {"device": 2}]},
+        {"disks": [{"device": "/dev/sda", "category": "bad"}]},
+    ],
+)
+def test_a_broken_last_state_leaves_the_sleeping_disk_ok(prev):
+    status, _, metrics = CHECKER.evaluate({}, _report(_asleep()), prev)
+    assert status == "ok"
+    assert metrics["_details"]["disks"][0]["category"] == "ok"
+
+
+def test_standby_must_be_true_not_truthy():
+    # Only the agent's boolean marks a disk asleep; anything else is graded as sent.
+    status, _, _ = CHECKER.evaluate({}, _report(_disk(standby="yes", smart_passed=False)))
+    assert status == "critical"
+
+
+def test_a_disk_last_read_without_a_verdict_stays_not_readable_asleep():
+    # Sleeping changes nothing about the last state: no flapping between unknown and ok.
+    _, read_msg, first = CHECKER.evaluate(
+        {}, _report(_disk(smart_passed=None), _disk(device="/dev/sdb"))
+    )
+    status, message, _ = CHECKER.evaluate(
+        {}, _report(_asleep(), _disk(device="/dev/sdb")), first["_details"]
+    )
+    assert status == "unknown"
+    assert message == read_msg + ", 1 asleep"

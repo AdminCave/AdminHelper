@@ -23,8 +23,10 @@ Allowlist nimmt die neuen Formen und lehnt die alten ab.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/ ./internal/allowlist/
 Doku: → T6
 
-### T2 — R-1569: Monitoring hält den letzten SMART-Stand einer schlafenden Platte  [ ]
+### T2 — R-1569: Monitoring hält den letzten SMART-Stand einer schlafenden Platte  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/tests/test_smart_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2cb3bc808 2026-11-19T04:58:28+01:00
+Review: approve (.ah-out/review/kern-monitoring-48/T2.verdict.json)
 Änderung: Jede gelesene Platte bekommt in den Details `read_at` (ISO-UTC). Eine Platte mit `standby: true` übernimmt
 ihren Eintrag aus `prev_details["disks"]` (gleiches `device`) samt Kategorie und `read_at`, dazu `standby: true`; ihre
 Probleme zählen weiter. Ohne Vorstand: Eintrag mit `standby: true`, Kategorie ok, nicht „not readable“. Die
@@ -34,7 +36,7 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_check
 Doku: → T6
 
 ### T3 — R-1569: Desktop zeigt „schläft, letzter Stand von …“  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/checkDetails.ts
 Änderung: `MonitorSmartDetails.disks[]` um `standby?: boolean` und `read_at?: string`; eine Platte mit `standby`
 zeigt einen Hinweis „schläft, letzter Stand von <Zeit>“ (ohne `read_at`: „schläft, noch kein Stand“). Test in
 `SecSmart.test.ts`.
@@ -73,3 +75,4 @@ Abhängt von: T1, T2, T3, T5
 ## Entscheidungen
 - 2026-11-19 Übergabe: Kern 1 hat Plan und Kopf `aktiv` angelegt (0b30649c8, 8427db994); Kern 2 baut ab T1 (Kevin 2026-11-18: km48 gehört Kern 2).
 - 2026-11-19 T1: `-n standby,3` nur für ATA/SCSI, nicht für NVMe (Scan-Protokoll `NVMe` oder Typ `nvme`): smartctl(8) führt `-n` nur unter `[ATA, SCSI]`. Die NVMe-Formen der Allowlist bleiben deshalb, die neuen kommen dazu; Status 3 ohne `-n` (NVMe) bleibt ein Öffnungsfehler.
+- 2026-11-19 T2: Die Probleme einer schlafenden Platte stehen nicht in den Details; sie zählt mit ihrer letzten Kategorie als ein Problem „<Gerät> (<Modell>): <Kategorie> when last read (asleep)“. Keine Metrik-Serien für sie (keine Werte statt Nullen). `read_at` in ganzen Sekunden (`_now`, in den Tests eingefroren: Gleichheitstests vergleichen zwei Auswertungen).
