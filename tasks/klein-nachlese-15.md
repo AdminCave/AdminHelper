@@ -29,12 +29,14 @@ Semantik: keine Stelle in docs/ — Mockup (Spec docs/features/arch-monitoring-n
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/mockups/monitoring-neu
 Doku: keine (Mockup, nicht ausgeliefert)
 
-### T3 — R-1632: i18n-Schlüssel monitoring.services.journal.notLinux umbenennen  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte
+### T3 — R-1632: i18n-Schlüssel monitoring.services.journal.notLinux umbenennen  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/section/ServiceList.svelte, apps/desktop/ui/src/components/monitoring/section/ServiceList.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c6566d9bf 2026-11-19T21:46:24+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T3.verdict.json)
 Beweis: reviewer kern-monitoring-50 2026-11-19, dictionaries.ts:1276
 Semantik: keine Stelle in docs/ — interner Schlüsselname
 Änderung: Schlüssel DE+EN und Verwendung auf einen Namen ohne „Linux“ (`monitoring.services.journal.unsupported`); der Text nennt auch OPNsense, falls `ServiceList.svelte` die Plattform dafür kennt, sonst Text unverändert. Ein vorhandener Test (i18n-Gleichlauf) deckt den Schlüssel.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/i18n src/components/monitoring/section
 Doku: keine (interner Schlüssel)
 
 ### T4 — R-1620: monitoring.html „Was der Hub nicht annimmt“ (DE+EN)  [x]
