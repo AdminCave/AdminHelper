@@ -16,7 +16,7 @@ Eintrag, obwohl `docs/admin/betrieb.html` sagt, dass das Ändern von Verbindunge
 
 ## Betroffene Komponenten & Dateien
 `apps/server/app/modules/frp/tunnel_router.py` (`update_tunnel`), `apps/server/tests/test_frp_auto_connection.py`,
-`docs/admin/betrieb.html`, `docs/en/admin/betrieb.html`, `changelog.d/kern-frp-9.md`.
+`docs/admin/betrieb.html`, `docs/en/admin/operations.html`, `changelog.d/kern-frp-9.md`.
 
 ## Datenmodell / API / Migrationen
 Keine. Neuer Audit-Eintrag mit bestehender Action `connection.updated`; keine Änderung an Schemas oder OpenAPI.
@@ -34,7 +34,7 @@ Keine.
 Gering; ein zusätzlicher Audit-Eintrag. Rollback: Revert des Task-Commits.
 
 ## Doku-Impact
-`docs/admin/betrieb.html` und EN: ein Halbsatz, dass auch das Nachziehen einer verknüpften Verbindung durch ein
+`docs/admin/betrieb.html` und `docs/en/admin/operations.html`: ein Halbsatz, dass auch das Nachziehen einer verknüpften Verbindung durch ein
 Tunnel-Update als Änderung der Verbindung erfasst wird. `changelog.d/kern-frp-9.md`.
 
 ## Offene Fragen
