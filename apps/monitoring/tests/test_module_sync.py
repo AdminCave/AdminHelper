@@ -542,11 +542,21 @@ def test_adopting_gone_switches_off_and_deletes_nothing(db, actions):
     assert finding.status == "adopted"
 
 
-def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions):
+def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions, monkeypatch):
     # A switched-off check whose alarm the bell shows lags: the job sends the
     # all-clear (R-1601), as for a check switched off by hand.
-    from app.bell_catch_up import lag_target
+    import app.core.database as database_mod
+    from app import alerter
+    from app.bell_catch_up import catch_up_bell, lag_target
     from app.models import MonitorState
+
+    posts = []
+    monkeypatch.setattr(
+        alerter,
+        "post_hub_event",
+        lambda payload, label: posts.append(payload["new_status"]) or True,
+    )
+    monkeypatch.setattr(database_mod, "SessionLocal", sessionmaker(bind=db.get_bind()))
 
     _inventory(db)
     finding = _finding(db)
@@ -562,6 +572,8 @@ def test_adopting_gone_leaves_the_all_clear_to_the_bell_catch_up(db, actions):
 
     assert not web.enabled
     assert lag_target(web, db.get(MonitorState, web.id)) == "ok"
+    catch_up_bell()
+    assert posts == ["ok"]
 
 
 def test_adopting_new_again_switches_the_whole_instance_on(db, actions):

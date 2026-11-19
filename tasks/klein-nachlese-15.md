@@ -60,12 +60,14 @@ Semantik: apps/monitoring/app/module_sync.py:471 `_belongs`: „a check that nam
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_module_sync.py
 Doku: changelog.d/klein-nachlese-15.md
 
-### T6 — R-1623/R-1652: Monitoring-Tests und Docstrings  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/tests/test_bell_catch_up.py, apps/monitoring/tests/test_check_engine_concurrency.py, apps/monitoring/app/checkers/plugins.py
+### T6 — R-1623/R-1652: Monitoring-Tests und Docstrings  [x]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_bell_catch_up.py, apps/monitoring/tests/test_check_engine_concurrency.py, apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_module_sync.py, apps/monitoring/tests/test_template_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @fe2bb8e4b 2026-11-19T21:53:47+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T6.verdict.json)
 Beweis: reviewer-Nits kern-monitoring-49 2026-11-19 und arch-monitoring-neu-p1 Branch 2026-11-19 (plugins.py:528/:100, test_check_engine_concurrency.py:220/306/403)
 Semantik: keine Stelle in docs/ — Tests und Kommentare; .claude/rules/testing.md „Fristen“: ≥ 30 s
 Änderung: Test: `sync_assignment` ruft `send_all_clears` (alle Entwarnungen), gone-Test prüft, dass `catch_up_bell` ok sendet. Docstrings `_container_object`/`_guest_object` verweisen auf die ausstehende Übernahme in den Schlüssel (P1e) statt „fehlende Agent-Daten“. `barrier.wait(timeout=10)` → 30.
-Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py tests/test_check_engine_concurrency.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_bell_catch_up.py tests/test_check_engine_concurrency.py tests/test_module_sync.py tests/test_template_sync.py tests/test_plugin_checkers.py
 Doku: keine (Tests, Kommentare)
 
 ### T7 — R-1624: Agent busybox: Changelog, programName, Test-Skip  [ ]
