@@ -34,8 +34,10 @@ Komponente: server · Dateien: apps/server/app/modules/provisioning/progress.py,
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_progress.py
 Doku: keine (internes Verhalten)
 
-### T5 — R-1614/R-1628: Dialog: Ersatztext für unbekannte Katalogwerte, Tab-Label und Fortschrittstest  [ ]
+### T5 — R-1614/R-1628: Dialog: Ersatztext für unbekannte Katalogwerte, Tab-Label und Fortschrittstest  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts, apps/desktop/ui/src/components/infra/provisioning/ProvisioningProgress.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6a9a8d368 2026-11-19T17:37:53+01:00
+Review: approve (.ah-out/review/kern-provision-2/T5.verdict.json)
 Änderung: Unbekannter `reason`/`port.purpose` zeigt einen Ersatztext (DE+EN) statt des rohen Schlüssels; der Dialogtest findet die Aktions-Tabs per `getByRole('tablist', { name })`; Fortschrittstest „früherer Token, dann falsche Antwort“.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/provisioning src/lib/i18n
 Doku: keine (Ersatztext für Fehlerfall)

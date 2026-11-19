@@ -8,7 +8,7 @@
 // of the command unless the admin switches to automation.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { setLanguage, tNow } from '$lib/i18n';
 import type { ProvisionPlatform } from '$lib/api/types';
 
@@ -162,10 +162,14 @@ async function choose(doc: Document, id: string): Promise<void> {
   });
 }
 
+// The action tabs, found by their accessible name: an unnamed tablist would not pass.
+function actionTabs(doc: Document): HTMLElement[] {
+  const list = within(doc.body).getByRole('tablist', { name: tNow('infra.prov.actionLabel') });
+  return within(list).getAllByRole('tab');
+}
+
 async function tab(doc: Document, label: string): Promise<void> {
-  const btn = Array.from(doc.querySelectorAll('[role="tab"]')).find(
-    (b) => b.textContent?.trim() === label,
-  );
+  const btn = actionTabs(doc).find((b) => b.textContent?.trim() === label);
   expect(btn).toBeDefined();
   await fireEvent.click(btn as HTMLElement);
 }
@@ -207,6 +211,30 @@ describe('ProvisioningDialog — catalog', () => {
     expect(doc.querySelector('[data-action="prov-mint"]')).toBeNull();
   });
 
+  it('names a reason and a port purpose this desktop does not know instead of their keys', async () => {
+    const newer = platform({
+      reason: 'laterThing',
+      prerequisites: {
+        systems: ['Debian 12/13'],
+        ports: [...PORTS, { port: 9000, purpose: 'futurePlane', tunnelOnly: false }],
+      },
+    } as Partial<ProvisionPlatform>);
+    const { doc } = await open(server, [newer]);
+    const text = doc.body.textContent ?? '';
+    expect(text).toContain(tNow('infra.prov.unknownReason', { value: 'laterThing' }));
+    expect(text).toContain(`9000: ${tNow('infra.prov.unknownPurpose', { value: 'futurePlane' })}`);
+    expect(text).not.toContain('infra.prov.');
+  });
+
+  it('names an unknown reason of an unavailable platform too', async () => {
+    const { doc } = await open(server, [{ ...FREEBSD, reason: 'laterThing' }, LINUX]);
+    await choose(doc, 'freebsd');
+    await waitFor(() => expect(byTestId(doc, 'prov-unavailable')).not.toBeNull());
+    expect(byTestId(doc, 'prov-unavailable')?.textContent).toContain(
+      tNow('infra.prov.unknownReason', { value: 'laterThing' }),
+    );
+  });
+
   it('shows an error and no command when the catalog does not load', async () => {
     h.platforms.mockRejectedValueOnce(new Error('boom'));
     const view = render(ProvisioningDialog, {
@@ -224,7 +252,7 @@ describe('ProvisioningDialog — catalog', () => {
     const { doc } = await open();
     await choose(doc, 'windows');
     await waitFor(() => expect(doc.body.textContent).toContain(tNow('infra.prov.reason.notYet')));
-    const tabs = Array.from(doc.querySelectorAll('[role="tab"]')).map((b) => b.textContent?.trim());
+    const tabs = actionTabs(doc).map((b) => b.textContent?.trim());
     expect(tabs).toEqual(['Neu registrieren', 'Entfernen']);
     const text = commandText(doc);
     expect(text).toContain(`${WIN_EXE} provision`);
