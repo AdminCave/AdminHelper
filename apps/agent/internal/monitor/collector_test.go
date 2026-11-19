@@ -335,6 +335,29 @@ func TestSkipFSTypesFreeBSD(t *testing.T) {
 	}
 }
 
+func TestSkippedDiskLeavesNetworkSharesOutOnLinuxAlone(t *testing.T) {
+	for _, fstype := range []string{"nfs", "nfs4", "cifs", "smb3"} {
+		share := disk.PartitionStat{Mountpoint: "/mnt/pve/backup", Fstype: fstype}
+		if !skippedDisk(share, "linux") {
+			t.Errorf("%s is a disk on Linux, want it left to the share check", fstype)
+		}
+		// FreeBSD and Windows have no share check: there a share stays a disk.
+		if skippedDisk(share, "freebsd") || skippedDisk(share, "windows") {
+			t.Errorf("%s is skipped off Linux, want it a disk", fstype)
+		}
+	}
+	for _, p := range []disk.PartitionStat{{Mountpoint: "/", Fstype: "ext4"}, {Mountpoint: "/srv", Fstype: "xfs"}} {
+		if skippedDisk(p, "linux") {
+			t.Errorf("%+v is skipped, want it a disk", p)
+		}
+	}
+	for _, p := range []disk.PartitionStat{{Mountpoint: "/run", Fstype: "tmpfs"}, {Mountpoint: "/snap/core", Fstype: "ext4"}} {
+		if !skippedDisk(p, "linux") {
+			t.Errorf("%+v is a disk, want it skipped", p)
+		}
+	}
+}
+
 // TestFreeBSDNoSwapMatchesGopsutil reads mem_freebsd.go of the gopsutil this module pins and
 // fails when it no longer creates freebsdNoSwap, so a bump cannot silently drop "no swap".
 func TestFreeBSDNoSwapMatchesGopsutil(t *testing.T) {

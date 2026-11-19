@@ -109,6 +109,7 @@ def _smart(smartctl_status=0):
         "protocol": "ATA",
         "kind": "HDD",
         "temp_c": 30,
+        "smart_passed": True,
         "smartctl_status": smartctl_status,
     }
     return SmartHealthChecker().evaluate({}, {"smart": [disk]})
@@ -328,7 +329,7 @@ CASES = [
     ),
     pytest.param(
         lambda: SmartHealthChecker().evaluate({}, {}),
-        "ok",
+        "info",
         "No SMART data (VM or smartctl not available)",
         id="smart-no-data",
     ),
@@ -697,6 +698,7 @@ def _smart_disks(smartctl_status, count):
             "protocol": "ATA",
             "kind": "HDD",
             "temp_c": 30,
+            "smart_passed": True,
             "smartctl_status": smartctl_status,
         }
         for i in range(count)
@@ -968,6 +970,7 @@ def _smart_model(model):
         "protocol": "ATA",
         "kind": "HDD",
         "temp_c": 30,
+        "smart_passed": True,
         "smartctl_status": 0x10,
     }
     return SmartHealthChecker().evaluate({}, {"smart": [disk]})

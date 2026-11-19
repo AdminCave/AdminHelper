@@ -43,6 +43,9 @@ type reportState struct {
 	// ProxmoxBackups is the last backup index read from the backup storages' content (Proxmox nodes
 	// only). A state without it, saved by an older agent, reads them at once.
 	ProxmoxBackups *backupIndexCheck `json:"proxmox_backups,omitempty"`
+	// ServiceLogs is the failures whose error lines went out (unit → since of failed_details): each
+	// once per failure. A push that fails keeps the last state, so its lines go out again.
+	ServiceLogs map[string]string `json:"service_logs,omitempty"`
 	// LoadShed is the load gate's state (loadgate.go). A state without it sheds nothing.
 	LoadShed loadShed `json:"load_shed,omitzero"`
 }

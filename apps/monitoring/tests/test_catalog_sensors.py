@@ -91,7 +91,7 @@ def test_the_sensor_fields_are_exactly_the_union_of_the_views():
     assert SENSOR_FIELDS["opnsense"] == frozenset().union(*OPNSENSE_VIEW_FIELDS.values())
 
 
-def _app_module(**check):
+def _app_module(module=None, **check):
     raw_check = {
         "key": "meetings",
         "name": "Meetings",
@@ -110,6 +110,7 @@ def _app_module(**check):
         "detect": {"units": ["bbb-web.service"]},
         "instance": "unit",
         "checks": [raw_check],
+        **(module or {}),
     }
     return load_catalog([("bbb", raw)])
 
@@ -119,7 +120,11 @@ def _app_module(**check):
 )
 def test_every_app_view_loads_with_all_its_fields_and_each_of_its_targets(view, kind):
     fields = sorted(APP_VIEW_FIELDS[view])
-    catalog = _app_module(target={"kind": kind}, params={"view": view}, fields=fields, rules=[])
+    # A share is checked only by a module of instance share.
+    module = {"detect": {"net_shares": True}, "instance": "share"} if kind == "share" else None
+    catalog = _app_module(
+        module, target={"kind": kind}, params={"view": view}, fields=fields, rules=[]
+    )
     assert catalog.errors == ()
     check = catalog.modules["bbb"].checks[0]
     assert check.params == {"view": view}
@@ -306,6 +311,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "haproxy_certs": ["certs", "expiring_14d", "min_days_left", "reload_missing"],
         "moodle_checks": ["not_ok", "state"],
         "moodle_data": ["free_bytes", "inodes_used_pct", "used_pct"],
+        "net_share_usage": ["free_gb", "hung", "mounted", "used_percent"],
         "es_nodes": ["disk_used_pct_max", "heap_used_pct_max", "nodes", "nodes_failed"],
         "backuppc_status": [
             "backup_age_max_s",
@@ -448,6 +454,7 @@ def test_the_app_views_are_those_the_agent_returns():
         "web_vhost_cert": ["vhost"],
         "moodle_checks": ["vhost"],
         "moodle_data": ["vhost"],
+        "net_share_usage": ["share"],
         "haproxy_certs": ["unit"],
         "es_nodes": ["container", "unit"],
         "backuppc_status": ["unit"],

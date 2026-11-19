@@ -26,11 +26,14 @@ var logger = logging.For("probe")
 
 // Plan is what the monitoring service answers on GET /agent/{id}/plan, plan_version 1.
 type Plan struct {
-	PlanVersion    int       `json:"plan_version"`
-	CatalogVersion string    `json:"catalog_version"`
-	Scan           bool      `json:"scan"`
-	Discovery      Discovery `json:"discovery"`
-	Probes         []Probe   `json:"probes"`
+	PlanVersion    int    `json:"plan_version"`
+	CatalogVersion string `json:"catalog_version"`
+	Scan           bool   `json:"scan"`
+	// ServiceLogs asks for the error lines of failed units (systemd.failed_logs); a plan without it
+	// (an older monitoring service) asks for none.
+	ServiceLogs bool      `json:"service_logs"`
+	Discovery   Discovery `json:"discovery"`
+	Probes      []Probe   `json:"probes"`
 }
 
 // Discovery is what the discovery of this host looks for.

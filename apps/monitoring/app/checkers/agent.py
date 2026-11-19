@@ -461,11 +461,6 @@ def _grade_temperatures(grader: _Grader, config: dict, resources: dict) -> list[
     return temperatures
 
 
-# How long the agent's load gate may hold the optional collectors, the probes and a discovery
-# back before agent_resources warns: their checks keep their last status meanwhile (R-1268).
-_LOAD_SHED_WARN_MINUTES = 30
-
-
 def load_shed_block(report: dict) -> dict:
     """The report's self.load_shed block; {} without one or for anything but an object."""
     own = report.get("self")
@@ -487,21 +482,18 @@ def load_shed_since(report: dict) -> datetime | None:
 
 
 def _grade_load_shed(grader: _Grader, report: dict) -> None:
-    # Only a warning: the load itself is graded above, and a host that sheds is still
-    # measured in its core. A begin in the future (the agent's clock ahead) counts as now.
+    # A warning from the first run of it (R-1400): the checks of the collectors the gate holds
+    # back go unmeasured meanwhile. Only a warning: the load itself is graded above, and a host
+    # that sheds is still measured in its core. A begin in the future (the agent's clock ahead)
+    # counts as now.
     since = load_shed_since(report)
     if since is None:
         return
     minutes = max(0, int((utcnow_naive() - since).total_seconds() // 60))
-    grader.grade(
-        "load_shed",
-        minutes,
-        _LOAD_SHED_WARN_MINUTES,
-        math.inf,
-        f"Load shedding since {since:%Y-%m-%d %H:%M} UTC ({minutes} min)",
-        " min",
-        hysteresis=False,
-    )
+    grader.problems.append(f"Load shedding since {since:%Y-%m-%d %H:%M} UTC ({minutes} min)")
+    grader.problem_levels["load_shed"] = "warning"
+    if grader.status != "critical":
+        grader.status = "warning"
 
 
 def _resources_message(problems: list[str], cpu, mem) -> str:

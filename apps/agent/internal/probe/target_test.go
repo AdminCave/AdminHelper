@@ -67,6 +67,16 @@ func TestTargetOfTakesOnlyTheKindsOfTheSensorWithWhatTheyNeed(t *testing.T) {
 		{"vhost of a wildcard", []string{kindVhost}, &Target{Kind: kindVhost, Name: "*.example.org", PortHint: 443}, false},
 		{"vhost of an address", []string{kindVhost}, &Target{Kind: kindVhost, Name: "192.0.2.1", PortHint: 443}, false},
 		{"vhost localhost", []string{kindVhost}, &Target{Kind: kindVhost, Name: "localhost", PortHint: 443}, false},
+		{"share", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/pve/backup"}, true},
+		{"share with a blank", []string{kindShare}, &Target{Kind: kindShare, Name: "/srv/team share"}, true},
+		{"share root", []string{kindShare}, &Target{Kind: kindShare, Name: "/"}, false},
+		{"share relative", []string{kindShare}, &Target{Kind: kindShare, Name: "mnt/pve"}, false},
+		{"share climbing out", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/../etc"}, false},
+		{"share with a trailing slash", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/pve/"}, false},
+		{"share with a double slash", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt//pve"}, false},
+		{"share with a control character", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/a\nb"}, false},
+		{"share with a port", []string{kindShare}, &Target{Kind: kindShare, Name: "/mnt/pve/backup", PortHint: 2049}, false},
+		{"share too long", []string{kindShare}, &Target{Kind: kindShare, Name: "/" + strings.Repeat("a", maxNameRunes)}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -279,9 +289,10 @@ func TestResolveFindsWhereATargetListens(t *testing.T) {
 	h := &fakeHost{
 		list: []listener{
 			lst("0.0.0.0", 443, 7), lst("::", 443, 7), lst("127.0.0.1", 80, 8), lst("192.0.2.1", 8080, 9),
-			lst("0.0.0.0", 22, 0), lst("127.0.0.1", 9000, 10),
+			lst("0.0.0.0", 22, 0), lst("127.0.0.1", 9000, 10), lst("127.0.0.1", 8090, 11),
 		},
-		names: map[int32]string{7: "nginx", 8: "Nginx.EXE", 9: "java", 10: "php-fpm"},
+		names: map[int32]string{7: "nginx", 8: "Nginx.EXE", 9: "java", 10: "php-fpm", 11: "busybox"},
+		args:  map[int32][]string{11: {"busybox", "httpd", "-f", "-p", "8090"}},
 	}
 	stubHost(t, h)
 	ctx := context.Background()
@@ -300,6 +311,8 @@ func TestResolveFindsWhereATargetListens(t *testing.T) {
 		{"a process of several ports", Target{Kind: kindProcess, Name: "NGINX"}, "", ErrAmbiguousTarget},
 		{"a process of one port", Target{Kind: kindProcess, Name: "php-fpm", PortHint: 9001}, "127.0.0.1:9000", nil},
 		{"a process listening nowhere", Target{Kind: kindProcess, Name: "sshd"}, "", errNotListening},
+		{"an applet of busybox by its name", Target{Kind: kindProcess, Name: "httpd"}, "127.0.0.1:8090", nil},
+		{"busybox, which runs an applet", Target{Kind: kindProcess, Name: "busybox"}, "", errNotListening},
 		{"loopback", Target{Kind: kindLoopback, PortHint: 6379}, "127.0.0.1:6379", nil},
 	}
 	for _, c := range cases {

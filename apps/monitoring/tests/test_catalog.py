@@ -346,7 +346,7 @@ def test_target_service_needs_a_compose_project():
     [
         (
             {"kind": "port", "alternatives": [{"port_hint": 80, "scheme": "http"}]},
-            "alternatives need a container target",
+            "alternatives need a container, loopback or unit target",
         ),
         (
             {
@@ -381,6 +381,38 @@ def test_target_alternatives_load_in_order():
     target = {"kind": "container", "service": "web", "alternatives": alternatives}
     module = _load(_module(checks=[_check(target=target)])).modules["example"]
     assert [a.model_dump() for a in module.checks[0].target.alternatives] == alternatives
+
+
+@pytest.mark.parametrize("kind", ["loopback", "unit"])
+def test_target_alternatives_load_at_the_host(kind):
+    # R-1528: the web interface of a 3CX listens on 443 or on 5001, whichever the setup chose.
+    alternatives = [{"port_hint": 443, "scheme": "https"}, {"port_hint": 5001, "scheme": "https"}]
+    target = {"kind": kind, "alternatives": alternatives}
+    raw = _module(instance="unit", detect={"units": ["app.service"]}, card=[])
+    raw["checks"] = [_check(target=target, credential=None)]
+    module = _load(raw).modules["example"]
+    assert [a.model_dump() for a in module.checks[0].target.alternatives] == alternatives
+
+
+def _unit_module(**check):
+    raw = _module(instance="unit", detect={"units": ["app.service", "app-mc01.service"]}, card=[])
+    target = {"kind": "loopback", "port_hint": 8000, "scheme": "http"}
+    raw["checks"] = [_check(target=target, credential=None, **check)]
+    return raw
+
+
+def test_a_check_names_the_instance_it_belongs_to():
+    module = _load(_unit_module(instance="app.service")).modules["example"]
+    assert module.checks[0].instance == "app.service"
+    assert module.checks[0].model_dump()["instance"] == "app.service"
+    # Unset, the field stays out of the dump: the other checks keep their hash.
+    plain = _load(_unit_module()).modules["example"].checks[0]
+    assert "instance" not in plain.model_dump()
+
+
+def test_a_checks_instance_must_be_one_of_the_modules_units():
+    error = _only_error(_load(_unit_module(instance="other.service")))
+    assert "instance 'other.service' is none of the module's units" in error
 
 
 def test_image_fallback_needs_a_service():
