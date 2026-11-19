@@ -1117,13 +1117,21 @@ class ServiceProcessChecker:
         if not isinstance(systemd, dict):
             systemd = {}
         error = systemd.get("error")
+        # The service control manager compares service names without case (CreateServiceW,
+        # lpServiceName), so on Windows "w32time" is "W32Time"; systemd units and rc.d scripts
+        # differ by case and stay exact (R-0436).
+        fold = _host_os(report) == "windows"
+
+        def key(name: str) -> str:
+            unit = self._unit_name(name)
+            return unit.casefold() if fold else unit
 
         # Lowest precedence first, so each later source overwrites what it knows.
         states: dict[str, str] = {}
         reasons: dict[str, str] = {}
         if "all_services" in systemd:
             inventory = {
-                self._unit_name(s["unit"]): s
+                key(s["unit"]): s
                 for s in self._capped(systemd["all_services"])
                 if isinstance(s, dict) and isinstance(s.get("unit"), str)
             }
@@ -1144,20 +1152,20 @@ class ServiceProcessChecker:
                     and isinstance(w.get("name"), str)
                     and w.get("state") in ("running", "down")
                 ):
-                    states[self._unit_name(w["name"])] = w["state"]
+                    states[key(w["name"])] = w["state"]
                     reason = cap_agent_text(w.get("reason"))
                     if reason:
-                        reasons[self._unit_name(w["name"])] = reason
+                        reasons[key(w["name"])] = reason
         for s in self._capped(report.get("services")):
             if isinstance(s, dict) and isinstance(s.get("name"), str):
-                states[self._unit_name(s["name"])] = "running" if s.get("running") else "down"
+                states[key(s["name"])] = "running" if s.get("running") else "down"
 
         watched = []
         for name in expected:
-            state = states.get(self._unit_name(name), "nodata")
+            state = states.get(key(name), "nodata")
             # running beside state: desktops before state read running alone (Kevin 2026-10-16).
             entry = {"name": name, "state": state, "running": state == "running"}
-            reason = reasons.get(self._unit_name(name))
+            reason = reasons.get(key(name))
             if state == "down" and reason:
                 entry["reason"] = reason
             watched.append(entry)

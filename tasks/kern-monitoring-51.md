@@ -5,8 +5,10 @@ Heavy: none — nur Bewertung und eine Admin-Route im Monitoring-Dienst, kein St
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-0436: service_process list vergleicht Windows-Dienstnamen ohne Groß-/Kleinschreibung  [ ]
+### T1 — R-0436: service_process list vergleicht Windows-Dienstnamen ohne Groß-/Kleinschreibung  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_service_process_checker.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-51.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6e4c4da17 2026-11-19T20:19:19+01:00
+Review: approve (.ah-out/review/kern-monitoring-51/T1.verdict.json)
 Beweis: Beobachtung monitoring-services T5 (2026-10-16), Code-Lesung `_evaluate_list` (Schlüssel `_unit_name(name)` wörtlich); Test zeigt `w32time` gegen Inventar `W32Time` = nodata
 Dedup-Key: bug:monitoring:checkers/agent.py:service_name_case
 Änderung: Trägt der Bericht `host.os == "windows"`, bildet `_evaluate_list` die Schlüssel aller Quellen (Watch-Liste, Inventar samt Alias-Ziel, prev_details) und der erwarteten Namen klein (`casefold`); die Ausgabe nennt den Namen wie eingetragen. Erst der rote Test.
