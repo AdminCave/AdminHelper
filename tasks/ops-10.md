@@ -5,8 +5,10 @@ Heavy: windows — Installer-Pfad; Kevin 2026-11-19: der windows-latest-Job aus 
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1578: scripts/agent-install.ps1 mit Doku  [ ]
+### T1 — R-1578: scripts/agent-install.ps1 mit Doku  [x]
 Komponente: scripts · Dateien: scripts/agent-install.ps1, scripts/tests/agent_install_ps1_test.sh, scripts/tests/run.sh, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-10.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d67da6b4c 2026-11-19T12:40:23+01:00
+Review: am Ende (Branch-Review)
 Änderung: Neues Skript (SPDX) nach Spec: Admin-Prüfung, Release per HTTPS, SHA256SUMS-Prüfung beider Dateien vor jeder Änderung, `service install` aus dem Temp-Verzeichnis, `provision --token-stdin` mit SecureString-Abfrage. Hermetischer Test (SPDX) prüft die Invarianten (kein `Invoke-Expression` geladener Inhalte, Token nie als Argument außer `-Token`, Hash-Prüfung vor `service install`, Override nur für Loopback), eingetragen in `run.sh`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- agent_install_ps1_test
 Doku: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, changelog.d/ops-10.md
