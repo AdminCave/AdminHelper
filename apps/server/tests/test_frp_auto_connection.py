@@ -8,6 +8,7 @@ connection along, a hand-linked one too."""
 
 import pytest
 
+from app.modules.audit.models import AuditLog
 from app.modules.connections.models import Connection
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
@@ -187,3 +188,35 @@ def test_a_c1_control_character_in_the_path_is_422(test_client, h):
         "/api/frp/tunnels", json=_body(auto_connection_path="/a\u0080b"), headers=h
     )
     assert r.status_code == 422, r.text
+
+
+def _connection_updates(db, conn_id: str) -> list[AuditLog]:
+    db.expire_all()
+    return (
+        db.query(AuditLog)
+        .filter(AuditLog.action == "connection.updated", AuditLog.object_id == conn_id)
+        .all()
+    )
+
+
+def test_taking_the_connection_along_is_audited_as_its_change(test_client, db_session, h):
+    t = _create(test_client, h, protocol="ssh", auto_connection_username="u")
+    conn = _conn(db_session, t)
+
+    _put(test_client, h, t["id"], protocol="web")
+    rows = _connection_updates(db_session, conn.id)
+    assert len(rows) == 1
+    row = rows[0]
+    db_session.refresh(conn)
+    assert row.object_label == conn.display_name() == "serverA · Web (FRP)"
+    assert (row.object_type, row.status) == ("connection", "success")
+    assert row.actor_type == "user" and row.actor_label == "admin"
+    assert t["id"] in (row.detail or "")
+
+
+def test_an_update_without_a_change_of_shape_writes_no_connection_entry(test_client, db_session, h):
+    t = _create(test_client, h)
+    conn = _conn(db_session, t)
+
+    _put(test_client, h, t["id"], local_port=8007)
+    assert _connection_updates(db_session, conn.id) == []
