@@ -1,5 +1,5 @@
 # Nachlese Provisionieren — Task-Ledger
-Status: erledigt · Branch: feature/kern-provision-2 · Review: pro Task
+Status: aktiv · Branch: feature/kern-provision-2 · Review: pro Task
 Spec: docs/features/kern-provision-2.md (Roadmap R-1629, R-1612, R-1613, R-1614, R-1628)
 Heavy: linux-full — Server-API (Katalog, Fortschritt) und Desktop-Provisionieren
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -84,3 +84,9 @@ Review: am Ende (nur Doku, Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/api-reference.html, docs/en/developer/api-reference.html
 Task-Review: am Ende
+
+### T10 — R-1612: Doku-CLI-Prüfung kennt den PowerShell-Pipe-Aufruf (PR-CI)  [ ]
+Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/docs_cli_test.go
+Änderung: Die PR-CI fiel in `TestDocsCallTheAgentCLIAsItIs`: die Windows-Form aus T6 (`'<token>' | & '…\adminhelper-agent.exe' provision … --token-stdin`) liest der Prüfer nicht, weil `quotedExeRE` den Aufrufoperator `&` nur am Zeilenanfang nimmt. Er nimmt ihn nun auch hinter `|` und `;`; die Fixture in `TestDocsCLICheckCanFail` bekommt die Form.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./cmd/adminhelper-agent/
+Doku: keine (Testprüfer; die Doku-Zeile steht schon)
