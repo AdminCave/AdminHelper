@@ -65,7 +65,7 @@ const WINDOWS = platform({
         { flag: '--url', value: 'serverUrl', optional: false, mode: null },
         { flag: '--server-id', value: 'serverId', optional: false, mode: null },
         { flag: '--token-stdin', value: 'flag', optional: false, mode: 'interactive' },
-        { flag: '--token', value: 'token', optional: false, mode: 'automation' },
+        { flag: '--token-stdin', value: 'tokenStdin', optional: false, mode: 'automation' },
       ],
     },
     { action: 'remove', shell: 'powershell', base: `${WIN_EXE} service uninstall`, args: [] },
@@ -351,14 +351,16 @@ describe('ProvisioningDialog — automation', () => {
     expect(byTestId(doc, 'prov-token')).toBeNull();
   });
 
-  it('drops the interactive --token-stdin for automation on Windows', async () => {
+  it('pipes the token into the agent for automation on Windows, never as an argument', async () => {
     const { doc } = await open();
     await choose(doc, 'windows');
     await waitFor(() => expect(commandText(doc)).toContain('--token-stdin'));
+    expect(commandText(doc)).not.toContain(TOKEN);
     await automate(doc);
     await mint(doc);
-    await waitFor(() => expect(commandText(doc)).toContain(`--token '${TOKEN}'`));
-    expect(commandText(doc)).not.toContain('--token-stdin');
+    await waitFor(() => expect(commandText(doc)).toMatch(new RegExp(`^'${TOKEN}' \\| `)));
+    expect(commandText(doc)).not.toContain('--token ');
+    expect(commandText(doc).match(/--token-stdin/g)).toHaveLength(1);
   });
 
   it('hides the command with the token shortly after it was copied', async () => {

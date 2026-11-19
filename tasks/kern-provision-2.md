@@ -19,10 +19,12 @@ Komponente: server · Dateien: apps/server/app/modules/provisioning/catalog.py, 
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning_catalog.py tests/test_openapi_snapshot.py
 Doku: → T6
 
-### T3 — R-1612: Desktop: Token als Pipe vor den Befehlskopf  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts
+### T3 — R-1612: Desktop: Token als Pipe vor den Befehlskopf  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/provisioning/command.ts, apps/desktop/ui/src/lib/provisioning/command.test.ts, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.svelte, apps/desktop/ui/src/components/infra/provisioning/ProvisioningDialog.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @0415b1d75 2026-11-19T17:25:42+01:00
+Review: approve (.ah-out/review/kern-provision-2/T3.verdict.json)
 Änderung: Wertetyp `tokenStdin` (nur Automationsmodus, nur bei gültigem Token): Flag ohne Wert anhängen, gequoteten Token per Shell-Pipe vor den Kopf setzen; Tests für PowerShell und sh, kein Token im argv-Teil.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning/command.test.ts
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/provisioning/command.test.ts src/components/infra/provisioning/ProvisioningDialog.test.ts
 Abhängt von: T1
 Doku: → T6
 

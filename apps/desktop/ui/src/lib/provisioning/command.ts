@@ -35,10 +35,22 @@ export interface ProvisionValues {
   allowInsecure: boolean;
 }
 
-const SHELLS: Record<string, { quote: (v: string) => string; join: string }> = {
-  bash: { quote: shellQuote, join: ' \\\n  ' },
-  sh: { quote: shellQuote, join: ' \\\n  ' },
-  powershell: { quote: psQuote, join: ' `\n  ' },
+interface Shell {
+  quote: (v: string) => string;
+  join: string;
+  // Feeds a quoted value to the head's stdin.
+  pipe: (quoted: string) => string;
+}
+
+const POSIX: Shell = {
+  quote: shellQuote,
+  join: ' \\\n  ',
+  pipe: (q) => `printf '%s\\n' ${q} | `,
+};
+const SHELLS: Record<string, Shell> = {
+  bash: POSIX,
+  sh: POSIX,
+  powershell: { quote: psQuote, join: ' `\n  ', pipe: (q) => `${q} | ` },
 };
 
 /** The command text, or null when it cannot be built safely. */
@@ -51,6 +63,7 @@ export function buildCommand(
   if (!shell || !spec.base || CONTROL.test(spec.base)) return null;
   if (!UUID_FORM.test(values.serverId)) return null;
   const parts = [spec.base];
+  let stdin = '';
   for (const arg of spec.args) {
     if (!FLAG_FORM.test(arg.flag)) return null;
     if (arg.mode === 'interactive' && automation) continue;
@@ -79,6 +92,14 @@ export function buildCommand(
         if (!automation) return null;
         value = values.token !== null && TOKEN_FORM.test(values.token) ? values.token : null;
         break;
+      case 'tokenStdin':
+        // Piped in rather than passed: an argument would sit in the host's process list
+        // while the provisioning runs.
+        if (!automation || values.token === null || !TOKEN_FORM.test(values.token)) return null;
+        if (stdin) return null;
+        stdin = shell.pipe(shell.quote(values.token));
+        parts.push(arg.flag);
+        continue;
       default:
         return null;
     }
@@ -92,5 +113,5 @@ export function buildCommand(
     if (spec.shell === 'powershell' && value.includes('"')) return null;
     parts.push(`${arg.flag} ${shell.quote(value)}`);
   }
-  return parts.join(shell.join);
+  return stdin + parts.join(shell.join);
 }

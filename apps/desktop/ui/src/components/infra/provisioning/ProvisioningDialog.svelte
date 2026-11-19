@@ -62,7 +62,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   const activeAction = $derived(actions.includes(action as ProvisionAction) ? action : actions[0]);
   const spec = $derived(platform?.commands.find((c) => c.action === activeAction) ?? null);
-  const needsToken = $derived(spec?.args.some((a) => a.value === 'token') ?? false);
+  const needsToken = $derived(
+    spec?.args.some((a) => a.value === 'token' || a.value === 'tokenStdin') ?? false,
+  );
   const command = $derived(
     spec && $session
       ? buildCommand(

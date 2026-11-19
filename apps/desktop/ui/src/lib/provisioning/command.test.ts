@@ -90,6 +90,51 @@ describe('buildCommand', () => {
     expect(buildCommand(spec, VALUES, true)).not.toContain('--token-stdin');
   });
 
+  it('pipes the token in front of a PowerShell head, never as an argument', () => {
+    const spec: ProvisionCommandSpec = {
+      action: 'reregister',
+      shell: 'powershell',
+      base: "& 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe' provision",
+      args: [
+        arg('--server-id', 'serverId'),
+        arg('--token-stdin', 'flag', { mode: 'interactive' }),
+        arg('--token-stdin', 'tokenStdin', { mode: 'automation' }),
+      ],
+    };
+    expect(buildCommand(spec, VALUES, true)).toBe(
+      `'${TOKEN}' | & 'C:\\Program Files\\AdminHelper Agent\\adminhelper-agent.exe' provision \`\n` +
+        `  --server-id '${ID}' \`\n` +
+        '  --token-stdin',
+    );
+    expect(buildCommand(spec, VALUES, false)).not.toContain(TOKEN);
+  });
+
+  it.each(['bash', 'dash'] as const)('%s hands the piped token to the head on stdin', (shell) => {
+    const spec: ProvisionCommandSpec = {
+      ...INSTALL,
+      shell: 'sh',
+      // A head that reads one line from stdin and prints it, then its own arguments.
+      base: `sh -c 'read -r t; printf "[%s]\\n" "$t" "$@"' -`,
+      args: [arg('--token-stdin', 'tokenStdin', { mode: 'automation' })],
+    };
+    const text = buildCommand(spec, VALUES, true);
+    expect(text).not.toBeNull();
+    // The flag stays in the head's argv, the token only in what the pipe writes.
+    expect((text as string).split('|')[1]).not.toContain(TOKEN);
+    expect(execFileSync(shell, ['-c', text as string], { encoding: 'utf8' })).toBe(
+      `[${TOKEN}]\n[--token-stdin]\n`,
+    );
+  });
+
+  it.each<[string, Partial<ProvisionValues>, boolean]>([
+    ['outside automation mode', {}, false],
+    ['without a token', { token: null }, true],
+    ['with a token of another form', { token: '-x' }, true],
+  ])('builds no piped token %s', (_name, values, automation) => {
+    const spec = { ...INSTALL, args: [arg('--token-stdin', 'tokenStdin')] };
+    expect(buildCommand(spec, { ...VALUES, ...values }, automation)).toBeNull();
+  });
+
   it('never builds a token argument outside automation mode', () => {
     const spec = { ...INSTALL, args: [arg('--token', 'token')] };
     expect(buildCommand(spec, VALUES, false)).toBeNull();
