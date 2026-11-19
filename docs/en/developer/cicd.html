@@ -75,6 +75,16 @@
           than around the rule. <code>ci.yml</code> also runs on
           <code>merge_group</code>; only the ruleset turns a merge queue on.</p>
 
+          <p><strong>Workflow hardening.</strong> Every <code>actions/checkout</code> runs with
+          <code>persist-credentials: false</code>: no step pushes or fetches with the token, so it does not sit
+          in <code>.git/config</code>, where a later step or an artifact could pick it up. A <code>run:</code>
+          block expands no <code>${{ &hellip; }}</code> other than <code>matrix.</code>; values such as
+          <code>github.base_ref</code> go through <code>env:</code>, so a branch name cannot become shell code.
+          Write permissions sit on the job that needs them (<code>docker.yml</code>: <code>packages</code> and
+          <code>id-token</code> only on <code>build</code>), the workflow level has only
+          <code>contents: read</code>. <code>apps/server/tests/test_ci_workflow.py</code> holds this; checked
+          with <code>zizmor --offline --min-severity medium .github/workflows</code> without a finding.</p>
+
           <h2>Trigger Matrix</h2>
           <table>
             <thead><tr><th>Event</th><th>What runs</th></tr></thead>
