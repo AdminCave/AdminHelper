@@ -1717,6 +1717,28 @@ def test_a_resync_binds_a_check_naming_an_instance_there_only(db, actions):
     assert "web" not in _checks(db, other)
 
 
+def test_a_row_of_another_instance_is_not_rebound_when_the_check_names_one(db, actions):
+    _scanned(db, [_socket(443)])
+    main = _finding(db, "pbx", "pbx.service", summary={})
+    other = _finding(db, "pbx", "pbx-mc01.service", summary={})
+    unnamed = _pbx(web={k: v for k, v in _PBX_WEB.items() if k != "instance"})
+    adopt(db, main.id, catalog=unnamed, now=NOW)
+    adopt(db, other.id, catalog=unnamed, now=NOW)
+    before = _checks(db, other)["web"].config
+
+    # The catalog now names pbx.service for the web check: the row at the other instance
+    # stays as it was, without an update and without a reason.
+    result = adopt(db, other.id, catalog=PBX, now=NOW)
+    sync_catalog(db, catalog=PBX)
+
+    assert result.updated == []
+    assert result.skipped == []
+    assert _checks(db, other)["web"].config == before
+    assert _checks(db, other)["web"].module_check_hash == definition_hash(
+        unnamed.modules["pbx"].checks[0]
+    )
+
+
 @pytest.mark.parametrize(
     ("kind", "sockets", "port", "reason"),
     [

@@ -86,16 +86,20 @@ def definition_hash(check: Check) -> str:
 
 def updatable_checks(checks: list[MonitorCheck], module: Module | None) -> list[MonitorCheck]:
     """The checks whose catalog definition changed since they were bound. A row without a
-    hash (bound before R-1264) is never offered: nothing shows what it was bound from."""
+    hash (bound before R-1264) is never offered: nothing shows what it was bound from, and
+    neither is a row at another instance than the one its check now names (R-1528): it
+    stays as it was, like a row the catalog dropped."""
     if module is None:
         return []
-    hashes = {check.key: definition_hash(check) for check in module.checks}
+    by_key = {check.key: check for check in module.checks}
+    hashes = {key: definition_hash(check) for key, check in by_key.items()}
     return [
         row
         for row in checks
         if row.module_check_hash is not None
         and row.module_check_key in hashes
         and row.module_check_hash != hashes[row.module_check_key]
+        and by_key[row.module_check_key].instance in (None, row.module_instance)
     ]
 
 

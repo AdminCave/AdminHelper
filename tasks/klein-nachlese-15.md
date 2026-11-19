@@ -50,8 +50,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: die Änderung selbst
 Task-Review: am Ende
 
-### T5 — R-1621: module_sync bindet eine Zeile einer anderen Instanz nicht neu  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py
+### T5 — R-1621: module_sync bindet eine Zeile einer anderen Instanz nicht neu  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/module_sync.py, apps/monitoring/tests/test_module_sync.py, changelog.d/klein-nachlese-15.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @845be1b2a 2026-11-19T21:49:22+01:00
+Review: approve (.ah-out/review/klein-nachlese-15/T5.verdict.json)
 Beweis: branch-review kern-monitoring-46 2026-11-19 · Dedup-Key: ref:monitoring:module_sync.py:belongs-update
 Semantik: apps/monitoring/app/module_sync.py:471 `_belongs`: „a check that names one instance (R-1528) at that one only“
 Änderung: Eine bestehende Zeile, deren Katalog-Check eine andere Instanz nennt (`not _belongs`), wird weder von `_adopt` (`_update`, Aktivieren) noch vom Katalog-Sync (`updatable_checks`) angefasst: sie bleibt wie sie ist, ohne Grund. Erst ein roter Test: Check bekommt `instance` nach dem Anlegen, Adopt an anderer Instanz ändert die Zeile nicht.
