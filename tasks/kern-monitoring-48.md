@@ -35,8 +35,10 @@ einer schlafenden Platte aus dem Vorstand, `read_at` gesetzt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py tests/test_checker_messages.py
 Doku: → T6
 
-### T3 — R-1569: Desktop zeigt „schläft, letzter Stand von …“  [ ]
+### T3 — R-1569: Desktop zeigt „schläft, letzter Stand von …“  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecSmart.svelte, apps/desktop/ui/src/components/monitoring/section/SecSmart.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/checkDetails.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8c89f6745 2026-11-19T05:05:19+01:00
+Review: approve (.ah-out/review/kern-monitoring-48/T3.verdict.json)
 Änderung: `MonitorSmartDetails.disks[]` um `standby?: boolean` und `read_at?: string`; eine Platte mit `standby`
 zeigt einen Hinweis „schläft, letzter Stand von <Zeit>“ (ohne `read_at`: „schläft, noch kein Stand“). Test in
 `SecSmart.test.ts`.
