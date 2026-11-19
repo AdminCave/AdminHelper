@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 ## Tasks
 
-### T1 — R-1569: smartctl mit -n standby, schlafende Platte als standby melden  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go
+### T1 — R-1569: smartctl mit -n standby, schlafende Platte als standby melden  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/allowlist/allowlist.go, apps/agent/internal/allowlist/allowlist_test.go, apps/agent/internal/monitor/allowlist_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8427db994 2026-11-19T04:52:06+01:00
+Review: approve (.ah-out/review/kern-monitoring-48/T1.verdict.json)
 Änderung: `querySmartDevice` ruft `smartctl --all --json=c -n standby,3 [-d <typ>] <gerät>`; Exit 3 ergibt
 `SmartDisk{Device, Standby: true}` (Feld `standby`, omitempty), keine weiteren Werte. Die Allowlist-Formen von
 smartctl tragen `-n standby,3`. Tests: Aufruf trägt die Option, Exit 3 → standby-Platte, Exit 2 → weiter verworfen,
@@ -69,3 +71,5 @@ Task-Review: am Ende
 Abhängt von: T1, T2, T3, T5
 
 ## Entscheidungen
+- 2026-11-19 Übergabe: Kern 1 hat Plan und Kopf `aktiv` angelegt (0b30649c8, 8427db994); Kern 2 baut ab T1 (Kevin 2026-11-18: km48 gehört Kern 2).
+- 2026-11-19 T1: `-n standby,3` nur für ATA/SCSI, nicht für NVMe (Scan-Protokoll `NVMe` oder Typ `nvme`): smartctl(8) führt `-n` nur unter `[ATA, SCSI]`. Die NVMe-Formen der Allowlist bleiben deshalb, die neuen kommen dazu; Status 3 ohne `-n` (NVMe) bleibt ein Öffnungsfehler.

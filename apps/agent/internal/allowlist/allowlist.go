@@ -234,6 +234,10 @@ var commands = map[string][][]string{
 		{"--scan", "--json=c"},
 		{"--all", "--json=c", "<device>"},
 		{"--all", "--json=c", "-d", "<devtype>", "<device>"},
+		// An ATA or SCSI disk without waking it (querySmartDevice): in STANDBY or SLEEP smartctl ends
+		// before any check with exit status 3 (smartctl(8), -n POWERMODE,STATUS).
+		{"--all", "--json=c", "-n", "standby,3", "<device>"},
+		{"--all", "--json=c", "-n", "standby,3", "-d", "<devtype>", "<device>"},
 	},
 	// How full a network share is (net_share_usage): statfs of its mount point in a process of its own,
 	// which the timeout kills when the share hangs (R-1267).
