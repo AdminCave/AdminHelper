@@ -1,5 +1,5 @@
 # Agent-Daten für stabile Objektschlüssel (P1e) — Task-Ledger
-Status: bereit · Branch: feature/kern-agent-11 · Review: am Ende
+Status: erledigt · Branch: feature/kern-agent-11 · Review: am Ende
 Spec: docs/features/kern-agent-11.md (Roadmap R-1639)
 Heavy: linux-full — apps/agent (Report-Felder); geht in den nächtlichen Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
