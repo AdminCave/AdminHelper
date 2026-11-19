@@ -318,6 +318,9 @@ class _Grader:
         self.problems: list[str] = []
         self.status = "ok"
         self.problem_levels: dict[str, str] = {}
+        # Every crossing under its key, for the host objects (R-1559): two sensors may share
+        # a name, and problem_levels keeps only the last.
+        self.problem_marks: dict[str, list[tuple[str, str]]] = {}
 
     def grade(
         self,
@@ -337,6 +340,7 @@ class _Grader:
         )
         if level:
             self.problem_levels[key] = level
+            self.problem_marks.setdefault(key, []).append((level, self.problems[-1]))
 
 
 def _grade_usage(grader: _Grader, config: dict, resources: dict) -> tuple:
@@ -511,6 +515,69 @@ def _grade_load_shed(grader: _Grader, report: dict) -> None:
         grader.status = "warning"
 
 
+# The reason of a host object within its limits: fixed, so an ok object costs no write while
+# its values move. A problem names the value and the limit it crossed.
+_WITHIN_LIMITS = "Within limits"
+
+
+def _host_object(
+    grader: _Grader, kind: str, ident: str | None, name: str, keys: tuple[str, ...]
+) -> dict:
+    """One host object of agent_resources (R-1559), as bad as the worst measure in keys."""
+    marks = [mark for key in keys for mark in grader.problem_marks.get(key, [])]
+    levels = {level for level, _text in marks}
+    return {
+        "kind": kind,
+        "id": ident,
+        "name": name,
+        "status": "critical" if "critical" in levels else "warning" if levels else "ok",
+        "reason": "; ".join(text for _level, text in marks) or _WITHIN_LIMITS,
+    }
+
+
+def _resource_objects(
+    grader: _Grader,
+    resources: dict,
+    cpu: float | None,
+    mem: float | None,
+    disks: list[dict],
+    ignore_mounts: set,
+    temperatures: list[dict],
+) -> dict:
+    """The object result of agent_resources (R-1559): cpu with the load, memory with the swap,
+    a mount per rated path, a sensor per name. Load shedding is part of none: an object the
+    gate leaves unmeasured is never a problem (ADR 0004 §2).
+
+    Complete only with CPU, RAM and the whole disk list: the agent leaves the list out when
+    it cannot read the partitions, and a reading that is missing must not mark an object gone.
+    No sensor list is a host without sensors (every VM). A disk or sensor is keyed by the name
+    it is rated under, so ignore_mounts and the overrides name the same object."""
+    items = []
+    if cpu is not None:
+        items.append(_host_object(grader, "cpu", None, "CPU", ("cpu", "load")))
+    if mem is not None:
+        items.append(_host_object(grader, "memory", None, "Memory", ("memory", "swap")))
+    mounts: dict[str, dict] = {}
+    for disk in disks:
+        mount = entry_text(disk, "mount", NO_MOUNT)
+        if mount not in ignore_mounts:
+            keys = (f"disk:{mount}", f"inode:{mount}")
+            mounts[mount] = _host_object(grader, "mount", mount, mount, keys)
+    sensors: dict[str, dict] = {}
+    for sensor in temperatures:
+        name = entry_text(sensor, "sensor", "?")
+        sensors[name] = _host_object(grader, "sensor", name, name, (f"temp:{name}",))
+    # Anything but a list counts as no list, as for the rating (R-0517).
+    readings = resources.get("temperatures")
+    complete = (
+        cpu is not None
+        and mem is not None
+        and whole_list(resources.get("disks"))
+        and (not isinstance(readings, list) or whole_list(readings))
+    )
+    return {"complete": complete, "items": [*items, *mounts.values(), *sensors.values()]}
+
+
 def _resources_message(problems: list[str], cpu, mem) -> str:
     if problems:
         return join_capped(problems, "; ")
@@ -671,7 +738,8 @@ class AgentResourcesChecker:
             details["load_rated"] = False
 
         message = _resources_message(grader.problems, cpu, mem)
-        return grader.status, message, {"_details": details}
+        objects = _resource_objects(grader, resources, cpu, mem, disks, ignore_mounts, temperatures)
+        return grader.status, message, {"_details": details, "_objects": objects}
 
 
 class ServiceProcessChecker:
