@@ -324,3 +324,51 @@ def test_the_nightly_restore_runs_the_round_trip_where_a_skip_is_red():
         "name": "Backup, total loss, restore",
         "run": "bash scripts/tests/backup_restore_test.sh",
     }
+
+
+# Hardening after zizmor 1.32 (R-1556), over every workflow of the repo.
+_WORKFLOWS = sorted(_CI.parent.glob("*.yml"))
+
+
+def _steps():
+    for path in _WORKFLOWS:
+        for job_name, job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].items():
+            for step in job.get("steps", []):
+                yield f"{path.name}:{job_name}", step
+
+
+def test_every_workflow_is_seen():
+    assert {p.name for p in _WORKFLOWS} >= {
+        "ci.yml",
+        "audit.yml",
+        "docker.yml",
+        "nightly.yml",
+        "release.yml",
+    }
+
+
+def test_no_checkout_leaves_the_token_in_the_git_config():
+    checkouts = [
+        (where, s) for where, s in _steps() if s.get("uses", "").startswith("actions/checkout@")
+    ]
+    assert checkouts
+    for where, step in checkouts:
+        assert (step.get("with") or {}).get("persist-credentials") is False, where
+
+
+def test_no_run_block_expands_a_context_other_than_the_matrix():
+    # A template in run: is pasted into the script before the shell sees it; a branch name
+    # (github.base_ref, github.head_ref) could carry shell code. Such values go through env:.
+    for where, step in _steps():
+        for expr in re.findall(r"\$\{\{(.*?)\}\}", step.get("run", "")):
+            assert expr.strip().startswith("matrix."), (where, expr)
+
+
+def test_docker_grants_package_and_oidc_writes_only_to_the_jobs_that_need_them():
+    docker = yaml.safe_load(_CI.with_name("docker.yml").read_text(encoding="utf-8"))
+    assert docker["permissions"] == {"contents": "read"}
+    assert docker["jobs"]["build"]["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+    }
