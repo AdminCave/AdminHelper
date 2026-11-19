@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test
 Doku: keine (Mockup nur im Vite-Dev-Server)
 Abhängt von: T2
 
-### T4 — Serverliste und „Alle Server“: Lagekarte, Flotten-Teppich, Karten (R-1558)  [ ]
+### T4 — Serverliste und „Alle Server“: Lagekarte, Flotten-Teppich, Karten (R-1558)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/mockups/monitoring-neu/views/ServerNav.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/Lagekarte.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/AllServers.svelte, apps/desktop/ui/src/mockups/monitoring-neu/views/overview.test.ts, apps/desktop/ui/src/mockups/monitoring-neu/views/limits.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2cc123bb7 2026-11-19T06:50:58+01:00
+Review: approve (.ah-out/review/arch-monitoring-neu-p0-abnahme/T4.verdict.json)
 Änderung: Neu (je SPDX) `ServerNav.svelte` (Serverliste wie heute: „Alle Server“, mit/ohne Probleme, schlechteste zuerst, Suche „/“, Pfeiltasten, gleitende Auswahl; ab 25 ruhigen Servern eine Zeile „N Server ohne Probleme zeigen“), `Lagekarte.svelte` (Server × Objektart, die 20 schlimmsten, „alle zeigen“; ab 40 Servern Flotten-Teppich mit Vorschau und Klick) und `AllServers.svelte` (Kopfzahlen, Lagekarte, Karten-Board mit 24 Karten, davon 8 mit Kennzahlen, „N weitere Server zeigen“, offene Probleme als Liste). Tests: Inhalte und Reihenfolge, Falten und Suche, Pfeiltasten, Teppich-Klick wählt den Server, Grenzen 20/24/8/25 mit der großen Flotte.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/styles/tokens.test.ts src/mockups/monitoring-neu
 Doku: keine (Mockup nur im Vite-Dev-Server)
