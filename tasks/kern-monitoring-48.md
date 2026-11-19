@@ -45,8 +45,10 @@ zeigt einen Hinweis „schläft, letzter Stand von <Zeit>“ (ohne `read_at`: �
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecSmart.test.ts src/lib/api/types.contract.test.ts
 Doku: → T6
 
-### T4 — R-1413: Schwärzung der Fehlerzeilen im Agent  [ ]
+### T4 — R-1413: Schwärzung der Fehlerzeilen im Agent  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/servicelogs.go, apps/agent/internal/monitor/servicelogs_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @9d97c7985 2026-11-19T05:13:28+01:00
+Review: approve (.ah-out/review/kern-monitoring-48/T4.verdict.json)
 Änderung: Neue Datei (SPDX) ohne Build-Tag: `cleanLogLine` wie `service_inventory.clean_log_line` (eine Zeile,
 Steuerzeichen → Leerzeichen, Regeln aus `_RULES` und `_BASE64_RUN` in RE2, 300 Zeichen mit „…“). Der Test liest
 `apps/monitoring/tests/service_log_redaction.json` und besteht jeden Vektor.
@@ -78,3 +80,4 @@ Abhängt von: T1, T2, T3, T5
 - 2026-11-19 Übergabe: Kern 1 hat Plan und Kopf `aktiv` angelegt (0b30649c8, 8427db994); Kern 2 baut ab T1 (Kevin 2026-11-18: km48 gehört Kern 2).
 - 2026-11-19 T1: `-n standby,3` nur für ATA/SCSI, nicht für NVMe (Scan-Protokoll `NVMe` oder Typ `nvme`): smartctl(8) führt `-n` nur unter `[ATA, SCSI]`. Die NVMe-Formen der Allowlist bleiben deshalb, die neuen kommen dazu; Status 3 ohne `-n` (NVMe) bleibt ein Öffnungsfehler.
 - 2026-11-19 T2: Die Probleme einer schlafenden Platte stehen nicht in den Details; sie zählt mit ihrer letzten Kategorie als ein Problem „<Gerät> (<Modell>): <Kategorie> when last read (asleep)“. Keine Metrik-Serien für sie (keine Werte statt Nullen). `read_at` in ganzen Sekunden (`_now`, in den Tests eingefroren: Gleichheitstests vergleichen zwei Auswertungen).
+- 2026-11-19 T4: `cleanLogLine` zählt Zeichen als Runen wie Python und macht ungültiges UTF-8 vorher zu U+FFFD (journalctl kann rohe Bytes liefern). RE2 `(?i)` faltet Unicode (etwa das Kelvin-Zeichen auf `k`): der Agent schwärzt dort höchstens mehr als der Server, nie weniger; der Server wendet die Regeln ohnehin erneut an.
