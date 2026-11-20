@@ -54,8 +54,11 @@ def test_stale_agent_is_critical(monkeypatch):
 def test_fresh_agent_is_ok(monkeypatch):
     monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
     monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=2))
-    status, _msg, metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 5})
+    status, msg, metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 5})
     assert status == "ok"
+    # SecHeartbeat.svelte parses the age out of this wording and of the critical one
+    # ("Agent unreachable for N min"); changing either breaks the desktop display.
+    assert msg == "Agent active (last report 120s ago)"
     assert metrics["agent_last_seen_seconds"] == 120
 
 
