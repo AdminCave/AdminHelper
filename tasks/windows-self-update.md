@@ -1,5 +1,5 @@
 # Windows-Agent: signiertes Self-Update über :8445 — Task-Ledger
-Status: aktiv · Branch: feature/windows-self-update · Review: pro Task
+Status: bereit · Branch: feature/windows-self-update · Review: pro Task
 Spec: docs/features/windows-self-update.md (Roadmap R-1581)
 Heavy: windows — Tausch, Health-Check und Rollback sind Windows-Code; Beweis über die Windows-Jobs der PR-CI; den Gateway-Teil prüft der integration-stack-Job der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task
 Task-Review: am Ende
 
-### T7 — Testdaten des Update-Satzes ohne Zeilenende-Umwandlung  [ ]
+### T7 — Testdaten des Update-Satzes ohne Zeilenende-Umwandlung  [x]
 Komponente: agent · Dateien: apps/agent/internal/selfupdate/testdata/.gitattributes
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @eb238aee1 2026-11-20T19:23:13+01:00
+Review: approve (.ah-out/review/windows-self-update/T7.verdict.json)
 Änderung: PR-CI #630, Job „Go Agent (test, Windows)“: TestFetch* rot mit „minisign: signature verification failed“. Der Windows-Checkout (autocrlf) schreibt `SHA256SUMS` und `VERSION` der Testdaten mit CRLF, die Signatur deckt die LF-Bytes. Beweis lokal: Klon mit `core.autocrlf=true`, `go test ./internal/selfupdate/` → 12 FAIL. `testdata/.gitattributes` mit `* -text` hält die Bytes wie signiert.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/selfupdate/...
 Doku: keine (Testdaten)
