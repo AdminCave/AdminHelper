@@ -413,32 +413,35 @@ def test_lock_state_waits_for_the_first_writer_of_a_check(pg_sessionmaker):
 
     check_id = _seed_check_without_state(pg_sessionmaker)
     first = pg_sessionmaker()
-    assert lock_state(first, check_id) is None
+    try:
+        assert lock_state(first, check_id) is None
 
-    seen: list[object] = []
-    done = threading.Event()
+        seen: list[object] = []
+        done = threading.Event()
 
-    def _second():
-        session = pg_sessionmaker()
-        try:
-            state = lock_state(session, check_id)
-            seen.append(None if state is None else state.status)
-            session.rollback()
-        finally:
-            session.close()
-            done.set()
+        def _second():
+            session = pg_sessionmaker()
+            try:
+                state = lock_state(session, check_id)
+                seen.append(None if state is None else state.status)
+                session.rollback()
+            finally:
+                session.close()
+                done.set()
 
-    worker = threading.Thread(target=_second, name="second")
-    worker.start()
-    # The second session must still be waiting on the first one's lock: a fixed wait,
-    # because what is tested is that nothing happens within it.
-    assert not done.wait(timeout=1.0), f"the second writer did not wait: it saw {seen}"
-    first.add(MonitorState(check_id=check_id, status="critical", fail_count=1, ok_count=0))
-    first.commit()
-    first.close()
-    worker.join(timeout=30)
-    assert not worker.is_alive(), "the second writer never finished"
-    assert seen == ["critical"]
+        worker = threading.Thread(target=_second, name="second")
+        worker.start()
+        # The second session must still be waiting on the first one's lock: a fixed wait,
+        # because what is tested is that nothing happens within it.
+        assert not done.wait(timeout=1.0), f"the second writer did not wait: it saw {seen}"
+        first.add(MonitorState(check_id=check_id, status="critical", fail_count=1, ok_count=0))
+        first.commit()
+        first.close()
+        worker.join(timeout=30)
+        assert not worker.is_alive(), "the second writer never finished"
+        assert seen == ["critical"]
+    finally:
+        first.close()
 
 
 def test_cleanup_waits_for_a_writer_bringing_an_object_back(pg_sessionmaker):
