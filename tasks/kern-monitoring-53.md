@@ -38,8 +38,10 @@ Review: approve (.ah-out/review/kern-monitoring-53/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py tests/test_objects_api.py
 Doku: → T6
 
-### T5 — R-1660: Hub-Entwarnung bei toggle/delete im Hintergrund  [ ]
+### T5 — R-1660: Hub-Entwarnung bei toggle/delete im Hintergrund  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_alerter_hub.py, apps/monitoring/tests/test_bell_removed_checks.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @a465abd11 2026-11-20T08:57:46+01:00
+Review: approve (.ah-out/review/kern-monitoring-53/T5.verdict.json)
 Änderung: `toggle_check` und `delete_check` geben die Entwarnung an `BackgroundTasks` ab. Bei einem Fehlschlag gibt der Hintergrund-Job den Slot über eine eigene Sitzung frei (`release_hub_slot`). Antwort und Schema bleiben gleich. Ein Test zeigt, dass die Antwort nicht auf einen hängenden Hub wartet, ein weiterer, dass ein Fehlschlag den Slot freigibt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_hub.py tests/test_bell_removed_checks.py tests/test_openapi_snapshot.py
 Doku: → T6
