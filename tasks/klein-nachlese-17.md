@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-17 — Task-Ledger
-Status: aktiv · Branch: feature/klein-nachlese-17 · Review: am Ende
+Status: bereit · Branch: feature/klein-nachlese-17 · Review: am Ende
 Spec: docs/features/klein-nachlese-17.md (Roadmap R-1643, R-1649, R-1662, R-1664)
 Heavy: none — Kommentar, Doku, Changelog-Fragmente und ein Test, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -28,8 +28,10 @@ Beweis: reviewer kern-monitoring-53 2026-11-20, reviewer ops-13 2026-11-20. Dedu
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_concurrency.py
 Doku: docs/developer/monitoring.html DE+EN, changelog.d/kern-monitoring-53.md, changelog.d/ops-13.md
 
-### T3 — R-1649: ci-19-Spec: Suche als ganzes Wort  [ ]
+### T3 — R-1649: ci-19-Spec: Suche als ganzes Wort  [x]
 Komponente: scripts · Dateien: docs/features/ci-19.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ff08c9414 2026-11-20T12:15:55+01:00
+Review: am Ende (Branch-Review)
 Beweis: reviewer ci-19 2026-11-19, docs/features/ci-19.md:33. Dedup-Key: nit:ci-19:spec-tradeoff
 Änderung: Trade-off-Absatz: die Kontext-Namen werden als ganzes Wort gesucht (nicht nur vor `.` oder `[`), Literale vorher entfernt.
 Task-Review: am Ende
