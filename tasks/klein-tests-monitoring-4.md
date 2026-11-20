@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-tests-monitoring-4 — Task-Ledger
-Status: geplant · Branch: feature/klein-tests-monitoring-4 · Review: am Ende
+Status: aktiv · Branch: feature/klein-tests-monitoring-4 · Review: am Ende
 Spec: docs/features/klein-tests-monitoring-4.md (Roadmap R-1600)
 Heavy: none — ein Monitoring-Unit-Test
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
