@@ -148,7 +148,12 @@ type dhcpScope struct {
 }
 
 // dhcpValues reports the fullest scope and the scopes over 80 and 95 per cent in use.
+// A server without a scope reports only the count: its rules then have no value and the
+// check is unknown, not a silent ok (R-1465).
 func dhcpValues(scopes []dhcpScope) map[string]any {
+	if len(scopes) == 0 {
+		return map[string]any{"scopes": 0}
+	}
 	maxPct := 0.0
 	over80, over95 := 0, 0
 	for _, s := range scopes {
@@ -563,9 +568,8 @@ func defenderValues(s mpStatus, mode string, threats []mpThreat, now time.Time) 
 		"antivirus_on":   s.AntivirusEnabled,
 		"detections_24h": recent,
 	}
-	if s.AntivirusSignatureAge != mpSignatureNever {
-		values["signature_age_d"] = int(s.AntivirusSignatureAge)
-	}
+	// Never updated (65535) goes out as that age: the >= 4 days rule rates it critical (R-1481).
+	values["signature_age_d"] = int(s.AntivirusSignatureAge)
 	if mode != "" {
 		values["passive"] = strings.Contains(mode, "Passive")
 	}
