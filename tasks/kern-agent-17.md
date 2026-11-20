@@ -1,5 +1,5 @@
 # Agent-DEB: Maintainer-Skripte ohne systemd als PID 1 — Task-Ledger
-Status: geplant · Branch: feature/kern-agent-17 · Review: am Ende
+Status: aktiv · Branch: feature/kern-agent-17 · Review: am Ende
 Spec: Roadmap R-1670
 Heavy: none — nur postinst/postrm und ein Go-Test, der sie mit systemctl-Stub fährt; wie R-0576 (#627) für das RPM, build-deb.sh unverändert
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
