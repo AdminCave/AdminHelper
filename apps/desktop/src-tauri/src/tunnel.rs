@@ -208,11 +208,17 @@ fn to_visitor(connection: &mut Connection, local_port: u16, web: bool) {
         let kept = connection
             .url
             .as_deref()
-            .and_then(|raw| Url::parse(&validate_web_url(raw).ok()?).ok())
-            .and_then(|mut url| {
+            .and_then(|raw| Some((Url::parse(&validate_web_url(raw).ok()?).ok()?, raw)))
+            .and_then(|(mut url, raw)| {
                 url.set_host(Some("127.0.0.1")).ok()?;
                 url.set_port(Some(local_port)).ok()?;
-                Some(url.to_string())
+                let mut out = url.to_string();
+                // `Url` writes an empty path as `/`; a URL saved without one stays without one.
+                let bare = url.path() == "/" && url.query().is_none() && url.fragment().is_none();
+                if bare && !raw.trim().ends_with('/') {
+                    out.pop();
+                }
+                Some(out)
             });
         connection.url = Some(kept.unwrap_or_else(|| format!("http://127.0.0.1:{local_port}")));
     }
@@ -534,6 +540,11 @@ mod tests {
                 "https://127.0.0.1:13389/ui/?lang=de",
             ),
             ("no URL", None, "http://127.0.0.1:13389"),
+            (
+                "a URL without a path",
+                Some("http://127.0.0.1:6000"),
+                "http://127.0.0.1:13389",
+            ),
             (
                 "localhost and another port",
                 Some("https://localhost:8006/pve"),
