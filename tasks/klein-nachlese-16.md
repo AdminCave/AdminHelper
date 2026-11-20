@@ -10,8 +10,10 @@ Heavy: none — Kommentar, Monitoring-Unit-Tests, Spec-Text
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1657: Kommentar an ensureAllSubscription  [ ]
+### T1 — R-1657: Kommentar an ensureAllSubscription  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @380eaee1e 2026-11-20T01:19:48+01:00
+Review: approve (.ah-out/review/klein-nachlese-16/T1.verdict.json)
 Beweis: reviewer kern-gateway-1 branch, 2026-11-19
 Semantik: keine Stelle in docs/ — der Kommentar selbst ist der Fund
 Änderung: Der Kommentar sagt, dass `ensureAllSubscription` über das Gateway (`-k`) läuft, und nennt `injectEvent` nicht mehr als Vorbild, denn der geht per `compose exec` in den Server-Container.
