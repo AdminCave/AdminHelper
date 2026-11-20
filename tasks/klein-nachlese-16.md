@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-nachlese-16 — Task-Ledger
-Status: bereit · Branch: feature/klein-nachlese-16 · Review: pro Task
+Status: erledigt · Branch: feature/klein-nachlese-16 · Review: pro Task
 Spec: docs/features/klein-nachlese-16.md (Roadmap R-1657, R-1661)
 Heavy: none — Kommentar, Monitoring-Unit-Tests, Spec-Text
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
