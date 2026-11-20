@@ -1094,6 +1094,15 @@ def test_docker_a_compose_container_is_keyed_by_project_service_and_number():
             {"compose_project": "shop", "compose_service": "", "compose_number": 2},
             id="empty-service",
         ),
+        # The parts are joined with "/": a part with one would no longer split back (R-1663).
+        pytest.param(
+            {"compose_project": "a/b", "compose_service": "web", "compose_number": 2},
+            id="slash-in-project",
+        ),
+        pytest.param(
+            {"compose_project": "shop", "compose_service": "b/web", "compose_number": 2},
+            id="slash-in-service",
+        ),
     ],
 )
 def test_docker_without_the_whole_compose_identity_the_key_stays_the_name(compose):
