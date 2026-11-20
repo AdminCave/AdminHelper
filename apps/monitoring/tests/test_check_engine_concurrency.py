@@ -327,6 +327,120 @@ def test_two_writers_damp_an_object_once_each(pg_sessionmaker, monkeypatch):
     assert (status, reason) == ("ok", "SMART (failure 2/3)")
 
 
+def _seed_check_without_state(factory) -> str:
+    from app.models import MonitorCheck
+
+    check_id = f"chk-{uuid.uuid4().hex[:8]}"
+    session = factory()
+    session.add(
+        MonitorCheck(
+            id=check_id,
+            server_id="srv-1",
+            name="first result",
+            check_type="http",
+            config=json.dumps({"url": "http://example.test"}),
+            enabled=True,
+            interval="5m",
+            severity="critical",
+            consecutive_fails=3,
+        )
+    )
+    session.commit()
+    session.close()
+    return check_id
+
+
+def test_two_first_results_of_a_check_are_serialized(pg_sessionmaker, monkeypatch):
+    """R-1651: a check without a state row has nothing for FOR UPDATE to lock. Two first
+    results must still run one after the other: one creates the state (and its objects),
+    the other finds it and counts on. The delay in apply_result holds the first writer
+    between its SELECT and its COMMIT, so the second one overlaps it."""
+    from app import check_engine
+    from app.core import victoria as victoria_mod
+    from app.models import MonitorObjectState, MonitorState
+
+    class _DiskFailing:
+        def run(self, config):
+            item = {"kind": "disk", "id": "sda", "status": "critical", "reason": "SMART"}
+            return "critical", "down", {"_objects": {"complete": True, "items": [item]}}
+
+    monkeypatch.setattr(check_engine, "get_checker", lambda check_type: _DiskFailing())
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(check_engine, "_alert_pool", _InlinePool())
+
+    real_apply_result = check_engine.apply_result
+
+    def _slow_apply_result(*args, **kwargs):
+        time.sleep(0.5)
+        return real_apply_result(*args, **kwargs)
+
+    monkeypatch.setattr(check_engine, "apply_result", _slow_apply_result)
+
+    check_id = _seed_check_without_state(pg_sessionmaker)
+
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def _run():
+        try:
+            barrier.wait(timeout=30)
+            check_engine.execute_check(check_id)
+        except BaseException as exc:  # noqa: BLE001 - reported below, not swallowed
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_run, name=f"first-{i}") for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+        assert not t.is_alive(), "a writer never finished — the row lock deadlocked"
+    assert not errors, errors
+
+    session = pg_sessionmaker()
+    state = session.query(MonitorState).filter(MonitorState.check_id == check_id).one()
+    sda = session.query(MonitorObjectState).filter(MonitorObjectState.check_id == check_id).one()
+    counts = (state.fail_count, sda.fail_count)
+    session.close()
+
+    assert counts == (2, 2), f"fail counts (check, object) are {counts}, expected (2, 2)"
+
+
+def test_lock_state_waits_for_the_first_writer_of_a_check(pg_sessionmaker):
+    """R-1651, the helper both the pull and the push path take: while one session holds
+    the check without a state, a second one waits and then finds the state it created."""
+    from app.check_engine import lock_state
+    from app.models import MonitorState
+
+    check_id = _seed_check_without_state(pg_sessionmaker)
+    first = pg_sessionmaker()
+    assert lock_state(first, check_id) is None
+
+    seen: list[object] = []
+    done = threading.Event()
+
+    def _second():
+        session = pg_sessionmaker()
+        try:
+            state = lock_state(session, check_id)
+            seen.append(None if state is None else state.status)
+            session.rollback()
+        finally:
+            session.close()
+            done.set()
+
+    worker = threading.Thread(target=_second, name="second")
+    worker.start()
+    # The second session must still be waiting on the first one's lock: a fixed wait,
+    # because what is tested is that nothing happens within it.
+    assert not done.wait(timeout=1.0), f"the second writer did not wait: it saw {seen}"
+    first.add(MonitorState(check_id=check_id, status="critical", fail_count=1, ok_count=0))
+    first.commit()
+    first.close()
+    worker.join(timeout=30)
+    assert not worker.is_alive(), "the second writer never finished"
+    assert seen == ["critical"]
+
+
 def test_two_dispatches_claim_the_same_alert_only_once(pg_sessionmaker, monkeypatch):
     """Two BG dispatches for one check, overlapping inside the claim window.
 

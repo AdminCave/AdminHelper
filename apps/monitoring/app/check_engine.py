@@ -587,6 +587,20 @@ def _run_checker(run: _Run) -> tuple[str, str, dict | None, int]:
     return result_status, message, metrics, duration_ms
 
 
+def lock_state(db: Session, check_id: str) -> MonitorState | None:
+    """The check's state row under FOR UPDATE, held until the caller's commit; None
+    before its first result."""
+    query = db.query(MonitorState).filter(MonitorState.check_id == check_id).with_for_update()
+    state = query.first()
+    if state is None:
+        # Before the first result there is no row to lock: the check's row stands in,
+        # so a second first result waits here and then finds the state the first one
+        # created (read again: a new statement sees what committed meanwhile).
+        db.query(MonitorCheck.id).filter(MonitorCheck.id == check_id).with_for_update().first()
+        state = query.first()
+    return state
+
+
 def _apply_locked(
     db: Session,
     check_id: str,
@@ -604,9 +618,7 @@ def _apply_locked(
     # near-simultaneous reports for one server. Without the lock both could read fail_count=2
     # and write 3 instead of 4, or both see the same transition and double-alert (4.46).
     # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
-    state = (
-        db.query(MonitorState).filter(MonitorState.check_id == check_id).with_for_update().first()
-    )
+    state = lock_state(db, check_id)
     # Read again: the check may have been changed or deleted during the run.
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if check is None:

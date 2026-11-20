@@ -5,8 +5,10 @@ Heavy: none — nur Bewertung, Sperren und Routen im Monitoring-Dienst, kein Sta
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — R-1651: Erstergebnis eines Checks unter Sperre schreiben  [ ]
+### T1 — R-1651: Erstergebnis eines Checks unter Sperre schreiben  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_check_engine_concurrency.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @ab002f04d 2026-11-20T08:44:32+01:00
+Review: approve (.ah-out/review/kern-monitoring-53/T1.verdict.json)
 Änderung: Ohne `MonitorState` sperren Pull (`check_engine`) und Push (`routers/agent.py`) die `MonitorCheck`-Zeile `FOR UPDATE` und lesen den Zustand danach neu. Der Postgres-Test lässt zwei Erstergebnisse gleichzeitig laufen: Erst schlägt er fehl, mit der Sperre ist er grün. Lokal läuft er zusätzlich mit Postgres, der Beleg kommt in den Commit-Body.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_concurrency.py tests/test_object_state.py tests/test_agent_report.py
 Doku: keine (internes Sperrverhalten ohne dokumentierten Einfluss)
