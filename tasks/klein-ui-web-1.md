@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # klein-ui-web-1 — Task-Ledger
-Status: bereit · Branch: feature/klein-ui-web-1 · Review: am Ende
+Status: erledigt · Branch: feature/klein-ui-web-1 · Review: am Ende
 Spec: docs/features/klein-ui-web-1.md (Roadmap R-1658)
 Heavy: none — nur Asset und Unit-Test, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
