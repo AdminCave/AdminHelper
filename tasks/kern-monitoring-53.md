@@ -1,5 +1,5 @@
 # Monitoring-Nachlese: Objektzeilen unter Sperre, stabile Schlüssel, Verlauf, Hub im Hintergrund — Task-Ledger
-Status: erledigt · Branch: feature/kern-monitoring-53 · Review: pro Task
+Status: aktiv · Branch: feature/kern-monitoring-53 · Review: pro Task
 Spec: docs/features/kern-monitoring-53.md (Roadmap R-1651, R-1653, R-1650, R-1642, R-1660)
 Heavy: none — nur Bewertung, Sperren und Routen im Monitoring-Dienst, kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -55,5 +55,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_objects_api
 Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/admin/monitoring.html, docs/en/admin/monitoring.html, changelog.d/kern-monitoring-53.md
 Task-Review: am Ende
 Abhängt von: T3, T4, T5
+
+### T7 — R-1660: direkte Aufrufer von toggle_check/delete_check an die neue Signatur  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_template_sync.py
+Änderung: T5 hat `background_tasks` vor `db` eingefügt. `test_template_sync.py` ruft beide Routen direkt mit `(id, db)` auf, `db` landet dort im `BackgroundTasks`-Platz und die Sitzung ist der `Depends`-Standard (PR-CI #619: 5 failed, AttributeError 'Depends' object has no attribute 'query'). Die Aufrufer reichen `BackgroundTasks()` mit.
+Beweis: PR-CI #619 run 44700042687 Monitoring (pytest): 5 failed in tests/test_template_sync.py
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py tests/test_alerter_hub.py
+Doku: keine (nur Testaufrufe)
+Abhängt von: T5
 
 ## Entscheidungen
