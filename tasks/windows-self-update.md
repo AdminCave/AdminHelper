@@ -1,5 +1,5 @@
 # Windows-Agent: signiertes Self-Update über :8445 — Task-Ledger
-Status: aktiv · Branch: feature/windows-self-update · Review: pro Task
+Status: bereit · Branch: feature/windows-self-update · Review: pro Task
 Spec: docs/features/windows-self-update.md (Roadmap R-1581)
 Heavy: windows — Tausch, Health-Check und Rollback sind Windows-Code; Beweis über die Windows-Jobs der PR-CI; den Gateway-Teil prüft der integration-stack-Job der PR-CI
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -38,8 +38,10 @@ Review: approve (.ah-out/review/windows-self-update/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- windows_update_set_test
 Doku: → T5
 
-### T5 — Doku: automatisches Update unter Windows, Release-Schritt  [ ]
+### T5 — Doku: automatisches Update unter Windows, Release-Schritt  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/developer/cicd.html, docs/en/developer/cicd.html, changelog.d/windows-self-update.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1f0ca7cac 2026-11-20T18:54:06+01:00
+Review: am Ende (nur Doku, Branch-Review)
 Änderung: Absatz „Automatisches Update“ im Windows-Abschnitt (Rhythmus, Signatur, Rollback, `AUTO_UPDATE=0`). Der Release-Schritt kommt in cicd.html. Changelog-Fragment deutsch, umlautfrei, `- **Windows-Agent: …:** …`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: diese Task

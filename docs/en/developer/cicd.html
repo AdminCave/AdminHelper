@@ -524,7 +524,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           <ul>
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>/<code>freebsd</code> binaries (<code>adminhelper-agent-freebsd-x86_64</code>, static) + <code>frpc-windows-x86_64.exe</code> (the pinned frpc.exe for the Windows agent, checked against <code>FRP_SHA256_WINDOWS_AMD64</code> and <code>ExeSHA256</code> at build time)</li>
-            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo and, under <code>freebsd/</code>, the signed pkg repo for FreeBSD&nbsp;14 and&nbsp;15 with <code>adminhelper-agent</code> and the OPNsense plugin <code>os-adminhelper</code>) &mdash; plus the archive keyring <code>adminhelper-archive-keyring.gpg</code> as a standalone asset (a second channel to fingerprint-verify it against <code>SHA256SUMS</code> + minisign)</li>
+            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo and, under <code>freebsd/</code>, the signed pkg repo for FreeBSD&nbsp;14 and&nbsp;15 with <code>adminhelper-agent</code> and the OPNsense plugin <code>os-adminhelper</code>, under <code>windows/</code> the signed update set of the Windows agent) &mdash; plus the archive keyring <code>adminhelper-archive-keyring.gpg</code> as a standalone asset (a second channel to fingerprint-verify it against <code>SHA256SUMS</code> + minisign)</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
             <li><code>SHA256SUMS</code> over all assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign signature) once armed</li>
           </ul>
@@ -629,6 +629,9 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out adminhelper-pk
 gh secret set PKG_REPO_SIGNING_KEY &lt; adminhelper-pkg.key
 openssl pkey -in adminhelper-pkg.key -pubout -out apps/agent/freebsd/adminhelper-pkg.pub
 sha256sum apps/agent/freebsd/adminhelper-pkg.pub   # new value for this page and agent-deployment.html</code></pre>
+
+          <h2 id="windows-update-set">Windows update set (self-update of the Windows agent)</h2>
+          <p>The step &ldquo;Build signed Windows update set&rdquo; in <code>release.yml</code> runs <code>apps/agent/build-windows-update.sh</code>: it lays out <code>windows/</code> with <code>VERSION</code>, <code>adminhelper-agent.exe</code>, <code>frpc.exe</code> (the pinned frpc of the release), <code>SHA256SUMS</code> over these three and <code>SHA256SUMS.minisig</code>. It signs with the same minisign key as the release's <code>SHA256SUMS</code> (secret <code>MINISIGN_SECRET_KEY</code>); the signed comment names the version, so an old, genuinely signed set cannot pass as a new one. Without the secret the release fails; the key file lives only for the step, in a directory of its own. The set goes under <code>windows/</code> into the asset <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code>, and the gateway serves it over the certless repo plane (<code>:8445/windows/</code>). The agent verifies the signature against the key it has built in, like <code>scripts/update.sh</code> (<a href="../admin/agent-deployment.html#windows-auto-update">Agent deployment &rarr; Automatic update</a>). <code>scripts/tests/windows_update_set_test.sh</code> builds the set with a throwaway key and checks its contents and signature.</p>
 
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>
