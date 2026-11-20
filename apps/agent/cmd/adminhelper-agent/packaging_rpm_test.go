@@ -73,6 +73,10 @@ systemctl daemon-reload
 const systemctlStub = `#!/bin/sh
 s=$AH_SYSTEMCTL_STATE
 echo "$*" >> "$s/calls"
+if [ -n "$AH_SYSTEMCTL_DOWN" ]; then
+    echo "System has not been booted with systemd as init system (PID 1). Can't operate." >&2
+    exit 1
+fi
 start() {
     if [ "$2" = restart ] || [ ! -f "$s/$1.active" ]; then echo "$1" >> "$s/starts"; fi
     : > "$s/$1.active"
@@ -330,6 +334,25 @@ func TestRPMInstallWithoutFrpcConfigStartsOnlyTheTimer(t *testing.T) {
 				t.Errorf("%s calls systemctl %s without frpc.toml", l.name, c)
 			}
 		}
+	}
+}
+
+// In a container without systemd as PID 1 every systemctl call fails; rpm reports a
+// scriptlet that exits non-zero as failed (R-0576).
+func TestRPMScriptletsPassWithoutSystemd(t *testing.T) {
+	t.Setenv("AH_SYSTEMCTL_DOWN", "1")
+	spec := specScriptlets(t)
+	for _, tc := range []struct {
+		name  string
+		steps []scriptletStep
+	}{
+		{"install", []scriptletStep{{"%post", spec["post"], 1}, {"%posttrans", spec["posttrans"], 0}}},
+		{"upgrade", upgradeSteps(spec, spec)},
+		{"erase", []scriptletStep{{"%preun", spec["preun"], 0}, {"%postun", spec["postun"], 0}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			newRPMHost(t, true).run(t, tc.steps)
+		})
 	}
 }
 

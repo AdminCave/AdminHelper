@@ -106,8 +106,9 @@ func TestDhcpValuesReportsTheFullestScope(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("dhcpValues() = %v, want %v", got, want)
 	}
+	// A server without a scope has no use to rate: no rule field, so the check is unknown (R-1465).
 	got = dhcpValues(nil)
-	want = map[string]any{"scopes": 0, "max_used_pct": 0.0, "scopes_over_80": 0, "scopes_over_95": 0}
+	want = map[string]any{"scopes": 0}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("dhcpValues(nil) = %v, want %v", got, want)
 	}
@@ -314,9 +315,10 @@ func TestDefenderValues(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
+	// Never updated is the oldest age there is, so the >= 4 rule rates it critical (R-1481).
 	got = defenderValues(mpStatus{AntivirusSignatureAge: mpSignatureNever}, "", nil, winNow)
-	if _, ok := got["signature_age_d"]; ok {
-		t.Fatalf("signatures never updated read as an age: %v", got)
+	if got["signature_age_d"] != mpSignatureNever {
+		t.Fatalf("signatures never updated must report age %d: %v", mpSignatureNever, got)
 	}
 	if _, ok := got["passive"]; ok {
 		t.Fatalf("an unknown mode read as a state: %v", got)

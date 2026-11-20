@@ -55,7 +55,7 @@ cp etc/systemd/system/adminhelper-agent.timer %{buildroot}/etc/systemd/system/
 %dir %attr(700,root,root) /etc/adminhelper
 
 %post
-systemctl daemon-reload
+systemctl daemon-reload >/dev/null 2>&1 || true
 # Alte Units aufraeumen
 for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer srm-monitor-agent.service srm-agent.timer srm-agent.service; do
     if [ -f "/etc/systemd/system/${unit}" ]; then
@@ -64,7 +64,7 @@ for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer sr
         rm -f "/etc/systemd/system/${unit}"
     fi
 done
-systemctl daemon-reload
+systemctl daemon-reload >/dev/null 2>&1 || true
 
 %preun
 # $1 == 0: Uninstall (stop + disable). $1 == 1: Upgrade, nichts tun: dieses Skript
@@ -77,7 +77,7 @@ if [ "$1" -eq 0 ]; then
 fi
 
 %postun
-systemctl daemon-reload
+systemctl daemon-reload >/dev/null 2>&1 || true
 
 %posttrans
 # Laeuft bei Installation und Upgrade zuletzt, beim Upgrade nach preun und postun
