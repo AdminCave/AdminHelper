@@ -682,6 +682,29 @@ history_of | grep -q ',all,web vitest,unbestaetigt,' \
 report_of | grep -qF 'step not addressable by --step on base' \
   && ok "the report says the counter-check could not run" || bad "table: $(report_of | grep '^| all')"
 
+# ── 4g3: a second-box run whose tauri build failed is no evidence (R-1667) ───
+# The Sammellauf of 2026-11-20: the base build lacked the frpc sidecar, the spec
+# ran against an old binary, and a real regression was reported as `extern`.
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
+export SHIM_W2_BASE_OUT="HookError [SevereServiceError]: tauri build failed (1)"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' \
+  && ok "the base build failed -> unbestaetigt, not extern" || bad "rows: $(history_of)"
+report_of | grep -qF 'tauri build failed on base' \
+  && ok "the report says the base was not built" || bad "table: $(report_of | grep '^| all')"
+
+candidate_case
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
+export SHIM_W2_HEAD_OUT="HookError [SevereServiceError]: tauri build failed (1)"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+history_of | grep -q ',all,web vitest,unbestaetigt,' \
+  && ok "the HEAD build failed on the second box -> unbestaetigt, not reg" || bad "rows: $(history_of)"
+[ "$(cat "$SHIM_STATE/w2.n")" = 1 ] \
+  && ok "no counter-check after HEAD was not built" || bad "$(cat "$SHIM_STATE/w2.n") w2 runs"
+
 # ── 4h: a confirmed regression becomes a roadmap row + a short ledger ────────
 roadmap_of() { cat "$AH_PRIVATE_DIR/ROADMAP.md" 2>/dev/null; }
 
