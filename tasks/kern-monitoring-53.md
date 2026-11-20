@@ -1,5 +1,5 @@
 # Monitoring-Nachlese: Objektzeilen unter Sperre, stabile Schlüssel, Verlauf, Hub im Hintergrund — Task-Ledger
-Status: aktiv · Branch: feature/kern-monitoring-53 · Review: pro Task
+Status: bereit · Branch: feature/kern-monitoring-53 · Review: pro Task
 Spec: docs/features/kern-monitoring-53.md (Roadmap R-1651, R-1653, R-1650, R-1642, R-1660)
 Heavy: none — nur Bewertung, Sperren und Routen im Monitoring-Dienst, kein Stack-, Gateway-, PKI-, Agent- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, Lint sauber, SPDX bei neuen Dateien; Doku in der Task oder ihrer Doku-Task).
@@ -56,8 +56,10 @@ Doku: docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/ad
 Task-Review: am Ende
 Abhängt von: T3, T4, T5
 
-### T7 — R-1660: direkte Aufrufer von toggle_check/delete_check an die neue Signatur  [ ]
+### T7 — R-1660: direkte Aufrufer von toggle_check/delete_check an die neue Signatur  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_template_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7d5568e4c 2026-11-20T09:12:17+01:00
+Review: approve (.ah-out/review/kern-monitoring-53/T7.verdict.json)
 Änderung: T5 hat `background_tasks` vor `db` eingefügt. `test_template_sync.py` ruft beide Routen direkt mit `(id, db)` auf, `db` landet dort im `BackgroundTasks`-Platz und die Sitzung ist der `Depends`-Standard (PR-CI #619: 5 failed, AttributeError 'Depends' object has no attribute 'query'). Die Aufrufer reichen `BackgroundTasks()` mit.
 Beweis: PR-CI #619 run 44700042687 Monitoring (pytest): 5 failed in tests/test_template_sync.py
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py tests/test_alerter_hub.py
