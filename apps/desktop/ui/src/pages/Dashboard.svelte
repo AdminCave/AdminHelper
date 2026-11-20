@@ -13,6 +13,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     kindCounts,
     recentConnections,
     loading,
+    connectionsStore,
   } from '$lib/stores/connections';
   import { sessionStore } from '$lib/stores/session';
   import {
@@ -58,6 +59,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let problems = $derived(summary.critical + summary.warning);
   // A failed load leaves no checks behind: zero problems would read as a healthy monitoring.
   let monitoringKnown = $derived($monitoringHasLoaded && !$monitoringError);
+  // The same for connections: a pending or failed fetch has no count yet (R-0781).
+  let connectionsKnown = $derived(
+    !$connectionsStore.error && !($loading && $kindCounts.total === 0),
+  );
   let agentServers = $derived(
     new Set(enabledChecks.filter((c) => c.checkType === 'agent_ping').map((c) => c.serverId)).size,
   );
@@ -89,7 +94,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="dash-cards">
     <div class="dash-card" data-card="connections">
       <div class="dash-card-label">{$t('dashboard.total')}</div>
-      <div class="dash-card-value">{$kindCounts.total}</div>
+      <div class="dash-card-value">{connectionsKnown ? $kindCounts.total : '-'}</div>
       <div class="dash-card-hint">
         {$t('dashboard.kindHint', {
           ssh: $kindCounts.ssh,
@@ -101,7 +106,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#if monitoringShown}
       <div class="dash-card" data-card="servers">
         <div class="dash-card-label">{$t('dashboard.servers')}</div>
-        <div class="dash-card-value">{$monitoringServers.length}</div>
+        <div class="dash-card-value">{monitoringKnown ? $monitoringServers.length : '-'}</div>
         <div class="dash-card-hint">{$t('dashboard.serversHint', { count: agentServers })}</div>
       </div>
       <div class="dash-card" data-card="problems" class:has-problems={problems > 0}>
@@ -133,6 +138,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
           </ul>
         {:else if $loading}
           <div class="dash-empty">{$t('loading.generic')}</div>
+        {:else if $connectionsStore.error}
+          <div class="dash-empty">-</div>
         {:else}
           <div class="dash-empty">{$t('dashboard.empty')}</div>
         {/if}

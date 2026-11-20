@@ -54,6 +54,12 @@ import Dashboard from './Dashboard.svelte';
 
 const OFFLINE = new Error('offline');
 
+function cardValue(card: string): string {
+  return (
+    document.querySelector(`[data-card="${card}"] .dash-card-value`)?.textContent?.trim() ?? ''
+  );
+}
+
 beforeAll(() => {
   setLanguage('en');
 });
@@ -75,6 +81,9 @@ describe('Dashboard while loading and after a failed fetch', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain(tNow('connections.loadFailed', { error: 'offline' }));
     expect(screen.getByRole('button', { name: tNow('action.retry') })).not.toBeNull();
+    // Nothing came back: neither "no connections used" nor a count of zero (R-0781).
+    expect(screen.queryByText(tNow('dashboard.empty'))).toBeNull();
+    expect(cardValue('connections')).toBe('-');
   });
 
   it('shows that it loads instead of "no connections used" while the fetch is pending', async () => {
@@ -90,6 +99,7 @@ describe('Dashboard while loading and after a failed fetch', () => {
     expect(await screen.findByText(tNow('loading.generic'))).not.toBeNull();
     expect(screen.queryByText(tNow('dashboard.empty'))).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(cardValue('connections')).toBe('-');
 
     finish([]);
     await waitFor(() => expect(screen.queryByText(tNow('loading.generic'))).toBeNull());
@@ -100,6 +110,7 @@ describe('Dashboard while loading and after a failed fetch', () => {
     render(Dashboard);
 
     expect(await screen.findByText(tNow('dashboard.empty'))).not.toBeNull();
+    expect(cardValue('connections')).toBe('0');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText(tNow('loading.generic'))).toBeNull();
   });
