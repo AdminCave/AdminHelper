@@ -106,3 +106,20 @@ func TestServeWindowsLowersPriority(t *testing.T) {
 		}
 	}
 }
+
+func TestHealthyAfterFirstCycle(t *testing.T) {
+	marks := 0
+	wrapped := healthyAfterFirstCycle(func(context.Context) {}, func() { marks++ })
+
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	wrapped(stopped)
+	if marks != 0 {
+		t.Fatalf("a cycle cut short by Stop marked the version healthy")
+	}
+	wrapped(context.Background())
+	wrapped(context.Background())
+	if marks != 1 {
+		t.Fatalf("marks = %d after two finished cycles, want 1", marks)
+	}
+}

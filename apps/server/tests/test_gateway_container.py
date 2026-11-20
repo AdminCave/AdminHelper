@@ -69,7 +69,9 @@ LARGE_SIZE = 32 * 1024 * 1024
 # The FreeBSD pkg repo as build-pkg.sh lays it out, and files of the repo root outside the served
 # subtrees: on disk, so only the location rules keep them back.
 FREEBSD = ["/freebsd/FreeBSD:15:amd64/meta.conf", "/freebsd/FreeBSD:15:amd64/All/agent.pkg"]
-OUTSIDE = ["/outside/meta.conf", "/freebsd.old/meta.conf"]
+# The signed Windows release set the agent's self-update fetches (build-windows-update.sh).
+WINDOWS = ["/windows/SHA256SUMS", "/windows/SHA256SUMS.minisig", "/windows/adminhelper-agent.exe"]
+OUTSIDE = ["/outside/meta.conf", "/freebsd.old/meta.conf", "/windows.old/SHA256SUMS"]
 
 CERTLESS_ZONES = [
     ["$binary_remote_addr", "zone=certless_addr:10m"],
@@ -316,10 +318,10 @@ def gateway_setup(tmp_path_factory):
         path.chmod(0o755)
     (setup.repo / "apt" / "probe").chmod(0o644)
     large.chmod(0o644)
-    for name in FREEBSD + OUTSIDE:
+    for name in FREEBSD + WINDOWS + OUTSIDE:
         file = setup.repo / name.lstrip("/")
         file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_text("served only under /freebsd/\n")
+        file.write_text("served only under /freebsd/ and /windows/\n")
         file.chmod(0o644)
         for parent in file.relative_to(setup.repo).parents[:-1]:
             (setup.repo / parent).chmod(0o755)
@@ -499,6 +501,20 @@ def test_the_repo_plane_serves_the_freebsd_repo_and_nothing_else_of_its_root(gat
         traps = OUTSIDE + ["/freebsd/../outside/meta.conf", "/freebsd/%2e%2e/outside/meta.conf"]
         refused = {path: box.fetch(path) for path in traps}
         assert served == dict.fromkeys(FREEBSD, "200"), box.logs()
+        assert refused == dict.fromkeys(traps, "404"), box.logs()
+
+
+def test_the_repo_plane_serves_the_windows_release_set(gateway_setup):
+    with _gateway(gateway_setup, _compose_gateway()) as box:
+        assert box.answer() == "200", box.logs()
+        served = {path: box.fetch(path) for path in WINDOWS}
+        traps = [
+            "/windows/../outside/meta.conf",
+            "/windows/%2e%2e/outside/meta.conf",
+            "/windows.old/SHA256SUMS",
+        ]
+        refused = {path: box.fetch(path) for path in traps}
+        assert served == dict.fromkeys(WINDOWS, "200"), box.logs()
         assert refused == dict.fromkeys(traps, "404"), box.logs()
 
 

@@ -8,12 +8,29 @@ package main
 
 import (
 	"context"
+	"sync"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 
 	"adminhelper-agent/internal/frpc"
+	"adminhelper-agent/internal/selfupdate"
 )
+
+var applySelfUpdate = selfupdate.ApplyStaged
+
+// healthyAfterFirstCycle wraps cycle so that the first cycle the service finishes marks this
+// version healthy for a pending self-update (selfupdate.MarkHealthy).
+func healthyAfterFirstCycle(cycle func(context.Context), mark func()) func(context.Context) {
+	var once sync.Once
+	return func(ctx context.Context) {
+		cycle(ctx)
+		// A cycle cut short by Stop proves nothing.
+		if ctx.Err() == nil {
+			once.Do(mark)
+		}
+	}
+}
 
 // windowsServiceName must match the name `sc create` registers in
 // internal/service/service_windows.go.
@@ -57,8 +74,9 @@ func (s *agentService) Execute(_ []string, r <-chan svc.ChangeRequest, changes c
 	// serve runs on its own goroutine so the SCM control loop below stays
 	// responsive while a cycle runs.
 	served := make(chan struct{})
+	go selfupdate.Loop(ctx, version)
 	go func() {
-		serve(ctx, defaultInterval, cycle)
+		serve(ctx, defaultInterval, healthyAfterFirstCycle(cycle, func() { selfupdate.MarkHealthy(version) }))
 		close(served)
 	}()
 

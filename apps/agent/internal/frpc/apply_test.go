@@ -101,6 +101,32 @@ func TestWriteSyncConfigNeverStoresInsecure(t *testing.T) {
 	}
 }
 
+func TestWriteSyncConfigKeepsAutoUpdate(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	if err := os.WriteFile(config.FrpAdminHelperConf(),
+		[]byte("ADMINHELPER_URL=\"https://old.example\"\nAUTO_UPDATE=\"0\"\nOTHER=\"x\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: "https://srv.example", ServerID: "srv-1", APIKey: "key-1",
+	}); err != nil {
+		t.Fatalf("WriteSyncConfig: %v", err)
+	}
+	kv, err := config.LoadKeyValue(config.FrpAdminHelperConf())
+	if err != nil {
+		t.Fatalf("sync config: %v", err)
+	}
+	want := map[string]string{
+		"ADMINHELPER_URL": "https://srv.example",
+		"API_KEY":         "key-1",
+		"SERVER_ID":       "srv-1",
+		"AUTO_UPDATE":     "0",
+	}
+	if !reflect.DeepEqual(kv, want) {
+		t.Fatalf("sync config = %v, want %v", kv, want)
+	}
+}
+
 // Nothing is ever written to frp/pki anymore, so the sync config does not create it.
 func TestWriteSyncConfigCreatesNoPkiDir(t *testing.T) {
 	t.Setenv("ADMINHELPER_FRP_DIR", filepath.Join(t.TempDir(), "frp"))

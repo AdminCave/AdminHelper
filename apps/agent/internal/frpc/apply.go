@@ -93,6 +93,13 @@ func writeSyncConfig(p SyncConfigParams) error {
 	if confCACert != "" {
 		entries = append(entries, config.KeyValue{Key: "CACERT", Value: confCACert})
 	}
+	// AUTO_UPDATE is the host's own setting (the Windows self-update), not the server's: it
+	// survives a new provisioning. A value WriteKeyValue would refuse is dropped.
+	if old, err := config.LoadKeyValue(config.FrpAdminHelperConf()); err == nil {
+		if v, ok := old["AUTO_UPDATE"]; ok && !strings.ContainsAny(v, "\n\r\"") {
+			entries = append(entries, config.KeyValue{Key: "AUTO_UPDATE", Value: v})
+		}
+	}
 	if err := config.WriteKeyValue(config.FrpAdminHelperConf(), entries); err != nil {
 		return fmt.Errorf("Config schreiben: %w", err)
 	}

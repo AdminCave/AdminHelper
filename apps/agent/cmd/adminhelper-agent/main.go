@@ -53,10 +53,25 @@ func main() {
 	root.AddCommand(monitorCmd())
 	root.AddCommand(serviceCmd())
 	root.AddCommand(diagnosticsCmd())
+	root.AddCommand(selfUpdateApplyCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+// selfUpdateApplyCmd is the update helper the Windows service starts from its stage; no one
+// calls it by hand, so it is hidden.
+func selfUpdateApplyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "self-update-apply <version>",
+		Short:  "Install the staged agent release (started by the Windows service)",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return applySelfUpdate(args[0])
+		},
 	}
 }
 

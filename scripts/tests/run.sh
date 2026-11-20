@@ -699,7 +699,7 @@ layer_lint() {
 # ${VAR-…}, not ${VAR:-…}: unset means "use the default", but an explicitly empty
 # list is a mistake worth reporting, not a silent full run.
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
-restore_guard_test gateway_mtls_test agent_install_test agent_install_bsd_test agent_install_ps1_test diagnostics_test
+restore_guard_test gateway_mtls_test agent_install_test agent_install_bsd_test agent_install_ps1_test windows_update_set_test diagnostics_test
 session_status_test run_flags_test verify_test log_digest_test harness_consistency_test iter_flags_test guard_test ledger_test review_scripts_test review_snap_test overlap_test start_session_test task_close_test gitignore_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test

@@ -118,6 +118,7 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 | github.com/inconshreveable/mousetrap | Apache-2.0 |
 | github.com/go-ole/go-ole | MIT |
 | github.com/yusufpapurcu/wmi | MIT |
+| golang.org/x/crypto (blake2b, Self-Update) | BSD-3-Clause |
 
 **Auflagen-relevant:** Apache-2.0 (NOTICE) — `cobra`, `numcpus`, `mousetrap`; MPL-2.0 — `go-sql-driver/mysql`.
 
